@@ -21,7 +21,7 @@ Example:
 
 import copy
 import warnings
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal, Self
 
 import torch
@@ -179,7 +179,7 @@ def state_to_device(
     Returns:
         A new BaseState object with the converted device and dtype
     """
-    attrs = asdict(state)
+    attrs = vars(state)
     for attr_name, attr_value in attrs.items():
         if isinstance(attr_value, torch.Tensor):
             attrs[attr_name] = attr_value.to(device=device)
