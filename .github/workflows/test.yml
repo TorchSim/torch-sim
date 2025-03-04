@@ -18,7 +18,6 @@ jobs:
           - { python: "3.12", resolution: lowest-direct }
     runs-on: ${{ matrix.os }}
 
-
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -125,3 +124,42 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: Radical-AI/torch-sim # TODO codecov can't find this repo despite valid token, needs debugging
+
+  find-examples:
+    runs-on: ubuntu-latest
+    outputs:
+      examples: ${{ steps.set-matrix.outputs.examples }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Find example scripts
+        id: set-matrix
+        run: |
+          EXAMPLES=$(find ./examples -name "*.py" | jq -R -s -c 'split("\n")[:-1]')
+          echo "examples=$EXAMPLES" >> $GITHUB_OUTPUT
+
+  test-examples:
+    needs: find-examples
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        example: ${{fromJson(needs.find-examples.outputs.examples)}}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Install package and dependencies
+        run: uv pip install .[models] --system
+
+      - name: Run example
+        run: python ${{ matrix.example }}
