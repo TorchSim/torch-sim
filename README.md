@@ -13,6 +13,117 @@ cd torch-sim
 pip install .
 ```
 
+## High-level API Example with ASE
+```python
+from ase import bulk
+from torchsim.runners import integrate, state_to_atoms
+from torchsim.integrators import nvt_langevin
+from torchsim.models.lennard_jones import LennardJonesModel
+import torch
+
+# instantiate a lennard jones model for Si
+lj_model = LennardJonesModel(
+    sigma=2.0,
+    epsilon=0.1,
+    device=torch.device("cpu"),
+    dtype=torch.float64,
+)
+# create a bulk silicon system
+si_atoms = bulk("Si", "fcc", a=5.43, cubic=True)
+
+# integrate the system with NVT Langevin dynamics
+final_state = integrate(
+    system=si_atoms,
+    model=lj_model,
+    integrator=nvt_langevin,
+    n_steps=1000,
+    temperature=2000,
+    timestep=0.002,
+)
+# retrieve the final state as an ASE Atoms object
+final_atoms = state_to_atoms(final_state)
+```
+
+## Low-level API Example with ASE
+```python
+# the model and atoms will remain the same
+
+from torchsim.runners import atoms_to_state
+from torchsim.units import MetalUnits
+
+# instantiate the state
+initial_state = atoms_to_state(si_atoms)
+
+# instantiate the integrator
+init_state_fn, update_fn = nvt_langevin(model=lj_model)
+
+initial_state = init_state_fn(initial_state, kT=2000 * MetalUnits.temperature)
+for step in range(1000):
+    state = update_fn(initial_state, kT=2000 * MetalUnits.temperature)
+
+```
+
+## Low-level API Example with ASE
+```python
+# the model and atoms will remain the same
+
+from torchsim.runners import atoms_to_state
+from torchsim.units import MetalUnits
+
+# instantiate the state
+initial_state = atoms_to_state(si_atoms)
+
+# instantiate the integrator
+init_state_fn, update_fn = nvt_langevin(model=lj_model)
+
+initial_state = init_state_fn(initial_state, kT=2000 * MetalUnits.temperature)
+for step in range(1000):
+    state = update_fn(initial_state, kT=2000 * MetalUnits.temperature)
+
+```
+
+## High-level API with reporting
+
+```python
+
+from torchsim.trajectory import TrajectoryReporter, TorchSimTrajectory
+from torchsim.quantities import kinetic_energy
+
+trajectory_file = "lj_trajectory.h5md"
+# report potential energy every 10 steps and kinetic energy every 20 steps
+prop_calculators = {
+    10: {"potential_energy": lambda state: state.energy},
+    20: {"kinetic_energy": lambda state: kinetic_energy(state.momenta, state.masses)},
+}
+
+reporter = TrajectoryReporter(
+    trajectory_file,
+    # report state every 10 steps
+    state_frequency=10,
+    prop_calculators=prop_calculators,
+)
+
+final_state = integrate(
+    system=si_atoms,
+    model=lj_model,
+    integrator=nvt_langevin,
+    n_steps=1000,
+    temperature=2000,
+    timestep=0.002,
+    trajectory_reporter=reporter,
+)
+
+# Check energy fluctuations
+with TorchSimTrajectory(trajectory_file) as traj:
+    kinetic_energies = traj.get_array("kinetic_energy")
+    potential_energies = traj.get_array("potential_energy")
+    final_energy = potential_energies[-1]
+
+    final_atoms = traj.get_atoms(-1)
+
+
+```
+
 ## Core modules
 
 TorchSim is built around the following core modules:
