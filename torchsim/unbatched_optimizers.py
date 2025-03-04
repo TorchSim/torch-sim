@@ -2,12 +2,17 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Literal
 
 import torch
 
 from torchsim.state import BaseState
 from torchsim.unbatched_integrators import velocity_verlet
 
+
+StateDict = dict[
+    Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "batch"], torch.Tensor
+]
 
 eps = 1e-8
 
@@ -41,19 +46,12 @@ class GDState(OptimizerState):
         lr: Learning rate for position updates
     """
 
-    lr: torch.Tensor
-
 
 def gradient_descent(
     *,
-    positions: torch.Tensor,
-    masses: torch.Tensor,
-    cell: torch.Tensor,
-    pbc: bool,
     model: torch.nn.Module,
-    learning_rate: float = 0.01,
-    **extra_state_kwargs,
-) -> tuple[GDState, Callable[[GDState], GDState]]:
+    lr: float = 0.01,
+) -> tuple[Callable[[StateDict], GDState], Callable[[GDState], GDState]]:
     """Initialize a simple gradient descent optimization.
 
     Gradient descent updates atomic positions by moving along the direction of the forces
@@ -63,31 +61,67 @@ def gradient_descent(
 
     Args:
         model: Neural network model that computes energies and forces
-        positions: Atomic positions tensor of shape (n_atoms, 3)
-        masses: Atomic masses tensor of shape (n_atoms,)
-        cell: Unit cell tensor of shape (3, 3)
-        pbc: Periodic boundary conditions flags
-        learning_rate: Step size for position updates (default: 0.01)
-        **extra_state_kwargs: Additional keyword arguments to pass to the state
+        lr: Step size for position updates (default: 0.01)
 
     Returns:
         Tuple containing:
-        - Initial GDState with system state
+        - Initialization function that creates the initial GDState
         - Update function that performs one gradient descent step
 
     Notes:
         - Best suited for systems close to their minimum energy configuration
     """
-    device = positions.device
-    dtype = positions.dtype
+    device = model.device
+    dtype = model.dtype
 
     # Convert learning rate to tensor
-    lr = torch.tensor(learning_rate, device=device, dtype=dtype)
+    if not isinstance(lr, torch.Tensor):
+        lr = torch.tensor(lr, device=device, dtype=dtype)
 
-    def gd_step(state: GDState) -> GDState:
-        """Perform one gradient descent optimization step."""
+    def gd_init(state: BaseState | StateDict, **extra_state_kwargs) -> GDState:
+        """Initialize the gradient descent optimizer state.
+
+        Args:
+            state: Initial system state
+            **extra_state_kwargs: Additional keyword arguments for state initialization
+
+        Returns:
+            Initial GDState with system configuration and forces
+        """
+        if not isinstance(state, BaseState):
+            state = BaseState(**state)
+
+        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+
+        # Get initial forces and energy from model
+        model_output = model(
+            positions=state.positions,
+            cell=state.cell,
+            atomic_numbers=atomic_numbers,
+        )
+
+        return GDState(
+            positions=state.positions,
+            masses=state.masses,
+            cell=state.cell,
+            pbc=state.pbc,
+            atomic_numbers=state.atomic_numbers,
+            forces=model_output["forces"],
+            energy=model_output["energy"],
+        )
+
+    def gd_step(state: GDState, lr: torch.Tensor = lr) -> GDState:
+        """Perform one gradient descent optimization step.
+
+        Args:
+            state: Current optimization state
+            lr: Learning rate for position updates (default: value from initialization)
+
+        Returns:
+            Updated state after one optimization step
+        """
         # Update positions using forces and learning rate
-        state.positions = state.positions + state.lr * state.forces
+        state.positions = state.positions + lr * state.forces
 
         # Update forces and energy at new positions
         results = model(
@@ -100,23 +134,7 @@ def gradient_descent(
 
         return state
 
-    model_output = model(
-        positions=positions,
-        cell=cell,
-        atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
-    )
-
-    initial_state = GDState(
-        positions=positions,
-        masses=masses,
-        cell=cell,
-        pbc=pbc,
-        atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
-        forces=model_output["forces"],
-        energy=model_output["energy"],
-        lr=lr,
-    )
-    return initial_state, gd_step
+    return gd_init, gd_step
 
 
 @dataclass
