@@ -55,19 +55,23 @@ model = UnbatchedMaceModel(
 # Run initial inference
 results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 
+state = {
+    "positions": positions,
+    "masses": masses,
+    "cell": cell,
+    "pbc": PERIODIC,
+    "atomic_numbers": atomic_numbers,
+}
 # Initialize FIRE optimizer for structural relaxation
-state, fire_update = fire(
+fire_init, fire_update = fire(
     model=model,
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    pbc=PERIODIC,
-    atomic_numbers=atomic_numbers,
 )
 
+state = fire_init(state=state)
+
 # Run optimization loop
-for step in range(2_000):
-    if step % 100 == 0:
+for step in range(1_000):
+    if step % 10 == 0:
         print(f"{step=}: Total energy: {state.energy.item()} eV")
     state = fire_update(state)
 

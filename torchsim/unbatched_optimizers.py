@@ -165,13 +165,9 @@ class FIREState(OptimizerState):
         return self.momenta / self.masses.unsqueeze(-1)
 
 
-def fire(
+def fire(  # noqa: PLR0915, C901
     *,
     model: torch.nn.Module,
-    positions: torch.Tensor,
-    masses: torch.Tensor,
-    cell: torch.Tensor,
-    pbc: bool,
     dt_max: float = 0.4,
     dt_start: float = 0.01,
     n_min: int = 5,
@@ -180,8 +176,9 @@ def fire(
     f_alpha: float = 0.99,
     alpha_start: float = 0.1,
     eps: float = 1e-8,
-    **extra_state_kwargs,
-) -> tuple[FIREState, Callable[[FIREState], FIREState]]:
+) -> tuple[
+    Callable[[BaseState | StateDict], FIREState], Callable[[FIREState], FIREState]
+]:
     """Initialize a FIRE (Fast Inertial Relaxation Engine) optimization.
 
     FIRE is a molecular dynamics-based optimization algorithm that combines velocity
@@ -190,10 +187,6 @@ def fire(
 
     Args:
         model: Neural network model that computes energies and forces.
-        positions: Atomic positions tensor of shape (n_atoms, 3).
-        masses: Atomic masses tensor of shape (n_atoms,).
-        cell: Unit cell tensor of shape (3, 3).
-        pbc: Whether to use periodic boundary conditions.
         dt_max: Maximum allowed timestep (default: 0.4).
         dt_start: Initial timestep (default: 0.01).
         n_min: Minimum number of steps before timestep increase (default: 5).
@@ -202,11 +195,10 @@ def fire(
         f_alpha: Factor for damping parameter decrease (default: 0.99).
         alpha_start: Initial value of damping parameter (default: 0.1).
         eps: Small value for numerical stability (default: 1e-8).
-        **extra_state_kwargs: Additional keyword arguments for state initialization.
 
     Returns:
         A tuple containing:
-        - Initial FIRE state
+        - Initialization function that creates the initial FIREState
         - Update function that performs one FIRE optimization step
 
     Notes:
@@ -217,17 +209,61 @@ def fire(
         - f_inc and f_dec control how quickly the timestep changes
         - alpha_start and f_alpha control the strength and adaptation of damping
     """
-    device = positions.device
-    dtype = positions.dtype
+    device = model.device
+    dtype = model.dtype
 
     # parameters to be set in fire_update
-    dt_max = torch.tensor(dt_max, device=device, dtype=dtype)
-    n_min = torch.tensor(n_min, device=device, dtype=dtype)
-    f_inc = torch.tensor(f_inc, device=device, dtype=dtype)
-    f_dec = torch.tensor(f_dec, device=device, dtype=dtype)
-    f_alpha = torch.tensor(f_alpha, device=device, dtype=dtype)
-    dt_start = torch.tensor(dt_start, device=device, dtype=dtype)
-    alpha_start = torch.tensor(alpha_start, device=device, dtype=dtype)
+    if not isinstance(dt_max, torch.Tensor):
+        dt_max = torch.tensor(dt_max, device=device, dtype=dtype)
+    if not isinstance(n_min, torch.Tensor):
+        n_min = torch.tensor(n_min, device=device, dtype=dtype)
+    if not isinstance(f_inc, torch.Tensor):
+        f_inc = torch.tensor(f_inc, device=device, dtype=dtype)
+    if not isinstance(f_dec, torch.Tensor):
+        f_dec = torch.tensor(f_dec, device=device, dtype=dtype)
+    if not isinstance(f_alpha, torch.Tensor):
+        f_alpha = torch.tensor(f_alpha, device=device, dtype=dtype)
+    if not isinstance(dt_start, torch.Tensor):
+        dt_start = torch.tensor(dt_start, device=device, dtype=dtype)
+    if not isinstance(alpha_start, torch.Tensor):
+        alpha_start = torch.tensor(alpha_start, device=device, dtype=dtype)
+
+    def fire_init(state: BaseState | StateDict, **extra_state_kwargs) -> FIREState:
+        """Initialize the FIRE optimizer state.
+
+        Args:
+            state: Initial system state
+            **extra_state_kwargs: Additional keyword arguments for state initialization
+
+        Returns:
+            Initial FIREState with system configuration and forces
+        """
+        if not isinstance(state, BaseState):
+            state = BaseState(**state)
+
+        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+        # Get initial forces and energy from model
+        model_output = model(
+            positions=state.positions,
+            cell=state.cell,
+            atomic_numbers=atomic_numbers,
+        )
+        momenta = torch.zeros_like(state.positions, device=device, dtype=dtype)
+
+        initial_state = FIREState(
+            positions=state.positions,
+            forces=model_output["forces"],
+            energy=model_output["energy"],
+            masses=state.masses,
+            momenta=momenta,
+            atomic_numbers=atomic_numbers,
+            cell=state.cell,
+            pbc=state.pbc,
+            dt=dt_max,
+            alpha=alpha_start,
+            n_pos=0,
+        )
+        return initial_state  # noqa: RET504
 
     def fire_update(
         state: FIREState,
@@ -238,6 +274,20 @@ def fire(
         f_alpha: torch.Tensor = f_alpha,
         alpha_start: torch.Tensor = alpha_start,
     ) -> FIREState:
+        """Perform one FIRE optimization step.
+
+        Args:
+            state: Current optimization state
+            dt_max: Maximum allowed timestep
+            n_min: Minimum number of steps before timestep increase
+            f_inc: Factor for timestep increase
+            f_dec: Factor for timestep decrease
+            f_alpha: Factor for damping parameter decrease
+            alpha_start: Initial value of damping parameter
+
+        Returns:
+            Updated FIREState after one optimization step
+        """
         # Perform NVE step
         dt_curr = state.dt
         alpha_curr = state.alpha
@@ -283,28 +333,7 @@ def fire(
         state.n_pos = n_pos
         return state
 
-    model_output = model(
-        positions=positions,
-        cell=cell,
-        atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
-    )
-    momenta = torch.zeros_like(positions, device=device, dtype=dtype)
-
-    initial_state = FIREState(
-        positions=positions,
-        forces=model_output["forces"],
-        energy=model_output["energy"],
-        masses=masses,
-        momenta=momenta,
-        atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
-        cell=cell,
-        pbc=pbc,
-        dt=dt_max,
-        alpha=alpha_start,
-        n_pos=0,
-    )
-
-    return initial_state, fire_update
+    return fire_init, fire_update
 
 
 def fire_ase(  # noqa: PLR0915

@@ -1,28 +1,21 @@
-from dataclasses import asdict
 from typing import Any
 
-import pytest
 import torch
 
 from torchsim.state import BaseState
 from torchsim.unbatched_optimizers import fire, gradient_descent
 
 
-pytest.skip(
-    "Unbatched optimizers deprecated, skipping optimizer tests", allow_module_level=True
-)
-
-
-def test_fire_optimizer(si_base_state: BaseState, lj_calculator: Any) -> None:
+def test_fire_optimizer(si_base_state: BaseState, unbatched_lj_calculator: Any) -> None:
     """Test FIRE optimization of Si structure."""
 
     # perturb the structure
     si_base_state.positions[1][0] = 1.0
+    si_base_state.cell = si_base_state.cell.squeeze(0)
 
     # Initialize optimizer
-    state, update_fn = fire(
-        model=lj_calculator,
-        **asdict(si_base_state),
+    init_fn, update_fn = fire(
+        model=unbatched_lj_calculator,
         dt_start=0.01,
         dt_max=0.1,
         n_min=5,
@@ -30,6 +23,8 @@ def test_fire_optimizer(si_base_state: BaseState, lj_calculator: Any) -> None:
         f_dec=0.5,
         alpha_start=0.1,
     )
+
+    state = init_fn(state=si_base_state)
 
     # Run a few optimization steps
     initial_force_norm = torch.norm(state.forces)
@@ -48,18 +43,21 @@ def test_fire_optimizer(si_base_state: BaseState, lj_calculator: Any) -> None:
     assert state.positions.shape == si_base_state.positions.shape
 
 
-def test_gradient_descent_optimizer(si_base_state: BaseState, lj_calculator: Any) -> None:
+def test_gradient_descent_optimizer(
+    si_base_state: BaseState, unbatched_lj_calculator: Any
+) -> None:
     """Test gradient descent optimization of Si structure."""
 
     # perturb the structure
     si_base_state.positions[1][0] = 1.0
-
+    si_base_state.cell = si_base_state.cell.squeeze(0)
     # Initialize optimizer
-    state, update_fn = gradient_descent(
-        model=lj_calculator,
-        **asdict(si_base_state),
-        learning_rate=0.01,
+    init_fn, update_fn = gradient_descent(
+        model=unbatched_lj_calculator,
+        lr=0.01,
     )
+
+    state = init_fn(state=si_base_state)
 
     # Run a few optimization steps
     initial_energy = state.energy
@@ -70,29 +68,31 @@ def test_gradient_descent_optimizer(si_base_state: BaseState, lj_calculator: Any
     assert state.energy < initial_energy, "Energy should decrease during optimization"
 
     # Check state properties
-    assert hasattr(state, "lr"), "GD state should have learning rate"
     assert state.positions.shape == si_base_state.positions.shape
 
 
-def test_optimizer_convergence(si_base_state: BaseState, lj_calculator: Any) -> None:
+def test_optimizer_convergence(
+    si_base_state: BaseState, unbatched_lj_calculator: Any
+) -> None:
     """Test that both optimizers can reach similar final states."""
 
     # perturb the structure
     si_base_state.positions[1][0] = 1.0
-
+    si_base_state.cell = si_base_state.cell.squeeze(0)
     # Run FIRE
-    fire_state, fire_update = fire(
-        model=lj_calculator,
-        **asdict(si_base_state),
+    fire_init, fire_update = fire(
+        model=unbatched_lj_calculator,
         dt_start=0.01,
     )
 
     # Run GD
-    gd_state, gd_update = gradient_descent(
-        **asdict(si_base_state),
-        model=lj_calculator,
-        learning_rate=0.01,
+    gd_init, gd_update = gradient_descent(
+        model=unbatched_lj_calculator,
+        lr=0.01,
     )
+
+    fire_state = fire_init(state=si_base_state)
+    gd_state = gd_init(state=si_base_state)
 
     # Optimize both for more steps
     for _ in range(50):

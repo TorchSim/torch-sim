@@ -62,7 +62,6 @@ atomic_numbers = torch.full((positions.shape[0],), 29, device=device, dtype=torc
 # Cu atomic mass in atomic mass units
 masses = torch.full((positions.shape[0],), 63.546, device=device, dtype=dtype)
 
-
 # Initialize the Soft Sphere model
 model = SoftSphereModel(
     sigma=2.5,
@@ -77,20 +76,22 @@ model = SoftSphereModel(
 # Run initial simulation and get results
 results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 
-print(f"Initial Energy: {results['energy']}")
-print(f"Initial Forces shape: {results['forces'].shape}")
+state = {
+    "positions": positions,
+    "masses": masses,
+    "cell": cell,
+    "pbc": PERIODIC,
+    "atomic_numbers": atomic_numbers,
+}
 
 # Initialize FIRE (Fast Inertial Relaxation Engine) optimizer
-state, fire_update = fire(
+fire_init, fire_update = fire(
     model=model,
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    atomic_numbers=atomic_numbers,
-    pbc=PERIODIC,
     dt_start=0.005,  # Initial timestep
     dt_max=0.01,  # Maximum timestep
 )
+
+state = fire_init(state=state)
 
 # Run optimization for 2000 steps
 for step in range(2_000):
