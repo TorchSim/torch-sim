@@ -6,6 +6,10 @@ from torchsim.integrators import nvt_langevin
 from torchsim.models.lennard_jones import LennardJonesModel
 import torch
 
+from mace.calculators.foundations_models import mace_mp
+from torchsim.models.mace import MaceModel
+
+
 lj_model = LennardJonesModel(
     sigma=2.0,  # Å, typical for Si-Si interaction
     epsilon=0.1,  # eV, typical for Si-Si interaction
@@ -67,10 +71,6 @@ with TorchSimTrajectory(trajectory_file) as traj:
 ### basic mace example
 
 # cuda if available
-
-from mace.calculators.foundations_models import mace_mp
-from torchsim.models.mace import MaceModel
-
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 

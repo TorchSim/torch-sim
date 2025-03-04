@@ -1,4 +1,10 @@
-# Import dependencies
+# /// script
+# dependencies = [
+#     "mace-torch>=0.3.10",
+#     "phonopy>=2.35",
+#     "pymatviz>=0.15.1",
+# ]
+# ///
 import numpy as np
 import pymatviz as pmv
 import torch

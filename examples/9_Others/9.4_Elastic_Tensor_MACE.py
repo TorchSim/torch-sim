@@ -1,3 +1,9 @@
+# /// script
+# dependencies = [
+#     "ase>=3.24",
+#     "mace-torch>=0.3.10",
+# ]
+# ///
 import numpy as np
 import torch
 from ase import units

@@ -1,12 +1,14 @@
-# Import dependencies
+# /// script
+# dependencies = [
+#     "mace-torch>=0.3.10",
+# ]
+# ///
 import torch
 from ase.build import bulk
 
-# Import torchsim models and neighbors list
 from torchsim.models.mace import UnbatchedMaceModel
 from torchsim.neighbors import vesin_nl_ts
 
-# Import MACE model from mace-mp
 from mace.calculators.foundations_models import mace_mp
 
 # Set device and data type

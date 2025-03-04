@@ -1,9 +1,12 @@
-# Import dependencies
+# /// script
+# dependencies = [
+#     "mace-torch>=0.3.10",
+# ]
+# ///
 import numpy as np
 import torch
 from ase.build import bulk
 
-# Import torchsim models and optimizers
 from torchsim.models.mace import UnbatchedMaceModel
 from torchsim.neighbors import vesin_nl_ts
 from torchsim.unbatched_optimizers import fire

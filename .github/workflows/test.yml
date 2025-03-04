@@ -150,16 +150,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up uv
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: 3.11
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v2
 
-      - name: Install package and dependencies
-        run: uv pip install .[models] --system
-
       - name: Run example
-        run: python ${{ matrix.example }}
+        run: |
+          uv pip install . --system
+          uv run ${{ matrix.example }}
