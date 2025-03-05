@@ -634,7 +634,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
     def fire_init(
         state: BaseState | StateDict,
         cell_factor: torch.Tensor = cell_factor,
-        pressure: torch.Tensor = 0.0,
+        scalar_pressure: float = scalar_pressure,
         **extra_state_kwargs,
     ) -> UnitCellFIREState:
         """Initialize the FIRE optimization state.
@@ -642,7 +642,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
         Args:
             state: Initial system state containing positions, masses, cell, etc.
             cell_factor: Scaling factor for cell optimization (default: number of atoms)
-            pressure: External pressure tensor (default: 0.0)
+            scalar_pressure: External pressure tensor (default: 0.0)
             **extra_state_kwargs: Additional keyword arguments for state initialization
 
         Returns:
