@@ -152,7 +152,7 @@ def calculators(
         use_neighbor_list=False, cutoff=cutoff, **calc_params
     )
 
-    positions, cell = ar_fcc_base_state.positions, ar_fcc_base_state.cell
+    positions, cell = ar_fcc_base_state.positions, ar_fcc_base_state.cell.squeeze(0)
     return calc_nl(positions, cell), calc_direct(positions, cell)
 
 

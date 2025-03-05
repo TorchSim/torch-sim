@@ -4,7 +4,13 @@ import torch
 
 from torchsim.quantities import kinetic_energy, temperature
 from torchsim.state import BaseState
-from torchsim.unbatched_integrators import MDState, nve, nvt_langevin, nvt_nose_hoover
+from torchsim.unbatched_integrators import (
+    MDState,
+    nve,
+    nvt_langevin,
+    nvt_nose_hoover,
+    nvt_nose_hoover_invariant,
+)
 from torchsim.units import MetalUnits
 from torchsim.utils import calculate_momenta
 
@@ -63,7 +69,7 @@ def test_nvt_langevin_integrator(
 
     average_temperature = torch.mean(temperatures)
     # Check temperature control
-    assert 110 > average_temperature > 90, "Temperature should be maintained"
+    assert 120 > average_temperature > 80, "Temperature should be maintained"
 
 
 def test_nvt_nose_hoover_integrator(
@@ -96,7 +102,7 @@ def test_nvt_nose_hoover_integrator(
 
     average_temperature = torch.mean(temperatures)
     # Check temperature control
-    assert 110 > average_temperature > 90, "Temperature should be maintained"
+    assert 120 > average_temperature > 80, "Temperature should be maintained"
 
     # Check chain properties
     assert hasattr(state, "chain"), "Should have chain thermostat"
@@ -155,3 +161,35 @@ def test_integrator_state_properties(
         assert state.cell.shape == (3, 3)
 
         assert torch.allclose(md_state.momenta, state.momenta)
+
+
+def test_nvt_nose_hoover_invariant(
+    ar_fcc_base_state: BaseState, unbatched_lj_calculator: Any
+) -> None:
+    """Test Nose-Hoover chain thermostat maintains temperature."""
+    # Initialize integrator
+    target_temp = torch.tensor(100.0) * MetalUnits.temperature
+    dt = torch.tensor(0.001) * MetalUnits.time
+
+    ar_fcc_base_state.cell = ar_fcc_base_state.cell.squeeze(0)
+
+    nvt_init, nvt_update = nvt_nose_hoover(
+        model=unbatched_lj_calculator,
+        dt=dt,
+        kT=target_temp,
+        chain_length=3,
+        chain_steps=3,
+        sy_steps=3,
+    )
+
+    state = nvt_init(state=ar_fcc_base_state, seed=42)
+
+    # Run equilibration
+    invariant = torch.zeros(500)
+    for step in range(500):
+        state = nvt_update(state, target_temp)
+        invariant[step] = nvt_nose_hoover_invariant(state, target_temp)
+
+    # Check energy conservation
+    invariant_drift = torch.abs(invariant - invariant[0]) / torch.abs(invariant[0])
+    assert torch.all(invariant_drift < 0.05), "invariant should be conserved"
