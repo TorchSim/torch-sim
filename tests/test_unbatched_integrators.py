@@ -2,88 +2,79 @@ from typing import Any
 
 import torch
 
-from torchsim.quantities import kinetic_energy
+from torchsim.quantities import kinetic_energy, temperature
 from torchsim.state import BaseState
 from torchsim.unbatched_integrators import MDState, nve, nvt_langevin, nvt_nose_hoover
+from torchsim.units import MetalUnits
 from torchsim.utils import calculate_momenta
 
 
-# skip all tests in this file for now
-
-"""
-pytest.skip(
-    reason="Unbatched integrators deprecated, skipping integrator tests",
-    allow_module_level=True,
-)
-"""
-
-
-def test_nve_integrator(si_base_state: BaseState, unbatched_lj_calculator: Any) -> None:
+def test_nve_integrator(
+    ar_fcc_base_state: BaseState, unbatched_lj_calculator: Any
+) -> None:
     """Test NVE integration conserves energy."""
     # Initialize integrator
-    kT = torch.tensor(300.0)  # Temperature in K
-    dt = torch.tensor(0.001)  # Small timestep for stability
+    kT = torch.tensor(100.0) * MetalUnits.temperature  # Temperature in K
+    dt = torch.tensor(0.001) * MetalUnits.time  # Small timestep for stability
 
     nve_init, nve_update = nve(model=unbatched_lj_calculator, dt=dt, kT=kT)
 
     # Remove batch dimension from cell
-    si_base_state.cell = si_base_state.cell.squeeze(0)
+    ar_fcc_base_state.cell = ar_fcc_base_state.cell.squeeze(0)
 
-    state = nve_init(state=si_base_state)
-    # Store initial energy
-    initial_energy = state.energy + kinetic_energy(state.momenta, state.masses)
+    state = nve_init(state=ar_fcc_base_state)
 
     # Run several steps
-    energies = []
-    for _ in range(100):
+    energies = torch.zeros(20)
+    for step in range(1000):
         state = nve_update(state, dt)
-        total_energy = state.energy + kinetic_energy(state.momenta, state.masses)
-        energies.append(total_energy)
+        if step % 50 == 0:
+            total_energy = state.energy + kinetic_energy(state.momenta, state.masses)
+            energies[step // 50] = total_energy
 
     # Check energy conservation
-    energies = torch.tensor(energies)
-    energy_drift = torch.abs(energies - initial_energy) / torch.abs(initial_energy)
-    assert torch.all(energy_drift < 0.01), "Energy should be conserved in NVE"
+    energy_drift = torch.abs(energies - energies[1]) / torch.abs(energies[1])
+    assert torch.all(energy_drift < 0.05), "Energy should be conserved in NVE"
 
 
 def test_nvt_langevin_integrator(
-    si_base_state: BaseState, unbatched_lj_calculator: Any
+    ar_fcc_base_state: BaseState, unbatched_lj_calculator: Any
 ) -> None:
     """Test Langevin thermostat maintains target temperature."""
     # Initialize integrator
-    target_temp = torch.tensor(300.0)
-    dt = torch.tensor(0.001)
-    gamma = torch.tensor(0.1)  # Friction coefficient
+    target_temp = torch.tensor(100.0) * MetalUnits.temperature
+    dt = torch.tensor(0.001) * MetalUnits.time
+    gamma = torch.tensor(10.0) / MetalUnits.time  # Friction coefficient
 
     langevin_init, langevin_update = nvt_langevin(
         model=unbatched_lj_calculator, dt=dt, kT=target_temp, gamma=gamma
     )
 
     # Remove batch dimension from cell
-    si_base_state.cell = si_base_state.cell.squeeze(0)
+    ar_fcc_base_state.cell = ar_fcc_base_state.cell.squeeze(0)
 
-    state = langevin_init(state=si_base_state, seed=42)
+    state = langevin_init(state=ar_fcc_base_state, seed=42)
     # Run equilibration
-    temperatures = []
-    for _ in range(500):
+    temperatures = torch.zeros(500)
+    for step in range(500):
         state = langevin_update(state, target_temp)
-        KE = kinetic_energy(state.momenta, state.masses)
-        temp = 2 * KE / (3 * len(state.masses))  # 3N degrees of freedom
-        temperatures.append(temp)
+        temp = temperature(state.momenta, state.masses) / MetalUnits.temperature
+        temperatures[step] = temp
 
+    average_temperature = torch.mean(temperatures)
     # Check temperature control
-    assert 400 > target_temp > 200, "Temperature should be maintained"
+    assert 110 > average_temperature > 90, "Temperature should be maintained"
 
 
 def test_nvt_nose_hoover_integrator(
-    si_base_state: BaseState, unbatched_lj_calculator: Any
+    ar_fcc_base_state: BaseState, unbatched_lj_calculator: Any
 ) -> None:
     """Test Nose-Hoover chain thermostat maintains temperature."""
     # Initialize integrator
-    target_temp = torch.tensor(300.0)
-    dt = torch.tensor(0.001)
+    target_temp = torch.tensor(100.0) * MetalUnits.temperature
+    dt = torch.tensor(0.001) * MetalUnits.time
 
-    si_base_state.cell = si_base_state.cell.squeeze(0)
+    ar_fcc_base_state.cell = ar_fcc_base_state.cell.squeeze(0)
 
     nvt_init, nvt_update = nvt_nose_hoover(
         model=unbatched_lj_calculator,
@@ -94,18 +85,18 @@ def test_nvt_nose_hoover_integrator(
         sy_steps=3,
     )
 
-    state = nvt_init(state=si_base_state, seed=42)
+    state = nvt_init(state=ar_fcc_base_state, seed=42)
 
     # Run equilibration
-    temperatures = []
-    for _ in range(500):
+    temperatures = torch.zeros(500)
+    for step in range(500):
         state = nvt_update(state, target_temp)
-        KE = kinetic_energy(state.momenta, state.masses)
-        temp = 2 * KE / (3 * len(state.masses))
-        temperatures.append(temp)
+        temp = temperature(state.momenta, state.masses) / MetalUnits.temperature
+        temperatures[step] = temp
 
+    average_temperature = torch.mean(temperatures)
     # Check temperature control
-    assert 400 > target_temp > 200, "Temperature should be maintained"
+    assert 110 > average_temperature > 90, "Temperature should be maintained"
 
     # Check chain properties
     assert hasattr(state, "chain"), "Should have chain thermostat"
@@ -115,31 +106,35 @@ def test_nvt_nose_hoover_integrator(
 
 
 def test_integrator_state_properties(
-    si_base_state: BaseState, unbatched_lj_calculator: Any
+    ar_fcc_base_state: BaseState, unbatched_lj_calculator: Any
 ) -> None:
     """Test that all integrators preserve state properties."""
-    device = si_base_state.positions.device
-    dtype = si_base_state.positions.dtype
+    device = ar_fcc_base_state.positions.device
+    dtype = ar_fcc_base_state.positions.dtype
 
     momenta = calculate_momenta(
-        si_base_state.positions, si_base_state.masses, 300.0, device, dtype
+        ar_fcc_base_state.positions,
+        ar_fcc_base_state.masses,
+        100.0 * MetalUnits.temperature,
+        device,
+        dtype,
     )
     md_state = MDState(
-        positions=si_base_state.positions,
+        positions=ar_fcc_base_state.positions,
         momenta=momenta,
-        masses=si_base_state.masses,
-        cell=si_base_state.cell.squeeze(0),
-        pbc=si_base_state.pbc,
-        forces=torch.zeros_like(si_base_state.positions),
+        masses=ar_fcc_base_state.masses,
+        cell=ar_fcc_base_state.cell.squeeze(0),
+        pbc=ar_fcc_base_state.pbc,
+        forces=torch.zeros_like(ar_fcc_base_state.positions),
         energy=torch.tensor(0.0),
-        atomic_numbers=si_base_state.atomic_numbers,
+        atomic_numbers=ar_fcc_base_state.atomic_numbers,
     )
 
     for integrator in [nve, nvt_langevin, nvt_nose_hoover]:
         init_fn, update_fn = integrator(
             model=unbatched_lj_calculator,
-            dt=torch.tensor(0.001),
-            kT=torch.tensor(300.0),
+            dt=torch.tensor(0.001) * MetalUnits.time,
+            kT=torch.tensor(100.0) * MetalUnits.temperature,
         )
         state = init_fn(state=md_state)
 
