@@ -38,20 +38,14 @@ class OptimizerState(BaseState):
 
 @dataclass
 class GDState(OptimizerState):
-    """State class for gradient descent optimization.
-
-    Extends OptimizerState with learning rate parameter.
-
-    Attributes:
-        lr: Learning rate for position updates
-    """
+    """State class for gradient descent optimization."""
 
 
 def gradient_descent(
     *,
     model: torch.nn.Module,
     lr: float = 0.01,
-) -> tuple[Callable[[StateDict], GDState], Callable[[GDState], GDState]]:
+) -> tuple[Callable[[StateDict | BaseState], GDState], Callable[[GDState], GDState]]:
     """Initialize a simple gradient descent optimization.
 
     Gradient descent updates atomic positions by moving along the direction of the forces

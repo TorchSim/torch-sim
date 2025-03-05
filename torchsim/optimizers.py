@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any, Literal
 
 import torch
 
@@ -9,115 +10,112 @@ from torchsim.state import BaseState
 from torchsim.unbatched_optimizers import OptimizerState
 
 
+StateDict = dict[
+    Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "batch"], torch.Tensor
+]
+
+
 @dataclass
 class BatchedGDState(OptimizerState):
-    """State class for batched gradient descent optimization.
-
-    Extends OptimizerState with learning rates for each batch.
-
-    Attributes:
-        lr: Learning rates tensor of shape (n_batches,)
-    """
-
-    lr: torch.Tensor
+    """State class for batched gradient descent optimization."""
 
 
-def batched_gradient_descent(
+def gradient_descent(
+    *,
     model: torch.nn.Module,
-    # list of tensors with shape (n_atoms_per_batch, 3)
-    positions_list: list[torch.Tensor],
-    masses_list: list[torch.Tensor],  # list of tensors with shape (n_atoms_per_batch,)
-    cell_list: list[torch.Tensor],  # list of tensors with shape (3, 3)
-    batch_indices: torch.Tensor,  # shape: (total_atoms,)
-    learning_rates: torch.Tensor | float = 0.01,
-) -> tuple[BatchedGDState, Callable[[BatchedGDState], BatchedGDState]]:
+    lr: torch.Tensor | float = 0.01,
+) -> tuple[
+    Callable[[StateDict | BaseState], BatchedGDState],
+    Callable[[BatchedGDState], BatchedGDState],
+]:
     """Initialize a batched gradient descent optimization.
 
     Args:
         model: Neural network model that computes energies and forces
-        positions_list: List of atomic positions tensors
-        masses_list: List of atomic masses tensors
-        cell_list: List of unit cell tensors
-        batch_indices: Tensor mapping each atom to its batch index
-        learning_rates: Learning rates for each batch or single float (default: 0.01)
+        lr: Learning rate(s) for optimization. Can be a single float applied to all
+            batches or a tensor with shape [n_batches] for batch-specific rates
 
     Returns:
         Tuple containing:
-        - Initial BatchedGDState with system state
+        - Initialization function that creates the initial BatchedGDState
         - Update function that performs one gradient descent step
     """
-    device = positions_list[0].device
-    dtype = positions_list[0].dtype
+    device = model.device
+    dtype = model.dtype
 
-    # Get dimensions
-    n_batches = len(positions_list)
-    n_atoms_per_batch = [pos.shape[0] for pos in positions_list]
-
-    # Convert learning rates to tensor if needed
-    if isinstance(learning_rates, float):
-        lr = torch.full((n_batches,), learning_rates, device=device, dtype=dtype)
-    else:
-        lr = learning_rates.to(device=device, dtype=dtype)
-        assert len(lr) == n_batches, (
-            "Number of learning rates must match number of batches"
-        )
-
-    def initialize_state(
-        positions_list: list[torch.Tensor],
-        masses_list: list[torch.Tensor],
-        cell_list: list[torch.Tensor],
-        *,
-        pbc: bool,
-        lr: torch.Tensor = lr,
+    def gd_init(
+        state: BaseState | StateDict,
+        **extra_state_kwargs: Any,
     ) -> BatchedGDState:
-        """Initialize the batched gradient descent optimization state."""
+        """Initialize the batched gradient descent optimization state.
+
+        Args:
+            state: Base state containing positions, masses, cell, etc.
+            extra_state_kwargs: Additional keyword arguments to override state attributes
+
+        Returns:
+            Initialized BatchedGDState with forces and energy
+        """
+        if not isinstance(state, BaseState):
+            state = BaseState(**state)
+
+        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+
         # Get initial forces and energy from model
-        results = model(positions_list, cell_list)
-        energy = results["energy"]
-        forces_list = results["forces"]
-
-        # Concatenate all positions, forces, and masses
-        positions_cat = torch.cat(positions_list, dim=0)
-        forces_cat = torch.cat(forces_list, dim=0)
-        masses_cat = torch.cat(masses_list, dim=0)
-
-        # Stack cells for storage
-        cell_stack = torch.stack(cell_list, dim=0)
+        model_output = model(
+            positions=state.positions,
+            cell=state.cell,
+            atomic_numbers=atomic_numbers,
+            batch=state.batch,
+        )
+        energy = model_output["energy"]
+        forces = model_output["forces"]
 
         return BatchedGDState(
-            positions=positions_cat,
-            forces=forces_cat,
+            positions=state.positions,
+            forces=forces,
             energy=energy,
-            masses=masses_cat,
-            cell=cell_stack,
-            pbc=pbc,
-            lr=lr,
+            masses=state.masses,
+            cell=state.cell,
+            pbc=state.pbc,
+            atomic_numbers=atomic_numbers,
+            batch=state.batch,
         )
 
-    def gd_step(state: BatchedGDState) -> BatchedGDState:
-        """Perform one gradient descent optimization step."""
+    def gd_step(state: BatchedGDState, lr: torch.Tensor = lr) -> BatchedGDState:
+        """Perform one gradient descent optimization step.
+
+        Args:
+            state: Current optimization state
+            lr: Learning rate(s) to use for this step, overriding the default
+
+        Returns:
+            Updated BatchedGDState after one optimization step
+        """
         # Get per-atom learning rates by mapping batch learning rates to atoms
-        atom_lr = state.lr[batch_indices].unsqueeze(-1)  # shape: (total_atoms, 1)
+        if isinstance(lr, float):
+            lr = torch.full((state.n_batches,), lr, device=device, dtype=dtype)
+
+        atom_lr = lr[state.batch].unsqueeze(-1)  # shape: (total_atoms, 1)
 
         # Update positions using forces and per-atom learning rates
         state.positions = state.positions + atom_lr * state.forces
 
-        # Split positions back into list for model input
-        positions_split = torch.split(state.positions, n_atoms_per_batch)
-        positions_list = [pos.clone() for pos in positions_split]
-        cell_list = [state.cell[i].clone() for i in range(n_batches)]
-
-        # Update forces and energy at new positions
-        results = model(positions_list, cell_list)
+        # Get updated forces and energy from model
+        model_output = model(
+            positions=state.positions,
+            cell=state.cell,
+            atomic_numbers=state.atomic_numbers,
+            batch=state.batch,
+        )
 
         # Update state with new forces and energy
-        state.forces = torch.cat(results["forces"], dim=0)
-        state.energy = results["energy"]
+        state.forces = model_output["forces"]
+        state.energy = model_output["energy"]
 
         return state
 
-    initial_state = initialize_state(positions_list, masses_list, cell_list, pbc=True)
-    return initial_state, gd_step
+    return gd_init, gd_step
 
 
 @dataclass

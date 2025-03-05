@@ -4,10 +4,10 @@ import torch
 from ase.build import bulk
 
 # Import torchsim models and neighbors list
-from torchsim.models.mace import MaceModel, UnbatchedMaceModel
+from torchsim.models.mace import MaceModel
 from torchsim.neighbors import vesin_nl_ts
-from torchsim.optimizers import batched_gradient_descent
-from torchsim.unbatched_optimizers import gradient_descent
+from torchsim.optimizers import gradient_descent
+from torchsim.runners import atoms_to_state
 
 from mace.calculators.foundations_models import mace_mp
 
@@ -33,14 +33,14 @@ PERIODIC = True
 rng = np.random.default_rng()
 
 # Create diamond cubic Silicon systems
-si_dc = bulk("Si", "diamond", a=5.43).repeat((4, 4, 4))
+si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 si_dc.positions += 0.2 * rng.standard_normal(si_dc.positions.shape)
 
-si_dc_small = bulk("Si", "diamond", a=5.43).repeat((3, 3, 3))
-si_dc_small.positions += 0.2 * rng.standard_normal(si_dc_small.positions.shape)
+fe = bulk("Fe", "bcc", a=2.8665, cubic=True).repeat((3, 3, 3))
+fe.positions += 0.2 * rng.standard_normal(fe.positions.shape)
 
 # Create a list of our atomic systems
-atoms_list = [si_dc, si_dc, si_dc_small]
+atoms_list = [si_dc, fe]
 
 # Create batched model
 batched_model = MaceModel(
@@ -54,19 +54,7 @@ batched_model = MaceModel(
     enable_cueq=False,
 )
 
-# Create unbatched model for comparison
-unbatched_model = UnbatchedMaceModel(
-    model=loaded_model,
-    atomic_numbers=si_dc.get_atomic_numbers(),
-    device=device,
-    neighbor_list_fn=vesin_nl_ts,
-    periodic=PERIODIC,
-    compute_force=True,
-    compute_stress=True,
-    dtype=dtype,
-    enable_cueq=False,
-)
-
+"""
 # Convert data to tensors
 positions_list = [
     torch.tensor(atoms.positions, device=device, dtype=dtype) for atoms in atoms_list
@@ -105,63 +93,37 @@ atoms_per_batch = torch.tensor(
 batch_indices = torch.repeat_interleave(
     torch.arange(len(atoms_per_batch), device=device), atoms_per_batch
 )
+"""
 
-print(f"Positions shape: {positions.shape}")
-print(f"Cell shape: {cell.shape}")
-print(f"Batch indices shape: {batch_indices.shape}")
+state = atoms_to_state(atoms_list, device=device, dtype=dtype)
+
+print(f"Positions shape: {state.positions.shape}")
+print(f"Cell shape: {state.cell.shape}")
+print(f"Batch indices shape: {state.batch.shape}")
 
 # Run initial inference
 results = batched_model(
-    positions=positions, cell=cell, atomic_numbers=atomic_numbers, batch=batch_indices
+    positions=state.positions,
+    cell=state.cell,
+    atomic_numbers=state.atomic_numbers,
+    batch=state.batch,
 )
 # Use different learning rates for each batch
 learning_rate = 0.01
-learning_rates = torch.tensor(
-    [learning_rate] * len(atoms_list), device=device, dtype=dtype
-)
 
 # Initialize batched gradient descent optimizer
-batch_state, gd_update = batched_gradient_descent(
+gd_init, gd_update = gradient_descent(
     model=batched_model,
-    positions=positions,
-    cell=cell,
-    atomic_numbers=atomic_numbers,
-    masses=masses,
-    batch=batch_indices,
-    learning_rates=learning_rates,
+    lr=learning_rate,
 )
 
+state = gd_init(state)
 # Run batched optimization for a few steps
 print("\nRunning batched gradient descent:")
 for step in range(100):
     if step % 10 == 0:
-        print(f"Step {step}, Energy: {batch_state.energy}")
-    batch_state = gd_update(batch_state)
+        print(f"Step {step}, Energy: {[res.item() for res in state.energy]} eV")
+    state = gd_update(state)
 
-print(f"Final batched energy: {batch_state.energy}")
-
-# Compare with unbatched optimization
-print("\nRunning unbatched gradient descent for comparison:")
-unbatched_pos = torch.tensor(si_dc.positions, device=device, dtype=dtype)
-unbatched_cell = torch.tensor(si_dc.cell.array, device=device, dtype=dtype)
-unbatched_masses = torch.tensor(si_dc.get_masses(), device=device, dtype=dtype)
-
-state, single_gd_update = gradient_descent(
-    model=unbatched_model,
-    positions=unbatched_pos,
-    masses=unbatched_masses,
-    cell=unbatched_cell,
-    pbc=PERIODIC,
-    learning_rate=learning_rate,
-)
-
-for step in range(100):
-    if step % 10 == 0:
-        print(f"Step {step}, Energy: {state.energy}")
-    state = single_gd_update(state)
-
-print(f"Final unbatched energy: {state.energy}")
-
-# Compare final results between batched and unbatched
-print("\nComparison between batched and unbatched results:")
-print(f"Energy difference: {torch.max(torch.abs(batch_state.energy[0] - state.energy))}")
+print(f"Initial energies: {[res.item() for res in results['energy']]} eV")
+print(f"Final energies: {[res.item() for res in state.energy]} eV")
