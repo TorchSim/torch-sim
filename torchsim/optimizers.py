@@ -11,7 +11,8 @@ from torchsim.unbatched_optimizers import OptimizerState
 
 
 StateDict = dict[
-    Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "batch"], torch.Tensor
+    Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "batch"],
+    torch.Tensor,
 ]
 
 
@@ -439,7 +440,7 @@ class BatchedUnitCellFireState(BaseState):
     forces: torch.Tensor  # [n_total_atoms, 3]
     energy: torch.Tensor  # [n_batches]
     stress: torch.Tensor  # [n_batches, 3, 3]
-    velocity: torch.Tensor  # [n_total_atoms, 3]
+    velocities: torch.Tensor  # [n_total_atoms, 3]
 
     # cell attributes
     cell_positions: torch.Tensor  # [n_batches * 3, 3]
@@ -458,6 +459,11 @@ class BatchedUnitCellFireState(BaseState):
     n_pos: torch.Tensor  # [n_batches]
     hydrostatic_strain: bool
     constant_volume: bool
+
+    @property
+    def momenta(self) -> torch.Tensor:
+        """Atomwise momenta of the system."""
+        return self.velocities * self.masses.unsqueeze(-1)
 
 
 def unit_cell_fire(  # noqa: C901, PLR0915
@@ -531,7 +537,11 @@ def unit_cell_fire(  # noqa: C901, PLR0915
     # Setup parameters
     params = [dt_max, dt_start, alpha_start, f_inc, f_dec, f_alpha, n_min]
     dt_max, dt_start, alpha_start, f_inc, f_dec, f_alpha, n_min = [
-        p if isinstance(p, torch.Tensor) else torch.tensor(p, device=device, dtype=dtype)
+        (
+            p
+            if isinstance(p, torch.Tensor)
+            else torch.tensor(p, device=device, dtype=dtype)
+        )
         for p in params
     ]
 
@@ -639,7 +649,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
             batch=state.batch.clone(),
             pbc=state.pbc,
             # new attrs
-            velocity=torch.zeros_like(state.positions),
+            velocities=torch.zeros_like(state.positions),
             forces=forces,
             energy=energy,
             stress=stress,
@@ -700,7 +710,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         atom_wise_dt = state.dt[state.batch].unsqueeze(-1)
         cell_wise_dt = state.dt.repeat_interleave(3).unsqueeze(-1)
 
-        state.velocity += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
+        state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
         state.cell_velocities += (
             0.5 * cell_wise_dt * state.cell_forces / state.cell_masses.unsqueeze(-1)
         )
@@ -709,7 +719,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         atomic_positions = state.positions  # shape: (n_atoms, 3)
 
         # Update atomic and cell positions
-        atomic_positions_new = atomic_positions + atom_wise_dt * state.velocity
+        atomic_positions_new = atomic_positions + atom_wise_dt * state.velocities
         cell_positions_new = cell_positions + cell_wise_dt * state.cell_velocities
 
         # Update cell with deformation gradient
@@ -757,13 +767,13 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         state.cell_forces = virial_flat
 
         # Velocity Verlet first half step (v += 0.5*a*dt)
-        state.velocity += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
+        state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
         state.cell_velocities += (
             0.5 * cell_wise_dt * state.cell_forces / state.cell_masses.unsqueeze(-1)
         )
 
         # Calculate power (F·V) for atoms
-        atomic_power = (state.forces * state.velocity).sum(dim=1)  # [n_atoms]
+        atomic_power = (state.forces * state.velocities).sum(dim=1)  # [n_atoms]
         atomic_power_per_batch = torch.zeros(
             n_batches, device=device, dtype=atomic_power.dtype
         )
@@ -798,12 +808,12 @@ def unit_cell_fire(  # noqa: C901, PLR0915
                 state.dt[batch_idx] = state.dt[batch_idx] * f_dec
                 state.alpha[batch_idx] = alpha_start[batch_idx]
                 # Reset velocities for both atoms and cell
-                state.velocity[state.batch == batch_idx] = 0
+                state.velocities[state.batch == batch_idx] = 0
                 cell_batch = torch.arange(n_batches, device=device).repeat_interleave(3)
                 state.cell_velocities[cell_batch == batch_idx] = 0
 
         # Mix velocity and force direction using FIRE for atoms
-        v_norm = torch.norm(state.velocity, dim=1, keepdim=True)
+        v_norm = torch.norm(state.velocities, dim=1, keepdim=True)
         f_norm = torch.norm(state.forces, dim=1, keepdim=True)
         # Avoid division by zero
         # mask = f_norm > 1e-10
@@ -814,9 +824,9 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         #     state.velocity,
         # )
         batch_wise_alpha = state.alpha[state.batch].unsqueeze(-1)
-        state.velocity = (
+        state.velocities = (
             1.0 - batch_wise_alpha
-        ) * state.velocity + batch_wise_alpha * state.forces * v_norm / (f_norm + 1e-10)
+        ) * state.velocities + batch_wise_alpha * state.forces * v_norm / (f_norm + 1e-10)
 
         # Mix velocity and force direction for cell DOFs
         cell_v_norm = torch.norm(state.cell_velocities, dim=1, keepdim=True)
