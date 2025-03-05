@@ -1,6 +1,8 @@
 ### basic lennard jones example
 
-from ase import bulk
+
+# %% %
+from ase.build import bulk
 from torchsim.runners import integrate, state_to_atoms
 from torchsim.integrators import nvt_langevin
 from torchsim.models.lennard_jones import LennardJonesModel
@@ -83,6 +85,13 @@ mace_model = MaceModel(
     compute_force=True,
 )
 
+reporter = TrajectoryReporter(
+    trajectory_file,
+    # report state every 10 steps
+    state_frequency=10,
+    prop_calculators=prop_calculators,
+)
+
 final_state = integrate(
     system=si_atoms,
     model=mace_model,
@@ -143,27 +152,21 @@ for filename in filenames:
 ### basic mace example with optimization
 
 from torchsim.runners import optimize
-from torchsim.integrators import fire
+from torchsim.optimizers import fire
 
 systems = [si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell]
-
-for system in systems:
-    system.positions += torch.randn_like(system.positions) * 0.01
 
 final_state = optimize(
     system=systems,
     model=mace_model,
     optimizer=fire,
-    n_steps=100,
-    temperature=2000,
-    timestep=0.002,
 )
 
 
 ### basic mace example with custom convergence function
 
 from torchsim.runners import optimize
-from torchsim.integrators import fire
+from torchsim.optimizers import fire
 from torchsim.units import MetalUnits
 
 systems = [si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell]
@@ -185,9 +188,6 @@ final_state = optimize(
     model=mace_model,
     optimizer=fire,
     convergence_fn=converge_energy,
-    n_steps=100,
-    temperature=2000,
-    timestep=0.002,
 )
 
 

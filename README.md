@@ -15,7 +15,7 @@ pip install .
 
 ## High-level API Example with ASE
 ```python
-from ase import bulk
+from ase.build import bulk
 from torchsim.runners import integrate, state_to_atoms
 from torchsim.integrators import nvt_langevin
 from torchsim.models.lennard_jones import LennardJonesModel
@@ -52,34 +52,21 @@ from torchsim.runners import atoms_to_state
 from torchsim.units import MetalUnits
 
 # instantiate the state
-initial_state = atoms_to_state(si_atoms)
+initial_state = atoms_to_state(si_atoms, device=lj_model.device, dtype=lj_model.dtype)
 
 # instantiate the integrator
-init_state_fn, update_fn = nvt_langevin(model=lj_model)
+init_state_fn, update_fn = nvt_langevin(
+    model=lj_model,
+    dt=0.002 * MetalUnits.time,
+    kT=2000 * MetalUnits.temperature,
+)
 
+# initialize the state
 initial_state = init_state_fn(initial_state, kT=2000 * MetalUnits.temperature)
+
+# run the simulation
 for step in range(1000):
     state = update_fn(initial_state, kT=2000 * MetalUnits.temperature)
-
-```
-
-## Low-level API Example with ASE
-```python
-# the model and atoms will remain the same
-
-from torchsim.runners import atoms_to_state
-from torchsim.units import MetalUnits
-
-# instantiate the state
-initial_state = atoms_to_state(si_atoms)
-
-# instantiate the integrator
-init_state_fn, update_fn = nvt_langevin(model=lj_model)
-
-initial_state = init_state_fn(initial_state, kT=2000 * MetalUnits.temperature)
-for step in range(1000):
-    state = update_fn(initial_state, kT=2000 * MetalUnits.temperature)
-
 ```
 
 ## High-level API with reporting
@@ -103,6 +90,7 @@ reporter = TrajectoryReporter(
     prop_calculators=prop_calculators,
 )
 
+# integrate the system with NVT Langevin dynamics
 final_state = integrate(
     system=si_atoms,
     model=lj_model,
@@ -121,9 +109,62 @@ with TorchSimTrajectory(trajectory_file) as traj:
 
     final_atoms = traj.get_atoms(-1)
 
-
 ```
 
+## High-level API with MACE and batching
+
+```python
+from mace.calculators.foundations_models import mace_mp
+from torchsim.models.mace import MaceModel
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# simply load the model from mace-mp
+mace = mace_mp(model="small", return_raw_model=True)
+mace_model = MaceModel(
+    model=mace,
+    device=device,
+    periodic=True,
+    dtype=torch.float64,
+    compute_force=True,
+)
+
+# create a bulk example systems
+fe_atoms = bulk("Fe", "fcc", a=5.26, cubic=True)
+fe_atoms_supercell = fe_atoms.repeat([2, 2, 2])
+si_atoms_supercell = si_atoms.repeat([2, 2, 2])
+
+# create a reporter to report the trajectories
+trajectory_files = [
+    "si_traj.h5md",
+    "fe_traj.h5md",
+    "si_supercell_traj.h5md",
+    "fe_supercell_traj.h5md",
+]
+reporter = TrajectoryReporter(
+    filenames=trajectory_files,
+    # report state every 10 steps
+    state_frequency=50,
+    prop_calculators=prop_calculators,
+)
+
+# seamlessly run a batched simulation
+final_state = integrate(
+    system=[si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell],
+    model=mace_model,
+    integrator=nvt_langevin,
+    n_steps=100,
+    temperature=2000,
+    timestep=0.002,
+    trajectory_reporter=reporter,
+)
+final_atoms = state_to_atoms(final_state)
+final_fe_atoms_supercell = final_atoms[3]
+
+for filename in trajectory_files:
+    with TorchSimTrajectory(filename) as traj:
+        print(traj)
+```
 ## Core modules
 
 TorchSim is built around the following core modules:
