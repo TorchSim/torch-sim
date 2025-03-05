@@ -4,7 +4,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 import torch
-from torch_scatter import scatter
 
 from torchsim.state import BaseState
 from torchsim.unbatched_optimizers import OptimizerState
@@ -504,7 +503,7 @@ def batched_unit_cell_fire(  # noqa: C901, PLR0915
             pressure=pressure,
         )
 
-    def fire_step(state: FireState) -> FireState:
+    def fire_step(state: FireState) -> FireState:  # noqa: PLR0915
         """Perform one FIRE optimization step."""
         # Get dimensions
         n_atoms = len(batch_indices)  # Total number of atoms
@@ -588,12 +587,9 @@ def batched_unit_cell_fire(  # noqa: C901, PLR0915
         )
 
         # Calculate power (F·V) for each batch after velocity update
-        power = scatter(
-            (state.forces * state.velocity).sum(dim=1),
-            extended_batch_indices,
-            dim=0,
-            reduce="sum",
-        )
+        power_per_dof = (state.forces * state.velocity).sum(dim=1)
+        power = torch.zeros(n_batches, device=device, dtype=dtype)
+        power.scatter_add_(dim=0, index=extended_batch_indices, src=power_per_dof)
         # Map power back to all atoms and cell DOFs
         power = power[extended_batch_indices]
 
@@ -876,8 +872,9 @@ def fire(  # noqa: C901, PLR0915
 
         # Calculate power (F·V) for atoms
         atomic_power = (state.forces * state.velocity).sum(dim=1)  # [n_atoms]
-        atomic_power_per_batch = scatter(
-            atomic_power, state.batch, dim=0, reduce="sum"
+        atomic_power_per_batch = torch.zeros(n_batches, device=device, dtype=dtype)
+        atomic_power_per_batch.scatter_add_(
+            dim=0, index=state.batch, src=atomic_power
         )  # [n_batches]
 
         # Calculate power for cell DOFs
@@ -885,8 +882,9 @@ def fire(  # noqa: C901, PLR0915
             dim=1
         )  # [n_batches*3]
         cell_batch = torch.arange(n_batches, device=device).repeat_interleave(3)
-        cell_power_per_batch = scatter(
-            cell_power, cell_batch, dim=0, reduce="sum"
+        cell_power_per_batch = torch.zeros(n_batches, device=device, dtype=dtype)
+        cell_power_per_batch.scatter_add_(
+            dim=0, index=cell_batch, src=cell_power
         )  # [n_batches]
 
         # Calculate total power per batch and sum

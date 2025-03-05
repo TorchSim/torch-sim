@@ -16,7 +16,7 @@ from torchsim.units import MetalUnits as Units
 from mace.calculators.foundations_models import mace_mp
 
 
-def get_target_temperature(
+def get_kT(
     step: int,
     num_steps_initial: int,
     num_steps_ramp_up: int,
@@ -29,7 +29,7 @@ def get_target_temperature(
     device: torch.device,
 ) -> torch.Tensor:
     """
-    Determine target temperature based on current simulation step.
+    Determine target kT based on current simulation step.
     Temperature profile:
     300K (initial) → ramp to 3_000K → hold at 3_000K → quench to 300K → hold at 300K
     """
@@ -39,8 +39,8 @@ def get_target_temperature(
     elif step < (num_steps_initial + num_steps_ramp_up):
         # Linear ramp from cool_temp to melt_temp
         progress = (step - num_steps_initial) / num_steps_ramp_up
-        current_temp = cool_temp + (melt_temp - cool_temp) * progress
-        return torch.tensor(current_temp, device=device)
+        current_kT = cool_temp + (melt_temp - cool_temp) * progress
+        return torch.tensor(current_kT, device=device)
     elif step < (num_steps_initial + num_steps_ramp_up + num_steps_melt):
         # Hold at melting temperature
         return torch.tensor(melt_temp, device=device)
@@ -51,8 +51,8 @@ def get_target_temperature(
         progress = (
             step - (num_steps_initial + num_steps_ramp_up + num_steps_melt)
         ) / num_steps_ramp_down
-        current_temp = melt_temp - (melt_temp - cool_temp) * progress
-        return torch.tensor(current_temp, device=device)
+        current_kT = melt_temp - (melt_temp - cool_temp) * progress
+        return torch.tensor(current_kT, device=device)
     elif step < (
         num_steps_initial
         + num_steps_ramp_up
@@ -128,10 +128,6 @@ atomic_numbers = torch.tensor(
 )
 masses = torch.tensor(fcc_lattice.get_masses(), device=device, dtype=dtype)
 
-# Print shapes for verification
-print(f"Positions: {positions.shape}")
-print(f"Cell: {cell.shape}")
-
 # Initialize the unbatched MACE model
 model = UnbatchedMaceModel(
     model=loaded_model,
@@ -146,25 +142,21 @@ model = UnbatchedMaceModel(
 
 # Run initial inference
 results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
-print(f"Energy: {results['energy']}")
-print(f"Forces: {results['forces']}")
 
 # Set up simulation parameters
 dt = 0.002 * Units.time
 kT = Initial_temperature * Units.temperature
 
-# Initialize NVT simulation
-state, nvt_nose_hoover_update = nvt_nose_hoover(
-    model=model,
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    pbc=PERIODIC,
-    kT=kT,
-    dt=dt,
-    seed=1,
-    atomic_numbers=atomic_numbers,
-)
+state = {
+    "positions": positions,
+    "masses": masses,
+    "cell": cell,
+    "pbc": PERIODIC,
+    "atomic_numbers": atomic_numbers,
+}
+
+nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
+state = nvt_init(state, kT=kT, seed=1)
 
 # Run simulation with temperature profile
 Temperature = np.zeros(Num_steps)
@@ -172,7 +164,7 @@ Expected_temperature = np.zeros(Num_steps)
 
 for step in range(Num_steps):
     # Get target temperature for current step
-    current_temp = get_target_temperature(
+    current_kT = get_kT(
         step=step,
         num_steps_initial=Num_steps_initial,
         num_steps_ramp_up=Num_steps_ramp_up,
@@ -188,14 +180,14 @@ for step in range(Num_steps):
     # Calculate current temperature and save data
     temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
     Temperature[step] = temp
-    Expected_temperature[step] = current_temp
+    Expected_temperature[step] = current_kT
 
     # Calculate invariant and progress report
-    invariant = nvt_nose_hoover_invariant(state, kT=current_temp * Units.temperature)
+    invariant = nvt_nose_hoover_invariant(state, kT=current_kT * Units.temperature)
     print(f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant.item():.4f}")
 
     # Update simulation state
-    state = nvt_nose_hoover_update(state, kT=current_temp * Units.temperature)
+    state = nvt_update(state, kT=current_kT * Units.temperature)
 
 # Visualize temperature profile
 fig = make_subplots()

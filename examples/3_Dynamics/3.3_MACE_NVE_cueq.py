@@ -60,17 +60,20 @@ kT = 1000 * Units.temperature  # Initial temperature (K)
 dt = 0.002 * Units.time  # Timestep (ps)
 
 # Initialize NVE integrator
-state, nve_update = nve(
+state = {
+    "positions": positions,
+    "masses": masses,
+    "cell": cell,
+    "pbc": PERIODIC,
+    "atomic_numbers": atomic_numbers,
+}
+# Initialize NVE integrator
+nve_init, nve_update = nve(
     model=model,
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    pbc=PERIODIC,
-    kT=kT,
     dt=dt,
-    seed=1,
-    atomic_numbers=atomic_numbers,
+    kT=kT,
 )
+state = nve_init(state=state, seed=1)
 
 # Run MD simulation
 print("\nStarting NVE molecular dynamics simulation...")
@@ -81,7 +84,7 @@ for step in range(1_000):
     )
     if step % 100 == 0:
         print(f"Step {step}: Total energy: {total_energy.item():.4f} eV")
-    state = nve_update(state, dt)
+    state = nve_update(state=state, dt=dt)
 end_time = time.perf_counter()
 
 # Report simulation results

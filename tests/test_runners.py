@@ -189,11 +189,10 @@ def test_integrate_many_nvt(
     assert not torch.allclose(final_state.energy[0], final_state.energy[2], atol=1e-2)
 
 
-@pytest.importorskip("torch_scatter")
 def test_optimize_fire(
     si_base_state: BaseState, lj_calculator: Any, tmp_path: Any
 ) -> None:
-    from torchsim.optimizers import fire
+    fire = pytest.importorskip("torchsim.optimizers.fire")
 
     """Test FIRE optimization with LJ potential."""
     trajectory_files = [tmp_path / "opt.h5md"]
@@ -224,11 +223,10 @@ def test_optimize_fire(
     assert not torch.allclose(original_state.positions, final_state.positions)
 
 
-@pytest.importorskip("torch_scatter")
 def test_default_converged_fn(
     si_base_state: BaseState, lj_calculator: Any, tmp_path: Any
 ) -> None:
-    from torchsim.optimizers import fire
+    fire = pytest.importorskip("torchsim.optimizers.fire")
 
     """Test default converged function."""
     si_base_state.positions += torch.randn_like(si_base_state.positions) * 0.1
@@ -255,14 +253,13 @@ def test_default_converged_fn(
     assert not torch.allclose(original_state.positions, final_state.positions)
 
 
-@pytest.importorskip("torch_scatter")
 def test_batched_optimize_fire(
     si_double_base_state: BaseState,
     lj_calculator: Any,
     tmp_path: Any,
 ) -> None:
     """Test batched FIRE optimization with LJ potential."""
-    from torchsim.optimizers import fire
+    fire = pytest.importorskip("torchsim.optimizers.fire")
 
     trajectory_files = [
         tmp_path / f"nvt_{i}.h5md" for i in range(si_double_base_state.n_batches)

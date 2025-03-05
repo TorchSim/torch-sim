@@ -59,26 +59,29 @@ dt = 0.002 * Units.time  # Timestep (ps)
 kT = 1000 * Units.temperature  # Initial temperature (K)
 gamma = 10 / Units.time  # Langevin friction coefficient (ps^-1)
 
+state = {
+    "positions": positions,
+    "masses": masses,
+    "cell": cell,
+    "pbc": PERIODIC,
+    "atomic_numbers": atomic_numbers,
+}
 # Initialize NVT Langevin integrator
-state, nvt_langevin_update = nvt_langevin(
+langevin_init, langevin_update = nvt_langevin(
     model=model,
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    pbc=PERIODIC,
     kT=kT,
     dt=dt,
     gamma=gamma,
-    seed=1,
-    atomic_numbers=atomic_numbers,
 )
+
+state = langevin_init(state=state, seed=1)
 
 for step in range(1_000):
     if step % 100 == 0:
         print(
             f"{step=}: Temperature: {temperature(masses=state.masses, momenta=state.momenta) / Units.temperature:.4f}"
         )
-    state = nvt_langevin_update(state, kT=kT)
+    state = langevin_update(state=state, kT=kT)
 
 print(
     f"Final temperature: {temperature(masses=state.masses, momenta=state.momenta) / Units.temperature}"

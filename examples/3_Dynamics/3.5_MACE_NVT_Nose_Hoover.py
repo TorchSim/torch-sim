@@ -58,17 +58,16 @@ results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 dt = 0.002 * Units.time  # Timestep (ps)
 kT = 1000 * Units.temperature  # Initial temperature (K)
 
-state, nvt_nose_hoover_update = nvt_nose_hoover(
-    model=model,
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    pbc=PERIODIC,
-    kT=kT,
-    dt=dt,
-    seed=1,
-    atomic_numbers=atomic_numbers,
-)
+start = {
+    "positions": positions,
+    "masses": masses,
+    "cell": cell,
+    "pbc": PERIODIC,
+    "atomic_numbers": atomic_numbers,
+}
+
+nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
+state = nvt_init(start, kT=kT, seed=1)
 
 for step in range(1_000):
     if step % 100 == 0:
@@ -77,7 +76,7 @@ for step in range(1_000):
         print(
             f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant.item():.4f}"
         )
-    state = nvt_nose_hoover_update(state, kT=kT)
+    state = nvt_update(state, kT=kT)
 
 print(
     f"Final temperature: {temperature(masses=state.masses, momenta=state.momenta) / Units.temperature}"

@@ -8,7 +8,7 @@ from ase import Atoms
 from ase.build import bulk
 from pymatgen.core import Structure
 
-from torchsim.models.lennard_jones import LennardJonesModel
+from torchsim.models.lennard_jones import LennardJonesModel, UnbatchedLennardJonesModel
 from torchsim.runners import atoms_to_state
 from torchsim.state import BaseState
 from torchsim.trajectory import TrajectoryReporter
@@ -66,6 +66,20 @@ def ar_fcc_state(device: torch.device) -> Any:
 def si_double_base_state(si_atoms: Atoms, device: torch.device) -> Any:
     """Create a basic state from si_structure."""
     return atoms_to_state([si_atoms, si_atoms], device, torch.float64)
+
+
+@pytest.fixture
+def unbatched_lj_calculator(device: torch.device) -> UnbatchedLennardJonesModel:
+    """Create a Lennard-Jones calculator with reasonable parameters for Si."""
+    return UnbatchedLennardJonesModel(
+        sigma=2.0,  # Approximate for Si-Si interaction
+        epsilon=0.1,  # Small epsilon for stability during testing
+        device=device,
+        dtype=torch.float64,
+        compute_force=True,
+        compute_stress=True,
+        cutoff=5.0,
+    )
 
 
 @pytest.fixture

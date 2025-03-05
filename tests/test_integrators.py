@@ -196,20 +196,18 @@ def test_nvt_langevin(
     kT = torch.tensor(300.0 / 11606, device=device, dtype=dtype)  # Room temperature
 
     # Initialize integrator
-    initial_state, update_fn = nvt_langevin(
-        state=si_double_base_state,
+    init_fn, update_fn = nvt_langevin(
         model=lj_calculator,
         dt=dt,
         kT=kT,
-        seed=42,
     )
 
     # Run dynamics for several steps
-    state = initial_state
+    state = init_fn(state=si_double_base_state, seed=42)
     energies = []
     temperatures = []
     for _ in range(n_steps):
-        state = update_fn(state)
+        state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
         temp = temperature(state.momenta, state.masses, batch=state.batch)
@@ -261,19 +259,13 @@ def test_nve(
     kT = torch.tensor(300.0 / 11606, device=device, dtype=dtype)  # Room temperature
 
     # Initialize integrator
-    initial_state, update_fn = nve(
-        state=si_double_base_state,
-        model=lj_calculator,
-        dt=dt,
-        kT=kT,
-        seed=42,
-    )
+    nve_init, nve_update = nve(model=lj_calculator, dt=dt, kT=kT)
+    state = nve_init(state=si_double_base_state, seed=42)
 
     # Run dynamics for several steps
-    state = initial_state
     energies = []
     for _ in range(n_steps):
-        state = update_fn(state)
+        state = nve_update(state=state, dt=dt)
 
         energies.append(state.energy)
 
@@ -300,16 +292,12 @@ def test_compare_single_vs_batched_integrators(
         kT = torch.tensor(300.0) / 11606  # Temperature in K
         dt = torch.tensor(0.001)  # Small timestep for stability
 
-        state, update_fn = nve(
-            state=state,
-            model=lj_calculator,
-            dt=dt,
-            kT=kT,
-        )
+        nve_init, nve_update = nve(model=lj_calculator, dt=dt, kT=kT)
+        state = nve_init(state=state, seed=42)
         state.momenta = torch.zeros_like(state.momenta)
 
         for _ in range(100):
-            state = update_fn(state, dt)
+            state = nve_update(state=state, dt=dt)
 
         final_states[state_name] = state
 

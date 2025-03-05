@@ -70,38 +70,31 @@ dt = 0.001 * Units.time  # Time step (1 ps)
 kT = 300 * Units.temperature  # Initial temperature (300 K)
 target_pressure = 0.0 * Units.pressure  # Target pressure (0 bar)
 
-state, nvt_nose_hoover_update = nvt_nose_hoover(
-    model=model,
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    pbc=PERIODIC,
-    kT=kT,
-    dt=dt,
-    seed=1,
-    atomic_numbers=atomic_numbers,
-)
+state = {
+    "positions": positions,
+    "masses": masses,
+    "cell": cell,
+    "pbc": PERIODIC,
+    "atomic_numbers": atomic_numbers,
+}
+
+nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
+state = nvt_init(state=state, seed=1)
 
 for step in range(N_steps_nvt):
     if step % 10 == 0:
         temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
         invariant = nvt_nose_hoover_invariant(state, kT=kT).item()
         print(f"{step=}: Temperature: {temp:.4f}: invariant: {invariant:.4f}, ")
-    state = nvt_nose_hoover_update(state, kT=kT)
+    state = nvt_update(state, kT=kT)
 
-state, npt_nose_hoover_update = npt_nose_hoover(
+npt_init, npt_update = npt_nose_hoover(
     model=model,
-    positions=state.positions,
-    momenta=state.momenta,
-    masses=state.masses,
-    cell=cell,
-    pbc=PERIODIC,
     kT=kT,
     dt=dt,
-    seed=1,
     external_pressure=target_pressure,
-    atomic_numbers=atomic_numbers,
 )
+state = npt_init(state=state, seed=1)
 
 
 def get_pressure(stress, kinetic_energy, volume, dim=3):
@@ -135,7 +128,7 @@ for step in range(N_steps_npt):
             }, "
             f"box xx yy zz: {state.current_box[0, 0].item():.4f}, {state.current_box[1, 1].item():.4f}, {state.current_box[2, 2].item():.4f}"
         )
-    state = npt_nose_hoover_update(state, kT=kT, external_pressure=target_pressure)
+    state = npt_update(state, kT=kT, external_pressure=target_pressure)
 
 print(
     f"Final temperature: {temperature(masses=state.masses, momenta=state.momenta) / Units.temperature:.4f}"
