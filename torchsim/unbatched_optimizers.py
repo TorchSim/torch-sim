@@ -165,7 +165,7 @@ class FIREState(OptimizerState):
         return self.momenta / self.masses.unsqueeze(-1)
 
 
-def fire(  # noqa: PLR0915, C901
+def fire(
     *,
     model: torch.nn.Module,
     dt_max: float = 0.4,
@@ -208,25 +208,18 @@ def fire(  # noqa: PLR0915, C901
         - n_min prevents premature timestep increases
         - f_inc and f_dec control how quickly the timestep changes
         - alpha_start and f_alpha control the strength and adaptation of damping
+    References:
+        - Bitzek et al., PRL 97, 170201 (2006) - Original FIRE paper
     """
     device = model.device
     dtype = model.dtype
 
-    # parameters to be set in fire_update
-    if not isinstance(dt_max, torch.Tensor):
-        dt_max = torch.tensor(dt_max, device=device, dtype=dtype)
-    if not isinstance(n_min, torch.Tensor):
-        n_min = torch.tensor(n_min, device=device, dtype=dtype)
-    if not isinstance(f_inc, torch.Tensor):
-        f_inc = torch.tensor(f_inc, device=device, dtype=dtype)
-    if not isinstance(f_dec, torch.Tensor):
-        f_dec = torch.tensor(f_dec, device=device, dtype=dtype)
-    if not isinstance(f_alpha, torch.Tensor):
-        f_alpha = torch.tensor(f_alpha, device=device, dtype=dtype)
-    if not isinstance(dt_start, torch.Tensor):
-        dt_start = torch.tensor(dt_start, device=device, dtype=dtype)
-    if not isinstance(alpha_start, torch.Tensor):
-        alpha_start = torch.tensor(alpha_start, device=device, dtype=dtype)
+    # Convert parameters to tensors
+    params = [dt_max, n_min, f_inc, f_dec, f_alpha, dt_start, alpha_start]
+    dt_max, n_min, f_inc, f_dec, f_alpha, dt_start, alpha_start = [
+        p if isinstance(p, torch.Tensor) else torch.tensor(p, device=device, dtype=dtype)
+        for p in params
+    ]
 
     def fire_init(state: BaseState | StateDict, **extra_state_kwargs) -> FIREState:
         """Initialize the FIRE optimizer state.
@@ -339,10 +332,6 @@ def fire(  # noqa: PLR0915, C901
 def fire_ase(  # noqa: PLR0915
     *,
     model: torch.nn.Module,
-    positions: torch.Tensor,
-    masses: torch.Tensor,
-    cell: torch.Tensor,
-    pbc: bool,
     dt: float = 0.1,
     max_step: float = 0.2,
     dt_max: float = 1.0,
@@ -352,8 +341,9 @@ def fire_ase(  # noqa: PLR0915
     alpha_start: float = 0.1,
     f_alpha: float = 0.99,
     downhill_check: bool = False,
-    **extra_state_kwargs,
-) -> tuple[FIREState, Callable[[FIREState], FIREState]]:
+) -> tuple[
+    Callable[[BaseState | StateDict], FIREState], Callable[[FIREState], FIREState]
+]:
     """Initialize a FIRE (Fast Inertial Relaxation Engine) optimization following
     ASE's implementation.
 
@@ -376,10 +366,6 @@ def fire_ase(  # noqa: PLR0915
        - Reset mixing parameter: a = alpha_start
     Args:
         model: Neural network model that computes energies and forces
-        positions: Atomic positions tensor of shape (n_atoms, 3)
-        masses: Atomic masses tensor of shape (n_atoms,)
-        cell: Unit cell tensor of shape (3, 3)
-        pbc: Periodic boundary conditions flags
         dt: Initial timestep (default: 0.1)
         max_step: Maximum allowed atomic displacement per step (default: 0.2)
         dt_max: Maximum allowed timestep (default: 1.0)
@@ -409,19 +395,69 @@ def fire_ase(  # noqa: PLR0915
         - Bitzek et al., PRL 97, 170201 (2006) - Original FIRE paper
         - ASE implementation: https://wiki.fysik.dtu.dk/ase/ase/optimize.html
     """
-    device = positions.device
-    dtype = positions.dtype
+    device = model.device
+    dtype = model.dtype
     # Convert scalar parameters to tensors
-    dt = torch.tensor(dt, device=device, dtype=dtype)
-    dt_max = torch.tensor(dt_max, device=device, dtype=dtype)
-    max_step = torch.tensor(max_step, device=device, dtype=dtype)
-    f_inc = torch.tensor(f_inc, device=device, dtype=dtype)
-    f_dec = torch.tensor(f_dec, device=device, dtype=dtype)
-    f_alpha = torch.tensor(f_alpha, device=device, dtype=dtype)
-    alpha_start = torch.tensor(alpha_start, device=device, dtype=dtype)
+    params = [dt, dt_max, max_step, f_inc, f_dec, f_alpha, alpha_start]
+    dt, dt_max, max_step, f_inc, f_dec, f_alpha, alpha_start = [
+        p if isinstance(p, torch.Tensor) else torch.tensor(p, device=device, dtype=dtype)
+        for p in params
+    ]
+
+    def fire_init(state: BaseState | StateDict, **extra_state_kwargs) -> FIREState:
+        """Initialize the FIRE optimizer state.
+
+        Args:
+            state: Initial system state
+            **extra_state_kwargs: Additional keyword arguments for state initialization
+
+        Returns:
+            Initial FIREState with system configuration and forces
+        """
+        if not isinstance(state, BaseState):
+            state = BaseState(**state)
+
+        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+
+        # Get initial forces and energy from model
+        model_output = model(
+            positions=state.positions,
+            cell=state.cell,
+            atomic_numbers=atomic_numbers,
+        )
+
+        # Initialize momenta as zeros
+        momenta = torch.zeros_like(state.positions, device=device, dtype=dtype)
+
+        return FIREState(
+            positions=state.positions,
+            forces=model_output["forces"],
+            energy=model_output["energy"],
+            masses=state.masses,
+            momenta=momenta,
+            atomic_numbers=atomic_numbers,
+            cell=state.cell,
+            pbc=state.pbc,
+            dt=dt,
+            alpha=alpha_start,
+            n_pos=0,
+        )
 
     def fire_step(state: FIREState) -> FIREState:
-        """Perform one FIRE optimization step."""
+        """Perform one FIRE optimization step.
+
+        This function implements the core FIRE algorithm update, which combines
+        velocity Verlet integration with adaptive velocity mixing and timestep
+        adjustment. The algorithm modifies atomic velocities based on the power
+        (dot product of forces and velocities) to efficiently navigate the energy
+        landscape.
+
+        Args:
+            state: Current optimization state containing positions, momenta, forces, etc.
+
+        Returns:
+            Updated FIREState after one optimization step
+        """
         # Store previous state if doing downhill check
         if downhill_check:
             prev_positions = state.positions.clone()
@@ -494,29 +530,7 @@ def fire_ase(  # noqa: PLR0915
         state.energy = results["energy"]
         return state
 
-    model_output = model(
-        positions=positions,
-        cell=cell,
-        atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
-    )
-
-    momenta = torch.zeros_like(positions, device=device, dtype=dtype)
-
-    initial_state = FIREState(
-        positions=positions,
-        forces=model_output["forces"],
-        energy=model_output["energy"],
-        masses=masses,
-        momenta=momenta,
-        atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
-        cell=cell,
-        pbc=pbc,
-        dt=dt_max,
-        alpha=alpha_start,
-        n_pos=0,
-    )
-
-    return initial_state, fire_step
+    return fire_init, fire_step
 
 
 @dataclass
@@ -549,18 +563,34 @@ class UnitCellFIREState(OptimizerState):
     pressure: torch.Tensor
     stress: torch.Tensor
 
+    def __post_init__(self) -> None:
+        """Validate and process the state after initialization."""
+        # data validation and fill batch
+        # should make pbc a tensor here
+        # if devices aren't all the same, raise an error, in a clean way
+        devices = {
+            attr: getattr(self, attr).device
+            for attr in ("positions", "masses", "cell", "atomic_numbers")
+        }
+        if len(set(devices.values())) > 1:
+            raise ValueError("All tensors must be on the same device")
+
+        if self.batch is None:
+            self.batch = torch.zeros(self.n_atoms, device=self.device, dtype=torch.int64)
+        else:
+            # assert that batch indices are unique consecutive integers
+            _, counts = torch.unique_consecutive(self.batch, return_counts=True)
+            if not torch.all(counts == torch.bincount(self.batch)):
+                raise ValueError("Batch indices must be unique consecutive integers")
+
     @property
     def velocities(self) -> torch.Tensor:
         """Calculate velocities from momenta and masses."""
         return self.momenta / self.masses.unsqueeze(-1)
 
 
-def unit_cell_fire(  # noqa: PLR0915
+def unit_cell_fire(  # noqa: PLR0915, C901
     model: torch.nn.Module,
-    positions: torch.Tensor,
-    masses: torch.Tensor,
-    cell: torch.Tensor,
-    pbc: bool,  # noqa: FBT001
     dt_max: float = 0.4,
     dt_start: float = 0.1,
     n_min: int = 5,
@@ -568,20 +598,18 @@ def unit_cell_fire(  # noqa: PLR0915
     f_dec: float = 0.5,
     alpha_start: float = 0.1,
     f_alpha: float = 0.99,
-    cell_factor: float | None = None,
     hydrostatic_strain: bool = False,  # noqa: FBT001, FBT002
     constant_volume: bool = False,  # noqa: FBT001, FBT002
     scalar_pressure: float = 0.0,
-    **extra_state_kwargs,
-) -> tuple[UnitCellFIREState, Callable[[UnitCellFIREState], UnitCellFIREState]]:
+    cell_factor: float | None = None,
+) -> tuple[
+    Callable[[BaseState | StateDict], UnitCellFIREState],
+    Callable[[UnitCellFIREState], UnitCellFIREState],
+]:
     """Initialize a FIRE optimization with unit cell.
 
     Args:
         model: Neural network model that computes energies and forces
-        positions: Atomic positions tensor of shape (n_atoms, 3)
-        masses: Atomic masses tensor of shape (n_atoms,)
-        cell: Unit cell tensor of shape (3, 3)
-        pbc: Whether to use periodic boundary conditions
         dt_max: Maximum allowed timestep (default: 0.4)
         dt_start: Initial timestep (default: 0.1)
         n_min: Minimum steps before timestep increase (default: 5)
@@ -589,51 +617,68 @@ def unit_cell_fire(  # noqa: PLR0915
         f_dec: Factor for timestep decrease (default: 0.5)
         alpha_start: Initial mixing parameter (default: 0.1)
         f_alpha: Factor for mixing parameter decrease (default: 0.99)
-        cell_factor: Scaling factor for cell optimization (default: n_atoms)
-        hydrostatic_strain: Whether to only allow hydrostatic deformation
-        constant_volume: Whether to maintain constant volume
+        hydrostatic_strain: Whether to only allow hydrostatic deformation (default: False)
+        constant_volume: Whether to maintain constant volume (default: False)
         scalar_pressure: Applied pressure in GPa (default: 0.0)
-        **extra_state_kwargs: Additional keyword arguments for state
+        cell_factor: Scaling factor for cell optimization (default: number of atoms)
+
     Returns:
         Tuple containing:
-        - Initial UnitCellFIREState with system state
+        - Initialization function that creates a UnitCellFIREState
         - Update function that performs one FIRE step
     """
-    device = positions.device
-    dtype = positions.dtype
+    device = model.device
+    dtype = model.dtype
 
     # Setup parameters
-    dt_max = torch.tensor(dt_max, device=device, dtype=dtype)
-    dt_start = torch.tensor(dt_start, device=device, dtype=dtype)
-    alpha_start = torch.tensor(alpha_start, device=device, dtype=dtype)
+    params = [dt_max, dt_start, alpha_start, f_inc, f_dec, f_alpha, n_min]
+    dt_max, dt_start, alpha_start, f_inc, f_dec, f_alpha, n_min = [
+        p if isinstance(p, torch.Tensor) else torch.tensor(p, device=device, dtype=dtype)
+        for p in params
+    ]
 
-    # Setup cell factor
-    if cell_factor is None:
-        cell_factor = float(len(positions))
-    cell_factor = torch.full((1, 1), cell_factor, device=device, dtype=dtype)
-
-    # Setup pressure tensor
-    pressure = scalar_pressure * torch.eye(3, device=device, dtype=dtype)
-
-    def initialize_state(
-        positions: torch.Tensor,
-        masses: torch.Tensor,
-        cell: torch.Tensor,
-        pbc: bool,  # noqa: FBT001
+    def fire_init(
+        state: BaseState | StateDict,
+        cell_factor: torch.Tensor = cell_factor,
+        pressure: torch.Tensor = 0.0,
+        **extra_state_kwargs,
     ) -> UnitCellFIREState:
-        """Initialize the FIRE optimization state."""
+        """Initialize the FIRE optimization state.
+
+        Args:
+            state: Initial system state containing positions, masses, cell, etc.
+            cell_factor: Scaling factor for cell optimization (default: number of atoms)
+            pressure: External pressure tensor (default: 0.0)
+            **extra_state_kwargs: Additional keyword arguments for state initialization
+
+        Returns:
+            Initial UnitCellFIREState with system configuration and forces
+        """
+        if not isinstance(state, BaseState):
+            state = BaseState(**state)
+
+        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+
+        # Setup cell factor
+        if cell_factor is None:
+            cell_factor = float(len(state.positions))
+        cell_factor = torch.full((1, 1), cell_factor, device=device, dtype=dtype)
+
+        # Setup pressure tensor
+        pressure = scalar_pressure * torch.eye(3, device=device, dtype=dtype)
+
         # Get initial forces and energy from model
         results = model(
-            positions=positions,
-            cell=cell,
-            atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
+            positions=state.positions,
+            cell=state.cell,
+            atomic_numbers=atomic_numbers,
         )
         forces = results["forces"]
         energy = results["energy"]
         stress = results["stress"]
 
         # Total number of DOFs (atoms + cell)
-        n_atoms = len(positions)
+        n_atoms = len(state.positions)
         total_dofs = n_atoms + 3
 
         # Combine atomic forces and cell forces
@@ -641,7 +686,7 @@ def unit_cell_fire(  # noqa: PLR0915
         forces_combined[:n_atoms] = forces
 
         # Cell forces (from stress)
-        volume = torch.linalg.det(cell).view(1, 1)
+        volume = torch.linalg.det(state.cell).view(1, 1)
         virial = -volume * stress + pressure
 
         if hydrostatic_strain:
@@ -657,31 +702,55 @@ def unit_cell_fire(  # noqa: PLR0915
 
         # Initialize masses for cell degrees of freedom
         masses_combined = torch.zeros(total_dofs, device=device, dtype=dtype)
-        masses_combined[:n_atoms] = masses
-        masses_combined[n_atoms:] = masses.sum()  # Use total mass for cell DOFs
+        masses_combined[:n_atoms] = state.masses
+        masses_combined[n_atoms:] = state.masses.sum()  # Use total mass for cell DOFs
 
         return UnitCellFIREState(
-            positions=positions,
+            positions=state.positions,
             forces=forces_combined,
             energy=energy,
             stress=stress,
             masses=masses_combined,
-            cell=cell,
-            pbc=pbc,
+            cell=state.cell,
+            pbc=state.pbc,
             momenta=torch.zeros_like(forces_combined),
             dt=dt_start,
             alpha=alpha_start,
             n_pos=0,
-            orig_cell=cell.clone(),
+            orig_cell=state.cell.clone(),
             cell_factor=cell_factor,
             hydrostatic_strain=hydrostatic_strain,
             constant_volume=constant_volume,
             pressure=pressure,
-            **extra_state_kwargs,
+            atomic_numbers=atomic_numbers,
         )
 
     def fire_step(state: UnitCellFIREState) -> UnitCellFIREState:
-        """Perform one FIRE optimization step."""
+        """Perform one FIRE optimization step.
+
+        This function implements a single step of the FIRE optimization algorithm
+        for systems with variable unit cell. It combines velocity Verlet integration
+        with adaptive velocity mixing and timestep adjustment, handling both atomic
+        positions and cell vectors simultaneously.
+
+        The algorithm:
+        1. Updates velocities and positions using velocity Verlet integration
+        2. Recalculates forces and energy with the updated geometry
+        3. Adjusts the timestep and mixing parameter based on the power (P = F·v)
+        4. Mixes velocities with normalized force directions
+
+        Args:
+            state: Current UnitCellFIREState containing positions, cell, forces, etc.
+
+        Returns:
+            Updated UnitCellFIREState after one optimization step
+
+        Notes:
+            - The implementation handles both atomic and cell degrees of freedom
+            - Cell optimization uses a deformation gradient approach
+            - Stress tensor is converted to forces on cell vectors
+            - Hydrostatic strain and constant volume constraints are supported
+        """
         n_atoms = len(state.positions)
 
         # Get current deformation gradient
@@ -709,7 +778,7 @@ def unit_cell_fire(  # noqa: PLR0915
         results = model(
             positions=atomic_positions_new,
             cell=new_cell,
-            atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
+            atomic_numbers=state.atomic_numbers,
         )
 
         forces = results["forces"]
@@ -772,7 +841,4 @@ def unit_cell_fire(  # noqa: PLR0915
 
         return state
 
-    initial_state = initialize_state(
-        positions=positions, masses=masses, cell=cell, pbc=pbc
-    )
-    return initial_state, fire_step
+    return fire_init, fire_step
