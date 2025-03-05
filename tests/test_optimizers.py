@@ -2,7 +2,7 @@ import copy
 
 import torch
 
-from torchsim.optimizers import fire
+from torchsim.optimizers import unit_cell_fire as fire
 from torchsim.state import BaseState, concatenate_states
 
 
@@ -20,12 +20,13 @@ def test_fire_optimization(
     initial_state = si_base_state
 
     # Initialize FIRE optimizer
-    state, update_fn = fire(
-        state=initial_state,
+    init_fn, update_fn = fire(
         model=lj_calculator,
         dt_max=0.3,
         dt_start=0.1,
     )
+
+    state = init_fn(si_base_state)
 
     # Run optimization for a few steps
     energies = [1000, state.energy.item()]
@@ -77,12 +78,13 @@ def test_fire_multi_batch(
     )
 
     # Initialize FIRE optimizer
-    state, update_fn = fire(
-        state=multi_state,
+    init_fn, update_fn = fire(
         model=lj_calculator,
         dt_max=0.3,
         dt_start=0.1,
     )
+
+    state = init_fn(multi_state)
     initial_state = copy.deepcopy(state)
 
     # Run optimization for a few steps
@@ -155,12 +157,13 @@ def test_fire_batch_consistency(
         return not torch.allclose(current_energy, prev_energy, atol=1e-6)
 
     for state in [si_base_state_1, si_base_state_2]:
-        state_opt, update_fn = fire(
-            state=copy.deepcopy(state),
+        init_fn, update_fn = fire(
             model=lj_calculator,
             dt_max=0.3,
             dt_start=0.1,
         )
+
+        state_opt = init_fn(state)
 
         # Run optimization until convergence
         current_energy = state_opt.energy
@@ -184,12 +187,13 @@ def test_fire_batch_consistency(
         device=si_base_state.device,
     )
 
-    batch_state, batch_update_fn = fire(
-        state=copy.deepcopy(multi_state),
+    init_fn, batch_update_fn = fire(
         model=lj_calculator,
         dt_max=0.3,
         dt_start=0.1,
     )
+
+    batch_state = init_fn(multi_state)
 
     # Run optimization until convergence for both batches
     current_energies = batch_state.energy.clone()

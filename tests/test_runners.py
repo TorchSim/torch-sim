@@ -1,12 +1,12 @@
 from typing import Any
 
 import numpy as np
-import pytest
 import torch
 from ase import Atoms
 from pymatgen.core import Structure
 
 from torchsim.integrators import nve, nvt_langevin
+from torchsim.optimizers import unit_cell_fire as fire
 from torchsim.quantities import kinetic_energy
 from torchsim.runners import (
     atoms_to_state,
@@ -192,8 +192,6 @@ def test_integrate_many_nvt(
 def test_optimize_fire(
     si_base_state: BaseState, lj_calculator: Any, tmp_path: Any
 ) -> None:
-    fire = pytest.importorskip("torchsim.optimizers.fire")
-
     """Test FIRE optimization with LJ potential."""
     trajectory_files = [tmp_path / "opt.h5md"]
     reporter = TrajectoryReporter(
@@ -226,8 +224,6 @@ def test_optimize_fire(
 def test_default_converged_fn(
     si_base_state: BaseState, lj_calculator: Any, tmp_path: Any
 ) -> None:
-    fire = pytest.importorskip("torchsim.optimizers.fire")
-
     """Test default converged function."""
     si_base_state.positions += torch.randn_like(si_base_state.positions) * 0.1
 
@@ -259,7 +255,6 @@ def test_batched_optimize_fire(
     tmp_path: Any,
 ) -> None:
     """Test batched FIRE optimization with LJ potential."""
-    fire = pytest.importorskip("torchsim.optimizers.fire")
 
     trajectory_files = [
         tmp_path / f"nvt_{i}.h5md" for i in range(si_double_base_state.n_batches)
