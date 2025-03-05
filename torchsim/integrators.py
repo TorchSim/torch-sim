@@ -6,13 +6,13 @@ from typing import Any, Literal
 
 import torch
 
-from torchsim.quantities import temperature
 from torchsim.state import BaseState
 from torchsim.transforms import pbc_wrap_batched
 
 
 StateDict = dict[
-    Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "batch"], torch.Tensor
+    Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "batch"],
+    torch.Tensor,
 ]
 
 
@@ -481,57 +481,3 @@ def validate_replica_exchange_ensemble(state: MDState) -> None:
     assert (state.atomic_numbers == state.atomic_numbers[0]).all(), (
         "All replicas must have same atomic numbers"
     )
-
-
-def replica_exchange_step(
-    state: MDState,
-    seed: int | None = None,
-) -> MDState:
-    """Perform one step of replica exchange.
-
-    Args:
-        state: The state to perform the replica exchange on
-        seed: The seed for the random number generator
-
-    """
-    # TODO: need to make temperature batchable
-
-    validate_replica_exchange_ensemble(state)
-
-    generator = torch.Generator(device=state.device)
-    if seed is not None:
-        generator.manual_seed(seed)
-
-    # select a random pair of replicas
-    i = torch.randint(0, state.n_batches - 1, generator=generator)
-    j = i + 1
-
-    # swap i and j 50% of the time
-    if torch.rand(1, generator=generator) < 0.5:
-        i, j = j, i
-
-    # TODO: kinetic or potential energy?
-    delta_e = state.energy[i] - state.energy[j]
-
-    temperatures = temperature(state.momenta, state.masses, batch=state.batch)
-    delta_beta = 1 / temperatures[i] - 1 / temperatures[j]
-
-    # metropolis criterion
-    p_acceptance = torch.exp(delta_beta * delta_e)
-
-    i_mask = state.batch == i
-    j_mask = state.batch == j
-
-    # metropolis criterion
-    if torch.rand(1, generator=generator) < p_acceptance:
-        # swap positions
-        state.positions[i_mask], state.positions[j_mask] = (
-            state.positions[j_mask],
-            state.positions[i_mask],
-        )
-
-        # rescale momenta
-        state.momenta[i_mask] *= torch.sqrt(temperatures[j] / temperatures[i])
-        state.momenta[j_mask] *= torch.sqrt(temperatures[i] / temperatures[j])
-
-    return state
