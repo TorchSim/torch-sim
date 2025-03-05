@@ -471,13 +471,3 @@ def nvt_langevin(
         return momentum_step(state, dt / 2)
 
     return langevin_init, langevin_update
-
-
-def validate_replica_exchange_ensemble(state: MDState) -> None:
-    """Validate that the ensemble is appropriate for replica exchange."""
-    assert state.n_batches > 1, "Ensemble must contain multiple replicas"
-
-    # replicas must have same atomic numbers
-    assert (state.atomic_numbers == state.atomic_numbers[0]).all(), (
-        "All replicas must have same atomic numbers"
-    )
