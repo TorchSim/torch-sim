@@ -130,7 +130,7 @@ def metropolis_criterion(
 
 
 def swap_monte_carlo(
-    state: BaseState,
+    *,
     model: torch.nn.Module,
     kT: float,
     seed: int | None = None,
@@ -146,6 +146,30 @@ def swap_monte_carlo(
     Returns:
         A tuple containing the initial state and the step function
     """
+    if seed is not None:
+        generator = torch.Generator(device=model.device)
+        generator.manual_seed(seed)
+    else:
+        generator = None
+
+    def init_swap_mc_state(state: BaseState) -> SwapMCState:
+        model_output = model(
+            positions=state.positions,
+            cell=state.cell,
+            batch=state.batch,
+            atomic_numbers=state.atomic_numbers,
+        )
+
+        return SwapMCState(
+            positions=state.positions,
+            masses=state.masses,
+            cell=state.cell,
+            pbc=state.pbc,
+            atomic_numbers=state.atomic_numbers,
+            batch=state.batch,
+            energy=model_output["energy"],
+            last_permutation=torch.arange(state.n_atoms, device=state.device),
+        )
 
     def swap_monte_carlo_step(
         state: SwapMCState,
@@ -190,28 +214,4 @@ def swap_monte_carlo(
 
         return state
 
-    if seed is not None:
-        generator = torch.Generator(device=state.device)
-        generator.manual_seed(seed)
-    else:
-        generator = None
-
-    model_output = model(
-        positions=state.positions,
-        cell=state.cell,
-        batch=state.batch,
-        atomic_numbers=state.atomic_numbers,
-    )
-
-    initial_state = SwapMCState(
-        positions=state.positions,
-        masses=state.masses,
-        cell=state.cell,
-        pbc=state.pbc,
-        atomic_numbers=state.atomic_numbers,
-        batch=state.batch,
-        energy=model_output["energy"],
-        last_permutation=torch.arange(state.n_atoms, device=state.device),
-    )
-
-    return initial_state, swap_monte_carlo_step
+    return init_swap_mc_state, swap_monte_carlo_step
