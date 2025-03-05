@@ -764,7 +764,9 @@ def unit_cell_fire(  # noqa: C901, PLR0915
 
         # Calculate power (F·V) for atoms
         atomic_power = (state.forces * state.velocity).sum(dim=1)  # [n_atoms]
-        atomic_power_per_batch = torch.zeros(n_batches, device=device, dtype=dtype)
+        atomic_power_per_batch = torch.zeros(
+            n_batches, device=device, dtype=atomic_power.dtype
+        )
         atomic_power_per_batch.scatter_add_(
             dim=0, index=state.batch, src=atomic_power
         )  # [n_batches]
@@ -774,7 +776,9 @@ def unit_cell_fire(  # noqa: C901, PLR0915
             dim=1
         )  # [n_batches*3]
         cell_batch = torch.arange(n_batches, device=device).repeat_interleave(3)
-        cell_power_per_batch = torch.zeros(n_batches, device=device, dtype=dtype)
+        cell_power_per_batch = torch.zeros(
+            n_batches, device=device, dtype=cell_power.dtype
+        )
         cell_power_per_batch.scatter_add_(
             dim=0, index=cell_batch, src=cell_power
         )  # [n_batches]
