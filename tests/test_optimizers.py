@@ -2,11 +2,11 @@ import copy
 
 import torch
 
-from torchsim.optimizers import unit_cell_fire as fire
+from torchsim.optimizers import unit_cell_fire
 from torchsim.state import BaseState, concatenate_states
 
 
-def test_fire_optimization(
+def test_unit_cell_fire_optimization(
     si_base_state: BaseState, lj_calculator: torch.nn.Module
 ) -> None:
     """Test that the FIRE optimizer actually minimizes energy."""
@@ -20,7 +20,7 @@ def test_fire_optimization(
     initial_state = si_base_state
 
     # Initialize FIRE optimizer
-    init_fn, update_fn = fire(
+    init_fn, update_fn = unit_cell_fire(
         model=lj_calculator,
         dt_max=0.3,
         dt_start=0.1,
@@ -44,6 +44,10 @@ def test_fire_optimization(
 
     # Check force convergence
     max_force = torch.max(torch.norm(state.forces, dim=1))
+    pressure = torch.trace(state.stress.squeeze(0)) / 3.0
+    assert pressure < 0.01, (
+        f"Pressure should be small after optimization (got {pressure})"
+    )
     assert max_force < 0.2, f"Forces should be small after optimization (got {max_force})"
 
     assert not torch.allclose(state.positions, initial_state.positions)
@@ -78,7 +82,7 @@ def test_fire_multi_batch(
     )
 
     # Initialize FIRE optimizer
-    init_fn, update_fn = fire(
+    init_fn, update_fn = unit_cell_fire(
         model=lj_calculator,
         dt_max=0.3,
         dt_start=0.1,
@@ -112,6 +116,18 @@ def test_fire_multi_batch(
     max_force = torch.max(torch.norm(state.forces, dim=1))
     assert torch.all(max_force < 0.1), (
         f"Forces should be small after optimization (got {max_force})"
+    )
+
+    pressure_0 = torch.trace(state.stress[0]) / 3.0
+    pressure_1 = torch.trace(state.stress[1]) / 3.0
+    assert torch.allclose(pressure_0, pressure_1), (
+        f"Pressure should be the same for all batches (got {pressure_0} and {pressure_1})"
+    )
+    assert pressure_0 < 0.01, (
+        f"Pressure should be small after optimization (got {pressure_0})"
+    )
+    assert pressure_1 < 0.01, (
+        f"Pressure should be small after optimization (got {pressure_1})"
     )
 
     n_ar_atoms = si_base_state.n_atoms
@@ -157,7 +173,7 @@ def test_fire_batch_consistency(
         return not torch.allclose(current_energy, prev_energy, atol=1e-6)
 
     for state in [si_base_state_1, si_base_state_2]:
-        init_fn, update_fn = fire(
+        init_fn, update_fn = unit_cell_fire(
             model=lj_calculator,
             dt_max=0.3,
             dt_start=0.1,
@@ -187,7 +203,7 @@ def test_fire_batch_consistency(
         device=si_base_state.device,
     )
 
-    init_fn, batch_update_fn = fire(
+    init_fn, batch_update_fn = unit_cell_fire(
         model=lj_calculator,
         dt_max=0.3,
         dt_start=0.1,
