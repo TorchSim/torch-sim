@@ -23,7 +23,7 @@ from torchsim.units import UnitSystem
 
 
 def test_integrate_nve(
-    si_base_state: BaseState, lj_calculator: Any, tmp_path: Any
+    ar_fcc_base_state: BaseState, lj_calculator: Any, tmp_path: Any
 ) -> None:
     """Test NVE integration with LJ potential."""
     trajectory_file = tmp_path / "nve.h5md"
@@ -36,11 +36,11 @@ def test_integrate_nve(
     )
 
     final_state = integrate(
-        system=si_base_state,
+        system=ar_fcc_base_state,
         model=lj_calculator,
         integrator=nve,
         n_steps=10,
-        temperature=300.0,  # K
+        temperature=100.0,  # K
         timestep=0.001,  # ps
         unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
@@ -57,7 +57,7 @@ def test_integrate_nve(
 
 
 def test_integrate_single_nvt(
-    si_base_state: BaseState, lj_calculator: Any, tmp_path: Any
+    ar_fcc_base_state: BaseState, lj_calculator: Any, tmp_path: Any
 ) -> None:
     """Test NVT integration with LJ potential."""
     trajectory_file = tmp_path / "nvt.h5md"
@@ -70,11 +70,11 @@ def test_integrate_single_nvt(
     )
 
     final_state = integrate(
-        system=si_base_state,
+        system=ar_fcc_base_state,
         model=lj_calculator,
         integrator=nvt_langevin,
         n_steps=10,
-        temperature=300.0,  # K
+        temperature=100.0,  # K
         timestep=0.001,  # ps
         unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
@@ -92,26 +92,26 @@ def test_integrate_single_nvt(
 
 
 def test_integrate_double_nvt(
-    si_double_base_state: BaseState, lj_calculator: Any
+    ar_fcc_batched_base_state: BaseState, lj_calculator: Any
 ) -> None:
     """Test NVT integration with LJ potential."""
 
     final_state = integrate(
-        system=si_double_base_state,
+        system=ar_fcc_batched_base_state,
         model=lj_calculator,
         integrator=nvt_langevin,
         n_steps=10,
-        temperature=300.0,  # K
+        temperature=100.0,  # K
         timestep=0.001,  # ps
     )
 
     assert isinstance(final_state, BaseState)
-    assert final_state.n_atoms == 16
+    assert final_state.n_atoms == 512
     assert not torch.isnan(final_state.energy).any()
 
 
 def test_integrate_double_nvt_with_reporter(
-    si_double_base_state: BaseState, lj_calculator: Any, tmp_path: Any
+    ar_fcc_batched_base_state: BaseState, lj_calculator: Any, tmp_path: Any
 ) -> None:
     """Test NVT integration with LJ potential."""
     trajectory_files = [tmp_path / "nvt_0.h5md", tmp_path / "nvt_1.h5md"]
@@ -124,11 +124,11 @@ def test_integrate_double_nvt_with_reporter(
     )
 
     final_state = integrate(
-        system=si_double_base_state,
+        system=ar_fcc_batched_base_state,
         model=lj_calculator,
         integrator=nvt_langevin,
         n_steps=10,
-        temperature=300.0,  # K
+        temperature=100.0,  # K
         timestep=0.001,  # ps
         unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
@@ -136,7 +136,7 @@ def test_integrate_double_nvt_with_reporter(
     )
 
     assert isinstance(final_state, BaseState)
-    assert final_state.n_atoms == 16
+    assert final_state.n_atoms == 512
     assert all(traj_file.exists() for traj_file in trajectory_files)
 
     # Check energy fluctuations
@@ -149,14 +149,14 @@ def test_integrate_double_nvt_with_reporter(
 
 
 def test_integrate_many_nvt(
-    si_double_base_state: BaseState,
+    ar_fcc_batched_base_state: BaseState,
     fe_fcc_state: BaseState,
     lj_calculator: Any,
     tmp_path: Any,
 ) -> None:
     """Test NVT integration with LJ potential."""
     triple_state = initialize_state(
-        [si_double_base_state, fe_fcc_state],
+        [ar_fcc_batched_base_state, fe_fcc_state],
         lj_calculator.device,
         lj_calculator.dtype,
     )
@@ -190,7 +190,7 @@ def test_integrate_many_nvt(
 
 
 def test_optimize_fire(
-    si_base_state: BaseState, lj_calculator: Any, tmp_path: Any
+    ar_fcc_base_state: BaseState, lj_calculator: Any, tmp_path: Any
 ) -> None:
     """Test FIRE optimization with LJ potential."""
     trajectory_files = [tmp_path / "opt.h5md"]
@@ -198,12 +198,12 @@ def test_optimize_fire(
         filenames=[tmp_path / "opt.h5md"],
         prop_calculators={1: {"energy": lambda state: state.energy}},
     )
-    si_base_state.positions += torch.randn_like(si_base_state.positions) * 0.1
+    ar_fcc_base_state.positions += torch.randn_like(ar_fcc_base_state.positions) * 0.1
 
-    original_state = si_base_state.clone()
+    original_state = ar_fcc_base_state.clone()
 
     final_state = optimize(
-        system=si_base_state,
+        system=ar_fcc_base_state,
         model=lj_calculator,
         optimizer=fire,
         convergence_fn=lambda state: torch.norm(state.forces) < 1e-4,
@@ -222,10 +222,10 @@ def test_optimize_fire(
 
 
 def test_default_converged_fn(
-    si_base_state: BaseState, lj_calculator: Any, tmp_path: Any
+    ar_fcc_base_state: BaseState, lj_calculator: Any, tmp_path: Any
 ) -> None:
     """Test default converged function."""
-    si_base_state.positions += torch.randn_like(si_base_state.positions) * 0.1
+    ar_fcc_base_state.positions += torch.randn_like(ar_fcc_base_state.positions) * 0.1
 
     trajectory_files = [tmp_path / "opt.h5md"]
     reporter = TrajectoryReporter(
@@ -233,10 +233,10 @@ def test_default_converged_fn(
         prop_calculators={1: {"energy": lambda state: state.energy}},
     )
 
-    original_state = si_base_state.clone()
+    original_state = ar_fcc_base_state.clone()
 
     final_state = optimize(
-        system=si_base_state,
+        system=ar_fcc_base_state,
         model=lj_calculator,
         optimizer=fire,
         trajectory_reporter=reporter,
@@ -250,14 +250,14 @@ def test_default_converged_fn(
 
 
 def test_batched_optimize_fire(
-    si_double_base_state: BaseState,
+    ar_fcc_batched_base_state: BaseState,
     lj_calculator: Any,
     tmp_path: Any,
 ) -> None:
     """Test batched FIRE optimization with LJ potential."""
 
     trajectory_files = [
-        tmp_path / f"nvt_{i}.h5md" for i in range(si_double_base_state.n_batches)
+        tmp_path / f"nvt_{i}.h5md" for i in range(ar_fcc_batched_base_state.n_batches)
     ]
     reporter = TrajectoryReporter(
         filenames=trajectory_files,
@@ -271,7 +271,7 @@ def test_batched_optimize_fire(
         return torch.norm(state.forces) < 1e-4
 
     final_state = optimize(
-        system=si_double_base_state,
+        system=ar_fcc_batched_base_state,
         model=lj_calculator,
         optimizer=fire,
         convergence_fn=convergence_condition,
@@ -351,40 +351,40 @@ def test_multiple_atoms_to_state(si_atoms: Atoms, device: torch.device) -> None:
     assert torch.all(state.batch == torch.repeat_interleave(torch.tensor([0, 1]), 8))
 
 
-def test_state_to_structure(si_base_state: BaseState) -> None:
+def test_state_to_structure(ar_fcc_base_state: BaseState) -> None:
     """Test conversion from state tensors to list of pymatgen Structure."""
-    structures = state_to_structures(si_base_state)
+    structures = state_to_structures(ar_fcc_base_state)
     assert len(structures) == 1
     assert isinstance(structures[0], Structure)
-    assert len(structures[0]) == 8
+    assert len(structures[0]) == 256
 
 
-def test_state_to_multiple_structures(si_double_base_state: BaseState) -> None:
+def test_state_to_multiple_structures(ar_fcc_batched_base_state: BaseState) -> None:
     """Test conversion from state tensors to list of pymatgen Structure."""
-    structures = state_to_structures(si_double_base_state)
+    structures = state_to_structures(ar_fcc_batched_base_state)
     assert len(structures) == 2
     assert isinstance(structures[0], Structure)
     assert isinstance(structures[1], Structure)
-    assert len(structures[0]) == 8
-    assert len(structures[1]) == 8
+    assert len(structures[0]) == 256
+    assert len(structures[1]) == 256
 
 
-def test_state_to_atoms(si_base_state: BaseState) -> None:
+def test_state_to_atoms(ar_fcc_base_state: BaseState) -> None:
     """Test conversion from state tensors to list of ASE Atoms."""
-    atoms = state_to_atoms(si_base_state)
+    atoms = state_to_atoms(ar_fcc_base_state)
     assert len(atoms) == 1
     assert isinstance(atoms[0], Atoms)
-    assert len(atoms[0]) == 8
+    assert len(atoms[0]) == 256
 
 
-def test_state_to_multiple_atoms(si_double_base_state: BaseState) -> None:
+def test_state_to_multiple_atoms(ar_fcc_batched_base_state: BaseState) -> None:
     """Test conversion from state tensors to list of ASE Atoms."""
-    atoms = state_to_atoms(si_double_base_state)
+    atoms = state_to_atoms(ar_fcc_batched_base_state)
     assert len(atoms) == 2
     assert isinstance(atoms[0], Atoms)
     assert isinstance(atoms[1], Atoms)
-    assert len(atoms[0]) == 8
-    assert len(atoms[1]) == 8
+    assert len(atoms[0]) == 256
+    assert len(atoms[1]) == 256
 
 
 def test_initialize_state_from_structure(
@@ -398,14 +398,14 @@ def test_initialize_state_from_structure(
 
 
 def test_initialize_state_from_state(
-    si_base_state: BaseState, device: torch.device
+    ar_fcc_base_state: BaseState, device: torch.device
 ) -> None:
     """Test conversion from BaseState to BaseState."""
-    state = initialize_state(si_base_state, device, torch.float64)
+    state = initialize_state(ar_fcc_base_state, device, torch.float64)
     assert isinstance(state, BaseState)
-    assert state.positions.shape == si_base_state.positions.shape
-    assert state.masses.shape == si_base_state.masses.shape
-    assert state.cell.shape == si_base_state.cell.shape
+    assert state.positions.shape == ar_fcc_base_state.positions.shape
+    assert state.masses.shape == ar_fcc_base_state.masses.shape
+    assert state.cell.shape == ar_fcc_base_state.cell.shape
 
 
 def test_initialize_state_from_atoms(si_atoms: Atoms, device: torch.device) -> None:
@@ -417,13 +417,13 @@ def test_initialize_state_from_atoms(si_atoms: Atoms, device: torch.device) -> N
     assert state.cell.shape[1:] == si_atoms.cell.array.T.shape
 
 
-def test_to_atoms(si_base_state: BaseState) -> None:
+def test_to_atoms(ar_fcc_base_state: BaseState) -> None:
     """Test conversion from BaseState to list of ASE Atoms."""
-    atoms = state_to_atoms(si_base_state)
+    atoms = state_to_atoms(ar_fcc_base_state)
     assert isinstance(atoms[0], Atoms)
 
 
-def test_to_structures(si_base_state: BaseState) -> None:
+def test_to_structures(ar_fcc_base_state: BaseState) -> None:
     """Test conversion from BaseState to list of Pymatgen Structure."""
-    structures = state_to_structures(si_base_state)
+    structures = state_to_structures(ar_fcc_base_state)
     assert isinstance(structures[0], Structure)

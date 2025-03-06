@@ -9,7 +9,7 @@ from ase.build import bulk
 from pymatgen.core import Structure
 
 from torchsim.models.lennard_jones import LennardJonesModel, UnbatchedLennardJonesModel
-from torchsim.runners import atoms_to_state
+from torchsim.runners import atoms_to_state, concatenate_states
 from torchsim.state import BaseState
 from torchsim.trajectory import TrajectoryReporter
 from torchsim.unbatched_integrators import nve
@@ -67,7 +67,7 @@ def ar_fcc_base_state(device: torch.device) -> BaseState:
     """Create a face-centered cubic (FCC) Argon structure."""
     # 5.26 Å is a typical lattice constant for Ar
     a = 5.26  # Lattice constant
-    N = 2  # Supercell size
+    N = 4  # Supercell size
     n_atoms = 4 * N * N * N  # Total number of atoms (4 atoms per unit cell)
     dtype = torch.float64
 
@@ -105,6 +105,14 @@ def ar_fcc_base_state(device: torch.device) -> BaseState:
             (n_atoms,), 18, device=device, dtype=torch.long
         ),  # Ar atomic number
         batch=batch,
+    )
+
+
+@pytest.fixture
+def ar_fcc_batched_base_state(ar_fcc_base_state: BaseState) -> BaseState:
+    """Create a batched state from ar_fcc_base_state."""
+    return concatenate_states(
+        [ar_fcc_base_state, ar_fcc_base_state], device=ar_fcc_base_state.device
     )
 
 
