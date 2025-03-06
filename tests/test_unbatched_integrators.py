@@ -1,11 +1,14 @@
 from typing import Any
 
+import pytest
 import torch
 
 from torchsim.quantities import kinetic_energy, temperature
 from torchsim.state import BaseState
 from torchsim.unbatched_integrators import (
     MDState,
+    npt_nose_hoover,
+    npt_nose_hoover_invariant,
     nve,
     nvt_langevin,
     nvt_nose_hoover,
@@ -189,6 +192,41 @@ def test_nvt_nose_hoover_invariant(
     for step in range(500):
         state = nvt_update(state, target_temp)
         invariant[step] = nvt_nose_hoover_invariant(state, target_temp)
+
+    # Check energy conservation
+    invariant_drift = torch.abs(invariant - invariant[0]) / torch.abs(invariant[0])
+    assert torch.all(invariant_drift < 0.05), "invariant should be conserved"
+
+
+@pytest.mark.skip(reason="NPT Nose-Hoover needs debugging")
+def test_npt_nose_hoover_invariant(
+    ar_fcc_base_state: BaseState, unbatched_lj_calculator: Any
+) -> None:
+    """Test NPT Nose-Hoover chain thermostats maintain temperature and pressure."""
+    # Initialize integrator
+    target_temp = torch.tensor(100.0) * MetalUnits.temperature
+    target_pressure = torch.tensor(1.01325) * MetalUnits.pressure
+    dt = torch.tensor(0.001) * MetalUnits.time
+
+    ar_fcc_base_state.cell = ar_fcc_base_state.cell.squeeze(0)
+
+    npt_init, npt_update = npt_nose_hoover(
+        model=unbatched_lj_calculator,
+        dt=dt,
+        kT=target_temp,
+        external_pressure=target_pressure,
+        chain_length=3,
+        chain_steps=3,
+        sy_steps=3,
+    )
+
+    state = npt_init(state=ar_fcc_base_state, seed=42)
+
+    # Run equilibration
+    invariant = torch.zeros(500)
+    for step in range(500):
+        state = npt_update(state, target_temp, target_pressure)
+        invariant[step] = npt_nose_hoover_invariant(state, target_temp, target_pressure)
 
     # Check energy conservation
     invariant_drift = torch.abs(invariant - invariant[0]) / torch.abs(invariant[0])
