@@ -1,4 +1,3 @@
-# Import dependencies
 import time
 import torch
 from ase.build import bulk

@@ -1,9 +1,8 @@
-# Import dependencies
 import numpy as np
 import torch
 from ase.build import bulk
 
-# Import torchsim models and optimizers
+
 from torchsim.models.mace import MaceModel
 from torchsim.neighbors import vesin_nl_ts
 from torchsim.optimizers import unit_cell_gradient_descent

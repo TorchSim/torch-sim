@@ -1,6 +1,5 @@
 """Example NVT Nose Hoover MD simulation of random alloy using MACE model with temperature profile."""
 
-# Import dependencies
 import numpy as np
 import torch
 from ase.build import bulk

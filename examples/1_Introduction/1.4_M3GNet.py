@@ -1,4 +1,8 @@
-# Import dependencies
+# /// script
+# dependencies = [
+#     "mattersim>=1.1.2",
+# ]
+# ///
 import torch
 from ase.build import bulk
 

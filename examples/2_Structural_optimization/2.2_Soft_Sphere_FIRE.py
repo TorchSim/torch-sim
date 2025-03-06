@@ -1,7 +1,5 @@
-# Import dependencies
 import torch
 
-# Import torchsim models and optimizers
 from torchsim.models.soft_sphere import SoftSphereModel
 from torchsim.unbatched_optimizers import fire
 

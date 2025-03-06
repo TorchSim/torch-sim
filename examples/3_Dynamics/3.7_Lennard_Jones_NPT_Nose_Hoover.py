@@ -1,4 +1,3 @@
-# Import dependencies
 import torch
 
 # Import torchsim models and integrators

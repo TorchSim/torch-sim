@@ -1,3 +1,8 @@
+# /// script
+# dependencies = [
+#     "fairchem>=0.1.0",
+# ]
+# ///
 import torch
 from ase.build import bulk
 
