@@ -106,7 +106,7 @@ def test_integrate_double_nvt(
     )
 
     assert isinstance(final_state, BaseState)
-    assert final_state.n_atoms == 512
+    assert final_state.n_atoms == 64
     assert not torch.isnan(final_state.energy).any()
 
 
@@ -136,7 +136,7 @@ def test_integrate_double_nvt_with_reporter(
     )
 
     assert isinstance(final_state, BaseState)
-    assert final_state.n_atoms == 512
+    assert final_state.n_atoms == 64
     assert all(traj_file.exists() for traj_file in trajectory_files)
 
     # Check energy fluctuations
@@ -356,7 +356,7 @@ def test_state_to_structure(ar_base_state: BaseState) -> None:
     structures = state_to_structures(ar_base_state)
     assert len(structures) == 1
     assert isinstance(structures[0], Structure)
-    assert len(structures[0]) == 256
+    assert len(structures[0]) == 32
 
 
 def test_state_to_multiple_structures(ar_double_base_state: BaseState) -> None:
@@ -365,8 +365,8 @@ def test_state_to_multiple_structures(ar_double_base_state: BaseState) -> None:
     assert len(structures) == 2
     assert isinstance(structures[0], Structure)
     assert isinstance(structures[1], Structure)
-    assert len(structures[0]) == 256
-    assert len(structures[1]) == 256
+    assert len(structures[0]) == 32
+    assert len(structures[1]) == 32
 
 
 def test_state_to_atoms(ar_base_state: BaseState) -> None:
@@ -374,7 +374,7 @@ def test_state_to_atoms(ar_base_state: BaseState) -> None:
     atoms = state_to_atoms(ar_base_state)
     assert len(atoms) == 1
     assert isinstance(atoms[0], Atoms)
-    assert len(atoms[0]) == 256
+    assert len(atoms[0]) == 32
 
 
 def test_state_to_multiple_atoms(ar_double_base_state: BaseState) -> None:
@@ -383,8 +383,8 @@ def test_state_to_multiple_atoms(ar_double_base_state: BaseState) -> None:
     assert len(atoms) == 2
     assert isinstance(atoms[0], Atoms)
     assert isinstance(atoms[1], Atoms)
-    assert len(atoms[0]) == 256
-    assert len(atoms[1]) == 256
+    assert len(atoms[0]) == 32
+    assert len(atoms[1]) == 32
 
 
 def test_initialize_state_from_structure(
