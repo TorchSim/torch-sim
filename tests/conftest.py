@@ -67,7 +67,7 @@ def ar_fcc_base_state(device: torch.device) -> BaseState:
     """Create a face-centered cubic (FCC) Argon structure."""
     # 5.26 Å is a typical lattice constant for Ar
     a = 5.26  # Lattice constant
-    N = 4  # Supercell size
+    N = 2  # Supercell size
     n_atoms = 4 * N * N * N  # Total number of atoms (4 atoms per unit cell)
     dtype = torch.float64
 
@@ -113,8 +113,8 @@ def unbatched_lj_calculator(device: torch.device) -> UnbatchedLennardJonesModel:
     """Create a Lennard-Jones calculator with reasonable parameters for Ar."""
     return UnbatchedLennardJonesModel(
         use_neighbor_list=True,
-        sigma=3.405,  # Approximate for Ar-Ar interaction
-        epsilon=0.0104,  # Small epsilon for stability during testing
+        sigma=3.405,
+        epsilon=0.0104,
         device=device,
         dtype=torch.float64,
         compute_force=True,
@@ -125,15 +125,16 @@ def unbatched_lj_calculator(device: torch.device) -> UnbatchedLennardJonesModel:
 
 @pytest.fixture
 def lj_calculator(device: torch.device) -> LennardJonesModel:
-    """Create a Lennard-Jones calculator with reasonable parameters for Si."""
+    """Create a Lennard-Jones calculator with reasonable parameters for Ar."""
     return LennardJonesModel(
-        sigma=2.0,  # Approximate for Si-Si interaction
-        epsilon=0.1,  # Small epsilon for stability during testing
+        use_neighbor_list=True,
+        sigma=3.405,
+        epsilon=0.0104,
         device=device,
         dtype=torch.float64,
         compute_force=True,
         compute_stress=True,
-        cutoff=5.0,
+        cutoff=2.5 * 3.405,
     )
 
 
