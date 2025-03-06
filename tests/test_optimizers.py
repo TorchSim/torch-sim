@@ -2,8 +2,102 @@ import copy
 
 import torch
 
-from torchsim.optimizers import unit_cell_fire
+from torchsim.optimizers import (
+    gradient_descent,
+    unit_cell_fire,
+    unit_cell_gradient_descent,
+)
 from torchsim.state import BaseState, concatenate_states
+
+
+def test_gradient_descent_optimization(
+    si_base_state: BaseState, lj_calculator: torch.nn.Module
+) -> None:
+    """Test that the Gradient Descent optimizer actually minimizes energy."""
+
+    # Add some random displacement to positions
+    perturbed_positions = (
+        si_base_state.positions + torch.randn_like(si_base_state.positions) * 0.1
+    )
+
+    si_base_state.positions = perturbed_positions
+    initial_state = si_base_state
+
+    # Initialize Gradient Descent optimizer
+    init_fn, update_fn = gradient_descent(
+        model=lj_calculator,
+        lr=0.01,
+    )
+
+    state = init_fn(si_base_state)
+
+    # Run optimization for a few steps
+    energies = [1000, state.energy.item()]
+    while abs(energies[-2] - energies[-1]) > 1e-6:
+        state = update_fn(state)
+        energies.append(state.energy.item())
+
+    energies = energies[1:]
+
+    # Check that energy decreased
+    assert energies[-1] < energies[0], (
+        f"FIRE optimization should reduce energy "
+        f"(initial: {energies[0]}, final: {energies[-1]})"
+    )
+
+    # Check force convergence
+    max_force = torch.max(torch.norm(state.forces, dim=1))
+    assert max_force < 0.2, f"Forces should be small after optimization (got {max_force})"
+
+    assert not torch.allclose(state.positions, initial_state.positions)
+
+
+def test_unit_cell_gradient_descent_optimization(
+    si_base_state: BaseState, lj_calculator: torch.nn.Module
+) -> None:
+    """Test that the Gradient Descent optimizer actually minimizes energy."""
+
+    # Add some random displacement to positions
+    perturbed_positions = (
+        si_base_state.positions + torch.randn_like(si_base_state.positions) * 0.1
+    )
+
+    si_base_state.positions = perturbed_positions
+    initial_state = si_base_state
+
+    # Initialize Gradient Descent optimizer
+    init_fn, update_fn = unit_cell_gradient_descent(
+        model=lj_calculator,
+        positions_lr=0.01,
+        cell_lr=0.1,
+    )
+
+    state = init_fn(si_base_state)
+
+    # Run optimization for a few steps
+    energies = [1000, state.energy.item()]
+    while abs(energies[-2] - energies[-1]) > 1e-6:
+        state = update_fn(state)
+        energies.append(state.energy.item())
+
+    energies = energies[1:]
+
+    # Check that energy decreased
+    assert energies[-1] < energies[0], (
+        f"FIRE optimization should reduce energy "
+        f"(initial: {energies[0]}, final: {energies[-1]})"
+    )
+
+    # Check force convergence
+    max_force = torch.max(torch.norm(state.forces, dim=1))
+    pressure = torch.trace(state.stress.squeeze(0)) / 3.0
+    assert pressure < 0.01, (
+        f"Pressure should be small after optimization (got {pressure})"
+    )
+    assert max_force < 0.2, f"Forces should be small after optimization (got {max_force})"
+
+    assert not torch.allclose(state.positions, initial_state.positions)
+    assert not torch.allclose(state.cell, initial_state.cell)
 
 
 def test_unit_cell_fire_optimization(
@@ -54,7 +148,7 @@ def test_unit_cell_fire_optimization(
     assert not torch.allclose(state.cell, initial_state.cell)
 
 
-def test_fire_multi_batch(
+def test_unit_cell_fire_multi_batch(
     si_base_state: BaseState, lj_calculator: torch.nn.Module
 ) -> None:
     """Test FIRE optimization with multiple batches."""
@@ -143,7 +237,7 @@ def test_fire_multi_batch(
     assert current_energy[0] == current_energy[1]
 
 
-def test_fire_batch_consistency(
+def test_unit_cell_fire_batch_consistency(
     si_base_state: BaseState, lj_calculator: torch.nn.Module
 ) -> None:
     """Test batched FIRE optimization is consistent with individual optimizations."""
