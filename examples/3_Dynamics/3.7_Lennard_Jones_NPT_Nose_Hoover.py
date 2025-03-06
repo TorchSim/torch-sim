@@ -86,23 +86,25 @@ results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 
 dt = 0.001 * Units.time  # Time step (1 ps)
 kT = 200 * Units.temperature  # Temperature (200 K)
-target_pressure = 10000 * Units.pressure  # Target pressure (10 kbar)
+target_pressure = 0 * Units.pressure  # Target pressure (10 kbar)
 
-state, npt_nose_hoover_update = npt_nose_hoover(
+state = {
+    "positions": positions,
+    "masses": masses,
+    "cell": cell,
+    "pbc": PERIODIC,
+    "atomic_numbers": atomic_numbers,
+}
+npt_init, npt_update = npt_nose_hoover(
     model=model,
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    pbc=PERIODIC,
-    kT=kT,
     dt=dt,
+    kT=kT,
+    external_pressure=target_pressure,
     chain_length=3,  # Chain length
     chain_steps=1,
     sy_steps=1,
-    seed=1,
-    external_pressure=target_pressure,
-    atomic_numbers=atomic_numbers,
 )
+state = npt_init(state=state, seed=1)
 
 
 def get_pressure(stress, kinetic_energy, volume, dim=3):
@@ -126,7 +128,7 @@ for step in range(10_000):
             f"pressure: {get_pressure(model(positions=state.positions, cell=state.current_box)['stress'], kinetic_energy(masses=state.masses, momenta=state.momenta), torch.det(state.current_box)).item() / Units.pressure:.4f}, "
             f"box xx yy zz: {state.current_box[0, 0].item():.4f}, {state.current_box[1, 1].item():.4f}, {state.current_box[2, 2].item():.4f}"
         )
-    state = npt_nose_hoover_update(state, kT=kT, external_pressure=target_pressure)
+    state = npt_update(state, kT=kT, external_pressure=target_pressure)
 
 print(
     f"Final temperature: {temperature(masses=state.masses, momenta=state.momenta) / Units.temperature}"

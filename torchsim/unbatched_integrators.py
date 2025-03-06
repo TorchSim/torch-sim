@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import torch
 
@@ -10,6 +10,11 @@ from torchsim.quantities import count_dof, kinetic_energy
 from torchsim.state import BaseState
 from torchsim.transforms import pbc_wrap_general
 from torchsim.utils import calculate_momenta
+
+
+StateDict = dict[
+    Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "batch"], torch.Tensor
+]
 
 
 @dataclass
@@ -203,15 +208,13 @@ def velocity_verlet(state: MDState, dt: torch.Tensor, model: torch.nn.Module) ->
 
 def nve(
     *,
-    positions: torch.Tensor,
-    masses: torch.Tensor,
-    cell: torch.Tensor,
-    pbc: bool,
     model: torch.nn.Module,
     dt: torch.Tensor,
     kT: torch.Tensor,
-    **extra_state_kwargs: Any,
-) -> tuple[MDState, Callable[[MDState, torch.Tensor], MDState]]:
+) -> tuple[
+    Callable[[BaseState | dict, torch.Tensor], MDState],
+    Callable[[MDState, torch.Tensor], MDState],
+]:
     """Initialize and return an NVE (microcanonical) integrator.
 
     This function sets up integration in the NVE ensemble, where particle number (N),
@@ -219,19 +222,16 @@ def nve(
     and an update function for time evolution.
 
     Args:
-        positions: Initial particle positions [n_particles, n_dimensions]
-        masses: Particle masses [n_particles]
-        cell: Simulation cell matrix [n_dimensions, n_dimensions]
-        pbc: Whether to use periodic boundary conditions
         model: Neural network model that computes energies and forces
         dt: Integration timestep
-        kT: Temperature for initializing thermal velocities
-        extra_state_kwargs: Additional state arguments
+        kT: Temperature in energy units for initializing momenta
 
     Returns:
         tuple:
-            - MDState: Initial system state with thermal velocities
-            - callable: Update function that evolves system by one timestep
+            - Callable[[BaseState | StateDict, torch.Tensor], MDState]: Function to
+              initialize the MDState from input data and kT
+            - Callable[[MDState, torch.Tensor], MDState]: Update function that evolves
+              system by one timestep
 
     Notes:
         - Uses velocity Verlet algorithm for time-reversible integration
@@ -239,8 +239,57 @@ def nve(
         - Initial velocities sampled from Maxwell-Boltzmann distribution
         - Model must return dict with 'energy' and 'forces' keys
     """
-    device = positions.device
-    dtype = positions.dtype
+    device = model.device
+    dtype = model.dtype
+
+    def nve_init(
+        state: BaseState | StateDict,
+        kT: torch.Tensor = kT,
+        seed: int | None = None,
+        **extra_state_kwargs: Any,
+    ) -> MDState:
+        """Initialize an NVE state from input data.
+
+        Args:
+            state: Either a BaseState object or a dictionary containing positions,
+                masses, cell, pbc
+            kT: Temperature in energy units for initializing momenta
+            seed: Random seed for reproducibility
+            **extra_state_kwargs: Additional state arguments
+
+        Returns:
+            MDState: Initialized state for NVE integration
+        """
+        # Extract required data from input
+        if not isinstance(state, BaseState):
+            state = BaseState(**state)
+
+        # Override with extra_state_kwargs if provided
+        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+
+        model_output = model(
+            positions=state.positions,
+            cell=state.cell,
+            atomic_numbers=state.atomic_numbers,
+        )
+
+        momenta = (
+            extra_state_kwargs.get("momenta")
+            if extra_state_kwargs.get("momenta") is not None
+            else calculate_momenta(state.positions, state.masses, kT, device, dtype, seed)
+        )
+
+        initial_state = MDState(
+            positions=state.positions,
+            momenta=momenta,
+            energy=model_output["energy"],
+            forces=model_output["forces"],
+            masses=state.masses,
+            cell=state.cell,
+            pbc=state.pbc,
+            atomic_numbers=atomic_numbers,
+        )
+        return initial_state  # noqa: RET504
 
     def nve_update(state: MDState, dt: torch.Tensor = dt, **_) -> MDState:
         """Perform one complete NVE (microcanonical) integration step.
@@ -278,45 +327,19 @@ def nve(
 
         return momentum_step(state, dt / 2)
 
-    model_output = model(
-        positions=positions,
-        cell=cell,
-        atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
-    )
-
-    momenta = (
-        extra_state_kwargs.get("momenta")
-        if extra_state_kwargs.get("momenta") is not None
-        else calculate_momenta(positions, masses, kT, device, dtype)
-    )
-
-    initial_state = MDState(
-        positions=positions,
-        momenta=momenta,
-        energy=model_output["energy"],
-        forces=model_output["forces"],
-        masses=masses,
-        cell=cell,
-        pbc=pbc,
-        atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
-    )
-
-    return initial_state, nve_update
+    return nve_init, nve_update
 
 
 def nvt_langevin(
     *,
-    positions: torch.Tensor,
-    masses: torch.Tensor,
-    cell: torch.Tensor,
-    pbc: bool,
     model: torch.nn.Module,
     dt: torch.Tensor,
     kT: torch.Tensor,
     gamma: torch.Tensor | None = None,
-    seed: int | None = None,
-    **extra_state_kwargs: Any,
-) -> tuple[MDState, Callable[[MDState, torch.Tensor], MDState]]:
+) -> tuple[
+    Callable[[BaseState | StateDict, torch.Tensor], MDState],
+    Callable[[MDState, torch.Tensor], MDState],
+]:
     """Initialize and return an NVT (canonical) integrator using Langevin dynamics.
 
     This function sets up integration in the NVT ensemble, where particle number (N),
@@ -324,38 +347,79 @@ def nvt_langevin(
     and an update function for time evolution.
 
     Args:
-        positions: Initial particle positions [n_particles, n_dimensions]
-        masses: Particle masses [n_particles]
-        cell: Simulation cell matrix [n_dimensions, n_dimensions]
-        pbc: Whether to use periodic boundary conditions
         model: Neural network model that computes energies and forces
         dt: Integration timestep
         kT: Target temperature in energy units
-        gamma: Friction coefficient for Langevin thermostat
-        seed: Random seed for reproducibility
-        extra_state_kwargs: Additional state arguments
+        gamma: Friction coefficient for Langevin thermostat (default: 1/(100*dt))
 
     Returns:
         tuple:
-            - MDState: Initial system state with thermal velocities
-            - Callable[[MDState, torch.Tensor], MDState]: Update function for nvt langevin
+            - Callable[[BaseState | StateDict, torch.Tensor], MDState]: Function to
+              initialize the MDState from input data and kT
+            - Callable[[MDState, torch.Tensor], MDState]: Update function that evolves
+              system by one timestep
 
     Notes:
         - Uses BAOAB splitting scheme for Langevin dynamics
         - Preserves detailed balance for correct NVT sampling
         - Handles periodic boundary conditions if enabled in state
     """
-    device = positions.device
-    dtype = positions.dtype
+    device = model.device
+    dtype = model.dtype
     gamma = gamma or 1 / (100 * dt)
 
-    # Convert scalar parameters to tensors if needed
-    if not isinstance(gamma, torch.Tensor):
+    if isinstance(gamma, float):
         gamma = torch.tensor(gamma, device=device, dtype=dtype)
-    if not isinstance(dt, torch.Tensor):
+
+    if isinstance(dt, float):
         dt = torch.tensor(dt, device=device, dtype=dtype)
-    if not isinstance(kT, torch.Tensor):
-        kT = torch.tensor(kT, device=device, dtype=dtype)
+
+    def langevin_init(
+        state: BaseState | StateDict,
+        kT: torch.Tensor = kT,
+        seed: int | None = None,
+        **extra_state_kwargs: Any,
+    ) -> MDState:
+        """Initialize an NVT Langevin state from input data.
+
+        Args:
+            state: Either a BaseState object or a dictionary containing positions,
+                masses, cell, pbc
+            kT: Temperature in energy units for initializing momenta
+            seed: Random seed for reproducibility
+            **extra_state_kwargs: Additional state arguments
+
+        Returns:
+            MDState: Initialized state for NVT Langevin integration
+        """
+        if not isinstance(state, BaseState):
+            state = BaseState(**state)
+
+        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+
+        model_output = model(
+            positions=state.positions,
+            cell=state.cell,
+            atomic_numbers=atomic_numbers,
+        )
+
+        momenta = (
+            extra_state_kwargs.get("momenta")
+            if extra_state_kwargs.get("momenta") is not None
+            else calculate_momenta(state.positions, state.masses, kT, device, dtype, seed)
+        )
+
+        initial_state = MDState(
+            positions=state.positions,
+            momenta=momenta,
+            energy=model_output["energy"],
+            forces=model_output["forces"],
+            masses=state.masses,
+            cell=state.cell,
+            pbc=state.pbc,
+            atomic_numbers=atomic_numbers,
+        )
+        return initial_state  # noqa: RET504
 
     def langevin_update(
         state: MDState,
@@ -377,12 +441,18 @@ def nvt_langevin(
         Args:
             state: Current system state containing positions, momenta, forces
             dt: Integration timestep
-            kT: Target temperature (energy units)
+            kT: Target temperature in energy units
             gamma: Friction coefficient for Langevin thermostat
 
         Returns:
-            Updated state after one complete Langevin step
+            MDState: Updated state after one complete Langevin step
         """
+        if isinstance(gamma, float):
+            gamma = torch.tensor(gamma, device=device, dtype=dtype)
+
+        if isinstance(dt, float):
+            dt = torch.tensor(dt, device=device, dtype=dtype)
+
         state = momentum_step(state, dt / 2)
         state = position_step(state, dt / 2)
         state = stochastic_step(state, dt, kT, gamma, device, dtype)
@@ -398,31 +468,7 @@ def nvt_langevin(
 
         return momentum_step(state, dt / 2)
 
-    # Initialize the NVT langevin state
-    model_output = model(
-        positions=positions,
-        cell=cell,
-        atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
-    )
-
-    momenta = (
-        extra_state_kwargs.get("momenta")
-        if extra_state_kwargs.get("momenta") is not None
-        else calculate_momenta(positions, masses, kT, device, dtype, seed)
-    )
-
-    initial_state = MDState(
-        positions=positions,
-        momenta=momenta,
-        energy=model_output["energy"],
-        forces=model_output["forces"],
-        masses=masses,
-        cell=cell,
-        pbc=pbc,
-        atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
-    )
-
-    return initial_state, langevin_update
+    return langevin_init, langevin_update
 
 
 @dataclass
@@ -715,79 +761,147 @@ class NVTNoseHooverState(MDState):
 
 def nvt_nose_hoover(
     *,
-    positions: torch.Tensor,
-    masses: torch.Tensor,
-    cell: torch.Tensor,
-    pbc: bool,
     model: torch.nn.Module,
     dt: torch.Tensor,
     kT: torch.Tensor,
     chain_length: int = 3,
     chain_steps: int = 3,
     sy_steps: int = 3,
-    tau: torch.Tensor | None = None,
-    seed: int | None = None,
-    **extra_state_kwargs: Any,
 ) -> tuple[
-    NVTNoseHooverState, Callable[[NVTNoseHooverState, torch.Tensor], NVTNoseHooverState]
+    Callable[[BaseState | StateDict, torch.Tensor, int | None, Any], NVTNoseHooverState],
+    Callable[[NVTNoseHooverState, torch.Tensor], NVTNoseHooverState],
 ]:
-    """Integrate NVT system with Nose-Hoover chain thermostat.
+    """Initialize NVT Nose-Hoover chain thermostat integration.
 
-    This function integrates the NVT system using a Nose-Hoover chain thermostat.
-    It computes the forces, initializes momenta, and sets up the chain thermostat.
+    This function sets up integration of an NVT system using a Nose-Hoover chain
+    thermostat. The Nose-Hoover chain provides deterministic temperature control by
+    coupling the system to a chain of thermostats. The integration scheme is
+    time-reversible and conserves an extended energy quantity.
 
     Args:
-        model: Model to compute forces
-        positions: Particle positions with shape [n_particles, n_dimensions]
-        momenta: Particle momenta with shape [n_particles, n_dimensions]
-        masses: Particle masses with shape [n_particles]
-        cell: Simulation cell matrix with shape [n_dimensions, n_dimensions]
-        pbc: Whether to use periodic boundary conditions
+        model: Neural network model that computes energies and forces
         dt: Integration timestep
-        kT: Target temperature
-        chain_length: Number of thermostats in Nose-Hoover chain
-        chain_steps: Number of chain integration substeps
-        sy_steps: Number of Suzuki-Yoshida steps (1, 3, 5, or 7)
-        tau: Temperature relaxation time (defaults to 100*dt)
-        seed: Random seed for momenta initialization
-        extra_state_kwargs: Additional keyword arguments for state initialization
+        kT: Target temperature in energy units
+        chain_length: Number of thermostats in Nose-Hoover chain (default: 3)
+        chain_steps: Number of chain integration substeps (default: 3)
+        sy_steps: Number of Suzuki-Yoshida steps - must be 1, 3, 5, or 7 (default: 3)
 
     Returns:
-        Tuple of (NVTNoseHooverState, Callable[[NVTNoseHooverState, torch.Tensor],
-        NVTNoseHooverState]). The first element is the initialized state, the second is
-        the update function
-    """
-    device = positions.device
-    dtype = positions.dtype
+        Tuple containing:
+        - Initialization function that takes a state and returns NVTNoseHooverState
+        - Update function that performs one complete integration step
 
-    def nvt_nose_hoover_step(
+    Notes:
+        The initialization function accepts:
+        - state: Initial system state (BaseState or dict)
+        - kT: Target temperature (optional, defaults to constructor value)
+        - tau: Thermostat relaxation time (optional, defaults to 100*dt)
+        - seed: Random seed for momenta initialization (optional)
+        - **extra_state_kwargs: Additional state variables
+
+        The update function accepts:
+        - state: Current NVTNoseHooverState
+        - dt: Integration timestep (optional, defaults to constructor value)
+        - kT: Target temperature (optional, defaults to constructor value)
+
+        The integration sequence is:
+        1. Update chain masses
+        2. First half-step of chain evolution
+        3. Full velocity Verlet step
+        4. Update chain kinetic energy
+        5. Second half-step of chain evolution
+    """
+    device = model.device
+    dtype = model.dtype
+
+    def nvt_nose_hoover_init(
+        state: BaseState | StateDict,
+        kT: torch.Tensor = kT,
+        tau: torch.Tensor | None = None,
+        seed: int | None = None,
+        **extra_state_kwargs: Any,
+    ) -> NVTNoseHooverState:
+        """Initialize the NVT Nose-Hoover state.
+
+        Args:
+            state: Initial system state as BaseState or dict
+            kT: Target temperature in energy units
+            tau: Thermostat relaxation time (defaults to 100*dt)
+            seed: Random seed for momenta initialization
+            **extra_state_kwargs: Additional state variables
+
+        Returns:
+            Initialized NVTNoseHooverState with positions, momenta, forces,
+            and thermostat chain variables
+        """
+        # Set default tau if not provided
+        if tau is None:
+            tau = dt * 100.0
+
+        # Create thermostat functions
+        chain_fns = construct_nose_hoover_chain(
+            dt, chain_length, chain_steps, sy_steps, tau
+        )
+
+        if not isinstance(state, BaseState):
+            state = BaseState(**state)
+
+        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+
+        model_output = model(
+            positions=state.positions,
+            cell=state.cell,
+            atomic_numbers=atomic_numbers,
+        )
+        momenta = (
+            extra_state_kwargs.get("momenta")
+            if extra_state_kwargs.get("momenta") is not None
+            else calculate_momenta(state.positions, state.masses, kT, device, dtype, seed)
+        )
+
+        # Calculate initial kinetic energy
+        KE = kinetic_energy(momenta, state.masses)
+
+        # Initialize chain with calculated KE
+        dof = count_dof(state.positions)
+
+        # Initialize base state
+        state = NVTNoseHooverState(
+            positions=state.positions,
+            momenta=momenta,
+            energy=model_output["energy"],
+            forces=model_output["forces"],
+            masses=state.masses,
+            cell=state.cell,
+            pbc=state.pbc,
+            atomic_numbers=atomic_numbers,
+            chain=chain_fns.initialize(dof, KE, kT),
+            _chain_fns=chain_fns,  # Store the chain functions
+        )
+        return state  # noqa: RET504
+
+    def nvt_nose_hoover_update(
         state: NVTNoseHooverState,
         dt: torch.Tensor = dt,
         kT: torch.Tensor = kT,
     ) -> NVTNoseHooverState:
         """Perform one complete Nose-Hoover chain integration step.
 
-        This function implements the integration scheme for NVT dynamics using a
-        Nose-Hoover chain thermostat. The integration sequence is:
-        1. Update chain masses
-        2. First half-step of chain evolution
-        3. Full velocity Verlet step
-        4. Update chain kinetic energy
-        5. Second half-step of chain evolution
-
         Args:
             state: Current system state containing positions, momenta, forces, and chain
-            kT: Target temperature in energy units
             dt: Integration timestep
+            kT: Target temperature in energy units
 
         Returns:
             Updated state after one complete Nose-Hoover step
 
         Notes:
-            - Time-reversible integration scheme
-            - Deterministic temperature control through extended system
-            - Chain masses are updated to maintain proper temperature coupling
-            - Conserves extended energy in the absence of numerical errors
+            Integration sequence:
+            1. Update chain masses based on target temperature
+            2. First half-step of chain evolution
+            3. Full velocity Verlet step
+            4. Update chain kinetic energy
+            5. Second half-step of chain evolution
         """
         # Get chain functions from state
         chain_fns = state._chain_fns  # noqa: SLF001
@@ -814,46 +928,7 @@ def nvt_nose_hoover(
 
         return state
 
-    # Initialize the NVT Nose-Hoover state
-    # Set default tau if not provided
-    if tau is None:
-        tau = dt * 100.0
-
-    # Create thermostat functions
-    chain_fns = construct_nose_hoover_chain(dt, chain_length, chain_steps, sy_steps, tau)
-
-    model_output = model(
-        positions=positions,
-        cell=cell,
-        atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
-    )
-    momenta = (
-        extra_state_kwargs.get("momenta")
-        if extra_state_kwargs.get("momenta") is not None
-        else calculate_momenta(positions, masses, kT, device, dtype, seed)
-    )
-
-    # Calculate initial kinetic energy
-    KE = kinetic_energy(momenta, masses)
-
-    # Initialize chain with calculated KE
-    dof = count_dof(positions)
-
-    # Initialize base state
-    state = NVTNoseHooverState(
-        positions=positions,
-        momenta=momenta,
-        energy=model_output["energy"],
-        forces=model_output["forces"],
-        masses=masses,
-        cell=cell,
-        pbc=pbc,
-        atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
-        chain=chain_fns.initialize(dof, KE, kT),
-        _chain_fns=chain_fns,  # Store the chain functions
-    )
-
-    return state, nvt_nose_hoover_step
+    return nvt_nose_hoover_init, nvt_nose_hoover_update
 
 
 def nvt_nose_hoover_invariant(
@@ -923,28 +998,30 @@ class NPTNoseHooverState(MDState):
     the equations of motion.
 
     Attributes:
-        positions: Particle positions with shape [n_particles, n_dimensions]
-        momenta: Particle momenta with shape [n_particles, n_dimensions]
-        forces: Forces on particles with shape [n_particles, n_dimensions]
-        masses: Particle masses with shape [n_particles]
-        reference_box: Reference simulation cell matrix with shape
+        positions (torch.Tensor): Particle positions with shape [n_particles, n_dims]
+        momenta (torch.Tensor): Particle momenta with shape [n_particles, n_dims]
+        forces (torch.Tensor): Forces on particles with shape [n_particles, n_dims]
+        masses (torch.Tensor): Particle masses with shape [n_particles]
+        reference_box (torch.Tensor): Reference simulation cell matrix with shape
             [n_dimensions, n_dimensions]. Used to measure relative volume changes.
-        box_position: Logarithmic box coordinate. Scalar value representing
+        box_position (torch.Tensor): Logarithmic box coordinate. Scalar value representing
             (1/d)ln(V/V_0) where V is current volume and V_0 is reference volume.
-        box_momentum: Box momentum (velocity) conjugate to box_position.
+        box_momentum (torch.Tensor): Box momentum (velocity) conjugate to box_position.
             Scalar value controlling volume changes.
-        box_mass: Mass parameter for box dynamics. Controls coupling
+        box_mass (torch.Tensor): Mass parameter for box dynamics. Controls coupling
             between volume fluctuations and pressure.
-        barostat: Chain thermostat coupled to box dynamics for
+        barostat (NoseHooverChain): Chain thermostat coupled to box dynamics for
             pressure control
-        thermostat: Chain thermostat coupled to particle dynamics
+        thermostat (NoseHooverChain): Chain thermostat coupled to particle dynamics
             for temperature control
+        barostat_fns (NoseHooverChainFns): Functions for barostat chain updates
+        thermostat_fns (NoseHooverChainFns): Functions for thermostat chain updates
 
     Properties:
-        velocities: Particle velocities computed as momenta/masses.
-            Has shape [n_particles, n_dimensions]
-        box: Current simulation cell matrix derived from box_position.
-            Has shape [n_dimensions, n_dimensions]
+        velocities (torch.Tensor): Particle velocities computed as momenta
+            divided by masses. Shape: [n_particles, n_dimensions]
+        current_box (torch.Tensor): Current simulation cell matrix derived from
+            box_position. Shape: [n_dimensions, n_dimensions]
 
     Notes:
         - The box parameterization ensures volume positivity
@@ -993,59 +1070,47 @@ class NPTNoseHooverState(MDState):
 
 
 def npt_nose_hoover(  # noqa: C901, PLR0915
-    positions: torch.Tensor,
-    cell: torch.Tensor,
-    pbc: bool,  # noqa: FBT001
+    *,
+    model: torch.nn.Module,
     kT: torch.Tensor,
     external_pressure: torch.Tensor,
-    model: torch.nn.Module,
     dt: torch.Tensor,
-    masses: torch.Tensor,
     chain_length: int = 3,
     chain_steps: int = 2,
     sy_steps: int = 3,
-    t_tau: torch.Tensor | None = None,
-    b_tau: torch.Tensor | None = None,
-    seed: int | None = None,
-    **extra_state_kwargs: Any,
-) -> NPTNoseHooverState:
-    """Initialize an NPT simulation state with Nose-Hoover chain thermostats.
+) -> tuple[
+    Callable[[BaseState | StateDict], NPTNoseHooverState],
+    Callable[[NPTNoseHooverState, torch.Tensor], NPTNoseHooverState],
+]:
+    """Create an NPT simulation with Nose-Hoover chain thermostats.
 
-    This function creates and initializes a complete NPTNoseHooverState by setting up
-    both temperature and pressure control via Nose-Hoover chains. The barostat chain
-    controls pressure through box dynamics while the thermostat chain maintains
-    constant temperature.
+    This function returns initialization and update functions for NPT molecular dynamics
+    with Nose-Hoover chain thermostats for temperature and pressure control.
 
     Args:
-        positions (torch.Tensor): Initial particle positions [n_particles, n_dimensions]
-        cell (torch.Tensor): Initial simulation box matrix [n_dimensions, n_dimensions]
-            or scalar for cubic box
-        pbc (bool): Whether to use periodic boundary conditions
+        model (torch.nn.Module): Model to compute forces and energies
         kT (torch.Tensor): Target temperature in energy units
         external_pressure (torch.Tensor): Target external pressure
-        model (torch.nn.Module): Model to compute forces
-        dt (float): Integration timestep
-        masses (torch.Tensor): Particle masses
-        chain_length (int): Length of the Nose-Hoover chain
-        chain_steps (int): Number of steps in the Nose-Hoover chain
-        sy_steps (int): Number of steps in the Nose-Hoover chain
-        t_tau (float): Thermostat relaxation time
-        b_tau (float): Barostat relaxation time
-        seed (int): Random seed for reproducibility
-        **extra_state_kwargs: Additional arguments passed to force and stress functions
+        dt (torch.Tensor): Integration timestep
+        chain_length (int, optional): Length of Nose-Hoover chains. Defaults to 3.
+        chain_steps (int, optional): Chain integration substeps. Defaults to 2.
+        sy_steps (int, optional): Suzuki-Yoshida integration order. Defaults to 3.
 
     Returns:
-        NPTNoseHooverState: Initialized state ready for NPT integration
+        tuple:
+            - Callable[[BaseState | StateDict], NPTNoseHooverState]: Initialization
+              function
+            - Callable[[NPTNoseHooverState, torch.Tensor], NPTNoseHooverState]: Update
+              function
 
     Notes:
-        - Barostat uses longer relaxation time (1000*dt) for stable pressure control
-        - Thermostat uses shorter relaxation time (100*dt) for temperature control
-        - Box position is parameterized as (1/d)ln(V/V_0)
+        - Uses Nose-Hoover chains for both temperature and pressure control
+        - Implements symplectic integration with Suzuki-Yoshida decomposition
+        - Box dynamics use logarithmic coordinates for volume updates
+        - Conserves extended system Hamiltonian
     """
-    # Get system dimensions and device
-    n_particles, dim = positions.shape
-    device = positions.device
-    dtype = positions.dtype
+    device = model.device
+    dtype = model.dtype
 
     def _npt_box_info(
         state: NPTNoseHooverState,
@@ -1276,9 +1341,6 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         # NOTE on Stress tensor vs Pressure tensor convention
         # Be careful about the sign of the stress tensor!
         # torch-sim models return a stress tensor as 1/volume * dU/de_ij
-        # To get the pressure right that's usually -1/(volume d) * trace(dU/de_ij)
-        # But the ML models already divide by the volume but not the dimension
-        # So we need to divide by the dimension.
         # The standard definition can be found here.
         # https://matsci.org/t/stress-and-pressure/15195/5
         # https://docs.lammps.org/compute_pressure.html
@@ -1392,7 +1454,132 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         state.box_mass = box_mass
         return state
 
-    def npt_nose_hoover_step(
+    def npt_nose_hoover_init(
+        state: BaseState | StateDict,
+        kT: torch.Tensor = kT,
+        t_tau: torch.Tensor | None = None,
+        b_tau: torch.Tensor | None = None,
+        seed: int | None = None,
+        **extra_state_kwargs: Any,
+    ) -> NPTNoseHooverState:
+        """Initialize the NPT Nose-Hoover state.
+
+        This function initializes a state for NPT molecular dynamics with Nose-Hoover
+        chain thermostats for both temperature and pressure control. It sets up the
+        system with appropriate initial conditions including particle positions, momenta,
+        box variables, and thermostat chains.
+
+        Args:
+            state: Initial system state as BaseState or dict containing positions, masses,
+                cell, and PBC information
+            kT: Target temperature in energy units
+            t_tau: Thermostat relaxation time. Controls how quickly temperature
+                equilibrates. Defaults to 100*dt
+            b_tau: Barostat relaxation time. Controls how quickly pressure equilibrates.
+                Defaults to 1000*dt
+            seed: Random seed for momenta initialization. Used for reproducible runs
+            **extra_state_kwargs: Additional state variables like atomic_numbers or
+                pre-initialized momenta
+
+        Returns:
+            NPTNoseHooverState: Initialized state containing:
+                - Particle positions, momenta, forces
+                - Box position, momentum and mass
+                - Reference box matrix
+                - Thermostat and barostat chain variables
+                - System energy
+                - Other state variables (masses, PBC, etc.)
+
+        Notes:
+            - Uses separate Nose-Hoover chains for temperature and pressure control
+            - Box mass is set based on system size and barostat relaxation time
+            - Initial momenta are drawn from Maxwell-Boltzmann distribution if not
+              provided
+            - Box dynamics use logarithmic coordinates for volume updates
+        """
+        # Initialize the NPT Nose-Hoover state
+        # Thermostat relaxation time
+        if t_tau is None:
+            t_tau = 100 * dt
+
+        # Barostat relaxation time
+        if b_tau is None:
+            b_tau = 1000 * dt
+
+        # Setup thermostats with appropriate timescales
+        barostat_fns = construct_nose_hoover_chain(
+            dt, chain_length, chain_steps, sy_steps, b_tau
+        )
+        thermostat_fns = construct_nose_hoover_chain(
+            dt, chain_length, chain_steps, sy_steps, t_tau
+        )
+
+        if not isinstance(state, BaseState):
+            state = BaseState(**state)
+
+        dim, n_particles = state.positions.shape
+        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+
+        # Initialize box variables
+        box_position = torch.zeros((), device=device, dtype=dtype)
+        box_momentum = torch.zeros((), device=device, dtype=dtype)
+        box_mass = torch.tensor(
+            dim * (n_particles + 1) * kT * b_tau**2, device=device, dtype=dtype
+        )
+
+        # Calculate box kinetic energy
+        KE_box = kinetic_energy(box_momentum, box_mass)
+
+        # Handle scalar box input
+        if (torch.is_tensor(state.cell) and state.cell.ndim == 0) or isinstance(
+            state.cell, int | float
+        ):
+            state.cell = torch.eye(dim, device=device, dtype=dtype) * state.cell
+
+        # Get model output
+        model_output = model(
+            positions=state.positions,
+            cell=state.cell,
+            atomic_numbers=atomic_numbers,
+        )
+        forces = model_output["forces"]
+        energy = model_output["energy"]
+
+        # Create initial state
+        state = NPTNoseHooverState(
+            positions=state.positions,
+            momenta=None,
+            energy=energy,
+            forces=forces,
+            masses=state.masses,
+            atomic_numbers=atomic_numbers,
+            cell=state.cell,
+            pbc=state.pbc,
+            reference_box=state.cell,
+            box_position=box_position,
+            box_momentum=box_momentum,
+            box_mass=box_mass,
+            barostat=barostat_fns.initialize(1, KE_box, kT),
+            thermostat=None,
+            barostat_fns=barostat_fns,
+            thermostat_fns=thermostat_fns,
+        )
+
+        # Initialize momenta
+        momenta = (
+            extra_state_kwargs.get("momenta")
+            if extra_state_kwargs.get("momenta") is not None
+            else calculate_momenta(state.positions, state.masses, kT, device, dtype, seed)
+        )
+
+        # Initialize thermostat
+        state.momenta = momenta
+        KE = kinetic_energy(state.momenta, state.masses)
+        state.thermostat = thermostat_fns.initialize(state.positions.numel(), KE, kT)
+
+        return state
+
+    def npt_nose_hoover_update(
         state: NPTNoseHooverState,
         dt: torch.Tensor = dt,
         kT: torch.Tensor = kT,
@@ -1411,7 +1598,6 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             state (NPTNoseHooverState): Current system state
             dt (torch.Tensor): Integration timestep
             kT (torch.Tensor): Target temperature
-            model (torch.nn.Module): Model to compute energy, forces, and stresses
             external_pressure (torch.Tensor): Target external pressure
 
         Returns:
@@ -1457,79 +1643,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         )
         return state
 
-    # Initialize the NPT Nose-Hoover state
-    # Thermostat relaxation time
-    if t_tau is None:
-        t_tau = 100 * dt
-
-    # Barostat relaxation time
-    if b_tau is None:
-        b_tau = 1000 * dt
-
-    # Setup thermostats with appropriate timescales
-    barostat_fns = construct_nose_hoover_chain(
-        dt, chain_length, chain_steps, sy_steps, b_tau
-    )
-    thermostat_fns = construct_nose_hoover_chain(
-        dt, chain_length, chain_steps, sy_steps, t_tau
-    )
-
-    # Initialize box variables
-    box_position = torch.zeros((), device=device, dtype=dtype)
-    box_momentum = torch.zeros((), device=device, dtype=dtype)
-    box_mass = torch.tensor(
-        dim * (n_particles + 1) * kT * b_tau**2, device=device, dtype=dtype
-    )
-
-    # Calculate box kinetic energy
-    KE_box = kinetic_energy(box_momentum, box_mass)
-
-    # Handle scalar box input
-    if (torch.is_tensor(cell) and cell.ndim == 0) or isinstance(cell, int | float):
-        cell = torch.eye(dim, device=device, dtype=dtype) * cell
-
-    # Get model output
-    model_output = model(
-        positions=positions,
-        cell=cell,
-        atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
-    )
-    forces = model_output["forces"]
-    energy = model_output["energy"]
-
-    # Create initial state
-    state = NPTNoseHooverState(
-        positions=positions,
-        momenta=None,
-        energy=energy,
-        forces=forces,
-        masses=masses,
-        atomic_numbers=extra_state_kwargs.get("atomic_numbers"),
-        cell=cell,
-        pbc=pbc,
-        reference_box=cell,
-        box_position=box_position,
-        box_momentum=box_momentum,
-        box_mass=box_mass,
-        barostat=barostat_fns.initialize(1, KE_box, kT),
-        thermostat=None,
-        barostat_fns=barostat_fns,
-        thermostat_fns=thermostat_fns,
-    )
-
-    # Initialize momenta
-    momenta = (
-        extra_state_kwargs.get("momenta")
-        if extra_state_kwargs.get("momenta") is not None
-        else calculate_momenta(positions, masses, kT, device, dtype, seed)
-    )
-
-    # Initialize thermostat
-    state.momenta = momenta
-    KE = kinetic_energy(state.momenta, state.masses)
-    state.thermostat = thermostat_fns.initialize(positions.numel(), KE, kT)
-
-    return state, npt_nose_hoover_step
+    return npt_nose_hoover_init, npt_nose_hoover_update
 
 
 def npt_nose_hoover_invariant(
@@ -1552,13 +1666,11 @@ def npt_nose_hoover_invariant(
     - Box kinetic energy
 
     Args:
-        energy: Energy of the system.
         state: Current state of the NPT simulation system.
             Must contain position, momentum, box, box_momentum, box_mass, thermostat,
             and barostat.
         external_pressure: Target external pressure of the system.
         kT: Target thermal energy (Boltzmann constant x temperature).
-        **kwargs: Additional keyword arguments passed to energy_fn.
 
     Returns:
         torch.Tensor: The conserved quantity (extended Hamiltonian) of the NPT system.

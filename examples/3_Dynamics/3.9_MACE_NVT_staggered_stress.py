@@ -58,23 +58,23 @@ results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 dt = 0.002 * Units.time  # Timestep (ps)
 kT = 1000 * Units.temperature  # Initial temperature (K)
 
-state, nvt_nose_hoover_update = nvt_nose_hoover(
-    model=model,
-    positions=positions,
-    masses=torch.tensor(si_dc.get_masses(), device=device, dtype=dtype),
-    cell=cell,
-    pbc=PERIODIC,
-    kT=kT,
-    dt=dt,
-    atomic_numbers=atomic_numbers,
-)
+state = {
+    "positions": positions,
+    "masses": masses,
+    "cell": cell,
+    "pbc": PERIODIC,
+    "atomic_numbers": atomic_numbers,
+}
+
+nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
+state = nvt_init(state, kT=kT, seed=1)
 
 stress = torch.zeros(10, 3, 3, device=device, dtype=dtype)
 for step in range(100):
     temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
     invariant = nvt_nose_hoover_invariant(state, kT=kT).item()
     print(f"{step=}: Temperature: {temp:.4f}: invariant: {invariant:.4f}")
-    state = nvt_nose_hoover_update(state, kT=kT)
+    state = nvt_update(state, kT=kT)
     if step % 10 == 0:
         model.compute_stress = True
         results = model(

@@ -116,13 +116,14 @@ def test_monte_carlo(
     """Test the monte_carlo function that returns a step function and initial state."""
 
     # Call monte_carlo to get the initial state and step function
-    initial_state, monte_carlo_step = swap_monte_carlo(
-        batched_diverse_state, lj_calculator, kT=1.0, seed=42
+    init_state_fn, monte_carlo_step_fn = swap_monte_carlo(
+        model=lj_calculator, kT=1.0, seed=42
     )
+    initial_state = init_state_fn(batched_diverse_state)
 
     # Verify the returned values
     assert isinstance(initial_state, SwapMCState)
-    assert callable(monte_carlo_step)
+    assert callable(monte_carlo_step_fn)
 
     # Verify the initial state has the expected attributes
     assert hasattr(initial_state, "energy")
@@ -142,7 +143,7 @@ def test_monte_carlo(
         step_generator.manual_seed(42 + i + 1)  # Different seed for each step
 
         # Run a Monte Carlo step
-        current_state = monte_carlo_step(current_state, generator=step_generator)
+        current_state = monte_carlo_step_fn(current_state, generator=step_generator)
 
         # Verify the state is an MCState
         assert isinstance(current_state, SwapMCState)

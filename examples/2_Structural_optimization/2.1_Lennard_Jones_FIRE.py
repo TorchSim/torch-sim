@@ -78,18 +78,23 @@ model = UnbatchedLennardJonesModel(
 # Run initial simulation and get results
 results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 
+state = {
+    "positions": positions,
+    "masses": masses,
+    "cell": cell,
+    "pbc": PERIODIC,
+    "atomic_numbers": atomic_numbers,
+}
+
 # Initialize FIRE (Fast Inertial Relaxation Engine) optimizer
 # FIRE is an efficient method for finding local energy minima in molecular systems
-state, fire_update = fire(
+fire_init, fire_update = fire(
     model=model,
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    pbc=PERIODIC,
     dt_start=0.005,  # Initial timestep
     dt_max=0.01,  # Maximum timestep
-    atomic_numbers=atomic_numbers,
 )
+
+state = fire_init(state=state)
 
 # Run optimization for 1000 steps
 for step in range(2_000):

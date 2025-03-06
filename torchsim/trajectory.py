@@ -12,7 +12,6 @@ import tables
 import torch
 
 from torchsim.state import BaseState, slice_substate
-from torchsim.unbatched_integrators import MDState
 
 
 DATA_TYPE_MAP = {
@@ -120,7 +119,8 @@ class TrajectoryReporter:
             model: Model used for simulation (optional)
         """
         # Get unique batch indices
-        batch_indices = torch.unique(state.batch).cpu().tolist()
+        batch_indices = range(state.n_batches)
+        # batch_indices = torch.unique(state.batch).cpu().tolist()
 
         # Ensure we have the right number of trajectories
         if len(batch_indices) != len(self.trajectories):
@@ -195,7 +195,7 @@ class TorchSimTrajectory:
         self,
         filename: str | pathlib.Path,
         *,
-        mode: Literal["w", "a", "r"] = "a",
+        mode: Literal["w", "a", "r"] = "r",
         compress_data: bool = True,
         coerce_to_float32: bool = True,
         coerce_to_int32: bool = False,
@@ -569,18 +569,21 @@ class TorchSimTrajectory:
         }
 
         # Add optional arrays based on flags
-        if any([save_velocities, save_forces, save_energy]) and not isinstance(
-            state[0], MDState
-        ):
-            raise ValueError(
-                "Velocities, forces, and energy can only be saved for MDStates"
-            )
-        if save_velocities:
-            data["velocities"] = torch.stack([s.velocities for s in state])
-        if save_forces:
-            data["forces"] = torch.stack([s.forces for s in state])
-        if save_energy:
-            data["energy"] = torch.stack([s.energy for s in state])
+        # Define optional arrays to save based on flags
+        optional_arrays = {
+            "velocities": save_velocities,
+            "forces": save_forces,
+            "energy": save_energy,
+        }
+        # Loop through optional arrays and add them if requested
+        for array_name, should_save in optional_arrays.items():
+            if should_save:
+                if not hasattr(state[0], array_name):
+                    raise ValueError(
+                        f"{array_name.capitalize()} can only be saved "
+                        f"if included in the state being reported."
+                    )
+                data[array_name] = torch.stack([getattr(s, array_name) for s in state])
 
         # Handle cell and masses based on variable flags
         if variable_cell:

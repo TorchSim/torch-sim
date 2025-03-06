@@ -1,14 +1,13 @@
 # Import dependencies
-import time
+import numpy as np
 import torch
 from ase.build import bulk
 
-# Import torchsim models and integrators
-from torchsim.unbatched_integrators import nvt_langevin
+# Import torchsim models and optimizers
 from torchsim.models.mace import UnbatchedMaceModel
 from torchsim.neighbors import vesin_nl_ts
-from torchsim.quantities import temperature
-from torchsim.units import MetalUnits as Units
+from torchsim.unbatched_optimizers import unit_cell_fire
+from torchsim.units import UnitConversion
 
 from mace.calculators.foundations_models import mace_mp
 
@@ -31,8 +30,11 @@ loaded_model = mace_mp(
 
 PERIODIC = True
 
-# Create diamond cubic Silicon
+# Create diamond cubic Silicon with random displacements and a 5% volume compression
+rng = np.random.default_rng()
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
+si_dc.positions = si_dc.positions + 0.2 * rng.standard_normal(si_dc.positions.shape)
+si_dc.cell = si_dc.cell.array * 0.95
 
 # Prepare input tensors
 positions = torch.tensor(si_dc.positions, device=device, dtype=dtype)
@@ -47,17 +49,13 @@ model = UnbatchedMaceModel(
     neighbor_list_fn=vesin_nl_ts,
     periodic=PERIODIC,
     compute_force=True,
-    compute_stress=False,
+    compute_stress=True,
     dtype=dtype,
     enable_cueq=False,
 )
 
 # Run initial inference
 results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
-
-dt = 0.002 * Units.time  # Timestep (ps)
-kT = 1000 * Units.temperature  # Initial temperature (K)
-gamma = 10 / Units.time  # Langevin friction coefficient (ps^-1)
 
 state = {
     "positions": positions,
@@ -66,23 +64,31 @@ state = {
     "pbc": PERIODIC,
     "atomic_numbers": atomic_numbers,
 }
-# Initialize NVT Langevin integrator
-langevin_init, langevin_update = nvt_langevin(
+# Initialize FIRE optimizer for structural relaxation
+fire_init, fire_update = unit_cell_fire(
     model=model,
-    kT=kT,
-    dt=dt,
-    gamma=gamma,
 )
 
-state = langevin_init(state=state, seed=1)
+state = fire_init(state=state)
 
+# Run optimization loop
 for step in range(1_000):
-    if step % 100 == 0:
-        print(
-            f"{step=}: Temperature: {temperature(masses=state.masses, momenta=state.momenta) / Units.temperature:.4f}"
-        )
-    state = langevin_update(state=state, kT=kT)
+    if step % 10 == 0:
+        PE = state.energy.item()
+        P = torch.trace(state.stress).item() / 3.0 * UnitConversion.eV_per_Ang3_to_GPa
+        print(f"{step=}: Total energy: {PE} eV, pressure: {P} GPa")
+    state = fire_update(state)
+
+print(f"Initial energy: {results['energy'].item()} eV")
+print(f"Final energy: {state.energy.item()} eV")
+
+
+print(f"Initial max force: {torch.max(torch.abs(results['forces'])).item()} eV/Å")
+print(f"Final max force: {torch.max(torch.abs(state.forces)).item()} eV/Å")
 
 print(
-    f"Final temperature: {temperature(masses=state.masses, momenta=state.momenta) / Units.temperature}"
+    f"Initial pressure: {torch.trace(results['stress']).item() / 3.0 * UnitConversion.eV_per_Ang3_to_GPa} GPa"
+)
+print(
+    f"Final pressure: {torch.trace(state.stress).item() / 3.0 * UnitConversion.eV_per_Ang3_to_GPa} GPa"
 )

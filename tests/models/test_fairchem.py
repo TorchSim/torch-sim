@@ -10,6 +10,9 @@ from torchsim.runners import atoms_to_state
 from torchsim.state import BaseState
 
 
+pytest.importorskip("torch_sparse")
+
+
 @pytest.fixture(scope="session")
 def model_path(tmp_path_factory: pytest.TempPathFactory) -> str:
     tmp_path = tmp_path_factory.mktemp("fairchem_checkpoints")

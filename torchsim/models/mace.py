@@ -94,7 +94,7 @@ class UnbatchedMaceModel(torch.nn.Module):
         )
 
         # setup system boundary conditions
-        pbc = [True] * 3 if periodic else [False] * 3
+        pbc = [periodic] * 3
         self.pbc = torch.tensor([pbc], device=self.device)
 
         if atomic_numbers is not None:
@@ -331,6 +331,11 @@ class MaceModel(torch.nn.Module, ModelInterface):
         # Store flag to track if atomic numbers were provided at init
         self.atomic_numbers_in_init = atomic_numbers is not None
 
+        # Set PBC
+        pbc = [periodic] * 3
+        self.pbc_template = torch.tensor([pbc], device=self._device)
+        self.pbc = None  # Will be set in forward
+
         # Set up batch information if atomic numbers are provided
         if atomic_numbers is not None:
             if batch is None:
@@ -340,11 +345,6 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 )
 
             self.setup_from_batch(atomic_numbers, batch)
-
-        # Set PBC
-        pbc = [True] * 3 if periodic else [False] * 3
-        self.pbc_template = torch.tensor([pbc], device=self._device)
-        self.pbc = None  # Will be set in forward
 
     def setup_from_batch(self, atomic_numbers: torch.Tensor, batch: torch.Tensor) -> None:
         """Set up internal state from atomic numbers and batch indices.

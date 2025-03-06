@@ -77,13 +77,13 @@ def integrate(
         )
 
     dtype, device = state.positions.dtype, state.positions.device
-    state, update_fn = integrator(
-        state=state,
+    init_fn, update_fn = integrator(
         model=model,
         kT=torch.tensor(temps[0] * unit_system.temperature, dtype=dtype, device=device),
         dt=torch.tensor(timestep * unit_system.time, dtype=dtype, device=device),
         **integrator_kwargs,
     )
+    state = init_fn(state)
 
     for step in range(1, n_steps + 1):
         state = update_fn(state, kT=temps[step - 1] * unit_system.temperature)
@@ -136,11 +136,11 @@ def optimize(
         )
     state: BaseState = initialize_state(system, model.device, model.dtype)
 
-    state, update_fn = optimizer(
-        state=state,
+    init_fn, update_fn = optimizer(
         model=model,
         **optimizer_kwargs,
     )
+    state = init_fn(state)
 
     step: int = 1
     last_energy = state.energy + 1

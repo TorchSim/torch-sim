@@ -1,20 +1,9 @@
 import copy
 
-import pytest
 import torch
 
+from torchsim.optimizers import unit_cell_fire as fire
 from torchsim.state import BaseState, concatenate_states
-
-
-# skip tests if we don't have torch scatter
-try:
-    from torchsim.optimizers import fire
-
-except ImportError:
-    pytest.skip(
-        "torch_scatter not installed, skipping batched optimizer tests",
-        allow_module_level=True,
-    )
 
 
 def test_fire_optimization(
@@ -31,12 +20,13 @@ def test_fire_optimization(
     initial_state = si_base_state
 
     # Initialize FIRE optimizer
-    state, update_fn = fire(
-        state=initial_state,
+    init_fn, update_fn = fire(
         model=lj_calculator,
         dt_max=0.3,
         dt_start=0.1,
     )
+
+    state = init_fn(si_base_state)
 
     # Run optimization for a few steps
     energies = [1000, state.energy.item()]
@@ -88,29 +78,30 @@ def test_fire_multi_batch(
     )
 
     # Initialize FIRE optimizer
-    state, update_fn = fire(
-        state=multi_state,
+    init_fn, update_fn = fire(
         model=lj_calculator,
         dt_max=0.3,
         dt_start=0.1,
     )
+
+    state = init_fn(multi_state)
     initial_state = copy.deepcopy(state)
 
     # Run optimization for a few steps
     prev_energy = torch.ones(2, device=state.device, dtype=state.energy.dtype) * 1000
     current_energy = initial_state.energy
-    i = 0
+    step = 0
     while not torch.allclose(current_energy, prev_energy, atol=1e-9):
         prev_energy = current_energy
         state = update_fn(state)
         current_energy = state.energy
 
-        i += 1
-        if i > 500:
+        step += 1
+        if step > 500:
             raise ValueError("Optimization did not converge")
 
     # check that we actually optimized
-    assert i > 10
+    assert step > 10
 
     # Check that energy decreased for both batches
     assert torch.all(state.energy < initial_state.energy), (
@@ -132,7 +123,7 @@ def test_fire_multi_batch(
     )
     assert not torch.allclose(state.cell, multi_state.cell)
 
-    # we are evolving identical sysmems
+    # we are evolving identical systems
     assert current_energy[0] == current_energy[1]
 
 
@@ -166,28 +157,29 @@ def test_fire_batch_consistency(
         return not torch.allclose(current_energy, prev_energy, atol=1e-6)
 
     for state in [si_base_state_1, si_base_state_2]:
-        state_opt, update_fn = fire(
-            state=copy.deepcopy(state),
+        init_fn, update_fn = fire(
             model=lj_calculator,
             dt_max=0.3,
             dt_start=0.1,
         )
 
+        state_opt = init_fn(state)
+
         # Run optimization until convergence
         current_energy = state_opt.energy
         prev_energy = current_energy + 1
 
-        i = 0
+        step = 0
         while energy_converged(current_energy, prev_energy):
             prev_energy = current_energy
             state_opt = update_fn(state_opt)
             current_energy = state_opt.energy
-            i += 1
-            if i > 1000:
+            step += 1
+            if step > 1000:
                 raise ValueError("Optimization did not converge")
 
         final_individual_states.append(state_opt)
-        total_steps.append(i)
+        total_steps.append(step)
 
     # Now optimize both states together in a batch
     multi_state = concatenate_states(
@@ -195,32 +187,33 @@ def test_fire_batch_consistency(
         device=si_base_state.device,
     )
 
-    batch_state, batch_update_fn = fire(
-        state=copy.deepcopy(multi_state),
+    init_fn, batch_update_fn = fire(
         model=lj_calculator,
         dt_max=0.3,
         dt_start=0.1,
     )
 
+    batch_state = init_fn(multi_state)
+
     # Run optimization until convergence for both batches
     current_energies = batch_state.energy.clone()
     prev_energies = current_energies + 1
 
-    i = 0
+    step = 0
     while energy_converged(current_energies[0], prev_energies[0]) and energy_converged(
         current_energies[1], prev_energies[1]
     ):
         prev_energies = current_energies.clone()
         batch_state = batch_update_fn(batch_state)
         current_energies = batch_state.energy.clone()
-        i += 1
-        if i > 1000:
+        step += 1
+        if step > 1000:
             raise ValueError("Optimization did not converge")
 
     individual_energies = [state.energy.item() for state in final_individual_states]
     # Check that final energies from batched optimization match individual optimizations
-    for i, individual_energy in enumerate(individual_energies):
-        assert abs(batch_state.energy[i].item() - individual_energy) < 1e-4, (
-            f"Energy for batch {i} doesn't match individual optimization: "
-            f"batch={batch_state.energy[i].item()}, individual={individual_energy}"
+    for step, individual_energy in enumerate(individual_energies):
+        assert abs(batch_state.energy[step].item() - individual_energy) < 1e-4, (
+            f"Energy for batch {step} doesn't match individual optimization: "
+            f"batch={batch_state.energy[step].item()}, individual={individual_energy}"
         )

@@ -5,7 +5,7 @@ import torch
 
 from torchsim.models.interface import validate_model_outputs
 from torchsim.models.lennard_jones import (
-    LennardJonesModel,
+    UnbatchedLennardJonesModel,
     lennard_jones_pair,
     lennard_jones_pair_force,
 )
@@ -132,7 +132,7 @@ def test_lennard_jones_force_energy_consistency() -> None:
 
 @pytest.fixture
 def calculators(
-    ar_fcc_state: BaseState,
+    ar_fcc_base_state: BaseState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create both neighbor list and direct calculators with Argon parameters."""
     calc_params = {
@@ -145,10 +145,14 @@ def calculators(
     }
 
     cutoff = 2.5 * 3.405  # Standard LJ cutoff * sigma
-    calc_nl = LennardJonesModel(use_neighbor_list=True, cutoff=cutoff, **calc_params)
-    calc_direct = LennardJonesModel(use_neighbor_list=False, cutoff=cutoff, **calc_params)
+    calc_nl = UnbatchedLennardJonesModel(
+        use_neighbor_list=True, cutoff=cutoff, **calc_params
+    )
+    calc_direct = UnbatchedLennardJonesModel(
+        use_neighbor_list=False, cutoff=cutoff, **calc_params
+    )
 
-    positions, cell = ar_fcc_state.positions, ar_fcc_state.cell
+    positions, cell = ar_fcc_base_state.positions, ar_fcc_base_state.cell.squeeze(0)
     return calc_nl(positions, cell), calc_direct(positions, cell)
 
 
@@ -197,7 +201,7 @@ def test_stress_tensor_symmetry(
 
 
 def test_validate_model_outputs(
-    lj_calculator: LennardJonesModel,
+    lj_calculator: UnbatchedLennardJonesModel,
     device: torch.device,
 ) -> None:
     """Test that the model outputs are valid."""

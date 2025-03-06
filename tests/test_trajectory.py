@@ -44,7 +44,7 @@ def trajectory(test_file: Path) -> TorchSimTrajectory:
 
 def test_initialization(test_file: Path) -> None:
     """Test trajectory file initialization."""
-    traj = TorchSimTrajectory(test_file)
+    traj = TorchSimTrajectory(test_file, mode="w")
     assert os.path.exists(test_file)
     assert traj._file.isopen  # noqa: SLF001
     traj.close()
@@ -149,6 +149,7 @@ def test_data_type_coercion(test_file: Path) -> None:
         test_file,
         coerce_to_float32=True,
         coerce_to_int32=True,
+        mode="w",
     )
 
     rng = np.random.default_rng()
@@ -183,7 +184,7 @@ def test_invalid_writes(trajectory: TorchSimTrajectory) -> None:
 
 def test_context_manager(test_file: Path) -> None:
     """Test context manager protocol."""
-    with TorchSimTrajectory(test_file) as traj:
+    with TorchSimTrajectory(test_file, mode="w") as traj:
         assert traj._file.isopen  # noqa: SLF001
         rng = np.random.default_rng()
         positions = rng.random((10, 3)).astype(np.float32)
@@ -208,7 +209,7 @@ def test_compression(test_file: Path) -> None:
     rng = np.random.default_rng()
     data = rng.random((100, 3)).astype(np.float32)
 
-    traj_compressed = TorchSimTrajectory(test_file, compress_data=True)
+    traj_compressed = TorchSimTrajectory(test_file, compress_data=True, mode="w")
     traj_compressed.write_arrays({"data": data}, steps=0)
     traj_compressed.close()
     size_compressed = os.path.getsize(test_file)
@@ -228,7 +229,7 @@ def test_compression(test_file: Path) -> None:
 def test_file_modes(test_file: Path) -> None:
     """Test different file opening modes."""
     # Write initial data
-    traj = TorchSimTrajectory(test_file)
+    traj = TorchSimTrajectory(test_file, mode="w")
     rng = np.random.default_rng()
     positions = rng.random((10, 3)).astype(np.float32)
     traj.write_arrays({"positions": positions}, steps=0)

@@ -296,5 +296,5 @@ class FairChemModel(torch.nn.Module, ModelInterface):
                 _pred = _pred.reshape(self._reshaped_props.get(key)).squeeze()
             results[key] = _pred
 
-        results["energy"] = results["energy"].squeeze()
+        results["energy"] = results["energy"].squeeze(dim=1)
         return results
