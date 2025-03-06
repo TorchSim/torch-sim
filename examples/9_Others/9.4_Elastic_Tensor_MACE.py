@@ -4,28 +4,28 @@
 #     "mace-torch>=0.3.10",
 # ]
 # ///
-import numpy as np
+
 import torch
 from ase import units
-from typing import Tuple
-from ase.build import bulk
 from ase.atoms import Atoms
-from ase.optimize import FIRE as FIRE_ASE
+from ase.build import bulk
 from ase.filters import FrechetCellFilter
+from ase.optimize import FIRE as FIRE_ASE
 from ase.spacegroup import get_spacegroup
+from mace.calculators.foundations_models import mace_mp
+
 from torchsim.elastic import (
-    ElasticState,
-    get_elementary_deformations,
     BravaisType,
+    ElasticState,
     get_elastic_tensor,
+    get_elementary_deformations,
     get_full_elastic_tensor,
 )
-from mace.calculators.foundations_models import mace_mp
 
 
 def get_bravais_type(
     atoms: Atoms, symprec: float = 1e-5
-) -> Tuple[str, BravaisType, str, int]:
+) -> tuple[str, BravaisType, str, int]:
     """Determine Bravais lattice type from ASE Atoms object.
 
     Args:
@@ -57,11 +57,6 @@ def get_bravais_type(
     sg_nr = spacegroup.no
     sg_symbol = spacegroup.symbol
 
-    # Get cell parameters
-    cell = atoms.get_cell()
-    lengths = np.linalg.norm(cell, axis=1)
-    angles = cell.angles()
-
     # Determine lattice type and Bravais lattice
     if 195 <= sg_nr <= 230:  # Cubic
         if sg_nr in [
@@ -81,22 +76,22 @@ def get_bravais_type(
             223,
             224,
         ]:
-            lattype = "primitive"
+            latt_type = "primitive"
         elif sg_nr in [196, 202, 203, 209, 210, 216, 219, 225, 226, 227, 228]:
-            lattype = "face-centered"
+            latt_type = "face-centered"
         else:
-            lattype = "body-centered"
+            latt_type = "body-centered"
         bravais = BravaisType.CUBIC
 
     elif 168 <= sg_nr <= 194:  # Hexagonal
-        lattype = "primitive"
+        latt_type = "primitive"
         bravais = BravaisType.HEXAGONAL
 
     elif 143 <= sg_nr <= 167:  # Trigonal
         if sg_nr <= 148:  # R-centered
-            lattype = "rhombohedral"
+            latt_type = "rhombohedral"
         else:
-            lattype = "primitive"
+            latt_type = "primitive"
         bravais = BravaisType.TRIGONAL
 
     elif 75 <= sg_nr <= 142:  # Tetragonal
@@ -151,9 +146,9 @@ def get_bravais_type(
             137,
             138,
         ]:
-            lattype = "primitive"
+            latt_type = "primitive"
         else:
-            lattype = "body-centered"
+            latt_type = "body-centered"
         bravais = BravaisType.TETRAGONAL
 
     elif 16 <= sg_nr <= 74:  # Orthorhombic
@@ -189,27 +184,27 @@ def get_bravais_type(
             61,
             62,
         ]:
-            lattype = "primitive"
+            latt_type = "primitive"
         elif sg_nr in [20, 21, 35, 36, 37, 38, 39, 40, 41, 63, 64, 65, 66, 67, 68]:
-            lattype = "face-centered"
+            latt_type = "face-centered"
         elif sg_nr in [22, 23, 42, 43, 69, 70]:
-            lattype = "body-centered"
+            latt_type = "body-centered"
         else:
-            lattype = "base-centered"
+            latt_type = "base-centered"
         bravais = BravaisType.ORTHORHOMBIC
 
     elif 3 <= sg_nr <= 15:  # Monoclinic
         if sg_nr in [3, 4, 6, 7, 10, 11, 13, 14]:
-            lattype = "primitive"
+            latt_type = "primitive"
         else:
-            lattype = "base-centered"
+            latt_type = "base-centered"
         bravais = BravaisType.MONOCLINIC
 
     else:  # Triclinic
-        lattype = "primitive"
+        latt_type = "primitive"
         bravais = BravaisType.TRICLINIC
 
-    return lattype, bravais, sg_symbol, sg_nr
+    return latt_type, bravais, sg_symbol, sg_nr
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -233,7 +228,7 @@ state = ElasticState(
     cell=torch.tensor(struct.get_cell().array, device=device, dtype=torch.float64),
 )
 
-lattype, bravais_type, sg_symbol, sg_nr = get_bravais_type(struct)
+latt_type, bravais_type, sg_symbol, sg_nr = get_bravais_type(struct)
 deformations = get_elementary_deformations(
     state, n_deform=6, max_strain=2.0, bravais_type=bravais_type
 )

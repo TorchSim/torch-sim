@@ -8,12 +8,13 @@
 import numpy as np
 import pymatviz as pmv
 import torch
+from mace.calculators.foundations_models import mace_mp
 from phonopy import Phonopy
 from phonopy.structure.atoms import PhonopyAtoms
+
 from torchsim.models.mace import MaceModel
 from torchsim.neighbors import vesin_nl_ts
 
-from mace.calculators.foundations_models import mace_mp
 
 # Set device and data type
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

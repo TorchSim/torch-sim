@@ -3,16 +3,14 @@
 import numpy as np
 import torch
 from ase.build import bulk
+from mace.calculators.foundations_models import mace_mp
 from plotly.subplots import make_subplots
 
-# Import torchsim models and integrators
-from torchsim.unbatched_integrators import nvt_nose_hoover, nvt_nose_hoover_invariant
 from torchsim.models.mace import UnbatchedMaceModel
 from torchsim.neighbors import vesin_nl_ts
 from torchsim.quantities import temperature
+from torchsim.unbatched_integrators import nvt_nose_hoover, nvt_nose_hoover_invariant
 from torchsim.units import MetalUnits as Units
-
-from mace.calculators.foundations_models import mace_mp
 
 
 def get_kT(
@@ -27,23 +25,22 @@ def get_kT(
     anneal_temp: float,
     device: torch.device,
 ) -> torch.Tensor:
-    """
-    Determine target kT based on current simulation step.
+    """Determine target kT based on current simulation step.
     Temperature profile:
-    300K (initial) → ramp to 3_000K → hold at 3_000K → quench to 300K → hold at 300K
+    300K (initial) → ramp to 3_000K → hold at 3_000K → quench to 300K → hold at 300K.
     """
     if step < num_steps_initial:
         # Initial equilibration at cool temperature
         return torch.tensor(cool_temp, device=device)
-    elif step < (num_steps_initial + num_steps_ramp_up):
+    if step < (num_steps_initial + num_steps_ramp_up):
         # Linear ramp from cool_temp to melt_temp
         progress = (step - num_steps_initial) / num_steps_ramp_up
         current_kT = cool_temp + (melt_temp - cool_temp) * progress
         return torch.tensor(current_kT, device=device)
-    elif step < (num_steps_initial + num_steps_ramp_up + num_steps_melt):
+    if step < (num_steps_initial + num_steps_ramp_up + num_steps_melt):
         # Hold at melting temperature
         return torch.tensor(melt_temp, device=device)
-    elif step < (
+    if step < (
         num_steps_initial + num_steps_ramp_up + num_steps_melt + num_steps_ramp_down
     ):
         # Linear cooling from melt_temp to cool_temp
@@ -52,7 +49,7 @@ def get_kT(
         ) / num_steps_ramp_down
         current_kT = melt_temp - (melt_temp - cool_temp) * progress
         return torch.tensor(current_kT, device=device)
-    elif step < (
+    if step < (
         num_steps_initial
         + num_steps_ramp_up
         + num_steps_melt
@@ -61,9 +58,8 @@ def get_kT(
     ):
         # Hold at annealing temperature
         return torch.tensor(anneal_temp, device=device)
-    else:
-        # Hold at annealing temperature
-        return torch.tensor(anneal_temp, device=device)
+    # Hold at annealing temperature
+    return torch.tensor(anneal_temp, device=device)
 
 
 # Set device and data type
@@ -200,4 +196,4 @@ fig.update_layout(
     xaxis_title="time (ps)",
 )
 fig.update_yaxes(title_text="Temperature (K)")
-fig.write_image(f"nvt_visualization_temperature.pdf")
+fig.write_image("nvt_visualization_temperature.pdf")

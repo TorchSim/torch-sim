@@ -1,7 +1,6 @@
 """Plot the soft sphere potential energy vs distance using plotly."""
 
 import numpy as np
-import plotly.graph_objects as go
 import torch
 from plotly.subplots import make_subplots
 

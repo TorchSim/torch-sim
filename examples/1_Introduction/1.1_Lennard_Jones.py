@@ -2,6 +2,7 @@ import torch
 
 from torchsim.models.lennard_jones import UnbatchedLennardJonesModel
 
+
 # Set up the device and data type
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32

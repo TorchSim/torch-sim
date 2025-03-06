@@ -2,14 +2,14 @@
 
 
 # %% %
+import torch
 from ase.build import bulk
-from torchsim.runners import integrate, state_to_atoms
+from mace.calculators.foundations_models import mace_mp
+
 from torchsim.integrators import nvt_langevin
 from torchsim.models.lennard_jones import LennardJonesModel
-import torch
-
-from mace.calculators.foundations_models import mace_mp
 from torchsim.models.mace import MaceModel
+from torchsim.runners import integrate, state_to_atoms
 
 
 lj_model = LennardJonesModel(
@@ -34,8 +34,9 @@ final_atoms = state_to_atoms(final_state)
 
 ### basic lennard jones example with reporting
 
-from torchsim.trajectory import TrajectoryReporter, TorchSimTrajectory
 from torchsim.quantities import kinetic_energy
+from torchsim.trajectory import TorchSimTrajectory, TrajectoryReporter
+
 
 trajectory_file = "lj_trajectory.h5md"
 # report potential energy every 10 steps and kinetic energy every 20 steps
@@ -151,8 +152,9 @@ for filename in filenames:
 
 ### basic mace example with optimization
 
-from torchsim.runners import optimize
 from torchsim.optimizers import fire
+from torchsim.runners import optimize
+
 
 systems = [si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell]
 
@@ -165,9 +167,10 @@ final_state = optimize(
 
 ### basic mace example with custom convergence function
 
-from torchsim.runners import optimize
 from torchsim.optimizers import fire
+from torchsim.runners import optimize
 from torchsim.units import MetalUnits
+
 
 systems = [si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell]
 
@@ -194,7 +197,9 @@ final_state = optimize(
 ### basic mace example with pymatgen
 
 from pymatgen.core import Structure
+
 from torchsim.runners import state_to_structures
+
 
 lattice = [[5.43, 0, 0], [0, 5.43, 0], [0, 0, 5.43]]
 species = ["Si"] * 8

@@ -2,8 +2,8 @@
 import numpy as np
 import torch
 
-from torchsim.unbatched_integrators import MDState
 from torchsim.trajectory import TorchSimTrajectory
+from torchsim.unbatched_integrators import MDState
 
 
 # Create test data

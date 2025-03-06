@@ -1,9 +1,8 @@
 import torch
 
-# Import torchsim models and integrators
-from torchsim.unbatched_integrators import nve
 from torchsim.models.lennard_jones import UnbatchedLennardJonesModel
 from torchsim.quantities import kinetic_energy
+from torchsim.unbatched_integrators import nve
 from torchsim.units import MetalUnits as Units
 
 

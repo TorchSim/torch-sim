@@ -3,6 +3,7 @@ import torch
 from torchsim.models.soft_sphere import SoftSphereModel
 from torchsim.unbatched_optimizers import fire
 
+
 # Set up the device and data type
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float64

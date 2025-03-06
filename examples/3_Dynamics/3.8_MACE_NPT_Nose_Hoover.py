@@ -1,20 +1,18 @@
-import time
 import torch
 from ase.build import bulk
+from mace.calculators.foundations_models import mace_mp
 
-# Import torchsim models and integrators
-from torchsim.unbatched_integrators import (
-    nvt_nose_hoover,
-    nvt_nose_hoover_invariant,
-    npt_nose_hoover,
-    npt_nose_hoover_invariant,
-)
 from torchsim.models.mace import UnbatchedMaceModel
 from torchsim.neighbors import vesin_nl_ts
-from torchsim.quantities import temperature, kinetic_energy
+from torchsim.quantities import kinetic_energy, temperature
+from torchsim.unbatched_integrators import (
+    npt_nose_hoover,
+    npt_nose_hoover_invariant,
+    nvt_nose_hoover,
+    nvt_nose_hoover_invariant,
+)
 from torchsim.units import MetalUnits as Units
 
-from mace.calculators.foundations_models import mace_mp
 
 # Set device and data type
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

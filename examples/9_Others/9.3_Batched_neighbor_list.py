@@ -1,8 +1,10 @@
-from ase.build import bulk
-from torchsim.runners import atoms_to_state
-from torchsim.neighbors import torch_nl_linked_cell, torch_nl_n2
-from torchsim.transforms import compute_cell_shifts, compute_distances_with_cell_shifts
 import torch
+from ase.build import bulk
+
+from torchsim.neighbors import torch_nl_linked_cell, torch_nl_n2
+from torchsim.runners import atoms_to_state
+from torchsim.transforms import compute_cell_shifts, compute_distances_with_cell_shifts
+
 
 atoms_list = [bulk("Si", "diamond", a=5.43), bulk("Ge", "diamond", a=5.65)]
 state = atoms_to_state(atoms_list, device="cpu", dtype=torch.float32)

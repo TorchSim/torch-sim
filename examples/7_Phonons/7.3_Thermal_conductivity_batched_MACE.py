@@ -6,17 +6,19 @@
 # ]
 # ///
 import time
+
 import numpy as np
 import torch
+from mace.calculators.foundations_models import mace_mp
 from phono3py import Phono3py
 from phono3py.interface.phono3py_yaml import Phono3pyYaml
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 from pymatgen.io.phonopy import get_phonopy_structure
+
 from torchsim.models.mace import MaceModel
 from torchsim.neighbors import vesin_nl_ts
 
-from mace.calculators.foundations_models import mace_mp
 
 start_time = time.perf_counter()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

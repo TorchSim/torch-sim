@@ -8,11 +8,10 @@ import torch
 from ase.build import bulk
 from mace.tools import atomic_numbers_to_indices, to_one_hot
 
-from torchsim.optimizers import batched_unit_cell_gradient_descent
 from torchsim.models.mace import MaceModel
 from torchsim.neighbors import vesin_nl_ts
 from torchsim.optimizers import batched_unit_cell_gradient_descent
-from mace.tools import atomic_numbers_to_indices, to_one_hot
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32

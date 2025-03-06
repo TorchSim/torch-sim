@@ -1,10 +1,10 @@
 import torch
 
-# Import torchsim models and integrators
-from torchsim.unbatched_integrators import npt_nose_hoover, npt_nose_hoover_invariant
 from torchsim.models.lennard_jones import UnbatchedLennardJonesModel
 from torchsim.quantities import kinetic_energy, temperature
+from torchsim.unbatched_integrators import npt_nose_hoover, npt_nose_hoover_invariant
 from torchsim.units import MetalUnits as Units
+
 
 # Set up the device and data type
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

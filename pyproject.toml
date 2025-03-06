@@ -62,7 +62,6 @@ output-format = "concise"
 
 [tool.ruff.lint]
 select = ["ALL"]
-exclude = ["examples/*"]
 ignore = [
     "ANN002",  # Checks that *args arguments have type annotations.
     "ANN003",  # Checks that **kwargs arguments have type annotations.

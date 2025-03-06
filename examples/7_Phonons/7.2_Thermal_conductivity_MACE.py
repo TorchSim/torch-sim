@@ -3,18 +3,20 @@
 #     "mace-torch>=0.3.10",
 # ]
 # ///
+import time
+
 import numpy as np
 import torch
-import time
+from mace.calculators.foundations_models import mace_mp
 from phono3py import Phono3py
 from phono3py.interface.phono3py_yaml import Phono3pyYaml
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 from pymatgen.io.phonopy import get_phonopy_structure
+
 from torchsim.models.mace import UnbatchedMaceModel
 from torchsim.neighbors import vesin_nl_ts
 
-from mace.calculators.foundations_models import mace_mp
 
 # Set device and data type
 start_time = time.perf_counter()
@@ -59,7 +61,7 @@ print(f"Model loading time: {model_loading_time}s")
 
 # Calculate forces for each displacement
 set_of_forces: list[np.ndarray] = []
-for i, displacement in enumerate(ph3.supercells_with_displacements):
+for displacement in ph3.supercells_with_displacements:
     positions = torch.tensor(displacement.get_positions(), device=device, dtype=dtype)
     cell = torch.tensor(displacement.get_cell(), device=device, dtype=dtype)
     atomic_numbers = torch.tensor(displacement.numbers, device=device, dtype=torch.int)

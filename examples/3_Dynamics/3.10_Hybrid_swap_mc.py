@@ -1,14 +1,16 @@
 # %%
-from pymatgen.core import Structure
+from dataclasses import dataclass
+
 import torch
+from mace.calculators.foundations_models import mace_mp
+from pymatgen.core import Structure
+
+from torchsim.integrators import MDState, nvt_langevin
+from torchsim.models.mace import MaceModel
+from torchsim.monte_carlo import swap_monte_carlo
 from torchsim.runners import structures_to_state
 from torchsim.units import MetalUnits
-from torchsim.models.mace import MaceModel
-from torchsim.integrators import MDState
-from torchsim.integrators import nvt_langevin
-from torchsim.monte_carlo import swap_monte_carlo
-from dataclasses import dataclass
-from mace.calculators.foundations_models import mace_mp
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float64

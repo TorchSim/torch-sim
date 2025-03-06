@@ -1,14 +1,13 @@
 import numpy as np
 import torch
 from ase.build import bulk
-
+from mace.calculators.foundations_models import mace_mp
 
 from torchsim.models.mace import UnbatchedMaceModel
 from torchsim.neighbors import vesin_nl_ts
 from torchsim.unbatched_optimizers import unit_cell_fire
 from torchsim.units import UnitConversion
 
-from mace.calculators.foundations_models import mace_mp
 
 # Set device and data type
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

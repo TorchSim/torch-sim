@@ -10,6 +10,7 @@ from ase.build import bulk
 from torchsim.models.mattersim.m3gnet import M3GnetModel
 from torchsim.models.mattersim.utils.build import batch_to_dict, build_dataloader
 
+
 # Set device and data type
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
