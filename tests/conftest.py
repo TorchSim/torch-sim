@@ -65,47 +65,9 @@ def si_double_base_state(si_atoms: Atoms, device: torch.device) -> Any:
 @pytest.fixture
 def ar_base_state(device: torch.device) -> BaseState:
     """Create a face-centered cubic (FCC) Argon structure."""
-    # 5.26 Å is a typical lattice constant for Ar
-    a = 5.26  # Lattice constant
-    N = 4  # Supercell size
-    n_atoms = 4 * N * N * N  # Total number of atoms (4 atoms per unit cell)
-    dtype = torch.float64
-
-    # Create positions tensor directly
-    positions = torch.zeros((n_atoms, 3), device=device, dtype=dtype)
-    idx = 0
-    for i in range(N):
-        for j in range(N):
-            for k in range(N):
-                # Add base FCC positions with offset
-                positions[idx] = torch.tensor([i, j, k], device=device, dtype=dtype) * a
-                positions[idx + 1] = (
-                    torch.tensor([i, j + 0.5, k + 0.5], device=device, dtype=dtype) * a
-                )
-                positions[idx + 2] = (
-                    torch.tensor([i + 0.5, j, k + 0.5], device=device, dtype=dtype) * a
-                )
-                positions[idx + 3] = (
-                    torch.tensor([i + 0.5, j + 0.5, k], device=device, dtype=dtype) * a
-                )
-                idx += 4
-
-    # Create cell tensor with shape (1, 3, 3) to match atoms_to_state format
-    cell = torch.eye(3, device=device, dtype=dtype).unsqueeze(0) * (N * a)
-
-    # Create batch indices
-    batch = torch.zeros(n_atoms, device=device, dtype=torch.long)
-
-    return BaseState(
-        positions=positions,
-        masses=torch.full((n_atoms,), 39.95, device=device, dtype=dtype),  # Ar mass
-        cell=cell,  # Cubic cell
-        pbc=True,
-        atomic_numbers=torch.full(
-            (n_atoms,), 18, device=device, dtype=torch.long
-        ),  # Ar atomic number
-        batch=batch,
-    )
+    # Create FCC Ar using ASE, with 4x4x4 supercell
+    ar_atoms = bulk("Ar", "fcc", a=5.26, cubic=True).repeat([2, 2, 2])
+    return atoms_to_state(ar_atoms, device, torch.float64)
 
 
 @pytest.fixture

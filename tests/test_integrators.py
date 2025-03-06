@@ -1,6 +1,5 @@
 from typing import Any
 
-import pytest
 import torch
 
 from torchsim.integrators import batched_initialize_momenta, nve, nvt_langevin
@@ -9,23 +8,6 @@ from torchsim.quantities import temperature
 from torchsim.state import BaseState, concatenate_states, slice_substate
 from torchsim.unbatched_integrators import MDState, initialize_momenta
 from torchsim.units import MetalUnits
-
-
-@pytest.fixture
-def ar_double_base_state(ar_base_state: BaseState) -> BaseState:
-    """Create a basic state from ar_fcc_base_state."""
-    batch = torch.repeat_interleave(torch.arange(2), ar_base_state.positions.shape[0])
-
-    return BaseState(
-        positions=torch.cat([ar_base_state.positions, ar_base_state.positions], dim=0),
-        cell=torch.cat([ar_base_state.cell, ar_base_state.cell], dim=0),
-        masses=torch.cat([ar_base_state.masses, ar_base_state.masses], dim=0),
-        atomic_numbers=torch.cat(
-            [ar_base_state.atomic_numbers, ar_base_state.atomic_numbers], dim=0
-        ),
-        batch=batch,
-        pbc=ar_base_state.pbc,
-    )
 
 
 def batched_initialize_momenta_loop(

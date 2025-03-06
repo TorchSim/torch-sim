@@ -2,6 +2,7 @@
 
 import pytest
 import torch
+from ase.build import bulk
 
 from torchsim.models.interface import validate_model_outputs
 from torchsim.models.lennard_jones import (
@@ -9,6 +10,7 @@ from torchsim.models.lennard_jones import (
     lennard_jones_pair,
     lennard_jones_pair_force,
 )
+from torchsim.runners import atoms_to_state
 from torchsim.state import BaseState
 
 
@@ -130,9 +132,21 @@ def test_lennard_jones_force_energy_consistency() -> None:
     assert torch.allclose(force_direct, force_from_grad, rtol=1e-4, atol=1e-4)
 
 
+# NOTE: This is a large system to test the neighbor list and direct calculation
+#       are consistent. Direct calculation uses minimal image convention, which
+#       is not used in the neighbor list calculation. So to get correct results,
+#       we need a system that is large enough (2*cutoff).
+@pytest.fixture
+def ar_base_state_large(device: torch.device) -> BaseState:
+    """Create a face-centered cubic (FCC) Argon structure."""
+    # Create FCC Ar using ASE, with 4x4x4 supercell
+    ar_atoms = bulk("Ar", "fcc", a=5.26, cubic=True).repeat([4, 4, 4])
+    return atoms_to_state(ar_atoms, device, torch.float64)
+
+
 @pytest.fixture
 def calculators(
-    ar_base_state: BaseState,
+    ar_base_state_large: BaseState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create both neighbor list and direct calculators with Argon parameters."""
     calc_params = {
@@ -152,7 +166,7 @@ def calculators(
         use_neighbor_list=False, cutoff=cutoff, **calc_params
     )
 
-    positions, cell = ar_base_state.positions, ar_base_state.cell.squeeze(0)
+    positions, cell = ar_base_state_large.positions, ar_base_state_large.cell.squeeze(0)
     return calc_nl(positions, cell), calc_direct(positions, cell)
 
 
