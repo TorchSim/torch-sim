@@ -159,6 +159,4 @@ jobs:
         uses: astral-sh/setup-uv@v2
 
       - name: Run example
-        run: |
-          uv pip install . --system
-          uv run ${{ matrix.example }}
+        run: uv run --with . ${{ matrix.example }}
