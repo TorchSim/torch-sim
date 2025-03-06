@@ -63,7 +63,7 @@ def si_double_base_state(si_atoms: Atoms, device: torch.device) -> Any:
 
 
 @pytest.fixture
-def ar_fcc_base_state(device: torch.device) -> BaseState:
+def ar_base_state(device: torch.device) -> BaseState:
     """Create a face-centered cubic (FCC) Argon structure."""
     # 5.26 Å is a typical lattice constant for Ar
     a = 5.26  # Lattice constant
@@ -109,11 +109,9 @@ def ar_fcc_base_state(device: torch.device) -> BaseState:
 
 
 @pytest.fixture
-def ar_fcc_batched_base_state(ar_fcc_base_state: BaseState) -> BaseState:
+def ar_double_base_state(ar_base_state: BaseState) -> BaseState:
     """Create a batched state from ar_fcc_base_state."""
-    return concatenate_states(
-        [ar_fcc_base_state, ar_fcc_base_state], device=ar_fcc_base_state.device
-    )
+    return concatenate_states([ar_base_state, ar_base_state], device=ar_base_state.device)
 
 
 @pytest.fixture

@@ -12,21 +12,19 @@ from torchsim.units import MetalUnits
 
 
 @pytest.fixture
-def ar_fcc_batched_base_state(ar_fcc_base_state: BaseState) -> BaseState:
+def ar_double_base_state(ar_base_state: BaseState) -> BaseState:
     """Create a basic state from ar_fcc_base_state."""
-    batch = torch.repeat_interleave(torch.arange(2), ar_fcc_base_state.positions.shape[0])
+    batch = torch.repeat_interleave(torch.arange(2), ar_base_state.positions.shape[0])
 
     return BaseState(
-        positions=torch.cat(
-            [ar_fcc_base_state.positions, ar_fcc_base_state.positions], dim=0
-        ),
-        cell=torch.cat([ar_fcc_base_state.cell, ar_fcc_base_state.cell], dim=0),
-        masses=torch.cat([ar_fcc_base_state.masses, ar_fcc_base_state.masses], dim=0),
+        positions=torch.cat([ar_base_state.positions, ar_base_state.positions], dim=0),
+        cell=torch.cat([ar_base_state.cell, ar_base_state.cell], dim=0),
+        masses=torch.cat([ar_base_state.masses, ar_base_state.masses], dim=0),
         atomic_numbers=torch.cat(
-            [ar_fcc_base_state.atomic_numbers, ar_fcc_base_state.atomic_numbers], dim=0
+            [ar_base_state.atomic_numbers, ar_base_state.atomic_numbers], dim=0
         ),
         batch=batch,
-        pbc=ar_fcc_base_state.pbc,
+        pbc=ar_base_state.pbc,
     )
 
 
@@ -189,7 +187,7 @@ def test_batched_initialize_momenta():
 
 
 def test_nvt_langevin(
-    ar_fcc_batched_base_state: BaseState,
+    ar_double_base_state: BaseState,
     lj_calculator: LennardJonesModel,
     device: torch.device,
 ) -> None:
@@ -206,7 +204,7 @@ def test_nvt_langevin(
     )
 
     # Run dynamics for several steps
-    state = init_fn(state=ar_fcc_batched_base_state, seed=42)
+    state = init_fn(state=ar_double_base_state, seed=42)
     energies = []
     temperatures = []
     for _ in range(n_steps):
@@ -252,7 +250,7 @@ def test_nvt_langevin(
 
 
 def test_nve(
-    ar_fcc_batched_base_state: BaseState,
+    ar_double_base_state: BaseState,
     lj_calculator: LennardJonesModel,
     device: torch.device,
 ):
@@ -263,7 +261,7 @@ def test_nve(
 
     # Initialize integrator
     nve_init, nve_update = nve(model=lj_calculator, dt=dt, kT=kT)
-    state = nve_init(state=ar_fcc_batched_base_state, seed=42)
+    state = nve_init(state=ar_double_base_state, seed=42)
 
     # Run dynamics for several steps
     energies = []
@@ -280,13 +278,13 @@ def test_nve(
 
 
 def test_compare_single_vs_batched_integrators(
-    ar_fcc_base_state: BaseState, lj_calculator: Any
+    ar_base_state: BaseState, lj_calculator: Any
 ) -> None:
     """Test that single and batched integrators give the same results."""
 
     initial_states = {
-        "single": ar_fcc_base_state,
-        "batched": concatenate_states([ar_fcc_base_state, ar_fcc_base_state]),
+        "single": ar_base_state,
+        "batched": concatenate_states([ar_base_state, ar_base_state]),
     }
 
     final_states = {}
@@ -305,13 +303,13 @@ def test_compare_single_vs_batched_integrators(
         final_states[state_name] = state
 
     # Check energy conservation
-    ar_fcc_single_state = final_states["single"]
-    ar_fcc_batched_state_0 = slice_substate(final_states["batched"], 0)
-    ar_fcc_batched_state_1 = slice_substate(final_states["batched"], 1)
+    ar_single_state = final_states["single"]
+    ar_batched_state_0 = slice_substate(final_states["batched"], 0)
+    ar_batched_state_1 = slice_substate(final_states["batched"], 1)
 
-    for final_state in [ar_fcc_batched_state_0, ar_fcc_batched_state_1]:
-        assert torch.allclose(ar_fcc_single_state.positions, final_state.positions)
-        assert torch.allclose(ar_fcc_single_state.momenta, final_state.momenta)
-        assert torch.allclose(ar_fcc_single_state.forces, final_state.forces)
-        assert torch.allclose(ar_fcc_single_state.masses, final_state.masses)
-        assert torch.allclose(ar_fcc_single_state.cell, final_state.cell)
+    for final_state in [ar_batched_state_0, ar_batched_state_1]:
+        assert torch.allclose(ar_single_state.positions, final_state.positions)
+        assert torch.allclose(ar_single_state.momenta, final_state.momenta)
+        assert torch.allclose(ar_single_state.forces, final_state.forces)
+        assert torch.allclose(ar_single_state.masses, final_state.masses)
+        assert torch.allclose(ar_single_state.cell, final_state.cell)

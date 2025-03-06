@@ -132,7 +132,7 @@ def test_lennard_jones_force_energy_consistency() -> None:
 
 @pytest.fixture
 def calculators(
-    ar_fcc_base_state: BaseState,
+    ar_base_state: BaseState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create both neighbor list and direct calculators with Argon parameters."""
     calc_params = {
@@ -152,7 +152,7 @@ def calculators(
         use_neighbor_list=False, cutoff=cutoff, **calc_params
     )
 
-    positions, cell = ar_fcc_base_state.positions, ar_fcc_base_state.cell.squeeze(0)
+    positions, cell = ar_base_state.positions, ar_base_state.cell.squeeze(0)
     return calc_nl(positions, cell), calc_direct(positions, cell)
 
 
