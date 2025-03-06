@@ -1,14 +1,19 @@
+"""This example demonstrates how to use the MACE model to compute the energy, forces, and
+stress of multiple systems at once.
+"""
+
 # Import dependencies
-import torch
 import numpy as np
+import torch
 from ase.build import bulk
+
+# Import MACE model from mace-mp
+from mace.calculators.foundations_models import mace_mp
 
 # Import torchsim models and neighbors list
 from torchsim.models.mace import MaceModel
 from torchsim.neighbors import vesin_nl_ts
 
-# Import MACE model from mace-mp
-from mace.calculators.foundations_models import mace_mp
 
 # Set device and data type
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -50,7 +55,7 @@ batched_model = MaceModel(
 # This will have shape (16, 3) which is concatenated from two 8 atom systems
 positions_numpy = np.concatenate([atoms.positions for atoms in atoms_list])
 
-# Then we stack cell vectors into a (2, 3, 3) array where the first index is batch dimension
+# Then we stack cell vectors into a (2, 3, 3) array where first index is batch dim
 cell_numpy = np.stack([atoms.cell.array for atoms in atoms_list])
 
 # Then we concatenate atomic numbers into a (16,) array
@@ -63,7 +68,8 @@ positions = torch.tensor(positions_numpy, device=device, dtype=dtype)
 cell = torch.tensor(cell_numpy, device=device, dtype=dtype)
 atomic_numbers = torch.tensor(atomic_numbers_numpy, device=device, dtype=torch.int)
 
-# Then we create a batch index array of shape (16,) which is 0 for first 8 atoms and 1 for last 8 atoms
+# Then we create a batch index array of shape (16,) which is 0 for
+# first 8 atoms and 1 for last 8 atoms
 atoms_per_batch = torch.tensor(
     [len(atoms) for atoms in atoms_list], device=device, dtype=torch.int
 )
@@ -91,7 +97,7 @@ print(f"Forces: {results['forces'].shape}")
 # The stress has shape (n_batches, 3, 3) same as cell
 print(f"Stress: {results['stress'].shape}")
 
-# Check if the energy, forces, and stress are the same for the Si system across the batch
+# Check if the energy, forces, and stress are the same for the systems across the batch
 print(torch.max(torch.abs(results["energy"][0] - results["energy"][1])))
 print(torch.max(torch.abs(results["forces"][0] - results["forces"][1])))
 print(torch.max(torch.abs(results["stress"][0] - results["stress"][1])))

@@ -1,13 +1,18 @@
+"""This example demonstrates how to use the Lennard-Jones model to compute the energy,
+forces, and stress of a system.
+"""
+
 # Import dependencies
 import torch
 
 # Import torchsim models
 from torchsim.models.lennard_jones import UnbatchedLennardJonesModel
 
+
 # Set up the device and data type
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
-PERIODIC = True  # Flag to use periodic boundary conditions
+PERIODIC = True
 
 # Create face-centered cubic (FCC) Argon
 # 5.26 Å is a typical lattice constant for Ar

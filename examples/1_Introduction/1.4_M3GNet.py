@@ -1,3 +1,7 @@
+"""This example demonstrates how to use the M3GNet model
+to compute the energy, forces, and stress of a system.
+"""
+
 # Import dependencies
 import torch
 from ase.build import bulk
@@ -5,6 +9,7 @@ from ase.build import bulk
 # Import torchsim models and utilities
 from torchsim.models.mattersim.m3gnet import M3GnetModel
 from torchsim.models.mattersim.utils.build import batch_to_dict, build_dataloader
+
 
 # Set device and data type
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -42,7 +47,7 @@ dataloader = build_dataloader(
 for input_dict in dataloader:
     results = model(batch_to_dict(input_dict))
 
-# Print results
+# Print shapes
 print(f"Energy: {results['energy'].shape}")
 print(f"Forces: {results['forces'].shape}")
 print(f"Stress: {results['stress'].shape}")
@@ -59,11 +64,14 @@ print(results["stress"])
 if len(atoms_batch) > 1:
     print("Batch consistency check:")
     print(
-        f"Energy diff: {torch.max(torch.abs(results['energy'][0] - results['energy'][1]))}"
+        "Energy diff: "
+        f"{torch.max(torch.abs(results['energy'][0] - results['energy'][1]))}"
     )
     print(
-        f"Forces diff: {torch.max(torch.abs(results['forces'][0] - results['forces'][1]))}"
+        "Forces diff: "
+        f"{torch.max(torch.abs(results['forces'][0] - results['forces'][1]))}"
     )
     print(
-        f"Stress diff: {torch.max(torch.abs(results['stress'][0] - results['stress'][1]))}"
+        "Stress diff: "
+        f"{torch.max(torch.abs(results['stress'][0] - results['stress'][1]))}"
     )

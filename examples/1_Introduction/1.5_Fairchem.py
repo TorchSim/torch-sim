@@ -1,3 +1,7 @@
+"""This example demonstrates how to use the FairChem model
+to compute the energy, forces, and stress of a system.
+"""
+
 import torch
 from ase.build import bulk
 
@@ -37,10 +41,12 @@ print(f"Cell: {cell.shape}")
 
 results = batched_model(positions_list, cell_list)
 
+# Print shapes
 print(results["energy"].shape)
 print(results["forces"].shape)
 print(results["stress"].shape)
 
+# Print the actual values
 print(f"Energy: {results['energy']}")
 print(f"Forces: {results['forces']}")
 print(f"Stress: {results['stress']}")

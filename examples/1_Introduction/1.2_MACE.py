@@ -1,13 +1,18 @@
+"""This example demonstrates how to use the MACE model to
+compute the energy, forces, and stress of a system.
+"""
+
 # Import dependencies
 import torch
 from ase.build import bulk
+
+# Import MACE model from mace-mp
+from mace.calculators.foundations_models import mace_mp
 
 # Import torchsim models and neighbors list
 from torchsim.models.mace import UnbatchedMaceModel
 from torchsim.neighbors import vesin_nl_ts
 
-# Import MACE model from mace-mp
-from mace.calculators.foundations_models import mace_mp
 
 # Set device and data type
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -48,7 +53,7 @@ positions = torch.tensor(si_dc.positions, device=device, dtype=dtype)
 cell = torch.tensor(si_dc.cell.array, device=device, dtype=dtype)
 atomic_numbers = torch.tensor(si_dc.get_atomic_numbers(), device=device, dtype=torch.int)
 
-# Print shapes for verification
+# Print shapes
 print(f"Positions: {positions.shape}")
 print(f"Cell: {cell.shape}")
 print(f"Atomic numbers: {atomic_numbers.shape}")
