@@ -9,6 +9,7 @@ criteria, and logging.
 # ]
 # ///
 
+import numpy as np
 import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
@@ -167,9 +168,9 @@ final_state = optimize(
 
 systems = [si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell]
 
+rng = np.random.default_rng()
 for system in systems:
-    system.positions += torch.randn_like(system.positions) * 0.01
-
+    system.positions += rng.random(system.positions.shape) * 0.01
 
 final_state = optimize(
     system=systems,

@@ -105,20 +105,23 @@ def get_unit_cell_relaxed_structure(
     # Make sure to compute stress
     model.compute_stress = True
 
+    StateDict = {
+        "positions": positions,
+        "masses": torch.tensor(atomic_masses, device=device, dtype=dtype),
+        "cell": cell,
+        "pbc": PERIODIC,
+        "atomic_numbers": atomic_numbers,
+    }
     results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
     init_energy = results["energy"].item()
     init_stress = results["stress"]
     init_pressure = (-torch.trace(init_stress) / 3.0).item()
     print(f"Initial energy: {init_energy} eV, Initial pressure: {init_pressure} eV/A^3")
 
-    state, unit_cell_fire_update = unit_cell_fire(
+    unit_cell_fire_init, unit_cell_fire_update = unit_cell_fire(
         model=model,
-        positions=positions,
-        masses=torch.tensor(atomic_masses, device=device, dtype=dtype),
-        cell=cell,
-        pbc=PERIODIC,
-        atomic_numbers=atomic_numbers,
     )
+    state = unit_cell_fire_init(StateDict)
 
     def step_fn(
         step: int, state: UnitCellFIREState, logger: dict
@@ -268,17 +271,20 @@ max_optim_steps = (
     1 if os.getenv("CI") else 100
 )  # Number of optimization steps for unit cell relaxation
 
-state, nvt_nose_hoover_update = nvt_nose_hoover(
+nvt_nose_hoover_init, nvt_nose_hoover_update = nvt_nose_hoover(
     model=model,
-    positions=structure.positions,
-    masses=torch.tensor(atomic_masses, device=device, dtype=dtype),
-    cell=cell,
-    pbc=PERIODIC,
     kT=T_high * Units.temperature,
     dt=dt,
-    seed=1,
-    atomic_numbers=atomic_numbers,
 )
+
+StateDict = {
+    "positions": structure.positions,
+    "masses": torch.tensor(atomic_masses, device=device, dtype=dtype),
+    "cell": cell,
+    "pbc": PERIODIC,
+    "atomic_numbers": atomic_numbers,
+}
+state = nvt_nose_hoover_init(StateDict)
 
 logger = {
     "T": torch.zeros((simulation_steps, 1), device=device, dtype=dtype),
@@ -304,8 +310,8 @@ def step_fn(
 # Run NVT-MD with the melt-quench-equilibrate temperature profile
 for step in range(simulation_steps):
     state, logger = step_fn(step, state, logger)
-    temp, enthalpy = logger["T"][step].item(), logger["H"][step].item()
-    print(f"Step {step}: Temperature: {temp} K: H: {enthalpy} eV")
+    temp, invariant = logger["T"][step].item(), logger["H"][step].item()
+    print(f"Step {step}: Temperature: {temp:.4f} K: H: {invariant:.4f} eV")
 
 print(
     f"Amorphous structure is ready: positions\n = "

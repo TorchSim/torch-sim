@@ -125,7 +125,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
         self.alpha = torch.tensor(alpha, dtype=dtype, device=self.device)
 
     def forward(
-        self, positions: torch.Tensor, cell: torch.Tensor | None = None
+        self, positions: torch.Tensor, cell: torch.Tensor | None = None, **_
     ) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single system."""
         positions = positions.to(device=self.device, dtype=self.dtype)

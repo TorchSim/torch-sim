@@ -293,15 +293,15 @@ def random_packed_structure(
         atomic_numbers = torch.ones_like(positions_cart, device=device, dtype=torch.int)
 
         # Set up FIRE optimizer with unit masses
-        state = FIREState(
-            positions=positions_cart,
-            masses=torch.ones(N_atoms, device=device, dtype=dtype),
-            atomic_numbers=atomic_numbers,
-            cell=cell,
-            pbc=True,
-        )
-        state_init_fn, fire_update = fire(model=model)
-        state = state_init_fn(state)
+        state = {
+            "positions": positions_cart,
+            "masses": torch.ones(N_atoms, device=device, dtype=dtype),
+            "atomic_numbers": atomic_numbers,
+            "cell": cell,
+            "pbc": True,
+        }
+        fire_init, fire_update = fire(model=model)
+        state = fire_init(state)
         print(f"Initial energy: {state.energy.item():.4f}")
         # Run FIRE optimization until convergence or max iterations
         for _step in range(max_iter):
@@ -422,15 +422,16 @@ def random_packed_structure_multi(
         # Dummy atomic numbers
         atomic_numbers = torch.ones_like(positions_cart, device=device, dtype=torch.int)
 
+        StateDict = {
+            "positions": positions_cart,
+            "masses": torch.ones(N_atoms, device=device, dtype=dtype),
+            "atomic_numbers": atomic_numbers,
+            "cell": cell,
+            "pbc": True,
+        }
         # Set up FIRE optimizer with unit masses for all atoms
-        state_init_fn, fire_update = fire(model=model)
-        state = state_init_fn(
-            positions=positions_cart,
-            masses=torch.ones(N_atoms, device=device, dtype=dtype),
-            atomic_numbers=atomic_numbers,
-            cell=cell,
-            pbc=True,
-        )
+        fire_init, fire_update = fire(model=model)
+        state = fire_init(StateDict)
         print(f"Initial energy: {state.energy.item():.4f}")
         # Run FIRE optimization until convergence or max iterations
         for _step in range(max_iter):
