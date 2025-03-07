@@ -24,7 +24,11 @@ from torchsim.models.mace import UnbatchedMaceModel
 from torchsim.neighbors import vesin_nl_ts
 from torchsim.quantities import temperature
 from torchsim.transforms import get_fractional_coordinates
-from torchsim.unbatched_integrators import nvt_nose_hoover, nvt_nose_hoover_invariant
+from torchsim.unbatched_integrators import (
+    NVTNoseHooverState,
+    nvt_nose_hoover,
+    nvt_nose_hoover_invariant,
+)
 from torchsim.unbatched_optimizers import (
     FIREState,
     UnitCellFIREState,
@@ -70,11 +74,11 @@ def get_unit_cell_relaxed_structure(
     """Relax both atomic positions and cell parameters using FIRE algorithm.
 
     This function performs geometry optimization of both atomic positions and unit cell
-    parameters simultaneously. It uses the Fast Inertial Relaxation Engine (FIRE) algorithm
+    parameters simultaneously. Uses the Fast Inertial Relaxation Engine (FIRE) algorithm
     to minimize forces on atoms and stresses on the cell.
 
     Args:
-        fractional_positions: Atomic positions in fractional coordinates with shape [n_atoms, 3]
+        fractional_positions: Fractional atomic coordinates with shape [n_atoms, 3]
         cell: Unit cell tensor with shape [3, 3] containing lattice vectors
         species: List of atomic species symbols
         model: Model to compute energies, forces, and stresses
@@ -82,7 +86,7 @@ def get_unit_cell_relaxed_structure(
 
     Returns:
         tuple containing:
-            - UnitCellFIREState: Final state containing relaxed positions, cell and other quantities
+            - UnitCellFIREState: Final state containing relaxed positions, cell and more
             - dict: Logger with energy and stress trajectories
             - float: Final energy in eV
             - float: Final pressure in eV/Å³
@@ -101,12 +105,10 @@ def get_unit_cell_relaxed_structure(
     model.compute_stress = True
 
     results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
-    Initial_energy = results["energy"]
-    Initial_stress = results["stress"]
-    Initial_pressure = -torch.trace(Initial_stress) / 3.0
-    print(
-        f"Initial energy: {Initial_energy.item()} eV, Initial pressure: {Initial_pressure.item()} eV/A^3"
-    )
+    init_energy = results["energy"].item()
+    init_stress = results["stress"]
+    init_pressure = (-torch.trace(init_stress) / 3.0).item()
+    print(f"Initial energy: {init_energy} eV, Initial pressure: {init_pressure} eV/A^3")
 
     state, unit_cell_fire_update = unit_cell_fire(
         model=model,
@@ -117,7 +119,9 @@ def get_unit_cell_relaxed_structure(
         atomic_numbers=atomic_numbers,
     )
 
-    def step_fn(step, state, logger):
+    def step_fn(
+        step: int, state: UnitCellFIREState, logger: dict
+    ) -> tuple[UnitCellFIREState, dict]:
         logger["energy"][step] = state.energy
         logger["stress"][step] = state.stress
         state = unit_cell_fire_update(state)
@@ -125,19 +129,19 @@ def get_unit_cell_relaxed_structure(
 
     for step in range(max_iter):
         state, logger = step_fn(step, state, logger)
-        # print(f"Step {i}: Energy = {logger['energy'][i].item()} eV: Pressure = {-torch.trace(logger['stress'][i]) / 3.0} eV/A^3")
+        # energy, stress = logger["energy"][step].item(), logger["stress"][step]
+        # pressure = -torch.trace(stress) / 3.0
+        # print(f"Step {step}: Energy = {energy} eV: Pressure = {pressure} eV/A^3")
 
     # Get final results
     final_results = model(
         positions=state.positions, cell=state.cell, atomic_numbers=atomic_numbers
     )
 
-    final_energy = final_results["energy"]
+    final_energy = final_results["energy"].item()
     final_stress = final_results["stress"]
-    final_pressure = -torch.trace(final_stress) / 3.0
-    print(
-        f"Final energy: {final_energy.item()} eV, Final pressure: {final_pressure.item()} eV/A^3"
-    )
+    final_pressure = (-torch.trace(final_stress) / 3.0).item()
+    print(f"Final energy: {final_energy} eV, Final pressure: {final_pressure} eV/A^3")
     return state, logger, final_energy, final_pressure
 
 
@@ -150,12 +154,11 @@ def get_relaxed_structure(
 ) -> tuple[FIREState, dict]:
     """Relax atomic positions at fixed cell parameters using FIRE algorithm.
 
-    This function performs geometry optimization of atomic positions while keeping the unit
-    cell fixed. It uses the Fast Inertial Relaxation Engine (FIRE) algorithm to minimize
-    forces on atoms.
+    Does geometry optimization of atomic positions while keeping the unit cell fixed.
+    Uses the Fast Inertial Relaxation Engine (FIRE) algorithm to minimize forces on atoms.
 
     Args:
-        fractional_positions: Atomic positions in fractional coordinates with shape [n_atoms, 3]
+        fractional_positions: Fractional atomic coordinates with shape [n_atoms, 3]
         cell: Unit cell tensor with shape [3, 3] containing lattice vectors
         species: List of atomic species symbols
         model: Model to compute energies, forces, and stresses
@@ -203,12 +206,10 @@ def get_relaxed_structure(
         positions=state.positions, cell=state.cell, atomic_numbers=atomic_numbers
     )
 
-    final_energy = final_results["energy"]
+    final_energy = final_results["energy"].item()
     final_stress = final_results["stress"]
-    final_pressure = -torch.trace(final_stress) / 3.0
-    print(
-        f"Final energy: {final_energy.item()} eV, Final pressure: {final_pressure.item()} eV/A^3"
-    )
+    final_pressure = (-torch.trace(final_stress) / 3.0).item()
+    print(f"Final energy: {final_energy} eV, Final pressure: {final_pressure} eV/A^3")
     return state, logger, final_energy, final_pressure
 
 
@@ -280,7 +281,10 @@ logger = {
 }
 
 
-def step_fn(step, state, logger):
+def step_fn(
+    step: int, state: NVTNoseHooverState, logger: dict
+) -> tuple[NVTNoseHooverState, dict]:
+    """Step function for NVT-MD with Nose-Hoover thermostat."""
     current_temp = get_target_temperature(step, equi_steps, cool_steps, T_high, T_low)
     logger["T"][step] = (
         temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
@@ -295,12 +299,12 @@ def step_fn(step, state, logger):
 # Run NVT-MD with the melt-quench-equilibrate temperature profile
 for step in range(simulation_steps):
     state, logger = step_fn(step, state, logger)
-    print(
-        f"Step {step}: Temperature: {logger['T'][step].item()} K: H: {logger['H'][step].item()} eV"
-    )
+    temp, enthalpy = logger["T"][step].item(), logger["H"][step].item()
+    print(f"Step {step}: Temperature: {temp} K: H: {enthalpy} eV")
 
 print(
-    f"Amorphous structure is ready: positions\n = {state.positions}\ncell\n = {state.cell}\nspecies = {species}"
+    f"Amorphous structure is ready: positions\n = "
+    f"{state.positions}\ncell\n = {state.cell}\nspecies = {species}"
 )
 
 # Convert positions to fractional coordinates

@@ -1,3 +1,5 @@
+"""Batched neighbor list."""
+
 import torch
 from ase.build import bulk
 

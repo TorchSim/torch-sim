@@ -17,7 +17,7 @@ from torchsim.models.lennard_jones import lennard_jones_pair, lennard_jones_pair
 torch.set_default_tensor_type(torch.DoubleTensor)
 # Set simulation parameters
 n_steps = 10000
-kT = 0.722  # Temperature in energy units
+kT = 0.722  # Temperature in energy units  # noqa: N816
 sigma = 1.0  # Length parameter
 epsilon = 1.0  # Energy parameter
 
@@ -37,6 +37,7 @@ mass = torch.ones(num_particles)
 def energy_fn(
     R: torch.Tensor, box: torch.Tensor, perturbation: torch.Tensor | None = None
 ) -> torch.Tensor:
+    """Calculate energy using a brute force method."""
     # Create displacement vectors for all pairs
     ri = R.unsqueeze(0)
     rj = R.unsqueeze(1)
@@ -62,6 +63,7 @@ def energy_fn(
 
 
 def force_fn(R: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
+    """Calculate forces using a brute force method."""
     # Create displacement vectors for all pairs
     ri = R.unsqueeze(0)
     rj = R.unsqueeze(1)
@@ -86,6 +88,7 @@ def force_fn(R: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
 
 
 def stress_fn(R: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
+    """Calculate stress using a brute force method."""
     # Create displacement vectors for all pairs
     ri = R.unsqueeze(0)
     rj = R.unsqueeze(1)
@@ -120,8 +123,7 @@ def stress_fn(R: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
 
 
 def stress_autograd_fn(R: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
-    # Ensure we track gradients
-
+    """Calculate stress using autograd."""
     # Get volume and dimension
     volume = torch.prod(box.diagonal())
     dim = R.shape[1]
@@ -130,11 +132,11 @@ def stress_autograd_fn(R: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
     eye = torch.eye(dim, device=R.device)
     zero = torch.zeros((dim, dim), device=R.device).requires_grad_(True)  # noqa: FBT003
 
-    def U(eps: torch.Tensor) -> torch.Tensor:
+    def internal_energy(eps: torch.Tensor) -> torch.Tensor:
         return energy_fn(R, box, perturbation=(eye + eps))
 
     # Calculate energy at zero strain
-    energy = U(zero)
+    energy = internal_energy(zero)
 
     stress = -torch.autograd.grad(energy, zero)[0]
 
@@ -151,7 +153,7 @@ def stress_autograd_fn_functorch(R: torch.Tensor, box: torch.Tensor) -> torch.Te
     eye = torch.eye(dim, device=R.device, dtype=torch.float64)
     zero = torch.zeros((dim, dim), device=R.device, dtype=torch.float64)
 
-    def U(eps: torch.Tensor, R: torch.Tensor) -> torch.Tensor:
+    def internal_energy(eps: torch.Tensor, R: torch.Tensor) -> torch.Tensor:
         # Apply strain perturbation to positions
         return energy_fn(R, box, perturbation=(eye + eps))
 
@@ -159,7 +161,7 @@ def stress_autograd_fn_functorch(R: torch.Tensor, box: torch.Tensor) -> torch.Te
     from torch.func import grad
 
     # Get gradient of U with respect to eps
-    grad_U = grad(U, argnums=0)  # take gradient with respect to first argument (eps)
+    grad_U = grad(internal_energy, argnums=0)  # take gradient w.r.t. first argument (eps)
 
     # Calculate stress using grad
     stress = -grad_U(zero, R)

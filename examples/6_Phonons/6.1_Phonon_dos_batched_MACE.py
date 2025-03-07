@@ -1,3 +1,5 @@
+"""Phonon DOS calculation with MACE in batched mode."""
+
 # /// script
 # dependencies = [
 #     "mace-torch>=0.3.10",
@@ -5,6 +7,7 @@
 #     "pymatviz[export-figs]>=0.15.1",
 # ]
 # ///
+
 import numpy as np
 import pymatviz as pmv
 import torch

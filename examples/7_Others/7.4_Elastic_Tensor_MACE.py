@@ -24,7 +24,7 @@ from torchsim.elastic import (
 )
 
 
-def get_bravais_type(
+def get_bravais_type(  # noqa: C901
     atoms: Atoms, symprec: float = 1e-5
 ) -> tuple[str, BravaisType, str, int]:
     """Determine Bravais lattice type from ASE Atoms object.
@@ -89,10 +89,8 @@ def get_bravais_type(
         bravais = BravaisType.HEXAGONAL
 
     elif 143 <= sg_nr <= 167:  # Trigonal
-        if sg_nr <= 148:  # R-centered
-            latt_type = "rhombohedral"
-        else:
-            latt_type = "primitive"
+        # R-centered
+        latt_type = "rhombohedral" if sg_nr <= 148 else "primitive"
         bravais = BravaisType.TRIGONAL
 
     elif 75 <= sg_nr <= 142:  # Tetragonal
@@ -244,6 +242,6 @@ for i, deformation in enumerate(deformations):
 
 C_ij, B_ij = get_elastic_tensor(state, deformations, stresses, ref_pressure, bravais_type)
 
-full_C_ij = get_full_elastic_tensor(C_ij, bravais_type)
+full_c_ij = get_full_elastic_tensor(C_ij, bravais_type)
 
-print(full_C_ij / units.GPa)
+print(full_c_ij / units.GPa)
