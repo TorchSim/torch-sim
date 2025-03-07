@@ -9,6 +9,7 @@
 jax-md https://github.com/jax-md/jax-md/blob/main/jax_md/a2c/a2c_workflow.py.
 """
 
+import os
 from collections import defaultdict
 
 import torch
@@ -253,15 +254,19 @@ structure = random_packed_structure(
     max_iter=100,
 )
 
-equi_steps = 2500  # MD steps for melt equilibration
-cool_steps = 2500  # MD steps for quenching equilibration
-final_steps = 2500  # MD steps for amorphous phase equilibration
+equi_steps = 25 if os.getenv("CI") else 2500  # MD steps for melt equilibration
+cool_steps = 25 if os.getenv("CI") else 2500  # MD steps for quenching equilibration
+final_steps = (
+    25 if os.getenv("CI") else 2500
+)  # MD steps for amorphous phase equilibration
 T_high = 2000  # Melt temperature
 T_low = 300  # Quench to this temperature
 dt = 0.002 * Units.time  # time step = 2fs
 tau = 40 * dt  # oscillation period in Nose-Hoover thermostat
 simulation_steps = equi_steps + cool_steps + final_steps
-max_optim_steps = 100  # Number of optimization steps for unit cell relaxation
+max_optim_steps = (
+    1 if os.getenv("CI") else 100
+)  # Number of optimization steps for unit cell relaxation
 
 state, nvt_nose_hoover_update = nvt_nose_hoover(
     model=model,

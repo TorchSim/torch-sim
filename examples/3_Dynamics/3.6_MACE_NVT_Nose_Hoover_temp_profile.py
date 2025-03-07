@@ -6,7 +6,7 @@ temperature profile.
 # dependencies = [
 #     "mace-torch>=0.3.10",
 #     "plotly>=6",
-#     "kaleido<=1.0.0rc0",
+#     "kaleido",
 # ]
 # ///
 

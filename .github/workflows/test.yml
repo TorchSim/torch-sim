@@ -146,7 +146,6 @@ jobs:
         run: |
           # Find all example scripts but exclude known failing ones
           EXAMPLES=$(find examples -name "*.py" | grep -v \
-            -e "examples/5_Workflow/5.1_a2c_silicon.py" \
             | jq -R -s -c 'split("\n")[:-1]')
           echo "examples=$EXAMPLES" >> $GITHUB_OUTPUT
 
