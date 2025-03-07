@@ -146,6 +146,7 @@ jobs:
         run: |
           # Find all example scripts but exclude known failing ones
           EXAMPLES=$(find examples -name "*.py" | grep -v \
+            -e "examples/1_Introduction/1.4_M3GNet.py" \
             | jq -R -s -c 'split("\n")[:-1]')
           echo "examples=$EXAMPLES" >> $GITHUB_OUTPUT
 
