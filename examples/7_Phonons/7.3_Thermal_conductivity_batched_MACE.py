@@ -1,3 +1,5 @@
+"""Calculate the thermal conductivity of a material using a batched MACE model."""
+
 # /// script
 # dependencies = [
 #     "mace-torch>=0.3.10",
