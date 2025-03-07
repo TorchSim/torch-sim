@@ -18,9 +18,7 @@ from torchsim.units import MetalUnits
 from torchsim.utils import calculate_momenta
 
 
-def test_nve_integrator(
-    ar_fcc_base_state: BaseState, unbatched_lj_calculator: Any
-) -> None:
+def test_nve_integrator(ar_base_state: BaseState, unbatched_lj_calculator: Any) -> None:
     """Test NVE integration conserves energy."""
     # Initialize integrator
     kT = torch.tensor(100.0) * MetalUnits.temperature  # Temperature in K
@@ -29,9 +27,9 @@ def test_nve_integrator(
     nve_init, nve_update = nve(model=unbatched_lj_calculator, dt=dt, kT=kT)
 
     # Remove batch dimension from cell
-    ar_fcc_base_state.cell = ar_fcc_base_state.cell.squeeze(0)
+    ar_base_state.cell = ar_base_state.cell.squeeze(0)
 
-    state = nve_init(state=ar_fcc_base_state)
+    state = nve_init(state=ar_base_state)
 
     # Run several steps
     energies = torch.zeros(20)
@@ -47,7 +45,7 @@ def test_nve_integrator(
 
 
 def test_nvt_langevin_integrator(
-    ar_fcc_base_state: BaseState, unbatched_lj_calculator: Any
+    ar_base_state: BaseState, unbatched_lj_calculator: Any
 ) -> None:
     """Test Langevin thermostat maintains target temperature."""
     # Initialize integrator
@@ -60,9 +58,9 @@ def test_nvt_langevin_integrator(
     )
 
     # Remove batch dimension from cell
-    ar_fcc_base_state.cell = ar_fcc_base_state.cell.squeeze(0)
+    ar_base_state.cell = ar_base_state.cell.squeeze(0)
 
-    state = langevin_init(state=ar_fcc_base_state, seed=42)
+    state = langevin_init(state=ar_base_state, seed=42)
     # Run equilibration
     temperatures = torch.zeros(500)
     for step in range(500):
@@ -76,14 +74,14 @@ def test_nvt_langevin_integrator(
 
 
 def test_nvt_nose_hoover_integrator(
-    ar_fcc_base_state: BaseState, unbatched_lj_calculator: Any
+    ar_base_state: BaseState, unbatched_lj_calculator: Any
 ) -> None:
     """Test Nose-Hoover chain thermostat maintains temperature."""
     # Initialize integrator
     target_temp = torch.tensor(100.0) * MetalUnits.temperature
     dt = torch.tensor(0.001) * MetalUnits.time
 
-    ar_fcc_base_state.cell = ar_fcc_base_state.cell.squeeze(0)
+    ar_base_state.cell = ar_base_state.cell.squeeze(0)
 
     nvt_init, nvt_update = nvt_nose_hoover(
         model=unbatched_lj_calculator,
@@ -94,7 +92,7 @@ def test_nvt_nose_hoover_integrator(
         sy_steps=3,
     )
 
-    state = nvt_init(state=ar_fcc_base_state, seed=42)
+    state = nvt_init(state=ar_base_state, seed=42)
 
     # Run equilibration
     temperatures = torch.zeros(500)
@@ -115,28 +113,28 @@ def test_nvt_nose_hoover_integrator(
 
 
 def test_integrator_state_properties(
-    ar_fcc_base_state: BaseState, unbatched_lj_calculator: Any
+    ar_base_state: BaseState, unbatched_lj_calculator: Any
 ) -> None:
     """Test that all integrators preserve state properties."""
-    device = ar_fcc_base_state.positions.device
-    dtype = ar_fcc_base_state.positions.dtype
+    device = ar_base_state.positions.device
+    dtype = ar_base_state.positions.dtype
 
     momenta = calculate_momenta(
-        ar_fcc_base_state.positions,
-        ar_fcc_base_state.masses,
+        ar_base_state.positions,
+        ar_base_state.masses,
         100.0 * MetalUnits.temperature,
         device,
         dtype,
     )
     md_state = MDState(
-        positions=ar_fcc_base_state.positions,
+        positions=ar_base_state.positions,
         momenta=momenta,
-        masses=ar_fcc_base_state.masses,
-        cell=ar_fcc_base_state.cell.squeeze(0),
-        pbc=ar_fcc_base_state.pbc,
-        forces=torch.zeros_like(ar_fcc_base_state.positions),
+        masses=ar_base_state.masses,
+        cell=ar_base_state.cell.squeeze(0),
+        pbc=ar_base_state.pbc,
+        forces=torch.zeros_like(ar_base_state.positions),
         energy=torch.tensor(0.0),
-        atomic_numbers=ar_fcc_base_state.atomic_numbers,
+        atomic_numbers=ar_base_state.atomic_numbers,
     )
 
     for integrator in [nve, nvt_langevin, nvt_nose_hoover]:
@@ -167,14 +165,14 @@ def test_integrator_state_properties(
 
 
 def test_nvt_nose_hoover_invariant(
-    ar_fcc_base_state: BaseState, unbatched_lj_calculator: Any
+    ar_base_state: BaseState, unbatched_lj_calculator: Any
 ) -> None:
     """Test Nose-Hoover chain thermostat maintains temperature."""
     # Initialize integrator
     target_temp = torch.tensor(100.0) * MetalUnits.temperature
     dt = torch.tensor(0.001) * MetalUnits.time
 
-    ar_fcc_base_state.cell = ar_fcc_base_state.cell.squeeze(0)
+    ar_base_state.cell = ar_base_state.cell.squeeze(0)
 
     nvt_init, nvt_update = nvt_nose_hoover(
         model=unbatched_lj_calculator,
@@ -185,7 +183,7 @@ def test_nvt_nose_hoover_invariant(
         sy_steps=3,
     )
 
-    state = nvt_init(state=ar_fcc_base_state, seed=42)
+    state = nvt_init(state=ar_base_state, seed=42)
 
     # Run equilibration
     invariant = torch.zeros(500)
@@ -200,7 +198,7 @@ def test_nvt_nose_hoover_invariant(
 
 @pytest.mark.skip(reason="NPT Nose-Hoover needs debugging")
 def test_npt_nose_hoover_invariant(
-    ar_fcc_base_state: BaseState, unbatched_lj_calculator: Any
+    ar_base_state: BaseState, unbatched_lj_calculator: Any
 ) -> None:
     """Test NPT Nose-Hoover chain thermostats maintain temperature and pressure."""
     # Initialize integrator
@@ -208,7 +206,7 @@ def test_npt_nose_hoover_invariant(
     target_pressure = torch.tensor(1.01325) * MetalUnits.pressure
     dt = torch.tensor(0.001) * MetalUnits.time
 
-    ar_fcc_base_state.cell = ar_fcc_base_state.cell.squeeze(0)
+    ar_base_state.cell = ar_base_state.cell.squeeze(0)
 
     npt_init, npt_update = npt_nose_hoover(
         model=unbatched_lj_calculator,
@@ -220,7 +218,7 @@ def test_npt_nose_hoover_invariant(
         sy_steps=3,
     )
 
-    state = npt_init(state=ar_fcc_base_state, seed=42)
+    state = npt_init(state=ar_base_state, seed=42)
 
     # Run equilibration
     invariant = torch.zeros(500)

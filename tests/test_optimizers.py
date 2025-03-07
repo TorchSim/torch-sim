@@ -2,31 +2,34 @@ import copy
 
 import torch
 
-from torchsim.optimizers import unit_cell_fire as fire
+from torchsim.optimizers import (
+    gradient_descent,
+    unit_cell_fire,
+    unit_cell_gradient_descent,
+)
 from torchsim.state import BaseState, concatenate_states
 
 
-def test_fire_optimization(
-    si_base_state: BaseState, lj_calculator: torch.nn.Module
+def test_gradient_descent_optimization(
+    ar_base_state: BaseState, lj_calculator: torch.nn.Module
 ) -> None:
-    """Test that the FIRE optimizer actually minimizes energy."""
+    """Test that the Gradient Descent optimizer actually minimizes energy."""
 
     # Add some random displacement to positions
     perturbed_positions = (
-        si_base_state.positions + torch.randn_like(si_base_state.positions) * 0.1
+        ar_base_state.positions + torch.randn_like(ar_base_state.positions) * 0.1
     )
 
-    si_base_state.positions = perturbed_positions
-    initial_state = si_base_state
+    ar_base_state.positions = perturbed_positions
+    initial_state = ar_base_state
 
-    # Initialize FIRE optimizer
-    init_fn, update_fn = fire(
+    # Initialize Gradient Descent optimizer
+    init_fn, update_fn = gradient_descent(
         model=lj_calculator,
-        dt_max=0.3,
-        dt_start=0.1,
+        lr=0.01,
     )
 
-    state = init_fn(si_base_state)
+    state = init_fn(ar_base_state)
 
     # Run optimization for a few steps
     energies = [1000, state.energy.item()]
@@ -47,21 +50,116 @@ def test_fire_optimization(
     assert max_force < 0.2, f"Forces should be small after optimization (got {max_force})"
 
     assert not torch.allclose(state.positions, initial_state.positions)
+
+
+def test_unit_cell_gradient_descent_optimization(
+    ar_base_state: BaseState, lj_calculator: torch.nn.Module
+) -> None:
+    """Test that the Gradient Descent optimizer actually minimizes energy."""
+
+    # Add some random displacement to positions
+    perturbed_positions = (
+        ar_base_state.positions + torch.randn_like(ar_base_state.positions) * 0.1
+    )
+
+    ar_base_state.positions = perturbed_positions
+    initial_state = ar_base_state
+
+    # Initialize Gradient Descent optimizer
+    init_fn, update_fn = unit_cell_gradient_descent(
+        model=lj_calculator,
+        positions_lr=0.01,
+        cell_lr=0.1,
+    )
+
+    state = init_fn(ar_base_state)
+
+    # Run optimization for a few steps
+    energies = [1000, state.energy.item()]
+    while abs(energies[-2] - energies[-1]) > 1e-6:
+        state = update_fn(state)
+        energies.append(state.energy.item())
+
+    energies = energies[1:]
+
+    # Check that energy decreased
+    assert energies[-1] < energies[0], (
+        f"FIRE optimization should reduce energy "
+        f"(initial: {energies[0]}, final: {energies[-1]})"
+    )
+
+    # Check force convergence
+    max_force = torch.max(torch.norm(state.forces, dim=1))
+    pressure = torch.trace(state.stress.squeeze(0)) / 3.0
+    assert pressure < 0.01, (
+        f"Pressure should be small after optimization (got {pressure})"
+    )
+    assert max_force < 0.2, f"Forces should be small after optimization (got {max_force})"
+
+    assert not torch.allclose(state.positions, initial_state.positions)
     assert not torch.allclose(state.cell, initial_state.cell)
 
 
-def test_fire_multi_batch(
-    si_base_state: BaseState, lj_calculator: torch.nn.Module
+def test_unit_cell_fire_optimization(
+    ar_base_state: BaseState, lj_calculator: torch.nn.Module
+) -> None:
+    """Test that the FIRE optimizer actually minimizes energy."""
+
+    # Add some random displacement to positions
+    perturbed_positions = (
+        ar_base_state.positions + torch.randn_like(ar_base_state.positions) * 0.1
+    )
+
+    ar_base_state.positions = perturbed_positions
+    initial_state = ar_base_state
+
+    # Initialize FIRE optimizer
+    init_fn, update_fn = unit_cell_fire(
+        model=lj_calculator,
+        dt_max=0.3,
+        dt_start=0.1,
+    )
+
+    state = init_fn(ar_base_state)
+
+    # Run optimization for a few steps
+    energies = [1000, state.energy.item()]
+    while abs(energies[-2] - energies[-1]) > 1e-6:
+        state = update_fn(state)
+        energies.append(state.energy.item())
+
+    energies = energies[1:]
+
+    # Check that energy decreased
+    assert energies[-1] < energies[0], (
+        f"FIRE optimization should reduce energy "
+        f"(initial: {energies[0]}, final: {energies[-1]})"
+    )
+
+    # Check force convergence
+    max_force = torch.max(torch.norm(state.forces, dim=1))
+    pressure = torch.trace(state.stress.squeeze(0)) / 3.0
+    assert pressure < 0.01, (
+        f"Pressure should be small after optimization (got {pressure})"
+    )
+    assert max_force < 0.2, f"Forces should be small after optimization (got {max_force})"
+
+    assert not torch.allclose(state.positions, initial_state.positions)
+    assert not torch.allclose(state.cell, initial_state.cell)
+
+
+def test_unit_cell_fire_multi_batch(
+    ar_base_state: BaseState, lj_calculator: torch.nn.Module
 ) -> None:
     """Test FIRE optimization with multiple batches."""
     # Create a multi-batch system by duplicating ar_fcc_state
 
-    generator = torch.Generator(device=si_base_state.device)
+    generator = torch.Generator(device=ar_base_state.device)
 
-    si_base_state_1 = copy.deepcopy(si_base_state)
-    si_base_state_2 = copy.deepcopy(si_base_state)
+    ar_base_state_1 = copy.deepcopy(ar_base_state)
+    ar_base_state_2 = copy.deepcopy(ar_base_state)
 
-    for state in [si_base_state_1, si_base_state_2]:
+    for state in [ar_base_state_1, ar_base_state_2]:
         generator.manual_seed(43)
         state.positions += (
             torch.randn(
@@ -69,16 +167,16 @@ def test_fire_multi_batch(
                 device=state.device,
                 generator=generator,
             )
-            * 0.05
+            * 0.1
         )
 
     multi_state = concatenate_states(
-        [si_base_state_1, si_base_state_2],
-        device=si_base_state.device,
+        [ar_base_state_1, ar_base_state_2],
+        device=ar_base_state.device,
     )
 
     # Initialize FIRE optimizer
-    init_fn, update_fn = fire(
+    init_fn, update_fn = unit_cell_fire(
         model=lj_calculator,
         dt_max=0.3,
         dt_start=0.1,
@@ -114,7 +212,19 @@ def test_fire_multi_batch(
         f"Forces should be small after optimization (got {max_force})"
     )
 
-    n_ar_atoms = si_base_state.n_atoms
+    pressure_0 = torch.trace(state.stress[0]) / 3.0
+    pressure_1 = torch.trace(state.stress[1]) / 3.0
+    assert torch.allclose(pressure_0, pressure_1), (
+        f"Pressure should be the same for all batches (got {pressure_0} and {pressure_1})"
+    )
+    assert pressure_0 < 0.01, (
+        f"Pressure should be small after optimization (got {pressure_0})"
+    )
+    assert pressure_1 < 0.01, (
+        f"Pressure should be small after optimization (got {pressure_1})"
+    )
+
+    n_ar_atoms = ar_base_state.n_atoms
     assert not torch.allclose(
         state.positions[:n_ar_atoms], multi_state.positions[:n_ar_atoms]
     )
@@ -127,17 +237,17 @@ def test_fire_multi_batch(
     assert current_energy[0] == current_energy[1]
 
 
-def test_fire_batch_consistency(
-    si_base_state: BaseState, lj_calculator: torch.nn.Module
+def test_unit_cell_fire_batch_consistency(
+    ar_base_state: BaseState, lj_calculator: torch.nn.Module
 ) -> None:
     """Test batched FIRE optimization is consistent with individual optimizations."""
-    generator = torch.Generator(device=si_base_state.device)
+    generator = torch.Generator(device=ar_base_state.device)
 
-    si_base_state_1 = copy.deepcopy(si_base_state)
-    si_base_state_2 = copy.deepcopy(si_base_state)
+    ar_base_state_1 = copy.deepcopy(ar_base_state)
+    ar_base_state_2 = copy.deepcopy(ar_base_state)
 
     # Add same random perturbation to both states
-    for state in [si_base_state_1, si_base_state_2]:
+    for state in [ar_base_state_1, ar_base_state_2]:
         generator.manual_seed(43)
         state.positions += (
             torch.randn(
@@ -145,7 +255,7 @@ def test_fire_batch_consistency(
                 device=state.device,
                 generator=generator,
             )
-            * 0.05
+            * 0.1
         )
 
     # Optimize each state individually
@@ -156,8 +266,8 @@ def test_fire_batch_consistency(
         """Check if optimization should continue based on energy convergence."""
         return not torch.allclose(current_energy, prev_energy, atol=1e-6)
 
-    for state in [si_base_state_1, si_base_state_2]:
-        init_fn, update_fn = fire(
+    for state in [ar_base_state_1, ar_base_state_2]:
+        init_fn, update_fn = unit_cell_fire(
             model=lj_calculator,
             dt_max=0.3,
             dt_start=0.1,
@@ -183,11 +293,11 @@ def test_fire_batch_consistency(
 
     # Now optimize both states together in a batch
     multi_state = concatenate_states(
-        [copy.deepcopy(si_base_state_1), copy.deepcopy(si_base_state_2)],
-        device=si_base_state.device,
+        [copy.deepcopy(ar_base_state_1), copy.deepcopy(ar_base_state_2)],
+        device=ar_base_state.device,
     )
 
-    init_fn, batch_update_fn = fire(
+    init_fn, batch_update_fn = unit_cell_fire(
         model=lj_calculator,
         dt_max=0.3,
         dt_start=0.1,

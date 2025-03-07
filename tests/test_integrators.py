@@ -1,6 +1,5 @@
 from typing import Any
 
-import pytest
 import torch
 
 from torchsim.integrators import batched_initialize_momenta, nve, nvt_langevin
@@ -8,23 +7,7 @@ from torchsim.models.lennard_jones import LennardJonesModel
 from torchsim.quantities import temperature
 from torchsim.state import BaseState, concatenate_states, slice_substate
 from torchsim.unbatched_integrators import MDState, initialize_momenta
-
-
-@pytest.fixture
-def si_batched_base_state(si_base_state: BaseState) -> BaseState:
-    """Create a basic state from si_structure."""
-    batch = torch.repeat_interleave(torch.arange(2), si_base_state.positions.shape[0])
-
-    return BaseState(
-        positions=torch.cat([si_base_state.positions, si_base_state.positions], dim=0),
-        cell=torch.cat([si_base_state.cell, si_base_state.cell], dim=0),
-        masses=torch.cat([si_base_state.masses, si_base_state.masses], dim=0),
-        atomic_numbers=torch.cat(
-            [si_base_state.atomic_numbers, si_base_state.atomic_numbers], dim=0
-        ),
-        batch=batch,
-        pbc=si_base_state.pbc,
-    )
+from torchsim.units import MetalUnits
 
 
 def batched_initialize_momenta_loop(
@@ -186,14 +169,14 @@ def test_batched_initialize_momenta():
 
 
 def test_nvt_langevin(
-    si_double_base_state: BaseState,
+    ar_double_base_state: BaseState,
     lj_calculator: LennardJonesModel,
     device: torch.device,
 ) -> None:
     dtype = torch.float64
     n_steps = 100
     dt = torch.tensor(0.001, device=device, dtype=dtype)
-    kT = torch.tensor(300.0 / 11606, device=device, dtype=dtype)  # Room temperature
+    kT = torch.tensor(100.0, device=device, dtype=dtype) * MetalUnits.temperature
 
     # Initialize integrator
     init_fn, update_fn = nvt_langevin(
@@ -203,7 +186,7 @@ def test_nvt_langevin(
     )
 
     # Run dynamics for several steps
-    state = init_fn(state=si_double_base_state, seed=42)
+    state = init_fn(state=ar_double_base_state, seed=42)
     energies = []
     temperatures = []
     for _ in range(n_steps):
@@ -249,18 +232,18 @@ def test_nvt_langevin(
 
 
 def test_nve(
-    si_double_base_state: BaseState,
+    ar_double_base_state: BaseState,
     lj_calculator: LennardJonesModel,
     device: torch.device,
 ):
     dtype = torch.float64
     n_steps = 100
     dt = torch.tensor(0.001, device=device, dtype=dtype)
-    kT = torch.tensor(300.0 / 11606, device=device, dtype=dtype)  # Room temperature
+    kT = torch.tensor(100.0, device=device, dtype=dtype) * MetalUnits.temperature
 
     # Initialize integrator
     nve_init, nve_update = nve(model=lj_calculator, dt=dt, kT=kT)
-    state = nve_init(state=si_double_base_state, seed=42)
+    state = nve_init(state=ar_double_base_state, seed=42)
 
     # Run dynamics for several steps
     energies = []
@@ -277,19 +260,19 @@ def test_nve(
 
 
 def test_compare_single_vs_batched_integrators(
-    si_base_state: BaseState, lj_calculator: Any
+    ar_base_state: BaseState, lj_calculator: Any
 ) -> None:
     """Test that single and batched integrators give the same results."""
 
     initial_states = {
-        "single": si_base_state,
-        "batched": concatenate_states([si_base_state, si_base_state]),
+        "single": ar_base_state,
+        "batched": concatenate_states([ar_base_state, ar_base_state]),
     }
 
     final_states = {}
     for state_name, state in initial_states.items():
         # Initialize integrator
-        kT = torch.tensor(300.0) / 11606  # Temperature in K
+        kT = torch.tensor(100.0) * MetalUnits.temperature
         dt = torch.tensor(0.001)  # Small timestep for stability
 
         nve_init, nve_update = nve(model=lj_calculator, dt=dt, kT=kT)
@@ -302,13 +285,13 @@ def test_compare_single_vs_batched_integrators(
         final_states[state_name] = state
 
     # Check energy conservation
-    si_single_state = final_states["single"]
-    si_batched_state_0 = slice_substate(final_states["batched"], 0)
-    si_batched_state_1 = slice_substate(final_states["batched"], 1)
+    ar_single_state = final_states["single"]
+    ar_batched_state_0 = slice_substate(final_states["batched"], 0)
+    ar_batched_state_1 = slice_substate(final_states["batched"], 1)
 
-    for final_state in [si_batched_state_0, si_batched_state_1]:
-        assert torch.allclose(si_single_state.positions, final_state.positions)
-        assert torch.allclose(si_single_state.momenta, final_state.momenta)
-        assert torch.allclose(si_single_state.forces, final_state.forces)
-        assert torch.allclose(si_single_state.masses, final_state.masses)
-        assert torch.allclose(si_single_state.cell, final_state.cell)
+    for final_state in [ar_batched_state_0, ar_batched_state_1]:
+        assert torch.allclose(ar_single_state.positions, final_state.positions)
+        assert torch.allclose(ar_single_state.momenta, final_state.momenta)
+        assert torch.allclose(ar_single_state.forces, final_state.forces)
+        assert torch.allclose(ar_single_state.masses, final_state.masses)
+        assert torch.allclose(ar_single_state.cell, final_state.cell)

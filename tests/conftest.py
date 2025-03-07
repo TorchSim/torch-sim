@@ -9,7 +9,7 @@ from ase.build import bulk
 from pymatgen.core import Structure
 
 from torchsim.models.lennard_jones import LennardJonesModel, UnbatchedLennardJonesModel
-from torchsim.runners import atoms_to_state
+from torchsim.runners import atoms_to_state, concatenate_states
 from torchsim.state import BaseState
 from torchsim.trajectory import TrajectoryReporter
 from torchsim.unbatched_integrators import nve
@@ -63,49 +63,17 @@ def si_double_base_state(si_atoms: Atoms, device: torch.device) -> Any:
 
 
 @pytest.fixture
-def ar_fcc_base_state(device: torch.device) -> BaseState:
+def ar_base_state(device: torch.device) -> BaseState:
     """Create a face-centered cubic (FCC) Argon structure."""
-    # 5.26 Å is a typical lattice constant for Ar
-    a = 5.26  # Lattice constant
-    N = 4  # Supercell size
-    n_atoms = 4 * N * N * N  # Total number of atoms (4 atoms per unit cell)
-    dtype = torch.float64
+    # Create FCC Ar using ASE, with 4x4x4 supercell
+    ar_atoms = bulk("Ar", "fcc", a=5.26, cubic=True).repeat([2, 2, 2])
+    return atoms_to_state(ar_atoms, device, torch.float64)
 
-    # Create positions tensor directly
-    positions = torch.zeros((n_atoms, 3), device=device, dtype=dtype)
-    idx = 0
-    for i in range(N):
-        for j in range(N):
-            for k in range(N):
-                # Add base FCC positions with offset
-                positions[idx] = torch.tensor([i, j, k], device=device, dtype=dtype) * a
-                positions[idx + 1] = (
-                    torch.tensor([i, j + 0.5, k + 0.5], device=device, dtype=dtype) * a
-                )
-                positions[idx + 2] = (
-                    torch.tensor([i + 0.5, j, k + 0.5], device=device, dtype=dtype) * a
-                )
-                positions[idx + 3] = (
-                    torch.tensor([i + 0.5, j + 0.5, k], device=device, dtype=dtype) * a
-                )
-                idx += 4
 
-    # Create cell tensor with shape (1, 3, 3) to match atoms_to_state format
-    cell = torch.eye(3, device=device, dtype=dtype).unsqueeze(0) * (N * a)
-
-    # Create batch indices
-    batch = torch.zeros(n_atoms, device=device, dtype=torch.long)
-
-    return BaseState(
-        positions=positions,
-        masses=torch.full((n_atoms,), 39.95, device=device, dtype=dtype),  # Ar mass
-        cell=cell,  # Cubic cell
-        pbc=True,
-        atomic_numbers=torch.full(
-            (n_atoms,), 18, device=device, dtype=torch.long
-        ),  # Ar atomic number
-        batch=batch,
-    )
+@pytest.fixture
+def ar_double_base_state(ar_base_state: BaseState) -> BaseState:
+    """Create a batched state from ar_fcc_base_state."""
+    return concatenate_states([ar_base_state, ar_base_state], device=ar_base_state.device)
 
 
 @pytest.fixture
@@ -113,8 +81,8 @@ def unbatched_lj_calculator(device: torch.device) -> UnbatchedLennardJonesModel:
     """Create a Lennard-Jones calculator with reasonable parameters for Ar."""
     return UnbatchedLennardJonesModel(
         use_neighbor_list=True,
-        sigma=3.405,  # Approximate for Ar-Ar interaction
-        epsilon=0.0104,  # Small epsilon for stability during testing
+        sigma=3.405,
+        epsilon=0.0104,
         device=device,
         dtype=torch.float64,
         compute_force=True,
@@ -125,15 +93,16 @@ def unbatched_lj_calculator(device: torch.device) -> UnbatchedLennardJonesModel:
 
 @pytest.fixture
 def lj_calculator(device: torch.device) -> LennardJonesModel:
-    """Create a Lennard-Jones calculator with reasonable parameters for Si."""
+    """Create a Lennard-Jones calculator with reasonable parameters for Ar."""
     return LennardJonesModel(
-        sigma=2.0,  # Approximate for Si-Si interaction
-        epsilon=0.1,  # Small epsilon for stability during testing
+        use_neighbor_list=True,
+        sigma=3.405,
+        epsilon=0.0104,
         device=device,
         dtype=torch.float64,
         compute_force=True,
         compute_stress=True,
-        cutoff=5.0,
+        cutoff=2.5 * 3.405,
     )
 
 
