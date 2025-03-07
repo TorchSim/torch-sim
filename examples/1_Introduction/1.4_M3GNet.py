@@ -2,8 +2,9 @@
 
 # /// script
 # dependencies = [
-#     "mattersim>=1.1.2",
 #     "numpy<2",
+#     "mattersim>=1.1.2",
+#
 # ]
 # ///
 import torch

@@ -17,7 +17,7 @@ from pymatgen.core import Structure
 from torchsim.integrators import nvt_langevin
 from torchsim.models.lennard_jones import LennardJonesModel
 from torchsim.models.mace import MaceModel
-from torchsim.optimizers import fire
+from torchsim.optimizers import unit_cell_fire
 from torchsim.quantities import kinetic_energy
 from torchsim.runners import integrate, optimize, state_to_atoms, state_to_structures
 from torchsim.trajectory import TorchSimTrajectory, TrajectoryReporter
@@ -161,7 +161,7 @@ systems = [si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell]
 final_state = optimize(
     system=systems,
     model=mace_model,
-    optimizer=fire,
+    optimizer=unit_cell_fire,
 )
 
 
@@ -174,7 +174,7 @@ for system in systems:
 final_state = optimize(
     system=systems,
     model=mace_model,
-    optimizer=fire,
+    optimizer=unit_cell_fire,
     convergence_fn=lambda state, last_energy: torch.all(
         last_energy - state.energy < 1e-6 * MetalUnits.energy
     ),

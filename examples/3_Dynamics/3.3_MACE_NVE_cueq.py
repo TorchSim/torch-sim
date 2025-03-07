@@ -56,7 +56,7 @@ model = UnbatchedMaceModel(
     compute_force=True,
     compute_stress=False,
     dtype=dtype,
-    enable_cueq=True,
+    enable_cueq=False,
 )
 
 # Run initial inference

@@ -42,7 +42,7 @@ model = MaceModel(
     model=loaded_model,
     device=device,
     dtype=dtype,
-    enable_cueq=True,
+    enable_cueq=False,
 )
 
 

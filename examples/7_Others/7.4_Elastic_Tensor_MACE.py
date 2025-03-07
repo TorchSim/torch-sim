@@ -208,7 +208,7 @@ def get_bravais_type(  # noqa: C901
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-calculator = mace_mp(model="medium", enable_cueq=True, default_dtype="float64")
+calculator = mace_mp(model="medium", enable_cueq=False, default_dtype="float64")
 
 # Copper
 N = 2
