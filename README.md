@@ -88,7 +88,6 @@ for step in range(1000):
 ## High-level API with reporting
 
 ```python
-
 from torchsim.trajectory import TrajectoryReporter, TorchSimTrajectory
 from torchsim.quantities import kinetic_energy
 
@@ -124,7 +123,6 @@ with TorchSimTrajectory(trajectory_file) as traj:
     final_energy = potential_energies[-1]
 
     final_atoms = traj.get_atoms(-1)
-
 ```
 
 ## High-level API with MACE and batching
@@ -202,7 +200,7 @@ TorchSim is built around the following core modules:
 
 - `torchsim.runners`: Provides functions for running molecular dynamics simulations and optimizations, handling simulation state and conversions between different representations.
 
-- `torchsim.state`: Defines the `BaseState` class, a dataclass for representing the state of molecular systems.
+- `torchsim.state`: Defines the `BaseState` class, a `dataclass` for representing the state of molecular systems.
 
 - `torchsim.trajectory`: Implements classes for handling trajectory data, allowing for reading and writing of simulation data to HDF5 files.
 
@@ -214,7 +212,7 @@ TorchSim is built around the following core modules:
 
 - `torchsim.units`: Unit system and conversion factors
 
-- `torchsim.worlflows`: Utility functions for running workflows.
+- `torchsim.workflows`: Utility functions for running workflows.
 
 Each module is designed to work seamlessly with PyTorch, enabling efficient and flexible molecular simulations.
 
