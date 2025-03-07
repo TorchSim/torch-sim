@@ -1,13 +1,27 @@
-"""Basic Lennard-Jones example."""
+"""Basic Lennard-Jones and MACE relaxation examples with batching, custom convergence
+criteria, and logging.
+"""
+
+# /// script
+# dependencies = [
+#     "mace-torch>=0.3.10",
+#     "pymatgen>=2025.2.18",
+# ]
+# ///
 
 import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
+from pymatgen.core import Structure
 
 from torchsim.integrators import nvt_langevin
 from torchsim.models.lennard_jones import LennardJonesModel
 from torchsim.models.mace import MaceModel
-from torchsim.runners import integrate, state_to_atoms
+from torchsim.optimizers import fire
+from torchsim.quantities import kinetic_energy
+from torchsim.runners import integrate, optimize, state_to_atoms, state_to_structures
+from torchsim.trajectory import TorchSimTrajectory, TrajectoryReporter
+from torchsim.units import MetalUnits
 
 
 lj_model = LennardJonesModel(
@@ -28,12 +42,6 @@ final_state = integrate(
     timestep=0.002,
 )
 final_atoms = state_to_atoms(final_state)
-
-
-### basic lennard jones example with reporting
-
-from torchsim.quantities import kinetic_energy
-from torchsim.trajectory import TorchSimTrajectory, TrajectoryReporter
 
 
 trajectory_file = "lj_trajectory.h5md"
@@ -148,12 +156,6 @@ for filename in filenames:
         final_energies_per_atom.append(final_energy / len(traj.get_atoms(-1)))
 
 
-### basic mace example with optimization
-
-from torchsim.optimizers import fire
-from torchsim.runners import optimize
-
-
 systems = [si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell]
 
 final_state = optimize(
@@ -161,13 +163,6 @@ final_state = optimize(
     model=mace_model,
     optimizer=fire,
 )
-
-
-### basic mace example with custom convergence function
-
-from torchsim.optimizers import fire
-from torchsim.runners import optimize
-from torchsim.units import MetalUnits
 
 
 systems = [si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell]
@@ -176,27 +171,14 @@ for system in systems:
     system.positions += torch.randn_like(system.positions) * 0.01
 
 
-def converge_forces(state) -> bool:
-    return torch.all(state.forces < 1e-2)
-
-
-def converge_energy(state, last_energy) -> bool:
-    return torch.all(last_energy - state.energy < 1e-6 * MetalUnits.energy)
-
-
 final_state = optimize(
     system=systems,
     model=mace_model,
     optimizer=fire,
-    convergence_fn=converge_energy,
+    convergence_fn=lambda state, last_energy: torch.all(
+        last_energy - state.energy < 1e-6 * MetalUnits.energy
+    ),
 )
-
-
-### basic mace example with pymatgen
-
-from pymatgen.core import Structure
-
-from torchsim.runners import state_to_structures
 
 
 lattice = [[5.43, 0, 0], [0, 5.43, 0], [0, 0, 5.43]]

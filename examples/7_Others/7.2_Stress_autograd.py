@@ -47,7 +47,7 @@ def energy_fn(
     dr = dr - box.diagonal() * torch.round(dr / box.diagonal())
     if perturbation is not None:
         # Apply transformation directly (R + dR)
-        dr = dr + perturbation @ dr
+        dr = dr + torch.einsum("ij,nmj->nmi", perturbation, dr)
 
     # Calculate distances
     distances = torch.norm(dr, dim=2)

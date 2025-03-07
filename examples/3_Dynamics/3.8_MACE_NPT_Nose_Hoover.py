@@ -72,7 +72,7 @@ results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 N_steps_nvt = 500
 N_steps_npt = 500
 dt = 0.001 * Units.time  # Time step (1 ps)
-kT = 300 * Units.temperature  # Initial temperature (300 K)
+kT = 300 * Units.temperature  # Initial temperature (300 K)  # noqa: N816
 target_pressure = 0.0 * Units.pressure  # Target pressure (0 bar)
 
 state = {
@@ -94,21 +94,20 @@ for step in range(N_steps_nvt):
     state = nvt_update(state, kT=kT)
 
 npt_init, npt_update = npt_nose_hoover(
-    model=model,
-    kT=kT,
-    dt=dt,
-    external_pressure=target_pressure,
+    model=model, kT=kT, dt=dt, external_pressure=target_pressure
 )
 state = npt_init(state=state, seed=1)
 
 
-def get_pressure(stress, kinetic_energy, volume, dim=3):
+def get_pressure(
+    stress: torch.Tensor, kinetic_energy: torch.Tensor, volume: torch.Tensor, dim: int = 3
+) -> torch.Tensor:
     """Compute the pressure from the stress tensor.
 
     The stress tensor is defined as 1/volume * dU/de_ij
     So the pressure is -1/volume * trace(dU/de_ij)
     """
-    return 1 / (dim) * ((2 * kinetic_energy / volume) - torch.trace(stress))
+    return 1 / dim * ((2 * kinetic_energy / volume) - torch.trace(stress))
 
 
 for step in range(N_steps_npt):
@@ -117,27 +116,32 @@ for step in range(N_steps_npt):
         invariant = npt_nose_hoover_invariant(
             state, kT=kT, external_pressure=target_pressure
         ).item()
+        stress = model(
+            positions=state.positions,
+            cell=state.current_box,
+            atomic_numbers=state.atomic_numbers,
+        )["stress"]
+        volume = torch.det(state.current_box)
+        pressure = get_pressure(
+            stress, kinetic_energy(masses=state.masses, momenta=state.momenta), volume
+        ).item()
+        xx, yy, zz = torch.diag(state.current_box)
         print(
             f"{step=}: Temperature: {temp:.4f}: invariant: {invariant:.4f}, "
-            f"pressure: {
-                get_pressure(
-                    model(
-                        positions=state.positions,
-                        cell=state.current_box,
-                        atomic_numbers=state.atomic_numbers,
-                    )['stress'],
-                    kinetic_energy(masses=state.masses, momenta=state.momenta),
-                    torch.det(state.current_box),
-                ).item()
-                / Units.pressure:.4f
-            }, "
-            f"box xx yy zz: {state.current_box[0, 0].item():.4f}, {state.current_box[1, 1].item():.4f}, {state.current_box[2, 2].item():.4f}"
+            f"pressure: {pressure:.4f}, "
+            f"box xx yy zz: {xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}"
         )
     state = npt_update(state, kT=kT, external_pressure=target_pressure)
 
-print(
-    f"Final temperature: {temperature(masses=state.masses, momenta=state.momenta) / Units.temperature:.4f}"
+final_temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
+print(f"Final temperature: {final_temp:.4f}")
+final_stress = model(
+    positions=state.positions,
+    cell=state.current_box,
+    atomic_numbers=state.atomic_numbers,
+)["stress"]
+final_volume = torch.det(state.current_box)
+final_pressure = get_pressure(
+    final_stress, kinetic_energy(masses=state.masses, momenta=state.momenta), final_volume
 )
-print(
-    f"Final pressure: {get_pressure(model(positions=state.positions, cell=state.current_box, atomic_numbers=state.atomic_numbers)['stress'], kinetic_energy(masses=state.masses, momenta=state.momenta), torch.det(state.current_box)).item() / Units.pressure:.4f}"
-)
+print(f"Final pressure: {final_pressure:.4f}")

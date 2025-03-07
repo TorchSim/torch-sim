@@ -10,7 +10,7 @@ from torchsim.transforms import compute_cell_shifts, compute_distances_with_cell
 
 atoms_list = [bulk("Si", "diamond", a=5.43), bulk("Ge", "diamond", a=5.65)]
 state = atoms_to_state(atoms_list, device="cpu", dtype=torch.float32)
-pos, cell, pbc = state.positions, state.cell, torch.tensor(state.pbc)
+pos, cell, pbc = state.positions, state.cell, torch.tensor([state.pbc] * 3)
 batch, n_atoms = state.batch, state.n_atoms
 cutoff = 4.0
 self_interaction = False

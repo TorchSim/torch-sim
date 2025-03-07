@@ -23,7 +23,7 @@ dr_tensor = torch.sqrt(torch.tensor(dr))
 
 # Calculate potential energy
 # Make dr_tensor require gradients for autograd
-dr_tensor.requires_grad_(mode=True)
+dr_tensor.requires_grad_(True)  # noqa: FBT003
 
 # Calculate potential energy with gradients enabled
 energy = soft_sphere_pair(dr_tensor, sigma, epsilon, alpha)

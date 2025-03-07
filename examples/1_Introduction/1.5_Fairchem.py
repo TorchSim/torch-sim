@@ -1,6 +1,9 @@
+"""Minimal FairChem example demonstrating batching."""
+
 # /// script
 # dependencies = [
 #     "fairchem-core>=1.6",
+#     "torch-geometric>=2.6.1",
 # ]
 # ///
 import torch

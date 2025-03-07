@@ -74,9 +74,9 @@ class M3GnetModel(nn.Module):
 
         results = {}
         if self.compute_force:
-            input_dict["atom_pos"].requires_grad_(mode=True)
+            input_dict["atom_pos"].requires_grad_(True)  # noqa: FBT003
         if self.compute_stress:
-            strain.requires_grad_(mode=True)
+            strain.requires_grad_(True)  # noqa: FBT003
             input_dict["cell"] = torch.matmul(
                 input_dict["cell"],
                 (torch.eye(3, device=self.device)[None, ...] + strain),

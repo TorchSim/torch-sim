@@ -1,3 +1,11 @@
+"""MACE NVT Langevin dynamics."""
+
+# /// script
+# dependencies = [
+#     "mace-torch>=0.3.10",
+# ]
+# ///
+
 import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
@@ -53,7 +61,7 @@ model = UnbatchedMaceModel(
 results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 
 dt = 0.002 * Units.time  # Timestep (ps)
-kT = 1000 * Units.temperature  # Initial temperature (K)
+kT = 1000 * Units.temperature  # Initial temperature (K)  # noqa: N816
 gamma = 10 / Units.time  # Langevin friction coefficient (ps^-1)
 
 state = {
@@ -75,11 +83,9 @@ state = langevin_init(state=state, seed=1)
 
 for step in range(1_000):
     if step % 100 == 0:
-        print(
-            f"{step=}: Temperature: {temperature(masses=state.masses, momenta=state.momenta) / Units.temperature:.4f}"
-        )
+        temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
+        print(f"{step=}: Temperature: {temp:.4f}")
     state = langevin_update(state=state, kT=kT)
 
-print(
-    f"Final temperature: {temperature(masses=state.masses, momenta=state.momenta) / Units.temperature}"
-)
+final_temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
+print(f"Final temperature: {final_temp:.4f}")
