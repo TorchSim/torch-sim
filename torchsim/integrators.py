@@ -281,10 +281,8 @@ def nve(
             atomic_numbers=state.atomic_numbers,
         )
 
-        momenta = (
-            kwargs.get("momenta")
-            if kwargs.get("momenta") is not None
-            else calculate_momenta(state.positions, state.masses, kT, seed)
+        momenta = kwargs.get(
+            "momenta", calculate_momenta(state.positions, state.masses, kT, seed)
         )
 
         initial_state = MDState(
@@ -403,10 +401,8 @@ def nvt_langevin(
             atomic_numbers=atomic_numbers,
         )
 
-        momenta = (
-            state.momenta
-            if getattr(state, "momenta", None) is not None
-            else calculate_momenta(state.positions, state.masses, kT, seed)
+        momenta = getattr(
+            state, "momenta", calculate_momenta(state.positions, state.masses, kT, seed)
         )
 
         initial_state = MDState(

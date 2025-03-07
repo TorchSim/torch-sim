@@ -273,10 +273,9 @@ def nve(
             atomic_numbers=state.atomic_numbers,
         )
 
-        momenta = (
-            kwargs.get("momenta")
-            if kwargs.get("momenta") is not None
-            else calculate_momenta(state.positions, state.masses, kT, device, dtype, seed)
+        momenta = kwargs.get(
+            "momenta",
+            calculate_momenta(state.positions, state.masses, kT, device, dtype, seed),
         )
 
         initial_state = MDState(
@@ -403,10 +402,9 @@ def nvt_langevin(
             atomic_numbers=atomic_numbers,
         )
 
-        momenta = (
-            kwargs.get("momenta")
-            if kwargs.get("momenta") is not None
-            else calculate_momenta(state.positions, state.masses, kT, device, dtype, seed)
+        momenta = kwargs.get(
+            "momenta",
+            calculate_momenta(state.positions, state.masses, kT, device, dtype, seed),
         )
 
         initial_state = MDState(
@@ -853,10 +851,9 @@ def nvt_nose_hoover(
             cell=state.cell,
             atomic_numbers=atomic_numbers,
         )
-        momenta = (
-            kwargs.get("momenta")
-            if kwargs.get("momenta") is not None
-            else calculate_momenta(state.positions, state.masses, kT, device, dtype, seed)
+        momenta = kwargs.get(
+            "momenta",
+            calculate_momenta(state.positions, state.masses, kT, device, dtype, seed),
         )
 
         # Calculate initial kinetic energy
@@ -961,24 +958,26 @@ def nvt_nose_hoover_invariant(
         - Useful for debugging thermostat behavior
     """
     # Calculate system energy terms
-    PE = state.energy
-    KE = kinetic_energy(state.momenta, state.masses)
+    e_pot = state.energy
+    e_kin = kinetic_energy(state.momenta, state.masses)
 
     # Get system degrees of freedom
     dof = count_dof(state.positions)
 
     # Start with system energy
-    E = PE + KE
+    e_tot = e_pot + e_kin
 
     # Add first thermostat term
     c = state.chain
-    E = E + c.momenta[0] ** 2 / (2 * c.masses[0]) + dof * kT * c.positions[0]
+    e_tot = e_tot + c.momenta[0] ** 2 / (2 * c.masses[0]) + dof * kT * c.positions[0]
 
     # Add remaining chain terms
-    for r, p, m in zip(c.positions[1:], c.momenta[1:], c.masses[1:], strict=True):
-        E = E + p**2 / (2 * m) + kT * r
+    for pos, momentum, mass in zip(
+        c.positions[1:], c.momenta[1:], c.masses[1:], strict=True
+    ):
+        e_tot = e_tot + momentum**2 / (2 * mass) + kT * pos
 
-    return E
+    return e_tot
 
 
 # TODO: Add NPT Nose-Hoover integrator with same interface as other integrators
@@ -1566,10 +1565,9 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         )
 
         # Initialize momenta
-        momenta = (
-            kwargs.get("momenta")
-            if kwargs.get("momenta") is not None
-            else calculate_momenta(state.positions, state.masses, kT, device, dtype, seed)
+        momenta = kwargs.get(
+            "momenta",
+            calculate_momenta(state.positions, state.masses, kT, device, dtype, seed),
         )
 
         # Initialize thermostat
@@ -1677,41 +1675,41 @@ def npt_nose_hoover_invariant(
     """
     # Calculate volume and potential energy
     volume = torch.det(state.current_box)
-    PE = state.energy
+    e_pot = state.energy
 
     # Calculate kinetic energy of particles
-    KE = kinetic_energy(state.momenta, state.masses)
+    e_kin = kinetic_energy(state.momenta, state.masses)
 
     # Total degrees of freedom
     DOF = state.positions.numel()
 
     # Initialize total energy with PE + KE
-    E = PE + KE
+    e_tot = e_pot + e_kin
 
     # Add thermostat chain contributions
-    E += (state.thermostat.momenta[0] ** 2) / (2 * state.thermostat.masses[0])
-    E += DOF * kT * state.thermostat.positions[0]
+    e_tot += (state.thermostat.momenta[0] ** 2) / (2 * state.thermostat.masses[0])
+    e_tot += DOF * kT * state.thermostat.positions[0]
 
     # Add remaining thermostat terms
-    for r, p, m in zip(
+    for pos, momentum, mass in zip(
         state.thermostat.positions[1:],
         state.thermostat.momenta[1:],
         state.thermostat.masses[1:],
         strict=True,
     ):
-        E += (p**2) / (2 * m) + kT * r
+        e_tot += (momentum**2) / (2 * mass) + kT * pos
 
     # Add barostat chain contributions
-    for r, p, m in zip(
+    for pos, momentum, mass in zip(
         state.barostat.positions,
         state.barostat.momenta,
         state.barostat.masses,
         strict=True,
     ):
-        E += (p**2) / (2 * m) + kT * r
+        e_tot += (momentum**2) / (2 * mass) + kT * pos
 
     # Add PV term and box kinetic energy
-    E += external_pressure * volume
-    E += (state.box_momentum**2) / (2 * state.box_mass)
+    e_tot += external_pressure * volume
+    e_tot += (state.box_momentum**2) / (2 * state.box_mass)
 
-    return E
+    return e_tot

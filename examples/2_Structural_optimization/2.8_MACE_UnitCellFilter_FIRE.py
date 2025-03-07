@@ -77,9 +77,11 @@ state = fire_init(state=state)
 # Run optimization loop
 for step in range(1_000):
     if step % 10 == 0:
-        PE = state.energy.item()
-        P = torch.trace(state.stress).item() / 3.0 * UnitConversion.eV_per_Ang3_to_GPa
-        print(f"{step=}: Total energy: {PE} eV, pressure: {P} GPa")
+        e_pot = state.energy.item()
+        pressure = (
+            torch.trace(state.stress).item() / 3.0 * UnitConversion.eV_per_Ang3_to_GPa
+        )
+        print(f"{step=}: Total energy: {e_pot} eV, {pressure=:.4f} GPa")
     state = fire_update(state)
 
 print(f"Initial energy: {results['energy'].item()} eV")
