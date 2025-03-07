@@ -6,6 +6,8 @@
 # ]
 # ///
 
+import os
+
 import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
@@ -69,8 +71,8 @@ model = UnbatchedMaceModel(
 # Run initial inference
 results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 
-N_steps_nvt = 200
-N_steps_npt = 200
+N_steps_nvt = 20 if os.getenv("CI") else 2_000
+N_steps_npt = 20 if os.getenv("CI") else 2_000
 dt = 0.001 * Units.time  # Time step (1 ps)
 kT = 300 * Units.temperature  # Initial temperature (300 K)
 target_pressure = 0.0 * Units.pressure  # Target pressure (0 bar)
@@ -87,7 +89,7 @@ nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
 state = nvt_init(state=state, seed=1)
 
 for step in range(N_steps_nvt):
-    if step % 20 == 0:
+    if step % 10 == 0:
         temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
         invariant = nvt_nose_hoover_invariant(state, kT=kT).item()
         print(f"{step=}: Temperature: {temp:.4f}: invariant: {invariant:.4f}, ")
@@ -111,7 +113,7 @@ def get_pressure(
 
 
 for step in range(N_steps_npt):
-    if step % 20 == 0:
+    if step % 10 == 0:
         temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
         invariant = npt_nose_hoover_invariant(
             state, kT=kT, external_pressure=target_pressure

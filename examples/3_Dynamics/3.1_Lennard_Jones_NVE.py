@@ -1,5 +1,7 @@
 """NVE simulation with Lennard-Jones potential."""
 
+import os
+
 import torch
 
 from torchsim.models.lennard_jones import UnbatchedLennardJonesModel
@@ -11,6 +13,9 @@ from torchsim.units import MetalUnits as Units
 # Set up the device and data type
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
+
+# Number of steps to run
+N_steps = 100 if os.getenv("CI") else 2_000
 
 # Set random seed and deterministic behavior for reproducibility
 torch.manual_seed(42)
@@ -104,7 +109,7 @@ nve_init, nve_update = nve(model=model, dt=dt, kT=kT)
 state = nve_init(state=state)
 
 # Run NVE simulation for 1000 steps
-for step in range(2_000):
+for step in range(N_steps):
     if step % 100 == 0:
         # Calculate total energy (potential + kinetic)
         total_energy = state.energy + kinetic_energy(

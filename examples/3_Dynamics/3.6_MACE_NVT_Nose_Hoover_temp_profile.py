@@ -6,9 +6,11 @@ temperature profile.
 # dependencies = [
 #     "mace-torch>=0.3.10",
 #     "plotly>=6",
-#     "kaleido==1.0.0rc0",
+#     "kaleido<=1.0.0rc0",
 # ]
 # ///
+
+import os
 
 import numpy as np
 import torch
@@ -97,11 +99,11 @@ cooling_temp = 300
 annealing_temp = 300
 
 # Step counts for different phases
-n_steps_initial = 200
-n_steps_ramp_up = 200
-n_steps_melt = 200
-n_steps_ramp_down = 200
-n_steps_anneal = 200
+n_steps_initial = 20 if os.getenv("CI") else 200
+n_steps_ramp_up = 20 if os.getenv("CI") else 200
+n_steps_melt = 20 if os.getenv("CI") else 200
+n_steps_ramp_down = 20 if os.getenv("CI") else 200
+n_steps_anneal = 20 if os.getenv("CI") else 200
 
 n_steps = (
     n_steps_initial + n_steps_ramp_up + n_steps_melt + n_steps_ramp_down + n_steps_anneal

@@ -6,6 +6,8 @@
 # ]
 # ///
 
+import os
+
 import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
@@ -33,6 +35,9 @@ loaded_model = mace_mp(
 # Option 2: Load from local file (comment out Option 1 to use this)
 # MODEL_PATH = "../../../checkpoints/MACE/mace-mpa-0-medium.model"
 # loaded_model = torch.load(MODEL_PATH, map_location=device)
+
+# Number of steps to run
+N_steps = 20 if os.getenv("CI") else 2_000
 
 PERIODIC = True
 
@@ -81,8 +86,8 @@ langevin_init, langevin_update = nvt_langevin(
 
 state = langevin_init(state=state, seed=1)
 
-for step in range(200):
-    if step % 20 == 0:
+for step in range(N_steps):
+    if step % 10 == 0:
         temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
         print(f"{step=}: Temperature: {temp:.4f}")
     state = langevin_update(state=state, kT=kT)
