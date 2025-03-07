@@ -56,7 +56,7 @@ model = UnbatchedMaceModel(
     compute_force=True,
     compute_stress=False,
     dtype=dtype,
-    enable_cueq=False,
+    enable_cueq=torch.cuda.is_available(),
 )
 
 # Run initial inference

@@ -77,10 +77,11 @@ class HybridSwapMCState(MDState):
     last_permutation: torch.Tensor
 
 
-md_state, nvt_step = nvt_langevin(state, model, dt=0.002, kT=kT, seed=42)
+nvt_init, nvt_step = nvt_langevin(model=model, dt=0.002, kT=kT)
+md_state = nvt_init(state, seed=42)
 
-swap_state, swap_step = swap_monte_carlo(md_state, model, kT=kT, seed=42)
-
+swap_init, swap_step = swap_monte_carlo(model=model, kT=kT, seed=42)
+swap_state = swap_init(md_state)
 hybrid_state = HybridSwapMCState(
     **vars(md_state),
     last_permutation=torch.zeros(

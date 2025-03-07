@@ -4,6 +4,7 @@
 # dependencies = [
 #     "ase>=3.24",
 #     "mace-torch>=0.3.10",
+#     "spglib",
 # ]
 # ///
 

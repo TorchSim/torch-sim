@@ -3,7 +3,6 @@
 # /// script
 # dependencies = [
 #     "fairchem-core>=1.6",
-#     "torch",
 #     "torch-geometric>=2.6.1",
 #     "torch-scatter==2.1.2",
 #     "torch-sparse==0.6.18",
