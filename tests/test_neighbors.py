@@ -133,7 +133,8 @@ def structure_set() -> list:
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
 def test_wrapping_nl(*, cutoff: int) -> None:
     """Check that wrapping_nl gives the same NL as ASE by comparing
-    the resulting sorted list of distances between neighbors."""
+    the resulting sorted list of distances between neighbors.
+    """
     structures = [bulk("Si", "diamond", a=6, cubic=True)]
 
     for structure in structures:
@@ -199,7 +200,8 @@ def test_wrapping_nl(*, cutoff: int) -> None:
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
 def test_standard_nl(*, cutoff: float) -> None:
     """Check that standard_nl gives the same NL as ASE by comparing
-    the resulting sorted list of distances between neighbors."""
+    the resulting sorted list of distances between neighbors.
+    """
     structures = structure_set()
 
     for structure in structures:
@@ -263,7 +265,8 @@ def test_standard_nl(*, cutoff: float) -> None:
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
 def test_vesin_nl_ts(*, cutoff: float) -> None:
     """Check that vesin_nl gives the same NL as ASE by comparing
-    the resulting sorted list of distances between neighbors."""
+    the resulting sorted list of distances between neighbors.
+    """
     structures = structure_set()
 
     for structure in structures:
@@ -327,7 +330,8 @@ def test_vesin_nl_ts(*, cutoff: float) -> None:
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
 def test_vesin_nl(*, cutoff: float) -> None:
     """Check that vesin_nl gives the same NL as ASE by comparing
-    the resulting sorted list of distances between neighbors."""
+    the resulting sorted list of distances between neighbors.
+    """
     structures = structure_set()
 
     for structure in structures:
@@ -392,7 +396,8 @@ def test_vesin_nl(*, cutoff: float) -> None:
 @pytest.mark.parametrize("self_interaction", [True, False])
 def test_torch_nl_n2(*, cutoff: float, self_interaction: bool) -> None:
     """Check that torch_neighbor_list gives the same NL as ASE by comparing
-    the resulting sorted list of distances between neighbors."""
+    the resulting sorted list of distances between neighbors.
+    """
     structures = structure_set()
 
     # Convert to torch batch (concatenate all tensors)
@@ -429,7 +434,8 @@ def test_torch_nl_n2(*, cutoff: float, self_interaction: bool) -> None:
 @pytest.mark.parametrize("self_interaction", [True, False])
 def test_torch_nl_linked_cell(*, cutoff: float, self_interaction: bool) -> None:
     """Check that torch_neighbor_list gives the same NL as ASE by comparing
-    the resulting sorted list of distances between neighbors."""
+    the resulting sorted list of distances between neighbors.
+    """
     structures = structure_set()
     pos, cell, pbc, batch, _ = ase_to_torch_batch(structures, device=DEVICE, dtype=DTYPE)
 

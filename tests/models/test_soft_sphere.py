@@ -33,7 +33,8 @@ def calculator_outputs(
 @pytest.fixture
 def multi_species_system() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Create a binary system with two different species
-    arranged in alternating layers."""
+    arranged in alternating layers.
+    """
     N = 4
     a_len = 5.26  # Å
     positions = []

@@ -8,7 +8,6 @@ from torchsim.unbatched_optimizers import fire, gradient_descent, unit_cell_fire
 
 def test_fire_optimizer(ar_base_state: BaseState, unbatched_lj_calculator: Any) -> None:
     """Test FIRE optimization of Ar FCC structure."""
-
     # perturb the structure
     ar_base_state.positions[1][0] = 1.0
     ar_base_state.cell = ar_base_state.cell.squeeze(0)
@@ -28,7 +27,7 @@ def test_fire_optimizer(ar_base_state: BaseState, unbatched_lj_calculator: Any) 
 
     # Run a few optimization steps
     initial_force_norm = torch.norm(state.forces)
-    for _ in range(10):
+    for _step in range(10):
         state = update_fn(state)
 
     # Check that forces are being minimized
@@ -47,7 +46,6 @@ def test_gradient_descent_optimizer(
     ar_base_state: BaseState, unbatched_lj_calculator: Any
 ) -> None:
     """Test gradient descent optimization of Ar FCC structure."""
-
     # perturb the structure
     ar_base_state.positions[1][0] = 1.0
     ar_base_state.cell = ar_base_state.cell.squeeze(0)
@@ -61,7 +59,7 @@ def test_gradient_descent_optimizer(
 
     # Run a few optimization steps
     initial_energy = state.energy
-    for _ in range(10):
+    for _step in range(10):
         state = update_fn(state)
 
     # Check that energy is decreasing
@@ -75,7 +73,6 @@ def test_unit_cell_fire_optimizer(
     ar_base_state: BaseState, unbatched_lj_calculator: Any
 ) -> None:
     """Test FIRE optimization of Ar FCC structure."""
-
     # perturb the structure
     ar_base_state.positions[1][0] = 1.0
     ar_base_state.cell = ar_base_state.cell.squeeze(0)
@@ -96,7 +93,7 @@ def test_unit_cell_fire_optimizer(
     # Run a few optimization steps
     initial_force_norm = torch.norm(state.forces)
     initial_pressure = torch.trace(state.stress) / 3.0
-    for _ in range(10):
+    for _step in range(10):
         state = update_fn(state)
 
     # Check that forces are being minimized
@@ -120,7 +117,6 @@ def test_optimizer_convergence(
     ar_base_state: BaseState, unbatched_lj_calculator: Any
 ) -> None:
     """Test that both optimizers can reach similar final states."""
-
     # perturb the structure
     ar_base_state.positions[1][0] = 1.0
     ar_base_state.cell = ar_base_state.cell.squeeze(0)
@@ -140,7 +136,7 @@ def test_optimizer_convergence(
     gd_state = gd_init(state=ar_base_state)
 
     # Optimize both for more steps
-    for _ in range(50):
+    for _step in range(50):
         fire_state = fire_update(fire_state)
         gd_state = gd_update(gd_state)
 

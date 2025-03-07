@@ -394,20 +394,16 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         outputs = []
         for pos, cell in zip(positions_split, cell_split, strict=True):
             outputs.append(self.unbatched_forward(pos, cell))
-        properties = outputs[0].keys()
+        properties = outputs[0]
 
         # Combine results
         results = {}
-        if "stress" in properties:
-            results["stress"] = torch.stack([out["stress"] for out in outputs])
-        if "energy" in properties:
-            results["energy"] = torch.stack([out["energy"] for out in outputs])
-        if "forces" in properties:
-            results["forces"] = torch.cat([out["forces"] for out in outputs], dim=0)
-        if "energies" in properties:
-            results["energies"] = torch.cat([out["energies"] for out in outputs], dim=0)
-        if "stresses" in properties:
-            results["stresses"] = torch.cat([out["stresses"] for out in outputs], dim=0)
+        for key in ("stress", "energy"):
+            if key in properties:
+                results[key] = torch.stack([out[key] for out in outputs])
+        for key in ("forces", "energies", "stresses"):
+            if key in properties:
+                results[key] = torch.cat([out[key] for out in outputs], dim=0)
 
         return results
 
@@ -948,19 +944,16 @@ class SoftSphereMultiModel(torch.nn.Module):
         outputs = []
         for pos, cell in zip(positions_split, cell_split, strict=True):
             outputs.append(self.unbatched_forward(pos, cell))
-        properties = outputs[0].keys()
+        properties = outputs[0]
 
         # Combine results
         results = {}
-        if "stress" in properties:
-            results["stress"] = torch.stack([out["stress"] for out in outputs])
-        if "energy" in properties:
-            results["energy"] = torch.stack([out["energy"] for out in outputs])
-        if "forces" in properties:
-            results["forces"] = torch.cat([out["forces"] for out in outputs], dim=0)
-        if "energies" in properties:
-            results["energies"] = torch.cat([out["energies"] for out in outputs], dim=0)
-        if "stresses" in properties:
-            results["stresses"] = torch.cat([out["stresses"] for out in outputs], dim=0)
+        for key in ("stress", "energy", "forces", "energies", "stresses"):
+            if key in properties:
+                results[key] = torch.stack([out[key] for out in outputs])
+
+        for key in ("forces", "energies", "stresses"):
+            if key in properties:
+                results[key] = torch.cat([out[key] for out in outputs], dim=0)
 
         return results

@@ -114,7 +114,6 @@ def test_monte_carlo(
     lj_calculator: torch.nn.Module,
 ):
     """Test the monte_carlo function that returns a step function and initial state."""
-
     # Call monte_carlo to get the initial state and step function
     init_state_fn, monte_carlo_step_fn = swap_monte_carlo(
         model=lj_calculator, kT=1.0, seed=42

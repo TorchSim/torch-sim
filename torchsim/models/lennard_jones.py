@@ -392,16 +392,17 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         outputs = []
         for pos, box in zip(positions_split, cell_split, strict=True):
             outputs.append(self.unbatched_forward(pos, box))
-        properties = outputs[0].keys()
+        properties = outputs[0]
 
         # we always return tensors
         # per atom properties are returned as (atoms, ...) tensors
         # global properties are returned as shape (..., n) tensors
         results = {}
-        if "stress" in properties:
-            results["stress"] = torch.stack([out["stress"] for out in outputs])
-        if "energy" in properties:
-            results["energy"] = torch.stack([out["energy"] for out in outputs])
-        if "forces" in properties:
-            results["forces"] = torch.cat([out["forces"] for out in outputs], dim=0)
+        for key in ("stress", "energy"):
+            if key in properties:
+                results[key] = torch.stack([out[key] for out in outputs])
+        for key in ("forces",):
+            if key in properties:
+                results[key] = torch.cat([out[key] for out in outputs], dim=0)
+
         return results

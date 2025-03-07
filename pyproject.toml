@@ -98,14 +98,9 @@ ignore = [
 pydocstyle.convention = "google"
 isort.split-on-trailing-comma = false
 isort.lines-after-imports = 2
-isort.known-first-party = ["radical"]
-isort.known-third-party = ["wandb"]
 
 [tool.ruff.lint.per-file-ignores]
-"**/tests/*" = ["ANN201", "D", "DOC", "PT006", "S101"]
-"**/bin/*" = ["D"]
-"**/scripts/*" = ["D"]
-"__init__.py" = ["F401"]
+"**/tests/*" = ["ANN201", "D", "S101"]
 
 [tool.ruff.lint.flake8-unused-arguments]
 ignore-variadic-names = true

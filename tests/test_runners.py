@@ -95,7 +95,6 @@ def test_integrate_double_nvt(
     ar_double_base_state: BaseState, lj_calculator: Any
 ) -> None:
     """Test NVT integration with LJ potential."""
-
     final_state = integrate(
         system=ar_double_base_state,
         model=lj_calculator,
@@ -257,7 +256,6 @@ def test_batched_optimize_fire(
     tmp_path: Any,
 ) -> None:
     """Test batched FIRE optimization with LJ potential."""
-
     trajectory_files = [
         tmp_path / f"nvt_{idx}.h5md" for idx in range(ar_double_base_state.n_batches)
     ]

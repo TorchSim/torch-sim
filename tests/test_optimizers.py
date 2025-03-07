@@ -14,7 +14,6 @@ def test_gradient_descent_optimization(
     ar_base_state: BaseState, lj_calculator: torch.nn.Module
 ) -> None:
     """Test that the Gradient Descent optimizer actually minimizes energy."""
-
     # Add some random displacement to positions
     perturbed_positions = (
         ar_base_state.positions + torch.randn_like(ar_base_state.positions) * 0.1
@@ -56,7 +55,6 @@ def test_unit_cell_gradient_descent_optimization(
     ar_base_state: BaseState, lj_calculator: torch.nn.Module
 ) -> None:
     """Test that the Gradient Descent optimizer actually minimizes energy."""
-
     # Add some random displacement to positions
     perturbed_positions = (
         ar_base_state.positions + torch.randn_like(ar_base_state.positions) * 0.1
@@ -104,7 +102,6 @@ def test_unit_cell_fire_optimization(
     ar_base_state: BaseState, lj_calculator: torch.nn.Module
 ) -> None:
     """Test that the FIRE optimizer actually minimizes energy."""
-
     # Add some random displacement to positions
     perturbed_positions = (
         ar_base_state.positions + torch.randn_like(ar_base_state.positions) * 0.1

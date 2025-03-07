@@ -189,7 +189,7 @@ def test_nvt_langevin(
     state = init_fn(state=ar_double_base_state, seed=42)
     energies = []
     temperatures = []
-    for _ in range(n_steps):
+    for _step in range(n_steps):
         state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
@@ -247,7 +247,7 @@ def test_nve(
 
     # Run dynamics for several steps
     energies = []
-    for _ in range(n_steps):
+    for _step in range(n_steps):
         state = nve_update(state=state, dt=dt)
 
         energies.append(state.energy)
@@ -263,7 +263,6 @@ def test_compare_single_vs_batched_integrators(
     ar_base_state: BaseState, lj_calculator: Any
 ) -> None:
     """Test that single and batched integrators give the same results."""
-
     initial_states = {
         "single": ar_base_state,
         "batched": concatenate_states([ar_base_state, ar_base_state]),
@@ -279,7 +278,7 @@ def test_compare_single_vs_batched_integrators(
         state = nve_init(state=state, seed=42)
         state.momenta = torch.zeros_like(state.momenta)
 
-        for _ in range(100):
+        for _step in range(100):
             state = nve_update(state=state, dt=dt)
 
         final_states[state_name] = state

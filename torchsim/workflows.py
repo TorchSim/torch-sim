@@ -304,7 +304,7 @@ def random_packed_structure(
         state = state_init_fn(state)
         print(f"Initial energy: {state.energy.item():.4f}")
         # Run FIRE optimization until convergence or max iterations
-        for _ in range(max_iter):
+        for _step in range(max_iter):
             # Check if minimum distance criterion is met (95% of target diameter)
             if min_distance(state.positions, cell, distance_tolerance) > diameter * 0.95:
                 break
@@ -375,7 +375,7 @@ def random_packed_structure_multi(
     """
     # Extract element information from composition into a robust dictionary format
     element_dict = composition.as_dict()
-    element_symbols = list(element_dict.keys())  # Get unique elements
+    element_symbols = list(element_dict)  # Get unique elements
     element_counts = [
         int(element_dict[el]) for el in element_symbols
     ]  # Get counts directly
@@ -433,7 +433,7 @@ def random_packed_structure_multi(
         )
         print(f"Initial energy: {state.energy.item():.4f}")
         # Run FIRE optimization until convergence or max iterations
-        for _ in range(max_iter):
+        for _step in range(max_iter):
             # Check if minimum distance criterion is met (95% of smallest target diameter)
             if (
                 min_distance(state.positions, cell, distance_tolerance)
