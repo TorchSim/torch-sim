@@ -219,7 +219,7 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     dtype: torch.dtype,
     self_interaction: bool = False,  # noqa: FBT001, FBT002
     use_scaled_positions: bool = False,  # noqa: FBT001, FBT002
-    max_nbins: int = int(1e6),
+    max_n_bins: int = int(1e6),
 ) -> list[torch.Tensor]:
     """Compute a neighbor list for an atomic configuration.
 
@@ -264,7 +264,7 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
             Default: False
         use_scaled_positions: If set to true, positions are expected to be
             scaled positions.
-        max_nbins: Maximum number of bins used in neighbor search. This is used to limit
+        max_n_bins: Maximum number of bins used in neighbor search. This is used to limit
             the maximum amount of memory required by the neighbor list.
 
     Returns:
@@ -323,7 +323,7 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     )
     n_bins = torch.prod(n_bins_c)
     # Make sure we limit the amount of memory used by the explicit bins.
-    while n_bins > max_nbins:
+    while n_bins > max_n_bins:
         n_bins_c = torch.maximum(
             n_bins_c // 2, torch.ones(3, dtype=torch.long, device=device)
         )
@@ -449,9 +449,9 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     # The memory layout of binx_xyz, biny_xyz, binz_xyz is such that computing
     # the respective bin index leads to a linearly increasing consecutive list.
     # The following assert statement succeeds:
-    #     b_b = (binx_xyz + nbins_c[0] * (biny_xyz + nbins_c[1] *
+    #     b_b = (binx_xyz + n_bins_c[0] * (biny_xyz + n_bins_c[1] *
     #                                     binz_xyz)).ravel()
-    #     assert (b_b == torch.arange(torch.prod(nbins_c))).all()
+    #     assert (b_b == torch.arange(torch.prod(n_bins_c))).all()
 
     # First atoms in pair.
     _first_at_neigh_tuple_n = atoms_in_bin_ba[:, atom_pairs_pn[0]]
@@ -678,7 +678,7 @@ def standard_nl(
         dtype=dtype,
         self_interaction=False,
         use_scaled_positions=False,
-        max_nbins=torch.tensor(1e6, dtype=torch.int64, device=device),
+        max_n_bins=torch.tensor(1e6, dtype=torch.int64, device=device),
     )
 
     mapping = torch.stack((i, j), dim=0)

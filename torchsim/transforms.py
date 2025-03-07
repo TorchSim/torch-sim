@@ -743,7 +743,7 @@ def unravel_3d(idx_linear: torch.Tensor, shape: torch.Tensor) -> torch.Tensor:
 
 
 def get_linear_bin_idx(
-    cell: torch.Tensor, pos: torch.Tensor, nbins_s: torch.Tensor
+    cell: torch.Tensor, pos: torch.Tensor, n_bins_s: torch.Tensor
 ) -> torch.Tensor:
     """Calculate the linear bin index for each position within a defined box.
 
@@ -757,19 +757,19 @@ def get_linear_bin_idx(
             representing the cell vectors defining the box.
         pos (torch.Tensor): A tensor of shape [-1, 3]
             representing the set of positions to be binned.
-        nbins_s (torch.Tensor): A tensor of shape [3]
+        n_bins_s (torch.Tensor): A tensor of shape [3]
             representing the number of bins in each direction.
 
     Returns:
         torch.Tensor: A tensor containing the linear bin indices for each position.
     """
     scaled_pos = torch.linalg.solve(cell.t(), pos.t()).t()
-    bin_index_s = torch.floor(scaled_pos * nbins_s).to(torch.long)
-    return ravel_3d(bin_index_s, nbins_s)
+    bin_index_s = torch.floor(scaled_pos * n_bins_s).to(torch.long)
+    return ravel_3d(bin_index_s, n_bins_s)
 
 
 def scatter_bin_index(
-    nbins: int,
+    n_bins: int,
     max_n_atom_per_bin: int,
     n_images: int,
     bin_index: torch.Tensor,
@@ -783,7 +783,7 @@ def scatter_bin_index(
     to facilitate later removal.
 
     Args:
-        nbins (int): The total number of bins.
+        n_bins (int): The total number of bins.
         max_n_atom_per_bin (int): The maximum number of atoms that can be
             stored in each bin.
         n_images (int): The total number of atoms, including periodic
@@ -792,20 +792,20 @@ def scatter_bin_index(
             its corresponding bin index.
 
     Returns:
-        torch.Tensor: A tensor of shape [nbins, max_n_atom_per_bin]
+        torch.Tensor: A tensor of shape [n_bins, max_n_atom_per_bin]
         relating bin indices (rows) to atom indices (columns).
     """
     device = bin_index.device
     sorted_bin_index, sorted_id = torch.sort(bin_index)
     bin_id = torch.full(
-        (nbins * max_n_atom_per_bin,), n_images, device=device, dtype=torch.long
+        (n_bins * max_n_atom_per_bin,), n_images, device=device, dtype=torch.long
     )
     sorted_bin_id = torch.remainder(
         torch.arange(bin_index.shape[0], device=device), max_n_atom_per_bin
     )
     sorted_bin_id = sorted_bin_index * max_n_atom_per_bin + sorted_bin_id
     bin_id.scatter_(dim=0, index=sorted_bin_id, src=sorted_id)
-    return bin_id.view((nbins, max_n_atom_per_bin))
+    return bin_id.view((n_bins, max_n_atom_per_bin))
 
 
 def linked_cell(  # noqa: PLR0915
@@ -881,24 +881,24 @@ def linked_cell(  # noqa: PLR0915
     box_length = b_max - b_min + 1e-3
 
     # Divide the box into square bins of size cutoff in 3D
-    nbins_s = torch.maximum(torch.ceil(box_length / cutoff), pos.new_ones(3))
+    n_bins_s = torch.maximum(torch.ceil(box_length / cutoff), pos.new_ones(3))
     # Adapt the box lengths so that it encompasses
-    box_vec = torch.diag_embed(nbins_s * cutoff)
-    nbins_s = nbins_s.to(torch.long)
-    nbins = int(torch.prod(nbins_s))
+    box_vec = torch.diag_embed(n_bins_s * cutoff)
+    n_bins_s = n_bins_s.to(torch.long)
+    n_bins = int(torch.prod(n_bins_s))
     # Determine which bins the original atoms and the images belong to following
     # a linear indexing of the 3D bins
-    bin_index_j = get_linear_bin_idx(box_vec, images, nbins_s)
-    n_atom_j_per_bin = torch.bincount(bin_index_j, minlength=nbins)
+    bin_index_j = get_linear_bin_idx(box_vec, images, n_bins_s)
+    n_atom_j_per_bin = torch.bincount(bin_index_j, minlength=n_bins)
     max_n_atom_per_bin = int(n_atom_j_per_bin.max())
     # Convert the linear map bin_index_j into a 2D map. This allows for
     # Fully vectorized neighbor assignment
-    bin_id_j = scatter_bin_index(nbins, max_n_atom_per_bin, n_images, bin_index_j)
+    bin_id_j = scatter_bin_index(n_bins, max_n_atom_per_bin, n_images, bin_index_j)
 
     # Find which bins the original atoms belong to
     bin_index_i = bin_index_j[:n_atom]
     i_bins_l = torch.unique(bin_index_i)
-    i_bins_s = unravel_3d(i_bins_l, nbins_s)
+    i_bins_s = unravel_3d(i_bins_l, n_bins_s)
 
     # Find the bin indices in the neighborhood of i_bins_l. Since the bins have
     # a side length of cutoff only 27 bins are in the neighborhood
@@ -919,13 +919,13 @@ def linked_cell(  # noqa: PLR0915
 
     # Some of the generated bin indices might not be valid
     mask = torch.all(
-        torch.logical_and(neigh_bins_s < nbins_s.view(1, 3), neigh_bins_s >= 0),
+        torch.logical_and(neigh_bins_s < n_bins_s.view(1, 3), neigh_bins_s >= 0),
         dim=1,
     )
 
     # Remove the bins that are outside of the search range, i.e. beyond
     # the borders of the box in the case of non-periodic directions.
-    neigh_j_bins_l = ravel_3d(neigh_bins_s[mask], nbins_s)
+    neigh_j_bins_l = ravel_3d(neigh_bins_s[mask], n_bins_s)
 
     max_neigh_per_atom = max_n_atom_per_bin * n_neigh_bins
     # The i_bin related to neigh_j_bins_l
@@ -948,14 +948,14 @@ def linked_cell(  # noqa: PLR0915
     # Relate `bin_index` (row) with the `neighbor_atom_index` (stored in the columns).
     # empty entries are set to `n_images`
     bin_id_ij = torch.full(
-        (nbins * n_neigh_bins, max_n_atom_per_bin),
+        (n_bins * n_neigh_bins, max_n_atom_per_bin),
         n_images,
         dtype=torch.long,
         device=device,
     )
     # Fill the bins with neighbor atom indices
     bin_id_ij[neigh_i_bins_l] = bin_id_j[neigh_j_bins_l]
-    bin_id_ij = bin_id_ij.view((nbins, max_neigh_per_atom))
+    bin_id_ij = bin_id_ij.view((n_bins, max_neigh_per_atom))
 
     # Map the neighbors in the bins to the central atoms
     neigh_atom[1] = bin_id_ij[bin_index_i].view(-1)
