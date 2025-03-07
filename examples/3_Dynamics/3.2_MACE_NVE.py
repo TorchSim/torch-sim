@@ -84,11 +84,11 @@ state = nve_init(state=state, seed=1)
 # Run MD simulation
 print("\nStarting NVE molecular dynamics simulation...")
 start_time = time.perf_counter()
-for step in range(1_000):
+for step in range(200):
     total_energy = state.energy + kinetic_energy(
         masses=state.masses, momenta=state.momenta
     )
-    if step % 100 == 0:
+    if step % 20 == 0:
         print(f"Step {step}: Total energy: {total_energy.item():.4f} eV")
     state = nve_update(state=state, dt=dt)
 end_time = time.perf_counter()

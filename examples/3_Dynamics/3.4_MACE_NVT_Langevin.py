@@ -81,8 +81,8 @@ langevin_init, langevin_update = nvt_langevin(
 
 state = langevin_init(state=state, seed=1)
 
-for step in range(1_000):
-    if step % 100 == 0:
+for step in range(200):
+    if step % 20 == 0:
         temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
         print(f"{step=}: Temperature: {temp:.4f}")
     state = langevin_update(state=state, kT=kT)

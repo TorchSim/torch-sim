@@ -74,8 +74,8 @@ start = {
 nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
 state = nvt_init(start, kT=kT, seed=1)
 
-for step in range(1_000):
-    if step % 100 == 0:
+for step in range(200):
+    if step % 20 == 0:
         temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
         invariant = nvt_nose_hoover_invariant(state, kT=kT).item()
         print(f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant:.4f}")

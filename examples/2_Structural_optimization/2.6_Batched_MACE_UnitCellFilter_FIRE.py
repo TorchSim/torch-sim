@@ -44,11 +44,11 @@ si_dc = bulk("Si", "diamond", a=5.21, cubic=True).repeat((2, 2, 2))
 si_dc.positions += 0.2 * rng.standard_normal(si_dc.positions.shape)
 
 # Create FCC Copper
-cu_dc = bulk("Cu", "fcc", a=3.85, cubic=True).repeat((2, 2, 2))
+cu_dc = bulk("Cu", "fcc", a=3.85).repeat((2, 2, 2))
 cu_dc.positions += 0.2 * rng.standard_normal(cu_dc.positions.shape)
 
 # Create BCC Iron
-fe_dc = bulk("Fe", "bcc", a=2.95, cubic=True).repeat((2, 2, 2))
+fe_dc = bulk("Fe", "bcc", a=2.95).repeat((2, 2, 2))
 fe_dc.positions += 0.2 * rng.standard_normal(fe_dc.positions.shape)
 
 # Create a list of our atomic systems
@@ -95,7 +95,7 @@ state = fire_init(state)
 
 # Run optimization for a few steps
 print("\nRunning batched unit cell gradient descent:")
-for step in range(500):
+for step in range(200):
     P1 = torch.trace(state.stress[0]) * UnitConversion.eV_per_Ang3_to_GPa / 3
     P2 = torch.trace(state.stress[1]) * UnitConversion.eV_per_Ang3_to_GPa / 3
     P3 = torch.trace(state.stress[2]) * UnitConversion.eV_per_Ang3_to_GPa / 3

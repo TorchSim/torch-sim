@@ -73,7 +73,7 @@ fire_init, fire_update = fire(model=model)
 state = fire_init(state=state)
 
 # Run optimization loop
-for step in range(1_000):
+for step in range(200):
     if step % 10 == 0:
         print(f"{step=}: Total energy: {state.energy.item()} eV")
     state = fire_update(state)

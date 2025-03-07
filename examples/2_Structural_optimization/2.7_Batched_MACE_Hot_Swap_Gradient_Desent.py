@@ -42,10 +42,10 @@ rng = np.random.default_rng()
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 si_dc.positions += 0.2 * rng.standard_normal(si_dc.positions.shape)
 
-cu_dc = bulk("Cu", "fcc", a=3.85).repeat((3, 3, 3))
+cu_dc = bulk("Cu", "fcc", a=3.85).repeat((2, 2, 2))
 cu_dc.positions += 0.2 * rng.standard_normal(cu_dc.positions.shape)
 
-fe_dc = bulk("Fe", "bcc", a=2.95).repeat((3, 3, 3))
+fe_dc = bulk("Fe", "bcc", a=2.95).repeat((2, 2, 2))
 fe_dc.positions += 0.2 * rng.standard_normal(fe_dc.positions.shape)
 
 batched_model = MaceModel(

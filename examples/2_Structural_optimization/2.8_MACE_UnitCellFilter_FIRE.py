@@ -75,7 +75,7 @@ fire_init, fire_update = unit_cell_fire(model=model)
 state = fire_init(state=state)
 
 # Run optimization loop
-for step in range(1_000):
+for step in range(200):
     if step % 10 == 0:
         e_pot = state.energy.item()
         pressure = (
