@@ -46,13 +46,13 @@ def gradient_descent(
 
     def gd_init(
         state: BaseState | StateDict,
-        **extra_state_kwargs: Any,
+        **kwargs: Any,
     ) -> BatchedGDState:
         """Initialize the batched gradient descent optimization state.
 
         Args:
             state: Base state containing positions, masses, cell, etc.
-            extra_state_kwargs: Additional keyword arguments to override state attributes
+            kwargs: Additional keyword arguments to override state attributes
 
         Returns:
             Initialized BatchedGDState with forces and energy
@@ -60,7 +60,7 @@ def gradient_descent(
         if not isinstance(state, BaseState):
             state = BaseState(**state)
 
-        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         # Get initial forces and energy from model
         model_output = model(
@@ -191,7 +191,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         hydrostatic_strain: bool = hydrostatic_strain,  # noqa: FBT001
         constant_volume: bool = constant_volume,  # noqa: FBT001
         scalar_pressure: float = scalar_pressure,
-        **extra_state_kwargs: Any,
+        **kwargs: Any,
     ) -> BatchedUnitCellGDState:
         """Initialize the batched gradient descent optimization state with unit cell.
 
@@ -201,7 +201,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
             hydrostatic_strain: Whether to only allow hydrostatic deformation
             constant_volume: Whether to maintain constant volume
             scalar_pressure: Applied pressure in GPa
-            **extra_state_kwargs: Additional keyword arguments for state initialization
+            **kwargs: Additional keyword arguments for state initialization
 
         Returns:
             Initial BatchedUnitCellGDState with system configuration and forces
@@ -209,7 +209,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         if not isinstance(state, BaseState):
             state = BaseState(**state)
 
-        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         # Setup cell_factor
         if cell_factor is None:
@@ -552,7 +552,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         scalar_pressure: float = scalar_pressure,
         dt_start: float = dt_start,
         alpha_start: float = alpha_start,
-        **extra_state_kwargs: Any,
+        **kwargs: Any,
     ) -> BatchedUnitCellFireState:
         """Initialize a batched FIRE optimization state with unit cell.
 
@@ -563,7 +563,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
             scalar_pressure: Applied pressure in energy units
             dt_start: Initial timestep per batch
             alpha_start: Initial mixing parameter per batch
-            **extra_state_kwargs: Additional state attribute overrides
+            **kwargs: Additional state attribute overrides
 
         Returns:
             BatchedUnitCellFireState with initialized optimization tensors
@@ -571,7 +571,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         if not isinstance(state, BaseState):
             state = BaseState(**state)
 
-        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         # Get dimensions
         n_batches = state.n_batches

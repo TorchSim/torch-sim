@@ -246,7 +246,7 @@ def nve(
         state: BaseState | StateDict,
         kT: torch.Tensor = kT,
         seed: int | None = None,
-        **extra_state_kwargs: Any,
+        **kwargs: Any,
     ) -> MDState:
         """Initialize an NVE state from input data.
 
@@ -255,7 +255,7 @@ def nve(
                 masses, cell, pbc
             kT: Temperature in energy units for initializing momenta
             seed: Random seed for reproducibility
-            **extra_state_kwargs: Additional state arguments
+            **kwargs: Additional state arguments
 
         Returns:
             MDState: Initialized state for NVE integration
@@ -264,8 +264,8 @@ def nve(
         if not isinstance(state, BaseState):
             state = BaseState(**state)
 
-        # Override with extra_state_kwargs if provided
-        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+        # Override with kwargs if provided
+        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         model_output = model(
             positions=state.positions,
@@ -274,8 +274,8 @@ def nve(
         )
 
         momenta = (
-            extra_state_kwargs.get("momenta")
-            if extra_state_kwargs.get("momenta") is not None
+            kwargs.get("momenta")
+            if kwargs.get("momenta") is not None
             else calculate_momenta(state.positions, state.masses, kT, device, dtype, seed)
         )
 
@@ -378,7 +378,7 @@ def nvt_langevin(
         state: BaseState | StateDict,
         kT: torch.Tensor = kT,
         seed: int | None = None,
-        **extra_state_kwargs: Any,
+        **kwargs: Any,
     ) -> MDState:
         """Initialize an NVT Langevin state from input data.
 
@@ -387,7 +387,7 @@ def nvt_langevin(
                 masses, cell, pbc
             kT: Temperature in energy units for initializing momenta
             seed: Random seed for reproducibility
-            **extra_state_kwargs: Additional state arguments
+            **kwargs: Additional state arguments
 
         Returns:
             MDState: Initialized state for NVT Langevin integration
@@ -395,7 +395,7 @@ def nvt_langevin(
         if not isinstance(state, BaseState):
             state = BaseState(**state)
 
-        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         model_output = model(
             positions=state.positions,
@@ -404,8 +404,8 @@ def nvt_langevin(
         )
 
         momenta = (
-            extra_state_kwargs.get("momenta")
-            if extra_state_kwargs.get("momenta") is not None
+            kwargs.get("momenta")
+            if kwargs.get("momenta") is not None
             else calculate_momenta(state.positions, state.masses, kT, device, dtype, seed)
         )
 
@@ -797,7 +797,7 @@ def nvt_nose_hoover(
         - kT: Target temperature (optional, defaults to constructor value)
         - tau: Thermostat relaxation time (optional, defaults to 100*dt)
         - seed: Random seed for momenta initialization (optional)
-        - **extra_state_kwargs: Additional state variables
+        - **kwargs: Additional state variables
 
         The update function accepts:
         - state: Current NVTNoseHooverState
@@ -819,7 +819,7 @@ def nvt_nose_hoover(
         kT: torch.Tensor = kT,
         tau: torch.Tensor | None = None,
         seed: int | None = None,
-        **extra_state_kwargs: Any,
+        **kwargs: Any,
     ) -> NVTNoseHooverState:
         """Initialize the NVT Nose-Hoover state.
 
@@ -828,7 +828,7 @@ def nvt_nose_hoover(
             kT: Target temperature in energy units
             tau: Thermostat relaxation time (defaults to 100*dt)
             seed: Random seed for momenta initialization
-            **extra_state_kwargs: Additional state variables
+            **kwargs: Additional state variables
 
         Returns:
             Initialized NVTNoseHooverState with positions, momenta, forces,
@@ -846,7 +846,7 @@ def nvt_nose_hoover(
         if not isinstance(state, BaseState):
             state = BaseState(**state)
 
-        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         model_output = model(
             positions=state.positions,
@@ -854,8 +854,8 @@ def nvt_nose_hoover(
             atomic_numbers=atomic_numbers,
         )
         momenta = (
-            extra_state_kwargs.get("momenta")
-            if extra_state_kwargs.get("momenta") is not None
+            kwargs.get("momenta")
+            if kwargs.get("momenta") is not None
             else calculate_momenta(state.positions, state.masses, kT, device, dtype, seed)
         )
 
@@ -1460,7 +1460,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         t_tau: torch.Tensor | None = None,
         b_tau: torch.Tensor | None = None,
         seed: int | None = None,
-        **extra_state_kwargs: Any,
+        **kwargs: Any,
     ) -> NPTNoseHooverState:
         """Initialize the NPT Nose-Hoover state.
 
@@ -1478,7 +1478,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             b_tau: Barostat relaxation time. Controls how quickly pressure equilibrates.
                 Defaults to 1000*dt
             seed: Random seed for momenta initialization. Used for reproducible runs
-            **extra_state_kwargs: Additional state variables like atomic_numbers or
+            **kwargs: Additional state variables like atomic_numbers or
                 pre-initialized momenta
 
         Returns:
@@ -1518,7 +1518,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             state = BaseState(**state)
 
         dim, n_particles = state.positions.shape
-        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         # Initialize box variables
         box_position = torch.zeros((), device=device, dtype=dtype)
@@ -1567,8 +1567,8 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
 
         # Initialize momenta
         momenta = (
-            extra_state_kwargs.get("momenta")
-            if extra_state_kwargs.get("momenta") is not None
+            kwargs.get("momenta")
+            if kwargs.get("momenta") is not None
             else calculate_momenta(state.positions, state.masses, kT, device, dtype, seed)
         )
 

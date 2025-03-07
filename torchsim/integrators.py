@@ -252,7 +252,7 @@ def nve(
         state: BaseState | StateDict,
         kT: torch.Tensor = kT,
         seed: int | None = None,
-        **extra_state_kwargs: Any,
+        **kwargs: Any,
     ) -> MDState:
         """Initialize an NVE state from input data.
 
@@ -261,7 +261,7 @@ def nve(
                 masses, cell, pbc
             kT: Temperature in energy units for initializing momenta
             seed: Random seed for reproducibility
-            **extra_state_kwargs: Additional state arguments
+            **kwargs: Additional state arguments
 
         Returns:
             MDState: Initialized state for NVE integration
@@ -270,9 +270,9 @@ def nve(
         if not isinstance(state, BaseState):
             state = BaseState(**state)
 
-        # Override with extra_state_kwargs if provided
-        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
-        batch = extra_state_kwargs.get("batch", state.batch)
+        # Override with kwargs if provided
+        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
+        batch = kwargs.get("batch", state.batch)
 
         model_output = model(
             positions=state.positions,
@@ -282,8 +282,8 @@ def nve(
         )
 
         momenta = (
-            extra_state_kwargs.get("momenta")
-            if extra_state_kwargs.get("momenta") is not None
+            kwargs.get("momenta")
+            if kwargs.get("momenta") is not None
             else calculate_momenta(state.positions, state.masses, kT, seed)
         )
 
@@ -387,14 +387,14 @@ def nvt_langevin(
         state: BaseState | StateDict,
         kT: torch.Tensor = kT,
         seed: int | None = None,
-        **extra_state_kwargs: Any,
+        **kwargs: Any,
     ) -> MDState:
         """Initialize an NVT state from input data."""
         if not isinstance(state, BaseState):
             state = BaseState(**state)
 
-        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
-        batch = extra_state_kwargs.get("batch", state.batch)
+        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
+        batch = kwargs.get("batch", state.batch)
 
         model_output = model(
             positions=state.positions,

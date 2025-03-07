@@ -72,12 +72,12 @@ def gradient_descent(
     if not isinstance(lr, torch.Tensor):
         lr = torch.tensor(lr, device=device, dtype=dtype)
 
-    def gd_init(state: BaseState | StateDict, **extra_state_kwargs) -> GDState:
+    def gd_init(state: BaseState | StateDict, **kwargs) -> GDState:
         """Initialize the gradient descent optimizer state.
 
         Args:
             state: Initial system state
-            **extra_state_kwargs: Additional keyword arguments for state initialization
+            **kwargs: Additional keyword arguments for state initialization
 
         Returns:
             Initial GDState with system configuration and forces
@@ -85,7 +85,7 @@ def gradient_descent(
         if not isinstance(state, BaseState):
             state = BaseState(**state)
 
-        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         # Get initial forces and energy from model
         model_output = model(
@@ -215,12 +215,12 @@ def fire(
         for p in params
     ]
 
-    def fire_init(state: BaseState | StateDict, **extra_state_kwargs) -> FIREState:
+    def fire_init(state: BaseState | StateDict, **kwargs) -> FIREState:
         """Initialize the FIRE optimizer state.
 
         Args:
             state: Initial system state
-            **extra_state_kwargs: Additional keyword arguments for state initialization
+            **kwargs: Additional keyword arguments for state initialization
 
         Returns:
             Initial FIREState with system configuration and forces
@@ -228,7 +228,7 @@ def fire(
         if not isinstance(state, BaseState):
             state = BaseState(**state)
 
-        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
         # Get initial forces and energy from model
         model_output = model(
             positions=state.positions,
@@ -398,12 +398,12 @@ def fire_ase(  # noqa: PLR0915
         for p in params
     ]
 
-    def fire_init(state: BaseState | StateDict, **extra_state_kwargs) -> FIREState:
+    def fire_init(state: BaseState | StateDict, **kwargs) -> FIREState:
         """Initialize the FIRE optimizer state.
 
         Args:
             state: Initial system state
-            **extra_state_kwargs: Additional keyword arguments for state initialization
+            **kwargs: Additional keyword arguments for state initialization
 
         Returns:
             Initial FIREState with system configuration and forces
@@ -411,7 +411,7 @@ def fire_ase(  # noqa: PLR0915
         if not isinstance(state, BaseState):
             state = BaseState(**state)
 
-        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         # Get initial forces and energy from model
         model_output = model(
@@ -635,7 +635,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
         state: BaseState | StateDict,
         cell_factor: torch.Tensor = cell_factor,
         scalar_pressure: float = scalar_pressure,
-        **extra_state_kwargs,
+        **kwargs,
     ) -> UnitCellFIREState:
         """Initialize the FIRE optimization state.
 
@@ -643,7 +643,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
             state: Initial system state containing positions, masses, cell, etc.
             cell_factor: Scaling factor for cell optimization (default: number of atoms)
             scalar_pressure: External pressure tensor (default: 0.0)
-            **extra_state_kwargs: Additional keyword arguments for state initialization
+            **kwargs: Additional keyword arguments for state initialization
 
         Returns:
             Initial UnitCellFIREState with system configuration and forces
@@ -651,7 +651,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
         if not isinstance(state, BaseState):
             state = BaseState(**state)
 
-        atomic_numbers = extra_state_kwargs.get("atomic_numbers", state.atomic_numbers)
+        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         # Setup cell factor
         if cell_factor is None:
