@@ -3,6 +3,7 @@
 # /// script
 # dependencies = [
 #     "mace-torch>=0.3.10",
+#     "phono3py>=3.12",
 # ]
 # ///
 import time

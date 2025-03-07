@@ -1,6 +1,6 @@
 # /// script
 # dependencies = [
-#     "fairchem>=0.1.0",
+#     "fairchem-core>=1.6",
 # ]
 # ///
 import torch

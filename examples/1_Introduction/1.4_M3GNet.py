@@ -1,6 +1,7 @@
 # /// script
 # dependencies = [
 #     "mattersim>=1.1.2",
+#     "numpy<2",
 # ]
 # ///
 import torch
@@ -63,12 +64,9 @@ print(results["stress"])
 # Check if the energy, forces, and stress are the same for the Si system across the batch
 if len(atoms_batch) > 1:
     print("Batch consistency check:")
-    print(
-        f"Energy diff: {torch.max(torch.abs(results['energy'][0] - results['energy'][1]))}"
-    )
-    print(
-        f"Forces diff: {torch.max(torch.abs(results['forces'][0] - results['forces'][1]))}"
-    )
-    print(
-        f"Stress diff: {torch.max(torch.abs(results['stress'][0] - results['stress'][1]))}"
-    )
+    e_diff = torch.max(torch.abs(results["energy"][0] - results["energy"][1]))
+    f_diff = torch.max(torch.abs(results["forces"][0] - results["forces"][1]))
+    s_diff = torch.max(torch.abs(results["stress"][0] - results["stress"][1]))
+    print(f"Energy diff: {e_diff}")
+    print(f"Forces diff: {f_diff}")
+    print(f"Stress diff: {s_diff}")

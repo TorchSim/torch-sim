@@ -3,6 +3,7 @@
 # /// script
 # dependencies = [
 #     "mace-torch>=0.3.10",
+#     "pymatgen>=2025.2.18",
 # ]
 # ///
 
@@ -22,7 +23,7 @@ from torchsim.units import MetalUnits
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float64
 
-kT = 1000 * MetalUnits.temperature
+kT = 1000 * MetalUnits.temperature  # noqa: N816
 
 # Option 1: Load the raw model from the downloaded model
 mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
@@ -61,7 +62,6 @@ coords = [
 structure = Structure(lattice, species, coords)
 
 state = structures_to_state([structure], device=device, dtype=dtype)
-state.atomic_numbers
 
 
 # %%
