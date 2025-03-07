@@ -39,7 +39,7 @@ def batched_initialize_momenta_loop(
     n_atoms_per_batch = positions.shape[1]
 
     # Initialize momenta tensor
-    momenta = torch.zeros((n_batches, n_atoms_per_batch, 3), device=device, dtype=dtype)
+    momenta = torch.zeros((n_batches, n_atoms_per_batch, 3), dtype=dtype)
 
     # Create a generator for each batch using the provided seeds
     generators = [torch.Generator(device=device).manual_seed(int(seed)) for seed in seeds]
@@ -48,7 +48,7 @@ def batched_initialize_momenta_loop(
     for i in range(n_batches):
         # Generate random velocities from normal distribution
         batch_momenta = torch.randn(
-            (n_atoms_per_batch, 3), device=device, dtype=dtype, generator=generators[i]
+            (n_atoms_per_batch, 3), dtype=dtype, generator=generators[i]
         )
 
         # Scale by sqrt(mass * kT)
@@ -77,27 +77,27 @@ def test_batched_initialize_momenta_loop():
     n_atoms_per_batch = 4
 
     # Create test inputs
-    positions = torch.randn(n_batches, n_atoms_per_batch, 3, device=device, dtype=dtype)
-    masses = torch.rand(n_batches, n_atoms_per_batch, device=device, dtype=dtype) + 0.5
-    kT = torch.tensor([0.1, 0.2, 0.3], device=device, dtype=dtype)
+    positions = torch.randn(n_batches, n_atoms_per_batch, 3, dtype=dtype)
+    masses = torch.rand(n_batches, n_atoms_per_batch, dtype=dtype) + 0.5
+    kT = torch.tensor([0.1, 0.2, 0.3], dtype=dtype)
     seeds = torch.arange(seed, seed + n_batches, dtype=torch.int64)
 
     # Run non-batched version first
     unbatched_momenta = []
-    for i in range(n_batches):
+    for batch_idx in range(n_batches):
         state = MDState(
-            positions=positions[i],
-            momenta=torch.zeros_like(positions[i]),
-            masses=masses[i],
-            forces=torch.zeros_like(positions[i]),
-            energy=torch.zeros(1, device=device, dtype=dtype),
-            atomic_numbers=torch.ones(
-                n_atoms_per_batch, device=device, dtype=torch.int64
-            ),
-            cell=torch.eye(3, device=device, dtype=dtype),
+            positions=positions[batch_idx],
+            momenta=torch.zeros_like(positions[batch_idx]),
+            masses=masses[batch_idx],
+            forces=torch.zeros_like(positions[batch_idx]),
+            energy=torch.zeros(1, dtype=dtype),
+            atomic_numbers=torch.ones(n_atoms_per_batch, dtype=torch.int64),
+            cell=torch.eye(3, dtype=dtype),
             pbc=False,
         )
-        state = initialize_momenta(state, kT[i], device, dtype, seed=int(seeds[i]))
+        state = initialize_momenta(
+            state, kT[batch_idx], device, dtype, seed=int(seeds[batch_idx])
+        )
         unbatched_momenta.append(state.momenta)
 
     unbatched_momenta = torch.stack(unbatched_momenta)
@@ -124,9 +124,9 @@ def test_batched_initialize_momenta():
     n_atoms_per_batch = 4
 
     # Create test inputs
-    positions = torch.randn(n_batches, n_atoms_per_batch, 3, device=device, dtype=dtype)
-    masses = torch.rand(n_batches, n_atoms_per_batch, device=device, dtype=dtype) + 0.5
-    kT = torch.tensor([0.1, 0.2, 0.3], device=device, dtype=dtype)
+    positions = torch.randn(n_batches, n_atoms_per_batch, 3, dtype=dtype)
+    masses = torch.rand(n_batches, n_atoms_per_batch, dtype=dtype) + 0.5
+    kT = torch.tensor([0.1, 0.2, 0.3], dtype=dtype)
     seeds = torch.arange(seed, seed + n_batches, dtype=torch.int64)
 
     # Run non-batched version first
@@ -139,11 +139,9 @@ def test_batched_initialize_momenta():
             momenta=torch.zeros_like(positions[batch_idx]),
             masses=masses[batch_idx],
             forces=torch.zeros_like(positions[batch_idx]),
-            energy=torch.zeros(1, device=device, dtype=dtype),
-            atomic_numbers=torch.ones(
-                n_atoms_per_batch, device=device, dtype=torch.int64
-            ),
-            cell=torch.eye(3, device=device, dtype=dtype),
+            energy=torch.zeros(1, dtype=dtype),
+            atomic_numbers=torch.ones(n_atoms_per_batch, dtype=torch.int64),
+            cell=torch.eye(3, dtype=dtype),
             pbc=False,
         )
         state = initialize_momenta(
@@ -163,20 +161,14 @@ def test_batched_initialize_momenta():
     # Verify center of mass momentum is zero for each batch
     for batch_idx in range(n_batches):
         com_momentum = torch.mean(batched_momenta[batch_idx], dim=0)
-        assert torch.allclose(
-            com_momentum, torch.zeros(3, device=device, dtype=dtype), atol=1e-10
-        )
+        assert torch.allclose(com_momentum, torch.zeros(3, dtype=dtype), atol=1e-10)
 
 
-def test_nvt_langevin(
-    ar_double_base_state: BaseState,
-    lj_calculator: LennardJonesModel,
-    device: torch.device,
-) -> None:
+def test_nvt_langevin(ar_double_base_state: BaseState, lj_calculator: LennardJonesModel):
     dtype = torch.float64
     n_steps = 100
-    dt = torch.tensor(0.001, device=device, dtype=dtype)
-    kT = torch.tensor(100.0, device=device, dtype=dtype) * MetalUnits.temperature
+    dt = torch.tensor(0.001, dtype=dtype)
+    kT = torch.tensor(100.0, dtype=dtype) * MetalUnits.temperature
 
     # Initialize integrator
     init_fn, update_fn = nvt_langevin(
@@ -231,15 +223,11 @@ def test_nvt_langevin(
     assert pos_diff > 0.0001  # Systems should remain separated
 
 
-def test_nve(
-    ar_double_base_state: BaseState,
-    lj_calculator: LennardJonesModel,
-    device: torch.device,
-):
+def test_nve(ar_double_base_state: BaseState, lj_calculator: LennardJonesModel):
     dtype = torch.float64
     n_steps = 100
-    dt = torch.tensor(0.001, device=device, dtype=dtype)
-    kT = torch.tensor(100.0, device=device, dtype=dtype) * MetalUnits.temperature
+    dt = torch.tensor(0.001, dtype=dtype)
+    kT = torch.tensor(100.0, dtype=dtype) * MetalUnits.temperature
 
     # Initialize integrator
     nve_init, nve_update = nve(model=lj_calculator, dt=dt, kT=kT)

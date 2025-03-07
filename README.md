@@ -21,10 +21,7 @@ pip install .
 # if uv is not yet installed
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# run the demo script
-uv run --with . path/to/example.py
-
-# example paths
+# pick any of the examples
 uv run --with . examples/2_Structural_optimization/2.3_MACE_FIRE.py
 uv run --with . examples/3_Dynamics/3.3_MACE_NVE_cueq.py
 uv run --with . examples/4_High_level_api/4.1_high_level_api.py
