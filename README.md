@@ -7,13 +7,31 @@ TorchSim is an open-source simulation engine in PyTorch focused on atomistic sim
 
 ## Installation
 
-```bash
-git clone https://github.com/radical-ai/torch-sim.git
+```sh
+git clone https://github.com/radical-ai/torch-sim
 cd torch-sim
 pip install .
 ```
 
+## Running Example Scripts
+
+`torchsim` has dozens of demos in the [`examples/`](examples) folder. To run any of the them, use the following command:
+
+```sh
+# if uv is not yet installed
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# run the demo script
+uv run --with . path/to/example.py
+
+# example paths
+uv run --with . examples/2_Structural_optimization/2.3_MACE_FIRE.py
+uv run --with . examples/3_Dynamics/3.3_MACE_NVE_cueq.py
+uv run --with . examples/4_High_level_api/4.1_high_level_api.py
+```
+
 ## High-level API Example with ASE
+
 ```python
 from ase.build import bulk
 from torchsim.runners import integrate, state_to_atoms
@@ -45,6 +63,7 @@ final_atoms = state_to_atoms(final_state)
 ```
 
 ## Low-level API Example with ASE
+
 ```python
 # the model and atoms will remain the same
 
@@ -165,6 +184,7 @@ for filename in trajectory_files:
     with TorchSimTrajectory(filename) as traj:
         print(traj)
 ```
+
 ## Core modules
 
 TorchSim is built around the following core modules:
@@ -200,14 +220,15 @@ TorchSim is built around the following core modules:
 - `torchsim.worlflows`: Utility functions for running workflows.
 
 Each module is designed to work seamlessly with PyTorch, enabling efficient and flexible molecular simulations.
+
 ## API
 
 ### State and Parameters
 
 The simulation engine uses two main objects:
 
-| Temperature Profile | RDF Comparison |
-| ------------------ | -------------- |
+| Temperature Profile                                                                                     | RDF Comparison                                                                                     |
+| ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | ![Temperature Profile](https://github.com/user-attachments/assets/4d87444f-751d-49f4-ada2-c4578abe0a18) | ![RDF Comparison](https://github.com/user-attachments/assets/f84b4b3f-5b09-4cf5-9eda-b0f766be93fc) |
 
 ### State (S)
