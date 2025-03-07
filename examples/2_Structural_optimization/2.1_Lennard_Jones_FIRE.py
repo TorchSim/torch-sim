@@ -1,5 +1,7 @@
 """Lennard-Jones FIRE optimization."""
 
+import os
+
 import torch
 
 from torchsim.models.lennard_jones import UnbatchedLennardJonesModel
@@ -13,6 +15,9 @@ dtype = torch.float32
 # Set up the random number generator
 generator = torch.Generator(device=device)
 generator.manual_seed(42)  # For reproducibility
+
+# Number of steps to run
+N_steps = 10 if os.getenv("CI") else 2_000
 
 # Create face-centered cubic (FCC) Argon
 # 5.26 Å is a typical lattice constant for Ar
@@ -98,7 +103,7 @@ fire_init, fire_update = fire(
 state = fire_init(state=state)
 
 # Run optimization for 1000 steps
-for step in range(2_000):
+for step in range(N_steps):
     if step % 100 == 0:
         print(f"{step=}: Potential energy: {state.energy.item()} eV")
     state = fire_update(state)

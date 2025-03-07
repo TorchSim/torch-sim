@@ -1,5 +1,7 @@
 """Structural optimization with soft sphere potential using FIRE optimizer."""
 
+import os
+
 import torch
 
 from torchsim.models.soft_sphere import SoftSphereModel
@@ -13,6 +15,9 @@ dtype = torch.float64
 # Set up the random number generator
 generator = torch.Generator(device=device)
 generator.manual_seed(42)  # For reproducibility
+
+# Number of steps to run
+N_steps = 10 if os.getenv("CI") else 2_000
 
 # Create face-centered cubic (FCC) Cu
 # 3.61 Å is a typical lattice constant for Cu
@@ -95,7 +100,7 @@ fire_init, fire_update = fire(
 state = fire_init(state=state)
 
 # Run optimization for 2000 steps
-for step in range(2_000):
+for step in range(N_steps):
     if step % 100 == 0:
         print(f"{step=}: Total energy: {state.energy.item()} eV")
     state = fire_update(state)

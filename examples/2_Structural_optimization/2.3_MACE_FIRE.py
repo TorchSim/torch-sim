@@ -6,6 +6,8 @@
 # ]
 # ///
 
+import os
+
 import numpy as np
 import torch
 from ase.build import bulk
@@ -32,6 +34,9 @@ loaded_model = mace_mp(
 # Option 2: Load from local file (comment out Option 1 to use this)
 # MODEL_PATH = "../../../checkpoints/MACE/mace-mpa-0-medium.model"
 # loaded_model = torch.load(MODEL_PATH, map_location=device)
+
+# Number of steps to run
+N_steps = 10 if os.getenv("CI") else 500
 
 PERIODIC = True
 
@@ -73,7 +78,7 @@ fire_init, fire_update = fire(model=model)
 state = fire_init(state=state)
 
 # Run optimization loop
-for step in range(200):
+for step in range(N_steps):
     if step % 10 == 0:
         print(f"{step=}: Total energy: {state.energy.item()} eV")
     state = fire_update(state)

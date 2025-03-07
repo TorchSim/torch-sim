@@ -5,6 +5,8 @@
 #     "mace-torch>=0.3.10",
 # ]
 # ///
+import os
+
 import numpy as np
 import torch
 from ase.build import bulk
@@ -33,6 +35,9 @@ loaded_model = mace_mp(
 # Option 2: Load the compiled model from the local file
 # MODEL_PATH = "../../../checkpoints/MACE/mace-mpa-0-medium.model"
 # loaded_model = torch.load(MODEL_PATH, map_location=device)
+
+# Number of steps to run
+N_steps = 10 if os.getenv("CI") else 500
 
 PERIODIC = True
 
@@ -94,7 +99,7 @@ results = batched_model(
 total_structures = 3
 current_structures = 2
 # Run optimization for a few steps
-for step in range(200):
+for step in range(N_steps):
     # Calculate force norms for each batch and check if they're converged
     force_norms = torch.stack(
         [batch_state.forces[batch_state.batch == i].norm(dim=-1).max() for i in range(2)]

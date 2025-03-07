@@ -6,6 +6,8 @@
 # ]
 # ///
 
+import os
+
 import numpy as np
 import torch
 from ase.build import bulk
@@ -34,6 +36,9 @@ loaded_model = mace_mp(
 # Option 2: Load from local file (comment out Option 1 to use this)
 # MODEL_PATH = "../../../checkpoints/MACE/mace-mpa-0-medium.model"
 # loaded_model = torch.load(MODEL_PATH, map_location=device)
+
+# Number of steps to run
+N_steps = 10 if os.getenv("CI") else 500
 
 # Set random seed for reproducibility
 PERIODIC = True
@@ -100,7 +105,7 @@ state = gd_init(state)
 
 # Run optimization for a few steps
 print("\nRunning batched unit cell gradient descent:")
-for step in range(200):
+for step in range(N_steps):
     P1 = torch.trace(state.stress[0]) * UnitConversion.eV_per_Ang3_to_GPa / 3
     P2 = torch.trace(state.stress[1]) * UnitConversion.eV_per_Ang3_to_GPa / 3
     P3 = torch.trace(state.stress[2]) * UnitConversion.eV_per_Ang3_to_GPa / 3
