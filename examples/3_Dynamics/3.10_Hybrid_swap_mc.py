@@ -89,13 +89,12 @@ hybrid_state = HybridSwapMCState(
     ),
 )
 
-og_hybrid_state = hybrid_state.clone()
-
 generator = torch.Generator(device=device)
 generator.manual_seed(42)
 
-for i in range(100):
-    if i % 10 == 0:
+n_steps = 100
+for step in range(n_steps):
+    if step % 10 == 0:
         hybrid_state = swap_step(hybrid_state, kT=torch.tensor(kT), generator=generator)
     else:
         hybrid_state = nvt_step(hybrid_state, dt=torch.tensor(0.002), kT=torch.tensor(kT))

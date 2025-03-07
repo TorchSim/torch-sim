@@ -45,15 +45,15 @@ def batched_initialize_momenta_loop(
     generators = [torch.Generator(device=device).manual_seed(int(seed)) for seed in seeds]
 
     # Generate random momenta for each batch
-    for i in range(n_batches):
+    for batch_idx in range(n_batches):
         # Generate random velocities from normal distribution
         batch_momenta = torch.randn(
-            (n_atoms_per_batch, 3), dtype=dtype, generator=generators[i]
+            (n_atoms_per_batch, 3), dtype=dtype, generator=generators[batch_idx]
         )
 
         # Scale by sqrt(mass * kT)
-        mass_factors = torch.sqrt(masses[i]).unsqueeze(-1)
-        kT_factor = torch.sqrt(kT[i])
+        mass_factors = torch.sqrt(masses[batch_idx]).unsqueeze(-1)
+        kT_factor = torch.sqrt(kT[batch_idx])
         batch_momenta *= mass_factors * kT_factor
 
         # Remove center of mass motion if more than one atom
@@ -61,7 +61,7 @@ def batched_initialize_momenta_loop(
             mean_momentum = torch.mean(batch_momenta, dim=0, keepdim=True)
             batch_momenta = batch_momenta - mean_momentum
 
-        momenta[i] = batch_momenta
+        momenta[batch_idx] = batch_momenta
 
     return momenta
 

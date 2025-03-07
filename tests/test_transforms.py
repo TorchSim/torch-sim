@@ -450,11 +450,11 @@ def test_pbc_wrap_batched_preserves_relative_positions(
 
         # Calculate pairwise distances before wrapping
         atoms_in_batch = torch.sum(batch_mask).item()
-        for i in range(atoms_in_batch - 1):
-            for j in range(i + 1, atoms_in_batch):
+        for n_atoms in range(atoms_in_batch - 1):
+            for j in range(n_atoms + 1, atoms_in_batch):
                 # Get the indices of atoms i and j in this batch
                 batch_indices = torch.where(batch_mask)[0]
-                idx_i = batch_indices[i]
+                idx_i = batch_indices[n_atoms]
                 idx_j = batch_indices[j]
 
                 # Original vector from i to j

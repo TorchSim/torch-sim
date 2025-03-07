@@ -136,10 +136,10 @@ def test_monte_carlo(
 
     # Run multiple Monte Carlo steps
     n_steps = 5
-    for i in range(n_steps):
+    for step in range(n_steps):
         # Create a new generator for each step
         step_generator = torch.Generator(device=batched_diverse_state.device)
-        step_generator.manual_seed(42 + i + 1)  # Different seed for each step
+        step_generator.manual_seed(42 + step + 1)  # Different seed for each step
 
         # Run a Monte Carlo step
         current_state = monte_carlo_step_fn(current_state, generator=step_generator)
