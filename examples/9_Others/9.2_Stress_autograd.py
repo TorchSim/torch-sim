@@ -1,9 +1,17 @@
+"""Measure performance of different methods for calculating stress.
+
+The stress is calculated using three different methods:
+
+1. The stress_fn function, which uses a brute force method.
+2. The stress_autograd_fn function, which uses automatic differentiation.
+3. The stress_autograd_fn_functorch function, which uses functorch.
+"""
+
 import timeit
 
 import torch
 
 from torchsim.models.lennard_jones import lennard_jones_pair, lennard_jones_pair_force
-from torchsim.transforms import raw_transform
 
 
 torch.set_default_tensor_type(torch.DoubleTensor)
@@ -37,7 +45,8 @@ def energy_fn(
     # Apply periodic boundary conditions
     dr = dr - box.diagonal() * torch.round(dr / box.diagonal())
     if perturbation is not None:
-        dr = raw_transform(perturbation, dr)
+        # Apply transformation directly (R + dR)
+        dr = dr + perturbation @ dr
 
     # Calculate distances
     distances = torch.norm(dr, dim=2)
@@ -133,17 +142,18 @@ def stress_autograd_fn(R: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
 
 
 def stress_autograd_fn_functorch(R: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
+    """Calculate stress using functorch.grad."""
     # Get volume and dimension
     volume = torch.prod(box.diagonal())
     dim = R.shape[1]
 
     # Create identity and zero matrices
-    I = torch.eye(dim, device=R.device, dtype=torch.float64)
+    eye = torch.eye(dim, device=R.device, dtype=torch.float64)
     zero = torch.zeros((dim, dim), device=R.device, dtype=torch.float64)
 
-    def U(eps, R):
+    def U(eps: torch.Tensor, R: torch.Tensor) -> torch.Tensor:
         # Apply strain perturbation to positions
-        return energy_fn(R, box, perturbation=(I + eps))
+        return energy_fn(R, box, perturbation=(eye + eps))
 
     # Use functorch.grad
     from torch.func import grad
@@ -157,20 +167,25 @@ def stress_autograd_fn_functorch(R: torch.Tensor, box: torch.Tensor) -> torch.Te
     return 2 * stress / volume
 
 
-latvec = torch.eye(2) * box_size
+lat_vec = torch.eye(2) * box_size
 
-print(
-    f"stress_fn time: {timeit.timeit('stress_fn(positions, latvec)', globals=globals(), number=100)} seconds"
+stress_fn_time = timeit.timeit(
+    "stress_fn(positions, lat_vec)", globals=globals(), number=100
 )
-print(
-    f"stress_autograd_fn time: {timeit.timeit('stress_autograd_fn(positions, latvec)', globals=globals(), number=100)} seconds"
-)
-print(
-    f"stress_autograd_fn_functorch time: {timeit.timeit('stress_autograd_fn_functorch(positions, latvec)', globals=globals(), number=100)} seconds"
-)
+print(f"{stress_fn_time=:.4f} sec")
 
-print(energy_fn(positions, latvec, None))
-print(force_fn(positions, latvec))
-print(f"stress_fn: {stress_fn(positions, latvec)[1]}")
-print(f"stress_autograd_fn: {stress_autograd_fn(positions, latvec)}")
-print(f"stress_autograd_fn_functorch: {stress_autograd_fn_functorch(positions, latvec)}")
+stress_autograd_fn_time = timeit.timeit(
+    "stress_autograd_fn(positions, lat_vec)", globals=globals(), number=100
+)
+print(f"{stress_autograd_fn_time=:.4f} sec")
+
+stress_autograd_fn_functorch_time = timeit.timeit(
+    "stress_autograd_fn_functorch(positions, lat_vec)", globals=globals(), number=100
+)
+print(f"{stress_autograd_fn_functorch_time=:.4f} sec")
+
+print(energy_fn(positions, lat_vec, None))
+print(force_fn(positions, lat_vec))
+print(f"stress_fn: {stress_fn(positions, lat_vec)[1]}")
+print(f"stress_autograd_fn: {stress_autograd_fn(positions, lat_vec)}")
+print(f"stress_autograd_fn_functorch: {stress_autograd_fn_functorch(positions, lat_vec)}")
