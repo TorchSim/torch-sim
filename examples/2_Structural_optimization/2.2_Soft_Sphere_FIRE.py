@@ -1,3 +1,5 @@
+"""Structural optimization with soft sphere potential using FIRE optimizer."""
+
 import torch
 
 from torchsim.models.soft_sphere import SoftSphereModel

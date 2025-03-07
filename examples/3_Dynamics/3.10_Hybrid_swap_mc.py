@@ -1,4 +1,11 @@
-# %%
+"""Hybrid swap Monte Carlo simulation."""
+
+# /// script
+# dependencies = [
+#     "mace-torch>=0.3.10",
+# ]
+# ///
+
 from dataclasses import dataclass
 
 import torch

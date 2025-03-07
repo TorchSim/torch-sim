@@ -1,3 +1,11 @@
+"""Structural optimization with MACE using FIRE optimizer."""
+
+# /// script
+# dependencies = [
+#     "mace-torch>=0.3.10",
+# ]
+# ///
+
 import numpy as np
 import torch
 from ase.build import bulk

@@ -1,3 +1,11 @@
+"""NPT simulation with MACE and Nose-Hoover thermostat."""
+
+# /// script
+# dependencies = [
+#     "mace-torch>=0.3.10",
+# ]
+# ///
+
 import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp

@@ -118,11 +118,11 @@ def stress_autograd_fn(R: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
     dim = R.shape[1]
 
     # Create identity and zero matrices
-    I = torch.eye(dim, device=R.device)
-    zero = torch.zeros((dim, dim), device=R.device).requires_grad_(True)
+    eye = torch.eye(dim, device=R.device)
+    zero = torch.zeros((dim, dim), device=R.device).requires_grad_(mode=True)
 
-    def U(eps):
-        return energy_fn(R, box, perturbation=(I + eps))
+    def U(eps: torch.Tensor) -> torch.Tensor:
+        return energy_fn(R, box, perturbation=(eye + eps))
 
     # Calculate energy at zero strain
     energy = U(zero)

@@ -1,3 +1,4 @@
+"""Elastic tensor calculation with MACE."""
 # /// script
 # dependencies = [
 #     "ase>=3.24",

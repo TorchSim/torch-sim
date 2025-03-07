@@ -1,3 +1,5 @@
+"""Trajectory logging example."""
+
 # %%
 import numpy as np
 import torch
@@ -47,7 +49,7 @@ state = MDState(
     forces=torch.randn(10, 3),
     masses=torch.ones(10),
     cell=torch.eye(3) * 10.0,  # Cubic box of size 10
-    pbc=torch.tensor(True),
+    pbc=torch.tensor(data=True),
 )
 
 traj2 = TorchSimTrajectory("test_trajectory2.h5")

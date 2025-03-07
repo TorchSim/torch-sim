@@ -1,3 +1,11 @@
+"""NVE simulation with MACE and cuEquivariance enabled."""
+
+# /// script
+# dependencies = [
+#     "mace-torch>=0.3.10",
+# ]
+# ///
+
 import time
 
 import torch

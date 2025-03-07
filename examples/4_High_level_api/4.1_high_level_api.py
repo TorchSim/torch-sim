@@ -1,7 +1,5 @@
-### basic lennard jones example
+"""Basic Lennard-Jones example."""
 
-
-# %% %
 import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
