@@ -213,8 +213,7 @@ class TorchSimTrajectory:
             coerce_to_int32 (bool): Whether to coerce int64 data to int32
             metadata (dict[str, str] | None): Additional metadata to save in trajectory
 
-        If the file does not exist, it will be created. If it exists and force_overwrite
-        is True, it will be overwritten.
+        If the file does not exist, it will be created.
         """
         filename = pathlib.Path(filename)
 

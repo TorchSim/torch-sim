@@ -12,7 +12,7 @@ from mace.tools import atomic_numbers_to_indices, to_one_hot
 
 from torchsim.models.mace import MaceModel
 from torchsim.neighbors import vesin_nl_ts
-from torchsim.optimizers import batched_unit_cell_gradient_descent
+from torchsim.optimizers import unit_cell_gradient_descent
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -94,7 +94,7 @@ learning_rate = 0.01
 learning_rates = torch.tensor([learning_rate, learning_rate], device=device, dtype=dtype)
 
 # Initialize unit cell gradient descent optimizer
-batch_state, gd_update = batched_unit_cell_gradient_descent(
+batch_state, gd_update = unit_cell_gradient_descent(
     model=batched_model,
     positions_list=positions_list,
     masses_list=masses_list,
@@ -174,7 +174,7 @@ for step in range(200):
             )
 
             # Reinitialize optimizer with updated batch information
-            batch_state, gd_update = batched_unit_cell_gradient_descent(
+            batch_state, gd_update = unit_cell_gradient_descent(
                 model=batched_model,
                 positions_list=positions_list,
                 masses_list=masses_list,

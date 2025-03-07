@@ -128,7 +128,7 @@ def stress_autograd_fn(R: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
 
     # Create identity and zero matrices
     eye = torch.eye(dim, device=R.device)
-    zero = torch.zeros((dim, dim), device=R.device).requires_grad_(mode=True)
+    zero = torch.zeros((dim, dim), device=R.device).requires_grad_(True)  # noqa: FBT003
 
     def U(eps: torch.Tensor) -> torch.Tensor:
         return energy_fn(R, box, perturbation=(eye + eps))

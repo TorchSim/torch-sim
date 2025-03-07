@@ -11,12 +11,12 @@ from torchsim.unbatched_integrators import MDState
 # Create test data
 n_atoms = 10
 n_frames = 2
-
-positions = np.random.random((n_atoms, 3)).astype(np.float32)
-velocities = np.random.random((n_atoms, 3)).astype(np.float32)
+np_rng = np.random.default_rng(seed=42)
+positions = np_rng.random((n_atoms, 3)).astype(np.float32)
+velocities = np_rng.random((n_atoms, 3)).astype(np.float32)
 
 # Initialize trajectory file
-traj = TorchSimTrajectory("test_trajectory.h5", compress_data=True, force_overwrite=True)
+traj = TorchSimTrajectory("test_trajectory.h5", compress_data=True)
 
 # Write first frame
 data_frame1 = {"positions": positions, "velocities": velocities}

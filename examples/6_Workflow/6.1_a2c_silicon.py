@@ -179,7 +179,7 @@ def get_relaxed_structure(
     Initial_energy = results["energy"]
     print(f"Initial energy: {Initial_energy.item()} eV")
 
-    state, fire_update = fire(
+    state_init_fn, fire_update = fire(
         model=model,
         positions=positions,
         masses=torch.tensor(atomic_masses, device=device, dtype=dtype),
@@ -187,8 +187,9 @@ def get_relaxed_structure(
         pbc=PERIODIC,
         atomic_numbers=atomic_numbers,
     )
+    state = state_init_fn()
 
-    def step_fn(idx, state, logger):
+    def step_fn(idx: int, state: FIREState, logger: dict) -> tuple[FIREState, dict]:
         logger["energy"][idx] = state.energy
         state = fire_update(state)
         return state, logger

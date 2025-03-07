@@ -159,7 +159,8 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
     constant_volume: bool = False,
     scalar_pressure: float = 0.0,
 ) -> tuple[
-    BatchedUnitCellGDState, Callable[[BatchedUnitCellGDState], BatchedUnitCellGDState]
+    Callable[[BaseState | StateDict], BatchedUnitCellGDState],
+    Callable[[BatchedUnitCellGDState], BatchedUnitCellGDState],
 ]:
     """Initialize a batched gradient descent optimization with unit cell.
 
