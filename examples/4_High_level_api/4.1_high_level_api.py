@@ -9,6 +9,8 @@ criteria, and logging.
 # ]
 # ///
 
+import os
+
 import numpy as np
 import torch
 from ase.build import bulk
@@ -38,7 +40,7 @@ final_state = integrate(
     system=si_atoms,
     model=lj_model,
     integrator=nvt_langevin,
-    n_steps=1000,
+    n_steps=40 if os.getenv("CI") else 1000,
     temperature=2000,
     timestep=0.002,
 )
@@ -63,7 +65,7 @@ final_state = integrate(
     system=si_atoms,
     model=lj_model,
     integrator=nvt_langevin,
-    n_steps=1000,
+    n_steps=40 if os.getenv("CI") else 1000,
     temperature=2000,
     timestep=0.002,
     trajectory_reporter=reporter,
@@ -104,7 +106,7 @@ final_state = integrate(
     system=si_atoms,
     model=mace_model,
     integrator=nvt_langevin,
-    n_steps=100,
+    n_steps=40 if os.getenv("CI") else 100,
     temperature=2000,
     timestep=0.002,
     trajectory_reporter=reporter,
@@ -122,7 +124,7 @@ final_state = integrate(
     system=[si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell],
     model=mace_model,
     integrator=nvt_langevin,
-    n_steps=100,
+    n_steps=40 if os.getenv("CI") else 100,
     temperature=2000,
     timestep=0.002,
 )
@@ -144,7 +146,7 @@ final_state = integrate(
     system=systems,
     model=mace_model,
     integrator=nvt_langevin,
-    n_steps=100,
+    n_steps=40 if os.getenv("CI") else 100,
     temperature=2000,
     timestep=0.002,
     trajectory_reporter=batch_reporter,
@@ -199,7 +201,7 @@ final_state = integrate(
     system=structure,
     model=lj_model,
     integrator=nvt_langevin,
-    n_steps=1000,
+    n_steps=40 if os.getenv("CI") else 1000,
     temperature=2000,
     timestep=0.002,
 )
