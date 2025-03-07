@@ -69,10 +69,7 @@ state = {
     "atomic_numbers": atomic_numbers,
 }
 # Initialize FIRE optimizer for structural relaxation
-fire_init, fire_update = fire(
-    model=model,
-)
-
+fire_init, fire_update = fire(model=model)
 state = fire_init(state=state)
 
 # Run optimization loop

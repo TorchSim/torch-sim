@@ -1,3 +1,5 @@
+"""Lennard-Jones FIRE optimization."""
+
 import torch
 
 from torchsim.models.lennard_jones import UnbatchedLennardJonesModel

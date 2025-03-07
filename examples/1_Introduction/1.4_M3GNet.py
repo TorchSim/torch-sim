@@ -1,3 +1,5 @@
+"""M3GNet model example."""
+
 # /// script
 # dependencies = [
 #     "mattersim>=1.1.2",

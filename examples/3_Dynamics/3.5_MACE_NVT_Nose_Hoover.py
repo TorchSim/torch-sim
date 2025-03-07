@@ -61,7 +61,7 @@ model = UnbatchedMaceModel(
 results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 
 dt = 0.002 * Units.time  # Timestep (ps)
-kT = 1000 * Units.temperature  # Initial temperature (K)
+kT = 1000 * Units.temperature  # Initial temperature (K)  # noqa: N816
 
 start = {
     "positions": positions,
@@ -77,12 +77,9 @@ state = nvt_init(start, kT=kT, seed=1)
 for step in range(1_000):
     if step % 100 == 0:
         temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
-        invariant = nvt_nose_hoover_invariant(state, kT=kT)
-        print(
-            f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant.item():.4f}"
-        )
+        invariant = nvt_nose_hoover_invariant(state, kT=kT).item()
+        print(f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant:.4f}")
     state = nvt_update(state, kT=kT)
 
-print(
-    f"Final temperature: {temperature(masses=state.masses, momenta=state.momenta) / Units.temperature}"
-)
+final_temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
+print(f"Final temperature: {final_temp}")

@@ -63,13 +63,13 @@ print(f"Model loading time: {model_loading_time}s")
 # First we will create a concatenated positions array from all supercells
 positions_numpy = np.concatenate([i.get_positions() for i in supercells])
 
-# Then we stack cell vectors into a (n_supercells, 3, 3) array
+# stack cell vectors into a (n_supercells, 3, 3) array
 cell_numpy = np.stack([i.get_cell() for i in supercells])
 
-# Then we concatenate atomic numbers into a single array
+# concatenate atomic numbers into a single array
 atomic_numbers_numpy = np.concatenate([i.numbers for i in supercells])
 
-# Then we convert to tensors
+# convert to tensors
 positions = torch.tensor(positions_numpy, device=device, dtype=dtype)
 cell = torch.tensor(cell_numpy, device=device, dtype=dtype)
 atomic_numbers = torch.tensor(atomic_numbers_numpy, device=device, dtype=torch.int)

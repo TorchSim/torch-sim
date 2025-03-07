@@ -1,8 +1,11 @@
+"""Minimal MACE batched example."""
+
 # /// script
 # dependencies = [
 #     "mace-torch>=0.3.10",
 # ]
 # ///
+
 import numpy as np
 import torch
 from ase.build import bulk
@@ -52,20 +55,20 @@ batched_model = MaceModel(
 # This will have shape (16, 3) which is concatenated from two 8 atom systems
 positions_numpy = np.concatenate([atoms.positions for atoms in atoms_list])
 
-# Then we stack cell vectors into a (2, 3, 3) array where the first index is batch dimension
+# stack cell vectors into a (2, 3, 3) array where the first index is batch dimension
 cell_numpy = np.stack([atoms.cell.array for atoms in atoms_list])
 
-# Then we concatenate atomic numbers into a (16,) array
+# concatenate atomic numbers into a (16,) array
 atomic_numbers_numpy = np.concatenate(
     [atoms.get_atomic_numbers() for atoms in atoms_list]
 )
 
-# Then we convert to tensors
+# convert to tensors
 positions = torch.tensor(positions_numpy, device=device, dtype=dtype)
 cell = torch.tensor(cell_numpy, device=device, dtype=dtype)
 atomic_numbers = torch.tensor(atomic_numbers_numpy, device=device, dtype=torch.int)
 
-# Then we create a batch index array of shape (16,) which is 0 for first 8 atoms and 1 for last 8 atoms
+# create batch index array of shape (16,) which is 0 for first 8 atoms, 1 for last 8 atoms
 atoms_per_batch = torch.tensor(
     [len(atoms) for atoms in atoms_list], device=device, dtype=torch.int
 )

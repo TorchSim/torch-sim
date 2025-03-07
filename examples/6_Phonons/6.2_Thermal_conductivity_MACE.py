@@ -4,6 +4,7 @@
 # dependencies = [
 #     "mace-torch>=0.3.10",
 #     "phono3py>=3.12",
+#     "pymatgen>=2025.2.18",
 # ]
 # ///
 import time

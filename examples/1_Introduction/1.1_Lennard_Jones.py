@@ -1,3 +1,5 @@
+"""Lennard-Jones simple single system example."""
+
 import torch
 
 from torchsim.models.lennard_jones import UnbatchedLennardJonesModel

@@ -1,4 +1,6 @@
-"""Example NVT Nose Hoover MD simulation of random alloy using MACE model with temperature profile."""
+"""Example NVT Nose Hoover MD simulation of random alloy using MACE model with
+temperature profile.
+"""
 
 # /// script
 # dependencies = [
@@ -20,7 +22,7 @@ from torchsim.unbatched_integrators import nvt_nose_hoover, nvt_nose_hoover_inva
 from torchsim.units import MetalUnits as Units
 
 
-def get_kT(
+def get_kT(  # noqa: N802
     step: int,
     num_steps_initial: int,
     num_steps_ramp_up: int,
@@ -119,7 +121,9 @@ probabilities = [0.33, 0.33, 0.34]
 fcc_lattice = bulk("Cu", "fcc", a=3.61, cubic=True).repeat((2, 2, 2))
 
 # Randomly assign species
-random_species = np.random.choice(species, size=len(fcc_lattice), p=probabilities)
+random_species = np.random.default_rng(seed=0).choice(
+    species, size=len(fcc_lattice), p=probabilities
+)
 fcc_lattice.set_chemical_symbols(random_species)
 
 # Prepare input tensors
@@ -147,7 +151,7 @@ results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 
 # Set up simulation parameters
 dt = 0.002 * Units.time
-kT = Initial_temperature * Units.temperature
+kT = Initial_temperature * Units.temperature  # noqa: N816
 
 state = {
     "positions": positions,
@@ -166,7 +170,7 @@ Expected_temperature = np.zeros(Num_steps)
 
 for step in range(Num_steps):
     # Get target temperature for current step
-    current_kT = get_kT(
+    current_kT = get_kT(  # noqa: N816
         step=step,
         num_steps_initial=Num_steps_initial,
         num_steps_ramp_up=Num_steps_ramp_up,

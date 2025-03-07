@@ -115,9 +115,14 @@ for step in range(500):
 
 print(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
 print(f"Final energies: {[energy.item() for energy in state.energy]} eV")
-print(
-    f"Initial pressure: {[torch.trace(stress).item() * UnitConversion.eV_per_Ang3_to_GPa / 3 for stress in results['stress']]} GPa"
-)
-print(
-    f"Final pressure: {[torch.trace(stress).item() * UnitConversion.eV_per_Ang3_to_GPa / 3 for stress in state.stress]} GPa"
-)
+
+initial_pressure = [
+    torch.trace(stress).item() * UnitConversion.eV_per_Ang3_to_GPa / 3
+    for stress in results["stress"]
+]
+final_pressure = [
+    torch.trace(stress).item() * UnitConversion.eV_per_Ang3_to_GPa / 3
+    for stress in state.stress
+]
+print(f"{initial_pressure=} GPa")
+print(f"{final_pressure=} GPa")

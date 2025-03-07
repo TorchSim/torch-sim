@@ -95,7 +95,7 @@ results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 # Set up NVE simulation
 # kT: initial temperature in metal units (K)
 # dt: timestep in metal units (ps)
-kT = 80 * Units.temperature
+kT = 80 * Units.temperature  # noqa: N816
 dt = 0.001 * Units.time
 
 # Initialize NVE integrator
@@ -115,6 +115,7 @@ for step in range(2_000):
     # Update state using NVE integrator
     state = nve_update(state=state, dt=dt)
 
-print(
-    f"Final total energy: {state.energy + kinetic_energy(masses=state.masses, momenta=state.momenta).item():.4f}"
+final_total_energy = state.energy + kinetic_energy(
+    masses=state.masses, momenta=state.momenta
 )
+print(f"Final total energy: {final_total_energy.item():.4f}")

@@ -71,10 +71,7 @@ state = {
     "atomic_numbers": atomic_numbers,
 }
 # Initialize FIRE optimizer for structural relaxation
-fire_init, fire_update = unit_cell_fire(
-    model=model,
-)
-
+fire_init, fire_update = unit_cell_fire(model=model)
 state = fire_init(state=state)
 
 # Run optimization loop
@@ -92,9 +89,11 @@ print(f"Final energy: {state.energy.item()} eV")
 print(f"Initial max force: {torch.max(torch.abs(results['forces'])).item()} eV/Å")
 print(f"Final max force: {torch.max(torch.abs(state.forces)).item()} eV/Å")
 
-print(
-    f"Initial pressure: {torch.trace(results['stress']).item() / 3.0 * UnitConversion.eV_per_Ang3_to_GPa} GPa"
+initial_pressure = (
+    torch.trace(results["stress"]).item() / 3.0 * UnitConversion.eV_per_Ang3_to_GPa
 )
-print(
-    f"Final pressure: {torch.trace(state.stress).item() / 3.0 * UnitConversion.eV_per_Ang3_to_GPa} GPa"
+print(f"{initial_pressure=:.4f} GPa")
+final_pressure = (
+    torch.trace(state.stress).item() / 3.0 * UnitConversion.eV_per_Ang3_to_GPa
 )
+print(f"{final_pressure=:.4f} GPa")
