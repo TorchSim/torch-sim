@@ -3,6 +3,7 @@
 # /// script
 # dependencies = [
 #     "plotly>=6",
+#     "kaleido"
 # ]
 # ///
 
