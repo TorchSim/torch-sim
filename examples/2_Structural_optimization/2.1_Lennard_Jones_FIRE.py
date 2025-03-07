@@ -7,7 +7,7 @@ from torchsim.unbatched_optimizers import fire
 
 
 # Set up the device and data type
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
 # Set up the random number generator

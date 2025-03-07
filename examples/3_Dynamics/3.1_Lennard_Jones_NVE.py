@@ -9,7 +9,7 @@ from torchsim.units import MetalUnits as Units
 
 
 # Set up the device and data type
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
 # Set random seed and deterministic behavior for reproducibility

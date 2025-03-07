@@ -15,7 +15,7 @@ from ase.build import bulk
 from torchsim.models.fairchem import FairChemModel
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
 MODEL_PATH = "../../../checkpoints/FAIRCHEM/EquiformerV2-31M-S2EF-OC20-All+MD.pt"

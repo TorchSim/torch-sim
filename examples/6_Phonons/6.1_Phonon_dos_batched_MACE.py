@@ -20,7 +20,7 @@ from torchsim.neighbors import vesin_nl_ts
 
 
 # Set device and data type
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
 # Load the raw model

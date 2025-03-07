@@ -16,7 +16,7 @@ from torchsim.models.mattersim.utils.build import batch_to_dict, build_dataloade
 
 
 # Set device and data type
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
 # Path to the model checkpoint

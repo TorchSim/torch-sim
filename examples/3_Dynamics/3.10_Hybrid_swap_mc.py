@@ -20,7 +20,7 @@ from torchsim.runners import structures_to_state
 from torchsim.units import MetalUnits
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float64
 
 kT = 1000 * MetalUnits.temperature
