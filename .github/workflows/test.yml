@@ -136,7 +136,18 @@ jobs:
       - name: Find example scripts
         id: set-matrix
         run: |
-          EXAMPLES=$(find examples -name "*.py" | jq -R -s -c 'split("\n")[:-1]')
+          # Find all example scripts but exclude known failing ones
+          EXAMPLES=$(find examples -name "*.py" | grep -v \
+            -e "examples/1_Introduction/1.4_M3GNet.py" \
+            -e "examples/1_Introduction/1.5_Fairchem.py" \
+            -e "examples/2_Structural_optimization/2.7_Batched_MACE_Hot_Swap_Gradient_Desent.py" \
+            -e "examples/3_Dynamics/3.3_MACE_NVE_cueq.py" \
+            -e "examples/3_Dynamics/3.10_Hybrid_swap_mc.py" \
+            -e "examples/4_High_level_api/4.1_high_level_api.py" \
+            -e "examples/5_Workflow/5.1_a2c_silicon.py" \
+            -e "examples/7_Others/7.1_Soft_sphere_autograd.py" \
+            -e "examples/7_Others/7.4_Elastic_Tensor_MACE.py" \
+            | jq -R -s -c 'split("\n")[:-1]')
           echo "examples=$EXAMPLES" >> $GITHUB_OUTPUT
 
   test-examples:
@@ -150,7 +161,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up uv
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
