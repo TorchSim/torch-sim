@@ -184,35 +184,35 @@ for filename in trajectory_files:
 
 TorchSim is built around the following core modules:
 
-- `torchsim.integrators`: Provides batched molecular dynamics integrators for simulating the time evolution of molecular systems.
+- [`torchsim.integrators`](torchsim/integrators.py): Provides batched molecular dynamics integrators for simulating the time evolution of molecular systems.
 
-- `torchsim.optimizers`: Provides optimization algorithms for molecular systems, including gradient descent and the FIRE algorithm.
+- [`torchsim.optimizers`](torchsim/optimizers.py): Provides optimization algorithms for molecular systems, including gradient descent and the FIRE algorithm.
 
-- `torchsim.unbatched_integrators`: Provides unbatched molecular dynamics integrators for simulating the time evolution of molecular systems.
+- [`torchsim.unbatched_integrators`](torchsim/unbatched_integrators.py): Provides unbatched molecular dynamics integrators for simulating the time evolution of molecular systems.
 
-- `torchsim.unbatched_optimizers`: Provides unbatched optimization algorithms for molecular systems, including gradient descent and the FIRE algorithm.
+- [`torchsim.unbatched_optimizers`](torchsim/unbatched_optimizers.py): Provides unbatched optimization algorithms for molecular systems, including gradient descent and the FIRE algorithm.
 
-- `torchsim.monte_carlo`: Contains functions for performing Monte Carlo simulations, including swap-based Monte Carlo.
+- [`torchsim.monte_carlo`](torchsim/monte_carlo.py): Contains functions for performing Monte Carlo simulations, including swap-based Monte Carlo.
 
-- `torchsim.neighbors`: Contains functions for constructing neighbor lists.
+- [`torchsim.neighbors`](torchsim/neighbors.py): Contains functions for constructing neighbor lists.
 
-- `torchsim.quantities`: Functions for computing physical quantities, such as kinetic energy, from simulation data.
+- [`torchsim.quantities`](torchsim/quantities.py): Functions for computing physical quantities, such as kinetic energy, from simulation data.
 
-- `torchsim.runners`: Provides functions for running molecular dynamics simulations and optimizations, handling simulation state and conversions between different representations.
+- [`torchsim.runners`](torchsim/runners.py): Provides functions for running molecular dynamics simulations and optimizations, handling simulation state and conversions between different representations.
 
-- `torchsim.state`: Defines the `BaseState` class, a `dataclass` for representing the state of molecular systems.
+- [`torchsim.state`](torchsim/state.py): Defines the `BaseState` class, a `dataclass` for representing the state of molecular systems.
 
-- `torchsim.trajectory`: Implements classes for handling trajectory data, allowing for reading and writing of simulation data to HDF5 files.
+- [`torchsim.trajectory`](torchsim/trajectory.py): Implements classes for handling trajectory data, allowing for reading and writing of simulation data to HDF5 files.
 
-- `torchsim.transforms`: Functions for handling coordinate transformations and periodic boundary conditions in molecular simulations.
+- [`torchsim.transforms`](torchsim/transforms.py): Functions for handling coordinate transformations and periodic boundary conditions in molecular simulations.
 
-- `torchsim.elastic`: Contains classes and functions for calculating crystal elasticity, including the representation of elastic states and computation of elastic tensors.
+- [`torchsim.elastic`](torchsim/elastic.py): Contains classes and functions for calculating crystal elasticity, including the representation of elastic states and computation of elastic tensors.
 
-- `torchsim.utils`: Utility functions.
+- [`torchsim.utils`](torchsim/utils.py): Utility functions.
 
-- `torchsim.units`: Unit system and conversion factors
+- [`torchsim.units`](torchsim/units.py): Unit system and conversion factors
 
-- `torchsim.workflows`: Utility functions for running workflows.
+- [`torchsim.workflows`](torchsim/workflows.py): Utility functions for running workflows.
 
 Each module is designed to work seamlessly with PyTorch, enabling efficient and flexible molecular simulations.
 
