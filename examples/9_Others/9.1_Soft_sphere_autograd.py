@@ -1,5 +1,11 @@
 """Plot the soft sphere potential energy vs distance using plotly."""
 
+# /// script
+# dependencies = [
+#     "plotly>=6",
+# ]
+# ///
+
 import numpy as np
 import torch
 from plotly.subplots import make_subplots

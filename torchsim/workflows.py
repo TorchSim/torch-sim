@@ -293,15 +293,14 @@ def random_packed_structure(
         atomic_numbers = torch.ones_like(positions_cart, device=device, dtype=torch.int)
 
         # Set up FIRE optimizer with unit masses
-        state_init_fn, fire_update = fire(
-            model=model,
+        state_init_fn, fire_update = fire(model=model)
+        state = state_init_fn(
             positions=positions_cart,
             masses=torch.ones(N_atoms, device=device, dtype=dtype),
             atomic_numbers=atomic_numbers,
             cell=cell,
             pbc=True,
         )
-        state = state_init_fn()
         print(f"Initial energy: {state.energy.item():.4f}")
         # Run FIRE optimization until convergence or max iterations
         for _ in range(max_iter):
@@ -423,15 +422,14 @@ def random_packed_structure_multi(
         atomic_numbers = torch.ones_like(positions_cart, device=device, dtype=torch.int)
 
         # Set up FIRE optimizer with unit masses for all atoms
-        state_init_fn, fire_update = fire(
-            model=model,
+        state_init_fn, fire_update = fire(model=model)
+        state = state_init_fn(
             positions=positions_cart,
             masses=torch.ones(N_atoms, device=device, dtype=dtype),
             atomic_numbers=atomic_numbers,
             cell=cell,
             pbc=True,
         )
-        state = state_init_fn()
         print(f"Initial energy: {state.energy.item():.4f}")
         # Run FIRE optimization until convergence or max iterations
         for _ in range(max_iter):

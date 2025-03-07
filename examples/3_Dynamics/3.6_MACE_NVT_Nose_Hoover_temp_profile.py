@@ -3,6 +3,7 @@
 # /// script
 # dependencies = [
 #     "mace-torch>=0.3.10",
+#     "plotly>=6",
 # ]
 # ///
 
