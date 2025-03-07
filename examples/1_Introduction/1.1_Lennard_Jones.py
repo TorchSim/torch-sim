@@ -10,7 +10,7 @@ PERIODIC = True  # Flag to use periodic boundary conditions
 
 # Create face-centered cubic (FCC) Argon
 # 5.26 Å is a typical lattice constant for Ar
-a = 5.26  # Lattice constant
+a_len = 5.26  # Lattice constant
 
 # Generate base FCC unit cell positions (scaled by lattice constant)
 base_positions = torch.tensor(
@@ -38,11 +38,11 @@ for i in range(4):
 positions = torch.stack(positions)
 
 # Scale by lattice constant
-positions = positions * a
+positions = positions * a_len
 
 # Create the cell tensor
 cell = torch.tensor(
-    [[4 * a, 0, 0], [0, 4 * a, 0], [0, 0, 4 * a]], device=device, dtype=dtype
+    [[4 * a_len, 0, 0], [0, 4 * a_len, 0], [0, 0, 4 * a_len]], device=device, dtype=dtype
 )
 
 # Create the atomic numbers tensor

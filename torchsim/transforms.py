@@ -336,21 +336,21 @@ def translate_pretty(
         pbc = torch.tensor(pbc, dtype=torch.bool, device=fractional.device)
 
     fractional = fractional.clone()
-    for i in range(3):
-        if not pbc[i]:
+    for dim in range(3):
+        if not pbc[dim]:
             continue
 
         # Sort positions along this dimension
-        indices = torch.argsort(fractional[:, i])
-        sp = fractional[indices, i]
+        indices = torch.argsort(fractional[:, dim])
+        sp = fractional[indices, dim]
 
         # Calculate wrapped differences between consecutive positions
         widths = (torch.roll(sp, 1) - sp) % 1.0
 
         # Find the position that minimizes the differences and subtract it
         min_idx = torch.argmin(widths)
-        fractional[:, i] -= sp[min_idx]
-        fractional[:, i] %= 1.0
+        fractional[:, dim] -= sp[min_idx]
+        fractional[:, dim] %= 1.0
 
     return fractional
 

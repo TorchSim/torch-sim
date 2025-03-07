@@ -35,7 +35,7 @@ def multi_species_system() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Create a binary system with two different species
     arranged in alternating layers."""
     N = 4
-    a = 5.26  # Å
+    a_len = 5.26  # Å
     positions = []
     species = []
 
@@ -43,7 +43,7 @@ def multi_species_system() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     for x in range(N):
         for y in range(N):
             for z in range(N):
-                pos = torch.tensor([x, y, z], dtype=torch.float64) * a
+                pos = torch.tensor([x, y, z], dtype=torch.float64) * a_len
                 positions.append(pos)
                 # Alternate species by z-layer
                 species.append(
@@ -52,7 +52,7 @@ def multi_species_system() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
     positions = torch.stack(positions)
     species = torch.tensor(species, dtype=torch.long)  # Convert to tensor
-    cell = torch.eye(3, dtype=torch.float64) * (N * a)
+    cell = torch.eye(3, dtype=torch.float64) * (N * a_len)
 
     # Add small random displacements
     torch.manual_seed(42)

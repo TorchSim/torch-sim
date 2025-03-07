@@ -95,7 +95,7 @@ def cu_fcc_system() -> tuple[torch.Tensor, torch.Tensor]:
     )
 
     # Lattice constant for Copper
-    a = 3.61  # Å
+    a_len = 3.61  # Å
     N = 4
     # Create NxNxN supercell
     positions = []
@@ -105,14 +105,14 @@ def cu_fcc_system() -> tuple[torch.Tensor, torch.Tensor]:
                 offset = torch.tensor([x, y, z], dtype=torch.float64)
                 for b in basis:
                     # Convert fractional to cartesian coordinates
-                    pos = (b + offset) * a
+                    pos = (b + offset) * a_len
                     positions.append(pos)
 
     # Stack all positions into a single tensor
     positions = torch.stack(positions)
 
     # Create the cell tensor (cubic cell)
-    cell = torch.eye(3, dtype=torch.float64) * (N * a)
+    cell = torch.eye(3, dtype=torch.float64) * (N * a_len)
 
     # Add random displacements (0.1 Å)
     torch.manual_seed(42)

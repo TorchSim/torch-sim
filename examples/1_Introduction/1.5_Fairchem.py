@@ -34,8 +34,8 @@ masses = torch.tensor(
 pbc = torch.tensor([True, True], device=device, dtype=torch.bool)
 
 # Convert batched tensors to lists for the calculator
-cell_list = [cell[i] for i in range(len(cell))]
-positions_list = [positions[i] for i in range(len(positions))]
+cell_list = [cell[idx] for idx in range(len(cell))]
+positions_list = [positions[idx] for idx in range(len(positions))]
 
 print(f"Positions: {positions.shape}")
 print(f"Cell: {cell.shape}")

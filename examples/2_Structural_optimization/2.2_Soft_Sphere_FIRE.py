@@ -16,7 +16,7 @@ generator.manual_seed(42)  # For reproducibility
 
 # Create face-centered cubic (FCC) Cu
 # 3.61 Å is a typical lattice constant for Cu
-a = 3.61  # Lattice constant
+a_len = 3.61  # Lattice constant
 PERIODIC = True  # Flag to use periodic boundary conditions
 
 # Generate base FCC unit cell positions (scaled by lattice constant)
@@ -45,11 +45,11 @@ for i in range(4):
 positions = torch.stack(positions)
 
 # Scale by lattice constant
-positions = positions * a
+positions = positions * a_len
 
 # Create the cell tensor
 cell = torch.tensor(
-    [[4 * a, 0, 0], [0, 4 * a, 0], [0, 0, 4 * a]], device=device, dtype=dtype
+    [[4 * a_len, 0, 0], [0, 4 * a_len, 0], [0, 0, 4 * a_len]], device=device, dtype=dtype
 )
 
 # Add random perturbation to the positions to start with non-equilibrium structure

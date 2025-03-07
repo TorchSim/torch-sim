@@ -34,8 +34,7 @@ loaded_model = mace_mp(
 )
 
 # Create MgO structure using pymatgen
-a = 4.21
-lattice = Lattice.cubic(a)
+lattice = Lattice.cubic(4.21)
 mg_o_structure = Structure(lattice, ["Mg", "O"], [[0, 0, 0], [0.5, 0.5, 0.5]])
 
 # Convert to phonopy atoms

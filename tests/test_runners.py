@@ -160,7 +160,9 @@ def test_integrate_many_nvt(
         lj_calculator.device,
         lj_calculator.dtype,
     )
-    trajectory_files = [tmp_path / f"nvt_{i}.h5md" for i in range(triple_state.n_batches)]
+    trajectory_files = [
+        tmp_path / f"nvt_{batch}.h5md" for batch in range(triple_state.n_batches)
+    ]
     reporter = TrajectoryReporter(
         filenames=trajectory_files,
         state_frequency=1,
@@ -257,7 +259,7 @@ def test_batched_optimize_fire(
     """Test batched FIRE optimization with LJ potential."""
 
     trajectory_files = [
-        tmp_path / f"nvt_{i}.h5md" for i in range(si_double_base_state.n_batches)
+        tmp_path / f"nvt_{idx}.h5md" for idx in range(si_double_base_state.n_batches)
     ]
     reporter = TrajectoryReporter(
         filenames=trajectory_files,

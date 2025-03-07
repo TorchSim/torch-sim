@@ -394,7 +394,7 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     atoms_in_bin_ba = -torch.ones(
         n_bins, max_n_atoms_per_bin.item(), dtype=torch.long, device=device
     )
-    for i in range(int(max_n_atoms_per_bin.item())):
+    for bin_cnt in range(int(max_n_atoms_per_bin.item())):
         # Create a mask array that identifies the first atom of each bin.
         mask = torch.cat(
             (
@@ -404,7 +404,7 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
             dim=0,
         )
         # Assign all first atoms.
-        atoms_in_bin_ba[bin_index_i[mask], i] = atom_i[mask]
+        atoms_in_bin_ba[bin_index_i[mask], bin_cnt] = atom_i[mask]
 
         # Remove atoms that we just sorted into atoms_in_bin_ba. The next
         # "first" atom will be the second and so on.
@@ -560,10 +560,10 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
             cell_shift_vector_n = cell_shift_vector_n[m]
 
     # Sort neighbor list.
-    i = torch.argsort(first_at_neigh_tuple_n)
-    first_at_neigh_tuple_n = first_at_neigh_tuple_n[i]
-    second_at_neigh_tuple_n = second_at_neigh_tuple_n[i]
-    cell_shift_vector_n = cell_shift_vector_n[i]
+    bin_cnt = torch.argsort(first_at_neigh_tuple_n)
+    first_at_neigh_tuple_n = first_at_neigh_tuple_n[bin_cnt]
+    second_at_neigh_tuple_n = second_at_neigh_tuple_n[bin_cnt]
+    cell_shift_vector_n = cell_shift_vector_n[bin_cnt]
 
     # Compute distance vectors.
     # TODO: Use .T?
