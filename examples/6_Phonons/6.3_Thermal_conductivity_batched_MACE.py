@@ -7,6 +7,7 @@
 #     "pymatgen>=2025.2.18",
 # ]
 # ///
+
 import time
 
 import numpy as np
@@ -29,10 +30,7 @@ dtype = torch.float32
 # Load the raw model from URL
 mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
-    model=mace_checkpoint_url,
-    return_raw_model=True,
-    default_dtype=dtype,
-    device=device,
+    model=mace_checkpoint_url, return_raw_model=True, default_dtype=dtype, device=device
 )
 
 # Create MgO structure using pymatgen
@@ -61,13 +59,13 @@ model_loading_time = time.perf_counter() - start_time
 print(f"Model loading time: {model_loading_time}s")
 
 # First we will create a concatenated positions array from all supercells
-positions_numpy = np.concatenate([i.get_positions() for i in supercells])
+positions_numpy = np.concatenate([cell.get_positions() for cell in supercells])
 
 # stack cell vectors into a (n_supercells, 3, 3) array
-cell_numpy = np.stack([i.get_cell() for i in supercells])
+cell_numpy = np.stack([cell.get_cell() for cell in supercells])
 
 # concatenate atomic numbers into a single array
-atomic_numbers_numpy = np.concatenate([i.numbers for i in supercells])
+atomic_numbers_numpy = np.concatenate([cell.numbers for cell in supercells])
 
 # convert to tensors
 positions = torch.tensor(positions_numpy, device=device, dtype=dtype)
@@ -76,7 +74,7 @@ atomic_numbers = torch.tensor(atomic_numbers_numpy, device=device, dtype=torch.i
 
 # Create a batch index array to track which atoms belong to which supercell
 atoms_per_batch = torch.tensor(
-    [len(i) for i in supercells], device=device, dtype=torch.int
+    [len(cell) for cell in supercells], device=device, dtype=torch.int
 )
 batch = torch.repeat_interleave(
     torch.arange(len(atoms_per_batch), device=device), atoms_per_batch

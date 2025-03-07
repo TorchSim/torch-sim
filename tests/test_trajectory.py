@@ -52,7 +52,7 @@ def test_initialization(test_file: Path) -> None:
 
 def test_write_arrays_basic(trajectory: TorchSimTrajectory) -> None:
     """Test writing basic arrays."""
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed=0)
     positions = rng.random((10, 3)).astype(np.float32)
     velocities = rng.random((10, 3)).astype(np.float32)
 
@@ -66,7 +66,7 @@ def test_write_arrays_basic(trajectory: TorchSimTrajectory) -> None:
 
 def test_write_arrays_multiple_frames(trajectory: TorchSimTrajectory) -> None:
     """Test writing multiple frames."""
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed=0)
     positions1 = rng.random((10, 3)).astype(np.float32)
     positions2 = positions1 + 0.1
 
@@ -152,7 +152,7 @@ def test_data_type_coercion(test_file: Path) -> None:
         mode="w",
     )
 
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed=0)
     float64_data = rng.random((10, 3)).astype(np.float64)
     int64_data = rng.integers(0, 10, (10, 3), dtype=np.int64)
 
@@ -168,7 +168,7 @@ def test_data_type_coercion(test_file: Path) -> None:
 
 def test_invalid_writes(trajectory: TorchSimTrajectory) -> None:
     """Test error handling for invalid writes."""
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed=0)
     positions = rng.random((10, 3)).astype(np.float32)
     trajectory.write_arrays({"positions": positions}, steps=0)
 
@@ -186,7 +186,7 @@ def test_context_manager(test_file: Path) -> None:
     """Test context manager protocol."""
     with TorchSimTrajectory(test_file, mode="w") as traj:
         assert traj._file.isopen  # noqa: SLF001
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(seed=0)
         positions = rng.random((10, 3)).astype(np.float32)
         traj.write_arrays({"positions": positions}, steps=0)
 
@@ -195,7 +195,7 @@ def test_context_manager(test_file: Path) -> None:
 
 def test_get_steps(trajectory: TorchSimTrajectory) -> None:
     """Test step number retrieval."""
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed=0)
     positions = rng.random((10, 3)).astype(np.float32)
     trajectory.write_arrays({"positions": positions}, steps=5)
 
@@ -206,7 +206,7 @@ def test_get_steps(trajectory: TorchSimTrajectory) -> None:
 def test_compression(test_file: Path) -> None:
     """Test file compression."""
     # Write same data with and without compression
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed=0)
     data = rng.random((100, 3)).astype(np.float32)
 
     traj_compressed = TorchSimTrajectory(test_file, compress_data=True, mode="w")
@@ -230,7 +230,7 @@ def test_file_modes(test_file: Path) -> None:
     """Test different file opening modes."""
     # Write initial data
     traj = TorchSimTrajectory(test_file, mode="w")
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed=0)
     positions = rng.random((10, 3)).astype(np.float32)
     traj.write_arrays({"positions": positions}, steps=0)
     traj.close()
@@ -257,7 +257,7 @@ def test_data_type_conversions(test_file: Path) -> None:
         mode="w",
     )
 
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed=0)
     # Test data with different types
     test_data = {
         # NumPy arrays
@@ -308,7 +308,7 @@ def test_no_data_type_coercion(test_file: Path) -> None:
         mode="w",
     )
 
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed=0)
     test_data = {
         "float64": rng.random((10, 3)).astype(np.float64),
         "int64": rng.integers(0, 10, (10, 3), dtype=np.int64),
@@ -352,7 +352,9 @@ def test_invalid_dtype_handling(test_file: Path) -> None:
     traj = TorchSimTrajectory(test_file, mode="w")
 
     # Test complex numbers
-    complex_data = {"complex": np.random.default_rng().random((10, 3)).astype(np.float16)}
+    complex_data = {
+        "complex": np.random.default_rng(seed=0).random((10, 3)).astype(np.float16)
+    }
     with pytest.raises(ValueError, match="Unsupported dtype"):
         traj.write_arrays(complex_data, steps=0)
 

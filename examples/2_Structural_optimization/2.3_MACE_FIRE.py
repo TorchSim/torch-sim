@@ -41,7 +41,7 @@ N_steps = 10 if os.getenv("CI") else 500
 PERIODIC = True
 
 # Create diamond cubic Silicon with random displacements
-rng = np.random.default_rng()
+rng = np.random.default_rng(seed=0)
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 si_dc.positions = si_dc.positions + 0.2 * rng.standard_normal(si_dc.positions.shape)
 

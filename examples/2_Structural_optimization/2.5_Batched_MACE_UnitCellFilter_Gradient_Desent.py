@@ -42,7 +42,7 @@ N_steps = 10 if os.getenv("CI") else 500
 
 # Set random seed for reproducibility
 PERIODIC = True
-rng = np.random.default_rng()
+rng = np.random.default_rng(seed=0)
 
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.21, cubic=True).repeat((2, 2, 2))
