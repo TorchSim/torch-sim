@@ -86,7 +86,7 @@ model = UnbatchedLennardJonesModel(
 results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 
 dt = 0.001 * Units.time  # Time step (1 ps)
-kT = 200 * Units.temperature  # Temperature (200 K)  # noqa: N816
+kT = 200 * Units.temperature  # Temperature (200 K)
 target_pressure = 0 * Units.pressure  # Target pressure (10 kbar)
 
 state = {

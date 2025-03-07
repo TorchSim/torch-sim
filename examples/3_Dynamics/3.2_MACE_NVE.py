@@ -63,7 +63,7 @@ model = UnbatchedMaceModel(
 results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 
 # Setup NVE MD simulation parameters
-kT = 1000 * Units.temperature  # Initial temperature (K)  # noqa: N816
+kT = 1000 * Units.temperature  # Initial temperature (K)
 dt = 0.002 * Units.time  # Timestep (ps)
 
 state = {

@@ -61,7 +61,7 @@ model = UnbatchedMaceModel(
 results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 
 dt = 0.002 * Units.time  # Timestep (ps)
-kT = 1000 * Units.temperature  # Initial temperature (K)  # noqa: N816
+kT = 1000 * Units.temperature  # Initial temperature (K)
 
 start = {
     "positions": positions,

@@ -95,7 +95,7 @@ results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 # Set up NVE simulation
 # kT: initial temperature in metal units (K)
 # dt: timestep in metal units (ps)
-kT = 80 * Units.temperature  # noqa: N816
+kT = 80 * Units.temperature
 dt = 0.001 * Units.time
 
 # Initialize NVE integrator

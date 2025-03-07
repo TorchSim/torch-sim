@@ -23,7 +23,7 @@ from torchsim.units import MetalUnits
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float64
 
-kT = 1000 * MetalUnits.temperature  # noqa: N816
+kT = 1000 * MetalUnits.temperature
 
 # Option 1: Load the raw model from the downloaded model
 mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"

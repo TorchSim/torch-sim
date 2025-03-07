@@ -23,7 +23,7 @@ from torchsim.unbatched_integrators import nvt_nose_hoover, nvt_nose_hoover_inva
 from torchsim.units import MetalUnits as Units
 
 
-def get_kT(  # noqa: N802
+def get_kT(
     step: int,
     n_steps_initial: int,
     n_steps_ramp_up: int,
@@ -146,7 +146,7 @@ results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 
 # Set up simulation parameters
 dt = 0.002 * Units.time
-kT = init_temp * Units.temperature  # noqa: N816
+kT = init_temp * Units.temperature
 
 state = {
     "positions": positions,

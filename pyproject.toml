@@ -98,6 +98,7 @@ ignore = [
 pydocstyle.convention = "google"
 isort.split-on-trailing-comma = false
 isort.lines-after-imports = 2
+pep8-naming.ignore-names = ["get_kT", "kT"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/*" = ["ANN201", "D", "S101"]

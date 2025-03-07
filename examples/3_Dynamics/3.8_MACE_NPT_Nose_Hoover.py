@@ -72,7 +72,7 @@ results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 N_steps_nvt = 200
 N_steps_npt = 200
 dt = 0.001 * Units.time  # Time step (1 ps)
-kT = 300 * Units.temperature  # Initial temperature (300 K)  # noqa: N816
+kT = 300 * Units.temperature  # Initial temperature (300 K)
 target_pressure = 0.0 * Units.pressure  # Target pressure (0 bar)
 
 state = {
