@@ -40,7 +40,7 @@ final_state = integrate(
     system=si_atoms,
     model=lj_model,
     integrator=nvt_langevin,
-    n_steps=40 if os.getenv("CI") else 1000,
+    n_steps=100 if os.getenv("CI") else 1000,
     temperature=2000,
     timestep=0.002,
 )
@@ -65,7 +65,7 @@ final_state = integrate(
     system=si_atoms,
     model=lj_model,
     integrator=nvt_langevin,
-    n_steps=40 if os.getenv("CI") else 1000,
+    n_steps=100 if os.getenv("CI") else 1000,
     temperature=2000,
     timestep=0.002,
     trajectory_reporter=reporter,
@@ -106,7 +106,7 @@ final_state = integrate(
     system=si_atoms,
     model=mace_model,
     integrator=nvt_langevin,
-    n_steps=40 if os.getenv("CI") else 100,
+    n_steps=100 if os.getenv("CI") else 1000,
     temperature=2000,
     timestep=0.002,
     trajectory_reporter=reporter,
@@ -124,7 +124,7 @@ final_state = integrate(
     system=[si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell],
     model=mace_model,
     integrator=nvt_langevin,
-    n_steps=40 if os.getenv("CI") else 100,
+    n_steps=100 if os.getenv("CI") else 1000,
     temperature=2000,
     timestep=0.002,
 )
@@ -146,7 +146,7 @@ final_state = integrate(
     system=systems,
     model=mace_model,
     integrator=nvt_langevin,
-    n_steps=40 if os.getenv("CI") else 100,
+    n_steps=100 if os.getenv("CI") else 1000,
     temperature=2000,
     timestep=0.002,
     trajectory_reporter=batch_reporter,
@@ -165,6 +165,7 @@ final_state = optimize(
     system=systems,
     model=mace_model,
     optimizer=unit_cell_fire,
+    max_steps=10 if os.getenv("CI") else 1000,
 )
 
 
@@ -181,6 +182,7 @@ final_state = optimize(
     convergence_fn=lambda state, last_energy: torch.all(
         last_energy - state.energy < 1e-6 * MetalUnits.energy
     ),
+    max_steps=10 if os.getenv("CI") else 1000,
 )
 
 
@@ -201,7 +203,7 @@ final_state = integrate(
     system=structure,
     model=lj_model,
     integrator=nvt_langevin,
-    n_steps=40 if os.getenv("CI") else 1000,
+    n_steps=100 if os.getenv("CI") else 1000,
     temperature=2000,
     timestep=0.002,
 )
