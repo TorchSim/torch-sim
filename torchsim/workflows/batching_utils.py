@@ -11,7 +11,7 @@ from torchsim.runners import atoms_to_state, structures_to_state
 
 
 def write_log_line(
-    f: TextIO,
+    file: TextIO,
     step: int,
     properties: dict[str, list[float]],
     converged: list[bool],
@@ -20,7 +20,7 @@ def write_log_line(
     """Write a formatted log line to the given file.
 
     Args:
-        f: File handle to write to
+        file: File handle to write to
         step: Current optimization step
         properties: Dictionary mapping property names to lists of values for each
             structure
@@ -34,10 +34,10 @@ def write_log_line(
         header_parts.extend(properties.keys())
         header_parts.extend(["Force mask", "Batch Indices"])
         header = " | ".join(header_parts)
-        f.write(header + "\n")
+        file.write(header + "\n")
 
         # Write separator line
-        f.write("-" * len(header) + "\n")
+        file.write("-" * len(header) + "\n")
 
     # Build property string by joining each property list
     prop_strings = [f"{step:4d}"]
@@ -50,7 +50,7 @@ def write_log_line(
 
     # Join with separator and write
     struct_line = " | ".join(prop_strings)
-    f.write(struct_line + "\n")
+    file.write(struct_line + "\n")
 
 
 def check_max_atoms_in_batch(

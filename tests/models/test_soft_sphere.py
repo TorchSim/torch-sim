@@ -1,5 +1,7 @@
 """Tests for soft sphere models ensuring different parts of torchsim work together."""
 
+import itertools
+
 import pytest
 import torch
 
@@ -41,15 +43,11 @@ def multi_species_system() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     species = []
 
     # Create simple cubic lattice with alternating species layers
-    for x in range(N):
-        for y in range(N):
-            for z in range(N):
-                pos = torch.tensor([x, y, z], dtype=torch.float64) * a_len
-                positions.append(pos)
-                # Alternate species by z-layer
-                species.append(
-                    0 if z % 2 == 0 else 1
-                )  # Using integer indices instead of strings
+    for x, y, z in itertools.product(range(N), range(N), range(N)):
+        pos = torch.tensor([x, y, z], dtype=torch.float64) * a_len
+        positions.append(pos)
+        # Alternate species by z-layer
+        species.append(0 if z % 2 == 0 else 1)  # Using integer indices instead of strings
 
     positions = torch.stack(positions)
     species = torch.tensor(species, dtype=torch.long)  # Convert to tensor

@@ -148,7 +148,7 @@ for step in range(N_steps):
 
     with open(log_file, "a") as f:
         write_log_line(
-            f=f,
+            file=f,
             step=step,
             properties={
                 "energy": energies,
