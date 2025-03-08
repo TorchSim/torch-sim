@@ -6,12 +6,14 @@ from typing import Any
 
 import numpy as np
 import torch
-from pymatgen.core.composition import Composition, Element
+from pymatgen.core.composition import Composition
 
 from torchsim.models.soft_sphere import (
     UnbatchedSoftSphereModel,
     UnbatchedSoftSphereMultiModel,
 )
+from torchsim.optimizers import unit_cell_fire as batched_unit_cell_fire
+from torchsim.runners import BaseState
 from torchsim.transforms import get_pair_displacements
 from torchsim.unbatched_optimizers import (
     FIREState,
@@ -703,9 +705,7 @@ def get_target_temperature(
 
 
 def get_unit_cell_relaxed_structure(
-    fractional_positions: torch.Tensor,
-    cell: torch.Tensor,
-    species: list[str],
+    state: BaseState,
     model: torch.nn.Module,
     max_iter: int = 200,
 ) -> tuple[UnitCellFIREState, dict]:
@@ -716,9 +716,7 @@ def get_unit_cell_relaxed_structure(
     to minimize forces on atoms and stresses on the cell.
 
     Args:
-        fractional_positions: Fractional atomic coordinates with shape [n_atoms, 3]
-        cell: Unit cell tensor with shape [3, 3] containing lattice vectors
-        species: List of atomic species symbols
+        state: State containing positions, cell and atomic numbers
         model: Model to compute energies, forces, and stresses
         max_iter: Maximum number of FIRE iterations. Defaults to 200.
 
@@ -733,36 +731,28 @@ def get_unit_cell_relaxed_structure(
     device = model.device
     dtype = model.dtype
 
-    # Get atomic masses from species
-    atomic_numbers = [Element(s).Z for s in species]
-    atomic_numbers = torch.tensor(atomic_numbers, device=device, dtype=torch.int)
-    atomic_masses = [Element(s).atomic_mass for s in species]
-    positions = torch.matmul(fractional_positions, cell)
     logger = {
         "energy": torch.zeros((max_iter, 1), device=device, dtype=dtype),
         "stress": torch.zeros((max_iter, 3, 3), device=device, dtype=dtype),
     }
 
-    # Make sure to compute stress
-    model.compute_stress = True
-
-    StateDict = {
-        "positions": positions,
-        "masses": torch.tensor(atomic_masses, device=device, dtype=dtype),
-        "cell": cell,
-        "pbc": True,
-        "atomic_numbers": atomic_numbers,
-    }
-    results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
+    # Remove batch dimension from cell
+    state.cell = state.cell.squeeze(0)
+    results = model(
+        positions=state.positions, cell=state.cell, atomic_numbers=state.atomic_numbers
+    )
     init_energy = results["energy"].item()
     init_stress = results["stress"]
     init_pressure = (torch.trace(init_stress) / 3.0).item()
-    print(f"Initial energy: {init_energy} eV, Initial pressure: {init_pressure} eV/A^3")
+    print(
+        f"Initial energy: {init_energy:.4f} eV, "
+        f"Initial pressure: {init_pressure:.4f} eV/A^3"
+    )
 
     unit_cell_fire_init, unit_cell_fire_update = unit_cell_fire(
         model=model,
     )
-    state = unit_cell_fire_init(StateDict)
+    state = unit_cell_fire_init(state)
 
     def step_fn(
         step: int, state: UnitCellFIREState, logger: dict
@@ -780,20 +770,106 @@ def get_unit_cell_relaxed_structure(
 
     # Get final results
     final_results = model(
-        positions=state.positions, cell=state.cell, atomic_numbers=atomic_numbers
+        positions=state.positions, cell=state.cell, atomic_numbers=state.atomic_numbers
     )
 
     final_energy = final_results["energy"].item()
     final_stress = final_results["stress"]
     final_pressure = (torch.trace(final_stress) / 3.0).item()
-    print(f"Final energy: {final_energy} eV, Final pressure: {final_pressure} eV/A^3")
+    print(
+        f"Final energy: {final_energy:.4f} eV, "
+        f"Final pressure: {final_pressure:.4f} eV/A^3"
+    )
+    return state, logger, final_energy, final_pressure
+
+
+def get_unit_cell_relaxed_structure_batched(
+    state: BaseState,
+    model: torch.nn.Module,
+    max_iter: int = 200,
+) -> tuple[UnitCellFIREState, dict]:
+    """Relax both atomic positions and cell parameters using FIRE algorithm.
+
+    This function performs geometry optimization of both atomic positions and unit cell
+    parameters simultaneously. Uses the Fast Inertial Relaxation Engine (FIRE) algorithm
+    to minimize forces on atoms and stresses on the cell.
+
+    Args:
+        state: State containing positions, cell and atomic numbers
+        model: Model to compute energies, forces, and stresses
+        max_iter: Maximum number of FIRE iterations. Defaults to 200.
+
+    Returns:
+        tuple containing:
+            - UnitCellFIREState: Final state containing relaxed positions, cell and more
+            - dict: Logger with energy and stress trajectories
+            - float: Final energy in eV
+            - float: Final pressure in eV/Å³
+    """
+    # Get device and dtype from model
+    device = model.device
+    dtype = model.dtype
+
+    logger = {
+        "energy": torch.zeros((max_iter, state.n_batches), device=device, dtype=dtype),
+        "stress": torch.zeros(
+            (max_iter, state.n_batches, 3, 3), device=device, dtype=dtype
+        ),
+    }
+
+    results = model(
+        positions=state.positions,
+        cell=state.cell,
+        atomic_numbers=state.atomic_numbers,
+        batch=state.batch,
+    )
+    init_energy = [e.item() for e in results["energy"]]
+    init_stress = results["stress"]
+    init_pressure = [(torch.trace(stress) / 3.0).item() for stress in init_stress]
+    print(
+        f"Initial energy: {[f'{e:.4f}' for e in init_energy]} eV, "
+        f"Initial pressure: {[f'{p:.4f}' for p in init_pressure]} eV/A^3"
+    )
+
+    unit_cell_fire_init, unit_cell_fire_update = batched_unit_cell_fire(
+        model=model,
+    )
+    state = unit_cell_fire_init(state)
+
+    def step_fn(
+        step: int, state: UnitCellFIREState, logger: dict
+    ) -> tuple[UnitCellFIREState, dict]:
+        logger["energy"][step] = state.energy
+        logger["stress"][step] = state.stress
+        state = unit_cell_fire_update(state)
+        return state, logger
+
+    for step in range(max_iter):
+        state, logger = step_fn(step, state, logger)
+        # energy, stress = logger["energy"][step].item(), logger["stress"][step]
+        # pressure = -torch.trace(stress) / 3.0
+        # print(f"Step {step}: Energy = {energy} eV: Pressure = {pressure} eV/A^3")
+
+    # Get final results
+    final_results = model(
+        positions=state.positions,
+        cell=state.cell,
+        atomic_numbers=state.atomic_numbers,
+        batch=state.batch,
+    )
+
+    final_energy = [e.item() for e in final_results["energy"]]
+    final_stress = final_results["stress"]
+    final_pressure = [(torch.trace(stress) / 3.0).item() for stress in final_stress]
+    print(
+        f"Final energy: {[f'{e:.4f}' for e in final_energy]} eV, "
+        f"Final pressure: {[f'{p:.4f}' for p in final_pressure]} eV/A^3"
+    )
     return state, logger, final_energy, final_pressure
 
 
 def get_relaxed_structure(
-    fractional_positions: torch.Tensor,
-    cell: torch.Tensor,
-    species: list[str],
+    state: BaseState,
     model: torch.nn.Module,
     max_iter: int = 200,
 ) -> tuple[FIREState, dict]:
@@ -803,9 +879,7 @@ def get_relaxed_structure(
     Uses the Fast Inertial Relaxation Engine (FIRE) algorithm to minimize forces on atoms.
 
     Args:
-        fractional_positions: Fractional atomic coordinates with shape [n_atoms, 3]
-        cell: Unit cell tensor with shape [3, 3] containing lattice vectors
-        species: List of atomic species symbols
+        state: State containing positions, cell and atomic numbers
         model: Model to compute energies, forces, and stresses
         max_iter: Maximum number of FIRE iterations. Defaults to 200.
 
@@ -820,26 +894,18 @@ def get_relaxed_structure(
     device = model.device
     dtype = model.dtype
 
-    # Get atomic masses from species
-    atomic_numbers = [Element(s).Z for s in species]
-    atomic_numbers = torch.tensor(atomic_numbers, device=device, dtype=torch.int)
-    atomic_masses = [Element(s).atomic_mass for s in species]
-    positions = torch.matmul(fractional_positions, cell)
     logger = {"energy": torch.zeros((max_iter, 1), device=device, dtype=dtype)}
 
-    results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
+    # Remove batch dimension from cell
+    state.cell = state.cell.squeeze(0)
+    results = model(
+        positions=state.positions, cell=state.cell, atomic_numbers=state.atomic_numbers
+    )
     Initial_energy = results["energy"]
-    print(f"Initial energy: {Initial_energy.item()} eV")
+    print(f"Initial energy: {Initial_energy.item():.4f} eV")
 
-    StateDict = {
-        "positions": positions,
-        "masses": torch.tensor(atomic_masses, device=device, dtype=dtype),
-        "cell": cell,
-        "pbc": True,
-        "atomic_numbers": atomic_numbers,
-    }
     state_init_fn, fire_update = fire(model=model)
-    state = state_init_fn(StateDict)
+    state = state_init_fn(state)
 
     def step_fn(idx: int, state: FIREState, logger: dict) -> tuple[FIREState, dict]:
         logger["energy"][idx] = state.energy
@@ -853,11 +919,14 @@ def get_relaxed_structure(
     # Get final results
     model.compute_stress = True
     final_results = model(
-        positions=state.positions, cell=state.cell, atomic_numbers=atomic_numbers
+        positions=state.positions, cell=state.cell, atomic_numbers=state.atomic_numbers
     )
 
     final_energy = final_results["energy"].item()
     final_stress = final_results["stress"]
     final_pressure = (torch.trace(final_stress) / 3.0).item()
-    print(f"Final energy: {final_energy} eV, Final pressure: {final_pressure} eV/A^3")
+    print(
+        f"Final energy: {final_energy:.4f} eV, "
+        f"Final pressure: {final_pressure:.4f} eV/A^3"
+    )
     return state, logger, final_energy, final_pressure

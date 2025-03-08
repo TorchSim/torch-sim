@@ -22,7 +22,7 @@ from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core import Composition, Element, Structure
 from tqdm import tqdm
 
-from torchsim.models.mace import UnbatchedMaceModel
+from torchsim.models.mace import MaceModel, UnbatchedMaceModel
 from torchsim.neighbors import vesin_nl_ts
 from torchsim.quantities import temperature
 from torchsim.runners import state_to_structures, structures_to_state
@@ -36,7 +36,7 @@ from torchsim.units import MetalUnits as Units
 from torchsim.workflows.a2c_utils import (
     get_subcells_to_crystallize,
     get_target_temperature,
-    get_unit_cell_relaxed_structure,
+    get_unit_cell_relaxed_structure_batched,
     random_packed_structure,
     subcells_to_structures,
 )
@@ -100,7 +100,8 @@ structure = random_packed_structure(
     max_iter=100,
 )
 
-# Relax structure in batches of 4
+# Relax structure in batches of 6
+batch_size = 1 if os.getenv("CI") else 6
 max_optim_steps = (
     1 if os.getenv("CI") else 100
 )  # Number of optimization steps for unit cell relaxation
@@ -116,6 +117,7 @@ T_low = 300  # Quench to this temperature
 dt = 0.002 * Units.time  # time step = 2fs
 tau = 40 * dt  # oscillation period in Nose-Hoover thermostat
 simulation_steps = equi_steps + cool_steps + final_steps
+
 
 nvt_nose_hoover_init, nvt_nose_hoover_update = nvt_nose_hoover(
     model=model,
@@ -206,31 +208,43 @@ pymatgen_struct_list = [
     )
     for struct in candidate_structures
 ]
-# Make sure to compute stress
-model.compute_stress = True
 
 start_time = time.perf_counter()
+# Create a batched model
+model = MaceModel(
+    model=raw_model,
+    device=device,
+    neighbor_list_fn=vesin_nl_ts,
+    periodic=PERIODIC,
+    compute_force=True,
+    compute_stress=True,
+    dtype=dtype,
+    enable_cueq=False,
+)
+
 pymatgen_relaxed_struct_list = []
-for struct in tqdm(pymatgen_struct_list):
-    state = structures_to_state(struct, device=device, dtype=dtype)
-    final_state, logger, final_energy, final_pressure = get_unit_cell_relaxed_structure(
-        state=state,
-        model=model,
-        max_iter=max_optim_steps,
+# Process structures in batches of 4
+for i in tqdm(range(0, len(pymatgen_struct_list), batch_size)):
+    batch_structs = pymatgen_struct_list[i : i + batch_size]
+    # Combine structures into a single batched state
+    batch_state = structures_to_state(batch_structs, device=device, dtype=dtype)
+
+    final_state, logger, final_energy, final_pressure = (
+        get_unit_cell_relaxed_structure_batched(
+            state=batch_state,
+            model=model,
+            max_iter=max_optim_steps,
+        )
     )
 
-    # Add batch dimension to cell
-    final_state.cell = final_state.cell.reshape(1, 3, 3)
     final_struct_list = state_to_structures(final_state)
 
     # NOTE: Possible OOM, so we don't store the logger
     # relaxed_structures.append((pymatgen_struct, logger, final_energy, final_pressure))
-    pymatgen_relaxed_struct_list.extend(
-        [
-            (final_struct, final_energy, final_pressure)
-            for final_struct in final_struct_list
-        ]
-    )
+    for i, final_struct in enumerate(final_struct_list):
+        pymatgen_relaxed_struct_list.append(
+            (final_struct, final_energy[i], final_pressure[i])
+        )
 
 lowest_e_struct = sorted(
     pymatgen_relaxed_struct_list, key=lambda x: x[-2] / x[0].num_sites
@@ -259,4 +273,4 @@ struct_match = StructureMatcher().fit(lowest_e_struct[0], si_diamond)
 print("Prediction matches diamond-cubic Si?", struct_match)
 
 end_time = time.perf_counter()
-print(f"Total time taken to run relaxation: {end_time - start_time:.2f} seconds")
+print(f"Total time taken to run the workflow: {end_time - start_time:.2f} seconds")
