@@ -11,16 +11,14 @@ import os
 import time
 
 import numpy as np
-import pandas as pd
 import torch
 from mace.calculators.foundations_models import mace_mp
-from matbench_discovery.data import DataFiles
-from pymatgen.core import Structure
+from matbench_discovery.data import DataFiles, ase_atoms_from_zip
 
 from torchsim.models.mace import MaceModel
 from torchsim.neighbors import vesin_nl_ts
 from torchsim.optimizers import unit_cell_fire
-from torchsim.runners import structures_to_state
+from torchsim.runners import atoms_to_state
 from torchsim.units import UnitConversion
 from torchsim.workflows.batching_utils import (
     calculate_force_convergence,
@@ -29,9 +27,6 @@ from torchsim.workflows.batching_utils import (
     write_log_line,
 )
 
-
-# WBM initial structures in pymatgen JSON format
-df_init_structs = pd.read_json(DataFiles.wbm_initial_structures.path)
 
 # Set device and data type
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -65,32 +60,30 @@ batched_model = MaceModel(
     enable_cueq=False,
 )
 
-max_structures_to_relax = 2 if os.getenv("CI") else 200
-all_struct_list = []
-for struct_dict in df_init_structs["initial_structure"][0:max_structures_to_relax]:
-    struct = Structure.from_dict(struct_dict)
-    all_struct_list.append(struct)
-
-total_structures = len(all_struct_list)
+n_structures_to_relax = 2 if os.getenv("CI") else 200
+# WBM initial structures in pymatgen JSON format
+ase_init_atoms = ase_atoms_from_zip(
+    DataFiles.wbm_initial_atoms.path, limit=n_structures_to_relax
+)
 batch_size = 2 if os.getenv("CI") else 10
 fmax = 0.05
-N_steps = 10 if os.getenv("CI") else 200_000_000
-log_file = "WBM_relaxation_log.txt"
-max_atoms_in_batch = 50 if os.getenv("CI") else 2000
+n_steps = 10 if os.getenv("CI") else 200_000_000
+log_path = "WBM_relaxation_log.txt"
+max_atoms_in_batch = 50 if os.getenv("CI") else 2_000
 
 # Run optimization for a few steps
 current_idx = batch_size  # Track next structure to add
 # Start with first batch_size structures
-struct_list = all_struct_list[:batch_size].copy()
+struct_list = ase_init_atoms[:batch_size].copy()
 # Initialize unit cell fire optimizer
 fire_init, fire_update = unit_cell_fire(model=batched_model)
 
 # Initialize optimization
-batch_state = fire_init(structures_to_state(struct_list, device=device, dtype=dtype))
+batch_state = fire_init(atoms_to_state(struct_list, device=device, dtype=dtype))
 
 start_time = time.perf_counter()
 # Main optimization loop
-for step in range(N_steps):
+for step in range(n_steps):
     # Calculate force norms and check convergence for each structure in batch
     force_norms, force_mask = calculate_force_convergence(
         state=batch_state, batch_size=batch_size, fmax=fmax
@@ -98,8 +91,8 @@ for step in range(N_steps):
 
     # Replace converged structures if possible
     for idx, is_converged in enumerate(force_mask):
-        if is_converged and current_idx < total_structures:
-            next_atoms = all_struct_list[current_idx]
+        if is_converged and current_idx < n_structures_to_relax:
+            next_atoms = ase_init_atoms[current_idx]
             if check_max_atoms_in_batch(
                 current_struct=struct_list[idx],
                 next_struct=next_atoms,
@@ -110,7 +103,7 @@ for step in range(N_steps):
                     idx=idx,
                     current_idx=current_idx,
                     struct_list=struct_list,
-                    all_struct_list=all_struct_list,
+                    all_struct_list=ase_init_atoms,
                     device=device,
                     dtype=dtype,
                     optimizer_init=fire_init,
@@ -120,15 +113,13 @@ for step in range(N_steps):
     pressures = [(torch.trace(stress) / 3.0).item() for stress in batch_state.stress]
     energies = [energy.item() for energy in batch_state.energy]
 
-    with open(log_file, "a") as f:
+    with open(log_path, mode="a") as file:
+        pressures = [press * UnitConversion.eV_per_Ang3_to_GPa for press in pressures]
+        props = {"energy": energies, "pressure": pressures, "force": force_norms}
         write_log_line(
-            f=f,
+            file=file,
             step=step,
-            properties={
-                "energy": energies,
-                "pressure": [p * UnitConversion.eV_per_Ang3_to_GPa for p in pressures],
-                "force": force_norms,
-            },
+            properties=props,
             converged=force_mask,
             batch_idx=list(range(current_idx - batch_size, current_idx)),
         )
