@@ -30,16 +30,11 @@ from torchsim.unbatched_integrators import (
     nvt_nose_hoover,
     nvt_nose_hoover_invariant,
 )
-from torchsim.unbatched_optimizers import (
-    FIREState,
-    UnitCellFIREState,
-    fire,
-    unit_cell_fire,
-)
 from torchsim.units import MetalUnits as Units
-from torchsim.workflows import (
+from torchsim.workflows.a2c_utils import (
     get_subcells_to_crystallize,
     get_target_temperature,
+    get_unit_cell_relaxed_structure,
     random_packed_structure,
     subcells_to_structures,
 )
@@ -47,7 +42,7 @@ from torchsim.workflows import (
 
 """
 # Example of how to use random_packed_structure_multi
-from torchsim.workflows import random_packed_structure_multi
+from torchsim.workflows.a2c_utils import random_packed_structure_multi
 
 comp = Composition("Fe80B20")
 cell = torch.tensor(
@@ -62,160 +57,6 @@ structure_multi = random_packed_structure_multi(
     max_iter=100,
 )
 """
-
-
-# Helper functions
-def get_unit_cell_relaxed_structure(
-    fractional_positions: torch.Tensor,
-    cell: torch.Tensor,
-    species: list[str],
-    model: torch.nn.Module,
-    max_iter: int = 200,
-) -> tuple[UnitCellFIREState, dict]:
-    """Relax both atomic positions and cell parameters using FIRE algorithm.
-
-    This function performs geometry optimization of both atomic positions and unit cell
-    parameters simultaneously. Uses the Fast Inertial Relaxation Engine (FIRE) algorithm
-    to minimize forces on atoms and stresses on the cell.
-
-    Args:
-        fractional_positions: Fractional atomic coordinates with shape [n_atoms, 3]
-        cell: Unit cell tensor with shape [3, 3] containing lattice vectors
-        species: List of atomic species symbols
-        model: Model to compute energies, forces, and stresses
-        max_iter: Maximum number of FIRE iterations. Defaults to 200.
-
-    Returns:
-        tuple containing:
-            - UnitCellFIREState: Final state containing relaxed positions, cell and more
-            - dict: Logger with energy and stress trajectories
-            - float: Final energy in eV
-            - float: Final pressure in eV/Å³
-    """
-    # Get atomic masses from species
-    atomic_numbers = [Element(s).Z for s in species]
-    atomic_numbers = torch.tensor(atomic_numbers, device=device, dtype=torch.int)
-    atomic_masses = [Element(s).atomic_mass for s in species]
-    positions = torch.matmul(fractional_positions, cell)
-    logger = {
-        "energy": torch.zeros((max_iter, 1), device=device, dtype=dtype),
-        "stress": torch.zeros((max_iter, 3, 3), device=device, dtype=dtype),
-    }
-
-    # Make sure to compute stress
-    model.compute_stress = True
-
-    StateDict = {
-        "positions": positions,
-        "masses": torch.tensor(atomic_masses, device=device, dtype=dtype),
-        "cell": cell,
-        "pbc": PERIODIC,
-        "atomic_numbers": atomic_numbers,
-    }
-    results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
-    init_energy = results["energy"].item()
-    init_stress = results["stress"]
-    init_pressure = (-torch.trace(init_stress) / 3.0).item()
-    print(f"Initial energy: {init_energy} eV, Initial pressure: {init_pressure} eV/A^3")
-
-    unit_cell_fire_init, unit_cell_fire_update = unit_cell_fire(
-        model=model,
-    )
-    state = unit_cell_fire_init(StateDict)
-
-    def step_fn(
-        step: int, state: UnitCellFIREState, logger: dict
-    ) -> tuple[UnitCellFIREState, dict]:
-        logger["energy"][step] = state.energy
-        logger["stress"][step] = state.stress
-        state = unit_cell_fire_update(state)
-        return state, logger
-
-    for step in range(max_iter):
-        state, logger = step_fn(step, state, logger)
-        # energy, stress = logger["energy"][step].item(), logger["stress"][step]
-        # pressure = -torch.trace(stress) / 3.0
-        # print(f"Step {step}: Energy = {energy} eV: Pressure = {pressure} eV/A^3")
-
-    # Get final results
-    final_results = model(
-        positions=state.positions, cell=state.cell, atomic_numbers=atomic_numbers
-    )
-
-    final_energy = final_results["energy"].item()
-    final_stress = final_results["stress"]
-    final_pressure = (-torch.trace(final_stress) / 3.0).item()
-    print(f"Final energy: {final_energy} eV, Final pressure: {final_pressure} eV/A^3")
-    return state, logger, final_energy, final_pressure
-
-
-def get_relaxed_structure(
-    fractional_positions: torch.Tensor,
-    cell: torch.Tensor,
-    species: list[str],
-    model: torch.nn.Module,
-    max_iter: int = 200,
-) -> tuple[FIREState, dict]:
-    """Relax atomic positions at fixed cell parameters using FIRE algorithm.
-
-    Does geometry optimization of atomic positions while keeping the unit cell fixed.
-    Uses the Fast Inertial Relaxation Engine (FIRE) algorithm to minimize forces on atoms.
-
-    Args:
-        fractional_positions: Fractional atomic coordinates with shape [n_atoms, 3]
-        cell: Unit cell tensor with shape [3, 3] containing lattice vectors
-        species: List of atomic species symbols
-        model: Model to compute energies, forces, and stresses
-        max_iter: Maximum number of FIRE iterations. Defaults to 200.
-
-    Returns:
-        tuple containing:
-            - FIREState: Final state containing relaxed positions and other quantities
-            - dict: Logger with energy trajectory
-            - float: Final energy in eV
-            - float: Final pressure in eV/Å³
-    """
-    # Get atomic masses from species
-    atomic_numbers = [Element(s).Z for s in species]
-    atomic_numbers = torch.tensor(atomic_numbers, device=device, dtype=torch.int)
-    atomic_masses = [Element(s).atomic_mass for s in species]
-    positions = torch.matmul(fractional_positions, cell)
-    logger = {"energy": torch.zeros((max_iter, 1), device=device, dtype=dtype)}
-
-    results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
-    Initial_energy = results["energy"]
-    print(f"Initial energy: {Initial_energy.item()} eV")
-
-    state = UnitCellFIREState(
-        positions=positions,
-        cell=cell,
-        atomic_numbers=atomic_numbers,
-        masses=torch.tensor(atomic_masses, device=device, dtype=dtype),
-    )
-    state_init_fn, fire_update = fire(model=model)
-    state = state_init_fn(state)
-
-    def step_fn(idx: int, state: FIREState, logger: dict) -> tuple[FIREState, dict]:
-        logger["energy"][idx] = state.energy
-        state = fire_update(state)
-        return state, logger
-
-    for idx in range(max_iter):
-        state, logger = step_fn(idx, state, logger)
-        # print(f"Step {i}: Energy = {logger['energy'][i].item()} eV")
-
-    # Get final results
-    model.compute_stress = True
-    final_results = model(
-        positions=state.positions, cell=state.cell, atomic_numbers=atomic_numbers
-    )
-
-    final_energy = final_results["energy"].item()
-    final_stress = final_results["stress"]
-    final_pressure = (-torch.trace(final_stress) / 3.0).item()
-    print(f"Final energy: {final_energy} eV, Final pressure: {final_pressure} eV/A^3")
-    return state, logger, final_energy, final_pressure
-
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
@@ -243,7 +84,7 @@ model = UnbatchedMaceModel(
     neighbor_list_fn=vesin_nl_ts,
     periodic=PERIODIC,
     compute_force=True,
-    compute_stress=False,
+    compute_stress=False,  # We don't need stress for MD
     dtype=dtype,
     enable_cueq=False,
 )
@@ -327,7 +168,7 @@ fractional_positions = get_fractional_coordinates(
 subcells = get_subcells_to_crystallize(
     fractional_positions=fractional_positions,
     species=species,
-    d_frac=0.2,
+    d_frac=0.1,
     n_min=2,
     n_max=8,
 )
@@ -367,7 +208,10 @@ for struct in tqdm(candidate_structures):
         coords=state.positions.detach().cpu().numpy(),
         coords_are_cartesian=True,
     )
-    relaxed_structures.append((pymatgen_struct, logger, final_energy, final_pressure))
+    # NOTE: Possible OOM, so we don't store the logger
+    # relaxed_structures.append((pymatgen_struct, logger, final_energy, final_pressure))
+
+    relaxed_structures.append((pymatgen_struct, final_energy, final_pressure))
 
 lowest_e_struct = sorted(relaxed_structures, key=lambda x: x[-2] / x[0].num_sites)[0]
 spg = SpacegroupAnalyzer(lowest_e_struct[0])
@@ -380,18 +224,15 @@ for struct in relaxed_structures:
 spg_counter[sp] += 1
 
 print("All space groups encountered:", dict(spg_counter))
-si_diamond = Structure.from_str(
-    """Si
-1.0
-0.000000000000   2.732954000000   2.732954000000
-2.732954000000   0.000000000000   2.732954000000
-2.732954000000   2.732954000000   0.000000000000
-Si
-2
-Direct
-0.500000000000   0.500000000000   0.500000000000
-0.750000000000   0.750000000000   0.750000000000""",
-    fmt="poscar",
+si_diamond = Structure(
+    lattice=[
+        [0.0, 2.732954, 2.732954],
+        [2.732954, 0.0, 2.732954],
+        [2.732954, 2.732954, 0.0],
+    ],
+    species=["Si", "Si"],
+    coords=[[0.5, 0.5, 0.5], [0.75, 0.75, 0.75]],
+    coords_are_cartesian=False,
 )
 struct_match = StructureMatcher().fit(lowest_e_struct[0], si_diamond)
 print("Prediction matches diamond-cubic Si?", struct_match)
