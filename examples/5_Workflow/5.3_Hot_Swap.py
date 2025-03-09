@@ -17,10 +17,10 @@ from mace.calculators.foundations_models import mace_mp
 from torchsim.models.mace import MaceModel
 from torchsim.neighbors import vesin_nl_ts
 from torchsim.optimizers import unit_cell_fire
-from torchsim.runners import atoms_to_state
+from torchsim.runners import atoms_to_state, state_to_atoms
 from torchsim.units import UnitConversion
 from torchsim.workflows.batching_utils import (
-    calculate_force_convergence,
+    calculate_force_convergence_mask,
     check_max_atoms_in_batch,
     swap_structure,
     write_log_line,
@@ -118,8 +118,11 @@ batch_state = fire_init(atoms_to_state(atoms_list, device=device, dtype=dtype))
 # Main optimization loop
 for step in range(N_steps):
     # Calculate force norms and check convergence for each structure in batch
-    force_norms, force_mask = calculate_force_convergence(
-        state=batch_state, batch_size=batch_size, fmax=fmax
+    force_norms, force_mask = calculate_force_convergence_mask(
+        forces=batch_state.forces,
+        batch=batch_state.batch,
+        batch_size=batch_size,
+        fmax=fmax,
     )
 
     # Replace converged structures if possible
@@ -132,6 +135,7 @@ for step in range(N_steps):
                 struct_list=atoms_list,
                 max_atoms=max_atoms_in_batch,
             ):
+                atoms_list = state_to_atoms(batch_state)
                 batch_state, current_idx = swap_structure(
                     idx=idx,
                     current_idx=current_idx,

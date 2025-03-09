@@ -19,12 +19,15 @@ def write_log_line(
 ) -> None:
     """Write a formatted log line to the given file.
 
+    Writes a nicely formatted line containing the current optimization step,
+    property values for each structure, convergence status, and batch indices.
+    On first step (step=0), writes a header row.
+
     Args:
         file: File handle to write to
         step: Current optimization step
         properties: Dictionary mapping property names to lists of values for each
-            structure
-            e.g. {"energy": [...], "pressure": [...], "max_force": [...]}
+            structure (e.g. {"energy": [...], "pressure": [...], "max_force": [...]})
         converged: List of convergence status for each structure
         batch_idx: List of batch indices being processed
     """
@@ -61,11 +64,15 @@ def check_max_atoms_in_batch(
 ) -> bool:
     """Check if swapping structures would exceed max batch size.
 
+    Calculates total number of atoms if current_struct was replaced with next_struct
+    and checks against max_atoms limit. Works with both ASE Atoms and pymatgen
+    Structure objects.
+
     Args:
         current_struct: Structure to be replaced (Atoms or pymatgen Structure)
         next_struct: Structure to add (Atoms or pymatgen Structure)
-        struct_list (list): Current list of structures
-        max_atoms (int): Maximum allowed atoms in batch
+        struct_list: Current list of structures
+        max_atoms: Maximum allowed atoms in batch
 
     Returns:
         bool: True if swap is allowed, False otherwise
@@ -96,6 +103,9 @@ def swap_structure(
 ) -> tuple[Any, int]:
     """Swap a converged structure with the next one in the queue.
 
+    Replaces structure at idx with next structure from all_struct_list,
+    reinitializes optimizer state, and returns updated state.
+
     Args:
         idx: Index of structure to replace
         current_idx: Index of next structure to add
@@ -119,20 +129,23 @@ def swap_structure(
         base_state = structures_to_state(struct_list, device=device, dtype=dtype)
 
     state = optimizer_init(base_state)
-    torch.cuda.empty_cache()
-    print(f"Replaced structure at index {idx} with next structure (index {current_idx})")
     return state, current_idx + 1
 
 
-def calculate_force_convergence(
-    state: Any,
+def _calculate_force_convergence_mask(
+    forces: torch.Tensor,
+    batch: torch.Tensor,
     batch_size: int,
     fmax: float,
 ) -> tuple[list[float], list[bool]]:
     """Calculate force norms and check convergence for each structure in batch.
 
+    Non-vectorized implementation that returns Python lists. Prefer using
+    calculate_force_convergence_mask() for better performance.
+
     Args:
-        state: Current state containing forces and batch indices
+        forces: Forces tensor for all atoms
+        batch: Batch indices tensor mapping atoms to structures
         batch_size: Number of structures in batch
         fmax: Force convergence threshold
 
@@ -141,8 +154,54 @@ def calculate_force_convergence(
             - list[float]: Maximum force norm for each structure
             - list[bool]: Whether each structure is converged
     """
-    force_norms = torch.stack(
-        [state.forces[state.batch == i].norm(dim=-1).max() for i in range(batch_size)]
-    ).tolist()
+    # Calculate max force norm per structure
+    force_norms = torch.zeros(batch_size, device=forces.device)
+    force_norms.index_add_(0, batch, forces.norm(p=2, dim=-1))
+    force_norms = force_norms.tolist()
+
+    # Check convergence against threshold
     force_converged = [norm < fmax for norm in force_norms]
+
     return force_norms, force_converged
+
+
+@torch.jit.script
+def calculate_force_convergence_mask(
+    forces: torch.Tensor, batch: torch.Tensor, batch_size: int, fmax: float
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Vectorized implementation of force convergence check.
+
+    Uses torch.scatter_reduce for efficient calculation when possible,
+    falls back to loop implementation if batch indices are out of bounds.
+
+    Args:
+        forces: Tensor of shape [n_atoms, 3] containing all forces
+        batch: Tensor of shape [n_atoms] mapping atoms to their batch index
+        batch_size: Number of structures in batch
+        fmax: Maximum force threshold for convergence
+
+    Returns:
+        force_norms: Tensor of shape [batch_size] with max force norm per structure
+        force_mask: Boolean tensor of shape [batch_size] indicating converged structures
+    """
+    # Initialize tensor for max forces per structure
+    max_forces = torch.zeros(batch_size, device=forces.device)
+
+    # Compute force norms for all atoms at once
+    force_norms = torch.norm(forces, dim=1)  # [n_atoms]
+
+    # Handle out-of-bounds batch indices
+    if batch.max() >= batch_size:
+        # Fall back to safer loop implementation
+        for b in range(batch_size):
+            mask = batch == b
+            if mask.any():
+                max_forces[b] = force_norms[mask].max()
+    else:
+        # Use efficient scatter_reduce operation
+        max_forces.scatter_reduce_(0, batch, force_norms, reduce="amax")
+
+    # Check convergence against threshold
+    force_mask = max_forces < fmax
+
+    return max_forces, force_mask
