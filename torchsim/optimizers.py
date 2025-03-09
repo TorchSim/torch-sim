@@ -132,9 +132,9 @@ class BatchedUnitCellGDState(BatchedGDState):
         hydrostatic_strain: Whether to only allow hydrostatic deformation
         constant_volume: Whether to maintain constant volume
         pressure: Applied pressure tensor
-        cell_positions: Cell positions tensor of shape (n_batches * 3, 3)
-        cell_forces: Cell forces tensor of shape (n_batches * 3, 3)
-        cell_masses: Cell masses tensor of shape (n_batches * 3,)
+        cell_positions: Cell positions tensor of shape (n_batches, 3, 3)
+        cell_forces: Cell forces tensor of shape (n_batches, 3, 3)
+        cell_masses: Cell masses tensor of shape (n_batches, 3)
     """
 
     reference_cell: torch.Tensor
@@ -245,7 +245,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
 
         # Create cell masses
         cell_masses = torch.ones(
-            state.n_batches * 3, device=device, dtype=dtype
+            (state.n_batches, 3), device=device, dtype=dtype
         )  # One mass per cell DOF
 
         # Get current deformation gradient
@@ -259,7 +259,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         )  # shape: (n_batches, 3, 1)
         cell_positions = (
             cur_deform_grad.reshape(state.n_batches, 3, 3) * cell_factor_expanded
-        ).reshape(-1, 3)  # shape: (n_batches * 3, 3)
+        )  # shape: (n_batches, 3, 3)
 
         # Calculate virial
         volumes = torch.linalg.det(state.cell).view(-1, 1, 1)
@@ -281,7 +281,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         virial = virial / cell_factor
 
         # Reshape virial for cell forces
-        cell_forces = virial.reshape(state.n_batches * 3, 3)
+        cell_forces = virial  # shape: (n_batches, 3, 3)
 
         return BatchedUnitCellGDState(
             positions=state.positions,
@@ -341,20 +341,18 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         cell_factor_expanded = state.cell_factor.expand(n_batches, 3, 1)
         cell_positions = (
             cur_deform_grad.reshape(n_batches, 3, 3) * cell_factor_expanded
-        ).reshape(-1, 3)
+        )  # shape: (n_batches, 3, 3)
 
         # Get per-atom and per-cell learning rates
         atom_wise_lr = positions_lr[state.batch].unsqueeze(-1)
-        cell_wise_lr = cell_lr.repeat_interleave(3).unsqueeze(-1)
+        cell_wise_lr = cell_lr.view(-1, 1, 1)  # shape: (n_batches, 1, 1)
 
         # Update atomic and cell positions
         atomic_positions_new = state.positions + atom_wise_lr * state.forces
         cell_positions_new = cell_positions + cell_wise_lr * state.cell_forces
 
         # Update cell with deformation gradient
-        cell_update = (cell_positions_new / cell_factor_expanded.reshape(-1, 1)).reshape(
-            n_batches, 3, 3
-        )
+        cell_update = cell_positions_new / cell_factor_expanded
         new_cell = torch.bmm(state.reference_cell, cell_update.transpose(1, 2))
 
         # Get new forces and energy
@@ -391,7 +389,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
 
         # Update cell forces
         state.cell_positions = cell_positions_new
-        state.cell_forces = virial.reshape(n_batches * 3, 3)
+        state.cell_forces = virial
 
         return state
 
@@ -419,10 +417,10 @@ class BatchedUnitCellFireState(BaseState):
         stress: Stress tensor [n_batches, 3, 3]
 
         # Cell quantities
-        cell_positions: Flattened cell positions [n_batches * 3, 3]
-        cell_velocities: Flattened cell velocities [n_batches * 3, 3]
-        cell_forces: Flattened cell forces [n_batches * 3, 3]
-        cell_masses: Flattened cell masses [n_batches * 3]
+        cell_positions: Cell positions [n_batches, 3, 3]
+        cell_velocities: Cell velocities [n_batches, 3, 3]
+        cell_forces: Cell forces [n_batches, 3, 3]
+        cell_masses: Cell masses [n_batches, 3]
 
         # Cell optimization parameters
         orig_cell: Original unit cells [n_batches, 3, 3]
@@ -444,10 +442,10 @@ class BatchedUnitCellFireState(BaseState):
     velocities: torch.Tensor  # [n_total_atoms, 3]
 
     # cell attributes
-    cell_positions: torch.Tensor  # [n_batches * 3, 3]
-    cell_velocities: torch.Tensor  # [n_batches * 3, 3]
-    cell_forces: torch.Tensor  # [n_batches * 3, 3]
-    cell_masses: torch.Tensor  # [n_batches * 3]
+    cell_positions: torch.Tensor  # [n_batches, 3, 3]
+    cell_velocities: torch.Tensor  # [n_batches, 3, 3]
+    cell_forces: torch.Tensor  # [n_batches, 3, 3]
+    cell_masses: torch.Tensor  # [n_batches, 3]
 
     # Optimization-specific attributes
     orig_cell: torch.Tensor  # [n_batches, 3, 3]
@@ -623,7 +621,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
             ).unsqueeze(0).expand(n_batches, -1, -1)
 
         virial = virial / cell_factor
-        cell_forces = virial.reshape(n_batches * 3, 3)
+        cell_forces = virial
 
         # Sum masses per batch using segment_reduce
         # TODO (AG): check this
@@ -632,7 +630,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         cell_masses = torch.segment_reduce(
             state.masses, reduce="sum", lengths=batch_counts
         )  # shape: (n_batches,)
-        cell_masses = cell_masses.repeat_interleave(3)  # shape: (n_batches * 3,)
+        cell_masses = cell_masses.unsqueeze(-1).expand(-1, 3)  # shape: (n_batches, 3)
 
         # Setup parameters
         dt_start = torch.full((n_batches,), dt_start, device=device, dtype=dtype)
@@ -655,8 +653,8 @@ def unit_cell_fire(  # noqa: C901, PLR0915
             energy=energy,
             stress=stress,
             # cell attrs
-            cell_positions=torch.zeros(3 * n_batches, 3, device=device, dtype=dtype),
-            cell_velocities=torch.zeros(3 * n_batches, 3, device=device, dtype=dtype),
+            cell_positions=torch.zeros(n_batches, 3, 3, device=device, dtype=dtype),
+            cell_velocities=torch.zeros(n_batches, 3, 3, device=device, dtype=dtype),
             cell_forces=cell_forces,
             cell_masses=cell_masses,
             # optimization attrs
@@ -703,13 +701,11 @@ def unit_cell_fire(  # noqa: C901, PLR0915
 
         # Calculate cell positions from deformation gradient
         cell_factor_expanded = state.cell_factor.expand(n_batches, 3, 1)
-        cell_positions = (
-            cur_deform_grad.reshape(n_batches, 3, 3) * cell_factor_expanded
-        ).reshape(-1, 3)
+        cell_positions = cur_deform_grad * cell_factor_expanded
 
         # Velocity Verlet first half step (v += 0.5*a*dt)
         atom_wise_dt = state.dt[state.batch].unsqueeze(-1)
-        cell_wise_dt = state.dt.repeat_interleave(3).unsqueeze(-1)
+        cell_wise_dt = state.dt.unsqueeze(-1).unsqueeze(-1)
 
         state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
         state.cell_velocities += (
@@ -724,9 +720,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         cell_positions_new = cell_positions + cell_wise_dt * state.cell_velocities
 
         # Update cell with deformation gradient
-        cell_update = (cell_positions_new / cell_factor_expanded.reshape(-1, 1)).reshape(
-            n_batches, 3, 3
-        )
+        cell_update = cell_positions_new / cell_factor_expanded
         new_cell = torch.bmm(state.orig_cell, cell_update.transpose(1, 2))
 
         # Get new forces and energy
@@ -764,8 +758,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
             ).unsqueeze(0).expand(n_batches, -1, -1)
 
         virial = virial / state.cell_factor
-        virial_flat = virial.reshape(n_batches * 3, 3)
-        state.cell_forces = virial_flat
+        state.cell_forces = virial
 
         # Velocity Verlet first half step (v += 0.5*a*dt)
         state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
@@ -784,18 +777,9 @@ def unit_cell_fire(  # noqa: C901, PLR0915
 
         # Calculate power for cell DOFs
         cell_power = (state.cell_forces * state.cell_velocities).sum(
-            dim=1
-        )  # [n_batches*3]
-        cell_batch = torch.arange(n_batches, device=device).repeat_interleave(3)
-        cell_power_per_batch = torch.zeros(
-            n_batches, device=device, dtype=cell_power.dtype
-        )
-        cell_power_per_batch.scatter_add_(
-            dim=0, index=cell_batch, src=cell_power
+            dim=(1, 2)
         )  # [n_batches]
-
-        # Calculate total power per batch and sum
-        batch_power = atomic_power_per_batch + cell_power_per_batch
+        batch_power = atomic_power_per_batch + cell_power
 
         for batch_idx in range(n_batches):
             # FIRE specific updates
@@ -810,8 +794,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
                 state.alpha[batch_idx] = alpha_start[batch_idx]
                 # Reset velocities for both atoms and cell
                 state.velocities[state.batch == batch_idx] = 0
-                cell_batch = torch.arange(n_batches, device=device).repeat_interleave(3)
-                state.cell_velocities[cell_batch == batch_idx] = 0
+                state.cell_velocities[batch_idx] = 0
 
         # Mix velocity and force direction using FIRE for atoms
         v_norm = torch.norm(state.velocities, dim=1, keepdim=True)
@@ -830,9 +813,9 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         ) * state.velocities + batch_wise_alpha * state.forces * v_norm / (f_norm + 1e-10)
 
         # Mix velocity and force direction for cell DOFs
-        cell_v_norm = torch.norm(state.cell_velocities, dim=1, keepdim=True)
-        cell_f_norm = torch.norm(state.cell_forces, dim=1, keepdim=True)
-        cell_wise_alpha = state.alpha.repeat_interleave(3).unsqueeze(-1)
+        cell_v_norm = torch.norm(state.cell_velocities, dim=(1, 2), keepdim=True)
+        cell_f_norm = torch.norm(state.cell_forces, dim=(1, 2), keepdim=True)
+        cell_wise_alpha = state.alpha.unsqueeze(-1).unsqueeze(-1)
         cell_mask = cell_f_norm > 1e-10
         state.cell_velocities = torch.where(
             cell_mask,
