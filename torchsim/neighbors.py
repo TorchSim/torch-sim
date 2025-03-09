@@ -833,7 +833,7 @@ def vesin_nl(
 
 def strict_nl(
     cutoff: float,
-    pos: torch.Tensor,
+    positions: torch.Tensor,
     cell: torch.Tensor,
     mapping: torch.Tensor,
     batch_mapping: torch.Tensor,
@@ -850,13 +850,13 @@ def strict_nl(
         cutoff (float):
             The maximum distance for considering two atoms as neighbors. This value
             is used to filter the neighbor pairs based on their distances.
-        pos (torch.Tensor):
+        positions (torch.Tensor):
             A tensor of shape (n_atoms, 3) representing the positions of the atoms.
         cell (torch.Tensor):
             A tensor representing the unit cell dimensions, used for computing cell
             shifts.
         mapping (torch.Tensor):
-            A tensor of shape (2, n_pairs) that specifies pairs of indices in `pos`
+            A tensor of shape (2, n_pairs) that specifies pairs of indices in `positions`
             for which to compute distances.
         batch_mapping (torch.Tensor):
             A tensor that maps the shifts to the corresponding cells, used in conjunction
@@ -886,9 +886,13 @@ def strict_nl(
     """
     cell_shifts = compute_cell_shifts(cell, shifts_idx, batch_mapping)
     if cell_shifts is None:
-        d2 = (pos[mapping[0]] - pos[mapping[1]]).square().sum(dim=1)
+        d2 = (positions[mapping[0]] - positions[mapping[1]]).square().sum(dim=1)
     else:
-        d2 = (pos[mapping[0]] - pos[mapping[1]] - cell_shifts).square().sum(dim=1)
+        d2 = (
+            (positions[mapping[0]] - positions[mapping[1]] - cell_shifts)
+            .square()
+            .sum(dim=1)
+        )
 
     mask = d2 < cutoff * cutoff
     mapping = mapping[:, mask]
@@ -900,7 +904,7 @@ def strict_nl(
 @torch.jit.script
 def torch_nl_n2(
     cutoff: float,
-    pos: torch.Tensor,
+    positions: torch.Tensor,
     cell: torch.Tensor,
     pbc: torch.Tensor,
     batch: torch.Tensor,
@@ -913,7 +917,7 @@ def torch_nl_n2(
     Args:
         cutoff (float):
             The cutoff radius used for the neighbor search.
-        pos (torch.Tensor [n_atom, 3]):
+        positions (torch.Tensor [n_atom, 3]):
             A tensor containing the positions of atoms wrapped inside their
             respective unit cells.
         cell (torch.Tensor [3*n_structure, 3]):
@@ -944,10 +948,10 @@ def torch_nl_n2(
     """
     n_atoms = torch.bincount(batch)
     mapping, batch_mapping, shifts_idx = build_naive_neighborhood(
-        pos, cell, pbc, cutoff, n_atoms, self_interaction
+        positions, cell, pbc, cutoff, n_atoms, self_interaction
     )
     mapping, mapping_batch, shifts_idx = strict_nl(
-        cutoff, pos, cell, mapping, batch_mapping, shifts_idx
+        cutoff, positions, cell, mapping, batch_mapping, shifts_idx
     )
     return mapping, mapping_batch, shifts_idx
 
@@ -955,7 +959,7 @@ def torch_nl_n2(
 @torch.jit.script
 def torch_nl_linked_cell(
     cutoff: float,
-    pos: torch.Tensor,
+    positions: torch.Tensor,
     cell: torch.Tensor,
     pbc: torch.Tensor,
     batch: torch.Tensor,
@@ -968,7 +972,7 @@ def torch_nl_linked_cell(
     Args:
         cutoff (float):
             The cutoff radius used for the neighbor search.
-        pos (torch.Tensor [n_atom, 3]):
+        positions (torch.Tensor [n_atom, 3]):
             A tensor containing the positions of atoms wrapped inside
             their respective unit cells.
         cell (torch.Tensor [3*n_structure, 3]):
@@ -1000,10 +1004,10 @@ def torch_nl_linked_cell(
     """
     n_atoms = torch.bincount(batch)
     mapping, batch_mapping, shifts_idx = build_linked_cell_neighborhood(
-        pos, cell, pbc, cutoff, n_atoms, self_interaction
+        positions, cell, pbc, cutoff, n_atoms, self_interaction
     )
 
     mapping, mapping_batch, shifts_idx = strict_nl(
-        cutoff, pos, cell, mapping, batch_mapping, shifts_idx
+        cutoff, positions, cell, mapping, batch_mapping, shifts_idx
     )
     return mapping, mapping_batch, shifts_idx

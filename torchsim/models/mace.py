@@ -460,6 +460,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
         unit_shifts_list = []
         offset = 0
 
+        # TODO (AG): Currently doesn't work for batched neighbor lists
         for b in range(self.n_systems):
             batch_mask = batch == b
             # Calculate neighbor list for this system
