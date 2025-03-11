@@ -32,10 +32,11 @@ from torchsim.workflows.batching_utils import (
 # Device and data type configuration
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
+print(f"job will run on {device=}")
 
 # --- Model Initialization ---
 PERIODIC = True
-print("Loading MACE model...", flush=True)
+print("Loading MACE model...")
 mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_omat_0/mace-omat-0-medium.model"
 loaded_model = mace_mp(
     model=mace_checkpoint_url,
@@ -44,7 +45,7 @@ loaded_model = mace_mp(
     device=device,
 )
 
-print("Initializing MACE model...", flush=True)
+print("Initializing MACE model...")
 batched_model = MaceModel(
     model=loaded_model,
     device=device,
@@ -58,24 +59,24 @@ batched_model = MaceModel(
 batched_model.eval()
 
 # Optimization parameters
-batch_size = 2 if os.getenv("CI") else 16
+batch_size = 2 if os.getenv("CI") else 1000
 fmax = 0.05  # Force convergence threshold
 n_steps = 10 if os.getenv("CI") else 200_000_000
 log_path = Path(f"WBM_relaxation_log_{batch_size}.txt")
-max_atoms_in_batch = 50 if os.getenv("CI") else 2_000
+max_atoms_in_batch = 50 if os.getenv("CI") else 8_000
 log_frequency = 500
 
 # Performance optimizations
 if device == "cuda":
     torch.set_num_threads(batch_size)  # Optimize CPU thread count for GPU usage
-    torch.cuda.set_device(0)  # Use primary GPU if multiple available
+    # torch.cuda.set_device(0)  # Use primary GPU if multiple available
 
 # Ensure log directory exists
 log_path.parent.mkdir(parents=True, exist_ok=True)
 
 # --- Data Loading ---
-n_structures_to_relax = 2 if os.getenv("CI") else 1000
-print(f"Loading {n_structures_to_relax} structures...", flush=True)
+n_structures_to_relax = 2 if os.getenv("CI") else 3_000
+print(f"Loading {n_structures_to_relax:,} structures...")
 ase_init_atoms = ase_atoms_from_zip(
     DataFiles.wbm_initial_atoms.path, limit=n_structures_to_relax
 )
@@ -92,9 +93,7 @@ fire_init, fire_update = unit_cell_fire(model=batched_model)
 batch_state = fire_init(atoms_to_state(struct_list, device=device, dtype=dtype))
 
 print(
-    f"Starting optimization of {n_structures_to_relax} structures "
-    f"with batch size {batch_size}...",
-    flush=True,
+    f"Starting optimization of {n_structures_to_relax} structures with {batch_size=}..."
 )
 start_time = time.perf_counter()
 
@@ -185,16 +184,14 @@ for step in range(n_steps):
                 torch.cuda.empty_cache()
                 any_replaced = True
                 print(
-                    f"Swapped structure {current_idx - batch_size + idx} "
-                    f"with structure {current_idx}.",
-                    flush=True,
+                    f"Swapped structure "
+                    f"{current_idx - batch_size + idx} with structure {current_idx}."
                 )
             else:
                 # Handle final batch case
                 print(
-                    f"Final structure at position {idx} converged. "
-                    f"Reducing batch size to {batch_size - 1}.",
-                    flush=True,
+                    f"Final structure {idx} converged. "
+                    f"Reducing batch size to {batch_size - 1}."
                 )
                 completed_structures += 1
                 processed_atoms += len(struct_list[idx])
@@ -243,7 +240,7 @@ for step in range(n_steps):
                 force_mask = torch.zeros(batch_size, dtype=torch.bool, device=device)
             else:
                 # All structures are converged, exit the loop
-                print("All structures converged!", flush=True)
+                print("All structures converged!")
                 break
 
             any_replaced = True
