@@ -580,7 +580,7 @@ def get_subcells_to_crystallize(
         # Convert stoichiometries to composition formulas
         comps = []
         for stoich in stoichs:
-            comp = dict(zip(elements, stoich, strict=False))
+            comp = dict(zip(elements, stoich, strict=True))
             comps.append(Composition.from_dict(comp).reduced_formula)
         restrict_to_compositions = set(comps)
 

@@ -156,10 +156,10 @@ def test_chunking_auto_batcher_restore_order_with_split_states(
     assert torch.all(restored_states[1].atomic_numbers == states[1].atomic_numbers)
 
 
-def test_hotswapping_max_metric_too_small(
+def test_hot_swapping_max_metric_too_small(
     si_base_state: BaseState, fe_fcc_state: BaseState, lj_calculator: LennardJonesModel
 ) -> None:
-    """Test HotswappingAutoBatcher with different states."""
+    """Test HotSwappingAutoBatcher with different states."""
     # Create a list of states
     states = [si_base_state, fe_fcc_state]
 
@@ -176,10 +176,10 @@ def test_hotswapping_max_metric_too_small(
         batcher.next_batch(None, None)
 
 
-def test_hotswapping_auto_batcher(
+def test_hot_swapping_auto_batcher(
     si_base_state: BaseState, fe_fcc_state: BaseState, lj_calculator: LennardJonesModel
 ) -> None:
-    """Test HotswappingAutoBatcher with different states."""
+    """Test HotSwappingAutoBatcher with different states."""
     # Create a list of states
     states = [si_base_state, fe_fcc_state]
 
@@ -245,10 +245,10 @@ def test_determine_max_batch_size_fibonacci(
     assert max_size == 8
 
 
-def test_hotswapping_auto_batcher_restore_order(
+def test_hot_swapping_auto_batcher_restore_order(
     si_base_state: BaseState, fe_fcc_state: BaseState, lj_calculator: LennardJonesModel
 ) -> None:
-    """Test HotswappingAutoBatcher's restore_original_order method."""
+    """Test HotSwappingAutoBatcher's restore_original_order method."""
     states = [si_base_state, fe_fcc_state]
 
     batcher = HotSwappingAutoBatcher(
@@ -291,7 +291,7 @@ def test_hotswapping_auto_batcher_restore_order(
     #     batcher.restore_original_order([si_base_state])
 
 
-def test_hotswapping_with_fire(
+def test_hot_swapping_with_fire(
     si_base_state: BaseState, fe_fcc_state: BaseState, lj_calculator: LennardJonesModel
 ) -> None:
     fire_init, fire_update = unit_cell_fire(lj_calculator)
@@ -373,5 +373,5 @@ def test_chunking_auto_batcher_with_fire(
 
     restored_states = batcher.restore_original_order(finished_states)
     assert len(restored_states) == len(fire_states)
-    for restored, original in zip(restored_states, fire_states, strict=False):
+    for restored, original in zip(restored_states, fire_states, strict=True):
         assert torch.all(restored.atomic_numbers == original.atomic_numbers)

@@ -297,7 +297,7 @@ class ChunkingAutoBatcher:
             )
 
         # sort states by original indices
-        indexed_states = list(zip(original_indices, all_states, strict=False))
+        indexed_states = list(zip(original_indices, all_states, strict=True))
         return [state for _, state in sorted(indexed_states, key=lambda x: x[0])]
 
 
@@ -317,7 +317,7 @@ class HotSwappingAutoBatcher:
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
     ) -> None:
-        """Initialize the hotswapping auto-batcher.
+        """Initialize the hot-swapping auto-batcher.
 
         Args:
             states: Collection of states to process (list, iterator, or single state
@@ -544,7 +544,7 @@ class HotSwappingAutoBatcher:
 
         # Create pairs of (original_index, state)
         indexed_states = list(
-            zip(self.completed_idx_og_order, completed_states, strict=False)
+            zip(self.completed_idx_og_order, completed_states, strict=True)
         )
 
         # Sort by original index
