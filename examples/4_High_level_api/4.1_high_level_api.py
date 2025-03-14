@@ -4,7 +4,7 @@ criteria, and logging.
 
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.10",
+#     "mace-torch>=0.3.11",
 #     "pymatgen>=2025.2.18",
 # ]
 # ///

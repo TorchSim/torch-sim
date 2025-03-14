@@ -1,6 +1,6 @@
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.10",
+#     "mace-torch>=0.3.11",
 #     "moyopy>=0.4.1",
 #     "pymatgen>=2025.2.18",
 # ]
