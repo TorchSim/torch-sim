@@ -54,12 +54,12 @@ batched_model = MaceModel(
     compute_force=True,
     compute_stress=True,
     dtype=dtype,
-    enable_cueq=True,
+    enable_cueq=False,
 )
 batched_model.eval()
 
 # Optimization parameters
-batch_size = 2 if os.getenv("CI") else 1000
+batch_size = 2 if os.getenv("CI") else 16
 fmax = 0.05  # Force convergence threshold
 n_steps = 10 if os.getenv("CI") else 200_000_000
 log_path = Path(f"WBM_relaxation_log_{batch_size}.txt")
@@ -75,7 +75,7 @@ if device == "cuda":
 log_path.parent.mkdir(parents=True, exist_ok=True)
 
 # --- Data Loading ---
-n_structures_to_relax = 2 if os.getenv("CI") else 3_000
+n_structures_to_relax = 2 if os.getenv("CI") else 100
 print(f"Loading {n_structures_to_relax:,} structures...")
 ase_init_atoms = ase_atoms_from_zip(
     DataFiles.wbm_initial_atoms.path, limit=n_structures_to_relax

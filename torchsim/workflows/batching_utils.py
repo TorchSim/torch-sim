@@ -132,39 +132,6 @@ def swap_structure(
     return state, current_idx + 1
 
 
-def _calculate_force_convergence_mask(
-    forces: torch.Tensor,
-    batch: torch.Tensor,
-    batch_size: int,
-    fmax: float,
-) -> tuple[list[float], list[bool]]:
-    """Calculate force norms and check convergence for each structure in batch.
-
-    Non-vectorized implementation that returns Python lists. Prefer using
-    calculate_force_convergence_mask() for better performance.
-
-    Args:
-        forces: Forces tensor for all atoms
-        batch: Batch indices tensor mapping atoms to structures
-        batch_size: Number of structures in batch
-        fmax: Force convergence threshold
-
-    Returns:
-        tuple containing:
-            - list[float]: Maximum force norm for each structure
-            - list[bool]: Whether each structure is converged
-    """
-    # Calculate max force norm per structure
-    force_norms = torch.zeros(batch_size, device=forces.device)
-    force_norms.index_add_(0, batch, forces.norm(p=2, dim=-1))
-    force_norms = force_norms.tolist()
-
-    # Check convergence against threshold
-    force_converged = [norm < fmax for norm in force_norms]
-
-    return force_norms, force_converged
-
-
 @torch.jit.script
 def calculate_force_convergence_mask(
     forces: torch.Tensor, batch: torch.Tensor, batch_size: int, fmax: float
