@@ -53,11 +53,6 @@ class TrajectoryReporter:
             metadata: Metadata to save in trajectory file
             trajectory_kwargs: Additional arguments for trajectory initialization
         """
-        filenames = [filenames] if not isinstance(filenames, list) else filenames
-        self.filenames = [pathlib.Path(filename) for filename in filenames]
-        if len(set(self.filenames)) != len(self.filenames):
-            raise ValueError("All filenames must be unique.")
-
         self.state_frequency = state_frequency
         self.trajectory_kwargs = trajectory_kwargs or {}
         self.trajectory_kwargs["mode"] = self.trajectory_kwargs.get(
@@ -66,18 +61,37 @@ class TrajectoryReporter:
         self.prop_calculators = prop_calculators or {}
         self.state_kwargs = state_kwargs or {}
         self.shape_warned = False
+        self.metadata = metadata
+
+        self.trajectories = []
+        self.load_new_trajectories(filenames)
+
+        self._add_model_arg_to_prop_calculators()
+
+    def load_new_trajectories(
+        self, filenames: str | pathlib.Path | list[str | pathlib.Path]
+    ) -> None:
+        """Load new trajectories into the reporter.
+
+        Args:
+            filenames: Path(s) to save trajectory file(s)
+        """
+        self.finish()
+
+        filenames = [filenames] if not isinstance(filenames, list) else filenames
+        self.filenames = [pathlib.Path(filename) for filename in filenames]
+        if len(set(self.filenames)) != len(self.filenames):
+            raise ValueError("All filenames must be unique.")
 
         self.trajectories = []
         for filename in self.filenames:
             self.trajectories.append(
                 TorchSimTrajectory(
                     filename=filename,
-                    metadata=metadata,
+                    metadata=self.metadata,
                     **self.trajectory_kwargs,
                 )
             )
-
-        self._add_model_arg_to_prop_calculators()
 
     @property
     def array_registry(self) -> dict[str, tuple[tuple[int, ...], np.dtype]]:

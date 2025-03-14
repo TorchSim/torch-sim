@@ -1,5 +1,6 @@
 from typing import Any
 
+import binpacking
 import pytest
 import torch
 
@@ -58,11 +59,11 @@ def test_chunking_auto_batcher(
 
     # Initialize the batcher with a fixed max_metric to avoid GPU memory testing
     batcher = ChunkingAutoBatcher(
-        states=states,
         model=lj_calculator,
         memory_scales_with="n_atoms",
         max_memory_scaler=260.0,  # Set a small value to force multiple batches
     )
+    batcher.load_states(states)
 
     # Check that the batcher correctly identified the metrics
     assert len(batcher.memory_scalers) == 2
@@ -95,12 +96,12 @@ def test_chunking_auto_batcher_with_indices(
     states = [si_base_state, fe_fcc_state]
 
     batcher = ChunkingAutoBatcher(
-        states=states,
         model=lj_calculator,
         memory_scales_with="n_atoms",
         max_memory_scaler=260.0,
         return_indices=True,
     )
+    batcher.load_states(states)
 
     # Get batches with indices
     batches_with_indices = []
@@ -124,11 +125,11 @@ def test_chunking_auto_batcher_restore_order_with_split_states(
 
     # Initialize the batcher with a fixed max_metric to avoid GPU memory testing
     batcher = ChunkingAutoBatcher(
-        states=states,
         model=lj_calculator,
         memory_scales_with="n_atoms",
         max_memory_scaler=260.0,  # Set a small value to force multiple batches
     )
+    batcher.load_states(states)
 
     # Get batches until None is returned
     batches = []
@@ -165,15 +166,13 @@ def test_hot_swapping_max_metric_too_small(
 
     # Initialize the batcher with a fixed max_metric
     batcher = HotSwappingAutoBatcher(
-        states=states,
         model=lj_calculator,
         memory_scales_with="n_atoms",
         max_memory_scaler=1.0,  # Set a small value to force multiple batches
     )
-
     # Get the first batch
     with pytest.raises(ValueError, match="is greater than max_metric"):
-        batcher.next_batch(None, None)
+        batcher.load_states(states)
 
 
 def test_hot_swapping_auto_batcher(
@@ -185,23 +184,22 @@ def test_hot_swapping_auto_batcher(
 
     # Initialize the batcher with a fixed max_metric
     batcher = HotSwappingAutoBatcher(
-        states=states,
         model=lj_calculator,
         memory_scales_with="n_atoms",
         max_memory_scaler=260,  # Set a small value to force multiple batches
+        return_indices=True,
     )
+    batcher.load_states(states)
 
     # Get the first batch
-    first_batch, [] = batcher.next_batch(states, None)
+    first_batch, [], _ = batcher.next_batch(states, None)
     assert isinstance(first_batch, BaseState)
 
     # Create a convergence tensor where the first state has converged
     convergence = torch.tensor([True])
 
     # Get the next batch
-    next_batch, popped_batch, idx = batcher.next_batch(
-        first_batch, convergence, return_indices=True
-    )
+    next_batch, popped_batch, idx = batcher.next_batch(first_batch, convergence)
     assert isinstance(next_batch, BaseState)
     assert isinstance(popped_batch, list)
     assert isinstance(popped_batch[0], BaseState)
@@ -216,7 +214,7 @@ def test_hot_swapping_auto_batcher(
     convergence = torch.tensor([True])
 
     # Get the next batch, which should be None since all states have converged
-    final_batch, popped_batch = batcher.next_batch(next_batch, convergence)
+    final_batch, popped_batch, _ = batcher.next_batch(next_batch, convergence)
     assert final_batch is None
 
     # Check that all states are marked as completed
@@ -252,11 +250,11 @@ def test_hot_swapping_auto_batcher_restore_order(
     states = [si_base_state, fe_fcc_state]
 
     batcher = HotSwappingAutoBatcher(
-        states=states,
         model=lj_calculator,
         memory_scales_with="n_atoms",
         max_memory_scaler=260.0,
     )
+    batcher.load_states(states)
 
     # Get the first batch
     first_batch, [] = batcher.next_batch(states, None)
@@ -305,12 +303,12 @@ def test_hot_swapping_with_fire(
         state.positions += torch.randn_like(state.positions) * 0.01
 
     batcher = HotSwappingAutoBatcher(
-        states=fire_states,
         model=lj_calculator,
         memory_scales_with="n_atoms",
         # max_metric=400_000,
         max_memory_scaler=600,
     )
+    batcher.load_states(fire_states)
 
     def convergence_fn(state: BaseState) -> bool:
         batch_wise_max_force = torch.zeros(
@@ -357,15 +355,21 @@ def test_chunking_auto_batcher_with_fire(
     for state in fire_states:
         state.positions += torch.randn_like(state.positions) * 0.01
 
+    batch_lengths = [state.n_atoms for state in fire_states]
+    optimal_batches = binpacking.to_constant_volume(batch_lengths, 400)
+    optimal_n_batches = len(optimal_batches)
+
     batcher = ChunkingAutoBatcher(
-        states=fire_states,
         model=lj_calculator,
         memory_scales_with="n_atoms",
         max_memory_scaler=400,
     )
+    batcher.load_states(fire_states)
 
     finished_states = []
+    n_batches = 0
     for batch in batcher:
+        n_batches += 1
         for _ in range(5):
             batch = fire_update(batch)
 
@@ -375,3 +379,5 @@ def test_chunking_auto_batcher_with_fire(
     assert len(restored_states) == len(fire_states)
     for restored, original in zip(restored_states, fire_states, strict=True):
         assert torch.all(restored.atomic_numbers == original.atomic_numbers)
+    # analytically determined to be optimal
+    assert n_batches == optimal_n_batches

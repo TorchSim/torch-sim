@@ -5,16 +5,17 @@ optimizations using various calculators and integrators. It includes utilities f
 converting between different molecular representations and handling simulation state.
 """
 
-import inspect
 import warnings
 from collections.abc import Callable
-from functools import partial
 from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 from numpy.typing import ArrayLike
 
+from torchsim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
+from torchsim.models.interface import ModelInterface
+from torchsim.quantities import batchwise_max_force
 from torchsim.state import BaseState, StateLike, concatenate_states, state_to_device
 from torchsim.trajectory import TrajectoryReporter
 from torchsim.units import UnitSystem
@@ -40,15 +41,45 @@ except ImportError:
         """Stub class for ASE Atoms when not installed."""
 
 
+def _create_batches_iterator(
+    model: ModelInterface,
+    state: BaseState,
+    autobatcher: ChunkingAutoBatcher | bool,
+) -> ChunkingAutoBatcher:
+    """Create a batches iterator for the integrate function."""
+    # load and properly configure the autobatcher
+    if autobatcher and isinstance(autobatcher, bool):
+        autobatcher = ChunkingAutoBatcher(
+            model=model,
+            return_indices=True,
+        )
+        autobatcher.load_states(state)
+        batchs = autobatcher
+    elif isinstance(autobatcher, ChunkingAutoBatcher):
+        autobatcher.load_states(state)
+        autobatcher.return_indices = True
+        batchs = autobatcher
+    elif not autobatcher:
+        batchs = [(state, [])]
+    else:
+        raise ValueError(
+            f"Invalid autobatcher type: {type(autobatcher)}, "
+            "must be bool, ChunkingAutoBatcher, or None."
+        )
+    return batchs
+
+
 def integrate(
     system: StateLike,
-    model: torch.nn.Module,
+    model: ModelInterface,
+    *,
     integrator: Callable,
     n_steps: int,
     temperature: float | ArrayLike,
     timestep: float,
     unit_system: UnitSystem = UnitSystem.metal,
     trajectory_reporter: TrajectoryReporter | None = None,
+    autobatcher: ChunkingAutoBatcher | bool = False,
     **integrator_kwargs: dict,
 ) -> BaseState:
     """Simulate a system using a model and integrator.
@@ -63,20 +94,21 @@ def integrate(
         unit_system: Unit system for temperature and time
         integrator_kwargs: Additional keyword arguments for integrator
         trajectory_reporter: Optional reporter for tracking trajectory
+        autobatcher: Optional autobatcher to use
 
     Returns:
         BaseState: Final state after integration
     """
-    # TODO: figure out a way to pass velocities too
-    state: BaseState = initialize_state(system, model.device, model.dtype)
-
+    # create a list of temperatures
     temps = temperature if hasattr(temperature, "__iter__") else [temperature] * n_steps
     if len(temps) != n_steps:
         raise ValueError(
             f"len(temperature) = {len(temps)}. It must equal n_steps = {n_steps}"
         )
 
-    dtype, device = state.positions.dtype, state.positions.device
+    # initialize the state
+    state: BaseState = initialize_state(system, model.device, model.dtype)
+    dtype, device = state.dtype, state.device
     init_fn, update_fn = integrator(
         model=model,
         kT=torch.tensor(temps[0] * unit_system.temperature, dtype=dtype, device=device),
@@ -85,26 +117,94 @@ def integrate(
     )
     state = init_fn(state)
 
-    for step in range(1, n_steps + 1):
-        state = update_fn(state, kT=temps[step - 1] * unit_system.temperature)
+    batch_iterator = _create_batches_iterator(model, state, autobatcher)
 
-        if trajectory_reporter:
-            trajectory_reporter.report(state, step, model=model)
+    final_states = []
+    og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
+    for state, batch_indices in batch_iterator:
+        # set up trajectory reporters
+        if autobatcher and trajectory_reporter:
+            # we must remake the trajectory reporter for each batch
+            trajectory_reporter.load_new_trajectories(
+                filenames=[og_filenames[i] for i in batch_indices]
+            )
+
+        # run the simulation
+        for step in range(1, n_steps + 1):
+            state = update_fn(state, kT=temps[step - 1] * unit_system.temperature)
+
+            if trajectory_reporter:
+                trajectory_reporter.report(state, step, model=model)
+
+        # finish the trajectory reporter
+        final_states.append(state)
 
     if trajectory_reporter:
         trajectory_reporter.finish()
 
+    if isinstance(batch_iterator, ChunkingAutoBatcher):
+        reordered_states = batch_iterator.restore_original_order(final_states)
+        return concatenate_states(reordered_states)
+
     return state
+
+
+def _configure_hot_swapping_autobatcher(
+    model: ModelInterface,
+    state: BaseState,
+    autobatcher: HotSwappingAutoBatcher | bool,
+) -> HotSwappingAutoBatcher:
+    """Configure the hot swapping autobatcher for the optimize function."""
+    # load and properly configure the autobatcher
+    if isinstance(autobatcher, HotSwappingAutoBatcher):
+        autobatcher.return_indices = True
+        autobatcher.load_states(state)
+    else:
+        memory_scales_with = getattr(model, "memory_scales_with", "n_atoms")
+        max_memory_scaler = None if autobatcher else state.n_atoms + 1
+        autobatcher = HotSwappingAutoBatcher(
+            model=model,
+            return_indices=True,
+            max_memory_scaler=max_memory_scaler,
+            memory_scales_with=memory_scales_with,
+        )
+        autobatcher.load_states(state)
+    return autobatcher
+
+
+def generate_force_convergence_fn(force_tol: float = 1e-1) -> Callable:
+    """Generate a convergence function for the convergence_fn argument
+    of the optimize function.
+
+    Args:
+        force_tol: Force tolerance for convergence
+
+    Returns:
+        Convergence function that takes a state and last energy and
+        returns a batchwise boolean function
+    """
+
+    def convergence_fn(
+        state: BaseState,
+        last_energy: torch.Tensor,  # noqa: ARG001
+    ) -> bool:
+        """Check if the system has converged."""
+        return batchwise_max_force(state) < force_tol
+
+    return convergence_fn
 
 
 def optimize(
     system: StateLike,
-    model: torch.nn.Module,
+    model: ModelInterface,
+    *,
     optimizer: Callable,
     convergence_fn: Callable | None = None,
     unit_system: UnitSystem = UnitSystem.metal,
     trajectory_reporter: TrajectoryReporter | None = None,
     max_steps: int = 10_000,
+    autobatcher: HotSwappingAutoBatcher | bool = False,
+    steps_between_swaps: int = 5,
     **optimizer_kwargs: dict,
 ) -> BaseState:
     """Optimize a system using a model and optimizer.
@@ -118,47 +218,71 @@ def optimize(
         unit_system: Unit system for energy tolerance
         optimizer_kwargs: Additional keyword arguments for optimizer
         trajectory_reporter: Optional reporter for tracking optimization trajectory
-        max_steps: Maximum number of optimization steps
+        max_steps: Maximum number of total optimization steps
+        autobatcher: Optional autobatcher to use. If False, the system will assume
+            infinite memory and will not batch, but will still remove converged
+            structures from the batch. If True, the system will estimate the memory
+            available and batch accordingly. If a HotSwappingAutoBatcher, the system
+            will use the provided autobatcher.
+        steps_between_swaps: Number of steps to take before checking convergence
+            and swapping out states.
 
     Returns:
         Optimized system state
     """
+    # create a default convergence function if one is not provided
     # TODO: document this behavior
     if convergence_fn is None:
 
         def convergence_fn(state: BaseState, last_energy: torch.Tensor) -> bool:
             return last_energy - state.energy < 1e-6 * unit_system.energy
 
-    # we partially evaluate the function to create a new function with
-    # an optional second argument, this can be set to state later on
-    if len(inspect.signature(convergence_fn).parameters) == 1:
-        convergence_fn = partial(
-            lambda state, _=None, fn=None: fn(state), fn=convergence_fn
-        )
+    # initialize the state
     state: BaseState = initialize_state(system, model.device, model.dtype)
-
     init_fn, update_fn = optimizer(
         model=model,
         **optimizer_kwargs,
     )
     state = init_fn(state)
 
+    autobatcher = _configure_hot_swapping_autobatcher(model, state, autobatcher)
+
     step: int = 1
     last_energy = state.energy + 1
-    while not torch.all(convergence_fn(state, last_energy)):
-        last_energy = state.energy
-        state = update_fn(state)
+    all_converged_states, convergence_tensor = [], None
+    og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
+    while (result := autobatcher.next_batch(state, convergence_tensor))[0] is not None:
+        state, converged_states, batch_indices = result
+        all_converged_states.extend(converged_states)
 
-        if trajectory_reporter:
-            trajectory_reporter.report(state, step, model=model)
-        step += 1
-        if step > max_steps:
-            # TODO: desired behavior?
-            warnings.warn(f"Optimize has reached max steps: {step}", stacklevel=2)
-            break
+        # need to update the trajectory reporter if any states have converged
+        if trajectory_reporter and (step == 1 or len(converged_states) > 0):
+            trajectory_reporter.load_new_trajectories(
+                filenames=[og_filenames[i] for i in batch_indices]
+            )
+
+        for _step in range(steps_between_swaps):
+            state = update_fn(state)
+            last_energy = state.energy
+
+            if trajectory_reporter:
+                trajectory_reporter.report(state, step, model=model)
+            step += 1
+            if step > max_steps:
+                # TODO: max steps should be tracked for each structure in the batch
+                warnings.warn(f"Optimize has reached max steps: {step}", stacklevel=2)
+                break
+
+        convergence_tensor = convergence_fn(state, last_energy)
+
+    all_converged_states.extend(result[1])
 
     if trajectory_reporter:
         trajectory_reporter.finish()
+
+    if autobatcher:
+        final_states = autobatcher.restore_original_order(all_converged_states)
+        return concatenate_states(final_states)
 
     return state
 
@@ -181,10 +305,18 @@ def initialize_state(
     Raises:
         ValueError: If system type is not supported
     """
+    # TODO: create a way to pass velocities from pmg and ase
+
     if isinstance(system, BaseState):
         return state_to_device(system, device, dtype)
 
     if isinstance(system, list) and all(isinstance(s, BaseState) for s in system):
+        if not all(state.n_batches == 1 for state in system):
+            raise ValueError(
+                "When providing a list of states, to the initialize_state function, "
+                "all states must have n_batches == 1. To fix this, you can split the "
+                "states into individual states with the split_state function."
+            )
         return concatenate_states(system)
 
     try:
