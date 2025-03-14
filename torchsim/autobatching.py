@@ -30,7 +30,7 @@ def measure_model_memory_forward(state: BaseState, model: ModelInterface) -> flo
         raise ValueError(
             "Memory estimation does not make sense on CPU and is unsupported."
         )
-    logging.info(
+    logging.info(  # noqa: LOG015
         "Model Memory Estimation: Running forward pass on state with "
         "%s atoms and %s batches.",
         state.n_atoms,
@@ -152,7 +152,7 @@ def estimate_max_memory_scaler(
     min_state = state_list[metric_values.argmin()]
     max_state = state_list[metric_values.argmax()]
 
-    logging.info(
+    logging.info(  # noqa: LOG015
         "Model Memory Estimation: Estimating memory from worst case of "
         "largest and smallest system. Largest system has %s atoms and %s batches, "
         "and smallest system has %s atoms and %s batches.",
