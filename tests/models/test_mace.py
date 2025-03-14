@@ -211,7 +211,7 @@ def test_optimize_with_autobatcher(
     from torchsim.runners import initialize_state, optimize
     from torchsim.state import split_state
     from torchsim.optimizers import unit_cell_fire
-    from torchsim.runners import generate_max_force_convergence_fn
+    from torchsim.runners import generate_force_convergence_fn
 
     mace_model = torchsim_batched_mace_model
 
@@ -226,7 +226,7 @@ def test_optimize_with_autobatcher(
         system=triple_state,
         model=mace_model,
         optimizer=unit_cell_fire,
-        convergence_fn=generate_max_force_convergence_fn(force_tol=1e-1),
+        convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
         autobatcher=True,
     )
 

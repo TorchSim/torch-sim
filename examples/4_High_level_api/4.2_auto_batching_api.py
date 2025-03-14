@@ -26,7 +26,7 @@ from torchsim.autobatching import (
 from torchsim.integrators import nvt_langevin
 from torchsim.models.mace import MaceModel
 from torchsim.optimizers import unit_cell_fire
-from torchsim.runners import atoms_to_state, generate_max_force_convergence_fn
+from torchsim.runners import atoms_to_state, generate_force_convergence_fn
 from torchsim.state import BaseState
 from torchsim.units import MetalUnits
 
@@ -66,7 +66,7 @@ len(fire_states)
 
 # %%
 # TODO: add max steps
-converge_max_force = generate_max_force_convergence_fn(force_tol=1e-1)
+converge_max_force = generate_force_convergence_fn(force_tol=1e-1)
 single_system_memory = calculate_memory_scaler(fire_states[0])
 batcher = HotSwappingAutoBatcher(
     model=mace_model,

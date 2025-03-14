@@ -16,7 +16,7 @@ from torchsim.runners import (
     state_to_atoms,
     state_to_structures,
     structures_to_state,
-    generate_max_force_convergence_fn,
+    generate_force_convergence_fn,
 )
 from torchsim.state import BaseState, split_state
 from torchsim.trajectory import TorchSimTrajectory, TrajectoryReporter
@@ -314,7 +314,7 @@ def test_optimize_fire(
         system=ar_base_state,
         model=lj_calculator,
         optimizer=fire,
-        convergence_fn=generate_max_force_convergence_fn(force_tol=1e-1),
+        convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
         unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
     )
@@ -378,7 +378,7 @@ def test_batched_optimize_fire(
         system=ar_double_base_state,
         model=lj_calculator,
         optimizer=fire,
-        convergence_fn=generate_max_force_convergence_fn(force_tol=1e-1),
+        convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
         unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
     )
@@ -434,7 +434,7 @@ def test_optimize_with_autobatcher(
         system=triple_state,
         model=lj_calculator,
         optimizer=fire,
-        convergence_fn=generate_max_force_convergence_fn(force_tol=1e-1),
+        convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
         autobatcher=autobatcher,
     )
 
@@ -479,7 +479,7 @@ def test_optimize_with_autobatcher_and_reporting(
         system=triple_state,
         model=lj_calculator,
         optimizer=fire,
-        convergence_fn=generate_max_force_convergence_fn(force_tol=1e-1),
+        convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
         trajectory_reporter=reporter,
         autobatcher=autobatcher,
     )
@@ -505,7 +505,6 @@ def test_optimize_with_autobatcher_and_reporting(
 
         assert torch.all(traj_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(traj_state.positions != init_state.positions)
-
 
 
 def test_multiple_structures_to_state(

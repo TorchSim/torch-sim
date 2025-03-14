@@ -5,10 +5,8 @@ optimizations using various calculators and integrators. It includes utilities f
 converting between different molecular representations and handling simulation state.
 """
 
-import inspect
 import warnings
 from collections.abc import Callable
-from functools import partial
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -20,7 +18,7 @@ from torchsim.state import BaseState, StateLike, concatenate_states, state_to_de
 from torchsim.trajectory import TrajectoryReporter
 from torchsim.units import UnitSystem
 from torchsim.models.interface import ModelInterface
-
+from torchsim.quantities import batchwise_max_force
 
 if TYPE_CHECKING:
     from ase import Atoms
@@ -172,20 +170,7 @@ def configure_hot_swapping_autobatcher(
     return autobatcher
 
 
-def batchwise_max_force(state: BaseState) -> torch.Tensor:
-    batch_wise_max_force = torch.zeros(
-        state.n_batches, device=state.device, dtype=state.dtype
-    )
-    max_forces = state.forces.norm(dim=1)
-    return batch_wise_max_force.scatter_reduce(
-        dim=0,
-        index=state.batch,
-        src=max_forces,
-        reduce="amax",
-    )
-
-
-def generate_max_force_convergence_fn(force_tol: float = 1e-1) -> Callable:
+def generate_force_convergence_fn(force_tol: float = 1e-1) -> Callable:
     def convergence_fn(state: BaseState, last_energy: torch.Tensor) -> bool:
         """Check if the system has converged."""
         return batchwise_max_force(state) < force_tol
@@ -227,13 +212,6 @@ def optimize(
 
         def convergence_fn(state: BaseState, last_energy: torch.Tensor) -> bool:
             return last_energy - state.energy < 1e-6 * unit_system.energy
-
-    # we partially evaluate the function to create a new function with
-    # an optional second argument, this can be set to state later on
-    # if len(inspect.signature(convergence_fn).parameters) == 1:
-    #     convergence_fn = partial(
-    #         lambda state, _=None, fn=None: fn(state), fn=convergence_fn
-    #     )
 
     # initialize the state
     state: BaseState = initialize_state(system, model.device, model.dtype)

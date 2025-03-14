@@ -1,6 +1,7 @@
 """Functions for computing physical quantities."""
 
 import torch
+from torchsim.state import BaseState
 
 
 # @torch.jit.script
@@ -95,4 +96,17 @@ def kinetic_energy(
     flattened_squared = torch.sum(squared_term, dim=-1)
     return 0.5 * torch.segment_reduce(
         flattened_squared, reduce="sum", lengths=torch.bincount(batch)
+    )
+
+
+def batchwise_max_force(state: BaseState) -> torch.Tensor:
+    batch_wise_max_force = torch.zeros(
+        state.n_batches, device=state.device, dtype=state.dtype
+    )
+    max_forces = state.forces.norm(dim=1)
+    return batch_wise_max_force.scatter_reduce(
+        dim=0,
+        index=state.batch,
+        src=max_forces,
+        reduce="amax",
     )
