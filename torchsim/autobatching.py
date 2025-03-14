@@ -1,5 +1,6 @@
 """Utilities for batching and memory management in torchsim."""
 
+import logging
 from collections.abc import Iterator
 from itertools import chain
 from typing import Literal
@@ -29,7 +30,10 @@ def measure_model_memory_forward(state: BaseState, model: ModelInterface) -> flo
         raise ValueError(
             "Memory estimation does not make sense on CPU and is unsupported."
         )
-
+    logging.info(
+        f"Model Memory Estimation: Running forward pass on state with "
+        f"{state.n_atoms} atoms and {state.n_batches} batches."
+    )
     # Clear GPU memory
     torch.cuda.synchronize()
     torch.cuda.empty_cache()
@@ -47,38 +51,45 @@ def measure_model_memory_forward(state: BaseState, model: ModelInterface) -> flo
 
 
 def determine_max_batch_size(
-    state: BaseState, model: ModelInterface, max_atoms: int = 500_000
+    state: BaseState,
+    model: ModelInterface,
+    max_atoms: int = 500_000,
+    start_size: int = 1,
+    scale_factor: float = 1.6,
 ) -> int:
     """Determine maximum batch size that fits in GPU memory.
 
-    Uses a Fibonacci sequence to efficiently search for the largest number of
+    Uses a geometric sequence to efficiently search for the largest number of
     batches that can be processed without running out of GPU memory.
 
     Args:
         state: Base state to replicate for testing.
         model: Model to test with.
         max_atoms: Upper limit on number of atoms to try (for safety).
+        start_size: Initial batch size to test.
+        scale_factor: Factor to multiply batch size by in each iteration.
 
     Returns:
         Maximum number of batches that fit in GPU memory.
     """
-    # create a list of integers following the fibonacci sequence
-    fib = [1, 2]
-    while fib[-1] < max_atoms:
-        fib.append(fib[-1] + fib[-2])
+    # Create a geometric sequence of batch sizes
+    sizes = [start_size]
+    while (next_size := round(sizes[-1] * scale_factor)) < max_atoms:
+        sizes.append(next_size)
 
-    for i in range(len(fib)):
-        n_batches = fib[i]
+    for i in range(len(sizes)):
+        n_batches = sizes[i]
         concat_state = concatenate_states([state] * n_batches)
 
         try:
             measure_model_memory_forward(concat_state, model)
         except RuntimeError as e:
             if "CUDA out of memory" in str(e):
-                return fib[i - 2]
+                # Return the last successful size, with a safety margin
+                return sizes[max(0, i - 2)]
             raise
 
-    return fib[-2]
+    return sizes[-1]
 
 
 def calculate_memory_scaler(
@@ -139,6 +150,12 @@ def estimate_max_memory_scaler(
     min_state = state_list[metric_values.argmin()]
     max_state = state_list[metric_values.argmax()]
 
+    logging.info(
+        f"Model Memory Estimation: Estimating memory from worst case of "
+        f"largest and smallest system. Largest system has {max_state.n_atoms} "
+        f"atoms and {max_state.n_batches} batches, and smallest system has "
+        f"{min_state.n_atoms} atoms and {min_state.n_batches} batches."
+    )
     min_state_max_batches = determine_max_batch_size(min_state, model, max_atoms)
     max_state_max_batches = determine_max_batch_size(max_state, model, max_atoms)
 
@@ -158,7 +175,9 @@ class ChunkingAutoBatcher:
         states: list[BaseState] | BaseState,
         model: ModelInterface,
         *,
-        memory_scales_with: Literal["n_atoms", "n_atoms_x_density"] = "n_atoms_x_density",
+        memory_scales_with: Literal[
+            "n_atoms", "n_atoms_x_density"
+        ] = "n_atoms_x_density",
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         return_indices: bool = False,
@@ -268,7 +287,9 @@ class ChunkingAutoBatcher:
             raise StopIteration
         return next_batch
 
-    def restore_original_order(self, batched_states: list[BaseState]) -> list[BaseState]:
+    def restore_original_order(
+        self, batched_states: list[BaseState]
+    ) -> list[BaseState]:
         """Reorder processed states back to their original sequence.
 
         Takes states that were processed in batches and restores them to the
@@ -313,7 +334,9 @@ class HotSwappingAutoBatcher:
         self,
         states: list[BaseState] | Iterator[BaseState] | BaseState,
         model: ModelInterface,
-        memory_scales_with: Literal["n_atoms", "n_atoms_x_density"] = "n_atoms_x_density",
+        memory_scales_with: Literal[
+            "n_atoms", "n_atoms_x_density"
+        ] = "n_atoms_x_density",
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
     ) -> None:
@@ -452,7 +475,9 @@ class HotSwappingAutoBatcher:
         convergence_tensor: torch.Tensor | None,
         *,
         return_indices: bool = False,
-    ) -> tuple[BaseState, list[BaseState]] | tuple[BaseState, list[BaseState], list[int]]:
+    ) -> (
+        tuple[BaseState, list[BaseState]] | tuple[BaseState, list[BaseState], list[int]]
+    ):
         """Get the next batch of states based on convergence.
 
         Removes converged states from the batch, adds new states if possible,
