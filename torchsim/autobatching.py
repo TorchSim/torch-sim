@@ -172,7 +172,7 @@ class ChunkingAutoBatcher:
 
     def __init__(
         self,
-        states: list[BaseState] | BaseState,
+        # states: list[BaseState] | BaseState,
         model: ModelInterface,
         *,
         memory_scales_with: Literal[
@@ -197,22 +197,40 @@ class ChunkingAutoBatcher:
                 max_memory_scaler.
             return_indices: Whether to return original indices along with batches.
         """
+        self.max_memory_scaler = max_memory_scaler
+        self.max_atoms_to_try = max_atoms_to_try
+        self.memory_scales_with = memory_scales_with
+        self.return_indices = return_indices
+        self.model = model
+
+    def load_states(
+        self,
+        states: list[BaseState] | BaseState,
+    ) -> None:
+        """Load new states into the batcher.
+
+        Args:
+            states: Collection of states to batch (either a list or a single state
+                that will be split).
+        """
         self.state_slices = (
             split_state(states) if isinstance(states, BaseState) else states
         )
         self.memory_scalers = [
-            calculate_memory_scaler(state_slice, memory_scales_with)
+            calculate_memory_scaler(state_slice, self.memory_scales_with)
             for state_slice in self.state_slices
         ]
-        if not max_memory_scaler:
+        if not self.max_memory_scaler:
             self.max_memory_scaler = estimate_max_memory_scaler(
-                model, self.state_slices, self.memory_scalers, max_atoms_to_try
+                self.model,
+                self.state_slices,
+                self.memory_scalers,
+                self.max_atoms_to_try,
             )
             print(f"Max metric calculated: {self.max_memory_scaler}")
         else:
-            self.max_memory_scaler = max_memory_scaler
+            self.max_memory_scaler = self.max_memory_scaler
 
-        self.return_indices = return_indices
         # verify that no systems are too large
         max_metric_value = max(self.memory_scalers)
         max_metric_idx = self.memory_scalers.index(max_metric_value)
@@ -332,13 +350,14 @@ class HotSwappingAutoBatcher:
 
     def __init__(
         self,
-        states: list[BaseState] | Iterator[BaseState] | BaseState,
+        # states: list[BaseState] | Iterator[BaseState] | BaseState,
         model: ModelInterface,
         memory_scales_with: Literal[
             "n_atoms", "n_atoms_x_density"
         ] = "n_atoms_x_density",
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
+        return_indices: bool = False,
     ) -> None:
         """Initialize the hot-swapping auto-batcher.
 
@@ -354,22 +373,38 @@ class HotSwappingAutoBatcher:
             max_atoms_to_try: Maximum number of atoms to try when estimating
                 max_memory_scaler.
         """
+
+        self.model = model
+        self.memory_scales_with = memory_scales_with
+        self.max_memory_scaler = max_memory_scaler or None
+        self.max_atoms_to_try = max_atoms_to_try
+        self.return_indices = return_indices
+
+    def load_states(
+        self,
+        states: list[BaseState] | Iterator[BaseState] | BaseState,
+    ) -> None:
+        """Load new states into the batcher.
+
+        Args:
+            states: Collection of states to process (list, iterator, or single state
+                that will be split).
+        """
         if isinstance(states, BaseState):
             states = split_state(states)
         if isinstance(states, list):
             states = iter(states)
 
-        self.model = model
         self.states_iterator = states
-        self.memory_scales_with = memory_scales_with
-        self.max_memory_scaler = max_memory_scaler or None
-        self.max_atoms_to_try = max_atoms_to_try
 
         self.current_scalers = []
         self.current_idx = []
         self.iterator_idx = 0
 
         self.completed_idx_og_order = []
+
+        self.first_batch_returned = False
+        self._first_batch = self._get_first_batch()
 
     def _get_next_states(self) -> None:
         """Add states from the iterator until max_memory_scaler is reached.
@@ -391,7 +426,6 @@ class HotSwappingAutoBatcher:
                     f"{self.max_memory_scaler}, please set a larger max_metric "
                     f"or run smaller systems metric."
                 )
-            # new_metric += sum(new_metrics)
             if (
                 sum(self.current_scalers) + sum(new_metrics) + metric
                 > self.max_memory_scaler
@@ -428,7 +462,7 @@ class HotSwappingAutoBatcher:
             self.current_scalers.pop(idx)
             self.completed_idx_og_order.append(og_idx)
 
-    def _first_batch(self) -> BaseState:
+    def _get_first_batch(self) -> BaseState:
         """Create and return the first batch of states.
 
         Initializes the batcher by estimating memory requirements if needed
@@ -455,7 +489,7 @@ class HotSwappingAutoBatcher:
                 [first_metric],
                 max_atoms=self.max_atoms_to_try,
             )
-            self.max_memory_scaler *= 0.8
+            self.max_memory_scaler = self.max_memory_scaler * 0.8
 
         states = self._get_next_states()
 
@@ -467,16 +501,14 @@ class HotSwappingAutoBatcher:
                 max_atoms=self.max_atoms_to_try,
             )
             print(f"Max metric calculated: {self.max_memory_scaler}")
-        return concatenate_states([first_state, *states]), []
+        return concatenate_states([first_state, *states])
 
     def next_batch(
         self,
         updated_state: BaseState | None,
         convergence_tensor: torch.Tensor | None,
-        *,
-        return_indices: bool = False,
     ) -> (
-        tuple[BaseState, list[BaseState]] | tuple[BaseState, list[BaseState], list[int]]
+        tuple[BaseState | None, list[BaseState]] | tuple[BaseState | None, list[BaseState], list[int]]
     ):
         """Get the next batch of states based on convergence.
 
@@ -495,18 +527,20 @@ class HotSwappingAutoBatcher:
 
             When no states remain to process, next_batch will be None.
         """
-        # TODO: this needs to be refactored to avoid so
-        # many split and concatenate operations, we should
-        # take the updated_concat_state and pop off
-        # the states that have converged. with the pop_states function
 
-        if convergence_tensor is None or updated_state is None:
-            if self.iterator_idx > 0:
-                raise ValueError(
-                    "A convergence tensor must be provided after the "
-                    "first batch has been run."
-                )
-            return self._first_batch()
+        if not self.first_batch_returned:
+            self.first_batch_returned = True
+            if self.return_indices:
+                return self._first_batch, [], self.current_idx
+            return self._first_batch, []
+
+        if (
+            convergence_tensor is None or updated_state is None
+        ) and self.first_batch_returned:
+            raise ValueError(
+                "A convergence tensor must be provided after the "
+                "first batch has been run."
+            )
 
         # assert statements helpful for debugging, should be moved to validate fn
         # the first two are most important
@@ -527,7 +561,7 @@ class HotSwappingAutoBatcher:
         if not self.current_idx:
             return (
                 (None, completed_states, [])
-                if return_indices
+                if self.return_indices
                 else (None, completed_states)
             )
 
@@ -536,7 +570,7 @@ class HotSwappingAutoBatcher:
             next_states = [remaining_state, *next_states]
         next_batch = concatenate_states(next_states)
 
-        if return_indices:
+        if self.return_indices:
             return next_batch, completed_states, self.current_idx
 
         return next_batch, completed_states

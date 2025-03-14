@@ -26,7 +26,7 @@ from torchsim.autobatching import (
 from torchsim.integrators import nvt_langevin
 from torchsim.models.mace import MaceModel
 from torchsim.optimizers import unit_cell_fire
-from torchsim.runners import atoms_to_state
+from torchsim.runners import atoms_to_state, generate_max_force_convergence_fn
 from torchsim.state import BaseState
 from torchsim.units import MetalUnits
 
@@ -64,43 +64,31 @@ for state in fire_states:
 len(fire_states)
 
 
-# %% run hot swapping autobatcher
-def convergence_fn(state: BaseState) -> bool:
-    """Check if the system has converged."""
-    batch_wise_max_force = torch.zeros(state.n_batches, device=state.device)
-    max_forces = state.forces.norm(dim=1)
-    batch_wise_max_force = batch_wise_max_force.scatter_reduce(
-        dim=0,
-        index=state.batch,
-        src=max_forces,
-        reduce="amax",
-    )
-    return batch_wise_max_force < 1e-1
-
-
+# %%
+# TODO: add max steps
+converge_max_force = generate_max_force_convergence_fn(force_tol=1e-1)
 single_system_memory = calculate_memory_scaler(fire_states[0])
 batcher = HotSwappingAutoBatcher(
     model=mace_model,
-    states=fire_states,
     memory_scales_with="n_atoms_x_density",
     max_memory_scaler=single_system_memory * 2.5 if os.getenv("CI") else None,
 )
+batcher.load_states(fire_states)
+all_completed_states, convergence_tensor, state = [], None, None
+while (result := batcher.next_batch(state, convergence_tensor))[0] is not None:
 
-all_completed_states, convergence_tensor = [], None
-while True:
+    state, completed_states = result
     print(f"Starting new batch of {state.n_batches} states.")
 
-    state, completed_states = batcher.next_batch(state, convergence_tensor)
-    print("Number of completed states", len(completed_states))
-
     all_completed_states.extend(completed_states)
-    if state is None:
-        break
+    print("Total number of completed states", len(all_completed_states))
 
-    # run 10 steps, arbitrary number
     for _step in range(10):
         state = fire_update(state)
-    convergence_tensor = convergence_fn(state)
+    convergence_tensor = converge_max_force(state, last_energy=None)
+else:
+    all_completed_states.extend(result[1])
+    print("Total number of completed states", len(all_completed_states))
 
 
 # %% run chunking autobatcher
@@ -124,11 +112,10 @@ for state in nvt_states:
 single_system_memory = calculate_memory_scaler(fire_states[0])
 batcher = ChunkingAutoBatcher(
     model=mace_model,
-    states=nvt_states,
     memory_scales_with="n_atoms_x_density",
     max_memory_scaler=single_system_memory * 2.5 if os.getenv("CI") else None,
 )
-
+batcher.load_states(nvt_states)
 finished_states = []
 for batch in batcher:
     for _ in range(100):
