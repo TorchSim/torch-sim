@@ -24,7 +24,7 @@ from torchsim.state import BaseState
 
 # --- Setup and Configuration ---
 # Device and data type configuration
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda")
 dtype = torch.float32
 print(f"job will run on {device=}")
 
