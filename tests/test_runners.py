@@ -5,27 +5,23 @@ import torch
 from ase import Atoms
 from pymatgen.core import Structure
 
+from torchsim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
 from torchsim.integrators import nve, nvt_langevin
 from torchsim.optimizers import unit_cell_fire as fire
 from torchsim.quantities import kinetic_energy
 from torchsim.runners import (
     atoms_to_state,
+    generate_force_convergence_fn,
     initialize_state,
     integrate,
     optimize,
     state_to_atoms,
     state_to_structures,
     structures_to_state,
-    generate_force_convergence_fn,
 )
 from torchsim.state import BaseState, split_state
 from torchsim.trajectory import TorchSimTrajectory, TrajectoryReporter
 from torchsim.units import UnitSystem
-from torchsim.autobatching import (
-    ChunkingAutoBatcher,
-    HotSwappingAutoBatcher,
-    calculate_memory_scaler,
-)
 
 
 def test_integrate_nve(
@@ -200,7 +196,6 @@ def test_integrate_with_autobatcher(
     ar_base_state: BaseState,
     fe_fcc_state: BaseState,
     lj_calculator: Any,
-    tmp_path: Any,
 ) -> None:
     """Test integration with autobatcher."""
     states = [ar_base_state, fe_fcc_state, ar_base_state]
@@ -226,7 +221,7 @@ def test_integrate_with_autobatcher(
 
     assert isinstance(final_state, BaseState)
     split_final_state = split_state(final_state)
-    for init_state, final_state in zip(states, split_final_state):
+    for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
 
@@ -281,11 +276,11 @@ def test_integrate_with_autobatcher_and_reporting(
 
     assert isinstance(final_state, BaseState)
     split_final_state = split_state(final_state)
-    for init_state, final_state in zip(states, split_final_state):
+    for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
 
-    for init_state, traj_file in zip(states, trajectory_files):
+    for init_state, traj_file in zip(states, trajectory_files, strict=False):
         with TorchSimTrajectory(traj_file) as traj:
             final_state = traj.get_state(-1)
             energies = traj.get_array("pe")
@@ -386,17 +381,14 @@ def test_batched_optimize_fire(
     assert torch.all(final_state.forces < 1e-4)
 
 
-def test_single_structure_to_state(
-    si_structure: Structure, device: torch.device
-) -> None:
+def test_single_structure_to_state(si_structure: Structure, device: torch.device) -> None:
     """Test conversion from pymatgen Structure to state tensors."""
     state = structures_to_state(si_structure, device, torch.float64)
 
     # Check basic properties
     assert isinstance(state, BaseState)
     assert all(
-        t.device.type == device.type
-        for t in [state.positions, state.masses, state.cell]
+        t.device.type == device.type for t in [state.positions, state.masses, state.cell]
     )
     assert all(
         t.dtype == torch.float64 for t in [state.positions, state.masses, state.cell]
@@ -440,7 +432,7 @@ def test_optimize_with_autobatcher(
 
     assert isinstance(final_state, BaseState)
     split_final_state = split_state(final_state)
-    for init_state, final_state in zip(states, split_final_state):
+    for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
 
@@ -488,12 +480,12 @@ def test_optimize_with_autobatcher_and_reporting(
 
     assert isinstance(final_state, BaseState)
     split_final_state = split_state(final_state)
-    for init_state, final_state in zip(states, split_final_state):
+    for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
         assert torch.all(final_state.forces < 1e-1)
 
-    for init_state, traj_file in zip(states, trajectory_files):
+    for init_state, traj_file in zip(states, trajectory_files, strict=False):
         with TorchSimTrajectory(traj_file) as traj:
             traj_state = traj.get_state(-1)
             energies = traj.get_array("pe")

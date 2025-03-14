@@ -31,8 +31,10 @@ def measure_model_memory_forward(state: BaseState, model: ModelInterface) -> flo
             "Memory estimation does not make sense on CPU and is unsupported."
         )
     logging.info(
-        f"Model Memory Estimation: Running forward pass on state with "
-        f"{state.n_atoms} atoms and {state.n_batches} batches."
+        "Model Memory Estimation: Running forward pass on state with "
+        "%s atoms and %s batches.",
+        state.n_atoms,
+        state.n_batches,
     )
     # Clear GPU memory
     torch.cuda.synchronize()
@@ -151,10 +153,13 @@ def estimate_max_memory_scaler(
     max_state = state_list[metric_values.argmax()]
 
     logging.info(
-        f"Model Memory Estimation: Estimating memory from worst case of "
-        f"largest and smallest system. Largest system has {max_state.n_atoms} "
-        f"atoms and {max_state.n_batches} batches, and smallest system has "
-        f"{min_state.n_atoms} atoms and {min_state.n_batches} batches."
+        "Model Memory Estimation: Estimating memory from worst case of "
+        "largest and smallest system. Largest system has %s atoms and %s batches, "
+        "and smallest system has %s atoms and %s batches.",
+        max_state.n_atoms,
+        max_state.n_batches,
+        min_state.n_atoms,
+        min_state.n_batches,
     )
     min_state_max_batches = determine_max_batch_size(min_state, model, max_atoms)
     max_state_max_batches = determine_max_batch_size(max_state, model, max_atoms)
@@ -172,12 +177,9 @@ class ChunkingAutoBatcher:
 
     def __init__(
         self,
-        # states: list[BaseState] | BaseState,
         model: ModelInterface,
         *,
-        memory_scales_with: Literal[
-            "n_atoms", "n_atoms_x_density"
-        ] = "n_atoms_x_density",
+        memory_scales_with: Literal["n_atoms", "n_atoms_x_density"] = "n_atoms_x_density",
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         return_indices: bool = False,
@@ -185,8 +187,6 @@ class ChunkingAutoBatcher:
         """Initialize the chunking auto-batcher.
 
         Args:
-            states: Collection of states to batch (either a list or a single state
-                that will be split).
             model: Model to batch for, used to estimate memory requirements.
             memory_scales_with: Metric to use for estimating memory requirements:
                 - "n_atoms": Uses only atom count
@@ -305,9 +305,7 @@ class ChunkingAutoBatcher:
             raise StopIteration
         return next_batch
 
-    def restore_original_order(
-        self, batched_states: list[BaseState]
-    ) -> list[BaseState]:
+    def restore_original_order(self, batched_states: list[BaseState]) -> list[BaseState]:
         """Reorder processed states back to their original sequence.
 
         Takes states that were processed in batches and restores them to the
@@ -350,11 +348,9 @@ class HotSwappingAutoBatcher:
 
     def __init__(
         self,
-        # states: list[BaseState] | Iterator[BaseState] | BaseState,
         model: ModelInterface,
-        memory_scales_with: Literal[
-            "n_atoms", "n_atoms_x_density"
-        ] = "n_atoms_x_density",
+        *,
+        memory_scales_with: Literal["n_atoms", "n_atoms_x_density"] = "n_atoms_x_density",
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         return_indices: bool = False,
@@ -362,8 +358,6 @@ class HotSwappingAutoBatcher:
         """Initialize the hot-swapping auto-batcher.
 
         Args:
-            states: Collection of states to process (list, iterator, or single state
-                that will be split).
             model: Model to batch for, used to estimate memory requirements.
             memory_scales_with: Metric to use for estimating memory requirements:
                 - "n_atoms": Uses only atom count
@@ -372,8 +366,8 @@ class HotSwappingAutoBatcher:
                 will be automatically estimated.
             max_atoms_to_try: Maximum number of atoms to try when estimating
                 max_memory_scaler.
+            return_indices: Whether to return original indices along with the batch.
         """
-
         self.model = model
         self.memory_scales_with = memory_scales_with
         self.max_memory_scaler = max_memory_scaler or None
@@ -508,7 +502,8 @@ class HotSwappingAutoBatcher:
         updated_state: BaseState | None,
         convergence_tensor: torch.Tensor | None,
     ) -> (
-        tuple[BaseState | None, list[BaseState]] | tuple[BaseState | None, list[BaseState], list[int]]
+        tuple[BaseState | None, list[BaseState]]
+        | tuple[BaseState | None, list[BaseState], list[int]]
     ):
         """Get the next batch of states based on convergence.
 
@@ -527,7 +522,6 @@ class HotSwappingAutoBatcher:
 
             When no states remain to process, next_batch will be None.
         """
-
         if not self.first_batch_returned:
             self.first_batch_returned = True
             if self.return_indices:

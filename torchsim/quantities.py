@@ -1,6 +1,7 @@
 """Functions for computing physical quantities."""
 
 import torch
+
 from torchsim.state import BaseState
 
 
@@ -100,6 +101,14 @@ def kinetic_energy(
 
 
 def batchwise_max_force(state: BaseState) -> torch.Tensor:
+    """Compute the maximum force per batch.
+
+    Args:
+        state: State to compute the maximum force per batch for
+
+    Returns:
+        Tensor of maximum forces per batch
+    """
     batch_wise_max_force = torch.zeros(
         state.n_batches, device=state.device, dtype=state.dtype
     )

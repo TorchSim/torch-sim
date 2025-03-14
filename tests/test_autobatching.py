@@ -1,9 +1,8 @@
 from typing import Any
 
+import binpacking
 import pytest
 import torch
-import binpacking
-
 
 from torchsim.autobatching import (
     ChunkingAutoBatcher,
@@ -200,9 +199,7 @@ def test_hot_swapping_auto_batcher(
     convergence = torch.tensor([True])
 
     # Get the next batch
-    next_batch, popped_batch, idx = batcher.next_batch(
-        first_batch, convergence
-    )
+    next_batch, popped_batch, idx = batcher.next_batch(first_batch, convergence)
     assert isinstance(next_batch, BaseState)
     assert isinstance(popped_batch, list)
     assert isinstance(popped_batch[0], BaseState)

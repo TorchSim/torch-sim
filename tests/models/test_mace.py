@@ -10,6 +10,7 @@ from torchsim.neighbors import wrapping_nl
 from torchsim.runners import atoms_to_state
 from torchsim.state import BaseState
 
+
 mace_model = mace_mp(model="small", return_raw_model=True)
 
 
@@ -173,9 +174,9 @@ def test_integrate_with_autobatcher(
     indicative of something going wrong with the autobatcher.
     """
     mace_model = torchsim_batched_mace_model
+    from torchsim.integrators import nve
     from torchsim.runners import initialize_state, integrate
     from torchsim.state import split_state
-    from torchsim.integrators import nve
 
     states = [ar_base_state, fe_fcc_state, ar_base_state]
     triple_state = initialize_state(
@@ -197,7 +198,7 @@ def test_integrate_with_autobatcher(
     assert isinstance(final_state, BaseState)
     split_final_state = split_state(final_state)
 
-    for init_state, final_state in zip(states, split_final_state):
+    for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
 
@@ -208,10 +209,9 @@ def test_optimize_with_autobatcher(
     torchsim_batched_mace_model: MaceModel,
 ) -> None:
     """Test optimize with autobatcher."""
-    from torchsim.runners import initialize_state, optimize
-    from torchsim.state import split_state
     from torchsim.optimizers import unit_cell_fire
-    from torchsim.runners import generate_force_convergence_fn
+    from torchsim.runners import generate_force_convergence_fn, initialize_state, optimize
+    from torchsim.state import split_state
 
     mace_model = torchsim_batched_mace_model
 
@@ -232,6 +232,6 @@ def test_optimize_with_autobatcher(
 
     assert isinstance(final_state, BaseState)
     split_final_state = split_state(final_state)
-    for init_state, final_state in zip(states, split_final_state):
+    for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)

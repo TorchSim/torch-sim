@@ -27,7 +27,6 @@ from torchsim.integrators import nvt_langevin
 from torchsim.models.mace import MaceModel
 from torchsim.optimizers import unit_cell_fire
 from torchsim.runners import atoms_to_state, generate_force_convergence_fn
-from torchsim.state import BaseState
 from torchsim.units import MetalUnits
 
 
@@ -76,7 +75,6 @@ batcher = HotSwappingAutoBatcher(
 batcher.load_states(fire_states)
 all_completed_states, convergence_tensor, state = [], None, None
 while (result := batcher.next_batch(state, convergence_tensor))[0] is not None:
-
     state, completed_states = result
     print(f"Starting new batch of {state.n_batches} states.")
 
@@ -86,9 +84,8 @@ while (result := batcher.next_batch(state, convergence_tensor))[0] is not None:
     for _step in range(10):
         state = fire_update(state)
     convergence_tensor = converge_max_force(state, last_energy=None)
-else:
-    all_completed_states.extend(result[1])
-    print("Total number of completed states", len(all_completed_states))
+all_completed_states.extend(result[1])
+print("Total number of completed states", len(all_completed_states))
 
 
 # %% run chunking autobatcher

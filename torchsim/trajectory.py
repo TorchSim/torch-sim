@@ -68,7 +68,9 @@ class TrajectoryReporter:
 
         self._add_model_arg_to_prop_calculators()
 
-    def load_new_trajectories(self, filenames: str | pathlib.Path | list[str | pathlib.Path]) -> None:
+    def load_new_trajectories(
+        self, filenames: str | pathlib.Path | list[str | pathlib.Path]
+    ) -> None:
         """Load new trajectories into the reporter.
 
         Args:
