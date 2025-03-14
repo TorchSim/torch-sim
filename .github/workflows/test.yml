@@ -148,6 +148,7 @@ jobs:
           EXAMPLES=$(find examples -name "*.py" | grep -v \
             -e "examples/1_Introduction/1.4_M3GNet.py" \
             -e "examples/1_Introduction/1.5_Fairchem.py" \
+            -e "examples/5_Workflow/5.3_Hot_Swap_WBM.py" \
             | jq -R -s -c 'split("\n")[:-1]')
           echo "examples=$EXAMPLES" >> $GITHUB_OUTPUT
 
