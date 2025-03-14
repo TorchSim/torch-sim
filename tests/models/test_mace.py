@@ -8,7 +8,6 @@ from torchsim.models.interface import validate_model_outputs
 from torchsim.models.mace import MaceModel, UnbatchedMaceModel
 from torchsim.neighbors import wrapping_nl
 from torchsim.runners import atoms_to_state
-from torchsim.state import BaseState
 
 
 mace_model = mace_mp(model="small", return_raw_model=True)

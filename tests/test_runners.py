@@ -7,6 +7,7 @@ from pymatgen.core import Structure
 
 from torchsim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
 from torchsim.integrators import nve, nvt_langevin
+from torchsim.models.lennard_jones import LennardJonesModel
 from torchsim.optimizers import unit_cell_fire
 from torchsim.quantities import kinetic_energy
 from torchsim.runners import (
@@ -22,7 +23,6 @@ from torchsim.runners import (
 from torchsim.state import BaseState, split_state
 from torchsim.trajectory import TorchSimTrajectory, TrajectoryReporter
 from torchsim.units import UnitSystem
-from torchsim.models.lennard_jones import LennardJonesModel
 
 
 def test_integrate_nve(
@@ -382,17 +382,14 @@ def test_batched_optimize_fire(
     assert torch.all(final_state.forces < 1e-4)
 
 
-def test_single_structure_to_state(
-    si_structure: Structure, device: torch.device
-) -> None:
+def test_single_structure_to_state(si_structure: Structure, device: torch.device) -> None:
     """Test conversion from pymatgen Structure to state tensors."""
     state = structures_to_state(si_structure, device, torch.float64)
 
     # Check basic properties
     assert isinstance(state, BaseState)
     assert all(
-        t.device.type == device.type
-        for t in [state.positions, state.masses, state.cell]
+        t.device.type == device.type for t in [state.positions, state.masses, state.cell]
     )
     assert all(
         t.dtype == torch.float64 for t in [state.positions, state.masses, state.cell]
@@ -632,7 +629,7 @@ def test_to_structures(ar_base_state: BaseState) -> None:
     assert isinstance(structures[0], Structure)
 
 
-def test_integrate_with_autobatcher(
+def test_integrate_with_default_autobatcher(
     ar_base_state: BaseState,
     fe_fcc_state: BaseState,
     lj_calculator: LennardJonesModel,
@@ -640,9 +637,10 @@ def test_integrate_with_autobatcher(
 ) -> None:
     """Test integration with autobatcher."""
 
-    monkeypatch.setattr(
-        "torchsim.autobatching.estimate_max_memory_scaler", lambda *args, **kwargs: 10000
-    )
+    def mock_estimate(*args, **kwargs) -> float:  # noqa: ARG001
+        return 10000.0
+
+    monkeypatch.setattr("torchsim.autobatching.estimate_max_memory_scaler", mock_estimate)
 
     states = [ar_base_state, fe_fcc_state, ar_base_state]
     triple_state = initialize_state(
@@ -669,7 +667,7 @@ def test_integrate_with_autobatcher(
         assert torch.any(final_state.positions != init_state.positions)
 
 
-def test_optimize_with_autobatcher(
+def test_optimize_with_default_autobatcher(
     ar_base_state: BaseState,
     fe_fcc_state: BaseState,
     lj_calculator: LennardJonesModel,
@@ -677,9 +675,10 @@ def test_optimize_with_autobatcher(
 ) -> None:
     """Test optimize with autobatcher."""
 
-    monkeypatch.setattr(
-        "torchsim.autobatching.estimate_max_memory_scaler", lambda *args, **kwargs: 10000
-    )
+    def mock_estimate(*args, **kwargs) -> float:  # noqa: ARG001
+        return 10000.0
+
+    monkeypatch.setattr("torchsim.autobatching.estimate_max_memory_scaler", mock_estimate)
 
     states = [ar_base_state, fe_fcc_state, ar_base_state]
     triple_state = initialize_state(
