@@ -87,11 +87,10 @@ fire_states = fire_init(atoms_to_state(ase_atoms_list, device=device, dtype=dtyp
 
 batcher = HotSwappingAutoBatcher(
     model=mace_model,
-    states=fire_states,
     memory_scales_with="n_atoms_x_density",
     max_memory_scaler=None,
 )
-
+batcher.load_states(fire_states)
 start_time = time.perf_counter()
 
 # --- Main Optimization Loop ---

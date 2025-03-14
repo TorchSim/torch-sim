@@ -25,11 +25,15 @@ def measure_model_memory_forward(state: BaseState, model: ModelInterface) -> flo
     Returns:
         Peak memory usage in gigabytes.
     """
+    # TODO: Make it cleaner
     # assert model device is not cpu
-    if model.device.type == "cpu":
+    if (isinstance(model.device, str) and model.device == "cpu") or (
+        isinstance(model.device, torch.device) and model.device.type == "cpu"
+    ):
         raise ValueError(
             "Memory estimation does not make sense on CPU and is unsupported."
         )
+
     logging.info(  # noqa: LOG015
         "Model Memory Estimation: Running forward pass on state with "
         "%s atoms and %s batches.",
