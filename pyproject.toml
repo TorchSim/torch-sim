@@ -27,6 +27,7 @@ classifiers = [
 requires-python = ">=3.11"
 dependencies = [
     "ase>=3.24",
+    "binpacking>=1.5.2",
     "h5py>=3.12.1",
     "numpy>=1.26",
     "tables>=3.10.2",
@@ -38,7 +39,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["ase>=3.24", "pymatgen>=2024.11.3", "pytest-cov>=6", "pytest>=8"]
-models = ["mace-torch>=0.3.10"]
+models = ["mace-torch>=0.3.11"]
 
 [project.urls]
 Repo = "https://github.com/radical-ai/torchsim"

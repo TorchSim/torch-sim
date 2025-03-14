@@ -113,7 +113,8 @@ def optimize(
         system: Input system to optimize (ASE Atoms, Pymatgen Structure, or BaseState)
         model: Neural network calculator module
         optimizer: Optimization algorithm function
-        convergence_fn: Condition for convergence
+        convergence_fn: Condition for convergence, should return a boolean tensor
+            of length n_batches
         unit_system: Unit system for energy tolerance
         optimizer_kwargs: Additional keyword arguments for optimizer
         trajectory_reporter: Optional reporter for tracking optimization trajectory
@@ -126,7 +127,7 @@ def optimize(
     if convergence_fn is None:
 
         def convergence_fn(state: BaseState, last_energy: torch.Tensor) -> bool:
-            return torch.all(last_energy - state.energy < 1e-6 * unit_system.energy)
+            return last_energy - state.energy < 1e-6 * unit_system.energy
 
     # we partially evaluate the function to create a new function with
     # an optional second argument, this can be set to state later on
@@ -144,7 +145,7 @@ def optimize(
 
     step: int = 1
     last_energy = state.energy + 1
-    while not convergence_fn(state, last_energy):
+    while not torch.all(convergence_fn(state, last_energy)):
         last_energy = state.energy
         state = update_fn(state)
 

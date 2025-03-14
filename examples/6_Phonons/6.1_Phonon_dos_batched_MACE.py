@@ -2,7 +2,7 @@
 
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.10",
+#     "mace-torch>=0.3.11",
 #     "phonopy>=2.35",
 #     "pymatviz[export-figs]>=0.15.1",
 # ]

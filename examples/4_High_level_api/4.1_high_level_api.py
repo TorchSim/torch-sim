@@ -4,7 +4,7 @@ criteria, and logging.
 
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.10",
+#     "mace-torch>=0.3.11",
 #     "pymatgen>=2025.2.18",
 # ]
 # ///
@@ -179,9 +179,8 @@ final_state = optimize(
     system=systems,
     model=mace_model,
     optimizer=unit_cell_fire,
-    convergence_fn=lambda state, last_energy: torch.all(
-        last_energy - state.energy < 1e-6 * MetalUnits.energy
-    ),
+    convergence_fn=lambda state, last_energy: last_energy - state.energy
+    < 1e-6 * MetalUnits.energy,
     max_steps=10 if os.getenv("CI") else 1000,
 )
 

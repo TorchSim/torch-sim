@@ -263,6 +263,117 @@ def infer_property_scope(
     return scope
 
 
+def split_state(
+    state: BaseState,
+    ambiguous_handling: Literal["error", "globalize"] = "error",
+) -> list[BaseState]:
+    """Split a state into a list of states, each containing a single batch element.
+    This also needs to be optimized.
+    """
+    # TODO: make this more efficient
+    scope = infer_property_scope(state, ambiguous_handling=ambiguous_handling)
+
+    batch_sizes = torch.bincount(state.batch).tolist()
+
+    global_attrs = {}
+
+    # Process global properties (unchanged)
+    for attr_name in scope["global"]:
+        global_attrs[attr_name] = getattr(state, attr_name)
+
+    sliced_attrs = {}
+
+    # Process per-atom properties (filter by batch mask)
+    for attr_name in scope["per_atom"]:
+        if attr_name == "batch":
+            continue
+        attr_value = getattr(state, attr_name)
+        sliced_attrs[attr_name] = torch.split(attr_value, batch_sizes, dim=0)
+
+    # Process per-batch properties (select the specific batch)
+    for attr_name in scope["per_batch"]:
+        attr_value = getattr(state, attr_name)
+        sliced_attrs[attr_name] = torch.split(attr_value, 1, dim=0)
+
+    states = []
+    for i in range(state.n_batches):
+        state = type(state)(
+            batch=torch.zeros(batch_sizes[i], device=state.device, dtype=torch.int64),
+            **{attr_name: sliced_attrs[attr_name][i] for attr_name in sliced_attrs},
+            **global_attrs,
+        )
+        states.append(state)
+
+    return states
+
+
+def pop_states(
+    state: BaseState,
+    pop_indices: list[int],
+    ambiguous_handling: Literal["error", "globalize"] = "error",
+) -> tuple[BaseState, list[BaseState]]:
+    """Pop off the states with masking in a way that
+    minimizes memory operations. We can use the mask to make the popped
+    and remaining states in place then split the popped states.
+
+    Infer batchwise atomwise should also be optimized.
+    """
+    if len(pop_indices) == 0:
+        return state, []
+
+    pop_indices = torch.tensor(pop_indices, device=state.device, dtype=torch.int64)
+
+    scope = infer_property_scope(state, ambiguous_handling=ambiguous_handling)
+
+    # Process global properties (unchanged)
+    global_attrs = {}
+    for attr_name in scope["global"]:
+        global_attrs[attr_name] = getattr(state, attr_name)
+
+    keep_attrs = {}
+    pop_attrs = {}
+
+    # Process per-atom properties (filter by batch mask)
+    for attr_name in scope["per_atom"]:
+        keep_mask = torch.isin(state.batch, pop_indices, invert=True)
+        attr_value = getattr(state, attr_name)
+
+        if attr_name == "batch":
+            n_popped = len(pop_indices)
+            n_kept = state.n_batches - n_popped
+            _, keep_counts = torch.unique_consecutive(
+                attr_value[keep_mask], return_counts=True
+            )
+            keep_batch_indices = torch.repeat_interleave(
+                torch.arange(n_kept, device=state.device), keep_counts
+            )
+            keep_attrs[attr_name] = keep_batch_indices
+
+            _, pop_counts = torch.unique_consecutive(
+                attr_value[~keep_mask], return_counts=True
+            )
+            pop_batch_indices = torch.repeat_interleave(
+                torch.arange(n_popped, device=state.device), pop_counts
+            )
+            pop_attrs[attr_name] = pop_batch_indices
+            continue
+
+        keep_attrs[attr_name] = attr_value[keep_mask]
+        pop_attrs[attr_name] = attr_value[~keep_mask]
+
+    # Process per-batch properties (select the specific batch)
+    for attr_name in scope["per_batch"]:
+        attr_value = getattr(state, attr_name)
+        batch_range = torch.arange(state.n_batches, device=state.device)
+        keep_mask = torch.isin(batch_range, pop_indices, invert=True)
+        keep_attrs[attr_name] = attr_value[keep_mask]
+        pop_attrs[attr_name] = attr_value[~keep_mask]
+
+    keep_state = type(state)(**keep_attrs, **global_attrs)
+    pop_states = split_state(type(state)(**pop_attrs, **global_attrs))
+    return keep_state, pop_states
+
+
 def slice_substate(
     state: BaseState,
     batch_index: int,
@@ -278,6 +389,8 @@ def slice_substate(
     Returns:
         A BaseState object containing the sliced substate
     """
+    # TODO: should share more logic with pop_states, basically the same
+    # TODO: should be renamed slice_state
     scope = infer_property_scope(state, ambiguous_handling=ambiguous_handling)
 
     # Create a mask for the atoms in the specified batch
@@ -310,7 +423,7 @@ def slice_substate(
     return type(state)(**sliced_attrs)
 
 
-def concatenate_states(  # noqa: C901
+def concatenate_states(
     states: list[BaseState], device: torch.device | None = None
 ) -> BaseState:
     """Concatenate a list of BaseStates into a single BaseState.
@@ -336,57 +449,57 @@ def concatenate_states(  # noqa: C901
     if not all(isinstance(state, state_class) for state in states):
         raise TypeError("All states must be of the same type")
 
-    # Categorize properties by scope for each state
-    property_scopes = [infer_property_scope(state) for state in states]
+    # Use the target device or default to the first state's device
+    target_device = device or first_state.device
 
-    # Collect all property names across all states
-    all_props = set()
-    for scope in property_scopes:
-        for scope_type in scope.values():
-            all_props.update(scope_type)
+    # Get property scopes from the first state to identify
+    # global/per-atom/per-batch properties
+    first_scope = infer_property_scope(first_state)
+    global_props = set(first_scope["global"])
+    per_atom_props = set(first_scope["per_atom"])
+    per_batch_props = set(first_scope["per_batch"])
 
-    # Initialize dictionaries to hold concatenated properties
-    concatenated = {}
+    # Initialize result with global properties from first state
+    concatenated = {prop: getattr(first_state, prop) for prop in global_props}
 
-    # Process global properties (take from first state)
-    for prop_name in property_scopes[0]["global"]:
-        concatenated[prop_name] = getattr(first_state, prop_name)
-
-    # Process per-atom properties (concatenate)
-    for prop_name in set().union(*[scope["per_atom"] for scope in property_scopes]):
-        tensors = [
-            getattr(state, prop_name) for state in states if hasattr(state, prop_name)
-        ]
-        if tensors:
-            concatenated[prop_name] = torch.cat(tensors, dim=0)
-
-    # Process per-batch properties (concatenate)
-    for prop_name in set().union(*[scope["per_batch"] for scope in property_scopes]):
-        tensors = [
-            getattr(state, prop_name) for state in states if hasattr(state, prop_name)
-        ]
-        if tensors:
-            concatenated[prop_name] = torch.cat(tensors, dim=0)
-
-    # Create new batch indices that account for existing batch structure
+    # Pre-allocate lists for tensors to concatenate
+    per_atom_tensors = {prop: [] for prop in per_atom_props}
+    per_batch_tensors = {prop: [] for prop in per_batch_props}
     new_batch_indices = []
     batch_offset = 0
 
-    device = device or states[0].device
+    # Process all states in a single pass
     for state in states:
-        state = state_to_device(state, device)
+        # Move state to target device if needed
+        if state.device != target_device:
+            state = state_to_device(state, target_device)
 
-        # Get the number of unique batches in this state
-        num_batches = len(torch.unique(state.batch))
+        # Collect per-atom properties
+        for prop in per_atom_props:
+            # if hasattr(state, prop):
+            per_atom_tensors[prop].append(getattr(state, prop))
 
-        # For each atom, map its current batch index to a new index with the offset
+        # Collect per-batch properties
+        for prop in per_batch_props:
+            # if hasattr(state, prop):
+            per_batch_tensors[prop].append(getattr(state, prop))
+
+        # Update batch indices
+        num_batches = state.n_batches
         new_indices = state.batch + batch_offset
         new_batch_indices.append(new_indices)
-
-        # Update the offset for the next state
         batch_offset += num_batches
 
-    # Concatenate all batch indices
+    # Concatenate collected tensors
+    for prop, tensors in per_atom_tensors.items():
+        # if tensors:
+        concatenated[prop] = torch.cat(tensors, dim=0)
+
+    for prop, tensors in per_batch_tensors.items():
+        # if tensors:
+        concatenated[prop] = torch.cat(tensors, dim=0)
+
+    # Concatenate batch indices
     concatenated["batch"] = torch.cat(new_batch_indices)
 
     # Create a new instance of the same class

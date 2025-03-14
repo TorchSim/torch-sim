@@ -7,3 +7,10 @@ __pycache__
 build/
 dist/
 *.egg-info
+
+# logging
+*.log
+*log.txt
+
+# model checkpoints
+*.model

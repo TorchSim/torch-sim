@@ -4,7 +4,7 @@ temperature profile.
 
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.10",
+#     "mace-torch>=0.3.11",
 #     "plotly>=6",
 #     "kaleido",
 # ]
