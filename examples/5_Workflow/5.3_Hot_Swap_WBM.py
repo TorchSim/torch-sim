@@ -16,7 +16,6 @@ from matbench_discovery.data import DataFiles, ase_atoms_from_zip
 
 from torchsim.autobatching import HotSwappingAutoBatcher
 from torchsim.models.mace import MaceModel
-from torchsim.neighbors import vesin_nl_ts
 from torchsim.optimizers import unit_cell_fire
 from torchsim.runners import atoms_to_state
 from torchsim.state import BaseState
@@ -25,32 +24,20 @@ from torchsim.state import BaseState
 # --- Setup and Configuration ---
 # Device and data type configuration
 device = torch.device("cuda")
-dtype = torch.float32
+dtype = torch.float64
 print(f"job will run on {device=}")
 
 # --- Model Initialization ---
 PERIODIC = True
 print("Loading MACE model...")
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_omat_0/mace-omat-0-medium.model"
-loaded_model = mace_mp(
-    model=mace_checkpoint_url,
-    return_raw_model=True,
-    default_dtype=dtype,
-    device=device,
-)
-
-print("Initializing MACE model...")
+mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(
-    model=loaded_model,
+    model=mace,
     device=device,
-    neighbor_list_fn=vesin_nl_ts,
-    periodic=PERIODIC,
+    periodic=True,
+    dtype=torch.float64,
     compute_force=True,
-    compute_stress=True,
-    dtype=dtype,
-    enable_cueq=False,
 )
-
 
 # Optimization parameters
 fmax = 0.05  # Force convergence threshold
