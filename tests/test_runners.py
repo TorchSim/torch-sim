@@ -7,7 +7,7 @@ from pymatgen.core import Structure
 
 from torchsim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
 from torchsim.integrators import nve, nvt_langevin
-from torchsim.optimizers import unit_cell_fire as fire
+from torchsim.optimizers import unit_cell_fire
 from torchsim.quantities import kinetic_energy
 from torchsim.runners import (
     atoms_to_state,
@@ -22,6 +22,7 @@ from torchsim.runners import (
 from torchsim.state import BaseState, split_state
 from torchsim.trajectory import TorchSimTrajectory, TrajectoryReporter
 from torchsim.units import UnitSystem
+from torchsim.models.lennard_jones import LennardJonesModel
 
 
 def test_integrate_nve(
@@ -308,7 +309,7 @@ def test_optimize_fire(
     final_state = optimize(
         system=ar_base_state,
         model=lj_calculator,
-        optimizer=fire,
+        optimizer=unit_cell_fire,
         convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
         unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
@@ -341,7 +342,7 @@ def test_default_converged_fn(
     final_state = optimize(
         system=ar_base_state,
         model=lj_calculator,
-        optimizer=fire,
+        optimizer=unit_cell_fire,
         trajectory_reporter=reporter,
     )
 
@@ -372,7 +373,7 @@ def test_batched_optimize_fire(
     final_state = optimize(
         system=ar_double_base_state,
         model=lj_calculator,
-        optimizer=fire,
+        optimizer=unit_cell_fire,
         convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
         unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
@@ -381,14 +382,17 @@ def test_batched_optimize_fire(
     assert torch.all(final_state.forces < 1e-4)
 
 
-def test_single_structure_to_state(si_structure: Structure, device: torch.device) -> None:
+def test_single_structure_to_state(
+    si_structure: Structure, device: torch.device
+) -> None:
     """Test conversion from pymatgen Structure to state tensors."""
     state = structures_to_state(si_structure, device, torch.float64)
 
     # Check basic properties
     assert isinstance(state, BaseState)
     assert all(
-        t.device.type == device.type for t in [state.positions, state.masses, state.cell]
+        t.device.type == device.type
+        for t in [state.positions, state.masses, state.cell]
     )
     assert all(
         t.dtype == torch.float64 for t in [state.positions, state.masses, state.cell]
@@ -425,7 +429,7 @@ def test_optimize_with_autobatcher(
     final_state = optimize(
         system=triple_state,
         model=lj_calculator,
-        optimizer=fire,
+        optimizer=unit_cell_fire,
         convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
         autobatcher=autobatcher,
     )
@@ -470,7 +474,7 @@ def test_optimize_with_autobatcher_and_reporting(
     final_state = optimize(
         system=triple_state,
         model=lj_calculator,
-        optimizer=fire,
+        optimizer=unit_cell_fire,
         convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
         trajectory_reporter=reporter,
         autobatcher=autobatcher,
@@ -626,3 +630,74 @@ def test_to_structures(ar_base_state: BaseState) -> None:
     """Test conversion from BaseState to list of Pymatgen Structure."""
     structures = state_to_structures(ar_base_state)
     assert isinstance(structures[0], Structure)
+
+
+def test_integrate_with_autobatcher(
+    ar_base_state: BaseState,
+    fe_fcc_state: BaseState,
+    lj_calculator: LennardJonesModel,
+    monkeypatch: Any,
+) -> None:
+    """Test integration with autobatcher."""
+
+    monkeypatch.setattr(
+        "torchsim.autobatching.estimate_max_memory_scaler", lambda *args, **kwargs: 10000
+    )
+
+    states = [ar_base_state, fe_fcc_state, ar_base_state]
+    triple_state = initialize_state(
+        states,
+        lj_calculator.device,
+        lj_calculator.dtype,
+    )
+
+    final_state = integrate(
+        system=triple_state,
+        model=lj_calculator,
+        integrator=nve,
+        n_steps=10,
+        temperature=300.0,
+        timestep=0.001,
+        autobatcher=True,
+    )
+
+    assert isinstance(final_state, BaseState)
+    split_final_state = split_state(final_state)
+
+    for init_state, final_state in zip(states, split_final_state, strict=False):
+        assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
+        assert torch.any(final_state.positions != init_state.positions)
+
+
+def test_optimize_with_autobatcher(
+    ar_base_state: BaseState,
+    fe_fcc_state: BaseState,
+    lj_calculator: LennardJonesModel,
+    monkeypatch: Any,
+) -> None:
+    """Test optimize with autobatcher."""
+
+    monkeypatch.setattr(
+        "torchsim.autobatching.estimate_max_memory_scaler", lambda *args, **kwargs: 10000
+    )
+
+    states = [ar_base_state, fe_fcc_state, ar_base_state]
+    triple_state = initialize_state(
+        states,
+        lj_calculator.device,
+        lj_calculator.dtype,
+    )
+
+    final_state = optimize(
+        system=triple_state,
+        model=lj_calculator,
+        optimizer=unit_cell_fire,
+        convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
+        autobatcher=True,
+    )
+
+    assert isinstance(final_state, BaseState)
+    split_final_state = split_state(final_state)
+    for init_state, final_state in zip(states, split_final_state, strict=False):
+        assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
+        assert torch.any(final_state.positions != init_state.positions)
