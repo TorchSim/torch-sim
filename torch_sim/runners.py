@@ -8,6 +8,7 @@ converting between different molecular representations and handling simulation s
 import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -19,6 +20,7 @@ from torch_sim.quantities import batchwise_max_force
 from torch_sim.state import BaseState, StateLike, concatenate_states, state_to_device
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.units import UnitSystem
+from torch_sim.quantities import kinetic_energy, temperature
 
 
 if TYPE_CHECKING:
@@ -41,7 +43,7 @@ except ImportError:
         """Stub class for ASE Atoms when not installed."""
 
 
-def _create_batches_iterator(
+def _configure_batches_iterator(
     model: ModelInterface,
     state: BaseState,
     autobatcher: ChunkingAutoBatcher | bool,
@@ -164,7 +166,7 @@ def integrate(
         timestep: Integration time step
         unit_system: Unit system for temperature and time
         integrator_kwargs: Additional keyword arguments for integrator
-        trajectory_reporter: Optional reporter for tracking trajectory
+        trajectory_reporter: Optional reporter for tracking trajectory.
         autobatcher: Optional autobatcher to use
 
     Returns:
@@ -188,7 +190,7 @@ def integrate(
     )
     state = init_fn(state)
 
-    batch_iterator = _create_batches_iterator(model, state, autobatcher)
+    batch_iterator = _configure_batches_iterator(model, state, autobatcher)
 
     final_states = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
@@ -224,11 +226,13 @@ def _configure_hot_swapping_autobatcher(
     model: ModelInterface,
     state: BaseState,
     autobatcher: HotSwappingAutoBatcher | bool,
+    max_attempts: int,
 ) -> HotSwappingAutoBatcher:
     """Configure the hot swapping autobatcher for the optimize function."""
     # load and properly configure the autobatcher
     if isinstance(autobatcher, HotSwappingAutoBatcher):
         autobatcher.return_indices = True
+        autobatcher.max_attempts = max_attempts
         autobatcher.load_states(state)
     else:
         memory_scales_with = getattr(model, "memory_scales_with", "n_atoms")
@@ -238,6 +242,7 @@ def _configure_hot_swapping_autobatcher(
             return_indices=True,
             max_memory_scaler=max_memory_scaler,
             memory_scales_with=memory_scales_with,
+            max_attempts=max_attempts,
         )
         autobatcher.load_states(state)
     return autobatcher
@@ -273,8 +278,8 @@ def optimize(
     convergence_fn: Callable | None = None,
     unit_system: UnitSystem = UnitSystem.metal,
     trajectory_reporter: TrajectoryReporter | None = None,
-    max_steps: int = 10_000,
     autobatcher: HotSwappingAutoBatcher | bool = False,
+    max_steps: int = 10_000,
     steps_between_swaps: int = 5,
     **optimizer_kwargs: dict,
 ) -> BaseState:
@@ -289,12 +294,13 @@ def optimize(
         unit_system: Unit system for energy tolerance
         optimizer_kwargs: Additional keyword arguments for optimizer
         trajectory_reporter: Optional reporter for tracking optimization trajectory
-        max_steps: Maximum number of total optimization steps
         autobatcher: Optional autobatcher to use. If False, the system will assume
             infinite memory and will not batch, but will still remove converged
             structures from the batch. If True, the system will estimate the memory
             available and batch accordingly. If a HotSwappingAutoBatcher, the system
-            will use the provided autobatcher.
+            will use the provided autobatcher, but will reset the max_attempts to
+            max_steps // steps_between_swaps.
+        max_steps: Maximum number of total optimization steps
         steps_between_swaps: Number of steps to take before checking convergence
             and swapping out states.
 
@@ -316,7 +322,10 @@ def optimize(
     )
     state = init_fn(state)
 
-    autobatcher = _configure_hot_swapping_autobatcher(model, state, autobatcher)
+    max_attempts = max_steps // steps_between_swaps
+    autobatcher = _configure_hot_swapping_autobatcher(
+        model, state, autobatcher, max_attempts
+    )
 
     step: int = 1
     last_energy = state.energy + 1

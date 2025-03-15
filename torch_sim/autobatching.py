@@ -358,6 +358,7 @@ class HotSwappingAutoBatcher:
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         return_indices: bool = False,
+        max_attempts: int | None = None,
     ) -> None:
         """Initialize the hot-swapping auto-batcher.
 
@@ -371,12 +372,16 @@ class HotSwappingAutoBatcher:
             max_atoms_to_try: Maximum number of atoms to try when estimating
                 max_memory_scaler.
             return_indices: Whether to return original indices along with the batch.
+            max_attempts: Maximum number of iterations a state can remain in the
+                batcher before being forcibly completed. If None, states can
+                remain indefinitely.
         """
         self.model = model
         self.memory_scales_with = memory_scales_with
         self.max_memory_scaler = max_memory_scaler or None
         self.max_atoms_to_try = max_atoms_to_try
         self.return_indices = return_indices
+        self.max_attempts = max_attempts
 
     def load_states(
         self,
@@ -398,6 +403,7 @@ class HotSwappingAutoBatcher:
         self.current_scalers = []
         self.current_idx = []
         self.iterator_idx = 0
+        self.swap_attempts = []  # Track attempts for each state
 
         self.completed_idx_og_order = []
 
@@ -435,6 +441,8 @@ class HotSwappingAutoBatcher:
             new_metrics.append(metric)
             new_idx.append(self.iterator_idx)
             new_states.append(state)
+            # Initialize attempt counter for new state
+            self.swap_attempts.append(0)
             self.iterator_idx += 1
 
         self.current_scalers.extend(new_metrics)
@@ -475,6 +483,7 @@ class HotSwappingAutoBatcher:
         first_metric = calculate_memory_scaler(first_state, self.memory_scales_with)
         self.current_scalers += [first_metric]
         self.current_idx += [0]
+        self.swap_attempts.append(0)  # Initialize attempt counter for first state
         self.iterator_idx += 1
         # self.total_metric += first_metric
 
@@ -546,6 +555,14 @@ class HotSwappingAutoBatcher:
         assert len(self.current_idx) == len(self.current_scalers)
         assert len(convergence_tensor.shape) == 1
         assert updated_state.n_batches > 0
+
+
+        # Increment attempt counters and check for max attempts in a single loop
+        for conv_idx, abs_idx in enumerate(self.current_idx):
+            self.swap_attempts[abs_idx] += 1
+            if self.max_attempts and self.swap_attempts[abs_idx] >= self.max_attempts:
+                # Force convergence for states that have reached max attempts
+                convergence_tensor[conv_idx] = torch.tensor(True)
 
         completed_idx = torch.where(convergence_tensor)[0].tolist()
         completed_idx.sort(reverse=True)
