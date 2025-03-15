@@ -286,7 +286,9 @@ def test_integrate_with_autobatcher_and_reporting(
 
     for init_state, traj_file in zip(states, trajectory_files, strict=False):
         with TorchSimTrajectory(traj_file) as traj:
-            final_state = traj.get_state(-1)
+            final_state = traj.get_state(
+                -1, device=init_state.device, dtype=init_state.dtype
+            )
             energies = traj.get_array("pe")
             energy_steps = traj.get_steps("pe")
             assert len(energies) == 10
@@ -491,7 +493,9 @@ def test_optimize_with_autobatcher_and_reporting(
 
     for init_state, traj_file in zip(states, trajectory_files, strict=False):
         with TorchSimTrajectory(traj_file) as traj:
-            traj_state = traj.get_state(-1)
+            traj_state = traj.get_state(
+                -1, device=init_state.device, dtype=init_state.dtype
+            )
             energies = traj.get_array("pe")
             energy_steps = traj.get_steps("pe")
             assert len(energies) > 0

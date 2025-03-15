@@ -381,3 +381,53 @@ def test_chunking_auto_batcher_with_fire(
         assert torch.all(restored.atomic_numbers == original.atomic_numbers)
     # analytically determined to be optimal
     assert n_batches == optimal_n_batches
+
+
+def test_hot_swapping_max_attempts(
+    si_base_state: BaseState, fe_fcc_state: BaseState, lj_calculator: LennardJonesModel
+) -> None:
+    """Test HotSwappingAutoBatcher with max_attempts limit."""
+    # Create states that won't naturally converge
+    states = [si_base_state.clone(), fe_fcc_state.clone()]
+
+    # Set max_attempts to a small value to ensure quick termination
+    max_attempts = 3
+    batcher = HotSwappingAutoBatcher(
+        model=lj_calculator,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=800.0,
+        max_attempts=max_attempts,
+    )
+    batcher.load_states(states)
+
+    # Get the first batch
+    state, [] = batcher.next_batch(None, None)
+
+    # Create a convergence tensor that never converges
+    convergence_tensor = torch.zeros(state.n_batches, dtype=torch.bool)
+
+    all_completed_states = []
+    iteration_count = 0
+
+    # Process batches until complete
+    while state is not None:
+        iteration_count += 1
+        state, completed_states = batcher.next_batch(state, convergence_tensor)
+        all_completed_states.extend(completed_states)
+
+        # Update convergence tensor for next iteration (still all False)
+        if state is not None:
+            convergence_tensor = torch.zeros(state.n_batches, dtype=torch.bool)
+
+        if iteration_count > max_attempts + 4:
+            raise ValueError("Should have terminated by now")
+
+    # Verify all states were processed
+    assert len(all_completed_states) == len(states)
+
+    # Verify we didn't exceed max_attempts + 1 iterations (first call doesn't count)
+    assert iteration_count == 3
+
+    # Verify swap_attempts tracking
+    for i in range(len(states)):
+        assert batcher.swap_attempts[i] == max_attempts

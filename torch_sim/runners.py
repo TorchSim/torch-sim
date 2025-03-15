@@ -6,7 +6,8 @@ converting between different molecular representations and handling simulation s
 """
 
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -15,7 +16,7 @@ from numpy.typing import ArrayLike
 
 from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
 from torch_sim.models.interface import ModelInterface
-from torch_sim.quantities import batchwise_max_force
+from torch_sim.quantities import batchwise_max_force, kinetic_energy, temperature
 from torch_sim.state import BaseState, StateLike, concatenate_states, state_to_device
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.units import UnitSystem
@@ -49,7 +50,7 @@ except ImportError:
         """Stub class for PhonopyAtoms when not installed."""
 
 
-def _create_batches_iterator(
+def _configure_batches_iterator(
     model: ModelInterface,
     state: BaseState,
     autobatcher: ChunkingAutoBatcher | bool,
@@ -77,6 +78,75 @@ def _create_batches_iterator(
     return batchs
 
 
+def create_default_reporter(
+    filenames: str | Path | list[str | Path],
+    property_frequency: int = 10,
+    state_frequency: int = 50,
+    properties: Iterable[str] = (
+        "positions",
+        "kinetic_energy",
+        "potential_energy",
+        "temperature",
+        "stress",
+    ),
+) -> TrajectoryReporter:
+    """Create a default trajectory reporter.
+
+    Args:
+        filenames: Filenames to save the trajectory to.
+        property_frequency: Frequency to save properties at.
+        state_frequency: Frequency to save state at.
+        properties: Properties to save, possible properties are "positions",
+            "kinetic_energy", "potential_energy", "temperature", "stress", "velocities",
+            and "forces".
+    """
+
+    def compute_stress(state: BaseState, model: ModelInterface) -> torch.Tensor:
+        # Check model type by name rather than instance
+        # TODO: this is a bit of a dumb way of tracking stress
+        if not model.compute_stress:
+            try:
+                og_model_stress = model.compute_stress
+                model.compute_stress = True
+            except AttributeError as err:
+                raise ValueError(
+                    "Model stress is not set to true and model stress cannot be "
+                    "set on the fly. Please set model.compute_stress to True."
+                ) from err
+        model_outputs = model.forward(
+            positions=state.positions,
+            cell=state.cell,
+            atomic_numbers=state.atomic_numbers,
+            batch=state.batch,
+        )
+        if not model.compute_stress:
+            model.compute_stress = og_model_stress
+
+        return model_outputs["stress"]
+
+    possible_properties = {
+        "kinetic_energy": lambda state: kinetic_energy(state.momenta, state.masses),
+        "potential_energy": lambda state: state.energy,
+        "temperature": lambda state: temperature(state.momenta, state.masses),
+        "stress": compute_stress,
+    }
+
+    prop_calculators = {
+        prop: calculator
+        for prop, calculator in possible_properties.items()
+        if prop in properties
+    }
+
+    save_velocities = "velocities" in properties
+    save_forces = "forces" in properties
+    return TrajectoryReporter(
+        filenames=filenames,
+        state_frequency=state_frequency,
+        prop_calculators={property_frequency: prop_calculators},
+        state_kwargs={"save_velocities": save_velocities, "save_forces": save_forces},
+    )
+
+
 def integrate(
     system: StateLike,
     model: ModelInterface,
@@ -101,7 +171,7 @@ def integrate(
         timestep: Integration time step
         unit_system: Unit system for temperature and time
         integrator_kwargs: Additional keyword arguments for integrator
-        trajectory_reporter: Optional reporter for tracking trajectory
+        trajectory_reporter: Optional reporter for tracking trajectory.
         autobatcher: Optional autobatcher to use
 
     Returns:
@@ -125,7 +195,7 @@ def integrate(
     )
     state = init_fn(state)
 
-    batch_iterator = _create_batches_iterator(model, state, autobatcher)
+    batch_iterator = _configure_batches_iterator(model, state, autobatcher)
 
     final_states = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
@@ -161,11 +231,13 @@ def _configure_hot_swapping_autobatcher(
     model: ModelInterface,
     state: BaseState,
     autobatcher: HotSwappingAutoBatcher | bool,
+    max_attempts: int,
 ) -> HotSwappingAutoBatcher:
     """Configure the hot swapping autobatcher for the optimize function."""
     # load and properly configure the autobatcher
     if isinstance(autobatcher, HotSwappingAutoBatcher):
         autobatcher.return_indices = True
+        autobatcher.max_attempts = max_attempts
         autobatcher.load_states(state)
     else:
         memory_scales_with = getattr(model, "memory_scales_with", "n_atoms")
@@ -175,6 +247,7 @@ def _configure_hot_swapping_autobatcher(
             return_indices=True,
             max_memory_scaler=max_memory_scaler,
             memory_scales_with=memory_scales_with,
+            max_attempts=max_attempts,
         )
         autobatcher.load_states(state)
     return autobatcher
@@ -210,8 +283,8 @@ def optimize(
     convergence_fn: Callable | None = None,
     unit_system: UnitSystem = UnitSystem.metal,
     trajectory_reporter: TrajectoryReporter | None = None,
-    max_steps: int = 10_000,
     autobatcher: HotSwappingAutoBatcher | bool = False,
+    max_steps: int = 10_000,
     steps_between_swaps: int = 5,
     **optimizer_kwargs: dict,
 ) -> BaseState:
@@ -226,12 +299,13 @@ def optimize(
         unit_system: Unit system for energy tolerance
         optimizer_kwargs: Additional keyword arguments for optimizer
         trajectory_reporter: Optional reporter for tracking optimization trajectory
-        max_steps: Maximum number of total optimization steps
         autobatcher: Optional autobatcher to use. If False, the system will assume
             infinite memory and will not batch, but will still remove converged
             structures from the batch. If True, the system will estimate the memory
             available and batch accordingly. If a HotSwappingAutoBatcher, the system
-            will use the provided autobatcher.
+            will use the provided autobatcher, but will reset the max_attempts to
+            max_steps // steps_between_swaps.
+        max_steps: Maximum number of total optimization steps
         steps_between_swaps: Number of steps to take before checking convergence
             and swapping out states.
 
@@ -253,7 +327,10 @@ def optimize(
     )
     state = init_fn(state)
 
-    autobatcher = _configure_hot_swapping_autobatcher(model, state, autobatcher)
+    max_attempts = max_steps // steps_between_swaps
+    autobatcher = _configure_hot_swapping_autobatcher(
+        model, state, autobatcher, max_attempts
+    )
 
     step: int = 1
     last_energy = state.energy + 1
