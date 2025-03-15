@@ -84,7 +84,7 @@ for step in range(N_steps):
     if step % 10 == 0:
         e_pot = state.energy.item()
         pressure = (
-            torch.trace(state.stress).item() / 3.0 * UnitConversion.eV_per_Ang3_to_GPa
+            -torch.trace(state.stress).item() / 3.0 * UnitConversion.eV_per_Ang3_to_GPa
         )
         print(f"{step=}: Total energy: {e_pot} eV, {pressure=:.4f} GPa")
     state = fire_update(state)
@@ -97,7 +97,7 @@ print(f"Initial max force: {torch.max(torch.abs(results['forces'])).item()} eV/Ã
 print(f"Final max force: {torch.max(torch.abs(state.forces)).item()} eV/Ã…")
 
 initial_pressure = (
-    torch.trace(results["stress"]).item() / 3.0 * UnitConversion.eV_per_Ang3_to_GPa
+    -torch.trace(results["stress"]).item() / 3.0 * UnitConversion.eV_per_Ang3_to_GPa
 )
 print(f"{initial_pressure=:.4f} GPa")
 final_pressure = (

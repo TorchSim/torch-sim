@@ -101,9 +101,9 @@ state = fire_init(state)
 # Run optimization for a few steps
 print("\nRunning batched unit cell gradient descent:")
 for step in range(N_steps):
-    P1 = torch.trace(state.stress[0]) * UnitConversion.eV_per_Ang3_to_GPa / 3
-    P2 = torch.trace(state.stress[1]) * UnitConversion.eV_per_Ang3_to_GPa / 3
-    P3 = torch.trace(state.stress[2]) * UnitConversion.eV_per_Ang3_to_GPa / 3
+    P1 = -torch.trace(state.stress[0]) * UnitConversion.eV_per_Ang3_to_GPa / 3
+    P2 = -torch.trace(state.stress[1]) * UnitConversion.eV_per_Ang3_to_GPa / 3
+    P3 = -torch.trace(state.stress[2]) * UnitConversion.eV_per_Ang3_to_GPa / 3
 
     if step % 20 == 0:
         print(
