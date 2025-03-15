@@ -17,6 +17,7 @@ from phonopy.structure.atoms import PhonopyAtoms
 
 from torch_sim.models.mace import MaceModel
 from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.runners import phonopy_to_state
 
 
 # Set device and data type
@@ -37,6 +38,7 @@ atoms = PhonopyAtoms(
     cell=np.eye(3) * 3,
     scaled_positions=[[0, 0, 0], [0.5, 0.5, 0.5]],
     symbols=["Na", "Cl"],
+    pbc=True,
 )
 
 # Create Phonopy object with supercell matrix
@@ -46,6 +48,9 @@ ph = Phonopy(atoms, supercell_matrix)
 # Generate displacements
 ph.generate_displacements(distance=0.01)
 supercells = ph.get_supercells_with_displacements()
+
+# Convert PhonopyAtoms to state
+state = phonopy_to_state(supercells, device, dtype)
 
 # Create batched MACE model
 atomic_numbers_list = [cell.get_atomic_numbers() for cell in supercells]
@@ -60,37 +65,12 @@ model = MaceModel(
     enable_cueq=False,
 )
 
-# First we will create a concatenated positions array from all supercells
-positions_numpy = np.concatenate([cell.get_positions() for cell in supercells])
-
-# stack cell vectors into a (n_supercells, 3, 3) array
-cell_numpy = np.stack([cell.get_cell() for cell in supercells])
-
-# concatenate atomic numbers into a single array
-atomic_numbers_numpy = np.concatenate([cell.get_atomic_numbers() for cell in supercells])
-
-# convert to tensors
-positions = torch.tensor(positions_numpy, device=device, dtype=dtype)
-cell = torch.tensor(cell_numpy, device=device, dtype=dtype)
-atomic_numbers = torch.tensor(atomic_numbers_numpy, device=device, dtype=torch.int)
-
-# Create a batch index array to track which atoms belong to which supercell
-atoms_per_batch = torch.tensor(
-    [len(cell) for cell in supercells], device=device, dtype=torch.int
-)
-batch = torch.repeat_interleave(
-    torch.arange(len(atoms_per_batch), device=device), atoms_per_batch
-)
-
-# Print shapes for verification
-print(f"Positions: {positions.shape}")
-print(f"Cell: {cell.shape}")
-print(f"Atomic numbers: {atomic_numbers.shape}")
-print(f"Batch: {batch.shape}")
-
 # Run the model in batched mode
 results = model(
-    positions=positions, cell=cell, atomic_numbers=atomic_numbers, batch=batch
+    positions=state.positions,
+    cell=state.cell,
+    atomic_numbers=state.atomic_numbers,
+    batch=state.batch,
 )
 
 # Print result keys and shapes

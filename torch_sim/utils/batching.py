@@ -1,13 +1,8 @@
 """Utility functions for batched structure optimization workflows."""
 
-from collections.abc import Callable
-from typing import Any, TextIO
+from typing import TextIO
 
 import torch
-from ase import Atoms
-from pymatgen.core import Structure
-
-from torch_sim.runners import atoms_to_state, structures_to_state
 
 
 def write_log_line(
@@ -54,82 +49,6 @@ def write_log_line(
     # Join with separator and write
     struct_line = " | ".join(prop_strings)
     file.write(struct_line + "\n")
-
-
-def check_max_atoms_in_batch(
-    current_struct: Atoms | Structure,
-    next_struct: Atoms | Structure,
-    struct_list: list[Atoms | Structure],
-    max_atoms: int,
-) -> bool:
-    """Check if swapping structures would exceed max batch size.
-
-    Calculates total number of atoms if current_struct was replaced with next_struct
-    and checks against max_atoms limit. Works with both ASE Atoms and pymatgen
-    Structure objects.
-
-    Args:
-        current_struct: Structure to be replaced (Atoms or pymatgen Structure)
-        next_struct: Structure to add (Atoms or pymatgen Structure)
-        struct_list: Current list of structures
-        max_atoms: Maximum allowed atoms in batch
-
-    Returns:
-        bool: True if swap is allowed, False otherwise
-    """
-
-    def _get_natoms(struct: Atoms | Structure) -> int:
-        if isinstance(struct, Atoms):
-            return len(struct)
-        # pymatgen Structure
-        return len(struct.sites)
-
-    total_batch_atoms = (
-        sum(_get_natoms(struct) for struct in struct_list)
-        - _get_natoms(current_struct)
-        + _get_natoms(next_struct)
-    )
-    return total_batch_atoms <= max_atoms
-
-
-def swap_structure(
-    idx: int,
-    current_idx: int,
-    struct_list: list[Atoms | Structure],
-    all_struct_list: list[Atoms | Structure],
-    device: torch.device,
-    dtype: torch.dtype,
-    optimizer_init: Callable,
-) -> tuple[Any, int]:
-    """Swap a converged structure with the next one in the queue.
-
-    Replaces structure at idx with next structure from all_struct_list,
-    reinitializes optimizer state, and returns updated state.
-
-    Args:
-        idx: Index of structure to replace
-        current_idx: Index of next structure to add
-        struct_list: Current list of structures (Atoms or pymatgen Structure)
-        all_struct_list: Full list of structures to process
-        device: Torch device
-        dtype: Torch dtype
-        optimizer_init: Optimizer initialization function
-
-    Returns:
-        tuple containing:
-            - Any: Updated state after swapping structure
-            - int: Incremented current_idx
-    """
-    struct_list[idx] = all_struct_list[current_idx]
-
-    # Convert structures based on type
-    if isinstance(struct_list[0], Atoms):
-        base_state = atoms_to_state(struct_list, device=device, dtype=dtype)
-    else:  # pymatgen Structure
-        base_state = structures_to_state(struct_list, device=device, dtype=dtype)
-
-    state = optimizer_init(base_state)
-    return state, current_idx + 1
 
 
 @torch.jit.script

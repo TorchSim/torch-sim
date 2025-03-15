@@ -38,7 +38,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["ase>=3.24", "pymatgen>=2024.11.3", "pytest-cov>=6", "pytest>=8"]
+test = ["ase>=3.24", "pymatgen>=2024.11.3", "pytest-cov>=6", "pytest>=8", "phonopy>=2.37.0"]
 models = ["mace-torch>=0.3.11"]
 
 [project.urls]

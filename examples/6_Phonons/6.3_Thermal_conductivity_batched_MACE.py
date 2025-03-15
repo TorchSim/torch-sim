@@ -8,6 +8,7 @@
 # ]
 # ///
 
+# ruff: noqa: TC002
 import time
 
 import numpy as np
@@ -21,6 +22,7 @@ from pymatgen.io.phonopy import get_phonopy_structure
 
 from torch_sim.models.mace import MaceModel
 from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.runners import phonopy_to_state
 
 
 start_time = time.perf_counter()
@@ -58,31 +60,15 @@ model = MaceModel(
 model_loading_time = time.perf_counter() - start_time
 print(f"Model loading time: {model_loading_time}s")
 
-# First we will create a concatenated positions array from all supercells
-positions_numpy = np.concatenate([cell.get_positions() for cell in supercells])
-
-# stack cell vectors into a (n_supercells, 3, 3) array
-cell_numpy = np.stack([cell.get_cell() for cell in supercells])
-
-# concatenate atomic numbers into a single array
-atomic_numbers_numpy = np.concatenate([cell.numbers for cell in supercells])
-
-# convert to tensors
-positions = torch.tensor(positions_numpy, device=device, dtype=dtype)
-cell = torch.tensor(cell_numpy, device=device, dtype=dtype)
-atomic_numbers = torch.tensor(atomic_numbers_numpy, device=device, dtype=torch.int)
-
-# Create a batch index array to track which atoms belong to which supercell
-atoms_per_batch = torch.tensor(
-    [len(cell) for cell in supercells], device=device, dtype=torch.int
-)
-batch = torch.repeat_interleave(
-    torch.arange(len(atoms_per_batch), device=device), atoms_per_batch
-)
+# Convert PhonopyAtoms to state
+state = phonopy_to_state(supercells, device, dtype)
 
 # Run the model in batched mode
 results = model(
-    positions=positions, cell=cell, atomic_numbers=atomic_numbers, batch=batch
+    positions=state.positions,
+    cell=state.cell,
+    atomic_numbers=state.atomic_numbers,
+    batch=state.batch,
 )
 
 # Extract forces and convert back to list of numpy arrays for phonopy

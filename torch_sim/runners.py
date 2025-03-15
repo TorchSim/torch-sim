@@ -42,6 +42,14 @@ except ImportError:
         """Stub class for ASE Atoms when not installed."""
 
 
+try:
+    from phonopy.structure.atoms import PhonopyAtoms
+except ImportError:
+
+    class PhonopyAtoms:
+        """Stub class for PhonopyAtoms when not installed."""
+
+
 def _configure_batches_iterator(
     model: ModelInterface,
     state: BaseState,
@@ -533,6 +541,54 @@ def state_to_structures(state: BaseState) -> list["Structure"]:
     return structures
 
 
+def state_to_phonopy(state: BaseState) -> list["PhonopyAtoms"]:
+    """Convert a BaseState to a list of PhonopyAtoms objects.
+
+    Args:
+        state (BaseState): Batched state containing positions, cell, and atomic numbers
+
+    Returns:
+        list[PhonopyAtoms]: List of PhonopyAtoms objects, one per batch
+
+    Notes:
+        - Output positions and cell will be in Å
+        - Output masses will be in amu
+    """
+    try:
+        from ase.data import chemical_symbols
+        from phonopy.structure.atoms import PhonopyAtoms
+    except ImportError as err:
+        raise ImportError(
+            "Phonopy is required for state_to_phonopy_atoms conversion"
+        ) from err
+
+    # Convert tensors to numpy arrays on CPU
+    positions = state.positions.detach().cpu().numpy()
+    cell = state.cell.detach().cpu().numpy()  # Shape: (n_batches, 3, 3)
+    atomic_numbers = state.atomic_numbers.detach().cpu().numpy()
+    batch = state.batch.detach().cpu().numpy()
+
+    phonopy_atoms_list = []
+    for batch_idx in np.unique(batch):
+        mask = batch == batch_idx
+        batch_positions = positions[mask]
+        batch_numbers = atomic_numbers[mask]
+        batch_cell = cell[batch_idx].T  # Transpose for Phonopy convention
+
+        # Convert atomic numbers to chemical symbols
+        symbols = [chemical_symbols[z] for z in batch_numbers]
+        phonopy_atoms_list.append(
+            PhonopyAtoms(
+                symbols=symbols,
+                positions=batch_positions,
+                cell=batch_cell,
+                pbc=state.pbc,
+            )
+        )
+
+    return phonopy_atoms_list
+
+
 def atoms_to_state(
     atoms: "Atoms | list[Atoms]",
     device: torch.device,
@@ -648,6 +704,71 @@ def structures_to_state(
         masses=masses,
         cell=cell,
         pbc=True,  # Structures are always periodic
+        atomic_numbers=atomic_numbers,
+        batch=batch,
+    )
+
+
+def phonopy_to_state(
+    phonopy_atoms: "PhonopyAtoms | list[PhonopyAtoms]",
+    device: torch.device,
+    dtype: torch.dtype,
+) -> BaseState:
+    """Create state tensors from a PhonopyAtoms object or list of PhonopyAtoms objects.
+
+    Args:
+        phonopy_atoms: Single PhonopyAtoms object or list of PhonopyAtoms objects
+        device: Device to create tensors on
+        dtype: Data type for tensors
+
+    Returns:
+        BaseState: Batched state tensors in internal units
+    """
+    try:
+        from phonopy.structure.atoms import PhonopyAtoms
+    except ImportError as err:
+        raise ImportError("Phonopy is required for phonopy_to_state conversion") from err
+
+    phonopy_atoms_list = (
+        [phonopy_atoms] if isinstance(phonopy_atoms, PhonopyAtoms) else phonopy_atoms
+    )
+
+    # Stack all properties in one go
+    positions = torch.tensor(
+        np.concatenate([a.positions for a in phonopy_atoms_list]),
+        dtype=dtype,
+        device=device,
+    )
+    masses = torch.tensor(
+        np.concatenate([a.masses for a in phonopy_atoms_list]), dtype=dtype, device=device
+    )
+    atomic_numbers = torch.tensor(
+        np.concatenate([a.numbers for a in phonopy_atoms_list]),
+        dtype=torch.int,
+        device=device,
+    )
+    cell = torch.tensor(
+        np.stack([a.cell.T for a in phonopy_atoms_list]), dtype=dtype, device=device
+    )
+
+    # Create batch indices using repeat_interleave
+    atoms_per_batch = torch.tensor([len(a) for a in phonopy_atoms_list], device=device)
+    batch = torch.repeat_interleave(
+        torch.arange(len(phonopy_atoms_list), device=device), atoms_per_batch
+    )
+
+    """
+    NOTE: PhonopyAtoms does not have pbc attribute for Supercells assume True
+    Verify consistent pbc
+    if not all(all(a.pbc) == all(phonopy_atoms_list[0].pbc) for a in phonopy_atoms_list):
+        raise ValueError("All systems must have the same periodic boundary conditions")
+    """
+
+    return BaseState(
+        positions=positions,
+        masses=masses,
+        cell=cell,
+        pbc=True,
         atomic_numbers=atomic_numbers,
         batch=batch,
     )

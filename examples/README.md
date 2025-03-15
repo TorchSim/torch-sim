@@ -15,11 +15,8 @@ This folder contains a series of examples demonstrating the use of TorchSim, a l
 - **1.3 Batched MACE Model**: Extends the MACE model example to handle batched inputs, allowing for the simulation of multiple systems simultaneously. It demonstrates the setup and execution of batched simulations.
   ```torchsim/examples/1_Introduction/1.3_Batched_MACE.py```
 
-- **1.4 M3GNet Model**: Illustrates the use of the M3GNet model for simulating diamond cubic Silicon. It includes model initialization, data preparation, and batch processing using a dataloader.
-  ```torchsim/examples/1_Introduction/1.4_M3GNet.py```
-
-- **1.5 Fairchem Model**: Demonstrates the Fairchem model for simulating diamond cubic Silicon. It includes model setup, data preparation, and running simulations to obtain energy, forces, and stress.
-  ```torchsim/examples/1_Introduction/1.5_Fairchem.py```
+- **1.4 Fairchem Model**: Demonstrates the Fairchem model for simulating diamond cubic Silicon. It includes model setup, data preparation, and running simulations to obtain energy, forces, and stress.
+  ```torchsim/examples/1_Introduction/1.4_Fairchem.py```
 
 ### 2. Structural Optimization
 
@@ -85,25 +82,20 @@ This folder contains a series of examples demonstrating the use of TorchSim, a l
 - **4.1 High-Level API**: Provides examples of using the high-level API for integrating systems with different models and integrators, including Lennard-Jones and MACE models.
   ```torchsim/examples/4_High_level_api/4.1_high_level_api.py```
 
-### 5. Trajectory Writing
+### 5. Workflow
 
-- **5.1 Trajectory Logging**: Demonstrates how to log simulation trajectories using TorchSim's trajectory module, including writing and reading trajectory data.
-  ```torchsim/examples/5_Trajectory_writing/5.1_Trajectory_logging.py```
+- **5.1 Workflow**: Demonstrates how to run the a2c workflow with MACE model.
+  ```torchsim/examples/5_Workflow/5.1_a2c_workflow.py```
 
-### 6. Workflow
+### 6. Phonons
 
-- **6.1 Workflow**: Demonstrates how to run the a2c workflow with MACE model.
-  ```torchsim/examples/6_Workflow/6.1_a2c_workflow.py```
+- **6.1 Phonon DOS with MACE Batched**: Demonstrates how to compute the phonon density of states (DOS) using the MACE model in batched mode.
+  ```torchsim/examples/6_Phonons/6.1_phonon_dos_batched_MACE.py```
 
-### 7. Phonons
+- **6.2 Thermal Conductivity with MACE**: Demonstrates how to compute the thermal conductivity using the MACE model.
+  ```torchsim/examples/6_Phonons/6.2_Thermal_conductivity_MACE.py```
 
-- **7.1 Phonon DOS with MACE Batched**: Demonstrates how to compute the phonon density of states (DOS) using the MACE model in batched mode.
-  ```torchsim/examples/7_Phonons/7.1_phonon_dos_batched_MACE.py```
-
-- **7.2 Thermal Conductivity with MACE**: Demonstrates how to compute the thermal conductivity using the MACE model.
-  ```torchsim/examples/7_Phonons/7.2_Thermal_conductivity_MACE.py```
-
-- **7.4 Thermal Conductivity with MACE Batched**: Demonstrates how to compute the thermal conductivity using the MACE model in batched mode.
-  ```torchsim/examples/7_Phonons/7.4_Thermal_conductivity_batched_MACE.py```
+- **6.3 Thermal Conductivity with MACE Batched**: Demonstrates how to compute the thermal conductivity using the MACE model in batched mode.
+  ```torchsim/examples/6_Phonons/6.3_Thermal_conductivity_batched_MACE.py```
 
 Each example is designed to be self-contained and can be run independently to explore the capabilities of TorchSim. The examples cover a wide range of functionalities, from basic model setup to advanced simulation techniques, providing a comprehensive overview of the library's features.
