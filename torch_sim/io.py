@@ -10,12 +10,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
-from torch_sim.state import BaseState, StateLike, concatenate_states, state_to_device
-
-
 if TYPE_CHECKING:
     from ase import Atoms
     from pymatgen.core import Structure
+    from torch_sim.state import BaseState, StateLike
 
 try:
     from pymatgen.core import Structure
@@ -41,75 +39,7 @@ except ImportError:
         """Stub class for PhonopyAtoms when not installed."""
 
 
-def initialize_state(
-    system: StateLike,
-    device: torch.device,
-    dtype: torch.dtype,
-) -> BaseState:
-    """Initialize state tensors from a system.
-
-    Args:
-        system: Input system to convert to state tensors
-        device: Device to create tensors on
-        dtype: Data type for tensors
-
-    Returns:
-        BaseState: State tensors initialized from input system
-
-    Raises:
-        ValueError: If system type is not supported
-    """
-    # TODO: create a way to pass velocities from pmg and ase
-
-    if isinstance(system, BaseState):
-        return state_to_device(system, device, dtype)
-
-    if isinstance(system, list) and all(isinstance(s, BaseState) for s in system):
-        if not all(state.n_batches == 1 for state in system):
-            raise ValueError(
-                "When providing a list of states, to the initialize_state function, "
-                "all states must have n_batches == 1. To fix this, you can split the "
-                "states into individual states with the split_state function."
-            )
-        return concatenate_states(system)
-
-    try:
-        from pymatgen.core import Structure
-
-        if isinstance(system, Structure) or (
-            isinstance(system, list) and all(isinstance(s, Structure) for s in system)
-        ):
-            return structures_to_state(system, device, dtype)
-    except ImportError:
-        pass
-
-    try:
-        from ase import Atoms
-
-        if isinstance(system, Atoms) or (
-            isinstance(system, list) and all(isinstance(s, Atoms) for s in system)
-        ):
-            return atoms_to_state(system, device, dtype)
-    except ImportError:
-        pass
-
-    # remaining code just for informative error
-    is_list = isinstance(system, list)
-    all_same_type = (
-        is_list and all(isinstance(s, type(system[0])) for s in system) and system
-    )
-    if is_list and not all_same_type:
-        raise ValueError(
-            f"All items in list must be of the same type, "
-            f"found {type(system[0])} and {type(system[1])}"
-        )
-
-    system_type = f"list[{type(system[0])}]" if is_list else type(system)
-
-    raise ValueError(f"Unsupported system type, {system_type}")
-
-
-def state_to_atoms(state: BaseState) -> list["Atoms"]:
+def state_to_atoms(state: "BaseState") -> list["Atoms"]:
     """Convert a BaseState to a list of ASE Atoms objects.
 
     Args:
@@ -156,7 +86,7 @@ def state_to_atoms(state: BaseState) -> list["Atoms"]:
     return atoms_list
 
 
-def state_to_structures(state: BaseState) -> list["Structure"]:
+def state_to_structures(state: "BaseState") -> list["Structure"]:
     """Convert a BaseState to a list of Pymatgen Structure objects.
 
     Args:
@@ -210,7 +140,7 @@ def state_to_structures(state: BaseState) -> list["Structure"]:
     return structures
 
 
-def state_to_phonopy(state: BaseState) -> list["PhonopyAtoms"]:
+def state_to_phonopy(state: "BaseState") -> list["PhonopyAtoms"]:
     """Convert a BaseState to a list of PhonopyAtoms objects.
 
     Args:
@@ -262,7 +192,7 @@ def atoms_to_state(
     atoms: "Atoms | list[Atoms]",
     device: torch.device,
     dtype: torch.dtype,
-) -> BaseState:
+) -> "BaseState":
     """Create state tensors from an ASE Atoms object or list of Atoms objects.
 
     Args:
@@ -273,6 +203,8 @@ def atoms_to_state(
     Returns:
         BaseState: Batched state tensors in internal units
     """
+    from torch_sim.state import BaseState
+
     try:
         from ase import Atoms
     except ImportError as err:
@@ -320,7 +252,7 @@ def structures_to_state(
     structure: "Structure | list[Structure]",
     device: torch.device,
     dtype: torch.dtype,
-) -> BaseState:
+) -> "BaseState":
     """Create a BaseState from pymatgen Structure(s).
 
     Args:
@@ -335,6 +267,8 @@ def structures_to_state(
         - Cell matrix follows ASE convention: [[ax,ay,az],[bx,by,bz],[cx,cy,cz]]
         - Assumes periodic boundary conditions from Structure
     """
+    from torch_sim.state import BaseState
+
     try:
         from pymatgen.core import Structure
     except ImportError as err:
@@ -382,7 +316,7 @@ def phonopy_to_state(
     phonopy_atoms: "PhonopyAtoms | list[PhonopyAtoms]",
     device: torch.device,
     dtype: torch.dtype,
-) -> BaseState:
+) -> "BaseState":
     """Create state tensors from a PhonopyAtoms object or list of PhonopyAtoms objects.
 
     Args:
@@ -393,6 +327,8 @@ def phonopy_to_state(
     Returns:
         BaseState: Batched state tensors in internal units
     """
+    from torch_sim.state import BaseState
+
     try:
         from phonopy.structure.atoms import PhonopyAtoms
     except ImportError as err:

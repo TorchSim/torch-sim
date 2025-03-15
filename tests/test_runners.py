@@ -8,7 +8,7 @@ from torch_sim.integrators import nve, nvt_langevin
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.optimizers import unit_cell_fire
 from torch_sim.quantities import kinetic_energy
-from torch_sim.io import initialize_state
+from torch_sim.state import initialize_state
 from torch_sim.runners import generate_force_convergence_fn, integrate, optimize
 from torch_sim.state import BaseState, split_state
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter

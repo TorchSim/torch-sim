@@ -1,5 +1,5 @@
 from dataclasses import asdict
-
+from typing import TYPE_CHECKING
 import torch
 
 from torch_sim.state import (
@@ -9,8 +9,14 @@ from torch_sim.state import (
     pop_states,
     slice_substate,
     split_state,
+    initialize_state,
 )
-from torch_sim.unbatched.unbatched_integrators import MDState
+from torch_sim.integrators import MDState
+
+if TYPE_CHECKING:
+    from pymatgen.core import Structure
+    from ase import Atoms
+    from phonopy.structure.atoms import PhonopyAtoms
 
 
 def test_infer_base_state_property_scope(si_base_state: BaseState) -> None:
@@ -89,7 +95,9 @@ def test_concatenate_two_si_states(
     assert concatenated.positions.shape == si_double_base_state.positions.shape
     assert concatenated.masses.shape == si_double_base_state.masses.shape
     assert concatenated.cell.shape == si_double_base_state.cell.shape
-    assert concatenated.atomic_numbers.shape == si_double_base_state.atomic_numbers.shape
+    assert (
+        concatenated.atomic_numbers.shape == si_double_base_state.atomic_numbers.shape
+    )
     assert concatenated.batch.shape == si_double_base_state.batch.shape
 
     # Check batch indices
@@ -250,3 +258,44 @@ def test_pop_states(
     assert kept_state.cell.shape == (2, 3, 3)
     assert kept_state.atomic_numbers.shape == (len_kept,)
     assert kept_state.batch.shape == (len_kept,)
+
+
+def test_initialize_state_from_structure(
+    si_structure: "Structure", device: torch.device
+) -> None:
+    """Test conversion from pymatgen Structure to state tensors."""
+    state = initialize_state([si_structure], device, torch.float64)
+    assert isinstance(state, BaseState)
+    assert state.positions.shape == si_structure.cart_coords.shape
+    assert state.cell.shape[1:] == si_structure.lattice.matrix.shape
+
+
+def test_initialize_state_from_state(
+    ar_base_state: BaseState, device: torch.device
+) -> None:
+    """Test conversion from BaseState to BaseState."""
+    state = initialize_state(ar_base_state, device, torch.float64)
+    assert isinstance(state, BaseState)
+    assert state.positions.shape == ar_base_state.positions.shape
+    assert state.masses.shape == ar_base_state.masses.shape
+    assert state.cell.shape == ar_base_state.cell.shape
+
+
+def test_initialize_state_from_atoms(si_atoms: "Atoms", device: torch.device) -> None:
+    """Test conversion from ASE Atoms to BaseState."""
+    state = initialize_state([si_atoms], device, torch.float64)
+    assert isinstance(state, BaseState)
+    assert state.positions.shape == si_atoms.positions.shape
+    assert state.masses.shape == si_atoms.get_masses().shape
+    assert state.cell.shape[1:] == si_atoms.cell.array.T.shape
+
+
+def test_initialize_state_from_phonopy_atoms(
+    si_phonopy_atoms: "PhonopyAtoms", device: torch.device
+) -> None:
+    """Test conversion from PhonopyAtoms to BaseState."""
+    state = initialize_state([si_phonopy_atoms], device, torch.float64)
+    assert isinstance(state, BaseState)
+    assert state.positions.shape == si_phonopy_atoms.positions.shape
+    assert state.masses.shape == si_phonopy_atoms.masses.shape
+    assert state.cell.shape[1:] == si_phonopy_atoms.cell.shape

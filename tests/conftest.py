@@ -10,8 +10,8 @@ from phonopy.structure.atoms import PhonopyAtoms
 from pymatgen.core import Structure
 
 from torch_sim.models.lennard_jones import LennardJonesModel, UnbatchedLennardJonesModel
-from torch_sim.io import atoms_to_state, concatenate_states
-from torch_sim.state import BaseState
+from torch_sim.io import atoms_to_state
+from torch_sim.state import BaseState, concatenate_states
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.unbatched.unbatched_integrators import nve
 

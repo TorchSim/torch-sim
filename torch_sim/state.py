@@ -26,17 +26,36 @@ from typing import TYPE_CHECKING, Literal, Self
 
 import torch
 
+from torch_sim.io import (
+    atoms_to_state,
+    phonopy_to_state,
+    state_to_atoms,
+    state_to_phonopy,
+    state_to_structures,
+    structures_to_state,
+)
+
 
 if TYPE_CHECKING:
     from ase import Atoms
     from pymatgen.core import Structure
+    from phonopy.structure.atoms import PhonopyAtoms
 
 
 from typing import TypeVar, Union
 
 
 T = TypeVar("T", bound="BaseState")
-StateLike = Union["Atoms", "Structure", list["Atoms"], list["Structure"], T, list[T]]
+StateLike = Union[
+    "Atoms",
+    "Structure",
+    "PhonopyAtoms",
+    list["Atoms"],
+    list["Structure"],
+    list["PhonopyAtoms"],
+    T,
+    list[T],
+]
 
 
 # TODO: change later on
@@ -96,7 +115,9 @@ class BaseState:
             )
 
         if self.batch is None:
-            self.batch = torch.zeros(self.n_atoms, device=self.device, dtype=torch.int64)
+            self.batch = torch.zeros(
+                self.n_atoms, device=self.device, dtype=torch.int64
+            )
         else:
             # assert that batch indices are unique consecutive integers
             _, counts = torch.unique_consecutive(self.batch, return_counts=True)
@@ -164,6 +185,38 @@ class BaseState:
                 attrs[attr_name] = copy.deepcopy(attr_value)
 
         return self.__class__(**attrs)
+
+    def to_atoms(self) -> list["Atoms"]:
+        """Convert the BaseState to a list of Atoms.
+
+        Returns:
+            A list of Atoms
+        """
+        return state_to_atoms(self)
+
+    def to_structures(self) -> list["Structure"]:
+        """Convert the BaseState to a list of Structures.
+
+        Returns:
+            A list of Structures
+        """
+        return state_to_structures(self)
+
+    def to_phonopy(self) -> list["PhonopyAtoms"]:
+        """Convert the BaseState to a list of PhonopyAtoms.
+
+        Returns:
+            A list of PhonopyAtoms
+        """
+        return state_to_phonopy(self)
+
+    def split(self) -> list[Self]:
+        """Split the BaseState into a list of BaseStates.
+
+        Returns:
+            A list of BaseStates
+        """
+        return split_state(self)
 
 
 def state_to_device(
@@ -504,3 +557,82 @@ def concatenate_states(
 
     # Create a new instance of the same class
     return state_class(**concatenated)
+
+
+def initialize_state(
+    system: StateLike,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> BaseState:
+    """Initialize state tensors from a system.
+
+    Args:
+        system: Input system to convert to state tensors
+        device: Device to create tensors on
+        dtype: Data type for tensors
+
+    Returns:
+        BaseState: State tensors initialized from input system
+
+    Raises:
+        ValueError: If system type is not supported
+    """
+
+    # TODO: create a way to pass velocities from pmg and ase
+
+    if isinstance(system, BaseState):
+        return state_to_device(system, device, dtype)
+
+    if isinstance(system, list) and all(isinstance(s, BaseState) for s in system):
+        if not all(state.n_batches == 1 for state in system):
+            raise ValueError(
+                "When providing a list of states, to the initialize_state function, "
+                "all states must have n_batches == 1. To fix this, you can split the "
+                "states into individual states with the split_state function."
+            )
+        return concatenate_states(system)
+
+    try:
+        from pymatgen.core import Structure
+
+        if isinstance(system, Structure) or (
+            isinstance(system, list) and all(isinstance(s, Structure) for s in system)
+        ):
+            return structures_to_state(system, device, dtype)
+    except ImportError:
+        pass
+
+    try:
+        from ase import Atoms
+
+        if isinstance(system, Atoms) or (
+            isinstance(system, list) and all(isinstance(s, Atoms) for s in system)
+        ):
+            return atoms_to_state(system, device, dtype)
+    except ImportError:
+        pass
+
+    try:
+        from phonopy.structure.atoms import PhonopyAtoms
+
+        if isinstance(system, PhonopyAtoms) or (
+            isinstance(system, list) and all(isinstance(s, PhonopyAtoms) for s in system)
+        ):
+            return phonopy_to_state(system, device, dtype)
+    except ImportError:
+        pass
+
+    # remaining code just for informative error
+    is_list = isinstance(system, list)
+    all_same_type = (
+        is_list and all(isinstance(s, type(system[0])) for s in system) and system
+    )
+    if is_list and not all_same_type:
+        raise ValueError(
+            f"All items in list must be of the same type, "
+            f"found {type(system[0])} and {type(system[1])}"
+        )
+
+    system_type = f"list[{type(system[0])}]" if is_list else type(system)
+
+    raise ValueError(f"Unsupported system type, {system_type}")

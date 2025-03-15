@@ -2,7 +2,7 @@ import torch
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
-from torch_sim.io import initialize_state
+from torch_sim.state import initialize_state
 from torch_sim.models.interface import ModelInterface
 from torch_sim.quantities import batchwise_max_force, kinetic_energy, temperature
 from torch_sim.state import BaseState, concatenate_states, StateLike

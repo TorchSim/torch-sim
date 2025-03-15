@@ -7,14 +7,13 @@ from pymatgen.core import Structure
 
 from torch_sim.io import (
     atoms_to_state,
-    initialize_state,
     phonopy_to_state,
     state_to_atoms,
     state_to_phonopy,
     state_to_structures,
     structures_to_state,
 )
-from torch_sim.state import BaseState
+from torch_sim.state import BaseState, initialize_state
 
 
 def test_single_structure_to_state(
@@ -42,6 +41,7 @@ def test_single_structure_to_state(
         state.cell,
         torch.diag(torch.full((3,), 5.43, device=device, dtype=torch.float64)),
     )
+
 
 def test_multiple_structures_to_state(
     si_structure: Structure, device: torch.device
@@ -130,36 +130,6 @@ def test_state_to_multiple_atoms(ar_double_base_state: BaseState) -> None:
     assert len(atoms[1]) == 32
 
 
-def test_initialize_state_from_structure(
-    si_structure: Structure, device: torch.device
-) -> None:
-    """Test conversion from pymatgen Structure to state tensors."""
-    state = initialize_state([si_structure], device, torch.float64)
-    assert isinstance(state, BaseState)
-    assert state.positions.shape == si_structure.cart_coords.shape
-    assert state.cell.shape[1:] == si_structure.lattice.matrix.shape
-
-
-def test_initialize_state_from_state(
-    ar_base_state: BaseState, device: torch.device
-) -> None:
-    """Test conversion from BaseState to BaseState."""
-    state = initialize_state(ar_base_state, device, torch.float64)
-    assert isinstance(state, BaseState)
-    assert state.positions.shape == ar_base_state.positions.shape
-    assert state.masses.shape == ar_base_state.masses.shape
-    assert state.cell.shape == ar_base_state.cell.shape
-
-
-def test_initialize_state_from_atoms(si_atoms: Atoms, device: torch.device) -> None:
-    """Test conversion from ASE Atoms to BaseState."""
-    state = initialize_state([si_atoms], device, torch.float64)
-    assert isinstance(state, BaseState)
-    assert state.positions.shape == si_atoms.positions.shape
-    assert state.masses.shape == si_atoms.get_masses().shape
-    assert state.cell.shape[1:] == si_atoms.cell.array.T.shape
-
-
 def test_to_atoms(ar_base_state: BaseState) -> None:
     """Test conversion from BaseState to list of ASE Atoms."""
     atoms = state_to_atoms(ar_base_state)
@@ -232,4 +202,3 @@ def test_state_to_multiple_phonopy(ar_double_base_state: BaseState) -> None:
     assert isinstance(phonopy_atoms[1], PhonopyAtoms)
     assert len(phonopy_atoms[0]) == 32
     assert len(phonopy_atoms[1]) == 32
-
