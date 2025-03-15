@@ -5,7 +5,7 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.transforms import get_pair_displacements
-from torch_sim.utils.utils import safe_mask
+from torch_sim.utils.tools import safe_mask
 
 
 # Default parameter values defined at module level

@@ -15,7 +15,7 @@ from torch_sim.unbatched.unbatched_integrators import (
     nvt_nose_hoover_invariant,
 )
 from torch_sim.units import MetalUnits
-from torch_sim.utils.utils import calculate_momenta
+from torch_sim.utils.tools import calculate_momenta
 
 
 def test_nve_integrator(ar_base_state: BaseState, unbatched_lj_calculator: Any) -> None:

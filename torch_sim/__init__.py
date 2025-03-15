@@ -1,4 +1,4 @@
-"""Radical package base module."""
+"""Torch-Sim package base module."""
 
 import os
 from datetime import datetime

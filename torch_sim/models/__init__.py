@@ -1,1 +1,1 @@
-"""Models for TorchSim."""
+"""Models for Torch-Sim."""

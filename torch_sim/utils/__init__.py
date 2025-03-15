@@ -1,1 +1,1 @@
-"""Workflows for TorchSim."""
+"""Utilities for Torch-Sim."""

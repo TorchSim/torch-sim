@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from torch_sim.utils.utils import (
+from torch_sim.utils.tools import (
     compute_angles_3d,
     compute_angles_3d_nl,
     diagonal_mask,
