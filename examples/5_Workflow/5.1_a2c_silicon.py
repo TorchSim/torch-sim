@@ -27,13 +27,13 @@ from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.quantities import temperature
 from torch_sim.runners import state_to_structures, structures_to_state
 from torch_sim.transforms import get_fractional_coordinates
-from torch_sim.unbatched_integrators import (
+from torch_sim.unbatched.unbatched_integrators import (
     NVTNoseHooverState,
     nvt_nose_hoover,
     nvt_nose_hoover_invariant,
 )
 from torch_sim.units import MetalUnits as Units
-from torch_sim.workflows.a2c_utils import (
+from torch_sim.utils.a2c import (
     get_subcells_to_crystallize,
     get_target_temperature,
     get_unit_cell_relaxed_structure,

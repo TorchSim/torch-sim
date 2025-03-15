@@ -3,7 +3,11 @@ from typing import Any
 import torch
 
 from torch_sim.state import BaseState
-from torch_sim.unbatched_optimizers import fire, gradient_descent, unit_cell_fire
+from torch_sim.unbatched.unbatched_optimizers import (
+    fire,
+    gradient_descent,
+    unit_cell_fire,
+)
 
 
 def test_fire_optimizer(ar_base_state: BaseState, unbatched_lj_calculator: Any) -> None:

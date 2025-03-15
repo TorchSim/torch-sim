@@ -6,7 +6,10 @@ import torch
 
 from torch_sim.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.quantities import kinetic_energy, temperature
-from torch_sim.unbatched_integrators import npt_nose_hoover, npt_nose_hoover_invariant
+from torch_sim.unbatched.unbatched_integrators import (
+    npt_nose_hoover,
+    npt_nose_hoover_invariant,
+)
 from torch_sim.units import MetalUnits as Units
 
 

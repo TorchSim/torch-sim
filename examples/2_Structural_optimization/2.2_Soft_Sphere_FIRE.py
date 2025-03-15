@@ -5,7 +5,7 @@ import os
 import torch
 
 from torch_sim.models.soft_sphere import SoftSphereModel
-from torch_sim.unbatched_optimizers import fire
+from torch_sim.unbatched.unbatched_optimizers import fire
 
 
 # Set up the device and data type

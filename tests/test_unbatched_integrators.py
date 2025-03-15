@@ -5,7 +5,7 @@ import torch
 
 from torch_sim.quantities import kinetic_energy, temperature
 from torch_sim.state import BaseState
-from torch_sim.unbatched_integrators import (
+from torch_sim.unbatched.unbatched_integrators import (
     MDState,
     npt_nose_hoover,
     npt_nose_hoover_invariant,

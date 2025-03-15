@@ -34,7 +34,7 @@ jobs:
         run: uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
 
       - name: Run Tests
-        run: pytest --cov=torchsim --cov-report=xml --ignore=tests/models/test_mace.py --ignore=tests/models/test_fairchem.py
+        run: pytest --cov=torch_sim --cov-report=xml --ignore=tests/models/test_mace.py --ignore=tests/models/test_fairchem.py
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -72,7 +72,7 @@ jobs:
         run: uv pip install mace-torch --system
 
       - name: Run Tests with Coverage
-        run: pytest --cov=torchsim --cov-report=xml tests/models/test_mace.py
+        run: pytest --cov=torch_sim --cov-report=xml tests/models/test_mace.py
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5

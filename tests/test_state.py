@@ -10,7 +10,7 @@ from torch_sim.state import (
     slice_substate,
     split_state,
 )
-from torch_sim.unbatched_integrators import MDState
+from torch_sim.unbatched.unbatched_integrators import MDState
 
 
 def test_infer_base_state_property_scope(si_base_state: BaseState) -> None:

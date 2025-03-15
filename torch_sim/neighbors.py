@@ -11,7 +11,7 @@ from torch_sim.transforms import (
     build_naive_neighborhood,
     compute_cell_shifts,
 )
-from torch_sim.utils import torch_divmod
+from torch_sim.utils.math import torch_divmod
 
 
 @torch.jit.script

@@ -7,7 +7,7 @@ from typing import Literal
 import torch
 
 from torch_sim.state import BaseState
-from torch_sim.unbatched_integrators import velocity_verlet
+from torch_sim.unbatched.unbatched_integrators import velocity_verlet
 
 
 StateDict = dict[
