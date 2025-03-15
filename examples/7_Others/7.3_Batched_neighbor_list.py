@@ -4,7 +4,7 @@ import torch
 from ase.build import bulk
 
 from torch_sim.neighbors import torch_nl_linked_cell, torch_nl_n2
-from torch_sim.runners import atoms_to_state
+from torch_sim.io import atoms_to_state
 from torch_sim.transforms import compute_cell_shifts, compute_distances_with_cell_shifts
 
 

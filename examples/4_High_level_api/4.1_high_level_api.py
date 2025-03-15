@@ -22,7 +22,7 @@ from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.models.mace import MaceModel
 from torch_sim.optimizers import unit_cell_fire
 from torch_sim.quantities import kinetic_energy
-from torch_sim.runners import integrate, optimize, state_to_atoms, state_to_structures
+from torch_sim.io import integrate, optimize, state_to_atoms, state_to_structures
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 from torch_sim.units import MetalUnits
 

@@ -16,7 +16,7 @@ from pymatgen.core import Structure
 from torch_sim.integrators import MDState, nvt_langevin
 from torch_sim.models.mace import MaceModel
 from torch_sim.monte_carlo import swap_monte_carlo
-from torch_sim.runners import structures_to_state
+from torch_sim.io import structures_to_state
 from torch_sim.units import MetalUnits
 
 

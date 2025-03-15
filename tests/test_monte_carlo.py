@@ -9,7 +9,7 @@ from torch_sim.monte_carlo import (
     swaps_to_permutation,
     validate_permutation,
 )
-from torch_sim.runners import structures_to_state
+from torch_sim.io import structures_to_state
 from torch_sim.state import BaseState
 
 

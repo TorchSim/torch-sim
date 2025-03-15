@@ -13,7 +13,7 @@ from torch_sim.models.soft_sphere import (
     UnbatchedSoftSphereMultiModel,
 )
 from torch_sim.optimizers import unit_cell_fire as batched_unit_cell_fire
-from torch_sim.runners import BaseState
+from torch_sim.io import BaseState
 from torch_sim.transforms import get_pair_displacements
 from torch_sim.unbatched.unbatched_optimizers import (
     FIREState,

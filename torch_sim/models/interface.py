@@ -124,7 +124,7 @@ def validate_model_outputs(
     """Validate the outputs of a model."""
     from ase.build import bulk
 
-    from torch_sim.runners import atoms_to_state
+    from torch_sim.io import atoms_to_state
 
     assert model.dtype is not None
     assert model.device is not None

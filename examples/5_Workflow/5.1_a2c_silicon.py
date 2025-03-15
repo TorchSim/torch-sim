@@ -25,7 +25,7 @@ from tqdm import tqdm
 from torch_sim.models.mace import UnbatchedMaceModel
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.quantities import temperature
-from torch_sim.runners import state_to_structures, structures_to_state
+from torch_sim.io import state_to_structures, structures_to_state
 from torch_sim.transforms import get_fractional_coordinates
 from torch_sim.unbatched.unbatched_integrators import (
     NVTNoseHooverState,

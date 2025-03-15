@@ -10,7 +10,7 @@ from torch_sim.models.lennard_jones import (
     lennard_jones_pair,
     lennard_jones_pair_force,
 )
-from torch_sim.runners import atoms_to_state
+from torch_sim.io import atoms_to_state
 from torch_sim.state import BaseState
 
 

@@ -11,7 +11,7 @@ from torch_sim.integrators import nve, nvt_langevin
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.optimizers import unit_cell_fire
 from torch_sim.quantities import kinetic_energy
-from torch_sim.runners import (
+from torch_sim.io import (
     atoms_to_state,
     generate_force_convergence_fn,
     initialize_state,
