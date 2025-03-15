@@ -9,7 +9,7 @@ import torch
 from torch_sim.quantities import count_dof, kinetic_energy
 from torch_sim.state import BaseState
 from torch_sim.transforms import pbc_wrap_general
-from torch_sim.utils import calculate_momenta
+from torch_sim.utils.utils import calculate_momenta
 
 
 StateDict = dict[
