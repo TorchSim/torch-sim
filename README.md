@@ -188,9 +188,7 @@ TorchSim is built around the following core modules:
 
 - [`torchsim.optimizers`](torchsim/optimizers.py): Provides optimization algorithms for molecular systems, including gradient descent and the FIRE algorithm.
 
-- [`torchsim.unbatched_integrators`](torchsim/unbatched_integrators.py): Provides unbatched molecular dynamics integrators for simulating the time evolution of molecular systems.
-
-- [`torchsim.unbatched_optimizers`](torchsim/unbatched_optimizers.py): Provides unbatched optimization algorithms for molecular systems, including gradient descent and the FIRE algorithm.
+- [`torchsim.unbatched`](torchsim/unbatched): Contains unbatched versions of the integrators and optimizers.
 
 - [`torchsim.monte_carlo`](torchsim/monte_carlo.py): Contains functions for performing Monte Carlo simulations, including swap-based Monte Carlo.
 
@@ -212,79 +210,9 @@ TorchSim is built around the following core modules:
 
 - [`torchsim.units`](torchsim/units.py): Unit system and conversion factors
 
-- [`torchsim.workflows`](torchsim/workflows.py): Utility functions for running workflows.
+- [`torchsim.autobatching`](torchsim/autobatching.py): Contains classes for automatically batching simulations.
 
 Each module is designed to work seamlessly with PyTorch, enabling efficient and flexible molecular simulations.
-
-## API
-
-### State and Parameters
-
-The simulation engine uses two main objects:
-
-| Temperature Profile                                                                                     | RDF Comparison                                                                                     |
-| ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| ![Temperature Profile](https://github.com/user-attachments/assets/4d87444f-751d-49f4-ada2-c4578abe0a18) | ![RDF Comparison](https://github.com/user-attachments/assets/f84b4b3f-5b09-4cf5-9eda-b0f766be93fc) |
-
-### State (S)
-
-- Positions (p)
-- Velocities (q)
-- Mass (m)
-- Other system properties
-
-### Parameters (P)
-
-- Temperature (T)
-- Pressure (P)
-- Timestep (dt)
-- Other simulation parameters
-
-The integrator/optimizer maps: S, U(S,P) → S
-
-### Energy Styles
-
-TorchSim implements various classical interaction potentials including:
-
-#### Soft Sphere
-
-- Finite-range repulsive potential
-- Parameters: sigma (diameter), epsilon (energy scale), alpha (stiffness)
-- Suitable for modeling excluded volume interactions
-
-#### Lennard-Jones
-
-- Standard 12-6 potential combining repulsion and attraction
-- Parameters: sigma (minimum distance), epsilon (well depth)
-- Widely used for van der Waals interactions
-
-#### Morse Potential
-
-- Anharmonic potential for chemical bonding
-- Parameters: sigma (equilibrium distance), epsilon (well depth), alpha (well width)
-- Good for modeling diatomic molecules
-
-#### Stillinger-Weber
-
-- Many-body potential originally developed for silicon
-- Combines two-body and three-body terms
-- Parameters: sigma (length scale), epsilon (energy scale), various angular terms
-
-## Example: Melt Quenching Simulation
-
-TorchSim can be used to simulate complex processes like melt quenching of silicon:
-
-1. Heat system to melting temperature
-2. Equilibrate liquid phase
-3. Rapidly cool to create amorphous structure
-4. Analyze resulting structure via RDF
-
-The simulation results can be analyzed through:
-
-- Temperature profiles
-- Radial distribution functions (RDF)
-- Structure visualization
-- Property calculations
 
 ## Citation
 
