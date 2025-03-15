@@ -383,10 +383,10 @@ def test_chunking_auto_batcher_with_fire(
     assert n_batches == optimal_n_batches
 
 
-def test_hot_swapping_max_attempts(
+def test_hot_swapping_max_iterations(
     si_base_state: BaseState, fe_fcc_state: BaseState, lj_calculator: LennardJonesModel
 ) -> None:
-    """Test HotSwappingAutoBatcher with max_attempts limit."""
+    """Test HotSwappingAutoBatcher with max_iterations limit."""
     # Create states that won't naturally converge
     states = [si_base_state.clone(), fe_fcc_state.clone()]
 
@@ -396,7 +396,7 @@ def test_hot_swapping_max_attempts(
         model=lj_calculator,
         memory_scales_with="n_atoms",
         max_memory_scaler=800.0,
-        max_attempts=max_attempts,
+        max_iterations=max_attempts,
     )
     batcher.load_states(states)
 

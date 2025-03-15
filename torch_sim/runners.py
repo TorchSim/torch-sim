@@ -247,7 +247,7 @@ def _configure_hot_swapping_autobatcher(
             return_indices=True,
             max_memory_scaler=max_memory_scaler,
             memory_scales_with=memory_scales_with,
-            max_attempts=max_attempts,
+            max_iterations=max_attempts,
         )
         autobatcher.load_states(state)
     return autobatcher
@@ -727,7 +727,9 @@ def phonopy_to_state(
     try:
         from phonopy.structure.atoms import PhonopyAtoms
     except ImportError as err:
-        raise ImportError("Phonopy is required for phonopy_to_state conversion") from err
+        raise ImportError(
+            "Phonopy is required for phonopy_to_state conversion"
+        ) from err
 
     phonopy_atoms_list = (
         [phonopy_atoms] if isinstance(phonopy_atoms, PhonopyAtoms) else phonopy_atoms
@@ -740,7 +742,9 @@ def phonopy_to_state(
         device=device,
     )
     masses = torch.tensor(
-        np.concatenate([a.masses for a in phonopy_atoms_list]), dtype=dtype, device=device
+        np.concatenate([a.masses for a in phonopy_atoms_list]),
+        dtype=dtype,
+        device=device,
     )
     atomic_numbers = torch.tensor(
         np.concatenate([a.numbers for a in phonopy_atoms_list]),
