@@ -6,8 +6,8 @@ from typing import Any, Literal
 
 import torch
 
-from torchsim.state import BaseState
-from torchsim.unbatched_optimizers import OptimizerState
+from torch_sim.state import BaseState
+from torch_sim.unbatched_optimizers import OptimizerState
 
 
 StateDict = dict[

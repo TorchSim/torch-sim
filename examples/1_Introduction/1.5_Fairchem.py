@@ -14,7 +14,7 @@
 import torch
 from ase.build import bulk
 
-from torchsim.models.fairchem import FairChemModel
+from torch_sim.models.fairchem import FairChemModel
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"

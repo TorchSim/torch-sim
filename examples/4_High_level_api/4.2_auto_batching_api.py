@@ -17,17 +17,17 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
-from torchsim.autobatching import (
+from torch_sim.autobatching import (
     ChunkingAutoBatcher,
     HotSwappingAutoBatcher,
     calculate_memory_scaler,
     split_state,
 )
-from torchsim.integrators import nvt_langevin
-from torchsim.models.mace import MaceModel
-from torchsim.optimizers import unit_cell_fire
-from torchsim.runners import atoms_to_state, generate_force_convergence_fn
-from torchsim.units import MetalUnits
+from torch_sim.integrators import nvt_langevin
+from torch_sim.models.mace import MaceModel
+from torch_sim.optimizers import unit_cell_fire
+from torch_sim.runners import atoms_to_state, generate_force_convergence_fn
+from torch_sim.units import MetalUnits
 
 
 if not torch.cuda.is_available():

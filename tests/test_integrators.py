@@ -2,12 +2,12 @@ from typing import Any
 
 import torch
 
-from torchsim.integrators import batched_initialize_momenta, nve, nvt_langevin
-from torchsim.models.lennard_jones import LennardJonesModel
-from torchsim.quantities import temperature
-from torchsim.state import BaseState, concatenate_states, slice_substate
-from torchsim.unbatched_integrators import MDState, initialize_momenta
-from torchsim.units import MetalUnits
+from torch_sim.integrators import batched_initialize_momenta, nve, nvt_langevin
+from torch_sim.models.lennard_jones import LennardJonesModel
+from torch_sim.quantities import temperature
+from torch_sim.state import BaseState, concatenate_states, slice_substate
+from torch_sim.unbatched_integrators import MDState, initialize_momenta
+from torch_sim.units import MetalUnits
 
 
 def batched_initialize_momenta_loop(

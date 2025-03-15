@@ -2,7 +2,7 @@
 
 import torch
 
-from torchsim.state import BaseState
+from torch_sim.state import BaseState
 
 
 # @torch.jit.script

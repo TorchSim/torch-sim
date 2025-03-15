@@ -5,9 +5,9 @@ import itertools
 import pytest
 import torch
 
-from torchsim.models.interface import validate_model_outputs
-from torchsim.models.soft_sphere import SoftSphereModel, SoftSphereMultiModel
-from torchsim.state import BaseState
+from torch_sim.models.interface import validate_model_outputs
+from torch_sim.models.soft_sphere import SoftSphereModel, SoftSphereMultiModel
+from torch_sim.state import BaseState
 
 
 @pytest.fixture

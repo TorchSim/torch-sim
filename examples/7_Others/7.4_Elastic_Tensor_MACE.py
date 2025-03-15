@@ -17,7 +17,7 @@ from ase.optimize import FIRE as FIRE_ASE
 from ase.spacegroup import get_spacegroup
 from mace.calculators.foundations_models import mace_mp
 
-from torchsim.elastic import (
+from torch_sim.elastic import (
     BravaisType,
     ElasticState,
     get_elastic_tensor,

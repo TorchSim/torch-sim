@@ -4,15 +4,15 @@ import binpacking
 import pytest
 import torch
 
-from torchsim.autobatching import (
+from torch_sim.autobatching import (
     ChunkingAutoBatcher,
     HotSwappingAutoBatcher,
     calculate_memory_scaler,
     determine_max_batch_size,
 )
-from torchsim.models.lennard_jones import LennardJonesModel
-from torchsim.optimizers import unit_cell_fire
-from torchsim.state import BaseState, split_state
+from torch_sim.models.lennard_jones import LennardJonesModel
+from torch_sim.optimizers import unit_cell_fire
+from torch_sim.state import BaseState, split_state
 
 
 def test_calculate_scaling_metric(si_base_state: BaseState) -> None:

@@ -6,10 +6,10 @@ from typing import Any, Literal
 
 import torch
 
-from torchsim.quantities import count_dof, kinetic_energy
-from torchsim.state import BaseState
-from torchsim.transforms import pbc_wrap_general
-from torchsim.utils import calculate_momenta
+from torch_sim.quantities import count_dof, kinetic_energy
+from torch_sim.state import BaseState
+from torch_sim.transforms import pbc_wrap_general
+from torch_sim.utils import calculate_momenta
 
 
 StateDict = dict[

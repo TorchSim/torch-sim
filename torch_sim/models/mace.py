@@ -10,8 +10,8 @@ import torch
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.tools import atomic_numbers_to_indices, to_one_hot, utils
 
-from torchsim.models.interface import ModelInterface
-from torchsim.neighbors import vesin_nl_ts
+from torch_sim.models.interface import ModelInterface
+from torch_sim.neighbors import vesin_nl_ts
 
 
 class UnbatchedMaceModel(torch.nn.Module):

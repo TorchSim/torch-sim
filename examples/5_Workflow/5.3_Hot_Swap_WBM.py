@@ -14,11 +14,11 @@ import torch
 from mace.calculators.foundations_models import mace_mp
 from matbench_discovery.data import DataFiles, ase_atoms_from_zip
 
-from torchsim.autobatching import HotSwappingAutoBatcher
-from torchsim.models.mace import MaceModel
-from torchsim.optimizers import unit_cell_fire
-from torchsim.runners import atoms_to_state
-from torchsim.state import BaseState
+from torch_sim.autobatching import HotSwappingAutoBatcher
+from torch_sim.models.mace import MaceModel
+from torch_sim.optimizers import unit_cell_fire
+from torch_sim.runners import atoms_to_state
+from torch_sim.state import BaseState
 
 
 # --- Setup and Configuration ---

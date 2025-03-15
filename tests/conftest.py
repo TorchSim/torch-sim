@@ -8,11 +8,11 @@ from ase import Atoms
 from ase.build import bulk
 from pymatgen.core import Structure
 
-from torchsim.models.lennard_jones import LennardJonesModel, UnbatchedLennardJonesModel
-from torchsim.runners import atoms_to_state, concatenate_states
-from torchsim.state import BaseState
-from torchsim.trajectory import TrajectoryReporter
-from torchsim.unbatched_integrators import nve
+from torch_sim.models.lennard_jones import LennardJonesModel, UnbatchedLennardJonesModel
+from torch_sim.runners import atoms_to_state, concatenate_states
+from torch_sim.state import BaseState
+from torch_sim.trajectory import TrajectoryReporter
+from torch_sim.unbatched_integrators import nve
 
 
 @pytest.fixture

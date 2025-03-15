@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import torch
 
-from torchsim.state import BaseState
+from torch_sim.state import BaseState
 
 
 @dataclass

@@ -6,12 +6,12 @@ import torch
 from vesin import NeighborList as VesinNeighborList
 from vesin.torch import NeighborList as VesinNeighborList_ts
 
-from torchsim.transforms import (
+from torch_sim.transforms import (
     build_linked_cell_neighborhood,
     build_naive_neighborhood,
     compute_cell_shifts,
 )
-from torchsim.utils import torch_divmod
+from torch_sim.utils import torch_divmod
 
 
 @torch.jit.script

@@ -4,10 +4,10 @@ from ase.atoms import Atoms
 from mace.calculators import MACECalculator
 from mace.calculators.foundations_models import mace_mp
 
-from torchsim.models.interface import validate_model_outputs
-from torchsim.models.mace import MaceModel, UnbatchedMaceModel
-from torchsim.neighbors import wrapping_nl
-from torchsim.runners import atoms_to_state
+from torch_sim.models.interface import validate_model_outputs
+from torch_sim.models.mace import MaceModel, UnbatchedMaceModel
+from torch_sim.neighbors import wrapping_nl
+from torch_sim.runners import atoms_to_state
 
 
 mace_model = mace_mp(model="small", return_raw_model=True)

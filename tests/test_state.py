@@ -2,7 +2,7 @@ from dataclasses import asdict
 
 import torch
 
-from torchsim.state import (
+from torch_sim.state import (
     BaseState,
     concatenate_states,
     infer_property_scope,
@@ -10,7 +10,7 @@ from torchsim.state import (
     slice_substate,
     split_state,
 )
-from torchsim.unbatched_integrators import MDState
+from torch_sim.unbatched_integrators import MDState
 
 
 def test_infer_base_state_property_scope(si_base_state: BaseState) -> None:

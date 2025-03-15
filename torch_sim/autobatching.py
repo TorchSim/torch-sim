@@ -8,8 +8,8 @@ from typing import Literal
 import binpacking
 import torch
 
-from torchsim.models.interface import ModelInterface
-from torchsim.state import BaseState, concatenate_states, pop_states, split_state
+from torch_sim.models.interface import ModelInterface
+from torch_sim.state import BaseState, concatenate_states, pop_states, split_state
 
 
 def measure_model_memory_forward(state: BaseState, model: ModelInterface) -> float:

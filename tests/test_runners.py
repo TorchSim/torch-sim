@@ -5,12 +5,12 @@ import torch
 from ase import Atoms
 from pymatgen.core import Structure
 
-from torchsim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
-from torchsim.integrators import nve, nvt_langevin
-from torchsim.models.lennard_jones import LennardJonesModel
-from torchsim.optimizers import unit_cell_fire
-from torchsim.quantities import kinetic_energy
-from torchsim.runners import (
+from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
+from torch_sim.integrators import nve, nvt_langevin
+from torch_sim.models.lennard_jones import LennardJonesModel
+from torch_sim.optimizers import unit_cell_fire
+from torch_sim.quantities import kinetic_energy
+from torch_sim.runners import (
     atoms_to_state,
     generate_force_convergence_fn,
     initialize_state,
@@ -20,9 +20,9 @@ from torchsim.runners import (
     state_to_structures,
     structures_to_state,
 )
-from torchsim.state import BaseState, split_state
-from torchsim.trajectory import TorchSimTrajectory, TrajectoryReporter
-from torchsim.units import UnitSystem
+from torch_sim.state import BaseState, split_state
+from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
+from torch_sim.units import UnitSystem
 
 
 def test_integrate_nve(

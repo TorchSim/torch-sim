@@ -19,8 +19,8 @@ from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 from pymatgen.io.phonopy import get_phonopy_structure
 
-from torchsim.models.mace import MaceModel
-from torchsim.neighbors import vesin_nl_ts
+from torch_sim.models.mace import MaceModel
+from torch_sim.neighbors import vesin_nl_ts
 
 
 start_time = time.perf_counter()

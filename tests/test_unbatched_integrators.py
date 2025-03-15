@@ -3,9 +3,9 @@ from typing import Any
 import pytest
 import torch
 
-from torchsim.quantities import kinetic_energy, temperature
-from torchsim.state import BaseState
-from torchsim.unbatched_integrators import (
+from torch_sim.quantities import kinetic_energy, temperature
+from torch_sim.state import BaseState
+from torch_sim.unbatched_integrators import (
     MDState,
     npt_nose_hoover,
     npt_nose_hoover_invariant,
@@ -14,8 +14,8 @@ from torchsim.unbatched_integrators import (
     nvt_nose_hoover,
     nvt_nose_hoover_invariant,
 )
-from torchsim.units import MetalUnits
-from torchsim.utils import calculate_momenta
+from torch_sim.units import MetalUnits
+from torch_sim.utils import calculate_momenta
 
 
 def test_nve_integrator(ar_base_state: BaseState, unbatched_lj_calculator: Any) -> None:

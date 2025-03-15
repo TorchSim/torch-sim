@@ -13,12 +13,12 @@ import numpy as np
 import torch
 from numpy.typing import ArrayLike
 
-from torchsim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
-from torchsim.models.interface import ModelInterface
-from torchsim.quantities import batchwise_max_force
-from torchsim.state import BaseState, StateLike, concatenate_states, state_to_device
-from torchsim.trajectory import TrajectoryReporter
-from torchsim.units import UnitSystem
+from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
+from torch_sim.models.interface import ModelInterface
+from torch_sim.quantities import batchwise_max_force
+from torch_sim.state import BaseState, StateLike, concatenate_states, state_to_device
+from torch_sim.trajectory import TrajectoryReporter
+from torch_sim.units import UnitSystem
 
 
 if TYPE_CHECKING:

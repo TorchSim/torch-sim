@@ -11,7 +11,7 @@ import numpy as np
 import tables
 import torch
 
-from torchsim.state import BaseState, slice_substate
+from torch_sim.state import BaseState, slice_substate
 
 
 DATA_TYPE_MAP = {

@@ -7,7 +7,7 @@ import torch
 from ase import Atoms
 from torch_geometric.loader import DataLoader as DataLoader_pyg
 
-from torchsim.models.mattersim.utils.converter import GraphConverter
+from torch_sim.models.mattersim.utils.converter import GraphConverter
 
 
 def batch_to_dict(

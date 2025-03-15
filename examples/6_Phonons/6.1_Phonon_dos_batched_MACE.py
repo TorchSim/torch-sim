@@ -15,8 +15,8 @@ from mace.calculators.foundations_models import mace_mp
 from phonopy import Phonopy
 from phonopy.structure.atoms import PhonopyAtoms
 
-from torchsim.models.mace import MaceModel
-from torchsim.neighbors import vesin_nl_ts
+from torch_sim.models.mace import MaceModel
+from torch_sim.neighbors import vesin_nl_ts
 
 
 # Set device and data type

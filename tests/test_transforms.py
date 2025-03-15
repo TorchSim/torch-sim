@@ -4,8 +4,8 @@ import pytest
 import torch
 from ase.geometry import wrap_positions as ase_wrap_positions
 
-from torchsim.state import BaseState
-from torchsim.transforms import (
+from torch_sim.state import BaseState
+from torch_sim.transforms import (
     inverse_box,
     pbc_wrap_batched,
     pbc_wrap_general,

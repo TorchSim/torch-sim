@@ -9,7 +9,7 @@ from ase import Atoms
 from pymatgen.optimization.neighbors import find_points_in_spheres
 from torch_geometric.data import Data
 
-from torchsim.models.mattersim.utils.threebody_indices import (
+from torch_sim.models.mattersim.utils.threebody_indices import (
     compute_threebody as _compute_threebody,
 )
 

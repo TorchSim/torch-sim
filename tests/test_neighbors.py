@@ -5,7 +5,7 @@ from ase import Atoms
 from ase.build import bulk, molecule
 from ase.neighborlist import neighbor_list
 
-from torchsim.neighbors import (
+from torch_sim.neighbors import (
     standard_nl,
     torch_nl_linked_cell,
     torch_nl_n2,
@@ -13,7 +13,7 @@ from torchsim.neighbors import (
     vesin_nl_ts,
     wrapping_nl,
 )
-from torchsim.transforms import compute_cell_shifts, compute_distances_with_cell_shifts
+from torch_sim.transforms import compute_cell_shifts, compute_distances_with_cell_shifts
 
 
 def ase_to_torch_batch(

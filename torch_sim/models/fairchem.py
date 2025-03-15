@@ -20,7 +20,7 @@ from fairchem.core.common.utils import (
 from fairchem.core.models.model_registry import model_name_to_local_file
 from torch_geometric.data import Batch
 
-from torchsim.models.interface import ModelInterface
+from torch_sim.models.interface import ModelInterface
 
 
 if TYPE_CHECKING:

@@ -7,7 +7,7 @@ import torch
 from ase import Atoms
 from pymatgen.core import Structure
 
-from torchsim.runners import atoms_to_state, structures_to_state
+from torch_sim.runners import atoms_to_state, structures_to_state
 
 
 def write_log_line(

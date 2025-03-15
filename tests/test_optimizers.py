@@ -2,12 +2,12 @@ import copy
 
 import torch
 
-from torchsim.optimizers import (
+from torch_sim.optimizers import (
     gradient_descent,
     unit_cell_fire,
     unit_cell_gradient_descent,
 )
-from torchsim.state import BaseState, concatenate_states
+from torch_sim.state import BaseState, concatenate_states
 
 
 def test_gradient_descent_optimization(

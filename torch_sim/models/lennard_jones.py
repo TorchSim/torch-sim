@@ -2,9 +2,9 @@
 
 import torch
 
-from torchsim.models.interface import ModelInterface
-from torchsim.neighbors import vesin_nl_ts
-from torchsim.transforms import get_pair_displacements
+from torch_sim.models.interface import ModelInterface
+from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.transforms import get_pair_displacements
 
 
 # Default parameter values defined at module level

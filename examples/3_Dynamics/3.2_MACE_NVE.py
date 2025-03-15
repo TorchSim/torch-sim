@@ -13,11 +13,11 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
-from torchsim.models.mace import UnbatchedMaceModel
-from torchsim.neighbors import vesin_nl_ts
-from torchsim.quantities import kinetic_energy
-from torchsim.unbatched_integrators import nve
-from torchsim.units import MetalUnits as Units
+from torch_sim.models.mace import UnbatchedMaceModel
+from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.quantities import kinetic_energy
+from torch_sim.unbatched_integrators import nve
+from torch_sim.units import MetalUnits as Units
 
 
 # Set device and data type

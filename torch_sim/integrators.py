@@ -6,8 +6,8 @@ from typing import Any, Literal
 
 import torch
 
-from torchsim.state import BaseState
-from torchsim.transforms import pbc_wrap_batched
+from torch_sim.state import BaseState
+from torch_sim.transforms import pbc_wrap_batched
 
 
 StateDict = dict[

@@ -4,14 +4,14 @@ import pytest
 import torch
 from ase.build import bulk
 
-from torchsim.models.interface import validate_model_outputs
-from torchsim.models.lennard_jones import (
+from torch_sim.models.interface import validate_model_outputs
+from torch_sim.models.lennard_jones import (
     UnbatchedLennardJonesModel,
     lennard_jones_pair,
     lennard_jones_pair_force,
 )
-from torchsim.runners import atoms_to_state
-from torchsim.state import BaseState
+from torch_sim.runners import atoms_to_state
+from torch_sim.state import BaseState
 
 
 def test_lennard_jones_pair_minimum() -> None:

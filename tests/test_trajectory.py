@@ -6,10 +6,10 @@ import numpy as np
 import pytest
 import torch
 
-from torchsim.models.lennard_jones import LennardJonesModel
-from torchsim.state import BaseState, slice_substate
-from torchsim.trajectory import TorchSimTrajectory, TrajectoryReporter
-from torchsim.unbatched_integrators import MDState
+from torch_sim.models.lennard_jones import LennardJonesModel
+from torch_sim.state import BaseState, slice_substate
+from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
+from torch_sim.unbatched_integrators import MDState
 
 
 @pytest.fixture

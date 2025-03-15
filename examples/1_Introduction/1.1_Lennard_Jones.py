@@ -2,7 +2,7 @@
 
 import torch
 
-from torchsim.models.lennard_jones import UnbatchedLennardJonesModel
+from torch_sim.models.lennard_jones import UnbatchedLennardJonesModel
 
 
 # Set up the device and data type

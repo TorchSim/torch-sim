@@ -13,11 +13,11 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
-from torchsim.models.mace import MaceModel
-from torchsim.neighbors import vesin_nl_ts
-from torchsim.optimizers import unit_cell_fire
-from torchsim.runners import atoms_to_state
-from torchsim.units import UnitConversion
+from torch_sim.models.mace import MaceModel
+from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.optimizers import unit_cell_fire
+from torch_sim.runners import atoms_to_state
+from torch_sim.units import UnitConversion
 
 
 # Set device and data type

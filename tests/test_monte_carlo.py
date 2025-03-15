@@ -2,15 +2,15 @@ import pytest
 import torch
 from pymatgen.core import Structure
 
-from torchsim.monte_carlo import (
+from torch_sim.monte_carlo import (
     SwapMCState,
     generate_swaps,
     swap_monte_carlo,
     swaps_to_permutation,
     validate_permutation,
 )
-from torchsim.runners import structures_to_state
-from torchsim.state import BaseState
+from torch_sim.runners import structures_to_state
+from torch_sim.state import BaseState
 
 
 @pytest.fixture

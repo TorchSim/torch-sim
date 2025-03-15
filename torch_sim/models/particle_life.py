@@ -2,8 +2,8 @@
 
 import torch
 
-from torchsim.neighbors import vesin_nl_ts
-from torchsim.transforms import get_pair_displacements
+from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.transforms import get_pair_displacements
 
 
 DEFAULT_BETA = torch.tensor(0.3)

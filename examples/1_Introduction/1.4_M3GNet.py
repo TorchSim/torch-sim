@@ -12,8 +12,8 @@ import torch
 from ase.build import bulk
 
 # Import torchsim models and utilities
-from torchsim.models.mattersim.m3gnet import M3GnetModel
-from torchsim.models.mattersim.utils.build import batch_to_dict, build_dataloader
+from torch_sim.models.mattersim.m3gnet import M3GnetModel
+from torch_sim.models.mattersim.utils.build import batch_to_dict, build_dataloader
 
 
 # Set device and data type
