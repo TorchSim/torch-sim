@@ -17,6 +17,72 @@ from phonopy.structure.atoms import PhonopyAtoms
 
 from torch_sim.models.mace import MaceModel
 from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.runners import BaseState
+
+
+def phonopy_atoms_to_state(
+    phonopy_atoms: "PhonopyAtoms | list[PhonopyAtoms]",
+    device: torch.device,
+    dtype: torch.dtype,
+) -> BaseState:
+    """Create state tensors from an ASE Atoms object or list of Atoms objects.
+
+    Args:
+        phonopy_atoms: Single PhonopyAtoms object or list of PhonopyAtoms objects
+        device: Device to create tensors on
+        dtype: Data type for tensors
+
+    Returns:
+        BaseState: Batched state tensors in internal units
+    """
+    try:
+        from phonopy.structure.atoms import PhonopyAtoms
+    except ImportError as err:
+        raise ImportError("ASE is required for state_to_atoms conversion") from err
+
+    phonopy_atoms_list = (
+        [phonopy_atoms] if isinstance(phonopy_atoms, PhonopyAtoms) else phonopy_atoms
+    )
+
+    # Stack all properties in one go
+    positions = torch.tensor(
+        np.concatenate([a.positions for a in phonopy_atoms_list]),
+        dtype=dtype,
+        device=device,
+    )
+    masses = torch.tensor(
+        np.concatenate([a.masses for a in phonopy_atoms_list]), dtype=dtype, device=device
+    )
+    atomic_numbers = torch.tensor(
+        np.concatenate([a.numbers for a in phonopy_atoms_list]),
+        dtype=torch.int,
+        device=device,
+    )
+    cell = torch.tensor(
+        np.stack([a.cell.T for a in phonopy_atoms_list]), dtype=dtype, device=device
+    )
+
+    # Create batch indices using repeat_interleave
+    atoms_per_batch = torch.tensor([len(a) for a in phonopy_atoms_list], device=device)
+    batch = torch.repeat_interleave(
+        torch.arange(len(phonopy_atoms_list), device=device), atoms_per_batch
+    )
+
+    """
+    NOTE: PhonopyAtoms does not have pbc attribute for Supercells assume True
+    Verify consistent pbc
+    if not all(all(a.pbc) == all(phonopy_atoms_list[0].pbc) for a in phonopy_atoms_list):
+        raise ValueError("All systems must have the same periodic boundary conditions")
+    """
+
+    return BaseState(
+        positions=positions,
+        masses=masses,
+        cell=cell,
+        pbc=True,
+        atomic_numbers=atomic_numbers,
+        batch=batch,
+    )
 
 
 # Set device and data type
@@ -37,6 +103,7 @@ atoms = PhonopyAtoms(
     cell=np.eye(3) * 3,
     scaled_positions=[[0, 0, 0], [0.5, 0.5, 0.5]],
     symbols=["Na", "Cl"],
+    pbc=True,
 )
 
 # Create Phonopy object with supercell matrix
@@ -46,6 +113,9 @@ ph = Phonopy(atoms, supercell_matrix)
 # Generate displacements
 ph.generate_displacements(distance=0.01)
 supercells = ph.get_supercells_with_displacements()
+
+# Convert PhonopyAtoms to state
+state = phonopy_atoms_to_state(supercells, device, dtype)
 
 # Create batched MACE model
 atomic_numbers_list = [cell.get_atomic_numbers() for cell in supercells]
@@ -60,37 +130,12 @@ model = MaceModel(
     enable_cueq=False,
 )
 
-# First we will create a concatenated positions array from all supercells
-positions_numpy = np.concatenate([cell.get_positions() for cell in supercells])
-
-# stack cell vectors into a (n_supercells, 3, 3) array
-cell_numpy = np.stack([cell.get_cell() for cell in supercells])
-
-# concatenate atomic numbers into a single array
-atomic_numbers_numpy = np.concatenate([cell.get_atomic_numbers() for cell in supercells])
-
-# convert to tensors
-positions = torch.tensor(positions_numpy, device=device, dtype=dtype)
-cell = torch.tensor(cell_numpy, device=device, dtype=dtype)
-atomic_numbers = torch.tensor(atomic_numbers_numpy, device=device, dtype=torch.int)
-
-# Create a batch index array to track which atoms belong to which supercell
-atoms_per_batch = torch.tensor(
-    [len(cell) for cell in supercells], device=device, dtype=torch.int
-)
-batch = torch.repeat_interleave(
-    torch.arange(len(atoms_per_batch), device=device), atoms_per_batch
-)
-
-# Print shapes for verification
-print(f"Positions: {positions.shape}")
-print(f"Cell: {cell.shape}")
-print(f"Atomic numbers: {atomic_numbers.shape}")
-print(f"Batch: {batch.shape}")
-
 # Run the model in batched mode
 results = model(
-    positions=positions, cell=cell, atomic_numbers=atomic_numbers, batch=batch
+    positions=state.positions,
+    cell=state.cell,
+    atomic_numbers=state.atomic_numbers,
+    batch=state.batch,
 )
 
 # Print result keys and shapes
