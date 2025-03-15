@@ -556,13 +556,12 @@ class HotSwappingAutoBatcher:
         assert len(convergence_tensor.shape) == 1
         assert updated_state.n_batches > 0
 
-
         # Increment attempt counters and check for max attempts in a single loop
         for conv_idx, abs_idx in enumerate(self.current_idx):
             self.swap_attempts[abs_idx] += 1
             if self.max_attempts and self.swap_attempts[abs_idx] >= self.max_attempts:
                 # Force convergence for states that have reached max attempts
-                convergence_tensor[conv_idx] = torch.tensor(True)
+                convergence_tensor[conv_idx] = torch.tensor(True)  # noqa: FBT003
 
         completed_idx = torch.where(convergence_tensor)[0].tolist()
         completed_idx.sort(reverse=True)

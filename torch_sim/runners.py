@@ -6,9 +6,9 @@ converting between different molecular representations and handling simulation s
 """
 
 import warnings
-from collections.abc import Callable
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -16,11 +16,10 @@ from numpy.typing import ArrayLike
 
 from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
 from torch_sim.models.interface import ModelInterface
-from torch_sim.quantities import batchwise_max_force
+from torch_sim.quantities import batchwise_max_force, kinetic_energy, temperature
 from torch_sim.state import BaseState, StateLike, concatenate_states, state_to_device
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.units import UnitSystem
-from torch_sim.quantities import kinetic_energy, temperature
 
 
 if TYPE_CHECKING:
@@ -75,13 +74,13 @@ def create_default_reporter(
     filenames: str | Path | list[str | Path],
     property_frequency: int = 10,
     state_frequency: int = 50,
-    properties: list[str] = [
+    properties: Iterable[str] = (
         "positions",
         "kinetic_energy",
         "potential_energy",
         "temperature",
         "stress",
-    ],
+    ),
 ) -> TrajectoryReporter:
     """Create a default trajectory reporter.
 
@@ -101,11 +100,11 @@ def create_default_reporter(
             try:
                 og_model_stress = model.compute_stress
                 model.compute_stress = True
-            except AttributeError:
+            except AttributeError as err:
                 raise ValueError(
                     "Model stress is not set to true and model stress cannot be "
                     "set on the fly. Please set model.compute_stress to True."
-                )
+                ) from err
         model_outputs = model.forward(
             positions=state.positions,
             cell=state.cell,
@@ -132,14 +131,12 @@ def create_default_reporter(
 
     save_velocities = "velocities" in properties
     save_forces = "forces" in properties
-    reporter = TrajectoryReporter(
+    return TrajectoryReporter(
         filenames=filenames,
         state_frequency=state_frequency,
         prop_calculators={property_frequency: prop_calculators},
         state_kwargs={"save_velocities": save_velocities, "save_forces": save_forces},
     )
-
-    return reporter
 
 
 def integrate(

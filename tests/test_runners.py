@@ -384,17 +384,14 @@ def test_batched_optimize_fire(
     assert torch.all(final_state.forces < 1e-4)
 
 
-def test_single_structure_to_state(
-    si_structure: Structure, device: torch.device
-) -> None:
+def test_single_structure_to_state(si_structure: Structure, device: torch.device) -> None:
     """Test conversion from pymatgen Structure to state tensors."""
     state = structures_to_state(si_structure, device, torch.float64)
 
     # Check basic properties
     assert isinstance(state, BaseState)
     assert all(
-        t.device.type == device.type
-        for t in [state.positions, state.masses, state.cell]
+        t.device.type == device.type for t in [state.positions, state.masses, state.cell]
     )
     assert all(
         t.dtype == torch.float64 for t in [state.positions, state.masses, state.cell]
@@ -493,7 +490,9 @@ def test_optimize_with_autobatcher_and_reporting(
 
     for init_state, traj_file in zip(states, trajectory_files, strict=False):
         with TorchSimTrajectory(traj_file) as traj:
-            traj_state = traj.get_state(-1, device=init_state.device, dtype=init_state.dtype)
+            traj_state = traj.get_state(
+                -1, device=init_state.device, dtype=init_state.dtype
+            )
             energies = traj.get_array("pe")
             energy_steps = traj.get_steps("pe")
             assert len(energies) > 0
