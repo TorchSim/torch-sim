@@ -534,7 +534,7 @@ class UnitCellFIREState(OptimizerState):
     and unit cell optimization.
 
     Attributes:
-        momenta: Atomic momenta tensor of shape (n_atoms + 3, 3)
+        velocities: Atomic velocities tensor of shape (n_atoms, 3)
         dt: Current timestep
         alpha: Current mixing parameter
         n_pos: Number of consecutive steps with positive power
@@ -544,43 +544,38 @@ class UnitCellFIREState(OptimizerState):
         constant_volume: Whether to maintain constant volume
         pressure: Applied pressure tensor
         stress: Stress tensor of shape (3, 3)
+        cell_positions: Cell positions tensor of shape (3, 3)
+        cell_velocities: Cell velocities tensor of shape (3, 3)
+        cell_forces: Cell forces tensor of shape (3, 3)
+        cell_masses: Cell masses tensor of shape (3)
     """
 
-    momenta: torch.Tensor
-    dt: torch.Tensor
-    alpha: torch.Tensor
-    n_pos: int
-    orig_cell: torch.Tensor
-    cell_factor: torch.Tensor
-    hydrostatic_strain: bool
-    constant_volume: bool
-    pressure: torch.Tensor
+    # Required attributes not in OptimizerState
+    velocities: torch.Tensor
     stress: torch.Tensor
 
-    def __post_init__(self) -> None:
-        """Validate and process the state after initialization."""
-        # data validation and fill batch
-        # should make pbc a tensor here
-        # if devices aren't all the same, raise an error, in a clean way
-        devices = {
-            attr: getattr(self, attr).device
-            for attr in ("positions", "masses", "cell", "atomic_numbers")
-        }
-        if len(set(devices.values())) > 1:
-            raise ValueError("All tensors must be on the same device")
+    # optimization-specific attributes
+    orig_cell: torch.Tensor
+    cell_factor: torch.Tensor
+    pressure: torch.Tensor
+    hydrostatic_strain: bool
+    constant_volume: bool
 
-        if self.batch is None:
-            self.batch = torch.zeros(self.n_atoms, device=self.device, dtype=torch.int64)
-        else:
-            # assert that batch indices are unique consecutive integers
-            _, counts = torch.unique_consecutive(self.batch, return_counts=True)
-            if not torch.all(counts == torch.bincount(self.batch)):
-                raise ValueError("Batch indices must be unique consecutive integers")
+    # cell attributes
+    cell_positions: torch.Tensor
+    cell_velocities: torch.Tensor
+    cell_forces: torch.Tensor
+    cell_masses: torch.Tensor
+
+    # FIRE algorithm parameters
+    dt: torch.Tensor
+    alpha: torch.Tensor
+    n_pos: torch.Tensor
 
     @property
-    def velocities(self) -> torch.Tensor:
-        """Calculate velocities from momenta and masses."""
-        return self.momenta / self.masses.unsqueeze(-1)
+    def momenta(self) -> torch.Tensor:
+        """Calculate momenta from velocities and masses."""
+        return self.velocities * self.masses.unsqueeze(-1)
 
 
 def unit_cell_fire(  # noqa: PLR0915, C901
@@ -633,7 +628,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
 
     def fire_init(
         state: BaseState | StateDict,
-        cell_factor: torch.Tensor = cell_factor,
+        cell_factor: torch.Tensor | None = cell_factor,
         scalar_pressure: float = scalar_pressure,
         **kwargs,
     ) -> UnitCellFIREState:
@@ -656,7 +651,8 @@ def unit_cell_fire(  # noqa: PLR0915, C901
         # Setup cell factor
         if cell_factor is None:
             cell_factor = float(len(state.positions))
-        cell_factor = torch.full((1, 1), cell_factor, device=device, dtype=dtype)
+        if isinstance(cell_factor, (int, float)):
+            cell_factor = torch.full((1, 1), cell_factor, device=device, dtype=dtype)
 
         # Setup pressure tensor
         pressure = scalar_pressure * torch.eye(3, device=device, dtype=dtype)
@@ -671,15 +667,15 @@ def unit_cell_fire(  # noqa: PLR0915, C901
         energy = results["energy"]
         stress = results["stress"]
 
-        # Total number of DOFs (atoms + cell)
-        n_atoms = len(state.positions)
-        total_dofs = n_atoms + 3
+        # Get current deformation gradient
+        cur_deform_grad = torch.transpose(
+            torch.linalg.solve(state.cell, state.cell), 0, 1
+        )  # Identity matrix
 
-        # Combine atomic forces and cell forces
-        forces_combined = torch.zeros((total_dofs, 3), device=device, dtype=dtype)
-        forces_combined[:n_atoms] = forces
+        # Calculate cell positions
+        cell_positions = (cur_deform_grad * cell_factor).reshape(3, 3)
 
-        # Cell forces (from stress)
+        # Calculate virial
         volume = torch.linalg.det(state.cell).view(1, 1)
         virial = -volume * stress + pressure
 
@@ -692,22 +688,20 @@ def unit_cell_fire(  # noqa: PLR0915, C901
             virial = virial - diag_mean * torch.eye(3, device=device)
 
         virial = virial / cell_factor
-        forces_combined[n_atoms:] = virial.reshape(-1, 3)
+        cell_forces = virial
 
-        # Initialize masses for cell degrees of freedom
-        masses_combined = torch.zeros(total_dofs, device=device, dtype=dtype)
-        masses_combined[:n_atoms] = state.masses
-        masses_combined[n_atoms:] = state.masses.sum()  # Use total mass for cell DOFs
+        # Create cell masses
+        cell_masses = torch.full((3,), state.masses.sum(), device=device, dtype=dtype)
 
         return UnitCellFIREState(
             positions=state.positions,
-            forces=forces_combined,
+            forces=forces,
             energy=energy,
             stress=stress,
-            masses=masses_combined,
+            masses=state.masses,
             cell=state.cell,
             pbc=state.pbc,
-            momenta=torch.zeros_like(forces_combined),
+            velocities=torch.zeros_like(forces),
             dt=dt_start,
             alpha=alpha_start,
             n_pos=0,
@@ -717,52 +711,44 @@ def unit_cell_fire(  # noqa: PLR0915, C901
             constant_volume=constant_volume,
             pressure=pressure,
             atomic_numbers=atomic_numbers,
+            cell_positions=cell_positions,
+            cell_velocities=torch.zeros_like(cell_positions),
+            cell_forces=cell_forces,
+            cell_masses=cell_masses,
         )
 
-    def fire_step(state: UnitCellFIREState) -> UnitCellFIREState:
+    def fire_step(  # noqa: PLR0915
+        state: UnitCellFIREState,
+    ) -> UnitCellFIREState:
         """Perform one FIRE optimization step.
 
         This function implements a single step of the FIRE optimization algorithm
-        for systems with variable unit cell. It combines velocity Verlet integration
-        with adaptive velocity mixing and timestep adjustment, handling both atomic
-        positions and cell vectors simultaneously.
-
-        The algorithm:
-        1. Updates velocities and positions using velocity Verlet integration
-        2. Recalculates forces and energy with the updated geometry
-        3. Adjusts the timestep and mixing parameter based on the power (P = F·v)
-        4. Mixes velocities with normalized force directions
+        for systems with variable unit cell. It handles atomic positions and cell
+        vectors separately while following the same FIRE algorithm logic.
 
         Args:
             state: Current UnitCellFIREState containing positions, cell, forces, etc.
 
         Returns:
             Updated UnitCellFIREState after one optimization step
-
-        Notes:
-            - The implementation handles both atomic and cell degrees of freedom
-            - Cell optimization uses a deformation gradient approach
-            - Stress tensor is converted to forces on cell vectors
-            - Hydrostatic strain and constant volume constraints are supported
         """
-        n_atoms = len(state.positions)
-
         # Get current deformation gradient
         cur_deform_grad = torch.transpose(
             torch.linalg.solve(state.orig_cell, state.cell), 0, 1
         )
 
-        # Split positions and forces
-        atomic_positions = state.positions
-        cell_positions = (cur_deform_grad * state.cell_factor).reshape(-1, 3)
+        # Calculate cell positions from deformation gradient
+        cell_positions = (cur_deform_grad * state.cell_factor).reshape(3, 3)
 
         # Velocity Verlet first half step
-        velocities = state.velocities
-        velocities += 0.5 * state.dt * state.forces / state.masses.unsqueeze(-1)
+        state.velocities += 0.5 * state.dt * state.forces / state.masses.unsqueeze(-1)
+        state.cell_velocities += (
+            0.5 * state.dt * state.cell_forces / state.cell_masses.unsqueeze(-1)
+        )
 
         # Update positions
-        atomic_positions_new = atomic_positions + state.dt * velocities[:n_atoms]
-        cell_positions_new = cell_positions + state.dt * velocities[n_atoms:]
+        atomic_positions_new = state.positions + state.dt * state.velocities
+        cell_positions_new = cell_positions + state.dt * state.cell_velocities
 
         # Update cell
         cell_update = (cell_positions_new / state.cell_factor).reshape(3, 3)
@@ -775,7 +761,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
             atomic_numbers=state.atomic_numbers,
         )
 
-        forces = results["forces"]
+        atomic_forces = results["forces"]
         energy = results["energy"]
         stress = results["stress"]
 
@@ -784,12 +770,10 @@ def unit_cell_fire(  # noqa: PLR0915, C901
         state.cell = new_cell
         state.stress = stress
         state.energy = energy
+        state.forces = atomic_forces
+        state.cell_positions = cell_positions_new
 
-        # Combine forces
-        forces_combined = torch.zeros_like(state.forces)
-        forces_combined[:n_atoms] = forces
-
-        # Calculate virial
+        # Calculate virial for cell forces
         volume = torch.linalg.det(new_cell).view(1, 1)
         virial = -volume * stress + state.pressure
 
@@ -802,18 +786,21 @@ def unit_cell_fire(  # noqa: PLR0915, C901
             virial = virial - diag_mean * torch.eye(3, device=device)
 
         virial = virial / state.cell_factor
-        forces_combined[n_atoms:] = virial.reshape(-1, 3)
-        state.forces = forces_combined
+        state.cell_forces = virial
 
         # Velocity Verlet second half step
-        velocities += 0.5 * state.dt * state.forces / state.masses.unsqueeze(-1)
-        state.momenta = velocities * state.masses.unsqueeze(-1)
+        state.velocities += 0.5 * state.dt * state.forces / state.masses.unsqueeze(-1)
+        state.cell_velocities += (
+            0.5 * state.dt * state.cell_forces / state.cell_masses.unsqueeze(-1)
+        )
 
-        # Calculate power
-        power = torch.sum(state.forces * velocities)
+        # Calculate power (F·V) for atoms and cell
+        atomic_power = torch.sum(state.forces * state.velocities)
+        cell_power = torch.sum(state.cell_forces * state.cell_velocities)
+        total_power = atomic_power + cell_power
 
         # FIRE updates
-        if power > 0:
+        if total_power > 0:
             state.n_pos += 1
             if state.n_pos > n_min:
                 state.dt = torch.min(state.dt * f_inc, dt_max)
@@ -822,16 +809,24 @@ def unit_cell_fire(  # noqa: PLR0915, C901
             state.n_pos = 0
             state.dt = state.dt * f_dec
             state.alpha = alpha_start
-            state.momenta.zero_()
-            velocities.zero_()
+            state.velocities.zero_()
+            state.cell_velocities.zero_()
 
-        # Mix velocity and force direction
-        v_norm = torch.norm(velocities, dim=1, keepdim=True)
+        # Mix velocity and force direction for atoms
+        v_norm = torch.norm(state.velocities, dim=1, keepdim=True)
         f_norm = torch.norm(state.forces, dim=1, keepdim=True)
-        velocities = (
+        state.velocities = (
             1.0 - state.alpha
-        ) * velocities + state.alpha * state.forces * v_norm / (f_norm + 1e-10)
-        state.momenta = velocities * state.masses.unsqueeze(-1)
+        ) * state.velocities + state.alpha * state.forces * v_norm / (f_norm + 1e-10)
+
+        # Mix velocity and force direction for cell
+        cell_v_norm = torch.norm(state.cell_velocities, dim=1, keepdim=True)
+        cell_f_norm = torch.norm(state.cell_forces, dim=1, keepdim=True)
+        state.cell_velocities = (
+            1.0 - state.alpha
+        ) * state.cell_velocities + state.alpha * state.cell_forces * cell_v_norm / (
+            cell_f_norm + 1e-10
+        )
 
         return state
 

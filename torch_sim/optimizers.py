@@ -451,13 +451,13 @@ class BatchedUnitCellFireState(BaseState):
     orig_cell: torch.Tensor  # [n_batches, 3, 3]
     cell_factor: torch.Tensor  # [n_batches, 1, 1]
     pressure: torch.Tensor  # [n_batches, 3, 3]
+    hydrostatic_strain: bool
+    constant_volume: bool
 
     # FIRE algorithm parameters
     dt: torch.Tensor  # [n_batches]
     alpha: torch.Tensor  # [n_batches]
     n_pos: torch.Tensor  # [n_batches]
-    hydrostatic_strain: bool
-    constant_volume: bool
 
     @property
     def momenta(self) -> torch.Tensor:
