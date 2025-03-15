@@ -231,7 +231,7 @@ def test_determine_max_batch_size_fibonacci(
         return 0.1  # Return a small constant memory usage
 
     monkeypatch.setattr(
-        "torchsim.autobatching.measure_model_memory_forward", mock_measure
+        "torch_sim.autobatching.measure_model_memory_forward", mock_measure
     )
 
     # Test with a small max_atoms value to limit the sequence

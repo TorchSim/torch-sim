@@ -640,7 +640,9 @@ def test_integrate_with_default_autobatcher(
     def mock_estimate(*args, **kwargs) -> float:  # noqa: ARG001
         return 10000.0
 
-    monkeypatch.setattr("torchsim.autobatching.estimate_max_memory_scaler", mock_estimate)
+    monkeypatch.setattr(
+        "torch_sim.autobatching.estimate_max_memory_scaler", mock_estimate
+    )
 
     states = [ar_base_state, fe_fcc_state, ar_base_state]
     triple_state = initialize_state(
@@ -678,7 +680,9 @@ def test_optimize_with_default_autobatcher(
     def mock_estimate(*args, **kwargs) -> float:  # noqa: ARG001
         return 10000.0
 
-    monkeypatch.setattr("torchsim.autobatching.estimate_max_memory_scaler", mock_estimate)
+    monkeypatch.setattr(
+        "torch_sim.autobatching.estimate_max_memory_scaler", mock_estimate
+    )
 
     states = [ar_base_state, fe_fcc_state, ar_base_state]
     triple_state = initialize_state(
