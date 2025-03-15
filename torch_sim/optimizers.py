@@ -137,6 +137,7 @@ class BatchedUnitCellGDState(BatchedGDState):
         cell_masses: Cell masses tensor of shape (n_batches, 3)
     """
 
+    # Required attributes not in BatchedGDState
     reference_cell: torch.Tensor
     cell_factor: torch.Tensor
     hydrostatic_strain: bool
@@ -144,6 +145,7 @@ class BatchedUnitCellGDState(BatchedGDState):
     pressure: torch.Tensor
     stress: torch.Tensor
 
+    # Cell attributes
     cell_positions: torch.Tensor
     cell_forces: torch.Tensor
     cell_masses: torch.Tensor
@@ -441,7 +443,7 @@ class BatchedUnitCellFireState(BaseState):
     stress: torch.Tensor  # [n_batches, 3, 3]
     velocities: torch.Tensor  # [n_total_atoms, 3]
 
-    # cell attributes
+    # Cell attributes
     cell_positions: torch.Tensor  # [n_batches, 3, 3]
     cell_velocities: torch.Tensor  # [n_batches, 3, 3]
     cell_forces: torch.Tensor  # [n_batches, 3, 3]
@@ -532,6 +534,8 @@ def unit_cell_fire(  # noqa: C901, PLR0915
     """
     device = model.device
     dtype = model.dtype
+
+    eps = 1e-8 if dtype == torch.float32 else 1e-16
 
     # Setup parameters
     params = [dt_max, dt_start, alpha_start, f_inc, f_dec, f_alpha, n_min]
@@ -647,17 +651,17 @@ def unit_cell_fire(  # noqa: C901, PLR0915
             atomic_numbers=state.atomic_numbers.clone(),
             batch=state.batch.clone(),
             pbc=state.pbc,
-            # new attrs
+            # New attributes
             velocities=torch.zeros_like(state.positions),
             forces=forces,
             energy=energy,
             stress=stress,
-            # cell attrs
+            # Cell attributes
             cell_positions=torch.zeros(n_batches, 3, 3, device=device, dtype=dtype),
             cell_velocities=torch.zeros(n_batches, 3, 3, device=device, dtype=dtype),
             cell_forces=cell_forces,
             cell_masses=cell_masses,
-            # optimization attrs
+            # Optimization attributes
             orig_cell=state.cell.clone(),
             cell_factor=cell_factor,
             pressure=pressure,
@@ -810,13 +814,13 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         batch_wise_alpha = state.alpha[state.batch].unsqueeze(-1)
         state.velocities = (
             1.0 - batch_wise_alpha
-        ) * state.velocities + batch_wise_alpha * state.forces * v_norm / (f_norm + 1e-10)
+        ) * state.velocities + batch_wise_alpha * state.forces * v_norm / (f_norm + eps)
 
         # Mix velocity and force direction for cell DOFs
         cell_v_norm = torch.norm(state.cell_velocities, dim=(1, 2), keepdim=True)
         cell_f_norm = torch.norm(state.cell_forces, dim=(1, 2), keepdim=True)
         cell_wise_alpha = state.alpha.unsqueeze(-1).unsqueeze(-1)
-        cell_mask = cell_f_norm > 1e-10
+        cell_mask = cell_f_norm > eps
         state.cell_velocities = torch.where(
             cell_mask,
             (1.0 - cell_wise_alpha) * state.cell_velocities
