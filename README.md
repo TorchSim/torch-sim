@@ -3,7 +3,7 @@
 [![CI](https://github.com/radical-ai/torch-sim/actions/workflows/test.yml/badge.svg)](https://github.com/radical-ai/torch-sim/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/radical-ai/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/radical-ai/torch-sim)
 
-TorchSim is an open-source simulation engine in PyTorch focused on atomistic simulations. It provides a easy to use and efficient interface for running simulations on both CPU and GPU. Being built on PyTorch, it allows for automatic differentiation of the simulation equations, making it easy to compute quantities of interest.
+Torch-Sim is an open-source simulation engine in PyTorch focused on atomistic simulations. It provides a easy to use and efficient interface for running simulations on both CPU and GPU. Being built on PyTorch, it allows for automatic differentiation of the simulation equations, making it easy to compute quantities of interest.
 
 ## Installation
 
@@ -15,7 +15,7 @@ pip install .
 
 ## Running Example Scripts
 
-`torchsim` has dozens of demos in the [`examples/`](examples) folder. To run any of the them, use the following command:
+`torch-sim` has dozens of demos in the [`examples/`](examples) folder. To run any of the them, use the following command:
 
 ```sh
 # if uv is not yet installed
@@ -182,35 +182,35 @@ for filename in trajectory_files:
 
 ## Core modules
 
-TorchSim is built around the following core modules:
+Torch-Sim is built around the following core modules:
 
-- [`torchsim.integrators`](torchsim/integrators.py): Provides batched molecular dynamics integrators for simulating the time evolution of molecular systems.
+- [`torch_sim.integrators`](torch_sim/integrators.py): Provides batched molecular dynamics integrators for simulating the time evolution of molecular systems.
 
-- [`torchsim.optimizers`](torchsim/optimizers.py): Provides optimization algorithms for molecular systems, including gradient descent and the FIRE algorithm.
+- [`torch_sim.optimizers`](torch_sim/optimizers.py): Provides optimization algorithms for molecular systems, including gradient descent and the FIRE algorithm.
 
-- [`torchsim.unbatched`](torchsim/unbatched): Contains unbatched versions of the integrators and optimizers.
+- [`torch_sim.unbatched`](torch_sim/unbatched): Contains unbatched versions of the integrators and optimizers.
 
-- [`torchsim.monte_carlo`](torchsim/monte_carlo.py): Contains functions for performing Monte Carlo simulations, including swap-based Monte Carlo.
+- [`torch_sim.monte_carlo`](torch_sim/monte_carlo.py): Contains functions for performing Monte Carlo simulations, including swap-based Monte Carlo.
 
-- [`torchsim.neighbors`](torchsim/neighbors.py): Contains functions for constructing neighbor lists.
+- [`torch_sim.neighbors`](torch_sim/neighbors.py): Contains functions for constructing neighbor lists.
 
-- [`torchsim.quantities`](torchsim/quantities.py): Functions for computing physical quantities, such as kinetic energy, from simulation data.
+- [`torch_sim.quantities`](torch_sim/quantities.py): Functions for computing physical quantities, such as kinetic energy, from simulation data.
 
-- [`torchsim.runners`](torchsim/runners.py): Provides functions for running molecular dynamics simulations and optimizations, handling simulation state and conversions between different representations.
+- [`torch_sim.runners`](torch_sim/runners.py): Provides functions for running molecular dynamics simulations and optimizations, handling simulation state and conversions between different representations.
 
-- [`torchsim.state`](torchsim/state.py): Defines the `BaseState` class, a `dataclass` for representing the state of molecular systems.
+- [`torch_sim.state`](torch_sim/state.py): Defines the `BaseState` class, a `dataclass` for representing the state of molecular systems.
 
-- [`torchsim.trajectory`](torchsim/trajectory.py): Implements classes for handling trajectory data, allowing for reading and writing of simulation data to HDF5 files.
+- [`torch_sim.trajectory`](torch_sim/trajectory.py): Implements classes for handling trajectory data, allowing for reading and writing of simulation data to HDF5 files.
 
-- [`torchsim.transforms`](torchsim/transforms.py): Functions for handling coordinate transformations and periodic boundary conditions in molecular simulations.
+- [`torch_sim.transforms`](torch_sim/transforms.py): Functions for handling coordinate transformations and periodic boundary conditions in molecular simulations.
 
-- [`torchsim.elastic`](torchsim/elastic.py): Contains classes and functions for calculating crystal elasticity, including the representation of elastic states and computation of elastic tensors.
+- [`torch_sim.elastic`](torch_sim/elastic.py): Contains classes and functions for calculating crystal elasticity, including the representation of elastic states and computation of elastic tensors.
 
-- [`torchsim.utils`](torchsim/utils.py): Utility functions.
+- [`torch_sim.utils`](torch_sim/utils.py): Utility functions.
 
-- [`torchsim.units`](torchsim/units.py): Unit system and conversion factors
+- [`torch_sim.units`](torch_sim/units.py): Unit system and conversion factors
 
-- [`torchsim.autobatching`](torchsim/autobatching.py): Contains classes for automatically batching simulations.
+- [`torch_sim.autobatching`](torch_sim/autobatching.py): Contains classes for automatically batching simulations.
 
 Each module is designed to work seamlessly with PyTorch, enabling efficient and flexible molecular simulations.
 
