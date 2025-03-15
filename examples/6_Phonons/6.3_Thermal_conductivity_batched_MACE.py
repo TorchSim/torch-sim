@@ -16,79 +16,13 @@ import torch
 from mace.calculators.foundations_models import mace_mp
 from phono3py import Phono3py
 from phono3py.interface.phono3py_yaml import Phono3pyYaml
-from phonopy.structure.atoms import PhonopyAtoms
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 from pymatgen.io.phonopy import get_phonopy_structure
 
 from torch_sim.models.mace import MaceModel
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.runners import BaseState
-
-
-def phonopy_atoms_to_state(
-    phonopy_atoms: "PhonopyAtoms | list[PhonopyAtoms]",
-    device: torch.device,
-    dtype: torch.dtype,
-) -> BaseState:
-    """Create state tensors from an ASE Atoms object or list of Atoms objects.
-
-    Args:
-        phonopy_atoms: Single PhonopyAtoms object or list of PhonopyAtoms objects
-        device: Device to create tensors on
-        dtype: Data type for tensors
-
-    Returns:
-        BaseState: Batched state tensors in internal units
-    """
-    try:
-        from phonopy.structure.atoms import PhonopyAtoms
-    except ImportError as err:
-        raise ImportError("ASE is required for state_to_atoms conversion") from err
-
-    phonopy_atoms_list = (
-        [phonopy_atoms] if isinstance(phonopy_atoms, PhonopyAtoms) else phonopy_atoms
-    )
-
-    # Stack all properties in one go
-    positions = torch.tensor(
-        np.concatenate([a.positions for a in phonopy_atoms_list]),
-        dtype=dtype,
-        device=device,
-    )
-    masses = torch.tensor(
-        np.concatenate([a.masses for a in phonopy_atoms_list]), dtype=dtype, device=device
-    )
-    atomic_numbers = torch.tensor(
-        np.concatenate([a.numbers for a in phonopy_atoms_list]),
-        dtype=torch.int,
-        device=device,
-    )
-    cell = torch.tensor(
-        np.stack([a.cell.T for a in phonopy_atoms_list]), dtype=dtype, device=device
-    )
-
-    # Create batch indices using repeat_interleave
-    atoms_per_batch = torch.tensor([len(a) for a in phonopy_atoms_list], device=device)
-    batch = torch.repeat_interleave(
-        torch.arange(len(phonopy_atoms_list), device=device), atoms_per_batch
-    )
-
-    """
-    NOTE: PhonopyAtoms does not have pbc attribute for Supercells assume True
-    Verify consistent pbc
-    if not all(all(a.pbc) == all(phonopy_atoms_list[0].pbc) for a in phonopy_atoms_list):
-        raise ValueError("All systems must have the same periodic boundary conditions")
-    """
-
-    return BaseState(
-        positions=positions,
-        masses=masses,
-        cell=cell,
-        pbc=True,
-        atomic_numbers=atomic_numbers,
-        batch=batch,
-    )
+from torch_sim.runners import phonopy_to_state
 
 
 start_time = time.perf_counter()
@@ -127,7 +61,7 @@ model_loading_time = time.perf_counter() - start_time
 print(f"Model loading time: {model_loading_time}s")
 
 # Convert PhonopyAtoms to state
-state = phonopy_atoms_to_state(supercells, device, dtype)
+state = phonopy_to_state(supercells, device, dtype)
 
 # Run the model in batched mode
 results = model(

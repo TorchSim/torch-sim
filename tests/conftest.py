@@ -6,6 +6,7 @@ import pytest
 import torch
 from ase import Atoms
 from ase.build import bulk
+from phonopy.structure.atoms import PhonopyAtoms
 from pymatgen.core import Structure
 
 from torch_sim.models.lennard_jones import LennardJonesModel, UnbatchedLennardJonesModel
@@ -42,6 +43,29 @@ def si_structure() -> Structure:
         [0.75, 0.75, 0.25],
     ]
     return Structure(lattice, species, coords)
+
+
+@pytest.fixture
+def si_phonopy_atoms() -> Any:
+    """Create crystalline silicon using PhonopyAtoms."""
+    lattice = [[5.43, 0, 0], [0, 5.43, 0], [0, 0, 5.43]]
+    species = ["Si"] * 8
+    coords = [
+        [0.0, 0.0, 0.0],
+        [0.25, 0.25, 0.25],
+        [0.0, 0.5, 0.5],
+        [0.25, 0.75, 0.75],
+        [0.5, 0.0, 0.5],
+        [0.75, 0.25, 0.75],
+        [0.5, 0.5, 0.0],
+        [0.75, 0.75, 0.25],
+    ]
+    return PhonopyAtoms(
+        cell=lattice,
+        scaled_positions=coords,
+        symbols=species,
+        pbc=True,
+    )
 
 
 @pytest.fixture
