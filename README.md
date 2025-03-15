@@ -31,9 +31,9 @@ uv run --with . examples/4_High_level_api/4.1_high_level_api.py
 
 ```python
 from ase.build import bulk
-from torchsim.runners import integrate, state_to_atoms
-from torchsim.integrators import nvt_langevin
-from torchsim.models.lennard_jones import LennardJonesModel
+from torch_sim.runners import integrate, state_to_atoms
+from torch_sim.integrators import nvt_langevin
+from torch_sim.models.lennard_jones import LennardJonesModel
 import torch
 
 # instantiate a lennard jones model for Si
@@ -64,8 +64,8 @@ final_atoms = state_to_atoms(final_state)
 ```python
 # the model and atoms will remain the same
 
-from torchsim.runners import atoms_to_state
-from torchsim.units import MetalUnits
+from torch_sim.runners import atoms_to_state
+from torch_sim.units import MetalUnits
 
 # instantiate the state
 initial_state = atoms_to_state(si_atoms, device=lj_model.device, dtype=lj_model.dtype)
@@ -88,8 +88,8 @@ for step in range(1000):
 ## High-level API with reporting
 
 ```python
-from torchsim.trajectory import TrajectoryReporter, TorchSimTrajectory
-from torchsim.quantities import kinetic_energy
+from torch_sim.trajectory import TrajectoryReporter, TorchSimTrajectory
+from torch_sim.quantities import kinetic_energy
 
 trajectory_file = "lj_trajectory.h5md"
 # report potential energy every 10 steps and kinetic energy every 20 steps
@@ -129,7 +129,7 @@ with TorchSimTrajectory(trajectory_file) as traj:
 
 ```python
 from mace.calculators.foundations_models import mace_mp
-from torchsim.models.mace import MaceModel
+from torch_sim.models.mace import MaceModel
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
