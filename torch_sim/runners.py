@@ -69,6 +69,77 @@ def _create_batches_iterator(
     return batchs
 
 
+def create_default_reporter(
+    filenames: str | Path | list[str | Path],
+    property_frequency: int = 10,
+    state_frequency: int = 50,
+    properties: list[str] = [
+        "positions",
+        "kinetic_energy",
+        "potential_energy",
+        "temperature",
+        "stress",
+    ],
+) -> TrajectoryReporter:
+    """Create a default trajectory reporter.
+
+    Args:
+        filenames: Filenames to save the trajectory to.
+        property_frequency: Frequency to save properties at.
+        state_frequency: Frequency to save state at.
+        properties: Properties to save, possible properties are "positions",
+            "kinetic_energy", "potential_energy", "temperature", "stress", "velocities",
+            and "forces".
+    """
+
+    def compute_stress(state: BaseState, model: ModelInterface) -> torch.Tensor:
+        # Check model type by name rather than instance
+        # TODO: this is a bit of a dumb way of tracking stress
+        if not model.compute_stress:
+            try:
+                og_model_stress = model.compute_stress
+                model.compute_stress = True
+            except AttributeError:
+                raise ValueError(
+                    "Model stress is not set to true and model stress cannot be "
+                    "set on the fly. Please set model.compute_stress to True."
+                )
+        model_outputs = model.forward(
+            positions=state.positions,
+            cell=state.cell,
+            atomic_numbers=state.atomic_numbers,
+            batch=state.batch,
+        )
+        if not model.compute_stress:
+            model.compute_stress = og_model_stress
+
+        return model_outputs["stress"]
+
+    possible_properties = {
+        "kinetic_energy": lambda state: kinetic_energy(state.momenta, state.masses),
+        "potential_energy": lambda state: state.energy,
+        "temperature": lambda state: temperature(state.momenta, state.masses),
+        "stress": compute_stress,
+    }
+
+    prop_calculators = {
+        prop: calculator
+        for prop, calculator in possible_properties.items()
+        if prop in properties
+    }
+
+    save_velocities = "velocities" in properties
+    save_forces = "forces" in properties
+    reporter = TrajectoryReporter(
+        filenames=filenames,
+        state_frequency=state_frequency,
+        prop_calculators={property_frequency: prop_calculators},
+        state_kwargs={"save_velocities": save_velocities, "save_forces": save_forces},
+    )
+
+    return reporter
+
+
 def integrate(
     system: StateLike,
     model: ModelInterface,
