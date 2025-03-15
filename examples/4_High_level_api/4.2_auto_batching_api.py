@@ -26,7 +26,8 @@ from torch_sim.autobatching import (
 from torch_sim.integrators import nvt_langevin
 from torch_sim.models.mace import MaceModel
 from torch_sim.optimizers import unit_cell_fire
-from torch_sim.io import atoms_to_state, generate_force_convergence_fn
+from torch_sim.io import atoms_to_state
+from torch_sim.runners import generate_force_convergence_fn
 from torch_sim.units import MetalUnits
 
 
