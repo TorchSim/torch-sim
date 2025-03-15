@@ -30,17 +30,22 @@ This folder contains a series of examples demonstrating the use of TorchSim, a l
 - **2.3 MACE FIRE**: Uses the MACE model for structural optimization with the FIRE optimizer.
   ```torchsim/examples/2_Structural_optimization/2.3_MACE_FIRE.py```
 
-- **2.4 Batched MACE Gradient Descent**: Demonstrates batched gradient descent optimization using the MACE model.
-  ```torchsim/examples/2_Structural_optimization/2.4_Batched_MACE_Gradient_Desent.py```
+- **2.4 MACE UnitCellFilter FIRE**: Uses the MACE model for structural optimization with the UnitCellFilter FIRE optimizer.
+  ```torchsim/examples/2_Structural_optimization/2.4_MACE_UnitCellFilter_FIRE.py```
 
-- **2.5 Batched MACE UnitCellFilter Gradient Descent**: Extends the batched optimization to include unit cell optimization using gradient descent.
-  ```torchsim/examples/2_Structural_optimization/2.5_Batched_MACE_UnitCellFilter_Gradient_Desent.py```
+- **2.5 MACE FrechetCellFilter FIRE**: Uses the MACE model for structural optimization with the FrechetCellFilter FIRE optimizer.
+  ```torchsim/examples/2_Structural_optimization/2.5_MACE_FrechetCellFilter_FIRE.py```
 
-- **2.6 Batched MACE UnitCellFilter FIRE**: Similar to the previous example but using the FIRE optimizer for unit cell optimization.
-  ```torchsim/examples/2_Structural_optimization/2.6_Batched_MACE_UnitCellFilter_FIRE.py```
+- **2.6 Batched MACE Gradient Descent**: Demonstrates batched gradient descent optimization using the MACE model.
+  ```torchsim/examples/2_Structural_optimization/2.6_Batched_MACE_Gradient_Desent.py```
 
-- **2.7 MACE UnitCellFilter FIRE**: Demonstrates a hot swap technique in batched gradient descent optimization.
-  ```torchsim/examples/2_Structural_optimization/2.7_MACE_UnitCellFilter_FIRE.py```
+- **2.7 Batched MACE UnitCellFilter Gradient Descent**: Extends the batched optimization to include unit cell optimization using gradient descent.
+  ```torchsim/examples/2_Structural_optimization/2.7_Batched_MACE_UnitCellFilter_Gradient_Desent.py```
+
+- **2.8 Batched MACE UnitCellFilter FIRE**: Similar to the previous example but using the FIRE optimizer for unit cell optimization.
+  ```torchsim/examples/2_Structural_optimization/2.8_Batched_MACE_UnitCellFilter_FIRE.py```
+
+
 
 ### 3. Dynamics
 
