@@ -34,7 +34,7 @@ repos:
     hooks:
       - id: codespell
         stages: [pre-commit, commit-msg]
-        args: ["--ignore-words-list", "statics,crate,annote,atomate,nd,te,titel,coo,slite"]
+        args: ["--ignore-words-list", "statics,crate,annote,atomate,nd,te,titel,coo,slite,fro"]
 
   - repo: https://github.com/janosh/format-ipy-cells
     rev: v0.1.11
