@@ -1,7 +1,6 @@
 """Models for Torch-Sim."""
 
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.models.morse import MorseModel
 from torch_sim.models.soft_sphere import SoftSphereModel
 
 
@@ -22,7 +21,6 @@ except ImportError:
 
 __all__ = [
     "LennardJonesModel",
-    "MorseModel",
     "SoftSphereModel",
 ]
 
