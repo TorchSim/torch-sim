@@ -11,6 +11,7 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
 from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.state import atoms_to_state
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 
 
@@ -48,18 +49,11 @@ model = UnbatchedMaceModel(
     enable_cueq=False,
 )
 
-# Prepare input tensors
-positions = torch.tensor(si_dc.positions, device=device, dtype=dtype)
-cell = torch.tensor(si_dc.cell.array, device=device, dtype=dtype)
-atomic_numbers = torch.tensor(si_dc.get_atomic_numbers(), device=device, dtype=torch.int)
-
-# Print shapes for verification
-print(f"Positions: {positions.shape}")
-print(f"Cell: {cell.shape}")
-print(f"Atomic numbers: {atomic_numbers.shape}")
+# Convert ASE atoms to state
+state = atoms_to_state(si_dc, device=device, dtype=dtype)
 
 # Run inference
-results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
+results = model(state)
 
 # Print results
 print(f"Energy: {results['energy']}")

@@ -4,6 +4,7 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.state import BaseState, StateDict
 from torch_sim.transforms import get_pair_displacements, safe_mask
 
 
@@ -123,27 +124,31 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
         self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self.device)
         self.alpha = torch.tensor(alpha, dtype=dtype, device=self.device)
 
-    def forward(
-        self, positions: torch.Tensor, cell: torch.Tensor | None = None, **_
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: BaseState | StateDict, **_) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single system."""
-        positions = positions.to(device=self.device, dtype=self.dtype)
-        if cell is not None:
-            cell = cell.to(device=self.device, dtype=self.dtype)
+        if not isinstance(state, BaseState):
+            state = BaseState(
+                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
+            )
+        elif state.pbc != self.periodic:
+            raise ValueError("PBC mismatch between model and state")
+
+        if state.cell.dim() == 3:  # Check if there is an extra batch dimension
+            state.cell = state.cell.squeeze(0)  # Squeeze the first dimension
 
         if self.use_neighbor_list:
             # Get neighbor list using vesin_nl_ts
             mapping, shifts = vesin_nl_ts(
-                positions=positions,
-                cell=cell,
+                positions=state.positions,
+                cell=state.cell,
                 pbc=self.periodic,
                 cutoff=self.cutoff,
                 sort_id=False,
             )
             # Get displacements between neighbor pairs
             dr_vec, distances = get_pair_displacements(
-                positions=positions,
-                cell=cell,
+                positions=state.positions,
+                cell=state.cell,
                 pbc=self.periodic,
                 pairs=mapping,
                 shifts=shifts,
@@ -152,12 +157,14 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
         else:
             # Direct N^2 computation of all pairs
             dr_vec, distances = get_pair_displacements(
-                positions=positions,
-                cell=cell,
+                positions=state.positions,
+                cell=state.cell,
                 pbc=self.periodic,
             )
             # Remove self-interactions and apply cutoff
-            mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)
+            mask = torch.eye(
+                state.positions.shape[0], dtype=torch.bool, device=self.device
+            )
             distances = distances.masked_fill(mask, float("inf"))
             mask = distances < self.cutoff
 
@@ -178,7 +185,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
         if self.per_atom_energies:
             # Compute per-atom energy contributions
             atom_energies = torch.zeros(
-                positions.shape[0], dtype=self.dtype, device=self.device
+                state.positions.shape[0], dtype=self.dtype, device=self.device
             )
             # Each atom gets half of the pair energy
             atom_energies.index_add_(0, mapping[0], 0.5 * pair_energies)
@@ -196,29 +203,34 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
 
             if self.compute_force:
                 # Compute atomic forces by accumulating pair contributions
-                forces = torch.zeros_like(positions)
+                forces = torch.zeros_like(state.positions)
                 # Add force contributions (f_ij on j, -f_ij on i)
                 forces.index_add_(0, mapping[0], force_vectors)
                 forces.index_add_(0, mapping[1], -force_vectors)
                 results["forces"] = forces
 
-            if self.compute_stress and cell is not None:
+            if self.compute_stress and state.cell is not None:
                 # Compute stress tensor using virial formula
                 stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
-                volume = torch.abs(torch.linalg.det(cell))
+                volume = torch.abs(torch.linalg.det(state.cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
 
                 if self.per_atom_stresses:
                     # Compute per-atom stress contributions
                     atom_stresses = torch.zeros(
-                        (positions.shape[0], 3, 3), dtype=self.dtype, device=self.device
+                        (state.positions.shape[0], 3, 3),
+                        dtype=self.dtype,
+                        device=self.device,
                     )
                     atom_stresses.index_add_(0, mapping[0], -0.5 * stress_per_pair)
                     atom_stresses.index_add_(0, mapping[1], -0.5 * stress_per_pair)
                     results["stresses"] = atom_stresses / volume
 
         return results
+
+
+# TODO: Standardize the interface for multi-species models
 
 
 class UnbatchedSoftSphereMultiModel(torch.nn.Module):

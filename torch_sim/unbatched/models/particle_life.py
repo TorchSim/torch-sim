@@ -2,6 +2,7 @@
 
 import torch
 
+from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.state import BaseState
 from torch_sim.transforms import get_pair_displacements
@@ -81,7 +82,7 @@ def asymmetric_particle_pair_force_jit(
     return inner_forces + outer_forces
 
 
-class UnbatchedParticleLifeModel(torch.nn.Module):
+class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
     """Calculator for asymmetric particle interaction."""
 
     def __init__(
@@ -124,6 +125,9 @@ class UnbatchedParticleLifeModel(torch.nn.Module):
             )
         elif state.pbc != self.periodic:
             raise ValueError("PBC mismatch between model and state")
+
+        if state.cell.dim() == 3:  # Check if there is an extra batch dimension
+            state.cell = state.cell.squeeze(0)  # Squeeze the first dimension
 
         if self.use_neighbor_list:
             # Get neighbor list using wrapping_nl

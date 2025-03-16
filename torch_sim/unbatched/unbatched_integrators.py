@@ -214,11 +214,7 @@ def velocity_verlet(state: MDState, dt: torch.Tensor, model: torch.nn.Module) ->
     state = momentum_step(state, dt_2)
     state = position_step(state, dt)
 
-    model_output = model(
-        positions=state.positions,
-        cell=state.cell,
-        atomic_numbers=state.atomic_numbers,
-    )
+    model_output = model(state)
 
     state.energy = model_output["energy"]
     state.forces = model_output["forces"]
@@ -286,11 +282,7 @@ def nve(
         # Override with kwargs if provided
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
-        model_output = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=state.atomic_numbers,
-        )
+        model_output = model(state)
 
         momenta = kwargs.get(
             "momenta",
@@ -335,11 +327,7 @@ def nve(
         state = momentum_step(state, dt / 2)
         state = position_step(state, dt)
 
-        model_output = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=state.atomic_numbers,
-        )
+        model_output = model(state)
         state.energy = model_output["energy"]
         state.forces = model_output["forces"]
 
@@ -415,11 +403,7 @@ def nvt_langevin(
 
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
-        model_output = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=atomic_numbers,
-        )
+        model_output = model(state)
 
         momenta = kwargs.get(
             "momenta",
@@ -475,11 +459,7 @@ def nvt_langevin(
         state = stochastic_step(state, dt, kT, gamma, device, dtype)
         state = position_step(state, dt / 2)
 
-        model_output = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=state.atomic_numbers,
-        )
+        model_output = model(state)
         state.energy = model_output["energy"]
         state.forces = model_output["forces"]
 
@@ -865,11 +845,7 @@ def nvt_nose_hoover(
 
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
-        model_output = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=atomic_numbers,
-        )
+        model_output = model(state)
         momenta = kwargs.get(
             "momenta",
             calculate_momenta(state.positions, state.masses, kT, device, dtype, seed),
@@ -997,9 +973,6 @@ def nvt_nose_hoover_invariant(
         e_tot = e_tot + momentum**2 / (2 * mass) + kT * pos
 
     return e_tot
-
-
-# TODO: Add NPT Nose-Hoover integrator with same interface as other integrators
 
 
 @dataclass
@@ -1414,9 +1387,8 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         box = volume_to_box(volume)
 
         # Get model output
-        model_output = model(
-            positions=positions, cell=box, atomic_numbers=state.atomic_numbers
-        )
+        state.cell = box
+        model_output = model(state)
 
         # First half step: Update momenta
         alpha = 1 + 1 / n_particles
@@ -1443,9 +1415,9 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
 
         # Update particle positions and forces
         positions = exp_iL1(state, state.velocities, box_momentum / box_mass, dt)
-        model_output = model(
-            positions=positions, cell=box, atomic_numbers=state.atomic_numbers
-        )
+        state.positions = positions
+        state.cell = box
+        model_output = model(state)
 
         # Second half step: Update momenta
         momenta = exp_iL2(
@@ -1555,11 +1527,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             state.cell = torch.eye(dim, device=device, dtype=dtype) * state.cell
 
         # Get model output
-        model_output = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=atomic_numbers,
-        )
+        model_output = model(state)
         forces = model_output["forces"]
         energy = model_output["energy"]
 

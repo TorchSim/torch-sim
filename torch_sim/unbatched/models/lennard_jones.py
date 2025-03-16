@@ -5,6 +5,7 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.transforms import get_pair_displacements
+from torch_sim.unbatched.unbatched_integrators import BaseState, StateDict
 
 
 # Default parameter values defined at module level
@@ -130,27 +131,31 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
         )
         self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self._device)
 
-    def forward(
-        self, positions: torch.Tensor, cell: torch.Tensor | None = None, **_
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: BaseState | StateDict) -> dict[str, torch.Tensor]:
         """Compute energies and forces."""
-        positions = positions.to(device=self._device, dtype=self._dtype)
-        if cell is not None:
-            cell = cell.to(device=self._device, dtype=self._dtype)
+        if not isinstance(state, BaseState):
+            state = BaseState(
+                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
+            )
+        elif state.pbc != self.periodic:
+            raise ValueError("PBC mismatch between model and state")
+
+        if state.cell.dim() == 3:  # Check if there is an extra batch dimension
+            state.cell = state.cell.squeeze(0)  # Squeeze the first dimension
 
         if self.use_neighbor_list:
             # Get neighbor list using vesin_nl_ts
             mapping, shifts = vesin_nl_ts(
-                positions=positions,
-                cell=cell,
+                positions=state.positions,
+                cell=state.cell,
                 pbc=self.periodic,
                 cutoff=self.cutoff,
                 sort_id=False,
             )
             # Get displacements using neighbor list
             dr_vec, distances = get_pair_displacements(
-                positions=positions,
-                cell=cell,
+                positions=state.positions,
+                cell=state.cell,
                 pbc=self.periodic,
                 pairs=mapping,
                 shifts=shifts,
@@ -158,12 +163,14 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
         else:
             # Get all pairwise displacements
             dr_vec, distances = get_pair_displacements(
-                positions=positions,
-                cell=cell,
+                positions=state.positions,
+                cell=state.cell,
                 pbc=self.periodic,
             )
             # Mask out self-interactions
-            mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self._device)
+            mask = torch.eye(
+                state.positions.shape[0], dtype=torch.bool, device=self._device
+            )
             distances = distances.masked_fill(mask, float("inf"))
             # Apply cutoff
             mask = distances < self.cutoff
@@ -187,7 +194,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
 
         if self.per_atom_energies:
             atom_energies = torch.zeros(
-                positions.shape[0], dtype=self._dtype, device=self._device
+                state.positions.shape[0], dtype=self._dtype, device=self._device
             )
             # Each atom gets half of the pair energy
             atom_energies.index_add_(0, mapping[0], 0.5 * pair_energies)
@@ -206,22 +213,22 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
 
             if self._compute_force:
                 # Initialize forces tensor
-                forces = torch.zeros_like(positions)
+                forces = torch.zeros_like(state.positions)
                 # Add force contributions (f_ij on i, -f_ij on j)
                 forces.index_add_(0, mapping[0], -force_vectors)
                 forces.index_add_(0, mapping[1], force_vectors)
                 results["forces"] = forces
 
-            if self._compute_stress and cell is not None:
+            if self._compute_stress and state.cell is not None:
                 # Compute stress tensor
                 stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
-                volume = torch.abs(torch.linalg.det(cell))
+                volume = torch.abs(torch.linalg.det(state.cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
 
                 if self.per_atom_stresses:
                     atom_stresses = torch.zeros(
-                        (positions.shape[0], 3, 3),
+                        (state.positions.shape[0], 3, 3),
                         dtype=self._dtype,
                         device=self._device,
                     )

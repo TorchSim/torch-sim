@@ -2,7 +2,9 @@
 
 import torch
 
+from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.state import BaseState, StateDict
 from torch_sim.transforms import get_pair_displacements
 
 
@@ -85,7 +87,7 @@ def morse_pair_force(
     # return torch.nan_to_num(force, nan=0.0, posinf=0.0, neginf=0.0)
 
 
-class UnbatchedMorseModel(torch.nn.Module):
+class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
     """Calculator for Morse potential."""
 
     def __init__(
@@ -136,44 +138,49 @@ class UnbatchedMorseModel(torch.nn.Module):
         self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self.device)
         self.alpha = torch.tensor(alpha, dtype=dtype, device=self.device)
 
-    def forward(
-        self, positions: torch.Tensor, cell: torch.Tensor | None = None, **_
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: BaseState | StateDict, **_) -> dict[str, torch.Tensor]:
         """Compute energies and forces.
 
         Args:
-            positions: Atomic positions [n_atoms, 3]
-            cell: Unit cell vectors [3, 3] or None for non-periodic systems
+            state: State object containing positions, cell, and other properties
 
         Returns:
             Dictionary containing computed properties (energy, forces, stress, etc.)
         """
-        positions = positions.to(device=self.device, dtype=self.dtype)
-        if cell is not None:
-            cell = cell.to(device=self.device, dtype=self.dtype)
+        if not isinstance(state, BaseState):
+            state = BaseState(
+                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
+            )
+        elif state.pbc != self.periodic:
+            raise ValueError("PBC mismatch between model and state")
+
+        if state.cell.dim() == 3:  # Check if there is an extra batch dimension
+            state.cell = state.cell.squeeze(0)  # Squeeze the first dimension
 
         if self.use_neighbor_list:
             mapping, shifts = vesin_nl_ts(
-                positions=positions,
-                cell=cell,
+                positions=state.positions,
+                cell=state.cell,
                 pbc=self.periodic,
                 cutoff=self.cutoff,
                 sort_id=False,
             )
             dr_vec, distances = get_pair_displacements(
-                positions=positions,
-                cell=cell,
+                positions=state.positions,
+                cell=state.cell,
                 pbc=self.periodic,
                 pairs=mapping,
                 shifts=shifts,
             )
         else:
             dr_vec, distances = get_pair_displacements(
-                positions=positions,
-                cell=cell,
+                positions=state.positions,
+                cell=state.cell,
                 pbc=self.periodic,
             )
-            mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)
+            mask = torch.eye(
+                state.positions.shape[0], dtype=torch.bool, device=self.device
+            )
             distances = distances.masked_fill(mask, float("inf"))
             mask = distances < self.cutoff
             i, j = torch.where(mask)
@@ -193,7 +200,7 @@ class UnbatchedMorseModel(torch.nn.Module):
 
         if self.per_atom_energies:
             atom_energies = torch.zeros(
-                positions.shape[0], dtype=self.dtype, device=self.device
+                state.positions.shape[0], dtype=self.dtype, device=self.device
             )
             atom_energies.index_add_(0, mapping[0], 0.5 * pair_energies)
             atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
@@ -208,20 +215,20 @@ class UnbatchedMorseModel(torch.nn.Module):
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
             if self.compute_force:
-                forces = torch.zeros_like(positions)
+                forces = torch.zeros_like(state.positions)
                 forces.index_add_(0, mapping[0], -force_vectors)
                 forces.index_add_(0, mapping[1], force_vectors)
                 results["forces"] = forces
 
-            if self.compute_stress and cell is not None:
+            if self.compute_stress and state.cell is not None:
                 stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
-                volume = torch.abs(torch.linalg.det(cell))
+                volume = torch.abs(torch.linalg.det(state.cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
 
                 if self.per_atom_stresses:
                     atom_stresses = torch.zeros(
-                        (positions.shape[0], 3, 3),
+                        (state.positions.shape[0], 3, 3),
                         dtype=self.dtype,
                         device=self.device,
                     )
