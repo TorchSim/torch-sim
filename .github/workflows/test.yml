@@ -171,4 +171,7 @@ jobs:
         uses: astral-sh/setup-uv@v2
 
       - name: Run example
-        run: uv run --with . ${{ matrix.example }}
+        run: |
+          # Strip any leading ./ from the path for consistency
+          EXAMPLE_PATH=$(echo "${{ matrix.example }}" | sed 's|^./||')
+          uv run --with . $EXAMPLE_PATH
