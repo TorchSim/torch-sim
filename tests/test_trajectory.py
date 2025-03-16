@@ -508,7 +508,9 @@ def test_write_ase_trajectory(
         # Check basic properties match
         assert len(atoms) == len(random_state.atomic_numbers)
         np.testing.assert_allclose(atoms.get_cell(), random_state.cell.numpy()[0])
-        np.testing.assert_allclose(atoms.get_positions(), random_state.positions.numpy())
+        np.testing.assert_allclose(
+            atoms.get_positions(), random_state.positions.numpy()
+        )
         np.testing.assert_allclose(
             atoms.get_atomic_numbers(), random_state.atomic_numbers.numpy()
         )
@@ -670,7 +672,7 @@ def test_reporter_with_model(
 
     # Create a property calculator that uses the model
     def energy_calculator(state: BaseState, model: torch.nn.Module) -> torch.Tensor:
-        output = model.forward(state.positions, state.cell)
+        output = model(state)
         # Calculate a property that depends on the model
         return output["energy"]
 
@@ -699,7 +701,7 @@ def test_reporter_with_model(
 
         # Calculate expected value
         substate = si_double_base_state[batch_idx]
-        expected = lj_calculator.forward(substate.positions, substate.cell)["energy"]
+        expected = lj_calculator(substate)["energy"]
 
         # Compare
         np.testing.assert_allclose(energy, expected.cpu().numpy())
