@@ -4,8 +4,8 @@ import os
 
 import torch
 
-from torch_sim.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.quantities import kinetic_energy
+from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_integrators import nve
 from torch_sim.units import MetalUnits as Units
 

@@ -3,7 +3,11 @@
 import pytest
 import torch
 
-from torch_sim.models.morse import UnbatchedMorseModel, morse_pair, morse_pair_force
+from torch_sim.unbatched.models.morse import (
+    UnbatchedMorseModel,
+    morse_pair,
+    morse_pair_force,
+)
 
 
 def test_morse_pair_minimum() -> None:

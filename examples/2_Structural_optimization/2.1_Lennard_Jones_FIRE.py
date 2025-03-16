@@ -4,7 +4,7 @@ import os
 
 import torch
 
-from torch_sim.models.lennard_jones import UnbatchedLennardJonesModel
+from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_optimizers import fire
 
 

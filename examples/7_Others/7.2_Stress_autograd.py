@@ -11,7 +11,10 @@ import timeit
 
 import torch
 
-from torch_sim.models.lennard_jones import lennard_jones_pair, lennard_jones_pair_force
+from torch_sim.unbatched.models.lennard_jones import (
+    lennard_jones_pair,
+    lennard_jones_pair_force,
+)
 
 
 torch.set_default_tensor_type(torch.DoubleTensor)
