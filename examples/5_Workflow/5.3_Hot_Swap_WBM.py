@@ -17,7 +17,7 @@ from matbench_discovery.data import DataFiles, ase_atoms_from_zip
 from torch_sim.autobatching import HotSwappingAutoBatcher
 from torch_sim.io import atoms_to_state
 from torch_sim.models.mace import MaceModel
-from torch_sim.optimizers import frechet_cell_fire
+from torch_sim.optimizers import unit_cell_fire
 from torch_sim.runners import generate_force_convergence_fn
 
 
@@ -46,7 +46,7 @@ n_steps = 10 if os.getenv("CI") else 200_000_000
 max_atoms_in_batch = 50 if os.getenv("CI") else 8_000
 
 # --- Data Loading ---
-n_structures_to_relax = 2 if os.getenv("CI") else 100
+n_structures_to_relax = 2 if os.getenv("CI") else 10
 print(f"Loading {n_structures_to_relax:,} structures...")
 ase_atoms_list = ase_atoms_from_zip(
     DataFiles.wbm_initial_atoms.path, limit=n_structures_to_relax
@@ -56,7 +56,7 @@ ase_atoms_list = ase_atoms_from_zip(
 # Statistics tracking
 
 # Initialize first batch
-fire_init, fire_update = frechet_cell_fire(model=mace_model)
+fire_init, fire_update = unit_cell_fire(model=mace_model)
 fire_states = fire_init(atoms_to_state(ase_atoms_list, device=device, dtype=dtype))
 
 batcher = HotSwappingAutoBatcher(

@@ -957,13 +957,17 @@ def matrix_log_scipy(matrix: torch.Tensor) -> torch.Tensor:
 
 
 def matrix_log_33(
-    matrix: torch.Tensor, sim_dtype: torch.dtype = torch.float64
+    matrix: torch.Tensor,
+    sim_dtype: torch.dtype = torch.float64,
+    fallback_warning: bool = False,
 ) -> torch.Tensor:
     """Compute the matrix logarithm of a square 3x3 matrix.
 
     Args:
         matrix: A square 3x3 matrix tensor
         sim_dtype: Simulation dtype, default=torch.float64
+        fallback_warning: Whether to print a warning when falling back to scipy,
+            default=False
 
     Returns:
         The matrix logarithm of the input matrix
@@ -980,6 +984,7 @@ def matrix_log_33(
             f"Error computing matrix logarithm with _matrix_log_33 {e} \n"
             "Falling back to scipy"
         )
-        print(msg)
+        if fallback_warning:
+            print(msg)
         # Fall back to scipy implementation
         return matrix_log_scipy(matrix).to(sim_dtype)

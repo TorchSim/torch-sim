@@ -1070,6 +1070,7 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
         # Calculate UCF-style cell gradient
         ucf_cell_grad = virial @ torch.linalg.inv(deform_grad_new.transpose(0, 1))
 
+        """
         # Calculate cell forces using Frechet derivative approach
         cell_forces = torch.zeros((3, 3), device=device, dtype=dtype)
         for mu in range(3):
@@ -1088,6 +1089,23 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
 
         # Scale by cell_factor
         cell_forces = cell_forces / state.cell_factor
+        """
+
+        directions = torch.zeros((9, 3, 3), device=device, dtype=dtype)
+        for idx, (i, j) in enumerate([(i, j) for i in range(3) for j in range(3)]):
+            directions[idx, i, j] = 1.0
+
+        # Compute all Frechet derivatives in one batch operation
+        expm_derivs = torch.stack(
+            [
+                expm_frechet(deform_grad_log_new, direction, compute_expm=False)
+                for direction in directions
+            ]
+        )
+
+        # Calculate all forces at once using matrix multiplication and reshape
+        cell_forces = torch.sum(expm_derivs * ucf_cell_grad.unsqueeze(0), dim=(1, 2))
+        cell_forces = cell_forces.reshape(3, 3) / state.cell_factor
 
         # Update state
         state.positions = atomic_positions_new

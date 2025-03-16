@@ -1042,7 +1042,7 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
             constant_volume=constant_volume,
         )
 
-    def fire_step(  # noqa: C901, PLR0915
+    def fire_step(  # noqa: PLR0915
         state: BatchedFrechetCellFIREState,
         alpha_start: float = alpha_start,
         dt_start: float = dt_start,
@@ -1076,6 +1076,7 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
         deform_grad_log = torch.zeros_like(cur_deform_grad)
         for b in range(n_batches):
             deform_grad_log[b] = logm(cur_deform_grad[b])
+
         # Scale to get cell positions
         cell_positions = deform_grad_log * state.cell_factor
 
@@ -1098,8 +1099,10 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
         # Convert cell positions to deformation gradient
         deform_grad_log_new = cell_positions_new / state.cell_factor
         deform_grad_new = torch.zeros_like(deform_grad_log_new)
+
         for b in range(n_batches):
             deform_grad_new[b] = expm.apply(deform_grad_log_new[b])
+
         # Update cell with deformation gradient
         new_cell = torch.bmm(state.orig_cell, deform_grad_new.transpose(1, 2))
 
@@ -1131,10 +1134,13 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
                 3, device=device
             ).unsqueeze(0).expand(n_batches, -1, -1)
 
+        """
         # Calculate UCF-style cell gradient
         ucf_cell_grad = torch.zeros_like(virial)
         for b in range(n_batches):
             ucf_cell_grad[b] = virial[b] @ torch.linalg.inv(deform_grad_new[b].T)
+
+
         # Calculate cell forces using Frechet derivative approach
         cell_forces = torch.zeros_like(ucf_cell_grad)
         for b in range(n_batches):
@@ -1149,6 +1155,36 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
                     )
                     # Sum the element-wise product
                     cell_forces[b, mu, nu] = torch.sum(expm_deriv * ucf_cell_grad[b])
+        """
+
+        # Perform batched matrix multiplication
+        ucf_cell_grad = torch.bmm(
+            virial, torch.linalg.inv(torch.transpose(deform_grad_new, 1, 2))
+        )
+
+        # Optimized cell forces calculation using batched approach
+        # Pre-compute all 9 direction matrices
+        directions = torch.zeros((9, 3, 3), device=device, dtype=dtype)
+        for idx, (mu, nu) in enumerate([(i, j) for i in range(3) for j in range(3)]):
+            directions[idx, mu, nu] = 1.0
+
+        # Calculate cell forces batch by batch
+        cell_forces = torch.zeros_like(ucf_cell_grad)
+        for b in range(n_batches):
+            # Calculate all 9 Frechet derivatives at once
+            expm_derivs = torch.stack(
+                [
+                    expm_frechet(deform_grad_log_new[b], direction, compute_expm=False)
+                    for direction in directions
+                ]
+            )
+
+            # Calculate all 9 cell forces components efficiently
+            forces_flat = torch.sum(
+                expm_derivs * ucf_cell_grad[b].unsqueeze(0), dim=(1, 2)
+            )
+            cell_forces[b] = forces_flat.reshape(3, 3)
+
         # Scale by cell_factor
         cell_forces = cell_forces / state.cell_factor
         state.cell_forces = cell_forces
