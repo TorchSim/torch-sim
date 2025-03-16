@@ -1,8 +1,8 @@
-"""Simulation runners for molecular dynamics and optimization.
+"""Input/output utilities for molecular systems.
 
-This module provides functions for running molecular dynamics simulations and geometry
-optimizations using various calculators and integrators. It includes utilities for
-converting between different molecular representations and handling simulation state.
+This module provides functions for converting between different structural
+representations. It includes utilities for converting ASE Atoms objects,
+Pymatgen Structures, and PhonopyAtoms objects to BaseState objects and vice versa.
 """
 
 from typing import TYPE_CHECKING
@@ -10,10 +10,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
+
 if TYPE_CHECKING:
     from ase import Atoms
     from pymatgen.core import Structure
-    from torch_sim.state import BaseState, StateLike
+
+    from torch_sim.state import BaseState
 
 try:
     from pymatgen.core import Structure
@@ -332,9 +334,7 @@ def phonopy_to_state(
     try:
         from phonopy.structure.atoms import PhonopyAtoms
     except ImportError as err:
-        raise ImportError(
-            "Phonopy is required for phonopy_to_state conversion"
-        ) from err
+        raise ImportError("Phonopy is required for phonopy_to_state conversion") from err
 
     phonopy_atoms_list = (
         [phonopy_atoms] if isinstance(phonopy_atoms, PhonopyAtoms) else phonopy_atoms

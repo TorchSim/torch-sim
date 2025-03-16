@@ -6,10 +6,10 @@ import numpy as np
 import pytest
 import torch
 
+from torch_sim.integrators import MDState
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.state import BaseState
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
-from torch_sim.integrators import MDState
 
 
 @pytest.fixture
@@ -508,9 +508,7 @@ def test_write_ase_trajectory(
         # Check basic properties match
         assert len(atoms) == len(random_state.atomic_numbers)
         np.testing.assert_allclose(atoms.get_cell(), random_state.cell.numpy()[0])
-        np.testing.assert_allclose(
-            atoms.get_positions(), random_state.positions.numpy()
-        )
+        np.testing.assert_allclose(atoms.get_positions(), random_state.positions.numpy())
         np.testing.assert_allclose(
             atoms.get_atomic_numbers(), random_state.atomic_numbers.numpy()
         )

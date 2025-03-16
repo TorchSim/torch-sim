@@ -18,11 +18,11 @@ from mace.calculators.foundations_models import mace_mp
 from pymatgen.core import Structure
 
 from torch_sim.integrators import nvt_langevin
+from torch_sim.io import state_to_atoms, state_to_structures
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.models.mace import MaceModel
 from torch_sim.optimizers import unit_cell_fire
 from torch_sim.quantities import kinetic_energy
-from torch_sim.io import state_to_atoms, state_to_structures
 from torch_sim.runners import integrate, optimize
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 from torch_sim.units import MetalUnits

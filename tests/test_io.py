@@ -13,20 +13,17 @@ from torch_sim.io import (
     state_to_structures,
     structures_to_state,
 )
-from torch_sim.state import BaseState, initialize_state
+from torch_sim.state import BaseState
 
 
-def test_single_structure_to_state(
-    si_structure: Structure, device: torch.device
-) -> None:
+def test_single_structure_to_state(si_structure: Structure, device: torch.device) -> None:
     """Test conversion from pymatgen Structure to state tensors."""
     state = structures_to_state(si_structure, device, torch.float64)
 
     # Check basic properties
     assert isinstance(state, BaseState)
     assert all(
-        t.device.type == device.type
-        for t in [state.positions, state.masses, state.cell]
+        t.device.type == device.type for t in [state.positions, state.masses, state.cell]
     )
     assert all(
         t.dtype == torch.float64 for t in [state.positions, state.masses, state.cell]
@@ -149,8 +146,7 @@ def test_single_phonopy_to_state(si_phonopy_atoms: Any, device: torch.device) ->
     # Check basic properties
     assert isinstance(state, BaseState)
     assert all(
-        t.device.type == device.type
-        for t in [state.positions, state.masses, state.cell]
+        t.device.type == device.type for t in [state.positions, state.masses, state.cell]
     )
     assert all(
         t.dtype == torch.float64 for t in [state.positions, state.masses, state.cell]
@@ -169,9 +165,7 @@ def test_single_phonopy_to_state(si_phonopy_atoms: Any, device: torch.device) ->
 
 def test_multiple_phonopy_to_state(si_phonopy_atoms: Any, device: torch.device) -> None:
     """Test conversion from multiple PhonopyAtoms to state tensors."""
-    state = phonopy_to_state(
-        [si_phonopy_atoms, si_phonopy_atoms], device, torch.float64
-    )
+    state = phonopy_to_state([si_phonopy_atoms, si_phonopy_atoms], device, torch.float64)
 
     # Check basic properties
     assert isinstance(state, BaseState)

@@ -183,9 +183,7 @@ class ChunkingAutoBatcher:
         self,
         model: ModelInterface,
         *,
-        memory_scales_with: Literal[
-            "n_atoms", "n_atoms_x_density"
-        ] = "n_atoms_x_density",
+        memory_scales_with: Literal["n_atoms", "n_atoms_x_density"] = "n_atoms_x_density",
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         return_indices: bool = False,
@@ -309,9 +307,7 @@ class ChunkingAutoBatcher:
             raise StopIteration
         return next_batch
 
-    def restore_original_order(
-        self, batched_states: list[BaseState]
-    ) -> list[BaseState]:
+    def restore_original_order(self, batched_states: list[BaseState]) -> list[BaseState]:
         """Reorder processed states back to their original sequence.
 
         Takes states that were processed in batches and restores them to the
@@ -356,9 +352,7 @@ class HotSwappingAutoBatcher:
         self,
         model: ModelInterface,
         *,
-        memory_scales_with: Literal[
-            "n_atoms", "n_atoms_x_density"
-        ] = "n_atoms_x_density",
+        memory_scales_with: Literal["n_atoms", "n_atoms_x_density"] = "n_atoms_x_density",
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         return_indices: bool = False,
@@ -376,7 +370,7 @@ class HotSwappingAutoBatcher:
             max_atoms_to_try: Maximum number of atoms to try when estimating
                 max_memory_scaler.
             return_indices: Whether to return original indices along with the batch.
-            max_attempts: Maximum number of iterations a state can remain in the
+            max_iterations: Maximum number of iterations a state can remain in the
                 batcher before being forcibly completed. If None, states can
                 remain indefinitely.
         """

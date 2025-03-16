@@ -4,9 +4,9 @@ from ase.build import bulk
 from fairchem.core import OCPCalculator
 from fairchem.core.models.model_registry import model_name_to_local_file
 
+from torch_sim.io import atoms_to_state
 from torch_sim.models.fairchem import FairChemModel
 from torch_sim.models.interface import validate_model_outputs
-from torch_sim.io import atoms_to_state
 from torch_sim.state import BaseState
 
 

@@ -1,22 +1,24 @@
 from dataclasses import asdict
 from typing import TYPE_CHECKING
+
 import torch
 
+from torch_sim.integrators import MDState
 from torch_sim.state import (
     BaseState,
+    _normalize_batch_indices,
     concatenate_states,
     infer_property_scope,
+    initialize_state,
     pop_states,
     slice_state,
-    initialize_state,
-    _normalize_batch_indices,
 )
-from torch_sim.integrators import MDState
+
 
 if TYPE_CHECKING:
-    from pymatgen.core import Structure
     from ase import Atoms
     from phonopy.structure.atoms import PhonopyAtoms
+    from pymatgen.core import Structure
 
 
 def test_infer_base_state_property_scope(si_base_state: BaseState) -> None:
@@ -95,9 +97,7 @@ def test_concatenate_two_si_states(
     assert concatenated.positions.shape == si_double_base_state.positions.shape
     assert concatenated.masses.shape == si_double_base_state.masses.shape
     assert concatenated.cell.shape == si_double_base_state.cell.shape
-    assert (
-        concatenated.atomic_numbers.shape == si_double_base_state.atomic_numbers.shape
-    )
+    assert concatenated.atomic_numbers.shape == si_double_base_state.atomic_numbers.shape
     assert concatenated.batch.shape == si_double_base_state.batch.shape
 
     # Check batch indices
@@ -198,12 +198,8 @@ def test_concatenate_double_si_and_fe_states(
     fe_slice = concatenated[2]
 
     # Check that the slices match the original states
-    assert torch.allclose(
-        si_slice_0.positions, si_double_base_state[0].positions
-    )
-    assert torch.allclose(
-        si_slice_1.positions, si_double_base_state[1].positions
-    )
+    assert torch.allclose(si_slice_0.positions, si_double_base_state[0].positions)
+    assert torch.allclose(si_slice_1.positions, si_double_base_state[1].positions)
     assert torch.allclose(fe_slice.positions, fe_fcc_state.positions)
 
 
@@ -431,6 +427,6 @@ def test_normalize_batch_indices(si_double_base_state: BaseState) -> None:
     # Test error for unsupported type
     try:
         _normalize_batch_indices((0, 1), n_batches, device)  # Tuple is not supported
-        assert False, "Should have raised TypeError"
+        raise ValueError("Should have raised TypeError")
     except TypeError:
         pass

@@ -119,9 +119,7 @@ class TrajectoryReporter:
                 if len(sig.parameters) == 1:
                     # we partially evaluate the function to create a new function with
                     # an optional second argument, this can be set to state later on
-                    new_fn = partial(
-                        lambda state, _=None, fn=None: fn(state), fn=prop_fn
-                    )
+                    new_fn = partial(lambda state, _=None, fn=None: fn(state), fn=prop_fn)
                     self.prop_calculators[frequency][name] = new_fn
 
     def report(
@@ -554,7 +552,7 @@ class TorchSimTrajectory:
         """
         # TODO: consider changing this reporting later
 
-        # we wrap 
+        # we wrap
         if isinstance(state, BaseState):
             state = [state]
         if isinstance(steps, int):
@@ -639,9 +637,7 @@ class TorchSimTrajectory:
 
         # Get required data
         if "positions" not in self.array_registry:
-            raise ValueError(
-                "Positions not found in trajectory so cannot get structure."
-            )
+            raise ValueError("Positions not found in trajectory so cannot get structure.")
 
         # check length of positions array
         n_frames = self._file.root.data.positions.shape[0]
@@ -652,9 +648,7 @@ class TorchSimTrajectory:
         if frame > n_frames:
             raise ValueError(f"{frame=} is out of range. Total frames: {n_frames}")
 
-        arrays["positions"] = self.get_array("positions", start=frame, stop=frame + 1)[
-            0
-        ]
+        arrays["positions"] = self.get_array("positions", start=frame, stop=frame + 1)[0]
 
         def return_prop(self: Self, prop: str, frame: int) -> np.ndarray:
             if self._file.root.data.cell.shape[0] > 1:  # Variable cell

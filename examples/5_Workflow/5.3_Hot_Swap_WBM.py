@@ -15,9 +15,9 @@ from mace.calculators.foundations_models import mace_mp
 from matbench_discovery.data import DataFiles, ase_atoms_from_zip
 
 from torch_sim.autobatching import HotSwappingAutoBatcher
+from torch_sim.io import atoms_to_state
 from torch_sim.models.mace import MaceModel
 from torch_sim.optimizers import unit_cell_fire
-from torch_sim.io import atoms_to_state
 from torch_sim.state import BaseState
 
 

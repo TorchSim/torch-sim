@@ -3,7 +3,10 @@
 import os
 from datetime import datetime
 
-from torch_sim.runners import optimize, integrate
+from torch_sim.runners import integrate, optimize
+
+
+__all__ = ["integrate", "optimize"]
 
 PKG_DIR = os.path.dirname(__file__)
 ROOT = os.path.dirname(PKG_DIR)

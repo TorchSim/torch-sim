@@ -13,10 +13,10 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
+from torch_sim.io import atoms_to_state
 from torch_sim.models.mace import MaceModel
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.optimizers import unit_cell_gradient_descent
-from torch_sim.io import atoms_to_state
 from torch_sim.units import UnitConversion
 
 

@@ -20,6 +20,7 @@ Example:
 """
 
 import copy
+import importlib
 import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal, Self
@@ -38,8 +39,8 @@ from torch_sim.io import (
 
 if TYPE_CHECKING:
     from ase import Atoms
-    from pymatgen.core import Structure
     from phonopy.structure.atoms import PhonopyAtoms
+    from pymatgen.core import Structure
 
 
 from typing import TypeVar, Union
@@ -115,9 +116,7 @@ class BaseState:
             )
 
         if self.batch is None:
-            self.batch = torch.zeros(
-                self.n_atoms, device=self.device, dtype=torch.int64
-            )
+            self.batch = torch.zeros(self.n_atoms, device=self.device, dtype=torch.int64)
         else:
             # assert that batch indices are unique consecutive integers
             _, counts = torch.unique_consecutive(self.batch, return_counts=True)
@@ -217,55 +216,60 @@ class BaseState:
             A list of BaseStates
         """
         return split_state(self)
-    
-    def pop(
-        self, batch_indices: int | list[int] | slice | torch.Tensor
-    ) -> list[Self]:
+
+    def pop(self, batch_indices: int | list[int] | slice | torch.Tensor) -> list[Self]:
         """Pop off states with the specified batch indices.
-        
+
         This method modifies the original state object by removing the specified batches.
-        
+
         Args:
             batch_indices: The batch indices to pop
-            
+
         Returns:
             List of popped states
         """
-        batch_indices = _normalize_batch_indices(batch_indices, self.n_batches, self.device)
+        batch_indices = _normalize_batch_indices(
+            batch_indices, self.n_batches, self.device
+        )
 
         # Get the modified state and popped states
         modified_state, popped_states = pop_states(self, batch_indices)
-        
+
         # Update all attributes of self with the modified state's attributes
         for attr_name, attr_value in vars(modified_state).items():
             setattr(self, attr_name, attr_value)
-        
+
         return popped_states
-    
+
     def __getitem__(self, batch_indices: int | list[int] | slice | torch.Tensor) -> Self:
         """Enable standard Python indexing syntax for slicing batches.
 
         Args:
             batch_indices: The batch indices to include in the sliced state
-                
+
         Returns:
             A new BaseState containing only the specified batches
         """
         # Reuse the existing slice method
-        batch_indices = _normalize_batch_indices(batch_indices, self.n_batches, self.device)
+        batch_indices = _normalize_batch_indices(
+            batch_indices, self.n_batches, self.device
+        )
 
         return slice_state(self, batch_indices)
 
+
 def _normalize_batch_indices(
-    batch_indices: int | list[int] | slice | torch.Tensor, n_batches: int, device: torch.device
+    batch_indices: int | list[int] | slice | torch.Tensor,
+    n_batches: int,
+    device: torch.device,
 ) -> torch.Tensor:
     """Normalize batch indices to handle negative indices and different input types.
-    
+
     Args:
         batch_indices: The batch indices to normalize
         n_batches: Total number of batches
         device: Device to place the tensor on
-        
+
     Returns:
         Normalized batch indices as a tensor
     """
@@ -274,22 +278,18 @@ def _normalize_batch_indices(
         if batch_indices < 0:
             batch_indices = n_batches + batch_indices
         return torch.tensor([batch_indices], device=device)
-    elif isinstance(batch_indices, list):
+    if isinstance(batch_indices, list):
         # Handle negative indices in lists
         normalized = [idx if idx >= 0 else n_batches + idx for idx in batch_indices]
         return torch.tensor(normalized, device=device)
-    elif isinstance(batch_indices, slice):
+    if isinstance(batch_indices, slice):
         # Let PyTorch handle the slice conversion with negative indices
         return torch.arange(n_batches, device=device)[batch_indices]
-    elif isinstance(batch_indices, torch.Tensor):
+    if isinstance(batch_indices, torch.Tensor):
         # Handle negative indices in tensors
-        return torch.where(
-            batch_indices < 0, 
-            n_batches + batch_indices, 
-            batch_indices
-        )
-    else:
-        raise TypeError(f"Unsupported index type: {type(batch_indices)}")
+        return torch.where(batch_indices < 0, n_batches + batch_indices, batch_indices)
+    raise TypeError(f"Unsupported index type: {type(batch_indices)}")
+
 
 def state_to_device(
     state: BaseState, device: torch.device, dtype: torch.dtype | None = None
@@ -423,7 +423,6 @@ def _filter_attrs_by_mask(
     attrs: dict[str, dict],
     atom_mask: torch.Tensor,
     batch_mask: torch.Tensor,
-    remap_batch: bool = True,
 ) -> dict:
     """Filter attributes by atom and batch masks.
 
@@ -431,7 +430,6 @@ def _filter_attrs_by_mask(
         attrs: Dictionary with 'global', 'per_atom', and 'per_batch' attributes
         atom_mask: Boolean mask for atoms to include
         batch_mask: Boolean mask for batches to include
-        remap_batch: Whether to remap batch indices to be consecutive
 
     Returns:
         Dictionary of filtered attributes
@@ -443,7 +441,7 @@ def _filter_attrs_by_mask(
 
     # Filter per-atom attributes
     for attr_name, attr_value in attrs["per_atom"].items():
-        if attr_name == "batch" and remap_batch:
+        if attr_name == "batch":
             # Get the old batch indices for the selected atoms
             old_batch = attr_value[atom_mask]
 
@@ -497,16 +495,11 @@ def split_state(
     for i in range(state.n_batches):
         batch_attrs = {
             # Create a batch tensor with all zeros for this batch
-            "batch": torch.zeros(
-                batch_sizes[i], device=state.device, dtype=torch.int64
-            ),
+            "batch": torch.zeros(batch_sizes[i], device=state.device, dtype=torch.int64),
             # Add the split per-atom attributes
             **{attr_name: split_per_atom[attr_name][i] for attr_name in split_per_atom},
             # Add the split per-batch attributes
-            **{
-                attr_name: split_per_batch[attr_name][i]
-                for attr_name in split_per_batch
-            },
+            **{attr_name: split_per_batch[attr_name][i] for attr_name in split_per_batch},
             # Add the global attributes
             **attrs["global"],
         }
@@ -689,7 +682,6 @@ def initialize_state(
     Raises:
         ValueError: If system type is not supported
     """
-
     # TODO: create a way to pass velocities from pmg and ase
 
     if isinstance(system, BaseState):
@@ -704,36 +696,24 @@ def initialize_state(
             )
         return concatenate_states(system)
 
-    try:
-        from pymatgen.core import Structure
+    converters = [
+        ("pymatgen.core", "Structure", structures_to_state),
+        ("ase", "Atoms", atoms_to_state),
+        ("phonopy.structure.atoms", "PhonopyAtoms", phonopy_to_state),
+    ]
 
-        if isinstance(system, Structure) or (
-            isinstance(system, list) and all(isinstance(s, Structure) for s in system)
-        ):
-            return structures_to_state(system, device, dtype)
-    except ImportError:
-        pass
+    # Try each converter
+    for module_path, class_name, converter_func in converters:
+        try:
+            module = importlib.import_module(module_path)
+            cls = getattr(module, class_name)
 
-    try:
-        from ase import Atoms
-
-        if isinstance(system, Atoms) or (
-            isinstance(system, list) and all(isinstance(s, Atoms) for s in system)
-        ):
-            return atoms_to_state(system, device, dtype)
-    except ImportError:
-        pass
-
-    try:
-        from phonopy.structure.atoms import PhonopyAtoms
-
-        if isinstance(system, PhonopyAtoms) or (
-            isinstance(system, list)
-            and all(isinstance(s, PhonopyAtoms) for s in system)
-        ):
-            return phonopy_to_state(system, device, dtype)
-    except ImportError:
-        pass
+            if isinstance(system, cls) or (
+                isinstance(system, list) and all(isinstance(s, cls) for s in system)
+            ):
+                return converter_func(system, device, dtype)
+        except ImportError:
+            continue
 
     # remaining code just for informative error
     is_list = isinstance(system, list)

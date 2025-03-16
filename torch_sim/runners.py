@@ -1,14 +1,23 @@
-import torch
+"""Simulation runners for molecular dynamics and optimization.
+
+This module provides functions for running molecular dynamics simulations and geometry
+optimizations using various calculators and integrators. It includes utilities for
+converting between different molecular representations and handling simulation state.
+"""
+
+import warnings
 from collections.abc import Callable, Iterable
 from pathlib import Path
+
+import torch
+from numpy.typing import ArrayLike
+
 from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
-from torch_sim.state import initialize_state
 from torch_sim.models.interface import ModelInterface
 from torch_sim.quantities import batchwise_max_force, kinetic_energy, temperature
-from torch_sim.state import BaseState, concatenate_states, StateLike
+from torch_sim.state import BaseState, StateLike, concatenate_states, initialize_state
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.units import UnitSystem
-from numpy.typing import ArrayLike
 
 
 def _configure_batches_iterator(

@@ -4,13 +4,13 @@ import pytest
 import torch
 from ase.build import bulk
 
+from torch_sim.io import atoms_to_state
 from torch_sim.models.interface import validate_model_outputs
 from torch_sim.models.lennard_jones import (
     UnbatchedLennardJonesModel,
     lennard_jones_pair,
     lennard_jones_pair_force,
 )
-from torch_sim.io import atoms_to_state
 from torch_sim.state import BaseState
 
 
