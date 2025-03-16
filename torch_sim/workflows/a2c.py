@@ -429,7 +429,7 @@ def random_packed_structure_multi(
         # Dummy atomic numbers
         atomic_numbers = torch.ones_like(positions_cart, device=device, dtype=torch.int)
 
-        StateDict = {
+        state_dict = {
             "positions": positions_cart,
             "masses": torch.ones(N_atoms, device=device, dtype=dtype),
             "atomic_numbers": atomic_numbers,
@@ -438,7 +438,7 @@ def random_packed_structure_multi(
         }
         # Set up FIRE optimizer with unit masses for all atoms
         fire_init, fire_update = fire(model=model)
-        state = fire_init(StateDict)
+        state = fire_init(state_dict)
         print(f"Initial energy: {state.energy.item():.4f}")
         # Run FIRE optimization until convergence or max iterations
         for _step in range(max_iter):

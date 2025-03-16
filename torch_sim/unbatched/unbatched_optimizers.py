@@ -8,13 +8,8 @@ import torch
 
 from torch_sim.math import expm, expm_frechet
 from torch_sim.math import matrix_log_33 as logm
-from torch_sim.state import BaseState
+from torch_sim.state import BaseState, StateDict
 from torch_sim.unbatched.unbatched_integrators import velocity_verlet
-
-
-StateDict = dict[
-    Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "batch"], torch.Tensor
-]
 
 
 @dataclass

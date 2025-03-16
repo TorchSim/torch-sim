@@ -58,6 +58,11 @@ StateLike = Union[
     list[T],
 ]
 
+StateDict = dict[
+    Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "batch"],
+    torch.Tensor,
+]
+
 
 # TODO: change later on
 @dataclass
@@ -116,7 +121,9 @@ class BaseState:
             )
 
         if self.batch is None:
-            self.batch = torch.zeros(self.n_atoms, device=self.device, dtype=torch.int64)
+            self.batch = torch.zeros(
+                self.n_atoms, device=self.device, dtype=torch.int64
+            )
         else:
             # assert that batch indices are unique consecutive integers
             _, counts = torch.unique_consecutive(self.batch, return_counts=True)
@@ -241,7 +248,23 @@ class BaseState:
 
         return popped_states
 
-    def __getitem__(self, batch_indices: int | list[int] | slice | torch.Tensor) -> Self:
+    def to(
+        self, device: torch.device | None = None, dtype: torch.dtype | None = None
+    ) -> Self:
+        """Convert the BaseState to a new device and dtype.
+
+        Args:
+            device: The device to convert to
+            dtype: The dtype to convert to
+
+        Returns:
+            A new BaseState object with the converted device and dtype
+        """
+        return state_to_device(self, device, dtype)
+
+    def __getitem__(
+        self, batch_indices: int | list[int] | slice | torch.Tensor
+    ) -> Self:
         """Enable standard Python indexing syntax for slicing batches.
 
         Args:
@@ -292,7 +315,9 @@ def _normalize_batch_indices(
 
 
 def state_to_device(
-    state: BaseState, device: torch.device, dtype: torch.dtype | None = None
+    state: BaseState,
+    device: torch.device | None = None,
+    dtype: torch.dtype | None = None,
 ) -> Self:
     """Convert the BaseState to a new device and dtype.
 
@@ -304,6 +329,11 @@ def state_to_device(
     Returns:
         A new BaseState object with the converted device and dtype
     """
+    if device is None:
+        device = state.device
+    if dtype is None:
+        dtype = state.dtype
+
     attrs = vars(state)
     for attr_name, attr_value in attrs.items():
         if isinstance(attr_value, torch.Tensor):
@@ -495,11 +525,16 @@ def split_state(
     for i in range(state.n_batches):
         batch_attrs = {
             # Create a batch tensor with all zeros for this batch
-            "batch": torch.zeros(batch_sizes[i], device=state.device, dtype=torch.int64),
+            "batch": torch.zeros(
+                batch_sizes[i], device=state.device, dtype=torch.int64
+            ),
             # Add the split per-atom attributes
             **{attr_name: split_per_atom[attr_name][i] for attr_name in split_per_atom},
             # Add the split per-batch attributes
-            **{attr_name: split_per_batch[attr_name][i] for attr_name in split_per_batch},
+            **{
+                attr_name: split_per_batch[attr_name][i]
+                for attr_name in split_per_batch
+            },
             # Add the global attributes
             **attrs["global"],
         }

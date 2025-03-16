@@ -2,18 +2,12 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 import torch
 
-from torch_sim.state import BaseState
+from torch_sim.state import BaseState, StateDict
 from torch_sim.unbatched.unbatched_optimizers import OptimizerState
-
-
-StateDict = dict[
-    Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "batch"],
-    torch.Tensor,
-]
 
 
 @dataclass
@@ -332,7 +326,9 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
             )
 
         if isinstance(cell_lr, float):
-            cell_lr = torch.full((state.n_batches,), cell_lr, device=device, dtype=dtype)
+            cell_lr = torch.full(
+                (state.n_batches,), cell_lr, device=device, dtype=dtype
+            )
 
         # Get current deformation gradient
         cur_deform_grad = torch.transpose(
@@ -711,7 +707,9 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         atom_wise_dt = state.dt[state.batch].unsqueeze(-1)
         cell_wise_dt = state.dt.unsqueeze(-1).unsqueeze(-1)
 
-        state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
+        state.velocities += (
+            0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
+        )
         state.cell_velocities += (
             0.5 * cell_wise_dt * state.cell_forces / state.cell_masses.unsqueeze(-1)
         )
@@ -765,7 +763,9 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         state.cell_forces = virial
 
         # Velocity Verlet first half step (v += 0.5*a*dt)
-        state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
+        state.velocities += (
+            0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
+        )
         state.cell_velocities += (
             0.5 * cell_wise_dt * state.cell_forces / state.cell_masses.unsqueeze(-1)
         )

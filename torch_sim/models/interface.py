@@ -155,12 +155,7 @@ def validate_model_outputs(
     og_batch = base_state.batch.clone()
     og_atomic_numbers = base_state.atomic_numbers.clone()
 
-    model_output = model.forward(
-        positions=base_state.positions,
-        cell=base_state.cell,
-        batch=base_state.batch,
-        atomic_numbers=base_state.atomic_numbers,
-    )
+    model_output = model.forward(base_state)
 
     # assert model did not mutate the input
     assert torch.allclose(og_positions, base_state.positions)
@@ -181,12 +176,7 @@ def validate_model_outputs(
     si_state = atoms_to_state([si_atoms], device, dtype)
     ar_state = atoms_to_state([fe_atoms], device, dtype)
 
-    si_model_output = model.forward(
-        positions=si_state.positions,
-        cell=si_state.cell,
-        batch=si_state.batch,
-        atomic_numbers=si_state.atomic_numbers,
-    )
+    si_model_output = model.forward(si_state)
     assert torch.allclose(
         si_model_output["energy"], model_output["energy"][0], atol=10e-3
     )
@@ -201,18 +191,8 @@ def validate_model_outputs(
     #     atol=10e-3,
     # )
 
-    ar_model_output = model.forward(
-        positions=ar_state.positions,
-        cell=ar_state.cell,
-        batch=ar_state.batch,
-        atomic_numbers=ar_state.atomic_numbers,
-    )
-    si_model_output = model.forward(
-        positions=si_state.positions,
-        cell=si_state.cell,
-        batch=si_state.batch,
-        atomic_numbers=si_state.atomic_numbers,
-    )
+    ar_model_output = model.forward(ar_state)
+    si_model_output = model.forward(si_state)
 
     # print("ar single batch energy", ar_model_output["energy"])
     # print("si single batch energy", si_model_output["energy"])

@@ -56,9 +56,7 @@ def test_fairchem_ocp_consistency(
 
     si_state = atoms_to_state([si_dc], device, torch.float32)
     # Get FairChem results
-    fairchem_results = fairchem_calculator(
-        si_state.positions, si_state.cell, si_state.atomic_numbers
-    )
+    fairchem_results = fairchem_calculator(si_state)
 
     # Get OCP results
     ocp_forces = torch.tensor(

@@ -12,6 +12,7 @@ from mace.tools import atomic_numbers_to_indices, to_one_hot, utils
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.state import BaseState, StateDict
 
 
 class UnbatchedMaceModel(torch.nn.Module):
@@ -346,7 +347,9 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
             self.setup_from_batch(atomic_numbers, batch)
 
-    def setup_from_batch(self, atomic_numbers: torch.Tensor, batch: torch.Tensor) -> None:
+    def setup_from_batch(
+        self, atomic_numbers: torch.Tensor, batch: torch.Tensor
+    ) -> None:
         """Set up internal state from atomic numbers and batch indices.
 
         Args:
@@ -386,30 +389,31 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
     def forward(  # noqa: C901
         self,
-        positions: torch.Tensor,
-        cell: torch.Tensor | None,
-        batch: torch.Tensor | None,
-        atomic_numbers: torch.Tensor | None = None,
-        **_,
+        state: BaseState | StateDict,
     ) -> dict[str, torch.Tensor]:
         """Compute energies, forces, and stresses for the system(s).
 
         Args:
-            positions: Atomic positions [n_atoms, 3]
-            cell: Unit cells [n_batches, 3, 3] or None
-            batch: Batch indices [n_atoms] or None
-            atomic_numbers: Atomic numbers [n_atoms] or None
-            **kwargs: Additional arguments
+            state: State object
 
         Returns:
             dict: Dictionary with 'energy', 'forces', and optionally 'stress'
         """
+        # Extract required data from input
+        if not isinstance(state, BaseState):
+            state = BaseState(
+                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
+            )
+        else:
+            if state.pbc != self.periodic:
+                raise ValueError("PBC mismatch between model and state")
+
         # Handle input validation for atomic numbers
-        if atomic_numbers is None and not self.atomic_numbers_in_init:
+        if state.atomic_numbers is None and not self.atomic_numbers_in_init:
             raise ValueError(
                 "Atomic numbers must be provided in either the constructor or forward."
             )
-        if atomic_numbers is not None and self.atomic_numbers_in_init:
+        if state.atomic_numbers is not None and self.atomic_numbers_in_init:
             raise ValueError(
                 "Atomic numbers cannot be provided in both the constructor and forward."
             )
@@ -430,29 +434,29 @@ class MaceModel(torch.nn.Module, ModelInterface):
         #         self.atomic_number_tensor = new_atomic_number_tensor
 
         # Use batch from init if not provided
-        if batch is None:
+        if state.batch is None:
             if not hasattr(self, "batch"):
                 raise ValueError(
                     "Batch indices must be provided if not set during initialization"
                 )
-            batch = self.batch
+            state.batch = self.batch
 
         # Update batch information if new atomic numbers are provided
         if (
-            atomic_numbers is not None
+            state.atomic_numbers is not None
             and not self.atomic_numbers_in_init
             and not torch.equal(
-                atomic_numbers,
+                state.atomic_numbers,
                 getattr(self, "atomic_numbers", torch.zeros(0, device=self._device)),
             )
         ):
-            self.setup_from_batch(atomic_numbers, batch)
+            self.setup_from_batch(state.atomic_numbers, state.batch)
 
         # Ensure cell has correct shape
-        if cell is None:
-            cell = torch.zeros(
-                (self.n_systems, 3, 3), device=self._device, dtype=self._dtype
-            )
+        # if state.cell is None:
+        #     state.cell = torch.zeros(
+        #         (self.n_systems, 3, 3), device=self._device, dtype=self._dtype
+        #     )
 
         # Process each system's neighbor list separately
         edge_indices = []
@@ -462,11 +466,11 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
         # TODO (AG): Currently doesn't work for batched neighbor lists
         for b in range(self.n_systems):
-            batch_mask = batch == b
+            batch_mask = state.batch == b
             # Calculate neighbor list for this system
             mapping, shifts_idx = self.neighbor_list_fn(
-                positions=positions[batch_mask],
-                cell=cell[b],
+                positions=state.positions[batch_mask],
+                cell=state.cell[b],
                 pbc=self.periodic,
                 cutoff=self.r_max,
             )
@@ -476,10 +480,10 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
             edge_indices.append(mapping)
             unit_shifts_list.append(shifts_idx)
-            shifts = torch.mm(shifts_idx, cell[b])
+            shifts = torch.mm(shifts_idx, state.cell[b])
             shifts_list.append(shifts)
 
-            offset += len(positions[batch_mask])
+            offset += len(state.positions[batch_mask])
 
         # Combine all neighbor lists
         edge_index = torch.cat(edge_indices, dim=1)
@@ -491,10 +495,10 @@ class MaceModel(torch.nn.Module, ModelInterface):
             dict(
                 ptr=self.ptr,
                 node_attrs=self.node_attrs,
-                batch=batch,
+                batch=state.batch,
                 pbc=self.pbc,
-                cell=cell,
-                positions=positions,
+                cell=state.cell,
+                positions=state.positions,
                 edge_index=edge_index,
                 unit_shifts=unit_shifts,
                 shifts=shifts,

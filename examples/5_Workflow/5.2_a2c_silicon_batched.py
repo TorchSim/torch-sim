@@ -125,14 +125,14 @@ nvt_nose_hoover_init, nvt_nose_hoover_update = nvt_nose_hoover(
     dt=dt,
 )
 
-StateDict = {
+state_dict = {
     "positions": structure.positions,
     "masses": torch.tensor(atomic_masses, device=device, dtype=dtype),
     "cell": cell,
     "pbc": PERIODIC,
     "atomic_numbers": atomic_numbers,
 }
-state = nvt_nose_hoover_init(StateDict)
+state = nvt_nose_hoover_init(state_dict)
 
 logger = {
     "T": torch.zeros((simulation_steps, 1), device=device, dtype=dtype),

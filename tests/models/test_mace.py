@@ -72,7 +72,9 @@ def test_mace_consistency(
 
     # Get FairChem results
     torchsim_mace_results = torchsim_mace_model(
-        si_system["positions"], si_system["cell"], si_system["atomic_numbers"]
+        positions=si_system["positions"],
+        cell=si_system["cell"],
+        atomic_numbers=si_system["atomic_numbers"],
     )
 
     # Get OCP results
@@ -107,12 +109,7 @@ def test_mace_batched_consistency(
     si_base_state = atoms_to_state([si_atoms], device, torch.float32)
 
     # Get FairChem results
-    torchsim_mace_results = torchsim_batched_mace_model(
-        positions=si_base_state.positions,
-        cell=si_base_state.cell,
-        batch=si_base_state.batch,
-        atomic_numbers=si_base_state.atomic_numbers,
-    )
+    torchsim_mace_results = torchsim_batched_mace_model(si_base_state)
 
     # Get OCP results
     ase_mace_forces = torch.tensor(
@@ -147,12 +144,7 @@ def test_mace_dtype_working(
 
     state = atoms_to_state([si_atoms], device, dtype)
 
-    model.forward(
-        positions=state.positions,
-        cell=state.cell,
-        batch=state.batch,
-        atomic_numbers=state.atomic_numbers,
-    )
+    model.forward(state)
 
 
 def test_validate_model_outputs(

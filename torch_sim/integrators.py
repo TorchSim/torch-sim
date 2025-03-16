@@ -6,14 +6,10 @@ from typing import Any, Literal
 
 import torch
 
-from torch_sim.state import BaseState
+from torch_sim.state import BaseState, StateDict
 from torch_sim.transforms import pbc_wrap_batched
 
 
-StateDict = dict[
-    Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "batch"],
-    torch.Tensor,
-]
 
 
 @dataclass

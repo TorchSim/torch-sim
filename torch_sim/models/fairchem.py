@@ -21,7 +21,7 @@ from fairchem.core.models.model_registry import model_name_to_local_file
 from torch_geometric.data import Batch
 
 from torch_sim.models.interface import ModelInterface
-
+from torch_sim.state import BaseState, StateDict
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -239,43 +239,33 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             print("Unable to load checkpoint!")
 
     def forward(
-        self,
-        positions: torch.Tensor,
-        cell: torch.Tensor,
-        atomic_numbers: torch.Tensor,
-        batch: torch.Tensor | None = None,
-        **_,
+        self, state: BaseState | StateDict
     ) -> dict:  # TODO: what are the shapes?
         """Forward pass of the model.
 
         Args:
-            positions: Atomic positions tensor
-            cell: Box vectors tensor
-            batch: Batch tensor
-            atomic_numbers: Atomic numbers tensor
+            state: State object
 
         Returns:
             Dictionary of model predictions
         """
-        if positions.device != self._device:
-            positions = positions.to(self._device)
-        if cell.device != self._device:
-            cell = cell.to(self._device)
+        if state.device != self._device:
+            state = state.to(self._device)
 
-        if batch is None:
-            batch = torch.zeros(positions.shape[0], dtype=torch.int)
+        if state.batch is None:
+            state.batch = torch.zeros(state.positions.shape[0], dtype=torch.int)
 
-        natoms = torch.bincount(batch)
+        natoms = torch.bincount(state.batch)
         pbc = torch.tensor(
             [self.pbc, self.pbc, self.pbc] * len(natoms), dtype=torch.bool
         ).view(-1, 3)
-        fixed = torch.zeros((batch.size(0), natoms.sum()), dtype=torch.int)
+        fixed = torch.zeros((state.batch.size(0), natoms.sum()), dtype=torch.int)
         self.data_object = Batch(
-            pos=positions,
-            cell=cell,
-            atomic_numbers=atomic_numbers,
+            pos=state.positions,
+            cell=state.cell,
+            atomic_numbers=state.atomic_numbers,
             natoms=natoms,
-            batch=batch,
+            batch=state.batch,
             fixed=fixed,
             pbc=pbc,
         )
