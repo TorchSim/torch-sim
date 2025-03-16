@@ -207,7 +207,7 @@ pymatgen_struct_list = [
     for struct in candidate_structures
 ]
 # Make sure to compute stress
-model.compute_stress = True
+model._compute_stress = True  # noqa: SLF001
 
 start_time = time.perf_counter()
 pymatgen_relaxed_struct_list = []

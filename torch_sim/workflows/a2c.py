@@ -300,13 +300,13 @@ def random_packed_structure(
         atomic_numbers = torch.ones_like(positions_cart, device=device, dtype=torch.int)
 
         # Set up FIRE optimizer with unit masses
-        state = {
-            "positions": positions_cart,
-            "masses": torch.ones(N_atoms, device=device, dtype=dtype),
-            "atomic_numbers": atomic_numbers,
-            "cell": cell,
-            "pbc": True,
-        }
+        state = BaseState(
+            positions=positions_cart,
+            masses=torch.ones(N_atoms, device=device, dtype=dtype),
+            atomic_numbers=atomic_numbers,
+            cell=cell,
+            pbc=True,
+        )
         fire_init, fire_update = fire(model=model)
         state = fire_init(state)
         print(f"Initial energy: {state.energy.item():.4f}")
@@ -429,13 +429,13 @@ def random_packed_structure_multi(
         # Dummy atomic numbers
         atomic_numbers = torch.ones_like(positions_cart, device=device, dtype=torch.int)
 
-        state_dict = {
-            "positions": positions_cart,
-            "masses": torch.ones(N_atoms, device=device, dtype=dtype),
-            "atomic_numbers": atomic_numbers,
-            "cell": cell,
-            "pbc": True,
-        }
+        state_dict = BaseState(
+            positions=positions_cart,
+            masses=torch.ones(N_atoms, device=device, dtype=dtype),
+            atomic_numbers=atomic_numbers,
+            cell=cell,
+            pbc=True,
+        )
         # Set up FIRE optimizer with unit masses for all atoms
         fire_init, fire_update = fire(model=model)
         state = fire_init(state_dict)
@@ -736,11 +736,7 @@ def get_unit_cell_relaxed_structure(
         "stress": torch.zeros((max_iter, 3, 3), device=device, dtype=dtype),
     }
 
-    # Remove batch dimension from cell
-    state.cell = state.cell.squeeze(0)
-    results = model(
-        positions=state.positions, cell=state.cell, atomic_numbers=state.atomic_numbers
-    )
+    results = model(state)
     init_energy = results["energy"].item()
     init_stress = results["stress"]
     init_pressure = (torch.trace(init_stress) / 3.0).item()
@@ -769,9 +765,7 @@ def get_unit_cell_relaxed_structure(
         # print(f"Step {step}: Energy = {energy} eV: Pressure = {pressure} eV/A^3")
 
     # Get final results
-    final_results = model(
-        positions=state.positions, cell=state.cell, atomic_numbers=state.atomic_numbers
-    )
+    final_results = model(state)
 
     final_energy = final_results["energy"].item()
     final_stress = final_results["stress"]
@@ -886,11 +880,7 @@ def get_relaxed_structure(
 
     logger = {"energy": torch.zeros((max_iter, 1), device=device, dtype=dtype)}
 
-    # Remove batch dimension from cell
-    state.cell = state.cell.squeeze(0)
-    results = model(
-        positions=state.positions, cell=state.cell, atomic_numbers=state.atomic_numbers
-    )
+    results = model(state)
     Initial_energy = results["energy"]
     print(f"Initial energy: {Initial_energy.item():.4f} eV")
 

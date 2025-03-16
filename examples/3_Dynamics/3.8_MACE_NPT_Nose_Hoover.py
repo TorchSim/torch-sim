@@ -117,11 +117,7 @@ for step in range(N_steps_npt):
         invariant = npt_nose_hoover_invariant(
             state, kT=kT, external_pressure=target_pressure
         ).item()
-        stress = model(
-            positions=state.positions,
-            cell=state.current_box,
-            atomic_numbers=state.atomic_numbers,
-        )["stress"]
+        stress = model(state)["stress"]
         volume = torch.det(state.current_box)
         pressure = get_pressure(
             stress, kinetic_energy(masses=state.masses, momenta=state.momenta), volume
@@ -136,11 +132,7 @@ for step in range(N_steps_npt):
 
 final_temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
 print(f"Final temperature: {final_temp:.4f}")
-final_stress = model(
-    positions=state.positions,
-    cell=state.current_box,
-    atomic_numbers=state.atomic_numbers,
-)["stress"]
+final_stress = model(state)["stress"]
 final_volume = torch.det(state.current_box)
 final_pressure = get_pressure(
     final_stress, kinetic_energy(masses=state.masses, momenta=state.momenta), final_volume

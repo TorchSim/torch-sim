@@ -135,7 +135,7 @@ for step in range(N_steps):
             state, kT=kT, external_pressure=target_pressure
         )
         pressure = get_pressure(
-            model(positions=state.positions, cell=state.current_box)["stress"],
+            model(state)["stress"],
             kinetic_energy(masses=state.masses, momenta=state.momenta),
             torch.det(state.current_box),
         )
@@ -152,7 +152,7 @@ temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperatu
 print(f"Final temperature: {temp:.4f}")
 
 pressure = get_pressure(
-    model(positions=state.positions, cell=state.current_box)["stress"],
+    model(state)["stress"],
     kinetic_energy(masses=state.masses, momenta=state.momenta),
     torch.det(state.current_box),
 )

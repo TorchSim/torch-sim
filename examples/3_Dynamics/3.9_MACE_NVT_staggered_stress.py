@@ -88,11 +88,7 @@ for step in range(N_steps):
     state = nvt_update(state, kT=kT)
     if step % 10 == 0:
         model.compute_stress = True
-        results = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=state.atomic_numbers,
-        )
+        results = model(state)
         stress[step // 10] = results["stress"]
         model.compute_stress = False
 
