@@ -13,6 +13,7 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
+from torch_sim.io import atoms_to_state
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_optimizers import frechet_cell_fire
@@ -47,11 +48,7 @@ si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 si_dc.positions = si_dc.positions + 0.2 * rng.standard_normal(si_dc.positions.shape)
 si_dc.cell = si_dc.cell.array * 0.95
 
-# Prepare input tensors
-positions = torch.tensor(si_dc.positions, device=device, dtype=dtype)
-cell = torch.tensor(si_dc.cell.array, device=device, dtype=dtype)
-atomic_numbers = torch.tensor(si_dc.get_atomic_numbers(), device=device, dtype=torch.int)
-masses = torch.tensor(si_dc.get_masses(), device=device, dtype=dtype)
+state = atoms_to_state([si_dc], device, dtype)
 
 # Initialize the unbatched MACE model
 model = UnbatchedMaceModel(
@@ -66,15 +63,8 @@ model = UnbatchedMaceModel(
 )
 
 # Run initial inference
-results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
+results = model(state)
 
-state = {
-    "positions": positions,
-    "masses": masses,
-    "cell": cell,
-    "pbc": PERIODIC,
-    "atomic_numbers": atomic_numbers,
-}
 # Initialize FIRE optimizer for structural relaxation
 fire_init, fire_update = frechet_cell_fire(model=model)
 state = fire_init(state=state)

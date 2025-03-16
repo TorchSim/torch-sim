@@ -73,11 +73,7 @@ def test_mace_consistency(
 
     # Get FairChem results
     torchsim_mace_results = torchsim_mace_model(
-        dict(
-            positions=si_system["positions"],
-            cell=si_system["cell"],
-            atomic_numbers=si_system["atomic_numbers"],
-        )
+        atoms_to_state([si_system["ase_atoms"]], device, torch.float32)
     )
 
     # Get OCP results

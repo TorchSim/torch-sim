@@ -62,10 +62,6 @@ model = UnbatchedMaceModel(
     dtype=dtype,
     enable_cueq=False,
 )
-
-# Run initial inference
-results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
-
 state = {
     "positions": positions,
     "masses": masses,
@@ -73,6 +69,10 @@ state = {
     "pbc": PERIODIC,
     "atomic_numbers": atomic_numbers,
 }
+
+# Run initial inference
+results = model(state)
+
 # Initialize FIRE optimizer for structural relaxation
 fire_init, fire_update = fire(model=model)
 state = fire_init(state=state)
