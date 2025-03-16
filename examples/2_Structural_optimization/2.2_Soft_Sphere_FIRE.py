@@ -4,7 +4,7 @@ import os
 
 import torch
 
-from torch_sim.models.soft_sphere import SoftSphereModel
+from torch_sim.models.soft_sphere import UnbatchedSoftSphereModel
 from torch_sim.unbatched.unbatched_optimizers import fire
 
 
@@ -71,7 +71,7 @@ atomic_numbers = torch.full((positions.shape[0],), 29, device=device, dtype=torc
 masses = torch.full((positions.shape[0],), 63.546, device=device, dtype=dtype)
 
 # Initialize the Soft Sphere model
-model = SoftSphereModel(
+model = UnbatchedSoftSphereModel(
     sigma=2.5,
     device=device,
     dtype=dtype,
@@ -82,7 +82,7 @@ model = SoftSphereModel(
 
 
 # Run initial simulation and get results
-results = model(dict(positions=positions, cell=cell, atomic_numbers=atomic_numbers))
+results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
 
 state = {
     "positions": positions,
