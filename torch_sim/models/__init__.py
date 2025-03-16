@@ -30,4 +30,4 @@ if _has_fairchem:
     __all__ += ["FairChemModel"]
 
 if _has_mace:
-    __all__.append("MaceModel")
+    __all__ += ["MaceModel"]
