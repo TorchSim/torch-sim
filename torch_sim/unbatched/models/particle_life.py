@@ -102,19 +102,23 @@ class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
     ) -> None:
         """Initialize the calculator."""
         super().__init__()
-        self.device = device or torch.device("cpu")
-        self.dtype = dtype
-        self.periodic = periodic
-        self.compute_force = compute_force
-        self.compute_stress = compute_stress
-        self.per_atom_energies = per_atom_energies
-        self.per_atom_stresses = per_atom_stresses
+        self._device = device or torch.device("cpu")
+        self._dtype = dtype
+
+        self._compute_force = compute_force
+        self._compute_stress = compute_stress
+        self._per_atom_energies = per_atom_energies
+        self._per_atom_stresses = per_atom_stresses
+
         self.use_neighbor_list = use_neighbor_list
+        self.periodic = periodic
 
         # Convert parameters to tensors
-        self.sigma = torch.tensor(sigma, dtype=dtype, device=self.device)
-        self.cutoff = torch.tensor(cutoff or 2.5 * sigma, dtype=dtype, device=self.device)
-        self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self.device)
+        self.sigma = torch.tensor(sigma, dtype=self._dtype, device=self._device)
+        self.cutoff = torch.tensor(
+            cutoff or 2.5 * sigma, dtype=self._dtype, device=self._device
+        )
+        self.epsilon = torch.tensor(epsilon, dtype=self._dtype, device=self._device)
 
     def forward(self, state: BaseState) -> dict[str, torch.Tensor]:
         """Compute energies and forces."""

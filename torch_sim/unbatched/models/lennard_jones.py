@@ -117,12 +117,13 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
         super().__init__()
         self._device = device or torch.device("cpu")
         self._dtype = dtype
-        self.periodic = periodic
+
         self._compute_force = compute_force
         self._compute_stress = compute_stress
         self._per_atom_energies = per_atom_energies
         self._per_atom_stresses = per_atom_stresses
         self.use_neighbor_list = use_neighbor_list
+        self.periodic = periodic
 
         # Convert parameters to tensors
         self.sigma = torch.tensor(sigma, dtype=dtype, device=self._device)

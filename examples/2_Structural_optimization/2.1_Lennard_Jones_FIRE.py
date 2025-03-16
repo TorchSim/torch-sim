@@ -80,10 +80,6 @@ model = UnbatchedLennardJonesModel(
     compute_force=True,
     compute_stress=False,
 )
-
-# Run initial simulation and get results
-results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
-
 state = {
     "positions": positions,
     "masses": masses,
@@ -91,6 +87,10 @@ state = {
     "pbc": PERIODIC,
     "atomic_numbers": atomic_numbers,
 }
+
+
+# Run initial simulation and get results
+results = model(state)
 
 # Initialize FIRE (Fast Inertial Relaxation Engine) optimizer
 # FIRE is an efficient method for finding local energy minima in molecular systems

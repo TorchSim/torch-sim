@@ -111,11 +111,13 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
         super().__init__()
         self._device = device or torch.device("cpu")
         self._dtype = dtype
-        self.periodic = periodic
+
         self._compute_force = compute_force
         self._compute_stress = compute_stress
-        self.per_atom_energies = per_atom_energies
-        self.per_atom_stresses = per_atom_stresses
+        self._per_atom_energies = per_atom_energies
+        self._per_atom_stresses = per_atom_stresses
+
+        self.periodic = periodic
         self.use_neighbor_list = use_neighbor_list
 
         # Convert interaction parameters to tensors with proper dtype/device
@@ -182,17 +184,17 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
         # Initialize results with total energy (divide by 2 to avoid double counting)
         results = {"energy": 0.5 * pair_energies.sum()}
 
-        if self.per_atom_energies:
+        if self._per_atom_energies:
             # Compute per-atom energy contributions
             atom_energies = torch.zeros(
-                state.positions.shape[0], dtype=self.dtype, device=self.device
+                state.positions.shape[0], dtype=self._dtype, device=self._device
             )
             # Each atom gets half of the pair energy
             atom_energies.index_add_(0, mapping[0], 0.5 * pair_energies)
             atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
             results["energies"] = atom_energies
 
-        if self.compute_force or self.compute_stress:
+        if self._compute_force or self._compute_stress:
             # Calculate pair forces
             pair_forces = soft_sphere_pair_force(
                 distances, sigma=self.sigma, epsilon=self.epsilon, alpha=self.alpha
@@ -201,7 +203,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
             # Project scalar forces onto displacement vectors
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
-            if self.compute_force:
+            if self._compute_force:
                 # Compute atomic forces by accumulating pair contributions
                 forces = torch.zeros_like(state.positions)
                 # Add force contributions (f_ij on j, -f_ij on i)
@@ -209,19 +211,19 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
                 forces.index_add_(0, mapping[1], -force_vectors)
                 results["forces"] = forces
 
-            if self.compute_stress and state.cell is not None:
+            if self._compute_stress and state.cell is not None:
                 # Compute stress tensor using virial formula
                 stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
                 volume = torch.abs(torch.linalg.det(state.cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
 
-                if self.per_atom_stresses:
+                if self._per_atom_stresses:
                     # Compute per-atom stress contributions
                     atom_stresses = torch.zeros(
                         (state.positions.shape[0], 3, 3),
-                        dtype=self.dtype,
-                        device=self.device,
+                        dtype=self._dtype,
+                        device=self._device,
                     )
                     atom_stresses.index_add_(0, mapping[0], -0.5 * stress_per_pair)
                     atom_stresses.index_add_(0, mapping[1], -0.5 * stress_per_pair)
@@ -293,13 +295,13 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
                 maximum sigma value from sigma_matrix.
         """
         super().__init__()
-        self.device = device or torch.device("cpu")
-        self.dtype = dtype
+        self._device = device or torch.device("cpu")
+        self._dtype = dtype
         self.periodic = periodic
-        self.compute_force = compute_force
-        self.compute_stress = compute_stress
-        self.per_atom_energies = per_atom_energies
-        self.per_atom_stresses = per_atom_stresses
+        self._compute_force = compute_force
+        self._compute_stress = compute_stress
+        self._per_atom_energies = per_atom_energies
+        self._per_atom_stresses = per_atom_stresses
         self.use_neighbor_list = use_neighbor_list
 
         # Store species list and determine number of unique species
@@ -307,9 +309,9 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
         n_species = len(torch.unique(species))
 
         # Initialize parameter matrices with defaults if not provided
-        default_sigma = DEFAULT_SIGMA.to(device=self.device, dtype=self.dtype)
-        default_epsilon = DEFAULT_EPSILON.to(device=self.device, dtype=self.dtype)
-        default_alpha = DEFAULT_ALPHA.to(device=self.device, dtype=self.dtype)
+        default_sigma = DEFAULT_SIGMA.to(device=self._device, dtype=self._dtype)
+        default_epsilon = DEFAULT_EPSILON.to(device=self._device, dtype=self._dtype)
+        default_alpha = DEFAULT_ALPHA.to(device=self._device, dtype=self._dtype)
 
         # Validate matrix shapes match number of species
         if sigma_matrix is not None and sigma_matrix.shape != (n_species, n_species):
@@ -327,19 +329,19 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
             sigma_matrix
             if sigma_matrix is not None
             else default_sigma
-            * torch.ones((n_species, n_species), dtype=dtype, device=device)
+            * torch.ones((n_species, n_species), dtype=self._dtype, device=self._device)
         )
         self.epsilon_matrix = (
             epsilon_matrix
             if epsilon_matrix is not None
             else default_epsilon
-            * torch.ones((n_species, n_species), dtype=dtype, device=device)
+            * torch.ones((n_species, n_species), dtype=self._dtype, device=self._device)
         )
         self.alpha_matrix = (
             alpha_matrix
             if alpha_matrix is not None
             else default_alpha
-            * torch.ones((n_species, n_species), dtype=dtype, device=device)
+            * torch.ones((n_species, n_species), dtype=self._dtype, device=self._device)
         )
 
         # Ensure parameter matrices are symmetric (required for energy conservation)
@@ -349,7 +351,9 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
 
         # Set interaction cutoff distance
         self.cutoff = torch.tensor(
-            cutoff or float(self.sigma_matrix.max()), dtype=dtype, device=device
+            cutoff or float(self.sigma_matrix.max()),
+            dtype=self._dtype,
+            device=self._device,
         )
 
     def forward(
@@ -376,10 +380,10 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
         """
         # Convert inputs to proper device/dtype and handle species
         if cell is not None:
-            cell = cell.to(device=self.device, dtype=self.dtype)
+            cell = cell.to(device=self._device, dtype=self._dtype)
 
         if species is not None:
-            species = species.to(device=self.device, dtype=torch.long)
+            species = species.to(device=self._device, dtype=torch.long)
         else:
             species = self.species
 
@@ -439,17 +443,17 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
         # Initialize results with total energy (divide by 2 to avoid double counting)
         results = {"energy": 0.5 * pair_energies.sum()}
 
-        if self.per_atom_energies:
+        if self._per_atom_energies:
             # Compute per-atom energy contributions
             atom_energies = torch.zeros(
-                positions.shape[0], dtype=self.dtype, device=self.device
+                positions.shape[0], dtype=self._dtype, device=self._device
             )
             # Each atom gets half of the pair energy
             atom_energies.index_add_(0, mapping[0], 0.5 * pair_energies)
             atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
             results["energies"] = atom_energies
 
-        if self.compute_force or self.compute_stress:
+        if self._compute_force or self._compute_stress:
             # Calculate pair forces
             pair_forces = soft_sphere_pair_force(
                 distances, sigma=pair_sigmas, epsilon=pair_epsilons, alpha=pair_alphas
@@ -458,7 +462,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
             # Project scalar forces onto displacement vectors
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
-            if self.compute_force:
+            if self._compute_force:
                 # Compute atomic forces by accumulating pair contributions
                 forces = torch.zeros_like(positions)
                 # Add force contributions (f_ij on j, -f_ij on i)
@@ -466,17 +470,19 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
                 forces.index_add_(0, mapping[1], -force_vectors)
                 results["forces"] = forces
 
-            if self.compute_stress and cell is not None:
+            if self._compute_stress and cell is not None:
                 # Compute stress tensor using virial formula
                 stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
                 volume = torch.abs(torch.linalg.det(cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
 
-                if self.per_atom_stresses:
+                if self._per_atom_stresses:
                     # Compute per-atom stress contributions
                     atom_stresses = torch.zeros(
-                        (positions.shape[0], 3, 3), dtype=self.dtype, device=self.device
+                        (positions.shape[0], 3, 3),
+                        dtype=self._dtype,
+                        device=self._device,
                     )
                     atom_stresses.index_add_(0, mapping[0], -0.5 * stress_per_pair)
                     atom_stresses.index_add_(0, mapping[1], -0.5 * stress_per_pair)
