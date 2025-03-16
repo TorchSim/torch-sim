@@ -33,7 +33,7 @@ from torch_sim.unbatched.unbatched_integrators import (
     nvt_nose_hoover_invariant,
 )
 from torch_sim.units import MetalUnits as Units
-from torch_sim.utils.a2c import (
+from torch_sim.workflows.a2c import (
     get_subcells_to_crystallize,
     get_target_temperature,
     get_unit_cell_relaxed_structure,
