@@ -209,7 +209,13 @@ def get_bravais_type(  # noqa: C901
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-calculator = mace_mp(model="medium", enable_cueq=False, default_dtype="float64")
+dtype = torch.float64
+mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
+calculator = mace_mp(
+    model=mace_checkpoint_url,
+    enable_cueq=False,
+    default_dtype=dtype,
+)
 
 # Copper
 N = 2
@@ -225,8 +231,8 @@ struct = fcf.atoms
 
 print(struct.get_stress())
 state = ElasticState(
-    position=torch.tensor(struct.get_positions(), device=device, dtype=torch.float64),
-    cell=torch.tensor(struct.get_cell().array, device=device, dtype=torch.float64),
+    position=torch.tensor(struct.get_positions(), device=device, dtype=dtype),
+    cell=torch.tensor(struct.get_cell().array, device=device, dtype=dtype),
 )
 
 latt_type, bravais_type, sg_symbol, sg_nr = get_bravais_type(struct)
