@@ -83,12 +83,7 @@ def create_default_reporter(
                     "Model stress is not set to true and model stress cannot be "
                     "set on the fly. Please set model.compute_stress to True."
                 ) from err
-        model_outputs = model.forward(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=state.atomic_numbers,
-            batch=state.batch,
-        )
+        model_outputs = model(state)
         if not model.compute_stress:
             model.compute_stress = og_model_stress
 
