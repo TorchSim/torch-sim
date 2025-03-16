@@ -4,7 +4,7 @@ import os
 
 import torch
 
-from torch_sim.models.soft_sphere import UnbatchedSoftSphereModel
+from torch_sim.unbatched.models.soft_sphere import UnbatchedSoftSphereModel
 from torch_sim.unbatched.unbatched_optimizers import fire
 
 

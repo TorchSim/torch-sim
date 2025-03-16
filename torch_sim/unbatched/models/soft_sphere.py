@@ -4,12 +4,7 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import BaseState, StateDict
-from torch_sim.transforms import get_pair_displacements
-from torch_sim.unbatched.models.soft_sphere import (
-    soft_sphere_pair,
-    soft_sphere_pair_force,
-)
+from torch_sim.transforms import get_pair_displacements, safe_mask
 
 
 # Default parameter values defined at module level
@@ -18,7 +13,81 @@ DEFAULT_EPSILON = torch.tensor(1.0)
 DEFAULT_ALPHA = torch.tensor(2.0)
 
 
-class SoftSphereModel(torch.nn.Module, ModelInterface):
+def soft_sphere_pair(
+    dr: torch.Tensor,
+    sigma: torch.Tensor = DEFAULT_SIGMA,
+    epsilon: torch.Tensor = DEFAULT_EPSILON,
+    alpha: torch.Tensor = DEFAULT_ALPHA,
+) -> torch.Tensor:
+    """Calculate pairwise repulsive energies between soft spheres with finite-range
+    interactions.
+
+    Computes a soft-core repulsive potential between particle pairs based on
+    their separation distance, size, and interaction parameters. The potential
+    goes to zero at finite range.
+
+    Args:
+        dr: Pairwise distances between particles. Shape: [n, m].
+        sigma: Particle diameters. Either a scalar float or tensor of shape [n, m]
+            for particle-specific sizes.
+        epsilon: Energy scale of the interaction. Either a scalar float or tensor
+            of shape [n, m] for pair-specific interaction strengths.
+        alpha: Stiffness exponent controlling the interaction decay. Either a scalar
+            float or tensor of shape [n, m].
+
+    Returns:
+        Pairwise interaction energies between particles. Shape: [n, m]. Each element
+        [i,j] represents the repulsive energy between particles i and j.
+    """
+
+    def fn(dr: torch.Tensor) -> torch.Tensor:
+        return epsilon / alpha * (1.0 - (dr / sigma)).pow(alpha)
+
+    # Create mask for distances within cutoff i.e sigma
+    mask = dr < sigma
+
+    # Use safe_mask to compute energies only where mask is True
+    return safe_mask(mask, fn, dr)
+
+
+def soft_sphere_pair_force(
+    dr: torch.Tensor,
+    sigma: torch.Tensor = DEFAULT_SIGMA,
+    epsilon: torch.Tensor = DEFAULT_EPSILON,
+    alpha: torch.Tensor = DEFAULT_ALPHA,
+) -> torch.Tensor:
+    """Computes the pairwise repulsive forces between soft spheres with finite range.
+
+    This function implements a soft-core repulsive interaction that smoothly goes to zero
+    at the cutoff distance sigma. The force magnitude is controlled by epsilon and its
+    stiffness by alpha.
+
+    Args:
+        dr: A tensor of shape [n, m] containing pairwise distances between particles,
+            where n and m represent different particle indices.
+        sigma: Particle diameter defining the interaction cutoff distance. Can be either
+            a float scalar or a tensor of shape [n, m] for particle-specific diameters.
+        epsilon: Energy scale of the interaction. Can be either a float scalar or a
+            tensor of shape [n, m] for particle-specific interaction strengths.
+        alpha: Exponent controlling the stiffness of the repulsion. Higher values create
+            a harder repulsion. Can be either a float scalar or a tensor of shape [n, m].
+
+    Returns:
+        torch.Tensor: Forces between particle pairs with shape [n, m]. Forces are zero
+        for distances greater than sigma.
+    """
+
+    def fn(dr: torch.Tensor) -> torch.Tensor:
+        return (-epsilon / sigma) * (1.0 - (dr / sigma)).pow(alpha - 1)
+
+    # Create mask for distances within cutoff i.e sigma
+    mask = dr < sigma
+
+    # Use safe_mask to compute energies only where mask is True
+    return safe_mask(mask, fn, dr)
+
+
+class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
     """Calculator for soft sphere potential."""
 
     def __init__(
@@ -54,8 +123,8 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self.device)
         self.alpha = torch.tensor(alpha, dtype=dtype, device=self.device)
 
-    def unbatched_forward(
-        self, positions: torch.Tensor, cell: torch.Tensor | None = None
+    def forward(
+        self, positions: torch.Tensor, cell: torch.Tensor | None = None, **_
     ) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single system."""
         positions = positions.to(device=self.device, dtype=self.dtype)
@@ -151,63 +220,8 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
 
         return results
 
-    def forward(  # noqa: C901
-        self, state: BaseState | StateDict
-    ) -> dict[str, torch.Tensor]:  # TODO: what are the shapes?
-        """Compute energies and forces for batched systems.
 
-        Args:
-            state: State object
-
-        Returns:
-            Dictionary with computed properties:
-            - energy: Energy for each system. Shape: [n_systems]
-            - forces: Forces for all atoms. Shape: [total_atoms, 3]
-            - stress: Stress tensor for each system. Shape: [n_systems, 3, 3]
-        """
-        if not isinstance(state, BaseState):
-            state = BaseState(
-                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
-            )
-        elif state.pbc != self.periodic:
-            raise ValueError("PBC mismatch between model and state")
-
-        # Handle batch indices if not provided
-        if state.batch is None:
-            # TODO can only exclude cell if batching, clean up logic later
-            if state.cell.shape == (3, 3):
-                state.cell = state.cell.unsqueeze(0)
-
-            if state.cell.shape[0] > 1:
-                raise ValueError("Batch can only be inferred for batch size 1.")
-            state.batch = torch.zeros(
-                state.positions.shape[0], device=self.device, dtype=torch.int64
-            )
-
-        # Split positions by batch indices
-        n_atoms_per_batch = torch.bincount(state.batch)
-        positions_split = torch.split(state.positions, n_atoms_per_batch.tolist())
-        cell_split = state.cell.unbind(dim=0)
-
-        # Process each system individually
-        outputs = []
-        for pos, cell in zip(positions_split, cell_split, strict=True):
-            outputs.append(self.unbatched_forward(pos, cell))
-        properties = outputs[0]
-
-        # Combine results
-        results = {}
-        for key in ("stress", "energy"):
-            if key in properties:
-                results[key] = torch.stack([out[key] for out in outputs])
-        for key in ("forces", "energies", "stresses"):
-            if key in properties:
-                results[key] = torch.cat([out[key] for out in outputs], dim=0)
-
-        return results
-
-
-class SoftSphereMultiModel(torch.nn.Module):
+class UnbatchedSoftSphereMultiModel(torch.nn.Module):
     """Calculator for soft sphere potential with multiple atomic species.
 
     This model implements a multi-species soft sphere potential where the interaction
@@ -326,7 +340,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             cutoff or float(self.sigma_matrix.max()), dtype=dtype, device=device
         )
 
-    def unbatched_forward(
+    def forward(
         self,
         positions: torch.Tensor,
         cell: torch.Tensor | None = None,
@@ -455,61 +469,5 @@ class SoftSphereMultiModel(torch.nn.Module):
                     atom_stresses.index_add_(0, mapping[0], -0.5 * stress_per_pair)
                     atom_stresses.index_add_(0, mapping[1], -0.5 * stress_per_pair)
                     results["stresses"] = atom_stresses / volume
-
-        return results
-
-    def forward(  # noqa: C901
-        self, state: BaseState | StateDict
-    ) -> dict[str, torch.Tensor]:
-        """Compute energies and forces for batched systems.
-
-        Args:
-            state: State object
-
-        Returns:
-            Dictionary with computed properties:
-            - energy: Energy for each system. Shape: [n_systems]
-            - forces: Forces for all atoms. Shape: [total_atoms, 3]
-            - stress: Stress tensor for each system. Shape: [n_systems, 3, 3]
-        """
-        if not isinstance(state, BaseState):
-            state = BaseState(
-                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
-            )
-        elif state.pbc != self.periodic:
-            raise ValueError("PBC mismatch between model and state")
-
-        # Handle batch indices if not provided
-        if state.batch is None:
-            # TODO can only exclude cell if batching, clean up logic later
-            if state.cell.shape == (3, 3):
-                state.cell = state.cell.unsqueeze(0)
-
-            if state.cell.shape[0] > 1:
-                raise ValueError("Batch can only be inferred for batch size 1.")
-            state.batch = torch.zeros(
-                state.positions.shape[0], device=self.device, dtype=torch.int64
-            )
-
-        # Split positions by batch indices
-        n_atoms_per_batch = torch.bincount(state.batch)
-        positions_split = torch.split(state.positions, n_atoms_per_batch.tolist())
-        cell_split = state.cell.unbind(dim=0)
-
-        # Process each system individually
-        outputs = []
-        for pos, cell in zip(positions_split, cell_split, strict=True):
-            outputs.append(self.unbatched_forward(pos, cell))
-        properties = outputs[0]
-
-        # Combine results
-        results = {}
-        for key in ("stress", "energy", "forces", "energies", "stresses"):
-            if key in properties:
-                results[key] = torch.stack([out[key] for out in outputs])
-
-        for key in ("forces", "energies", "stresses"):
-            if key in properties:
-                results[key] = torch.cat([out[key] for out in outputs], dim=0)
 
         return results
