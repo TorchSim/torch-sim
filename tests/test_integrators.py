@@ -5,7 +5,7 @@ import torch
 from torch_sim.integrators import batched_initialize_momenta, nve, nvt_langevin
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.quantities import temperature
-from torch_sim.state import BaseState, concatenate_states, slice_state
+from torch_sim.state import BaseState, concatenate_states
 from torch_sim.integrators import MDState, initialize_momenta
 from torch_sim.units import MetalUnits
 
@@ -277,8 +277,8 @@ def test_compare_single_vs_batched_integrators(
 
     # Check energy conservation
     ar_single_state = final_states["single"]
-    ar_batched_state_0 = slice_state(final_states["batched"], [0])
-    ar_batched_state_1 = slice_state(final_states["batched"], [1])
+    ar_batched_state_0 = final_states["batched"][0]
+    ar_batched_state_1 = final_states["batched"][1]
 
     for final_state in [ar_batched_state_0, ar_batched_state_1]:
         assert torch.allclose(ar_single_state.positions, final_state.positions)

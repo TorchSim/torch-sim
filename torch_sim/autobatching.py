@@ -9,7 +9,7 @@ import binpacking
 import torch
 
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import BaseState, concatenate_states, pop_states, split_state
+from torch_sim.state import BaseState, concatenate_states
 
 
 def measure_model_memory_forward(state: BaseState, model: ModelInterface) -> float:
@@ -219,9 +219,7 @@ class ChunkingAutoBatcher:
             states: Collection of states to batch (either a list or a single state
                 that will be split).
         """
-        self.state_slices = (
-            split_state(states) if isinstance(states, BaseState) else states
-        )
+        self.state_slices = states.split() if isinstance(states, BaseState) else states
         self.memory_scalers = [
             calculate_memory_scaler(state_slice, self.memory_scales_with)
             for state_slice in self.state_slices
@@ -329,7 +327,7 @@ class ChunkingAutoBatcher:
             ValueError: If the number of states doesn't match
             the number of original indices.
         """
-        state_bins = [split_state(state) for state in batched_states]
+        state_bins = [state.split() for state in batched_states]
 
         # Flatten lists
         all_states = list(chain.from_iterable(state_bins))
@@ -400,7 +398,7 @@ class HotSwappingAutoBatcher:
                 that will be split).
         """
         if isinstance(states, BaseState):
-            states = split_state(states)
+            states = states.split()
         if isinstance(states, list):
             states = iter(states)
 
@@ -572,7 +570,8 @@ class HotSwappingAutoBatcher:
         completed_idx = torch.where(convergence_tensor)[0].tolist()
         completed_idx.sort(reverse=True)
 
-        remaining_state, completed_states = pop_states(updated_state, completed_idx)
+        # remaining_state, completed_states = pop_states(updated_state, completed_idx)
+        completed_states = updated_state.pop(completed_idx)
 
         self._delete_old_states(completed_idx)
         next_states = self._get_next_states()
@@ -586,8 +585,8 @@ class HotSwappingAutoBatcher:
             )
 
         # concatenate remaining state with next states
-        if remaining_state.n_batches > 0:
-            next_states = [remaining_state, *next_states]
+        if updated_state.n_batches > 0:
+            next_states = [updated_state, *next_states]
         next_batch = concatenate_states(next_states)
 
         if self.return_indices:

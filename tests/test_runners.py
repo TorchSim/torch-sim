@@ -10,7 +10,7 @@ from torch_sim.optimizers import unit_cell_fire
 from torch_sim.quantities import kinetic_energy
 from torch_sim.state import initialize_state
 from torch_sim.runners import generate_force_convergence_fn, integrate, optimize
-from torch_sim.state import BaseState, split_state
+from torch_sim.state import BaseState
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 from torch_sim.units import UnitSystem
 
@@ -211,7 +211,7 @@ def test_integrate_with_autobatcher(
     )
 
     assert isinstance(final_state, BaseState)
-    split_final_state = split_state(final_state)
+    split_final_state = final_state.split()
     for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
@@ -266,7 +266,7 @@ def test_integrate_with_autobatcher_and_reporting(
     assert all(traj_file.exists() for traj_file in trajectory_files)
 
     assert isinstance(final_state, BaseState)
-    split_final_state = split_state(final_state)
+    split_final_state = final_state.split()
     for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
@@ -400,7 +400,7 @@ def test_optimize_with_autobatcher(
     )
 
     assert isinstance(final_state, BaseState)
-    split_final_state = split_state(final_state)
+    split_final_state = final_state.split()
     for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
@@ -448,7 +448,7 @@ def test_optimize_with_autobatcher_and_reporting(
     assert all(traj_file.exists() for traj_file in trajectory_files)
 
     assert isinstance(final_state, BaseState)
-    split_final_state = split_state(final_state)
+    split_final_state = final_state.split()
     for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
@@ -503,7 +503,7 @@ def test_integrate_with_default_autobatcher(
     )
 
     assert isinstance(final_state, BaseState)
-    split_final_state = split_state(final_state)
+    split_final_state = final_state.split()
 
     for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
@@ -541,7 +541,7 @@ def test_optimize_with_default_autobatcher(
     )
 
     assert isinstance(final_state, BaseState)
-    split_final_state = split_state(final_state)
+    split_final_state = final_state.split()
     for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)

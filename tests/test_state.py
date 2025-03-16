@@ -8,7 +8,6 @@ from torch_sim.state import (
     infer_property_scope,
     pop_states,
     slice_state,
-    split_state,
     initialize_state,
     _normalize_batch_indices,
 )
@@ -194,23 +193,23 @@ def test_concatenate_double_si_and_fe_states(
     assert torch.unique(concatenated.batch).shape[0] == 3
 
     # Check that we can slice back to the original states
-    si_slice_0 = slice_state(concatenated, [0])
-    si_slice_1 = slice_state(concatenated, [1])
-    fe_slice = slice_state(concatenated, [2])
+    si_slice_0 = concatenated[0]
+    si_slice_1 = concatenated[1]
+    fe_slice = concatenated[2]
 
     # Check that the slices match the original states
     assert torch.allclose(
-        si_slice_0.positions, slice_state(si_double_base_state, [0]).positions
+        si_slice_0.positions, si_double_base_state[0].positions
     )
     assert torch.allclose(
-        si_slice_1.positions, slice_state(si_double_base_state, [1]).positions
+        si_slice_1.positions, si_double_base_state[1].positions
     )
     assert torch.allclose(fe_slice.positions, fe_fcc_state.positions)
 
 
 def test_split_state(si_double_base_state: BaseState) -> None:
     """Test splitting a state into a list of states."""
-    states = split_state(si_double_base_state)
+    states = si_double_base_state.split()
     assert len(states) == si_double_base_state.n_batches
     for state in states:
         assert isinstance(state, BaseState)
@@ -227,7 +226,7 @@ def test_split_many_states(
     """Test splitting a state into a list of states."""
     states = [si_base_state, ar_base_state, fe_fcc_state]
     concatenated = concatenate_states(states)
-    split_states = split_state(concatenated)
+    split_states = concatenated.split()
     for state, sub_state in zip(states, split_states, strict=True):
         assert isinstance(sub_state, BaseState)
         assert torch.allclose(sub_state.positions, state.positions)

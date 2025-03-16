@@ -231,7 +231,7 @@ class BaseState:
         Returns:
             List of popped states
         """
-        batch_indices = _normalize_batch_indices(self, batch_indices)
+        batch_indices = _normalize_batch_indices(batch_indices, self.n_batches, self.device)
 
         # Get the modified state and popped states
         modified_state, popped_states = pop_states(self, batch_indices)
@@ -252,7 +252,7 @@ class BaseState:
             A new BaseState containing only the specified batches
         """
         # Reuse the existing slice method
-        batch_indices = _normalize_batch_indices(self, batch_indices)
+        batch_indices = _normalize_batch_indices(batch_indices, self.n_batches, self.device)
 
         return slice_state(self, batch_indices)
 

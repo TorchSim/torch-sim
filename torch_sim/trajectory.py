@@ -11,7 +11,7 @@ import numpy as np
 import tables
 import torch
 
-from torch_sim.state import BaseState, slice_state
+from torch_sim.state import BaseState
 
 
 DATA_TYPE_MAP = {
@@ -145,13 +145,10 @@ class TrajectoryReporter:
                 f"number of trajectory files ({len(self.trajectories)})"
             )
 
-        ambiguous_handling = "globalize" if self.shape_warned else "globalize_warn"
+        split_states = state.split()
         # Process each batch separately
-        for batch_idx, trajectory in zip(batch_indices, self.trajectories, strict=True):
+        for substate, trajectory in zip(split_states, self.trajectories, strict=True):
             # Slice the state once to get only the data for this batch
-            substate = slice_state(
-                state, [batch_idx], ambiguous_handling=ambiguous_handling
-            )
             self.shape_warned = True
 
             # Write state to trajectory if it's time
@@ -537,6 +534,8 @@ class TorchSimTrajectory:
         variable_atomic_numbers: bool = False,
     ) -> None:
         """Write an MDState or list of MDStates to the file.
+        The states are assumed to be different configurations of the same system,
+        representing a trajectory.
 
         Args:
             state (BaseState | list[BaseState]): BaseState or list of BaseStates to write
@@ -555,23 +554,22 @@ class TorchSimTrajectory:
         """
         # TODO: consider changing this reporting later
 
+        # we wrap 
         if isinstance(state, BaseState):
             state = [state]
         if isinstance(steps, int):
             steps = [steps]
 
-        if batch_index is None and torch.unique(state[0].batch) == 0:
+        if isinstance(batch_index, int):
+            batch_index = [batch_index]
+            sub_states = [state[batch_index] for state in state]
+        elif batch_index is None and torch.unique(state[0].batch) == 0:
             batch_index = 0
-        elif batch_index is None:
+            sub_states = state
+        else:
             raise ValueError(
                 "Batch index must be specified if there are multiple batches"
             )
-
-        # batch_indices = torch.unique(state[0].batch)
-        # TODO: need to remove the extra unnecessary slice here
-        sub_states = [
-            slice_state(s, [batch_index], ambiguous_handling="globalize") for s in state
-        ]
 
         if len(sub_states) != len(steps):
             raise ValueError(
