@@ -12,9 +12,9 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
-from torch_sim.models.mace import UnbatchedMaceModel
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.quantities import kinetic_energy, temperature
+from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import (
     npt_nose_hoover,
     npt_nose_hoover_invariant,

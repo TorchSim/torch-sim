@@ -19,8 +19,8 @@ from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 from pymatgen.io.phonopy import get_phonopy_structure
 
-from torch_sim.models.mace import UnbatchedMaceModel
 from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 
 
 # Set device and data type
