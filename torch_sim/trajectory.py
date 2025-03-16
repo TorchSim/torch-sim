@@ -11,7 +11,7 @@ import numpy as np
 import tables
 import torch
 
-from torch_sim.state import BaseState, slice_substate
+from torch_sim.state import BaseState, slice_state
 
 
 DATA_TYPE_MAP = {
@@ -119,7 +119,9 @@ class TrajectoryReporter:
                 if len(sig.parameters) == 1:
                     # we partially evaluate the function to create a new function with
                     # an optional second argument, this can be set to state later on
-                    new_fn = partial(lambda state, _=None, fn=None: fn(state), fn=prop_fn)
+                    new_fn = partial(
+                        lambda state, _=None, fn=None: fn(state), fn=prop_fn
+                    )
                     self.prop_calculators[frequency][name] = new_fn
 
     def report(
@@ -147,7 +149,7 @@ class TrajectoryReporter:
         # Process each batch separately
         for batch_idx, trajectory in zip(batch_indices, self.trajectories, strict=True):
             # Slice the state once to get only the data for this batch
-            substate = slice_substate(
+            substate = slice_state(
                 state, [batch_idx], ambiguous_handling=ambiguous_handling
             )
             self.shape_warned = True
@@ -568,7 +570,7 @@ class TorchSimTrajectory:
         # batch_indices = torch.unique(state[0].batch)
         # TODO: need to remove the extra unnecessary slice here
         sub_states = [
-            slice_substate(s, [batch_index], ambiguous_handling="globalize") for s in state
+            slice_state(s, [batch_index], ambiguous_handling="globalize") for s in state
         ]
 
         if len(sub_states) != len(steps):
@@ -639,7 +641,9 @@ class TorchSimTrajectory:
 
         # Get required data
         if "positions" not in self.array_registry:
-            raise ValueError("Positions not found in trajectory so cannot get structure.")
+            raise ValueError(
+                "Positions not found in trajectory so cannot get structure."
+            )
 
         # check length of positions array
         n_frames = self._file.root.data.positions.shape[0]
@@ -650,7 +654,9 @@ class TorchSimTrajectory:
         if frame > n_frames:
             raise ValueError(f"{frame=} is out of range. Total frames: {n_frames}")
 
-        arrays["positions"] = self.get_array("positions", start=frame, stop=frame + 1)[0]
+        arrays["positions"] = self.get_array("positions", start=frame, stop=frame + 1)[
+            0
+        ]
 
         def return_prop(self: Self, prop: str, frame: int) -> np.ndarray:
             if self._file.root.data.cell.shape[0] > 1:  # Variable cell

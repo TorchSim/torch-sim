@@ -217,7 +217,79 @@ class BaseState:
             A list of BaseStates
         """
         return split_state(self)
+    
+    def pop(
+        self, batch_indices: int | list[int] | slice | torch.Tensor
+    ) -> list[Self]:
+        """Pop off states with the specified batch indices.
+        
+        This method modifies the original state object by removing the specified batches.
+        
+        Args:
+            batch_indices: The batch indices to pop
+            
+        Returns:
+            List of popped states
+        """
+        batch_indices = _normalize_batch_indices(self, batch_indices)
 
+        # Get the modified state and popped states
+        modified_state, popped_states = pop_states(self, batch_indices)
+        
+        # Update all attributes of self with the modified state's attributes
+        for attr_name, attr_value in vars(modified_state).items():
+            setattr(self, attr_name, attr_value)
+        
+        return popped_states
+    
+    def __getitem__(self, batch_indices: int | list[int] | slice | torch.Tensor) -> Self:
+        """Enable standard Python indexing syntax for slicing batches.
+
+        Args:
+            batch_indices: The batch indices to include in the sliced state
+                
+        Returns:
+            A new BaseState containing only the specified batches
+        """
+        # Reuse the existing slice method
+        batch_indices = _normalize_batch_indices(self, batch_indices)
+
+        return slice_state(self, batch_indices)
+
+def _normalize_batch_indices(
+    batch_indices: int | list[int] | slice | torch.Tensor, n_batches: int, device: torch.device
+) -> torch.Tensor:
+    """Normalize batch indices to handle negative indices and different input types.
+    
+    Args:
+        batch_indices: The batch indices to normalize
+        n_batches: Total number of batches
+        device: Device to place the tensor on
+        
+    Returns:
+        Normalized batch indices as a tensor
+    """
+    if isinstance(batch_indices, int):
+        # Handle negative integer indexing
+        if batch_indices < 0:
+            batch_indices = n_batches + batch_indices
+        return torch.tensor([batch_indices], device=device)
+    elif isinstance(batch_indices, list):
+        # Handle negative indices in lists
+        normalized = [idx if idx >= 0 else n_batches + idx for idx in batch_indices]
+        return torch.tensor(normalized, device=device)
+    elif isinstance(batch_indices, slice):
+        # Let PyTorch handle the slice conversion with negative indices
+        return torch.arange(n_batches, device=device)[batch_indices]
+    elif isinstance(batch_indices, torch.Tensor):
+        # Handle negative indices in tensors
+        return torch.where(
+            batch_indices < 0, 
+            n_batches + batch_indices, 
+            batch_indices
+        )
+    else:
+        raise TypeError(f"Unsupported index type: {type(batch_indices)}")
 
 def state_to_device(
     state: BaseState, device: torch.device, dtype: torch.dtype | None = None
@@ -479,7 +551,7 @@ def pop_states(
     return keep_state, pop_states
 
 
-def slice_substate(
+def slice_state(
     state: BaseState,
     batch_indices: list[int] | torch.Tensor,
     ambiguous_handling: Literal["error", "globalize"] = "error",
