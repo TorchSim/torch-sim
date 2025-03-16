@@ -285,7 +285,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             _pred = predictions[key]
             if key in self._reshaped_props:
                 _pred = _pred.reshape(self._reshaped_props.get(key)).squeeze()
-            results[key] = _pred
+            results[key] = _pred.detach()
 
         results["energy"] = results["energy"].squeeze(dim=1)
         return results
