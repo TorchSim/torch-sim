@@ -336,12 +336,13 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         cell_update = cell_positions_new / cell_factor_expanded
         new_cell = torch.bmm(state.reference_cell, cell_update.transpose(1, 2))
 
-        # Get new forces and energy
-        model_output = model(state)
-
         # Update state
         state.positions = atomic_positions_new
         state.cell = new_cell
+
+        # Get new forces and energy
+        model_output = model(state)
+
         state.energy = model_output["energy"]
         state.forces = model_output["forces"]
         state.stress = model_output["stress"]
@@ -693,16 +694,14 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         cell_update = cell_positions_new / cell_factor_expanded
         new_cell = torch.bmm(state.orig_cell, cell_update.transpose(1, 2))
 
-        # Get new forces and energy
-        results = model(state)
-
         # Update state with new positions and cell
         state.positions = atomic_positions_new
         state.cell_positions = cell_positions_new
         state.cell = new_cell
-        state.energy = results["energy"]
 
-        # Combine new atomic forces and cell forces
+        # Get new forces, energy, and stress
+        results = model(state)
+        state.energy = results["energy"]
         forces = results["forces"]
         stress = results["stress"]
 

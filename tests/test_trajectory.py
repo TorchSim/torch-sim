@@ -508,9 +508,7 @@ def test_write_ase_trajectory(
         # Check basic properties match
         assert len(atoms) == len(random_state.atomic_numbers)
         np.testing.assert_allclose(atoms.get_cell(), random_state.cell.numpy()[0])
-        np.testing.assert_allclose(
-            atoms.get_positions(), random_state.positions.numpy()
-        )
+        np.testing.assert_allclose(atoms.get_positions(), random_state.positions.numpy())
         np.testing.assert_allclose(
             atoms.get_atomic_numbers(), random_state.atomic_numbers.numpy()
         )
