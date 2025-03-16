@@ -174,42 +174,6 @@ def position_step(state: MDState, dt: torch.Tensor) -> MDState:
     return state
 
 
-def stochastic_step(
-    state: MDState,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
-    gamma: torch.Tensor,
-) -> MDState:
-    """Apply stochastic noise and friction for Langevin dynamics.
-
-    This function implements the stochastic part of Langevin dynamics by applying
-    random noise and friction forces to particle momenta. The noise amplitude is
-    chosen to maintain the target temperature kT.
-
-    Args:
-        state: Current system state containing positions, momenta, etc.
-        dt: Integration timestep
-        kT: Target temperature in energy units
-        gamma: Friction coefficient controlling noise strength
-
-    Returns:
-        Updated state with new momenta after stochastic step
-
-    Notes:
-        - Uses Ornstein-Uhlenbeck process for correct thermal sampling
-        - Noise amplitude scales with sqrt(mass) for equipartition
-        - Preserves detailed balance through fluctuation-dissipation relation
-    """
-    c1 = torch.exp(-gamma * dt)
-    c2 = torch.sqrt(kT * (1 - c1**2))
-
-    # Generate random noise from normal distribution
-    noise = torch.randn_like(state.momenta, device=state.device, dtype=state.dtype)
-    new_momenta = c1 * state.momenta + c2 * torch.sqrt(state.masses).unsqueeze(-1) * noise
-    state.momenta = new_momenta
-    return state
-
-
 def nve(
     model: torch.nn.Module,
     *,
@@ -365,6 +329,43 @@ def nvt_langevin(
     if isinstance(dt, float):
         dt = torch.tensor(dt, device=device, dtype=dtype)
 
+    def ou_step(
+        state: MDState,
+        dt: torch.Tensor,
+        kT: torch.Tensor,
+        gamma: torch.Tensor,
+    ) -> MDState:
+        """Apply stochastic noise and friction for Langevin dynamics.
+
+        This function implements the stochastic part of Langevin dynamics by applying
+        random noise and friction forces to particle momenta. The noise amplitude is
+        chosen to maintain the target temperature kT.
+
+        Args:
+            state: Current system state containing positions, momenta, etc.
+            dt: Integration timestep
+            kT: Target temperature in energy units
+            gamma: Friction coefficient controlling noise strength
+
+        Returns:
+            Updated state with new momenta after stochastic step
+
+        Notes:
+            - Uses Ornstein-Uhlenbeck process for correct thermal sampling
+            - Noise amplitude scales with sqrt(mass) for equipartition
+            - Preserves detailed balance through fluctuation-dissipation relation
+        """
+        c1 = torch.exp(-gamma * dt)
+        c2 = torch.sqrt(kT * (1 - c1**2))
+
+        # Generate random noise from normal distribution
+        noise = torch.randn_like(state.momenta, device=state.device, dtype=state.dtype)
+        new_momenta = (
+            c1 * state.momenta + c2 * torch.sqrt(state.masses).unsqueeze(-1) * noise
+        )
+        state.momenta = new_momenta
+        return state
+
     def langevin_init(
         state: BaseState | StateDict,
         kT: torch.Tensor = kT,
@@ -431,7 +432,7 @@ def nvt_langevin(
 
         state = momentum_step(state, dt / 2)
         state = position_step(state, dt / 2)
-        state = stochastic_step(state, dt, kT, gamma)
+        state = ou_step(state, dt, kT, gamma)
         state = position_step(state, dt / 2)
 
         model_output = model(state)
