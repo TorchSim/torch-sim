@@ -4,8 +4,8 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.transforms import get_pair_displacements
 from torch_sim.state import BaseState, StateDict
+from torch_sim.transforms import get_pair_displacements
 
 
 # Default parameter values defined at module level
@@ -181,9 +181,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
         )
         # Zero out energies beyond cutoff
         mask = distances < self.cutoff
-        pair_energies = torch.where(
-            mask, pair_energies, torch.zeros_like(pair_energies)
-        )
+        pair_energies = torch.where(mask, pair_energies, torch.zeros_like(pair_energies))
 
         # Initialize results with total energy (sum/2 to avoid double counting)
         results = {"energy": 0.5 * pair_energies.sum()}
@@ -217,9 +215,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
 
             if self._compute_stress and cell is not None:
                 # Compute stress tensor
-                stress_per_pair = torch.einsum(
-                    "...i,...j->...ij", dr_vec, force_vectors
-                )
+                stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
                 volume = torch.abs(torch.linalg.det(cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
@@ -323,9 +319,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         )
         # Zero out energies beyond cutoff
         mask = distances < self.cutoff
-        pair_energies = torch.where(
-            mask, pair_energies, torch.zeros_like(pair_energies)
-        )
+        pair_energies = torch.where(mask, pair_energies, torch.zeros_like(pair_energies))
 
         # Initialize results with total energy (sum/2 to avoid double counting)
         results = {"energy": 0.5 * pair_energies.sum()}
@@ -359,9 +353,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
 
             if self._compute_stress and cell is not None:
                 # Compute stress tensor
-                stress_per_pair = torch.einsum(
-                    "...i,...j->...ij", dr_vec, force_vectors
-                )
+                stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
                 volume = torch.abs(torch.linalg.det(cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
@@ -384,9 +376,8 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
             state = BaseState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )
-        else:
-            if state.pbc != self.periodic:
-                raise ValueError("PBC mismatch between model and state")
+        elif state.pbc != self.periodic:
+            raise ValueError("PBC mismatch between model and state")
 
         if state.batch is None:
             if state.cell.shape[0] > 1:

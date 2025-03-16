@@ -2,14 +2,12 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 import torch
 
 from torch_sim.state import BaseState, StateDict
 from torch_sim.transforms import pbc_wrap_batched
-
-
 
 
 @dataclass

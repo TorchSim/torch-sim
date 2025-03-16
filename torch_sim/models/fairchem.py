@@ -21,11 +21,14 @@ from fairchem.core.models.model_registry import model_name_to_local_file
 from torch_geometric.data import Batch
 
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import BaseState, StateDict
+
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
+
+    from torch_sim.state import BaseState, StateDict
+
 
 DTYPE_DICT = {
     torch.float16: "float16",
@@ -238,9 +241,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         except NotImplementedError:
             print("Unable to load checkpoint!")
 
-    def forward(
-        self, state: BaseState | StateDict
-    ) -> dict:  # TODO: what are the shapes?
+    def forward(self, state: BaseState | StateDict) -> dict:  # TODO: what are the shapes?
         """Forward pass of the model.
 
         Args:

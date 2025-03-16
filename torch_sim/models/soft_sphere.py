@@ -4,8 +4,9 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.transforms import get_pair_displacements, safe_mask
 from torch_sim.state import BaseState, StateDict
+from torch_sim.transforms import get_pair_displacements, safe_mask
+
 
 # Default parameter values defined at module level
 DEFAULT_SIGMA = torch.tensor(1.0)
@@ -204,9 +205,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
 
             if self.compute_stress and cell is not None:
                 # Compute stress tensor using virial formula
-                stress_per_pair = torch.einsum(
-                    "...i,...j->...ij", dr_vec, force_vectors
-                )
+                stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
                 volume = torch.abs(torch.linalg.det(cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
@@ -340,9 +339,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
 
             if self.compute_stress and cell is not None:
                 # Compute stress tensor using virial formula
-                stress_per_pair = torch.einsum(
-                    "...i,...j->...ij", dr_vec, force_vectors
-                )
+                stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
                 volume = torch.abs(torch.linalg.det(cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
@@ -358,13 +355,13 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
 
         return results
 
-    def forward(self, state: BaseState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(  # noqa: C901
+        self, state: BaseState | StateDict
+    ) -> dict[str, torch.Tensor]:  # TODO: what are the shapes?
         """Compute energies and forces for batched systems.
 
         Args:
-            positions: Atomic positions. Shape: [total_atoms, 3]
-            cell: Unit cells for each system in batch. Shape: [n_systems, 3, 3]
-            batch: Batch indices mapping each atom to its system. Shape: [total_atoms]
+            state: State object
 
         Returns:
             Dictionary with computed properties:
@@ -376,9 +373,8 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             state = BaseState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )
-        else:
-            if state.pbc != self.periodic:
-                raise ValueError("PBC mismatch between model and state")
+        elif state.pbc != self.periodic:
+            raise ValueError("PBC mismatch between model and state")
 
         # Handle batch indices if not provided
         if state.batch is None:
@@ -500,9 +496,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
             n_species,
             n_species,
         ):
-            raise ValueError(
-                f"epsilon_matrix must have shape ({n_species}, {n_species})"
-            )
+            raise ValueError(f"epsilon_matrix must have shape ({n_species}, {n_species})")
         if alpha_matrix is not None and alpha_matrix.shape != (n_species, n_species):
             raise ValueError(f"alpha_matrix must have shape ({n_species}, {n_species})")
 
@@ -652,9 +646,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
 
             if self.compute_stress and cell is not None:
                 # Compute stress tensor using virial formula
-                stress_per_pair = torch.einsum(
-                    "...i,...j->...ij", dr_vec, force_vectors
-                )
+                stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
                 volume = torch.abs(torch.linalg.det(cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
@@ -756,9 +748,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             n_species,
             n_species,
         ):
-            raise ValueError(
-                f"epsilon_matrix must have shape ({n_species}, {n_species})"
-            )
+            raise ValueError(f"epsilon_matrix must have shape ({n_species}, {n_species})")
         if alpha_matrix is not None and alpha_matrix.shape != (n_species, n_species):
             raise ValueError(f"alpha_matrix must have shape ({n_species}, {n_species})")
 
@@ -908,9 +898,7 @@ class SoftSphereMultiModel(torch.nn.Module):
 
             if self.compute_stress and cell is not None:
                 # Compute stress tensor using virial formula
-                stress_per_pair = torch.einsum(
-                    "...i,...j->...ij", dr_vec, force_vectors
-                )
+                stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
                 volume = torch.abs(torch.linalg.det(cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
@@ -926,13 +914,13 @@ class SoftSphereMultiModel(torch.nn.Module):
 
         return results
 
-    def forward(self, state: BaseState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(  # noqa: C901
+        self, state: BaseState | StateDict
+    ) -> dict[str, torch.Tensor]:
         """Compute energies and forces for batched systems.
 
         Args:
-            positions: Atomic positions. Shape: [total_atoms, 3]
-            cell: Unit cells for each system in batch. Shape: [n_systems, 3, 3]
-            batch: Batch indices mapping each atom to its system. Shape: [total_atoms]
+            state: State object
 
         Returns:
             Dictionary with computed properties:
@@ -944,9 +932,8 @@ class SoftSphereMultiModel(torch.nn.Module):
             state = BaseState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )
-        else:
-            if state.pbc != self.periodic:
-                raise ValueError("PBC mismatch between model and state")
+        elif state.pbc != self.periodic:
+            raise ValueError("PBC mismatch between model and state")
 
         # Handle batch indices if not provided
         if state.batch is None:

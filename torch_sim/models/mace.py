@@ -347,9 +347,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
             self.setup_from_batch(atomic_numbers, batch)
 
-    def setup_from_batch(
-        self, atomic_numbers: torch.Tensor, batch: torch.Tensor
-    ) -> None:
+    def setup_from_batch(self, atomic_numbers: torch.Tensor, batch: torch.Tensor) -> None:
         """Set up internal state from atomic numbers and batch indices.
 
         Args:
@@ -404,9 +402,8 @@ class MaceModel(torch.nn.Module, ModelInterface):
             state = BaseState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )
-        else:
-            if state.pbc != self.periodic:
-                raise ValueError("PBC mismatch between model and state")
+        elif state.pbc != self.periodic:
+            raise ValueError("PBC mismatch between model and state")
 
         # Handle input validation for atomic numbers
         if state.atomic_numbers is None and not self.atomic_numbers_in_init:
