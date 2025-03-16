@@ -4,6 +4,7 @@ import os
 
 import torch
 
+from torch_sim.state import BaseState
 from torch_sim.unbatched.models.soft_sphere import UnbatchedSoftSphereModel
 from torch_sim.unbatched.unbatched_optimizers import fire
 
@@ -70,6 +71,13 @@ atomic_numbers = torch.full((positions.shape[0],), 29, device=device, dtype=torc
 # Cu atomic mass in atomic mass units
 masses = torch.full((positions.shape[0],), 63.546, device=device, dtype=dtype)
 
+state = BaseState(
+    positions=positions,
+    masses=masses,
+    cell=cell,
+    pbc=PERIODIC,
+    atomic_numbers=atomic_numbers,
+)
 # Initialize the Soft Sphere model
 model = UnbatchedSoftSphereModel(
     sigma=2.5,
@@ -80,17 +88,8 @@ model = UnbatchedSoftSphereModel(
     use_neighbor_list=True,
 )
 
-
 # Run initial simulation and get results
-results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
-
-state = {
-    "positions": positions,
-    "masses": masses,
-    "cell": cell,
-    "pbc": PERIODIC,
-    "atomic_numbers": atomic_numbers,
-}
+results = model(state)
 
 # Initialize FIRE (Fast Inertial Relaxation Engine) optimizer
 fire_init, fire_update = fire(

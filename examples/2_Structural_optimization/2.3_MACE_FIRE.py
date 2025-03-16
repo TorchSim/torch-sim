@@ -14,6 +14,7 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
 from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.state import BaseState
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_optimizers import fire
 
@@ -62,13 +63,13 @@ model = UnbatchedMaceModel(
     dtype=dtype,
     enable_cueq=False,
 )
-state = {
-    "positions": positions,
-    "masses": masses,
-    "cell": cell,
-    "pbc": PERIODIC,
-    "atomic_numbers": atomic_numbers,
-}
+state = BaseState(
+    positions=positions,
+    masses=masses,
+    cell=cell,
+    pbc=PERIODIC,
+    atomic_numbers=atomic_numbers,
+)
 
 # Run initial inference
 results = model(state)
