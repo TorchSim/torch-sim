@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from pymatgen.core.composition import Composition
 
-from torch_sim.io import BaseState
+from torch_sim.state import BaseState
 from torch_sim.models.soft_sphere import (
     UnbatchedSoftSphereModel,
     UnbatchedSoftSphereMultiModel,
