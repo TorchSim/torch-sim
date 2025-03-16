@@ -120,8 +120,8 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
         self.periodic = periodic
         self._compute_force = compute_force
         self._compute_stress = compute_stress
-        self.per_atom_energies = per_atom_energies
-        self.per_atom_stresses = per_atom_stresses
+        self._per_atom_energies = per_atom_energies
+        self._per_atom_stresses = per_atom_stresses
         self.use_neighbor_list = use_neighbor_list
 
         # Convert parameters to tensors
@@ -192,7 +192,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
         # Initialize results with total energy (sum/2 to avoid double counting)
         results = {"energy": 0.5 * pair_energies.sum()}
 
-        if self.per_atom_energies:
+        if self._per_atom_energies:
             atom_energies = torch.zeros(
                 state.positions.shape[0], dtype=self._dtype, device=self._device
             )
@@ -226,7 +226,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
 
-                if self.per_atom_stresses:
+                if self._per_atom_stresses:
                     atom_stresses = torch.zeros(
                         (state.positions.shape[0], 3, 3),
                         dtype=self._dtype,

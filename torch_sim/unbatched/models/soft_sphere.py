@@ -124,7 +124,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
         self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self.device)
         self.alpha = torch.tensor(alpha, dtype=dtype, device=self.device)
 
-    def forward(self, state: BaseState | StateDict, **_) -> dict[str, torch.Tensor]:
+    def forward(self, state: BaseState | StateDict) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single system."""
         if not isinstance(state, BaseState):
             state = BaseState(

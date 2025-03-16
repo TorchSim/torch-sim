@@ -123,22 +123,23 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
             cutoff: Cutoff distance for interactions (default: 2.5*sigma)
         """
         super().__init__()
-        self.device = device or torch.device("cpu")
-        self.dtype = dtype
-        self.periodic = periodic
-        self.compute_force = compute_force
-        self.compute_stress = compute_stress
-        self.per_atom_energies = per_atom_energies
-        self.per_atom_stresses = per_atom_stresses
+        self._device = device or torch.device("cpu")
+        self._dtype = dtype
+        self._compute_force = compute_force
+        self._compute_stress = compute_stress
+        self._per_atom_energies = per_atom_energies
+        self._per_atom_stresses = per_atom_stresses
         self.use_neighbor_list = use_neighbor_list
-
+        self.periodic = periodic
         # Convert parameters to tensors
-        self.sigma = torch.tensor(sigma, dtype=dtype, device=self.device)
-        self.cutoff = torch.tensor(cutoff or 2.5 * sigma, dtype=dtype, device=self.device)
-        self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self.device)
-        self.alpha = torch.tensor(alpha, dtype=dtype, device=self.device)
+        self.sigma = torch.tensor(sigma, dtype=self._dtype, device=self._device)
+        self.cutoff = torch.tensor(
+            cutoff or 2.5 * sigma, dtype=self._dtype, device=self._device
+        )
+        self.epsilon = torch.tensor(epsilon, dtype=self._dtype, device=self._device)
+        self.alpha = torch.tensor(alpha, dtype=self._dtype, device=self._device)
 
-    def forward(self, state: BaseState | StateDict, **_) -> dict[str, torch.Tensor]:
+    def forward(self, state: BaseState | StateDict) -> dict[str, torch.Tensor]:
         """Compute energies and forces.
 
         Args:
@@ -198,7 +199,7 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
         # Initialize results with total energy (sum/2 to avoid double counting)
         results = {"energy": 0.5 * pair_energies.sum()}
 
-        if self.per_atom_energies:
+        if self._per_atom_energies:
             atom_energies = torch.zeros(
                 state.positions.shape[0], dtype=self.dtype, device=self.device
             )
@@ -214,19 +215,19 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
 
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
-            if self.compute_force:
+            if self._compute_force:
                 forces = torch.zeros_like(state.positions)
                 forces.index_add_(0, mapping[0], -force_vectors)
                 forces.index_add_(0, mapping[1], force_vectors)
                 results["forces"] = forces
 
-            if self.compute_stress and state.cell is not None:
+            if self._compute_stress and state.cell is not None:
                 stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
                 volume = torch.abs(torch.linalg.det(state.cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
 
-                if self.per_atom_stresses:
+                if self._per_atom_stresses:
                     atom_stresses = torch.zeros(
                         (state.positions.shape[0], 3, 3),
                         dtype=self.dtype,

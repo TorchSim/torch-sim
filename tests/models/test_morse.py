@@ -148,8 +148,12 @@ def calculators(
         use_neighbor_list=False, cutoff=cutoff, **calc_params
     )
 
-    positions, cell = cu_fcc_system
-    return calc_nl(positions, cell), calc_direct(positions, cell)
+    state = dict(
+        positions=cu_fcc_system[0],
+        cell=cu_fcc_system[1],
+        atomic_numbers=torch.ones(len(cu_fcc_system[0]), dtype=torch.int32),
+    )
+    return calc_nl(state), calc_direct(state)
 
 
 def test_energy_match(

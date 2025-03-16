@@ -166,8 +166,7 @@ def calculators(
         use_neighbor_list=False, cutoff=cutoff, **calc_params
     )
 
-    positions, cell = ar_base_state_large.positions, ar_base_state_large.cell.squeeze(0)
-    return calc_nl(positions, cell), calc_direct(positions, cell)
+    return calc_nl(ar_base_state_large), calc_direct(ar_base_state_large)
 
 
 def test_energy_match(
