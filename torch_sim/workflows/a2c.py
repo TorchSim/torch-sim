@@ -738,7 +738,9 @@ def get_unit_cell_relaxed_structure(
 
     # Remove batch dimension from cell
     state.cell = state.cell.squeeze(0)
-    results = model(state)
+    results = model(
+        positions=state.positions, cell=state.cell, atomic_numbers=state.atomic_numbers
+    )
     init_energy = results["energy"].item()
     init_stress = results["stress"]
     init_pressure = (torch.trace(init_stress) / 3.0).item()
@@ -767,7 +769,9 @@ def get_unit_cell_relaxed_structure(
         # print(f"Step {step}: Energy = {energy} eV: Pressure = {pressure} eV/A^3")
 
     # Get final results
-    final_results = model(state)
+    final_results = model(
+        positions=state.positions, cell=state.cell, atomic_numbers=state.atomic_numbers
+    )
 
     final_energy = final_results["energy"].item()
     final_stress = final_results["stress"]
@@ -884,7 +888,9 @@ def get_relaxed_structure(
 
     # Remove batch dimension from cell
     state.cell = state.cell.squeeze(0)
-    results = model(state)
+    results = model(
+        positions=state.positions, cell=state.cell, atomic_numbers=state.atomic_numbers
+    )
     Initial_energy = results["energy"]
     print(f"Initial energy: {Initial_energy.item():.4f} eV")
 
@@ -902,7 +908,9 @@ def get_relaxed_structure(
 
     # Get final results
     model.compute_stress = True
-    final_results = model(state)
+    final_results = model(
+        positions=state.positions, cell=state.cell, atomic_numbers=state.atomic_numbers
+    )
 
     final_energy = final_results["energy"].item()
     final_stress = final_results["stress"]
