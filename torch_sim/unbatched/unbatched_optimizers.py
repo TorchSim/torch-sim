@@ -8,8 +8,8 @@ import torch
 
 from torch_sim.state import BaseState
 from torch_sim.unbatched.unbatched_integrators import velocity_verlet
-from torch_sim.utils.math import expm, expm_frechet
-from torch_sim.utils.math import matrix_log_33 as logm
+from torch_sim.math import expm, expm_frechet
+from torch_sim.math import matrix_log_33 as logm
 
 
 StateDict = dict[

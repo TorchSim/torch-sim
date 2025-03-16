@@ -9,7 +9,7 @@ import scipy
 import torch
 from numpy.testing import assert_allclose
 
-from torch_sim.utils.math import (
+from torch_sim.math import (
     _matrix_log_33,
     ell_table_61,
     expm,
