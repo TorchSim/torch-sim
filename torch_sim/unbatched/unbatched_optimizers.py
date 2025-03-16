@@ -82,18 +82,14 @@ def gradient_descent(
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         # Get initial forces and energy from model
-        model_output = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=atomic_numbers,
-        )
+        model_output = model(state)
 
         return GDState(
             positions=state.positions,
             masses=state.masses,
             cell=state.cell,
             pbc=state.pbc,
-            atomic_numbers=state.atomic_numbers,
+            atomic_numbers=atomic_numbers,
             forces=model_output["forces"],
             energy=model_output["energy"],
         )
@@ -112,11 +108,7 @@ def gradient_descent(
         state.positions = state.positions + lr * state.forces
 
         # Update forces and energy at new positions
-        results = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=state.atomic_numbers,
-        )
+        results = model(state)
         state.forces = results["forces"]
         state.energy = results["energy"]
 
@@ -224,11 +216,7 @@ def fire(
 
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
         # Get initial forces and energy from model
-        model_output = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=atomic_numbers,
-        )
+        model_output = model(state)
         momenta = torch.zeros_like(state.positions, device=device, dtype=dtype)
 
         initial_state = FIREState(
@@ -411,11 +399,7 @@ def fire_ase(  # noqa: PLR0915
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         # Get initial forces and energy from model
-        model_output = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=atomic_numbers,
-        )
+        model_output = model(state)
 
         # Initialize momenta as zeros
         momenta = torch.zeros_like(state.positions, device=device, dtype=dtype)
@@ -456,14 +440,6 @@ def fire_ase(  # noqa: PLR0915
             prev_energy = state.energy.clone()
         # Perform velocity Verlet step
         state = velocity_verlet(state, state.dt, model=model)
-        # Get updated energy after velocity Verlet step
-        results = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=state.atomic_numbers,
-        )
-        state.energy = results["energy"]
-        state.forces = results["forces"]
         # Get current velocities
         velocities = state.velocities
         # Calculate power (force dot velocity)
@@ -473,11 +449,7 @@ def fire_ase(  # noqa: PLR0915
             state.positions = prev_positions
             state.momenta = prev_momenta
             # Recalculate forces and energy at reverted positions
-            results = model(
-                positions=prev_positions,
-                cell=state.cell,
-                atomic_numbers=state.atomic_numbers,
-            )
+            results = model(state)
             state.forces = results["forces"]
             state.energy = results["energy"]
             power = torch.tensor(
@@ -512,11 +484,7 @@ def fire_ase(  # noqa: PLR0915
             dr = dr * scale_factor
         state.positions = state.positions + dr
         # Update forces and energy at new positions
-        results = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=state.atomic_numbers,
-        )
+        results = model(state)
         state.forces = results["forces"]
         state.energy = results["energy"]
         return state
@@ -657,11 +625,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
         pressure = scalar_pressure * torch.eye(3, device=device, dtype=dtype)
 
         # Get initial forces and energy from model
-        results = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=atomic_numbers,
-        )
+        results = model(state)
         forces = results["forces"]
         energy = results["energy"]
         stress = results["stress"]
@@ -754,11 +718,9 @@ def unit_cell_fire(  # noqa: PLR0915, C901
         new_cell = torch.mm(state.orig_cell, cell_update.t())
 
         # Get new forces and energy
-        results = model(
-            positions=atomic_positions_new,
-            cell=new_cell,
-            atomic_numbers=state.atomic_numbers,
-        )
+        state.positions = atomic_positions_new
+        state.cell = new_cell
+        results = model(state)
 
         atomic_forces = results["forces"]
         energy = results["energy"]
@@ -985,11 +947,7 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
         pressure = scalar_pressure * torch.eye(3, device=device, dtype=dtype)
 
         # Get initial forces and energy from model
-        results = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=atomic_numbers,
-        )
+        results = model(state)
         forces = results["forces"]
         energy = results["energy"]
         stress = results["stress"]
@@ -1089,11 +1047,9 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
         new_cell = torch.mm(state.orig_cell, deform_grad_new.transpose(0, 1))
 
         # Get new forces and energy
-        results = model(
-            positions=atomic_positions_new,
-            cell=new_cell,
-            atomic_numbers=state.atomic_numbers,
-        )
+        state.positions = atomic_positions_new
+        state.cell = new_cell
+        results = model(state)
 
         atomic_forces = results["forces"]
         energy = results["energy"]
