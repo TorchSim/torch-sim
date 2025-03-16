@@ -137,14 +137,14 @@ for step in range(N_steps):
         pressure = get_pressure(
             model(state)["stress"],
             kinetic_energy(masses=state.masses, momenta=state.momenta),
-            torch.det(state.current_box),
+            torch.det(state.current_cell),
         )
         pressure = pressure.item() / Units.pressure
-        xx, yy, zz = torch.diag(state.current_box)
+        xx, yy, zz = torch.diag(state.current_cell)
         print(
             f"{step=}: Temperature: {temp:.4f}: invariant: {invariant.item():.4f}, "
             f"{pressure=:.4f}, "
-            f"box xx yy zz: {xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}"
+            f"cell xx yy zz: {xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}"
         )
     state = npt_update(state, kT=kT, external_pressure=target_pressure)
 
@@ -154,7 +154,7 @@ print(f"Final temperature: {temp:.4f}")
 pressure = get_pressure(
     model(state)["stress"],
     kinetic_energy(masses=state.masses, momenta=state.momenta),
-    torch.det(state.current_box),
+    torch.det(state.current_cell),
 )
 pressure = pressure.item() / Units.pressure
 print(f"Final {pressure=:.4f}")
