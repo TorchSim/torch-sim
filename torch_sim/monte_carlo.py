@@ -153,12 +153,7 @@ def swap_monte_carlo(
         generator = None
 
     def init_swap_mc_state(state: BaseState) -> SwapMCState:
-        model_output = model(
-            positions=state.positions,
-            cell=state.cell,
-            batch=state.batch,
-            atomic_numbers=state.atomic_numbers,
-        )
+        model_output = model(state)
 
         return SwapMCState(
             positions=state.positions,
@@ -194,12 +189,7 @@ def swap_monte_carlo(
         energies_old = state.energy.clone()
         state.positions = state.positions[permutation].clone()
 
-        model_output = model(
-            positions=state.positions,
-            cell=state.cell,
-            batch=state.batch,
-            atomic_numbers=state.atomic_numbers,
-        )
+        model_output = model(state)
         energies_new = model_output["energy"]
 
         accepted = metropolis_criterion(

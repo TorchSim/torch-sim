@@ -46,12 +46,7 @@ def measure_model_memory_forward(state: BaseState, model: ModelInterface) -> flo
     torch.cuda.ipc_collect()
     torch.cuda.reset_peak_memory_stats()
 
-    model(
-        positions=state.positions,
-        cell=state.cell,
-        batch=state.batch,
-        atomic_numbers=state.atomic_numbers,
-    )
+    model(state)
 
     return torch.cuda.max_memory_allocated() / 1024**3  # Convert to GB
 

@@ -57,12 +57,7 @@ def gradient_descent(
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         # Get initial forces and energy from model
-        model_output = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=atomic_numbers,
-            batch=state.batch,
-        )
+        model_output = model(state)
         energy = model_output["energy"]
         forces = model_output["forces"]
 
@@ -97,12 +92,7 @@ def gradient_descent(
         state.positions = state.positions + atom_lr * state.forces
 
         # Get updated forces and energy from model
-        model_output = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=state.atomic_numbers,
-            batch=state.batch,
-        )
+        model_output = model(state)
 
         # Update state with new forces and energy
         state.forces = model_output["forces"]
@@ -229,12 +219,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         pressure = scalar_pressure * torch.eye(3, device=device)
 
         # Get initial forces and energy from model
-        model_output = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=atomic_numbers,
-            batch=state.batch,
-        )
+        model_output = model(state)
         energy = model_output["energy"]
         forces = model_output["forces"]
         stress = model_output["stress"]  # Already shape: (n_batches, 3, 3)
@@ -354,12 +339,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         new_cell = torch.bmm(state.reference_cell, cell_update.transpose(1, 2))
 
         # Get new forces and energy
-        model_output = model(
-            positions=atomic_positions_new,
-            cell=new_cell,
-            atomic_numbers=state.atomic_numbers,
-            batch=state.batch,
-        )
+        model_output = model(state)
 
         # Update state
         state.positions = atomic_positions_new
@@ -594,12 +574,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         pressure = pressure.unsqueeze(0).expand(n_batches, -1, -1)
 
         # Get initial forces and energy from model
-        model_output = model(
-            positions=state.positions,
-            cell=state.cell,
-            atomic_numbers=atomic_numbers,
-            batch=state.batch,
-        )
+        model_output = model(state)
 
         energy = model_output["energy"]  # [n_batches]
         forces = model_output["forces"]  # [n_total_atoms, 3]
@@ -726,12 +701,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         new_cell = torch.bmm(state.orig_cell, cell_update.transpose(1, 2))
 
         # Get new forces and energy
-        results = model(
-            positions=atomic_positions_new,
-            cell=new_cell,
-            atomic_numbers=state.atomic_numbers,
-            batch=state.batch,
-        )
+        results = model(state)
 
         # Update state with new positions and cell
         state.positions = atomic_positions_new
