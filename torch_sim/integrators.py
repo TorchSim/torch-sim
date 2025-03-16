@@ -217,8 +217,8 @@ def stochastic_step(
 
 
 def nve(
-    *,
     model: torch.nn.Module,
+    *,
     dt: torch.Tensor,
     kT: torch.Tensor,
 ) -> tuple[
@@ -339,8 +339,8 @@ def nve(
 
 
 def nvt_langevin(
-    *,
     model: torch.nn.Module,
+    *,
     dt: torch.Tensor,
     kT: torch.Tensor,
     gamma: torch.Tensor | None = None,

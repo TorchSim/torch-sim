@@ -143,6 +143,7 @@ def integrate(
         integrator_kwargs: Additional keyword arguments for integrator
         trajectory_reporter: Optional reporter for tracking trajectory.
         autobatcher: Optional autobatcher to use
+        **integrator_kwargs: Additional keyword arguments for integrator init function
 
     Returns:
         BaseState: Final state after integration
@@ -161,9 +162,8 @@ def integrate(
         model=model,
         kT=torch.tensor(temps[0] * unit_system.temperature, dtype=dtype, device=device),
         dt=torch.tensor(timestep * unit_system.time, dtype=dtype, device=device),
-        **integrator_kwargs,
     )
-    state = init_fn(state)
+    state = init_fn(state, **integrator_kwargs)
 
     batch_iterator = _configure_batches_iterator(model, state, autobatcher)
 
@@ -267,7 +267,7 @@ def optimize(
         convergence_fn: Condition for convergence, should return a boolean tensor
             of length n_batches
         unit_system: Unit system for energy tolerance
-        optimizer_kwargs: Additional keyword arguments for optimizer
+        optimizer_kwargs: Additional keyword arguments for optimizer init function
         trajectory_reporter: Optional reporter for tracking optimization trajectory
         autobatcher: Optional autobatcher to use. If False, the system will assume
             infinite memory and will not batch, but will still remove converged
@@ -293,9 +293,8 @@ def optimize(
     state: BaseState = initialize_state(system, model.device, model.dtype)
     init_fn, update_fn = optimizer(
         model=model,
-        **optimizer_kwargs,
     )
-    state = init_fn(state)
+    state = init_fn(state, **optimizer_kwargs)
 
     max_attempts = max_steps // steps_between_swaps
     autobatcher = _configure_hot_swapping_autobatcher(

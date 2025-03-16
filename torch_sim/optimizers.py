@@ -22,8 +22,8 @@ class BatchedGDState(OptimizerState):
 
 
 def gradient_descent(
-    *,
     model: torch.nn.Module,
+    *,
     lr: torch.Tensor | float = 0.01,
 ) -> tuple[
     Callable[[StateDict | BaseState], BatchedGDState],
