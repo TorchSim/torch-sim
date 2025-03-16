@@ -87,9 +87,9 @@ for step in range(N_steps):
     print(f"{step=}: Temperature: {temp:.4f}: invariant: {invariant:.4f}")
     state = nvt_update(state, kT=kT)
     if step % 10 == 0:
-        model.compute_stress = True
+        model._compute_stress = True  # noqa: SLF001
         results = model(state)
         stress[step // 10] = results["stress"]
-        model.compute_stress = False
+        model._compute_stress = False  # noqa: SLF001
 
 print(f"Stress: {stress} eV/Å^3")

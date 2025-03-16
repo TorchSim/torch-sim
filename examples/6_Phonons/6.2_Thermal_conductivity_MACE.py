@@ -74,6 +74,7 @@ for displacement in ph3.supercells_with_displacements:
         positions=positions,
         cell=cell,
         pbc=True,
+        masses=torch.ones_like(atomic_numbers),
         atomic_numbers=atomic_numbers,
     )
     results = model(state)
