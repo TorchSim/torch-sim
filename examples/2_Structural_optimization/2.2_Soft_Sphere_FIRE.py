@@ -54,7 +54,9 @@ positions = positions * a_len
 
 # Create the cell tensor
 cell = torch.tensor(
-    [[4 * a_len, 0, 0], [0, 4 * a_len, 0], [0, 0, 4 * a_len]], device=device, dtype=dtype
+    [[4 * a_len, 0, 0], [0, 4 * a_len, 0], [0, 0, 4 * a_len]],
+    device=device,
+    dtype=dtype,
 )
 
 # Add random perturbation to the positions to start with non-equilibrium structure
@@ -80,7 +82,7 @@ model = SoftSphereModel(
 
 
 # Run initial simulation and get results
-results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
+results = model(dict(positions=positions, cell=cell, atomic_numbers=atomic_numbers))
 
 state = {
     "positions": positions,

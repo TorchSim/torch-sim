@@ -84,7 +84,7 @@ print(f"Batch: {batch.shape}")
 
 # Now we can pass them to the model
 results = batched_model(
-    positions=positions, cell=cell, atomic_numbers=atomic_numbers, batch=batch
+    dict(positions=positions, cell=cell, atomic_numbers=atomic_numbers, batch=batch)
 )
 
 # The energy has shape (n_batches,) as the structures in a batch

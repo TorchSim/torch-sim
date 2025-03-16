@@ -80,12 +80,7 @@ model = MaceModel(
 # Convert atoms to state
 state = atoms_to_state(atoms_list, device=device, dtype=dtype)
 # Run initial inference
-results = model(
-    positions=state.positions,
-    cell=state.cell,
-    atomic_numbers=state.atomic_numbers,
-    batch=state.batch,
-)
+results = model(state)
 
 # Initialize unit cell gradient descent optimizer
 fire_init, fire_update = unit_cell_fire(

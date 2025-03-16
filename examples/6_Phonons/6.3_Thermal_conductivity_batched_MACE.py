@@ -64,12 +64,7 @@ print(f"Model loading time: {model_loading_time}s")
 state = phonopy_to_state(supercells, device, dtype)
 
 # Run the model in batched mode
-results = model(
-    positions=state.positions,
-    cell=state.cell,
-    atomic_numbers=state.atomic_numbers,
-    batch=state.batch,
-)
+results = model(state)
 
 # Extract forces and convert back to list of numpy arrays for phonopy
 n_atoms_per_supercell = [len(sc) for sc in supercells]

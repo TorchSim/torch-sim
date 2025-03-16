@@ -80,12 +80,8 @@ model = MaceModel(
 # Convert atoms to state
 state = atoms_to_state(atoms_list, device=device, dtype=dtype)
 # Run initial inference
-results = model(
-    positions=state.positions,
-    cell=state.cell,
-    atomic_numbers=state.atomic_numbers,
-    batch=state.batch,
-)
+results = model(state)
+
 # Use same learning rate for all batches
 positions_lr = 0.01
 cell_lr = 0.1

@@ -48,6 +48,7 @@ positions_list = [positions[idx] for idx in range(len(positions))]
 print(f"Positions: {positions.shape}")
 print(f"Cell: {cell.shape}")
 
+# TODO: how was this ever passing?
 results = batched_model(positions_list, cell_list)
 
 print(results["energy"].shape)

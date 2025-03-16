@@ -66,12 +66,7 @@ model = MaceModel(
 )
 
 # Run the model in batched mode
-results = model(
-    positions=state.positions,
-    cell=state.cell,
-    atomic_numbers=state.atomic_numbers,
-    batch=state.batch,
-)
+results = model(state)
 
 # Print result keys and shapes
 print(f"Result keys: {results.keys()}")

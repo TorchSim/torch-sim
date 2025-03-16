@@ -114,12 +114,8 @@ print(f"Cell shape: {state.cell.shape}")
 print(f"Batch indices shape: {state.batch.shape}")
 
 # Run initial inference
-results = batched_model(
-    positions=state.positions,
-    cell=state.cell,
-    atomic_numbers=state.atomic_numbers,
-    batch=state.batch,
-)
+results = batched_model(state)
+
 # Use different learning rates for each batch
 learning_rate = 0.01
 
