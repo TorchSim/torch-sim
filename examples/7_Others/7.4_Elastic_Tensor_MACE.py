@@ -214,7 +214,8 @@ mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace
 calculator = mace_mp(
     model=mace_checkpoint_url,
     enable_cueq=False,
-    default_dtype=dtype,
+    device=device,
+    default_dtype="float64",
 )
 
 # Copper
