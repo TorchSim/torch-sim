@@ -621,7 +621,7 @@ def test_property_calculator_consistency(
     single_reporters = []
     for batch_idx in range(2):
         # Extract single batch states
-        single_state = slice_substate(si_double_base_state, batch_idx)
+        single_state = slice_substate(si_double_base_state, [batch_idx])
         reporter = TrajectoryReporter(
             tmp_path / f"single_{batch_idx}.hdf5",
             state_frequency=1,
@@ -698,7 +698,7 @@ def test_reporter_with_model(
         energy = trajectory.get_array("energy")[0]
 
         # Calculate expected value
-        substate = slice_substate(si_double_base_state, batch_idx)
+        substate = slice_substate(si_double_base_state, [batch_idx])
         expected = lj_calculator.forward(substate.positions, substate.cell)["energy"]
 
         # Compare

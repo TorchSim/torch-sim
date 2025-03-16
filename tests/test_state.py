@@ -53,7 +53,7 @@ def test_slice_substate(
 ) -> None:
     """Test slicing a substate from the BaseState."""
     for batch_index in range(2):
-        substate = slice_substate(si_double_base_state, batch_index)
+        substate = slice_substate(si_double_base_state, [batch_index])
         assert isinstance(substate, BaseState)
         assert substate.positions.shape == (8, 3)
         assert substate.masses.shape == (8,)
@@ -69,11 +69,11 @@ def test_slice_md_substate(si_double_base_state: BaseState) -> None:
     state = MDState(
         **asdict(si_double_base_state),
         momenta=torch.randn_like(si_double_base_state.positions),
-        energy=torch.zeros((2,)),
+        energy=torch.zeros((2,), device=si_double_base_state.device),
         forces=torch.randn_like(si_double_base_state.positions),
     )
     for batch_index in range(2):
-        substate = slice_substate(state, batch_index)
+        substate = slice_substate(state, [batch_index])
         assert isinstance(substate, MDState)
         assert substate.positions.shape == (8, 3)
         assert substate.masses.shape == (8,)
@@ -193,16 +193,16 @@ def test_concatenate_double_si_and_fe_states(
     assert torch.unique(concatenated.batch).shape[0] == 3
 
     # Check that we can slice back to the original states
-    si_slice_0 = slice_substate(concatenated, 0)
-    si_slice_1 = slice_substate(concatenated, 1)
-    fe_slice = slice_substate(concatenated, 2)
+    si_slice_0 = slice_substate(concatenated, [0])
+    si_slice_1 = slice_substate(concatenated, [1])
+    fe_slice = slice_substate(concatenated, [2])
 
     # Check that the slices match the original states
     assert torch.allclose(
-        si_slice_0.positions, slice_substate(si_double_base_state, 0).positions
+        si_slice_0.positions, slice_substate(si_double_base_state, [0]).positions
     )
     assert torch.allclose(
-        si_slice_1.positions, slice_substate(si_double_base_state, 1).positions
+        si_slice_1.positions, slice_substate(si_double_base_state, [1]).positions
     )
     assert torch.allclose(fe_slice.positions, fe_fcc_state.positions)
 

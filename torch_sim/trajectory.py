@@ -148,7 +148,7 @@ class TrajectoryReporter:
         for batch_idx, trajectory in zip(batch_indices, self.trajectories, strict=True):
             # Slice the state once to get only the data for this batch
             substate = slice_substate(
-                state, batch_idx, ambiguous_handling=ambiguous_handling
+                state, [batch_idx], ambiguous_handling=ambiguous_handling
             )
             self.shape_warned = True
 
@@ -568,7 +568,7 @@ class TorchSimTrajectory:
         # batch_indices = torch.unique(state[0].batch)
         # TODO: need to remove the extra unnecessary slice here
         sub_states = [
-            slice_substate(s, batch_index, ambiguous_handling="globalize") for s in state
+            slice_substate(s, [batch_index], ambiguous_handling="globalize") for s in state
         ]
 
         if len(sub_states) != len(steps):

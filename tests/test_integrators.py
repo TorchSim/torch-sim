@@ -277,8 +277,8 @@ def test_compare_single_vs_batched_integrators(
 
     # Check energy conservation
     ar_single_state = final_states["single"]
-    ar_batched_state_0 = slice_substate(final_states["batched"], 0)
-    ar_batched_state_1 = slice_substate(final_states["batched"], 1)
+    ar_batched_state_0 = slice_substate(final_states["batched"], [0])
+    ar_batched_state_1 = slice_substate(final_states["batched"], [1])
 
     for final_state in [ar_batched_state_0, ar_batched_state_1]:
         assert torch.allclose(ar_single_state.positions, final_state.positions)

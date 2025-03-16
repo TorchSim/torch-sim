@@ -429,51 +429,64 @@ def pop_states(
 
 def slice_substate(
     state: BaseState,
-    batch_index: int,
+    batch_indices: list[int] | torch.Tensor,
     ambiguous_handling: Literal["error", "globalize"] = "error",
-) -> Self:
-    """Slice a substate from the BaseState.
+) -> BaseState:
+    """Slice a substate from the BaseState containing only the specified batch indices.
 
     Args:
         state: The state to slice
-        batch_index: The index of the batch to slice
+        batch_indices: List or tensor of batch indices to include in the sliced state
         ambiguous_handling: How to handle ambiguous properties
 
     Returns:
-        A BaseState object containing the sliced substate
+        A BaseState object containing only the specified batches
     """
-    # TODO: should share more logic with pop_states, basically the same
-    # TODO: should be renamed slice_state
+    if isinstance(batch_indices, list):
+        batch_indices = torch.tensor(
+            batch_indices, device=state.device, dtype=torch.int64
+        )
+
+    if len(batch_indices) == 0:
+        raise ValueError("batch_indices cannot be empty")
+
     scope = infer_property_scope(state, ambiguous_handling=ambiguous_handling)
 
-    # Create a mask for the atoms in the specified batch
-    batch_mask = state.batch == batch_index
-
-    # Initialize a dictionary to hold the sliced attributes
-    sliced_attrs = {}
-
     # Process global properties (unchanged)
+    global_attrs = {}
     for attr_name in scope["global"]:
-        sliced_attrs[attr_name] = getattr(state, attr_name)
+        global_attrs[attr_name] = getattr(state, attr_name)
+
+    sliced_attrs = {}
 
     # Process per-atom properties (filter by batch mask)
     for attr_name in scope["per_atom"]:
         attr_value = getattr(state, attr_name)
-        sliced_attrs[attr_name] = attr_value[batch_mask]
+        slice_mask = torch.isin(state.batch, batch_indices)
 
-    # Process per-batch properties (select the specific batch)
+        if attr_name == "batch":
+            # Remap batch indices to be consecutive starting from 0
+            old_batch = attr_value[slice_mask]
+            batch_map = {idx.item(): i for i, idx in enumerate(batch_indices)}
+            new_batch = torch.tensor(
+                [batch_map[b.item()] for b in old_batch],
+                device=state.device,
+                dtype=torch.int64,
+            )
+            sliced_attrs[attr_name] = new_batch
+            continue
+
+        sliced_attrs[attr_name] = attr_value[slice_mask]
+
+    # Process per-batch properties (select the specific batches)
     for attr_name in scope["per_batch"]:
         attr_value = getattr(state, attr_name)
-        sliced_attrs[attr_name] = attr_value[batch_index : batch_index + 1]
-
-    # Create a new batch tensor with all zeros (single batch)
-    n_sliced_atoms = sliced_attrs.get("positions").shape[0]
-    sliced_attrs["batch"] = torch.zeros(
-        n_sliced_atoms, device=state.device, dtype=torch.int64
-    )
+        batch_range = torch.arange(state.n_batches, device=state.device)
+        batch_mask = torch.isin(batch_range, batch_indices)
+        sliced_attrs[attr_name] = attr_value[batch_mask]
 
     # Create a new instance of the same class
-    return type(state)(**sliced_attrs)
+    return type(state)(**sliced_attrs, **global_attrs)
 
 
 def concatenate_states(
@@ -616,7 +629,8 @@ def initialize_state(
         from phonopy.structure.atoms import PhonopyAtoms
 
         if isinstance(system, PhonopyAtoms) or (
-            isinstance(system, list) and all(isinstance(s, PhonopyAtoms) for s in system)
+            isinstance(system, list)
+            and all(isinstance(s, PhonopyAtoms) for s in system)
         ):
             return phonopy_to_state(system, device, dtype)
     except ImportError:
