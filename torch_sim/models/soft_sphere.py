@@ -5,7 +5,7 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.transforms import get_pair_displacements
-from torch_sim.utils.tools import safe_mask
+from torch_sim.transforms import safe_mask
 
 
 # Default parameter values defined at module level
@@ -205,7 +205,9 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
 
             if self.compute_stress and cell is not None:
                 # Compute stress tensor using virial formula
-                stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
+                stress_per_pair = torch.einsum(
+                    "...i,...j->...ij", dr_vec, force_vectors
+                )
                 volume = torch.abs(torch.linalg.det(cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
@@ -339,7 +341,9 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
 
             if self.compute_stress and cell is not None:
                 # Compute stress tensor using virial formula
-                stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
+                stress_per_pair = torch.einsum(
+                    "...i,...j->...ij", dr_vec, force_vectors
+                )
                 volume = torch.abs(torch.linalg.det(cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
@@ -383,7 +387,9 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
 
             if cell.shape[0] > 1:
                 raise ValueError("Batch can only be inferred for batch size 1.")
-            batch = torch.zeros(positions.shape[0], device=self.device, dtype=torch.int64)
+            batch = torch.zeros(
+                positions.shape[0], device=self.device, dtype=torch.int64
+            )
 
         # Split positions by batch indices
         n_atoms_per_batch = torch.bincount(batch)
@@ -489,8 +495,13 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
         # Validate matrix shapes match number of species
         if sigma_matrix is not None and sigma_matrix.shape != (n_species, n_species):
             raise ValueError(f"sigma_matrix must have shape ({n_species}, {n_species})")
-        if epsilon_matrix is not None and epsilon_matrix.shape != (n_species, n_species):
-            raise ValueError(f"epsilon_matrix must have shape ({n_species}, {n_species})")
+        if epsilon_matrix is not None and epsilon_matrix.shape != (
+            n_species,
+            n_species,
+        ):
+            raise ValueError(
+                f"epsilon_matrix must have shape ({n_species}, {n_species})"
+            )
         if alpha_matrix is not None and alpha_matrix.shape != (n_species, n_species):
             raise ValueError(f"alpha_matrix must have shape ({n_species}, {n_species})")
 
@@ -640,7 +651,9 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
 
             if self.compute_stress and cell is not None:
                 # Compute stress tensor using virial formula
-                stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
+                stress_per_pair = torch.einsum(
+                    "...i,...j->...ij", dr_vec, force_vectors
+                )
                 volume = torch.abs(torch.linalg.det(cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
@@ -738,8 +751,13 @@ class SoftSphereMultiModel(torch.nn.Module):
         # Validate matrix shapes match number of species
         if sigma_matrix is not None and sigma_matrix.shape != (n_species, n_species):
             raise ValueError(f"sigma_matrix must have shape ({n_species}, {n_species})")
-        if epsilon_matrix is not None and epsilon_matrix.shape != (n_species, n_species):
-            raise ValueError(f"epsilon_matrix must have shape ({n_species}, {n_species})")
+        if epsilon_matrix is not None and epsilon_matrix.shape != (
+            n_species,
+            n_species,
+        ):
+            raise ValueError(
+                f"epsilon_matrix must have shape ({n_species}, {n_species})"
+            )
         if alpha_matrix is not None and alpha_matrix.shape != (n_species, n_species):
             raise ValueError(f"alpha_matrix must have shape ({n_species}, {n_species})")
 
@@ -889,7 +907,9 @@ class SoftSphereMultiModel(torch.nn.Module):
 
             if self.compute_stress and cell is not None:
                 # Compute stress tensor using virial formula
-                stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
+                stress_per_pair = torch.einsum(
+                    "...i,...j->...ij", dr_vec, force_vectors
+                )
                 volume = torch.abs(torch.linalg.det(cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
@@ -933,7 +953,9 @@ class SoftSphereMultiModel(torch.nn.Module):
 
             if cell.shape[0] > 1:
                 raise ValueError("Batch can only be inferred for batch size 1.")
-            batch = torch.zeros(positions.shape[0], device=self.device, dtype=torch.int64)
+            batch = torch.zeros(
+                positions.shape[0], device=self.device, dtype=torch.int64
+            )
 
         # Split positions by batch indices
         n_atoms_per_batch = torch.bincount(batch)

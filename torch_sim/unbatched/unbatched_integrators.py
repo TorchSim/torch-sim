@@ -9,11 +9,11 @@ import torch
 from torch_sim.quantities import count_dof, kinetic_energy
 from torch_sim.state import BaseState
 from torch_sim.transforms import pbc_wrap_general
-from torch_sim.utils.tools import calculate_momenta
 
 
 StateDict = dict[
-    Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "batch"], torch.Tensor
+    Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "batch"],
+    torch.Tensor,
 ]
 
 
@@ -48,6 +48,31 @@ class MDState(BaseState):
     def velocities(self) -> torch.Tensor:
         """Calculate velocities from momenta and masses."""
         return self.momenta / self.masses.unsqueeze(-1)
+
+
+def calculate_momenta(
+    positions: torch.Tensor,
+    masses: torch.Tensor,
+    kT: torch.Tensor,
+    device: torch.device,
+    dtype: torch.dtype,
+    seed: int | None = None,
+) -> torch.Tensor:
+    """Calculate momenta from positions and masses."""
+    generator = torch.Generator(device=device)
+    if seed is not None:
+        generator.manual_seed(seed)
+
+    # Generate random momenta from normal distribution
+    momenta = torch.randn(
+        positions.shape, device=device, dtype=dtype, generator=generator
+    ) * torch.sqrt(masses * kT).unsqueeze(-1)
+
+    # Center the momentum if more than one particle
+    if positions.shape[0] > 1:
+        momenta = momenta - torch.mean(momenta, dim=0, keepdim=True)
+
+    return momenta
 
 
 def initialize_momenta(
@@ -162,12 +187,16 @@ def stochastic_step(
 
     # Generate random noise from normal distribution
     noise = torch.randn_like(state.momenta, device=device, dtype=dtype)
-    new_momenta = c1 * state.momenta + c2 * torch.sqrt(state.masses).unsqueeze(-1) * noise
+    new_momenta = (
+        c1 * state.momenta + c2 * torch.sqrt(state.masses).unsqueeze(-1) * noise
+    )
     state.momenta = new_momenta
     return state
 
 
-def velocity_verlet(state: MDState, dt: torch.Tensor, model: torch.nn.Module) -> MDState:
+def velocity_verlet(
+    state: MDState, dt: torch.Tensor, model: torch.nn.Module
+) -> MDState:
     """Perform one complete velocity Verlet integration step.
 
     This function implements the velocity Verlet algorithm, which provides
@@ -686,7 +715,9 @@ def construct_nose_hoover_chain(
 
         return P, state
 
-    def update_chain_mass_fn(state: NoseHooverChain, kT: torch.Tensor) -> NoseHooverChain:
+    def update_chain_mass_fn(
+        state: NoseHooverChain, kT: torch.Tensor
+    ) -> NoseHooverChain:
         """Update chain masses to maintain target oscillation period.
 
         Args:
@@ -766,7 +797,9 @@ def nvt_nose_hoover(
     chain_steps: int = 3,
     sy_steps: int = 3,
 ) -> tuple[
-    Callable[[BaseState | StateDict, torch.Tensor, int | None, Any], NVTNoseHooverState],
+    Callable[
+        [BaseState | StateDict, torch.Tensor, int | None, Any], NVTNoseHooverState
+    ],
     Callable[[NVTNoseHooverState, torch.Tensor], NVTNoseHooverState],
 ]:
     """Initialize NVT Nose-Hoover chain thermostat integration.
@@ -1201,7 +1234,12 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             >>> print(y)  # tensor([1.0000, 1.0017, 1.0067])
         """
         return (
-            1 + x**2 / 6 + x**4 / 120 + x**6 / 5040 + x**8 / 362_880 + x**10 / 39_916_800
+            1
+            + x**2 / 6
+            + x**4 / 120
+            + x**6 / 5040
+            + x**8 / 362_880
+            + x**10 / 39_916_800
         )
 
     def exp_iL1(  # noqa: N802
