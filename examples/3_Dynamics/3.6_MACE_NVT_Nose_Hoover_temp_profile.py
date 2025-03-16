@@ -20,6 +20,7 @@ from plotly.subplots import make_subplots
 
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.quantities import temperature
+from torch_sim.state import BaseState
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import (
     nvt_nose_hoover,
@@ -145,21 +146,19 @@ model = UnbatchedMaceModel(
     dtype=dtype,
     enable_cueq=False,
 )
-
+state = BaseState(
+    positions=positions,
+    masses=masses,
+    cell=cell,
+    pbc=PERIODIC,
+    atomic_numbers=atomic_numbers,
+)
 # Run initial inference
-results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
+results = model(state)
 
 # Set up simulation parameters
 dt = 0.002 * Units.time
 kT = init_temp * Units.temperature
-
-state = {
-    "positions": positions,
-    "masses": masses,
-    "cell": cell,
-    "pbc": PERIODIC,
-    "atomic_numbers": atomic_numbers,
-}
 
 nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
 state = nvt_init(state, kT=kT, seed=1)

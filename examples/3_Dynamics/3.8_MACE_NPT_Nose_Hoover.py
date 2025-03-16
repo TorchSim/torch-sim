@@ -14,6 +14,7 @@ from mace.calculators.foundations_models import mace_mp
 
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.quantities import kinetic_energy, temperature
+from torch_sim.state import BaseState
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import (
     npt_nose_hoover,
@@ -67,23 +68,21 @@ model = UnbatchedMaceModel(
     dtype=dtype,
     enable_cueq=False,
 )
-
+state = BaseState(
+    positions=positions,
+    masses=masses,
+    cell=cell,
+    pbc=PERIODIC,
+    atomic_numbers=atomic_numbers,
+)
 # Run initial inference
-results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
+results = model(state)
 
 N_steps_nvt = 20 if os.getenv("CI") else 2_000
 N_steps_npt = 20 if os.getenv("CI") else 2_000
 dt = 0.001 * Units.time  # Time step (1 ps)
 kT = 300 * Units.temperature  # Initial temperature (300 K)
 target_pressure = 0.0 * Units.pressure  # Target pressure (0 bar)
-
-state = {
-    "positions": positions,
-    "masses": masses,
-    "cell": cell,
-    "pbc": PERIODIC,
-    "atomic_numbers": atomic_numbers,
-}
 
 nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
 state = nvt_init(state=state, seed=1)

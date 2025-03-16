@@ -5,6 +5,7 @@ import os
 import torch
 
 from torch_sim.quantities import kinetic_energy, temperature
+from torch_sim.state import BaseState
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_integrators import (
     npt_nose_hoover,
@@ -89,21 +90,20 @@ model = UnbatchedLennardJonesModel(
     compute_force=True,
     compute_stress=True,
 )
-
+state = BaseState(
+    positions=positions,
+    masses=masses,
+    cell=cell,
+    pbc=PERIODIC,
+    atomic_numbers=atomic_numbers,
+)
 # Run initial simulation and get results
-results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
+results = model(state)
 
 dt = 0.001 * Units.time  # Time step (1 ps)
 kT = 200 * Units.temperature  # Temperature (200 K)
 target_pressure = 0 * Units.pressure  # Target pressure (10 kbar)
 
-state = {
-    "positions": positions,
-    "masses": masses,
-    "cell": cell,
-    "pbc": PERIODIC,
-    "atomic_numbers": atomic_numbers,
-}
 npt_init, npt_update = npt_nose_hoover(
     model=model,
     dt=dt,

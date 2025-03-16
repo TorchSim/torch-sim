@@ -14,6 +14,7 @@ from mace.calculators.foundations_models import mace_mp
 
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.quantities import temperature
+from torch_sim.state import BaseState
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import nvt_langevin
 from torch_sim.units import MetalUnits as Units
@@ -62,20 +63,18 @@ model = UnbatchedMaceModel(
     enable_cueq=False,
 )
 
-# Run initial inference
-results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
+state = BaseState(
+    positions=positions,
+    masses=masses,
+    cell=cell,
+    pbc=PERIODIC,
+    atomic_numbers=atomic_numbers,
+)
 
 dt = 0.002 * Units.time  # Timestep (ps)
 kT = 1000 * Units.temperature  # Initial temperature (K)
 gamma = 10 / Units.time  # Langevin friction coefficient (ps^-1)
 
-state = {
-    "positions": positions,
-    "masses": masses,
-    "cell": cell,
-    "pbc": PERIODIC,
-    "atomic_numbers": atomic_numbers,
-}
 # Initialize NVT Langevin integrator
 langevin_init, langevin_update = nvt_langevin(
     model=model,

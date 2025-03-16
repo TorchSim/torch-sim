@@ -15,6 +15,7 @@ from mace.calculators.foundations_models import mace_mp
 
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.quantities import kinetic_energy
+from torch_sim.state import BaseState
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import nve
 from torch_sim.units import MetalUnits as Units
@@ -62,22 +63,21 @@ model = UnbatchedMaceModel(
     dtype=dtype,
     enable_cueq=torch.cuda.is_available(),
 )
-
+state = BaseState(
+    positions=positions,
+    masses=masses,
+    cell=cell,
+    pbc=PERIODIC,
+    atomic_numbers=atomic_numbers,
+)
 # Run initial inference
-results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
+results = model(state)
 
 # Setup NVE MD simulation parameters
 kT = 1000 * Units.temperature  # Initial temperature (K)
 dt = 0.002 * Units.time  # Timestep (ps)
 
-# Initialize NVE integrator
-state = {
-    "positions": positions,
-    "masses": masses,
-    "cell": cell,
-    "pbc": PERIODIC,
-    "atomic_numbers": atomic_numbers,
-}
+
 # Initialize NVE integrator
 nve_init, nve_update = nve(model=model, dt=dt, kT=kT)
 state = nve_init(state=state, seed=1)

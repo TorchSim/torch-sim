@@ -5,6 +5,7 @@ import os
 import torch
 
 from torch_sim.quantities import kinetic_energy
+from torch_sim.state import BaseState
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_integrators import nve
 from torch_sim.units import MetalUnits as Units
@@ -71,13 +72,13 @@ atomic_numbers = torch.full((positions.shape[0],), 18, device=device, dtype=torc
 # Create the masses tensor (Argon = 39.948 amu)
 masses = torch.full((positions.shape[0],), 39.948, device=device, dtype=dtype)
 
-state = {
-    "positions": positions,
-    "masses": masses,
-    "cell": cell,
-    "pbc": PERIODIC,
-    "atomic_numbers": atomic_numbers,
-}
+state = BaseState(
+    positions=positions,
+    masses=masses,
+    cell=cell,
+    pbc=PERIODIC,
+    atomic_numbers=atomic_numbers,
+)
 # Initialize the Lennard-Jones model
 # Parameters:
 #  - sigma: distance at which potential is zero (3.405 Å for Ar)
@@ -95,7 +96,7 @@ model = UnbatchedLennardJonesModel(
 )
 
 # Run initial simulation and get results
-results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
+results = model(state)
 
 # Set up NVE simulation
 # kT: initial temperature in metal units (K)

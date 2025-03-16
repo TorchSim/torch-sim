@@ -14,6 +14,7 @@ from mace.calculators.foundations_models import mace_mp
 
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.quantities import temperature
+from torch_sim.state import BaseState
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import (
     nvt_nose_hoover,
@@ -64,30 +65,29 @@ model = UnbatchedMaceModel(
     dtype=dtype,
     enable_cueq=False,
 )
-
+state = BaseState(
+    positions=positions,
+    masses=masses,
+    cell=cell,
+    pbc=PERIODIC,
+    atomic_numbers=atomic_numbers,
+)
 # Run initial inference
-results = model(positions=positions, cell=cell, atomic_numbers=atomic_numbers)
+results = model(state)
 
 dt = 0.002 * Units.time  # Timestep (ps)
 kT = 1000 * Units.temperature  # Initial temperature (K)
 
-start = {
-    "positions": positions,
-    "masses": masses,
-    "cell": cell,
-    "pbc": PERIODIC,
-    "atomic_numbers": atomic_numbers,
-}
 
 nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
-state = nvt_init(start, kT=kT, seed=1)
+state = nvt_init(state=state, kT=kT, seed=1)
 
 for step in range(N_steps):
     if step % 10 == 0:
         temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
         invariant = nvt_nose_hoover_invariant(state, kT=kT).item()
         print(f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant:.4f}")
-    state = nvt_update(state, kT=kT)
+    state = nvt_update(state=state, kT=kT)
 
 final_temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
 print(f"Final temperature: {final_temp}")
