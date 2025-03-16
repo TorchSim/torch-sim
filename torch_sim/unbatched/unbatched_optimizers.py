@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import torch
 
-from torch_sim.math import expm, expm_frechet
+from torch_sim.math import expm_frechet
 from torch_sim.math import matrix_log_33 as logm
 from torch_sim.state import BaseState, StateDict
 from torch_sim.unbatched.unbatched_integrators import velocity_verlet
@@ -1041,7 +1041,7 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
 
         # Convert cell positions to deformation gradient
         deform_grad_log_new = cell_positions_new
-        deform_grad_new = expm.apply(deform_grad_log_new / state.cell_factor)
+        deform_grad_new = torch.matrix_exp(deform_grad_log_new / state.cell_factor)
 
         # Update cell
         new_cell = torch.mm(state.orig_cell, deform_grad_new.transpose(0, 1))

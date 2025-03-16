@@ -6,7 +6,7 @@ from typing import Any
 
 import torch
 
-from torch_sim.math import expm, expm_frechet
+from torch_sim.math import expm_frechet
 from torch_sim.math import matrix_log_33 as logm
 from torch_sim.state import BaseState, StateDict
 from torch_sim.unbatched.unbatched_optimizers import OptimizerState
@@ -1098,10 +1098,12 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
 
         # Convert cell positions to deformation gradient
         deform_grad_log_new = cell_positions_new / state.cell_factor
-        deform_grad_new = torch.zeros_like(deform_grad_log_new)
 
-        for b in range(n_batches):
-            deform_grad_new[b] = expm.apply(deform_grad_log_new[b])
+        # deform_grad_new = torch.zeros_like(deform_grad_log_new)
+        # for b in range(n_batches):
+        #    deform_grad_new[b] = expm.apply(deform_grad_log_new[b])
+
+        deform_grad_new = torch.matrix_exp(deform_grad_log_new)
 
         # Update cell with deformation gradient
         new_cell = torch.bmm(state.orig_cell, deform_grad_new.transpose(1, 2))
@@ -1162,7 +1164,6 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
             virial, torch.linalg.inv(torch.transpose(deform_grad_new, 1, 2))
         )
 
-        # Optimized cell forces calculation using batched approach
         # Pre-compute all 9 direction matrices
         directions = torch.zeros((9, 3, 3), device=device, dtype=dtype)
         for idx, (mu, nu) in enumerate([(i, j) for i in range(3) for j in range(3)]):
@@ -1179,7 +1180,7 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
                 ]
             )
 
-            # Calculate all 9 cell forces components efficiently
+            # Calculate all 9 cell forces components
             forces_flat = torch.sum(
                 expm_derivs * ucf_cell_grad[b].unsqueeze(0), dim=(1, 2)
             )
