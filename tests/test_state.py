@@ -244,7 +244,9 @@ def test_pop_states(
     """Test popping states from a state."""
     states = [si_base_state, ar_base_state, fe_fcc_state]
     concatenated_states = concatenate_states(states)
-    kept_state, popped_states = pop_states(concatenated_states, torch.tensor([0]))
+    kept_state, popped_states = pop_states(
+        concatenated_states, torch.tensor([0], device=concatenated_states.device)
+    )
 
     assert isinstance(kept_state, BaseState)
     assert isinstance(popped_states, list)
