@@ -7,6 +7,7 @@ general PBC wrapping.
 
 from collections.abc import Callable, Iterable
 from functools import wraps
+
 import torch
 from torch.types import _dtype
 
@@ -92,9 +93,7 @@ def inverse_box(box: torch.Tensor) -> torch.Tensor:
         return 1 / box
     if box.ndim == 2:
         return torch.linalg.inv(box)
-    raise ValueError(
-        f"Box must be either: a scalar, a vector, or a matrix. Found {box}."
-    )
+    raise ValueError(f"Box must be either: a scalar, a vector, or a matrix. Found {box}.")
 
 
 def pbc_wrap_general(
@@ -131,10 +130,7 @@ def pbc_wrap_general(
     ):
         raise TypeError("Positions and lattice vectors must be floating point tensors.")
 
-    if (
-        lattice_vectors.ndim != 2
-        or lattice_vectors.shape[0] != lattice_vectors.shape[1]
-    ):
+    if lattice_vectors.ndim != 2 or lattice_vectors.shape[0] != lattice_vectors.shape[1]:
         raise ValueError("Lattice vectors must be a square matrix.")
 
     if positions.shape[-1] != lattice_vectors.shape[0]:
@@ -477,9 +473,7 @@ def get_number_of_cell_repeats(
 
     has_pbc = pbc.prod(dim=1, dtype=torch.bool)
     reciprocal_cell = torch.zeros_like(cell)
-    reciprocal_cell[has_pbc, :, :] = torch.linalg.inv(cell[has_pbc, :, :]).transpose(
-        2, 1
-    )
+    reciprocal_cell[has_pbc, :, :] = torch.linalg.inv(cell[has_pbc, :, :]).transpose(2, 1)
     inv_distances = reciprocal_cell.norm(2, dim=-1)
     num_repeats = torch.ceil(cutoff * inv_distances).to(torch.long)
     return torch.where(pbc, num_repeats, torch.zeros_like(num_repeats))
@@ -1058,8 +1052,7 @@ def build_linked_cell_neighborhood(
         )
 
         batch_mapping.append(
-            i_structure
-            * torch.ones(neigh_atom.shape[1], dtype=torch.long, device=device)
+            i_structure * torch.ones(neigh_atom.shape[1], dtype=torch.long, device=device)
         )
         # Shift the mapping indices to access positions
         mapping.append(neigh_atom + stride[i_structure])
