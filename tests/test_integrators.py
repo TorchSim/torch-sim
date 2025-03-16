@@ -5,7 +5,6 @@ import torch
 from torch_sim.integrators import (
     MDState,
     batched_initialize_momenta,
-    initialize_momenta,
     nve,
     nvt_langevin,
 )
@@ -47,7 +46,9 @@ def batched_initialize_momenta_loop(
     momenta = torch.zeros((n_batches, n_atoms_per_batch, 3), dtype=dtype)
 
     # Create a generator for each batch using the provided seeds
-    generators = [torch.Generator(device=device).manual_seed(int(seed)) for seed in seeds]
+    generators = [
+        torch.Generator(device=device).manual_seed(int(seed)) for seed in seeds
+    ]
 
     # Generate random momenta for each batch
     for batch_idx in range(n_batches):
@@ -72,6 +73,8 @@ def batched_initialize_momenta_loop(
 
 
 def test_batched_initialize_momenta_loop():
+    from torch_sim.unbatched.unbatched_integrators import initialize_momenta
+
     # Set random seed for reproducibility
     seed = 42
 
@@ -121,6 +124,8 @@ def test_batched_initialize_momenta_loop():
 
 
 def test_batched_initialize_momenta():
+    from torch_sim.unbatched.unbatched_integrators import initialize_momenta
+
     seed = 42
     device = torch.device("cpu")
     dtype = torch.float64
@@ -169,7 +174,9 @@ def test_batched_initialize_momenta():
         assert torch.allclose(com_momentum, torch.zeros(3, dtype=dtype), atol=1e-10)
 
 
-def test_nvt_langevin(ar_double_base_state: BaseState, lj_calculator: LennardJonesModel):
+def test_nvt_langevin(
+    ar_double_base_state: BaseState, lj_calculator: LennardJonesModel
+):
     dtype = torch.float64
     n_steps = 100
     dt = torch.tensor(0.001, dtype=dtype)
