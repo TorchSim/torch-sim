@@ -28,8 +28,7 @@ def calculator_outputs(
     calc_nl = SoftSphereModel(use_neighbor_list=True, **calc_params)
     calc_direct = SoftSphereModel(use_neighbor_list=False, **calc_params)
 
-    positions, cell = fe_fcc_state.positions, fe_fcc_state.cell
-    return calc_nl(positions, cell), calc_direct(positions, cell)
+    return calc_nl(fe_fcc_state), calc_direct(fe_fcc_state)
 
 
 @pytest.fixture
@@ -89,7 +88,12 @@ def multi_calculators(
     calc_direct = SoftSphereMultiModel(use_neighbor_list=False, **calc_params)
 
     positions, cell, species = multi_species_system
-    return calc_nl(positions, cell, species), calc_direct(positions, cell, species)
+    multi_species_system_dict = {
+        "positions": positions,
+        "cell": cell,
+        "species": species,
+    }
+    return calc_nl(multi_species_system_dict), calc_direct(multi_species_system_dict)
 
 
 def test_energy_match(
