@@ -916,7 +916,7 @@ def npt_langevin(  # noqa: C901, PLR0915
             energy=model_output["energy"],
             forces=model_output["forces"],
             stress=model_output["stress"],
-            reference_cell=state.cell,
+            reference_cell=state.cell.clone(),
             cell_positions=cell_positions,
             cell_velocities=cell_velocities,
             cell_masses=cell_masses,
