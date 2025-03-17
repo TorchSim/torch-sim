@@ -8,6 +8,7 @@ from torch_sim.state import BaseState
 from torch_sim.unbatched.unbatched_integrators import (
     MDState,
     calculate_momenta,
+    npt_langevin,
     npt_nose_hoover,
     npt_nose_hoover_invariant,
     nve,
@@ -110,6 +111,53 @@ def test_nvt_nose_hoover_integrator(
     assert hasattr(state.chain, "positions"), "Chain should have positions"
     assert hasattr(state.chain, "momenta"), "Chain should have momenta"
     assert state.chain.positions.shape[0] == 3, "Should have 3 chain thermostats"
+
+
+def test_npt_langevin_integrator(
+    ar_base_state: BaseState, unbatched_lj_calculator: Any
+) -> None:
+    """Test Langevin thermostat maintains target temperature."""
+    # Initialize integrator
+    target_temp = torch.tensor(100.0) * MetalUnits.temperature
+    dt = torch.tensor(0.001) * MetalUnits.time
+    external_pressure = torch.tensor(10000) * MetalUnits.pressure
+    n_steps = 2000
+    dim = ar_base_state.positions.shape[1]
+    langevin_init, langevin_update = npt_langevin(
+        model=unbatched_lj_calculator,
+        dt=dt,
+        kT=target_temp,
+        external_pressure=external_pressure,
+        alpha=40 * dt,
+    )
+
+    # Remove batch dimension from cell
+    ar_base_state.cell = ar_base_state.cell.squeeze(0)
+
+    state = langevin_init(state=ar_base_state, seed=42)
+    # Run equilibration
+    temperatures = torch.zeros(n_steps)
+    pressures = torch.zeros(n_steps)
+    for step in range(n_steps):
+        state = langevin_update(state, target_temp)
+        temp = temperature(state.momenta, state.masses) / MetalUnits.temperature
+        volume = torch.linalg.det(state.cell)
+        pressures[step] = (
+            1
+            / (dim)
+            * (
+                (2 * kinetic_energy(state.momenta, state.masses) / volume)
+                - torch.trace(state.stress)
+            )
+            / MetalUnits.pressure
+        )
+        temperatures[step] = temp
+
+    average_temperature = torch.mean(temperatures)
+    average_pressure = torch.mean(pressures)
+    # Check temperature control
+    assert 120 > average_temperature > 80, "Temperature should be maintained"
+    assert 12000 > average_pressure > 8000, "Pressure should be maintained"
 
 
 def test_integrator_state_properties(
