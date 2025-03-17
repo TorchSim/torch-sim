@@ -121,7 +121,7 @@ def test_npt_langevin_integrator(
     target_temp = torch.tensor(100.0) * MetalUnits.temperature
     dt = torch.tensor(0.001) * MetalUnits.time
     external_pressure = torch.tensor(10000) * MetalUnits.pressure
-    n_steps = 2000
+    n_steps = 4000
     dim = ar_base_state.positions.shape[1]
     langevin_init, langevin_update = npt_langevin(
         model=unbatched_lj_calculator,
@@ -153,8 +153,8 @@ def test_npt_langevin_integrator(
         )
         temperatures[step] = temp
 
-    average_temperature = torch.mean(temperatures)
-    average_pressure = torch.mean(pressures)
+    average_temperature = torch.mean(temperatures[2000:])
+    average_pressure = torch.mean(pressures[2000:])
     # Check temperature control
     assert 120 > average_temperature > 80, "Temperature should be maintained"
     assert 12000 > average_pressure > 8000, "Pressure should be maintained"
