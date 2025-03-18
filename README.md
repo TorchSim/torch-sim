@@ -206,8 +206,6 @@ Torch-Sim is built around the following core modules:
 
 - [`torch_sim.elastic`](torch_sim/elastic.py): Contains classes and functions for calculating crystal elasticity, including the representation of elastic states and computation of elastic tensors.
 
-- [`torch_sim.utils`](torch_sim/utils.py): Utility functions.
-
 - [`torch_sim.units`](torch_sim/units.py): Unit system and conversion factors
 
 - [`torch_sim.autobatching`](torch_sim/autobatching.py): Contains classes for automatically batching simulations.
