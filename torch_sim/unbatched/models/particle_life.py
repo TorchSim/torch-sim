@@ -4,7 +4,7 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import BaseState, StateDict
+from torch_sim.state import BaseState
 from torch_sim.transforms import get_pair_displacements
 
 
@@ -123,7 +123,7 @@ class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
     def forward(self, state: BaseState) -> dict[str, torch.Tensor]:
         """Compute energies and forces."""
         # Extract required data from input
-        if isinstance(state, StateDict):
+        if isinstance(state, dict):
             state = BaseState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )

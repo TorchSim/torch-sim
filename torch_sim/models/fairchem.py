@@ -248,7 +248,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         Returns:
             Dictionary of model predictions
         """
-        if isinstance(state, StateDict):
+        if isinstance(state, dict):
             state = BaseState(
                 **state, pbc=self.pbc, masses=torch.ones_like(state["positions"])
             )
