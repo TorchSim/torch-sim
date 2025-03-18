@@ -211,9 +211,12 @@ class MaceModel(torch.nn.Module, ModelInterface):
         ):
             self.setup_from_batch(state.atomic_numbers, state.batch)
 
+        cell = state.cell
+        positions = state.positions
+
         # Ensure cell has correct shape
-        # if state.cell is None:
-        #     state.cell = torch.zeros(
+        # if cell is None:
+        #     cell = torch.zeros(
         #         (self.n_systems, 3, 3), device=self._device, dtype=self._dtype
         #     )
 
@@ -228,8 +231,8 @@ class MaceModel(torch.nn.Module, ModelInterface):
             batch_mask = state.batch == b
             # Calculate neighbor list for this system
             mapping, shifts_idx = self.neighbor_list_fn(
-                positions=state.positions[batch_mask],
-                cell=state.cell[b],
+                positions=positions[batch_mask],
+                cell=cell[b],
                 pbc=self.periodic,
                 cutoff=self.r_max,
             )
@@ -239,7 +242,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
             edge_indices.append(mapping)
             unit_shifts_list.append(shifts_idx)
-            shifts = torch.mm(shifts_idx, state.cell[b])
+            shifts = torch.mm(shifts_idx, cell[b])
             shifts_list.append(shifts)
 
             offset += len(state.positions[batch_mask])
@@ -256,8 +259,8 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 node_attrs=self.node_attrs,
                 batch=state.batch,
                 pbc=self.pbc,
-                cell=state.cell,
-                positions=state.positions,
+                cell=cell,
+                positions=positions,
                 edge_index=edge_index,
                 unit_shifts=unit_shifts,
                 shifts=shifts,

@@ -256,14 +256,17 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         if state.batch is None:
             state.batch = torch.zeros(state.positions.shape[0], dtype=torch.int)
 
+        cell = state.cell
+        positions = state.positions
+
         natoms = torch.bincount(state.batch)
         pbc = torch.tensor(
             [self.pbc, self.pbc, self.pbc] * len(natoms), dtype=torch.bool
         ).view(-1, 3)
         fixed = torch.zeros((state.batch.size(0), natoms.sum()), dtype=torch.int)
         self.data_object = Batch(
-            pos=state.positions,
-            cell=state.cell,
+            pos=positions,
+            cell=cell,
             atomic_numbers=state.atomic_numbers,
             natoms=natoms,
             batch=state.batch,
