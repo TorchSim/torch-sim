@@ -9,10 +9,10 @@ import binpacking
 import torch
 
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import BaseState, concatenate_states
+from torch_sim.state import SimState, concatenate_states
 
 
-def measure_model_memory_forward(state: BaseState, model: ModelInterface) -> float:
+def measure_model_memory_forward(state: SimState, model: ModelInterface) -> float:
     """Measure peak GPU memory usage during a model's forward pass.
 
     Clears GPU cache, runs a forward pass with the provided state, and measures
@@ -52,7 +52,7 @@ def measure_model_memory_forward(state: BaseState, model: ModelInterface) -> flo
 
 
 def determine_max_batch_size(
-    state: BaseState,
+    state: SimState,
     model: ModelInterface,
     max_atoms: int = 500_000,
     start_size: int = 1,
@@ -64,7 +64,7 @@ def determine_max_batch_size(
     batches that can be processed without running out of GPU memory.
 
     Args:
-        state: Base state to replicate for testing.
+        state: SimState to replicate for testing.
         model: Model to test with.
         max_atoms: Upper limit on number of atoms to try (for safety).
         start_size: Initial batch size to test.
@@ -94,7 +94,7 @@ def determine_max_batch_size(
 
 
 def calculate_memory_scaler(
-    state: BaseState,
+    state: SimState,
     memory_scales_with: Literal["n_atoms_x_density", "n_atoms"] = "n_atoms_x_density",
 ) -> float:
     """Calculate a metric that estimates memory requirements for a state.
@@ -124,7 +124,7 @@ def calculate_memory_scaler(
 
 def estimate_max_memory_scaler(
     model: ModelInterface,
-    state_list: list[BaseState],
+    state_list: list[SimState],
     metric_values: list[float],
     max_atoms: int = 500_000,
 ) -> float:
@@ -204,7 +204,7 @@ class ChunkingAutoBatcher:
 
     def load_states(
         self,
-        states: list[BaseState] | BaseState,
+        states: list[SimState] | SimState,
     ) -> None:
         """Load new states into the batcher.
 
@@ -212,7 +212,7 @@ class ChunkingAutoBatcher:
             states: Collection of states to batch (either a list or a single state
                 that will be split).
         """
-        self.state_slices = states.split() if isinstance(states, BaseState) else states
+        self.state_slices = states.split() if isinstance(states, SimState) else states
         self.memory_scalers = [
             calculate_memory_scaler(state_slice, self.memory_scales_with)
             for state_slice in self.state_slices
@@ -250,7 +250,7 @@ class ChunkingAutoBatcher:
 
     def next_batch(
         self, *, return_indices: bool = False
-    ) -> BaseState | tuple[list[BaseState], list[int]] | None:
+    ) -> SimState | tuple[list[SimState], list[int]] | None:
         """Get the next batch of states.
 
         Returns batches sequentially until all states have been processed.
@@ -276,7 +276,7 @@ class ChunkingAutoBatcher:
             return state
         return None
 
-    def __iter__(self) -> Iterator[BaseState]:
+    def __iter__(self) -> Iterator[SimState]:
         """Return self as an iterator.
 
         Allows using the batcher in a for loop.
@@ -286,7 +286,7 @@ class ChunkingAutoBatcher:
         """
         return self
 
-    def __next__(self) -> BaseState:
+    def __next__(self) -> SimState:
         """Get the next batch for iteration.
 
         Implements the iterator protocol to allow using the batcher in a for loop.
@@ -302,7 +302,7 @@ class ChunkingAutoBatcher:
             raise StopIteration
         return next_batch
 
-    def restore_original_order(self, batched_states: list[BaseState]) -> list[BaseState]:
+    def restore_original_order(self, batched_states: list[SimState]) -> list[SimState]:
         """Reorder processed states back to their original sequence.
 
         Takes states that were processed in batches and restores them to the
@@ -378,7 +378,7 @@ class HotSwappingAutoBatcher:
 
     def load_states(
         self,
-        states: list[BaseState] | Iterator[BaseState] | BaseState,
+        states: list[SimState] | Iterator[SimState] | SimState,
     ) -> None:
         """Load new states into the batcher.
 
@@ -386,7 +386,7 @@ class HotSwappingAutoBatcher:
             states: Collection of states to process (list, iterator, or single state
                 that will be split).
         """
-        if isinstance(states, BaseState):
+        if isinstance(states, SimState):
             states = states.split()
         if isinstance(states, list):
             states = iter(states)
@@ -461,7 +461,7 @@ class HotSwappingAutoBatcher:
             self.current_scalers.pop(idx)
             self.completed_idx_og_order.append(og_idx)
 
-    def _get_first_batch(self) -> BaseState:
+    def _get_first_batch(self) -> SimState:
         """Create and return the first batch of states.
 
         Initializes the batcher by estimating memory requirements if needed
@@ -505,11 +505,11 @@ class HotSwappingAutoBatcher:
 
     def next_batch(
         self,
-        updated_state: BaseState | None,
+        updated_state: SimState | None,
         convergence_tensor: torch.Tensor | None,
     ) -> (
-        tuple[BaseState | None, list[BaseState]]
-        | tuple[BaseState | None, list[BaseState], list[int]]
+        tuple[SimState | None, list[SimState]]
+        | tuple[SimState | None, list[SimState], list[int]]
     ):
         """Get the next batch of states based on convergence.
 
@@ -583,9 +583,7 @@ class HotSwappingAutoBatcher:
 
         return next_batch, completed_states
 
-    def restore_original_order(
-        self, completed_states: list[BaseState]
-    ) -> list[BaseState]:
+    def restore_original_order(self, completed_states: list[SimState]) -> list[SimState]:
         """Reorder completed states back to their original sequence.
 
         Takes states that were completed in arbitrary order and restores them

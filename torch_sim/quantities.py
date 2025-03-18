@@ -2,7 +2,7 @@
 
 import torch
 
-from torch_sim.state import BaseState
+from torch_sim.state import SimState
 
 
 # @torch.jit.script
@@ -100,7 +100,7 @@ def kinetic_energy(
     )
 
 
-def batchwise_max_force(state: BaseState) -> torch.Tensor:
+def batchwise_max_force(state: SimState) -> torch.Tensor:
     """Compute the maximum force per batch.
 
     Args:

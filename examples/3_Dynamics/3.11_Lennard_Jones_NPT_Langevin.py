@@ -5,7 +5,7 @@ import os
 import torch
 
 from torch_sim.quantities import kinetic_energy, temperature
-from torch_sim.state import BaseState
+from torch_sim.state import SimState
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_integrators import npt_langevin
 from torch_sim.units import MetalUnits as Units
@@ -88,7 +88,7 @@ model = UnbatchedLennardJonesModel(
     compute_force=True,
     compute_stress=True,
 )
-state = BaseState(
+state = SimState(
     positions=positions,
     masses=masses,
     cell=cell,

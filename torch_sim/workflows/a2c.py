@@ -9,7 +9,7 @@ import torch
 from pymatgen.core.composition import Composition
 
 from torch_sim.optimizers import unit_cell_fire as batched_unit_cell_fire
-from torch_sim.state import BaseState
+from torch_sim.state import SimState
 from torch_sim.transforms import get_pair_displacements
 from torch_sim.unbatched.models.soft_sphere import (
     UnbatchedSoftSphereModel,
@@ -300,7 +300,7 @@ def random_packed_structure(
         atomic_numbers = torch.ones_like(positions_cart, device=device, dtype=torch.int)
 
         # Set up FIRE optimizer with unit masses
-        state = BaseState(
+        state = SimState(
             positions=positions_cart,
             masses=torch.ones(N_atoms, device=device, dtype=dtype),
             atomic_numbers=atomic_numbers,
@@ -429,7 +429,7 @@ def random_packed_structure_multi(
         # Dummy atomic numbers
         atomic_numbers = torch.ones_like(positions_cart, device=device, dtype=torch.int)
 
-        state_dict = BaseState(
+        state_dict = SimState(
             positions=positions_cart,
             masses=torch.ones(N_atoms, device=device, dtype=dtype),
             atomic_numbers=atomic_numbers,
@@ -705,7 +705,7 @@ def get_target_temperature(
 
 
 def get_unit_cell_relaxed_structure(
-    state: BaseState,
+    state: SimState,
     model: torch.nn.Module,
     max_iter: int = 200,
 ) -> tuple[UnitCellFIREState, dict]:
@@ -778,7 +778,7 @@ def get_unit_cell_relaxed_structure(
 
 
 def get_unit_cell_relaxed_structure_batched(
-    state: BaseState,
+    state: SimState,
     model: torch.nn.Module,
     max_iter: int = 200,
 ) -> tuple[UnitCellFIREState, dict]:
@@ -853,7 +853,7 @@ def get_unit_cell_relaxed_structure_batched(
 
 
 def get_relaxed_structure(
-    state: BaseState,
+    state: SimState,
     model: torch.nn.Module,
     max_iter: int = 200,
 ) -> tuple[FIREState, dict]:

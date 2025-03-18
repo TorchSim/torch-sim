@@ -4,7 +4,7 @@ import os
 
 import torch
 
-from torch_sim.state import BaseState
+from torch_sim.state import SimState
 from torch_sim.unbatched.models.soft_sphere import UnbatchedSoftSphereModel
 from torch_sim.unbatched.unbatched_optimizers import fire
 
@@ -71,7 +71,7 @@ atomic_numbers = torch.full((positions.shape[0],), 29, device=device, dtype=torc
 # Cu atomic mass in atomic mass units
 masses = torch.full((positions.shape[0],), 63.546, device=device, dtype=dtype)
 
-state = BaseState(
+state = SimState(
     positions=positions,
     masses=masses,
     cell=cell,

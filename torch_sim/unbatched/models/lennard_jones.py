@@ -5,7 +5,7 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.transforms import get_pair_displacements
-from torch_sim.unbatched.unbatched_integrators import BaseState, StateDict
+from torch_sim.unbatched.unbatched_integrators import SimState, StateDict
 
 
 # Default parameter values defined at module level
@@ -132,10 +132,10 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
         )
         self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self._device)
 
-    def forward(self, state: BaseState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute energies and forces."""
         if isinstance(state, dict):
-            state = BaseState(
+            state = SimState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )
         elif state.pbc != self.periodic:

@@ -198,7 +198,7 @@ Torch-Sim is built around the following core modules:
 
 - [`torch_sim.runners`](torch_sim/runners.py): Provides functions for running molecular dynamics simulations and optimizations, handling simulation state and conversions between different representations.
 
-- [`torch_sim.state`](torch_sim/state.py): Defines the `BaseState` class, a `dataclass` for representing the state of molecular systems.
+- [`torch_sim.state`](torch_sim/state.py): Defines the `SimState` class, a `dataclass` for representing the state of molecular systems.
 
 - [`torch_sim.trajectory`](torch_sim/trajectory.py): Implements classes for handling trajectory data, allowing for reading and writing of simulation data to HDF5 files.
 

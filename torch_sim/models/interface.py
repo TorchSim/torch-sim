@@ -148,20 +148,20 @@ def validate_model_outputs(
     si_atoms = bulk("Si", "diamond", a=5.43, cubic=True)
     fe_atoms = bulk("Fe", "fcc", a=5.26, cubic=True).repeat([3, 1, 1])
 
-    base_state = atoms_to_state([si_atoms, fe_atoms], device, dtype)
+    sim_state = atoms_to_state([si_atoms, fe_atoms], device, dtype)
 
-    og_positions = base_state.positions.clone()
-    og_cell = base_state.cell.clone()
-    og_batch = base_state.batch.clone()
-    og_atomic_numbers = base_state.atomic_numbers.clone()
+    og_positions = sim_state.positions.clone()
+    og_cell = sim_state.cell.clone()
+    og_batch = sim_state.batch.clone()
+    og_atomic_numbers = sim_state.atomic_numbers.clone()
 
-    model_output = model.forward(base_state)
+    model_output = model.forward(sim_state)
 
     # assert model did not mutate the input
-    assert torch.allclose(og_positions, base_state.positions)
-    assert torch.allclose(og_cell, base_state.cell)
-    assert torch.allclose(og_batch, base_state.batch)
-    assert torch.allclose(og_atomic_numbers, base_state.atomic_numbers)
+    assert torch.allclose(og_positions, sim_state.positions)
+    assert torch.allclose(og_cell, sim_state.cell)
+    assert torch.allclose(og_batch, sim_state.batch)
+    assert torch.allclose(og_atomic_numbers, sim_state.atomic_numbers)
 
     # assert model output has the correct keys
     assert "energy" in model_output

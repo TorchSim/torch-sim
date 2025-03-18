@@ -11,7 +11,7 @@ import numpy as np
 import tables
 import torch
 
-from torch_sim.state import BaseState
+from torch_sim.state import SimState
 
 
 DATA_TYPE_MAP = {
@@ -123,7 +123,7 @@ class TrajectoryReporter:
                     self.prop_calculators[frequency][name] = new_fn
 
     def report(
-        self, state: BaseState, step: int, model: torch.nn.Module | None = None
+        self, state: SimState, step: int, model: torch.nn.Module | None = None
     ) -> None:
         """Report a state and step to the trajectory files.
 
@@ -193,7 +193,7 @@ class TorchSimTrajectory:
     """Trajectory class for TorchSim.
 
     This class provides an interface for writing and reading trajectory data to/from
-    HDF5 files. It supports writing both raw arrays and BaseState objects, with
+    HDF5 files. It supports writing both raw arrays and SimState objects, with
     configurable compression and data type coercion.
 
     Attributes:
@@ -520,7 +520,7 @@ class TorchSimTrajectory:
 
     def write_state(  # noqa: C901
         self,
-        state: BaseState | list[BaseState],  # TODO: rename this to states?
+        state: SimState | list[SimState],  # TODO: rename this to states?
         steps: int | list[int],
         batch_index: int | None = None,
         *,
@@ -536,7 +536,7 @@ class TorchSimTrajectory:
         representing a trajectory.
 
         Args:
-            state (BaseState | list[BaseState]): BaseState or list of BaseStates to write
+            state (SimState | list[SimState]): SimState or list of SimStates to write
             steps (int | list[int]): Step number(s) for the frame(s)
             batch_index (int | None): Batch index to save
             save_velocities (bool): Whether to save velocities
@@ -553,7 +553,7 @@ class TorchSimTrajectory:
         # TODO: consider changing this reporting later
 
         # we wrap
-        if isinstance(state, BaseState):
+        if isinstance(state, SimState):
             state = [state]
         if isinstance(steps, int):
             steps = [steps]
@@ -720,8 +720,8 @@ class TorchSimTrajectory:
         frame: int,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
-    ) -> BaseState:
-        """Get a BaseState object for a given frame.
+    ) -> SimState:
+        """Get a SimState object for a given frame.
 
         Args:
             frame: Frame index to retrieve
@@ -729,15 +729,15 @@ class TorchSimTrajectory:
             dtype: Data type for tensors
 
         Returns:
-            BaseState: State object containing all available data for the frame
+            SimState: State object containing all available data for the frame
         """
         device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = dtype or torch.float64
 
         arrays = self._get_state_arrays(frame)
 
-        # Create base state with required attributes
-        return BaseState(
+        # Create SimState with required attributes
+        return SimState(
             positions=torch.tensor(arrays["positions"], device=device, dtype=dtype),
             masses=torch.tensor(arrays.get("masses", None), device=device, dtype=dtype),
             cell=torch.tensor(arrays["cell"], device=device, dtype=dtype),

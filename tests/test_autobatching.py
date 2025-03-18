@@ -12,29 +12,29 @@ from torch_sim.autobatching import (
 )
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.optimizers import unit_cell_fire
-from torch_sim.state import BaseState
+from torch_sim.state import SimState
 
 
-def test_calculate_scaling_metric(si_base_state: BaseState) -> None:
+def test_calculate_scaling_metric(si_sim_state: SimState) -> None:
     """Test calculation of scaling metrics for a state."""
     # Test n_atoms metric
-    n_atoms_metric = calculate_memory_scaler(si_base_state, "n_atoms")
-    assert n_atoms_metric == si_base_state.n_atoms
+    n_atoms_metric = calculate_memory_scaler(si_sim_state, "n_atoms")
+    assert n_atoms_metric == si_sim_state.n_atoms
 
     # Test n_atoms_x_density metric
-    density_metric = calculate_memory_scaler(si_base_state, "n_atoms_x_density")
-    volume = torch.abs(torch.linalg.det(si_base_state.cell[0])) / 1000
-    expected = si_base_state.n_atoms * (si_base_state.n_atoms / volume.item())
+    density_metric = calculate_memory_scaler(si_sim_state, "n_atoms_x_density")
+    volume = torch.abs(torch.linalg.det(si_sim_state.cell[0])) / 1000
+    expected = si_sim_state.n_atoms * (si_sim_state.n_atoms / volume.item())
     assert pytest.approx(density_metric, rel=1e-5) == expected
 
     # Test invalid metric
     with pytest.raises(ValueError, match="Invalid metric"):
-        calculate_memory_scaler(si_base_state, "invalid_metric")
+        calculate_memory_scaler(si_sim_state, "invalid_metric")
 
 
-def test_split_state(si_double_base_state: BaseState) -> None:
+def test_split_state(si_double_sim_state: SimState) -> None:
     """Test splitting a batched state into individual states."""
-    split_states = si_double_base_state.split()
+    split_states = si_double_sim_state.split()
 
     # Check we get the right number of states
     assert len(split_states) == 2
@@ -45,17 +45,17 @@ def test_split_state(si_double_base_state: BaseState) -> None:
         assert torch.all(
             state[1].batch == 0
         )  # Each split state should have batch indices reset to 0
-        assert state[1].n_atoms == si_double_base_state.n_atoms // 2
-        assert state[1].positions.shape[0] == si_double_base_state.n_atoms // 2
+        assert state[1].n_atoms == si_double_sim_state.n_atoms // 2
+        assert state[1].positions.shape[0] == si_double_sim_state.n_atoms // 2
         assert state[1].cell.shape[0] == 1
 
 
 def test_chunking_auto_batcher(
-    si_base_state: BaseState, fe_fcc_state: BaseState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
 ) -> None:
     """Test ChunkingAutoBatcher with different states."""
     # Create a list of states with different sizes
-    states = [si_base_state, fe_fcc_state]
+    states = [si_sim_state, fe_fcc_sim_state]
 
     # Initialize the batcher with a fixed max_metric to avoid GPU memory testing
     batcher = ChunkingAutoBatcher(
@@ -67,8 +67,8 @@ def test_chunking_auto_batcher(
 
     # Check that the batcher correctly identified the metrics
     assert len(batcher.memory_scalers) == 2
-    assert batcher.memory_scalers[0] == si_base_state.n_atoms
-    assert batcher.memory_scalers[1] == fe_fcc_state.n_atoms
+    assert batcher.memory_scalers[0] == si_sim_state.n_atoms
+    assert batcher.memory_scalers[1] == fe_fcc_sim_state.n_atoms
 
     # Get batches until None is returned
     batches = list(batcher)
@@ -90,10 +90,10 @@ def test_chunking_auto_batcher(
 
 
 def test_chunking_auto_batcher_with_indices(
-    si_base_state: BaseState, fe_fcc_state: BaseState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
 ) -> None:
     """Test ChunkingAutoBatcher with return_indices=True."""
-    states = [si_base_state, fe_fcc_state]
+    states = [si_sim_state, fe_fcc_sim_state]
 
     batcher = ChunkingAutoBatcher(
         model=lj_calculator,
@@ -117,11 +117,11 @@ def test_chunking_auto_batcher_with_indices(
 
 
 def test_chunking_auto_batcher_restore_order_with_split_states(
-    si_base_state: BaseState, fe_fcc_state: BaseState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
 ) -> None:
     """Test ChunkingAutoBatcher's restore_original_order method with split states."""
     # Create a list of states with different sizes
-    states = [si_base_state, fe_fcc_state]
+    states = [si_sim_state, fe_fcc_sim_state]
 
     # Initialize the batcher with a fixed max_metric to avoid GPU memory testing
     batcher = ChunkingAutoBatcher(
@@ -158,11 +158,11 @@ def test_chunking_auto_batcher_restore_order_with_split_states(
 
 
 def test_hot_swapping_max_metric_too_small(
-    si_base_state: BaseState, fe_fcc_state: BaseState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
 ) -> None:
     """Test HotSwappingAutoBatcher with different states."""
     # Create a list of states
-    states = [si_base_state, fe_fcc_state]
+    states = [si_sim_state, fe_fcc_sim_state]
 
     # Initialize the batcher with a fixed max_metric
     batcher = HotSwappingAutoBatcher(
@@ -176,11 +176,11 @@ def test_hot_swapping_max_metric_too_small(
 
 
 def test_hot_swapping_auto_batcher(
-    si_base_state: BaseState, fe_fcc_state: BaseState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
 ) -> None:
     """Test HotSwappingAutoBatcher with different states."""
     # Create a list of states
-    states = [si_base_state, fe_fcc_state]
+    states = [si_sim_state, fe_fcc_sim_state]
 
     # Initialize the batcher with a fixed max_metric
     batcher = HotSwappingAutoBatcher(
@@ -193,16 +193,16 @@ def test_hot_swapping_auto_batcher(
 
     # Get the first batch
     first_batch, [], _ = batcher.next_batch(states, None)
-    assert isinstance(first_batch, BaseState)
+    assert isinstance(first_batch, SimState)
 
     # Create a convergence tensor where the first state has converged
     convergence = torch.tensor([True])
 
     # Get the next batch
     next_batch, popped_batch, idx = batcher.next_batch(first_batch, convergence)
-    assert isinstance(next_batch, BaseState)
+    assert isinstance(next_batch, SimState)
     assert isinstance(popped_batch, list)
-    assert isinstance(popped_batch[0], BaseState)
+    assert isinstance(popped_batch[0], SimState)
     assert idx == [1]
 
     # Check that the converged state was removed
@@ -222,7 +222,7 @@ def test_hot_swapping_auto_batcher(
 
 
 def test_determine_max_batch_size_fibonacci(
-    si_base_state: BaseState, lj_calculator: LennardJonesModel, monkeypatch: Any
+    si_sim_state: SimState, lj_calculator: LennardJonesModel, monkeypatch: Any
 ) -> None:
     """Test that determine_max_batch_size uses Fibonacci sequence correctly."""
 
@@ -235,7 +235,7 @@ def test_determine_max_batch_size_fibonacci(
     )
 
     # Test with a small max_atoms value to limit the sequence
-    max_size = determine_max_batch_size(si_base_state, lj_calculator, max_atoms=10)
+    max_size = determine_max_batch_size(si_sim_state, lj_calculator, max_atoms=10)
 
     # The Fibonacci sequence up to 10 is [1, 2, 3, 5, 8, 13]
     # Since we're not triggering OOM errors with our mock, it should
@@ -244,10 +244,10 @@ def test_determine_max_batch_size_fibonacci(
 
 
 def test_hot_swapping_auto_batcher_restore_order(
-    si_base_state: BaseState, fe_fcc_state: BaseState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
 ) -> None:
     """Test HotSwappingAutoBatcher's restore_original_order method."""
-    states = [si_base_state, fe_fcc_state]
+    states = [si_sim_state, fe_fcc_sim_state]
 
     batcher = HotSwappingAutoBatcher(
         model=lj_calculator,
@@ -286,16 +286,16 @@ def test_hot_swapping_auto_batcher_restore_order(
     # with pytest.raises(
     #     ValueError, match="Number of completed states .* does not match"
     # ):
-    #     batcher.restore_original_order([si_base_state])
+    #     batcher.restore_original_order([si_sim_state])
 
 
 def test_hot_swapping_with_fire(
-    si_base_state: BaseState, fe_fcc_state: BaseState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
 ) -> None:
     fire_init, fire_update = unit_cell_fire(lj_calculator)
 
-    si_fire_state = fire_init(si_base_state)
-    fe_fire_state = fire_init(fe_fcc_state)
+    si_fire_state = fire_init(si_sim_state)
+    fe_fire_state = fire_init(fe_fcc_sim_state)
 
     fire_states = [si_fire_state, fe_fire_state] * 5
     fire_states = [state.clone() for state in fire_states]
@@ -310,7 +310,7 @@ def test_hot_swapping_with_fire(
     )
     batcher.load_states(fire_states)
 
-    def convergence_fn(state: BaseState) -> bool:
+    def convergence_fn(state: SimState) -> bool:
         batch_wise_max_force = torch.zeros(
             state.n_batches, device=state.device, dtype=torch.float64
         )
@@ -343,12 +343,12 @@ def test_hot_swapping_with_fire(
 
 
 def test_chunking_auto_batcher_with_fire(
-    si_base_state: BaseState, fe_fcc_state: BaseState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
 ) -> None:
     fire_init, fire_update = unit_cell_fire(lj_calculator)
 
-    si_fire_state = fire_init(si_base_state)
-    fe_fire_state = fire_init(fe_fcc_state)
+    si_fire_state = fire_init(si_sim_state)
+    fe_fire_state = fire_init(fe_fcc_sim_state)
 
     fire_states = [si_fire_state, fe_fire_state] * 5
     fire_states = [state.clone() for state in fire_states]
@@ -384,11 +384,13 @@ def test_chunking_auto_batcher_with_fire(
 
 
 def test_hot_swapping_max_iterations(
-    si_base_state: BaseState, fe_fcc_state: BaseState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState,
+    fe_fcc_sim_state: SimState,
+    lj_calculator: LennardJonesModel,
 ) -> None:
     """Test HotSwappingAutoBatcher with max_iterations limit."""
     # Create states that won't naturally converge
-    states = [si_base_state.clone(), fe_fcc_state.clone()]
+    states = [si_sim_state.clone(), fe_fcc_sim_state.clone()]
 
     # Set max_attempts to a small value to ensure quick termination
     max_attempts = 3

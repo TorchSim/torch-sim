@@ -9,14 +9,12 @@ from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.optimizers import unit_cell_fire
 from torch_sim.quantities import kinetic_energy
 from torch_sim.runners import generate_force_convergence_fn, integrate, optimize
-from torch_sim.state import BaseState, initialize_state
+from torch_sim.state import SimState, initialize_state
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 from torch_sim.units import UnitSystem
 
 
-def test_integrate_nve(
-    ar_base_state: BaseState, lj_calculator: Any, tmp_path: Any
-) -> None:
+def test_integrate_nve(ar_sim_state: SimState, lj_calculator: Any, tmp_path: Any) -> None:
     """Test NVE integration with LJ potential."""
     trajectory_file = tmp_path / "nve.h5md"
     reporter = TrajectoryReporter(
@@ -28,7 +26,7 @@ def test_integrate_nve(
     )
 
     final_state = integrate(
-        system=ar_base_state,
+        system=ar_sim_state,
         model=lj_calculator,
         integrator=nve,
         n_steps=10,
@@ -38,7 +36,7 @@ def test_integrate_nve(
         trajectory_reporter=reporter,
     )
 
-    assert isinstance(final_state, BaseState)
+    assert isinstance(final_state, SimState)
     assert trajectory_file.exists()
 
     # Check energy conservation
@@ -49,7 +47,7 @@ def test_integrate_nve(
 
 
 def test_integrate_single_nvt(
-    ar_base_state: BaseState, lj_calculator: Any, tmp_path: Any
+    ar_sim_state: SimState, lj_calculator: Any, tmp_path: Any
 ) -> None:
     """Test NVT integration with LJ potential."""
     trajectory_file = tmp_path / "nvt.h5md"
@@ -62,7 +60,7 @@ def test_integrate_single_nvt(
     )
 
     final_state = integrate(
-        system=ar_base_state,
+        system=ar_sim_state,
         model=lj_calculator,
         integrator=nvt_langevin,
         n_steps=10,
@@ -73,7 +71,7 @@ def test_integrate_single_nvt(
         gamma=0.1,  # ps^-1
     )
 
-    assert isinstance(final_state, BaseState)
+    assert isinstance(final_state, SimState)
     assert trajectory_file.exists()
 
     # Check energy fluctuations
@@ -83,12 +81,10 @@ def test_integrate_single_nvt(
         assert std_energy / np.mean(energies) < 0.2  # 20% tolerance for NVT
 
 
-def test_integrate_double_nvt(
-    ar_double_base_state: BaseState, lj_calculator: Any
-) -> None:
+def test_integrate_double_nvt(ar_double_sim_state: SimState, lj_calculator: Any) -> None:
     """Test NVT integration with LJ potential."""
     final_state = integrate(
-        system=ar_double_base_state,
+        system=ar_double_sim_state,
         model=lj_calculator,
         integrator=nvt_langevin,
         n_steps=10,
@@ -96,13 +92,13 @@ def test_integrate_double_nvt(
         timestep=0.001,  # ps
     )
 
-    assert isinstance(final_state, BaseState)
+    assert isinstance(final_state, SimState)
     assert final_state.n_atoms == 64
     assert not torch.isnan(final_state.energy).any()
 
 
 def test_integrate_double_nvt_with_reporter(
-    ar_double_base_state: BaseState, lj_calculator: Any, tmp_path: Any
+    ar_double_sim_state: SimState, lj_calculator: Any, tmp_path: Any
 ) -> None:
     """Test NVT integration with LJ potential."""
     trajectory_files = [tmp_path / "nvt_0.h5md", tmp_path / "nvt_1.h5md"]
@@ -115,7 +111,7 @@ def test_integrate_double_nvt_with_reporter(
     )
 
     final_state = integrate(
-        system=ar_double_base_state,
+        system=ar_double_sim_state,
         model=lj_calculator,
         integrator=nvt_langevin,
         n_steps=10,
@@ -126,7 +122,7 @@ def test_integrate_double_nvt_with_reporter(
         gamma=0.1,  # ps^-1
     )
 
-    assert isinstance(final_state, BaseState)
+    assert isinstance(final_state, SimState)
     assert final_state.n_atoms == 64
     assert all(traj_file.exists() for traj_file in trajectory_files)
 
@@ -140,14 +136,14 @@ def test_integrate_double_nvt_with_reporter(
 
 
 def test_integrate_many_nvt(
-    ar_base_state: BaseState,
-    fe_fcc_state: BaseState,
+    ar_sim_state: SimState,
+    fe_fcc_state: SimState,
     lj_calculator: Any,
     tmp_path: Any,
 ) -> None:
     """Test NVT integration with LJ potential."""
     triple_state = initialize_state(
-        [ar_base_state, ar_base_state, fe_fcc_state],
+        [ar_sim_state, ar_sim_state, fe_fcc_state],
         lj_calculator.device,
         lj_calculator.dtype,
     )
@@ -172,7 +168,7 @@ def test_integrate_many_nvt(
         trajectory_reporter=reporter,
     )
 
-    assert isinstance(final_state, BaseState)
+    assert isinstance(final_state, SimState)
     assert all(traj_file.exists() for traj_file in trajectory_files)
     assert not torch.isnan(final_state.energy).any()
     assert not torch.isnan(final_state.positions).any()
@@ -183,12 +179,12 @@ def test_integrate_many_nvt(
 
 
 def test_integrate_with_autobatcher(
-    ar_base_state: BaseState,
-    fe_fcc_state: BaseState,
+    ar_sim_state: SimState,
+    fe_fcc_state: SimState,
     lj_calculator: Any,
 ) -> None:
     """Test integration with autobatcher."""
-    states = [ar_base_state, fe_fcc_state, ar_base_state]
+    states = [ar_sim_state, fe_fcc_state, ar_sim_state]
     triple_state = initialize_state(
         states,
         lj_calculator.device,
@@ -209,7 +205,7 @@ def test_integrate_with_autobatcher(
         autobatcher=autobatcher,
     )
 
-    assert isinstance(final_state, BaseState)
+    assert isinstance(final_state, SimState)
     split_final_state = final_state.split()
     for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
@@ -217,13 +213,13 @@ def test_integrate_with_autobatcher(
 
 
 def test_integrate_with_autobatcher_and_reporting(
-    ar_base_state: BaseState,
-    fe_fcc_state: BaseState,
+    ar_sim_state: SimState,
+    fe_fcc_state: SimState,
     lj_calculator: Any,
     tmp_path: Any,
 ) -> None:
     """Test integration with autobatcher."""
-    states = [ar_base_state, fe_fcc_state, ar_base_state]
+    states = [ar_sim_state, fe_fcc_state, ar_sim_state]
     triple_state = initialize_state(
         states,
         lj_calculator.device,
@@ -264,7 +260,7 @@ def test_integrate_with_autobatcher_and_reporting(
 
     assert all(traj_file.exists() for traj_file in trajectory_files)
 
-    assert isinstance(final_state, BaseState)
+    assert isinstance(final_state, SimState)
     split_final_state = final_state.split()
     for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
@@ -284,21 +280,19 @@ def test_integrate_with_autobatcher_and_reporting(
         assert torch.any(final_state.positions != init_state.positions)
 
 
-def test_optimize_fire(
-    ar_base_state: BaseState, lj_calculator: Any, tmp_path: Any
-) -> None:
+def test_optimize_fire(ar_sim_state: SimState, lj_calculator: Any, tmp_path: Any) -> None:
     """Test FIRE optimization with LJ potential."""
     trajectory_files = [tmp_path / "opt.h5md"]
     reporter = TrajectoryReporter(
         filenames=[tmp_path / "opt.h5md"],
         prop_calculators={1: {"energy": lambda state: state.energy}},
     )
-    ar_base_state.positions += torch.randn_like(ar_base_state.positions) * 0.1
+    ar_sim_state.positions += torch.randn_like(ar_sim_state.positions) * 0.1
 
-    original_state = ar_base_state.clone()
+    original_state = ar_sim_state.clone()
 
     final_state = optimize(
-        system=ar_base_state,
+        system=ar_sim_state,
         model=lj_calculator,
         optimizer=unit_cell_fire,
         convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
@@ -317,10 +311,10 @@ def test_optimize_fire(
 
 
 def test_default_converged_fn(
-    ar_base_state: BaseState, lj_calculator: Any, tmp_path: Any
+    ar_sim_state: SimState, lj_calculator: Any, tmp_path: Any
 ) -> None:
     """Test default converged function."""
-    ar_base_state.positions += torch.randn_like(ar_base_state.positions) * 0.1
+    ar_sim_state.positions += torch.randn_like(ar_sim_state.positions) * 0.1
 
     trajectory_files = [tmp_path / "opt.h5md"]
     reporter = TrajectoryReporter(
@@ -328,10 +322,10 @@ def test_default_converged_fn(
         prop_calculators={1: {"energy": lambda state: state.energy}},
     )
 
-    original_state = ar_base_state.clone()
+    original_state = ar_sim_state.clone()
 
     final_state = optimize(
-        system=ar_base_state,
+        system=ar_sim_state,
         model=lj_calculator,
         optimizer=unit_cell_fire,
         trajectory_reporter=reporter,
@@ -345,13 +339,13 @@ def test_default_converged_fn(
 
 
 def test_batched_optimize_fire(
-    ar_double_base_state: BaseState,
+    ar_double_sim_state: SimState,
     lj_calculator: Any,
     tmp_path: Any,
 ) -> None:
     """Test batched FIRE optimization with LJ potential."""
     trajectory_files = [
-        tmp_path / f"nvt_{idx}.h5md" for idx in range(ar_double_base_state.n_batches)
+        tmp_path / f"nvt_{idx}.h5md" for idx in range(ar_double_sim_state.n_batches)
     ]
     reporter = TrajectoryReporter(
         filenames=trajectory_files,
@@ -362,7 +356,7 @@ def test_batched_optimize_fire(
     )
 
     final_state = optimize(
-        system=ar_double_base_state,
+        system=ar_double_sim_state,
         model=lj_calculator,
         optimizer=unit_cell_fire,
         convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
@@ -374,12 +368,12 @@ def test_batched_optimize_fire(
 
 
 def test_optimize_with_autobatcher(
-    ar_base_state: BaseState,
-    fe_fcc_state: BaseState,
+    ar_sim_state: SimState,
+    fe_fcc_state: SimState,
     lj_calculator: Any,
 ) -> None:
     """Test optimize with autobatcher."""
-    states = [ar_base_state, fe_fcc_state, ar_base_state]
+    states = [ar_sim_state, fe_fcc_state, ar_sim_state]
     triple_state = initialize_state(
         states,
         lj_calculator.device,
@@ -398,7 +392,7 @@ def test_optimize_with_autobatcher(
         autobatcher=autobatcher,
     )
 
-    assert isinstance(final_state, BaseState)
+    assert isinstance(final_state, SimState)
     split_final_state = final_state.split()
     for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
@@ -406,13 +400,13 @@ def test_optimize_with_autobatcher(
 
 
 def test_optimize_with_autobatcher_and_reporting(
-    ar_base_state: BaseState,
-    fe_fcc_state: BaseState,
+    ar_sim_state: SimState,
+    fe_fcc_state: SimState,
     lj_calculator: Any,
     tmp_path: Any,
 ) -> None:
     """Test optimize with autobatcher and reporting."""
-    states = [ar_base_state, fe_fcc_state, ar_base_state]
+    states = [ar_sim_state, fe_fcc_state, ar_sim_state]
     triple_state = initialize_state(
         states,
         lj_calculator.device,
@@ -446,7 +440,7 @@ def test_optimize_with_autobatcher_and_reporting(
 
     assert all(traj_file.exists() for traj_file in trajectory_files)
 
-    assert isinstance(final_state, BaseState)
+    assert isinstance(final_state, SimState)
     split_final_state = final_state.split()
     for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
@@ -470,8 +464,8 @@ def test_optimize_with_autobatcher_and_reporting(
 
 
 def test_integrate_with_default_autobatcher(
-    ar_base_state: BaseState,
-    fe_fcc_state: BaseState,
+    ar_sim_state: SimState,
+    fe_fcc_state: SimState,
     lj_calculator: LennardJonesModel,
     monkeypatch: Any,
 ) -> None:
@@ -484,7 +478,7 @@ def test_integrate_with_default_autobatcher(
         "torch_sim.autobatching.estimate_max_memory_scaler", mock_estimate
     )
 
-    states = [ar_base_state, fe_fcc_state, ar_base_state]
+    states = [ar_sim_state, fe_fcc_state, ar_sim_state]
     triple_state = initialize_state(
         states,
         lj_calculator.device,
@@ -501,7 +495,7 @@ def test_integrate_with_default_autobatcher(
         autobatcher=True,
     )
 
-    assert isinstance(final_state, BaseState)
+    assert isinstance(final_state, SimState)
     split_final_state = final_state.split()
 
     for init_state, final_state in zip(states, split_final_state, strict=False):
@@ -510,8 +504,8 @@ def test_integrate_with_default_autobatcher(
 
 
 def test_optimize_with_default_autobatcher(
-    ar_base_state: BaseState,
-    fe_fcc_state: BaseState,
+    ar_sim_state: SimState,
+    fe_fcc_state: SimState,
     lj_calculator: LennardJonesModel,
     monkeypatch: Any,
 ) -> None:
@@ -524,7 +518,7 @@ def test_optimize_with_default_autobatcher(
         "torch_sim.autobatching.estimate_max_memory_scaler", mock_estimate
     )
 
-    states = [ar_base_state, fe_fcc_state, ar_base_state]
+    states = [ar_sim_state, fe_fcc_state, ar_sim_state]
     triple_state = initialize_state(
         states,
         lj_calculator.device,
@@ -539,7 +533,7 @@ def test_optimize_with_default_autobatcher(
         autobatcher=True,
     )
 
-    assert isinstance(final_state, BaseState)
+    assert isinstance(final_state, SimState)
     split_final_state = final_state.split()
     for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)

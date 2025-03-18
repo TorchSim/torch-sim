@@ -11,7 +11,7 @@ from pymatgen.core import Structure
 
 from torch_sim.io import atoms_to_state
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.state import BaseState, concatenate_states
+from torch_sim.state import SimState, concatenate_states
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_integrators import nve
@@ -70,7 +70,7 @@ def si_phonopy_atoms() -> Any:
 
 
 @pytest.fixture
-def si_base_state(si_atoms: Any, device: torch.device) -> Any:
+def si_sim_state(si_atoms: Any, device: torch.device) -> Any:
     """Create a basic state from si_structure."""
     return atoms_to_state(si_atoms, device, torch.float64)
 
@@ -82,13 +82,13 @@ def fe_fcc_state(device: torch.device) -> Any:
 
 
 @pytest.fixture
-def si_double_base_state(si_atoms: Atoms, device: torch.device) -> Any:
+def si_double_sim_state(si_atoms: Atoms, device: torch.device) -> Any:
     """Create a basic state from si_structure."""
     return atoms_to_state([si_atoms, si_atoms], device, torch.float64)
 
 
 @pytest.fixture
-def ar_base_state(device: torch.device) -> BaseState:
+def ar_sim_state(device: torch.device) -> SimState:
     """Create a face-centered cubic (FCC) Argon structure."""
     # Create FCC Ar using ASE, with 4x4x4 supercell
     ar_atoms = bulk("Ar", "fcc", a=5.26, cubic=True).repeat([2, 2, 2])
@@ -96,9 +96,9 @@ def ar_base_state(device: torch.device) -> BaseState:
 
 
 @pytest.fixture
-def ar_double_base_state(ar_base_state: BaseState) -> BaseState:
-    """Create a batched state from ar_fcc_base_state."""
-    return concatenate_states([ar_base_state, ar_base_state], device=ar_base_state.device)
+def ar_double_sim_state(ar_sim_state: SimState) -> SimState:
+    """Create a batched state from ar_fcc_sim_state."""
+    return concatenate_states([ar_sim_state, ar_sim_state], device=ar_sim_state.device)
 
 
 @pytest.fixture
@@ -132,14 +132,14 @@ def lj_calculator(device: torch.device) -> LennardJonesModel:
 
 
 @pytest.fixture
-def torchsim_trajectory(si_base_state: BaseState, lj_calculator: Any, tmp_path: Path):
+def torchsim_trajectory(si_sim_state: SimState, lj_calculator: Any, tmp_path: Path):
     """Test NVE integration conserves energy."""
     # Initialize integrator
     kT = torch.tensor(300.0)  # Temperature in K
     dt = torch.tensor(0.001)  # Small timestep for stability
 
     state, update_fn = nve(
-        **asdict(si_base_state),
+        **asdict(si_sim_state),
         model=lj_calculator,
         dt=dt,
         kT=kT,

@@ -10,7 +10,7 @@ from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.tools import atomic_numbers_to_indices, to_one_hot, utils
 
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import BaseState, StateDict
+from torch_sim.state import SimState, StateDict
 
 
 class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
@@ -146,7 +146,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
 
     def forward(  # noqa: C901
         self,
-        state: BaseState | StateDict,
+        state: SimState | StateDict,
     ) -> dict[str, torch.Tensor]:
         """Compute the energy of the system given atomic positions and box vectors.
 
@@ -154,14 +154,14 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         model, and returns the computed energy.
 
         Args:
-            state (BaseState | StateDict): The state of the system.
+            state (SimState | StateDict): The state of the system.
 
         Returns:
             dict[str, torch.Tensor]: A dictionary containing the computed energy,
                 forces, and stress of the system.
         """
         if isinstance(state, dict):
-            state = BaseState(
+            state = SimState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )
         elif state.pbc != self.periodic:

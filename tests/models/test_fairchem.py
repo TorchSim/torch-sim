@@ -7,7 +7,7 @@ from fairchem.core.models.model_registry import model_name_to_local_file
 from torch_sim.io import atoms_to_state
 from torch_sim.models.fairchem import FairChemModel
 from torch_sim.models.interface import validate_model_outputs
-from torch_sim.state import BaseState
+from torch_sim.state import SimState
 
 
 pytest.importorskip("torch_sparse")
@@ -22,7 +22,7 @@ def model_path(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 
 @pytest.fixture
-def si_system(dtype: torch.dtype, device: torch.device) -> BaseState:
+def si_system(dtype: torch.dtype, device: torch.device) -> SimState:
     # Create diamond cubic Silicon
     si_dc = bulk("Si", "diamond", a=5.43)
 

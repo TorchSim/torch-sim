@@ -5,11 +5,11 @@ from dataclasses import dataclass
 
 import torch
 
-from torch_sim.state import BaseState
+from torch_sim.state import SimState
 
 
 @dataclass
-class SwapMCState(BaseState):
+class SwapMCState(SimState):
     """State for Monte Carlo simulations.
 
     Attributes:
@@ -25,7 +25,7 @@ class SwapMCState(BaseState):
 
 
 def generate_swaps(
-    state: BaseState, generator: torch.Generator | None = None
+    state: SimState, generator: torch.Generator | None = None
 ) -> torch.Tensor:
     """Generate swaps for a given batch."""
     # TODO: add atomic numbers and a way to guarantee swaps
@@ -152,7 +152,7 @@ def swap_monte_carlo(
     else:
         generator = None
 
-    def init_swap_mc_state(state: BaseState) -> SwapMCState:
+    def init_swap_mc_state(state: SimState) -> SwapMCState:
         model_output = model(state)
 
         return SwapMCState(

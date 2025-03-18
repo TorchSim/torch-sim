@@ -9,7 +9,7 @@ from mace.tools import atomic_numbers_to_indices, to_one_hot, utils
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import BaseState, StateDict
+from torch_sim.state import SimState, StateDict
 
 
 class MaceModel(torch.nn.Module, ModelInterface):
@@ -149,7 +149,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
     def forward(  # noqa: C901
         self,
-        state: BaseState | StateDict,
+        state: SimState | StateDict,
     ) -> dict[str, torch.Tensor]:
         """Compute energies, forces, and stresses for the system(s).
 
@@ -161,7 +161,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
         """
         # Extract required data from input
         if isinstance(state, dict):
-            state = BaseState(
+            state = SimState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )
         elif state.pbc != self.periodic:

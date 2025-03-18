@@ -105,10 +105,10 @@ def test_mace_batched_consistency(
     # Set up ASE calculator
     si_atoms.calc = ase_mace_calculator
 
-    si_base_state = atoms_to_state([si_atoms], device, torch.float32)
+    si_sim_state = atoms_to_state([si_atoms], device, torch.float32)
 
     # Get FairChem results
-    torchsim_mace_results = torchsim_batched_mace_model(si_base_state)
+    torchsim_mace_results = torchsim_batched_mace_model(si_sim_state)
 
     # Get OCP results
     ase_mace_forces = torch.tensor(

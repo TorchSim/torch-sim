@@ -21,7 +21,7 @@ from fairchem.core.models.model_registry import model_name_to_local_file
 from torch_geometric.data import Batch
 
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import BaseState, StateDict
+from torch_sim.state import SimState, StateDict
 
 
 if TYPE_CHECKING:
@@ -239,7 +239,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         except NotImplementedError:
             print("Unable to load checkpoint!")
 
-    def forward(self, state: BaseState | StateDict) -> dict:  # TODO: what are the shapes?
+    def forward(self, state: SimState | StateDict) -> dict:  # TODO: what are the shapes?
         """Forward pass of the model.
 
         Args:
@@ -249,7 +249,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             Dictionary of model predictions
         """
         if isinstance(state, dict):
-            state = BaseState(
+            state = SimState(
                 **state, pbc=self.pbc, masses=torch.ones_like(state["positions"])
             )
 

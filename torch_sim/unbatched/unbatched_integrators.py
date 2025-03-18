@@ -7,12 +7,12 @@ from typing import Any
 import torch
 
 from torch_sim.quantities import count_dof, kinetic_energy
-from torch_sim.state import BaseState, StateDict
+from torch_sim.state import SimState, StateDict
 from torch_sim.transforms import pbc_wrap_general
 
 
 @dataclass
-class MDState(BaseState):
+class MDState(SimState):
     """State information for MD.
 
     This class represents the complete state of a molecular system being integrated
@@ -187,7 +187,7 @@ def nve(
     dt: torch.Tensor,
     kT: torch.Tensor,
 ) -> tuple[
-    Callable[[BaseState | dict, torch.Tensor], MDState],
+    Callable[[SimState | dict, torch.Tensor], MDState],
     Callable[[MDState, torch.Tensor], MDState],
 ]:
     """Initialize and return an NVE (microcanonical) integrator.
@@ -203,7 +203,7 @@ def nve(
 
     Returns:
         tuple:
-            - Callable[[BaseState | StateDict, torch.Tensor], MDState]: Function to
+            - Callable[[SimState | StateDict, torch.Tensor], MDState]: Function to
               initialize the MDState from input data and kT
             - Callable[[MDState, torch.Tensor], MDState]: Update function that evolves
               system by one timestep
@@ -218,7 +218,7 @@ def nve(
     dtype = model.dtype
 
     def nve_init(
-        state: BaseState | StateDict,
+        state: SimState | StateDict,
         kT: torch.Tensor = kT,
         seed: int | None = None,
         **kwargs: Any,
@@ -226,7 +226,7 @@ def nve(
         """Initialize an NVE state from input data.
 
         Args:
-            state: Either a BaseState object or a dictionary containing positions,
+            state: Either a SimState object or a dictionary containing positions,
                 masses, cell, pbc
             kT: Temperature in energy units for initializing momenta
             seed: Random seed for reproducibility
@@ -236,8 +236,8 @@ def nve(
             MDState: Initialized state for NVE integration
         """
         # Extract required data from input
-        if not isinstance(state, BaseState):
-            state = BaseState(**state)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         # Check if there is an extra batch dimension
         if state.cell.dim() == 3:
@@ -307,7 +307,7 @@ def nvt_langevin(
     kT: torch.Tensor,
     gamma: torch.Tensor | None = None,
 ) -> tuple[
-    Callable[[BaseState | StateDict, torch.Tensor], MDState],
+    Callable[[SimState | StateDict, torch.Tensor], MDState],
     Callable[[MDState, torch.Tensor], MDState],
 ]:
     """Initialize and return an NVT (canonical) integrator using Langevin dynamics.
@@ -324,7 +324,7 @@ def nvt_langevin(
 
     Returns:
         tuple:
-            - Callable[[BaseState | StateDict, torch.Tensor], MDState]: Function to
+            - Callable[[SimState | StateDict, torch.Tensor], MDState]: Function to
               initialize the MDState from input data and kT
             - Callable[[MDState, torch.Tensor], MDState]: Update function that evolves
               system by one timestep
@@ -386,7 +386,7 @@ def nvt_langevin(
         return state
 
     def langevin_init(
-        state: BaseState | StateDict,
+        state: SimState | StateDict,
         kT: torch.Tensor = kT,
         seed: int | None = None,
         **kwargs: Any,
@@ -394,7 +394,7 @@ def nvt_langevin(
         """Initialize an NVT Langevin state from input data.
 
         Args:
-            state: Either a BaseState object or a dictionary containing positions,
+            state: Either a SimState object or a dictionary containing positions,
                 masses, cell, pbc
             kT: Temperature in energy units for initializing momenta
             seed: Random seed for reproducibility
@@ -403,8 +403,8 @@ def nvt_langevin(
         Returns:
             MDState: Initialized state for NVT Langevin integration
         """
-        if not isinstance(state, BaseState):
-            state = BaseState(**state)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         # Check if there is an extra batch dimension
         if state.cell.dim() == 3:
@@ -478,7 +478,7 @@ def nvt_langevin(
 
 
 @dataclass
-class NPTLangevinState(BaseState):
+class NPTLangevinState(SimState):
     """State information for an NPT system with Langevin dynamics.
 
     This class represents the complete state of a molecular system being integrated
@@ -524,7 +524,7 @@ def npt_langevin(  # noqa: C901, PLR0915
     cell_alpha: torch.Tensor | None = None,
     b_tau: torch.Tensor | None = None,
 ) -> tuple[
-    Callable[[BaseState | StateDict, torch.Tensor], MDState],
+    Callable[[SimState | StateDict, torch.Tensor], MDState],
     Callable[[MDState, torch.Tensor], MDState],
 ]:
     """Initialize and return an NPT (canonical) integrator using Langevin dynamics.
@@ -544,7 +544,7 @@ def npt_langevin(  # noqa: C901, PLR0915
 
     Returns:
         tuple:
-            - Callable[[BaseState | StateDict, torch.Tensor], MDState]: Function to
+            - Callable[[SimState | StateDict, torch.Tensor], MDState]: Function to
               initialize the MDState from input data and kT
             - Callable[[MDState, torch.Tensor], MDState]: Update function that evolves
               system by one timestep
@@ -866,7 +866,7 @@ def npt_langevin(  # noqa: C901, PLR0915
         return state
 
     def npt_init(
-        state: BaseState | StateDict,
+        state: SimState | StateDict,
         kT: torch.Tensor = kT,
         device: torch.device = device,
         dtype: torch.dtype = dtype,
@@ -875,11 +875,11 @@ def npt_langevin(  # noqa: C901, PLR0915
     ) -> MDState:
         """Initialize an NPT state from input data.
 
-        This function creates an initial NPT state from the provided base state or
+        This function creates an initial NPT state from the provided state or
         state dictionary, initializing all necessary variables for NPT simulation.
 
         Args:
-            state: Either a BaseState object or a dictionary containing positions,
+            state: Either a SimState object or a dictionary containing positions,
                 momenta, cell, pbc
             kT: Target temperature in energy units
             device: Device to place the tensor on (CPU or GPU)
@@ -891,8 +891,8 @@ def npt_langevin(  # noqa: C901, PLR0915
             MDState: Initialized state for NPT integration
         """
         # Convert dictionary to BaseState if needed
-        if not isinstance(state, BaseState):
-            state = BaseState(**state)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         # Check if there is an extra batch dimension
         if state.cell.dim() == 3:
@@ -1339,7 +1339,7 @@ def nvt_nose_hoover(
     chain_steps: int = 3,
     sy_steps: int = 3,
 ) -> tuple[
-    Callable[[BaseState | StateDict, torch.Tensor, int | None, Any], NVTNoseHooverState],
+    Callable[[SimState | StateDict, torch.Tensor, int | None, Any], NVTNoseHooverState],
     Callable[[NVTNoseHooverState, torch.Tensor], NVTNoseHooverState],
 ]:
     """Initialize NVT Nose-Hoover chain thermostat integration.
@@ -1364,7 +1364,7 @@ def nvt_nose_hoover(
 
     Notes:
         The initialization function accepts:
-        - state: Initial system state (BaseState or dict)
+        - state: Initial system state (SimState or dict)
         - kT: Target temperature (optional, defaults to constructor value)
         - tau: Thermostat relaxation time (optional, defaults to 100*dt)
         - seed: Random seed for momenta initialization (optional)
@@ -1386,7 +1386,7 @@ def nvt_nose_hoover(
     dtype = model.dtype
 
     def nvt_nose_hoover_init(
-        state: BaseState | StateDict,
+        state: SimState | StateDict,
         kT: torch.Tensor = kT,
         tau: torch.Tensor | None = None,
         seed: int | None = None,
@@ -1395,7 +1395,7 @@ def nvt_nose_hoover(
         """Initialize the NVT Nose-Hoover state.
 
         Args:
-            state: Initial system state as BaseState or dict
+            state: Initial system state as SimState or dict
             kT: Target temperature in energy units
             tau: Thermostat relaxation time (defaults to 100*dt)
             seed: Random seed for momenta initialization
@@ -1414,8 +1414,8 @@ def nvt_nose_hoover(
             dt, chain_length, chain_steps, sy_steps, tau
         )
 
-        if not isinstance(state, BaseState):
-            state = BaseState(**state)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         # Check if there is an extra batch dimension
         if state.cell.dim() == 3:
@@ -1435,7 +1435,7 @@ def nvt_nose_hoover(
         # Initialize chain with calculated KE
         dof = count_dof(state.positions)
 
-        # Initialize base state
+        # Initialize state
         state = NVTNoseHooverState(
             positions=state.positions,
             momenta=momenta,
@@ -1652,7 +1652,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
     chain_steps: int = 2,
     sy_steps: int = 3,
 ) -> tuple[
-    Callable[[BaseState | StateDict], NPTNoseHooverState],
+    Callable[[SimState | StateDict], NPTNoseHooverState],
     Callable[[NPTNoseHooverState, torch.Tensor], NPTNoseHooverState],
 ]:
     """Create an NPT simulation with Nose-Hoover chain thermostats.
@@ -1671,7 +1671,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
 
     Returns:
         tuple:
-            - Callable[[BaseState | StateDict], NPTNoseHooverState]: Initialization
+            - Callable[[SimState | StateDict], NPTNoseHooverState]: Initialization
               function
             - Callable[[NPTNoseHooverState, torch.Tensor], NPTNoseHooverState]: Update
               function
@@ -2027,7 +2027,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         return state
 
     def npt_nose_hoover_init(
-        state: BaseState | StateDict,
+        state: SimState | StateDict,
         kT: torch.Tensor = kT,
         t_tau: torch.Tensor | None = None,
         b_tau: torch.Tensor | None = None,
@@ -2042,7 +2042,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         cell variables, and thermostat chains.
 
         Args:
-            state: Initial system state as BaseState or dict containing positions, masses,
+            state: Initial system state as SimState or dict containing positions, masses,
                 cell, and PBC information
             kT: Target temperature in energy units
             t_tau: Thermostat relaxation time. Controls how quickly temperature
@@ -2086,8 +2086,8 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             dt, chain_length, chain_steps, sy_steps, t_tau
         )
 
-        if not isinstance(state, BaseState):
-            state = BaseState(**state)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         # Check if there is an extra batch dimension
         if state.cell.dim() == 3:

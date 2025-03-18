@@ -5,7 +5,7 @@ import os
 import torch
 
 from torch_sim.quantities import kinetic_energy
-from torch_sim.state import BaseState
+from torch_sim.state import SimState
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_integrators import nve
 from torch_sim.units import MetalUnits as Units
@@ -72,7 +72,7 @@ atomic_numbers = torch.full((positions.shape[0],), 18, device=device, dtype=torc
 # Create the masses tensor (Argon = 39.948 amu)
 masses = torch.full((positions.shape[0],), 39.948, device=device, dtype=dtype)
 
-state = BaseState(
+state = SimState(
     positions=positions,
     masses=masses,
     cell=cell,

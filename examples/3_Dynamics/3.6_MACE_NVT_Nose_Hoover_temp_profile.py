@@ -20,7 +20,7 @@ from plotly.subplots import make_subplots
 
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.quantities import temperature
-from torch_sim.state import BaseState
+from torch_sim.state import SimState
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import (
     nvt_nose_hoover,
@@ -146,7 +146,7 @@ model = UnbatchedMaceModel(
     dtype=dtype,
     enable_cueq=False,
 )
-state = BaseState(
+state = SimState(
     positions=positions,
     masses=masses,
     cell=cell,

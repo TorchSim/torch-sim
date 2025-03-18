@@ -8,7 +8,7 @@ import torch
 
 from torch_sim.math import expm_frechet
 from torch_sim.math import matrix_log_33 as logm
-from torch_sim.state import BaseState, StateDict
+from torch_sim.state import SimState, StateDict
 from torch_sim.unbatched.unbatched_optimizers import OptimizerState
 
 
@@ -22,7 +22,7 @@ def gradient_descent(
     *,
     lr: torch.Tensor | float = 0.01,
 ) -> tuple[
-    Callable[[StateDict | BaseState], BatchedGDState],
+    Callable[[StateDict | SimState], BatchedGDState],
     Callable[[BatchedGDState], BatchedGDState],
 ]:
     """Initialize a batched gradient descent optimization.
@@ -41,20 +41,20 @@ def gradient_descent(
     dtype = model.dtype
 
     def gd_init(
-        state: BaseState | StateDict,
+        state: SimState | StateDict,
         **kwargs: Any,
     ) -> BatchedGDState:
         """Initialize the batched gradient descent optimization state.
 
         Args:
-            state: Base state containing positions, masses, cell, etc.
+            state: SimState containing positions, masses, cell, etc.
             kwargs: Additional keyword arguments to override state attributes
 
         Returns:
             Initialized BatchedGDState with forces and energy
         """
-        if not isinstance(state, BaseState):
-            state = BaseState(**state)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
@@ -147,7 +147,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
     constant_volume: bool = False,
     scalar_pressure: float = 0.0,
 ) -> tuple[
-    Callable[[BaseState | StateDict], BatchedUnitCellGDState],
+    Callable[[SimState | StateDict], BatchedUnitCellGDState],
     Callable[[BatchedUnitCellGDState], BatchedUnitCellGDState],
 ]:
     """Initialize a batched gradient descent optimization with unit cell.
@@ -174,7 +174,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
     dtype = model.dtype
 
     def gd_init(
-        state: BaseState,
+        state: SimState,
         cell_factor: float | torch.Tensor | None = cell_factor,
         hydrostatic_strain: bool = hydrostatic_strain,  # noqa: FBT001
         constant_volume: bool = constant_volume,  # noqa: FBT001
@@ -194,8 +194,8 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         Returns:
             Initial BatchedUnitCellGDState with system configuration and forces
         """
-        if not isinstance(state, BaseState):
-            state = BaseState(**state)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
@@ -376,10 +376,10 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
 
 
 @dataclass
-class BatchedUnitCellFireState(BaseState):
+class BatchedUnitCellFireState(SimState):
     """State information for batched FIRE optimization with unit cell degrees of freedom.
 
-    This class extends BaseState to include additional attributes needed for FIRE
+    This class extends SimState to include additional attributes needed for FIRE
     optimization with unit cell degrees of freedom. It handles both atomic and cell
     optimization in a batched manner, where multiple systems can be optimized
     simultaneously.
@@ -414,7 +414,7 @@ class BatchedUnitCellFireState(BaseState):
         constant_volume: Whether to maintain constant volume
     """
 
-    # Required attributes not in BaseState
+    # Required attributes not in SimState
     forces: torch.Tensor  # [n_total_atoms, 3]
     energy: torch.Tensor  # [n_batches]
     stress: torch.Tensor  # [n_batches, 3, 3]
@@ -526,7 +526,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
     ]
 
     def fire_init(
-        state: BaseState | StateDict,
+        state: SimState | StateDict,
         cell_factor: torch.Tensor | None = cell_factor,
         scalar_pressure: float = scalar_pressure,
         dt_start: float = dt_start,
@@ -535,7 +535,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         """Initialize a batched FIRE optimization state with unit cell.
 
         Args:
-            state: Input state as BaseState object or state parameter dict
+            state: Input state as SimState object or state parameter dict
             cell_factor: Cell optimization scaling factor. If None, uses atoms per batch.
                 Single value or tensor of shape [n_batches].
             scalar_pressure: Applied pressure in energy units
@@ -546,8 +546,8 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         Returns:
             BatchedUnitCellFireState with initialized optimization tensors
         """
-        if not isinstance(state, BaseState):
-            state = BaseState(**state)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         # Get dimensions
         n_batches = state.n_batches
@@ -613,7 +613,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
 
         # Create initial state
         return BatchedUnitCellFireState(
-            # Copy base state attributes
+            # Copy SimState attributes
             positions=state.positions.clone(),
             masses=state.masses.clone(),
             cell=state.cell.clone(),
@@ -912,7 +912,7 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
     ]
 
     def fire_init(
-        state: BaseState | StateDict,
+        state: SimState | StateDict,
         cell_factor: torch.Tensor | None = cell_factor,
         scalar_pressure: float = scalar_pressure,
         dt_start: float = dt_start,
@@ -923,7 +923,7 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
         parameterization.
 
         Args:
-            state: Input state as BaseState object or state parameter dict
+            state: Input state as SimState object or state parameter dict
             cell_factor: Cell optimization scaling factor. If None, uses atoms per batch.
                          Single value or tensor of shape [n_batches].
             scalar_pressure: Applied pressure in energy units
@@ -934,8 +934,8 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
         Returns:
             BatchedFrechetCellFIREState with initialized optimization tensors
         """
-        if not isinstance(state, BaseState):
-            state = BaseState(**state)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
@@ -1014,7 +1014,7 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
 
         # Create initial state
         return BatchedFrechetCellFIREState(
-            # Copy base state attributes
+            # Copy SimState attributes
             positions=state.positions,
             masses=state.masses,
             cell=state.cell,

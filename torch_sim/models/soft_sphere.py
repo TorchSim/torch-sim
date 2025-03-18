@@ -4,7 +4,7 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import BaseState, StateDict
+from torch_sim.state import SimState, StateDict
 from torch_sim.transforms import get_pair_displacements
 from torch_sim.unbatched.models.soft_sphere import (
     soft_sphere_pair,
@@ -56,11 +56,11 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
 
     def unbatched_forward(
         self,
-        state: BaseState,
+        state: SimState,
     ) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single system."""
         if isinstance(state, dict):
-            state = BaseState(
+            state = SimState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )
 
@@ -158,7 +158,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         return results
 
     def forward(
-        self, state: BaseState | StateDict
+        self, state: SimState | StateDict
     ) -> dict[str, torch.Tensor]:  # TODO: what are the shapes?
         """Compute energies and forces for batched systems.
 
@@ -172,7 +172,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             - stress: Stress tensor for each system. Shape: [n_systems, 3, 3]
         """
         if isinstance(state, dict):
-            state = BaseState(
+            state = SimState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )
         elif state.pbc != self.periodic:
@@ -318,7 +318,7 @@ class SoftSphereMultiModel(torch.nn.Module):
 
     def unbatched_forward(  # noqa: PLR0915
         self,
-        state: BaseState,
+        state: SimState,
         species: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Compute energies, forces and stresses for the multi-species system.
@@ -337,8 +337,8 @@ class SoftSphereMultiModel(torch.nn.Module):
             - 'stresses': Per-atom stress tensors (if per_atom_stresses=True)
         """
         # Convert inputs to proper device/dtype and handle species
-        if not isinstance(state, BaseState):
-            state = BaseState(**state)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         if species is not None:
             species = species.to(device=self.device, dtype=torch.long)
@@ -449,7 +449,7 @@ class SoftSphereMultiModel(torch.nn.Module):
 
         return results
 
-    def forward(self, state: BaseState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute energies and forces for batched systems.
 
         Args:
@@ -461,8 +461,8 @@ class SoftSphereMultiModel(torch.nn.Module):
             - forces: Forces for all atoms. Shape: [total_atoms, 3]
             - stress: Stress tensor for each system. Shape: [n_systems, 3, 3]
         """
-        if not isinstance(state, BaseState):
-            state = BaseState(
+        if not isinstance(state, SimState):
+            state = SimState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )
         elif state.pbc != self.periodic:

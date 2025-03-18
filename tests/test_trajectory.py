@@ -8,7 +8,7 @@ import torch
 
 from torch_sim.integrators import MDState
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.state import BaseState
+from torch_sim.state import SimState
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 
 
@@ -446,7 +446,7 @@ def test_get_atoms(trajectory: TorchSimTrajectory, random_state: MDState) -> Non
 
 
 def test_get_state(trajectory: TorchSimTrajectory, random_state: MDState) -> None:
-    """Test retrieving a BaseState object from trajectory."""
+    """Test retrieving a SimState object from trajectory."""
     # Write a state to the trajectory
     trajectory.write_state(random_state, steps=0)
 
@@ -532,7 +532,7 @@ def prop_calculators() -> dict[int, dict[str, Callable]]:
 
 
 def test_single_batch_reporter(
-    si_base_state: BaseState, tmp_path: Path, prop_calculators: dict
+    si_sim_state: SimState, tmp_path: Path, prop_calculators: dict
 ) -> None:
     """Test TrajectoryReporter with a single batch."""
     # Create a reporter with a single file
@@ -544,7 +544,7 @@ def test_single_batch_reporter(
 
     # Run several steps
     for step in range(5):
-        reporter.report(si_base_state, step)
+        reporter.report(si_sim_state, step)
 
     reporter.close()
 
@@ -569,7 +569,7 @@ def test_single_batch_reporter(
 
 
 def test_multi_batch_reporter(
-    si_double_base_state: BaseState, tmp_path: Path, prop_calculators: dict
+    si_double_sim_state: SimState, tmp_path: Path, prop_calculators: dict
 ) -> None:
     """Test TrajectoryReporter with multiple batches."""
     # Create a reporter with multiple files
@@ -581,7 +581,7 @@ def test_multi_batch_reporter(
 
     # Run several steps
     for step in range(5):
-        reporter.report(si_double_base_state, step)
+        reporter.report(si_double_sim_state, step)
 
     reporter.close()
 
@@ -599,7 +599,7 @@ def test_multi_batch_reporter(
 
     # Check that each trajectory has the correct number of atoms
     # (should be half of the total in the double state)
-    atoms_per_batch = si_double_base_state.positions.shape[0] // 2
+    atoms_per_batch = si_double_sim_state.positions.shape[0] // 2
     assert traj0.get_array("positions").shape[1] == atoms_per_batch
     assert traj1.get_array("positions").shape[1] == atoms_per_batch
 
@@ -614,14 +614,14 @@ def test_multi_batch_reporter(
 
 
 def test_property_calculator_consistency(
-    si_double_base_state: BaseState, tmp_path: Path, prop_calculators: dict
+    si_double_sim_state: SimState, tmp_path: Path, prop_calculators: dict
 ) -> None:
     """Test  property calculators are consistent for single and multi-batch cases."""
     # Create reporters for single and multi-batch cases
     single_reporters = []
     for batch_idx in range(2):
         # Extract single batch states
-        single_state = si_double_base_state[batch_idx]
+        single_state = si_double_sim_state[batch_idx]
         reporter = TrajectoryReporter(
             tmp_path / f"single_{batch_idx}.hdf5",
             state_frequency=1,
@@ -640,7 +640,7 @@ def test_property_calculator_consistency(
         state_frequency=1,
         prop_calculators=prop_calculators,
     )
-    multi_reporter.report(si_double_base_state, 0)
+    multi_reporter.report(si_double_sim_state, 0)
     multi_reporter.close()
 
     multi_trajectories = [
@@ -664,12 +664,12 @@ def test_property_calculator_consistency(
 
 
 def test_reporter_with_model(
-    si_double_base_state: BaseState, tmp_path: Path, lj_calculator: LennardJonesModel
+    si_double_sim_state: SimState, tmp_path: Path, lj_calculator: LennardJonesModel
 ) -> None:
     """Test TrajectoryReporter with a model argument in property calculators."""
 
     # Create a property calculator that uses the model
-    def energy_calculator(state: BaseState, model: torch.nn.Module) -> torch.Tensor:
+    def energy_calculator(state: SimState, model: torch.nn.Module) -> torch.Tensor:
         output = model(state)
         # Calculate a property that depends on the model
         return output["energy"]
@@ -684,7 +684,7 @@ def test_reporter_with_model(
     )
 
     # Run with model
-    reporter.report(si_double_base_state, 0, lj_calculator)
+    reporter.report(si_double_sim_state, 0, lj_calculator)
     reporter.close()
 
     # Verify property was calculated correctly
@@ -698,7 +698,7 @@ def test_reporter_with_model(
         energy = trajectory.get_array("energy")[0]
 
         # Calculate expected value
-        substate = si_double_base_state[batch_idx]
+        substate = si_double_sim_state[batch_idx]
         expected = lj_calculator(substate)["energy"]
 
         # Compare

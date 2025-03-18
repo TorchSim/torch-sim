@@ -46,7 +46,7 @@ if TYPE_CHECKING:
 from typing import TypeVar, Union
 
 
-T = TypeVar("T", bound="BaseState")
+T = TypeVar("T", bound="SimState")
 StateLike = Union[
     "Atoms",
     "Structure",
@@ -66,8 +66,8 @@ StateDict = dict[
 
 # TODO: change later on
 @dataclass
-class BaseState:
-    """Base state class for molecular systems.
+class SimState:
+    """State class for molecular systems.
 
     Contains the fundamental properties needed to describe a molecular system:
     positions, masses, unit cell, periodic boundary conditions, and atomic numbers.
@@ -176,10 +176,10 @@ class BaseState:
         return torch.unique(self.batch).shape[0]
 
     def clone(self) -> Self:
-        """Create a deep copy of the BaseState.
+        """Create a deep copy of the SimState.
 
         Returns:
-            A new BaseState object with the same properties as the original
+            A new SimState object with the same properties as the original
         """
         attrs = {}
         for attr_name, attr_value in vars(self).items():
@@ -191,7 +191,7 @@ class BaseState:
         return self.__class__(**attrs)
 
     def to_atoms(self) -> list["Atoms"]:
-        """Convert the BaseState to a list of Atoms.
+        """Convert the SimState to a list of Atoms.
 
         Returns:
             A list of Atoms
@@ -199,7 +199,7 @@ class BaseState:
         return state_to_atoms(self)
 
     def to_structures(self) -> list["Structure"]:
-        """Convert the BaseState to a list of Structures.
+        """Convert the SimState to a list of Structures.
 
         Returns:
             A list of Structures
@@ -207,7 +207,7 @@ class BaseState:
         return state_to_structures(self)
 
     def to_phonopy(self) -> list["PhonopyAtoms"]:
-        """Convert the BaseState to a list of PhonopyAtoms.
+        """Convert the SimState to a list of PhonopyAtoms.
 
         Returns:
             A list of PhonopyAtoms
@@ -215,10 +215,10 @@ class BaseState:
         return state_to_phonopy(self)
 
     def split(self) -> list[Self]:
-        """Split the BaseState into a list of BaseStates.
+        """Split the SimState into a list of SimStates.
 
         Returns:
-            A list of BaseStates
+            A list of SimStates
         """
         return split_state(self)
 
@@ -249,14 +249,14 @@ class BaseState:
     def to(
         self, device: torch.device | None = None, dtype: torch.dtype | None = None
     ) -> Self:
-        """Convert the BaseState to a new device and dtype.
+        """Convert the SimState to a new device and dtype.
 
         Args:
             device: The device to convert to
             dtype: The dtype to convert to
 
         Returns:
-            A new BaseState object with the converted device and dtype
+            A new SimState object with the converted device and dtype
         """
         return state_to_device(self, device, dtype)
 
@@ -267,7 +267,7 @@ class BaseState:
             batch_indices: The batch indices to include in the sliced state
 
         Returns:
-            A new BaseState containing only the specified batches
+            A new SimState containing only the specified batches
         """
         # Reuse the existing slice method
         batch_indices = _normalize_batch_indices(
@@ -311,11 +311,11 @@ def _normalize_batch_indices(
 
 
 def state_to_device(
-    state: BaseState,
+    state: SimState,
     device: torch.device | None = None,
     dtype: torch.dtype | None = None,
 ) -> Self:
-    """Convert the BaseState to a new device and dtype.
+    """Convert the SimState to a new device and dtype.
 
     Args:
         state: The state to convert
@@ -323,7 +323,7 @@ def state_to_device(
         dtype: The dtype to convert to
 
     Returns:
-        A new BaseState object with the converted device and dtype
+        A new SimState object with the converted device and dtype
     """
     if device is None:
         device = state.device
@@ -344,7 +344,7 @@ def state_to_device(
 
 
 def infer_property_scope(
-    state: BaseState,
+    state: SimState,
     ambiguous_handling: Literal["error", "globalize", "globalize_warn"] = "error",
 ) -> dict[Literal["global", "per_atom", "per_batch"], list[str]]:
     """Infer whether a property is global, per-atom, or per-batch.
@@ -415,7 +415,7 @@ def infer_property_scope(
 
 
 def _get_property_attrs(
-    state: BaseState, ambiguous_handling: Literal["error", "globalize"] = "error"
+    state: SimState, ambiguous_handling: Literal["error", "globalize"] = "error"
 ) -> dict[str, dict]:
     """Get global, per-atom, and per-batch attributes from a state.
 
@@ -497,9 +497,9 @@ def _filter_attrs_by_mask(
 
 
 def split_state(
-    state: BaseState,
+    state: SimState,
     ambiguous_handling: Literal["error", "globalize"] = "error",
-) -> list[BaseState]:
+) -> list[SimState]:
     """Split a state into a list of states, each containing a single batch element."""
     attrs = _get_property_attrs(state, ambiguous_handling)
     batch_sizes = torch.bincount(state.batch).tolist()
@@ -535,10 +535,10 @@ def split_state(
 
 
 def pop_states(
-    state: BaseState,
+    state: SimState,
     pop_indices: list[int] | torch.Tensor,
     ambiguous_handling: Literal["error", "globalize"] = "error",
-) -> tuple[BaseState, list[BaseState]]:
+) -> tuple[SimState, list[SimState]]:
     """Pop off the states with the specified indices."""
     if len(pop_indices) == 0:
         return state, []
@@ -571,11 +571,11 @@ def pop_states(
 
 
 def slice_state(
-    state: BaseState,
+    state: SimState,
     batch_indices: list[int] | torch.Tensor,
     ambiguous_handling: Literal["error", "globalize"] = "error",
-) -> BaseState:
-    """Slice a substate from the BaseState containing only the specified batch indices.
+) -> SimState:
+    """Slice a substate from the SimState containing only the specified batch indices.
 
     Args:
         state: The state to slice
@@ -583,7 +583,7 @@ def slice_state(
         ambiguous_handling: How to handle ambiguous properties
 
     Returns:
-        A BaseState object containing only the specified batches
+        A SimState object containing only the specified batches
     """
     if isinstance(batch_indices, list):
         batch_indices = torch.tensor(
@@ -608,19 +608,19 @@ def slice_state(
 
 
 def concatenate_states(
-    states: list[BaseState], device: torch.device | None = None
-) -> BaseState:
-    """Concatenate a list of BaseStates into a single BaseState.
+    states: list[SimState], device: torch.device | None = None
+) -> SimState:
+    """Concatenate a list of SimStates into a single SimState.
 
     Global properties are taken from the first state, and per-atom and per-batch
     properties are concatenated.
 
     Args:
-        states: A list of BaseState objects to concatenate
+        states: A list of SimState objects to concatenate
         device: The device to concatenate on
 
     Returns:
-        BaseState: A BaseState object initialized from the input states
+        SimState: A SimState object initialized from the input states
     """
     if not states:
         raise ValueError("Cannot concatenate an empty list of states")
@@ -694,7 +694,7 @@ def initialize_state(
     system: StateLike,
     device: torch.device,
     dtype: torch.dtype,
-) -> BaseState:
+) -> SimState:
     """Initialize state tensors from a system.
 
     Args:
@@ -703,17 +703,17 @@ def initialize_state(
         dtype: Data type for tensors
 
     Returns:
-        BaseState: State tensors initialized from input system
+        SimState: State tensors initialized from input system
 
     Raises:
         ValueError: If system type is not supported
     """
     # TODO: create a way to pass velocities from pmg and ase
 
-    if isinstance(system, BaseState):
+    if isinstance(system, SimState):
         return state_to_device(system, device, dtype)
 
-    if isinstance(system, list) and all(isinstance(s, BaseState) for s in system):
+    if isinstance(system, list) and all(isinstance(s, SimState) for s in system):
         if not all(state.n_batches == 1 for state in system):
             raise ValueError(
                 "When providing a list of states, to the initialize_state function, "

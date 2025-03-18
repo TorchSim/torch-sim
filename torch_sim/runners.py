@@ -15,14 +15,14 @@ from numpy.typing import ArrayLike
 from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
 from torch_sim.models.interface import ModelInterface
 from torch_sim.quantities import batchwise_max_force, kinetic_energy, temperature
-from torch_sim.state import BaseState, StateLike, concatenate_states, initialize_state
+from torch_sim.state import SimState, StateLike, concatenate_states, initialize_state
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.units import UnitSystem
 
 
 def _configure_batches_iterator(
     model: ModelInterface,
-    state: BaseState,
+    state: SimState,
     autobatcher: ChunkingAutoBatcher | bool,
 ) -> ChunkingAutoBatcher:
     """Create a batches iterator for the integrate function."""
@@ -71,7 +71,7 @@ def create_default_reporter(
             and "forces".
     """
 
-    def compute_stress(state: BaseState, model: ModelInterface) -> torch.Tensor:
+    def compute_stress(state: SimState, model: ModelInterface) -> torch.Tensor:
         # Check model type by name rather than instance
         # TODO: this is a bit of a dumb way of tracking stress
         if not model.compute_stress:
@@ -124,7 +124,7 @@ def integrate(
     trajectory_reporter: TrajectoryReporter | None = None,
     autobatcher: ChunkingAutoBatcher | bool = False,
     **integrator_kwargs: dict,
-) -> BaseState:
+) -> SimState:
     """Simulate a system using a model and integrator.
 
     Args:
@@ -141,7 +141,7 @@ def integrate(
         **integrator_kwargs: Additional keyword arguments for integrator init function
 
     Returns:
-        BaseState: Final state after integration
+        SimState: Final state after integration
     """
     # create a list of temperatures
     temps = temperature if hasattr(temperature, "__iter__") else [temperature] * n_steps
@@ -151,7 +151,7 @@ def integrate(
         )
 
     # initialize the state
-    state: BaseState = initialize_state(system, model.device, model.dtype)
+    state: SimState = initialize_state(system, model.device, model.dtype)
     dtype, device = state.dtype, state.device
     init_fn, update_fn = integrator(
         model=model,
@@ -194,7 +194,7 @@ def integrate(
 
 def _configure_hot_swapping_autobatcher(
     model: ModelInterface,
-    state: BaseState,
+    state: SimState,
     autobatcher: HotSwappingAutoBatcher | bool,
     max_attempts: int,
 ) -> HotSwappingAutoBatcher:
@@ -231,7 +231,7 @@ def generate_force_convergence_fn(force_tol: float = 1e-1) -> Callable:
     """
 
     def convergence_fn(
-        state: BaseState,
+        state: SimState,
         last_energy: torch.Tensor,  # noqa: ARG001
     ) -> bool:
         """Check if the system has converged."""
@@ -252,11 +252,11 @@ def optimize(
     max_steps: int = 10_000,
     steps_between_swaps: int = 5,
     **optimizer_kwargs: dict,
-) -> BaseState:
+) -> SimState:
     """Optimize a system using a model and optimizer.
 
     Args:
-        system: Input system to optimize (ASE Atoms, Pymatgen Structure, or BaseState)
+        system: Input system to optimize (ASE Atoms, Pymatgen Structure, or SimState)
         model: Neural network calculator module
         optimizer: Optimization algorithm function
         convergence_fn: Condition for convergence, should return a boolean tensor
@@ -281,11 +281,11 @@ def optimize(
     # TODO: document this behavior
     if convergence_fn is None:
 
-        def convergence_fn(state: BaseState, last_energy: torch.Tensor) -> bool:
+        def convergence_fn(state: SimState, last_energy: torch.Tensor) -> bool:
             return last_energy - state.energy < 1e-6 * unit_system.energy
 
     # initialize the state
-    state: BaseState = initialize_state(system, model.device, model.dtype)
+    state: SimState = initialize_state(system, model.device, model.dtype)
     init_fn, update_fn = optimizer(
         model=model,
     )

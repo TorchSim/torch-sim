@@ -4,7 +4,7 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import BaseState, StateDict
+from torch_sim.state import SimState, StateDict
 from torch_sim.transforms import get_pair_displacements, safe_mask
 
 
@@ -126,10 +126,10 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
         self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self.device)
         self.alpha = torch.tensor(alpha, dtype=dtype, device=self.device)
 
-    def forward(self, state: BaseState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single system."""
         if isinstance(state, dict):
-            state = BaseState(
+            state = SimState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )
         elif state.pbc != self.periodic:

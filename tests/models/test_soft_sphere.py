@@ -7,12 +7,12 @@ import torch
 
 from torch_sim.models.interface import validate_model_outputs
 from torch_sim.models.soft_sphere import SoftSphereModel, SoftSphereMultiModel
-from torch_sim.state import BaseState
+from torch_sim.state import SimState
 
 
 @pytest.fixture
 def calculator_outputs(
-    fe_fcc_state: BaseState,
+    fe_fcc_state: SimState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create both neighbor list and direct calculators."""
     calc_params = {

@@ -6,12 +6,12 @@ from typing import Any
 
 import torch
 
-from torch_sim.state import BaseState, StateDict
+from torch_sim.state import SimState, StateDict
 from torch_sim.transforms import pbc_wrap_batched
 
 
 @dataclass
-class MDState(BaseState):
+class MDState(SimState):
     """State information for MD.
 
     This class represents the complete state of a molecular system being integrated
@@ -180,7 +180,7 @@ def nve(
     dt: torch.Tensor,
     kT: torch.Tensor,
 ) -> tuple[
-    Callable[[BaseState | dict, torch.Tensor], MDState],
+    Callable[[SimState | StateDict, torch.Tensor], MDState],
     Callable[[MDState, torch.Tensor], MDState],
 ]:
     """Initialize and return an NVE (microcanonical) integrator.
@@ -207,7 +207,7 @@ def nve(
     """
 
     def nve_init(
-        state: BaseState | StateDict,
+        state: SimState | StateDict,
         kT: torch.Tensor = kT,
         seed: int | None = None,
         **kwargs: Any,
@@ -215,7 +215,7 @@ def nve(
         """Initialize an NVE state from input data.
 
         Args:
-            state: Either a BaseState object or a dictionary containing positions,
+            state: Either a SimState object or a dictionary containing positions,
                 masses, cell, pbc
             kT: Temperature in energy units for initializing momenta
             seed: Random seed for reproducibility
@@ -225,8 +225,8 @@ def nve(
             MDState: Initialized state for NVE integration
         """
         # Extract required data from input
-        if not isinstance(state, BaseState):
-            state = BaseState(**state)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         # Override with kwargs if provided
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
@@ -293,7 +293,7 @@ def nvt_langevin(
     kT: torch.Tensor,
     gamma: torch.Tensor | None = None,
 ) -> tuple[
-    Callable[[BaseState | StateDict, torch.Tensor], MDState],
+    Callable[[SimState | StateDict, torch.Tensor], MDState],
     Callable[[MDState, torch.Tensor], MDState],
 ]:
     """Initialize and return an NVT (canonical) integrator using Langevin dynamics.
@@ -367,14 +367,14 @@ def nvt_langevin(
         return state
 
     def langevin_init(
-        state: BaseState | StateDict,
+        state: SimState | StateDict,
         kT: torch.Tensor = kT,
         seed: int | None = None,
         **kwargs: Any,
     ) -> MDState:
         """Initialize an NVT state from input data."""
-        if not isinstance(state, BaseState):
-            state = BaseState(**state)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
         batch = kwargs.get("batch", state.batch)
@@ -445,7 +445,7 @@ def nvt_langevin(
 
 
 @dataclass
-class NPTLangevinState(BaseState):
+class NPTLangevinState(SimState):
     """State information for an NPT system with Langevin dynamics.
 
     This class represents the complete state of a molecular system being integrated
@@ -496,7 +496,7 @@ def npt_langevin(  # noqa: C901, PLR0915
     cell_alpha: torch.Tensor | None = None,
     b_tau: torch.Tensor | None = None,
 ) -> tuple[
-    Callable[[BaseState | StateDict, torch.Tensor], NPTLangevinState],
+    Callable[[SimState | StateDict, torch.Tensor], NPTLangevinState],
     Callable[[NPTLangevinState, torch.Tensor], NPTLangevinState],
 ]:
     """Initialize and return an NPT (isothermal-isobaric) integrator using
@@ -948,7 +948,7 @@ def npt_langevin(  # noqa: C901, PLR0915
         return state
 
     def npt_init(
-        state: BaseState | StateDict,
+        state: SimState | StateDict,
         kT: torch.Tensor = kT,
         seed: int | None = None,
         **kwargs: Any,
@@ -959,7 +959,7 @@ def npt_langevin(  # noqa: C901, PLR0915
         setting up all necessary variables including cell parameters.
 
         Args:
-            state: Either a BaseState object or a dictionary containing positions,
+            state: Either a SimState object or a dictionary containing positions,
                   masses, cell, pbc
             kT: Temperature in energy units for initializing momenta
             seed: Random seed for reproducibility
@@ -968,8 +968,8 @@ def npt_langevin(  # noqa: C901, PLR0915
         Returns:
             NPTLangevinState: Initialized state for NPT Langevin integration
         """
-        if not isinstance(state, BaseState):
-            state = BaseState(**state)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         # Override with kwargs if provided
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)

@@ -2,7 +2,7 @@
 
 This module provides functions for converting between different structural
 representations. It includes utilities for converting ASE Atoms objects,
-Pymatgen Structures, and PhonopyAtoms objects to BaseState objects and vice versa.
+Pymatgen Structures, and PhonopyAtoms objects to SimState objects and vice versa.
 """
 
 from typing import TYPE_CHECKING
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from ase import Atoms
     from pymatgen.core import Structure
 
-    from torch_sim.state import BaseState
+    from torch_sim.state import SimState
 
 try:
     from pymatgen.core import Structure
@@ -41,11 +41,11 @@ except ImportError:
         """Stub class for PhonopyAtoms when not installed."""
 
 
-def state_to_atoms(state: "BaseState") -> list["Atoms"]:
-    """Convert a BaseState to a list of ASE Atoms objects.
+def state_to_atoms(state: "SimState") -> list["Atoms"]:
+    """Convert a SimState to a list of ASE Atoms objects.
 
     Args:
-        state (BaseState): Batched state containing positions, cell, and atomic numbers
+        state (SimState): Batched state containing positions, cell, and atomic numbers
 
     Returns:
         list[Atoms]: List of ASE Atoms objects, one per batch
@@ -88,11 +88,11 @@ def state_to_atoms(state: "BaseState") -> list["Atoms"]:
     return atoms_list
 
 
-def state_to_structures(state: "BaseState") -> list["Structure"]:
-    """Convert a BaseState to a list of Pymatgen Structure objects.
+def state_to_structures(state: "SimState") -> list["Structure"]:
+    """Convert a SimState to a list of Pymatgen Structure objects.
 
     Args:
-        state (BaseState): Batched state containing positions, cell, and atomic numbers
+        state (SimState): Batched state containing positions, cell, and atomic numbers
 
     Returns:
         list[Structure]: List of Pymatgen Structure objects, one per batch
@@ -142,11 +142,11 @@ def state_to_structures(state: "BaseState") -> list["Structure"]:
     return structures
 
 
-def state_to_phonopy(state: "BaseState") -> list["PhonopyAtoms"]:
-    """Convert a BaseState to a list of PhonopyAtoms objects.
+def state_to_phonopy(state: "SimState") -> list["PhonopyAtoms"]:
+    """Convert a SimState to a list of PhonopyAtoms objects.
 
     Args:
-        state (BaseState): Batched state containing positions, cell, and atomic numbers
+        state (SimState): Batched state containing positions, cell, and atomic numbers
 
     Returns:
         list[PhonopyAtoms]: List of PhonopyAtoms objects, one per batch
@@ -194,7 +194,7 @@ def atoms_to_state(
     atoms: "Atoms | list[Atoms]",
     device: torch.device,
     dtype: torch.dtype,
-) -> "BaseState":
+) -> "SimState":
     """Create state tensors from an ASE Atoms object or list of Atoms objects.
 
     Args:
@@ -203,9 +203,9 @@ def atoms_to_state(
         dtype: Data type for tensors
 
     Returns:
-        BaseState: Batched state tensors in internal units
+        SimState: Batched state tensors in internal units
     """
-    from torch_sim.state import BaseState
+    from torch_sim.state import SimState
 
     try:
         from ase import Atoms
@@ -240,7 +240,7 @@ def atoms_to_state(
     if not all(all(a.pbc) == all(atoms_list[0].pbc) for a in atoms_list):
         raise ValueError("All systems must have the same periodic boundary conditions")
 
-    return BaseState(
+    return SimState(
         positions=positions,
         masses=masses,
         cell=cell,
@@ -254,8 +254,8 @@ def structures_to_state(
     structure: "Structure | list[Structure]",
     device: torch.device,
     dtype: torch.dtype,
-) -> "BaseState":
-    """Create a BaseState from pymatgen Structure(s).
+) -> "SimState":
+    """Create a SimState from pymatgen Structure(s).
 
     Args:
         structure: Single Structure or list of Structure objects
@@ -263,13 +263,13 @@ def structures_to_state(
         dtype: Data type for tensors
 
     Returns:
-        BaseState: Batched state tensors in internal units
+        SimState: Batched state tensors in internal units
 
     Notes:
         - Cell matrix follows ASE convention: [[ax,ay,az],[bx,by,bz],[cx,cy,cz]]
         - Assumes periodic boundary conditions from Structure
     """
-    from torch_sim.state import BaseState
+    from torch_sim.state import SimState
 
     try:
         from pymatgen.core import Structure
@@ -304,7 +304,7 @@ def structures_to_state(
         torch.arange(len(struct_list), device=device), atoms_per_batch
     )
 
-    return BaseState(
+    return SimState(
         positions=positions,
         masses=masses,
         cell=cell,
@@ -318,7 +318,7 @@ def phonopy_to_state(
     phonopy_atoms: "PhonopyAtoms | list[PhonopyAtoms]",
     device: torch.device,
     dtype: torch.dtype,
-) -> "BaseState":
+) -> "SimState":
     """Create state tensors from a PhonopyAtoms object or list of PhonopyAtoms objects.
 
     Args:
@@ -327,9 +327,9 @@ def phonopy_to_state(
         dtype: Data type for tensors
 
     Returns:
-        BaseState: Batched state tensors in internal units
+        SimState: Batched state tensors in internal units
     """
-    from torch_sim.state import BaseState
+    from torch_sim.state import SimState
 
     try:
         from phonopy.structure.atoms import PhonopyAtoms
@@ -373,7 +373,7 @@ def phonopy_to_state(
         raise ValueError("All systems must have the same periodic boundary conditions")
     """
 
-    return BaseState(
+    return SimState(
         positions=positions,
         masses=masses,
         cell=cell,

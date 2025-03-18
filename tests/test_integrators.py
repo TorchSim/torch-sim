@@ -11,7 +11,7 @@ from torch_sim.integrators import (
 )
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.quantities import temperature
-from torch_sim.state import BaseState, concatenate_states
+from torch_sim.state import SimState, concatenate_states
 from torch_sim.units import MetalUnits
 
 
@@ -173,7 +173,7 @@ def test_batched_initialize_momenta():
         assert torch.allclose(com_momentum, torch.zeros(3, dtype=dtype), atol=1e-10)
 
 
-def test_npt_langevin(ar_double_base_state: BaseState, lj_calculator: LennardJonesModel):
+def test_npt_langevin(ar_double_sim_state: SimState, lj_calculator: LennardJonesModel):
     dtype = torch.float64
     n_steps = 200
     dt = torch.tensor(0.001, dtype=dtype)
@@ -190,7 +190,7 @@ def test_npt_langevin(ar_double_base_state: BaseState, lj_calculator: LennardJon
     )
 
     # Run dynamics for several steps
-    state = init_fn(state=ar_double_base_state, seed=42)
+    state = init_fn(state=ar_double_sim_state, seed=42)
     energies = []
     temperatures = []
     for _step in range(n_steps):
@@ -234,7 +234,7 @@ def test_npt_langevin(ar_double_base_state: BaseState, lj_calculator: LennardJon
     assert pos_diff > 0.0001  # Systems should remain separated
 
 
-def test_nvt_langevin(ar_double_base_state: BaseState, lj_calculator: LennardJonesModel):
+def test_nvt_langevin(ar_double_sim_state: SimState, lj_calculator: LennardJonesModel):
     dtype = torch.float64
     n_steps = 100
     dt = torch.tensor(0.001, dtype=dtype)
@@ -248,7 +248,7 @@ def test_nvt_langevin(ar_double_base_state: BaseState, lj_calculator: LennardJon
     )
 
     # Run dynamics for several steps
-    state = init_fn(state=ar_double_base_state, seed=42)
+    state = init_fn(state=ar_double_sim_state, seed=42)
     energies = []
     temperatures = []
     for _step in range(n_steps):
@@ -293,7 +293,7 @@ def test_nvt_langevin(ar_double_base_state: BaseState, lj_calculator: LennardJon
     assert pos_diff > 0.0001  # Systems should remain separated
 
 
-def test_nve(ar_double_base_state: BaseState, lj_calculator: LennardJonesModel):
+def test_nve(ar_double_sim_state: SimState, lj_calculator: LennardJonesModel):
     dtype = torch.float64
     n_steps = 100
     dt = torch.tensor(0.001, dtype=dtype)
@@ -301,7 +301,7 @@ def test_nve(ar_double_base_state: BaseState, lj_calculator: LennardJonesModel):
 
     # Initialize integrator
     nve_init, nve_update = nve(model=lj_calculator, dt=dt, kT=kT)
-    state = nve_init(state=ar_double_base_state, seed=42)
+    state = nve_init(state=ar_double_sim_state, seed=42)
 
     # Run dynamics for several steps
     energies = []
@@ -318,12 +318,12 @@ def test_nve(ar_double_base_state: BaseState, lj_calculator: LennardJonesModel):
 
 
 def test_compare_single_vs_batched_integrators(
-    ar_base_state: BaseState, lj_calculator: Any
+    ar_sim_state: SimState, lj_calculator: Any
 ) -> None:
     """Test that single and batched integrators give the same results."""
     initial_states = {
-        "single": ar_base_state,
-        "batched": concatenate_states([ar_base_state, ar_base_state]),
+        "single": ar_sim_state,
+        "batched": concatenate_states([ar_sim_state, ar_sim_state]),
     }
 
     final_states = {}

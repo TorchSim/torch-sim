@@ -4,7 +4,7 @@ import pytest
 import torch
 from ase.geometry import wrap_positions as ase_wrap_positions
 
-from torch_sim.state import BaseState
+from torch_sim.state import SimState
 from torch_sim.transforms import (
     high_precision_sum,
     inverse_box,
@@ -248,10 +248,10 @@ def test_translate_pretty():
     assert torch.all((translated >= 0) & (translated < 1))
 
 
-def test_pbc_wrap_batched_orthorhombic(si_double_base_state: BaseState) -> None:
+def test_pbc_wrap_batched_orthorhombic(si_double_sim_state: SimState) -> None:
     """Test batched periodic boundary wrapping with orthorhombic cell."""
     # Make a copy of the state to modify positions
-    state = si_double_base_state
+    state = si_double_sim_state
 
     # Modify a specific atom's position in each batch to be outside the cell
     # Get the first atom in each batch
@@ -394,9 +394,9 @@ def test_pbc_wrap_batched_invalid_inputs(device: torch.device) -> None:
         )
 
 
-def test_pbc_wrap_batched_multi_atom(si_double_base_state: BaseState) -> None:
+def test_pbc_wrap_batched_multi_atom(si_double_sim_state: SimState) -> None:
     """Test batched wrapping with realistic multi-atom system."""
-    state = si_double_base_state
+    state = si_double_sim_state
 
     # Get a copy of positions to modify
     test_positions = state.positions.clone()
@@ -432,10 +432,10 @@ def test_pbc_wrap_batched_multi_atom(si_double_base_state: BaseState) -> None:
 
 
 def test_pbc_wrap_batched_preserves_relative_positions(
-    si_double_base_state: BaseState,
+    si_double_sim_state: SimState,
 ) -> None:
     """Test that relative positions within each batch are preserved after wrapping."""
-    state = si_double_base_state
+    state = si_double_sim_state
 
     # Get a copy of positions
     original_positions = state.positions.clone()
