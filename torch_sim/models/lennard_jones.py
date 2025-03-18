@@ -54,12 +54,15 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self._device)
 
     def unbatched_forward(
-        self, positions: torch.Tensor, cell: torch.Tensor | None = None, **_
+        self,
+        state: BaseState,
     ) -> dict[str, torch.Tensor]:
         """Compute energies and forces."""
-        positions = positions.to(device=self._device, dtype=self._dtype)
-        if cell is not None:
-            cell = cell.to(device=self._device, dtype=self._dtype)
+        if not isinstance(state, BaseState):
+            state = BaseState(**state)
+
+        positions = state.positions
+        cell = state.cell.squeeze()
 
         if self.use_neighbor_list:
             # Get neighbor list using vesin_nl_ts
@@ -144,7 +147,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
 
                 if self.per_atom_stresses:
                     atom_stresses = torch.zeros(
-                        (positions.shape[0], 3, 3),
+                        (state.positions.shape[0], 3, 3),
                         dtype=self._dtype,
                         device=self._device,
                     )
@@ -163,21 +166,10 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         elif state.pbc != self.periodic:
             raise ValueError("PBC mismatch between model and state")
 
-        if state.batch is None:
-            if state.cell.shape[0] > 1:
-                raise ValueError("Batch can only be inferred for batch size 1.")
-            state.batch = torch.zeros(
-                state.positions.shape[0], device=self._device, dtype=torch.int64
-            )
-        # unroll the dicts and concatenate the results
-        # for unique entry in batch_indices, compute the energy and forces
-        n_atoms_per_batch = torch.bincount(state.batch)
-        positions_split = torch.split(state.positions, n_atoms_per_batch.tolist())
-        cell_split = state.cell.unbind(dim=0)
+        if state.batch is None and state.cell.shape[0] > 1:
+            raise ValueError("Batch can only be inferred for batch size 1.")
 
-        outputs = []
-        for pos, box in zip(positions_split, cell_split, strict=True):
-            outputs.append(self.unbatched_forward(pos, box))
+        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_batches)]
         properties = outputs[0]
 
         # we always return tensors
