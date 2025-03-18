@@ -12,7 +12,7 @@ from torch_sim.state import SimState
 
 @pytest.fixture
 def calculator_outputs(
-    fe_fcc_state: SimState,
+    fe_fcc_sim_state: SimState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create both neighbor list and direct calculators."""
     calc_params = {
@@ -28,7 +28,7 @@ def calculator_outputs(
     calc_nl = SoftSphereModel(use_neighbor_list=True, **calc_params)
     calc_direct = SoftSphereModel(use_neighbor_list=False, **calc_params)
 
-    return calc_nl(fe_fcc_state), calc_direct(fe_fcc_state)
+    return calc_nl(fe_fcc_sim_state), calc_direct(fe_fcc_sim_state)
 
 
 @pytest.fixture
