@@ -137,13 +137,13 @@ def test_integrate_double_nvt_with_reporter(
 
 def test_integrate_many_nvt(
     ar_sim_state: SimState,
-    fe_fcc_state: SimState,
+    fe_fcc_sim_state: SimState,
     lj_calculator: Any,
     tmp_path: Any,
 ) -> None:
     """Test NVT integration with LJ potential."""
     triple_state = initialize_state(
-        [ar_sim_state, ar_sim_state, fe_fcc_state],
+        [ar_sim_state, ar_sim_state, fe_fcc_sim_state],
         lj_calculator.device,
         lj_calculator.dtype,
     )
@@ -180,11 +180,11 @@ def test_integrate_many_nvt(
 
 def test_integrate_with_autobatcher(
     ar_sim_state: SimState,
-    fe_fcc_state: SimState,
+    fe_fcc_sim_state: SimState,
     lj_calculator: Any,
 ) -> None:
     """Test integration with autobatcher."""
-    states = [ar_sim_state, fe_fcc_state, ar_sim_state]
+    states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
     triple_state = initialize_state(
         states,
         lj_calculator.device,
@@ -214,12 +214,12 @@ def test_integrate_with_autobatcher(
 
 def test_integrate_with_autobatcher_and_reporting(
     ar_sim_state: SimState,
-    fe_fcc_state: SimState,
+    fe_fcc_sim_state: SimState,
     lj_calculator: Any,
     tmp_path: Any,
 ) -> None:
     """Test integration with autobatcher."""
-    states = [ar_sim_state, fe_fcc_state, ar_sim_state]
+    states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
     triple_state = initialize_state(
         states,
         lj_calculator.device,
@@ -369,11 +369,11 @@ def test_batched_optimize_fire(
 
 def test_optimize_with_autobatcher(
     ar_sim_state: SimState,
-    fe_fcc_state: SimState,
+    fe_fcc_sim_state: SimState,
     lj_calculator: Any,
 ) -> None:
     """Test optimize with autobatcher."""
-    states = [ar_sim_state, fe_fcc_state, ar_sim_state]
+    states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
     triple_state = initialize_state(
         states,
         lj_calculator.device,
@@ -401,12 +401,12 @@ def test_optimize_with_autobatcher(
 
 def test_optimize_with_autobatcher_and_reporting(
     ar_sim_state: SimState,
-    fe_fcc_state: SimState,
+    fe_fcc_sim_state: SimState,
     lj_calculator: Any,
     tmp_path: Any,
 ) -> None:
     """Test optimize with autobatcher and reporting."""
-    states = [ar_sim_state, fe_fcc_state, ar_sim_state]
+    states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
     triple_state = initialize_state(
         states,
         lj_calculator.device,
@@ -465,7 +465,7 @@ def test_optimize_with_autobatcher_and_reporting(
 
 def test_integrate_with_default_autobatcher(
     ar_sim_state: SimState,
-    fe_fcc_state: SimState,
+    fe_fcc_sim_state: SimState,
     lj_calculator: LennardJonesModel,
     monkeypatch: Any,
 ) -> None:
@@ -478,7 +478,7 @@ def test_integrate_with_default_autobatcher(
         "torch_sim.autobatching.estimate_max_memory_scaler", mock_estimate
     )
 
-    states = [ar_sim_state, fe_fcc_state, ar_sim_state]
+    states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
     triple_state = initialize_state(
         states,
         lj_calculator.device,
@@ -505,7 +505,7 @@ def test_integrate_with_default_autobatcher(
 
 def test_optimize_with_default_autobatcher(
     ar_sim_state: SimState,
-    fe_fcc_state: SimState,
+    fe_fcc_sim_state: SimState,
     lj_calculator: LennardJonesModel,
     monkeypatch: Any,
 ) -> None:
@@ -518,7 +518,7 @@ def test_optimize_with_default_autobatcher(
         "torch_sim.autobatching.estimate_max_memory_scaler", mock_estimate
     )
 
-    states = [ar_sim_state, fe_fcc_state, ar_sim_state]
+    states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
     triple_state = initialize_state(
         states,
         lj_calculator.device,

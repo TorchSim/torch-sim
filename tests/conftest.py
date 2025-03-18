@@ -76,7 +76,7 @@ def si_sim_state(si_atoms: Any, device: torch.device) -> Any:
 
 
 @pytest.fixture
-def fe_fcc_state(device: torch.device) -> Any:
+def fe_fcc_sim_state(device: torch.device) -> Any:
     fe_atoms = bulk("Fe", "fcc", a=5.26, cubic=True).repeat([4, 4, 4])
     return atoms_to_state(fe_atoms, device, torch.float64)
 
