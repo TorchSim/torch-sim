@@ -160,7 +160,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
             dict: Dictionary with 'energy', 'forces', and optionally 'stress'
         """
         # Extract required data from input
-        if not isinstance(state, BaseState):
+        if isinstance(state, StateDict):
             state = BaseState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )

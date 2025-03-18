@@ -128,7 +128,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
 
     def forward(self, state: BaseState | StateDict) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single system."""
-        if not isinstance(state, BaseState):
+        if isinstance(state, StateDict):
             state = BaseState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )

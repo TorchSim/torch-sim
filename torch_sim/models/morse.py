@@ -70,7 +70,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
         Returns:
             Dictionary containing computed properties (energy, forces, stress, etc.)
         """
-        if not isinstance(state, BaseState):
+        if isinstance(state, StateDict):
             state = BaseState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )
@@ -160,7 +160,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
 
     def forward(self, state: BaseState | StateDict) -> dict[str, torch.Tensor]:
         """Compute energies and forces."""
-        if not isinstance(state, BaseState):
+        if isinstance(state, StateDict):
             state = BaseState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )

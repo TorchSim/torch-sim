@@ -160,7 +160,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
             dict[str, torch.Tensor]: A dictionary containing the computed energy,
                 forces, and stress of the system.
         """
-        if not isinstance(state, BaseState):
+        if isinstance(state, StateDict):
             state = BaseState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )

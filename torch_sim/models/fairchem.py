@@ -21,14 +21,12 @@ from fairchem.core.models.model_registry import model_name_to_local_file
 from torch_geometric.data import Batch
 
 from torch_sim.models.interface import ModelInterface
+from torch_sim.state import BaseState, StateDict
 
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
-
-    from torch_sim.state import BaseState, StateDict
-
 
 DTYPE_DICT = {
     torch.float16: "float16",
@@ -250,6 +248,11 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         Returns:
             Dictionary of model predictions
         """
+        if isinstance(state, StateDict):
+            state = BaseState(
+                **state, pbc=self.pbc, masses=torch.ones_like(state["positions"])
+            )
+
         if state.device != self._device:
             state = state.to(self._device)
 

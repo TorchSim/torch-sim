@@ -148,7 +148,7 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
         Returns:
             Dictionary containing computed properties (energy, forces, stress, etc.)
         """
-        if not isinstance(state, BaseState):
+        if isinstance(state, StateDict):
             state = BaseState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )

@@ -59,8 +59,10 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         state: BaseState,
     ) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single system."""
-        if not isinstance(state, BaseState):
-            state = BaseState(**state)
+        if isinstance(state, StateDict):
+            state = BaseState(
+                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
+            )
 
         positions = state.positions
         cell = state.cell
@@ -169,7 +171,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             - forces: Forces for all atoms. Shape: [total_atoms, 3]
             - stress: Stress tensor for each system. Shape: [n_systems, 3, 3]
         """
-        if not isinstance(state, BaseState):
+        if isinstance(state, StateDict):
             state = BaseState(
                 **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
             )
