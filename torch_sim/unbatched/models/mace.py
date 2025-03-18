@@ -189,18 +189,21 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
                 )
                 self.atomic_number_tensor = new_atomic_number_tensor
 
-        if state.cell.dim() == 3:  # Check if there is an extra batch dimension
-            state.cell = state.cell.squeeze(0)  # Squeeze the first dimension
+        cell = state.cell
+        positions = state.positions
+
+        if cell.dim() == 3:  # Check if there is an extra batch dimension
+            cell = cell.squeeze(0)  # Squeeze the first dimension
 
         # calculate neighbor list
         mapping, shifts_idx = self.neighbor_list_fn(
-            positions=state.positions,
-            cell=state.cell,
+            positions=positions,
+            cell=cell,
             pbc=self.periodic,
             cutoff=self.r_max,
         )
         edge_index = torch.stack((mapping[0], mapping[1]))
-        shifts = torch.mm(shifts_idx, state.cell)
+        shifts = torch.mm(shifts_idx, cell)
 
         # get model output
         out = self.model(
@@ -209,8 +212,8 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
                 node_attrs=self.node_attrs,
                 batch=self.batch,
                 pbc=self.pbc,
-                cell=state.cell,
-                positions=state.positions,
+                cell=cell,
+                positions=positions,
                 edge_index=edge_index,
                 unit_shifts=shifts_idx,
                 shifts=shifts,

@@ -130,22 +130,25 @@ class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
         elif state.pbc != self.periodic:
             raise ValueError("PBC mismatch between model and state")
 
-        if state.cell.dim() == 3:  # Check if there is an extra batch dimension
-            state.cell = state.cell.squeeze(0)  # Squeeze the first dimension
+        positions = state.positions
+        cell = state.cell
+
+        if cell.dim() == 3:  # Check if there is an extra batch dimension
+            cell = cell.squeeze(0)  # Squeeze the first dimension
 
         if self.use_neighbor_list:
             # Get neighbor list using wrapping_nl
             mapping, shifts = vesin_nl_ts(
-                positions=state.positions,
-                cell=state.cell,
+                positions=positions,
+                cell=cell,
                 pbc=self.periodic,
                 cutoff=float(self.cutoff),
                 sort_id=False,
             )
             # Get displacements using neighbor list
             dr_vec, distances = get_pair_displacements(
-                positions=state.positions,
-                cell=state.cell,
+                positions=positions,
+                cell=cell,
                 pbc=self.periodic,
                 pairs=mapping,
                 shifts=shifts,
@@ -153,14 +156,12 @@ class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
         else:
             # Get all pairwise displacements
             dr_vec, distances = get_pair_displacements(
-                positions=state.positions,
-                cell=state.cell,
+                positions=positions,
+                cell=cell,
                 pbc=self.periodic,
             )
             # Mask out self-interactions
-            mask = torch.eye(
-                state.positions.shape[0], dtype=torch.bool, device=self.device
-            )
+            mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self._device)
             distances = distances.masked_fill(mask, float("inf"))
             # Apply cutoff
             mask = distances < self.cutoff

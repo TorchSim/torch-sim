@@ -155,33 +155,34 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
         elif state.pbc != self.periodic:
             raise ValueError("PBC mismatch between model and state")
 
-        if state.cell.dim() == 3:  # Check if there is an extra batch dimension
-            state.cell = state.cell.squeeze(0)  # Squeeze the first dimension
+        positions = state.positions
+        cell = state.cell
+
+        if cell.dim() == 3:  # Check if there is an extra batch dimension
+            cell = cell.squeeze(0)  # Squeeze the first dimension
 
         if self.use_neighbor_list:
             mapping, shifts = vesin_nl_ts(
-                positions=state.positions,
-                cell=state.cell,
+                positions=positions,
+                cell=cell,
                 pbc=self.periodic,
                 cutoff=self.cutoff,
                 sort_id=False,
             )
             dr_vec, distances = get_pair_displacements(
-                positions=state.positions,
-                cell=state.cell,
+                positions=positions,
+                cell=cell,
                 pbc=self.periodic,
                 pairs=mapping,
                 shifts=shifts,
             )
         else:
             dr_vec, distances = get_pair_displacements(
-                positions=state.positions,
-                cell=state.cell,
+                positions=positions,
+                cell=cell,
                 pbc=self.periodic,
             )
-            mask = torch.eye(
-                state.positions.shape[0], dtype=torch.bool, device=self.device
-            )
+            mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self._device)
             distances = distances.masked_fill(mask, float("inf"))
             mask = distances < self.cutoff
             i, j = torch.where(mask)
@@ -201,7 +202,7 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
 
         if self._per_atom_energies:
             atom_energies = torch.zeros(
-                state.positions.shape[0], dtype=self.dtype, device=self.device
+                positions.shape[0], dtype=self._dtype, device=self._device
             )
             atom_energies.index_add_(0, mapping[0], 0.5 * pair_energies)
             atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
@@ -216,22 +217,22 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
             if self._compute_force:
-                forces = torch.zeros_like(state.positions)
+                forces = torch.zeros_like(positions)
                 forces.index_add_(0, mapping[0], -force_vectors)
                 forces.index_add_(0, mapping[1], force_vectors)
                 results["forces"] = forces
 
-            if self._compute_stress and state.cell is not None:
+            if self._compute_stress and cell is not None:
                 stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
-                volume = torch.abs(torch.linalg.det(state.cell))
+                volume = torch.abs(torch.linalg.det(cell))
 
                 results["stress"] = -stress_per_pair.sum(dim=0) / volume
 
                 if self._per_atom_stresses:
                     atom_stresses = torch.zeros(
-                        (state.positions.shape[0], 3, 3),
-                        dtype=self.dtype,
-                        device=self.device,
+                        (positions.shape[0], 3, 3),
+                        dtype=self._dtype,
+                        device=self._device,
                     )
                     atom_stresses.index_add_(0, mapping[0], -0.5 * stress_per_pair)
                     atom_stresses.index_add_(0, mapping[1], -0.5 * stress_per_pair)
