@@ -239,6 +239,10 @@ def nve(
         if not isinstance(state, BaseState):
             state = BaseState(**state)
 
+        # Check if there is an extra batch dimension
+        if state.cell.dim() == 3:
+            state.cell = state.cell.squeeze(0)
+
         # Override with kwargs if provided
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
@@ -401,6 +405,10 @@ def nvt_langevin(
         """
         if not isinstance(state, BaseState):
             state = BaseState(**state)
+
+        # Check if there is an extra batch dimension
+        if state.cell.dim() == 3:
+            state.cell = state.cell.squeeze(0)
 
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
@@ -885,6 +893,10 @@ def npt_langevin(  # noqa: C901, PLR0915
         # Convert dictionary to BaseState if needed
         if not isinstance(state, BaseState):
             state = BaseState(**state)
+
+        # Check if there is an extra batch dimension
+        if state.cell.dim() == 3:
+            state.cell = state.cell.squeeze(0)
 
         # Get atomic numbers from kwargs or state
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
@@ -1404,6 +1416,10 @@ def nvt_nose_hoover(
 
         if not isinstance(state, BaseState):
             state = BaseState(**state)
+
+        # Check if there is an extra batch dimension
+        if state.cell.dim() == 3:
+            state.cell = state.cell.squeeze(0)
 
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
@@ -2072,6 +2088,10 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
 
         if not isinstance(state, BaseState):
             state = BaseState(**state)
+
+        # Check if there is an extra batch dimension
+        if state.cell.dim() == 3:
+            state.cell = state.cell.squeeze(0)
 
         dim, n_particles = state.positions.shape
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)

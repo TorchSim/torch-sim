@@ -79,6 +79,10 @@ def gradient_descent(
         if not isinstance(state, BaseState):
             state = BaseState(**state)
 
+        # Check if there is an extra batch dimension
+        if state.cell.dim() == 3:
+            state.cell = state.cell.squeeze(0)
+
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         # Get initial forces and energy from model
@@ -213,6 +217,10 @@ def fire(
         """
         if not isinstance(state, BaseState):
             state = BaseState(**state)
+
+        # Check if there is an extra batch dimension
+        if state.cell.dim() == 3:
+            state.cell = state.cell.squeeze(0)
 
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
         # Get initial forces and energy from model
@@ -395,6 +403,10 @@ def fire_ase(  # noqa: PLR0915
         """
         if not isinstance(state, BaseState):
             state = BaseState(**state)
+
+        # Check if there is an extra batch dimension
+        if state.cell.dim() == 3:
+            state.cell = state.cell.squeeze(0)
 
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
@@ -620,6 +632,10 @@ def unit_cell_fire(  # noqa: PLR0915, C901
             cell_factor = float(len(state.positions))
         if isinstance(cell_factor, (int, float)):
             cell_factor = torch.full((1, 1), cell_factor, device=device, dtype=dtype)
+
+        # Check if there is an extra batch dimension
+        if state.cell.dim() == 3:
+            state.cell = state.cell.squeeze(0)
 
         # Setup pressure tensor
         pressure = scalar_pressure * torch.eye(3, device=device, dtype=dtype)
@@ -942,6 +958,10 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
             cell_factor = float(len(state.positions))
         if isinstance(cell_factor, (int, float)):
             cell_factor = torch.tensor(cell_factor, device=device, dtype=dtype)
+
+        # Check if there is an extra batch dimension
+        if state.cell.dim() == 3:
+            state.cell = state.cell.squeeze(0)
 
         # Setup pressure tensor
         pressure = scalar_pressure * torch.eye(3, device=device, dtype=dtype)
