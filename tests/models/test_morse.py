@@ -3,11 +3,8 @@
 import pytest
 import torch
 
-from torch_sim.unbatched.models.morse import (
-    UnbatchedMorseModel,
-    morse_pair,
-    morse_pair_force,
-)
+from torch_sim.models.morse import MorseModel
+from torch_sim.unbatched.models.morse import morse_pair, morse_pair_force
 
 
 def test_morse_pair_minimum() -> None:
@@ -143,14 +140,12 @@ def calculators(
     }
 
     cutoff = 2.5 * 2.55  # Similar scaling as LJ cutoff
-    calc_nl = UnbatchedMorseModel(use_neighbor_list=True, cutoff=cutoff, **calc_params)
-    calc_direct = UnbatchedMorseModel(
-        use_neighbor_list=False, cutoff=cutoff, **calc_params
-    )
+    calc_nl = MorseModel(use_neighbor_list=True, cutoff=cutoff, **calc_params)
+    calc_direct = MorseModel(use_neighbor_list=False, cutoff=cutoff, **calc_params)
 
     state = dict(
         positions=cu_fcc_system[0],
-        cell=cu_fcc_system[1],
+        cell=cu_fcc_system[1].unsqueeze(0),
         atomic_numbers=torch.ones(len(cu_fcc_system[0]), dtype=torch.int32),
     )
     return calc_nl(state), calc_direct(state)
@@ -195,4 +190,6 @@ def test_stress_tensor_symmetry(
 ) -> None:
     """Test that stress tensor is symmetric."""
     results_nl, _ = calculators
-    assert torch.allclose(results_nl["stress"], results_nl["stress"].T, atol=1e-10)
+    assert torch.allclose(
+        results_nl["stress"].squeeze(), results_nl["stress"].squeeze().T, atol=1e-10
+    )

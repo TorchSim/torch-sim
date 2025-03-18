@@ -63,7 +63,8 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             state = BaseState(**state)
 
         positions = state.positions
-        cell = state.cell.squeeze()
+        cell = state.cell
+        cell = cell.squeeze()
 
         if self.use_neighbor_list:
             # Get neighbor list using vesin_nl_ts
@@ -343,7 +344,8 @@ class SoftSphereMultiModel(torch.nn.Module):
             species = self.species
 
         positions = state.positions
-        cell = state.cell.squeeze()
+        cell = state.cell
+        cell = cell.squeeze()
         species_idx = species
 
         # Compute neighbor list or full distance matrix
