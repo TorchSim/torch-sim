@@ -2,105 +2,70 @@
 
 This folder contains a series of examples demonstrating the use of TorchSim, a library for simulating molecular dynamics and structural optimization using classical and machine learning interatomic potentials. Each example showcases different functionalities and models available in TorchSim.
 
-## Examples Overview
+1. **Introduction**
 
-### 1. Introduction
+   1. **Lennard-Jones Model** - [`examples/1_Introduction/1.1_Lennard_Jones.py`](1_Introduction/1.1_Lennard_Jones.py): Simulate Argon atoms in an FCC lattice with a Lennard-Jones potential. Initialize the model, run a forward pass, and print energy, forces, and stress.
 
-- **1.1 Lennard-Jones Model**: Demonstrates the setup and simulation of a Lennard-Jones potential for Argon atoms arranged in a face-centered cubic (FCC) lattice. The example initializes the model, runs a model forward pass, and prints the energy, forces, and stress.
-  ```torchsim/examples/1_Introduction/1.1_Lennard_Jones.py```
+   1. **MACE Model** - [`examples/1_Introduction/1.2_MACE.py`](1_Introduction/1.2_MACE.py): Use the MACE model to simulate diamond cubic Silicon. Load a pre-trained model, set up the system, and calculate energy, forces, and stress.
 
-- **1.2 MACE Model**: Shows how to use the MACE model for simulating diamond cubic Silicon. It includes loading a pre-trained model, setting up the system, and running a model forward pass to obtain energy, forces, and stress.
-  ```torchsim/examples/1_Introduction/1.2_MACE.py```
+   1. **Batched MACE Model** - [`examples/1_Introduction/1.3_Batched_MACE.py`](1_Introduction/1.3_Batched_MACE.py): Handle batched inputs with the MACE model to simulate multiple systems simultaneously.
 
-- **1.3 Batched MACE Model**: Extends the MACE model example to handle batched inputs, allowing for the simulation of multiple systems simultaneously. It demonstrates the setup and execution of batched simulations.
-  ```torchsim/examples/1_Introduction/1.3_Batched_MACE.py```
+   1. **Fairchem Model** - [`examples/1_Introduction/1.4_Fairchem.py`](1_Introduction/1.4_Fairchem.py): Simulate diamond cubic Silicon with the Fairchem model. Set up the model and calculate energy, forces, and stress.
 
-- **1.4 Fairchem Model**: Demonstrates the Fairchem model for simulating diamond cubic Silicon. It includes model setup, data preparation, and running simulations to obtain energy, forces, and stress.
-  ```torchsim/examples/1_Introduction/1.4_Fairchem.py```
+1. **Structural Optimization**
 
-### 2. Structural Optimization
+   1. **Lennard-Jones FIRE** - [`examples/2_Structural_optimization/2.1_Lennard_Jones_FIRE.py`](2_Structural_optimization/2.1_Lennard_Jones_FIRE.py): Perform structural optimization using the FIRE optimizer with a Lennard-Jones model.
 
-- **2.1 Lennard-Jones FIRE**: Shows how to perform structural optimization using the FIRE (Fast Inertial Relaxation Engine) optimizer with a Lennard-Jones model.
-  ```torchsim/examples/2_Structural_optimization/2.1_Lennard_Jones_FIRE.py```
+   1. **Soft Sphere FIRE** - [`examples/2_Structural_optimization/2.2_Soft_Sphere_FIRE.py`](2_Structural_optimization/2.2_Soft_Sphere_FIRE.py): Optimize structures with a Soft Sphere model using the FIRE optimizer.
 
+   1. **MACE FIRE** - [`examples/2_Structural_optimization/2.3_MACE_FIRE.py`](2_Structural_optimization/2.3_MACE_FIRE.py): Optimize structures with the MACE model using the FIRE optimizer.
 
-- **2.2 Soft Sphere FIRE**: Similar to the Lennard-Jones example, but using a Soft Sphere model for optimization.
-  ```torchsim/examples/2_Structural_optimization/2.2_Soft_Sphere_FIRE.py```
+   1. **MACE UnitCellFilter FIRE** - [`examples/2_Structural_optimization/2.4_MACE_UnitCellFilter_FIRE.py`](2_Structural_optimization/2.4_MACE_UnitCellFilter_FIRE.py): Optimize structures with the MACE model using the UnitCellFilter FIRE optimizer.
 
-- **2.3 MACE FIRE**: Uses the MACE model for structural optimization with the FIRE optimizer.
-  ```torchsim/examples/2_Structural_optimization/2.3_MACE_FIRE.py```
+   1. **MACE FrechetCellFilter FIRE** - [`examples/2_Structural_optimization/2.5_MACE_FrechetCellFilter_FIRE.py`](2_Structural_optimization/2.5_MACE_FrechetCellFilter_FIRE.py): Optimize structures with the MACE model using the FrechetCellFilter FIRE optimizer.
 
-- **2.4 MACE UnitCellFilter FIRE**: Uses the MACE model for structural optimization with the UnitCellFilter FIRE optimizer.
-  ```torchsim/examples/2_Structural_optimization/2.4_MACE_UnitCellFilter_FIRE.py```
+   1. **Batched MACE Gradient Descent** - [`examples/2_Structural_optimization/2.6_Batched_MACE_Gradient_Descent.py`](2_Structural_optimization/2.6_Batched_MACE_Gradient_Descent.py): Optimize multiple structures simultaneously using batched gradient descent with the MACE model.
 
-- **2.5 MACE FrechetCellFilter FIRE**: Uses the MACE model for structural optimization with the FrechetCellFilter FIRE optimizer.
-  ```torchsim/examples/2_Structural_optimization/2.5_MACE_FrechetCellFilter_FIRE.py```
+   1. **Batched MACE UnitCellFilter Gradient Descent** - [`examples/2_Structural_optimization/2.7_Batched_MACE_UnitCellFilter_Gradient_Descent.py`](2_Structural_optimization/2.7_Batched_MACE_UnitCellFilter_Gradient_Descent.py): Optimize multiple structures and their unit cells using batched gradient descent with MACE.
 
-- **2.6 Batched MACE Gradient Descent**: Demonstrates batched gradient descent optimization using the MACE model.
-  ```torchsim/examples/2_Structural_optimization/2.6_Batched_MACE_Gradient_Desent.py```
+   1. **Batched MACE UnitCellFilter FIRE** - [`examples/2_Structural_optimization/2.8_Batched_MACE_UnitCellFilter_FIRE.py`](2_Structural_optimization/2.8_Batched_MACE_UnitCellFilter_FIRE.py): Optimize multiple structures and their unit cells using the batched FIRE optimizer with MACE.
 
-- **2.7 Batched MACE UnitCellFilter Gradient Descent**: Extends the batched optimization to include unit cell optimization using gradient descent.
-  ```torchsim/examples/2_Structural_optimization/2.7_Batched_MACE_UnitCellFilter_Gradient_Desent.py```
+1. **Dynamics**
 
-- **2.8 Batched MACE UnitCellFilter FIRE**: Similar to the previous example but using the FIRE optimizer for unit cell optimization.
-  ```torchsim/examples/2_Structural_optimization/2.8_Batched_MACE_UnitCellFilter_FIRE.py```
+   1. **Lennard-Jones NVE** - [`examples/3_Dynamics/3.1_Lennard_Jones_NVE.py`](3_Dynamics/3.1_Lennard_Jones_NVE.py): Run molecular dynamics with the NVE ensemble using a Lennard-Jones model. Set up, simulate, and check energy conservation.
 
+   1. **MACE NVE** - [`examples/3_Dynamics/3.2_MACE_NVE.py`](3_Dynamics/3.2_MACE_NVE.py): Run NVE molecular dynamics simulation with the MACE model.
 
+   1. **MACE NVE with Cueq** - [`examples/3_Dynamics/3.3_MACE_NVE_cueq.py`](3_Dynamics/3.3_MACE_NVE_cueq.py): Run the MACE model in NVE with CuEq acceleration.
 
-### 3. Dynamics
+   1. **MACE NVT Langevin** - [`examples/3_Dynamics/3.4_MACE_NVT_Langevin.py`](3_Dynamics/3.4_MACE_NVT_Langevin.py): Run temperature-controlled molecular dynamics using the NVT Langevin integrator with MACE.
 
-- **3.1 Lennard-Jones NVE**: Simulates molecular dynamics using the NVE ensemble with a Lennard-Jones model. It includes setup, simulation, and energy conservation checks.
-  ```torchsim/examples/3_Dynamics/3.1_Lennard_Jones_NVE.py```
+   1. **MACE NVT Nose-Hoover** - [`examples/3_Dynamics/3.5_MACE_NVT_Nose_Hoover.py`](3_Dynamics/3.5_MACE_NVT_Nose_Hoover.py): Run temperature-controlled molecular dynamics using the NVT Nose-Hoover integrator with MACE.
 
-- **3.2 MACE NVE**: Similar to the Lennard-Jones example but using the MACE model for NVE molecular dynamics simulation.
-  ```torchsim/examples/3_Dynamics/3.2_MACE_NVE.py```
+   1. **MACE NVT Nose-Hoover with Temperature Profile** - [`examples/3_Dynamics/3.6_MACE_NVT_Nose_Hoover_temp_profile.py`](3_Dynamics/3.6_MACE_NVT_Nose_Hoover_temp_profile.py): Simulate heating and cooling cycles using Nose-Hoover integrator with a temperature profile.
 
-- **3.3 MACE NVE with Cueq**: Runs the MACE model in NVE with the CuEq acceleration.
-  ```torchsim/examples/3_Dynamics/3.3_MACE_NVE_cueq.py```
+   1. **Lennard-Jones NPT Nose-Hoover** - [`examples/3_Dynamics/3.7_Lennard_Jones_NPT_Nose_Hoover.py`](3_Dynamics/3.7_Lennard_Jones_NPT_Nose_Hoover.py): Run pressure-controlled molecular dynamics using the NPT Nose-Hoover integrator with Lennard-Jones.
 
-- **3.4 MACE NVT Langevin**: Demonstrates the use of the NVT Langevin integrator with the MACE model for temperature-controlled molecular dynamics.
-  ```torchsim/examples/3_Dynamics/3.4_MACE_NVT_Langevin.py```
+   1. **MACE NPT Nose-Hoover** - [`examples/3_Dynamics/3.8_MACE_NPT_Nose_Hoover.py`](3_Dynamics/3.8_MACE_NPT_Nose_Hoover.py): Run pressure-controlled molecular dynamics using the NPT Nose-Hoover integrator with MACE.
 
-- **3.5 MACE NVT Nose-Hoover**: Uses the NVT Nose-Hoover integrator with the MACE model for temperature-controlled molecular dynamics.
-  ```torchsim/examples/3_Dynamics/3.5_MACE_NVT_Nose_Hoover.py```
+   1. **MACE NVT with Staggered Stress** - [`examples/3_Dynamics/3.9_MACE_NVT_staggered_stress.py`](3_Dynamics/3.9_MACE_NVT_staggered_stress.py): Use staggered stress calculations during NVT simulations with the MACE model.
 
-- **3.6 MACE NVT Nose-Hoover with Temperature Profile**: Extends the Nose-Hoover example to include a temperature profile, simulating heating and cooling cycles.
-  ```torchsim/examples/3_Dynamics/3.6_MACE_NVT_Nose_Hoover_temp_profile.py```
+   1. **Hybrid Swap Monte Carlo** - [`examples/3_Dynamics/3.10_Hybrid_swap_mc.py`](3_Dynamics/3.10_Hybrid_swap_mc.py): Combine molecular dynamics with Monte Carlo simulations using the MACE model.
 
-- **3.7 Lennard-Jones NPT Nose-Hoover**: Demonstrates the use of the NPT Nose-Hoover integrator with a Lennard-Jones model for pressure-controlled molecular dynamics.
-  ```torchsim/examples/3_Dynamics/3.7_Lennard_Jones_NPT_Nose_Hoover.py```
+1. **High-Level API**
 
-- **3.8 MACE NPT Nose-Hoover**: Similar to the Lennard-Jones example but using the MACE model for pressure-controlled molecular dynamics.
-  ```torchsim/examples/3_Dynamics/3.8_MACE_NPT_Nose_Hoover.py```
+   1. **High-Level API** - [`examples/4_High_level_api/4.1_high_level_api.py`](4_High_level_api/4.1_high_level_api.py): Integrate systems using the high-level API with different models and integrators.
 
-- **3.9 MACE NVT with Staggered Stress**: Demonstrates the use of staggered stress calculations during NVT simulations with the MACE model.
-  ```torchsim/examples/3_Dynamics/3.9_MACE_NVT_staggered_stress.py```
+1. **Workflow**
 
-- **3.10 Batched Integrator Test**: Tests batched integration using various models and integrators, showcasing the flexibility of TorchSim in handling different simulation scenarios.
-  ```torchsim/examples/3_Dynamics/3.10_Batched_integrator_test.py```
+   1. **Workflow** - [`examples/5_Workflow/5.1_a2c_silicon.py`](5_Workflow/5.1_a2c_silicon.py): Run the a2c workflow with the MACE model.
 
-- **3.11 Hybrid Swap Monte Carlo**: Combines molecular dynamics with Monte Carlo simulations using the MACE model, demonstrating hybrid simulation techniques.
-  ```torchsim/examples/3_Dynamics/3.11_Hybrid_swap_mc.py```
+1. **Phonons**
 
-### 4. High-Level API
+   1. **Phonon DOS with MACE Batched** - [`examples/6_Phonons/6.1_Phonon_dos_batched_MACE.py`](6_Phonons/6.1_Phonon_dos_batched_MACE.py): Compute the phonon density of states using the MACE model in batched mode.
 
-- **4.1 High-Level API**: Provides examples of using the high-level API for integrating systems with different models and integrators, including Lennard-Jones and MACE models.
-  ```torchsim/examples/4_High_level_api/4.1_high_level_api.py```
+   1. **Thermal Conductivity with MACE** - [`examples/6_Phonons/6.2_Thermal_conductivity_MACE.py`](6_Phonons/6.2_Thermal_conductivity_MACE.py): Compute thermal conductivity using the MACE model.
 
-### 5. Workflow
+   1. **Thermal Conductivity with MACE Batched** - [`examples/6_Phonons/6.3_Thermal_conductivity_batched_MACE.py`](6_Phonons/6.3_Thermal_conductivity_batched_MACE.py): Compute thermal conductivity using the MACE model in batched mode.
 
-- **5.1 Workflow**: Demonstrates how to run the a2c workflow with MACE model.
-  ```torchsim/examples/5_Workflow/5.1_a2c_workflow.py```
-
-### 6. Phonons
-
-- **6.1 Phonon DOS with MACE Batched**: Demonstrates how to compute the phonon density of states (DOS) using the MACE model in batched mode.
-  ```torchsim/examples/6_Phonons/6.1_phonon_dos_batched_MACE.py```
-
-- **6.2 Thermal Conductivity with MACE**: Demonstrates how to compute the thermal conductivity using the MACE model.
-  ```torchsim/examples/6_Phonons/6.2_Thermal_conductivity_MACE.py```
-
-- **6.3 Thermal Conductivity with MACE Batched**: Demonstrates how to compute the thermal conductivity using the MACE model in batched mode.
-  ```torchsim/examples/6_Phonons/6.3_Thermal_conductivity_batched_MACE.py```
-
-Each example is designed to be self-contained and can be run independently to explore the capabilities of TorchSim. The examples cover a wide range of functionalities, from basic model setup to advanced simulation techniques, providing a comprehensive overview of the library's features.
+Each example is self-contained and can be run independently to explore TorchSim capabilities. The examples cover basic model setup to advanced simulation techniques, providing a comprehensive overview of the library's features.

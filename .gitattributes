@@ -1,2 +1,0 @@
-# exclude generated and data files
-data/*.csv linguist-generated

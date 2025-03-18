@@ -1,0 +1,19 @@
+name: Link check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  markdown-link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Run markdown link check
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          config-file: .github/workflows/link-check-config.json
