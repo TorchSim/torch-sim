@@ -55,12 +55,15 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         self.alpha = torch.tensor(alpha, dtype=dtype, device=self.device)
 
     def unbatched_forward(
-        self, positions: torch.Tensor, cell: torch.Tensor | None = None
+        self,
+        state: BaseState,
     ) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single system."""
-        positions = positions.to(device=self.device, dtype=self.dtype)
-        if cell is not None:
-            cell = cell.to(device=self.device, dtype=self.dtype)
+        if not isinstance(state, BaseState):
+            state = BaseState(**state)
+
+        positions = state.positions
+        cell = state.cell.squeeze()
 
         if self.use_neighbor_list:
             # Get neighbor list using vesin_nl_ts
@@ -151,7 +154,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
 
         return results
 
-    def forward(  # noqa: C901
+    def forward(
         self, state: BaseState | StateDict
     ) -> dict[str, torch.Tensor]:  # TODO: what are the shapes?
         """Compute energies and forces for batched systems.
@@ -173,26 +176,10 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             raise ValueError("PBC mismatch between model and state")
 
         # Handle batch indices if not provided
-        if state.batch is None:
-            # TODO can only exclude cell if batching, clean up logic later
-            if state.cell.shape == (3, 3):
-                state.cell = state.cell.unsqueeze(0)
+        if state.batch is None and state.cell.shape[0] > 1:
+            raise ValueError("Batch can only be inferred for batch size 1.")
 
-            if state.cell.shape[0] > 1:
-                raise ValueError("Batch can only be inferred for batch size 1.")
-            state.batch = torch.zeros(
-                state.positions.shape[0], device=self.device, dtype=torch.int64
-            )
-
-        # Split positions by batch indices
-        n_atoms_per_batch = torch.bincount(state.batch)
-        positions_split = torch.split(state.positions, n_atoms_per_batch.tolist())
-        cell_split = state.cell.unbind(dim=0)
-
-        # Process each system individually
-        outputs = []
-        for pos, cell in zip(positions_split, cell_split, strict=True):
-            outputs.append(self.unbatched_forward(pos, cell))
+        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_batches)]
         properties = outputs[0]
 
         # Combine results
@@ -326,17 +313,15 @@ class SoftSphereMultiModel(torch.nn.Module):
             cutoff or float(self.sigma_matrix.max()), dtype=dtype, device=device
         )
 
-    def unbatched_forward(
+    def unbatched_forward(  # noqa: PLR0915
         self,
-        positions: torch.Tensor,
-        cell: torch.Tensor | None = None,
+        state: BaseState,
         species: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Compute energies, forces and stresses for the multi-species system.
 
         Args:
-            positions: Atomic positions tensor of shape [n_atoms, 3].
-            cell: Unit cell tensor of shape [3, 3] for periodic systems.
+            state: State object
             species: Species labels/indices for each atom. If None, uses
                 the species provided at initialization.
 
@@ -349,14 +334,16 @@ class SoftSphereMultiModel(torch.nn.Module):
             - 'stresses': Per-atom stress tensors (if per_atom_stresses=True)
         """
         # Convert inputs to proper device/dtype and handle species
-        if cell is not None:
-            cell = cell.to(device=self.device, dtype=self.dtype)
+        if not isinstance(state, BaseState):
+            state = BaseState(**state)
 
         if species is not None:
             species = species.to(device=self.device, dtype=torch.long)
         else:
             species = self.species
 
+        positions = state.positions
+        cell = state.cell.squeeze()
         species_idx = species
 
         # Compute neighbor list or full distance matrix
@@ -458,9 +445,7 @@ class SoftSphereMultiModel(torch.nn.Module):
 
         return results
 
-    def forward(  # noqa: C901
-        self, state: BaseState | StateDict
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: BaseState | StateDict) -> dict[str, torch.Tensor]:
         """Compute energies and forces for batched systems.
 
         Args:
@@ -480,26 +465,10 @@ class SoftSphereMultiModel(torch.nn.Module):
             raise ValueError("PBC mismatch between model and state")
 
         # Handle batch indices if not provided
-        if state.batch is None:
-            # TODO can only exclude cell if batching, clean up logic later
-            if state.cell.shape == (3, 3):
-                state.cell = state.cell.unsqueeze(0)
+        if state.batch is None and state.cell.shape[0] > 1:
+            raise ValueError("Batch can only be inferred for batch size 1.")
 
-            if state.cell.shape[0] > 1:
-                raise ValueError("Batch can only be inferred for batch size 1.")
-            state.batch = torch.zeros(
-                state.positions.shape[0], device=self.device, dtype=torch.int64
-            )
-
-        # Split positions by batch indices
-        n_atoms_per_batch = torch.bincount(state.batch)
-        positions_split = torch.split(state.positions, n_atoms_per_batch.tolist())
-        cell_split = state.cell.unbind(dim=0)
-
-        # Process each system individually
-        outputs = []
-        for pos, cell in zip(positions_split, cell_split, strict=True):
-            outputs.append(self.unbatched_forward(pos, cell))
+        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_batches)]
         properties = outputs[0]
 
         # Combine results
