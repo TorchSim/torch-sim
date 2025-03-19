@@ -105,7 +105,6 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
-        periodic: bool = True,
         compute_force: bool = True,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
@@ -123,7 +122,6 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
         self._per_atom_energies = per_atom_energies
         self._per_atom_stresses = per_atom_stresses
         self.use_neighbor_list = use_neighbor_list
-        self.periodic = periodic
 
         # Convert parameters to tensors
         self.sigma = torch.tensor(sigma, dtype=dtype, device=self._device)
@@ -135,14 +133,11 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
     def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute energies and forces."""
         if isinstance(state, dict):
-            state = SimState(
-                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
-            )
-        elif state.pbc != self.periodic:
-            raise ValueError("PBC mismatch between model and state")
+            state = SimState(**state, masses=torch.ones_like(state["positions"]))
 
         cell = state.cell
         positions = state.positions
+        pbc = state.pbc
 
         if cell.dim() == 3:  # Check if there is an extra batch dimension
             cell = cell.squeeze(0)  # Squeeze the first dimension
@@ -152,7 +147,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
             mapping, shifts = vesin_nl_ts(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=pbc,
                 cutoff=self.cutoff,
                 sort_id=False,
             )
@@ -160,7 +155,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
             dr_vec, distances = get_pair_displacements(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=pbc,
                 pairs=mapping,
                 shifts=shifts,
             )
@@ -169,7 +164,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
             dr_vec, distances = get_pair_displacements(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=pbc,
             )
             # Mask out self-interactions
             mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self._device)

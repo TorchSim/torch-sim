@@ -29,7 +29,6 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
-        periodic: bool = True,
         compute_force: bool = True,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
@@ -41,7 +40,6 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         super().__init__()
         self._device = device or torch.device("cpu")
         self._dtype = dtype
-        self.periodic = periodic
         self._compute_force = compute_force
         self._compute_stress = compute_stress
         self.per_atom_energies = per_atom_energies
@@ -60,20 +58,19 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
     ) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single system."""
         if isinstance(state, dict):
-            state = SimState(
-                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
-            )
+            state = SimState(**state, masses=torch.ones_like(state["positions"]))
 
         positions = state.positions
         cell = state.cell
         cell = cell.squeeze()
+        pbc = state.pbc
 
         if self.use_neighbor_list:
             # Get neighbor list using vesin_nl_ts
             mapping, shifts = vesin_nl_ts(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=pbc,
                 cutoff=self.cutoff,
                 sort_id=False,
             )
@@ -81,7 +78,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             dr_vec, distances = get_pair_displacements(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=pbc,
                 pairs=mapping,
                 shifts=shifts,
             )
@@ -91,7 +88,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             dr_vec, distances = get_pair_displacements(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=pbc,
             )
             # Remove self-interactions and apply cutoff
             mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)
@@ -172,11 +169,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             - stress: Stress tensor for each system. Shape: [n_systems, 3, 3]
         """
         if isinstance(state, dict):
-            state = SimState(
-                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
-            )
-        elif state.pbc != self.periodic:
-            raise ValueError("PBC mismatch between model and state")
+            state = SimState(**state, masses=torch.ones_like(state["positions"]))
 
         # Handle batch indices if not provided
         if state.batch is None and state.cell.shape[0] > 1:

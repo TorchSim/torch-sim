@@ -27,7 +27,6 @@ class MaceModel(torch.nn.Module, ModelInterface):
         batch: torch.Tensor | None = None,
         *,
         neighbor_list_fn: Callable = vesin_nl_ts,
-        periodic: bool = True,
         compute_force: bool = True,
         compute_stress: bool = True,
         enable_cueq: bool = False,
@@ -41,7 +40,6 @@ class MaceModel(torch.nn.Module, ModelInterface):
             atomic_numbers: Atomic numbers with shape [n_atoms].
             batch: Batch indices with shape [n_atoms].
             neighbor_list_fn: The neighbor list function to use.
-            periodic: Whether to use periodic boundary conditions.
             compute_force: Whether to compute forces.
             compute_stress: Whether to compute stress.
             enable_cueq: Whether to enable CuEq acceleration.
@@ -82,7 +80,6 @@ class MaceModel(torch.nn.Module, ModelInterface):
         self.model.eval()
 
         # Set model properties
-        self.periodic = periodic
         self.r_max = self.model.r_max
         self.z_table = utils.AtomicNumberTable(
             [int(z) for z in self.model.atomic_numbers]
@@ -93,11 +90,6 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
         # Store flag to track if atomic numbers were provided at init
         self.atomic_numbers_in_init = atomic_numbers is not None
-
-        # Set PBC
-        pbc = [periodic] * 3
-        self.pbc_template = torch.tensor([pbc], device=self._device)
-        self.pbc = None  # Will be set in forward
 
         # Set up batch information if atomic numbers are provided
         if atomic_numbers is not None:
@@ -144,9 +136,6 @@ class MaceModel(torch.nn.Module, ModelInterface):
             num_classes=len(self.z_table),
         )
 
-        # Set up PBC
-        self.pbc = self.pbc_template.expand(self.n_systems, -1)
-
     def forward(  # noqa: C901
         self,
         state: SimState | StateDict,
@@ -161,11 +150,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
         """
         # Extract required data from input
         if isinstance(state, dict):
-            state = SimState(
-                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
-            )
-        elif state.pbc != self.periodic:
-            raise ValueError("PBC mismatch between model and state")
+            state = SimState(**state, masses=torch.ones_like(state["positions"]))
 
         # Handle input validation for atomic numbers
         if state.atomic_numbers is None and not self.atomic_numbers_in_init:
@@ -213,7 +198,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
         cell = state.cell
         positions = state.positions
-
+        pbc = state.pbc
         # Ensure cell has correct shape
         # if cell is None:
         #     cell = torch.zeros(
@@ -233,7 +218,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
             mapping, shifts_idx = self.neighbor_list_fn(
                 positions=positions[batch_mask],
                 cell=cell[b],
-                pbc=self.periodic,
+                pbc=pbc,
                 cutoff=self.r_max,
             )
 
@@ -258,7 +243,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 ptr=self.ptr,
                 node_attrs=self.node_attrs,
                 batch=state.batch,
-                pbc=self.pbc,
+                pbc=pbc,
                 cell=cell,
                 positions=positions,
                 edge_index=edge_index,

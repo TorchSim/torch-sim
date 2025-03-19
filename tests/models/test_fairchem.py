@@ -30,7 +30,7 @@ def si_system(dtype: torch.dtype, device: torch.device) -> SimState:
 
 
 @pytest.fixture
-def fairchem_calculator(model_path: str, device: torch.device) -> FairChemModel:
+def fairchem_model(model_path: str, device: torch.device) -> FairChemModel:
     cpu = device.type == "cpu"
     return FairChemModel(
         model=model_path,
@@ -46,7 +46,7 @@ def ocp_calculator(model_path: str) -> OCPCalculator:
 
 
 def test_fairchem_ocp_consistency(
-    fairchem_calculator: FairChemModel,
+    fairchem_model: FairChemModel,
     ocp_calculator: OCPCalculator,
     device: torch.device,
 ) -> None:
@@ -56,7 +56,7 @@ def test_fairchem_ocp_consistency(
 
     si_state = atoms_to_state([si_dc], device, torch.float32)
     # Get FairChem results
-    fairchem_results = fairchem_calculator(si_state)
+    fairchem_results = fairchem_model(si_state)
 
     # Get OCP results
     ocp_forces = torch.tensor(
@@ -81,6 +81,6 @@ def test_fairchem_ocp_consistency(
     not torch.cuda.is_available(), reason="Batching does not work properly on CPU"
 )
 def test_validate_model_outputs(
-    fairchem_calculator: FairChemModel, device: torch.device
+    fairchem_model: FairChemModel, device: torch.device
 ) -> None:
-    validate_model_outputs(fairchem_calculator, device, torch.float32)
+    validate_model_outputs(fairchem_model, device, torch.float32)

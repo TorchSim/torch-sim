@@ -11,7 +11,7 @@ from torch_sim.unbatched.unbatched_optimizers import (
 )
 
 
-def test_fire_optimizer(ar_sim_state: SimState, unbatched_lj_calculator: Any) -> None:
+def test_fire_optimizer(ar_sim_state: SimState, unbatched_lj_model: Any) -> None:
     """Test FIRE optimization of Ar FCC structure."""
     # perturb the structure
     ar_sim_state.positions[1][0] = 1.0
@@ -19,7 +19,7 @@ def test_fire_optimizer(ar_sim_state: SimState, unbatched_lj_calculator: Any) ->
 
     # Initialize optimizer
     init_fn, update_fn = fire(
-        model=unbatched_lj_calculator,
+        model=unbatched_lj_model,
         dt_start=0.01,
         dt_max=0.1,
         n_min=5,
@@ -48,7 +48,7 @@ def test_fire_optimizer(ar_sim_state: SimState, unbatched_lj_calculator: Any) ->
 
 
 def test_gradient_descent_optimizer(
-    ar_sim_state: SimState, unbatched_lj_calculator: Any
+    ar_sim_state: SimState, unbatched_lj_model: Any
 ) -> None:
     """Test gradient descent optimization of Ar FCC structure."""
     # perturb the structure
@@ -56,7 +56,7 @@ def test_gradient_descent_optimizer(
     ar_sim_state.cell = ar_sim_state.cell.squeeze(0)
     # Initialize optimizer
     init_fn, update_fn = gradient_descent(
-        model=unbatched_lj_calculator,
+        model=unbatched_lj_model,
         lr=0.01,
     )
 
@@ -75,7 +75,7 @@ def test_gradient_descent_optimizer(
 
 
 def test_unit_cell_fire_optimizer(
-    ar_sim_state: SimState, unbatched_lj_calculator: Any
+    ar_sim_state: SimState, unbatched_lj_model: Any
 ) -> None:
     """Test FIRE optimization of Ar FCC structure."""
     # perturb the structure
@@ -84,7 +84,7 @@ def test_unit_cell_fire_optimizer(
 
     # Initialize optimizer
     init_fn, update_fn = unit_cell_fire(
-        model=unbatched_lj_calculator,
+        model=unbatched_lj_model,
         dt_start=0.01,
         dt_max=0.1,
         n_min=5,
@@ -119,7 +119,7 @@ def test_unit_cell_fire_optimizer(
 
 
 def test_frechet_cell_fire_optimizer(
-    ar_sim_state: SimState, unbatched_lj_calculator: Any
+    ar_sim_state: SimState, unbatched_lj_model: Any
 ) -> None:
     """Test FIRE optimization of Ar FCC structure."""
     # perturb the structure
@@ -128,7 +128,7 @@ def test_frechet_cell_fire_optimizer(
 
     # Initialize optimizer
     init_fn, update_fn = frechet_cell_fire(
-        model=unbatched_lj_calculator,
+        model=unbatched_lj_model,
         dt_start=0.01,
         dt_max=0.1,
         n_min=5,
@@ -162,22 +162,20 @@ def test_frechet_cell_fire_optimizer(
     assert state.positions.shape == ar_sim_state.positions.shape
 
 
-def test_optimizer_convergence(
-    ar_sim_state: SimState, unbatched_lj_calculator: Any
-) -> None:
+def test_optimizer_convergence(ar_sim_state: SimState, unbatched_lj_model: Any) -> None:
     """Test that both optimizers can reach similar final states."""
     # perturb the structure
     ar_sim_state.positions[1][0] = 1.0
     ar_sim_state.cell = ar_sim_state.cell.squeeze(0)
     # Run FIRE
     fire_init, fire_update = fire(
-        model=unbatched_lj_calculator,
+        model=unbatched_lj_model,
         dt_start=0.01,
     )
 
     # Run GD
     gd_init, gd_update = gradient_descent(
-        model=unbatched_lj_calculator,
+        model=unbatched_lj_model,
         lr=0.01,
     )
 

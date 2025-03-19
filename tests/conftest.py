@@ -108,8 +108,8 @@ def ar_double_sim_state(ar_sim_state: SimState) -> SimState:
 
 
 @pytest.fixture
-def unbatched_lj_calculator(device: torch.device) -> UnbatchedLennardJonesModel:
-    """Create a Lennard-Jones calculator with reasonable parameters for Ar."""
+def unbatched_lj_model(device: torch.device) -> UnbatchedLennardJonesModel:
+    """Create a Lennard-Jones model with reasonable parameters for Ar."""
     return UnbatchedLennardJonesModel(
         use_neighbor_list=True,
         sigma=3.405,
@@ -123,8 +123,8 @@ def unbatched_lj_calculator(device: torch.device) -> UnbatchedLennardJonesModel:
 
 
 @pytest.fixture
-def lj_calculator(device: torch.device) -> LennardJonesModel:
-    """Create a Lennard-Jones calculator with reasonable parameters for Ar."""
+def lj_model(device: torch.device) -> LennardJonesModel:
+    """Create a Lennard-Jones model with reasonable parameters for Ar."""
     return LennardJonesModel(
         use_neighbor_list=True,
         sigma=3.405,
@@ -138,7 +138,7 @@ def lj_calculator(device: torch.device) -> LennardJonesModel:
 
 
 @pytest.fixture
-def torchsim_trajectory(si_sim_state: SimState, lj_calculator: Any, tmp_path: Path):
+def torchsim_trajectory(si_sim_state: SimState, lj_model: Any, tmp_path: Path):
     """Test NVE integration conserves energy."""
     # Initialize integrator
     kT = torch.tensor(300.0)  # Temperature in K
@@ -146,7 +146,7 @@ def torchsim_trajectory(si_sim_state: SimState, lj_calculator: Any, tmp_path: Pa
 
     state, update_fn = nve(
         **asdict(si_sim_state),
-        model=lj_calculator,
+        model=lj_model,
         dt=dt,
         kT=kT,
     )

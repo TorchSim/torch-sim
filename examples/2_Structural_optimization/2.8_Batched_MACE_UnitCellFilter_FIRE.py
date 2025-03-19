@@ -41,7 +41,6 @@ loaded_model = mace_mp(
 N_steps = 10 if os.getenv("CI") else 500
 
 # Set random seed for reproducibility
-PERIODIC = True
 rng = np.random.default_rng(seed=0)
 
 # Create diamond cubic Silicon
@@ -70,7 +69,6 @@ model = MaceModel(
     model=loaded_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
-    periodic=PERIODIC,
     compute_force=True,
     compute_stress=True,
     dtype=dtype,

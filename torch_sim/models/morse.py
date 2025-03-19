@@ -20,7 +20,6 @@ class MorseModel(torch.nn.Module, ModelInterface):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
-        periodic: bool = True,
         compute_force: bool = False,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
@@ -36,7 +35,6 @@ class MorseModel(torch.nn.Module, ModelInterface):
             alpha: Controls the width of the potential well
             device: Torch device to use for calculations
             dtype: Data type for torch tensors
-            periodic: Whether to use periodic boundary conditions
             compute_force: Whether to compute forces
             compute_stress: Whether to compute stress tensor
             per_atom_energies: Whether to return per-atom energies
@@ -52,7 +50,6 @@ class MorseModel(torch.nn.Module, ModelInterface):
         self._per_atom_energies = per_atom_energies
         self._per_atom_stresses = per_atom_stresses
         self.use_neighbor_list = use_neighbor_list
-        self.periodic = periodic
         # Convert parameters to tensors
         self.sigma = torch.tensor(sigma, dtype=self._dtype, device=self._device)
         self.cutoff = torch.tensor(
@@ -71,26 +68,25 @@ class MorseModel(torch.nn.Module, ModelInterface):
             Dictionary containing computed properties (energy, forces, stress, etc.)
         """
         if isinstance(state, dict):
-            state = SimState(
-                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
-            )
+            state = SimState(**state, masses=torch.ones_like(state["positions"]))
 
         positions = state.positions
         cell = state.cell
         cell = cell.squeeze()
+        pbc = state.pbc
 
         if self.use_neighbor_list:
             mapping, shifts = vesin_nl_ts(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=pbc,
                 cutoff=self.cutoff,
                 sort_id=False,
             )
             dr_vec, distances = get_pair_displacements(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=pbc,
                 pairs=mapping,
                 shifts=shifts,
             )
@@ -98,7 +94,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
             dr_vec, distances = get_pair_displacements(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=pbc,
             )
             mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self._device)
             distances = distances.masked_fill(mask, float("inf"))
@@ -161,11 +157,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
     def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute energies and forces."""
         if isinstance(state, dict):
-            state = SimState(
-                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
-            )
-        elif state.pbc != self.periodic:
-            raise ValueError("PBC mismatch between model and state")
+            state = SimState(**state, masses=torch.ones_like(state["positions"]))
 
         if state.batch is None and state.cell.shape[0] > 1:
             raise ValueError("Batch can only be inferred for batch size 1.")

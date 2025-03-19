@@ -123,7 +123,7 @@ def cu_fcc_system() -> tuple[torch.Tensor, torch.Tensor]:
 
 
 @pytest.fixture
-def calculators(
+def models(
     cu_fcc_system: tuple[torch.Tensor, torch.Tensor],
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create both neighbor list and direct calculators with Copper parameters."""
@@ -134,62 +134,61 @@ def calculators(
         "epsilon": 0.436,  # eV, dissociation energy
         "alpha": 1.359,  # Å^-1, controls potential well width
         "dtype": torch.float64,
-        "periodic": True,
         "compute_force": True,
         "compute_stress": True,
     }
 
     cutoff = 2.5 * 2.55  # Similar scaling as LJ cutoff
-    calc_nl = MorseModel(use_neighbor_list=True, cutoff=cutoff, **calc_params)
-    calc_direct = MorseModel(use_neighbor_list=False, cutoff=cutoff, **calc_params)
+    model_nl = MorseModel(use_neighbor_list=True, cutoff=cutoff, **calc_params)
+    model_direct = MorseModel(use_neighbor_list=False, cutoff=cutoff, **calc_params)
 
     state = dict(
         positions=cu_fcc_system[0],
         cell=cu_fcc_system[1].unsqueeze(0),
         atomic_numbers=torch.ones(len(cu_fcc_system[0]), dtype=torch.int32),
     )
-    return calc_nl(state), calc_direct(state)
+    return model_nl(state), model_direct(state)
 
 
 def test_energy_match(
-    calculators: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
+    models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
 ) -> None:
     """Test that total energy matches between neighbor list and direct calculations."""
-    results_nl, results_direct = calculators
+    results_nl, results_direct = models
     assert torch.allclose(results_nl["energy"], results_direct["energy"], rtol=1e-10)
 
 
 def test_forces_match(
-    calculators: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
+    models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
 ) -> None:
     """Test that forces match between neighbor list and direct calculations."""
-    results_nl, results_direct = calculators
+    results_nl, results_direct = models
     assert torch.allclose(results_nl["forces"], results_direct["forces"], rtol=1e-10)
 
 
 def test_stress_match(
-    calculators: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
+    models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
 ) -> None:
     """Test that stress tensors match between neighbor list and direct calculations."""
-    results_nl, results_direct = calculators
+    results_nl, results_direct = models
     assert torch.allclose(results_nl["stress"], results_direct["stress"], rtol=1e-10)
 
 
 def test_force_conservation(
-    calculators: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
+    models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
 ) -> None:
     """Test that forces sum to zero (Newton's third law)."""
-    results_nl, _ = calculators
+    results_nl, _ = models
     assert torch.allclose(
         results_nl["forces"].sum(dim=0), torch.zeros(3, dtype=torch.float64), atol=1e-10
     )
 
 
 def test_stress_tensor_symmetry(
-    calculators: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
+    models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
 ) -> None:
     """Test that stress tensor is symmetric."""
-    results_nl, _ = calculators
+    results_nl, _ = models
     assert torch.allclose(
         results_nl["stress"].squeeze(), results_nl["stress"].squeeze().T, atol=1e-10
     )

@@ -51,7 +51,7 @@ def test_split_state(si_double_sim_state: SimState) -> None:
 
 
 def test_chunking_auto_batcher(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test ChunkingAutoBatcher with different states."""
     # Create a list of states with different sizes
@@ -59,7 +59,7 @@ def test_chunking_auto_batcher(
 
     # Initialize the batcher with a fixed max_metric to avoid GPU memory testing
     batcher = ChunkingAutoBatcher(
-        model=lj_calculator,
+        model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260.0,  # Set a small value to force multiple batches
     )
@@ -90,13 +90,13 @@ def test_chunking_auto_batcher(
 
 
 def test_chunking_auto_batcher_with_indices(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test ChunkingAutoBatcher with return_indices=True."""
     states = [si_sim_state, fe_fcc_sim_state]
 
     batcher = ChunkingAutoBatcher(
-        model=lj_calculator,
+        model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260.0,
         return_indices=True,
@@ -117,7 +117,7 @@ def test_chunking_auto_batcher_with_indices(
 
 
 def test_chunking_auto_batcher_restore_order_with_split_states(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test ChunkingAutoBatcher's restore_original_order method with split states."""
     # Create a list of states with different sizes
@@ -125,7 +125,7 @@ def test_chunking_auto_batcher_restore_order_with_split_states(
 
     # Initialize the batcher with a fixed max_metric to avoid GPU memory testing
     batcher = ChunkingAutoBatcher(
-        model=lj_calculator,
+        model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260.0,  # Set a small value to force multiple batches
     )
@@ -158,7 +158,7 @@ def test_chunking_auto_batcher_restore_order_with_split_states(
 
 
 def test_hot_swapping_max_metric_too_small(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test HotSwappingAutoBatcher with different states."""
     # Create a list of states
@@ -166,7 +166,7 @@ def test_hot_swapping_max_metric_too_small(
 
     # Initialize the batcher with a fixed max_metric
     batcher = HotSwappingAutoBatcher(
-        model=lj_calculator,
+        model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=1.0,  # Set a small value to force multiple batches
     )
@@ -176,7 +176,7 @@ def test_hot_swapping_max_metric_too_small(
 
 
 def test_hot_swapping_auto_batcher(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test HotSwappingAutoBatcher with different states."""
     # Create a list of states
@@ -184,7 +184,7 @@ def test_hot_swapping_auto_batcher(
 
     # Initialize the batcher with a fixed max_metric
     batcher = HotSwappingAutoBatcher(
-        model=lj_calculator,
+        model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260,  # Set a small value to force multiple batches
         return_indices=True,
@@ -222,7 +222,7 @@ def test_hot_swapping_auto_batcher(
 
 
 def test_determine_max_batch_size_fibonacci(
-    si_sim_state: SimState, lj_calculator: LennardJonesModel, monkeypatch: Any
+    si_sim_state: SimState, lj_model: LennardJonesModel, monkeypatch: Any
 ) -> None:
     """Test that determine_max_batch_size uses Fibonacci sequence correctly."""
 
@@ -235,7 +235,7 @@ def test_determine_max_batch_size_fibonacci(
     )
 
     # Test with a small max_atoms value to limit the sequence
-    max_size = determine_max_batch_size(si_sim_state, lj_calculator, max_atoms=10)
+    max_size = determine_max_batch_size(si_sim_state, lj_model, max_atoms=10)
 
     # The Fibonacci sequence up to 10 is [1, 2, 3, 5, 8, 13]
     # Since we're not triggering OOM errors with our mock, it should
@@ -244,13 +244,13 @@ def test_determine_max_batch_size_fibonacci(
 
 
 def test_hot_swapping_auto_batcher_restore_order(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test HotSwappingAutoBatcher's restore_original_order method."""
     states = [si_sim_state, fe_fcc_sim_state]
 
     batcher = HotSwappingAutoBatcher(
-        model=lj_calculator,
+        model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260.0,
     )
@@ -290,9 +290,9 @@ def test_hot_swapping_auto_batcher_restore_order(
 
 
 def test_hot_swapping_with_fire(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
-    fire_init, fire_update = unit_cell_fire(lj_calculator)
+    fire_init, fire_update = unit_cell_fire(lj_model)
 
     si_fire_state = fire_init(si_sim_state)
     fe_fire_state = fire_init(fe_fcc_sim_state)
@@ -303,7 +303,7 @@ def test_hot_swapping_with_fire(
         state.positions += torch.randn_like(state.positions) * 0.01
 
     batcher = HotSwappingAutoBatcher(
-        model=lj_calculator,
+        model=lj_model,
         memory_scales_with="n_atoms",
         # max_metric=400_000,
         max_memory_scaler=600,
@@ -343,9 +343,9 @@ def test_hot_swapping_with_fire(
 
 
 def test_chunking_auto_batcher_with_fire(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_calculator: LennardJonesModel
+    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
-    fire_init, fire_update = unit_cell_fire(lj_calculator)
+    fire_init, fire_update = unit_cell_fire(lj_model)
 
     si_fire_state = fire_init(si_sim_state)
     fe_fire_state = fire_init(fe_fcc_sim_state)
@@ -360,7 +360,7 @@ def test_chunking_auto_batcher_with_fire(
     optimal_n_batches = len(optimal_batches)
 
     batcher = ChunkingAutoBatcher(
-        model=lj_calculator,
+        model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=400,
     )
@@ -386,7 +386,7 @@ def test_chunking_auto_batcher_with_fire(
 def test_hot_swapping_max_iterations(
     si_sim_state: SimState,
     fe_fcc_sim_state: SimState,
-    lj_calculator: LennardJonesModel,
+    lj_model: LennardJonesModel,
 ) -> None:
     """Test HotSwappingAutoBatcher with max_iterations limit."""
     # Create states that won't naturally converge
@@ -395,7 +395,7 @@ def test_hot_swapping_max_iterations(
     # Set max_attempts to a small value to ensure quick termination
     max_attempts = 3
     batcher = HotSwappingAutoBatcher(
-        model=lj_calculator,
+        model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=800.0,
         max_iterations=max_attempts,

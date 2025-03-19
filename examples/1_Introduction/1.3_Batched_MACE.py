@@ -35,7 +35,6 @@ loaded_model = mace_mp(
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 atoms_list = [si_dc, si_dc]
-PERIODIC = True
 
 batched_model = MaceModel(
     # Pass the raw model
@@ -44,7 +43,6 @@ batched_model = MaceModel(
     # model=compiled_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
-    periodic=PERIODIC,
     compute_force=True,
     compute_stress=True,
     dtype=dtype,
@@ -84,7 +82,13 @@ print(f"Batch: {batch.shape}")
 
 # Now we can pass them to the model
 results = batched_model(
-    dict(positions=positions, cell=cell, atomic_numbers=atomic_numbers, batch=batch)
+    dict(
+        positions=positions,
+        cell=cell,
+        atomic_numbers=atomic_numbers,
+        batch=batch,
+        pbc=True,
+    )
 )
 
 # The energy has shape (n_batches,) as the structures in a batch

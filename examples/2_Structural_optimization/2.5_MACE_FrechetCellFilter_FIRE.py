@@ -40,8 +40,6 @@ loaded_model = mace_mp(
 # Number of steps to run
 N_steps = 10 if os.getenv("CI") else 500
 
-PERIODIC = True
-
 # Create diamond cubic Silicon with random displacements and a 5% volume compression
 rng = np.random.default_rng(seed=0)
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
@@ -55,7 +53,6 @@ model = UnbatchedMaceModel(
     model=loaded_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
-    periodic=PERIODIC,
     compute_force=True,
     compute_stress=True,
     dtype=dtype,

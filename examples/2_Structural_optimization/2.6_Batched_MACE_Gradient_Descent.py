@@ -39,8 +39,6 @@ loaded_model = mace_mp(
 # Number of steps to run
 N_steps = 10 if os.getenv("CI") else 500
 
-PERIODIC = True
-
 # Set random seed for reproducibility
 rng = np.random.default_rng(seed=0)
 
@@ -59,7 +57,6 @@ batched_model = MaceModel(
     model=loaded_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
-    periodic=PERIODIC,
     compute_force=True,
     compute_stress=True,
     dtype=dtype,

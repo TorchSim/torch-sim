@@ -109,13 +109,11 @@ def test_validate_permutation(batched_diverse_state: SimState):
 
 def test_monte_carlo(
     batched_diverse_state: SimState,
-    lj_calculator: torch.nn.Module,
+    lj_model: torch.nn.Module,
 ):
     """Test the monte_carlo function that returns a step function and initial state."""
     # Call monte_carlo to get the initial state and step function
-    init_state_fn, monte_carlo_step_fn = swap_monte_carlo(
-        model=lj_calculator, kT=1.0, seed=42
-    )
+    init_state_fn, monte_carlo_step_fn = swap_monte_carlo(model=lj_model, kT=1.0, seed=42)
     initial_state = init_state_fn(batched_diverse_state)
 
     # Verify the returned values

@@ -145,10 +145,10 @@ def ar_sim_state_large(device: torch.device) -> SimState:
 
 
 @pytest.fixture
-def calculators(
+def models(
     ar_sim_state_large: SimState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
-    """Create both neighbor list and direct calculators with Argon parameters."""
+    """Create both neighbor list and direct models with Argon parameters."""
     calc_params = {
         "sigma": 3.405,  # Å, typical for Ar
         "epsilon": 0.0104,  # eV, typical for Ar
@@ -159,63 +159,63 @@ def calculators(
     }
 
     cutoff = 2.5 * 3.405  # Standard LJ cutoff * sigma
-    calc_nl = UnbatchedLennardJonesModel(
+    model_nl = UnbatchedLennardJonesModel(
         use_neighbor_list=True, cutoff=cutoff, **calc_params
     )
-    calc_direct = UnbatchedLennardJonesModel(
+    model_direct = UnbatchedLennardJonesModel(
         use_neighbor_list=False, cutoff=cutoff, **calc_params
     )
 
-    return calc_nl(ar_sim_state_large), calc_direct(ar_sim_state_large)
+    return model_nl(ar_sim_state_large), model_direct(ar_sim_state_large)
 
 
 def test_energy_match(
-    calculators: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
+    models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
 ) -> None:
     """Test that total energy matches between neighbor list and direct calculations."""
-    results_nl, results_direct = calculators
+    results_nl, results_direct = models
     assert torch.allclose(results_nl["energy"], results_direct["energy"], rtol=1e-10)
 
 
 def test_forces_match(
-    calculators: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
+    models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
 ) -> None:
     """Test that forces match between neighbor list and direct calculations."""
-    results_nl, results_direct = calculators
+    results_nl, results_direct = models
     assert torch.allclose(results_nl["forces"], results_direct["forces"], rtol=1e-10)
 
 
 def test_stress_match(
-    calculators: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
+    models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
 ) -> None:
     """Test that stress tensors match between neighbor list and direct calculations."""
-    results_nl, results_direct = calculators
+    results_nl, results_direct = models
     assert torch.allclose(results_nl["stress"], results_direct["stress"], rtol=1e-10)
 
 
 def test_force_conservation(
-    calculators: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
+    models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
 ) -> None:
     """Test that forces sum to zero."""
-    results_nl, _ = calculators
+    results_nl, _ = models
     assert torch.allclose(
         results_nl["forces"].sum(dim=0), torch.zeros(3, dtype=torch.float64), atol=1e-10
     )
 
 
 def test_stress_tensor_symmetry(
-    calculators: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
+    models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
 ) -> None:
     """Test that stress tensor is symmetric."""
-    results_nl, _ = calculators
+    results_nl, _ = models
     # select trailing two dimensions
     stress_tensor = results_nl["stress"][0]
     assert torch.allclose(stress_tensor, stress_tensor.T, atol=1e-10)
 
 
 def test_validate_model_outputs(
-    lj_calculator: UnbatchedLennardJonesModel,
+    lj_model: UnbatchedLennardJonesModel,
     device: torch.device,
 ) -> None:
     """Test that the model outputs are valid."""
-    validate_model_outputs(lj_calculator, device, torch.float64)
+    validate_model_outputs(lj_model, device, torch.float64)

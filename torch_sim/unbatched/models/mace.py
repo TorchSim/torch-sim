@@ -20,7 +20,6 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         model (torch.nn.Module): The MACE model.
         device (str): The device (CPU or GPU) on which computations are performed.
         neighbor_list_fn (Callable): neighbor list function used for atom interactions.
-        periodic (bool): Whether to use periodic boundary conditions.
         default_dtype (torch.dtype): The default data type for tensor operations.
         r_max (float): The maximum cutoff radius for atomic interactions.
         z_table (utils.AtomicNumberTable): Table for converting between
@@ -33,7 +32,6 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         neighbor_list_fn: Callable,
         *,
         device: torch.device | None = None,
-        periodic: bool = True,
         compute_force: bool = False,
         compute_stress: bool = False,
         dtype: torch.dtype = torch.float32,
@@ -48,8 +46,6 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
             device (str | None): The device to run computations on ('cuda', 'cpu',
                 or None for auto-detection).
             neighbor_list_fn (Callable): The neighbor list function to use.
-            periodic (bool, optional): Whether to use periodic boundary conditions.
-                Defaults to True.
             compute_force (bool, optional): Whether to compute forces.
                 Defaults to False.
             compute_stress (bool, optional): Whether to compute stress.
@@ -65,7 +61,6 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         self._compute_force = compute_force
         self._compute_stress = compute_stress
         self.neighbor_list_fn = neighbor_list_fn
-        self.periodic = periodic
 
         torch.set_default_dtype(self._dtype)
 
@@ -89,10 +84,6 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         self.model.atomic_numbers = torch.tensor(
             self.model.atomic_numbers.clone(), device=self.device
         )
-
-        # setup system boundary conditions
-        pbc = [periodic] * 3
-        self.pbc = torch.tensor([pbc], device=self.device)
 
         if atomic_numbers is not None:
             self.ptr, self.batch, self.node_attrs = self.compute_atomic_numbers(
@@ -144,7 +135,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         )
         return ptr, batch, node_attrs
 
-    def forward(  # noqa: C901
+    def forward(
         self,
         state: SimState | StateDict,
     ) -> dict[str, torch.Tensor]:
@@ -161,11 +152,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
                 forces, and stress of the system.
         """
         if isinstance(state, dict):
-            state = SimState(
-                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
-            )
-        elif state.pbc != self.periodic:
-            raise ValueError("PBC mismatch between model and state")
+            state = SimState(**state, masses=torch.ones_like(state["positions"]))
 
         if state.atomic_numbers is None and not self.atomic_numbers_in_init:
             raise ValueError(
@@ -191,6 +178,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
 
         cell = state.cell
         positions = state.positions
+        pbc = state.pbc
 
         if cell.dim() == 3:  # Check if there is an extra batch dimension
             cell = cell.squeeze(0)  # Squeeze the first dimension
@@ -199,7 +187,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         mapping, shifts_idx = self.neighbor_list_fn(
             positions=positions,
             cell=cell,
-            pbc=self.periodic,
+            pbc=pbc,
             cutoff=self.r_max,
         )
         edge_index = torch.stack((mapping[0], mapping[1]))
@@ -211,7 +199,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
                 ptr=self.ptr,
                 node_attrs=self.node_attrs,
                 batch=self.batch,
-                pbc=self.pbc,
+                pbc=pbc,
                 cell=cell,
                 positions=positions,
                 edge_index=edge_index,

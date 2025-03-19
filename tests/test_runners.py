@@ -14,7 +14,7 @@ from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 from torch_sim.units import UnitSystem
 
 
-def test_integrate_nve(ar_sim_state: SimState, lj_calculator: Any, tmp_path: Any) -> None:
+def test_integrate_nve(ar_sim_state: SimState, lj_model: Any, tmp_path: Any) -> None:
     """Test NVE integration with LJ potential."""
     trajectory_file = tmp_path / "nve.h5md"
     reporter = TrajectoryReporter(
@@ -27,7 +27,7 @@ def test_integrate_nve(ar_sim_state: SimState, lj_calculator: Any, tmp_path: Any
 
     final_state = integrate(
         system=ar_sim_state,
-        model=lj_calculator,
+        model=lj_model,
         integrator=nve,
         n_steps=10,
         temperature=100.0,  # K
@@ -47,7 +47,7 @@ def test_integrate_nve(ar_sim_state: SimState, lj_calculator: Any, tmp_path: Any
 
 
 def test_integrate_single_nvt(
-    ar_sim_state: SimState, lj_calculator: Any, tmp_path: Any
+    ar_sim_state: SimState, lj_model: Any, tmp_path: Any
 ) -> None:
     """Test NVT integration with LJ potential."""
     trajectory_file = tmp_path / "nvt.h5md"
@@ -61,7 +61,7 @@ def test_integrate_single_nvt(
 
     final_state = integrate(
         system=ar_sim_state,
-        model=lj_calculator,
+        model=lj_model,
         integrator=nvt_langevin,
         n_steps=10,
         temperature=100.0,  # K
@@ -81,11 +81,11 @@ def test_integrate_single_nvt(
         assert std_energy / np.mean(energies) < 0.2  # 20% tolerance for NVT
 
 
-def test_integrate_double_nvt(ar_double_sim_state: SimState, lj_calculator: Any) -> None:
+def test_integrate_double_nvt(ar_double_sim_state: SimState, lj_model: Any) -> None:
     """Test NVT integration with LJ potential."""
     final_state = integrate(
         system=ar_double_sim_state,
-        model=lj_calculator,
+        model=lj_model,
         integrator=nvt_langevin,
         n_steps=10,
         temperature=100.0,  # K
@@ -98,7 +98,7 @@ def test_integrate_double_nvt(ar_double_sim_state: SimState, lj_calculator: Any)
 
 
 def test_integrate_double_nvt_with_reporter(
-    ar_double_sim_state: SimState, lj_calculator: Any, tmp_path: Any
+    ar_double_sim_state: SimState, lj_model: Any, tmp_path: Any
 ) -> None:
     """Test NVT integration with LJ potential."""
     trajectory_files = [tmp_path / "nvt_0.h5md", tmp_path / "nvt_1.h5md"]
@@ -112,7 +112,7 @@ def test_integrate_double_nvt_with_reporter(
 
     final_state = integrate(
         system=ar_double_sim_state,
-        model=lj_calculator,
+        model=lj_model,
         integrator=nvt_langevin,
         n_steps=10,
         temperature=100.0,  # K
@@ -138,14 +138,14 @@ def test_integrate_double_nvt_with_reporter(
 def test_integrate_many_nvt(
     ar_sim_state: SimState,
     fe_fcc_sim_state: SimState,
-    lj_calculator: Any,
+    lj_model: Any,
     tmp_path: Any,
 ) -> None:
     """Test NVT integration with LJ potential."""
     triple_state = initialize_state(
         [ar_sim_state, ar_sim_state, fe_fcc_sim_state],
-        lj_calculator.device,
-        lj_calculator.dtype,
+        lj_model.device,
+        lj_model.dtype,
     )
     trajectory_files = [
         tmp_path / f"nvt_{batch}.h5md" for batch in range(triple_state.n_batches)
@@ -160,7 +160,7 @@ def test_integrate_many_nvt(
 
     final_state = integrate(
         system=triple_state,
-        model=lj_calculator,
+        model=lj_model,
         integrator=nve,
         n_steps=10,
         temperature=300.0,  # K
@@ -181,23 +181,23 @@ def test_integrate_many_nvt(
 def test_integrate_with_autobatcher(
     ar_sim_state: SimState,
     fe_fcc_sim_state: SimState,
-    lj_calculator: Any,
+    lj_model: Any,
 ) -> None:
     """Test integration with autobatcher."""
     states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
     triple_state = initialize_state(
         states,
-        lj_calculator.device,
-        lj_calculator.dtype,
+        lj_model.device,
+        lj_model.dtype,
     )
     autobatcher = ChunkingAutoBatcher(
-        model=lj_calculator,
+        model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260,
     )
     final_state = integrate(
         system=triple_state,
-        model=lj_calculator,
+        model=lj_model,
         integrator=nve,
         n_steps=10,
         temperature=300.0,
@@ -215,24 +215,24 @@ def test_integrate_with_autobatcher(
 def test_integrate_with_autobatcher_and_reporting(
     ar_sim_state: SimState,
     fe_fcc_sim_state: SimState,
-    lj_calculator: Any,
+    lj_model: Any,
     tmp_path: Any,
 ) -> None:
     """Test integration with autobatcher."""
     states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
     triple_state = initialize_state(
         states,
-        lj_calculator.device,
-        lj_calculator.dtype,
+        lj_model.device,
+        lj_model.dtype,
     )
     autobatcher = ChunkingAutoBatcher(
-        model=lj_calculator,
+        model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260,
     )
     final_state = integrate(
         system=triple_state,
-        model=lj_calculator,
+        model=lj_model,
         integrator=nve,
         n_steps=10,
         temperature=300.0,
@@ -249,7 +249,7 @@ def test_integrate_with_autobatcher_and_reporting(
     )
     final_state = integrate(
         system=triple_state,
-        model=lj_calculator,
+        model=lj_model,
         integrator=nve,
         n_steps=10,
         temperature=300.0,
@@ -280,7 +280,7 @@ def test_integrate_with_autobatcher_and_reporting(
         assert torch.any(final_state.positions != init_state.positions)
 
 
-def test_optimize_fire(ar_sim_state: SimState, lj_calculator: Any, tmp_path: Any) -> None:
+def test_optimize_fire(ar_sim_state: SimState, lj_model: Any, tmp_path: Any) -> None:
     """Test FIRE optimization with LJ potential."""
     trajectory_files = [tmp_path / "opt.h5md"]
     reporter = TrajectoryReporter(
@@ -293,7 +293,7 @@ def test_optimize_fire(ar_sim_state: SimState, lj_calculator: Any, tmp_path: Any
 
     final_state = optimize(
         system=ar_sim_state,
-        model=lj_calculator,
+        model=lj_model,
         optimizer=unit_cell_fire,
         convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
         unit_system=UnitSystem.metal,
@@ -311,7 +311,7 @@ def test_optimize_fire(ar_sim_state: SimState, lj_calculator: Any, tmp_path: Any
 
 
 def test_default_converged_fn(
-    ar_sim_state: SimState, lj_calculator: Any, tmp_path: Any
+    ar_sim_state: SimState, lj_model: Any, tmp_path: Any
 ) -> None:
     """Test default converged function."""
     ar_sim_state.positions += torch.randn_like(ar_sim_state.positions) * 0.1
@@ -326,7 +326,7 @@ def test_default_converged_fn(
 
     final_state = optimize(
         system=ar_sim_state,
-        model=lj_calculator,
+        model=lj_model,
         optimizer=unit_cell_fire,
         trajectory_reporter=reporter,
     )
@@ -340,7 +340,7 @@ def test_default_converged_fn(
 
 def test_batched_optimize_fire(
     ar_double_sim_state: SimState,
-    lj_calculator: Any,
+    lj_model: Any,
     tmp_path: Any,
 ) -> None:
     """Test batched FIRE optimization with LJ potential."""
@@ -357,7 +357,7 @@ def test_batched_optimize_fire(
 
     final_state = optimize(
         system=ar_double_sim_state,
-        model=lj_calculator,
+        model=lj_model,
         optimizer=unit_cell_fire,
         convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
         unit_system=UnitSystem.metal,
@@ -370,23 +370,23 @@ def test_batched_optimize_fire(
 def test_optimize_with_autobatcher(
     ar_sim_state: SimState,
     fe_fcc_sim_state: SimState,
-    lj_calculator: Any,
+    lj_model: Any,
 ) -> None:
     """Test optimize with autobatcher."""
     states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
     triple_state = initialize_state(
         states,
-        lj_calculator.device,
-        lj_calculator.dtype,
+        lj_model.device,
+        lj_model.dtype,
     )
     autobatcher = HotSwappingAutoBatcher(
-        model=lj_calculator,
+        model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260,
     )
     final_state = optimize(
         system=triple_state,
-        model=lj_calculator,
+        model=lj_model,
         optimizer=unit_cell_fire,
         convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
         autobatcher=autobatcher,
@@ -402,20 +402,20 @@ def test_optimize_with_autobatcher(
 def test_optimize_with_autobatcher_and_reporting(
     ar_sim_state: SimState,
     fe_fcc_sim_state: SimState,
-    lj_calculator: Any,
+    lj_model: Any,
     tmp_path: Any,
 ) -> None:
     """Test optimize with autobatcher and reporting."""
     states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
     triple_state = initialize_state(
         states,
-        lj_calculator.device,
-        lj_calculator.dtype,
+        lj_model.device,
+        lj_model.dtype,
     )
     triple_state.positions += torch.randn_like(triple_state.positions) * 0.1
 
     autobatcher = HotSwappingAutoBatcher(
-        model=lj_calculator,
+        model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260,
     )
@@ -431,7 +431,7 @@ def test_optimize_with_autobatcher_and_reporting(
 
     final_state = optimize(
         system=triple_state,
-        model=lj_calculator,
+        model=lj_model,
         optimizer=unit_cell_fire,
         convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
         trajectory_reporter=reporter,
@@ -466,7 +466,7 @@ def test_optimize_with_autobatcher_and_reporting(
 def test_integrate_with_default_autobatcher(
     ar_sim_state: SimState,
     fe_fcc_sim_state: SimState,
-    lj_calculator: LennardJonesModel,
+    lj_model: LennardJonesModel,
     monkeypatch: Any,
 ) -> None:
     """Test integration with autobatcher."""
@@ -481,13 +481,13 @@ def test_integrate_with_default_autobatcher(
     states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
     triple_state = initialize_state(
         states,
-        lj_calculator.device,
-        lj_calculator.dtype,
+        lj_model.device,
+        lj_model.dtype,
     )
 
     final_state = integrate(
         system=triple_state,
-        model=lj_calculator,
+        model=lj_model,
         integrator=nve,
         n_steps=10,
         temperature=300.0,
@@ -506,7 +506,7 @@ def test_integrate_with_default_autobatcher(
 def test_optimize_with_default_autobatcher(
     ar_sim_state: SimState,
     fe_fcc_sim_state: SimState,
-    lj_calculator: LennardJonesModel,
+    lj_model: LennardJonesModel,
     monkeypatch: Any,
 ) -> None:
     """Test optimize with autobatcher."""
@@ -521,13 +521,13 @@ def test_optimize_with_default_autobatcher(
     states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
     triple_state = initialize_state(
         states,
-        lj_calculator.device,
-        lj_calculator.dtype,
+        lj_model.device,
+        lj_model.dtype,
     )
 
     final_state = optimize(
         system=triple_state,
-        model=lj_calculator,
+        model=lj_model,
         optimizer=unit_cell_fire,
         convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
         autobatcher=True,

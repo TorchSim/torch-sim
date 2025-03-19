@@ -8,7 +8,6 @@ from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 # Set up the device and data type
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
-PERIODIC = True  # Flag to use periodic boundary conditions
 
 # Create face-centered cubic (FCC) Argon
 # 5.26 Å is a typical lattice constant for Ar
@@ -74,6 +73,7 @@ state = dict(
     positions=positions,
     cell=cell,
     atomic_numbers=atomic_numbers,
+    pbc=True,
 )
 # Run the simulation and get results
 results = model(state)

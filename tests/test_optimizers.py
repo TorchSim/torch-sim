@@ -12,7 +12,7 @@ from torch_sim.state import SimState, concatenate_states
 
 
 def test_gradient_descent_optimization(
-    ar_sim_state: SimState, lj_calculator: torch.nn.Module
+    ar_sim_state: SimState, lj_model: torch.nn.Module
 ) -> None:
     """Test that the Gradient Descent optimizer actually minimizes energy."""
     # Add some random displacement to positions
@@ -25,7 +25,7 @@ def test_gradient_descent_optimization(
 
     # Initialize Gradient Descent optimizer
     init_fn, update_fn = gradient_descent(
-        model=lj_calculator,
+        model=lj_model,
         lr=0.01,
     )
 
@@ -53,7 +53,7 @@ def test_gradient_descent_optimization(
 
 
 def test_unit_cell_gradient_descent_optimization(
-    ar_sim_state: SimState, lj_calculator: torch.nn.Module
+    ar_sim_state: SimState, lj_model: torch.nn.Module
 ) -> None:
     """Test that the Gradient Descent optimizer actually minimizes energy."""
     # Add some random displacement to positions
@@ -66,7 +66,7 @@ def test_unit_cell_gradient_descent_optimization(
 
     # Initialize Gradient Descent optimizer
     init_fn, update_fn = unit_cell_gradient_descent(
-        model=lj_calculator,
+        model=lj_model,
         positions_lr=0.01,
         cell_lr=0.1,
     )
@@ -100,7 +100,7 @@ def test_unit_cell_gradient_descent_optimization(
 
 
 def test_unit_cell_fire_optimization(
-    ar_sim_state: SimState, lj_calculator: torch.nn.Module
+    ar_sim_state: SimState, lj_model: torch.nn.Module
 ) -> None:
     """Test that the FIRE optimizer actually minimizes energy."""
     # Add some random displacement to positions
@@ -113,7 +113,7 @@ def test_unit_cell_fire_optimization(
 
     # Initialize FIRE optimizer
     init_fn, update_fn = unit_cell_fire(
-        model=lj_calculator,
+        model=lj_model,
         dt_max=0.3,
         dt_start=0.1,
     )
@@ -147,7 +147,7 @@ def test_unit_cell_fire_optimization(
 
 
 def test_unit_cell_frechet_fire_optimization(
-    ar_sim_state: SimState, lj_calculator: torch.nn.Module
+    ar_sim_state: SimState, lj_model: torch.nn.Module
 ) -> None:
     """Test that the FIRE optimizer actually minimizes energy."""
     # Add some random displacement to positions
@@ -160,7 +160,7 @@ def test_unit_cell_frechet_fire_optimization(
 
     # Initialize FIRE optimizer
     init_fn, update_fn = frechet_cell_fire(
-        model=lj_calculator,
+        model=lj_model,
         dt_max=0.3,
         dt_start=0.1,
     )
@@ -194,7 +194,7 @@ def test_unit_cell_frechet_fire_optimization(
 
 
 def test_unit_cell_fire_multi_batch(
-    ar_sim_state: SimState, lj_calculator: torch.nn.Module
+    ar_sim_state: SimState, lj_model: torch.nn.Module
 ) -> None:
     """Test FIRE optimization with multiple batches."""
     # Create a multi-batch system by duplicating ar_fcc_state
@@ -222,7 +222,7 @@ def test_unit_cell_fire_multi_batch(
 
     # Initialize FIRE optimizer
     init_fn, update_fn = unit_cell_fire(
-        model=lj_calculator,
+        model=lj_model,
         dt_max=0.3,
         dt_start=0.1,
     )
@@ -283,7 +283,7 @@ def test_unit_cell_fire_multi_batch(
 
 
 def test_unit_cell_fire_batch_consistency(
-    ar_sim_state: SimState, lj_calculator: torch.nn.Module
+    ar_sim_state: SimState, lj_model: torch.nn.Module
 ) -> None:
     """Test batched FIRE optimization is consistent with individual optimizations."""
     generator = torch.Generator(device=ar_sim_state.device)
@@ -313,7 +313,7 @@ def test_unit_cell_fire_batch_consistency(
 
     for state in [ar_sim_state_1, ar_sim_state_2]:
         init_fn, update_fn = unit_cell_fire(
-            model=lj_calculator,
+            model=lj_model,
             dt_max=0.3,
             dt_start=0.1,
         )
@@ -343,7 +343,7 @@ def test_unit_cell_fire_batch_consistency(
     )
 
     init_fn, batch_update_fn = unit_cell_fire(
-        model=lj_calculator,
+        model=lj_model,
         dt_max=0.3,
         dt_start=0.1,
     )
@@ -375,7 +375,7 @@ def test_unit_cell_fire_batch_consistency(
 
 
 def test_unit_cell_frechet_fire_multi_batch(
-    ar_sim_state: SimState, lj_calculator: torch.nn.Module
+    ar_sim_state: SimState, lj_model: torch.nn.Module
 ) -> None:
     """Test FIRE optimization with multiple batches."""
     # Create a multi-batch system by duplicating ar_fcc_state
@@ -403,7 +403,7 @@ def test_unit_cell_frechet_fire_multi_batch(
 
     # Initialize FIRE optimizer
     init_fn, update_fn = frechet_cell_fire(
-        model=lj_calculator,
+        model=lj_model,
         dt_max=0.3,
         dt_start=0.1,
     )
@@ -464,7 +464,7 @@ def test_unit_cell_frechet_fire_multi_batch(
 
 
 def test_unit_cell_frechet_fire_batch_consistency(
-    ar_sim_state: SimState, lj_calculator: torch.nn.Module
+    ar_sim_state: SimState, lj_model: torch.nn.Module
 ) -> None:
     """Test batched FIRE optimization is consistent with individual optimizations."""
     generator = torch.Generator(device=ar_sim_state.device)
@@ -494,7 +494,7 @@ def test_unit_cell_frechet_fire_batch_consistency(
 
     for state in [ar_sim_state_1, ar_sim_state_2]:
         init_fn, update_fn = frechet_cell_fire(
-            model=lj_calculator,
+            model=lj_model,
             dt_max=0.3,
             dt_start=0.1,
         )
@@ -524,7 +524,7 @@ def test_unit_cell_frechet_fire_batch_consistency(
     )
 
     init_fn, batch_update_fn = frechet_cell_fire(
-        model=lj_calculator,
+        model=lj_model,
         dt_max=0.3,
         dt_start=0.1,
     )

@@ -36,7 +36,6 @@ def torchsim_mace_model(device: torch.device) -> UnbatchedMaceModel:
         model=mace_model,
         device=device,
         neighbor_list_fn=wrapping_nl,
-        periodic=True,
         dtype=torch.float32,
         compute_force=True,
     )
@@ -57,7 +56,6 @@ def torchsim_batched_mace_model(device: torch.device) -> MaceModel:
     return MaceModel(
         model=mace_model,
         device=device,
-        periodic=True,
         dtype=torch.float32,
         compute_force=True,
     )
@@ -137,7 +135,6 @@ def test_mace_dtype_working(
     model = MaceModel(
         model=mace_model,
         device=device,
-        periodic=True,
         dtype=dtype,
         compute_force=True,
     )
@@ -174,7 +171,6 @@ def torchsim_mace_off_model(device: torch.device) -> UnbatchedMaceModel:
         model=mace_off_model,
         device=device,
         neighbor_list_fn=wrapping_nl,
-        periodic=False,
         dtype=torch.float32,
         compute_force=True,
     )
@@ -195,7 +191,6 @@ def torchsim_batched_mace_off_model(device: torch.device) -> MaceModel:
     return MaceModel(
         model=mace_off_model,
         device=device,
-        periodic=False,
         dtype=torch.float32,
         compute_force=True,
     )
@@ -275,7 +270,6 @@ def test_mace_off_dtype_working(
     model = MaceModel(
         model=mace_off_model,
         device=device,
-        periodic=False,
         dtype=dtype,
         compute_force=True,
     )

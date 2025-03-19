@@ -1,7 +1,7 @@
 """Simulation runners for molecular dynamics and optimization.
 
 This module provides functions for running molecular dynamics simulations and geometry
-optimizations using various calculators and integrators. It includes utilities for
+optimizations using various models and integrators. It includes utilities for
 converting between different molecular representations and handling simulation state.
 """
 
@@ -129,7 +129,7 @@ def integrate(
 
     Args:
         system: Input system to simulate
-        model: Neural network calculator module
+        model: Neural network model module
         integrator: Integration algorithm function
         n_steps: Number of integration steps
         temperature: Temperature or array of temperatures for each step
@@ -257,7 +257,7 @@ def optimize(
 
     Args:
         system: Input system to optimize (ASE Atoms, Pymatgen Structure, or SimState)
-        model: Neural network calculator module
+        model: Neural network model module
         optimizer: Optimization algorithm function
         convergence_fn: Condition for convergence, should return a boolean tensor
             of length n_batches

@@ -613,10 +613,10 @@ def test_multi_batch_reporter(
     traj1.close()
 
 
-def test_property_calculator_consistency(
+def test_property_model_consistency(
     si_double_sim_state: SimState, tmp_path: Path, prop_calculators: dict
 ) -> None:
-    """Test  property calculators are consistent for single and multi-batch cases."""
+    """Test property models are consistent for single and multi-batch cases."""
     # Create reporters for single and multi-batch cases
     single_reporters = []
     for batch_idx in range(2):
@@ -664,7 +664,7 @@ def test_property_calculator_consistency(
 
 
 def test_reporter_with_model(
-    si_double_sim_state: SimState, tmp_path: Path, lj_calculator: LennardJonesModel
+    si_double_sim_state: SimState, tmp_path: Path, lj_model: LennardJonesModel
 ) -> None:
     """Test TrajectoryReporter with a model argument in property calculators."""
 
@@ -684,7 +684,7 @@ def test_reporter_with_model(
     )
 
     # Run with model
-    reporter.report(si_double_sim_state, 0, lj_calculator)
+    reporter.report(si_double_sim_state, 0, lj_model)
     reporter.close()
 
     # Verify property was calculated correctly
@@ -699,7 +699,7 @@ def test_reporter_with_model(
 
         # Calculate expected value
         substate = si_double_sim_state[batch_idx]
-        expected = lj_calculator(substate)["energy"]
+        expected = lj_model(substate)["energy"]
 
         # Compare
         np.testing.assert_allclose(energy, expected.cpu().numpy())
