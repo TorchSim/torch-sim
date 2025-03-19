@@ -43,8 +43,6 @@ loaded_model = mace_mp(
 # Number of steps to run
 N_steps = 20 if os.getenv("CI") else 2_000
 
-PERIODIC = True
-
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 
@@ -59,7 +57,6 @@ model = UnbatchedMaceModel(
     model=loaded_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
-    periodic=PERIODIC,
     compute_force=True,
     compute_stress=False,
     dtype=dtype,
@@ -70,7 +67,7 @@ state = SimState(
     positions=positions,
     masses=masses,
     cell=cell,
-    pbc=PERIODIC,
+    pbc=True,
     atomic_numbers=atomic_numbers,
 )
 

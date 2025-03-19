@@ -42,7 +42,6 @@ mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(
     model=mace,
     device=device,
-    periodic=True,
     dtype=torch.float64,
     compute_force=True,
 )

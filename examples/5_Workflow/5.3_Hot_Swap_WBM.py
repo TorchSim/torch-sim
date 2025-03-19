@@ -28,14 +28,12 @@ dtype = torch.float32
 print(f"job will run on {device=}")
 
 # --- Model Initialization ---
-PERIODIC = True
 print("Loading MACE model...")
 mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_omat_0/mace-omat-0-medium.model"
 mace = mace_mp(model=mace_checkpoint_url, return_raw_model=True)
 mace_model = MaceModel(
     model=mace,
     device=device,
-    periodic=True,
     dtype=dtype,
     compute_force=True,
 )

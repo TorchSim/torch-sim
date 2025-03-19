@@ -54,7 +54,6 @@ model = UnbatchedMaceModel(
     model=loaded_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
-    periodic=True,
     compute_force=True,
     compute_stress=False,
     dtype=dtype,

@@ -38,8 +38,6 @@ loaded_model = mace_off(
 # MODEL_PATH = "../../../checkpoints/MACE/mace-mpa-0-medium.model"
 # loaded_model = torch.load(MODEL_PATH, map_location=device)
 
-PERIODIC = False
-
 # Number of steps to run
 N_steps = 20 if os.getenv("CI") else 2_000
 
@@ -50,7 +48,6 @@ model = UnbatchedMaceModel(
     model=loaded_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
-    periodic=PERIODIC,
     compute_force=True,
     compute_stress=False,
     dtype=dtype,

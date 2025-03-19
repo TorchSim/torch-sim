@@ -94,8 +94,6 @@ loaded_model = mace_mp(
 # MODEL_PATH = "../../../checkpoints/MACE/mace-mpa-0-medium.model"
 # loaded_model = torch.load(MODEL_PATH, map_location=device, weights_only=False)
 
-PERIODIC = True
-
 # Temperature profile settings
 init_temp = 300
 melting_temp = 1000
@@ -140,7 +138,6 @@ model = UnbatchedMaceModel(
     model=loaded_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
-    periodic=PERIODIC,
     compute_force=True,
     compute_stress=False,
     dtype=dtype,
@@ -150,7 +147,7 @@ state = SimState(
     positions=positions,
     masses=masses,
     cell=cell,
-    pbc=PERIODIC,
+    pbc=True,
     atomic_numbers=atomic_numbers,
 )
 # Run initial inference

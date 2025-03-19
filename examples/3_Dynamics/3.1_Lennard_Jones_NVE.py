@@ -32,7 +32,6 @@ generator.manual_seed(42)  # For reproducibility
 # Create face-centered cubic (FCC) Argon
 # 5.26 Å is a typical lattice constant for Ar
 a_len = 5.26  # Lattice constant
-PERIODIC = True  # Flag to use periodic boundary conditions
 
 # Generate base FCC unit cell positions (scaled by lattice constant)
 base_positions = torch.tensor(
@@ -76,7 +75,7 @@ state = SimState(
     positions=positions,
     masses=masses,
     cell=cell,
-    pbc=PERIODIC,
+    pbc=True,
     atomic_numbers=atomic_numbers,
 )
 # Initialize the Lennard-Jones model

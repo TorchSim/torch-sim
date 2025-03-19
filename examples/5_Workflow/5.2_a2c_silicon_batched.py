@@ -66,7 +66,6 @@ dtype = torch.float32
 
 mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_omat_0/mace-omat-0-medium.model"
 raw_model = mace_mp(model=mace_checkpoint_url, return_raw_model=True)
-PERIODIC = True
 
 # Define system and model
 comp = Composition("Si64")
@@ -85,7 +84,6 @@ model = UnbatchedMaceModel(
     model=raw_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
-    periodic=PERIODIC,
     compute_force=True,
     compute_stress=False,  # We don't need stress for MD
     dtype=dtype,
@@ -130,7 +128,7 @@ state_dict = {
     "positions": structure.positions,
     "masses": torch.tensor(atomic_masses, device=device, dtype=dtype),
     "cell": cell,
-    "pbc": PERIODIC,
+    "pbc": True,
     "atomic_numbers": atomic_numbers,
 }
 state = nvt_nose_hoover_init(state_dict)
@@ -216,7 +214,6 @@ model = MaceModel(
     model=raw_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
-    periodic=PERIODIC,
     compute_force=True,
     compute_stress=True,
     dtype=dtype,

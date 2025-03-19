@@ -42,8 +42,6 @@ loaded_model = mace_mp(
 # MODEL_PATH = "../../../checkpoints/MACE/mace-mpa-0-medium.model"
 # loaded_model = torch.load(MODEL_PATH, map_location=device)
 
-PERIODIC = True
-
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 
@@ -62,7 +60,6 @@ model = UnbatchedMaceModel(
     model=loaded_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
-    periodic=PERIODIC,
     compute_force=True,
     compute_stress=True,
     dtype=dtype,
@@ -72,7 +69,6 @@ state = SimState(
     positions=positions,
     masses=masses,
     cell=cell,
-    pbc=PERIODIC,
     atomic_numbers=atomic_numbers,
 )
 # Run initial inference

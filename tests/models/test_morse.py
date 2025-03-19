@@ -146,6 +146,7 @@ def models(
         positions=cu_fcc_system[0],
         cell=cu_fcc_system[1].unsqueeze(0),
         atomic_numbers=torch.ones(len(cu_fcc_system[0]), dtype=torch.int32),
+        pbc=True,
     )
     return model_nl(state), model_direct(state)
 
