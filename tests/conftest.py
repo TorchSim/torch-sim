@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 import torch
 from ase import Atoms
-from ase.build import bulk
+from ase.build import bulk, molecule
 from phonopy.structure.atoms import PhonopyAtoms
 from pymatgen.core import Structure
 
@@ -26,6 +26,12 @@ def device() -> torch.device:
 def si_atoms() -> Any:
     """Create crystalline silicon using ASE."""
     return bulk("Si", "diamond", a=5.43, cubic=True)
+
+
+@pytest.fixture
+def benzene_atoms() -> Any:
+    """Create benzene using ASE."""
+    return molecule("C6H6")
 
 
 @pytest.fixture
