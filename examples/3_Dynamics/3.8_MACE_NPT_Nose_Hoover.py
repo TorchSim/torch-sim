@@ -70,6 +70,7 @@ state = SimState(
     masses=masses,
     cell=cell,
     atomic_numbers=atomic_numbers,
+    pbc=True,
 )
 # Run initial inference
 results = model(state)
