@@ -39,7 +39,6 @@ class FairChemModel(torch.nn.Module, ModelInterface):
     """Computes energies, forces and stresses using a FairChem model.
 
     Attributes:
-        pbc (bool): Whether to use periodic boundary conditions
         neighbor_list_fn (Callable | None): The neighbor list function to use
         r_max (float): Maximum cutoff radius for atomic interactions
         config (dict): Model configuration dictionary
@@ -63,7 +62,6 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         trainer: str | None = None,
         cpu: bool = False,
         seed: int | None = None,
-        pbc: bool = True,
         r_max: float | None = None,  # noqa: ARG002
         dtype: torch.dtype | None = None,
         compute_stress: bool = False,
@@ -80,7 +78,6 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             trainer: Name of trainer to use
             cpu: Whether to use CPU instead of GPU
             seed: Random seed for reproducibility
-            pbc: Whether to use periodic boundary conditions
             r_max: Maximum cutoff radius (overrides model default)
             dtype: Data type to use for the model
             compute_stress: Whether to compute stress
@@ -146,7 +143,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             config["model_attributes"]["name"] = config.pop("model")
             config["model"] = config["model_attributes"]
 
-        self.pbc = pbc
+        self.pbc = True
         self.neighbor_list_fn = neighbor_list_fn
 
         if neighbor_list_fn is None:
@@ -158,7 +155,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             )
 
         if "backbone" in config["model"]:
-            config["model"]["backbone"]["use_pbc"] = pbc
+            config["model"]["backbone"]["use_pbc"] = self.pbc
             config["model"]["backbone"]["use_pbc_single"] = False
             if dtype is not None:
                 try:
@@ -168,7 +165,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
                 except KeyError:
                     print("dtype not found in backbone, using default float32")
         else:
-            config["model"]["use_pbc"] = pbc
+            config["model"]["use_pbc"] = self.pbc
             config["model"]["use_pbc_single"] = False
             if dtype is not None:
                 try:
@@ -249,9 +246,9 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             Dictionary of model predictions
         """
         if isinstance(state, dict):
-            state = SimState(
-                **state, pbc=self.pbc, masses=torch.ones_like(state["positions"])
-            )
+            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+        if state.pbc is False:
+            raise ValueError("PBC must be True for FairChemModel")
 
         if state.device != self._device:
             state = state.to(self._device)
