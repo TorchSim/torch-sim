@@ -36,7 +36,6 @@ def fairchem_model(model_path: str, device: torch.device) -> FairChemModel:
         model=model_path,
         cpu=cpu,
         seed=0,
-        pbc=True,
     )
 
 
