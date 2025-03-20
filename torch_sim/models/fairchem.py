@@ -291,6 +291,6 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             results[key] = _pred.detach()
 
         results["energy"] = results["energy"].squeeze(dim=1)
-        if results.get("stress", None) and len(results["stress"].shape) == 2:
+        if results.get("stress", None) is not None and len(results["stress"].shape) == 2:
             results["stress"] = results["stress"].unsqueeze(dim=0)
         return results
