@@ -19,7 +19,7 @@ from torch_sim.unbatched.unbatched_integrators import nve
 
 @pytest.fixture
 def device() -> torch.device:
-    return torch.device("cpu")
+    return torch.device("cuda")
 
 
 @pytest.fixture

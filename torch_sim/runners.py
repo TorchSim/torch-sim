@@ -157,8 +157,9 @@ def integrate(
         model=model,
         kT=torch.tensor(temps[0] * unit_system.temperature, dtype=dtype, device=device),
         dt=torch.tensor(timestep * unit_system.time, dtype=dtype, device=device),
+        **integrator_kwargs,
     )
-    state = init_fn(state, **integrator_kwargs)
+    state = init_fn(state)
 
     batch_iterator = _configure_batches_iterator(model, state, autobatcher)
 

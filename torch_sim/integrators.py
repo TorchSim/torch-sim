@@ -67,12 +67,16 @@ def batched_initialize_momenta(
     n_atoms_per_batch = positions.shape[1]
 
     # Create a generator for each batch using the provided seeds
-    generators = [torch.Generator(device=device).manual_seed(int(seed)) for seed in seeds]
+    generators = [
+        torch.Generator(device=device).manual_seed(int(seed)) for seed in seeds
+    ]
 
     # Generate random momenta for all batches at once
     momenta = torch.stack(
         [
-            torch.randn((n_atoms_per_batch, 3), device=device, dtype=dtype, generator=gen)
+            torch.randn(
+                (n_atoms_per_batch, 3), device=device, dtype=dtype, generator=gen
+            )
             for gen in generators
         ]
     )
@@ -87,7 +91,9 @@ def batched_initialize_momenta(
     mean_momentum = torch.mean(momenta, dim=1, keepdim=True)  # shape: (n_batches, 1, 3)
 
     # Create a mask for batches with more than one atom
-    multi_atom_mask = torch.tensor(n_atoms_per_batch > 1, device=device, dtype=torch.bool)
+    multi_atom_mask = torch.tensor(
+        n_atoms_per_batch > 1, device=device, dtype=torch.bool
+    )
 
     # Subtract mean momentum where needed (broadcasting handles the rest)
     return torch.where(
@@ -179,6 +185,7 @@ def nve(
     *,
     dt: torch.Tensor,
     kT: torch.Tensor,
+    seed: int | None = None,
 ) -> tuple[
     Callable[[SimState | StateDict, torch.Tensor], MDState],
     Callable[[MDState, torch.Tensor], MDState],
@@ -209,8 +216,7 @@ def nve(
     def nve_init(
         state: SimState | StateDict,
         kT: torch.Tensor = kT,
-        seed: int | None = None,
-        **kwargs: Any,
+        seed: int | None = seed,
     ) -> MDState:
         """Initialize an NVE state from input data.
 
@@ -228,14 +234,10 @@ def nve(
         if not isinstance(state, SimState):
             state = SimState(**state)
 
-        # Override with kwargs if provided
-        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
-        batch = kwargs.get("batch", state.batch)
-
         model_output = model(state)
 
-        momenta = kwargs.get(
-            "momenta", calculate_momenta(state.positions, state.masses, kT, seed)
+        momenta = getattr(
+            state, "momenta", calculate_momenta(state.positions, state.masses, kT, seed)
         )
 
         initial_state = MDState(
@@ -246,8 +248,8 @@ def nve(
             masses=state.masses,
             cell=state.cell,
             pbc=state.pbc,
-            batch=batch,
-            atomic_numbers=atomic_numbers,
+            batch=state.batch,
+            atomic_numbers=state.atomic_numbers,
         )
         return initial_state  # noqa: RET504
 
@@ -292,6 +294,7 @@ def nvt_langevin(
     dt: torch.Tensor,
     kT: torch.Tensor,
     gamma: torch.Tensor | None = None,
+    seed: int | None = None,
 ) -> tuple[
     Callable[[SimState | StateDict, torch.Tensor], MDState],
     Callable[[MDState, torch.Tensor], MDState],
@@ -369,15 +372,11 @@ def nvt_langevin(
     def langevin_init(
         state: SimState | StateDict,
         kT: torch.Tensor = kT,
-        seed: int | None = None,
-        **kwargs: Any,
+        seed: int | None = seed,
     ) -> MDState:
         """Initialize an NVT state from input data."""
         if not isinstance(state, SimState):
             state = SimState(**state)
-
-        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
-        batch = kwargs.get("batch", state.batch)
 
         model_output = model(state)
 
@@ -390,8 +389,8 @@ def nvt_langevin(
             masses=state.masses,
             cell=state.cell,
             pbc=state.pbc,
-            batch=batch,
-            atomic_numbers=atomic_numbers,
+            batch=state.batch,
+            atomic_numbers=state.atomic_numbers,
             momenta=momenta,
             energy=model_output["energy"],
             forces=model_output["forces"],
@@ -495,6 +494,7 @@ def npt_langevin(  # noqa: C901, PLR0915
     alpha: torch.Tensor | None = None,
     cell_alpha: torch.Tensor | None = None,
     b_tau: torch.Tensor | None = None,
+    seed: int | None = None,
 ) -> tuple[
     Callable[[SimState | StateDict, torch.Tensor], NPTLangevinState],
     Callable[[NPTLangevinState, torch.Tensor], NPTLangevinState],
@@ -653,8 +653,12 @@ def npt_langevin(  # noqa: C901, PLR0915
         # Create pressure tensor (diagonal with external pressure)
         if external_pressure.ndim == 0:
             # Scalar pressure - create diagonal pressure tensors for each batch
-            pressure_tensor = external_pressure * torch.eye(3, device=device, dtype=dtype)
-            pressure_tensor = pressure_tensor.unsqueeze(0).expand(state.n_batches, -1, -1)
+            pressure_tensor = external_pressure * torch.eye(
+                3, device=device, dtype=dtype
+            )
+            pressure_tensor = pressure_tensor.unsqueeze(0).expand(
+                state.n_batches, -1, -1
+            )
         else:
             # Already a tensor with shape compatible with n_batches
             pressure_tensor = external_pressure
@@ -950,8 +954,7 @@ def npt_langevin(  # noqa: C901, PLR0915
     def npt_init(
         state: SimState | StateDict,
         kT: torch.Tensor = kT,
-        seed: int | None = None,
-        **kwargs: Any,
+        seed: int | None = seed,
     ) -> NPTLangevinState:
         """Initialize an NPT Langevin state from input data.
 
@@ -971,10 +974,6 @@ def npt_langevin(  # noqa: C901, PLR0915
         if not isinstance(state, SimState):
             state = SimState(**state)
 
-        # Override with kwargs if provided
-        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
-        batch = kwargs.get("batch", state.batch)
-
         # Get model output to initialize forces and stress
         model_output = model(state)
 
@@ -992,7 +991,9 @@ def npt_langevin(  # noqa: C901, PLR0915
         )  # shape: (n_batches, 1, 1)
 
         # Initialize cell velocities to zero
-        cell_velocities = torch.zeros((state.n_batches, 3, 3), device=device, dtype=dtype)
+        cell_velocities = torch.zeros(
+            (state.n_batches, 3, 3), device=device, dtype=dtype
+        )
 
         # Calculate cell masses based on system size and temperature
         # This follows standard NPT barostat mass scaling
@@ -1014,8 +1015,8 @@ def npt_langevin(  # noqa: C901, PLR0915
             masses=state.masses,
             cell=state.cell,
             pbc=state.pbc,
-            batch=batch,
-            atomic_numbers=atomic_numbers,
+            batch=state.batch,
+            atomic_numbers=state.atomic_numbers,
             reference_cell=reference_cell,
             cell_positions=cell_positions,
             cell_velocities=cell_velocities,
@@ -1083,8 +1084,9 @@ def npt_langevin(  # noqa: C901, PLR0915
 
         # Update cell (currently only isotropic fluctuations)
         dim = state.positions.shape[1]  # Usually 3 for 3D
-        V_0 = torch.linalg.det(state.reference_cell)  # shape: (n_batches,)
-        V = state.cell_positions.reshape(state.n_batches, -1)[:, 0]  # shape: (n_batches,)
+        # V_0 and V are shape: (n_batches,)
+        V_0 = torch.linalg.det(state.reference_cell)
+        V = state.cell_positions.reshape(state.n_batches, -1)[:, 0]
 
         # Scale cell uniformly in all dimensions
         scaling = (V / V_0) ** (1.0 / dim)  # shape: (n_batches,)
