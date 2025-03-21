@@ -3,6 +3,12 @@
 This module provides functions for converting between different structural
 representations. It includes utilities for converting ASE Atoms objects,
 Pymatgen Structures, and PhonopyAtoms objects to SimState objects and vice versa.
+
+The module handles:
+- Converting between ASE Atoms and SimState
+- Converting between Pymatgen Structure and SimState
+- Converting between PhonopyAtoms and SimState
+- Batched conversions for multiple structures
 """
 
 from typing import TYPE_CHECKING
@@ -204,6 +210,11 @@ def atoms_to_state(
 
     Returns:
         SimState: Batched state tensors in internal units
+
+    Notes:
+        - Input positions and cell should be in Å
+        - Input masses should be in amu
+        - All systems must have consistent periodic boundary conditions
     """
     from torch_sim.state import SimState
 
@@ -266,6 +277,7 @@ def structures_to_state(
         SimState: Batched state tensors in internal units
 
     Notes:
+        - Input positions and cell should be in Å
         - Cell matrix follows ASE convention: [[ax,ay,az],[bx,by,bz],[cx,cy,cz]]
         - Assumes periodic boundary conditions from Structure
     """
@@ -328,6 +340,12 @@ def phonopy_to_state(
 
     Returns:
         SimState: Batched state tensors in internal units
+
+    Notes:
+        - Input positions and cell should be in Å
+        - Input masses should be in amu
+        - PhonopyAtoms does not have pbc attribute for Supercells, assumes True
+        - Cell matrix follows ASE convention: [[ax,ay,az],[bx,by,bz],[cx,cy,cz]]
     """
     from torch_sim.state import SimState
 

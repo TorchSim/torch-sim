@@ -88,7 +88,11 @@ def morse_pair_force(
 
 
 class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
-    """Calculator for Morse potential."""
+    """Calculator for Morse potential.
+
+    This model implements the Morse potential energy and force calculator.
+    It supports customizable interaction parameters for different particle pairs.
+    """
 
     def __init__(
         self,

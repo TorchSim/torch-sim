@@ -25,7 +25,16 @@ def _configure_batches_iterator(
     state: SimState,
     autobatcher: ChunkingAutoBatcher | bool,
 ) -> ChunkingAutoBatcher:
-    """Create a batches iterator for the integrate function."""
+    """Create a batches iterator for the integrate function.
+
+    Args:
+        model: The model to use for the integration
+        state: The state to use for the integration
+        autobatcher: The autobatcher to use for the integration
+
+    Returns:
+        A batches iterator
+    """
     # load and properly configure the autobatcher
     if autobatcher and isinstance(autobatcher, bool):
         autobatcher = ChunkingAutoBatcher(
@@ -69,6 +78,10 @@ def create_default_reporter(
         properties: Properties to save, possible properties are "positions",
             "kinetic_energy", "potential_energy", "temperature", "stress", "velocities",
             and "forces".
+        model: The model to use for the reporter
+
+    Returns:
+        A trajectory reporter
     """
 
     def compute_stress(state: SimState, model: ModelInterface) -> torch.Tensor:
@@ -198,7 +211,17 @@ def _configure_hot_swapping_autobatcher(
     autobatcher: HotSwappingAutoBatcher | bool,
     max_attempts: int,
 ) -> HotSwappingAutoBatcher:
-    """Configure the hot swapping autobatcher for the optimize function."""
+    """Configure the hot swapping autobatcher for the optimize function.
+
+    Args:
+        model: The model to use for the autobatcher
+        state: The state to use for the autobatcher
+        autobatcher: The autobatcher to use for the autobatcher
+        max_attempts: The maximum number of attempts for the autobatcher
+
+    Returns:
+        A hot swapping autobatcher
+    """
     # load and properly configure the autobatcher
     if isinstance(autobatcher, HotSwappingAutoBatcher):
         autobatcher.return_indices = True

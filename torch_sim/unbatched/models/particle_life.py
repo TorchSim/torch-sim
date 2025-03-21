@@ -83,7 +83,13 @@ def asymmetric_particle_pair_force_jit(
 
 
 class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
-    """Calculator for asymmetric particle interaction."""
+    """Calculator for asymmetric particle interaction.
+
+    This model implements an asymmetric interaction between particles based on
+    distance-dependent forces. The interaction is defined by three parameters:
+    sigma, epsilon, and beta.
+
+    """
 
     def __init__(
         self,
@@ -119,7 +125,15 @@ class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
         self.epsilon = torch.tensor(epsilon, dtype=self._dtype, device=self._device)
 
     def forward(self, state: SimState) -> dict[str, torch.Tensor]:
-        """Compute energies and forces."""
+        """Compute energies and forces.
+
+        Args:
+            state: Either a SimState object or a dictionary containing positions,
+                cell, pbc
+
+        Returns:
+            A dictionary containing the energy, forces, and stresses
+        """
         # Extract required data from input
         if isinstance(state, dict):
             state = SimState(**state, masses=torch.ones_like(state["positions"]))

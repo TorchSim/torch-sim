@@ -89,7 +89,13 @@ def soft_sphere_pair_force(
 
 
 class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
-    """Calculator for soft sphere potential."""
+    """Calculator for soft sphere potential.
+
+    This model implements a soft sphere potential where the interaction
+    parameters (sigma, epsilon, alpha) can be specified independently for each pair
+    of atomic species. The potential creates repulsive forces between overlapping atoms
+    with species-specific interaction strengths and ranges.
+    """
 
     def __init__(
         self,
@@ -125,7 +131,15 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
         self.alpha = torch.tensor(alpha, dtype=dtype, device=self.device)
 
     def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
-        """Compute energies and forces for a single system."""
+        """Compute energies and forces for a single system.
+
+        Args:
+            state: Either a SimState object or a dictionary containing positions,
+                cell, pbc
+
+        Returns:
+            A dictionary containing the energy, forces, and stresses
+        """
         if isinstance(state, dict):
             state = SimState(**state, masses=torch.ones_like(state["positions"]))
 

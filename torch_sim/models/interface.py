@@ -8,7 +8,11 @@ import torch
 
 
 class ModelInterface(ABC):
-    """Interface for all TorchSim models."""
+    """Interface for all TorchSim models.
+
+    This interface provides a common structure for all models in TorchSim.
+    It ensures that all models implement the required methods and properties.
+    """
 
     @abstractmethod
     def __init__(
@@ -40,7 +44,11 @@ class ModelInterface(ABC):
 
     @property
     def device(self) -> torch.device:
-        """The device of the model."""
+        """The device of the model.
+
+        Returns:
+            The device of the model
+        """
         return self._device
 
     @device.setter
@@ -52,7 +60,11 @@ class ModelInterface(ABC):
 
     @property
     def dtype(self) -> torch.dtype:
-        """The data type of the model."""
+        """The data type of the model.
+
+        Returns:
+            The data type of the model
+        """
         return self._dtype
 
     @dtype.setter
@@ -64,7 +76,11 @@ class ModelInterface(ABC):
 
     @property
     def compute_stress(self) -> bool:
-        """Whether the model computes stresses."""
+        """Whether the model computes stresses.
+
+        Returns:
+            Whether the model computes stresses
+        """
         return self._compute_stress
 
     @compute_stress.setter
@@ -76,7 +92,11 @@ class ModelInterface(ABC):
 
     @property
     def compute_force(self) -> bool:
-        """Whether the model computes forces."""
+        """Whether the model computes forces.
+
+        Returns:
+            Whether the model computes forces
+        """
         return self._compute_force
 
     @compute_force.setter
@@ -96,6 +116,13 @@ class ModelInterface(ABC):
         **kwargs,
     ) -> dict[str, torch.Tensor]:
         """Abstract method that must be implemented by all models.
+
+        Args:
+            positions: The positions of the atoms
+            cell: The cell of the system
+            batch: The batch of the system
+            atomic_numbers: The atomic numbers of the atoms
+            **kwargs: Additional keyword arguments
 
         All models must accept positions, cell, and batch as inputs.
 
