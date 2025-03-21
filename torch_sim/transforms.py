@@ -82,12 +82,6 @@ def inverse_box(box: torch.Tensor) -> torch.Tensor:
         >>> inverse_box(mat)
         tensor([[ 1.0000, -2.0000],
                 [ 0.0000,  1.0000]])
-
-    Notes:
-        - For matrices, uses torch.linalg.inv which is more numerically stable
-          than naive matrix inversion.
-        - For vectors, equivalent to element-wise division: 1.0 / vector.
-        - Zero elements will raise runtime errors (division by zero).
     """
     if (torch.is_tensor(box) and box.ndim == 0) or box.numel() == 1 or box.ndim == 1:
         return 1 / box
@@ -117,12 +111,6 @@ def pbc_wrap_general(
     Returns:
         torch.Tensor: Tensor of wrapped positions in real space with
             same shape as input positions.
-
-    Notes:
-        - The lattice vectors define the simulation cell and should be
-            linearly independent.
-        - For orthorhombic cells, lattice_vectors is diagonal with box lengths.
-        - For triclinic cells, off-diagonal elements represent tilt factors.
     """
     # Validate inputs
     if not torch.is_floating_point(positions) or not torch.is_floating_point(
@@ -176,11 +164,6 @@ def pbc_wrap_batched(
     Returns:
         torch.Tensor: Tensor of wrapped positions in real space with
             same shape as input positions.
-
-    Notes:
-        - This is a batched version of pbc_wrap_general
-        - Each atom's position is wrapped according to the cell of its batch
-        - More efficient than manually splitting and recombining tensors
     """
     # Validate inputs
     if not torch.is_floating_point(positions) or not torch.is_floating_point(cell):
@@ -848,13 +831,6 @@ def linked_cell(  # noqa: PLR0915
             - neigh_shift_idx (torch.Tensor): A tensor containing the cell
               shift indices for each neighbor atom, which are necessary for
               reconstructing the positions of the neighboring atoms.
-
-    Notes:
-        - The function assumes that the input positions are wrapped within
-            their respective unit cells.
-        - The linked cell algorithm is efficient for large systems and is
-            particularly useful in molecular dynamics simulations where
-            periodic boundary conditions are common.
     """
     device = pos.device
     dtype = pos.dtype
@@ -1022,13 +998,6 @@ def build_linked_cell_neighborhood(
             - cell_shifts_idx (torch.Tensor): A tensor containing the cell
               shift indices for each neighbor atom, which are necessary for
               reconstructing the positions of the neighboring atoms.
-
-    Notes:
-        - The function assumes that the input positions are wrapped within their
-            respective unit cells.
-        - The linked cell algorithm is efficient for large systems and is particularly
-            useful in molecular dynamics simulations where periodic boundary conditions
-            are common.
     """
     n_structure = n_atoms.shape[0]
     device = positions.device

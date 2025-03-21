@@ -27,7 +27,15 @@ class SwapMCState(SimState):
 def generate_swaps(
     state: SimState, generator: torch.Generator | None = None
 ) -> torch.Tensor:
-    """Generate swaps for a given batch."""
+    """Generate swaps for a given batch.
+
+    Args:
+        state: The state to generate swaps for
+        generator: The generator to use for the random number generator
+
+    Returns:
+        A tensor of swaps
+    """
     # TODO: add atomic numbers and a way to guarantee swaps
     # between atoms of different atomic numbers
     batch = state.batch

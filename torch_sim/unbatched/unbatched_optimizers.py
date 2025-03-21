@@ -547,7 +547,11 @@ class UnitCellFIREState(OptimizerState):
 
     @property
     def momenta(self) -> torch.Tensor:
-        """Calculate momenta from velocities and masses."""
+        """Calculate momenta from velocities and masses.
+
+        Returns:
+            The momenta of the particles
+        """
         return self.velocities * self.masses.unsqueeze(-1)
 
 
@@ -860,11 +864,19 @@ class FrechetCellFIREState(OptimizerState):
 
     @property
     def momenta(self) -> torch.Tensor:
-        """Calculate momenta from velocities and masses."""
+        """Calculate momenta from velocities and masses.
+
+        Returns:
+            The momenta of the particles
+        """
         return self.velocities * self.masses.unsqueeze(-1)
 
     def deform_grad(self) -> torch.Tensor:
-        """Calculate the deformation gradient from original cell to current cell."""
+        """Calculate the deformation gradient from original cell to current cell.
+
+        Returns:
+            The deformation gradient
+        """
         return torch.transpose(torch.linalg.solve(self.orig_cell, self.cell), 0, 1)
 
 

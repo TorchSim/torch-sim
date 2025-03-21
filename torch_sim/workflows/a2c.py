@@ -1,4 +1,11 @@
-"""Workflows for generating random packed structures."""
+"""Workflows for generating random packed structures and crystallization.
+
+This module provides functions for:
+- Generating random atomic structures with controlled interatomic distances
+- Extracting and validating crystalline subcells from larger structures
+- Relaxing atomic positions and cell parameters using FIRE optimization
+- Converting between different structural representations
+"""
 
 import itertools
 from collections.abc import Sequence

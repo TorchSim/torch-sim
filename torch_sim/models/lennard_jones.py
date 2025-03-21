@@ -18,7 +18,11 @@ DEFAULT_EPSILON = torch.tensor(1.0)
 
 
 class LennardJonesModel(torch.nn.Module, ModelInterface):
-    """Calculator for Lennard-Jones potential."""
+    """Calculator for Lennard-Jones potential.
+
+    This model implements the Lennard-Jones potential energy and force calculator.
+    It supports customizable interaction parameters for different particle pairs.
+    """
 
     def __init__(
         self,
@@ -34,7 +38,20 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         use_neighbor_list: bool = True,
         cutoff: float | None = None,
     ) -> None:
-        """Initialize the calculator."""
+        """Initialize the calculator.
+
+        Args:
+            sigma: The sigma parameter of the Lennard-Jones potential
+            epsilon: The epsilon parameter of the Lennard-Jones potential
+            device: The device to run the model on
+            dtype: The data type to run the model on
+            compute_force: Whether to compute forces
+            compute_stress: Whether to compute stresses
+            per_atom_energies: Whether to compute per-atom energies
+            per_atom_stresses: Whether to compute per-atom stresses
+            use_neighbor_list: Whether to use a neighbor list
+            cutoff: The cutoff radius for the Lennard-Jones potential
+        """
         super().__init__()
         self._device = device or torch.device("cpu")
         self._dtype = dtype
@@ -55,7 +72,14 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         self,
         state: SimState,
     ) -> dict[str, torch.Tensor]:
-        """Compute energies and forces."""
+        """Compute energies and forces.
+
+        Args:
+            state: A SimState object
+
+        Returns:
+            A dictionary containing the energy, forces, and stresses
+        """
         if not isinstance(state, SimState):
             state = SimState(**state)
 
@@ -158,7 +182,15 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         return results
 
     def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
-        """Compute energies and forces."""
+        """Compute energies and forces.
+
+        Args:
+            state: Either a SimState object or a dictionary containing positions,
+                cell, pbc
+
+        Returns:
+            A dictionary containing the energy, forces, and stresses
+        """
         if isinstance(state, dict):
             state = SimState(**state, masses=torch.ones_like(state["positions"]))
 

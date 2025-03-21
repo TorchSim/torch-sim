@@ -19,7 +19,11 @@ DEFAULT_ALPHA = torch.tensor(2.0)
 
 
 class SoftSphereModel(torch.nn.Module, ModelInterface):
-    """Calculator for soft sphere potential."""
+    """Calculator for soft sphere potential.
+
+    This model implements the soft sphere potential energy and force calculator.
+    It supports customizable interaction parameters for different particle pairs.
+    """
 
     def __init__(
         self,
@@ -56,7 +60,14 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         self,
         state: SimState,
     ) -> dict[str, torch.Tensor]:
-        """Compute energies and forces for a single system."""
+        """Compute energies and forces for a single system.
+
+        Args:
+            state: State object containing positions, cell, and other properties
+
+        Returns:
+            Dictionary containing computed properties (energy, forces, stress, etc.)
+        """
         if isinstance(state, dict):
             state = SimState(**state, masses=torch.ones_like(state["positions"]))
 

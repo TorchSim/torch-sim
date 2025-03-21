@@ -500,7 +500,15 @@ def split_state(
     state: SimState,
     ambiguous_handling: Literal["error", "globalize"] = "error",
 ) -> list[SimState]:
-    """Split a state into a list of states, each containing a single batch element."""
+    """Split a SimState into a list of states, each containing a single batch element.
+
+    Args:
+        state: The SimState to split
+        ambiguous_handling: How to handle ambiguous properties
+
+    Returns:
+        A list of SimState objects, each containing a single batch element
+    """
     attrs = _get_property_attrs(state, ambiguous_handling)
     batch_sizes = torch.bincount(state.batch).tolist()
 
@@ -539,7 +547,16 @@ def pop_states(
     pop_indices: list[int] | torch.Tensor,
     ambiguous_handling: Literal["error", "globalize"] = "error",
 ) -> tuple[SimState, list[SimState]]:
-    """Pop off the states with the specified indices."""
+    """Pop off the states with the specified indices.
+
+    Args:
+        state: The SimState to pop off
+        pop_indices: The indices to pop off
+        ambiguous_handling: How to handle ambiguous properties
+
+    Returns:
+        A tuple of the keep SimState and the popped SimStates
+    """
     if len(pop_indices) == 0:
         return state, []
 

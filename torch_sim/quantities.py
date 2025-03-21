@@ -7,7 +7,14 @@ from torch_sim.state import SimState
 
 # @torch.jit.script
 def count_dof(tensor: torch.Tensor) -> int:
-    """Count the degrees of freedom in the system."""
+    """Count the degrees of freedom in the system.
+
+    Args:
+        tensor: Tensor to count the degrees of freedom in
+
+    Returns:
+        Number of degrees of freedom
+    """
     return tensor.numel()
 
 
@@ -104,7 +111,7 @@ def batchwise_max_force(state: SimState) -> torch.Tensor:
     """Compute the maximum force per batch.
 
     Args:
-        state: State to compute the maximum force per batch for
+        state: SimState to compute the maximum force per batch for
 
     Returns:
         Tensor of maximum forces per batch

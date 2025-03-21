@@ -102,7 +102,17 @@ def calculate_momenta(
     kT: torch.Tensor,
     seed: int | None = None,
 ) -> torch.Tensor:
-    """Calculate momenta from positions and masses."""
+    """Calculate momenta from positions and masses.
+
+    Args:
+        positions: The positions of the particles
+        masses: The masses of the particles
+        kT: The temperature of the system
+        seed: The seed for the random number generator
+
+    Returns:
+        The momenta of the particles
+    """
     device = positions.device
     dtype = positions.dtype
 
@@ -134,11 +144,6 @@ def momentum_step(state: MDState, dt: torch.Tensor) -> MDState:
 
     Returns:
         Updated state with new momenta after force application
-
-    Notes:
-        - Implements p(t+dt) = p(t) + F(t)*dt
-        - Used as half-steps in velocity Verlet algorithm
-        - Preserves time-reversibility when used symmetrically
     """
     new_momenta = state.momenta + state.forces * dt
     state.momenta = new_momenta
@@ -157,11 +162,6 @@ def position_step(state: MDState, dt: torch.Tensor) -> MDState:
 
     Returns:
         Updated state with new positions after propagation
-
-    Notes:
-        - Implements r(t+dt) = r(t) + v(t)*dt
-        - Handles periodic boundary conditions if enabled
-        - Used as half-steps in velocity Verlet algorithm
     """
     new_positions = state.positions + state.velocities * dt
 
@@ -369,7 +369,18 @@ def nvt_langevin(
         kT: torch.Tensor = kT,
         seed: int | None = seed,
     ) -> MDState:
-        """Initialize an NVT state from input data."""
+        """Initialize an NVT state from input data.
+
+        Args:
+            state: Either a SimState object or a dictionary containing positions,
+                masses, cell, pbc
+            kT: Temperature in energy units for initializing momenta
+            seed: Random seed for reproducibility
+            **kwargs: Additional state arguments
+
+        Returns:
+            MDState: Initialized state for NVT integration
+        """
         if not isinstance(state, SimState):
             state = SimState(**state)
 

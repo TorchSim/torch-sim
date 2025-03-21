@@ -1,4 +1,11 @@
-"""Batched optimizers for structure optimization."""
+"""Batched optimizers for structure optimization.
+
+This module provides optimizers for batched atomic structure optimization, including:
+- Gradient descent for atomic positions
+- Gradient descent with unit cell filter
+- FIRE optimization with unit cell filter
+- FIRE optimization with Frechet cell filter
+"""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -171,6 +178,13 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         Tuple containing:
         - Initialization function that creates a BatchedUnitCellGDState
         - Update function that performs one gradient descent step with cell optimization
+
+    Notes:
+        - The cell_factor parameter controls the relative scale of atomic vs cell
+          optimization
+        - hydrostatic_strain=True restricts cell deformation to volume changes only
+        - constant_volume=True maintains cell volume while allowing shape changes
+        - Pressure can be applied through the scalar_pressure parameter
     """
     device = model.device
     dtype = model.dtype
@@ -467,20 +481,6 @@ def unit_cell_fire(  # noqa: C901, PLR0915
     for both atomic positions and unit cell parameters in a batched manner.
     FIRE combines molecular dynamics with adaptive velocity damping
     to efficiently find local minima.
-
-    The optimization proceeds by:
-    1. Performing velocity Verlet MD steps for both atoms and cell
-    2. Computing power P = F·v (force dot velocity) for both atomic and cell degrees of
-       freedom
-    3. If P > 0 (moving downhill):
-       - Mixing velocity with normalized force: v = (1-a)v + a|v|F/|F|
-       - If moving downhill for > N_min steps:
-         * Increase timestep: dt = min(dt x f_inc, dt_max)
-         * Decrease mixing: a = a x f_alpha
-    4. If P ≤ 0 (moving uphill):
-       - Reset velocity to zero
-       - Decrease timestep: dt = dt x f_dec
-       - Reset mixing parameter: a = alpha_start
 
     Args:
         model: Neural network model computing energies, forces, and stress
@@ -889,9 +889,12 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
         - Initialization function that creates a BatchedFrechetCellFIREState
         - Update function that performs one FIRE step with Frechet derivatives
 
-    References:
-        - https://github.com/lan496/lan496.github.io/blob/main/notes/cell_grad.pdf
-        - https://github.com/JuliaMolSim/JuLIP.jl/blob/master/src/expcell.jl
+    Notes:
+        - The cell_factor parameter controls the relative scale of atomic vs cell
+          optimization
+        - hydrostatic_strain=True restricts cell deformation to volume changes only
+        - constant_volume=True maintains cell volume while allowing shape changes
+        - Pressure can be applied through the scalar_pressure parameter
     """
     device = model.device
     dtype = model.dtype

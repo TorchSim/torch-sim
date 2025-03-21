@@ -40,7 +40,11 @@ class MDState(SimState):
 
     @property
     def velocities(self) -> torch.Tensor:
-        """Calculate velocities from momenta and masses."""
+        """Calculate velocities from momenta and masses.
+
+        Returns:
+            The velocities of the particles
+        """
         return self.momenta / self.masses.unsqueeze(-1)
 
 
@@ -52,7 +56,19 @@ def calculate_momenta(
     dtype: torch.dtype,
     seed: int | None = None,
 ) -> torch.Tensor:
-    """Calculate momenta from positions and masses."""
+    """Calculate momenta from positions and masses.
+
+    Args:
+        positions: The positions of the particles
+        masses: The masses of the particles
+        kT: The temperature of the system
+        device: The device to use for the calculation
+        dtype: The data type to use for the calculation
+        seed: The seed to use for the calculation
+
+    Returns:
+        The momenta of the particles
+    """
     generator = torch.Generator(device=device)
     if seed is not None:
         generator.manual_seed(seed)
@@ -510,7 +526,11 @@ class NPTLangevinState(SimState):
 
     @property
     def momenta(self) -> torch.Tensor:
-        """Calculate momenta from velocities and masses."""
+        """Calculate momenta from velocities and masses.
+
+        Returns:
+            The momenta of the particles
+        """
         return self.masses.unsqueeze(-1) * self.velocities
 
 
@@ -1910,13 +1930,6 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
 
         # Compute kinetic energy contribution
         KE2 = 2.0 * kinetic_energy(momenta, masses)
-
-        # NOTE on Stress tensor vs Pressure tensor convention
-        # Be careful about the sign of the stress tensor!
-        # torch-sim models return a stress tensor as 1/volume * dU/de_ij
-        # The standard definition can be found here.
-        # https://matsci.org/t/stress-and-pressure/15195/5
-        # https://docs.lammps.org/compute_pressure.html
 
         # Get stress tensor and compute trace
         internal_pressure = torch.trace(stress)
