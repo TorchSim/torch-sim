@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
 
 import torch
 
@@ -67,16 +66,12 @@ def batched_initialize_momenta(
     n_atoms_per_batch = positions.shape[1]
 
     # Create a generator for each batch using the provided seeds
-    generators = [
-        torch.Generator(device=device).manual_seed(int(seed)) for seed in seeds
-    ]
+    generators = [torch.Generator(device=device).manual_seed(int(seed)) for seed in seeds]
 
     # Generate random momenta for all batches at once
     momenta = torch.stack(
         [
-            torch.randn(
-                (n_atoms_per_batch, 3), device=device, dtype=dtype, generator=gen
-            )
+            torch.randn((n_atoms_per_batch, 3), device=device, dtype=dtype, generator=gen)
             for gen in generators
         ]
     )
@@ -91,9 +86,7 @@ def batched_initialize_momenta(
     mean_momentum = torch.mean(momenta, dim=1, keepdim=True)  # shape: (n_batches, 1, 3)
 
     # Create a mask for batches with more than one atom
-    multi_atom_mask = torch.tensor(
-        n_atoms_per_batch > 1, device=device, dtype=torch.bool
-    )
+    multi_atom_mask = torch.tensor(n_atoms_per_batch > 1, device=device, dtype=torch.bool)
 
     # Subtract mean momentum where needed (broadcasting handles the rest)
     return torch.where(
@@ -200,6 +193,7 @@ def nve(
         model: Neural network model that computes energies and forces
         dt: Integration timestep
         kT: Temperature in energy units
+        seed: Random seed for reproducibility
 
     Returns:
         tuple:
@@ -310,6 +304,7 @@ def nvt_langevin(
         dt: Integration timestep
         kT: Target temperature in energy units
         gamma: Friction coefficient for Langevin thermostat
+        seed: Random seed for reproducibility
 
     Returns:
         tuple:
@@ -514,7 +509,7 @@ def npt_langevin(  # noqa: C901, PLR0915
         alpha: Friction coefficient for particle Langevin thermostat
         cell_alpha: Friction coefficient for cell Langevin thermostat
         b_tau: Barostat time constant
-
+        seed: Random seed for reproducibility
     Returns:
         tuple:
             - callable: Function to initialize the NPTLangevinState from input data
@@ -653,12 +648,8 @@ def npt_langevin(  # noqa: C901, PLR0915
         # Create pressure tensor (diagonal with external pressure)
         if external_pressure.ndim == 0:
             # Scalar pressure - create diagonal pressure tensors for each batch
-            pressure_tensor = external_pressure * torch.eye(
-                3, device=device, dtype=dtype
-            )
-            pressure_tensor = pressure_tensor.unsqueeze(0).expand(
-                state.n_batches, -1, -1
-            )
+            pressure_tensor = external_pressure * torch.eye(3, device=device, dtype=dtype)
+            pressure_tensor = pressure_tensor.unsqueeze(0).expand(state.n_batches, -1, -1)
         else:
             # Already a tensor with shape compatible with n_batches
             pressure_tensor = external_pressure
@@ -991,9 +982,7 @@ def npt_langevin(  # noqa: C901, PLR0915
         )  # shape: (n_batches, 1, 1)
 
         # Initialize cell velocities to zero
-        cell_velocities = torch.zeros(
-            (state.n_batches, 3, 3), device=device, dtype=dtype
-        )
+        cell_velocities = torch.zeros((state.n_batches, 3, 3), device=device, dtype=dtype)
 
         # Calculate cell masses based on system size and temperature
         # This follows standard NPT barostat mass scaling
