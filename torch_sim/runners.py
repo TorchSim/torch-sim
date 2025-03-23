@@ -210,7 +210,7 @@ def _configure_hot_swapping_autobatcher(
     model: ModelInterface,
     state: SimState,
     autobatcher: HotSwappingAutoBatcher | bool,
-    max_attempts: int,
+    max_attempts: int, # TODO: change name to max_iterations
 ) -> HotSwappingAutoBatcher:
     """Configure the hot swapping autobatcher for the optimize function.
 

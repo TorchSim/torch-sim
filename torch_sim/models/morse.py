@@ -1,4 +1,39 @@
-"""Morse potential model."""
+"""Morse Potential: Anharmonic interatomic potential for molecular dynamics.
+
+This module implements the Morse potential for molecular dynamics simulations.
+The Morse potential provides a more realistic description of anharmonic bond
+behavior than simple harmonic potentials, capturing bond breaking and formation.
+It includes both energy and force calculations with support for neighbor lists.
+
+Examples:
+    ```python
+    # Create a Morse model with default parameters
+    model = MorseModel(device=torch.device('cuda'))
+
+    # Create a model with custom parameters for O-H bonds
+    model = MorseModel(
+        sigma=0.96,       # Equilibrium bond length in Å
+        epsilon=4.52,     # Dissociation energy in eV
+        alpha=2.0,        # Controls steepness/width
+        cutoff=2.5,       # Cutoff distance in Å
+        compute_force=True
+    )
+
+    # Calculate properties for a simulation state
+    output = model(sim_state)
+    energy = output["energy"]
+    forces = output["forces"]
+    ```
+
+Notes:
+    The Morse potential follows the form:
+    V(r) = D_e * (1 - exp(-a(r-r_e)))^2
+
+    Where:
+    - D_e (epsilon) is the well depth (dissociation energy)
+    - r_e (sigma) is the equilibrium bond distance
+    - a (alpha) controls the width of the potential well
+"""
 
 import torch
 
@@ -10,10 +45,42 @@ from torch_sim.unbatched.models.morse import morse_pair, morse_pair_force
 
 
 class MorseModel(torch.nn.Module, ModelInterface):
-    """Calculator for Morse potential.
+    """Morse potential energy and force calculator.
 
-    This model implements the Morse potential energy and force calculator.
-    It supports customizable interaction parameters for different particle pairs.
+    Implements the Morse potential for molecular dynamics simulations. This model
+    is particularly useful for modeling covalent bonds as it can accurately describe
+    bond stretching, breaking, and anharmonic behavior. Unlike the Lennard-Jones
+    potential, Morse is often better for cases where accurate dissociation energy
+    and bond dynamics are important.
+
+    Attributes:
+        sigma (torch.Tensor): Equilibrium bond length (r_e) in distance units.
+        epsilon (torch.Tensor): Dissociation energy (D_e) in energy units.
+        alpha (torch.Tensor): Parameter controlling the width/steepness of the potential.
+        cutoff (torch.Tensor): Distance cutoff for truncating potential calculation.
+        device (torch.device): Device where calculations are performed.
+        dtype (torch.dtype): Data type used for calculations.
+        compute_force (bool): Whether to compute atomic forces.
+        compute_stress (bool): Whether to compute stress tensor.
+        per_atom_energies (bool): Whether to compute per-atom energy decomposition.
+        per_atom_stresses (bool): Whether to compute per-atom stress decomposition.
+        use_neighbor_list (bool): Whether to use neighbor list optimization.
+
+    Examples:
+        ```python
+        # Basic usage with default parameters
+        morse_model = MorseModel(device=torch.device('cuda'))
+        results = morse_model(sim_state)
+
+        # Model parameterized for O-H bonds in water
+        oh_model = MorseModel(
+            sigma=0.96,     # Å - equilibrium bond length
+            epsilon=4.52,   # eV - dissociation energy
+            alpha=2.0,      # Controls steepness
+            compute_force=True,
+            compute_stress=True
+        )
+        ```
     """
 
     def __init__(
@@ -31,20 +98,50 @@ class MorseModel(torch.nn.Module, ModelInterface):
         use_neighbor_list: bool = True,
         cutoff: float | None = None,
     ) -> None:
-        """Initialize the calculator.
+        """Initialize the Morse potential calculator.
+
+        Creates a model with specified interaction parameters and computational flags.
+        The Morse potential is defined by three key parameters: sigma (equilibrium distance),
+        epsilon (dissociation energy), and alpha (width control).
 
         Args:
-            sigma: Distance at which potential reaches its minimum
-            epsilon: Depth of the potential well (energy scale)
-            alpha: Controls the width of the potential well
-            device: Torch device to use for calculations
-            dtype: Data type for torch tensors
-            compute_force: Whether to compute forces
-            compute_stress: Whether to compute stress tensor
-            per_atom_energies: Whether to return per-atom energies
-            per_atom_stresses: Whether to return per-atom stress tensors
-            use_neighbor_list: Whether to use neighbor lists for efficiency
-            cutoff: Cutoff distance for interactions (default: 2.5*sigma)
+            sigma (float): Equilibrium bond distance (r_e) in distance units.
+                Defaults to 1.0.
+            epsilon (float): Dissociation energy (D_e) in energy units.
+                Defaults to 5.0.
+            alpha (float): Controls the width/steepness of the potential well.
+                Larger values create a narrower well. Defaults to 5.0.
+            device (torch.device | None): Device to run computations on. If None, uses CPU.
+                Defaults to None.
+            dtype (torch.dtype): Data type for calculations. Defaults to torch.float32.
+            compute_force (bool): Whether to compute forces. Defaults to False.
+            compute_stress (bool): Whether to compute stress tensor. Defaults to False.
+            per_atom_energies (bool): Whether to compute per-atom energy decomposition.
+                Defaults to False.
+            per_atom_stresses (bool): Whether to compute per-atom stress decomposition.
+                Defaults to False.
+            use_neighbor_list (bool): Whether to use a neighbor list for optimization.
+                Significantly faster for large systems. Defaults to True.
+            cutoff (float | None): Cutoff distance for interactions in distance units.
+                If None, uses 2.5*sigma. Defaults to None.
+
+        Examples:
+            ```python
+            # Basic model with default parameters
+            model = MorseModel()
+
+            # Model for diatomic hydrogen
+            model = MorseModel(
+                sigma=0.74,    # Å
+                epsilon=4.75,  # eV
+                alpha=1.94,    # Steepness parameter
+                compute_force=True
+            )
+            ```
+
+        Notes:
+            The alpha parameter can be related to the harmonic force constant k and
+            dissociation energy D_e by: alpha = sqrt(k/(2*D_e))
         """
         super().__init__()
         self._device = device or torch.device("cpu")
@@ -63,13 +160,28 @@ class MorseModel(torch.nn.Module, ModelInterface):
         self.alpha = torch.tensor(alpha, dtype=self._dtype, device=self._device)
 
     def unbatched_forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
-        """Compute energies and forces.
+        """Compute Morse potential properties for a single unbatched system.
+
+        Internal implementation that processes a single, non-batched simulation state.
+        This method handles the core computations of pair interactions, including
+        neighbor list construction, distance calculations, and property computation.
 
         Args:
-            state: State object containing positions, cell, and other properties
+            state (SimState | StateDict): Single, non-batched simulation state or
+                equivalent dictionary containing atomic positions, cell vectors,
+                and other system information.
 
         Returns:
-            Dictionary containing computed properties (energy, forces, stress, etc.)
+            dict[str, torch.Tensor]: Dictionary of computed properties:
+                - "energy": Total potential energy (scalar)
+                - "forces": Atomic forces with shape [n_atoms, 3] (if compute_force=True)
+                - "stress": Stress tensor with shape [3, 3] (if compute_stress=True)
+                - "energies": Per-atom energies with shape [n_atoms] (if per_atom_energies=True)
+                - "stresses": Per-atom stresses with shape [n_atoms, 3, 3] (if per_atom_stresses=True)
+
+        Notes:
+            This method can work with both neighbor list and full pairwise calculations.
+            In both cases, interactions are truncated at the cutoff distance.
         """
         if isinstance(state, dict):
             state = SimState(**state, masses=torch.ones_like(state["positions"]))
@@ -159,13 +271,35 @@ class MorseModel(torch.nn.Module, ModelInterface):
         return results
 
     def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
-        """Compute energies and forces.
+        """Compute Morse potential energies, forces, and stresses for a system.
+
+        Main entry point for Morse potential calculations that handles batched states
+        by dispatching each batch to the unbatched implementation and combining results.
 
         Args:
-            state: State object containing positions, cell, and other properties
+            state (SimState | StateDict): Input state containing atomic positions,
+                cell vectors, and other system information. Can be a SimState object
+                or a dictionary with the same keys.
 
         Returns:
-            Dictionary containing computed properties (energy, forces, stress, etc.)
+            dict[str, torch.Tensor]: Dictionary of computed properties:
+                - "energy": Potential energy with shape [n_batches]
+                - "forces": Atomic forces with shape [n_atoms, 3] (if compute_force=True)
+                - "stress": Stress tensor with shape [n_batches, 3, 3] (if compute_stress=True)
+                - May include additional outputs based on configuration
+
+        Raises:
+            ValueError: If batch cannot be inferred for multi-cell systems.
+
+        Examples:
+            ```python
+            # Compute properties for a simulation state
+            model = MorseModel(compute_force=True)
+            results = model(sim_state)
+
+            energy = results["energy"]  # Shape: [n_batches]
+            forces = results["forces"]  # Shape: [n_atoms, 3]
+            ```
         """
         if isinstance(state, dict):
             state = SimState(**state, masses=torch.ones_like(state["positions"]))

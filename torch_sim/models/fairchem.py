@@ -1,6 +1,26 @@
-"""FairChem model for computing energies, forces and stresses.
+"""FairChem: PyTorch implementation of FairChem models for molecular simulations.
 
-This module provides a PyTorch implementation of the FairChem model.
+This module provides a TorchSim wrapper of the FairChem models for computing
+energies, forces, and stresses of molecular systems. It serves as a wrapper around
+the FairChem library, integrating it with the torch_sim framework to enable seamless
+simulation of molecular systems with machine learning potentials.
+
+The FairChemModel class adapts FairChem models to the ModelInterface protocol,
+allowing them to be used within the broader torch_sim simulation pipeline.
+
+Examples:
+    >>> model = FairChemModel(
+    ...     model="path/to/checkpoint.pt",
+    ...     compute_stress=True,
+    ...     dtype=torch.float32
+    ... )
+    >>> results = model(state)
+    >>> energy, forces = results["energy"], results["forces"]
+
+Notes:
+    This implementation requires FairChem to be installed and accessible.
+    It supports various model configurations through configuration files or
+    pretrained model checkpoints.
 """
 
 from __future__ import annotations
@@ -36,15 +56,35 @@ DTYPE_DICT = {
 
 
 class FairChemModel(torch.nn.Module, ModelInterface):
-    """Computes energies, forces and stresses using a FairChem model.
+    """Computes molecular energies, forces and stresses using a FairChem model.
+
+    This class wraps a FairChem model to compute energies, forces, and stresses for
+    molecular systems. It handles model initialization, checkpoint loading, and provides
+    a forward pass that accepts a SimState object and returns model predictions.
+
+    The model can be initialized either with a configuration file or a pretrained checkpoint.
+    It supports various model architectures and configurations supported by FairChem.
 
     Attributes:
-        neighbor_list_fn (Callable | None): The neighbor list function to use
-        r_max (float): Maximum cutoff radius for atomic interactions
-        config (dict): Model configuration dictionary
-        trainer: The FairChem trainer object
+        neighbor_list_fn (Callable | None): Function to compute neighbor lists
+        r_max (float): Maximum cutoff radius for atomic interactions in Ångström
+        config (dict): Complete model configuration dictionary
+        trainer: FairChem trainer object that contains the model
         data_object (Batch): Data object containing system information
-        implemented_properties (list): List of implemented model outputs
+        implemented_properties (list): List of model outputs the model can compute
+        pbc (bool): Whether periodic boundary conditions are used
+        _dtype (torch.dtype): Data type used for computation
+        _compute_stress (bool): Whether to compute stress tensor
+        _compute_force (bool): Whether to compute forces
+        _device (torch.device): Device where computation is performed
+        _reshaped_props (dict): Properties that need reshaping after computation
+
+    Examples:
+        >>> model = FairChemModel(
+        ...     model="path/to/checkpoint.pt",
+        ...     compute_stress=True
+        ... )
+        >>> results = model(state)
     """
 
     _reshaped_props = MappingProxyType(
@@ -66,21 +106,35 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         dtype: torch.dtype | None = None,
         compute_stress: bool = False,
     ) -> None:
-        """Initialize the FairChemModel.
+        """Initialize the FairChemModel with specified configuration.
+
+        Loads a FairChem model from either a checkpoint path or a configuration file.
+        Sets up the model parameters, trainer, and configuration for subsequent use
+        in energy and force calculations.
 
         Args:
-            model: Path to model checkpoint
-            atomic_numbers_list: List of atomic numbers for each system
-            neighbor_list_fn: Neighbor list function (not currently supported)
-            config_yml: Path to config YAML file
-            model_name: Name of pretrained model
-            local_cache: Path to local model cache
-            trainer: Name of trainer to use
-            cpu: Whether to use CPU instead of GPU
-            seed: Random seed for reproducibility
-            r_max: Maximum cutoff radius (overrides model default)
-            dtype: Data type to use for the model
-            compute_stress: Whether to compute stress
+            model (str | Path | None): Path to model checkpoint file
+            neighbor_list_fn (Callable | None): Function to compute neighbor lists
+                (not currently supported)
+            config_yml (str | None): Path to configuration YAML file
+            model_name (str | None): Name of pretrained model to load
+            local_cache (str | None): Path to local model cache directory
+            trainer (str | None): Name of trainer class to use
+            cpu (bool): Whether to use CPU instead of GPU for computation
+            seed (int | None): Random seed for reproducibility
+            r_max (float | None): Maximum cutoff radius in Ångström (overrides model default)
+            dtype (torch.dtype | None): Data type to use for computation
+            compute_stress (bool): Whether to compute stress tensor
+
+        Raises:
+            RuntimeError: If both model_name and model are specified
+            NotImplementedError: If local_cache is not set when model_name is used
+            NotImplementedError: If custom neighbor list function is provided
+            ValueError: If stress computation is requested but not supported by model
+
+        Notes:
+            Either config_yml or model must be provided. The model loads configuration
+            from the checkpoint if config_yml is not specified.
         """
         setup_imports()
         setup_logging()
@@ -223,27 +277,48 @@ class FairChemModel(torch.nn.Module, ModelInterface):
     def load_checkpoint(
         self, checkpoint_path: str, checkpoint: dict | None = None
     ) -> None:
-        """Load existing trained model.
+        """Load an existing trained model checkpoint.
+
+        Loads model parameters from a checkpoint file or dictionary,
+        setting the model to inference mode.
 
         Args:
-            checkpoint_path: string
-                Path to trained model
-            checkpoint: dict
-                A pretrained checkpoint dict
+            checkpoint_path (str): Path to the trained model checkpoint file
+            checkpoint (dict | None): A pretrained checkpoint dictionary. If provided,
+                this dictionary is used instead of loading from checkpoint_path.
+
+        Notes:
+            If loading fails, a message is printed but no exception is raised.
         """
         try:
             self.trainer.load_checkpoint(checkpoint_path, checkpoint, inference_only=True)
         except NotImplementedError:
             print("Unable to load checkpoint!")
 
-    def forward(self, state: SimState | StateDict) -> dict:  # TODO: what are the shapes?
-        """Forward pass of the model.
+    def forward(self, state: SimState | StateDict) -> dict:
+        """Perform forward pass to compute energies, forces, and other properties.
+
+        Takes a simulation state and computes the properties implemented by the model,
+        such as energy, forces, and stresses.
 
         Args:
-            state: State object
+            state (SimState | StateDict): State object containing positions, cells,
+                atomic numbers, and other system information. If a dictionary is provided,
+                it will be converted to a SimState.
 
         Returns:
-            Dictionary of model predictions
+            dict: Dictionary of model predictions, which may include:
+                - energy (torch.Tensor): Energy with shape [batch_size]
+                - forces (torch.Tensor): Forces with shape [n_atoms, 3]
+                - stress (torch.Tensor): Stress tensor with shape [batch_size, 3, 3],
+                    if compute_stress is True
+
+        Raises:
+            ValueError: If state.pbc is False, as FairChemModel requires PBC.
+
+        Notes:
+            The state is automatically transferred to the model's device if needed.
+            All output tensors are detached from the computation graph.
         """
         if isinstance(state, dict):
             state = SimState(**state, masses=torch.ones_like(state["positions"]))

@@ -1,4 +1,10 @@
-"""Monte Carlo simulations."""
+"""Monte Carlo simulations: Implementation of Monte Carlo methods for atomic structure optimization.
+
+This module provides functionality for performing Monte Carlo simulations,
+particularly focused on swap Monte Carlo for atomic systems. It includes
+implementations of the Metropolis criterion, swap generation, and utility
+functions for handling permutations in batched systems.
+"""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -10,34 +16,39 @@ from torch_sim.state import SimState
 
 @dataclass
 class SwapMCState(SimState):
-    """State for Monte Carlo simulations.
+    """State for Monte Carlo simulations with swap moves.
+
+    This class extends the SimState to include properties specific to Monte Carlo
+    simulations, such as the system energy and records of permutations applied
+    during the simulation.
 
     Attributes:
-        energy: Energy of the system
-        last_permutation: Last permutation applied, we track this so
-            we can have a record of the moves made
+        energy (torch.Tensor): Energy of the system with shape [batch_size]
+        last_permutation (torch.Tensor): Last permutation applied to the system,
+            with shape [n_atoms], tracking the moves made for analysis or reversal
     """
 
     energy: torch.Tensor
-    # TODO: change back to last_swap? clearer + more efficient
-    # TODO: a little less general though because only one move is tracked
     last_permutation: torch.Tensor
 
 
 def generate_swaps(
     state: SimState, generator: torch.Generator | None = None
 ) -> torch.Tensor:
-    """Generate swaps for a given batch.
+    """Generate atom swaps for a given batched system.
+
+    Generates proposed swaps between atoms of different types within the same batch.
+    The function ensures that swaps only occur between atoms with different atomic numbers.
 
     Args:
-        state: The state to generate swaps for
-        generator: The generator to use for the random number generator
+        state (SimState): The simulation state
+        generator (torch.Generator | None, optional): Random number generator for
+            reproducibility. Defaults to None.
 
     Returns:
-        A tensor of swaps
+        torch.Tensor: A tensor of proposed swaps with shape [n_batches, 2],
+            where each row contains indices of atoms to be swapped
     """
-    # TODO: add atomic numbers and a way to guarantee swaps
-    # between atoms of different atomic numbers
     batch = state.batch
     atomic_numbers = state.atomic_numbers
 
@@ -88,7 +99,19 @@ def generate_swaps(
 
 
 def swaps_to_permutation(swaps: torch.Tensor, n_atoms: int) -> torch.Tensor:
-    """Convert swaps to a permutation."""
+    """Convert atom swap pairs to a full permutation tensor.
+
+    Creates a permutation tensor that represents the result of applying the specified swaps
+    to the system.
+
+    Args:
+        swaps (torch.Tensor): Tensor of shape [n_swaps, 2] containing pairs of indices to swap
+        n_atoms (int): Total number of atoms in the system
+
+    Returns:
+        torch.Tensor: Permutation tensor of shape [n_atoms] where permutation[i] contains
+            the index of the atom that should be moved to position i
+    """
     permutation = torch.arange(n_atoms, device=swaps.device)
     permutation[swaps[:, 0]] = swaps[:, 1]
     permutation[swaps[:, 1]] = swaps[:, 0]
@@ -96,11 +119,17 @@ def swaps_to_permutation(swaps: torch.Tensor, n_atoms: int) -> torch.Tensor:
 
 
 def validate_permutation(permutation: torch.Tensor, batch: torch.Tensor) -> None:
-    """Validate that no swaps are attempted between atoms in different batches.
+    """Validate that permutations only swap atoms within the same batch.
+
+    Confirms that no swaps are attempted between atoms in different batches,
+    which would lead to physically invalid configurations.
 
     Args:
-        permutation: A tensor of shape (n_atoms,) with indices swapped
-        batch: The batch of the atoms
+        permutation (torch.Tensor): Permutation tensor of shape [n_atoms]
+        batch (torch.Tensor): Batch assignments for each atom of shape [n_atoms]
+
+    Raises:
+        ValueError: If any swaps are between atoms in different batches
     """
     if not torch.all(batch == batch[permutation]):
         raise ValueError("Swaps must be between atoms in the same batch")
@@ -112,16 +141,25 @@ def metropolis_criterion(
     kT: float,
     generator: torch.Generator | None = None,
 ) -> torch.Tensor:
-    """Perform a Metropolis criterion using PyTorch.
+    """Apply the Metropolis acceptance criterion for Monte Carlo moves.
+
+    Determines whether proposed moves should be accepted or rejected based on
+    the energy difference and system temperature, following the Boltzmann distribution.
 
     Args:
-        energy_new: New energy after proposed move
-        energy_old: Old energy before proposed move
-        kT: Temperature of the system (energy units)
-        generator: Generator for random numbers
+        energy_new (torch.Tensor): New energy after proposed move of shape [batch_size]
+        energy_old (torch.Tensor): Old energy before proposed move of shape [batch_size]
+        kT (float): Temperature of the system in energy units
+        generator (torch.Generator | None, optional): Random number generator for
+            reproducibility. Defaults to None.
 
     Returns:
-        Boolean tensor indicating acceptance (True) or rejection (False) for each move
+        torch.Tensor: Boolean tensor of shape [batch_size] indicating acceptance (True)
+            or rejection (False) for each move
+
+    Notes:
+        The acceptance probability follows min(1, exp(-ΔE/kT)) according to the
+        standard Metropolis algorithm.
     """
     delta_e = energy_new - energy_old
 
@@ -142,17 +180,32 @@ def swap_monte_carlo(
     model: torch.nn.Module,
     kT: float,
     seed: int | None = None,
-) -> tuple[SwapMCState, Callable[[SwapMCState, torch.Tensor], SwapMCState]]:
-    """Swap Monte Carlo simulation.
+) -> tuple[
+    Callable[[SimState], SwapMCState],
+    Callable[[SwapMCState, float, torch.Generator | None], SwapMCState],
+]:
+    """Initialize a swap Monte Carlo simulation for atomic structure optimization.
+
+    Creates and returns functions for initializing the Monte Carlo state and performing
+    Monte Carlo steps. The simulation uses the Metropolis criterion to accept or reject
+    proposed swaps based on energy differences.
 
     Args:
-        state: The state to perform the Monte Carlo simulation on
-        model: The model to use for the Monte Carlo simulation
-        kT: The temperature of the system
-        seed: The seed for the random number generator
+        model (torch.nn.Module): Energy model that takes a SimState and returns a dict
+            containing 'energy' as a key
+        kT (float): Temperature of the system in energy units
+        seed (int | None, optional): Seed for the random number generator. Defaults to None.
 
     Returns:
-        A tuple containing the initial state and the step function
+        tuple: A tuple containing:
+            - init_function (Callable): Function to initialize a SwapMCState from a SimState
+            - step_function (Callable): Function to perform a single Monte Carlo step
+
+    Examples:
+        >>> init_fn, step_fn = swap_monte_carlo(model=energy_model, kT=0.1, seed=42)
+        >>> mc_state = init_fn(initial_state)
+        >>> for _ in range(100):
+        >>>     mc_state = step_fn(mc_state)
     """
     if seed is not None:
         generator = torch.Generator(device=model.device)
@@ -179,15 +232,24 @@ def swap_monte_carlo(
         kT: float = kT,
         generator: torch.Generator | None = None,
     ) -> SwapMCState:
-        """Perform a single swap step.
+        """Perform a single swap Monte Carlo step.
+
+        Proposes atom swaps, evaluates the energy change, and uses the Metropolis
+        criterion to determine whether to accept the move. Rejected moves are reversed.
 
         Args:
-            state: The state to perform the swap step on
-            kT: The temperature of the system
-            generator: The generator for the random number generator
+            state (SwapMCState): The current Monte Carlo state
+            kT (float, optional): Temperature parameter in energy units. Defaults to the value
+                specified in the outer function.
+            generator (torch.Generator | None, optional): Random number generator.
+                Defaults to None.
 
         Returns:
-            The state after the swap step
+            SwapMCState: Updated Monte Carlo state after applying the step
+
+        Notes:
+            The function handles batched systems and ensures that swaps only occur
+            within the same batch.
         """
         swaps = generate_swaps(state, generator=generator)
 

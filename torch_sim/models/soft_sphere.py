@@ -1,4 +1,44 @@
-"""Soft sphere model for computing energies, forces and stresses."""
+"""Soft sphere model for computing energies, forces and stresses.
+
+This module provides implementations of soft sphere potentials for molecular dynamics
+simulations. Soft sphere potentials are repulsive interatomic potentials that model
+the core repulsion between atoms, avoiding the infinite repulsion of hard sphere models
+while maintaining computational efficiency.
+
+The soft sphere potential has the form:
+    V(r) = epsilon * (sigma/r)^alpha
+
+Where:
+    - r is the distance between particles
+    - sigma is the effective diameter of the particles
+    - epsilon controls the energy scale
+    - alpha determines the steepness of the repulsion (typically α ≥ 2)
+
+Soft sphere models are particularly useful for:
+    - Granular matter simulations
+    - Modeling excluded volume effects
+    - Initial equilibration of dense systems
+    - Coarse-grained molecular dynamics
+
+Example:
+    ```python
+    # Create a soft sphere model with default parameters
+    model = SoftSphereModel()
+
+    # Calculate properties for a simulation state
+    results = model(sim_state)
+    energy = results["energy"]
+    forces = results["forces"]
+
+    # For multiple species with different interaction parameters
+    multi_model = SoftSphereMultiModel(
+        species=particle_types,
+        sigma_matrix=size_matrix,
+        epsilon_matrix=strength_matrix
+    )
+    results = multi_model(sim_state)
+    ```
+"""
 
 import torch
 
@@ -19,10 +59,51 @@ DEFAULT_ALPHA = torch.tensor(2.0)
 
 
 class SoftSphereModel(torch.nn.Module, ModelInterface):
-    """Calculator for soft sphere potential.
+    """Calculator for soft sphere potential energies and forces.
 
-    This model implements the soft sphere potential energy and force calculator.
-    It supports customizable interaction parameters for different particle pairs.
+    Implements a model for computing properties based on the soft sphere potential,
+    which describes purely repulsive interactions between particles. This potential
+    is useful for modeling systems where particles should not overlap but don't have
+    attractive interactions, such as granular materials and some colloidal systems.
+
+    The potential energy between particles i and j is:
+        V_ij(r) = epsilon * (sigma/r)^alpha
+
+    Attributes:
+        sigma (torch.Tensor): Effective particle diameter in distance units.
+        epsilon (torch.Tensor): Energy scale parameter in energy units.
+        alpha (torch.Tensor): Exponent controlling repulsion steepness (typically ≥ 2).
+        cutoff (torch.Tensor): Cutoff distance for interactions.
+        use_neighbor_list (bool): Whether to use neighbor list optimization.
+        _device (torch.device): Computation device (CPU/GPU).
+        _dtype (torch.dtype): Data type for tensor calculations.
+        _compute_force (bool): Whether to compute forces.
+        _compute_stress (bool): Whether to compute stress tensor.
+        per_atom_energies (bool): Whether to compute per-atom energy decomposition.
+        per_atom_stresses (bool): Whether to compute per-atom stress decomposition.
+
+    Examples:
+        ```python
+        # Basic usage with default parameters
+        model = SoftSphereModel()
+        results = model(sim_state)
+
+        # Custom parameters for colloidal system
+        colloid_model = SoftSphereModel(
+            sigma=2.0,       # particle diameter in nm
+            epsilon=10.0,    # energy scale in kJ/mol
+            alpha=12.0,      # steep repulsion for hard colloids
+            compute_stress=True
+        )
+
+        # Get forces for a system with periodic boundary conditions
+        results = colloid_model(SimState(
+            positions=positions,
+            cell=box_vectors,
+            pbc=torch.tensor([True, True, True])
+        ))
+        forces = results["forces"]  # shape: [n_particles, 3]
+        ```
     """
 
     def __init__(
@@ -40,7 +121,46 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         use_neighbor_list: bool = True,
         cutoff: float | None = None,
     ) -> None:
-        """Initialize the soft sphere model."""
+        """Initialize the soft sphere model.
+
+        Creates a soft sphere model with specified parameters for particle interactions
+        and computation options.
+
+        Args:
+            sigma (float): Effective particle diameter. Determines the distance
+                scale of the interaction. Defaults to 1.0.
+            epsilon (float): Energy scale parameter. Controls the strength of
+                the repulsion. Defaults to 1.0.
+            alpha (float): Exponent controlling repulsion steepness. Higher values
+                create steeper, more hard-sphere-like repulsion. Defaults to 2.0.
+            device (torch.device | None): Device for computations. If None, uses CPU.
+                Defaults to None.
+            dtype (torch.dtype): Data type for calculations. Defaults to torch.float32.
+            compute_force (bool): Whether to compute forces. Defaults to True.
+            compute_stress (bool): Whether to compute stress tensor. Defaults to False.
+            per_atom_energies (bool): Whether to compute per-atom energy decomposition.
+                Defaults to False.
+            per_atom_stresses (bool): Whether to compute per-atom stress decomposition.
+                Defaults to False.
+            use_neighbor_list (bool): Whether to use a neighbor list for optimization.
+                Significantly faster for large systems. Defaults to True.
+            cutoff (float | None): Cutoff distance for interactions. If None, uses
+                the value of sigma. Defaults to None.
+
+        Examples:
+            ```python
+            # Default model
+            model = SoftSphereModel()
+
+            # WCA-like repulsive potential (derived from Lennard-Jones)
+            wca_model = SoftSphereModel(
+                sigma=1.0,
+                epsilon=1.0,
+                alpha=12.0,  # Steep repulsion similar to r^-12 term in LJ
+                cutoff=2**(1/6)  # WCA cutoff at minimum of LJ potential
+            )
+            ```
+        """
         super().__init__()
         self._device = device or torch.device("cpu")
         self._dtype = dtype
@@ -60,13 +180,28 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         self,
         state: SimState,
     ) -> dict[str, torch.Tensor]:
-        """Compute energies and forces for a single system.
+        """Compute energies and forces for a single unbatched system.
+
+        Internal implementation that processes a single, non-batched simulation state.
+        This method handles the core computations for pair interactions, including
+        neighbor list construction, distance calculations, and property computation.
 
         Args:
-            state: State object containing positions, cell, and other properties
+            state (SimState): Single, non-batched simulation state containing atomic
+                positions, cell vectors, and other system information.
 
         Returns:
-            Dictionary containing computed properties (energy, forces, stress, etc.)
+            dict[str, torch.Tensor]: Dictionary of computed properties:
+                - "energy": Total potential energy (scalar)
+                - "forces": Atomic forces with shape [n_atoms, 3] (if compute_force=True)
+                - "stress": Stress tensor with shape [3, 3] (if compute_stress=True)
+                - "energies": Per-atom energies with shape [n_atoms] (if per_atom_energies=True)
+                - "stresses": Per-atom stresses with shape [n_atoms, 3, 3] (if per_atom_stresses=True)
+
+        Notes:
+            This method can work with both neighbor list and full pairwise calculations.
+            The soft sphere potential is purely repulsive, and forces are truncated at
+            the cutoff distance.
         """
         if isinstance(state, dict):
             state = SimState(**state, masses=torch.ones_like(state["positions"]))
@@ -165,19 +300,36 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
 
         return results
 
-    def forward(
-        self, state: SimState | StateDict
-    ) -> dict[str, torch.Tensor]:  # TODO: what are the shapes?
-        """Compute energies and forces for batched systems.
+    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+        """Compute soft sphere potential energies, forces, and stresses for a system.
+
+        Main entry point for soft sphere potential calculations that handles batched states
+        by dispatching each batch to the unbatched implementation and combining results.
 
         Args:
-            state: State object
+            state (SimState | StateDict): Input state containing atomic positions,
+                cell vectors, and other system information. Can be a SimState object
+                or a dictionary with the same keys.
 
         Returns:
-            Dictionary with computed properties:
-            - energy: Energy for each system. Shape: [n_systems]
-            - forces: Forces for all atoms. Shape: [total_atoms, 3]
-            - stress: Stress tensor for each system. Shape: [n_systems, 3, 3]
+            dict[str, torch.Tensor]: Dictionary of computed properties:
+                - "energy": Potential energy with shape [n_batches]
+                - "forces": Atomic forces with shape [n_atoms, 3] (if compute_force=True)
+                - "stress": Stress tensor with shape [n_batches, 3, 3] (if compute_stress=True)
+                - May include additional outputs based on configuration
+
+        Raises:
+            ValueError: If batch cannot be inferred for multi-cell systems.
+
+        Examples:
+            ```python
+            # Compute properties for a simulation state
+            model = SoftSphereModel(compute_force=True)
+            results = model(sim_state)
+
+            energy = results["energy"]  # Shape: [n_batches]
+            forces = results["forces"]  # Shape: [n_atoms, 3]
+            ```
         """
         if isinstance(state, dict):
             state = SimState(**state, masses=torch.ones_like(state["positions"]))
@@ -202,23 +354,63 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
 
 
 class SoftSphereMultiModel(torch.nn.Module):
-    """Calculator for soft sphere potential with multiple atomic species.
+    """Calculator for systems with multiple particle types.
 
-    This model implements a multi-species soft sphere potential where the interaction
-    parameters (sigma, epsilon, alpha) can be specified independently for each pair
-    of atomic species. The potential creates repulsive forces between overlapping atoms
-    with species-specific interaction strengths and ranges.
+    Extends the basic soft sphere model to support multiple particle types with
+    different interaction parameters for each pair of particle types. This enables
+    simulation of heterogeneous systems like mixtures, composites, or biomolecular
+    systems with different interaction strengths between different components.
 
-    The total energy is computed as a sum over all atom pairs:
-        E = sum_{i,j} E_{ij}(r_{ij})
-    where E_{ij} is the pair potential between species i and j.
+    This model maintains matrices of interaction parameters (sigma, epsilon, alpha)
+    where each element [i,j] represents the parameter for interactions between
+    particle types i and j.
 
-    The pair potential has the form:
-        E_{ij}(r) = epsilon_{ij}/alpha_{ij} * (1 - r/sigma_{ij})^alpha_{ij}
-        for r < sigma_{ij}, and 0 otherwise
+    Attributes:
+        species (torch.Tensor): Particle type indices for each particle in the system.
+        sigma_matrix (torch.Tensor): Matrix of distance parameters for each pair of types.
+            Shape: [n_types, n_types].
+        epsilon_matrix (torch.Tensor): Matrix of energy scale parameters for each pair.
+            Shape: [n_types, n_types].
+        alpha_matrix (torch.Tensor): Matrix of exponents for each pair of types.
+            Shape: [n_types, n_types].
+        cutoff (torch.Tensor): Maximum interaction distance.
+        compute_force (bool): Whether to compute forces.
+        compute_stress (bool): Whether to compute stress tensor.
+        per_atom_energies (bool): Whether to compute per-atom energy decomposition.
+        per_atom_stresses (bool): Whether to compute per-atom stress decomposition.
+        use_neighbor_list (bool): Whether to use neighbor list optimization.
+        periodic (bool): Whether to use periodic boundary conditions.
+        _device (torch.device): Computation device (CPU/GPU).
+        _dtype (torch.dtype): Data type for tensor calculations.
 
-    Forces are computed as the negative gradient of the energy with respect to atomic
-    positions. The stress tensor is computed using the virial formula.
+    Examples:
+        ```python
+        # Create a binary mixture with different interaction parameters
+        # Define interaction matrices (size 2x2 for binary system)
+        sigma_matrix = torch.tensor([
+            [1.0, 0.8],  # Type 0-0 and 0-1 interactions
+            [0.8, 0.6]   # Type 1-0 and 1-1 interactions
+        ])
+
+        epsilon_matrix = torch.tensor([
+            [1.0, 0.5],  # Type 0-0 and 0-1 interactions
+            [0.5, 2.0]   # Type 1-0 and 1-1 interactions
+        ])
+
+        # Particle type assignments (0 or 1 for each particle)
+        species = torch.tensor([0, 0, 1, 1, 0, 1])
+
+        # Create the model
+        model = SoftSphereMultiModel(
+            species=species,
+            sigma_matrix=sigma_matrix,
+            epsilon_matrix=epsilon_matrix,
+            compute_force=True
+        )
+
+        # Compute properties
+        results = model(simulation_state)
+        ```
     """
 
     def __init__(
@@ -238,27 +430,75 @@ class SoftSphereMultiModel(torch.nn.Module):
         use_neighbor_list: bool = True,
         cutoff: float | None = None,
     ) -> None:
-        """Initialize the multi-species soft sphere calculator.
+        """Initialize a soft sphere model for multi-component systems.
+
+        Creates a model for systems with multiple particle types, each with potentially
+        different interaction parameters.
 
         Args:
-            species: List of species labels/indices for each atom in the system.
-                Used to look up interaction parameters.
-            sigma_matrix: Matrix of interaction diameters for each species pair.
-                Shape [n_species, n_species]. Must be symmetric.
-            epsilon_matrix: Matrix of interaction strengths for each species pair.
-                Shape [n_species, n_species]. Must be symmetric.
-            alpha_matrix: Matrix of stiffness exponents for each species pair.
-                Shape [n_species, n_species]. Must be symmetric.
-            device: PyTorch device to use for calculations (CPU/GPU).
-            dtype: PyTorch data type for numerical precision.
-            periodic: Whether to use periodic boundary conditions.
-            compute_force: Whether to compute atomic forces.
-            compute_stress: Whether to compute the stress tensor.
-            per_atom_energies: Whether to compute per-atom energy contributions.
-            per_atom_stresses: Whether to compute per-atom stress contributions.
-            use_neighbor_list: Whether to use neighbor lists for efficiency.
-            cutoff: Global cutoff distance for interactions. If None, uses
-                maximum sigma value from sigma_matrix.
+            species (torch.Tensor | None): Particle type indices, shape [n_particles].
+                Each value should be an integer in range [0, n_types-1]. If None,
+                assumes all particles are the same type (0). Defaults to None.
+            sigma_matrix (torch.Tensor | None): Matrix of distance parameters for
+                each pair of types. Shape [n_types, n_types]. If None, uses default
+                value 1.0 for all pairs. Defaults to None.
+            epsilon_matrix (torch.Tensor | None): Matrix of energy scale parameters
+                for each pair of types. Shape [n_types, n_types]. If None, uses
+                default value 1.0 for all pairs. Defaults to None.
+            alpha_matrix (torch.Tensor | None): Matrix of exponents for each pair.
+                Shape [n_types, n_types]. If None, uses default value 2.0 for all
+                pairs. Defaults to None.
+            device (torch.device | None): Device for computations. If None, uses CPU.
+                Defaults to None.
+            dtype (torch.dtype): Data type for calculations. Defaults to torch.float32.
+            periodic (bool): Whether to use periodic boundary conditions. Defaults to True.
+            compute_force (bool): Whether to compute forces. Defaults to True.
+            compute_stress (bool): Whether to compute stress tensor. Defaults to False.
+            per_atom_energies (bool): Whether to compute per-atom energy decomposition.
+                Defaults to False.
+            per_atom_stresses (bool): Whether to compute per-atom stress decomposition.
+                Defaults to False.
+            use_neighbor_list (bool): Whether to use a neighbor list for optimization.
+                Defaults to True.
+            cutoff (float | None): Cutoff distance for interactions. If None, uses
+                the maximum value from sigma_matrix. Defaults to None.
+
+        Examples:
+            ```python
+            # Binary polymer mixture with different interactions
+            # Polymer A (type 0): larger, softer particles
+            # Polymer B (type 1): smaller, harder particles
+
+            # Create species assignment (100 particles total)
+            species = torch.cat([
+                torch.zeros(50, dtype=torch.long),  # 50 particles of type 0
+                torch.ones(50, dtype=torch.long)    # 50 particles of type 1
+            ])
+
+            # Interaction matrices
+            sigma = torch.tensor([
+                [1.2, 1.0],  # A-A and A-B interactions
+                [1.0, 0.8]   # B-A and B-B interactions
+            ])
+
+            epsilon = torch.tensor([
+                [1.0, 1.5],  # A-A and A-B interactions
+                [1.5, 2.0]   # B-A and B-B interactions
+            ])
+
+            # Create model with mixing rules
+            model = SoftSphereMultiModel(
+                species=species,
+                sigma_matrix=sigma,
+                epsilon_matrix=epsilon,
+                compute_force=True
+            )
+            ```
+
+        Notes:
+            The interaction matrices must be symmetric for physical consistency
+            (e.g., interaction of type 0 with type 1 should be the same as type 1
+            with type 0).
         """
         super().__init__()
         self.device = device or torch.device("cpu")
@@ -286,7 +526,9 @@ class SoftSphereMultiModel(torch.nn.Module):
             n_species,
             n_species,
         ):
-            raise ValueError(f"epsilon_matrix must have shape ({n_species}, {n_species})")
+            raise ValueError(
+                f"epsilon_matrix must have shape ({n_species}, {n_species})"
+            )
         if alpha_matrix is not None and alpha_matrix.shape != (n_species, n_species):
             raise ValueError(f"alpha_matrix must have shape ({n_species}, {n_species})")
 
@@ -325,20 +567,32 @@ class SoftSphereMultiModel(torch.nn.Module):
         state: SimState,
         species: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        """Compute energies, forces and stresses for the multi-species system.
+        """Compute energies and forces for a single unbatched system with multiple species.
+
+        Internal implementation that processes a single, non-batched simulation state.
+        This method handles all pair interactions between particles of different types
+        using the appropriate interaction parameters from the parameter matrices.
 
         Args:
-            state: State object
-            species: Species labels/indices for each atom. If None, uses
-                the species provided at initialization.
+            state (SimState): Single, non-batched simulation state containing atomic
+                positions, cell vectors, and other system information.
+            species (torch.Tensor | None): Optional species indices to override the
+                ones provided during initialization. Shape: [n_particles]. If None,
+                uses the species defined at initialization. Defaults to None.
 
         Returns:
-            Dictionary containing computed quantities:
-            - 'energy': Total potential energy of the system
-            - 'energies': Per-atom energies (if per_atom_energies=True)
-            - 'forces': Atomic forces (if compute_force=True)
-            - 'stress': Stress tensor (if compute_stress=True)
-            - 'stresses': Per-atom stress tensors (if per_atom_stresses=True)
+            dict[str, torch.Tensor]: Dictionary of computed properties:
+                - "energy": Total potential energy (scalar)
+                - "forces": Atomic forces with shape [n_atoms, 3] (if compute_force=True)
+                - "stress": Stress tensor with shape [3, 3] (if compute_stress=True)
+                - "energies": Per-atom energies with shape [n_atoms] (if per_atom_energies=True)
+                - "stresses": Per-atom stresses with shape [n_atoms, 3, 3] (if per_atom_stresses=True)
+
+        Notes:
+            This method supports both neighbor list optimization and full pairwise
+            calculations based on the use_neighbor_list parameter. For each pair of
+            particles, it looks up the appropriate parameters based on the species
+            of the two particles.
         """
         # Convert inputs to proper device/dtype and handle species
         if not isinstance(state, SimState):
@@ -454,16 +708,47 @@ class SoftSphereMultiModel(torch.nn.Module):
         return results
 
     def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
-        """Compute energies and forces for batched systems.
+        """Compute soft sphere potential properties for multi-component systems.
+
+        Main entry point for multi-species soft sphere calculations that handles
+        batched states by dispatching each batch to the unbatched implementation
+        and combining results.
 
         Args:
-            state: State object
+            state (SimState | StateDict): Input state containing atomic positions,
+                cell vectors, and other system information. Can be a SimState object
+                or a dictionary with the same keys.
 
         Returns:
-            Dictionary with computed properties:
-            - energy: Energy for each system. Shape: [n_systems]
-            - forces: Forces for all atoms. Shape: [total_atoms, 3]
-            - stress: Stress tensor for each system. Shape: [n_systems, 3, 3]
+            dict[str, torch.Tensor]: Dictionary of computed properties:
+                - "energy": Potential energy with shape [n_batches]
+                - "forces": Atomic forces with shape [n_atoms, 3] (if compute_force=True)
+                - "stress": Stress tensor with shape [n_batches, 3, 3] (if compute_stress=True)
+                - May include additional outputs based on configuration
+
+        Raises:
+            ValueError: If batch cannot be inferred for multi-cell systems or if
+                species information is missing.
+
+        Examples:
+            ```python
+            # Create model for binary mixture
+            model = SoftSphereMultiModel(
+                species=particle_types,
+                sigma_matrix=distance_matrix,
+                epsilon_matrix=strength_matrix,
+                compute_force=True
+            )
+
+            # Calculate properties
+            results = model(simulation_state)
+            energy = results["energy"]
+            forces = results["forces"]
+            ```
+
+        Notes:
+            This method requires species information either provided during initialization
+            or included in the state object's metadata.
         """
         if not isinstance(state, SimState):
             state = SimState(

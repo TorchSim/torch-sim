@@ -1,4 +1,4 @@
-"""Input/output utilities for molecular systems.
+"""Input/output utilities for atomistic systems.
 
 This module provides functions for converting between different structural
 representations. It includes utilities for converting ASE Atoms objects,
@@ -56,6 +56,9 @@ def state_to_atoms(state: "SimState") -> list["Atoms"]:
     Returns:
         list[Atoms]: List of ASE Atoms objects, one per batch
 
+    Raises:
+        ImportError: If ASE is not installed
+
     Notes:
         - Output positions and cell will be in Å
         - Output masses will be in amu
@@ -102,6 +105,9 @@ def state_to_structures(state: "SimState") -> list["Structure"]:
 
     Returns:
         list[Structure]: List of Pymatgen Structure objects, one per batch
+
+    Raises:
+        ImportError: If Pymatgen is not installed
 
     Notes:
         - Output positions and cell will be in Å
@@ -157,6 +163,9 @@ def state_to_phonopy(state: "SimState") -> list["PhonopyAtoms"]:
     Returns:
         list[PhonopyAtoms]: List of PhonopyAtoms objects, one per batch
 
+    Raises:
+        ImportError: If Phonopy is not installed
+
     Notes:
         - Output positions and cell will be in Å
         - Output masses will be in amu
@@ -201,15 +210,24 @@ def atoms_to_state(
     device: torch.device,
     dtype: torch.dtype,
 ) -> "SimState":
-    """Create state tensors from an ASE Atoms object or list of Atoms objects.
+    """Convert an ASE Atoms object or list of Atoms objects to a SimState.
 
     Args:
-        atoms: Single ASE Atoms object or list of Atoms objects
-        device: Device to create tensors on
-        dtype: Data type for tensors
+        atoms (Atoms | list[Atoms]): Single ASE Atoms object or list of Atoms objects
+        device (torch.device): Device to create tensors on
+        dtype (torch.dtype): Data type for tensors (typically torch.float32 or torch.float64)
 
     Returns:
-        SimState: Batched state tensors in internal units
+        SimState: Batched state tensors in internal units with shapes:
+                 - positions: [n_atoms, 3]
+                 - masses: [n_atoms]
+                 - cell: [n_batches, 3, 3]
+                 - atomic_numbers: [n_atoms]
+                 - batch: [n_atoms]
+
+    Raises:
+        ImportError: If ASE is not installed
+        ValueError: If systems have inconsistent periodic boundary conditions
 
     Notes:
         - Input positions and cell should be in Å
@@ -269,12 +287,20 @@ def structures_to_state(
     """Create a SimState from pymatgen Structure(s).
 
     Args:
-        structure: Single Structure or list of Structure objects
-        device: Device to create tensors on
-        dtype: Data type for tensors
+        structure (Structure | list[Structure]): Single Structure or list of Structure objects
+        device (torch.device): Device to create tensors on
+        dtype (torch.dtype): Data type for tensors (typically torch.float32 or torch.float64)
 
     Returns:
-        SimState: Batched state tensors in internal units
+        SimState: Batched state tensors in internal units with shapes:
+                 - positions: [n_atoms, 3]
+                 - masses: [n_atoms]
+                 - cell: [n_batches, 3, 3]
+                 - atomic_numbers: [n_atoms]
+                 - batch: [n_atoms]
+
+    Raises:
+        ImportError: If Pymatgen is not installed
 
     Notes:
         - Input positions and cell should be in Å
@@ -334,12 +360,21 @@ def phonopy_to_state(
     """Create state tensors from a PhonopyAtoms object or list of PhonopyAtoms objects.
 
     Args:
-        phonopy_atoms: Single PhonopyAtoms object or list of PhonopyAtoms objects
-        device: Device to create tensors on
-        dtype: Data type for tensors
+        phonopy_atoms (PhonopyAtoms | list[PhonopyAtoms]): Single PhonopyAtoms object
+                                                          or list of PhonopyAtoms objects
+        device (torch.device): Device to create tensors on
+        dtype (torch.dtype): Data type for tensors (typically torch.float32 or torch.float64)
 
     Returns:
-        SimState: Batched state tensors in internal units
+        SimState: Batched state tensors in internal units with shapes:
+                 - positions: [n_atoms, 3]
+                 - masses: [n_atoms]
+                 - cell: [n_batches, 3, 3]
+                 - atomic_numbers: [n_atoms]
+                 - batch: [n_atoms]
+
+    Raises:
+        ImportError: If Phonopy is not installed
 
     Notes:
         - Input positions and cell should be in Å
@@ -352,7 +387,9 @@ def phonopy_to_state(
     try:
         from phonopy.structure.atoms import PhonopyAtoms
     except ImportError as err:
-        raise ImportError("Phonopy is required for phonopy_to_state conversion") from err
+        raise ImportError(
+            "Phonopy is required for phonopy_to_state conversion"
+        ) from err
 
     phonopy_atoms_list = (
         [phonopy_atoms] if isinstance(phonopy_atoms, PhonopyAtoms) else phonopy_atoms

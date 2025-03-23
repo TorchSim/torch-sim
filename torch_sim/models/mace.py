@@ -1,4 +1,20 @@
-"""MACE model for computing energies for multiple systems."""
+"""MACE model implementation for TorchSim.
+
+This module provides a TorchSim wrapper of the MACE model for computing
+energies, forces, and stresses for molecular systems. It integrates the MACE model
+with TorchSim's simulation framework, handling batched computations for multiple
+systems simultaneously.
+
+The implementation supports various features including:
+- Computing energies, forces, and stresses
+- Handling periodic boundary conditions
+- Optional CuEq acceleration for improved performance
+- Batched calculations for multiple systems
+
+Notes:
+    This module depends on the MACE package and implements the ModelInterface
+    for compatibility with the broader TorchSim framework.
+"""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -15,7 +31,29 @@ from torch_sim.state import SimState, StateDict
 class MaceModel(torch.nn.Module, ModelInterface):
     """Computes energies for multiple systems using a MACE model.
 
-    Implements the ModelInterface for compatibility with TorchSim.
+    This class wraps a MACE model to compute energies, forces, and stresses for
+    atomic systems within the TorchSim framework. It supports batched calculations
+    for multiple systems and handles the necessary transformations between
+    TorchSim's data structures and MACE's expected inputs.
+
+    Attributes:
+        r_max (float): Cutoff radius for neighbor interactions.
+        z_table (utils.AtomicNumberTable): Table mapping atomic numbers to indices.
+        model (torch.nn.Module): The underlying MACE neural network model.
+        neighbor_list_fn (Callable): Function used to compute neighbor lists.
+        atomic_numbers (torch.Tensor): Atomic numbers with shape [n_atoms].
+        batch (torch.Tensor): Batch indices with shape [n_atoms].
+        n_systems (int): Number of systems in the batch.
+        n_atoms_per_system (list[int]): Number of atoms in each system.
+        ptr (torch.Tensor): Pointers to the start of each system in the batch with shape [n_systems + 1].
+        total_atoms (int): Total number of atoms across all systems.
+        node_attrs (torch.Tensor): One-hot encoded atomic types with shape [n_atoms, n_elements].
+
+    Examples:
+        >>> model = MaceModel(model=mace_model, atomic_numbers=torch.tensor([1, 1, 8]))
+        >>> state = SimState(positions=positions, cell=cell, pbc=pbc)
+        >>> results = model(state)
+        >>> energy, forces = results["energy"], results["forces"]
     """
 
     def __init__(
@@ -31,19 +69,33 @@ class MaceModel(torch.nn.Module, ModelInterface):
         compute_stress: bool = True,
         enable_cueq: bool = False,
     ) -> None:
-        """Initialize the BatchedMaceModel.
+        """Initialize the MACE model for energy and force calculations.
+
+        Sets up the MACE model for energy, force, and stress calculations within
+        the TorchSim framework. The model can be initialized with atomic numbers
+        and batch indices, or these can be provided during the forward pass.
 
         Args:
-            device: The device to run computations on.
-            dtype: The data type for tensor operations.
-            model: The MACE neural network model.
-            atomic_numbers: Atomic numbers with shape [n_atoms].
-            batch: Batch indices with shape [n_atoms].
-            neighbor_list_fn: The neighbor list function to use.
-            compute_force: Whether to compute forces.
-            compute_stress: Whether to compute stress.
-            enable_cueq: Whether to enable CuEq acceleration.
-            **kwargs: Additional keyword arguments.
+            model (str | Path | torch.nn.Module | None): The MACE neural network model,
+                either as a path to a saved model or as a loaded torch.nn.Module instance.
+            device (torch.device | None): The device to run computations on.
+                Defaults to CUDA if available, otherwise CPU.
+            dtype (torch.dtype): The data type for tensor operations.
+                Defaults to torch.float64.
+            atomic_numbers (torch.Tensor | None): Atomic numbers with shape [n_atoms].
+                If provided at initialization, cannot be provided again during forward.
+            batch (torch.Tensor | None): Batch indices with shape [n_atoms] indicating
+                which system each atom belongs to. If not provided with atomic_numbers,
+                all atoms are assumed to be in the same system.
+            neighbor_list_fn (Callable): Function to compute neighbor lists.
+                Defaults to vesin_nl_ts.
+            compute_force (bool): Whether to compute forces. Defaults to True.
+            compute_stress (bool): Whether to compute stress. Defaults to True.
+            enable_cueq (bool): Whether to enable CuEq acceleration. Defaults to False.
+
+        Raises:
+            NotImplementedError: If model is provided as a file path (not implemented yet).
+            TypeError: If model is neither a path nor a torch.nn.Module.
         """
         super().__init__()
 
@@ -101,12 +153,19 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
             self.setup_from_batch(atomic_numbers, batch)
 
-    def setup_from_batch(self, atomic_numbers: torch.Tensor, batch: torch.Tensor) -> None:
+    def setup_from_batch(
+        self, atomic_numbers: torch.Tensor, batch: torch.Tensor
+    ) -> None:
         """Set up internal state from atomic numbers and batch indices.
 
+        Processes the atomic numbers and batch indices to prepare the model for
+        forward pass calculations. Creates the necessary data structures for
+        batched processing of multiple systems.
+
         Args:
-            atomic_numbers: Atomic numbers tensor [n_atoms]
-            batch: Batch indices tensor [n_atoms]
+            atomic_numbers (torch.Tensor): Atomic numbers tensor with shape [n_atoms].
+            batch (torch.Tensor): Batch indices tensor with shape [n_atoms] indicating
+                which system each atom belongs to.
         """
         self.atomic_numbers = atomic_numbers
         self.batch = batch
@@ -140,13 +199,27 @@ class MaceModel(torch.nn.Module, ModelInterface):
         self,
         state: SimState | StateDict,
     ) -> dict[str, torch.Tensor]:
-        """Compute energies, forces, and stresses for the system(s).
+        """Compute energies, forces, and stresses for the given atomic systems.
+
+        Processes the provided state information and computes energies, forces, and
+        stresses using the underlying MACE model. Handles batched calculations for
+        multiple systems and constructs the necessary neighbor lists.
 
         Args:
-            state: State object
+            state (SimState | StateDict): State object containing positions, cell,
+                and other system information. Can be either a SimState object or a
+                dictionary with the relevant fields.
 
         Returns:
-            dict: Dictionary with 'energy', 'forces', and optionally 'stress'
+            dict[str, torch.Tensor]: Dictionary containing:
+                - 'energy': System energies with shape [n_systems]
+                - 'forces': Atomic forces with shape [n_atoms, 3] if compute_force=True
+                - 'stress': System stresses with shape [n_systems, 3, 3] if compute_stress=True
+
+        Raises:
+            ValueError: If atomic numbers are not provided either in the constructor
+                or in the forward pass, or if provided in both places.
+            ValueError: If batch indices are not provided when needed.
         """
         # Extract required data from input
         if isinstance(state, dict):

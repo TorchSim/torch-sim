@@ -1,22 +1,10 @@
-"""TorchScript-compatible Dataclass Module.
+"""SimState: TorchScript-compatible state representation for atomistic systems.
 
 This module provides a dataclass decorator that extends Python's built-in dataclass
 functionality to work seamlessly with TorchScript. It enables the creation of
 strongly-typed, immutable data structures that can be used in both Python and
-TorchScript contexts.
-
-Example:
-    ```python
-    from torchsim.dataclass import dataclass
-    import torch
-
-
-    @dataclass
-    class ParticleState:
-        position: torch.Tensor
-        velocity: torch.Tensor
-        mass: torch.Tensor
-    ```
+TorchScript contexts. The main SimState class represents atomistic systems with
+support for batched operations and conversion to/from various atomistic formats.
 """
 
 import copy
@@ -67,26 +55,33 @@ StateDict = dict[
 # TODO: change later on
 @dataclass
 class SimState:
-    """State class for molecular systems.
+    """State representation for atomistic systems with batched operations support.
 
-    Contains the fundamental properties needed to describe a molecular system:
+    Contains the fundamental properties needed to describe an atomistic system:
     positions, masses, unit cell, periodic boundary conditions, and atomic numbers.
-
-    positions, masses, and atomic numbers must have shape (n_atoms, 3), where
-    n_atoms is the total number of atoms summed over all batches.
-
-    Batch indices must have shape (n_atoms,) and must be unique consecutive integers.
-
-    cell must have shape (n_batches, 3, 3) and must be in the conventional matrix form.
-
-    pbc must be a boolean. Currently, all batches must have the same pbc.
+    Supports batched operations where multiple atomistic systems can be processed
+    simultaneously, managed through batch indices.
 
     Attributes:
-        positions: Tensor containing atomic positions with shape (n_atoms, 3)
-        masses: Tensor containing atomic masses with shape (n_atoms,)
-        cell: Tensor containing unit cell vectors with shape (n_batches, 3, 3)
-        pbc: Boolean indicating whether to use periodic boundary conditions
-        atomic_numbers: Tensor containing atomic numbers with shape (n_atoms,)
+        positions (torch.Tensor): Atomic positions with shape (n_atoms, 3)
+        masses (torch.Tensor): Atomic masses with shape (n_atoms,)
+        cell (torch.Tensor): Unit cell vectors with shape (n_batches, 3, 3)
+        pbc (bool): Boolean indicating whether to use periodic boundary conditions
+        atomic_numbers (torch.Tensor): Atomic numbers with shape (n_atoms,)
+        batch (torch.Tensor, optional): Batch indices with shape (n_atoms,),
+            defaults to None, must be unique consecutive integers starting from 0
+
+    Properties:
+        wrap_positions (torch.Tensor): Positions wrapped according to periodic boundary conditions
+        device (torch.device): Device of the positions tensor
+        dtype (torch.dtype): Data type of the positions tensor
+        n_atoms (int): Total number of atoms across all batches
+        n_batches (int): Number of unique batches in the system
+
+    Notes:
+        positions, masses, and atomic_numbers must have shape (n_atoms, 3).
+        cell must be in the conventional matrix form.
+        batch indices must be unique consecutive integers starting from 0.
     """
 
     positions: torch.Tensor
@@ -121,7 +116,9 @@ class SimState:
             )
 
         if self.batch is None:
-            self.batch = torch.zeros(self.n_atoms, device=self.device, dtype=torch.int64)
+            self.batch = torch.zeros(
+                self.n_atoms, device=self.device, dtype=torch.int64
+            )
         else:
             # assert that batch indices are unique consecutive integers
             _, counts = torch.unique_consecutive(self.batch, return_counts=True)
@@ -134,7 +131,7 @@ class SimState:
 
         Returns:
             torch.Tensor: Atomic positions wrapped according to periodic boundary
-                conditions if pbc=True, otherwise returns unwrapped positions.
+                conditions if pbc=True, otherwise returns unwrapped positions with shape (n_atoms, 3).
         """
         # TODO: implement a wrapping method
         return self.positions
@@ -144,25 +141,25 @@ class SimState:
         """Get the device of the positions tensor.
 
         Returns:
-            torch.device: The device of the positions tensor
+            torch.device: The device where the tensor data is located
         """
         return self.positions.device
 
     @property
     def dtype(self) -> torch.dtype:
-        """Get the dtype of the positions tensor.
+        """Get the data type of the positions tensor.
 
         Returns:
-            torch.dtype: The dtype of the positions tensor
+            torch.dtype: The data type of the positions tensor
         """
         return self.positions.dtype
 
     @property
     def n_atoms(self) -> int:
-        """Get the number of atoms in the system.
+        """Get the total number of atoms in the system across all batches.
 
         Returns:
-            int: The number of atoms in the system
+            int: Total number of atoms in the system
         """
         return self.positions.shape[0]
 
@@ -171,15 +168,18 @@ class SimState:
         """Get the number of batches in the system.
 
         Returns:
-            int: The number of batches in the system
+            int: Number of batches in the system
         """
         return torch.unique(self.batch).shape[0]
 
     def clone(self) -> Self:
         """Create a deep copy of the SimState.
 
+        Creates a new SimState object with identical but independent tensors,
+        allowing modification without affecting the original.
+
         Returns:
-            A new SimState object with the same properties as the original
+            SimState: A new SimState object with the same properties as the original
         """
         attrs = {}
         for attr_name, attr_value in vars(self).items():
@@ -191,47 +191,54 @@ class SimState:
         return self.__class__(**attrs)
 
     def to_atoms(self) -> list["Atoms"]:
-        """Convert the SimState to a list of Atoms.
+        """Convert the SimState to a list of ASE Atoms objects.
 
         Returns:
-            A list of Atoms
+            list[Atoms]: A list of ASE Atoms objects, one per batch
         """
         return state_to_atoms(self)
 
     def to_structures(self) -> list["Structure"]:
-        """Convert the SimState to a list of Structures.
+        """Convert the SimState to a list of pymatgen Structure objects.
 
         Returns:
-            A list of Structures
+            list[Structure]: A list of pymatgen Structure objects, one per batch
         """
         return state_to_structures(self)
 
     def to_phonopy(self) -> list["PhonopyAtoms"]:
-        """Convert the SimState to a list of PhonopyAtoms.
+        """Convert the SimState to a list of PhonopyAtoms objects.
 
         Returns:
-            A list of PhonopyAtoms
+            list[PhonopyAtoms]: A list of PhonopyAtoms objects, one per batch
         """
         return state_to_phonopy(self)
 
     def split(self) -> list[Self]:
-        """Split the SimState into a list of SimStates.
+        """Split the SimState into a list of single-batch SimStates.
+
+        Divides the current state into separate states, each containing a single batch,
+        preserving all properties appropriately for each batch.
 
         Returns:
-            A list of SimStates
+            list[SimState]: A list of SimState objects, one per batch
         """
         return split_state(self)
 
     def pop(self, batch_indices: int | list[int] | slice | torch.Tensor) -> list[Self]:
         """Pop off states with the specified batch indices.
 
-        This method modifies the original state object by removing the specified batches.
+        This method modifies the original state object by removing the specified batches
+        and returns the removed batches as separate SimState objects.
 
         Args:
-            batch_indices: The batch indices to pop
+            batch_indices (int | list[int] | slice | torch.Tensor): The batch indices to pop
 
         Returns:
-            List of popped states
+            list[SimState]: List of popped SimState objects, one per batch index
+
+        Notes:
+            This method modifies the original SimState in-place.
         """
         batch_indices = _normalize_batch_indices(
             batch_indices, self.n_batches, self.device
@@ -249,25 +256,27 @@ class SimState:
     def to(
         self, device: torch.device | None = None, dtype: torch.dtype | None = None
     ) -> Self:
-        """Convert the SimState to a new device and dtype.
+        """Convert the SimState to a new device and/or data type.
 
         Args:
-            device: The device to convert to
-            dtype: The dtype to convert to
+            device (torch.device, optional): The target device. Defaults to current device.
+            dtype (torch.dtype, optional): The target data type. Defaults to current dtype.
 
         Returns:
-            A new SimState object with the converted device and dtype
+            SimState: A new SimState with tensors on the specified device and dtype
         """
         return state_to_device(self, device, dtype)
 
-    def __getitem__(self, batch_indices: int | list[int] | slice | torch.Tensor) -> Self:
+    def __getitem__(
+        self, batch_indices: int | list[int] | slice | torch.Tensor
+    ) -> Self:
         """Enable standard Python indexing syntax for slicing batches.
 
         Args:
-            batch_indices: The batch indices to include in the sliced state
+            batch_indices (int | list[int] | slice | torch.Tensor): The batch indices to include
 
         Returns:
-            A new SimState containing only the specified batches
+            SimState: A new SimState containing only the specified batches
         """
         # Reuse the existing slice method
         batch_indices = _normalize_batch_indices(
@@ -284,13 +293,19 @@ def _normalize_batch_indices(
 ) -> torch.Tensor:
     """Normalize batch indices to handle negative indices and different input types.
 
+    Converts various batch index representations to a consistent tensor format,
+    handling negative indices in the Python style (counting from the end).
+
     Args:
-        batch_indices: The batch indices to normalize
-        n_batches: Total number of batches
-        device: Device to place the tensor on
+        batch_indices (int | list[int] | slice | torch.Tensor): The batch indices to normalize
+        n_batches (int): Total number of batches in the system
+        device (torch.device): Device to place the output tensor on
 
     Returns:
-        Normalized batch indices as a tensor
+        torch.Tensor: Normalized batch indices as a tensor
+
+    Raises:
+        TypeError: If batch_indices is of an unsupported type
     """
     if isinstance(batch_indices, int):
         # Handle negative integer indexing
@@ -317,13 +332,16 @@ def state_to_device(
 ) -> Self:
     """Convert the SimState to a new device and dtype.
 
+    Creates a new SimState with all tensors moved to the specified device and
+    with the specified data type.
+
     Args:
-        state: The state to convert
-        device: The device to convert to
-        dtype: The dtype to convert to
+        state (SimState): The state to convert
+        device (torch.device, optional): The target device. Defaults to state's current device.
+        dtype (torch.dtype, optional): The target data type. Defaults to state's current dtype.
 
     Returns:
-        A new SimState object with the converted device and dtype
+        SimState: A new SimState with tensors on the specified device and dtype
     """
     if device is None:
         device = state.device
@@ -349,14 +367,24 @@ def infer_property_scope(
 ) -> dict[Literal["global", "per_atom", "per_batch"], list[str]]:
     """Infer whether a property is global, per-atom, or per-batch.
 
+    Analyzes the shapes of tensor attributes to determine their scope within
+    the atomistic system representation.
+
     Args:
-        state: The state to infer the property scope of
-        ambiguous_handling: How to handle ambiguous properties
+        state (SimState): The state to analyze
+        ambiguous_handling (Literal["error", "globalize", "globalize_warn"]): How to handle
+            properties with ambiguous scope. Options:
+            - "error": Raise an error for ambiguous properties
+            - "globalize": Treat ambiguous properties as global
+            - "globalize_warn": Treat ambiguous properties as global with a warning
 
     Returns:
-        tuple[tuple[str], tuple[str], tuple[str]]: Tuple of three tuples,
-            containing the names of properties that are global, per-atom, and
-            per-batch, respectively.
+        dict[Literal["global", "per_atom", "per_batch"], list[str]]: Dictionary mapping
+            each scope category to a list of property names
+
+    Raises:
+        ValueError: If n_atoms equals n_batches (making scope inference ambiguous) or
+            if ambiguous_handling="error" and an ambiguous property is encountered
     """
     # TODO: this cannot effectively resolve global properties with
     # length of n_atoms or n_batches, they will be classified incorrectly,
@@ -419,12 +447,15 @@ def _get_property_attrs(
 ) -> dict[str, dict]:
     """Get global, per-atom, and per-batch attributes from a state.
 
+    Categorizes all attributes of the state based on their scope (global, per-atom, or per-batch).
+
     Args:
-        state: The state to extract attributes from
-        ambiguous_handling: How to handle ambiguous properties
+        state (SimState): The state to extract attributes from
+        ambiguous_handling (Literal["error", "globalize"]): How to handle ambiguous properties
 
     Returns:
-        Dictionary with 'global', 'per_atom', and 'per_batch' attribute names and values
+        dict[str, dict]: Dictionary with 'global', 'per_atom', and 'per_batch' keys,
+            each containing a dictionary of attribute names to values
     """
     scope = infer_property_scope(state, ambiguous_handling=ambiguous_handling)
 
@@ -452,13 +483,15 @@ def _filter_attrs_by_mask(
 ) -> dict:
     """Filter attributes by atom and batch masks.
 
+    Selects subsets of attributes based on boolean masks for atoms and batches.
+
     Args:
-        attrs: Dictionary with 'global', 'per_atom', and 'per_batch' attributes
-        atom_mask: Boolean mask for atoms to include
-        batch_mask: Boolean mask for batches to include
+        attrs (dict[str, dict]): Dictionary with 'global', 'per_atom', and 'per_batch' attributes
+        atom_mask (torch.Tensor): Boolean mask for atoms to include with shape (n_atoms,)
+        batch_mask (torch.Tensor): Boolean mask for batches to include with shape (n_batches,)
 
     Returns:
-        Dictionary of filtered attributes
+        dict: Dictionary of filtered attributes with appropriate handling for each scope
     """
     filtered_attrs = {}
 
@@ -502,12 +535,15 @@ def split_state(
 ) -> list[SimState]:
     """Split a SimState into a list of states, each containing a single batch element.
 
+    Divides a multi-batch state into individual single-batch states, preserving
+    appropriate properties for each batch.
+
     Args:
-        state: The SimState to split
-        ambiguous_handling: How to handle ambiguous properties
+        state (SimState): The SimState to split
+        ambiguous_handling (Literal["error", "globalize"]): How to handle ambiguous properties
 
     Returns:
-        A list of SimState objects, each containing a single batch element
+        list[SimState]: A list of SimState objects, each containing a single batch element
     """
     attrs = _get_property_attrs(state, ambiguous_handling)
     batch_sizes = torch.bincount(state.batch).tolist()
@@ -529,11 +565,16 @@ def split_state(
     for i in range(state.n_batches):
         batch_attrs = {
             # Create a batch tensor with all zeros for this batch
-            "batch": torch.zeros(batch_sizes[i], device=state.device, dtype=torch.int64),
+            "batch": torch.zeros(
+                batch_sizes[i], device=state.device, dtype=torch.int64
+            ),
             # Add the split per-atom attributes
             **{attr_name: split_per_atom[attr_name][i] for attr_name in split_per_atom},
             # Add the split per-batch attributes
-            **{attr_name: split_per_batch[attr_name][i] for attr_name in split_per_batch},
+            **{
+                attr_name: split_per_batch[attr_name][i]
+                for attr_name in split_per_batch
+            },
             # Add the global attributes
             **attrs["global"],
         }
@@ -549,13 +590,20 @@ def pop_states(
 ) -> tuple[SimState, list[SimState]]:
     """Pop off the states with the specified indices.
 
+    Extracts and removes the specified batch indices from the state.
+
     Args:
-        state: The SimState to pop off
-        pop_indices: The indices to pop off
-        ambiguous_handling: How to handle ambiguous properties
+        state (SimState): The SimState to modify
+        pop_indices (list[int] | torch.Tensor): The batch indices to extract and remove
+        ambiguous_handling (Literal["error", "globalize"]): How to handle ambiguous properties
 
     Returns:
-        A tuple of the keep SimState and the popped SimStates
+        tuple[SimState, list[SimState]]: A tuple containing:
+            - The modified original state with specified batches removed
+            - A list of the extracted SimStates, one per popped batch
+
+    Notes:
+        Unlike the pop method, this function does not modify the input state.
     """
     if len(pop_indices) == 0:
         return state, []
@@ -594,13 +642,19 @@ def slice_state(
 ) -> SimState:
     """Slice a substate from the SimState containing only the specified batch indices.
 
+    Creates a new SimState containing only the specified batches, preserving
+    all relevant properties.
+
     Args:
-        state: The state to slice
-        batch_indices: List or tensor of batch indices to include in the sliced state
-        ambiguous_handling: How to handle ambiguous properties
+        state (SimState): The state to slice
+        batch_indices (list[int] | torch.Tensor): Batch indices to include in the sliced state
+        ambiguous_handling (Literal["error", "globalize"]): How to handle ambiguous properties
 
     Returns:
-        A SimState object containing only the specified batches
+        SimState: A new SimState object containing only the specified batches
+
+    Raises:
+        ValueError: If batch_indices is empty
     """
     if isinstance(batch_indices, list):
         batch_indices = torch.tensor(
@@ -629,15 +683,20 @@ def concatenate_states(
 ) -> SimState:
     """Concatenate a list of SimStates into a single SimState.
 
-    Global properties are taken from the first state, and per-atom and per-batch
-    properties are concatenated.
+    Combines multiple states into a single state with multiple batches. Global properties
+    are taken from the first state, and per-atom and per-batch properties are concatenated.
 
     Args:
-        states: A list of SimState objects to concatenate
-        device: The device to concatenate on
+        states (list[SimState]): A list of SimState objects to concatenate
+        device (torch.device, optional): The device to place the concatenated state on.
+            Defaults to the device of the first state.
 
     Returns:
-        SimState: A SimState object initialized from the input states
+        SimState: A new SimState containing all input states as separate batches
+
+    Raises:
+        ValueError: If states is empty
+        TypeError: If not all states are of the same type
     """
     if not states:
         raise ValueError("Cannot concatenate an empty list of states")
@@ -712,18 +771,21 @@ def initialize_state(
     device: torch.device,
     dtype: torch.dtype,
 ) -> SimState:
-    """Initialize state tensors from a system.
+    """Initialize state tensors from a atomistic system representation.
+
+    Converts various atomistic system representations (ASE Atoms, pymatgen Structure,
+    PhonopyAtoms, or existing SimState) to a SimState object.
 
     Args:
-        system: Input system to convert to state tensors
-        device: Device to create tensors on
-        dtype: Data type for tensors
+        system (StateLike): Input system to convert to state tensors
+        device (torch.device): Device to create tensors on
+        dtype (torch.dtype): Data type for tensor values
 
     Returns:
-        SimState: State tensors initialized from input system
+        SimState: State representation initialized from input system
 
     Raises:
-        ValueError: If system type is not supported
+        ValueError: If system type is not supported or if list items have inconsistent types
     """
     # TODO: create a way to pass velocities from pmg and ase
 
