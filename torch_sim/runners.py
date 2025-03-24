@@ -229,8 +229,12 @@ def _configure_hot_swapping_autobatcher(
         autobatcher.max_attempts = max_attempts
         autobatcher.load_states(state)
     else:
-        memory_scales_with = getattr(model, "memory_scales_with", "n_atoms")
-        max_memory_scaler = None if autobatcher else state.n_atoms + 1
+        if autobatcher:
+            memory_scales_with = getattr(model, "memory_scales_with")
+            max_memory_scaler = None
+        else:
+            memory_scales_with = "n_atoms"
+            max_memory_scaler = state.n_atoms + 1
         autobatcher = HotSwappingAutoBatcher(
             model=model,
             return_indices=True,

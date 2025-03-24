@@ -1020,10 +1020,12 @@ class HotSwappingAutoBatcher:
                 convergence_tensor[cur_idx] = torch.tensor(True)  # noqa: FBT003
 
         completed_idx = torch.where(convergence_tensor)[0].tolist()
-        completed_idx.sort(reverse=True)
 
-        # remaining_state, completed_states = pop_states(updated_state, completed_idx)
         completed_states = updated_state.pop(completed_idx)
+        
+        # necessary to ensure states that finish at the same time are ordered properly
+        completed_states.reverse()
+        completed_idx.sort(reverse=True)
 
         self._delete_old_states(completed_idx)
         next_states = self._get_next_states()
