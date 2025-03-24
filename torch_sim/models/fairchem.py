@@ -1,9 +1,9 @@
-"""FairChem: PyTorch implementation of FairChem models for molecular simulations.
+"""FairChem: PyTorch implementation of FairChem models for atomistic simulations.
 
 This module provides a TorchSim wrapper of the FairChem models for computing
-energies, forces, and stresses of molecular systems. It serves as a wrapper around
+energies, forces, and stresses of atomistic systems. It serves as a wrapper around
 the FairChem library, integrating it with the torch_sim framework to enable seamless
-simulation of molecular systems with machine learning potentials.
+simulation of atomistic systems with machine learning potentials.
 
 The FairChemModel class adapts FairChem models to the ModelInterface protocol,
 allowing them to be used within the broader torch_sim simulation pipeline.
@@ -54,10 +54,10 @@ DTYPE_DICT = {
 
 
 class FairChemModel(torch.nn.Module, ModelInterface):
-    """Computes molecular energies, forces and stresses using a FairChem model.
+    """Computes atomistic energies, forces and stresses using a FairChem model.
 
     This class wraps a FairChem model to compute energies, forces, and stresses for
-    molecular systems. It handles model initialization, checkpoint loading, and
+    atomistic systems. It handles model initialization, checkpoint loading, and
     provides a forward pass that accepts a SimState object and returns model
     predictions.
 
@@ -213,7 +213,9 @@ class FairChemModel(torch.nn.Module, ModelInterface):
                 try:
                     config["model"]["backbone"].update({"dtype": DTYPE_DICT[dtype]})
                     for key in config["model"]["heads"]:
-                        config["model"]["heads"][key].update({"dtype": DTYPE_DICT[dtype]})
+                        config["model"]["heads"][key].update(
+                            {"dtype": DTYPE_DICT[dtype]}
+                        )
                 except KeyError:
                     print("dtype not found in backbone, using default float32")
         else:
@@ -289,7 +291,9 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             If loading fails, a message is printed but no exception is raised.
         """
         try:
-            self.trainer.load_checkpoint(checkpoint_path, checkpoint, inference_only=True)
+            self.trainer.load_checkpoint(
+                checkpoint_path, checkpoint, inference_only=True
+            )
         except NotImplementedError:
             print("Unable to load checkpoint!")
 

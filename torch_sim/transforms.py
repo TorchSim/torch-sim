@@ -149,7 +149,7 @@ def pbc_wrap_batched(
 ) -> torch.Tensor:
     """Apply periodic boundary conditions to batched systems.
 
-    This function handles wrapping positions for multiple molecular systems
+    This function handles wrapping positions for multiple atomistic systems
     (batches) in one operation. It uses the batch indices to determine which
     atoms belong to which system and applies the appropriate cell vectors.
 

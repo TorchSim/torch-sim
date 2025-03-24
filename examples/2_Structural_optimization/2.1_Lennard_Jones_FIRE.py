@@ -54,7 +54,9 @@ positions = positions * a_len
 
 # Create the cell tensor
 cell = torch.tensor(
-    [[4 * a_len, 0, 0], [0, 4 * a_len, 0], [0, 0, 4 * a_len]], device=device, dtype=dtype
+    [[4 * a_len, 0, 0], [0, 4 * a_len, 0], [0, 0, 4 * a_len]],
+    device=device,
+    dtype=dtype,
 )
 
 # Create the atomic numbers tensor
@@ -93,7 +95,7 @@ state = SimState(
 results = model(state)
 
 # Initialize FIRE (Fast Inertial Relaxation Engine) optimizer
-# FIRE is an efficient method for finding local energy minima in molecular systems
+# FIRE is an efficient method for finding local energy minima in atomistic systems
 fire_init, fire_update = fire(
     model=model,
     dt_start=0.005,  # Initial timestep

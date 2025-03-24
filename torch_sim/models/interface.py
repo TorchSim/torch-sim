@@ -174,7 +174,7 @@ class ModelInterface(ABC):
         atomic_numbers: torch.Tensor | None = None,
         **kwargs,
     ) -> dict[str, torch.Tensor]:
-        """Calculate energies, forces, and stresses for a molecular system.
+        """Calculate energies, forces, and stresses for a atomistic system.
 
         This is the main computational method that all model implementations must provide.
         It takes atomic positions and system information as input and returns a dictionary

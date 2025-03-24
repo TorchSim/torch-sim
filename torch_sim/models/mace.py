@@ -1,7 +1,7 @@
 """MACE model implementation for TorchSim.
 
 This module provides a TorchSim wrapper of the MACE model for computing
-energies, forces, and stresses for molecular systems. It integrates the MACE model
+energies, forces, and stresses for atomistic systems. It integrates the MACE model
 with TorchSim's simulation framework, handling batched computations for multiple
 systems simultaneously.
 

@@ -2,7 +2,7 @@
 
 This module provides functions for running molecular dynamics simulations and geometry
 optimizations using various models and integrators. It includes utilities for
-converting between different molecular representations and handling simulation state.
+converting between different atomistic representations and handling simulation state.
 """
 
 import warnings

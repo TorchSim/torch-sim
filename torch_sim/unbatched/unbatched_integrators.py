@@ -1,4 +1,4 @@
-"""Integrators for molecular dynamics simulations."""
+"""Integrators for atomistic dynamics simulations."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -162,7 +162,9 @@ def position_step(state: MDState, dt: torch.Tensor) -> MDState:
     return state
 
 
-def velocity_verlet(state: MDState, dt: torch.Tensor, model: torch.nn.Module) -> MDState:
+def velocity_verlet(
+    state: MDState, dt: torch.Tensor, model: torch.nn.Module
+) -> MDState:
     """Perform one complete velocity Verlet integration step.
 
     This function implements the velocity Verlet algorithm, which provides
@@ -1279,7 +1281,9 @@ def construct_nose_hoover_chain(
 
         return P, state
 
-    def update_chain_mass_fn(state: NoseHooverChain, kT: torch.Tensor) -> NoseHooverChain:
+    def update_chain_mass_fn(
+        state: NoseHooverChain, kT: torch.Tensor
+    ) -> NoseHooverChain:
         """Update chain masses to maintain target oscillation period.
 
         Args:
@@ -1795,7 +1799,12 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             >>> print(y)  # tensor([1.0000, 1.0017, 1.0067])
         """
         return (
-            1 + x**2 / 6 + x**4 / 120 + x**6 / 5040 + x**8 / 362_880 + x**10 / 39_916_800
+            1
+            + x**2 / 6
+            + x**4 / 120
+            + x**6 / 5040
+            + x**8 / 362_880
+            + x**10 / 39_916_800
         )
 
     def exp_iL1(  # noqa: N802
