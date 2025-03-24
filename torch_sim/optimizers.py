@@ -63,8 +63,9 @@ def gradient_descent(
 
     Args:
         model (torch.nn.Module): Neural network model that computes energies and forces
-        lr (torch.Tensor | float): Learning rate(s) for optimization. Can be a single float
-            applied to all batches or a tensor with shape [n_batches] for batch-specific rates
+        lr (torch.Tensor | float): Learning rate(s) for optimization. Can be a single
+            float applied to all batches or a tensor with shape [n_batches] for
+            batch-specific rates
 
     Returns:
         tuple: A pair of functions:
@@ -164,8 +165,10 @@ class BatchedUnitCellGDState(BatchedGDState):
 
         # Additional attributes for cell optimization
         stress (torch.Tensor): Stress tensor with shape [n_batches, 3, 3]
-        reference_cell (torch.Tensor): Reference unit cells with shape [n_batches, 3, 3]
-        cell_factor (torch.Tensor): Scaling factor for cell optimization with shape [n_batches, 1, 1]
+        reference_cell (torch.Tensor): Reference unit cells with shape
+            [n_batches, 3, 3]
+        cell_factor (torch.Tensor): Scaling factor for cell optimization with shape
+            [n_batches, 1, 1]
         hydrostatic_strain (bool): Whether to only allow hydrostatic deformation
         constant_volume (bool): Whether to maintain constant volume
         pressure (torch.Tensor): Applied pressure tensor with shape [n_batches, 3, 3]
@@ -212,26 +215,30 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
     computed by the provided model.
 
     Args:
-        model (torch.nn.Module): Neural network model that computes energies, forces, and stress
+        model (torch.nn.Module): Neural network model that computes energies, forces,
+            and stress
         positions_lr (float): Learning rate for atomic positions optimization
         cell_lr (float): Learning rate for unit cell optimization
-        cell_factor (float | torch.Tensor | None): Scaling factor for cell optimization.
-            If None, defaults to number of atoms per batch
-        hydrostatic_strain (bool): Whether to only allow hydrostatic deformation (isotropic scaling)
+        cell_factor (float | torch.Tensor | None): Scaling factor for cell
+            optimization. If None, defaults to number of atoms per batch
+        hydrostatic_strain (bool): Whether to only allow hydrostatic deformation
+            (isotropic scaling)
         constant_volume (bool): Whether to maintain constant volume during optimization
         scalar_pressure (float): Applied external pressure in GPa
 
     Returns:
         tuple: A pair of functions:
             - Initialization function that creates a BatchedUnitCellGDState
-            - Update function that performs one gradient descent step with cell optimization
+            - Update function that performs one gradient descent step with cell
+                optimization
 
     Notes:
-        - To fix the cell and only optimize atomic positions, set both constant_volume=True
-          and hydrostatic_strain=True
-        - The cell_factor parameter controls the relative scale of atomic vs cell optimization
-        - Larger values for positions_lr and cell_lr can speed up convergence but may cause
-          instability in the optimization process
+        - To fix the cell and only optimize atomic positions, set both
+          constant_volume=True and hydrostatic_strain=True
+        - The cell_factor parameter controls the relative scale of atomic vs cell
+          optimization
+        - Larger values for positions_lr and cell_lr can speed up convergence but
+          may cause instability in the optimization process
     """
     device = model.device
     dtype = model.dtype
@@ -373,9 +380,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
             )
 
         if isinstance(cell_lr, float):
-            cell_lr = torch.full(
-                (state.n_batches,), cell_lr, device=device, dtype=dtype
-            )
+            cell_lr = torch.full((state.n_batches,), cell_lr, device=device, dtype=dtype)
 
         # Get current deformation gradient
         cur_deform_grad = torch.transpose(
@@ -439,7 +444,8 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
 
 @dataclass
 class BatchedUnitCellFireState(SimState):
-    """State information for batched FIRE optimization with unit cell degrees of freedom.
+    """State information for batched FIRE optimization with unit cell degrees of
+    freedom.
 
     This class extends SimState to store and track the system state during FIRE
     (Fast Inertial Relaxation Engine) optimization. It maintains both atomic and cell
@@ -469,7 +475,8 @@ class BatchedUnitCellFireState(SimState):
 
         # Cell optimization parameters
         orig_cell (torch.Tensor): Original unit cells with shape [n_batches, 3, 3]
-        cell_factor (torch.Tensor): Cell optimization scaling factor with shape [n_batches, 1, 1]
+        cell_factor (torch.Tensor): Cell optimization scaling factor with shape
+            [n_batches, 1, 1]
         pressure (torch.Tensor): Applied pressure tensor with shape [n_batches, 3, 3]
         hydrostatic_strain (bool): Whether to only allow hydrostatic deformation
         constant_volume (bool): Whether to maintain constant volume
@@ -477,7 +484,8 @@ class BatchedUnitCellFireState(SimState):
         # FIRE optimization parameters
         dt (torch.Tensor): Current timestep per batch with shape [n_batches]
         alpha (torch.Tensor): Current mixing parameter per batch with shape [n_batches]
-        n_pos (torch.Tensor): Number of positive power steps per batch with shape [n_batches]
+        n_pos (torch.Tensor): Number of positive power steps per batch with shape
+            [n_batches]
 
     Properties:
         momenta (torch.Tensor): Atomwise momenta of the system with shape [n_atoms, 3],
@@ -538,13 +546,14 @@ def unit_cell_fire(  # noqa: C901, PLR0915
 ]:
     """Initialize a batched FIRE optimization with unit cell degrees of freedom.
 
-    Creates an optimizer that performs FIRE (Fast Inertial Relaxation Engine) optimization
-    on both atomic positions and unit cell parameters for multiple systems in parallel.
-    FIRE combines molecular dynamics with velocity damping and adjustment of time steps
-    to efficiently find local minima.
+    Creates an optimizer that performs FIRE (Fast Inertial Relaxation Engine)
+    optimization on both atomic positions and unit cell parameters for multiple systems
+    in parallel. FIRE combines molecular dynamics with velocity damping and adjustment
+    of time steps to efficiently find local minima.
 
     Args:
-        model (torch.nn.Module): Neural network model that computes energies, forces, and stress
+        model (torch.nn.Module): Neural network model that computes energies, forces,
+            and stress
         dt_max (float): Maximum allowed timestep
         dt_start (float): Initial timestep
         n_min (int): Minimum steps before timestep increase
@@ -554,7 +563,8 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         f_alpha (float): Factor for mixing parameter decrease
         cell_factor (float | None): Scaling factor for cell optimization.
             If None, defaults to number of atoms per batch
-        hydrostatic_strain (bool): Whether to only allow hydrostatic deformation (isotropic scaling)
+        hydrostatic_strain (bool): Whether to only allow hydrostatic deformation
+            (isotropic scaling)
         constant_volume (bool): Whether to maintain constant volume during optimization
         scalar_pressure (float): Applied external pressure in GPa
 
@@ -564,13 +574,14 @@ def unit_cell_fire(  # noqa: C901, PLR0915
             - Update function that performs one FIRE optimization step
 
     Notes:
-        - FIRE is generally more efficient than standard gradient descent for atomic structure
+        - FIRE is generally more efficient than standard gradient descent for atomic
+          structure optimization
+        - The algorithm adaptively adjusts step sizes and mixing parameters based
+          on the dot product of forces and velocities
+        - To fix the cell and only optimize atomic positions, set both
+          constant_volume=True and hydrostatic_strain=True
+        - The cell_factor parameter controls the relative scale of atomic vs cell
           optimization
-        - The algorithm adaptively adjusts step sizes and mixing parameters based on the dot
-          product of forces and velocities
-        - To fix the cell and only optimize atomic positions, set both constant_volume=True
-          and hydrostatic_strain=True
-        - The cell_factor parameter controls the relative scale of atomic vs cell optimization
     """
     device = model.device
     dtype = model.dtype
@@ -861,9 +872,10 @@ def unit_cell_fire(  # noqa: C901, PLR0915
 class BatchedFrechetCellFIREState(SimState):
     """State class for batched FIRE optimization with Frechet cell derivatives.
 
-    This class extends SimState to store and track the system state during FIRE optimization
-    with matrix logarithm parameterization for cell degrees of freedom. This parameterization
-    provides improved handling of cell deformations during optimization.
+    This class extends SimState to store and track the system state during FIRE
+    optimization with matrix logarithm parameterization for cell degrees of freedom.
+    This parameterization provides improved handling of cell deformations during
+    optimization.
 
     Attributes:
         # Inherited from SimState
@@ -882,13 +894,15 @@ class BatchedFrechetCellFIREState(SimState):
 
         # Optimization-specific attributes
         orig_cell (torch.Tensor): Original unit cell with shape [n_batches, 3, 3]
-        cell_factor (torch.Tensor): Scaling factor for cell optimization with shape [n_batches, 1, 1]
+        cell_factor (torch.Tensor): Scaling factor for cell optimization with shape
+            [n_batches, 1, 1]
         pressure (torch.Tensor): Applied pressure tensor with shape [n_batches, 3, 3]
         hydrostatic_strain (bool): Whether to only allow hydrostatic deformation
         constant_volume (bool): Whether to maintain constant volume
 
         # Cell attributes using log parameterization
-        cell_positions (torch.Tensor): Cell positions using log parameterization with shape [n_batches, 3, 3]
+        cell_positions (torch.Tensor): Cell positions using log parameterization with
+            shape [n_batches, 3, 3]
         cell_velocities (torch.Tensor): Cell velocities with shape [n_batches, 3, 3]
         cell_forces (torch.Tensor): Cell forces with shape [n_batches, 3, 3]
         cell_masses (torch.Tensor): Cell masses with shape [n_batches, 3]
@@ -896,7 +910,8 @@ class BatchedFrechetCellFIREState(SimState):
         # FIRE algorithm parameters
         dt (torch.Tensor): Current timestep per batch with shape [n_batches]
         alpha (torch.Tensor): Current mixing parameter per batch with shape [n_batches]
-        n_pos (torch.Tensor): Number of positive power steps per batch with shape [n_batches]
+        n_pos (torch.Tensor): Number of positive power steps per batch with shape
+            [n_batches]
 
     Properties:
         momenta (torch.Tensor): Atomwise momenta of the system with shape [n_atoms, 3],
@@ -959,12 +974,13 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
 
     Creates an optimizer that performs FIRE optimization on both atomic positions and
     unit cell parameters using matrix logarithm parameterization for cell degrees of
-    freedom. This parameterization provides forces consistent with numerical derivatives
-    of the potential energy with respect to cell variables, resulting in more robust
-    cell optimization.
+    freedom. This parameterization provides forces consistent with numerical
+    derivatives of the potential energy with respect to cell variables, resulting in
+    more robust cell optimization.
 
     Args:
-        model (torch.nn.Module): Neural network model that computes energies, forces, and stress
+        model (torch.nn.Module): Neural network model that computes energies, forces,
+            and stress.
         dt_max (float): Maximum allowed timestep
         dt_start (float): Initial timestep
         n_min (int): Minimum steps before timestep increase
@@ -974,7 +990,8 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
         f_alpha (float): Factor for mixing parameter decrease
         cell_factor (float | None): Scaling factor for cell optimization.
             If None, defaults to number of atoms per batch
-        hydrostatic_strain (bool): Whether to only allow hydrostatic deformation (isotropic scaling)
+        hydrostatic_strain (bool): Whether to only allow hydrostatic deformation
+            (isotropic scaling)
         constant_volume (bool): Whether to maintain constant volume during optimization
         scalar_pressure (float): Applied external pressure in GPa
 
@@ -984,12 +1001,13 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
             - Update function that performs one FIRE step with Frechet derivatives
 
     Notes:
-        - Frechet cell parameterization uses matrix logarithm to represent cell deformations,
-          which provides improved numerical properties for cell optimization
-        - This method generally performs better than standard unit cell optimization for
-          cases with large cell deformations
-        - To fix the cell and only optimize atomic positions, set both constant_volume=True
-          and hydrostatic_strain=True
+        - Frechet cell parameterization uses matrix logarithm to represent cell
+          deformations, which provides improved numerical properties for cell
+          optimization
+        - This method generally performs better than standard unit cell optimization
+          for cases with large cell deformations
+        - To fix the cell and only optimize atomic positions, set both
+          constant_volume=True and hydrostatic_strain=True
     """
     device = model.device
     dtype = model.dtype

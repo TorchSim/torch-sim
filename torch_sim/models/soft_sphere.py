@@ -12,7 +12,7 @@ Where:
     - r is the distance between particles
     - sigma is the effective diameter of the particles
     - epsilon controls the energy scale
-    - alpha determines the steepness of the repulsion (typically α ≥ 2)
+    - alpha determines the steepness of the repulsion (typically alpha >= 2)
 
 Soft sphere models are particularly useful for:
     - Granular matter simulations
@@ -34,7 +34,7 @@ Example:
     multi_model = SoftSphereMultiModel(
         species=particle_types,
         sigma_matrix=size_matrix,
-        epsilon_matrix=strength_matrix
+        epsilon_matrix=strength_matrix,
     )
     results = multi_model(sim_state)
     ```
@@ -90,18 +90,20 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
 
         # Custom parameters for colloidal system
         colloid_model = SoftSphereModel(
-            sigma=2.0,       # particle diameter in nm
-            epsilon=10.0,    # energy scale in kJ/mol
-            alpha=12.0,      # steep repulsion for hard colloids
-            compute_stress=True
+            sigma=2.0,  # particle diameter in nm
+            epsilon=10.0,  # energy scale in kJ/mol
+            alpha=12.0,  # steep repulsion for hard colloids
+            compute_stress=True,
         )
 
         # Get forces for a system with periodic boundary conditions
-        results = colloid_model(SimState(
-            positions=positions,
-            cell=box_vectors,
-            pbc=torch.tensor([True, True, True])
-        ))
+        results = colloid_model(
+            SimState(
+                positions=positions,
+                cell=box_vectors,
+                pbc=torch.tensor([True, True, True]),
+            )
+        )
         forces = results["forces"]  # shape: [n_particles, 3]
         ```
     """
@@ -157,7 +159,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
                 sigma=1.0,
                 epsilon=1.0,
                 alpha=12.0,  # Steep repulsion similar to r^-12 term in LJ
-                cutoff=2**(1/6)  # WCA cutoff at minimum of LJ potential
+                cutoff=2 ** (1 / 6),  # WCA cutoff at minimum of LJ potential
             )
             ```
         """
@@ -193,10 +195,13 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         Returns:
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Total potential energy (scalar)
-                - "forces": Atomic forces with shape [n_atoms, 3] (if compute_force=True)
+                - "forces": Atomic forces with shape [n_atoms, 3] (if
+                    compute_force=True)
                 - "stress": Stress tensor with shape [3, 3] (if compute_stress=True)
-                - "energies": Per-atom energies with shape [n_atoms] (if per_atom_energies=True)
-                - "stresses": Per-atom stresses with shape [n_atoms, 3, 3] (if per_atom_stresses=True)
+                - "energies": Per-atom energies with shape [n_atoms] (if
+                    per_atom_energies=True)
+                - "stresses": Per-atom stresses with shape [n_atoms, 3, 3] (if
+                    per_atom_stresses=True)
 
         Notes:
             This method can work with both neighbor list and full pairwise calculations.
@@ -303,8 +308,9 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
     def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute soft sphere potential energies, forces, and stresses for a system.
 
-        Main entry point for soft sphere potential calculations that handles batched states
-        by dispatching each batch to the unbatched implementation and combining results.
+        Main entry point for soft sphere potential calculations that handles batched
+        states by dispatching each batch to the unbatched implementation and combining
+        results.
 
         Args:
             state (SimState | StateDict): Input state containing atomic positions,
@@ -314,8 +320,10 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         Returns:
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Potential energy with shape [n_batches]
-                - "forces": Atomic forces with shape [n_atoms, 3] (if compute_force=True)
-                - "stress": Stress tensor with shape [n_batches, 3, 3] (if compute_stress=True)
+                - "forces": Atomic forces with shape [n_atoms, 3]
+                    (if compute_force=True)
+                - "stress": Stress tensor with shape [n_batches, 3, 3]
+                    (if compute_stress=True)
                 - May include additional outputs based on configuration
 
         Raises:
@@ -387,15 +395,19 @@ class SoftSphereMultiModel(torch.nn.Module):
         ```python
         # Create a binary mixture with different interaction parameters
         # Define interaction matrices (size 2x2 for binary system)
-        sigma_matrix = torch.tensor([
-            [1.0, 0.8],  # Type 0-0 and 0-1 interactions
-            [0.8, 0.6]   # Type 1-0 and 1-1 interactions
-        ])
+        sigma_matrix = torch.tensor(
+            [
+                [1.0, 0.8],  # Type 0-0 and 0-1 interactions
+                [0.8, 0.6],  # Type 1-0 and 1-1 interactions
+            ]
+        )
 
-        epsilon_matrix = torch.tensor([
-            [1.0, 0.5],  # Type 0-0 and 0-1 interactions
-            [0.5, 2.0]   # Type 1-0 and 1-1 interactions
-        ])
+        epsilon_matrix = torch.tensor(
+            [
+                [1.0, 0.5],  # Type 0-0 and 0-1 interactions
+                [0.5, 2.0],  # Type 1-0 and 1-1 interactions
+            ]
+        )
 
         # Particle type assignments (0 or 1 for each particle)
         species = torch.tensor([0, 0, 1, 1, 0, 1])
@@ -405,7 +417,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             species=species,
             sigma_matrix=sigma_matrix,
             epsilon_matrix=epsilon_matrix,
-            compute_force=True
+            compute_force=True,
         )
 
         # Compute properties
@@ -451,7 +463,8 @@ class SoftSphereMultiModel(torch.nn.Module):
             device (torch.device | None): Device for computations. If None, uses CPU.
                 Defaults to None.
             dtype (torch.dtype): Data type for calculations. Defaults to torch.float32.
-            periodic (bool): Whether to use periodic boundary conditions. Defaults to True.
+            periodic (bool): Whether to use periodic boundary conditions. Defaults to
+                True.
             compute_force (bool): Whether to compute forces. Defaults to True.
             compute_stress (bool): Whether to compute stress tensor. Defaults to False.
             per_atom_energies (bool): Whether to compute per-atom energy decomposition.
@@ -470,28 +483,34 @@ class SoftSphereMultiModel(torch.nn.Module):
             # Polymer B (type 1): smaller, harder particles
 
             # Create species assignment (100 particles total)
-            species = torch.cat([
-                torch.zeros(50, dtype=torch.long),  # 50 particles of type 0
-                torch.ones(50, dtype=torch.long)    # 50 particles of type 1
-            ])
+            species = torch.cat(
+                [
+                    torch.zeros(50, dtype=torch.long),  # 50 particles of type 0
+                    torch.ones(50, dtype=torch.long),  # 50 particles of type 1
+                ]
+            )
 
             # Interaction matrices
-            sigma = torch.tensor([
-                [1.2, 1.0],  # A-A and A-B interactions
-                [1.0, 0.8]   # B-A and B-B interactions
-            ])
+            sigma = torch.tensor(
+                [
+                    [1.2, 1.0],  # A-A and A-B interactions
+                    [1.0, 0.8],  # B-A and B-B interactions
+                ]
+            )
 
-            epsilon = torch.tensor([
-                [1.0, 1.5],  # A-A and A-B interactions
-                [1.5, 2.0]   # B-A and B-B interactions
-            ])
+            epsilon = torch.tensor(
+                [
+                    [1.0, 1.5],  # A-A and A-B interactions
+                    [1.5, 2.0],  # B-A and B-B interactions
+                ]
+            )
 
             # Create model with mixing rules
             model = SoftSphereMultiModel(
                 species=species,
                 sigma_matrix=sigma,
                 epsilon_matrix=epsilon,
-                compute_force=True
+                compute_force=True,
             )
             ```
 
@@ -526,9 +545,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             n_species,
             n_species,
         ):
-            raise ValueError(
-                f"epsilon_matrix must have shape ({n_species}, {n_species})"
-            )
+            raise ValueError(f"epsilon_matrix must have shape ({n_species}, {n_species})")
         if alpha_matrix is not None and alpha_matrix.shape != (n_species, n_species):
             raise ValueError(f"alpha_matrix must have shape ({n_species}, {n_species})")
 
@@ -567,7 +584,8 @@ class SoftSphereMultiModel(torch.nn.Module):
         state: SimState,
         species: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        """Compute energies and forces for a single unbatched system with multiple species.
+        """Compute energies and forces for a single unbatched system with multiple
+        species.
 
         Internal implementation that processes a single, non-batched simulation state.
         This method handles all pair interactions between particles of different types
@@ -583,10 +601,14 @@ class SoftSphereMultiModel(torch.nn.Module):
         Returns:
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Total potential energy (scalar)
-                - "forces": Atomic forces with shape [n_atoms, 3] (if compute_force=True)
-                - "stress": Stress tensor with shape [3, 3] (if compute_stress=True)
-                - "energies": Per-atom energies with shape [n_atoms] (if per_atom_energies=True)
-                - "stresses": Per-atom stresses with shape [n_atoms, 3, 3] (if per_atom_stresses=True)
+                - "forces": Atomic forces with shape [n_atoms, 3]
+                    (if compute_force=True)
+                - "stress": Stress tensor with shape [3, 3]
+                    (if compute_stress=True)
+                - "energies": Per-atom energies with shape [n_atoms]
+                    (if per_atom_energies=True)
+                - "stresses": Per-atom stresses with shape [n_atoms, 3, 3]
+                    (if per_atom_stresses=True)
 
         Notes:
             This method supports both neighbor list optimization and full pairwise
@@ -722,8 +744,10 @@ class SoftSphereMultiModel(torch.nn.Module):
         Returns:
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Potential energy with shape [n_batches]
-                - "forces": Atomic forces with shape [n_atoms, 3] (if compute_force=True)
-                - "stress": Stress tensor with shape [n_batches, 3, 3] (if compute_stress=True)
+                - "forces": Atomic forces with shape [n_atoms, 3]
+                    (if compute_force=True)
+                - "stress": Stress tensor with shape [n_batches, 3, 3]
+                    (if compute_stress=True)
                 - May include additional outputs based on configuration
 
         Raises:
@@ -737,7 +761,7 @@ class SoftSphereMultiModel(torch.nn.Module):
                 species=particle_types,
                 sigma_matrix=distance_matrix,
                 epsilon_matrix=strength_matrix,
-                compute_force=True
+                compute_force=True,
             )
 
             # Calculate properties

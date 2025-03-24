@@ -8,14 +8,14 @@ calculations and neighbor list-based optimizations.
 Examples:
     ```python
     # Create a Lennard-Jones model with default parameters
-    model = LennardJonesModel(device=torch.device('cuda'))
+    model = LennardJonesModel(device=torch.device("cuda"))
 
     # Create a model with custom parameters
     model = LennardJonesModel(
-        sigma=3.405,      # Angstroms
+        sigma=3.405,  # Angstroms
         epsilon=0.01032,  # eV
-        cutoff=10.0,      # Angstroms
-        compute_stress=True
+        cutoff=10.0,  # Angstroms
+        compute_stress=True,
     )
 
     # Calculate properties for a simulation state
@@ -23,12 +23,6 @@ Examples:
     energy = output["energy"]
     forces = output["forces"]
     ```
-
-Notes:
-    The Lennard-Jones potential follows the form:
-    V(r) = 4ε[(σ/r)^12 - (σ/r)^6]
-
-    Forces are computed as the negative gradient of the potential energy.
 """
 
 import torch
@@ -56,7 +50,8 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
     full pairwise calculation or neighbor list-based optimization for efficiency.
 
     Attributes:
-        sigma (torch.Tensor): Length parameter controlling particle size/repulsion distance.
+        sigma (torch.Tensor): Length parameter controlling particle size/repulsion
+            distance.
         epsilon (torch.Tensor): Energy parameter controlling interaction strength.
         cutoff (torch.Tensor): Distance cutoff for truncating potential calculation.
         device (torch.device): Device where calculations are performed.
@@ -70,15 +65,15 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
     Examples:
         ```python
         # Basic usage with default parameters
-        lj_model = LennardJonesModel(device=torch.device('cuda'))
+        lj_model = LennardJonesModel(device=torch.device("cuda"))
         results = lj_model(sim_state)
 
         # Custom parameterization for Argon
         ar_model = LennardJonesModel(
-            sigma=3.405,    # Å
-            epsilon=0.0104, # eV
-            cutoff=8.5,     # Å
-            compute_stress=True
+            sigma=3.405,  # Å
+            epsilon=0.0104,  # eV
+            cutoff=8.5,  # Å
+            compute_stress=True,
         )
         ```
     """
@@ -104,12 +99,12 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         and use different optimization strategies.
 
         Args:
-            sigma (float): Length parameter of the Lennard-Jones potential in distance units.
-                Controls the size of particles. Defaults to 1.0.
-            epsilon (float): Energy parameter of the Lennard-Jones potential in energy units.
-                Controls the strength of the interaction. Defaults to 1.0.
-            device (torch.device | None): Device to run computations on. If None, uses CPU.
-                Defaults to None.
+            sigma (float): Length parameter of the Lennard-Jones potential in distance
+                units. Controls the size of particles. Defaults to 1.0.
+            epsilon (float): Energy parameter of the Lennard-Jones potential in energy
+                units. Controls the strength of the interaction. Defaults to 1.0.
+            device (torch.device | None): Device to run computations on. If None, uses
+                CPU. Defaults to None.
             dtype (torch.dtype): Data type for calculations. Defaults to torch.float32.
             compute_force (bool): Whether to compute forces. Defaults to True.
             compute_stress (bool): Whether to compute stress tensor. Defaults to False.
@@ -135,7 +130,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
                 dtype=torch.float64,
                 compute_stress=True,
                 per_atom_energies=True,
-                cutoff=10.0
+                cutoff=10.0,
             )
             ```
 
@@ -176,10 +171,13 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         Returns:
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Total potential energy (scalar)
-                - "forces": Atomic forces with shape [n_atoms, 3] (if compute_force=True)
+                - "forces": Atomic forces with shape [n_atoms, 3] (if
+                    compute_force=True)
                 - "stress": Stress tensor with shape [3, 3] (if compute_stress=True)
-                - "energies": Per-atom energies with shape [n_atoms] (if per_atom_energies=True)
-                - "stresses": Per-atom stresses with shape [n_atoms, 3, 3] (if per_atom_stresses=True)
+                - "energies": Per-atom energies with shape [n_atoms] (if
+                    per_atom_energies=True)
+                - "stresses": Per-atom stresses with shape [n_atoms, 3, 3] (if
+                    per_atom_stresses=True)
 
         Notes:
             This method handles two different approaches:
@@ -238,9 +236,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         )
         # Zero out energies beyond cutoff
         mask = distances < self.cutoff
-        pair_energies = torch.where(
-            mask, pair_energies, torch.zeros_like(pair_energies)
-        )
+        pair_energies = torch.where(mask, pair_energies, torch.zeros_like(pair_energies))
 
         # Initialize results with total energy (sum/2 to avoid double counting)
         results = {"energy": 0.5 * pair_energies.sum()}
@@ -294,8 +290,8 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
     def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute Lennard-Jones energies, forces, and stresses for a system.
 
-        Main entry point for Lennard-Jones calculations that handles batched states
-        by dispatching each batch to the unbatched implementation and combining results.
+        Main entry point for Lennard-Jones calculations that handles batched states by
+        dispatching each batch to the unbatched implementation and combining results.
 
         Args:
             state (SimState | StateDict): Input state containing atomic positions,
@@ -305,8 +301,10 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         Returns:
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Potential energy with shape [n_batches]
-                - "forces": Atomic forces with shape [n_atoms, 3] (if compute_force=True)
-                - "stress": Stress tensor with shape [n_batches, 3, 3] (if compute_stress=True)
+                - "forces": Atomic forces with shape [n_atoms, 3] (if
+                    compute_force=True)
+                - "stress": Stress tensor with shape [n_batches, 3, 3] (if
+                    compute_stress=True)
                 - May include additional outputs based on configuration
 
         Raises:

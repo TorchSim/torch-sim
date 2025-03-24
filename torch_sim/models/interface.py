@@ -10,7 +10,9 @@ Examples:
     # Creating a custom model that implements the interface
     class MyModel(ModelInterface):
         def __init__(self, device=None, dtype=torch.float64):
-            self._device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self._device = device or torch.device(
+                "cuda" if torch.cuda.is_available() else "cpu"
+            )
             self._dtype = dtype
             self._compute_stress = True
             self._compute_force = True
@@ -49,7 +51,7 @@ class ModelInterface(ABC):
     Examples:
         ```python
         # Using a model that implements ModelInterface
-        model = LennardJonesModel(device=torch.device('cuda'))
+        model = LennardJonesModel(device=torch.device("cuda"))
 
         # Forward pass with a simulation state
         output = model(sim_state)
@@ -78,7 +80,8 @@ class ModelInterface(ABC):
         load parameters from a file or existing module.
 
         Args:
-            model (str | Path | torch.nn.Module | None): Model specification, which can be:
+            model (str | Path | torch.nn.Module | None): Model specification, which
+                can be:
                 - Path to a model checkpoint
                 - Pre-configured torch.nn.Module
                 - None for default initialization
@@ -182,8 +185,9 @@ class ModelInterface(ABC):
                 where n_atoms is the total number of atoms across all batches.
             cell (torch.Tensor | None): Unit cell vectors with shape [n_batches, 3, 3]
                 or None for non-periodic systems.
-            batch (torch.Tensor | None): Batch indices for each atom with shape [n_atoms],
-                containing consecutive integers identifying which batch each atom belongs to.
+            batch (torch.Tensor | None): Batch indices for each atom with shape
+                [n_atoms], containing consecutive integers identifying which batch
+                each atom belongs to.
             atomic_numbers (torch.Tensor | None): Atomic numbers with shape [n_atoms]
                 specifying the element type of each atom. Defaults to None.
             **kwargs: Additional model-specific parameters.
@@ -192,7 +196,8 @@ class ModelInterface(ABC):
             dict[str, torch.Tensor]: Dictionary containing computed properties:
                 - "energy": Potential energy with shape [n_batches]
                 - "forces": Atomic forces with shape [n_atoms, 3]
-                - "stress": Stress tensor with shape [n_batches, 3, 3] (if compute_stress=True)
+                - "stress": Stress tensor with shape [n_batches, 3, 3] (if
+                    compute_stress=True)
                 - May include additional model-specific outputs
 
         Examples:
@@ -202,7 +207,7 @@ class ModelInterface(ABC):
                 positions=state.positions,
                 cell=state.cell,
                 batch=state.batch,
-                atomic_numbers=state.atomic_numbers
+                atomic_numbers=state.atomic_numbers,
             )
 
             energy = output["energy"]
@@ -239,14 +244,10 @@ def validate_model_outputs(
     Examples:
         ```python
         # Create a new model implementation
-        model = MyCustomModel(device=torch.device('cuda'))
+        model = MyCustomModel(device=torch.device("cuda"))
 
         # Validate that it correctly implements the interface
-        validate_model_outputs(
-            model,
-            device=torch.device('cuda'),
-            dtype=torch.float64
-        )
+        validate_model_outputs(model, device=torch.device("cuda"), dtype=torch.float64)
         ```
 
     Notes:

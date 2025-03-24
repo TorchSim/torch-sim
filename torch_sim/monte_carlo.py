@@ -1,4 +1,5 @@
-"""Monte Carlo simulations: Implementation of Monte Carlo methods for atomic structure optimization.
+"""Monte Carlo simulations: Implementation of Monte Carlo methods for atomic structure
+optimization.
 
 This module provides functionality for performing Monte Carlo simulations,
 particularly focused on swap Monte Carlo for atomic systems. It includes
@@ -38,7 +39,8 @@ def generate_swaps(
     """Generate atom swaps for a given batched system.
 
     Generates proposed swaps between atoms of different types within the same batch.
-    The function ensures that swaps only occur between atoms with different atomic numbers.
+    The function ensures that swaps only occur between atoms with different atomic
+    numbers.
 
     Args:
         state (SimState): The simulation state
@@ -101,16 +103,17 @@ def generate_swaps(
 def swaps_to_permutation(swaps: torch.Tensor, n_atoms: int) -> torch.Tensor:
     """Convert atom swap pairs to a full permutation tensor.
 
-    Creates a permutation tensor that represents the result of applying the specified swaps
-    to the system.
+    Creates a permutation tensor that represents the result of applying the specified
+    swaps to the system.
 
     Args:
-        swaps (torch.Tensor): Tensor of shape [n_swaps, 2] containing pairs of indices to swap
+        swaps (torch.Tensor): Tensor of shape [n_swaps, 2] containing pairs of indices
+            to swap
         n_atoms (int): Total number of atoms in the system
 
     Returns:
-        torch.Tensor: Permutation tensor of shape [n_atoms] where permutation[i] contains
-            the index of the atom that should be moved to position i
+        torch.Tensor: Permutation tensor of shape [n_atoms] where permutation[i]
+            contains the index of the atom that should be moved to position i
     """
     permutation = torch.arange(n_atoms, device=swaps.device)
     permutation[swaps[:, 0]] = swaps[:, 1]
@@ -194,11 +197,13 @@ def swap_monte_carlo(
         model (torch.nn.Module): Energy model that takes a SimState and returns a dict
             containing 'energy' as a key
         kT (float): Temperature of the system in energy units
-        seed (int | None, optional): Seed for the random number generator. Defaults to None.
+        seed (int | None, optional): Seed for the random number generator.
+            Defaults to None.
 
     Returns:
         tuple: A tuple containing:
-            - init_function (Callable): Function to initialize a SwapMCState from a SimState
+            - init_function (Callable): Function to initialize a SwapMCState from a
+              SimState
             - step_function (Callable): Function to perform a single Monte Carlo step
 
     Examples:
@@ -239,8 +244,8 @@ def swap_monte_carlo(
 
         Args:
             state (SwapMCState): The current Monte Carlo state
-            kT (float, optional): Temperature parameter in energy units. Defaults to the value
-                specified in the outer function.
+            kT (float, optional): Temperature parameter in energy units. Defaults to the
+                value specified in the outer function.
             generator (torch.Generator | None, optional): Random number generator.
                 Defaults to None.
 

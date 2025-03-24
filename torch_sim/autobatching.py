@@ -117,9 +117,7 @@ def determine_max_batch_size(
         ```python
         # Find the maximum batch size for a Lennard-Jones model
         max_batches = determine_max_batch_size(
-            state=sample_state,
-            model=lj_model,
-            max_atoms=100_000
+            state=sample_state, model=lj_model, max_atoms=100_000
         )
         ```
 
@@ -160,7 +158,8 @@ def calculate_memory_scaler(
     Args:
         state (SimState): State to calculate metric for, with shape information
             specific to the SimState instance.
-        memory_scales_with (Literal["n_atoms_x_density", "n_atoms"]): Type of metric to use:
+        memory_scales_with (Literal["n_atoms_x_density", "n_atoms"]): Type of metric
+            to use:
             - "n_atoms": Uses only atom count, suitable for uniform density systems
             - "n_atoms_x_density": Uses atom count multiplied by number density,
               better for systems with varying densities
@@ -170,7 +169,8 @@ def calculate_memory_scaler(
         float: Calculated metric value.
 
     Raises:
-        ValueError: If state has multiple batches or if an invalid metric type is provided.
+        ValueError: If state has multiple batches or if an invalid metric type is
+            provided.
 
     Examples:
         ```python
@@ -276,7 +276,8 @@ class ChunkingAutoBatcher:
         state_slices (list[SimState]): Individual states to be batched.
         memory_scalers (list[float]): Memory scaling metrics for each state.
         index_to_scaler (dict): Mapping from state index to its scaling metric.
-        index_bins (list[list[int]]): Groups of state indices that can be batched together.
+        index_bins (list[list[int]]): Groups of state indices that can be batched
+            together.
         batched_states (list[list[SimState]]): Grouped states ready for batching.
         current_state_bin (int): Index of the current batch being processed.
 
@@ -284,9 +285,7 @@ class ChunkingAutoBatcher:
         ```python
         # Create a batcher with a Lennard-Jones model
         batcher = ChunkingAutoBatcher(
-            model=lj_model,
-            memory_scales_with="n_atoms",
-            max_memory_scaler=1000.0
+            model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=1000.0
         )
 
         # Load states and process them in batches
@@ -304,9 +303,7 @@ class ChunkingAutoBatcher:
         self,
         model: ModelInterface,
         *,
-        memory_scales_with: Literal[
-            "n_atoms", "n_atoms_x_density"
-        ] = "n_atoms_x_density",
+        memory_scales_with: Literal["n_atoms", "n_atoms_x_density"] = "n_atoms_x_density",
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         return_indices: bool = False,
@@ -314,14 +311,15 @@ class ChunkingAutoBatcher:
         """Initialize the chunking auto-batcher.
 
         Args:
-            model (ModelInterface): Model to batch for, used to estimate memory requirements.
-            memory_scales_with (Literal["n_atoms", "n_atoms_x_density"]): Metric to use for
-                estimating memory requirements:
+            model (ModelInterface): Model to batch for, used to estimate memory
+                requirements.
+            memory_scales_with (Literal["n_atoms", "n_atoms_x_density"]): Metric to use
+                for estimating memory requirements:
                 - "n_atoms": Uses only atom count
                 - "n_atoms_x_density": Uses atom count multiplied by number density
                 Defaults to "n_atoms_x_density".
-            max_memory_scaler (float | None): Maximum metric value allowed per batch. If None,
-                will be automatically estimated. Defaults to None.
+            max_memory_scaler (float | None): Maximum metric value allowed per batch. If
+                None, will be automatically estimated. Defaults to None.
             max_atoms_to_try (int): Maximum number of atoms to try when estimating
                 max_memory_scaler. Defaults to 500,000.
             return_indices (bool): Whether to return original indices along with batches.
@@ -344,10 +342,10 @@ class ChunkingAutoBatcher:
         to maximize GPU utilization.
 
         Args:
-            states (list[SimState] | SimState): Collection of states to batch. Either a list
-                of individual SimState objects or a single batched SimState that will be
-                split into individual states. Each SimState has shape information specific
-                to its instance.
+            states (list[SimState] | SimState): Collection of states to batch. Either a
+                list of individual SimState objects or a single batched SimState that
+                will be split into individual states. Each SimState has shape
+                information specific to its instance.
 
         Raises:
             ValueError: If any individual state has a memory scaling metric greater
@@ -412,8 +410,8 @@ class ChunkingAutoBatcher:
         memory constraints.
 
         Args:
-            return_indices (bool): Whether to return original indices along with the batch.
-                Overrides the value set during initialization. Defaults to False.
+            return_indices (bool): Whether to return original indices along with the
+                batch. Overrides the value set during initialization. Defaults to False.
 
         Returns:
             SimState | tuple[SimState, list[int]] | None:
@@ -563,9 +561,7 @@ class HotSwappingAutoBatcher:
         ```python
         # Create a hot-swapping batcher
         batcher = HotSwappingAutoBatcher(
-            model=lj_model,
-            memory_scales_with="n_atoms",
-            max_memory_scaler=1000.0
+            model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=1000.0
         )
 
         # Load states and process them with convergence checking
@@ -601,14 +597,15 @@ class HotSwappingAutoBatcher:
         """Initialize the hot-swapping auto-batcher.
 
         Args:
-            model (ModelInterface): Model to batch for, used to estimate memory requirements.
-            memory_scales_with (Literal["n_atoms", "n_atoms_x_density"]): Metric to use for
-                estimating memory requirements:
+            model (ModelInterface): Model to batch for, used to estimate memory
+                requirements.
+            memory_scales_with (Literal["n_atoms", "n_atoms_x_density"]): Metric to use
+                for estimating memory requirements:
                 - "n_atoms": Uses only atom count
                 - "n_atoms_x_density": Uses atom count multiplied by number density
                 Defaults to "n_atoms_x_density".
-            max_memory_scaler (float | None): Maximum metric value allowed per batch. If None,
-                will be automatically estimated. Defaults to None.
+            max_memory_scaler (float | None): Maximum metric value allowed per batch.
+                If None, will be automatically estimated. Defaults to None.
             max_atoms_to_try (int): Maximum number of atoms to try when estimating
                 max_memory_scaler. Defaults to 500,000.
             return_indices (bool): Whether to return original indices along with batches.
@@ -622,7 +619,7 @@ class HotSwappingAutoBatcher:
         self.max_memory_scaler = max_memory_scaler or None
         self.max_atoms_to_try = max_atoms_to_try
         self.return_indices = return_indices
-        self.max_attempts = max_iterations # TODO: change to max_iterations
+        self.max_attempts = max_iterations  # TODO: change to max_iterations
 
     def load_states(
         self,
@@ -796,17 +793,18 @@ class HotSwappingAutoBatcher:
             updated_state (SimState | None): Current state after processing, or None
                 for the first call. Contains shape information specific to the SimState
                 instance.
-            convergence_tensor (torch.Tensor | None): Boolean tensor with shape [n_batches]
-                indicating which states have converged (True) or not (False). Should be
-                None only for the first call.
+            convergence_tensor (torch.Tensor | None): Boolean tensor with shape
+                [n_batches] indicating which states have converged (True) or not
+                (False). Should be None only for the first call.
 
         Returns:
-            tuple[SimState | None, list[SimState]] | tuple[SimState | None, list[SimState], list[int]]:
+            tuple[SimState | None, list[SimState]] | tuple[SimState | None,
+                list[SimState], list[int]]:
                 - If return_indices is False: Tuple of (next_batch, completed_states)
                   where next_batch is a SimState or None if all states are processed,
                   and completed_states is a list of SimState objects.
-                - If return_indices is True: Tuple of (next_batch, completed_states, indices)
-                  where indices are the current batch's positions.
+                - If return_indices is True: Tuple of (next_batch, completed_states,
+                  indices) where indices are the current batch's positions.
 
         Raises:
             AssertionError: If convergence_tensor doesn't match the expected shape or
@@ -884,9 +882,7 @@ class HotSwappingAutoBatcher:
 
         return next_batch, completed_states
 
-    def restore_original_order(
-        self, completed_states: list[SimState]
-    ) -> list[SimState]:
+    def restore_original_order(self, completed_states: list[SimState]) -> list[SimState]:
         """Reorder completed states back to their original sequence.
 
         Takes states that were completed in arbitrary order and restores them
@@ -895,7 +891,8 @@ class HotSwappingAutoBatcher:
 
         Args:
             completed_states (list[SimState]): List of completed states to reorder.
-                Each SimState contains simulation data with shape specific to its instance.
+                Each SimState contains simulation data with shape specific to its
+                instance.
 
         Returns:
             list[SimState]: States in their original order, with shape information

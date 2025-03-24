@@ -8,15 +8,15 @@ It includes both energy and force calculations with support for neighbor lists.
 Examples:
     ```python
     # Create a Morse model with default parameters
-    model = MorseModel(device=torch.device('cuda'))
+    model = MorseModel(device=torch.device("cuda"))
 
     # Create a model with custom parameters for O-H bonds
     model = MorseModel(
-        sigma=0.96,       # Equilibrium bond length in Å
-        epsilon=4.52,     # Dissociation energy in eV
-        alpha=2.0,        # Controls steepness/width
-        cutoff=2.5,       # Cutoff distance in Å
-        compute_force=True
+        sigma=0.96,  # Equilibrium bond length in Å
+        epsilon=4.52,  # Dissociation energy in eV
+        alpha=2.0,  # Controls steepness/width
+        cutoff=2.5,  # Cutoff distance in Å
+        compute_force=True,
     )
 
     # Calculate properties for a simulation state
@@ -69,16 +69,16 @@ class MorseModel(torch.nn.Module, ModelInterface):
     Examples:
         ```python
         # Basic usage with default parameters
-        morse_model = MorseModel(device=torch.device('cuda'))
+        morse_model = MorseModel(device=torch.device("cuda"))
         results = morse_model(sim_state)
 
         # Model parameterized for O-H bonds in water
         oh_model = MorseModel(
-            sigma=0.96,     # Å - equilibrium bond length
-            epsilon=4.52,   # eV - dissociation energy
-            alpha=2.0,      # Controls steepness
+            sigma=0.96,  # Å - equilibrium bond length
+            epsilon=4.52,  # eV - dissociation energy
+            alpha=2.0,  # Controls steepness
             compute_force=True,
-            compute_stress=True
+            compute_stress=True,
         )
         ```
     """
@@ -101,8 +101,8 @@ class MorseModel(torch.nn.Module, ModelInterface):
         """Initialize the Morse potential calculator.
 
         Creates a model with specified interaction parameters and computational flags.
-        The Morse potential is defined by three key parameters: sigma (equilibrium distance),
-        epsilon (dissociation energy), and alpha (width control).
+        The Morse potential is defined by three key parameters: sigma (equilibrium
+        distance), epsilon (dissociation energy), and alpha (width control).
 
         Args:
             sigma (float): Equilibrium bond distance (r_e) in distance units.
@@ -111,8 +111,8 @@ class MorseModel(torch.nn.Module, ModelInterface):
                 Defaults to 5.0.
             alpha (float): Controls the width/steepness of the potential well.
                 Larger values create a narrower well. Defaults to 5.0.
-            device (torch.device | None): Device to run computations on. If None, uses CPU.
-                Defaults to None.
+            device (torch.device | None): Device to run computations on. If None, uses
+                CPU. Defaults to None.
             dtype (torch.dtype): Data type for calculations. Defaults to torch.float32.
             compute_force (bool): Whether to compute forces. Defaults to False.
             compute_stress (bool): Whether to compute stress tensor. Defaults to False.
@@ -132,10 +132,10 @@ class MorseModel(torch.nn.Module, ModelInterface):
 
             # Model for diatomic hydrogen
             model = MorseModel(
-                sigma=0.74,    # Å
+                sigma=0.74,  # Å
                 epsilon=4.75,  # eV
-                alpha=1.94,    # Steepness parameter
-                compute_force=True
+                alpha=1.94,  # Steepness parameter
+                compute_force=True,
             )
             ```
 
@@ -174,10 +174,13 @@ class MorseModel(torch.nn.Module, ModelInterface):
         Returns:
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Total potential energy (scalar)
-                - "forces": Atomic forces with shape [n_atoms, 3] (if compute_force=True)
+                - "forces": Atomic forces with shape [n_atoms, 3] (if
+                    compute_force=True)
                 - "stress": Stress tensor with shape [3, 3] (if compute_stress=True)
-                - "energies": Per-atom energies with shape [n_atoms] (if per_atom_energies=True)
-                - "stresses": Per-atom stresses with shape [n_atoms, 3, 3] (if per_atom_stresses=True)
+                - "energies": Per-atom energies with shape [n_atoms] (if
+                    per_atom_energies=True)
+                - "stresses": Per-atom stresses with shape [n_atoms, 3, 3] (if
+                    per_atom_stresses=True)
 
         Notes:
             This method can work with both neighbor list and full pairwise calculations.
@@ -284,8 +287,10 @@ class MorseModel(torch.nn.Module, ModelInterface):
         Returns:
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Potential energy with shape [n_batches]
-                - "forces": Atomic forces with shape [n_atoms, 3] (if compute_force=True)
-                - "stress": Stress tensor with shape [n_batches, 3, 3] (if compute_stress=True)
+                - "forces": Atomic forces with shape [n_atoms, 3]
+                    (if compute_force=True)
+                - "stress": Stress tensor with shape [n_batches, 3, 3]
+                    (if compute_stress=True)
                 - May include additional outputs based on configuration
 
         Raises:

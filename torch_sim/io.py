@@ -215,7 +215,8 @@ def atoms_to_state(
     Args:
         atoms (Atoms | list[Atoms]): Single ASE Atoms object or list of Atoms objects
         device (torch.device): Device to create tensors on
-        dtype (torch.dtype): Data type for tensors (typically torch.float32 or torch.float64)
+        dtype (torch.dtype): Data type for tensors (typically torch.float32 or
+            torch.float64)
 
     Returns:
         SimState: Batched state tensors in internal units with shapes:
@@ -287,9 +288,11 @@ def structures_to_state(
     """Create a SimState from pymatgen Structure(s).
 
     Args:
-        structure (Structure | list[Structure]): Single Structure or list of Structure objects
+        structure (Structure | list[Structure]): Single Structure or list of
+            Structure objects
         device (torch.device): Device to create tensors on
-        dtype (torch.dtype): Data type for tensors (typically torch.float32 or torch.float64)
+        dtype (torch.dtype): Data type for tensors (typically torch.float32 or
+            torch.float64)
 
     Returns:
         SimState: Batched state tensors in internal units with shapes:
@@ -361,9 +364,10 @@ def phonopy_to_state(
 
     Args:
         phonopy_atoms (PhonopyAtoms | list[PhonopyAtoms]): Single PhonopyAtoms object
-                                                          or list of PhonopyAtoms objects
+            or list of PhonopyAtoms objects
         device (torch.device): Device to create tensors on
-        dtype (torch.dtype): Data type for tensors (typically torch.float32 or torch.float64)
+        dtype (torch.dtype): Data type for tensors (typically torch.float32 or
+            torch.float64)
 
     Returns:
         SimState: Batched state tensors in internal units with shapes:
@@ -387,9 +391,7 @@ def phonopy_to_state(
     try:
         from phonopy.structure.atoms import PhonopyAtoms
     except ImportError as err:
-        raise ImportError(
-            "Phonopy is required for phonopy_to_state conversion"
-        ) from err
+        raise ImportError("Phonopy is required for phonopy_to_state conversion") from err
 
     phonopy_atoms_list = (
         [phonopy_atoms] if isinstance(phonopy_atoms, PhonopyAtoms) else phonopy_atoms

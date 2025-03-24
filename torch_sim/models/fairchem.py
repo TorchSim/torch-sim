@@ -10,9 +10,7 @@ allowing them to be used within the broader torch_sim simulation pipeline.
 
 Examples:
     >>> model = FairChemModel(
-    ...     model="path/to/checkpoint.pt",
-    ...     compute_stress=True,
-    ...     dtype=torch.float32
+    ...     model="path/to/checkpoint.pt", compute_stress=True, dtype=torch.float32
     ... )
     >>> results = model(state)
     >>> energy, forces = results["energy"], results["forces"]
@@ -59,11 +57,13 @@ class FairChemModel(torch.nn.Module, ModelInterface):
     """Computes molecular energies, forces and stresses using a FairChem model.
 
     This class wraps a FairChem model to compute energies, forces, and stresses for
-    molecular systems. It handles model initialization, checkpoint loading, and provides
-    a forward pass that accepts a SimState object and returns model predictions.
+    molecular systems. It handles model initialization, checkpoint loading, and
+    provides a forward pass that accepts a SimState object and returns model
+    predictions.
 
-    The model can be initialized either with a configuration file or a pretrained checkpoint.
-    It supports various model architectures and configurations supported by FairChem.
+    The model can be initialized either with a configuration file or a pretrained
+    checkpoint. It supports various model architectures and configurations supported by
+    FairChem.
 
     Attributes:
         neighbor_list_fn (Callable | None): Function to compute neighbor lists
@@ -80,10 +80,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         _reshaped_props (dict): Properties that need reshaping after computation
 
     Examples:
-        >>> model = FairChemModel(
-        ...     model="path/to/checkpoint.pt",
-        ...     compute_stress=True
-        ... )
+        >>> model = FairChemModel(model="path/to/checkpoint.pt", compute_stress=True)
         >>> results = model(state)
     """
 
@@ -122,7 +119,8 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             trainer (str | None): Name of trainer class to use
             cpu (bool): Whether to use CPU instead of GPU for computation
             seed (int | None): Random seed for reproducibility
-            r_max (float | None): Maximum cutoff radius in Ångström (overrides model default)
+            r_max (float | None): Maximum cutoff radius in Ångström (overrides model
+                default)
             dtype (torch.dtype | None): Data type to use for computation
             compute_stress (bool): Whether to compute stress tensor
 

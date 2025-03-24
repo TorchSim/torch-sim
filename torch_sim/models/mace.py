@@ -45,9 +45,11 @@ class MaceModel(torch.nn.Module, ModelInterface):
         batch (torch.Tensor): Batch indices with shape [n_atoms].
         n_systems (int): Number of systems in the batch.
         n_atoms_per_system (list[int]): Number of atoms in each system.
-        ptr (torch.Tensor): Pointers to the start of each system in the batch with shape [n_systems + 1].
+        ptr (torch.Tensor): Pointers to the start of each system in the batch with
+            shape [n_systems + 1].
         total_atoms (int): Total number of atoms across all systems.
-        node_attrs (torch.Tensor): One-hot encoded atomic types with shape [n_atoms, n_elements].
+        node_attrs (torch.Tensor): One-hot encoded atomic types with shape
+            [n_atoms, n_elements].
 
     Examples:
         >>> model = MaceModel(model=mace_model, atomic_numbers=torch.tensor([1, 1, 8]))
@@ -94,7 +96,8 @@ class MaceModel(torch.nn.Module, ModelInterface):
             enable_cueq (bool): Whether to enable CuEq acceleration. Defaults to False.
 
         Raises:
-            NotImplementedError: If model is provided as a file path (not implemented yet).
+            NotImplementedError: If model is provided as a file path (not
+                implemented yet).
             TypeError: If model is neither a path nor a torch.nn.Module.
         """
         super().__init__()
@@ -153,9 +156,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
             self.setup_from_batch(atomic_numbers, batch)
 
-    def setup_from_batch(
-        self, atomic_numbers: torch.Tensor, batch: torch.Tensor
-    ) -> None:
+    def setup_from_batch(self, atomic_numbers: torch.Tensor, batch: torch.Tensor) -> None:
         """Set up internal state from atomic numbers and batch indices.
 
         Processes the atomic numbers and batch indices to prepare the model for
@@ -214,7 +215,8 @@ class MaceModel(torch.nn.Module, ModelInterface):
             dict[str, torch.Tensor]: Dictionary containing:
                 - 'energy': System energies with shape [n_systems]
                 - 'forces': Atomic forces with shape [n_atoms, 3] if compute_force=True
-                - 'stress': System stresses with shape [n_systems, 3, 3] if compute_stress=True
+                - 'stress': System stresses with shape [n_systems, 3, 3] if
+                    compute_stress=True
 
         Raises:
             ValueError: If atomic numbers are not provided either in the constructor

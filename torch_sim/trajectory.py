@@ -14,11 +14,11 @@ Examples:
     # Creating a trajectory file
     with TorchSimTrajectory('simulation.hdf5', mode='w') as traj:
         traj.write_state(state, step=0)
-        
+
     # Writing to multiple trajectory files with a reporter
     reporter = TrajectoryReporter(['traj1.hdf5', 'traj2.hdf5'], state_frequency=100)
     reporter.report(state, step=0, model=model)
-    
+
 Notes:
     This module uses PyTables (HDF5) for efficient I/O operations and supports
     compression to reduce file sizes. It can interoperate with ASE and pymatgen
@@ -57,10 +57,10 @@ DATA_TYPE_MAP = {
 
 class TrajectoryReporter:
     """Trajectory reporter for saving simulation data at specified intervals.
-    
-    This class manages writing multiple trajectory files simultaneously. 
+
+    This class manages writing multiple trajectory files simultaneously.
     It handles periodic saving of full system states and custom property calculations.
-    
+
     Attributes:
         state_frequency (int): How often to save full states (in simulation steps)
         prop_calculators (dict): Dictionary mapping frequencies to property calculators
@@ -70,12 +70,12 @@ class TrajectoryReporter:
         filenames (list): List of trajectory file paths
         array_registry (dict): Dictionary of array names to (shape, dtype) tuples
         shape_warned (bool): Whether a shape warning has been issued
-        
+
     Examples:
         >>> reporter = TrajectoryReporter(
-        ...     ['system1.h5', 'system2.h5'],
+        ...     ["system1.h5", "system2.h5"],
         ...     state_frequency=100,
-        ...     prop_calculators={10: {'energy': calculate_energy}}
+        ...     prop_calculators={10: {"energy": calculate_energy}},
         ... )
         >>> for step in range(1000):
         ...     # Run simulation step
@@ -97,15 +97,18 @@ class TrajectoryReporter:
         """Initialize a TrajectoryReporter.
 
         Args:
-            filenames (str | pathlib.Path | list[str | pathlib.Path]): Path(s) to save trajectory file(s)
+            filenames (str | pathlib.Path | list[str | pathlib.Path]): Path(s) to
+                save trajectory file(s)
             state_frequency (int): How often to save state (in steps)
-            prop_calculators (dict[int, dict[str, Callable]], optional): Dictionary mapping frequencies to 
-                property calculators where each calculator is a function that takes a state and 
-                optionally a model and returns a tensor. Defaults to None.
-            state_kwargs (dict, optional): Additional arguments for state writing. Defaults to None.
-            metadata (dict[str, str], optional): Metadata to save in trajectory file. Defaults to None.
-            trajectory_kwargs (dict, optional): Additional arguments for trajectory initialization. Defaults to None.
-        
+            prop_calculators (dict[int, dict[str, Callable]], optional): Dictionary
+                mapping frequencies to property calculators where each calculator is a
+                function that takes a state and optionally a model and returns a tensor.
+                Defaults to None.
+            state_kwargs (dict, optional): Additional arguments for state writing.
+            metadata (dict[str, str], optional): Metadata to save in trajectory file.
+            trajectory_kwargs (dict, optional): Additional arguments for trajectory
+                initialization.
+
         Raises:
             ValueError: If filenames are not unique
         """
@@ -130,10 +133,11 @@ class TrajectoryReporter:
         """Load new trajectories into the reporter.
 
         Closes any existing trajectory files and initializes new ones.
-        
+
         Args:
-            filenames (str | pathlib.Path | list[str | pathlib.Path]): Path(s) to save trajectory file(s)
-            
+            filenames (str | pathlib.Path | list[str | pathlib.Path]): Path(s) to save
+                trajectory file(s)
+
         Raises:
             ValueError: If filenames are not unique
         """
@@ -159,7 +163,7 @@ class TrajectoryReporter:
         """Get the registry of array shapes and dtypes.
 
         Returns:
-            dict[str, tuple[tuple[int, ...], np.dtype]]: Dictionary mapping array names to 
+            dict[str, tuple[tuple[int, ...], np.dtype]]: Dictionary mapping array names to
                 tuples of (shape, dtype)
         """
         # Return the registry from the first trajectory
@@ -170,8 +174,9 @@ class TrajectoryReporter:
     def _add_model_arg_to_prop_calculators(self) -> None:
         """Add model argument to property calculators that only accept state.
 
-        Transforms single-argument (state) property calculators to accept the dual-argument 
-        (state, model) interface by creating partial functions with an optional second argument.
+        Transforms single-argument (state) property calculators to accept the
+        dual-argument (state, model) interface by creating partial functions with an
+        optional second argument.
         """
         for frequency in self.prop_calculators:
             for name, prop_fn in self.prop_calculators[frequency].items():
@@ -189,16 +194,18 @@ class TrajectoryReporter:
     ) -> None:
         """Report a state and step to the trajectory files.
 
-        Writes states and calculated properties to all trajectory files at the specified
-        frequencies. Splits multi-batch states across separate trajectory files. The
-        number of batches must match the number of trajectory files.
+        Writes states and calculated properties to all trajectory files at the
+        specified frequencies. Splits multi-batch states across separate trajectory
+        files. The number of batches must match the number of trajectory files.
 
         Args:
-            state (SimState): Current system state with n_batches equal to len(filenames)
+            state (SimState): Current system state with n_batches equal to
+                len(filenames)
             step (int): Current simulation step
-            model (torch.nn.Module, optional): Model used for simulation. Defaults to None.
-                Must be provided if any prop_calculators are provided.
-            
+            model (torch.nn.Module, optional): Model used for simulation.
+                Defaults to None. Must be provided if any prop_calculators
+                are provided.
+
         Raises:
             ValueError: If number of batches doesn't match number of trajectory files
         """
@@ -242,7 +249,7 @@ class TrajectoryReporter:
 
     def finish(self) -> None:
         """Finish writing the trajectory files.
-        
+
         Closes all open trajectory files.
         """
         for trajectory in self.trajectories:
@@ -250,7 +257,7 @@ class TrajectoryReporter:
 
     def close(self) -> None:
         """Close all trajectory files.
-        
+
         Ensures all data is written to disk and releases the file handles.
         """
         for trajectory in self.trajectories:
@@ -266,9 +273,9 @@ class TrajectoryReporter:
 
     def __exit__(self, *exc_info) -> None:
         """Support the context manager protocol.
-        
+
         Closes all trajectory files when exiting the context.
-        
+
         Args:
             *exc_info: Exception information
         """
@@ -278,15 +285,15 @@ class TrajectoryReporter:
 class TorchSimTrajectory:
     """Trajectory storage and retrieval for molecular dynamics simulations.
 
-    This class provides a low-level interface for reading and writing trajectory data to/from
-    HDF5 files. It supports storing SimState objects, raw arrays, and conversion to common
-    molecular modeling formats (ASE, pymatgen).
-    
+    This class provides a low-level interface for reading and writing trajectory data
+    to/from HDF5 files. It supports storing SimState objects, raw arrays, and
+    conversion to common molecular modeling formats (ASE, pymatgen).
+
     Attributes:
         _file (tables.File): The HDF5 file handle
         array_registry (dict): Registry mapping array names to (shape, dtype) tuples
         type_map (dict): Mapping of numpy/torch dtypes to PyTables atom types
-        
+
     Examples:
         >>> # Writing a trajectory
         >>> with TorchSimTrajectory('output.hdf5', mode='w') as traj:
@@ -313,13 +320,18 @@ class TorchSimTrajectory:
 
         Args:
             filename (str | pathlib.Path): Path to the HDF5 file
-            mode (Literal["w", "a", "r"]): Mode to open the file in. "w" will create a
-                new file and overwrite any existing file, "a" will append to the existing
-                file and "r" will open the file for reading only. Defaults to "r".
-            compress_data (bool): Whether to compress the data using zlib compression. Defaults to True.
-            coerce_to_float32 (bool): Whether to coerce float64 data to float32. Defaults to True.
-            coerce_to_int32 (bool): Whether to coerce int64 data to int32. Defaults to False.
-            metadata (dict[str, str], optional): Additional metadata to save in trajectory. Defaults to None.
+            mode (Literal["w", "a", "r"]): Mode to open the file in. "w" will create
+                a new file and overwrite any existing file, "a" will append to the
+                existing file and "r" will open the file for reading only. Defaults to
+                "r".
+            compress_data (bool): Whether to compress the data using zlib compression.
+                Defaults to True.
+            coerce_to_float32 (bool): Whether to coerce float64 data to float32.
+                Defaults to True.
+            coerce_to_int32 (bool): Whether to coerce int64 data to int32.
+                Defaults to False.
+            metadata (dict[str, str], optional): Additional metadata to save in
+                trajectory.
 
         Raises:
             ValueError: If the file cannot be opened or initialized
@@ -354,10 +366,11 @@ class TorchSimTrajectory:
     def _initialize_header(self, metadata: dict[str, str] | None = None) -> None:
         """Initialize the HDF5 file header with metadata.
 
-        Creates the basic structure of the HDF5 file with header, metadata, data, and steps groups.
+        Creates the basic structure of the HDF5 file with header, metadata, data,
+        and steps groups.
 
         Args:
-            metadata (dict[str, str], optional): Metadata to store in the header. Defaults to None.
+            metadata (dict[str, str], optional): Metadata to store in the header.
         """
         self._file.create_group("/", "header")
         self._file.root.header._v_attrs.program = "TorchSim"
@@ -416,17 +429,17 @@ class TorchSimTrajectory:
 
         This function is used to write arrays to the trajectory file. If steps is an
         integer, we assume that the arrays in data are for a single frame. If steps is
-        a list, we assume that the arrays in data are for multiple frames. This determines
-        whether we pad arrays with a first dimension of size 1.
+        a list, we assume that the arrays in data are for multiple frames. This
+        determines whether we pad arrays with a first dimension of size 1.
 
         We also validate that the arrays are compatible with the existing arrays in the
         file and that the steps are monotonically increasing.
 
         Args:
-            data (dict[str, np.ndarray | torch.Tensor]): Dictionary mapping array names to numpy arrays
-                or torch tensors with shapes [n_frames, ...]
-            steps (int | list[int]): Step number(s) for the frame(s) being written. If steps is an
-                integer, arrays will be treated as single frame data.
+            data (dict[str, np.ndarray | torch.Tensor]): Dictionary mapping array
+                names to numpy arrays or torch tensors with shapes [n_frames, ...]
+            steps (int | list[int]): Step number(s) for the frame(s) being written.
+                If steps is an integer, arrays will be treated as single frame data.
 
         Raises:
             ValueError: If array shapes or dtypes don't match existing arrays,
@@ -647,26 +660,29 @@ class TorchSimTrajectory:
         variable_atomic_numbers: bool = False,
     ) -> None:
         """Write a SimState or list of SimStates to the file.
-        
-        Extracts and stores position, velocity, force, and other data from SimState objects.
-        Static data (like cell parameters) is stored only once unless flagged as variable.
 
-        If a list, the states are assumed to be different configurations of the same system,
-        representing a trajectory.
+        Extracts and stores position, velocity, force, and other data from
+        SimState objects. Static data (like cell parameters) is stored only
+        once unless flagged as variable.
+
+        If a list, the states are assumed to be different configurations of
+        the same system, representing a trajectory.
 
         Args:
             state (SimState | list[SimState]): SimState or list of SimStates to write
             steps (int | list[int]): Step number(s) for the frame(s)
-            batch_index (int, optional): Batch index to save. Defaults to None.
-            save_velocities (bool, optional): Whether to save velocities. Defaults to False.
-            save_forces (bool, optional): Whether to save forces. Defaults to False.
-            save_energy (bool, optional): Whether to save energy. Defaults to False.
-            variable_cell (bool, optional): Whether the cell varies between frames. Defaults to False.
-            variable_masses (bool, optional): Whether masses vary between frames. Defaults to False.
-            variable_atomic_numbers (bool, optional): Whether atomic numbers vary between frames. Defaults to False.
+            batch_index (int, optional): Batch index to save.
+            save_velocities (bool, optional): Whether to save velocities.
+            save_forces (bool, optional): Whether to save forces.
+            save_energy (bool, optional): Whether to save energy.
+            variable_cell (bool, optional): Whether the cell varies between frames.
+            variable_masses (bool, optional): Whether masses vary between frames.
+            variable_atomic_numbers (bool, optional): Whether atomic numbers vary
+                between frames.
 
         Raises:
-            ValueError: If number of states doesn't match number of steps or if required attributes are missing
+            ValueError: If number of states doesn't match number of steps or if
+                required attributes are missing
         """
         # TODO: consider changing this reporting later
 
@@ -742,7 +758,8 @@ class TorchSimTrajectory:
     def _get_state_arrays(self, frame: int) -> dict[str, torch.Tensor]:
         """Get all available state tensors for a given frame.
 
-        Retrieves all state-related arrays (positions, cell, masses, etc.) for a specific frame.
+        Retrieves all state-related arrays (positions, cell, masses, etc.) for a
+        specific frame.
 
         Args:
             frame (int): Frame index to retrieve (-1 for last frame)
@@ -751,7 +768,8 @@ class TorchSimTrajectory:
             dict[str, torch.Tensor]: Dictionary of tensor names to their values
 
         Raises:
-            ValueError: If required arrays are missing from trajectory or frame is out of range
+            ValueError: If required arrays are missing from trajectory or frame is
+                out of range
         """
         arrays: dict[str, np.ndarray] = {}
 
@@ -791,11 +809,12 @@ class TorchSimTrajectory:
         for analysis and visualization.
 
         Args:
-            frame (int, optional): Frame index to retrieve (-1 for last frame). Defaults to -1.
+            frame (int, optional): Frame index to retrieve (-1 for last frame). Defaults
+            to -1.
 
         Returns:
             Structure: Pymatgen Structure object for the specified frame
-            
+
         Raises:
             ImportError: If pymatgen is not installed
         """
@@ -881,7 +900,7 @@ class TorchSimTrajectory:
 
     def close(self) -> None:
         """Close the HDF5 file handle.
-        
+
         Ensures all data is written to disk and releases the file handle.
         """
         # TODO: ???
@@ -898,9 +917,9 @@ class TorchSimTrajectory:
 
     def __exit__(self, *exc_info) -> None:
         """Support the context manager protocol.
-        
+
         Closes the file when exiting the context.
-        
+
         Args:
             *exc_info: Exception information
         """
@@ -908,7 +927,7 @@ class TorchSimTrajectory:
 
     def flush(self) -> None:
         """Write all buffered data to the disk file.
-        
+
         Forces any pending data to be written to the physical storage.
         """
         if self._file.isopen:
@@ -924,7 +943,7 @@ class TorchSimTrajectory:
 
     def write_ase_trajectory(self, filename: str | pathlib.Path) -> Any:
         """Convert trajectory to ASE Trajectory format.
-        
+
         Writes the entire trajectory to a new file in ASE format for compatibility
         with ASE analysis tools.
 
