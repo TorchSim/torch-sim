@@ -146,8 +146,8 @@ jobs:
         run: |
           # Find all example scripts but exclude known failing ones
           EXAMPLES=$(find examples -name "*.py" | grep -v \
-            -e "examples/1_Introduction/1.4_Fairchem.py" \
-            -e "examples/5_Workflow/5.3_Hot_Swap_WBM.py" \
+            -e "examples/scripts/1_Introduction/1.4_Fairchem.py" \
+            -e "examples/scripts/5_Workflow/5.3_Hot_Swap_WBM.py" \
             | jq -R -s -c 'split("\n")[:-1]')
           echo "examples=$EXAMPLES" >> $GITHUB_OUTPUT
 

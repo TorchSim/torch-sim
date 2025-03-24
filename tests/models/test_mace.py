@@ -1,8 +1,13 @@
 import pytest
 import torch
 from ase.atoms import Atoms
-from mace.calculators import MACECalculator
-from mace.calculators.foundations_models import mace_mp, mace_off
+
+
+try:
+    from mace.calculators import MACECalculator
+    from mace.calculators.foundations_models import mace_mp, mace_off
+except ImportError:
+    pytest.skip("MACE not installed", allow_module_level=True)
 
 from torch_sim.io import atoms_to_state
 from torch_sim.models.interface import validate_model_outputs
