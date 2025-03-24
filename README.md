@@ -184,9 +184,9 @@ for filename in trajectory_files:
 
 Torch-Sim is built around the following core modules:
 
-- [`torch_sim.integrators`](torch_sim/integrators.py): Provides batched molecular dynamics integrators for simulating the time evolution of molecular systems.
+- [`torch_sim.integrators`](torch_sim/integrators.py): Provides batched molecular dynamics integrators for simulating the time evolution of atomistic systems.
 
-- [`torch_sim.optimizers`](torch_sim/optimizers.py): Provides optimization algorithms for molecular systems, including gradient descent and the FIRE algorithm.
+- [`torch_sim.optimizers`](torch_sim/optimizers.py): Provides optimization algorithms for atomistic systems, including gradient descent and the FIRE algorithm.
 
 - [`torch_sim.unbatched`](torch_sim/unbatched): Contains unbatched versions of the integrators and optimizers.
 
@@ -198,7 +198,7 @@ Torch-Sim is built around the following core modules:
 
 - [`torch_sim.runners`](torch_sim/runners.py): Provides functions for running molecular dynamics simulations and optimizations, handling simulation state and conversions between different representations.
 
-- [`torch_sim.state`](torch_sim/state.py): Defines the `SimState` class, a `dataclass` for representing the state of molecular systems.
+- [`torch_sim.state`](torch_sim/state.py): Defines the `SimState` class, a `dataclass` for representing the state of atomistic systems.
 
 - [`torch_sim.trajectory`](torch_sim/trajectory.py): Implements classes for handling trajectory data, allowing for reading and writing of simulation data to HDF5 files.
 
