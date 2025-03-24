@@ -21,9 +21,9 @@ Notes:
 """
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from itertools import chain
-from typing import Literal, Callable
+from typing import Literal
 
 import torch
 

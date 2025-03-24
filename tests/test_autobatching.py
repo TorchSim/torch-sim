@@ -88,9 +88,7 @@ def test_bounds_and_tuples():
         ],
     ]
 
-    bins = to_constant_volume_bins(
-        c, V_max, weight_pos=1, lower_bound=1, upper_bound=11
-    )
+    bins = to_constant_volume_bins(c, V_max, weight_pos=1, lower_bound=1, upper_bound=11)
     bins = [sorted(_bin, key=lambda x: x[0]) for _bin in bins]
     assert bins == [
         [("a", 10, "foo")],
