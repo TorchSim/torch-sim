@@ -1022,7 +1022,7 @@ class HotSwappingAutoBatcher:
         completed_idx = torch.where(convergence_tensor)[0].tolist()
 
         completed_states = updated_state.pop(completed_idx)
-        
+
         # necessary to ensure states that finish at the same time are ordered properly
         completed_states.reverse()
         completed_idx.sort(reverse=True)
