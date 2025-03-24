@@ -5,6 +5,8 @@ version = "0.0.0rc"
 description = "A pytorch toolkit for calculating material properties using MLIPs"
 authors = [
     { name = "Abhijeet Gangan", email = "abhijeetgangan@g.ucla.edu" },
+    { name = "Orion Cohen", email = "orion@radical-ai.com" },
+    { name = "Janosh Riebesell", email = "jriebesell@radical-ai.com" },
     { name = "Radical AI", email = "info@radical.ai" },
 ]
 readme = "readme.md"
