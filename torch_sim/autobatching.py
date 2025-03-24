@@ -10,9 +10,10 @@ Examples:
     # Using ChunkingAutoBatcher with a model
     batcher = ChunkingAutoBatcher(model, memory_scales_with="n_atoms")
     batcher.load_states(states)
+    final_states = []
     for batch in batcher:
-        result = process_batch(batch)
-    results = batcher.restore_original_order(results)
+        final_states.append(evolve_batch(batch))
+    final_states = batcher.restore_original_order(final_states)
     ```
 
 Notes:
@@ -32,8 +33,8 @@ from torch_sim.state import SimState, concatenate_states
 
 
 def to_constant_volume_bins(  # noqa: C901, PLR0915
-    d: dict[int, float] | list[float] | list[tuple],
-    V_max: float,
+    items: dict[int, float] | list[float] | list[tuple],
+    max_volume: float,
     *,
     weight_pos: int | None = None,
     key: Callable | None = None,
@@ -43,18 +44,18 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
     """Distribute items into bins of fixed maximum volume.
 
     Groups items into the minimum number of bins possible while ensuring each bin's
-    total weight does not exceed V_max. Items are sorted by weight in descending
+    total weight does not exceed max_volume. Items are sorted by weight in descending
     order before binning to improve packing efficiency.
 
     Upstreamed from binpacking by @benmaier. https://pypi.org/project/binpacking/.
 
     Args:
-        d (dict[int, float] | list[float] | list[tuple]): Items to distribute,
+        items (dict[int, float] | list[float] | list[tuple]): Items to distribute,
             provided as either:
             - Dictionary with numeric weights as values
             - List of numeric weights
             - List of tuples containing weights (requires weight_pos or key)
-        V_max (float): Maximum allowed weight sum per bin.
+        max_volume (float): Maximum allowed weight sum per bin.
         weight_pos (int | None): For tuple lists, index of weight in each tuple.
             Defaults to None.
         key (callable | None): Function to extract weight from list items.
@@ -86,20 +87,20 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
     def _revargsort_bins(lst: list[float]) -> list[int]:
         return sorted(range(len(lst)), key=lambda i: -lst[i])
 
-    isdict = isinstance(d, dict)
+    isdict = isinstance(items, dict)
 
-    if not hasattr(d, "__len__"):
+    if not hasattr(items, "__len__"):
         raise TypeError("d must be iterable")
 
-    if not isdict and hasattr(d[0], "__len__"):
+    if not isdict and hasattr(items[0], "__len__"):
         if weight_pos is not None:
             key = lambda x: x[weight_pos]  # noqa: E731
         if key is None:
             raise ValueError("Must provide weight_pos or key for tuple list")
 
     if not isdict and key:
-        new_dict = dict(enumerate(d))
-        d = {i: key(val) for i, val in enumerate(d)}
+        new_dict = dict(enumerate(items))
+        items = {i: key(val) for i, val in enumerate(items)}
         isdict = True
         is_tuple_list = True
     else:
@@ -107,7 +108,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
 
     if isdict:
         # get keys and values (weights)
-        keys_vals = d.items()
+        keys_vals = items.items()
         keys = [k for k, v in keys_vals]
         vals = [v for k, v in keys_vals]
 
@@ -119,7 +120,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
 
         bins = [{}]
     else:
-        weights = sorted(d, key=lambda x: -x)
+        weights = sorted(items, key=lambda x: -x)
         bins = [[]]
 
     # find the valid indices
@@ -153,7 +154,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
 
         # find candidate bins where the weight might fit
         candidate_bins = list(
-            filter(lambda i: weight_sum[i] + weight <= V_max, range(len(weight_sum)))
+            filter(lambda i: weight_sum[i] + weight <= max_volume, range(len(weight_sum)))
         )
 
         # if there are candidates where it fits
@@ -264,10 +265,8 @@ def determine_max_batch_size(
     error or reaches the specified maximum atom count.
 
     Args:
-        state (SimState): SimState to replicate for testing, with shape dependent
-            on the specific state instance.
-        model (ModelInterface): Model to test with, implementing the ModelInterface
-            protocol.
+        state (SimState): SimState to replicate for testing.
+        model (ModelInterface): Model to test with.
         max_atoms (int): Upper limit on number of atoms to try (for safety).
             Defaults to 500,000.
         start_size (int): Initial batch size to test. Defaults to 1.
@@ -318,9 +317,11 @@ def calculate_memory_scaler(
 ) -> float:
     """Calculate a metric that estimates memory requirements for a state.
 
-    Provides different scaling metrics based on system properties that correlate
-    with memory usage. The choice of metric can significantly impact the accuracy
-    of memory requirement estimations for different types of simulation systems.
+    Provides different scaling metrics that correlate with memory usage.
+    Models with radial neighbor cutoffs generally scale with "n_atoms_x_density",
+    while models with a fixed number of neighbors scale with "n_atoms".
+    The choice of metric can significantly impact the accuracy of memory requirement
+    estimations for different types of simulation systems.
 
     Args:
         state (SimState): State to calculate metric for, with shape information
@@ -347,11 +348,6 @@ def calculate_memory_scaler(
         # Calculate memory scaling factor based on atom count and density
         metric = calculate_memory_scaler(state, memory_scales_with="n_atoms_x_density")
         ```
-
-    Notes:
-        The "n_atoms_x_density" metric typically provides better estimates for
-        neighbor-list based calculations where computational complexity depends
-        on both system size and density.
     """
     if state.n_batches > 1:
         raise ValueError("State must be a single batch")
@@ -434,6 +430,9 @@ class ChunkingAutoBatcher:
     metric to maximize GPU utilization. This approach is ideal for scenarios where
     all states need to be evolved the same number of steps.
 
+    To avoid a slow memory estimation step, set the `max_memory_scaler` to a
+    known value.
+
     Attributes:
         model (ModelInterface): Model used for memory estimation and processing.
         memory_scales_with (str): Metric type used for memory estimation.
@@ -457,12 +456,12 @@ class ChunkingAutoBatcher:
 
         # Load states and process them in batches
         batcher.load_states(states)
-        results = []
+        final_states = []
         for batch in batcher:
-            results.append(process_batch(batch))
+            final_states.append(evolve_batch(batch))
 
         # Restore original order
-        ordered_results = batcher.restore_original_order(results)
+        ordered_final_states = batcher.restore_original_order(final_states)
         ```
     """
 
@@ -560,7 +559,7 @@ class ChunkingAutoBatcher:
 
         self.index_to_scaler = dict(enumerate(self.memory_scalers))
         self.index_bins = to_constant_volume_bins(
-            self.index_to_scaler, V_max=self.max_memory_scaler
+            self.index_to_scaler, max_volume=self.max_memory_scaler
         )
         self.batched_states = []
         for index_bin in self.index_bins:
@@ -591,20 +590,15 @@ class ChunkingAutoBatcher:
         Examples:
             ```python
             # Get batches one by one
-            while True:
-                batch = batcher.next_batch()
-                if batch is None:
-                    break
-                process_batch(batch)
+            all_converged_state, convergence = [], None
+            while (result := batcher.next_batch(state, convergence))[0] is not None:
+                state, converged_states = result
+                all_converged_states.extend(converged_states)
 
-            # Get batches with indices
-            while True:
-                result = batcher.next_batch(return_indices=True)
-                if result is None:
-                    break
-                batch, indices = result
-                print(f"Processing states with indices: {indices}")
-                process_batch(batch)
+                evolve_batch(state)
+                convergence = convergence_criterion(state)
+            else:
+                all_converged_states.extend(result[1])
             ```
         """
         # TODO: need to think about how this intersects with reporting too
@@ -708,6 +702,9 @@ class HotSwappingAutoBatcher:
     adding new states to process. This approach is ideal for iterative processes
     where different states may converge at different rates, such as geometry
     optimization.
+
+    To avoid a slow memory estimation step, set the `max_memory_scaler` to a
+    known value.
 
     Attributes:
         model (ModelInterface): Model used for memory estimation and processing.
@@ -1016,11 +1013,11 @@ class HotSwappingAutoBatcher:
         assert updated_state.n_batches > 0
 
         # Increment attempt counters and check for max attempts in a single loop
-        for conv_idx, abs_idx in enumerate(self.current_idx):
+        for cur_idx, abs_idx in enumerate(self.current_idx):
             self.swap_attempts[abs_idx] += 1
-            if self.max_attempts and self.swap_attempts[abs_idx] >= self.max_attempts:
+            if self.max_attempts and (self.swap_attempts[abs_idx] >= self.max_attempts):
                 # Force convergence for states that have reached max attempts
-                convergence_tensor[conv_idx] = torch.tensor(True)  # noqa: FBT003
+                convergence_tensor[cur_idx] = torch.tensor(True)  # noqa: FBT003
 
         completed_idx = torch.where(convergence_tensor)[0].tolist()
         completed_idx.sort(reverse=True)

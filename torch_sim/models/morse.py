@@ -10,15 +10,6 @@ Examples:
     # Create a Morse model with default parameters
     model = MorseModel(device=torch.device("cuda"))
 
-    # Create a model with custom parameters for O-H bonds
-    model = MorseModel(
-        sigma=0.96,  # Equilibrium bond length in Å
-        epsilon=4.52,  # Dissociation energy in eV
-        alpha=2.0,  # Controls steepness/width
-        cutoff=2.5,  # Cutoff distance in Å
-        compute_force=True,
-    )
-
     # Calculate properties for a simulation state
     output = model(sim_state)
     energy = output["energy"]
@@ -72,11 +63,11 @@ class MorseModel(torch.nn.Module, ModelInterface):
         morse_model = MorseModel(device=torch.device("cuda"))
         results = morse_model(sim_state)
 
-        # Model parameterized for O-H bonds in water
+        # Model parameterized for O-H bonds in water, atomic units
         oh_model = MorseModel(
-            sigma=0.96,  # Å - equilibrium bond length
-            epsilon=4.52,  # eV - dissociation energy
-            alpha=2.0,  # Controls steepness
+            sigma=0.96,
+            epsilon=4.52,
+            alpha=2.0,
             compute_force=True,
             compute_stress=True,
         )

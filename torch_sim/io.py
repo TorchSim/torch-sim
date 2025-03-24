@@ -219,12 +219,7 @@ def atoms_to_state(
             torch.float64)
 
     Returns:
-        SimState: Batched state tensors in internal units with shapes:
-                 - positions: [n_atoms, 3]
-                 - masses: [n_atoms]
-                 - cell: [n_batches, 3, 3]
-                 - atomic_numbers: [n_atoms]
-                 - batch: [n_atoms]
+        SimState: TorchSim SimState object.
 
     Raises:
         ImportError: If ASE is not installed
@@ -295,12 +290,7 @@ def structures_to_state(
             torch.float64)
 
     Returns:
-        SimState: Batched state tensors in internal units with shapes:
-                 - positions: [n_atoms, 3]
-                 - masses: [n_atoms]
-                 - cell: [n_batches, 3, 3]
-                 - atomic_numbers: [n_atoms]
-                 - batch: [n_atoms]
+        SimState: TorchSim SimState object.
 
     Raises:
         ImportError: If Pymatgen is not installed
@@ -370,12 +360,7 @@ def phonopy_to_state(
             torch.float64)
 
     Returns:
-        SimState: Batched state tensors in internal units with shapes:
-                 - positions: [n_atoms, 3]
-                 - masses: [n_atoms]
-                 - cell: [n_batches, 3, 3]
-                 - atomic_numbers: [n_atoms]
-                 - batch: [n_atoms]
+        SimState: TorchSim SimState object.
 
     Raises:
         ImportError: If Phonopy is not installed

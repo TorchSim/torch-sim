@@ -7,15 +7,16 @@ supports periodic boundary conditions.
 
 Examples:
     >>> from torch_sim.integrators import nve
-    >>> nve_init, nve_update = nve(model, dt=1e-3, kT=300.0)
+    >>> nve_init, nve_update = nve(
+    ...     model, dt=1e-3 * units.time, kT=300.0 * units.temperature
+    ... )
     >>> state = nve_init(initial_state)
     >>> for _ in range(1000):
     ...     state = nve_update(state)
 
 Notes:
     All integrators support batched operations for efficient parallel simulation
-    of multiple systems. Temperature (kT) and energy values are expected to be
-    in consistent energy units (e.g., eV, kJ/mol).
+    of multiple systems.
 """
 
 from collections.abc import Callable
@@ -52,19 +53,6 @@ class MDState(SimState):
         n_batches (int): Number of independent systems in the batch
         device (torch.device): Device on which tensors are stored
         dtype (torch.dtype): Data type of tensors
-
-    Examples:
-        >>> positions = torch.rand(10, 3)
-        >>> momenta = torch.zeros(10, 3)
-        >>> masses = torch.ones(10)
-        >>> forces = torch.rand(10, 3)
-        >>> state = MDState(
-        ...     positions=positions,
-        ...     momenta=momenta,
-        ...     masses=masses,
-        ...     forces=forces,
-        ...     energy=torch.tensor(0.0),
-        ... )
     """
 
     momenta: torch.Tensor
@@ -160,12 +148,6 @@ def calculate_momenta(
 
     Returns:
         torch.Tensor: Initialized momenta [n_particles, n_dim]
-
-    Examples:
-        >>> pos = torch.rand(10, 3)
-        >>> masses = torch.ones(10)
-        >>> kT = torch.tensor(1.0)
-        >>> momenta = calculate_momenta(pos, masses, kT, seed=42)
     """
     device = positions.device
     dtype = positions.dtype
@@ -265,16 +247,6 @@ def nve(
               with signature: init_fn(state, kT=kT, seed=seed) -> MDState
             - callable: Update function that evolves system by one timestep
               with signature: update_fn(state, dt=dt) -> MDState
-
-    Examples:
-        >>> model = MyEnergyModel()
-        >>> nve_init, nve_update = nve(model, dt=0.001, kT=300.0)
-        >>> # Initialize from positions, masses, etc.
-        >>> state_dict = {"positions": pos, "masses": masses, ...}
-        >>> state = nve_init(state_dict)
-        >>> # Run dynamics for 1000 steps
-        >>> for _ in range(1000):
-        ...     state = nve_update(state)
 
     Notes:
         - Uses velocity Verlet algorithm for time-reversible integration
@@ -403,16 +375,6 @@ def nvt_langevin(
               with signature: init_fn(state, kT=kT, seed=seed) -> MDState
             - callable: Update function that evolves system by one timestep
               with signature: update_fn(state, dt=dt, kT=kT, gamma=gamma) -> MDState
-
-    Examples:
-        >>> model = MyEnergyModel()
-        >>> nvt_init, nvt_update = nvt_langevin(model, dt=0.001, kT=300.0, gamma=0.1)
-        >>> # Initialize from positions, masses, etc.
-        >>> state_dict = {"positions": pos, "masses": masses, ...}
-        >>> state = nvt_init(state_dict)
-        >>> # Run dynamics for 1000 steps
-        >>> for _ in range(1000):
-        ...     state = nvt_update(state)
 
     Notes:
         - Uses BAOAB splitting scheme for Langevin dynamics
@@ -675,18 +637,6 @@ def npt_langevin(  # noqa: C901, PLR0915
               with signature: update_fn(state, dt=dt, kT=kT,
               external_pressure=external_pressure, alpha=alpha,
               cell_alpha=cell_alpha) -> NPTLangevinState
-
-    Examples:
-        >>> model = MyEnergyModel()
-        >>> npt_init, npt_update = npt_langevin(
-        ...     model, dt=0.001, kT=300.0, external_pressure=1.0, b_tau=0.1
-        ... )
-        >>> # Initialize from positions, masses, etc.
-        >>> state_dict = {"positions": pos, "masses": masses, ...}
-        >>> state = npt_init(state_dict)
-        >>> # Run dynamics for 1000 steps
-        >>> for _ in range(1000):
-        ...     state = npt_update(state)
 
     Notes:
         - The model must provide stress tensor calculations for proper pressure coupling

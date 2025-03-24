@@ -62,7 +62,7 @@ def gradient_descent(
     forces computed by the provided model.
 
     Args:
-        model (torch.nn.Module): Neural network model that computes energies and forces
+        model (torch.nn.Module): Model that computes energies and forces
         lr (torch.Tensor | float): Learning rate(s) for optimization. Can be a single
             float applied to all batches or a tensor with shape [n_batches] for
             batch-specific rates
@@ -215,16 +215,17 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
     computed by the provided model.
 
     Args:
-        model (torch.nn.Module): Neural network model that computes energies, forces,
-            and stress
-        positions_lr (float): Learning rate for atomic positions optimization
-        cell_lr (float): Learning rate for unit cell optimization
+        model (torch.nn.Module): Model that computes energies, forces, and stress
+        positions_lr (float): Learning rate for atomic positions optimization. Default
+            is 0.01.
+        cell_lr (float): Learning rate for unit cell optimization. Default is 0.1.
         cell_factor (float | torch.Tensor | None): Scaling factor for cell
             optimization. If None, defaults to number of atoms per batch
         hydrostatic_strain (bool): Whether to only allow hydrostatic deformation
-            (isotropic scaling)
+            (isotropic scaling). Default is False.
         constant_volume (bool): Whether to maintain constant volume during optimization
-        scalar_pressure (float): Applied external pressure in GPa
+            Default is False.
+        scalar_pressure (float): Applied external pressure in GPa. Default is 0.0.
 
     Returns:
         tuple: A pair of functions:
@@ -552,8 +553,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
     of time steps to efficiently find local minima.
 
     Args:
-        model (torch.nn.Module): Neural network model that computes energies, forces,
-            and stress
+        model (torch.nn.Module): Model that computes energies, forces, and stress
         dt_max (float): Maximum allowed timestep
         dt_start (float): Initial timestep
         n_min (int): Minimum steps before timestep increase
@@ -979,8 +979,7 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
     more robust cell optimization.
 
     Args:
-        model (torch.nn.Module): Neural network model that computes energies, forces,
-            and stress.
+        model (torch.nn.Module): Model that computes energies, forces, and stress.
         dt_max (float): Maximum allowed timestep
         dt_start (float): Initial timestep
         n_min (int): Minimum steps before timestep increase

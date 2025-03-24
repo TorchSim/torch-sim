@@ -50,12 +50,6 @@ class MaceModel(torch.nn.Module, ModelInterface):
         total_atoms (int): Total number of atoms across all systems.
         node_attrs (torch.Tensor): One-hot encoded atomic types with shape
             [n_atoms, n_elements].
-
-    Examples:
-        >>> model = MaceModel(model=mace_model, atomic_numbers=torch.tensor([1, 1, 8]))
-        >>> state = SimState(positions=positions, cell=cell, pbc=pbc)
-        >>> results = model(state)
-        >>> energy, forces = results["energy"], results["forces"]
     """
 
     def __init__(

@@ -6,14 +6,7 @@ the FairChem library, integrating it with the torch_sim framework to enable seam
 simulation of atomistic systems with machine learning potentials.
 
 The FairChemModel class adapts FairChem models to the ModelInterface protocol,
-allowing them to be used within the broader torch_sim simulation pipeline.
-
-Examples:
-    >>> model = FairChemModel(
-    ...     model="path/to/checkpoint.pt", compute_stress=True, dtype=torch.float32
-    ... )
-    >>> results = model(state)
-    >>> energy, forces = results["energy"], results["forces"]
+allowing them to be used within the broader torch_sim simulation framework.
 
 Notes:
     This implementation requires FairChem to be installed and accessible.
@@ -119,8 +112,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             trainer (str | None): Name of trainer class to use
             cpu (bool): Whether to use CPU instead of GPU for computation
             seed (int | None): Random seed for reproducibility
-            r_max (float | None): Maximum cutoff radius in Ångström (overrides model
-                default)
+            r_max (float | None): Maximum cutoff radius (overrides model default)
             dtype (torch.dtype | None): Data type to use for computation
             compute_stress (bool): Whether to compute stress tensor
 
@@ -214,9 +206,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
                 try:
                     config["model"]["backbone"].update({"dtype": DTYPE_DICT[dtype]})
                     for key in config["model"]["heads"]:
-                        config["model"]["heads"][key].update(
-                            {"dtype": DTYPE_DICT[dtype]}
-                        )
+                        config["model"]["heads"][key].update({"dtype": DTYPE_DICT[dtype]})
                 except KeyError:
                     print("dtype not found in backbone, using default float32")
         else:
@@ -292,9 +282,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             If loading fails, a message is printed but no exception is raised.
         """
         try:
-            self.trainer.load_checkpoint(
-                checkpoint_path, checkpoint, inference_only=True
-            )
+            self.trainer.load_checkpoint(checkpoint_path, checkpoint, inference_only=True)
         except NotImplementedError:
             print("Unable to load checkpoint!")
 

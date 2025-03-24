@@ -119,10 +119,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
 
         Examples:
             ```python
-            # Basic model with default parameters
-            model = LennardJonesModel()
-
-            # Full-featured model with custom parameters
+            # Model with custom parameters
             model = LennardJonesModel(
                 sigma=3.405,
                 epsilon=0.01032,
@@ -133,10 +130,6 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
                 cutoff=10.0,
             )
             ```
-
-        Notes:
-            Setting cutoff to a smaller value improves performance but may affect
-            accuracy if set too small. A typical value is 2.5*sigma.
         """
         super().__init__()
         self._device = device or torch.device("cpu")

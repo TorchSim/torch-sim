@@ -33,6 +33,8 @@ from typing import Literal, Self
 
 import torch
 
+from torch_sim.state import SimState, StateDict
+
 
 class ModelInterface(ABC):
     """Abstract base class for all simulation models in torchsim.
@@ -69,8 +71,6 @@ class ModelInterface(ABC):
         model: str | Path | torch.nn.Module | None = None,
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float64,
-        atomic_numbers: torch.Tensor | None = None,
-        batch: torch.Tensor | None = None,
         **kwargs,
     ) -> Self:
         """Initialize a model implementation.
@@ -82,7 +82,7 @@ class ModelInterface(ABC):
         Args:
             model (str | Path | torch.nn.Module | None): Model specification, which
                 can be:
-                - Path to a model checkpoint
+                - Path to a model checkpoint or model file
                 - Pre-configured torch.nn.Module
                 - None for default initialization
                 Defaults to None.
@@ -90,10 +90,6 @@ class ModelInterface(ABC):
                 a default device will be selected. Defaults to None.
             dtype (torch.dtype): Data type for model calculations. Defaults to
                 torch.float64.
-            atomic_numbers (torch.Tensor | None): Atomic numbers for atom type information
-                with shape [n_atoms]. Defaults to None.
-            batch (torch.Tensor | None): Batch indices for atoms with shape [n_atoms].
-                Defaults to None.
             **kwargs: Additional model-specific parameters.
 
         Notes:
@@ -167,7 +163,7 @@ class ModelInterface(ABC):
 
     @property
     def memory_scales_with(self) -> Literal["n_atoms", "n_atoms_x_density"]:
-        """The metric that the model scales with. 
+        """The metric that the model scales with.
 
         Models with radial neighbor cutoffs scale with "n_atoms_x_density",
         while models with a fixed number of neighbors scale with "n_atoms".
@@ -179,14 +175,7 @@ class ModelInterface(ABC):
         return getattr(self, "_memory_scales_with", "n_atoms_x_density")
 
     @abstractmethod
-    def forward(
-        self,
-        positions: torch.Tensor,
-        cell: torch.Tensor | None,
-        batch: torch.Tensor | None,
-        atomic_numbers: torch.Tensor | None = None,
-        **kwargs,
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: SimState | StateDict, **kwargs) -> dict[str, torch.Tensor]:
         """Calculate energies, forces, and stresses for a atomistic system.
 
         This is the main computational method that all model implementations must provide.
@@ -194,15 +183,13 @@ class ModelInterface(ABC):
         containing computed physical properties.
 
         Args:
-            positions (torch.Tensor): Atomic positions with shape [n_atoms, 3],
-                where n_atoms is the total number of atoms across all batches.
-            cell (torch.Tensor | None): Unit cell vectors with shape [n_batches, 3, 3]
-                or None for non-periodic systems.
-            batch (torch.Tensor | None): Batch indices for each atom with shape
-                [n_atoms], containing consecutive integers identifying which batch
-                each atom belongs to.
-            atomic_numbers (torch.Tensor | None): Atomic numbers with shape [n_atoms]
-                specifying the element type of each atom. Defaults to None.
+            state (SimState | StateDict): Simulation state or state dictionary. The state
+                dictionary is dependent on the model but typically must contain the
+                following keys:
+                - "positions": Atomic positions with shape [n_atoms, 3]
+                - "cell": Unit cell vectors with shape [n_batches, 3, 3]
+                - "batch": Batch indices for each atom with shape [n_atoms]
+                - "atomic_numbers": Atomic numbers with shape [n_atoms] (optional)
             **kwargs: Additional model-specific parameters.
 
         Returns:
@@ -216,21 +203,12 @@ class ModelInterface(ABC):
         Examples:
             ```python
             # Compute energies and forces with a model
-            output = model.forward(
-                positions=state.positions,
-                cell=state.cell,
-                batch=state.batch,
-                atomic_numbers=state.atomic_numbers,
-            )
+            output = model.forward(state)
 
             energy = output["energy"]
             forces = output["forces"]
             stress = output.get("stress", None)
             ```
-
-        Notes:
-            Implementations must not modify the input tensors. The output forces should
-            follow the convention that negative gradient of energy corresponds to forces.
         """
 
 
