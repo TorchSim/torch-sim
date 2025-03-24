@@ -141,6 +141,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         self._dtype = dtype or torch.float32
         self._compute_stress = compute_stress
         self._compute_force = True
+        self._memory_scales_with = "n_atoms"
 
         if model_name is not None:
             if model is not None:

@@ -29,7 +29,7 @@ Notes:
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
 import torch
 
@@ -164,6 +164,19 @@ class ModelInterface(ABC):
             "No compute_force setter has been defined for this model"
             " so compute_force cannot be set after initialization."
         )
+
+    @property
+    def memory_scales_with(self) -> Literal["n_atoms", "n_atoms_x_density"]:
+        """The metric that the model scales with. 
+
+        Models with radial neighbor cutoffs scale with "n_atoms_x_density",
+        while models with a fixed number of neighbors scale with "n_atoms".
+        Default is "n_atoms_x_density" because most models are radial cutoff based.
+
+        Returns:
+            The metric that the model scales with
+        """
+        return getattr(self, "_memory_scales_with", "n_atoms_x_density")
 
     @abstractmethod
     def forward(

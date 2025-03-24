@@ -107,6 +107,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
         self._compute_force = compute_force
         self._compute_stress = compute_stress
         self.neighbor_list_fn = neighbor_list_fn
+        self._memory_scales_with = "n_atoms_x_density"
 
         # TODO: can we get rid of this shit?
         torch.set_default_dtype(self._dtype)
