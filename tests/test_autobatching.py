@@ -1,6 +1,5 @@
 from typing import Any
 
-import binpacking
 import pytest
 import torch
 
@@ -89,7 +88,9 @@ def test_bounds_and_tuples():
         ],
     ]
 
-    bins = to_constant_volume_bins(c, V_max, weight_pos=1, lower_bound=1, upper_bound=11)
+    bins = to_constant_volume_bins(
+        c, V_max, weight_pos=1, lower_bound=1, upper_bound=11
+    )
     bins = [sorted(_bin, key=lambda x: x[0]) for _bin in bins]
     assert bins == [
         [("a", 10, "foo")],
@@ -442,7 +443,7 @@ def test_chunking_auto_batcher_with_fire(
         state.positions += torch.randn_like(state.positions) * 0.01
 
     batch_lengths = [state.n_atoms for state in fire_states]
-    optimal_batches = binpacking.to_constant_volume(batch_lengths, 400)
+    optimal_batches = to_constant_volume_bins(batch_lengths, 400)
     optimal_n_batches = len(optimal_batches)
 
     batcher = ChunkingAutoBatcher(
