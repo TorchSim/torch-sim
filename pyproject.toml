@@ -49,7 +49,7 @@ include = ["torch_sim*"]
 exclude = ["examples*", "tests*"]
 
 [build-system]
-requires = ["setuptools==76.1.0"]
+requires = ["setuptools>=70"]
 build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]

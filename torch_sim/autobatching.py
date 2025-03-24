@@ -23,13 +23,180 @@ Notes:
 import logging
 from collections.abc import Iterator
 from itertools import chain
-from typing import Literal
+from typing import Literal, Callable
 
-import binpacking
 import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState, concatenate_states
+
+
+def to_constant_volume_bins(  # noqa: C901, PLR0915
+    d: dict[int, float] | list[float] | list[tuple],
+    V_max: float,
+    *,
+    weight_pos: int | None = None,
+    key: Callable | None = None,
+    lower_bound: float | None = None,
+    upper_bound: float | None = None,
+) -> list[dict[int, float]] | list[list[float]] | list[list[tuple]]:
+    """Distribute items into bins of fixed maximum volume.
+
+    Groups items into the minimum number of bins possible while ensuring each bin's
+    total weight does not exceed V_max. Items are sorted by weight in descending
+    order before binning to improve packing efficiency.
+
+    Upstreamed from binpacking by @benmaier. https://pypi.org/project/binpacking/.
+
+    Args:
+        d (dict[int, float] | list[float] | list[tuple]): Items to distribute,
+            provided as either:
+            - Dictionary with numeric weights as values
+            - List of numeric weights
+            - List of tuples containing weights (requires weight_pos or key)
+        V_max (float): Maximum allowed weight sum per bin.
+        weight_pos (int | None): For tuple lists, index of weight in each tuple.
+            Defaults to None.
+        key (callable | None): Function to extract weight from list items.
+            Defaults to None.
+        lower_bound (float | None): Exclude items with weights below this value.
+            Defaults to None.
+        upper_bound (float | None): Exclude items with weights above this value.
+            Defaults to None.
+
+    Returns:
+        list[dict[int, float]] | list[list[float]] | list[list[tuple]]:
+            List of bins, where each bin contains items of the same type as input:
+            - List of dictionaries if input was a dictionary
+            - List of lists if input was a list of numbers
+            - List of lists of tuples if input was a list of tuples
+
+    Raises:
+        TypeError: If input is not iterable.
+        ValueError: If weight_pos or key is not provided for tuple list input,
+            or if lower_bound >= upper_bound.
+    """
+
+    def _get_bins(lst: list[float], ndx: list[int]) -> list[float]:
+        return [lst[n] for n in ndx]
+
+    def _argmax_bins(lst: list[float]) -> int:
+        return max(range(len(lst)), key=lst.__getitem__)
+
+    def _revargsort_bins(lst: list[float]) -> list[int]:
+        return sorted(range(len(lst)), key=lambda i: -lst[i])
+
+    isdict = isinstance(d, dict)
+
+    if not hasattr(d, "__len__"):
+        raise TypeError("d must be iterable")
+
+    if not isdict and hasattr(d[0], "__len__"):
+        if weight_pos is not None:
+            key = lambda x: x[weight_pos]  # noqa: E731
+        if key is None:
+            raise ValueError("Must provide weight_pos or key for tuple list")
+
+    if not isdict and key:
+        new_dict = dict(enumerate(d))
+        d = {i: key(val) for i, val in enumerate(d)}
+        isdict = True
+        is_tuple_list = True
+    else:
+        is_tuple_list = False
+
+    if isdict:
+        # get keys and values (weights)
+        keys_vals = d.items()
+        keys = [k for k, v in keys_vals]
+        vals = [v for k, v in keys_vals]
+
+        # sort weights decreasingly
+        ndcs = _revargsort_bins(vals)
+
+        weights = _get_bins(vals, ndcs)
+        keys = _get_bins(keys, ndcs)
+
+        bins = [{}]
+    else:
+        weights = sorted(d, key=lambda x: -x)
+        bins = [[]]
+
+    # find the valid indices
+    if lower_bound is not None and upper_bound is not None and lower_bound < upper_bound:
+        valid_ndcs = filter(
+            lambda i: lower_bound < weights[i] < upper_bound, range(len(weights))
+        )
+    elif lower_bound is not None:
+        valid_ndcs = filter(lambda i: lower_bound < weights[i], range(len(weights)))
+    elif upper_bound is not None:
+        valid_ndcs = filter(lambda i: weights[i] < upper_bound, range(len(weights)))
+    elif lower_bound is None and upper_bound is None:
+        valid_ndcs = range(len(weights))
+    elif lower_bound >= upper_bound:
+        raise ValueError("lower_bound is greater or equal to upper_bound")
+
+    valid_ndcs = list(valid_ndcs)
+
+    weights = _get_bins(weights, valid_ndcs)
+
+    if isdict:
+        keys = _get_bins(keys, valid_ndcs)
+
+    # prepare array containing the current weight of the bins
+    weight_sum = [0.0]
+
+    # iterate through the weight list, starting with heaviest
+    for item, weight in enumerate(weights):
+        if isdict:
+            key = keys[item]
+
+        # find candidate bins where the weight might fit
+        candidate_bins = list(
+            filter(lambda i: weight_sum[i] + weight <= V_max, range(len(weight_sum)))
+        )
+
+        # if there are candidates where it fits
+        if len(candidate_bins) > 0:
+            # find the fullest bin where this item fits and assign it
+            candidate_index = _argmax_bins(_get_bins(weight_sum, candidate_bins))
+            b = candidate_bins[candidate_index]
+
+        # if this weight doesn't fit in any existent bin
+        elif item > 0:
+            # note! if this is the very first item then there is already an
+            # empty bin open so we don't need to open another one.
+
+            # open a new bin
+            b = len(weight_sum)
+            weight_sum.append(0.0)
+            if isdict:
+                bins.append({})
+            else:
+                bins.append([])
+
+        # if we are at the very first item, use the empty bin already open
+        else:
+            b = 0
+
+        # put it in
+        if isdict:
+            bins[b][key] = weight
+        else:
+            bins[b].append(weight)
+
+        # increase weight sum of the bin and continue with
+        # next item
+        weight_sum[b] += weight
+
+    if not is_tuple_list:
+        return bins
+    new_bins = []
+    for b in range(len(bins)):
+        new_bins.append([])
+        for _key in bins[b]:
+            new_bins[b].append(new_dict[_key])
+    return new_bins
 
 
 def measure_model_memory_forward(state: SimState, model: ModelInterface) -> float:
@@ -392,7 +559,7 @@ class ChunkingAutoBatcher:
             )
 
         self.index_to_scaler = dict(enumerate(self.memory_scalers))
-        self.index_bins = binpacking.to_constant_volume(
+        self.index_bins = to_constant_volume_bins(
             self.index_to_scaler, V_max=self.max_memory_scaler
         )
         self.batched_states = []
