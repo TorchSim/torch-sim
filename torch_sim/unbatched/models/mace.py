@@ -206,7 +206,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
                 unit_shifts=shifts_idx,
                 shifts=shifts,
             ),
-            compute_forces=self._compute_forces,
+            compute_force=self._compute_forces,
             compute_stress=self._compute_stress,
         )
 
