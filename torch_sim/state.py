@@ -62,6 +62,12 @@ class SimState:
     Supports batched operations where multiple atomistic systems can be processed
     simultaneously, managed through batch indices.
 
+    States support slicing, cloning, splitting, popping, and movement to other 
+    data structures or devices. Slicing is supported through fancy indexing, 
+    e.g. `state[[0, 1, 2]]` will return a new state containing only the first three
+    batches. The other operations are available through the `pop`, `split`, `clone`,
+    and `to` methods.
+
     Attributes:
         positions (torch.Tensor): Atomic positions with shape (n_atoms, 3)
         masses (torch.Tensor): Atomic masses with shape (n_atoms,)
@@ -80,9 +86,18 @@ class SimState:
         n_batches (int): Number of unique batches in the system
 
     Notes:
-        positions, masses, and atomic_numbers must have shape (n_atoms, 3).
-        cell must be in the conventional matrix form.
-        batch indices must be unique consecutive integers starting from 0.
+        - positions, masses, and atomic_numbers must have shape (n_atoms, 3).
+        - cell must be in the conventional matrix form.
+        - batch indices must be unique consecutive integers starting from 0.
+
+    Examples:
+        >>> state = initialize_state([ase_atoms_1, ase_atoms_2, ase_atoms_3], device, dtype)
+        >>> state.n_batches
+        3
+        >>> new_state = state[[0, 1]]
+        >>> new_state.n_batches
+        2
+        >>> cloned_state = state.clone()
     """
 
     positions: torch.Tensor
@@ -280,6 +295,7 @@ class SimState:
         Returns:
             SimState: A new SimState containing only the specified batches
         """
+        # TODO: need to document that slicing is supported
         # Reuse the existing slice method
         batch_indices = _normalize_batch_indices(
             batch_indices, self.n_batches, self.device
@@ -656,7 +672,9 @@ def slice_state(
         batch_indices (list[int] | torch.Tensor): Batch indices to include in the
             sliced state
         ambiguous_handling (Literal["error", "globalize"]): How to handle ambiguous
-            properties
+            properties. If "error", an error is raised if a property has ambiguous
+            scope. If "globalize", properties with ambiguous scope are treated as
+            global.
 
     Returns:
         SimState: A new SimState object containing only the specified batches
