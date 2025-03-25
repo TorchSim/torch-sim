@@ -231,15 +231,13 @@ def validate_model_outputs(
         AssertionError: If the model doesn't conform to the required interface,
             including issues with output shapes, types, or behavior consistency.
 
+    Example::
 
-    Examples:
-        ```python
         # Create a new model implementation
         model = MyCustomModel(device=torch.device("cuda"))
 
         # Validate that it correctly implements the interface
         validate_model_outputs(model, device=torch.device("cuda"), dtype=torch.float64)
-        ```
 
     Notes:
         This validator creates small test systems (silicon and iron) for validation.
