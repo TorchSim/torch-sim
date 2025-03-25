@@ -1,0 +1,64 @@
+name: build-docs
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+# set GITHUB_TOKEN permissions to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build-docs:
+    if: github.repository_owner == 'materialsproject' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+
+      - name: Install pandoc
+        run: sudo apt-get install pandoc
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[strict,docs]
+
+      - name: Copy tutorials
+        run: |
+          cp -r examples/tutorials docs/
+          jupytext --set-formats "py:percent,ipynb" docs/tutorials/*.py
+          jupytext --set-kernel python3 docs/tutorials/*.py
+          jupytext --to notebook --execute docs/tutorials/*.py
+          jupyter nbconvert --to markdown docs/tutorials/*.ipynb
+          rm docs/tutorials/*.py
+
+      - name: Build
+        run: sphinx-build docs docs_build
+
+      - name: Upload build artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./docs_build
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs: build-docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,7 +1,9 @@
 ```{toctree}
 :caption: User Guide
 :hidden:
+user/index
 user/test
+tutorials/index
 ```
 
 ```{toctree}

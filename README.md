@@ -3,6 +3,7 @@
 [![CI](https://github.com/radical-ai/torch-sim/actions/workflows/test.yml/badge.svg)](https://github.com/radical-ai/torch-sim/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/radical-ai/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/radical-ai/torch-sim)
 
+
 Torch-Sim is an open-source simulation engine in PyTorch focused on atomistic simulations. It provides a easy to use and efficient interface for running simulations on both CPU and GPU. Being built on PyTorch, it allows for automatic differentiation of the simulation equations, making it easy to compute quantities of interest.
 
 ## Installation
@@ -179,7 +180,7 @@ for filename in trajectory_files:
     with TorchSimTrajectory(filename) as traj:
         print(traj)
 ```
-
+<!-- 
 ## Core modules
 
 Torch-Sim is built around the following core modules:
@@ -211,6 +212,7 @@ Torch-Sim is built around the following core modules:
 - [`torch_sim.autobatching`](torch_sim/autobatching.py): Contains classes for automatically batching simulations.
 
 Each module is designed to work seamlessly with PyTorch, enabling efficient and flexible molecular simulations.
+-->
 
 ## Citation
 

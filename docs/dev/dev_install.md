@@ -37,6 +37,7 @@ the developer requirements with:
 ```bash
 pip install -e .
 pre-commit install
+pre-commit run --all-files
 ```
 
 The `pre-commit` command will ensure that changes to the source code match the
