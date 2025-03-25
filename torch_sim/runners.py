@@ -42,19 +42,19 @@ def _configure_batches_iterator(
             return_indices=True,
         )
         autobatcher.load_states(state)
-        batchs = autobatcher
+        batches = autobatcher
     elif isinstance(autobatcher, ChunkingAutoBatcher):
         autobatcher.load_states(state)
         autobatcher.return_indices = True
-        batchs = autobatcher
+        batches = autobatcher
     elif not autobatcher:
-        batchs = [(state, [])]
+        batches = [(state, [])]
     else:
         raise ValueError(
             f"Invalid autobatcher type: {type(autobatcher)}, "
             "must be bool, ChunkingAutoBatcher, or None."
         )
-    return batchs
+    return batches
 
 
 def create_default_reporter(
