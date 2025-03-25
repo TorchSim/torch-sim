@@ -15,7 +15,7 @@ fireworks components:
 
 ## Install from source
 
-To install torch_sim from source, clone the repository from [github](https://github.com/Radical-AI/torch_sim)
+To install torch_sim from source, clone the repository from [github](https://github.com/Radical-AI/torch-sim)
 
 ```bash
 git clone https://github.com/Radical-AI/torch_sim

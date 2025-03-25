@@ -31,8 +31,8 @@ about/license
 **Date**: {sub-ref}`today`
 
 **Useful links**:
-[Source Repository](https://github.com/Radical-AI/torch_sim) |
-[Issues & Ideas](https://github.com/Radical-AI/torch_sim/issues) |
+[Source Repository](https://github.com/Radical-AI/torch-sim) |
+[Issues & Ideas](https://github.com/Radical-AI/torch-sim/issues) |
 
 Atomate2 is an open-source library providing computational workflows for
 automating first-principles calculations.
