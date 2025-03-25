@@ -12,8 +12,6 @@ import torch
 from ase import units
 from ase.atoms import Atoms
 from ase.build import bulk
-from ase.filters import FrechetCellFilter
-from ase.optimize import FIRE as FIRE_ASE
 from ase.spacegroup import get_spacegroup
 from mace.calculators.foundations_models import mace_mp
 
@@ -24,6 +22,10 @@ from torch_sim.elastic import (
     get_elementary_deformations,
     get_full_elastic_tensor,
 )
+from torch_sim.models.mace import MaceModel
+from torch_sim.optimizers import frechet_cell_fire
+from torch_sim.runners import generate_force_convergence_fn, optimize
+from torch_sim.state import initialize_state
 
 
 def get_bravais_type(  # noqa: C901
@@ -211,43 +213,49 @@ def get_bravais_type(  # noqa: C901
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float64
 mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
-calculator = mace_mp(
+mace_mp_kwargs = dict(
     model=mace_checkpoint_url,
     enable_cueq=False,
     device=device,
     default_dtype="float64",
 )
+raw_model = mace_mp(**mace_mp_kwargs, return_raw_model=True)
+calculator = mace_mp(**mace_mp_kwargs, return_raw_model=False)
+model = MaceModel(
+    raw_model, device=device, dtype=dtype, compute_forces=True, compute_stress=True
+)
 
 # Copper
 N = 2
-struct = bulk("Cu", "fcc", a=3.58, cubic=True)
-struct = struct.repeat((N, N, N))
+atoms = bulk("Cu", "fcc", a=3.58, cubic=True)
+atoms = atoms.repeat((N, N, N))
 
-struct.calc = calculator
-
-fcf = FrechetCellFilter(struct, hydrostatic_strain=True)
-opt = FIRE_ASE(fcf)
-opt.run(0.0005, 200)
-struct = fcf.atoms
-
-print(struct.get_stress())
-state = ElasticState(
-    position=torch.tensor(struct.get_positions(), device=device, dtype=dtype),
-    cell=torch.tensor(struct.get_cell().array, device=device, dtype=dtype),
+state = initialize_state(atoms, device=device, dtype=dtype)
+state = optimize(
+    state,
+    model=model,
+    convergence_fn=generate_force_convergence_fn(0.05),
+    optimizer=frechet_cell_fire,
 )
 
-latt_type, bravais_type, sg_symbol, sg_nr = get_bravais_type(struct)
+state = ElasticState(
+    position=torch.tensor(atoms.get_positions(), device=device, dtype=dtype),
+    cell=torch.tensor(atoms.get_cell().array, device=device, dtype=dtype),
+)
+
+latt_type, bravais_type, sg_symbol, sg_nr = get_bravais_type(atoms)
 deformations = get_elementary_deformations(
     state, n_deform=6, max_strain=2.0, bravais_type=bravais_type
 )
 
-ref_pressure = -torch.mean(torch.tensor(struct.get_stress()[:3], device=device), dim=0)
+atoms.calc = calculator
+ref_pressure = -torch.mean(torch.tensor(atoms.get_stress()[:3], device=device), dim=0)
 
 stresses = torch.zeros((len(deformations), 6), device=device, dtype=torch.float64)
-for i, deformation in enumerate(deformations):
-    struct.cell = deformation.cell.cpu().numpy()
-    struct.positions = deformation.position.cpu().numpy()
-    stresses[i] = torch.tensor(struct.get_stress(), device=device)
+for idx, deformation in enumerate(deformations):
+    atoms.cell = deformation.cell.cpu().numpy()
+    atoms.positions = deformation.position.cpu().numpy()
+    stresses[idx] = torch.tensor(atoms.get_stress(), device=device)
 
 C_ij, B_ij = get_elastic_tensor(state, deformations, stresses, ref_pressure, bravais_type)
 
