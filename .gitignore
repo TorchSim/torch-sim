@@ -17,3 +17,4 @@ dist/
 
 # docs
 docs_build/
+docs/reference/torch_sim.*
