@@ -16,6 +16,7 @@ This section gives an overview of the API for torch_sim.
     elastic
     io
     math
+    models
     monte_carlo
     neighbors
     optimizers

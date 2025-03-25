@@ -62,6 +62,8 @@ myst_enable_extensions = [
     "html_image",
 ]
 
+autodoc_mock_imports = ['mace', 'fairchem']
+
 # use type hints
 autodoc_typehints = "description"
 # autoclass_content = "both"
@@ -172,4 +174,8 @@ html_title = "torch-sim"
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3.10", None),
     "torch": ("https://pytorch.org/docs/stable/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "ase": ("https://wiki.fysik.dtu.dk/ase/index.html", None),
+    "pymatgen": ("https://pymatgen.org/", None),
+    "phonopy": ("https://phonopy.github.io/phonopy/index.html", None),
 }
