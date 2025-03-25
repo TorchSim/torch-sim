@@ -37,7 +37,7 @@ about/license
 Atomate2 is an open-source library providing computational workflows for
 automating first-principles calculations.
 
-::::{grid} 1 1 2 2
+::::{grid} 3 1 1 1
 :class-container: text-center
 :gutter: 3
 
@@ -48,15 +48,6 @@ automating first-principles calculations.
 **User Guide** 🚀
 ^^^
 The user guide provides in-depth information and tutorials for using *torch_sim*.
-:::
-
-:::{grid-item-card}
-:link: https://matsci.org/c/atomate
-:class-header: bg-light
-**Support forum** ✨
-^^^
-You've read the user guide but still need help? Ask questions on the atomate2
-support forum.
 :::
 
 :::{grid-item-card}

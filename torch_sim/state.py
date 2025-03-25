@@ -12,7 +12,8 @@ import importlib
 import typing
 import warnings
 from dataclasses import dataclass, field
-from typing import Literal, Self
+from typing import Literal, Self, TypeVar, Union
+import typing
 
 import torch
 
@@ -30,9 +31,6 @@ if typing.TYPE_CHECKING:
     from ase import Atoms
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure
-
-
-from typing import TypeVar, Union
 
 
 T = TypeVar("T", bound="SimState")
