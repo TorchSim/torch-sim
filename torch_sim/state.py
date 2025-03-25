@@ -11,7 +11,8 @@ import copy
 import importlib
 import warnings
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, Self
+import typing
+from typing import Literal, Self
 
 import torch
 
@@ -25,7 +26,7 @@ from torch_sim.io import (
 )
 
 
-if TYPE_CHECKING:
+if typing.TYPE_CHECKING:
     from ase import Atoms
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure

@@ -18,28 +18,39 @@ from __future__ import annotations
 
 import copy
 from types import MappingProxyType
-from typing import TYPE_CHECKING
+import typing
 
 import torch
-from fairchem.core.common.registry import registry
-from fairchem.core.common.utils import (
-    load_config,
-    setup_imports,
-    setup_logging,
-    update_config,
-)
-from fairchem.core.models.model_registry import model_name_to_local_file
 from torch_geometric.data import Batch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState, StateDict
 
+try: 
+    from fairchem.core.common.registry import registry
+    from fairchem.core.common.utils import (
+        load_config,
+        setup_imports,
+        setup_logging,
+        update_config,
+    )
+    from fairchem.core.models.model_registry import model_name_to_local_file
+except ImportError:
+    class FairChemModel(torch.nn.Module, ModelInterface):
+        """FairChem model wrapper for torch_sim.
 
-if TYPE_CHECKING:
+        This class is a placeholder for the FairChemModel class.
+        It raises an ImportError if FairChem is not installed.
+        """
+        raise ImportError("FairChem must be installed to use this model.")
+
+
+
+if typing.TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-DTYPE_DICT = {
+_DTYPE_DICT = {
     torch.float16: "float16",
     torch.float32: "float32",
     torch.float64: "float64",
@@ -204,9 +215,9 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             config["model"]["backbone"]["use_pbc_single"] = False
             if dtype is not None:
                 try:
-                    config["model"]["backbone"].update({"dtype": DTYPE_DICT[dtype]})
+                    config["model"]["backbone"].update({"dtype": _DTYPE_DICT[dtype]})
                     for key in config["model"]["heads"]:
-                        config["model"]["heads"][key].update({"dtype": DTYPE_DICT[dtype]})
+                        config["model"]["heads"][key].update({"dtype": _DTYPE_DICT[dtype]})
                 except KeyError:
                     print("dtype not found in backbone, using default float32")
         else:
@@ -214,7 +225,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             config["model"]["use_pbc_single"] = False
             if dtype is not None:
                 try:
-                    config["model"].update({"dtype": DTYPE_DICT[dtype]})
+                    config["model"].update({"dtype": _DTYPE_DICT[dtype]})
                 except KeyError:
                     print("dtype not found in backbone, using default dtype")
 

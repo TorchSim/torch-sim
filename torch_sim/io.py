@@ -12,13 +12,13 @@ The module handles:
 * Batched conversions for multiple structures
 """
 
-from typing import TYPE_CHECKING
+import typing
 
 import numpy as np
 import torch
 
 
-if TYPE_CHECKING:
+if typing.TYPE_CHECKING:
     from ase import Atoms
     from pymatgen.core import Structure
 

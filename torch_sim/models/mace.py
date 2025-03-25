@@ -21,12 +21,21 @@ from collections.abc import Callable
 from pathlib import Path
 
 import torch
-from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
-from mace.tools import atomic_numbers_to_indices, to_one_hot, utils
-
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.state import SimState, StateDict
+
+try:
+    from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
+    from mace.tools import atomic_numbers_to_indices, to_one_hot, utils
+except ImportError:
+    class MaceModel(torch.nn.Module, ModelInterface):
+        """MACE model wrapper for torch_sim.
+
+        This class is a placeholder for the MaceModel class.
+        It raises an ImportError if MACE is not installed.
+        """
+        raise ImportError("MACE must be installed to use this model.")
 
 
 class MaceModel(torch.nn.Module, ModelInterface):

@@ -1,6 +1,5 @@
 from dataclasses import asdict
-from typing import TYPE_CHECKING
-
+import typing
 import torch
 
 from torch_sim.integrators import MDState
@@ -15,7 +14,7 @@ from torch_sim.state import (
 )
 
 
-if TYPE_CHECKING:
+if typing.TYPE_CHECKING:
     from ase import Atoms
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure

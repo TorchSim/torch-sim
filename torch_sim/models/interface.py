@@ -231,6 +231,7 @@ def validate_model_outputs(
         AssertionError: If the model doesn't conform to the required interface,
             including issues with output shapes, types, or behavior consistency.
 
+            
     Examples:
         ```python
         # Create a new model implementation
