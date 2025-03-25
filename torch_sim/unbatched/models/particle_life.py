@@ -98,7 +98,7 @@ class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
-        compute_force: bool = False,
+        compute_forces: bool = False,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
         per_atom_stresses: bool = False,
@@ -110,7 +110,7 @@ class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
         self._device = device or torch.device("cpu")
         self._dtype = dtype
 
-        self._compute_force = compute_force
+        self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self._per_atom_energies = per_atom_energies
         self._per_atom_stresses = per_atom_stresses

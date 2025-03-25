@@ -141,7 +141,7 @@ mace_model = MaceModel(
     device=device,
     periodic=True,
     dtype=torch.float64,
-    compute_force=True,
+    compute_forces=True,
 )
 
 # create a bulk example systems

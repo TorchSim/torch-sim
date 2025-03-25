@@ -20,7 +20,7 @@ def models(
         "epsilon": 0.0104,  # eV, typical for Ar
         "alpha": 2.0,
         "dtype": torch.float64,
-        "compute_force": True,
+        "compute_forces": True,
         "compute_stress": True,
     }
 
@@ -76,7 +76,7 @@ def multi_models(
         "epsilon_matrix": epsilon_matrix,
         "alpha_matrix": alpha_matrix,
         "dtype": torch.float64,
-        "compute_force": True,
+        "compute_forces": True,
         "compute_stress": True,
         "per_atom_energies": True,
         "per_atom_stresses": True,
@@ -143,7 +143,7 @@ def test_validate_model_outputs(device: torch.device) -> None:
         "epsilon": 0.0104,  # eV, typical for Ar
         "alpha": 2.0,
         "dtype": torch.float64,
-        "compute_force": True,
+        "compute_forces": True,
         "compute_stress": True,
     }
 

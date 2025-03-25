@@ -116,7 +116,7 @@ def unbatched_lj_model(device: torch.device) -> UnbatchedLennardJonesModel:
         epsilon=0.0104,
         device=device,
         dtype=torch.float64,
-        compute_force=True,
+        compute_forces=True,
         compute_stress=True,
         cutoff=2.5 * 3.405,
     )
@@ -131,7 +131,7 @@ def lj_model(device: torch.device) -> LennardJonesModel:
         epsilon=0.0104,
         device=device,
         dtype=torch.float64,
-        compute_force=True,
+        compute_forces=True,
         compute_stress=True,
         cutoff=2.5 * 3.405,
     )

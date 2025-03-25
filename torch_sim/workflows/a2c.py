@@ -299,7 +299,7 @@ def random_packed_structure(
             sigma=diameter,
             device=device,
             dtype=dtype,
-            compute_force=True,
+            compute_forces=True,
             use_neighbor_list=True,
         )
 
@@ -429,7 +429,7 @@ def random_packed_structure_multi(
             sigma_matrix=diameter_matrix,
             device=device,
             dtype=dtype,
-            compute_force=True,
+            compute_forces=True,
             use_neighbor_list=True,
         )
 

@@ -153,7 +153,7 @@ def models(
         "sigma": 3.405,  # Å, typical for Ar
         "epsilon": 0.0104,  # eV, typical for Ar
         "dtype": torch.float64,
-        "compute_force": True,
+        "compute_forces": True,
         "compute_stress": True,
     }
 

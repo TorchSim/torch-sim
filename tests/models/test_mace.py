@@ -42,7 +42,7 @@ def torchsim_mace_model(device: torch.device) -> UnbatchedMaceModel:
         device=device,
         neighbor_list_fn=wrapping_nl,
         dtype=torch.float32,
-        compute_force=True,
+        compute_forces=True,
     )
 
 
@@ -62,7 +62,7 @@ def torchsim_batched_mace_model(device: torch.device) -> MaceModel:
         model=mace_model,
         device=device,
         dtype=torch.float32,
-        compute_force=True,
+        compute_forces=True,
     )
 
 
@@ -141,7 +141,7 @@ def test_mace_dtype_working(
         model=mace_model,
         device=device,
         dtype=dtype,
-        compute_force=True,
+        compute_forces=True,
     )
 
     state = atoms_to_state([si_atoms], device, dtype)
@@ -177,7 +177,7 @@ def torchsim_mace_off_model(device: torch.device) -> UnbatchedMaceModel:
         device=device,
         neighbor_list_fn=wrapping_nl,
         dtype=torch.float32,
-        compute_force=True,
+        compute_forces=True,
     )
 
 
@@ -197,7 +197,7 @@ def torchsim_batched_mace_off_model(device: torch.device) -> MaceModel:
         model=mace_off_model,
         device=device,
         dtype=torch.float32,
-        compute_force=True,
+        compute_forces=True,
     )
 
 
@@ -276,7 +276,7 @@ def test_mace_off_dtype_working(
         model=mace_off_model,
         device=device,
         dtype=dtype,
-        compute_force=True,
+        compute_forces=True,
     )
 
     state = atoms_to_state([benzene_atoms], device, dtype)

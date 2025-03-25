@@ -92,7 +92,7 @@ mace_model = MaceModel(
     model=mace,
     device=device,
     dtype=torch.float64,
-    compute_force=True,
+    compute_forces=True,
 )
 
 reporter = TrajectoryReporter(

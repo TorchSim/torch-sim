@@ -102,7 +102,7 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
-        compute_force: bool = False,
+        compute_forces: bool = False,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
         per_atom_stresses: bool = False,
@@ -117,7 +117,7 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
             alpha: Controls the width of the potential well
             device: Torch device to use for calculations
             dtype: Data type for torch tensors
-            compute_force: Whether to compute forces
+            compute_forces: Whether to compute forces
             compute_stress: Whether to compute stress tensor
             per_atom_energies: Whether to return per-atom energies
             per_atom_stresses: Whether to return per-atom stress tensors
@@ -127,7 +127,7 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
         super().__init__()
         self._device = device or torch.device("cpu")
         self._dtype = dtype
-        self._compute_force = compute_force
+        self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self._per_atom_energies = per_atom_energies
         self._per_atom_stresses = per_atom_stresses
@@ -206,7 +206,7 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
             atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
             results["energies"] = atom_energies
 
-        if self.compute_force or self.compute_stress:
+        if self.compute_forces or self.compute_stress:
             pair_forces = morse_pair_force(
                 distances, sigma=self.sigma, epsilon=self.epsilon, alpha=self.alpha
             )
@@ -214,7 +214,7 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
 
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
-            if self._compute_force:
+            if self._compute_forces:
                 forces = torch.zeros_like(positions)
                 forces.index_add_(0, mapping[0], -force_vectors)
                 forces.index_add_(0, mapping[1], force_vectors)

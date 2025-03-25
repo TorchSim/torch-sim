@@ -84,7 +84,7 @@ model = UnbatchedLennardJonesModel(
     cutoff=2.5 * 3.405,
     device=device,
     dtype=dtype,
-    compute_force=True,
+    compute_forces=True,
     compute_stress=True,
 )
 state = SimState(

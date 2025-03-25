@@ -81,7 +81,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         pbc (bool): Whether periodic boundary conditions are used
         _dtype (torch.dtype): Data type used for computation
         _compute_stress (bool): Whether to compute stress tensor
-        _compute_force (bool): Whether to compute forces
+        _compute_forces (bool): Whether to compute forces
         _device (torch.device): Device where computation is performed
         _reshaped_props (dict): Properties that need reshaping after computation
 
@@ -145,7 +145,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
 
         self._dtype = dtype or torch.float32
         self._compute_stress = compute_stress
-        self._compute_force = True
+        self._compute_forces = True
         self._memory_scales_with = "n_atoms"
 
         if model_name is not None:

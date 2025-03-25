@@ -82,7 +82,7 @@ model = UnbatchedSoftSphereModel(
     sigma=2.5,
     device=device,
     dtype=dtype,
-    compute_force=True,
+    compute_forces=True,
     compute_stress=False,
     use_neighbor_list=True,
 )

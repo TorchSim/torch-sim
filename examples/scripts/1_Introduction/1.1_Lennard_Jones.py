@@ -61,7 +61,7 @@ model = UnbatchedLennardJonesModel(
     epsilon=0.0104,
     device=device,
     dtype=dtype,
-    compute_force=True,
+    compute_forces=True,
     compute_stress=True,
 )
 

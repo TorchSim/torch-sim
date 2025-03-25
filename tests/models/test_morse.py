@@ -134,7 +134,7 @@ def models(
         "epsilon": 0.436,  # eV, dissociation energy
         "alpha": 1.359,  # Å^-1, controls potential well width
         "dtype": torch.float64,
-        "compute_force": True,
+        "compute_forces": True,
         "compute_stress": True,
     }
 

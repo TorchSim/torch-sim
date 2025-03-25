@@ -55,7 +55,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         cutoff (torch.Tensor): Distance cutoff for truncating potential calculation.
         device (torch.device): Device where calculations are performed.
         dtype (torch.dtype): Data type used for calculations.
-        compute_force (bool): Whether to compute atomic forces.
+        compute_forces (bool): Whether to compute atomic forces.
         compute_stress (bool): Whether to compute stress tensor.
         per_atom_energies (bool): Whether to compute per-atom energy decomposition.
         per_atom_stresses (bool): Whether to compute per-atom stress decomposition.
@@ -83,7 +83,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
-        compute_force: bool = True,
+        compute_forces: bool = True,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
         per_atom_stresses: bool = False,
@@ -104,7 +104,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
             device (torch.device | None): Device to run computations on. If None, uses
                 CPU. Defaults to None.
             dtype (torch.dtype): Data type for calculations. Defaults to torch.float32.
-            compute_force (bool): Whether to compute forces. Defaults to True.
+            compute_forces (bool): Whether to compute forces. Defaults to True.
             compute_stress (bool): Whether to compute stress tensor. Defaults to False.
             per_atom_energies (bool): Whether to compute per-atom energy decomposition.
                 Defaults to False.
@@ -131,7 +131,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         super().__init__()
         self._device = device or torch.device("cpu")
         self._dtype = dtype
-        self._compute_force = compute_force
+        self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self.per_atom_energies = per_atom_energies
         self.per_atom_stresses = per_atom_stresses
@@ -162,7 +162,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Total potential energy (scalar)
                 - "forces": Atomic forces with shape [n_atoms, 3] (if
-                    compute_force=True)
+                    compute_forces=True)
                 - "stress": Stress tensor with shape [3, 3] (if compute_stress=True)
                 - "energies": Per-atom energies with shape [n_atoms] (if
                     per_atom_energies=True)
@@ -240,7 +240,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
             atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
             results["energies"] = atom_energies
 
-        if self._compute_force or self._compute_stress:
+        if self._compute_forces or self._compute_stress:
             # Calculate forces and apply cutoff
             pair_forces = lennard_jones_pair_force(
                 distances, sigma=self.sigma, epsilon=self.epsilon
@@ -250,7 +250,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
             # Project forces along displacement vectors
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
-            if self._compute_force:
+            if self._compute_forces:
                 # Initialize forces tensor
                 forces = torch.zeros_like(positions)
                 # Add force contributions (f_ij on i, -f_ij on j)
@@ -292,7 +292,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Potential energy with shape [n_batches]
                 - "forces": Atomic forces with shape [n_atoms, 3] (if
-                    compute_force=True)
+                    compute_forces=True)
                 - "stress": Stress tensor with shape [n_batches, 3, 3] (if
                     compute_stress=True)
                 - May include additional outputs based on configuration
