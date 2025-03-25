@@ -9,9 +9,9 @@ support for batched operations and conversion to/from various atomistic formats.
 
 import copy
 import importlib
+import typing
 import warnings
 from dataclasses import dataclass, field
-import typing
 from typing import Literal, Self
 
 import torch
@@ -63,8 +63,8 @@ class SimState:
     Supports batched operations where multiple atomistic systems can be processed
     simultaneously, managed through batch indices.
 
-    States support slicing, cloning, splitting, popping, and movement to other 
-    data structures or devices. Slicing is supported through fancy indexing, 
+    States support slicing, cloning, splitting, popping, and movement to other
+    data structures or devices. Slicing is supported through fancy indexing,
     e.g. `state[[0, 1, 2]]` will return a new state containing only the first three
     batches. The other operations are available through the `pop`, `split`, `clone`,
     and `to` methods.
@@ -92,7 +92,9 @@ class SimState:
         - batch indices must be unique consecutive integers starting from 0.
 
     Examples:
-        >>> state = initialize_state([ase_atoms_1, ase_atoms_2, ase_atoms_3], device, dtype)
+        >>> state = initialize_state(
+        ...     [ase_atoms_1, ase_atoms_2, ase_atoms_3], device, dtype
+        ... )
         >>> state.n_batches
         3
         >>> new_state = state[[0, 1]]

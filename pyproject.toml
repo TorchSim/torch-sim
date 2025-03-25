@@ -1,4 +1,3 @@
-
 [project]
 name = "torch_sim"
 version = "0.0.0rc"
@@ -117,6 +116,8 @@ pep8-naming.ignore-names = ["get_kT", "kT"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/*" = ["ANN201", "D", "S101"]
+"examples/**/*" = ["B018"]
+"tutorials/**/*" = ["B018"]
 
 [tool.ruff.format]
 docstring-code-format = true

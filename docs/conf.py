@@ -13,6 +13,7 @@ import sys
 
 from torch_sim import __version__
 
+
 sys.path.insert(0, os.path.abspath("../../"))
 
 # -- Project information -----------------------------------------------------
@@ -62,7 +63,7 @@ myst_enable_extensions = [
     "html_image",
 ]
 
-autodoc_mock_imports = ['mace', 'fairchem']
+autodoc_mock_imports = ["mace", "fairchem"]
 
 # use type hints
 autodoc_typehints = "description"

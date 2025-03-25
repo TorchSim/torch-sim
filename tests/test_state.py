@@ -1,5 +1,6 @@
-from dataclasses import asdict
 import typing
+from dataclasses import asdict
+
 import torch
 
 from torch_sim.integrators import MDState

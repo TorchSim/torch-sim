@@ -180,7 +180,7 @@ for filename in trajectory_files:
     with TorchSimTrajectory(filename) as traj:
         print(traj)
 ```
-<!-- 
+<!--
 ## Core modules
 
 Torch-Sim is built around the following core modules:

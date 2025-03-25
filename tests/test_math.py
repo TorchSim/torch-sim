@@ -335,7 +335,8 @@ class TestExpmFrechetTorch:
 
     def test_medium_matrix(self):
         """Test with a medium-sized matrix to compare performance
-        between methods using torch tensors."""
+        between methods using torch tensors.
+        """
         n = 1000
         rng = np.random.default_rng()
         A = torch.tensor(rng.exponential(size=(n, n)))

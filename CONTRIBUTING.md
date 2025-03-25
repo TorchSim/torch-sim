@@ -24,4 +24,3 @@ All submissions require review by project maintainers before merging:
 - Check our FAQ section for common questions
 
 Thank you for contributing to TorchSim!
-

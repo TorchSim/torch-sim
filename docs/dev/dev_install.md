@@ -88,7 +88,7 @@ jupytext --to notebook --execute docs/tutorials/*.py
 rm docs/tutorials/*.py
 ```
 
-Documentation structure based on Alex Ganose (@utf) exceptional 
+Documentation structure based on Alex Ganose (@utf) exceptional
 [atomate2](https://materialsproject.github.io/atomate2/) package.
 
 ## Adding new models
@@ -109,7 +109,7 @@ on the model. This ensures the model adheres to the correct input and output for
 3. Update test.yml to include proper installation and
 testing of the relevant model.
 
-4. Update .github/workflows/conf.py to include model in 
+4. Update .github/workflows/conf.py to include model in
 autodoc_mock_imports = ['mace', 'fairchem']
 
 [optional]

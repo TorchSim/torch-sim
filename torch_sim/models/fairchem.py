@@ -17,8 +17,8 @@ Notes:
 from __future__ import annotations
 
 import copy
-from types import MappingProxyType
 import typing
+from types import MappingProxyType
 
 import torch
 from torch_geometric.data import Batch
@@ -26,7 +26,8 @@ from torch_geometric.data import Batch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState, StateDict
 
-try: 
+
+try:
     from fairchem.core.common.registry import registry
     from fairchem.core.common.utils import (
         load_config,
@@ -36,14 +37,15 @@ try:
     )
     from fairchem.core.models.model_registry import model_name_to_local_file
 except ImportError:
+
     class FairChemModel(torch.nn.Module, ModelInterface):
         """FairChem model wrapper for torch_sim.
 
         This class is a placeholder for the FairChemModel class.
         It raises an ImportError if FairChem is not installed.
         """
-        raise ImportError("FairChem must be installed to use this model.")
 
+        raise ImportError("FairChem must be installed to use this model.")
 
 
 if typing.TYPE_CHECKING:
@@ -217,7 +219,9 @@ class FairChemModel(torch.nn.Module, ModelInterface):
                 try:
                     config["model"]["backbone"].update({"dtype": _DTYPE_DICT[dtype]})
                     for key in config["model"]["heads"]:
-                        config["model"]["heads"][key].update({"dtype": _DTYPE_DICT[dtype]})
+                        config["model"]["heads"][key].update(
+                            {"dtype": _DTYPE_DICT[dtype]}
+                        )
                 except KeyError:
                     print("dtype not found in backbone, using default float32")
         else:
