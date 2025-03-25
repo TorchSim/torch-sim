@@ -76,3 +76,6 @@ And launched with:
 ```bash
 python -m http.server -d docs_build
 ```
+
+Documentation structure based on Alex Ganose (@utf) exceptional 
+[atomate2](https://materialsproject.github.io/atomate2/) package.
