@@ -6,10 +6,11 @@ several gradient-based methods with support for both atomic position and unit ce
 optimization.
 
 The module offers:
-- Standard gradient descent for atomic positions
-- Gradient descent with unit cell optimization
-- FIRE (Fast Inertial Relaxation Engine) optimization with unit cell parameters
-- FIRE optimization with Frechet cell parameterization for improved cell relaxation
+
+* Standard gradient descent for atomic positions
+* Gradient descent with unit cell optimization
+* FIRE (Fast Inertial Relaxation Engine) optimization with unit cell parameters
+* FIRE optimization with Frechet cell parameterization for improved cell relaxation
 
 """
 

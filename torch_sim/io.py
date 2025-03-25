@@ -5,10 +5,11 @@ representations. It includes utilities for converting ASE Atoms objects,
 Pymatgen Structures, and PhonopyAtoms objects to SimState objects and vice versa.
 
 The module handles:
-- Converting between ASE Atoms and SimState
-- Converting between Pymatgen Structure and SimState
-- Converting between PhonopyAtoms and SimState
-- Batched conversions for multiple structures
+
+* Converting between ASE Atoms and SimState
+* Converting between Pymatgen Structure and SimState
+* Converting between PhonopyAtoms and SimState
+* Batched conversions for multiple structures
 """
 
 from typing import TYPE_CHECKING

@@ -5,8 +5,8 @@ It provides efficient calculation of energies, forces, and stresses based on the
 classic 12-6 potential function. The implementation supports both full pairwise
 calculations and neighbor list-based optimizations.
 
-Examples:
-    ```python
+Example::
+
     # Create a Lennard-Jones model with default parameters
     model = LennardJonesModel(device=torch.device("cuda"))
 
@@ -22,7 +22,6 @@ Examples:
     output = model(sim_state)
     energy = output["energy"]
     forces = output["forces"]
-    ```
 """
 
 import torch
@@ -62,8 +61,8 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         per_atom_stresses (bool): Whether to compute per-atom stress decomposition.
         use_neighbor_list (bool): Whether to use neighbor list optimization.
 
-    Examples:
-        ```python
+    Example::
+
         # Basic usage with default parameters
         lj_model = LennardJonesModel(device=torch.device("cuda"))
         results = lj_model(sim_state)
@@ -75,7 +74,6 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
             cutoff=8.5,  # Å
             compute_stress=True,
         )
-        ```
     """
 
     def __init__(
@@ -117,8 +115,8 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
             cutoff (float | None): Cutoff distance for interactions in distance units.
                 If None, uses 2.5*sigma. Defaults to None.
 
-        Examples:
-            ```python
+        Example::
+
             # Model with custom parameters
             model = LennardJonesModel(
                 sigma=3.405,
@@ -129,7 +127,6 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
                 per_atom_energies=True,
                 cutoff=10.0,
             )
-            ```
         """
         super().__init__()
         self._device = device or torch.device("cpu")
@@ -303,8 +300,8 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         Raises:
             ValueError: If batch cannot be inferred for multi-cell systems.
 
-        Examples:
-            ```python
+        Example::
+
             # Compute properties for a simulation state
             model = LennardJonesModel(compute_stress=True)
             results = model(sim_state)
@@ -312,7 +309,6 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
             energy = results["energy"]  # Shape: [n_batches]
             forces = results["forces"]  # Shape: [n_atoms, 3]
             stress = results["stress"]  # Shape: [n_batches, 3, 3]
-            ```
         """
         if isinstance(state, dict):
             state = SimState(**state, masses=torch.ones_like(state["positions"]))

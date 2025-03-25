@@ -6,10 +6,11 @@ with TorchSim's simulation framework, handling batched computations for multiple
 systems simultaneously.
 
 The implementation supports various features including:
-- Computing energies, forces, and stresses
-- Handling periodic boundary conditions
-- Optional CuEq acceleration for improved performance
-- Batched calculations for multiple systems
+
+* Computing energies, forces, and stresses
+* Handling periodic boundary conditions
+* Optional CuEq acceleration for improved performance
+* Batched calculations for multiple systems
 
 Notes:
     This module depends on the MACE package and implements the ModelInterface

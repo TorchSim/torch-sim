@@ -9,19 +9,21 @@ The soft sphere potential has the form:
     V(r) = epsilon * (sigma/r)^alpha
 
 Where:
-    - r is the distance between particles
-    - sigma is the effective diameter of the particles
-    - epsilon controls the energy scale
-    - alpha determines the steepness of the repulsion (typically alpha >= 2)
+
+* r is the distance between particles
+* sigma is the effective diameter of the particles
+* epsilon controls the energy scale
+* alpha determines the steepness of the repulsion (typically alpha >= 2)
 
 Soft sphere models are particularly useful for:
-    - Granular matter simulations
-    - Modeling excluded volume effects
-    - Initial equilibration of dense systems
-    - Coarse-grained molecular dynamics
 
-Example:
-    ```python
+* Granular matter simulations
+* Modeling excluded volume effects
+* Initial equilibration of dense systems
+* Coarse-grained molecular dynamics
+
+Example::
+
     # Create a soft sphere model with default parameters
     model = SoftSphereModel()
 
@@ -37,7 +39,7 @@ Example:
         epsilon_matrix=strength_matrix,
     )
     results = multi_model(sim_state)
-    ```
+
 """
 
 import torch

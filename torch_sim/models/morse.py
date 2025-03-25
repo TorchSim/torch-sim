@@ -5,8 +5,8 @@ The Morse potential provides a more realistic description of anharmonic bond
 behavior than simple harmonic potentials, capturing bond breaking and formation.
 It includes both energy and force calculations with support for neighbor lists.
 
-Examples:
-    ```python
+Example::
+
     # Create a Morse model with default parameters
     model = MorseModel(device=torch.device("cuda"))
 
@@ -14,7 +14,6 @@ Examples:
     output = model(sim_state)
     energy = output["energy"]
     forces = output["forces"]
-    ```
 
 Notes:
     The Morse potential follows the form:

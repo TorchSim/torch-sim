@@ -1,20 +1,19 @@
-"""Autobatching: GPU memory-efficient batched simulations in torchsim.
+"""GPU memory-efficient autobatching for simulations in torchsim.
 
 This module provides utilities for efficient batch processing of simulation states
 by dynamically determining optimal batch sizes based on GPU memory constraints.
 It includes tools for memory usage estimation, batch size determination, and
 two complementary strategies for batching: chunking and hot-swapping.
 
-Examples:
-    ```python
-    # Using ChunkingAutoBatcher with a model
-    batcher = ChunkingAutoBatcher(model, memory_scales_with="n_atoms")
-    batcher.load_states(states)
-    final_states = []
-    for batch in batcher:
-        final_states.append(evolve_batch(batch))
-    final_states = batcher.restore_original_order(final_states)
-    ```
+Example:
+    Using ChunkingAutoBatcher with a model::
+
+        batcher = ChunkingAutoBatcher(model, memory_scales_with="n_atoms")
+        batcher.load_states(states)
+        final_states = []
+        for batch in batcher:
+            final_states.append(evolve_batch(batch))
+        final_states = batcher.restore_original_order(final_states)
 
 Notes:
     Memory scaling estimates are approximate and may need tuning for specific
@@ -279,13 +278,12 @@ def determine_max_batch_size(
     Raises:
         RuntimeError: If any error other than CUDA out of memory occurs during testing.
 
-    Examples:
-        ```python
+    Example::
+
         # Find the maximum batch size for a Lennard-Jones model
         max_batches = determine_max_batch_size(
             state=sample_state, model=lj_model, max_atoms=100_000
         )
-        ```
 
     Notes:
         The function returns a batch size slightly smaller than the actual maximum
@@ -340,14 +338,13 @@ def calculate_memory_scaler(
         ValueError: If state has multiple batches or if an invalid metric type is
             provided.
 
-    Examples:
-        ```python
+    Example::
+
         # Calculate memory scaling factor based on atom count
         metric = calculate_memory_scaler(state, memory_scales_with="n_atoms")
 
         # Calculate memory scaling factor based on atom count and density
         metric = calculate_memory_scaler(state, memory_scales_with="n_atoms_x_density")
-        ```
     """
     if state.n_batches > 1:
         raise ValueError("State must be a single batch")
@@ -384,14 +381,13 @@ def estimate_max_memory_scaler(
     Returns:
         float: Maximum safe metric value that fits in GPU memory.
 
-    Examples:
-        ```python
+    Example::
+
         # Calculate metrics for a set of states
         metrics = [calculate_memory_scaler(state) for state in states]
 
         # Estimate maximum safe metric value
         max_metric = estimate_max_memory_scaler(model, states, metrics)
-        ```
 
     Notes:
         This function tests batch sizes with both the smallest and largest systems
@@ -447,8 +443,8 @@ class ChunkingAutoBatcher:
         batched_states (list[list[SimState]]): Grouped states ready for batching.
         current_state_bin (int): Index of the current batch being processed.
 
-    Examples:
-        ```python
+    Example::
+
         # Create a batcher with a Lennard-Jones model
         batcher = ChunkingAutoBatcher(
             model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=1000.0
@@ -462,7 +458,6 @@ class ChunkingAutoBatcher:
 
         # Restore original order
         ordered_final_states = batcher.restore_original_order(final_states)
-        ```
     """
 
     def __init__(
@@ -517,14 +512,13 @@ class ChunkingAutoBatcher:
             ValueError: If any individual state has a memory scaling metric greater
                 than the maximum allowed value.
 
-        Examples:
-            ```python
+        Example::
+
             # Load individual states
             batcher.load_states([state1, state2, state3])
 
             # Or load a batched state that will be split
             batcher.load_states(batched_state)
-            ```
 
         Notes:
             This method resets the current state bin index, so any ongoing iteration
@@ -721,8 +715,8 @@ class HotSwappingAutoBatcher:
         current_scalers (list[float]): Memory metrics for states in current batch.
         swap_attempts (dict[int, int]): Count of iterations for each state.
 
-    Examples:
-        ```python
+    Example::
+
         # Create a hot-swapping batcher
         batcher = HotSwappingAutoBatcher(
             model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=1000.0
@@ -745,7 +739,6 @@ class HotSwappingAutoBatcher:
 
         # Restore original order
         ordered_results = batcher.restore_original_order(completed_states)
-        ```
     """
 
     def __init__(

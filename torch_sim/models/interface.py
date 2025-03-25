@@ -5,8 +5,8 @@ It establishes a common API for interacting with different force and energy mode
 ensuring consistent behavior regardless of the underlying implementation. The module
 also provides validation utilities to verify model conformance to the interface.
 
-Examples:
-    ```python
+Example::
+
     # Creating a custom model that implements the interface
     class MyModel(ModelInterface):
         def __init__(self, device=None, dtype=torch.float64):
@@ -20,7 +20,6 @@ Examples:
         def forward(self, positions, cell, batch, atomic_numbers=None, **kwargs):
             # Implementation that returns energy, forces, and stress
             return {"energy": energy, "forces": forces, "stress": stress}
-    ```
 
 Notes:
     Models must explicitly declare support for stress computation through the
