@@ -3,7 +3,7 @@
 API reference
 -------------
 
-This section gives an overview of the API for atomate2.
+This section gives an overview of the API for torch_sim.
 
 .. currentmodule:: torch_sim
 

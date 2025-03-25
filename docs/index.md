@@ -1,16 +1,7 @@
 ```{toctree}
 :caption: User Guide
 :hidden:
-user/index
-user/install
-user/running-workflows
-user/key_concepts_overview
-user/docs-schemas-emmet
-user/jobflow-remote
-user/fireworks
-user/atomate-1-vs-2
-user/codes/index
-tutorials/tutorials
+user/test
 ```
 
 ```{toctree}
@@ -23,28 +14,23 @@ reference/index
 :caption: Developer Guide
 :hidden:
 dev/dev_install
-dev/workflow_tutorial
-dev/vasp_tests
-dev/abinit_tests
 ```
 
 ```{toctree}
 :caption: About
 :hidden:
 about/changelog
-about/contributors
 about/contributing
 about/license
 ```
 
-# atomate2 documentation
+# torch_sim documentation
 
 **Date**: {sub-ref}`today`
 
 **Useful links**:
-[Source Repository](https://github.com/materialsproject/atomate2) |
-[Issues & Ideas](https://github.com/materialsproject/atomate2/issues) |
-[Q&A Support](https://matsci.org/c/atomate)
+[Source Repository](https://github.com/Radical-AI/torch_sim) |
+[Issues & Ideas](https://github.com/Radical-AI/torch_sim/issues) |
 
 Atomate2 is an open-source library providing computational workflows for
 automating first-principles calculations.
@@ -59,7 +45,7 @@ automating first-principles calculations.
 :class-header: bg-light
 **User Guide** 🚀
 ^^^
-The user guide provides in-depth information and tutorials for using *atomate2*.
+The user guide provides in-depth information and tutorials for using *torch_sim*.
 :::
 
 :::{grid-item-card}
@@ -77,7 +63,7 @@ support forum.
 :class-header: bg-light
 **API reference** 📖
 ^^^
-The reference guide contains a detailed description of the *atomate2* API. It
+The reference guide contains a detailed description of the *torch_sim* API. It
 assumes that you have an understanding of the key concepts.
 :::
 

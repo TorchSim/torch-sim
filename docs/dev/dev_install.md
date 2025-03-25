@@ -15,7 +15,7 @@ fireworks components:
 
 ## Install from source
 
-To install torch_sim from source, clone the repository from [github](https://github.com/materialsproject/torch_sim)
+To install torch_sim from source, clone the repository from [github](https://github.com/Radical-AI/torch_sim)
 
 ```bash
 git clone https://github.com/Radical-AI/torch_sim
@@ -69,4 +69,10 @@ Next, the docs can be built to the `docs_build` directory:
 
 ```bash
 sphinx-build docs docs_build
+```
+
+And launched with:
+
+```bash
+python -m http.server -d docs_build
 ```
