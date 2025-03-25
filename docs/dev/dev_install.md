@@ -78,5 +78,15 @@ And launched with:
 python -m http.server -d docs_build
 ```
 
+To locally generate the tutorials, they must be copied to the docs folder,
+converted to `.ipynb` files, and executed.
+```bash
+cp -r examples/tutorials docs/
+jupytext --set-formats "py:percent,ipynb" docs/tutorials/*.py
+jupytext --set-kernel python3 docs/tutorials/*.py
+jupytext --to notebook --execute docs/tutorials/*.py
+rm docs/tutorials/*.py
+```
+
 Documentation structure based on Alex Ganose (@utf) exceptional 
 [atomate2](https://materialsproject.github.io/atomate2/) package.

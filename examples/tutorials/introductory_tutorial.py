@@ -14,11 +14,7 @@ print("Hello, world!")
 # %% [markdown]
 # ## Installation
 """
-cp -r examples/tutorials docs/
-jupytext --set-formats "py:percent,ipynb" docs/tutorials/*.py
-jupytext --set-kernel python3 docs/tutorials/*.py
-jupytext --to notebook --execute docs/tutorials/*.py
-jupyter nbconvert --to markdown docs/tutorials/*.ipynb
+Instructions!
 """
 
 # %%

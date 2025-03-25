@@ -41,7 +41,6 @@ jobs:
           jupytext --set-formats "py:percent,ipynb" docs/tutorials/*.py
           jupytext --set-kernel python3 docs/tutorials/*.py
           jupytext --to notebook --execute docs/tutorials/*.py
-          jupyter nbconvert --to markdown docs/tutorials/*.ipynb
           rm docs/tutorials/*.py
 
       - name: Build
