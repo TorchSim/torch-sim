@@ -53,8 +53,7 @@ docs = [
     "sphinx_design==0.6.1",
     "jupyterlab==4.3.4",
     "jupytext==1.16.7",
-    "nbsphinx>=0.9.7"
-    "pandoc>=2.4",
+    "nbsphinx>=0.9.7",
 ]
 [project.urls]
 Repo = "https://github.com/radical-ai/torch-sim"
