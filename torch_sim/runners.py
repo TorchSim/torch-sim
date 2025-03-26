@@ -351,7 +351,7 @@ def _configure_static_trajectory_reporter(
                 "variable_atomic_numbers": variable_atomic_numbers,
             },
         )
-        # unroll all the lists that are the values of the prop_calculators dict
+        # this uses the default prop_calculators and resets the state_frequency to 1
         all_calculators = list(
             chain.from_iterable(trajectory_reporter.prop_calculators.values())
         )

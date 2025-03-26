@@ -538,3 +538,4 @@ def test_optimize_with_default_autobatcher(
     for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
+

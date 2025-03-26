@@ -82,14 +82,12 @@ def test_write_state_single(
     trajectory: TorchSimTrajectory, random_state: MDState
 ) -> None:
     """Test writing a single MDState."""
-    trajectory.write_state(random_state, steps=0, save_energy=True)
+    trajectory.write_state(random_state, steps=0)
 
     assert "positions" in trajectory.array_registry
-    assert "energy" in trajectory.array_registry
     assert len(trajectory) == 1
 
     assert trajectory.get_array("positions").shape == (1, 10, 3)
-    assert trajectory.get_array("energy").shape == (1,)
     assert trajectory.get_array("atomic_numbers").shape == (1, 10)
     assert trajectory.get_array("cell").shape == (1, 3, 3)
     assert trajectory.get_array("pbc").shape == (1,)
@@ -99,13 +97,12 @@ def test_write_state_multiple(
     trajectory: TorchSimTrajectory, random_state: MDState
 ) -> None:
     """Test writing multiple MDStates."""
-    trajectory.write_state([random_state, random_state], [0, 1], save_energy=True)
+    trajectory.write_state([random_state, random_state], [0, 1])
 
     assert len(trajectory) == 2
     assert trajectory.get_array("positions").shape == (2, 10, 3)
-    assert trajectory.get_array("energy").shape == (2,)
     assert trajectory.get_array("atomic_numbers").shape == (1, 10)
-    assert trajectory.get_array("cell").shape == (1, 3, 3)
+    assert trajectory.get_array("cell").shape == (2, 3, 3)
     assert trajectory.get_array("pbc").shape == (1,)
 
 

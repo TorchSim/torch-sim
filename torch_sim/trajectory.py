@@ -845,9 +845,9 @@ class TorchSimTrajectory:
         arrays["positions"] = self.get_array("positions", start=frame, stop=frame + 1)[0]
 
         def return_prop(self: Self, prop: str, frame: int) -> np.ndarray:
-            if self._file.root.data.cell.shape[0] > 1:  # Variable cell
+            if getattr(self._file.root.data, prop).shape[0] > 1:  # Variable prop
                 start, stop = frame, frame + 1
-            else:  # Static cell
+            else:  # Static prop
                 start, stop = 0, 1
             return self.get_array(prop, start=start, stop=stop)[0]
 
