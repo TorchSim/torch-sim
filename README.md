@@ -20,7 +20,7 @@ TorchSim is an next-generation open-source atomistic simulation engine for the M
 ## Quick Start
 
 Here is a quick demonstration of many of the core features of TorchSim:
-cpu and gpu support, MLIP models, ASE integration, simple API,
+native support for GPUs, MLIP models, ASE integration, simple API,
 autobatching, and trajectory reporting, all in under 40 lines of code.
 
 ```python
@@ -30,8 +30,8 @@ from torch_sim.integrators import nvt_langevin
 from mace.calculators.foundations_models import mace_mp
 from torch_sim.models import MaceModel
 
-# run on cpu or gpu
-device = "cuda" if torch.cuda.is_available() else "cpu"
+# run natively on gpus
+device = torch.device("cuda")
 
 # easily load the model from mace-mp
 mace = mace_mp(model="small", return_raw_model=True)
@@ -39,12 +39,12 @@ mace_model = MaceModel(model=mace, device=device)
 
 # create many replicates of a cu system
 cu_atoms = bulk("Cu", "fcc", a=5.26, cubic=True).repeat(2, 2, 2)
-many_fe_atoms = [cu_atoms] * 500
+many_cu_atoms = [cu_atoms] * 500
 trajectory_files = [f"fe_traj_{i}" for i in many_cu_atoms]
 
 # run them all simultaneously with batching
 final_state = optimize(
-    system=many_fe_atoms,
+    system=many_cu_atoms,
     model=mace_model,
     integrator=nvt_langevin,
     n_steps=50,
