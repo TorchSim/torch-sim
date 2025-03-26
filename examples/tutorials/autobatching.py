@@ -1,3 +1,8 @@
+# /// script
+# dependencies = [
+#     "mace-torch>=0.3.11",
+# ]
+# ///
 # # %% [markdown]
 """
 # Autobatching
