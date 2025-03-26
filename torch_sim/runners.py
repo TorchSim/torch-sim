@@ -314,6 +314,67 @@ def optimize(
     return state
 
 
+def _configure_static_trajectory_reporter(
+    trajectory_reporter: TrajectoryReporter | dict | None,
+    state: SimState,
+    model: ModelInterface,
+    variable_atomic_numbers: bool,
+    save_state: bool,
+) -> tuple[TrajectoryReporter, bool]:
+    """Configure the trajectory reporter for static calculations.
+
+    Args:
+        trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
+            tracking trajectory. If a dict, will be passed to the TrajectoryReporter
+            constructor.
+        state (SimState): The state to use for the trajectory reporter
+        model (ModelInterface): The model to use for the trajectory reporter
+        variable_atomic_numbers (bool): Whether atomic numbers vary between frames.
+            Should only be set to `False` if all systems in the batch have the same
+            atomic numbers.
+        save_state (bool): Whether to save the state to the trajectory file.
+
+    Returns:
+        A tuple of the trajectory reporter and a boolean indicating whether to write
+        to the trajectory file.
+    """
+    if trajectory_reporter is None:
+        write_to_file = False
+
+        filenames = [f"should_not_exist_{idx}.h5md" for idx in range(state.n_batches)]
+        trajectory_reporter = TrajectoryReporter(
+            filenames=filenames,
+            state_frequency=int(save_state),
+            state_kwargs={
+                "save_velocities": False,
+                "save_forces": model.compute_forces,
+                "variable_atomic_numbers": variable_atomic_numbers,
+            },
+        )
+        # unroll all the lists that are the values of the prop_calculators dict
+        all_calculators = list(
+            chain.from_iterable(trajectory_reporter.prop_calculators.values())
+        )
+        trajectory_reporter.prop_calculators[1] = all_calculators
+        return trajectory_reporter, write_to_file
+    else:
+        if isinstance(trajectory_reporter, dict):
+            trajectory_reporter = TrajectoryReporter(**trajectory_reporter)
+
+        write_to_file = True
+        if trajectory_reporter.state_frequency != 1:
+            raise ValueError(
+                f"{trajectory_reporter.state_frequency=} must be 1 for statics"
+            )
+        prop_calc_keys = set(trajectory_reporter.prop_calculators)
+        if prop_calc_keys != {1}:
+            raise ValueError(
+                "trajectory_reporter.prop_calculators should only have key=1, got "
+                f"{prop_calc_keys}"
+            )
+        return trajectory_reporter, write_to_file
+
+
 def static(
     system: StateLike,
     model: ModelInterface,
@@ -351,39 +412,10 @@ def static(
     # initialize the state
     state: SimState = initialize_state(system, model.device, model.dtype)
 
-    if trajectory_reporter is None:
-        write_to_file = False
-
-        filenames = [f"should_not_exist_{idx}.h5md" for idx in range(state.n_batches)]
-        trajectory_reporter = TrajectoryReporter(
-            filenames=filenames,
-            state_frequency=int(save_state),
-            state_kwargs={
-                "save_velocities": False,
-                "save_forces": model.compute_forces,
-                "variable_atomic_numbers": variable_atomic_numbers,
-            },
-        )
-        # unroll all the lists that are the values of the prop_calculators dict
-        all_calculators = list(
-            chain.from_iterable(trajectory_reporter.prop_calculators.values())
-        )
-        trajectory_reporter.prop_calculators[1] = all_calculators
-    else:
-        trajectory_reporter = _configure_reporter(trajectory_reporter)
-        write_to_file = True
-        if trajectory_reporter.state_frequency != 1:
-            raise ValueError(
-                f"{trajectory_reporter.state_frequency=} must be 1 for statics"
-            )
-        prop_calc_keys = set(trajectory_reporter.prop_calculators)
-        if prop_calc_keys != {1}:
-            raise ValueError(
-                "trajectory_reporter.prop_calculators should only have key=1, got "
-                f"{prop_calc_keys}"
-            )
-
     batch_iterator = _configure_batches_iterator(model, state, autobatcher)
+    trajectory_reporter, write_to_file = _configure_static_trajectory_reporter(
+        trajectory_reporter, state, model, variable_atomic_numbers, save_state
+    )
 
     final_states: list[SimState] = []
     all_props: list[dict[str, torch.Tensor]] = []
