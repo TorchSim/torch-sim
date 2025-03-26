@@ -20,7 +20,7 @@ TorchSim is an next-generation open-source atomistic simulation engine for the M
 ## Quick Start
 
 Here is a quick demonstration of many of the core features of TorchSim:
-cpu and gpu support, MLIP models, batching, ASE integration, easy API,
+cpu and gpu support, MLIP models, ASE integration, simple API,
 autobatching, and trajectory reporting, all in under 40 lines of code.
 
 ```python
@@ -73,19 +73,9 @@ cd torch-sim
 pip install .
 ```
 
-## Running Example Scripts
+## Examples
 
-`torch-sim` has dozens of demos in the [`examples/`](examples) folder. To run any of the them, use the following command:
-
-```sh
-# if uv is not yet installed
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# pick any of the examples
-uv run --with . examples/2_Structural_optimization/2.3_MACE_FIRE.py
-uv run --with . examples/3_Dynamics/3.3_MACE_NVE_cueq.py
-uv run --with . examples/4_High_level_api/4.1_high_level_api.py
-```
+`torch-sim` has dozens of example scripts and tutorials in the [`examples/`](examples/readme.md) folder.
 
 ## Core Modules
 (Link to API docs)

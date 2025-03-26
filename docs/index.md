@@ -1,8 +1,9 @@
 ```{toctree}
 :caption: User Guide
 :hidden:
-user/index
-user/test
+user/introduction
+user/overview
+user/models
 tutorials/index
 ```
 
@@ -16,6 +17,8 @@ reference/index
 :caption: Developer Guide
 :hidden:
 dev/dev_install
+dev/add_model
+dev/batching
 ```
 
 ```{toctree}
