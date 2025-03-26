@@ -6,16 +6,15 @@ converting between different atomistic representations and handling simulation s
 """
 
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from itertools import chain
-from pathlib import Path
 
 import torch
 from numpy.typing import ArrayLike
 
 from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
 from torch_sim.models.interface import ModelInterface
-from torch_sim.quantities import batchwise_max_force, kinetic_energy, temperature
+from torch_sim.quantities import batchwise_max_force
 from torch_sim.state import SimState, StateLike, concatenate_states, initialize_state
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.units import UnitSystem
@@ -56,73 +55,6 @@ def _configure_batches_iterator(
             "must be bool or ChunkingAutoBatcher."
         )
     return batches
-
-
-def create_default_reporter(
-    filenames: str | Path | Sequence[str | Path],
-    property_frequency: int = 10,
-    state_frequency: int = 50,
-    properties: Sequence[str] = (
-        "positions",
-        "kinetic_energy",
-        "potential_energy",
-        "temperature",
-        "stress",
-    ),
-) -> TrajectoryReporter:
-    """Create a default trajectory reporter.
-
-    Args:
-        filenames (str | Path | list[str | Path]): Filenames to save the trajectory to.
-        property_frequency (int): Frequency to save properties at.
-        state_frequency (int): Frequency to save state at.
-        properties (Sequence[str]): Properties to save, possible properties are
-            "positions", "kinetic_energy", "potential_energy", "temperature",
-            "stress", "velocities", and "forces".
-
-    Returns:
-        A trajectory reporter
-    """
-
-    def compute_stress(state: SimState, model: ModelInterface) -> torch.Tensor:
-        # Check model type by name rather than instance
-        # TODO: this is a bit of a dumb way of tracking stress
-        if not model.compute_stress:
-            try:
-                og_model_stress = model.compute_stress
-                model.compute_stress = True
-            except AttributeError as err:
-                raise ValueError(
-                    "Model stress is not set to true and model stress cannot be "
-                    "set on the fly. Please set model.compute_stress to True."
-                ) from err
-        model_outputs = model(state)
-        if not model.compute_stress:
-            model.compute_stress = og_model_stress
-
-        return model_outputs["stress"]
-
-    possible_properties = {
-        "kinetic_energy": lambda state: kinetic_energy(state.momenta, state.masses),
-        "potential_energy": lambda state: state.energy,
-        "temperature": lambda state: temperature(state.momenta, state.masses),
-        "stress": compute_stress,
-    }
-
-    prop_calculators = {
-        prop: calculator
-        for prop, calculator in possible_properties.items()
-        if prop in properties
-    }
-
-    save_velocities = "velocities" in properties
-    save_forces = "forces" in properties
-    return TrajectoryReporter(
-        filenames=filenames,
-        state_frequency=state_frequency,
-        prop_calculators={property_frequency: prop_calculators},
-        state_kwargs={"save_velocities": save_velocities, "save_forces": save_forces},
-    )
 
 
 def integrate(

@@ -28,7 +28,7 @@ Notes:
 import copy
 import inspect
 import pathlib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any, Literal, Self
 
@@ -36,6 +36,7 @@ import numpy as np
 import tables
 import torch
 
+from torch_sim.quantities import kinetic_energy, temperature
 from torch_sim.state import SimState
 
 
@@ -89,7 +90,7 @@ class TrajectoryReporter:
         filenames: str | pathlib.Path | list[str | pathlib.Path],
         state_frequency: int = 100,
         *,
-        prop_calculators: dict[int, dict[str, Callable]] | None = None,
+        prop_calculators: dict[int, dict[str, Callable]] | bool = True,
         state_kwargs: dict | None = None,
         metadata: dict[str, str] | None = None,
         trajectory_kwargs: dict | None = None,
@@ -117,8 +118,19 @@ class TrajectoryReporter:
         self.trajectory_kwargs["mode"] = self.trajectory_kwargs.get(
             "mode", "w"
         )  # default will be to force overwrite if none is set
-        self.prop_calculators = prop_calculators or {}
-        self.state_kwargs = state_kwargs or {}
+
+        self.prop_calculators = (
+            self.get_default_prop_calculators()
+            if prop_calculators is True
+            else (prop_calculators or {})
+        )
+        properties = next(iter(self.prop_calculators.values()))
+        save_velocities = "velocities" in properties
+        save_forces = "forces" in properties
+        self.state_kwargs = state_kwargs or {
+            "save_velocities": save_velocities,
+            "save_forces": save_forces,
+        }
         self.shape_warned = False
         self.metadata = metadata
 
@@ -126,6 +138,36 @@ class TrajectoryReporter:
         self.load_new_trajectories(filenames)
 
         self._add_model_arg_to_prop_calculators()
+
+    @staticmethod
+    def get_default_prop_calculators(
+        property_frequency: int = 10,
+        properties: Sequence[str] = ("kinetic_energy", "potential_energy", "temperature"),
+    ) -> dict[int, dict[str, Callable]]:
+        """Create a default trajectory reporter.
+
+        Args:
+            property_frequency (int): Frequency to save properties at.
+            properties (Sequence[str]): Properties to save, possible properties are
+                "kinetic_energy", "potential_energy", "temperature".
+
+        Returns:
+            dict[int, dict[str, Callable]]: Dictionary mapping property frequencies to
+                dictionaries mapping property names to calculators
+        """
+        possible_properties = {
+            "kinetic_energy": lambda state: kinetic_energy(state.momenta, state.masses),
+            "potential_energy": lambda state: state.energy,
+            "temperature": lambda state: temperature(state.momenta, state.masses),
+        }
+
+        prop_calculators = {
+            prop: calculator
+            for prop, calculator in possible_properties.items()
+            if prop in properties
+        }
+
+        return {property_frequency: prop_calculators}
 
     def load_new_trajectories(
         self, filenames: str | pathlib.Path | list[str | pathlib.Path]
