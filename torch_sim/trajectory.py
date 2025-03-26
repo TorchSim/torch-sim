@@ -87,10 +87,10 @@ class TrajectoryReporter:
 
     def __init__(
         self,
-        filenames: str | pathlib.Path | list[str | pathlib.Path],
+        filenames: str | pathlib.Path | list[str | pathlib.Path] | None,
         state_frequency: int = 100,
         *,
-        prop_calculators: dict[int, dict[str, Callable]] | bool = True,
+        prop_calculators: dict[int, dict[str, Callable]] | None = None,
         state_kwargs: dict | None = None,
         metadata: dict[str, str] | None = None,
         trajectory_kwargs: dict | None = None,
@@ -99,7 +99,9 @@ class TrajectoryReporter:
 
         Args:
             filenames (str | pathlib.Path | list[str | pathlib.Path]): Path(s) to
-                save trajectory file(s)
+                save trajectory file(s). If None, the reporter will not save any
+                trajectories but `TrajectoryReporter.report` can still
+                be used to compute properties directly.
             state_frequency (int): How often to save state (in steps)
             prop_calculators (dict[int, dict[str, Callable]], optional): Dictionary
                 mapping frequencies to property calculators where each calculator is a
@@ -122,11 +124,7 @@ class TrajectoryReporter:
             "mode", "w"
         )  # default will be to force overwrite if none is set
 
-        self.prop_calculators = (
-            self.get_default_prop_calculators()
-            if prop_calculators is True
-            else (prop_calculators or {})
-        )
+        self.prop_calculators = prop_calculators or {}
         properties = next(iter(self.prop_calculators.values()))
         save_velocities = "velocities" in properties
         save_forces = "forces" in properties
@@ -138,39 +136,13 @@ class TrajectoryReporter:
         self.metadata = metadata
 
         self.trajectories = []
-        self.load_new_trajectories(filenames)
+        if filenames is not None:
+            self.load_new_trajectories(filenames)
+        else:
+            self.filenames = None
+            self.trajectories = []
 
         self._add_model_arg_to_prop_calculators()
-
-    @staticmethod
-    def get_default_prop_calculators(
-        property_frequency: int = 10,
-        properties: Sequence[str] = ("kinetic_energy", "potential_energy", "temperature"),
-    ) -> dict[int, dict[str, Callable]]:
-        """Create a default trajectory reporter.
-
-        Args:
-            property_frequency (int): Frequency to save properties at.
-            properties (Sequence[str]): Properties to save, possible properties are
-                "kinetic_energy", "potential_energy", "temperature".
-
-        Returns:
-            dict[int, dict[str, Callable]]: Dictionary mapping property frequencies to
-                dictionaries mapping property names to calculators
-        """
-        possible_properties = {
-            "kinetic_energy": lambda state: kinetic_energy(state.momenta, state.masses),
-            "potential_energy": lambda state: state.energy,
-            "temperature": lambda state: temperature(state.momenta, state.masses),
-        }
-
-        prop_calculators = {
-            prop: calculator
-            for prop, calculator in possible_properties.items()
-            if prop in properties
-        }
-
-        return {property_frequency: prop_calculators}
 
     def load_new_trajectories(
         self, filenames: str | pathlib.Path | list[str | pathlib.Path]
@@ -239,7 +211,6 @@ class TrajectoryReporter:
         state: SimState,
         step: int,
         model: torch.nn.Module | None = None,
-        write_to_file: bool = True,
     ) -> list[dict[str, torch.Tensor]]:
         """Report a state and step to the trajectory files.
 
@@ -269,7 +240,7 @@ class TrajectoryReporter:
         # batch_indices = torch.unique(state.batch).cpu().tolist()
 
         # Ensure we have the right number of trajectories
-        if len(batch_indices) != len(self.trajectories):
+        if self.filenames is not None and len(batch_indices) != len(self.trajectories):
             raise ValueError(
                 f"Number of batches ({len(batch_indices)}) doesn't match "
                 f"number of trajectory files ({len(self.trajectories)})"
@@ -278,13 +249,13 @@ class TrajectoryReporter:
         split_states = state.split()
         all_props: list[dict[str, torch.Tensor]] = []
         # Process each batch separately
-        for substate, trajectory in zip(split_states, self.trajectories, strict=True):
+        for i, substate in enumerate(split_states):
             # Slice the state once to get only the data for this batch
             self.shape_warned = True
 
             # Write state to trajectory if it's time
-            if self.state_frequency and step % self.state_frequency == 0:
-                trajectory.write_state(substate, step, **self.state_kwargs)
+            if self.state_frequency and step % self.state_frequency == 0 and self.filenames is not None:
+                self.trajectories[i].write_state(substate, step, **self.state_kwargs)
 
             # Process property calculators for this batch
             for report_frequency, calculators in self.prop_calculators.items():
@@ -300,9 +271,10 @@ class TrajectoryReporter:
                     props[prop_name] = prop
 
                 # Write properties to this trajectory
-                if props and write_to_file:
-                    trajectory.write_arrays(props, step)
+                if props:
                     all_props.append(props)
+                    if self.filenames is not None:
+                        self.trajectories[i].write_arrays(props, step)
 
         return all_props
 

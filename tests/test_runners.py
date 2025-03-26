@@ -8,7 +8,7 @@ from torch_sim.integrators import nve, nvt_langevin
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.optimizers import unit_cell_fire
 from torch_sim.quantities import kinetic_energy
-from torch_sim.runners import generate_force_convergence_fn, integrate, optimize
+from torch_sim.runners import generate_force_convergence_fn, integrate, optimize, static
 from torch_sim.state import SimState, initialize_state
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 from torch_sim.units import UnitSystem
@@ -538,4 +538,143 @@ def test_optimize_with_default_autobatcher(
     for init_state, final_state in zip(states, split_final_state, strict=False):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
+
+
+def test_static_single(ar_sim_state: SimState, lj_model: Any, tmp_path: Any) -> None:
+    """Test static calculation with LJ potential."""
+    trajectory_file = tmp_path / "static.h5md"
+    reporter = TrajectoryReporter(
+        filenames=trajectory_file,
+        state_frequency=1,
+        prop_calculators={1: {"potential_energy": lambda state: state.energy}},
+    )
+
+    props = static(
+        system=ar_sim_state,
+        model=lj_model,
+        trajectory_reporter=reporter,
+    )
+
+    assert isinstance(props, list)
+    assert len(props) == 1  # Single system = single props dict
+    assert "potential_energy" in props[0]
+    assert trajectory_file.exists()
+
+    # Check that energy was computed and saved correctly
+    with TorchSimTrajectory(trajectory_file) as traj:
+        saved_energy = traj.get_array("potential_energy")
+        assert len(saved_energy) == 1  # Static calc = single frame
+        np.testing.assert_allclose(saved_energy[0], props[0]["potential_energy"].numpy())
+
+
+def test_static_double(ar_double_sim_state: SimState, lj_model: Any, tmp_path: Any) -> None:
+    """Test static calculation with multiple systems."""
+    trajectory_files = [tmp_path / "static_0.h5md", tmp_path / "static_1.h5md"]
+    reporter = TrajectoryReporter(
+        filenames=trajectory_files,
+        state_frequency=1,
+        prop_calculators={1: {"potential_energy": lambda state: state.energy}},
+    )
+
+    props = static(
+        system=ar_double_sim_state,
+        model=lj_model,
+        trajectory_reporter=reporter,
+    )
+
+    assert isinstance(props, list)
+    assert len(props) == 2  # Two systems = two prop dicts
+    assert all("potential_energy" in p for p in props)
+    assert all(f.exists() for f in trajectory_files)
+
+    # Check energies were saved correctly
+    for idx, traj_file in enumerate(trajectory_files):
+        with TorchSimTrajectory(traj_file) as traj:
+            saved_energy = traj.get_array("potential_energy")
+            assert len(saved_energy) == 1
+            np.testing.assert_allclose(saved_energy[0], props[idx]["potential_energy"].numpy())
+
+
+def test_static_with_autobatcher(
+    ar_sim_state: SimState,
+    fe_fcc_sim_state: SimState,
+    lj_model: Any,
+) -> None:
+    """Test static calculation with autobatcher."""
+    states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
+    triple_state = initialize_state(
+        states,
+        lj_model.device,
+        lj_model.dtype,
+    )
+    autobatcher = ChunkingAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=260,
+    )
+
+    props = static(
+        system=triple_state,
+        model=lj_model,
+        autobatcher=autobatcher,
+    )
+
+    assert isinstance(props, list)
+    assert len(props) == 3  # Three systems = three prop dicts
+    
+    # Check that identical systems have identical energies
+    assert torch.allclose(props[0]["potential_energy"], props[2]["potential_energy"])
+    # Check that different systems have different energies
+    assert not torch.allclose(props[0]["potential_energy"], props[1]["potential_energy"])
+
+
+def test_static_with_autobatcher_and_reporting(
+    ar_sim_state: SimState,
+    fe_fcc_sim_state: SimState,
+    lj_model: Any,
+    tmp_path: Any,
+) -> None:
+    """Test static calculation with autobatcher and trajectory reporting."""
+    states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
+    triple_state = initialize_state(
+        states,
+        lj_model.device,
+        lj_model.dtype,
+    )
+    autobatcher = ChunkingAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=260,
+    )
+
+    trajectory_files = [
+        tmp_path / f"static_{batch}.h5md" for batch in range(len(states))
+    ]
+    reporter = TrajectoryReporter(
+        filenames=trajectory_files,
+        state_frequency=1,
+        prop_calculators={1: {"potential_energy": lambda state: state.energy}},
+    )
+
+    props = static(
+        system=triple_state,
+        model=lj_model,
+        trajectory_reporter=reporter,
+        autobatcher=autobatcher,
+    )
+
+    assert all(traj_file.exists() for traj_file in trajectory_files)
+    assert len(props) == 3
+
+    # Verify that properties were saved correctly to trajectory files
+    for idx, traj_file in enumerate(trajectory_files):
+        with TorchSimTrajectory(traj_file) as traj:
+            saved_energy = traj.get_array("potential_energy")
+            assert len(saved_energy) == 1
+            np.testing.assert_allclose(saved_energy[0], props[idx]["potential_energy"].numpy())
+
+    # Check that identical systems have identical energies
+    np.testing.assert_allclose(props[0]["potential_energy"].numpy(), props[2]["potential_energy"].numpy())
+    # Check that different systems have different energies
+    assert not np.allclose(props[0]["potential_energy"].numpy(), props[1]["potential_energy"].numpy())
 

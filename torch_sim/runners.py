@@ -8,25 +8,62 @@ converting between different atomistic representations and handling simulation s
 import warnings
 from collections.abc import Callable
 from itertools import chain
-
+from dataclasses import dataclass
 import torch
 from numpy.typing import ArrayLike
 
 from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
 from torch_sim.models.interface import ModelInterface
-from torch_sim.quantities import batchwise_max_force
+from torch_sim.quantities import batchwise_max_force, kinetic_energy, temperature
 from torch_sim.state import SimState, StateLike, concatenate_states, initialize_state
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.units import UnitSystem
+from typing import Literal
 
-
-def _configure_reporter(trajectory_reporter: TrajectoryReporter | dict | None):
+def _configure_reporter(
+    trajectory_reporter: TrajectoryReporter | dict | None,
+    # TODO: change to callable
+    runner: callable,
+    state_kwargs: dict | None = None,
+) -> TrajectoryReporter:
     if trajectory_reporter is None:
         return None
     elif isinstance(trajectory_reporter, TrajectoryReporter):
         return trajectory_reporter
     else:
-        return TrajectoryReporter(**trajectory_reporter)
+        possible_properties = {
+            "potential_energy": lambda state: state.energy,
+            "kinetic_energy": lambda state: kinetic_energy(state.momenta, state.masses),
+            "temperature": lambda state: temperature(state.momenta, state.masses),
+        }
+        if runner == integrate:
+            properties = ["kinetic_energy", "potential_energy", "temperature"]
+            prop_frequency = 10
+            state_frequency = 100
+        elif runner == optimize:
+            properties = ["potential_energy"]
+            prop_frequency = 10
+            state_frequency = 100
+        elif runner == static:
+            properties = ["potential_energy"]
+            prop_frequency = 1
+            state_frequency = 1
+        else:
+            raise ValueError(f"Invalid runner: {runner}")
+
+        prop_calculators = {
+            prop: calculator
+            for prop, calculator in possible_properties.items()
+            if prop in properties
+        }
+
+        # ordering is important to ensure we can override defaults
+        return TrajectoryReporter(
+            prop_calculators={prop_frequency: prop_calculators},
+            state_frequency=state_frequency,
+            state_kwargs=state_kwargs or {},
+            **trajectory_reporter,
+        )
 
 
 def _configure_batches_iterator(
@@ -119,7 +156,7 @@ def integrate(
     state = init_fn(state)
 
     batch_iterator = _configure_batches_iterator(model, state, autobatcher)
-    trajectory_reporter = _configure_reporter(trajectory_reporter)
+    trajectory_reporter = _configure_reporter(trajectory_reporter, integrate)
 
     final_states: list[SimState] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
@@ -271,7 +308,7 @@ def optimize(
     autobatcher = _configure_hot_swapping_autobatcher(
         model, state, autobatcher, max_attempts
     )
-    trajectory_reporter = _configure_reporter(trajectory_reporter)
+    trajectory_reporter = _configure_reporter(trajectory_reporter, optimize)
 
     step: int = 1
     last_energy = None
@@ -314,67 +351,6 @@ def optimize(
     return state
 
 
-def _configure_static_trajectory_reporter(
-    trajectory_reporter: TrajectoryReporter | dict | None,
-    state: SimState,
-    model: ModelInterface,
-    variable_atomic_numbers: bool,
-    save_state: bool,
-) -> tuple[TrajectoryReporter, bool]:
-    """Configure the trajectory reporter for static calculations.
-
-    Args:
-        trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
-            tracking trajectory. If a dict, will be passed to the TrajectoryReporter
-            constructor.
-        state (SimState): The state to use for the trajectory reporter
-        model (ModelInterface): The model to use for the trajectory reporter
-        variable_atomic_numbers (bool): Whether atomic numbers vary between frames.
-            Should only be set to `False` if all systems in the batch have the same
-            atomic numbers.
-        save_state (bool): Whether to save the state to the trajectory file.
-
-    Returns:
-        A tuple of the trajectory reporter and a boolean indicating whether to write
-        to the trajectory file.
-    """
-    if trajectory_reporter is None:
-        write_to_file = False
-
-        filenames = [f"should_not_exist_{idx}.h5md" for idx in range(state.n_batches)]
-        trajectory_reporter = TrajectoryReporter(
-            filenames=filenames,
-            state_frequency=int(save_state),
-            state_kwargs={
-                "save_velocities": False,
-                "save_forces": model.compute_forces,
-                "variable_atomic_numbers": variable_atomic_numbers,
-            },
-        )
-        # this uses the default prop_calculators and resets the state_frequency to 1
-        all_calculators = list(
-            chain.from_iterable(trajectory_reporter.prop_calculators.values())
-        )
-        trajectory_reporter.prop_calculators[1] = all_calculators
-        return trajectory_reporter, write_to_file
-    else:
-        if isinstance(trajectory_reporter, dict):
-            trajectory_reporter = TrajectoryReporter(**trajectory_reporter)
-
-        write_to_file = True
-        if trajectory_reporter.state_frequency != 1:
-            raise ValueError(
-                f"{trajectory_reporter.state_frequency=} must be 1 for statics"
-            )
-        prop_calc_keys = set(trajectory_reporter.prop_calculators)
-        if prop_calc_keys != {1}:
-            raise ValueError(
-                "trajectory_reporter.prop_calculators should only have key=1, got "
-                f"{prop_calc_keys}"
-            )
-        return trajectory_reporter, write_to_file
-
-
 def static(
     system: StateLike,
     model: ModelInterface,
@@ -382,15 +358,14 @@ def static(
     unit_system: UnitSystem = UnitSystem.metal,  # noqa: ARG001
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: ChunkingAutoBatcher | bool = False,
-    variable_atomic_numbers: bool = True,
-    save_state: bool = True,
 ) -> list[dict[str, torch.Tensor]]:
     """Run single point calculations on a batch of systems.
 
-    Unlike the other runners, this function does not modify or return a
-    state. Instead, it returns a list of dictionaries, one for each batch
-    in the input state. Each dictionary contains the properties calculated
-    for that batch.
+    Unlike the other runners, this function does not return a state. Instead, it
+    returns a list of dictionaries, one for each batch in the input state. Each
+    dictionary contains the properties calculated for that batch. It will also
+    modify the state in place with the "energy", "forces", and "stress" properties
+    if they are present in the model output.
 
     Args:
         system (StateLike): Input system to calculate properties for
@@ -398,13 +373,10 @@ def static(
         unit_system (UnitSystem): Unit system for energy and forces
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
             tracking trajectory. If a dict, will be passed to the TrajectoryReporter
-            trajectory
+            constructor and must include at least the "filenames" key. Any prop
+            calculators will be executed and the results will be returned in a list.
         autobatcher (ChunkingAutoBatcher | bool): Optional autobatcher to use for
             batching calculations
-        variable_atomic_numbers (bool): Whether atomic numbers vary between frames.
-            Should only be set to `False` if all systems in the batch have the same
-            atomic numbers.
-        save_state (bool): Whether to save the state to the trajectory file.
 
     Returns:
         list[dict[str, torch.Tensor]]: Maps of property names to tensors for all batches
@@ -413,24 +385,53 @@ def static(
     state: SimState = initialize_state(system, model.device, model.dtype)
 
     batch_iterator = _configure_batches_iterator(model, state, autobatcher)
-    trajectory_reporter, write_to_file = _configure_static_trajectory_reporter(
-        trajectory_reporter, state, model, variable_atomic_numbers, save_state
+    trajectory_reporter = _configure_reporter(
+        trajectory_reporter or dict(filenames=None),
+        static,
+        state_kwargs={
+            "variable_atomic_numbers": True,
+            "variable_masses": True,
+            "save_forces": model.compute_forces,
+        },
     )
+    if trajectory_reporter.state_frequency != 1:
+        raise ValueError(
+            f"{trajectory_reporter.state_frequency=} must be 1 for statics"
+        )
+    prop_calc_keys = set(trajectory_reporter.prop_calculators)
+    if prop_calc_keys != {1}:
+        raise ValueError(
+            "trajectory_reporter.prop_calculators should only have key=1, got "
+            f"{prop_calc_keys}"
+        )
+
+    @dataclass
+    class StaticState(SimState):
+        energy: torch.Tensor
+        forces: torch.Tensor
+        stress: torch.Tensor
 
     final_states: list[SimState] = []
     all_props: list[dict[str, torch.Tensor]] = []
     og_filenames = trajectory_reporter.filenames
     for substate, batch_indices in batch_iterator:
         # set up trajectory reporters
-        if autobatcher and trajectory_reporter:
+        if autobatcher and trajectory_reporter and og_filenames is not None:
             # we must remake the trajectory reporter for each batch
             trajectory_reporter.load_new_trajectories(
                 filenames=[og_filenames[idx] for idx in batch_indices]
             )
 
-        props = trajectory_reporter.report(
-            substate, 0, model=model, write_to_file=write_to_file
+        model_outputs = model(substate)
+
+        substate = StaticState(
+            **vars(substate),
+            energy=model_outputs["energy"],
+            forces=model_outputs["forces"] if model.compute_forces else None,
+            stress=model_outputs["stress"] if model.compute_stress else None,
         )
+
+        props = trajectory_reporter.report(substate, 0, model=model)
         all_props.extend(props)
 
         final_states.append(substate)

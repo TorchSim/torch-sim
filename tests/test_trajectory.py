@@ -565,6 +565,31 @@ def test_single_batch_reporter(
     trajectory.close()
 
 
+def test_multi_batch_reporter_filenames_none(
+    si_double_sim_state: SimState, tmp_path: Path, prop_calculators: dict
+) -> None:
+    """Test TrajectoryReporter with multiple batches and no filenames."""
+    reporter = TrajectoryReporter(
+        None,
+        state_frequency=1,
+        prop_calculators=prop_calculators,
+    )
+
+    # Run several steps
+    all_props = []
+    for step in range(5):
+        props = reporter.report(si_double_sim_state, step)
+        all_props.append(props)
+
+    # Check that the properties are the same
+    for props in all_props:
+        assert len(props) == 2  # Two batches
+        assert "ones" in props[0]
+        assert "center_of_mass" in props[0]
+        assert "ones" in props[1]
+        assert "center_of_mass" in props[1]
+
+
 def test_multi_batch_reporter(
     si_double_sim_state: SimState, tmp_path: Path, prop_calculators: dict
 ) -> None:
