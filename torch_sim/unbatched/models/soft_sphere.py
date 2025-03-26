@@ -273,7 +273,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
-        periodic: bool = True,
+        pbc: bool = True,
         compute_forces: bool = True,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
@@ -294,7 +294,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
                 Shape [n_species, n_species]. Must be symmetric.
             device: PyTorch device to use for calculations (CPU/GPU).
             dtype: PyTorch data type for numerical precision.
-            periodic: Whether to use periodic boundary conditions.
+            pbc: Whether to use periodic boundary conditions.
             compute_forces: Whether to compute atomic forces.
             compute_stress: Whether to compute the stress tensor.
             per_atom_energies: Whether to compute per-atom energy contributions.
@@ -306,7 +306,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
         super().__init__()
         self._device = device or torch.device("cpu")
         self._dtype = dtype
-        self.periodic = periodic
+        self.pbc = pbc
         self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self._per_atom_energies = per_atom_energies
@@ -404,7 +404,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
             mapping, shifts = vesin_nl_ts(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=self.pbc,
                 cutoff=self.cutoff,
                 sorti=False,
             )
@@ -412,7 +412,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
             dr_vec, distances = get_pair_displacements(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=self.pbc,
                 pairs=mapping,
                 shifts=shifts,
             )
@@ -422,7 +422,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
             dr_vec, distances = get_pair_displacements(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=self.pbc,
             )
             # Remove self-interactions and apply cutoff
             mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)

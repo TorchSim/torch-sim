@@ -8,7 +8,7 @@ systems simultaneously.
 The implementation supports various features including:
 
 * Computing energies, forces, and stresses
-* Handling periodic boundary conditions
+* Handling periodic boundary conditions (PBC)
 * Optional CuEq acceleration for improved performance
 * Batched calculations for multiple systems
 

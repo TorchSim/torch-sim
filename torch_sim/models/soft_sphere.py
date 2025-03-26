@@ -436,7 +436,7 @@ class SoftSphereMultiModel(torch.nn.Module):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
-        periodic: bool = True,
+        pbc: bool = True,
         compute_forces: bool = True,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
@@ -465,7 +465,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             device (torch.device | None): Device for computations. If None, uses CPU.
                 Defaults to None.
             dtype (torch.dtype): Data type for calculations. Defaults to torch.float32.
-            periodic (bool): Whether to use periodic boundary conditions. Defaults to
+            pbc (bool): Whether to use periodic boundary conditions. Defaults to
                 True.
             compute_forces (bool): Whether to compute forces. Defaults to True.
             compute_stress (bool): Whether to compute stress tensor. Defaults to False.
@@ -524,7 +524,7 @@ class SoftSphereMultiModel(torch.nn.Module):
         super().__init__()
         self.device = device or torch.device("cpu")
         self.dtype = dtype
-        self.periodic = periodic
+        self.pbc = pbc
         self.compute_forces = compute_forces
         self.compute_stress = compute_stress
         self.per_atom_energies = per_atom_energies
@@ -638,7 +638,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             mapping, shifts = vesin_nl_ts(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=self.pbc,
                 cutoff=self.cutoff,
                 sorti=False,
             )
@@ -646,7 +646,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             dr_vec, distances = get_pair_displacements(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=self.pbc,
                 pairs=mapping,
                 shifts=shifts,
             )
@@ -656,7 +656,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             dr_vec, distances = get_pair_displacements(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=self.pbc,
             )
             # Remove self-interactions and apply cutoff
             mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)
@@ -778,9 +778,9 @@ class SoftSphereMultiModel(torch.nn.Module):
         """
         if not isinstance(state, SimState):
             state = SimState(
-                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
+                **state, pbc=self.pbc, masses=torch.ones_like(state["positions"])
             )
-        elif state.pbc != self.periodic:
+        elif state.pbc != self.pbc:
             raise ValueError("PBC mismatch between model and state")
 
         # Handle batch indices if not provided
