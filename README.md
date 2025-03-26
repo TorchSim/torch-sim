@@ -19,62 +19,49 @@ TorchSim is an next-generation open-source atomistic simulation engine for the M
 
 ## Quick Start
 
+Here is a quick demonstration of many of the core features of TorchSim:
+cpu and gpu support, MLIP models, batching, ASE integration, easy API,
+autobatching, and trajectory reporting, all in under 40 lines of code.
 
 ```python
 from ase.build import bulk
-from torch_sim.runners import integrate
+from torch_sim import integrate
 from torch_sim.integrators import nvt_langevin
 from mace.calculators.foundations_models import mace_mp
-from torch_sim.models.mace import MaceModel
+from torch_sim.models import MaceModel
 
+# run on cpu or gpu
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# simply load the model from mace-mp
+# easily load the model from mace-mp
 mace = mace_mp(model="small", return_raw_model=True)
-mace_model = MaceModel(
-    model=mace,
-    device=device,
-    periodic=True,
-    dtype=torch.float64,
-    compute_forces=True,
-)
+mace_model = MaceModel(model=mace, device=device)
 
-# create a bulk example systems
-si_atoms = bulk("Si", "fcc", a=5.43, cubic=True)
-fe_atoms = bulk("Fe", "fcc", a=5.26, cubic=True)
-fe_atoms_supercell = fe_atoms.repeat([2, 2, 2])
-si_atoms_supercell = si_atoms.repeat([2, 2, 2])
+# create many replicates of a cu system
+cu_atoms = bulk("Cu", "fcc", a=5.26, cubic=True).repeat(2, 2, 2)
+many_fe_atoms = [cu_atoms] * 500
+trajectory_files = [f"fe_traj_{i}" for i in many_cu_atoms]
 
-# create a reporter to report the trajectories
-trajectory_files = [
-    "si_traj.h5md",
-    "fe_traj.h5md",
-    "si_supercell_traj.h5md",
-    "fe_supercell_traj.h5md",
-]
-reporter = TrajectoryReporter(
-    filenames=trajectory_files,
-    # report state every 10 steps
-    state_frequency=50,
-    prop_calculators=prop_calculators,
-)
-
-# seamlessly run a batched simulation
+# run them all simultaneously with batching
 final_state = optimize(
-    system=[si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell],
+    system=many_fe_atoms,
     model=mace_model,
     integrator=nvt_langevin,
-    n_steps=100,
-    temperature=2000,
+    n_steps=50,
+    temperature=1000,
     timestep=0.002,
-    trajectory_reporter=reporter,
+    trajectory_reporter=dict(filenames=trajectory_files, state_frequency=10),
+    autobatching=True
 )
-final_atoms = state.to_atoms()
-final_fe_atoms_supercell = final_atoms[3]
+final_atoms_list = state.to_atoms()
 
+# extract the final energy from the trajectory file
+final_energies = []
 for filename in trajectory_files:
     with TorchSimTrajectory(filename) as traj:
-        print(traj)
+        final_energies.append(traj.get_array("potential_energy")[-1])
+
+print(final_energies)
 ```
 
 
