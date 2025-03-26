@@ -28,7 +28,7 @@ from torch_sim.elastic import (
 
 def get_bravais_type(  # noqa: C901
     atoms: Atoms, symprec: float = 1e-5
-) -> tuple[str, BravaisType, str, int]:
+) -> BravaisType:
     """Determine Bravais lattice type from ASE Atoms object.
 
     Args:
@@ -205,7 +205,7 @@ def get_bravais_type(  # noqa: C901
         latt_type = "primitive"
         bravais = BravaisType.TRICLINIC
 
-    return latt_type, bravais, sg_symbol, sg_nr
+    return bravais
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -236,9 +236,10 @@ state = ElasticState(
     cell=torch.tensor(struct.get_cell().array, device=device, dtype=dtype),
 )
 
-latt_type, bravais_type, sg_symbol, sg_nr = get_bravais_type(struct)
+#bravais_type = get_bravais_type(struct) # TODO: find the symmetry of the actual structure and not of the high symmetry structure
+bravais_type = BravaisType.TRICLINIC     # fixing the triclinic symmetry for now 
 deformations = get_elementary_deformations(
-    state, n_deform=6, max_strain=2.0, bravais_type=bravais_type
+    state, n_deform=6, max_strain_normal=0.01, max_strain_shear=0.06, bravais_type=bravais_type
 )
 
 ref_pressure = -torch.mean(torch.tensor(struct.get_stress()[:3], device=device), dim=0)

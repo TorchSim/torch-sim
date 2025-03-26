@@ -696,7 +696,7 @@ def get_cart_deformed_cell(
         axis: Direction of deformation:
             - 0,1,2 for x,y,z cartesian deformations
             - 3,4,5 for yz,xz,xy shear deformations
-        size: Deformation magnitude in percent (for cartesian) or degrees (for shear)
+        size: Deformation magnitude
 
     Returns:
         ElasticState: New state with deformed cell and scaled positions
@@ -717,15 +717,14 @@ def get_cart_deformed_cell(
     L = torch.eye(3, dtype=base_state.cell.dtype, device=base_state.cell.device)
 
     # Apply deformation based on axis
-    s = size / 100.0
     if axis < 3:
-        L[axis, axis] += s
+        L[axis, axis] += size
     elif axis == 3:
-        L[1, 2] += s  # yz shear
+        L[1, 2] += size  # yz shear
     elif axis == 4:
-        L[0, 2] += s  # xz shear
+        L[0, 2] += size  # xz shear
     else:  # axis == 5
-        L[0, 1] += s  # xy shear
+        L[0, 1] += size  # xy shear
 
     # Convert positions to fractional coordinates
     old_inv = torch.linalg.inv(base_state.cell)
@@ -741,7 +740,8 @@ def get_cart_deformed_cell(
 def get_elementary_deformations(
     base_state: ElasticState,
     n_deform: int = 5,
-    max_strain: float = 2.0,
+    max_strain_normal: float = 0.01,
+    max_strain_shear: float = 0.06,
     bravais_type: BravaisType = None,
 ) -> list[ElasticState]:
     """Generate elementary deformations for elastic tensor calculation.
@@ -753,8 +753,8 @@ def get_elementary_deformations(
     Args:
         base_state: ElasticState containing the base structure to be deformed
         n_deform: Number of deformations per non-equivalent axis
-        max_strain: Maximum deformation magnitude (in percent for normal strain,
-                   degrees for shear strain)
+        max_strain_normal: Maximum deformation magnitude
+        max_strain_shear: Maximum deformation magnitude
         bravais_type: BravaisType enum specifying the crystal system. If None,
                      defaults to lowest symmetry (triclinic)
 
@@ -762,10 +762,10 @@ def get_elementary_deformations(
         List[ElasticState]: List of deformed structures
 
     Notes:
-        - For normal strains (axes 0,1,2), deformations range from -max_strain to
-          +max_strain
-        - For shear strains (axes 3,4,5), deformations range from max_strain/10 to
-          max_strain
+        - For normal strains (axes 0,1,2), deformations range from -max_strain_normal to
+          +max_strain_normal
+        - For shear strains (axes 3,4,5), deformations range from -max_strain_shear to
+          +max_strain_shear
         - Deformation axes are:
             0,1,2: x,y,z cartesian deformations
             3,4,5: yz,xz,xy shear deformations
@@ -801,13 +801,16 @@ def get_elementary_deformations(
         if axis < 3:  # Normal strain
             # Generate symmetric strains around zero
             strains = torch.linspace(
-                -max_strain, max_strain, n_deform, device=device, dtype=dtype
+                -max_strain_normal, max_strain_normal, n_deform, device=device, dtype=dtype
             )
         else:  # Shear strain
-            # Generate positive-only strains, skipping zero
+            # Generate symmetric strains around zero
             strains = torch.linspace(
-                max_strain / 10.0, max_strain, n_deform, device=device, dtype=dtype
+                -max_strain_shear, max_strain_shear, n_deform, device=device, dtype=dtype
             )
+    
+        # Skip zero strain
+        strains = strains[strains != 0]
 
         for strain in strains:
             deformed = get_cart_deformed_cell(
