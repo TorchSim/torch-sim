@@ -4,7 +4,79 @@
 [![codecov](https://codecov.io/gh/radical-ai/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/radical-ai/torch-sim)
 
 
-Torch-Sim is an open-source simulation engine in PyTorch focused on atomistic simulations. It provides a easy to use and efficient interface for running simulations on both CPU and GPU. Being built on PyTorch, it allows for automatic differentiation of the simulation equations, making it easy to compute quantities of interest.
+TorchSim is an next-generation open-source atomistic simulation engine for the MLIP era. By rewriting the core primitives of atomistic simulation in Pytorch, it allows orders of magnitude acceleration of popular machine learning potentials.
+
+* automatic batching and GPU memory management allowing up to 200x simulation speedup
+* Support for MACE and Fairchem MLIP models
+* Support for classical lennard jones, morse, and soft-sphere potentials
+* integration with NVE, NVT Langevin, and NPT langevin integrators
+* optimization with gradient descent, unit cell FIRE, or frechet cell FIRE
+* swap monte carlo and hybrid swap monte carlo
+* an extensible binary trajectory writing format with support for arbitrary properties
+* a simple and intuitive high-level API for new users
+* integration with ASE, Pymatgen, and Phonopy
+* and more: differentiable simulation, elastic properties, a2c workflow...
+
+## Quick Start
+
+
+```python
+from ase.build import bulk
+from torch_sim.runners import integrate
+from torch_sim.integrators import nvt_langevin
+from mace.calculators.foundations_models import mace_mp
+from torch_sim.models.mace import MaceModel
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# simply load the model from mace-mp
+mace = mace_mp(model="small", return_raw_model=True)
+mace_model = MaceModel(
+    model=mace,
+    device=device,
+    periodic=True,
+    dtype=torch.float64,
+    compute_forces=True,
+)
+
+# create a bulk example systems
+si_atoms = bulk("Si", "fcc", a=5.43, cubic=True)
+fe_atoms = bulk("Fe", "fcc", a=5.26, cubic=True)
+fe_atoms_supercell = fe_atoms.repeat([2, 2, 2])
+si_atoms_supercell = si_atoms.repeat([2, 2, 2])
+
+# create a reporter to report the trajectories
+trajectory_files = [
+    "si_traj.h5md",
+    "fe_traj.h5md",
+    "si_supercell_traj.h5md",
+    "fe_supercell_traj.h5md",
+]
+reporter = TrajectoryReporter(
+    filenames=trajectory_files,
+    # report state every 10 steps
+    state_frequency=50,
+    prop_calculators=prop_calculators,
+)
+
+# seamlessly run a batched simulation
+final_state = optimize(
+    system=[si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell],
+    model=mace_model,
+    integrator=nvt_langevin,
+    n_steps=100,
+    temperature=2000,
+    timestep=0.002,
+    trajectory_reporter=reporter,
+)
+final_atoms = state.to_atoms()
+final_fe_atoms_supercell = final_atoms[3]
+
+for filename in trajectory_files:
+    with TorchSimTrajectory(filename) as traj:
+        print(traj)
+```
+
 
 ## Installation
 
@@ -28,191 +100,11 @@ uv run --with . examples/3_Dynamics/3.3_MACE_NVE_cueq.py
 uv run --with . examples/4_High_level_api/4.1_high_level_api.py
 ```
 
-## High-level API Example with ASE
-
-```python
-from ase.build import bulk
-from torch_sim.runners import integrate, state_to_atoms
-from torch_sim.integrators import nvt_langevin
-from torch_sim.models.lennard_jones import LennardJonesModel
-import torch
-
-# instantiate a lennard jones model for Si
-lj_model = LennardJonesModel(
-    sigma=2.0,
-    epsilon=0.1,
-    device=torch.device("cpu"),
-    dtype=torch.float64,
-)
-# create a bulk silicon system
-si_atoms = bulk("Si", "fcc", a=5.43, cubic=True)
-
-# integrate the system with NVT Langevin dynamics
-final_state = integrate(
-    system=si_atoms,
-    model=lj_model,
-    integrator=nvt_langevin,
-    n_steps=1000,
-    temperature=2000,
-    timestep=0.002,
-)
-# retrieve the final state as an ASE Atoms object
-final_atoms = state_to_atoms(final_state)
-```
-
-## Low-level API Example with ASE
-
-```python
-# the model and atoms will remain the same
-
-from torch_sim.runners import atoms_to_state
-from torch_sim.units import MetalUnits
-
-# instantiate the state
-initial_state = atoms_to_state(si_atoms, device=lj_model.device, dtype=lj_model.dtype)
-
-# instantiate the integrator
-init_state_fn, update_fn = nvt_langevin(
-    model=lj_model,
-    dt=0.002 * MetalUnits.time,
-    kT=2000 * MetalUnits.temperature,
-)
-
-# initialize the state
-initial_state = init_state_fn(initial_state, kT=2000 * MetalUnits.temperature)
-
-# run the simulation
-for step in range(1000):
-    state = update_fn(initial_state, kT=2000 * MetalUnits.temperature)
-```
-
-## High-level API with reporting
-
-```python
-from torch_sim.trajectory import TrajectoryReporter, TorchSimTrajectory
-from torch_sim.quantities import kinetic_energy
-
-trajectory_file = "lj_trajectory.h5md"
-# report potential energy every 10 steps and kinetic energy every 20 steps
-prop_calculators = {
-    10: {"potential_energy": lambda state: state.energy},
-    20: {"kinetic_energy": lambda state: kinetic_energy(state.momenta, state.masses)},
-}
-
-reporter = TrajectoryReporter(
-    trajectory_file,
-    # report state every 10 steps
-    state_frequency=10,
-    prop_calculators=prop_calculators,
-)
-
-# integrate the system with NVT Langevin dynamics
-final_state = integrate(
-    system=si_atoms,
-    model=lj_model,
-    integrator=nvt_langevin,
-    n_steps=1000,
-    temperature=2000,
-    timestep=0.002,
-    trajectory_reporter=reporter,
-)
-
-# Check energy fluctuations
-with TorchSimTrajectory(trajectory_file) as traj:
-    kinetic_energies = traj.get_array("kinetic_energy")
-    potential_energies = traj.get_array("potential_energy")
-    final_energy = potential_energies[-1]
-
-    final_atoms = traj.get_atoms(-1)
-```
-
-## High-level API with MACE and batching
-
-```python
-from mace.calculators.foundations_models import mace_mp
-from torch_sim.models.mace import MaceModel
-
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-# simply load the model from mace-mp
-mace = mace_mp(model="small", return_raw_model=True)
-mace_model = MaceModel(
-    model=mace,
-    device=device,
-    periodic=True,
-    dtype=torch.float64,
-    compute_forces=True,
-)
-
-# create a bulk example systems
-fe_atoms = bulk("Fe", "fcc", a=5.26, cubic=True)
-fe_atoms_supercell = fe_atoms.repeat([2, 2, 2])
-si_atoms_supercell = si_atoms.repeat([2, 2, 2])
-
-# create a reporter to report the trajectories
-trajectory_files = [
-    "si_traj.h5md",
-    "fe_traj.h5md",
-    "si_supercell_traj.h5md",
-    "fe_supercell_traj.h5md",
-]
-reporter = TrajectoryReporter(
-    filenames=trajectory_files,
-    # report state every 10 steps
-    state_frequency=50,
-    prop_calculators=prop_calculators,
-)
-
-# seamlessly run a batched simulation
-final_state = integrate(
-    system=[si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell],
-    model=mace_model,
-    integrator=nvt_langevin,
-    n_steps=100,
-    temperature=2000,
-    timestep=0.002,
-    trajectory_reporter=reporter,
-)
-final_atoms = state_to_atoms(final_state)
-final_fe_atoms_supercell = final_atoms[3]
-
-for filename in trajectory_files:
-    with TorchSimTrajectory(filename) as traj:
-        print(traj)
-```
-<!--
-## Core modules
-
-Torch-Sim is built around the following core modules:
+## Core Modules
+(Link to API docs)
 
 - [`torch_sim.integrators`](torch_sim/integrators.py): Provides batched molecular dynamics integrators for simulating the time evolution of atomistic systems.
 
-- [`torch_sim.optimizers`](torch_sim/optimizers.py): Provides optimization algorithms for atomistic systems, including gradient descent and the FIRE algorithm.
-
-- [`torch_sim.unbatched`](torch_sim/unbatched): Contains unbatched versions of the integrators and optimizers.
-
-- [`torch_sim.monte_carlo`](torch_sim/monte_carlo.py): Contains functions for performing Monte Carlo simulations, including swap-based Monte Carlo.
-
-- [`torch_sim.neighbors`](torch_sim/neighbors.py): Contains functions for constructing neighbor lists.
-
-- [`torch_sim.quantities`](torch_sim/quantities.py): Functions for computing physical quantities, such as kinetic energy, from simulation data.
-
-- [`torch_sim.runners`](torch_sim/runners.py): Provides functions for running molecular dynamics simulations and optimizations, handling simulation state and conversions between different representations.
-
-- [`torch_sim.state`](torch_sim/state.py): Defines the `SimState` class, a `dataclass` for representing the state of atomistic systems.
-
-- [`torch_sim.trajectory`](torch_sim/trajectory.py): Implements classes for handling trajectory data, allowing for reading and writing of simulation data to HDF5 files.
-
-- [`torch_sim.transforms`](torch_sim/transforms.py): Functions for handling coordinate transformations and periodic boundary conditions in molecular simulations.
-
-- [`torch_sim.elastic`](torch_sim/elastic.py): Contains classes and functions for calculating crystal elasticity, including the representation of elastic states and computation of elastic tensors.
-
-- [`torch_sim.units`](torch_sim/units.py): Unit system and conversion factors
-
-- [`torch_sim.autobatching`](torch_sim/autobatching.py): Contains classes for automatically batching simulations.
-
-Each module is designed to work seamlessly with PyTorch, enabling efficient and flexible molecular simulations.
--->
 
 ## Citation
 

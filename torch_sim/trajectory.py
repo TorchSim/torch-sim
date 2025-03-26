@@ -105,10 +105,11 @@ class TrajectoryReporter:
                 mapping frequencies to property calculators where each calculator is a
                 function that takes a state and optionally a model and returns a tensor.
                 Defaults to None.
-            state_kwargs (dict, optional): Additional arguments for state writing.
+            state_kwargs (dict, optional): Additional arguments for state writing. 
+                Passed to the `TorchSimTrajectory.write_state` method.
             metadata (dict[str, str], optional): Metadata to save in trajectory file.
             trajectory_kwargs (dict, optional): Additional arguments for trajectory
-                initialization.
+                initialization. Passed to the `TorchSimTrajectory.__init__` method.
 
         Raises:
             ValueError: If filenames are not unique
