@@ -1,5 +1,5 @@
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from pathlib import Path
 
 import numpy as np
@@ -37,9 +37,11 @@ def random_state() -> MDState:
 
 
 @pytest.fixture
-def trajectory(test_file: Path) -> TorchSimTrajectory:
+def trajectory(test_file: Path) -> Generator[TorchSimTrajectory, None, None]:
     """Create a trajectory file for testing."""
-    return TorchSimTrajectory(test_file, compress_data=True, mode="w")
+    traj = TorchSimTrajectory(test_file, compress_data=True, mode="w")
+    yield traj
+    traj.close()
 
 
 def test_initialization(test_file: Path) -> None:
