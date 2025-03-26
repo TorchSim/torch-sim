@@ -20,6 +20,15 @@ from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.units import UnitSystem
 
 
+def _configure_reporter(trajectory_reporter: TrajectoryReporter | dict | None):
+    if trajectory_reporter is None:
+        return None
+    elif isinstance(trajectory_reporter, TrajectoryReporter):
+        return trajectory_reporter
+    else:
+        return TrajectoryReporter(**trajectory_reporter)
+
+
 def _configure_batches_iterator(
     model: ModelInterface,
     state: SimState,
@@ -66,7 +75,7 @@ def integrate(
     temperature: float | ArrayLike,
     timestep: float,
     unit_system: UnitSystem = UnitSystem.metal,
-    trajectory_reporter: TrajectoryReporter | None = None,
+    trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: ChunkingAutoBatcher | bool = False,
     **integrator_kwargs: dict,
 ) -> SimState:
@@ -82,8 +91,9 @@ def integrate(
         timestep (float): Integration time step
         unit_system (UnitSystem): Unit system for temperature and time
         integrator_kwargs: Additional keyword arguments for integrator
-        trajectory_reporter (TrajectoryReporter | None): Optional reporter for tracking
-            trajectory.
+        trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
+            tracking trajectory. If a dict, will be passed to the TrajectoryReporter
+            constructor.
         autobatcher (ChunkingAutoBatcher | bool): Optional autobatcher to use
         **integrator_kwargs: Additional keyword arguments for integrator init function
 
@@ -109,6 +119,7 @@ def integrate(
     state = init_fn(state)
 
     batch_iterator = _configure_batches_iterator(model, state, autobatcher)
+    trajectory_reporter = _configure_reporter(trajectory_reporter)
 
     final_states: list[SimState] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
@@ -210,7 +221,7 @@ def optimize(
     optimizer: Callable,
     convergence_fn: Callable | None = None,
     unit_system: UnitSystem = UnitSystem.metal,
-    trajectory_reporter: TrajectoryReporter | None = None,
+    trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: HotSwappingAutoBatcher | bool = False,
     max_steps: int = 10_000,
     steps_between_swaps: int = 5,
@@ -227,8 +238,9 @@ def optimize(
             boolean tensor of length n_batches
         unit_system (UnitSystem): Unit system for energy tolerance
         optimizer_kwargs: Additional keyword arguments for optimizer init function
-        trajectory_reporter (TrajectoryReporter | None): Optional reporter for tracking
-            optimization trajectory
+        trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
+            tracking optimization trajectory. If a dict, will be passed to the
+            TrajectoryReporter constructor.
         autobatcher (HotSwappingAutoBatcher | bool): Optional autobatcher to use. If
             False, the system will assume
             infinite memory and will not batch, but will still remove converged
@@ -259,6 +271,7 @@ def optimize(
     autobatcher = _configure_hot_swapping_autobatcher(
         model, state, autobatcher, max_attempts
     )
+    trajectory_reporter = _configure_reporter(trajectory_reporter)
 
     step: int = 1
     last_energy = None
@@ -306,23 +319,31 @@ def static(
     model: ModelInterface,
     *,
     unit_system: UnitSystem = UnitSystem.metal,  # noqa: ARG001
-    trajectory_reporter: TrajectoryReporter | None = None,
+    trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: ChunkingAutoBatcher | bool = False,
     variable_atomic_numbers: bool = True,
     save_state: bool = True,
 ) -> list[dict[str, torch.Tensor]]:
     """Run single point calculations on a batch of systems.
 
+    Unlike the other runners, this function does not modify or return a
+    state. Instead, it returns a list of dictionaries, one for each batch
+    in the input state. Each dictionary contains the properties calculated
+    for that batch.
+
     Args:
         system (StateLike): Input system to calculate properties for
         model (ModelInterface): Neural network model module
         unit_system (UnitSystem): Unit system for energy and forces
-        trajectory_reporter (TrajectoryReporter | None): Optional reporter for tracking
+        trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
+            tracking trajectory. If a dict, will be passed to the TrajectoryReporter
             trajectory
-        autobatcher (ChunkingAutoBatcher | bool): Optional autobatcher to use for batching
-            calculations
-        variable_atomic_numbers (bool): Whether atomic numbers vary between frames
-        save_state (bool): Whether to save the state to the trajectory file
+        autobatcher (ChunkingAutoBatcher | bool): Optional autobatcher to use for
+            batching calculations
+        variable_atomic_numbers (bool): Whether atomic numbers vary between frames.
+            Should only be set to `False` if all systems in the batch have the same
+            atomic numbers.
+        save_state (bool): Whether to save the state to the trajectory file.
 
     Returns:
         list[dict[str, torch.Tensor]]: Maps of property names to tensors for all batches
@@ -331,25 +352,26 @@ def static(
     state: SimState = initialize_state(system, model.device, model.dtype)
 
     if trajectory_reporter is None:
-        props: dict[str, Callable] = {}
-        if model.compute_forces:
-            props["forces"] = lambda state: state.forces
-        if model.compute_stress:
-            props["stress"] = lambda state: state.stress
-        # TODO: create temporary files for reporting or consider removing
-        # TrajectoryReporter entirely
-        filenames = [f"static_{idx}.h5md" for idx in range(state.n_batches)]
+        write_to_file = False
+
+        filenames = [f"should_not_exist_{idx}.h5md" for idx in range(state.n_batches)]
         trajectory_reporter = TrajectoryReporter(
             filenames=filenames,
             state_frequency=int(save_state),
-            prop_calculators={1: props},
             state_kwargs={
                 "save_velocities": False,
                 "save_forces": model.compute_forces,
                 "variable_atomic_numbers": variable_atomic_numbers,
             },
         )
+        # unroll all the lists that are the values of the prop_calculators dict
+        all_calculators = list(
+            chain.from_iterable(trajectory_reporter.prop_calculators.values())
+        )
+        trajectory_reporter.prop_calculators[1] = all_calculators
     else:
+        trajectory_reporter = _configure_reporter(trajectory_reporter)
+        write_to_file = True
         if trajectory_reporter.state_frequency != 1:
             raise ValueError(
                 f"{trajectory_reporter.state_frequency=} must be 1 for statics"
@@ -374,7 +396,9 @@ def static(
                 filenames=[og_filenames[idx] for idx in batch_indices]
             )
 
-        props = trajectory_reporter.report(substate, 0, model=model)
+        props = trajectory_reporter.report(
+            substate, 0, model=model, write_to_file=write_to_file
+        )
         all_props.extend(props)
 
         final_states.append(substate)

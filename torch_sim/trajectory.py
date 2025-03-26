@@ -106,7 +106,9 @@ class TrajectoryReporter:
                 function that takes a state and optionally a model and returns a tensor.
                 Defaults to None.
             state_kwargs (dict, optional): Additional arguments for state writing. 
-                Passed to the `TorchSimTrajectory.write_state` method.
+                Passed to the `TorchSimTrajectory.write_state` method. These can be
+                set to save the velocities and forces or to allow variable masses,
+                and atomic numbers across the trajectory.
             metadata (dict[str, str], optional): Metadata to save in trajectory file.
             trajectory_kwargs (dict, optional): Additional arguments for trajectory
                 initialization. Passed to the `TorchSimTrajectory.__init__` method.
@@ -233,7 +235,11 @@ class TrajectoryReporter:
                     self.prop_calculators[frequency][name] = new_fn
 
     def report(
-        self, state: SimState, step: int, model: torch.nn.Module | None = None
+        self,
+        state: SimState,
+        step: int,
+        model: torch.nn.Module | None = None,
+        write_to_file: bool = True,
     ) -> list[dict[str, torch.Tensor]]:
         """Report a state and step to the trajectory files.
 
@@ -248,6 +254,9 @@ class TrajectoryReporter:
             model (torch.nn.Module, optional): Model used for simulation.
                 Defaults to None. Must be provided if any prop_calculators
                 are provided.
+            write_to_file (bool, optional): Whether to write the state to the trajectory
+                files. Defaults to True. Should only be set to `False` if the props
+                are being collected separately.
 
         Returns:
             list[dict[str, torch.Tensor]]: Map of property names to tensors for each batch
@@ -291,7 +300,7 @@ class TrajectoryReporter:
                     props[prop_name] = prop
 
                 # Write properties to this trajectory
-                if props:
+                if props and write_to_file:
                     trajectory.write_arrays(props, step)
                     all_props.append(props)
 
@@ -704,8 +713,7 @@ class TorchSimTrajectory:
         *,
         save_velocities: bool = False,
         save_forces: bool = False,
-        save_energy: bool = False,
-        variable_cell: bool = False,
+        variable_cell: bool = True,
         variable_masses: bool = False,
         variable_atomic_numbers: bool = False,
     ) -> None:
@@ -724,7 +732,6 @@ class TorchSimTrajectory:
             batch_index (int, optional): Batch index to save.
             save_velocities (bool, optional): Whether to save velocities.
             save_forces (bool, optional): Whether to save forces.
-            save_energy (bool, optional): Whether to save energy.
             variable_cell (bool, optional): Whether the cell varies between frames.
             variable_masses (bool, optional): Whether masses vary between frames.
             variable_atomic_numbers (bool, optional): Whether atomic numbers vary
@@ -768,7 +775,6 @@ class TorchSimTrajectory:
         optional_arrays = {
             "velocities": save_velocities,
             "forces": save_forces,
-            "energy": save_energy,
         }
         # Loop through optional arrays and add them if requested
         for array_name, should_save in optional_arrays.items():
