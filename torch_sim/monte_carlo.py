@@ -193,6 +193,9 @@ def swap_monte_carlo(
     Monte Carlo steps. The simulation uses the Metropolis criterion to accept or reject
     proposed swaps based on energy differences.
 
+    Make sure that if the trajectory is being reported, the `TorchSimTrajectory.write_state`
+    method is called with `variable_masses=True`.
+
     Args:
         model (torch.nn.Module): Energy model that takes a SimState and returns a dict
             containing 'energy' as a key
