@@ -1,6 +1,8 @@
+from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pytest
 import torch
 
 from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
@@ -14,11 +16,11 @@ from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 from torch_sim.units import UnitSystem
 
 
-def test_integrate_nve(ar_sim_state: SimState, lj_model: Any, tmp_path: Any) -> None:
+def test_integrate_nve(ar_sim_state: SimState, lj_model: Any, tmp_path: Path) -> None:
     """Test NVE integration with LJ potential."""
-    trajectory_file = tmp_path / "nve.h5md"
+    traj_file = tmp_path / "nve.h5md"
     reporter = TrajectoryReporter(
-        filenames=trajectory_file,
+        filenames=traj_file,
         state_frequency=1,
         prop_calculators={
             1: {"ke": lambda state: kinetic_energy(state.momenta, state.masses)}
@@ -37,22 +39,22 @@ def test_integrate_nve(ar_sim_state: SimState, lj_model: Any, tmp_path: Any) -> 
     )
 
     assert isinstance(final_state, SimState)
-    assert trajectory_file.exists()
+    assert traj_file.exists()
 
     # Check energy conservation
-    with TorchSimTrajectory(trajectory_file) as traj:
+    with TorchSimTrajectory(traj_file) as traj:
         energies = traj.get_array("ke")
         std_energy = np.std(energies)
         assert std_energy / np.mean(energies) < 0.1  # 10% tolerance
 
 
 def test_integrate_single_nvt(
-    ar_sim_state: SimState, lj_model: Any, tmp_path: Any
+    ar_sim_state: SimState, lj_model: Any, tmp_path: Path
 ) -> None:
     """Test NVT integration with LJ potential."""
-    trajectory_file = tmp_path / "nvt.h5md"
+    traj_file = tmp_path / "nvt.h5md"
     reporter = TrajectoryReporter(
-        filenames=trajectory_file,
+        filenames=traj_file,
         state_frequency=1,
         prop_calculators={
             1: {"ke": lambda state: kinetic_energy(state.momenta, state.masses)}
@@ -72,10 +74,10 @@ def test_integrate_single_nvt(
     )
 
     assert isinstance(final_state, SimState)
-    assert trajectory_file.exists()
+    assert traj_file.exists()
 
     # Check energy fluctuations
-    with TorchSimTrajectory(trajectory_file) as traj:
+    with TorchSimTrajectory(traj_file) as traj:
         energies = traj.get_array("ke")
         std_energy = np.std(energies)
         assert std_energy / np.mean(energies) < 0.2  # 20% tolerance for NVT
@@ -98,7 +100,7 @@ def test_integrate_double_nvt(ar_double_sim_state: SimState, lj_model: Any) -> N
 
 
 def test_integrate_double_nvt_with_reporter(
-    ar_double_sim_state: SimState, lj_model: Any, tmp_path: Any
+    ar_double_sim_state: SimState, lj_model: Any, tmp_path: Path
 ) -> None:
     """Test NVT integration with LJ potential."""
     trajectory_files = [tmp_path / "nvt_0.h5md", tmp_path / "nvt_1.h5md"]
@@ -139,7 +141,7 @@ def test_integrate_many_nvt(
     ar_sim_state: SimState,
     fe_fcc_sim_state: SimState,
     lj_model: Any,
-    tmp_path: Any,
+    tmp_path: Path,
 ) -> None:
     """Test NVT integration with LJ potential."""
     triple_state = initialize_state(
@@ -216,7 +218,7 @@ def test_integrate_with_autobatcher_and_reporting(
     ar_sim_state: SimState,
     fe_fcc_sim_state: SimState,
     lj_model: Any,
-    tmp_path: Any,
+    tmp_path: Path,
 ) -> None:
     """Test integration with autobatcher."""
     states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
@@ -280,7 +282,7 @@ def test_integrate_with_autobatcher_and_reporting(
         assert torch.any(final_state.positions != init_state.positions)
 
 
-def test_optimize_fire(ar_sim_state: SimState, lj_model: Any, tmp_path: Any) -> None:
+def test_optimize_fire(ar_sim_state: SimState, lj_model: Any, tmp_path: Path) -> None:
     """Test FIRE optimization with LJ potential."""
     trajectory_files = [tmp_path / "opt.h5md"]
     reporter = TrajectoryReporter(
@@ -311,7 +313,7 @@ def test_optimize_fire(ar_sim_state: SimState, lj_model: Any, tmp_path: Any) -> 
 
 
 def test_default_converged_fn(
-    ar_sim_state: SimState, lj_model: Any, tmp_path: Any
+    ar_sim_state: SimState, lj_model: Any, tmp_path: Path
 ) -> None:
     """Test default converged function."""
     ar_sim_state.positions += torch.randn_like(ar_sim_state.positions) * 0.1
@@ -341,7 +343,7 @@ def test_default_converged_fn(
 def test_batched_optimize_fire(
     ar_double_sim_state: SimState,
     lj_model: Any,
-    tmp_path: Any,
+    tmp_path: Path,
 ) -> None:
     """Test batched FIRE optimization with LJ potential."""
     trajectory_files = [
@@ -403,7 +405,7 @@ def test_optimize_with_autobatcher_and_reporting(
     ar_sim_state: SimState,
     fe_fcc_sim_state: SimState,
     lj_model: Any,
-    tmp_path: Any,
+    tmp_path: Path,
 ) -> None:
     """Test optimize with autobatcher and reporting."""
     states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
@@ -540,13 +542,14 @@ def test_optimize_with_default_autobatcher(
         assert torch.any(final_state.positions != init_state.positions)
 
 
-def test_static_single(ar_sim_state: SimState, lj_model: Any, tmp_path: Any) -> None:
+def test_static_single(ar_sim_state: SimState, lj_model: Any, tmp_path: Path) -> None:
     """Test static calculation with LJ potential."""
-    trajectory_file = tmp_path / "static.h5md"
+    traj_file = tmp_path / "static.h5md"
     reporter = TrajectoryReporter(
-        filenames=trajectory_file,
+        filenames=traj_file,
         state_frequency=1,
         prop_calculators={1: {"potential_energy": lambda state: state.energy}},
+        state_kwargs={"save_forces": True},  # Enable force saving
     )
 
     props = static(
@@ -558,17 +561,23 @@ def test_static_single(ar_sim_state: SimState, lj_model: Any, tmp_path: Any) -> 
     assert isinstance(props, list)
     assert len(props) == 1  # Single system = single props dict
     assert "potential_energy" in props[0]
-    assert trajectory_file.exists()
+    assert traj_file.exists()
 
     # Check that energy was computed and saved correctly
-    with TorchSimTrajectory(trajectory_file) as traj:
+    with TorchSimTrajectory(traj_file) as traj:
         saved_energy = traj.get_array("potential_energy")
         assert len(saved_energy) == 1  # Static calc = single frame
         np.testing.assert_allclose(saved_energy[0], props[0]["potential_energy"].numpy())
 
+        # Verify state_kwargs were applied correctly
+        assert traj.get_array("atomic_numbers").shape == (1, ar_sim_state.n_atoms)
+        assert traj.get_array("masses").shape == (1, ar_sim_state.n_atoms)
+        if lj_model.compute_forces:
+            assert "forces" in traj.array_registry
+
 
 def test_static_double(
-    ar_double_sim_state: SimState, lj_model: Any, tmp_path: Any
+    ar_double_sim_state: SimState, lj_model: Any, tmp_path: Path
 ) -> None:
     """Test static calculation with multiple systems."""
     trajectory_files = [tmp_path / "static_0.h5md", tmp_path / "static_1.h5md"]
@@ -636,7 +645,7 @@ def test_static_with_autobatcher_and_reporting(
     ar_sim_state: SimState,
     fe_fcc_sim_state: SimState,
     lj_model: Any,
-    tmp_path: Any,
+    tmp_path: Path,
 ) -> None:
     """Test static calculation with autobatcher and trajectory reporting."""
     states = [ar_sim_state, fe_fcc_sim_state, ar_sim_state]
@@ -685,3 +694,35 @@ def test_static_with_autobatcher_and_reporting(
     assert not np.allclose(
         props[0]["potential_energy"].numpy(), props[1]["potential_energy"].numpy()
     )
+
+
+def test_static_no_filenames(
+    ar_sim_state: SimState, lj_model: Any, tmp_path: Path
+) -> None:
+    """Test static calculation with no trajectory filenames."""
+    reporter = TrajectoryReporter(
+        filenames=None,
+        state_frequency=1,
+        prop_calculators={1: {"potential_energy": lambda state: state.energy}},
+    )
+
+    props = static(system=ar_sim_state, model=lj_model, trajectory_reporter=reporter)
+
+    assert isinstance(props, list)
+    assert len(props) == 1
+    assert "potential_energy" in props[0]
+    assert isinstance(props[0]["potential_energy"], torch.Tensor)
+
+    reporter = TrajectoryReporter(
+        filenames=tmp_path / "static.h5md",
+        state_frequency=2,  # Invalid for static calculations
+        prop_calculators={1: {"potential_energy": lambda state: state.energy}},
+    )
+
+    # should raise for invalid state frequency
+    with pytest.raises(ValueError, match="state_frequency=2 must be 1 for statics"):
+        static(
+            system=ar_sim_state,
+            model=lj_model,
+            trajectory_reporter=reporter,
+        )
