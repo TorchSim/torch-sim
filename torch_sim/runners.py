@@ -7,6 +7,7 @@ converting between different atomistic representations and handling simulation s
 
 import warnings
 from collections.abc import Callable, Sequence
+from itertools import chain
 from pathlib import Path
 
 import torch
@@ -36,7 +37,7 @@ def _configure_batches_iterator(
         A batches iterator
     """
     # load and properly configure the autobatcher
-    if autobatcher and isinstance(autobatcher, bool):
+    if autobatcher is True:
         autobatcher = ChunkingAutoBatcher(
             model=model,
             return_indices=True,
@@ -47,12 +48,12 @@ def _configure_batches_iterator(
         autobatcher.load_states(state)
         autobatcher.return_indices = True
         batches = autobatcher
-    elif not autobatcher:
+    elif autobatcher is False:
         batches = [(state, [])]
     else:
         raise ValueError(
-            f"Invalid autobatcher type: {type(autobatcher)}, "
-            "must be bool, ChunkingAutoBatcher, or None."
+            f"Invalid autobatcher type: {type(autobatcher).__name__}, "
+            "must be bool or ChunkingAutoBatcher."
         )
     return batches
 
@@ -375,7 +376,9 @@ def static(
     unit_system: UnitSystem = UnitSystem.metal,  # noqa: ARG001
     trajectory_reporter: TrajectoryReporter | None = None,
     autobatcher: ChunkingAutoBatcher | bool = False,
-) -> SimState:
+    variable_atomic_numbers: bool = True,
+    save_state: bool = True,
+) -> list[dict[str, torch.Tensor]]:
     """Run single point calculations on a batch of systems.
 
     Args:
@@ -386,9 +389,11 @@ def static(
             trajectory
         autobatcher (ChunkingAutoBatcher | bool): Optional autobatcher to use for batching
             calculations
+        variable_atomic_numbers (bool): Whether atomic numbers vary between frames
+        save_state (bool): Whether to save the state to the trajectory file
 
     Returns:
-        SimState: State with calculated properties
+        list[dict[str, torch.Tensor]]: Maps of property names to tensors for all batches
     """
     # initialize the state
     state: SimState = initialize_state(system, model.device, model.dtype)
@@ -399,12 +404,18 @@ def static(
             props["forces"] = lambda state: state.forces
         if model.compute_stress:
             props["stress"] = lambda state: state.stress
-        # Create a trajectory file for each batch
+        # TODO: create temporary files for reporting or consider removing
+        # TrajectoryReporter entirely
         filenames = [f"static_{idx}.h5md" for idx in range(state.n_batches)]
         trajectory_reporter = TrajectoryReporter(
             filenames=filenames,
-            state_frequency=1,
+            state_frequency=int(save_state),
             prop_calculators={1: props},
+            state_kwargs={
+                "save_velocities": False,
+                "save_forces": model.compute_forces,
+                "variable_atomic_numbers": variable_atomic_numbers,
+            },
         )
     else:
         if trajectory_reporter.state_frequency != 1:
@@ -421,8 +432,9 @@ def static(
     batch_iterator = _configure_batches_iterator(model, state, autobatcher)
 
     final_states: list[SimState] = []
+    all_props: list[dict[str, torch.Tensor]] = []
     og_filenames = trajectory_reporter.filenames
-    for state, batch_indices in batch_iterator:
+    for substate, batch_indices in batch_iterator:
         # set up trajectory reporters
         if autobatcher and trajectory_reporter:
             # we must remake the trajectory reporter for each batch
@@ -430,14 +442,16 @@ def static(
                 filenames=[og_filenames[idx] for idx in batch_indices]
             )
 
-        trajectory_reporter.report(state, 0, model=model)
+        props = trajectory_reporter.report(substate, 0, model=model)
+        all_props.extend(props)
 
-        final_states.append(state)
+        final_states.append(substate)
 
     trajectory_reporter.finish()
 
     if isinstance(batch_iterator, ChunkingAutoBatcher):
-        reordered_states = batch_iterator.restore_original_order(final_states)
-        return concatenate_states(reordered_states)
+        # reorder properties to match original order of states
+        original_indices = list(chain.from_iterable(batch_iterator.index_bins))
+        return [all_props[idx] for idx in original_indices]
 
-    return state
+    return all_props

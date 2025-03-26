@@ -191,7 +191,7 @@ class TrajectoryReporter:
 
     def report(
         self, state: SimState, step: int, model: torch.nn.Module | None = None
-    ) -> None:
+    ) -> list[dict[str, torch.Tensor]]:
         """Report a state and step to the trajectory files.
 
         Writes states and calculated properties to all trajectory files at the
@@ -205,6 +205,9 @@ class TrajectoryReporter:
             model (torch.nn.Module, optional): Model used for simulation.
                 Defaults to None. Must be provided if any prop_calculators
                 are provided.
+
+        Returns:
+            list[dict[str, torch.Tensor]]: Map of property names to tensors for each batch
 
         Raises:
             ValueError: If number of batches doesn't match number of trajectory files
@@ -221,6 +224,7 @@ class TrajectoryReporter:
             )
 
         split_states = state.split()
+        all_props: list[dict[str, torch.Tensor]] = []
         # Process each batch separately
         for substate, trajectory in zip(split_states, self.trajectories, strict=True):
             # Slice the state once to get only the data for this batch
@@ -246,6 +250,9 @@ class TrajectoryReporter:
                 # Write properties to this trajectory
                 if props:
                     trajectory.write_arrays(props, step)
+                    all_props.append(props)
+
+        return all_props
 
     def finish(self) -> None:
         """Finish writing the trajectory files.

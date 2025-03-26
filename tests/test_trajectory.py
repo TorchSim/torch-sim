@@ -683,9 +683,17 @@ def test_reporter_with_model(
         prop_calculators=prop_calculators,
     )
 
-    # Run with model
-    reporter.report(si_double_sim_state, 0, lj_model)
+    # Run with model and get properties
+    props = reporter.report(si_double_sim_state, 0, lj_model)
     reporter.close()
+
+    # Verify properties were returned
+    assert len(props) == 2  # One dict per batch
+    for batch_props in props:
+        assert set(batch_props) == {"energy"}
+        assert isinstance(batch_props["energy"], torch.Tensor)
+        assert batch_props["energy"].shape == (1,)
+        assert batch_props["energy"] == pytest.approx(49.4150)
 
     # Verify property was calculated correctly
     trajectories = [
@@ -694,17 +702,19 @@ def test_reporter_with_model(
     ]
 
     for batch_idx, trajectory in enumerate(trajectories):
-        # Get the property value
-        energy = trajectory.get_array("energy")[0]
+        # Get the property value from file
+        file_energy = trajectory.get_array("energy")[0]
+        batch_props = props[batch_idx]
 
         # Calculate expected value
         substate = si_double_sim_state[batch_idx]
         expected = lj_model(substate)["energy"]
 
-        # Compare
-        np.testing.assert_allclose(energy, expected.cpu().numpy())
-        # assert energy not na
-        assert not np.isnan(energy)
-        assert len(energy)
+        # Compare file contents with expected
+        np.testing.assert_allclose(file_energy, expected)
+        # Compare returned properties with expected
+        np.testing.assert_allclose(batch_props["energy"], expected)
+        # Compare returned properties with file contents
+        np.testing.assert_allclose(batch_props["energy"], file_energy)
 
         trajectory.close()
