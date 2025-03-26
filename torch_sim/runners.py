@@ -7,8 +7,9 @@ converting between different atomistic representations and handling simulation s
 
 import warnings
 from collections.abc import Callable
-from itertools import chain
 from dataclasses import dataclass
+from itertools import chain
+
 import torch
 from numpy.typing import ArrayLike
 
@@ -18,7 +19,7 @@ from torch_sim.quantities import batchwise_max_force, kinetic_energy, temperatur
 from torch_sim.state import SimState, StateLike, concatenate_states, initialize_state
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.units import UnitSystem
-from typing import Literal
+
 
 def _configure_reporter(
     trajectory_reporter: TrajectoryReporter | dict | None,
@@ -28,42 +29,41 @@ def _configure_reporter(
 ) -> TrajectoryReporter:
     if trajectory_reporter is None:
         return None
-    elif isinstance(trajectory_reporter, TrajectoryReporter):
+    if isinstance(trajectory_reporter, TrajectoryReporter):
         return trajectory_reporter
+    possible_properties = {
+        "potential_energy": lambda state: state.energy,
+        "kinetic_energy": lambda state: kinetic_energy(state.momenta, state.masses),
+        "temperature": lambda state: temperature(state.momenta, state.masses),
+    }
+    if runner == integrate:
+        properties = ["kinetic_energy", "potential_energy", "temperature"]
+        prop_frequency = 10
+        state_frequency = 100
+    elif runner == optimize:
+        properties = ["potential_energy"]
+        prop_frequency = 10
+        state_frequency = 100
+    elif runner == static:
+        properties = ["potential_energy"]
+        prop_frequency = 1
+        state_frequency = 1
     else:
-        possible_properties = {
-            "potential_energy": lambda state: state.energy,
-            "kinetic_energy": lambda state: kinetic_energy(state.momenta, state.masses),
-            "temperature": lambda state: temperature(state.momenta, state.masses),
-        }
-        if runner == integrate:
-            properties = ["kinetic_energy", "potential_energy", "temperature"]
-            prop_frequency = 10
-            state_frequency = 100
-        elif runner == optimize:
-            properties = ["potential_energy"]
-            prop_frequency = 10
-            state_frequency = 100
-        elif runner == static:
-            properties = ["potential_energy"]
-            prop_frequency = 1
-            state_frequency = 1
-        else:
-            raise ValueError(f"Invalid runner: {runner}")
+        raise ValueError(f"Invalid runner: {runner}")
 
-        prop_calculators = {
-            prop: calculator
-            for prop, calculator in possible_properties.items()
-            if prop in properties
-        }
+    prop_calculators = {
+        prop: calculator
+        for prop, calculator in possible_properties.items()
+        if prop in properties
+    }
 
-        # ordering is important to ensure we can override defaults
-        return TrajectoryReporter(
-            prop_calculators={prop_frequency: prop_calculators},
-            state_frequency=state_frequency,
-            state_kwargs=state_kwargs or {},
-            **trajectory_reporter,
-        )
+    # ordering is important to ensure we can override defaults
+    return TrajectoryReporter(
+        prop_calculators={prop_frequency: prop_calculators},
+        state_frequency=state_frequency,
+        state_kwargs=state_kwargs or {},
+        **trajectory_reporter,
+    )
 
 
 def _configure_batches_iterator(
@@ -395,9 +395,7 @@ def static(
         },
     )
     if trajectory_reporter.state_frequency != 1:
-        raise ValueError(
-            f"{trajectory_reporter.state_frequency=} must be 1 for statics"
-        )
+        raise ValueError(f"{trajectory_reporter.state_frequency=} must be 1 for statics")
     prop_calc_keys = set(trajectory_reporter.prop_calculators)
     if prop_calc_keys != {1}:
         raise ValueError(

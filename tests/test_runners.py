@@ -567,7 +567,9 @@ def test_static_single(ar_sim_state: SimState, lj_model: Any, tmp_path: Any) -> 
         np.testing.assert_allclose(saved_energy[0], props[0]["potential_energy"].numpy())
 
 
-def test_static_double(ar_double_sim_state: SimState, lj_model: Any, tmp_path: Any) -> None:
+def test_static_double(
+    ar_double_sim_state: SimState, lj_model: Any, tmp_path: Any
+) -> None:
     """Test static calculation with multiple systems."""
     trajectory_files = [tmp_path / "static_0.h5md", tmp_path / "static_1.h5md"]
     reporter = TrajectoryReporter(
@@ -592,7 +594,9 @@ def test_static_double(ar_double_sim_state: SimState, lj_model: Any, tmp_path: A
         with TorchSimTrajectory(traj_file) as traj:
             saved_energy = traj.get_array("potential_energy")
             assert len(saved_energy) == 1
-            np.testing.assert_allclose(saved_energy[0], props[idx]["potential_energy"].numpy())
+            np.testing.assert_allclose(
+                saved_energy[0], props[idx]["potential_energy"].numpy()
+            )
 
 
 def test_static_with_autobatcher(
@@ -621,7 +625,7 @@ def test_static_with_autobatcher(
 
     assert isinstance(props, list)
     assert len(props) == 3  # Three systems = three prop dicts
-    
+
     # Check that identical systems have identical energies
     assert torch.allclose(props[0]["potential_energy"], props[2]["potential_energy"])
     # Check that different systems have different energies
@@ -647,9 +651,7 @@ def test_static_with_autobatcher_and_reporting(
         max_memory_scaler=260,
     )
 
-    trajectory_files = [
-        tmp_path / f"static_{batch}.h5md" for batch in range(len(states))
-    ]
+    trajectory_files = [tmp_path / f"static_{batch}.h5md" for batch in range(len(states))]
     reporter = TrajectoryReporter(
         filenames=trajectory_files,
         state_frequency=1,
@@ -671,10 +673,15 @@ def test_static_with_autobatcher_and_reporting(
         with TorchSimTrajectory(traj_file) as traj:
             saved_energy = traj.get_array("potential_energy")
             assert len(saved_energy) == 1
-            np.testing.assert_allclose(saved_energy[0], props[idx]["potential_energy"].numpy())
+            np.testing.assert_allclose(
+                saved_energy[0], props[idx]["potential_energy"].numpy()
+            )
 
     # Check that identical systems have identical energies
-    np.testing.assert_allclose(props[0]["potential_energy"].numpy(), props[2]["potential_energy"].numpy())
+    np.testing.assert_allclose(
+        props[0]["potential_energy"].numpy(), props[2]["potential_energy"].numpy()
+    )
     # Check that different systems have different energies
-    assert not np.allclose(props[0]["potential_energy"].numpy(), props[1]["potential_energy"].numpy())
-
+    assert not np.allclose(
+        props[0]["potential_energy"].numpy(), props[1]["potential_energy"].numpy()
+    )

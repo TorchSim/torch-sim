@@ -566,7 +566,7 @@ def test_single_batch_reporter(
 
 
 def test_multi_batch_reporter_filenames_none(
-    si_double_sim_state: SimState, tmp_path: Path, prop_calculators: dict
+    si_double_sim_state: SimState, prop_calculators: dict
 ) -> None:
     """Test TrajectoryReporter with multiple batches and no filenames."""
     reporter = TrajectoryReporter(

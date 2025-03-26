@@ -28,7 +28,7 @@ Notes:
 import copy
 import inspect
 import pathlib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from functools import partial
 from typing import Any, Literal, Self
 
@@ -36,7 +36,6 @@ import numpy as np
 import tables
 import torch
 
-from torch_sim.quantities import kinetic_energy, temperature
 from torch_sim.state import SimState
 
 
@@ -107,7 +106,7 @@ class TrajectoryReporter:
                 mapping frequencies to property calculators where each calculator is a
                 function that takes a state and optionally a model and returns a tensor.
                 Defaults to None.
-            state_kwargs (dict, optional): Additional arguments for state writing. 
+            state_kwargs (dict, optional): Additional arguments for state writing.
                 Passed to the `TorchSimTrajectory.write_state` method. These can be
                 set to save the velocities and forces or to allow variable masses,
                 and atomic numbers across the trajectory.
@@ -254,7 +253,11 @@ class TrajectoryReporter:
             self.shape_warned = True
 
             # Write state to trajectory if it's time
-            if self.state_frequency and step % self.state_frequency == 0 and self.filenames is not None:
+            if (
+                self.state_frequency
+                and step % self.state_frequency == 0
+                and self.filenames is not None
+            ):
                 self.trajectories[i].write_state(substate, step, **self.state_kwargs)
 
             # Process property calculators for this batch
