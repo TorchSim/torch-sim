@@ -296,31 +296,29 @@ def orthorhombic_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     return matrix
 
-
 def trigonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
     """Generate equation matrix for trigonal crystal symmetry.
 
     Constructs the stress-strain relationship matrix for trigonal symmetry,
-    which has six independent elastic constants: C11, C33, C12, C13, C44, C14.
-    Matrix construction uses auxiliary coordinates ξ=x+iy, η=x-iy following L&L approach.
+    which has 7 independent elastic constants: C11, C12, C13, C14, C33, C44, C66.
+    Matrix construction follows the standard form for trigonal symmetry.
 
     Args:
         strains: Tensor of shape (6,) containing strain components
                 [εxx, εyy, εzz, εyz, εxz, εxy]
 
     Returns:
-        torch.Tensor: Matrix of shape (6, 6) where columns correspond to
-                     coefficients for C11, C33, C12, C13, C44, C14
+        torch.Tensor: Matrix of shape (6, 7) where columns correspond to
+                     coefficients for C11, C12, C13, C14, C33, C44, C66
 
     Notes:
         The resulting matrix M has the form:
-        ⎡ εxx    0     εyy    εzz     0     2εxz  ⎤
-        ⎢ εyy    0     εxx    εzz     0    -2εxz  ⎥
-        ⎢  0    εzz     0    εxx+εyy   0      0   ⎥
-        ⎢  0     0      0      0     2εyz  -4εxy  ⎥
-        ⎢  0     0      0      0     2εxz   2Δε   ⎥
-        ⎣ 2εxy   0    -2εxy    0      0    -4εyz  ⎦
-        where Δε = εxx-εyy
+        ⎡ εxx    εyy    εzz    2εyz   2εxz   0      0    ⎤
+        ⎢ εyy    εxx    εzz   -2εyz  -2εxz   0      0    ⎥
+        ⎢ εzz    εzz    0      0      0      εzz    0    ⎥
+        ⎢ 2εxy  -2εxy   0      0      0      0     2εyz  ⎥
+        ⎢ 2εxy  -2εxy   0      0      0      0     2εxz  ⎥
+        ⎣ 0      0      0      0     2εxz    0      0    ⎦
     """
     if not isinstance(strains, torch.Tensor):
         strains = torch.tensor(strains)
@@ -332,30 +330,40 @@ def trigonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
     εxx, εyy, εzz, εyz, εxz, εxy = strains.unbind()
 
     # Create the matrix using torch.zeros for proper device/dtype handling
-    matrix = torch.zeros((6, 6), dtype=strains.dtype, device=strains.device)
+    matrix = torch.zeros((6, 7), dtype=strains.dtype, device=strains.device)
 
-    # Fill in the matrix elements
-    # First row
-    matrix[0] = torch.tensor([εxx, 0, εyy, εzz, 0, 2 * εxz], device=strains.device)
+    # Fill in the matrix elements according to the image
+    # First row - C11, C12, C13, C14, C33, C44, C66
+    matrix[0, 0] = εxx
+    matrix[0, 1] = εyy
+    matrix[0, 2] = εzz
+    matrix[0, 3] = 2 * εyz
+    matrix[0, 4] = 2 * εxz
 
     # Second row
-    matrix[1] = torch.tensor([εyy, 0, εxx, εzz, 0, -2 * εxz], device=strains.device)
+    matrix[1, 0] = εyy
+    matrix[1, 1] = εxx
+    matrix[1, 2] = εzz
+    matrix[1, 3] = -2 * εyz
+    matrix[1, 4] = -2 * εxz
 
     # Third row
-    matrix[2] = torch.tensor([0, εzz, 0, εxx + εyy, 0, 0], device=strains.device)
+    matrix[2, 0] = εzz
+    matrix[2, 1] = εzz
+    matrix[2, 5] = εzz
 
     # Fourth row
-    matrix[3] = torch.tensor([0, 0, 0, 0, 2 * εyz, -4 * εxy], device=strains.device)
+    matrix[3, 0] = 2 * εxy
+    matrix[3, 1] = -2 * εxy
+    matrix[3, 6] = 2 * εyz
 
     # Fifth row
-    matrix[4] = torch.tensor(
-        [0, 0, 0, 0, 2 * εxz, 2 * (εxx - εyy)], device=strains.device
-    )
+    matrix[4, 0] = 2 * εxy
+    matrix[4, 1] = -2 * εxy
+    matrix[4, 6] = 2 * εxz
 
     # Sixth row
-    matrix[5] = torch.tensor(
-        [2 * εxy, 0, -2 * εxy, 0, 0, -4 * εyz], device=strains.device
-    )
+    matrix[5, 4] = 2 * εxz
 
     return matrix
 
@@ -377,12 +385,12 @@ def hexagonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Notes:
         The resulting matrix M has the form:
-        ⎡ εxx    0     εyy    εzz     0   ⎤
-        ⎢ εyy    0     εxx    εzz     0   ⎥
-        ⎢  0    εzz     0    εxx+εyy   0   ⎥
-        ⎢  0     0      0      0     2εyz ⎥
-        ⎢  0     0      0      0     2εxz ⎥
-        ⎣(εxx-εyy)/2 0  -(εxx-εyy)/2  0   0   ⎦
+        ⎡ εxx    εyy    εzz      0     0   ⎤
+        ⎢ εyy    εxx    εzz      0     0   ⎥
+        ⎢ 0      0      εxx+εyy  εzz   0   ⎥
+        ⎢ 0      0      0        0     2εyz⎥
+        ⎢ 0      0      0        0     2εxz⎥
+        ⎣ εxy   -εxy    0        0     0   ⎦
     """
     if not isinstance(strains, torch.Tensor):
         strains = torch.tensor(strains)
@@ -396,24 +404,28 @@ def hexagonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
     # Create the matrix using torch.zeros for proper device/dtype handling
     matrix = torch.zeros((6, 5), dtype=strains.dtype, device=strains.device)
 
-    # Fill in the matrix elements
-    # First row (C11, C33, C12, C13, C44)
-    matrix[0] = torch.tensor([εxx, 0, εyy, εzz, 0], device=strains.device)
+    # Fill in the matrix elements according to the correct structure
+    # First row
+    matrix[0, 0] = εxx
+    matrix[0, 1] = εyy
+    matrix[0, 2] = εzz
 
     # Second row
-    matrix[1] = torch.tensor([εyy, 0, εxx, εzz, 0], device=strains.device)
+    matrix[1, 0] = εyy
+    matrix[1, 1] = εxx
+    matrix[1, 2] = εzz
 
     # Third row
-    matrix[2] = torch.tensor([0, εzz, 0, εxx + εyy, 0], device=strains.device)
+    matrix[2, 2] = εxx + εyy
+    matrix[2, 3] = εzz
 
     # Fourth and fifth rows (shear terms)
-    matrix[3] = torch.tensor([0, 0, 0, 0, 2 * εyz], device=strains.device)
-    matrix[4] = torch.tensor([0, 0, 0, 0, 2 * εxz], device=strains.device)
+    matrix[3, 4] = 2 * εyz
+    matrix[4, 4] = 2 * εxz
 
-    # Sixth row - note C66 = (C11-C12)/2 is dependent
-    matrix[5] = torch.tensor(
-        [(εxx - εyy) / 2, 0, -(εxx - εyy) / 2, 0, 0], device=strains.device
-    )
+    # Sixth row
+    matrix[5, 0] = εxy
+    matrix[5, 1] = -εxy
 
     return matrix
 
@@ -965,7 +977,8 @@ def get_elastic_tensor(
     pressure_corrections = {
         BravaisType.CUBIC: torch.tensor([-p, p, -p]),
         BravaisType.HEXAGONAL: torch.tensor([-p, -p, p, p, -p]),
-        BravaisType.TRIGONAL: torch.tensor([-p, -p, p, p, -p, p]),
+        #BravaisType.TRIGONAL: torch.tensor([-p, -p, p, p, -p, p]),
+        BravaisType.TRIGONAL: torch.tensor([-p, -p, p, p, p, p, -p]),  # Fixed: Added one more element for C15
         BravaisType.TETRAGONAL: torch.tensor([-p, -p, p, p, -p, -p]),
         BravaisType.ORTHORHOMBIC: torch.tensor([-p, -p, -p, p, p, p, -p, -p, -p]),
         BravaisType.MONOCLINIC: torch.tensor(
@@ -1064,12 +1077,15 @@ def get_full_elastic_tensor(  # noqa: C901
         C[0, 2] = C[2, 0] = C[1, 2] = C[2, 1] = C13
 
     elif bravais_type == BravaisType.TRIGONAL:
-        # C11, C12, C13, C14, C33, C44
-        C11, C12, C13, C14, C33, C44 = Cij
+        # C11, C12, C13, C14, C15, C33, C44
+        C11, C12, C13, C14, C15, C33, C44 = Cij 
         C.diagonal().copy_(torch.tensor([C11, C11, C33, C44, C44, (C11 - C12) / 2]))
         C[0, 1] = C[1, 0] = C12
         C[0, 2] = C[2, 0] = C[1, 2] = C[2, 1] = C13
-        C[0, 3] = C[3, 0] = C[1, 3] = C[3, 1] = C14
+        C[0, 3] = C[3, 0] = C14
+        C[0, 4] = C[4, 0] = C15
+        C[1, 3] = C[3, 1] = -C14 
+        C[1, 4] = C[4, 1] = -C15
 
     elif bravais_type == BravaisType.TETRAGONAL:
         # C11, C12, C13, C33, C44, C66
