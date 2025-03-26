@@ -495,7 +495,7 @@ class ChunkingAutoBatcher:
     def load_states(
         self,
         states: list[SimState] | SimState,
-    ) -> None:
+    ) -> float:
         """Load new states into the batcher.
 
         Processes the input states, computes memory scaling metrics for each,
@@ -507,6 +507,9 @@ class ChunkingAutoBatcher:
                 list of individual SimState objects or a single batched SimState that
                 will be split into individual states. Each SimState has shape
                 information specific to its instance.
+
+        Returns:
+            float: Maximum memory scaling metric that fits in GPU memory.
 
         Raises:
             ValueError: If any individual state has a memory scaling metric greater
@@ -559,6 +562,8 @@ class ChunkingAutoBatcher:
         for index_bin in self.index_bins:
             self.batched_states.append([self.state_slices[i] for i in index_bin])
         self.current_state_bin = 0
+
+        return self.max_memory_scaler
 
     def next_batch(
         self, *, return_indices: bool = False
