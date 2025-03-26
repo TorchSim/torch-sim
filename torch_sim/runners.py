@@ -394,13 +394,15 @@ def static(
     state: SimState = initialize_state(system, model.device, model.dtype)
 
     if trajectory_reporter is None:
-        props = {"energy": lambda state: state.energy}
+        props: dict[str, Callable] = {}
         if model.compute_forces:
             props["forces"] = lambda state: state.forces
         if model.compute_stress:
             props["stress"] = lambda state: state.stress
+        # Create a trajectory file for each batch
+        filenames = [f"static_{idx}.h5md" for idx in range(state.n_batches)]
         trajectory_reporter = TrajectoryReporter(
-            filenames=["single_point.h5md"],
+            filenames=filenames,
             state_frequency=1,
             prop_calculators={1: props},
         )
