@@ -38,8 +38,8 @@ except ImportError:
         This class is a placeholder for the MaceModel class.
         It raises an ImportError if MACE is not installed.
         """
-
-        raise ImportError("MACE must be installed to use this model.")
+        def __init__(self, *args, **kwargs):
+            raise ImportError("MACE must be installed to use this model.")
 
 
 class MaceModel(torch.nn.Module, ModelInterface):

@@ -25,7 +25,6 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState, StateDict
 
-
 try:
     from fairchem.core.common.registry import registry
     from fairchem.core.common.utils import (
@@ -46,8 +45,8 @@ except ImportError:
         This class is a placeholder for the FairChemModel class.
         It raises an ImportError if FairChem is not installed.
         """
-
-        raise ImportError("FairChem must be installed to use this model.")
+        def __init__(self, *args, **kwargs):
+            raise ImportError("FairChem must be installed to use this model.")
 
 
 if typing.TYPE_CHECKING:
