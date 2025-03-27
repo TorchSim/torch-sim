@@ -124,13 +124,7 @@ class TrajectoryReporter:
         )  # default will be to force overwrite if none is set
 
         self.prop_calculators = prop_calculators or {}
-        properties = next(iter(self.prop_calculators.values()))
-        save_velocities = "velocities" in properties
-        save_forces = "forces" in properties
-        self.state_kwargs = state_kwargs or {
-            "save_velocities": save_velocities,
-            "save_forces": save_forces,
-        }
+        self.state_kwargs = state_kwargs or {}
         self.shape_warned = False
         self.metadata = metadata
 
@@ -923,11 +917,21 @@ class TorchSimTrajectory:
             positions=torch.tensor(arrays["positions"], device=device, dtype=dtype),
             masses=torch.tensor(arrays.get("masses", None), device=device, dtype=dtype),
             cell=torch.tensor(arrays["cell"], device=device, dtype=dtype),
-            pbc=torch.tensor(arrays.get("pbc", True), device=device, dtype=torch.bool),
+            pbc=arrays.get("pbc", True),
             atomic_numbers=torch.tensor(
                 arrays["atomic_numbers"], device=device, dtype=torch.int
             ),
         )
+
+    @property
+    def metadata(self) -> dict:
+        """Get the metadata for the trajectory.
+
+        Returns:
+            dict: Metadata for the trajectory
+        """
+        attrs = self._file.root.metadata._v_attrs
+        return {name: getattr(attrs, name) for name in attrs._f_list()}
 
     def close(self) -> None:
         """Close the HDF5 file handle.
