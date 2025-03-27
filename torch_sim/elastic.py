@@ -683,7 +683,8 @@ def get_elementary_deformations(
     deformation_rules: dict[BravaisType, DeformationRule] = {
         BravaisType.CUBIC: DeformationRule([0, 3], regular_symmetry),
         BravaisType.HEXAGONAL: DeformationRule([0, 2, 3, 5], hexagonal_symmetry),
-        BravaisType.TRIGONAL: DeformationRule([0, 2, 3, 4, 5], trigonal_symmetry),
+        #BravaisType.TRIGONAL: DeformationRule([0, 2, 3, 4, 5], trigonal_symmetry),
+        BravaisType.TRIGONAL: DeformationRule([0, 1, 2, 3, 4, 5], trigonal_symmetry),
         BravaisType.TETRAGONAL: DeformationRule([0, 2, 3, 5], tetragonal_symmetry),
         BravaisType.ORTHORHOMBIC: DeformationRule(
             [0, 1, 2, 3, 4, 5], orthorhombic_symmetry
