@@ -21,7 +21,6 @@ import typing
 from types import MappingProxyType
 
 import torch
-from torch_geometric.data import Batch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState, StateDict
@@ -36,6 +35,9 @@ try:
         update_config,
     )
     from fairchem.core.models.model_registry import model_name_to_local_file
+
+    from torch_geometric.data import Batch
+
 except ImportError:
 
     class FairChemModel(torch.nn.Module, ModelInterface):

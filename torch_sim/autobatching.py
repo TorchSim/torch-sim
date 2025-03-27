@@ -347,7 +347,7 @@ def calculate_memory_scaler(
         metric = calculate_memory_scaler(state, memory_scales_with="n_atoms_x_density")
     """
     if state.n_batches > 1:
-        raise ValueError("State must be a single batch")
+        return sum(calculate_memory_scaler(s, memory_scales_with) for s in state.split())
     if memory_scales_with == "n_atoms":
         return state.n_atoms
     if memory_scales_with == "n_atoms_x_density":
@@ -539,7 +539,6 @@ class ChunkingAutoBatcher:
                 self.memory_scalers,
                 self.max_atoms_to_try,
             )
-            print(f"Max metric calculated: {self.max_memory_scaler}")
         else:
             self.max_memory_scaler = self.max_memory_scaler
 

@@ -243,7 +243,7 @@ def generate_force_convergence_fn(force_tol: float = 1e-1) -> Callable:
 
     def convergence_fn(
         state: SimState,
-        last_energy: torch.Tensor,  # noqa: ARG001
+        last_energy: torch.Tensor | None = None,  # noqa: ARG001
     ) -> bool:
         """Check if the system has converged."""
         return batchwise_max_force(state) < force_tol

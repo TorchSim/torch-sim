@@ -1,14 +1,3 @@
-# /// script
-# dependencies = [
-#     "mace-torch>=0.3.11",
-# ]
-# ///
-# # %% [markdown]
-"""
-# Autobatching
-This tutorial will give a detailed look at
-how to use the autobatching features of torch-sim.
-"""
 # %% [markdown]
 """
 # Autobatching
@@ -23,6 +12,14 @@ unless:
 - you want to manually optimize the batch size for your model
 - you want to develop advanced or custom workflows
 
+<details>
+<summary>Dependencies</summary>
+/// script
+dependencies = [
+    "mace-torch>=0.3.11",
+]
+///
+</details>
 
 ## Introduction
 
@@ -43,10 +40,10 @@ in CI on a CPU. Using the AutoBatcher is generally not supported on CPUs.
 """
 # %%
 import torch_sim
-def mock_calculate_memory_scaler(state, memory_scales_with):
-    return 1000 if memory_scales_with == "n_atoms" else 10000
+def mock_determine_max_batch_size(min_state, max_state, max_atoms):
+    return 3
 
-torch_sim.autobatching.calculate_memory_scaler = mock_calculate_memory_scaler
+torch_sim.autobatching.determine_max_batch_size = mock_determine_max_batch_size
 
 # %% [markdown]
 """
@@ -112,7 +109,6 @@ max_memory_metric = estimate_max_memory_scaler(
 )
 print(f"Max memory metric: {max_memory_metric}")
 
-
 # %% [markdown]
 """
 This is a verbose way to determine the max memory metric, we'll see a simpler way
@@ -174,6 +170,7 @@ batcher = ChunkingAutoBatcher(
     max_memory_scaler=max_memory_scaler,
 )
 
+# %% [markdown]
 """
 ### Optimization Example
 
@@ -183,28 +180,27 @@ Here's a real example using FIRE optimization from the test suite:
 # %%
 from torch_sim.integrators import nvt_langevin
 
-# Initialize FIRE optimizer
+# Initialize nvt langevin integrator
 nvt_init, nvt_update = nvt_langevin(mace_model, dt=0.001, kT=0.01)
 
 # Prepare states for optimization
-fire_state = nvt_init(state)
-
-# Add some random displacements to each state
-for state in fire_state:
-    state.positions += torch.randn_like(state.positions) * 0.05
+nvt_state = nvt_init(state)
 
 # Initialize the batcher
 batcher = ChunkingAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
-    max_memory_scaler=30,
 )
-max_memory_scaler = batcher.load_states(fire_state)
+max_memory_scaler = batcher.load_states(nvt_state)
 print(f"Max memory scaler: {max_memory_scaler}")
+
+print("There are ", len(batcher.index_bins), " bins")
+print("The indices of the states in each bin are: ", batcher.index_bins)
 
 # Run optimization on each batch
 finished_states = []
 for batch in batcher:
+
     # Run 5 steps of FIRE optimization
     for _ in range(5):
         batch = nvt_update(batch)
@@ -243,12 +239,15 @@ fire_state = fire_init(state)
 batcher = HotSwappingAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
-    max_memory_scaler=40,
-    max_iterations=100,  # Optional: maximum iterations per state
+    max_memory_scaler=1000,
+    max_iterations=100,  # Optional: maximum convergence attempts per state
 )
-
 # Load states
 batcher.load_states(fire_state)
+
+# add some random displacements to each state
+fire_state.positions = fire_state.positions + torch.randn_like(fire_state.positions) * 0.05
+total_states = fire_state.n_batches
 
 # Define a convergence function that checks the force on each atom is less than 5e-1
 convergence_fn = generate_force_convergence_fn(5e-1)
@@ -256,24 +255,33 @@ convergence_fn = generate_force_convergence_fn(5e-1)
 # Process states until all are complete
 all_converged_states, convergence_tensor = [], None
 while (result := batcher.next_batch(fire_state, convergence_tensor))[0] is not None:
-    state, converged_states = result
+    # collect the converged states
+    fire_state, converged_states = result
     all_converged_states.extend(converged_states)
 
-    # Process the batch
-    for _ in range(10):  # Run for 10 steps
-        batch = fire_update(batch)
+    # optimize the batch, we stagger the steps to avoid state processing overhead
+    for _ in range(10):
+        fire_state = fire_update(fire_state)
     
     # Check which states have converged
-    convergence_tensor = convergence_fn(batch)
-    
-    # Get next batch (converged states are removed, new ones added)
-    batch, new_completed = batcher.next_batch(batch, convergence_tensor)
+    convergence_tensor = convergence_fn(fire_state, None)
+    print(f"Convergence tensor: {batcher.current_idx}")
+
+else:
+    all_converged_states.extend(result[1])
 
 # Restore original order
 final_states = batcher.restore_original_order(all_converged_states)
 
 # Verify all states were processed
-assert len(final_states) == fire_state.n_batches
+assert len(final_states) == total_states
+
+# Note that the fire_state has been modified in place
+assert fire_state.n_batches == 0
+
+# %%
+fire_state.n_batches
+
 
 # %% [markdown]
 """
@@ -289,7 +297,7 @@ using the `TrajectoryReporter`, because the files must be regularly updated.
 batcher = ChunkingAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
-    max_memory_scaler=260.0,
+    max_memory_scaler=80,
     return_indices=True,
 )
 batcher.load_states(state)
