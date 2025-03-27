@@ -4,6 +4,7 @@
 # /// script
 # dependencies = [
 #     "mace-torch>=0.3.11",
+#     "pymatgen>=2025.2.18",
 # ]
 # ///
 # </details>

@@ -1,4 +1,16 @@
 # %% [markdown]
+# <details>
+#   <summary>Dependencies</summary>
+# /// script
+# dependencies = [
+#     "mace-torch>=0.3.11",
+#     "pymatgen>=2025.2.18",
+#     "ase>=3.23.1",
+# ]
+# ///
+# </details>
+
+# %% [markdown]
 """
 # Trajectory Reporting in TorchSim
 
