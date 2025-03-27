@@ -52,7 +52,7 @@ Structure class to define our system, but you could also use ASE or other format
 
 # %%
 from pymatgen.core import Structure
-from torch_sim.io import initialize_state
+from torch_sim.state import initialize_state
 
 # Create a binary Cu-Zr alloy structure
 lattice = [[5.43, 0, 0], [0, 5.43, 0], [0, 0, 5.43]]
