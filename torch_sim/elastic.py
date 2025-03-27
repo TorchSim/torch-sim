@@ -45,9 +45,9 @@ Online Resources:
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-
+from ase.atoms import Atoms
+from ase import units
 import torch
-
 
 @dataclass
 class ElasticState:
@@ -793,7 +793,7 @@ def get_strain(
     )
 
 
-def get_elastic_tensor(
+def get_elastic_coeffs(
     base_state: ElasticState,
     deformed_states: list[ElasticState],
     stresses: torch.Tensor,
@@ -913,7 +913,7 @@ def get_elastic_tensor(
     return Cij, (Bij, residuals, rank, singular_values)
 
 
-def get_full_elastic_tensor(  # noqa: C901
+def get_elastic_tensor_from_coeffs(  # noqa: C901
     Cij: torch.Tensor,
     bravais_type: BravaisType,
 ) -> torch.Tensor:
@@ -1015,3 +1015,94 @@ def get_full_elastic_tensor(  # noqa: C901
         C[3, 5] = C[5, 3] = C46
 
     return C
+
+def calculate_elastic_tensor(
+    struct: Atoms, 
+    device: torch.device, 
+    dtype: torch.dtype,
+    bravais_type: BravaisType = BravaisType.TRICLINIC,
+    max_strain_normal: float = 0.01,
+    max_strain_shear: float = 0.06,
+    n_deform: int = 5,
+) -> torch.Tensor:
+
+    """Calculate the elastic tensor of a structure (in GPa)"""
+
+    # Define elastic state
+    state = ElasticState(
+        position=torch.tensor(struct.get_positions(), device=device, dtype=dtype),
+        cell=torch.tensor(struct.get_cell().array, device=device, dtype=dtype),
+    )
+
+    # Calculate deformations for the bravais type
+    deformations = get_elementary_deformations(
+        state, 
+        n_deform=n_deform, 
+        max_strain_normal=max_strain_normal, 
+        max_strain_shear=max_strain_shear, 
+        bravais_type=bravais_type
+    )
+
+    # Calculate stresses for deformations
+    ref_pressure = -torch.mean(torch.tensor(struct.get_stress()[:3], device=device), dim=0)
+    stresses = torch.zeros((len(deformations), 6), device=device, dtype=torch.float64)
+    for i, deformation in enumerate(deformations):
+        struct.cell = deformation.cell.cpu().numpy()
+        struct.positions = deformation.position.cpu().numpy()
+        stresses[i] = torch.tensor(struct.get_stress(), device=device)
+
+    # Caclulate elastic tensor
+    C_ij, B_ij = get_elastic_coeffs(state, deformations, stresses, ref_pressure, bravais_type)
+    C = get_elastic_tensor_from_coeffs(C_ij, bravais_type) / units.GPa
+    
+    return C
+
+def calculate_elastic_moduli(C: torch.Tensor) -> tuple[float, float, float, float]:
+    """Calculate elastic moduli from the elastic tensor.
+    
+    Args:
+        C: Elastic tensor (6x6) in GPa
+        
+    Returns:
+        tuple: Four Voigt-Reuss-Hill averaged elastic moduli in order:
+            - Bulk modulus (K_VRH) in GPa
+            - Shear modulus (G_VRH) in GPa
+            - Poisson's ratio (v_VRH), dimensionless
+            - Pugh's ratio (K_VRH/G_VRH), dimensionless
+    """
+    # Ensure we're working with a tensor
+    if not isinstance(C, torch.Tensor):
+        C = torch.tensor(C)
+        
+    # Components of the elastic tensor
+    C11, C22, C33 = C[0,0], C[1,1], C[2,2]
+    C12, C23, C31 = C[0,1], C[1,2], C[2,0]
+    C44, C55, C66 = C[3,3], C[4,4], C[5,5]
+
+    # Calculate compliance tensor
+    S = torch.linalg.inv(C)
+    S11, S22, S33 = S[0,0], S[1,1], S[2,2]
+    S12, S23, S31 = S[0,1], S[1,2], S[2,0]
+    S44, S55, S66 = S[3,3], S[4,4], S[5,5]
+
+    # Voigt averaging (upper bound)
+    K_V = (1/9) * ((C11 + C22 + C33) + 2*(C12 + C23 + C31))
+    G_V = (1/15) * ((C11 + C22 + C33) - (C12 + C23 + C31) + 3*(C44 + C55 + C66))
+
+    # Reuss averaging (lower bound)
+    K_R = 1 / ((S11 + S22 + S33) + 2*(S12 + S23 + S31))
+    G_R = 15 / (4*(S11 + S22 + S33) - 4*(S12 + S23 + S31) + 3*(S44 + S55 + S66))
+
+    # Voigt-Reuss-Hill averaging
+    K_VRH = (K_V + K_R) / 2
+    G_VRH = (G_V + G_R) / 2
+
+    # Poisson's ratio (VRH)
+    v_VRH = (3 * K_VRH - 2 * G_VRH) / (6 * K_VRH + 2 * G_VRH)
+
+    # Pugh's ratio (VRH)
+    pugh_ratio_VRH = K_VRH / G_VRH
+    
+    # Convert to Python floats for the return values
+    return (float(K_VRH.item()), float(G_VRH.item()), 
+            float(v_VRH.item()), float(pugh_ratio_VRH.item()))

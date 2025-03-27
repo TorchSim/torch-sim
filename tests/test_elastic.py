@@ -7,17 +7,10 @@ from ase.filters import FrechetCellFilter
 from ase.optimize import FIRE as FIRE_ASE
 from ase.spacegroup import get_spacegroup
 from mace.calculators.foundations_models import mace_mp
-from torch_sim.elastic import (
-    BravaisType,
-    ElasticState,
-    get_elastic_tensor,
-    get_elementary_deformations,
-    get_full_elastic_tensor,
-)
+from torch_sim.elastic import calculate_elastic_tensor, BravaisType, calculate_elastic_moduli
 import numpy as np
 import copy
 from pymatgen.io.ase import AseAtomsAdaptor
-
 from pymatgen.analysis.elasticity.elastic import ElasticTensor
 from typing import Any
 import spglib
@@ -42,47 +35,6 @@ calculator = mace_mp(
     default_dtype="float64",
 )
 
-def calculate_elastic_tensor(
-    struct: Atoms, 
-    device: torch.device, 
-    dtype: torch.dtype,
-    bravais_type: BravaisType = BravaisType.TRICLINIC,
-    max_strain_normal: float = 0.01,
-    max_strain_shear: float = 0.06,
-    n_deform: int = 5,
-) -> torch.Tensor:
-
-    """Calculate the elastic tensor of a structure."""
-
-    # Define elastic state
-    state = ElasticState(
-        position=torch.tensor(struct.get_positions(), device=device, dtype=dtype),
-        cell=torch.tensor(struct.get_cell().array, device=device, dtype=dtype),
-    )
-
-    # Calculate deformations for the bravais type
-    deformations = get_elementary_deformations(
-        state, 
-        n_deform=n_deform, 
-        max_strain_normal=max_strain_normal, 
-        max_strain_shear=max_strain_shear, 
-        bravais_type=bravais_type
-    )
-
-    # Calculate stresses for deformations
-    ref_pressure = -torch.mean(torch.tensor(struct.get_stress()[:3], device=device), dim=0)
-    stresses = torch.zeros((len(deformations), 6), device=device, dtype=torch.float64)
-    for i, deformation in enumerate(deformations):
-        struct.cell = deformation.cell.cpu().numpy()
-        struct.positions = deformation.position.cpu().numpy()
-        stresses[i] = torch.tensor(struct.get_stress(), device=device)
-
-    # Caclulate elastic tensor
-    C_ij, B_ij = get_elastic_tensor(state, deformations, stresses, ref_pressure, bravais_type)
-    C = get_full_elastic_tensor(C_ij, bravais_type) / units.GPa
-    
-    return C
-
 def print_structure_info(struct: Atoms):
     """Print the information of a structure."""
     pmg_struct = AseAtomsAdaptor.get_structure(struct)
@@ -90,7 +42,7 @@ def print_structure_info(struct: Atoms):
     print(f"- Lattice parameters: a={pmg_struct.lattice.a:.4f}, b={pmg_struct.lattice.b:.4f}, c={pmg_struct.lattice.c:.4f}")
     print(f"- Angles: alpha={pmg_struct.lattice.alpha:.2f}, beta={pmg_struct.lattice.beta:.2f}, gamma={pmg_struct.lattice.gamma:.2f}")
 
-def get_spacegroup(struct: Atoms, tol: float = 1e-3):
+def get_bravais_type(struct: Atoms, tol: float = 1e-3):
     """Check and return the crystal system of a structure.
     
     This function determines the crystal system by analyzing the lattice
@@ -101,7 +53,7 @@ def get_spacegroup(struct: Atoms, tol: float = 1e-3):
         tol: Tolerance for floating-point comparisons
 
     Returns:
-        str: Crystal system name (cubic, hexagonal, tetragonal, etc.)
+        BravaisType: Bravais type
     """
     # Get cell parameters
     cell = struct.get_cell()
@@ -115,41 +67,41 @@ def get_spacegroup(struct: Atoms, tol: float = 1e-3):
     # Cubic: a = b = c, alpha = beta = gamma = 90°
     if (abs(a - b) < tol and abs(b - c) < tol and 
         abs(alpha - 90) < tol and abs(beta - 90) < tol and abs(gamma - 90) < tol):
-        return "cubic"
+        return BravaisType.CUBIC
             
     # Hexagonal: a = b ≠ c, alpha = beta = 90°, gamma = 120°
     elif (abs(a - b) < tol and abs(alpha - 90) < tol and 
           abs(beta - 90) < tol and abs(gamma - 120) < tol):
-        return "hexagonal"
+        return BravaisType.HEXAGONAL
         
     # Tetragonal: a = b ≠ c, alpha = beta = gamma = 90°
     elif (abs(a - b) < tol and abs(a - c) > tol and
           abs(alpha - 90) < tol and abs(beta - 90) < tol and abs(gamma - 90) < tol):
-        return "tetragonal"
+        return BravaisType.TETRAGONAL
             
     # Orthorhombic: a ≠ b ≠ c, alpha = beta = gamma = 90°
     elif (abs(alpha - 90) < tol and abs(beta - 90) < tol and abs(gamma - 90) < tol and
           abs(a - b) > tol and (abs(b - c) > tol or abs(a - c) > tol)):
-        return "orthorhombic"
+        return BravaisType.ORTHORHOMBIC
             
     # Monoclinic: a ≠ b ≠ c, alpha = gamma = 90°, beta ≠ 90°
     elif (abs(alpha - 90) < tol and abs(gamma - 90) < tol and abs(beta - 90) > tol):
-        return "monoclinic"
+        return BravaisType.MONOCLINIC
         
     # Trigonal/Rhombohedral: a = b = c, alpha = beta = gamma ≠ 90°
     elif (abs(a - b) < tol and abs(b - c) < tol and
           abs(alpha - beta) < tol and abs(beta - gamma) < tol and abs(alpha - 90) > tol):
-        return "trigonal"
+        return BravaisType.TRIGONAL
         
     # Triclinic: a ≠ b ≠ c, alpha ≠ beta ≠ gamma ≠ 90°
     else:
-        return "triclinic"
+        return BravaisType.TRICLINIC
     
 # --------------
 # TEST FUNCTIONS
 # --------------
 
-def test_cubic(verbose: bool = False):
+def test_cubic(calculator: mace_mp, verbose: bool = False):
     """Test the elastic tensor of a cubic structure of Cu"""
 
     if verbose:
@@ -173,7 +125,7 @@ def test_cubic(verbose: bool = False):
         print_structure_info(struct)
     
     # Verify the space group is cubic for the relaxed structure
-    assert get_spacegroup(struct) == "cubic", f"Structure is not cubic"
+    assert get_bravais_type(struct) == BravaisType.CUBIC, f"Structure is not cubic"
 
     # Calculate elastic tensor
     C_cubic = calculate_elastic_tensor(struct, device, dtype, bravais_type=BravaisType.CUBIC)
@@ -191,7 +143,7 @@ def test_cubic(verbose: bool = False):
     assert torch.allclose(C_cubic, C_triclinic, atol=1e-1)
 
 
-def test_hexagonal(verbose: bool = False):
+def test_hexagonal(calculator: mace_mp, verbose: bool = False):
     """Test the elastic tensor of a hexagonal structure of Mg"""
 
     if verbose:
@@ -215,7 +167,7 @@ def test_hexagonal(verbose: bool = False):
         print_structure_info(struct)
 
     # Verify the space group is hexagonal for the relaxed structure
-    assert get_spacegroup(struct) == "hexagonal", f"Structure is not hexagonal"
+    assert get_bravais_type(struct) == BravaisType.HEXAGONAL, f"Structure is not hexagonal"
 
     # Calculate elastic tensor
     C_hexagonal = calculate_elastic_tensor(struct, device, dtype, bravais_type=BravaisType.HEXAGONAL)
@@ -234,7 +186,7 @@ def test_hexagonal(verbose: bool = False):
     assert torch.allclose(C_hexagonal, C_triclinic, atol=1e-1)
 
 
-def test_trigonal(verbose: bool = False):
+def test_trigonal(calculator: mace_mp, verbose: bool = False):
     """Test the elastic tensor of a trigonal structure of Si"""
 
     if verbose:
@@ -272,7 +224,7 @@ def test_trigonal(verbose: bool = False):
         print_structure_info(struct)
 
     # Verify the space group is trigonal for the relaxed structure
-    assert get_spacegroup(struct) == "trigonal", f"Structure is not trigonal"
+    assert get_bravais_type(struct) == BravaisType.TRIGONAL, f"Structure is not trigonal"
 
     # Calculate elastic tensor
     C_trigonal = calculate_elastic_tensor(struct, device, dtype, bravais_type=BravaisType.TRIGONAL)
@@ -290,7 +242,7 @@ def test_trigonal(verbose: bool = False):
     # Check if the elastic tensors are equal
     assert torch.allclose(C_trigonal, C_triclinic, atol=2e-1)
 
-def test_tetragonal(verbose: bool = False):
+def test_tetragonal(calculator: mace_mp, verbose: bool = False):
     """Test the elastic tensor of a tetragonal structure of BaTiO3"""
 
     if verbose:
@@ -327,7 +279,7 @@ def test_tetragonal(verbose: bool = False):
         print_structure_info(struct)
 
     # Verify the space group is tetragonal for the relaxed structure
-    assert get_spacegroup(struct) == "tetragonal", f"Structure is not tetragonal"
+    assert get_bravais_type(struct) == BravaisType.TETRAGONAL, f"Structure is not tetragonal"
 
     # Calculate elastic tensor
     C_tetragonal = calculate_elastic_tensor(struct, device, dtype, bravais_type=BravaisType.TETRAGONAL)
@@ -346,7 +298,7 @@ def test_tetragonal(verbose: bool = False):
     assert torch.allclose(C_tetragonal, C_triclinic, atol=1e-1)
 
 
-def test_orthorhombic(verbose: bool = False):
+def test_orthorhombic(calculator: mace_mp, verbose: bool = False):
     """Test the elastic tensor of a orthorhombic structure of BaTiO3"""
 
     if verbose:
@@ -378,7 +330,7 @@ def test_orthorhombic(verbose: bool = False):
         print_structure_info(struct)
 
     # Verify the space group is orthorhombic for the relaxed structure
-    assert get_spacegroup(struct) == "orthorhombic", f"Structure is not orthorhombic"
+    assert get_bravais_type(struct) == BravaisType.ORTHORHOMBIC, f"Structure is not orthorhombic"
 
     # Calculate elastic tensor
     C_orthorhombic = calculate_elastic_tensor(struct, device, dtype, bravais_type=BravaisType.ORTHORHOMBIC)
@@ -396,7 +348,7 @@ def test_orthorhombic(verbose: bool = False):
     # Check if the elastic tensors are equal
     assert torch.allclose(C_orthorhombic, C_triclinic, atol=1e-1)
 
-def test_monoclinic(verbose: bool = False):
+def test_monoclinic(calculator: mace_mp, verbose: bool = False):
     """Test the elastic tensor of a monoclinic structure of β-Ga2O3"""
 
     if verbose:
@@ -438,7 +390,7 @@ def test_monoclinic(verbose: bool = False):
         print_structure_info(struct)
 
     # Verify the space group is monoclinic for the relaxed structure
-    assert get_spacegroup(struct) == "monoclinic", f"Structure is not monoclinic"
+    assert get_bravais_type(struct) == BravaisType.MONOCLINIC, f"Structure is not monoclinic"
 
     # Calculate elastic tensor
     C_monoclinic = calculate_elastic_tensor(struct, device, dtype, bravais_type=BravaisType.MONOCLINIC)
@@ -457,11 +409,66 @@ def test_monoclinic(verbose: bool = False):
     assert torch.allclose(C_monoclinic, C_triclinic, atol=1e-1)
 
 
+def test_copper_elastic_properties(calculator: mace_mp, verbose: bool = False):
+    """Test calculation of elastic properties for copper."""
+    
+    # Create copper structure
+    N = 2
+    struct = bulk("Cu", "fcc", a=3.58, cubic=True)
+    struct = struct.repeat((N, N, N))
+    struct.calc = calculator
+    
+    # Relax cell
+    fcf = FrechetCellFilter(struct)
+    opt = FIRE_ASE(fcf)
+    opt.run(fmax=1e-5, steps=300)
+    struct = fcf.atoms
+    
+    # Calculate elastic tensor
+    bravais_type = get_bravais_type(struct)
+    elastic_tensor = calculate_elastic_tensor(struct, device, dtype, bravais_type=bravais_type)
+    
+    # Calculate elastic moduli
+    bulk_modulus, shear_modulus, _, _ = calculate_elastic_moduli(elastic_tensor)
+    
+    # Expected values
+    expected_elastic_tensor = torch.tensor([
+        [171.3434, 130.5782, 130.5782, 0.0000, 0.0000, 0.0000],
+        [130.5782, 171.3434, 130.5782, 0.0000, 0.0000, 0.0000],
+        [130.5782, 130.5782, 171.3434, 0.0000, 0.0000, 0.0000],
+        [0.0000, 0.0000, 0.0000, 70.8565, 0.0000, 0.0000],
+        [0.0000, 0.0000, 0.0000, 0.0000, 70.8565, 0.0000],
+        [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 70.8565]
+    ], device=device, dtype=dtype)
+    
+    expected_bulk_modulus = 144.1666
+    expected_shear_modulus = 43.1319 
+    
+    # Print results for verification
+    if verbose:
+        print(f"\nElastic tensor (GPa):")
+        elastic_tensor_np = elastic_tensor.cpu().numpy()
+        for row in elastic_tensor_np:
+            print("  " + "  ".join(f"{val:10.4f}" for val in row))
+        
+        print(f"Bulk modulus (GPa): {bulk_modulus:.4f}")
+        print(f"Shear modulus (GPa): {shear_modulus:.4f}")
+
+    # Assert with tolerance
+    assert torch.allclose(elastic_tensor, expected_elastic_tensor, rtol=1e-4)
+    assert abs(bulk_modulus - expected_bulk_modulus) < 1e-4 * expected_bulk_modulus
+    assert abs(shear_modulus - expected_shear_modulus) < 1e-4 * expected_shear_modulus
+    
+
 if __name__ == "__main__":
     
-    test_cubic()
-    test_hexagonal()
-    test_trigonal()
-    test_tetragonal()
-    test_orthorhombic()
-    test_monoclinic()
+    # test symmetries
+    test_cubic(calculator)
+    test_hexagonal(calculator)
+    test_trigonal(calculator)
+    test_tetragonal(calculator)
+    test_orthorhombic(calculator)
+    test_monoclinic(calculator)
+
+    # test elastic properties of Cu
+    test_copper_elastic_properties(calculator)
