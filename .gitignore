@@ -21,3 +21,8 @@ docs/reference/torch_sim.*
 
 # ipynb files
 *.ipynb
+
+# ignore trajectory files
+*.h5
+*.hdf5
+*.traj
