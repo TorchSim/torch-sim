@@ -85,7 +85,8 @@ cp -r examples/tutorials docs/ && \
 jupytext --set-formats "py:percent,ipynb" docs/tutorials/*.py && \
 jupytext --set-kernel python3 docs/tutorials/*.py && \
 jupytext --to notebook --execute docs/tutorials/*.py && \
-rm docs/tutorials/*.py
+rm docs/tutorials/*.py && \
+rm docs/tutorials/*.h5*
 ```
 
 Documentation structure based on Alex Ganose (@utf) exceptional
