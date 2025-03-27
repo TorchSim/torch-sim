@@ -79,14 +79,16 @@ python -m http.server -d docs_build
 ```
 
 To locally generate the tutorials, they must be copied to the docs folder,
-converted to `.ipynb` files, and executed.
+converted to `.ipynb` files, and executed. Then the .py files and any generated
+trajectory files must be cleaned up.
 ```bash
 cp -r examples/tutorials docs/ && \ 
 jupytext --set-formats "py:percent,ipynb" docs/tutorials/*.py && \
 jupytext --set-kernel python3 docs/tutorials/*.py && \
 jupytext --to notebook --execute docs/tutorials/*.py && \
 rm docs/tutorials/*.py && \
-rm docs/tutorials/*.h5*
+rm docs/tutorials/*.h5* && \
+rm docs/tutorials/*.traj
 ```
 
 Documentation structure based on Alex Ganose (@utf) exceptional
