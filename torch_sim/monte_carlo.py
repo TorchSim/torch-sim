@@ -238,7 +238,7 @@ def swap_monte_carlo(
     def swap_monte_carlo_step(
         state: SwapMCState,
         kT: float = kT,
-        generator: torch.Generator | None = None,
+        generator: torch.Generator | None = generator,
     ) -> SwapMCState:
         """Perform a single swap Monte Carlo step.
 
