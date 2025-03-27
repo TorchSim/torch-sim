@@ -88,7 +88,7 @@ jupytext --set-kernel python3 docs/tutorials/*.py && \
 jupytext --to notebook --execute docs/tutorials/*.py && \
 rm docs/tutorials/*.py && \
 rm docs/tutorials/*.h5* && \
-rm docs/tutorials/*.traj
+rm docs/tutorials/*.traj*
 ```
 
 Documentation structure based on Alex Ganose (@utf) exceptional

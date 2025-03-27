@@ -20,9 +20,7 @@ This is an intermediate tutorial. Autobatching is automatically handled by the
 unless:
 - you want to manually optimize the batch size for your model
 - you want to develop advanced or custom workflows
-"""
-# %% [markdown]
-"""
+
 ## Introduction
 
 Simulating many molecular systems on GPUs can be challenging when the total number of
@@ -33,10 +31,8 @@ atoms exceeds available GPU memory. The `torch_sim.autobatching` module solves t
 3. Efficiently managing memory resources during large-scale simulations
 
 Let's explore how to use these powerful features!
-"""
 
-# %% [markdown]
-"""
+
 This next cell can be ignored, it only exists to allow the tutorial to run
 in CI on a CPU. Using the AutoBatcher is generally not supported on CPUs.
 """

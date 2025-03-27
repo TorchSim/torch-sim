@@ -96,16 +96,7 @@ to write entire SimState objects:
 from torch_sim.state import SimState
 from ase.build import bulk
 from torch_sim.state import atoms_to_state
-# Create a random simulation state
-# state = SimState(
-#     positions=torch.randn(10, 3),
-#     masses=torch.ones(10),
-#     cell=torch.eye(3).unsqueeze(0),
-#     atomic_numbers=torch.ones(10, dtype=torch.int),
-#     batch=torch.zeros(10, dtype=torch.int),
-#     pbc=True,
-# )
-
+# Create a bulk Si diamond structure
 state = atoms_to_state(bulk("Si", "diamond", a=5.43), device="cpu", dtype=torch.float64)
 
 # Open a new trajectory file in a context manager
