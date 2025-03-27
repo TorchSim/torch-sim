@@ -11,16 +11,17 @@ This is an intermediate tutorial. Autobatching is automatically handled by the
 unless:
 - you want to manually optimize the batch size for your model
 - you want to develop advanced or custom workflows
-
-<details>
-<summary>Dependencies</summary>
-/// script
-dependencies = [
-    "mace-torch>=0.3.11",
-]
-///
-</details>
-
+"""
+# <details>
+# <summary>Dependencies</summary>
+# /// script
+# dependencies = [
+#     "mace-torch>=0.3.11",
+# ]
+# ///
+# </details>
+# %% [markdown]
+"""
 ## Introduction
 
 Simulating many molecular systems on GPUs can be challenging when the total number of
