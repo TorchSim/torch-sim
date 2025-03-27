@@ -2,47 +2,53 @@
 """
 # Trajectory Reporting in TorchSim
 
-This tutorial explains how to save and analyze trajectory data from molecular dynamics 
-simulations using TorchSim's trajectory module.
+This tutorial explains how to save and analyze trajectory data from molecular dynamics
+simulations using TorchSim's trajectory module. Though reporting can be automatically
+handled by the `integrate`, `optimize`, and `static` functions, understanding the 
+reporting interface is helpful for developing more complex workflows.
 
 ## Introduction
 
-When running molecular dynamics simulations, we often want to:
-- Save atomic positions, forces, and energies over time
-- Calculate and store custom properties during the simulation
-- Analyze the trajectory data after the simulation
-- Convert trajectories to other formats for visualization
+TorchSim provides two classes for handling trajectories:
 
-TorchSim provides two main classes for handling trajectories:
-1. `TorchSimTrajectory`: Low-level interface for reading/writing HDF5 files
-2. `TrajectoryReporter`: High-level interface that builds on TorchSimTrajectory
+`TorchSimTrajectory` is a flexible low-level interface for reading/writing HDF5 files.
+The TorchSimTrajectory is two things, 1) a file format for storing simulation data,
+equivalent to the ASE `.traj` file format or the classical MD `.dcd` file format, and
+2) a simple interface for storing and retrieving trajectory data from HDF5 files.
+
+`TrajectoryReporter` builds on `TorchSimTrajectory` to make it easier to record
+simulation data. It provides a high-level interface for saving states at regular
+intervals, calculating and saving properties during simulation, and handling
+multi-batch simulations.
 
 We'll start with the low-level interface to understand the fundamentals.
 """
-
-# %%
-import torch
-from torch_sim.trajectory import TrajectoryReporter, TorchSimTrajectory
-from torch_sim.state import SimState
-from torch_sim.models.lennard_jones import LennardJonesModel
-
 
 # %% [markdown]
 """
 ## TorchSimTrajectory: Low-Level Interface
 
-The `TorchSimTrajectory` class provides direct access to trajectory data in HDF5 format.
-It's designed to be simple and efficient, storing data in a structured way.
+The TorchSimTrajectory does not aim to be a new trajectory standard, but rather
+a simple interface for storing and retrieving trajectory data from HDF5 files.
+Through the power of HDF5, the TorchSimTrajectory supports:
+* Saving arbitrary arrays from the user in a natural way
+* First class support for `torch-sim.state.SimState` objects
+* Binary encoding + compression for minimal file sizes
+* Easy interoperability with ASE and pymatgen
 
 ### Basic Usage
 
-Let's start with the basics of writing and reading data:
+Let's start with the basics usage of the TorchSimTrajectory, writing and reading
+arrays of data. This is the operation that all other functionality is built on.
 """
 
 # %%
+
+import torch
+from torch_sim.trajectory import TorchSimTrajectory
 # Open a trajectory file for writing
 trajectory = TorchSimTrajectory(
-    tmp_path / "basic.h5",
+    "basic_traj.h5",
     mode="w",  # 'w' for write, 'r' for read, 'a' for append
     compress_data=True,  # Enable compression
     coerce_to_float32=True,  # Convert float64 to float32 to save space
@@ -53,7 +59,16 @@ data = {
     "positions": torch.randn(10, 3),  # [n_atoms, 3] array
     "velocities": torch.randn(10, 3),
 }
-trajectory.write_arrays(data, steps=0)  # Save at simulation step 0
+# save the data at simulation step 1, 2, 3, 4, 5
+for step in range(5):
+    trajectory.write_arrays(data, steps=step + 1)
+
+# print a summary of the trajectory
+print(trajectory)
+
+# we can read back out the positions and the steps they were saved at
+positions = trajectory.get_array("positions")
+steps = trajectory.get_steps("positions")
 
 trajectory.close()
 
@@ -66,56 +81,71 @@ to write entire SimState objects:
 """
 
 # %%
-# Create a simple simulation state
-state = SimState(
-    positions=torch.randn(10, 3),
-    masses=torch.ones(10),
-    cell=torch.eye(3).unsqueeze(0),
-    atomic_numbers=torch.ones(10, dtype=torch.int),
-    batch=torch.zeros(10, dtype=torch.int),
-)
+from torch_sim.state import SimState
+from ase.build import bulk
+from torch_sim.state import atoms_to_state
+# Create a random simulation state
+# state = SimState(
+#     positions=torch.randn(10, 3),
+#     masses=torch.ones(10),
+#     cell=torch.eye(3).unsqueeze(0),
+#     atomic_numbers=torch.ones(10, dtype=torch.int),
+#     batch=torch.zeros(10, dtype=torch.int),
+#     pbc=True,
+# )
 
-# Open a new trajectory file
-with TorchSimTrajectory(tmp_path / "state.h5", mode="w") as traj:
+state = atoms_to_state(bulk("Si", "diamond", a=5.43), device="cpu", dtype=torch.float64)
+
+# Open a new trajectory file in a context manager
+with TorchSimTrajectory("random_state.h5", mode="w") as traj:
     # Write the state with additional options
-    traj.write_state(
-        state, 
-        steps=0,
-        save_velocities=True,  # Save velocities if present
-        save_forces=True,      # Save forces if present
-        variable_cell=True,    # Cell parameters can change over time
-        variable_masses=False, # Masses are constant
-    )
+    for i in range(5):
+        traj.write_state(
+            state, 
+            steps=i + 1,
+            save_velocities=False,  # our basic state doesn't have velocities
+            save_forces=False,      # our basic state doesn't have forces
+            variable_cell=False,    # True for an NPT simulation, where the cell changes
+            variable_masses=False,  # True for a Monte Carlo simulation which swaps atoms
+        )
+    print(traj)
 
 # %% [markdown]
 """
 ### Reading Trajectory Data
 
-The trajectory file can be read in several ways:
+Once we've written a trajectory, we can get the raw arrays, a SimState object, or
+convert the state to an atoms or ase.Atoms object.
 """
 
 # %%
 # Open for reading
-with TorchSimTrajectory(tmp_path / "state.h5", mode="r") as traj:
+with TorchSimTrajectory("random_state.h5", mode="r") as traj:
     # Get raw arrays
     positions = traj.get_array("positions")
     steps = traj.get_steps("positions")
     
-    # Get a SimState object
-    state = traj.get_state(frame=0)
+    # Get a SimState object from the first cell
+    state = traj.get_state(0)
     
-    # Get structure objects for visualization
-    atoms = traj.get_atoms(frame=0)  # ASE Atoms
-    structure = traj.get_structure(frame=0)  # Pymatgen Structure
+    # Get ase atoms from the second cell
+    atoms = traj.get_atoms(2)
+
+    # get pymatgen structure from the last cell
+    structure = traj.get_structure(-1)
+
+    # write ase trajectory
+    traj.write_ase_trajectory("random_state.traj")
 
 # %% [markdown]
 """
 ## TrajectoryReporter: High-Level Interface
 
-While TorchSimTrajectory is powerful, the TrajectoryReporter makes it easier to:
-- Save states at regular intervals
-- Calculate and save properties during simulation
-- Handle multi-batch simulations
+While TorchSimTrajectory is powerful, it is low-level and requires too much
+code to do the things that are most common in atomistic simulation. To bridge the gap
+TorchSim provides the TrajectoryReporter, which makes it easier to save states at
+regular intervals, calculate and save properties during simulation, and handle
+multi-batch simulations.
 
 ### Basic State Saving
 
@@ -123,21 +153,23 @@ Let's start with the simplest use case - saving states periodically:
 """
 
 # %%
+from torch_sim.trajectory import TrajectoryReporter
+
 # Initialize a basic reporter
 reporter = TrajectoryReporter(
-    filenames=tmp_path / "simulation.h5",
-    state_frequency=100,  # Save full state every 100 steps
+    filenames="reported_traj.h5",
+    state_frequency=5,  # Save full state every 100 steps
 )
 
 # Run a simple simulation
-for step in range(5):
-    # Update state (in a real simulation)
-    state.positions += torch.randn_like(state.positions) * 0.01
-    
+for step in range(50):
     # Report the state
-    reporter.report(state, step)
+    reporter.report(state, step + 1)
 
-reporter.close()
+
+# under the hood, the reporter is using TorchSimTrajectory
+traj = reporter.trajectories[0]
+print(traj)
 
 # %% [markdown]
 """
@@ -168,6 +200,9 @@ Let's see an example:
 """
 
 # %%
+
+from torch_sim.models import LennardJonesModel
+
 # Define some property calculators
 def calculate_com(state: SimState) -> torch.Tensor:
     """Calculate center of mass - only needs state"""
@@ -175,18 +210,15 @@ def calculate_com(state: SimState) -> torch.Tensor:
 
 def calculate_energy(state: SimState, model: torch.nn.Module) -> torch.Tensor:
     """Calculate energy - needs both state and model"""
-    output = model(state)
-    return output["energy"]
+    return model(state)["energy"]
 
 # Create a reporter with property calculators
 reporter = TrajectoryReporter(
-    filenames=tmp_path / "props.h5",
-    state_frequency=100,  # Save full state every 100 steps
+    filenames="traj_with_props.h5",
+    state_frequency=50,  # Save full state every 100 steps
     prop_calculators={
-        10: {  # Calculate these properties every 10 steps
-            "center_of_mass": calculate_com,
-            "energy": calculate_energy,
-        }
+        10: {"center_of_mass": calculate_com},
+        20: {"energy": calculate_energy},
     }
 )
 
@@ -194,31 +226,48 @@ reporter = TrajectoryReporter(
 lj_model = LennardJonesModel()
 
 # Run simulation with property calculation
-for step in range(5):
-    state.positions += torch.randn_like(state.positions) * 0.01
-    reporter.report(state, step, model=lj_model)
+for step in range(100):
+    reporter.report(state, step + 1, model=lj_model)
+
+traj = reporter.trajectories[0]
+print(traj)
 
 reporter.close()
 
 # %% [markdown]
 """
-### State Writing Options
 
-The TrajectoryReporter accepts `state_kwargs` that control how states are written:
+We can see that the center of mass is saved 10 times, the energy 5 times, and the state
+twice, as we expect from the reporting frequency.
+
+### Other Trajectory Writing Options
+
+The TrajectoryReporter also accepts `state_kwargs` that are passed to the
+`TorchSimTrajectory.write_state` method, allowing us to save velocities, forces,
+and other properties that might be part of the SimState. Note that velocities and
+forces are not attributes of the base SimState but are attributes of the MDState, 
+which it inherits from.
+
+We can also save metadata about the simulation, which will be saved in the HDF5 file
+and can be accessed later.
 """
 
 # %%
 reporter = TrajectoryReporter(
-    filenames=tmp_path / "state_options.h5",
+    filenames="state_options.h5",
     state_frequency=100,
+    metadata={"author": "John Doe"},
     state_kwargs={
-        "save_velocities": True,    # Save velocities if present
-        "save_forces": True,        # Save forces if present
-        "variable_cell": True,      # Cell parameters can change
-        "variable_masses": False,   # Masses are constant
-        "variable_atomic_numbers": False,  # Atomic numbers are constant
+        "save_velocities": True,
+        "save_forces": True,
+        "variable_cell": True,
+        "variable_masses": False,
+        "variable_atomic_numbers": False,
     }
 )
+
+traj = reporter.trajectories[0]
+print(traj.metadata)
 
 # %% [markdown]
 """
@@ -229,20 +278,13 @@ multiple trajectory files:
 """
 
 # %%
+from torch_sim.state import concatenate_states
 # Create a double-batch simulation state
-positions = torch.randn(20, 3)  # 20 atoms total
-batch = torch.cat([torch.zeros(10), torch.ones(10)])  # Two batches of 10 atoms
-multi_state = SimState(
-    positions=positions,
-    masses=torch.ones(20),
-    cell=torch.eye(3).unsqueeze(0),
-    atomic_numbers=torch.ones(20, dtype=torch.int),
-    batch=batch
-)
+multi_state = concatenate_states([state.clone() for _ in range(5)])
 
 # Create a reporter with multiple files
 reporter = TrajectoryReporter(
-    filenames=[tmp_path / "system1.h5", tmp_path / "system2.h5"],
+    filenames=[f"system{i}.h5" for i in range(5)],
     state_frequency=100,
     prop_calculators={10: {"energy": calculate_energy}}
 )
@@ -251,13 +293,49 @@ reporter = TrajectoryReporter(
 for step in range(5):
     reporter.report(multi_state, step, lj_model)
 
+print(f"We now have {len(reporter.trajectories)} trajectories.")
 reporter.close()
 
 # %% [markdown]
 """
-### Data Organization
+### Closing the Reporter
 
-The HDF5 files created by both classes follow this structure:
+This is a bit of a niche use case, but we should mention that the reporter
+can also run the prop calculators without writing to a trajectory file.
+This can be useful if we have defined property calculators and want to call
+all of them without writing to a trajectory file.
+"""
+
+reporter = TrajectoryReporter(
+    filenames=None,
+    prop_calculators={
+        10: {"center_of_mass": calculate_com},
+        20: {"energy": calculate_energy},
+    }
+)
+
+# Report state and properties
+props = reporter.report(state, 0, lj_model)
+print(f"We calculated the following properties: {[list(prop)[0] for prop in props]}")
+
+reporter.close()
+
+# %% [markdown]
+"""
+
+## Conclusion
+
+TorchSim's complementary interfaces `TorchSimTrajectory` and `TrajectoryReporter`
+provide a flexible and efficient way to save and analyze simulation data.
+
+1. Use `TrajectoryReporter` for saving simulation data to files.
+2. Use `TorchSimTrajectory` for opening and reading the trajectory files
+you generate.
+
+### HDF5 File Structure
+
+For experienced HDF5 users, the HDF5 files created by both classes follow this 
+structure:
 ```
 /
 ├── header/           # File metadata
@@ -273,21 +351,4 @@ The HDF5 files created by both classes follow this structure:
     ├── any_other_array
     └── ...
 ```
-
-## Best Practices
-
-1. Use context managers (`with` statements) to ensure files are properly closed
-2. Enable compression for large trajectories
-3. Consider using float32 precision to reduce file sizes
-4. Use property calculators for analysis during simulation
-5. Split large multi-batch simulations across multiple files
-6. Set appropriate state_kwargs to avoid saving unnecessary data
-
-## Conclusion
-
-TorchSim's trajectory module provides two complementary interfaces:
-- `TorchSimTrajectory` for direct, low-level data access
-- `TrajectoryReporter` for high-level simulation output
-
-Together, they provide a flexible and efficient way to save and analyze simulation data!
 """

@@ -214,7 +214,8 @@ class TrajectoryReporter:
         Args:
             state (SimState): Current system state with n_batches equal to
                 len(filenames)
-            step (int): Current simulation step
+            step (int): Current simulation step, setting step to 0 will write
+                the state and all properties.
             model (torch.nn.Module, optional): Model used for simulation.
                 Defaults to None. Must be provided if any prop_calculators
                 are provided.
