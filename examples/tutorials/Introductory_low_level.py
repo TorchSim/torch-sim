@@ -35,6 +35,8 @@ Body Centered Cubic (BCC) Iron and Diamond Cubic Silicon.
 Since we want to do batch simulations, we will create a list of Atoms from which we will
 create a `SimState`.
 """
+import os
+
 from ase.build import bulk
 
 
@@ -151,7 +153,7 @@ The optimizer performs optimization across the batch of systems.
 We can access the optimizer attributes from the state object like `state.energy` etc.
 This gives us the energies of the systems in the batch.
 """
-max_steps = 50
+max_steps = 5 if os.environ.get("CI") else 50
 state = fire_init(state=state)
 
 for step in range(max_steps):
@@ -179,7 +181,7 @@ from torch_sim.units import MetalUnits
 We will run a MD simulation for 500 steps with a timestep of 0.002 ps,
 an initial temperature of 300 K, and a Langevin friction coefficient of 10 ps^-1.
 """
-max_md_steps = 500
+max_md_steps = 5 if os.environ.get("CI") else 500
 dt = 0.002 * MetalUnits.time  # Timestep (ps)
 kT = 300 * MetalUnits.temperature  # Initial temperature (K)
 gamma = 10 / MetalUnits.time  # Langevin friction coefficient (ps^-1)
