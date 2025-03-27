@@ -359,15 +359,76 @@ def test_orthorhombic(verbose: bool = False):
     # Check if the elastic tensors are equal
     assert torch.allclose(C_orthorhombic, C_triclinic, atol=1e-1)
 
+def test_monoclinic(verbose: bool = False):
+    """Test the elastic tensor of a monoclinic structure of BiVO4"""
+
+    # Lattice parameters for monoclinic BiVO4 (I2/b)
+    # Experimental lattice parameters for β-Ga2O3 (C2/m)
+    a, b, c, beta = 12.214, 3.037, 5.798, 103.7  # in Å
+    beta_rad = np.radians(beta)
+    cell = [
+        [a, 0, 0],
+        [0, b, 0],
+        [c * np.cos(beta_rad), 0, c * np.sin(beta_rad)],
+    ]
+    positions = [
+        (0.0903, 0.0000, 0.7947),  # Ga1
+        (0.9097, 0.0000, 0.2053),  # Ga2
+        (0.1660, 0.5000, 0.4742),  # Ga3
+        (0.8340, 0.5000, 0.5258),  # Ga4
+        (0.3062, 0.0000, 0.3235),  # O1
+        (0.6938, 0.0000, 0.6765),  # O2
+        (0.4824, 0.5000, 0.8177),  # O3
+        (0.5176, 0.5000, 0.1823),  # O4
+        (0.3138, 0.5000, 0.0346),  # O5
+        (0.6862, 0.5000, 0.9654),  # O6
+    ]
+    symbols = ["Ga", "Ga", "Ga", "Ga", "O", "O", "O", "O", "O", "O"]
+    struct = Atoms(symbols, scaled_positions=positions, cell=cell, pbc=True)
+
+    
+    struct.calc = calculator
+
+    # Relax cell
+    fcf = FrechetCellFilter(struct)
+    opt = FIRE_ASE(fcf)
+    opt.run(fmax=5e-3, steps=300)
+    struct = fcf.atoms
+    struct_copy = copy.deepcopy(struct)
+
+    # Relaxed structure
+    if verbose:
+        print_structure_info(struct)
+
+    # Verify the space group is monoclinic for the relaxed structure
+    spg_number = get_spacegroup_number(struct)
+    assert 3 <= spg_number <= 15, f"Structure is not monoclinic (space group {spg_number})"
+
+    # Calculate elastic tensor
+    C_monoclinic = calculate_elastic_tensor(struct, device, dtype, bravais_type=BravaisType.MONOCLINIC)
+    C_triclinic = calculate_elastic_tensor(struct_copy, device, dtype, bravais_type=BravaisType.TRICLINIC)
+
+    if verbose:
+        print("\nMonoclinic")
+        for row in C_monoclinic:
+            print("  " + "  ".join(f"{val:10.4f}" for val in row))
+
+        print("\nTriclinic")
+        for row in C_triclinic:
+            print("  " + "  ".join(f"{val:10.4f}" for val in row))
+    
+    # Check if the elastic tensors are equal
+    assert torch.allclose(C_monoclinic, C_triclinic, atol=1e-1)
+
+
 if __name__ == "__main__":
     
-    #test_cubic()  # this works
-    #test_hexagonal()  # This works
-    #test_trigonal(verbose=True) # This fails
-
+    #test_cubic()
+    #test_hexagonal()
+    test_trigonal(verbose=True) # This fails
     #test_tetragonal()
-    test_orthorhombic()
-    #test_monoclinic() # TODO
+    #test_orthorhombic()
+    #test_monoclinic()
 
 
     # Take the structure from MP

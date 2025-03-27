@@ -436,13 +436,12 @@ def hexagonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     return matrix
 
-
 def monoclinic_symmetry(strains: torch.Tensor) -> torch.Tensor:
     """Generate equation matrix for monoclinic crystal symmetry.
 
     Constructs the stress-strain relationship matrix for monoclinic symmetry,
-    which has 13 independent elastic constants: C11, C22, C33, C44, C55, C66,
-    C12, C13, C23, C15, C25, C35, C46.
+    which has 13 independent elastic constants: C11, C12, C13, C15, C22, C23, C25, 
+    C33, C35, C44, C46, C55, C66.
 
     Args:
         strains: Tensor of shape (6,) containing strain components
@@ -450,13 +449,17 @@ def monoclinic_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Returns:
         torch.Tensor: Matrix of shape (6, 13) where columns correspond to
-                     coefficients for C11...C46 in order:
-                     [C11, C22, C33, C44, C55, C66, C12, C13, C23, C15, C25, C35, C46]
+                     coefficients for the 13 independent constants in order:
+                     [C11, C12, C13, C15, C22, C23, C25, C33, C35, C44, C46, C55, C66]
 
     Notes:
-        For monoclinic symmetry with unique axis b (y), the non-zero components are:
-        - Diagonal: C11, C22, C33, C44, C55, C66
-        - Off-diagonal: C12, C13, C23, C15, C25, C35, C46
+        For monoclinic symmetry with unique axis b (y), the matrix has the form:
+        ⎡ εxx    εyy    εzz    2εxz    0      0      0      0      0      0      0      0      0  ⎤
+        ⎢ 0      εxx    0      0       εyy    εzz    2εxz   0      0      0      0      0      0  ⎥
+        ⎢ 0      0      εxx    0       0      εyy    0      εzz    2εxz   0      0      0      0  ⎥
+        ⎢ 0      0      0      0       0      0      0      0      0      2εyz   2εxy   0      0  ⎥
+        ⎢ 0      0      0      εxx     0      0      εyy    0      εzz    0      0      2εxz   0  ⎥
+        ⎣ 0      0      0      0       0      0      0      0      0      0      2εyz   0      2εxy⎦
     """
     if not isinstance(strains, torch.Tensor):
         strains = torch.tensor(strains)
@@ -470,41 +473,42 @@ def monoclinic_symmetry(strains: torch.Tensor) -> torch.Tensor:
     # Create the matrix using torch.zeros for proper device/dtype handling
     matrix = torch.zeros((6, 13), dtype=strains.dtype, device=strains.device)
 
-    # Fill in the matrix elements
-    # Order: C11, C22, C33, C44, C55, C66, C12, C13, C23, C15, C25, C35, C46
+    # Fill in the matrix elements according to the image
+    # Order: C11, C12, C13, C15, C22, C23, C25, C33, C35, C44, C46, C55, C66
 
     # First row - σxx
-    matrix[0] = torch.tensor(
-        [εxx, 0, 0, 0, 0, 0, εyy, εzz, 0, 2 * εxz, 0, 0, 0], device=strains.device
-    )
+    matrix[0, 0] = εxx
+    matrix[0, 1] = εyy
+    matrix[0, 2] = εzz
+    matrix[0, 3] = 2 * εxz
 
     # Second row - σyy
-    matrix[1] = torch.tensor(
-        [0, εyy, 0, 0, 0, 0, εxx, 0, εzz, 0, 2 * εxz, 0, 0], device=strains.device
-    )
+    matrix[1, 1] = εxx
+    matrix[1, 4] = εyy
+    matrix[1, 5] = εzz
+    matrix[1, 6] = 2 * εxz
 
     # Third row - σzz
-    matrix[2] = torch.tensor(
-        [0, 0, εzz, 0, 0, 0, 0, εxx, εyy, 0, 0, 2 * εxz, 0], device=strains.device
-    )
+    matrix[2, 2] = εxx
+    matrix[2, 5] = εyy
+    matrix[2, 7] = εzz
+    matrix[2, 8] = 2 * εxz
 
     # Fourth row - σyz
-    matrix[3] = torch.tensor(
-        [0, 0, 0, 2 * εyz, 0, 0, 0, 0, 0, 0, 0, 0, 2 * εxy], device=strains.device
-    )
+    matrix[3, 9] = 2 * εyz
+    matrix[3, 10] = 2 * εxy
 
     # Fifth row - σxz
-    matrix[4] = torch.tensor(
-        [0, 0, 0, 0, 2 * εxz, 0, 0, 0, 0, εxx, εyy, εzz, 0], device=strains.device
-    )
+    matrix[4, 3] = εxx
+    matrix[4, 6] = εyy
+    matrix[4, 8] = εzz
+    matrix[4, 11] = 2 * εxz
 
     # Sixth row - σxy
-    matrix[5] = torch.tensor(
-        [0, 0, 0, 0, 0, 2 * εxy, 0, 0, 0, 0, 0, 0, 2 * εyz], device=strains.device
-    )
+    matrix[5, 10] = 2 * εyz
+    matrix[5, 12] = 2 * εxy
 
     return matrix
-
 
 def triclinic_symmetry(strains: torch.Tensor) -> torch.Tensor:
     """Generate equation matrix for triclinic crystal symmetry.
@@ -931,7 +935,7 @@ def get_full_elastic_tensor(  # noqa: C901
         - Trigonal: 6 (C11, C12, C13, C14, C33, C44)
         - Tetragonal: 7 (C11, C12, C13, C16, C33, C44, C66)
         - Orthorhombic: 9 (C11, C22, C33, C12, C13, C23, C44, C55, C66)
-        - Monoclinic: 13 constants
+        - Monoclinic: 13 constants (C11, C22, C33, C12, C13, C23, C44, C55, C66, C15, C25, C35, C46)
         - Triclinic: 21 constants
     """
     # Initialize full tensor
@@ -999,12 +1003,12 @@ def get_full_elastic_tensor(  # noqa: C901
 
     elif bravais_type == BravaisType.MONOCLINIC:
         # 13 independent constants
-        C11, C22, C33, C12, C13, C23, C44, C55, C66, C15, C25, C35, C46 = Cij
+        C11, C12, C13, C15, C22, C23, C25, C33, C35, C44, C46, C55, C66 = Cij
         C.diagonal().copy_(torch.tensor([C11, C22, C33, C44, C55, C66]))
         C[0, 1] = C[1, 0] = C12
         C[0, 2] = C[2, 0] = C13
-        C[1, 2] = C[2, 1] = C23
         C[0, 4] = C[4, 0] = C15
+        C[1, 2] = C[2, 1] = C23
         C[1, 4] = C[4, 1] = C25
         C[2, 4] = C[4, 2] = C35
         C[3, 5] = C[5, 3] = C46
