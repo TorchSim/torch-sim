@@ -239,12 +239,11 @@ def tetragonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     return matrix
 
-
 def orthorhombic_symmetry(strains: torch.Tensor) -> torch.Tensor:
     """Generate equation matrix for orthorhombic crystal symmetry.
 
     Constructs the stress-strain relationship matrix for orthorhombic symmetry,
-    which has nine independent elastic constants: C11, C22, C33, C12, C13, C23,
+    which has nine independent elastic constants: C11, C12, C13, C22, C23, C33,
     C44, C55, and C66.
 
     Args:
@@ -253,16 +252,16 @@ def orthorhombic_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Returns:
         torch.Tensor: Matrix of shape (6, 9) where columns correspond to
-                     coefficients for C11...C66
+                     coefficients for C11, C12, C13, C22, C23, C33, C44, C55, C66
 
     Notes:
         The resulting matrix M has the form:
-        ⎡ εxx   0    0   εyy  εzz   0    0    0    0  ⎤
-        ⎢  0   εyy   0   εxx   0   εzz   0    0    0  ⎥
-        ⎢  0    0   εzz   0   εxx  εyy   0    0    0  ⎥
-        ⎢  0    0    0    0    0    0   2εyz  0    0  ⎥
-        ⎢  0    0    0    0    0    0    0   2εxz  0  ⎥
-        ⎣  0    0    0    0    0    0    0    0   2εxy⎦
+        ⎡ εxx    εyy    εzz    0      0      0      0      0      0  ⎤
+        ⎢ 0      εxx    0      εyy    εzz    0      0      0      0  ⎥
+        ⎢ 0      0      εxx    0      εyy    εzz    0      0      0  ⎥
+        ⎢ 0      0      0      0      0      0      2εyz   0      0  ⎥
+        ⎢ 0      0      0      0      0      0      0      2εxz   0  ⎥
+        ⎣ 0      0      0      0      0      0      0      0      2εxy⎦
     """
     if not isinstance(strains, torch.Tensor):
         strains = torch.tensor(strains)
@@ -276,25 +275,29 @@ def orthorhombic_symmetry(strains: torch.Tensor) -> torch.Tensor:
     # Create the matrix using torch.zeros for proper device/dtype handling
     matrix = torch.zeros((6, 9), dtype=strains.dtype, device=strains.device)
 
-    # Fill in the matrix elements
-    # First row
+    # Fill in the matrix elements according to the image
+    # First row - C11, C12, C13, C22, C23, C33, C44, C55, C66
     matrix[0, 0] = εxx
-    matrix[0, 3] = εyy
-    matrix[0, 4] = εzz
+    matrix[0, 1] = εyy
+    matrix[0, 2] = εzz
 
     # Second row
-    matrix[1, 1] = εyy
-    matrix[1, 3] = εxx
-    matrix[1, 5] = εzz
+    matrix[1, 1] = εxx
+    matrix[1, 3] = εyy
+    matrix[1, 4] = εzz
 
     # Third row
-    matrix[2, 2] = εzz
-    matrix[2, 4] = εxx
-    matrix[2, 5] = εyy
+    matrix[2, 2] = εxx
+    matrix[2, 4] = εyy
+    matrix[2, 5] = εzz
 
-    # Shear components
+    # Fourth row (shear terms)
     matrix[3, 6] = 2 * εyz
+
+    # Fifth row
     matrix[4, 7] = 2 * εxz
+
+    # Sixth row
     matrix[5, 8] = 2 * εxy
 
     return matrix
@@ -988,7 +991,7 @@ def get_full_elastic_tensor(  # noqa: C901
 
     elif bravais_type == BravaisType.ORTHORHOMBIC:
         # C11, C22, C33, C12, C13, C23, C44, C55, C66
-        C11, C22, C33, C12, C13, C23, C44, C55, C66 = Cij
+        C11, C12, C13, C22, C23, C33, C44, C55, C66 = Cij
         C.diagonal().copy_(torch.tensor([C11, C22, C33, C44, C55, C66]))
         C[0, 1] = C[1, 0] = C12
         C[0, 2] = C[2, 0] = C13

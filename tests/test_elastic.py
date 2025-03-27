@@ -259,7 +259,7 @@ def test_tetragonal(verbose: bool = False):
     """Test the elastic tensor of a tetragonal structure of BaTiO3"""
 
     # Create tetragonal BaTiO3 structure
-    a, c = 3.99, 4.03  # in angstroms
+    a, c = 3.99, 4.03
     symbols = ["Ba", "Ti", "O", "O", "O"]
     basis = [
         (0, 0, 0),        # Ba at (0,0,0)
@@ -305,16 +305,59 @@ def test_tetragonal(verbose: bool = False):
         print("\nTriclinic")
         for row in C_triclinic:
             print("  " + "  ".join(f"{val:10.4f}" for val in row))
-
-        # Calculate elastic tensor using matcalc
-        print("\nMatcalc")
-        C_matcalc = calculate_elastic_tensor_matcalc(struct_matcalc, calculator)
-        for row in C_matcalc:
-            print("  " + "  ".join(f"{val:10.4f}" for val in row))
     
     # Check if the elastic tensors are equal
     assert torch.allclose(C_tetragonal, C_triclinic, atol=1e-1)
 
+
+def test_orthorhombic(verbose: bool = False):
+    """Test the elastic tensor of a orthorhombic structure of BaTiO3"""
+
+    # Create orthorhombic BaTiO3 structure
+    a, b, c = 3.8323, 2.8172, 5.8771
+    scaled_positions = [
+        (0.0000, 0.0000, 0.0000),  # Ba
+        (0.5000, 0.0000, 0.5000),  # Ti
+        (0.5000, 0.5000, 0.2450),  # O1
+        (0.5000, 0.5000, 0.7550),  # O2
+        (0.0000, 0.5000, 0.5000),  # O3
+    ]
+    symbols = ["Ba", "Ti", "O", "O", "O"]
+    struct = Atoms(symbols, scaled_positions=scaled_positions, 
+                  cell=[(a, 0, 0), (0, b, 0), (0, 0, c)], pbc=True)
+
+    struct.calc = calculator
+
+    # Relax cell
+    fcf = FrechetCellFilter(struct)
+    opt = FIRE_ASE(fcf)
+    opt.run(fmax=1e-4, steps=300)
+    struct = fcf.atoms
+    struct_copy = copy.deepcopy(struct)
+
+    # Relaxed structure
+    if verbose:
+        print_structure_info(struct)
+
+    # Verify the space group is orthorhombic for the relaxed structure
+    spg_number = get_spacegroup_number(struct)
+    assert 16 <= spg_number <= 74, f"Structure is not orthorhombic (space group {spg_number})"
+
+    # Calculate elastic tensor
+    C_orthorhombic = calculate_elastic_tensor(struct, device, dtype, bravais_type=BravaisType.ORTHORHOMBIC)
+    C_triclinic = calculate_elastic_tensor(struct_copy, device, dtype, bravais_type=BravaisType.TRICLINIC)
+
+    if verbose:
+        print("\nOrthorhombic")
+        for row in C_orthorhombic:
+            print("  " + "  ".join(f"{val:10.4f}" for val in row))
+
+        print("\nTriclinic")
+        for row in C_triclinic:
+            print("  " + "  ".join(f"{val:10.4f}" for val in row))
+    
+    # Check if the elastic tensors are equal
+    assert torch.allclose(C_orthorhombic, C_triclinic, atol=1e-1)
 
 if __name__ == "__main__":
     
@@ -322,8 +365,8 @@ if __name__ == "__main__":
     #test_hexagonal()  # This works
     #test_trigonal(verbose=True) # This fails
 
-    test_tetragonal(verbose=True) # TODO
-    #test_orthorhombic() # TODO
+    #test_tetragonal()
+    test_orthorhombic()
     #test_monoclinic() # TODO
 
 
