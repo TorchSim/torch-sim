@@ -1,4 +1,13 @@
 # %% [markdown]
+# <details>
+#   <summary>Dependencies</summary>
+# /// script
+# dependencies = [
+#     "mace-torch>=0.3.11",
+# ]
+# ///
+# </details>
+# %% [markdown]
 """
 # Autobatching
 
@@ -12,14 +21,6 @@ unless:
 - you want to manually optimize the batch size for your model
 - you want to develop advanced or custom workflows
 """
-# <details>
-# <summary>Dependencies</summary>
-# /// script
-# dependencies = [
-#     "mace-torch>=0.3.11",
-# ]
-# ///
-# </details>
 # %% [markdown]
 """
 ## Introduction
@@ -173,7 +174,7 @@ batcher = ChunkingAutoBatcher(
 
 # %% [markdown]
 """
-### Optimization Example
+### Example: NVT Langevin Dynamics
 
 Here's a real example using FIRE optimization from the test suite:
 """
@@ -225,7 +226,7 @@ it requires the batch to be dynamically updated. The swapping logic is handled i
 but the user must regularly provide a convergence tensor indicating which batches in 
 the state have converged.
 
-### Basic Usage
+### Usage
 """
 
 # %%

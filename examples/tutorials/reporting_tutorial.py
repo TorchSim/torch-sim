@@ -305,7 +305,7 @@ can also run the prop calculators without writing to a trajectory file.
 This can be useful if we have defined property calculators and want to call
 all of them without writing to a trajectory file.
 """
-
+# %%
 reporter = TrajectoryReporter(
     filenames=None,
     prop_calculators={
