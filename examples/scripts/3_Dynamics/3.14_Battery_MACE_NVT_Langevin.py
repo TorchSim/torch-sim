@@ -12,11 +12,11 @@ import torch
 from ase.io import read
 from mace.calculators.foundations_models import mace_mp
 
+from torch_sim.integrators import nvt_langevin
 from torch_sim.io import atoms_to_state
+from torch_sim.models.mace import MaceModel
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.quantities import temperature
-from torch_sim.unbatched.models.mace import UnbatchedMaceModel
-from torch_sim.unbatched.unbatched_integrators import nvt_langevin
 from torch_sim.units import MetalUnits as Units
 
 
@@ -35,12 +35,12 @@ loaded_model = mace_mp(
 
 # Load the battery structure
 battery = read("battery.xyz", format="extxyz")
-
+battery_rep = [battery, battery]
 # Number of steps to run
 N_steps = 20 if os.getenv("CI") else 2_000
 
 # Initialize the unbatched MACE model
-model = UnbatchedMaceModel(
+model = MaceModel(
     model=loaded_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
@@ -50,7 +50,7 @@ model = UnbatchedMaceModel(
     enable_cueq=False,
 )
 
-state = atoms_to_state(atoms=battery, device=device, dtype=dtype)
+state = atoms_to_state(atoms=battery_rep, device=device, dtype=dtype)
 
 dt = 0.002 * Units.time  # Timestep (ps)
 kT = 500 * Units.temperature  # Initial temperature (K)
@@ -64,13 +64,18 @@ langevin_init, langevin_update = nvt_langevin(
     gamma=gamma,
 )
 
-state = langevin_init(state=state, seed=1)
+state = langevin_init(state=state)
 
 for step in range(N_steps):
-    if step % 10 == 0:
-        temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
-        print(f"{step=}: Temperature: {temp:.4f}")
+    temp = (
+        temperature(masses=state.masses, momenta=state.momenta, batch=state.batch)
+        / Units.temperature
+    )
+    print(f"{step=}: Temperature: {temp}")
     state = langevin_update(state=state, kT=kT)
 
-final_temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
-print(f"Final temperature: {final_temp:.4f}")
+final_temp = (
+    temperature(masses=state.masses, momenta=state.momenta, batch=state.batch)
+    / Units.temperature
+)
+print(f"Final temperature: {final_temp}")
