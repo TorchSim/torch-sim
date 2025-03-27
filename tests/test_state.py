@@ -10,8 +10,8 @@ from torch_sim.state import (
     concatenate_states,
     infer_property_scope,
     initialize_state,
-    pop_states,
-    slice_state,
+    _pop_states,
+    _slice_state,
 )
 
 
@@ -53,7 +53,7 @@ def test_infer_md_state_property_scope(si_sim_state: SimState) -> None:
 def test_slice_substate(si_double_sim_state: SimState, si_sim_state: SimState) -> None:
     """Test slicing a substate from the SimState."""
     for batch_index in range(2):
-        substate = slice_state(si_double_sim_state, [batch_index])
+        substate = _slice_state(si_double_sim_state, [batch_index])
         assert isinstance(substate, SimState)
         assert substate.positions.shape == (8, 3)
         assert substate.masses.shape == (8,)
@@ -73,7 +73,7 @@ def test_slice_md_substate(si_double_sim_state: SimState) -> None:
         forces=torch.randn_like(si_double_sim_state.positions),
     )
     for batch_index in range(2):
-        substate = slice_state(state, [batch_index])
+        substate = _slice_state(state, [batch_index])
         assert isinstance(substate, MDState)
         assert substate.positions.shape == (8, 3)
         assert substate.masses.shape == (8,)
@@ -238,7 +238,7 @@ def test_pop_states(
     """Test popping states from a state."""
     states = [si_sim_state, ar_sim_state, fe_fcc_sim_state]
     concatenated_states = concatenate_states(states)
-    kept_state, popped_states = pop_states(
+    kept_state, popped_states = _pop_states(
         concatenated_states, torch.tensor([0], device=concatenated_states.device)
     )
 

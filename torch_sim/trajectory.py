@@ -39,7 +39,7 @@ import torch
 from torch_sim.state import SimState
 
 
-DATA_TYPE_MAP = {
+_DATA_TYPE_MAP = {
     np.dtype("float32"): tables.Float32Atom(),
     np.dtype("float64"): tables.Float64Atom(),
     np.dtype("int32"): tables.Int32Atom(),
@@ -440,7 +440,7 @@ class TorchSimTrajectory:
         Returns:
             dict: Dictionary mapping numpy/torch dtypes to PyTables atom types
         """
-        type_map = copy.copy(DATA_TYPE_MAP)
+        type_map = copy.copy(_DATA_TYPE_MAP)
         if coerce_to_int32:
             type_map[torch.int64] = tables.Int32Atom()
             type_map[np.dtype("int64")] = tables.Int32Atom()
