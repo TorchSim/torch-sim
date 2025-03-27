@@ -1,10 +1,7 @@
 """SimState: TorchScript-compatible state representation for atomistic systems.
 
-This module provides a dataclass decorator that extends Python's built-in dataclass
-functionality to work seamlessly with TorchScript. It enables the creation of
-strongly-typed, immutable data structures that can be used in both Python and
-TorchScript contexts. The main SimState class represents atomistic systems with
-support for batched operations and conversion to/from various atomistic formats.
+The main SimState class represents atomistic systems with support for batched
+operations and conversion to/from various atomistic formats.
 """
 
 import copy
