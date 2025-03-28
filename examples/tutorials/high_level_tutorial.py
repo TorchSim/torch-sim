@@ -328,6 +328,7 @@ Ignore the following cell, it just exists so that the example runs on CPU.
 def mock_determine_max_batch_size(min_state, max_state, max_atoms):
     return 10
 
+
 ts.autobatching.determine_max_batch_size = mock_determine_max_batch_size
 
 
