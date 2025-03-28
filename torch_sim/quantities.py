@@ -3,6 +3,7 @@
 import torch
 
 from torch_sim.state import SimState
+from torch_sim.units import MetalUnits
 
 
 # @torch.jit.script
@@ -17,9 +18,8 @@ def count_dof(tensor: torch.Tensor) -> int:
     """
     return tensor.numel()
 
-
 # @torch.jit.script
-def temperature(
+def calc_kT(
     momenta: torch.Tensor,
     masses: torch.Tensor,
     velocities: torch.Tensor | None = None,
@@ -68,8 +68,18 @@ def temperature(
     return batch_sums / dof_per_batch
 
 
+def calc_temperature(
+    momenta: torch.Tensor,
+    masses: torch.Tensor,
+    velocities: torch.Tensor | None = None,
+    batch: torch.Tensor | None = None,
+    units: object = MetalUnits.temperature,
+) -> torch.Tensor:
+    return calc_kT(momenta, masses, velocities, batch) / units
+
+
 # @torch.jit.script
-def kinetic_energy(
+def calc_kinetic_energy(
     momenta: torch.Tensor,
     masses: torch.Tensor,
     velocities: torch.Tensor | None = None,

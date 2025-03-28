@@ -30,7 +30,7 @@ from torch_sim.optimizers import (
 from torch_sim.state import initialize_state, concatenate_states
 
 # quantities
-from torch_sim.quantities import kinetic_energy, temperature
+from torch_sim.quantities import calc_kinetic_energy, calc_kT
 
 __all__ = [
     "__version__",
@@ -53,8 +53,8 @@ __all__ = [
     "frechet_cell_fire",
     "initialize_state",
     "concatenate_states",
-    "kinetic_energy",
-    "temperature",
+    "calc_kinetic_energy",
+    "calc_kT",
 ]
 
 PKG_DIR = os.path.dirname(__file__)

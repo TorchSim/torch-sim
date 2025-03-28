@@ -128,7 +128,7 @@ trajectory_file = "lj_trajectory.h5"
 # - Calculate kinetic energy every 20 steps
 prop_calculators = {
     10: {"potential_energy": lambda state: state.energy},
-    20: {"kinetic_energy": lambda state: ts.kinetic_energy(state.momenta, state.masses)},
+    20: {"kinetic_energy": lambda state: ts.calc_kinetic_energy(state.momenta, state.masses)},
 }
 
 # Create a reporter that saves the state every 10 steps

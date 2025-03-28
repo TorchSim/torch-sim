@@ -15,7 +15,7 @@ from numpy.typing import ArrayLike
 
 from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
 from torch_sim.models.interface import ModelInterface
-from torch_sim.quantities import batchwise_max_force, kinetic_energy, temperature
+from torch_sim.quantities import batchwise_max_force, calc_kinetic_energy, calc_kT
 from torch_sim.state import SimState, StateLike, concatenate_states, initialize_state
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.units import UnitSystem
@@ -33,8 +33,8 @@ def _configure_reporter(
         return trajectory_reporter
     possible_properties = {
         "potential_energy": lambda state: state.energy,
-        "kinetic_energy": lambda state: kinetic_energy(state.momenta, state.masses),
-        "temperature": lambda state: temperature(state.momenta, state.masses),
+        "kinetic_energy": lambda state: calc_kinetic_energy(state.momenta, state.masses),
+        "temperature": lambda state: calc_kT(state.momenta, state.masses),
     }
     if runner == integrate:
         properties = ["kinetic_energy", "potential_energy", "temperature"]

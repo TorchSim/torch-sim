@@ -4,7 +4,7 @@ import os
 
 import torch
 
-from torch_sim.quantities import kinetic_energy, temperature
+from torch_sim.quantities import calc_kinetic_energy, calc_kT
 from torch_sim.state import SimState
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_integrators import npt_langevin
@@ -125,10 +125,10 @@ def get_pressure(
 # Run the simulation
 for step in range(N_steps):
     if step % 50 == 0:
-        temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
+        temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
         pressure = get_pressure(
             model(state)["stress"],
-            kinetic_energy(masses=state.masses, momenta=state.momenta),
+            calc_kinetic_energy(masses=state.masses, momenta=state.momenta),
             torch.linalg.det(state.cell),
         )
         pressure = pressure.item() / Units.pressure
@@ -140,14 +140,14 @@ for step in range(N_steps):
         )
     state = npt_update(state, kT=kT, external_pressure=target_pressure)
 
-temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
+temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
 print(f"Final temperature: {temp:.4f}")
 
 
 stress = model(state)["stress"]
-kinetic_energy = kinetic_energy(masses=state.masses, momenta=state.momenta)
+calc_kinetic_energy = calc_kinetic_energy(masses=state.masses, momenta=state.momenta)
 volume = torch.linalg.det(state.cell)
-pressure = get_pressure(stress, kinetic_energy, volume)
+pressure = get_pressure(stress, calc_kinetic_energy, volume)
 pressure = pressure.item() / Units.pressure
 print(f"Final {pressure=:.4f}")
 print(stress * UnitConversion.eV_per_Ang3_to_GPa)

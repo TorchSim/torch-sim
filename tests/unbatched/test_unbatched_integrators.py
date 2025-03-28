@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 import torch
 
-from torch_sim.quantities import kinetic_energy, temperature
+from torch_sim.quantities import calc_kinetic_energy, calc_kT
 from torch_sim.state import SimState
 from torch_sim.unbatched.unbatched_integrators import (
     MDState,
@@ -37,7 +37,7 @@ def test_nve_integrator(ar_sim_state: SimState, unbatched_lj_model: Any) -> None
     for step in range(1000):
         state = nve_update(state, dt)
         if step % 50 == 0:
-            total_energy = state.energy + kinetic_energy(state.momenta, state.masses)
+            total_energy = state.energy + calc_kinetic_energy(state.momenta, state.masses)
             energies[step // 50] = total_energy
 
     # Check energy conservation
@@ -64,7 +64,7 @@ def test_nvt_langevin_integrator(ar_sim_state: SimState, unbatched_lj_model: Any
     temperatures = torch.zeros(500)
     for step in range(500):
         state = langevin_update(state, target_temp)
-        temp = temperature(state.momenta, state.masses) / MetalUnits.temperature
+        temp = calc_kT(state.momenta, state.masses) / MetalUnits.temperature
         temperatures[step] = temp
 
     average_temperature = torch.mean(temperatures)
@@ -97,7 +97,7 @@ def test_nvt_nose_hoover_integrator(
     temperatures = torch.zeros(500)
     for step in range(500):
         state = nvt_update(state, target_temp)
-        temp = temperature(state.momenta, state.masses) / MetalUnits.temperature
+        temp = calc_kT(state.momenta, state.masses) / MetalUnits.temperature
         temperatures[step] = temp
 
     average_temperature = torch.mean(temperatures)
@@ -136,13 +136,13 @@ def test_npt_langevin_integrator(ar_sim_state: SimState, unbatched_lj_model: Any
     pressures = torch.zeros(n_steps)
     for step in range(n_steps):
         state = langevin_update(state, target_temp)
-        temp = temperature(state.momenta, state.masses) / MetalUnits.temperature
+        temp = calc_kT(state.momenta, state.masses) / MetalUnits.temperature
         volume = torch.linalg.det(state.cell)
         pressures[step] = (
             1
             / (dim)
             * (
-                (2 * kinetic_energy(state.momenta, state.masses) / volume)
+                (2 * calc_kinetic_energy(state.momenta, state.masses) / volume)
                 - torch.trace(state.stress)
             )
             / MetalUnits.pressure

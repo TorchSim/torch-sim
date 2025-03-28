@@ -9,7 +9,7 @@ from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
 from torch_sim.integrators import nve, nvt_langevin
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.optimizers import unit_cell_fire
-from torch_sim.quantities import kinetic_energy
+from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.runners import generate_force_convergence_fn, integrate, optimize, static
 from torch_sim.state import SimState, initialize_state
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
@@ -23,7 +23,7 @@ def test_integrate_nve(ar_sim_state: SimState, lj_model: Any, tmp_path: Path) ->
         filenames=traj_file,
         state_frequency=1,
         prop_calculators={
-            1: {"ke": lambda state: kinetic_energy(state.momenta, state.masses)}
+            1: {"ke": lambda state: calc_kinetic_energy(state.momenta, state.masses)}
         },
     )
 
@@ -57,7 +57,7 @@ def test_integrate_single_nvt(
         filenames=traj_file,
         state_frequency=1,
         prop_calculators={
-            1: {"ke": lambda state: kinetic_energy(state.momenta, state.masses)}
+            1: {"ke": lambda state: calc_kinetic_energy(state.momenta, state.masses)}
         },
     )
 
@@ -108,7 +108,7 @@ def test_integrate_double_nvt_with_reporter(
         filenames=trajectory_files,
         state_frequency=1,
         prop_calculators={
-            1: {"ke": lambda state: kinetic_energy(state.momenta, state.masses)}
+            1: {"ke": lambda state: calc_kinetic_energy(state.momenta, state.masses)}
         },
     )
 
@@ -156,7 +156,7 @@ def test_integrate_many_nvt(
         filenames=trajectory_files,
         state_frequency=1,
         prop_calculators={
-            1: {"ke": lambda state: kinetic_energy(state.momenta, state.masses)}
+            1: {"ke": lambda state: calc_kinetic_energy(state.momenta, state.masses)}
         },
     )
 
@@ -353,7 +353,7 @@ def test_batched_optimize_fire(
         filenames=trajectory_files,
         state_frequency=1,
         prop_calculators={
-            1: {"ke": lambda state: kinetic_energy(state.momenta, state.masses)}
+            1: {"ke": lambda state: calc_kinetic_energy(state.momenta, state.masses)}
         },
     )
 
