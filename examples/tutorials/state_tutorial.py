@@ -48,14 +48,14 @@ can take in pymatgen Structure, PhonopyAtoms, or other SimStates and convert the
 
 # %%
 import torch
+import torch_sim as ts
 from ase.build import bulk
-from torch_sim.state import initialize_state
 
 # Create a crystal structure using ASE
 si_atoms = bulk("Si", "diamond", a=5.43, cubic=True)
 
 # Convert to SimState
-si_state = initialize_state(si_atoms, device=torch.device("cpu"), dtype=torch.float64)
+si_state = ts.initialize_state(si_atoms, device=torch.device("cpu"), dtype=torch.float64)
 
 print(f"State has {si_state.n_atoms} atoms and {si_state.n_batches} batches")
 
@@ -101,7 +101,7 @@ cu_atoms = bulk("Cu", "fcc", a=3.61, cubic=True)
 al_atoms = bulk("Al", "fcc", a=4.05, cubic=True)
 ag_atoms = bulk("Ag", "fcc", a=4.09, cubic=True)
 # Initialize both as a single batched state
-multi_state = initialize_state([cu_atoms, al_atoms, ag_atoms], device=torch.device("cpu"), dtype=torch.float64)
+multi_state = ts.initialize_state([cu_atoms, al_atoms, ag_atoms], device=torch.device("cpu"), dtype=torch.float64)
 
 print(f"Multi-state has {multi_state.n_atoms} total atoms across {multi_state.n_batches} batches")
 
@@ -138,8 +138,6 @@ containing only the first three batches. The other operations are available thro
 """
 
 # %%
-from torch_sim.state import concatenate_states
-
 # we can copy the state with the clone method
 multi_state_copy = multi_state.clone()
 print(f"This state has {multi_state_copy.n_batches} batches")
@@ -150,7 +148,7 @@ print(f"We popped {len(popped_states)} states, leaving us with "
       f"{multi_state_copy.n_batches} batch in the original state")
 
 # we can put them back together with concatenate
-multi_state_full = concatenate_states([*popped_states, multi_state_copy])
+multi_state_full = ts.concatenate_states([*popped_states, multi_state_copy])
 print(f"Again we have {multi_state_full.n_batches} batches in the full state")
 
 # or if we don't want to modify the original state, we can instead index into it

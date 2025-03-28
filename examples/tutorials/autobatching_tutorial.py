@@ -7,6 +7,7 @@
 # ]
 # ///
 # </details>
+
 # %% [markdown]
 """
 # Autobatching
@@ -37,11 +38,11 @@ This next cell can be ignored, it only exists to allow the tutorial to run
 in CI on a CPU. Using the AutoBatcher is generally not supported on CPUs.
 """
 # %%
-import torch_sim
+import torch_sim as ts
 def mock_determine_max_batch_size(min_state, max_state, max_atoms):
     return 3
 
-torch_sim.autobatching.determine_max_batch_size = mock_determine_max_batch_size
+ts.autobatching.determine_max_batch_size = mock_determine_max_batch_size
 
 # %% [markdown]
 """
@@ -53,7 +54,6 @@ Before diving into autobatching, let's understand how memory usage is estimated:
 # %%
 import torch
 from torch_sim.autobatching import calculate_memory_scaler
-from torch_sim.state import initialize_state
 from ase.build import bulk
 
 
@@ -64,7 +64,7 @@ many_cu_atoms = [cu_atoms] * 5
 
 # Can be replaced with any SimState object
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-state = initialize_state(many_cu_atoms, device=device, dtype=torch.float64)
+state = ts.initialize_state(many_cu_atoms, device=device, dtype=torch.float64)
 
 # Calculate memory scaling factor based on atom count
 atom_metric = calculate_memory_scaler(state, memory_scales_with="n_atoms")
@@ -124,10 +124,8 @@ batched integration.
 """
 
 # %%
-from torch_sim.autobatching import ChunkingAutoBatcher
-
 # Initialize the batcher, the max memory scaler will be computed automatically
-batcher = ChunkingAutoBatcher(
+batcher = ts.ChunkingAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
 )
@@ -162,7 +160,7 @@ every time, which is a bit slow, you can calculate it once and then include it i
 `ChunkingAutoBatcher` constructor.
 """
 # %%
-batcher = ChunkingAutoBatcher(
+batcher = ts.ChunkingAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
     max_memory_scaler=max_memory_scaler,
@@ -176,16 +174,14 @@ Here's a real example using FIRE optimization from the test suite:
 """
 
 # %%
-from torch_sim.integrators import nvt_langevin
-
 # Initialize nvt langevin integrator
-nvt_init, nvt_update = nvt_langevin(mace_model, dt=0.001, kT=0.01)
+nvt_init, nvt_update = ts.nvt_langevin(mace_model, dt=0.001, kT=0.01)
 
 # Prepare states for optimization
 nvt_state = nvt_init(state)
 
 # Initialize the batcher
-batcher = ChunkingAutoBatcher(
+batcher = ts.ChunkingAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
 )
@@ -226,15 +222,12 @@ the state have converged.
 """
 
 # %%
-from torch_sim.autobatching import HotSwappingAutoBatcher
-from torch_sim.runners import generate_force_convergence_fn
-from torch_sim.optimizers import frechet_cell_fire
 
-fire_init, fire_update = frechet_cell_fire(mace_model)
+fire_init, fire_update = ts.frechet_cell_fire(mace_model)
 fire_state = fire_init(state)
 
 # Initialize the batcher
-batcher = HotSwappingAutoBatcher(
+batcher = ts.HotSwappingAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
     max_memory_scaler=1000,
@@ -248,7 +241,7 @@ fire_state.positions = fire_state.positions + torch.randn_like(fire_state.positi
 total_states = fire_state.n_batches
 
 # Define a convergence function that checks the force on each atom is less than 5e-1
-convergence_fn = generate_force_convergence_fn(5e-1)
+convergence_fn = ts.generate_force_convergence_fn(5e-1)
 
 # Process states until all are complete
 all_converged_states, convergence_tensor = [], None
@@ -292,7 +285,7 @@ using the `TrajectoryReporter`, because the files must be regularly updated.
 
 # %%
 # Initialize with return_indices=True
-batcher = ChunkingAutoBatcher(
+batcher = ts.ChunkingAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
     max_memory_scaler=80,

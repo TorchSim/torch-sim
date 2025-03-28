@@ -27,9 +27,8 @@ native support for GPUs, MLIP models, ASE integration, simple API,
 autobatching, and trajectory reporting, all in under 40 lines of code.
 
 ```python
+import torch_sim as ts
 from ase.build import bulk
-from torch_sim import integrate
-from torch_sim.integrators import nvt_langevin
 from mace.calculators.foundations_models import mace_mp
 from torch_sim.models import MaceModel
 
@@ -46,10 +45,10 @@ many_cu_atoms = [cu_atoms] * 500
 trajectory_files = [f"fe_traj_{i}" for i in many_cu_atoms]
 
 # run them all simultaneously with batching
-final_state = optimize(
+final_state = ts.optimize(
     system=many_cu_atoms,
     model=mace_model,
-    integrator=nvt_langevin,
+    integrator=ts.nvt_langevin,
     n_steps=50,
     temperature=1000,
     timestep=0.002,
@@ -61,7 +60,7 @@ final_atoms_list = state.to_atoms()
 # extract the final energy from the trajectory file
 final_energies = []
 for filename in trajectory_files:
-    with TorchSimTrajectory(filename) as traj:
+    with ts.TorchSimTrajectory(filename) as traj:
         final_energies.append(traj.get_array("potential_energy")[-1])
 
 print(final_energies)

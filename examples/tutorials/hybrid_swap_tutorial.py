@@ -34,6 +34,7 @@ for this example, but any torch-sim compatible model would work.
 
 # %%
 import torch
+import torch_sim as ts
 from mace.calculators.foundations_models import mace_mp
 from torch_sim.models.mace import MaceModel
 
@@ -53,7 +54,6 @@ Structure class to define our system, but you could also use ASE or other format
 
 # %%
 from pymatgen.core import Structure
-from torch_sim.state import initialize_state
 
 # Create a binary Cu-Zr alloy structure
 lattice = [[5.43, 0, 0], [0, 5.43, 0], [0, 0, 5.43]]
@@ -71,7 +71,7 @@ coords = [
 structure = Structure(lattice, species, coords)
 
 # Convert to torch-sim state
-state = initialize_state([structure], device=device, dtype=torch.float64)
+state = ts.initialize_state([structure], device=device, dtype=torch.float64)
 
 # %% [markdown]
 """
@@ -88,9 +88,7 @@ The key components we'll combine are:
 
 # %%
 from dataclasses import dataclass
-from torch_sim.integrators import MDState, nvt_langevin
-from torch_sim.monte_carlo import swap_monte_carlo
-
+from torch_sim.integrators import MDState
 @dataclass
 class HybridSwapMCState(MDState):
     """State for hybrid MD-Monte Carlo simulations.
@@ -118,11 +116,11 @@ from torch_sim.units import MetalUnits
 kT = 1000 * MetalUnits.temperature
 
 # Initialize NVT Langevin dynamics state
-nvt_init, nvt_step = nvt_langevin(model=mace_model, dt=0.002, kT=kT, seed=42)
+nvt_init, nvt_step = ts.nvt_langevin(model=mace_model, dt=0.002, kT=kT, seed=42)
 md_state = nvt_init(state)
 
 # Initialize swap Monte Carlo state
-swap_init, swap_step = swap_monte_carlo(model=mace_model, kT=kT, seed=42)
+swap_init, swap_step = ts.swap_monte_carlo(model=mace_model, kT=kT, seed=42)
 swap_state = swap_init(md_state)
 
 # Create hybrid state combining both

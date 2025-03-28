@@ -46,13 +46,10 @@ potential. First, let's set up our model and create an atomic structure:
 """
 
 # %%
-import os
 import torch
+import torch_sim as ts
 from ase.build import bulk
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.io import state_to_atoms
-from torch_sim.integrators import nvt_langevin
-from torch_sim import integrate
 
 # Create a Lennard-Jones model with parameters suitable for Si
 lj_model = LennardJonesModel(
@@ -76,17 +73,17 @@ the simulation:
 
 # Run NVT simulation at 2000K
 n_steps = 50
-final_state = integrate(
+final_state = ts.integrate(
     system=cu_atoms,          # Input atomic system
     model=lj_model,           # Energy/force model
-    integrator=nvt_langevin,  # Integrator to use
+    integrator=ts.nvt_langevin,  # Integrator to use
     n_steps=n_steps,          # Number of MD steps
     temperature=2000,         # Target temperature (K)
     timestep=0.002,           # Integration timestep (ps)
 )
 
 # Convert the final state back to ASE atoms
-final_atoms = state_to_atoms(final_state)
+final_atoms = final_state.to_atoms()
 
 # %% [markdown]
 """
@@ -100,10 +97,10 @@ settings for the trajectory reporter and write to the specified files.
 # %%
 
 n_steps = 50
-final_state = integrate(
+final_state = ts.integrate(
     system=cu_atoms,          
     model=lj_model,           
-    integrator=nvt_langevin,  
+    integrator=ts.nvt_langevin,  
     n_steps=n_steps,          
     temperature=2000,
     timestep=0.002,          
@@ -123,9 +120,6 @@ For more detail, see the [trajectory reporter tutorial](./trajectory_reporter.ip
 """
 
 # %%
-from torch_sim.quantities import kinetic_energy
-from torch_sim.trajectory import TrajectoryReporter, TorchSimTrajectory
-
 # Define the output trajectory file
 trajectory_file = "lj_trajectory.h5"
 
@@ -134,11 +128,11 @@ trajectory_file = "lj_trajectory.h5"
 # - Calculate kinetic energy every 20 steps
 prop_calculators = {
     10: {"potential_energy": lambda state: state.energy},
-    20: {"kinetic_energy": lambda state: kinetic_energy(state.momenta, state.masses)},
+    20: {"kinetic_energy": lambda state: ts.kinetic_energy(state.momenta, state.masses)},
 }
 
 # Create a reporter that saves the state every 10 steps
-reporter = TrajectoryReporter(
+reporter = ts.TrajectoryReporter(
     trajectory_file,
     state_frequency=10, # Save the state every 10 steps
     prop_calculators=prop_calculators,
@@ -151,10 +145,10 @@ Now we can run the simulation with trajectory reporting:
 
 # %%
 # Run the simulation with trajectory reporting
-final_state = integrate(
+final_state = ts.integrate(
     system=cu_atoms,
     model=lj_model,
-    integrator=nvt_langevin,
+    integrator=ts.nvt_langevin,
     n_steps=n_steps,
     temperature=2000,
     timestep=0.002,
@@ -169,7 +163,7 @@ trajectory data.
 """
 # %%
 # Open the trajectory file and extract data
-with TorchSimTrajectory(trajectory_file) as traj:
+with ts.TorchSimTrajectory(trajectory_file) as traj:
     # Read energy arrays
     kinetic_energies = traj.get_array("kinetic_energy")
     potential_energies = traj.get_array("potential_energy")
@@ -207,16 +201,16 @@ mace_model = MaceModel(
 )
 
 # Run the simulation with MACE
-final_state = integrate(
+final_state = ts.integrate(
     system=cu_atoms,
     model=mace_model,
-    integrator=nvt_langevin,
+    integrator=ts.nvt_langevin,
     n_steps=n_steps,
     temperature=2000,
     timestep=0.002,
 )
 
-final_atoms = state_to_atoms(final_state)
+final_atoms = final_state.to_atoms()
 
 # %% [markdown]
 """
@@ -243,16 +237,16 @@ We can simulate all these systems in a single call to `integrate`:
 
 # %%
 # Run batch simulation with
-final_state = integrate(
+final_state = ts.integrate(
     system=systems,          # List of systems to simulate
     model=mace_model,        # Single model for all systems
-    integrator=nvt_langevin,
+    integrator=ts.nvt_langevin,
     n_steps=n_steps,
     temperature=2000,
     timestep=0.002,
 )
 
-final_atoms = state_to_atoms(final_state)
+final_atoms = final_state.to_atoms()
 print(f"Number of systems simulated: {len(final_atoms)}")
 print(f"Number of atoms in last system: {len(final_atoms[3])}")
 
@@ -268,17 +262,17 @@ When simulating multiple systems, we can save each to its own trajectory file:
 filenames = [f"batch_traj_{i}.h5" for i in range(len(systems))]
 
 # Create a reporter that handles multiple trajectories
-batch_reporter = TrajectoryReporter(
+batch_reporter = ts.TrajectoryReporter(
     filenames,
     state_frequency=10,
     prop_calculators=prop_calculators,
 )
 
 # Run the simulation with batch reporting
-final_state = integrate(
+final_state = ts.integrate(
     system=systems,
     model=mace_model,
-    integrator=nvt_langevin,
+    integrator=ts.nvt_langevin,
     n_steps=n_steps,
     temperature=2000,
     timestep=0.002,
@@ -294,7 +288,7 @@ We can analyze each trajectory individually:
 # Calculate final energy per atom for each system
 final_energies_per_atom = []
 for i, filename in enumerate(filenames):
-    with TorchSimTrajectory(filename) as traj:
+    with ts.TorchSimTrajectory(filename) as traj:
         final_energy = traj.get_array("potential_energy")[-1].item()
         n_atoms = len(traj.get_atoms(-1))
         final_energies_per_atom.append(final_energy / n_atoms)
@@ -314,10 +308,10 @@ We can enable autobatching by setting the `autobatcher` argument to `True`.
 """
 
 # Run the simulation with batch reporting
-final_state = integrate(
+final_state = ts.integrate(
     system=systems,
     model=mace_model,
-    integrator=nvt_langevin,
+    integrator=ts.nvt_langevin,
     n_steps=n_steps,
     temperature=2000,
     timestep=0.002,
@@ -343,17 +337,15 @@ Let's use the `optimize` function with the FIRE algorithm to relax our structure
 """
 
 # %%
-from torch_sim import optimize
-from torch_sim.optimizers import unit_cell_fire
 
 # Optimize multiple systems
-final_state = optimize(
+final_state = ts.optimize(
     system=systems,
     model=mace_model,
-    optimizer=unit_cell_fire,
+    optimizer=ts.unit_cell_fire,
 )
 
-final_atoms = state_to_atoms(final_state)
+final_atoms = final_state.to_atoms()
 
 # %% [markdown]
 """
@@ -387,21 +379,19 @@ For convenience torch-sim provides constructors for common convergence functions
 
 # %%
 
-from torch_sim.runners import generate_energy_convergence_fn, generate_force_convergence_fn
-
 # we use metal units for these functions
-energy_convergence_fn = generate_energy_convergence_fn(energy_tol=1e-6)
-force_convergence_fn = generate_force_convergence_fn(force_tol=1e-3)
+energy_convergence_fn = ts.generate_energy_convergence_fn(energy_tol=1e-6)
+force_convergence_fn = ts.generate_force_convergence_fn(force_tol=1e-3)
 
 # Run optimization with custom convergence
-final_state = optimize(
+final_state = ts.optimize(
     system=systems,
     model=mace_model,
-    optimizer=unit_cell_fire,
+    optimizer=ts.unit_cell_fire,
     convergence_fn=force_convergence_fn,  # Custom convergence function
 )
 
-final_atoms = state_to_atoms(final_state)
+final_atoms = final_state.to_atoms()
 
 # %% [markdown]
 """
@@ -424,8 +414,7 @@ prop_calculators = {
     20: {"stress": lambda state: state.stress},
 }
 
-from torch_sim import static
-final_results = static(
+final_results = ts.static(
     system=systems,
     model=mace_model,
     # we don't want to save any trajectories this time, just get the properties
@@ -450,7 +439,6 @@ torch-sim supports PyMatGen Structure objects in addition to ASE Atoms objects:
 
 # %%
 from pymatgen.core import Structure
-from torch_sim.io import state_to_structures
 
 # Define a silicon diamond structure using PyMatGen
 lattice = [[5.43, 0, 0], [0, 5.43, 0], [0, 0, 5.43]]
@@ -468,17 +456,17 @@ coords = [
 structure = Structure(lattice, species, coords)
 
 # Run a simulation starting from the PyMatGen structure
-final_state = integrate(
+final_state = ts.integrate(
     system=structure,
     model=lj_model,
-    integrator=nvt_langevin,
+    integrator=ts.nvt_langevin,
     n_steps=n_steps,
     temperature=2000,
     timestep=0.002,
 )
 
 # Convert the final state back to a PyMatGen structure
-final_structure = state_to_structures(final_state)
+final_structure = final_state.to_structures()
 
 # %% [markdown]
 """

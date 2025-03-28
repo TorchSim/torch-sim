@@ -56,10 +56,10 @@ arrays of data. This is the operation that all other functionality is built on.
 
 # %%
 
-import torch
-from torch_sim.trajectory import TorchSimTrajectory
+import torch    
+import torch_sim as ts
 # Open a trajectory file for writing
-trajectory = TorchSimTrajectory(
+trajectory = ts.TorchSimTrajectory(
     "basic_traj.h5",
     mode="w",  # 'w' for write, 'r' for read, 'a' for append
     compress_data=True,  # Enable compression
@@ -93,14 +93,12 @@ to write entire SimState objects:
 """
 
 # %%
-from torch_sim.state import SimState
 from ase.build import bulk
-from torch_sim.state import atoms_to_state
 # Create a bulk Si diamond structure
-state = atoms_to_state(bulk("Si", "diamond", a=5.43), device="cpu", dtype=torch.float64)
+state = ts.initialize_state(bulk("Si", "diamond", a=5.43), device="cpu", dtype=torch.float64)
 
 # Open a new trajectory file in a context manager
-with TorchSimTrajectory("random_state.h5", mode="w") as traj:
+with ts.TorchSimTrajectory("random_state.h5", mode="w") as traj:
     # Write the state with additional options
     for i in range(5):
         traj.write_state(
@@ -123,7 +121,7 @@ convert the state to an atoms or ase.Atoms object.
 
 # %%
 # Open for reading
-with TorchSimTrajectory("random_state.h5", mode="r") as traj:
+with ts.TorchSimTrajectory("random_state.h5", mode="r") as traj:
     # Get raw arrays
     positions = traj.get_array("positions")
     steps = traj.get_steps("positions")
@@ -156,10 +154,8 @@ Let's start with the simplest use case - saving states periodically:
 """
 
 # %%
-from torch_sim.trajectory import TrajectoryReporter
-
 # Initialize a basic reporter
-reporter = TrajectoryReporter(
+reporter = ts.TrajectoryReporter(
     filenames="reported_traj.h5",
     state_frequency=5,  # Save full state every 100 steps
 )
@@ -203,7 +199,7 @@ Let's see an example:
 """
 
 # %%
-
+from torch_sim.state import SimState
 from torch_sim.models import LennardJonesModel
 
 # Define some property calculators
@@ -216,7 +212,7 @@ def calculate_energy(state: SimState, model: torch.nn.Module) -> torch.Tensor:
     return model(state)["energy"]
 
 # Create a reporter with property calculators
-reporter = TrajectoryReporter(
+reporter = ts.TrajectoryReporter(
     filenames="traj_with_props.h5",
     state_frequency=50,  # Save full state every 100 steps
     prop_calculators={
@@ -256,7 +252,7 @@ and can be accessed later.
 """
 
 # %%
-reporter = TrajectoryReporter(
+reporter = ts.TrajectoryReporter(
     filenames="state_options.h5",
     state_frequency=100,
     metadata={"author": "John Doe"},
@@ -281,12 +277,11 @@ multiple trajectory files:
 """
 
 # %%
-from torch_sim.state import concatenate_states
 # Create a double-batch simulation state
-multi_state = concatenate_states([state.clone() for _ in range(5)])
+multi_state = ts.concatenate_states([state.clone() for _ in range(5)])
 
 # Create a reporter with multiple files
-reporter = TrajectoryReporter(
+reporter = ts.TrajectoryReporter(
     filenames=[f"system{i}.h5" for i in range(5)],
     state_frequency=100,
     prop_calculators={10: {"energy": calculate_energy}}
@@ -309,7 +304,7 @@ This can be useful if we have defined property calculators and want to call
 all of them without writing to a trajectory file.
 """
 # %%
-reporter = TrajectoryReporter(
+reporter = ts.TrajectoryReporter(
     filenames=None,
     prop_calculators={
         10: {"center_of_mass": calculate_com},

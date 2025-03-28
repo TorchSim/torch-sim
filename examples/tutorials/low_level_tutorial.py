@@ -37,7 +37,7 @@ First we will create two simple structures of 2x2x2 unit cells of Body Centered 
 # %%
 from ase.build import bulk
 import torch
-from torch_sim.state import initialize_state
+import torch_sim as ts
 
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 fe_bcc = bulk("Fe", "bcc", a=2.8665, cubic=True).repeat((3, 3, 3))
@@ -46,7 +46,7 @@ atoms_list = [si_dc, fe_bcc]
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
-state = initialize_state(atoms_list, device=device, dtype=dtype)
+state = ts.initialize_state(atoms_list, device=device, dtype=dtype)
 
 
 # %% [markdown]
@@ -132,9 +132,7 @@ We will walk through the `unit_cell_fire` optimizer as an example.
 """
 
 # %%
-from torch_sim.optimizers import unit_cell_fire
-
-fire_init_fn, fire_update_fn = unit_cell_fire(model=model)
+fire_init_fn, fire_update_fn = ts.unit_cell_fire(model=model)
 
 # %% [markdown]
 """
@@ -162,7 +160,7 @@ parameters can usually be passed to the `init_fn` and parameters that vary over
 the course of the simulation can be passed to the `update_fn`.
 """
 
-fire_init_fn, fire_update_fn = unit_cell_fire(
+fire_init_fn, fire_update_fn = ts.unit_cell_fire(
     model=model,
     dt_max=0.1,
     dt_start=0.02,
@@ -198,14 +196,12 @@ a model and configuration kwargs and returns an `init_fn` and `update_fn`.
 """
 
 # %%
-from torch_sim.integrators import nvt_langevin
-
-nvt_langevin_init_fn, nvt_langevin_update_fn = nvt_langevin(
+nvt_langevin_init_fn, nvt_langevin_update_fn = ts.nvt_langevin(
     model=model, dt=dt, kT=kT, gamma=gamma
 )
 
 # we'll also reinialize the state to clean up the previous state
-state = initialize_state(atoms_list, device=device, dtype=dtype)
+state = ts.initialize_state(atoms_list, device=device, dtype=dtype)
 
 
 # %% [markdown]
@@ -217,15 +213,13 @@ simulation is so short.
 """
 
 # %%
-from torch_sim.quantities import temperature
-
 state = nvt_langevin_init_fn(state=state)
 
 initial_kT = kT
 for step in range(30):
     state = nvt_langevin_update_fn(state=state, kT=initial_kT * (1 + step / 30))
     if step % 5 == 0:
-        temp_E_units = temperature(
+        temp_E_units = ts.temperature(
             masses=state.masses, momenta=state.momenta, batch=state.batch
         )
         temp = temp_E_units / MetalUnits.temperature
