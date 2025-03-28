@@ -107,7 +107,7 @@ final_state = integrate(
     n_steps=n_steps,          
     temperature=2000,
     timestep=0.002,          
-    trajectory_reporter={"filenames": "lj_trajectory.hdf5"},
+    trajectory_reporter={"filenames": "lj_trajectory.h5"},
 )
 # %% [markdown]
 """
@@ -127,7 +127,7 @@ from torch_sim.quantities import kinetic_energy
 from torch_sim.trajectory import TrajectoryReporter, TorchSimTrajectory
 
 # Define the output trajectory file
-trajectory_file = "lj_trajectory.hdf5"
+trajectory_file = "lj_trajectory.h5"
 
 # Define property calculators to track energies
 # - Calculate potential energy every 10 steps
@@ -265,7 +265,7 @@ When simulating multiple systems, we can save each to its own trajectory file:
 
 # %%
 # Create individual filenames for each system
-filenames = [f"batch_traj_{i}.hdf5" for i in range(len(systems))]
+filenames = [f"batch_traj_{i}.h5" for i in range(len(systems))]
 
 # Create a reporter that handles multiple trajectories
 batch_reporter = TrajectoryReporter(
