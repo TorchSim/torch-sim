@@ -114,7 +114,9 @@ for step in range(N_steps_npt):
         volume = torch.det(state.cell)
         pressure = (
             get_pressure(
-                stress, calc_kinetic_energy(masses=state.masses, momenta=state.momenta), volume
+                stress,
+                calc_kinetic_energy(masses=state.masses, momenta=state.momenta),
+                volume,
             ).item()
             / Units.pressure
         )

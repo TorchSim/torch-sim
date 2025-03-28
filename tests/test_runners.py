@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pytest
 import torch
 
 from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
@@ -696,9 +695,7 @@ def test_static_with_autobatcher_and_reporting(
     )
 
 
-def test_static_no_filenames(
-    ar_sim_state: SimState, lj_model: Any, tmp_path: Path
-) -> None:
+def test_static_no_filenames(ar_sim_state: SimState, lj_model: Any) -> None:
     """Test static calculation with no trajectory filenames."""
     reporter = TrajectoryReporter(
         filenames=None,

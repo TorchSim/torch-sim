@@ -8,13 +8,14 @@
 # ///
 # </details>
 
+
 # %% [markdown]
 """
 # Fundamentals of torch-sim
 
 The `torch-sim` package is designed to be both flexible and easy to use. It achieves this
-by providing a high level API for common use cases. For most cases, this is the right choice 
-because it bakes in autobatching, reporting, and evaluation. For some use cases, however, 
+by providing a high level API for common use cases. For most cases, this is the right choice
+because it bakes in autobatching, reporting, and evaluation. For some use cases, however,
 the high-level API is limiting. This tutorial introduces the design philosophy and usage of the
 low-level API.
 
@@ -84,6 +85,7 @@ model = MaceModel(
     dtype=dtype,
 )
 
+
 # %% [markdown]
 """
 `torch-sim`'s MaceModel, and the other MLIP models, are wrappers around the raw models
@@ -101,6 +103,7 @@ print("Model compute_stress:", model.compute_stress)
 # see the autobatching tutorial for more details
 print("Model memory_scales_with:", model.memory_scales_with)
 
+
 # %% [markdown]
 """
 `SimState` objects can be passed directly to the model and it will compute
@@ -117,6 +120,8 @@ print(f"Model outputs: {', '.join(list(model_outputs.keys()))}")
 print(f"Energy is a batchwise property with shape: {model_outputs['energy'].shape}")
 print(f"Forces are an atomwise property with shape: {model_outputs['forces'].shape}")
 print(f"Stress is a batchwise property with shape: {model_outputs['stress'].shape}")
+
+
 # %% [markdown]
 """
 ## Optimizers and Integrators
@@ -133,6 +138,7 @@ We will walk through the `unit_cell_fire` optimizer as an example.
 
 # %%
 fire_init_fn, fire_update_fn = ts.unit_cell_fire(model=model)
+
 
 # %% [markdown]
 """
@@ -152,6 +158,7 @@ for step in range(20):
     state = fire_update_fn(state=state)
     print(f"{step=}: Total energy: {state.energy} eV")
 
+
 # %% [markdown]
 """
 In general, you can set the optimizer-specific arguments in the `optimize` function
@@ -170,6 +177,7 @@ state = fire_init_fn(state=state)
 for step in range(5):
     state = fire_update_fn(state=state)
 
+
 # %% [markdown]
 """
 ## NVT Langevin Dynamics
@@ -187,6 +195,7 @@ from torch_sim.units import MetalUnits
 dt = 0.002 * MetalUnits.time  # Timestep (ps)
 kT = 300 * MetalUnits.temperature  # Initial temperature (K)
 gamma = 10 / MetalUnits.time  # Langevin friction coefficient (ps^-1)
+
 
 # %% [markdown]
 """
@@ -224,6 +233,7 @@ for step in range(30):
         )
         temp = temp_E_units / MetalUnits.temperature
         print(f"{step=}: Temperature: {temp}")
+
 
 # %% [markdown]
 """

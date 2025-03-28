@@ -7,11 +7,11 @@ from torch_sim.integrators import MDState
 from torch_sim.state import (
     SimState,
     _normalize_batch_indices,
+    _pop_states,
+    _slice_state,
     concatenate_states,
     infer_property_scope,
     initialize_state,
-    _pop_states,
-    _slice_state,
 )
 
 

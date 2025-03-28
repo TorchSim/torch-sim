@@ -11,6 +11,7 @@
 # ///
 # </details>
 
+
 # %% [markdown]
 """
 # Understanding State
@@ -40,7 +41,7 @@ an atomistic system:
 
 ### A Simple State
 
-New SimStates can be either created manually or from existing atomistic objects. Here 
+New SimStates can be either created manually or from existing atomistic objects. Here
 we'll start by creating an ase atoms object and converting it to a SimState. The `initialize_state` function
 can take in pymatgen Structure, PhonopyAtoms, or other SimStates and convert them into a single SimState.
 
@@ -67,6 +68,7 @@ print(f"Masses shape: {si_state.masses.shape}")
 print(f"PBC: {si_state.pbc}")
 print(f"Batch indices shape: {si_state.batch.shape}")
 
+
 # %% [markdown]
 """
 SimState attributes fall into three categories: atomwise, batchwise, and global.
@@ -80,11 +82,13 @@ SimState attributes fall into three categories: atomwise, batchwise, and global.
 You can use the `infer_property_scope` function to analyze a state's properties. This
 is mostly used internally but can be useful for debugging.
 """
+
 # %%
 from torch_sim.state import infer_property_scope
 
 scope = infer_property_scope(si_state)
 print(scope)
+
 
 # %% [markdown]
 """
@@ -101,15 +105,20 @@ cu_atoms = bulk("Cu", "fcc", a=3.61, cubic=True)
 al_atoms = bulk("Al", "fcc", a=4.05, cubic=True)
 ag_atoms = bulk("Ag", "fcc", a=4.09, cubic=True)
 # Initialize both as a single batched state
-multi_state = ts.initialize_state([cu_atoms, al_atoms, ag_atoms], device=torch.device("cpu"), dtype=torch.float64)
+multi_state = ts.initialize_state(
+    [cu_atoms, al_atoms, ag_atoms], device=torch.device("cpu"), dtype=torch.float64
+)
 
-print(f"Multi-state has {multi_state.n_atoms} total atoms across {multi_state.n_batches} batches")
+print(
+    f"Multi-state has {multi_state.n_atoms} total atoms across {multi_state.n_batches} batches"
+)
 
 # we can see how the shapes of batchwise, atomwise, and global properties change
 print(f"Positions shape: {multi_state.positions.shape}")
 print(f"Cell shape: {multi_state.cell.shape}")
 print(f"PBC: {multi_state.pbc}")
 print(f"Batch indices shape: {multi_state.batch.shape}")
+
 
 # %% [markdown]
 """
@@ -122,6 +131,7 @@ tensors are stored as the same datatype, `torch.float64` by default.
 
 We can change both the datatype and the state by calling the `to` method.
 """
+
 # %%
 if torch.cuda.is_available():
     multi_state = multi_state.to(device=torch.device("cuda"), dtype=torch.float32)
@@ -144,8 +154,10 @@ print(f"This state has {multi_state_copy.n_batches} batches")
 
 # we can pop states off while modifying the original state
 popped_states = multi_state_copy.pop([0, 2])
-print(f"We popped {len(popped_states)} states, leaving us with "
-      f"{multi_state_copy.n_batches} batch in the original state")
+print(
+    f"We popped {len(popped_states)} states, leaving us with "
+    f"{multi_state_copy.n_batches} batch in the original state"
+)
 
 # we can put them back together with concatenate
 multi_state_full = ts.concatenate_states([*popped_states, multi_state_copy])
@@ -167,6 +179,7 @@ print(f"Unlike pop, slicing returns a {type(sliced_state)} instead of a list")
 list_of_sliced_states = sliced_state.split()
 
 print(f"Which now is a list of {len(list_of_sliced_states)} states")
+
 
 # %% [markdown]
 """
@@ -219,6 +232,7 @@ phonopy_atoms = multi_state.to_phonopy()
 print(f"Converted to {len(phonopy_atoms)} PhonopyAtoms objects")
 print(f"First PhonopyAtoms object has chemical symbols: {phonopy_atoms[0].symbols}")
 
+
 # %% [markdown]
 """
 
@@ -241,8 +255,10 @@ from dataclasses import asdict
 md_state = MDState(
     **asdict(si_state),  # Copy all SimState properties
     momenta=torch.zeros_like(si_state.positions),  # Initial zero momenta
-    forces=torch.zeros_like(si_state.positions),   # Initial zero forces
-    energy=torch.zeros((si_state.n_batches,), device=si_state.device)  # Initial zero energy
+    forces=torch.zeros_like(si_state.positions),  # Initial zero forces
+    energy=torch.zeros(
+        (si_state.n_batches,), device=si_state.device
+    ),  # Initial zero energy
 )
 
 print("MDState properties:")
@@ -250,6 +266,7 @@ scope = infer_property_scope(md_state)
 print("Global properties:", scope["global"])
 print("Per-atom properties:", scope["per_atom"])
 print("Per-batch properties:", scope["per_batch"])
+
 
 # %% [markdown]
 """

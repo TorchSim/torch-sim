@@ -9,11 +9,12 @@
 # ///
 # </details>
 
+
 # %% [markdown]
 """
 # Implementing New Methods
 
-This tutorial demonstrates how to combine different torch-sim components to implement new 
+This tutorial demonstrates how to combine different torch-sim components to implement new
 simulation methods. We'll implement a hybrid Monte Carlo method that alternates between:
 - Molecular dynamics (MD) for local exploration
 - Swap Monte Carlo for composition changes
@@ -28,7 +29,7 @@ This is an advanced tutorial that will cover:
 """
 ## Setting up the Environment
 
-First, let's set up our simulation environment and load a model. We'll use MACE 
+First, let's set up our simulation environment and load a model. We'll use MACE
 for this example, but any torch-sim compatible model would work.
 """
 
@@ -73,6 +74,7 @@ structure = Structure(lattice, species, coords)
 # Convert to torch-sim state
 state = ts.initialize_state([structure], device=device, dtype=torch.float64)
 
+
 # %% [markdown]
 """
 ## Implementing the Hybrid Method
@@ -88,17 +90,21 @@ The key components we'll combine are:
 
 # %%
 from dataclasses import dataclass
+
+
 @dataclass
 class HybridSwapMCState(ts.integrators.MDState):
     """State for hybrid MD-Monte Carlo simulations.
-    
+
     This state class extends the standard MDState with:
     - last_permutation: Tracks whether the last MC move was accepted
-    
+
     All other MD attributes (positions, momenta, forces, etc.) are inherited
     from MDState.
     """
+
     last_permutation: torch.Tensor
+
 
 # %% [markdown]
 """
@@ -112,6 +118,7 @@ Now we'll initialize both the MD and Monte Carlo components. We:
 
 # %%
 from torch_sim.units import MetalUnits
+
 kT = 1000 * MetalUnits.temperature
 
 # Initialize NVT Langevin dynamics state
@@ -129,6 +136,7 @@ hybrid_state = HybridSwapMCState(
         md_state.n_batches, device=md_state.device, dtype=torch.bool
     ),
 )
+
 
 # %% [markdown]
 """
@@ -153,9 +161,10 @@ for step in range(n_steps):
     else:
         # Perform MD step
         hybrid_state = nvt_step(hybrid_state, dt=torch.tensor(0.002), kT=torch.tensor(kT))
-    
+
     if step % 20 == 0:
         print(f"Step {step}: Energy = {hybrid_state.energy.item():.3f} eV")
+
 
 # %% [markdown]
 """

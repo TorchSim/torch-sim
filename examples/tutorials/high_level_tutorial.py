@@ -10,6 +10,7 @@
 # ///
 # </details>
 
+
 # %% [markdown]
 """
 # Introduction to torch-sim
@@ -27,7 +28,7 @@ torch-sim's high-level API consists of three primary functions:
 2. `optimize` - For geometry optimization
 3. `static` - For one-time energy/force calculations on a diversity set of systems
 
-These functions handle: 
+These functions handle:
 * Automatic state initialization from various input formats
 * Memory-efficient GPU operations via autobatching
 * Trajectory reporting and property calculation
@@ -62,6 +63,7 @@ lj_model = LennardJonesModel(
 # Create a silicon FCC structure using ASE
 cu_atoms = bulk("Cu", "fcc", a=5.43, cubic=True)
 
+
 # %% [markdown]
 """
 Now we can run a molecular dynamics simulation using the `integrate` function. This
@@ -73,16 +75,17 @@ the simulation:
 # Run NVT simulation at 2000K
 n_steps = 50
 final_state = ts.integrate(
-    system=cu_atoms,          # Input atomic system
-    model=lj_model,           # Energy/force model
+    system=cu_atoms,  # Input atomic system
+    model=lj_model,  # Energy/force model
     integrator=ts.nvt_langevin,  # Integrator to use
-    n_steps=n_steps,          # Number of MD steps
-    temperature=2000,         # Target temperature (K)
-    timestep=0.002,           # Integration timestep (ps)
+    n_steps=n_steps,  # Number of MD steps
+    temperature=2000,  # Target temperature (K)
+    timestep=0.002,  # Integration timestep (ps)
 )
 
 # Convert the final state back to ASE atoms
 final_atoms = final_state.to_atoms()
+
 
 # %% [markdown]
 """
@@ -93,24 +96,27 @@ properties. The easiest way to do this is to simply specify the `filenames`
 argument in the `integrate` function. This will assume some reasonable default
 settings for the trajectory reporter and write to the specified files.
 """
+
 # %%
 n_steps = 50
 final_state = ts.integrate(
-    system=cu_atoms,          
-    model=lj_model,           
-    integrator=ts.nvt_langevin,  
-    n_steps=n_steps,          
+    system=cu_atoms,
+    model=lj_model,
+    integrator=ts.nvt_langevin,
+    n_steps=n_steps,
     temperature=2000,
-    timestep=0.002,          
+    timestep=0.002,
     trajectory_reporter={"filenames": "lj_trajectory.h5"},
 )
+
+
 # %% [markdown]
 """
 Behind the scenes, the `dict` is used to instantiate a `TrajectoryReporter` object,
 which then handles the reporting. If you need more control over the trajectory
 reporter, you can instantiate it manually and pass it to the `integrate` function.
 
-This makes it easier to customize the trajectory reporter to your needs. Below, 
+This makes it easier to customize the trajectory reporter to your needs. Below,
 we show how to periodically report additional quantities and manually specify the
 frequency that the state is saved.
 
@@ -126,15 +132,20 @@ trajectory_file = "lj_trajectory.h5"
 # - Calculate kinetic energy every 20 steps
 prop_calculators = {
     10: {"potential_energy": lambda state: state.energy},
-    20: {"kinetic_energy": lambda state: ts.calc_kinetic_energy(state.momenta, state.masses)},
+    20: {
+        "kinetic_energy": lambda state: ts.calc_kinetic_energy(
+            state.momenta, state.masses
+        )
+    },
 }
 
 # Create a reporter that saves the state every 10 steps
 reporter = ts.TrajectoryReporter(
     trajectory_file,
-    state_frequency=10, # Save the state every 10 steps
+    state_frequency=10,  # Save the state every 10 steps
     prop_calculators=prop_calculators,
 )
+
 
 # %% [markdown]
 """
@@ -153,12 +164,14 @@ final_state = ts.integrate(
     trajectory_reporter=reporter,  # Add the reporter
 )
 
+
 # %% [markdown]
 """
 After the simulation is complete, we can analyze the trajectory using the
 `TorchSimTrajectory` class. This class provides a simple interface for analyzing the
 trajectory data.
 """
+
 # %%
 # Open the trajectory file and extract data
 with ts.TorchSimTrajectory(trajectory_file) as traj:
@@ -166,12 +179,13 @@ with ts.TorchSimTrajectory(trajectory_file) as traj:
     kinetic_energies = traj.get_array("kinetic_energy")
     potential_energies = traj.get_array("potential_energy")
     final_energy = potential_energies[-1].item()
-    
+
     # Get the final atomic configuration
     final_atoms = traj.get_atoms(-1)
 
 print(f"Final potential energy: {final_energy:.6f} eV")
 print(f"Shape of kinetic energy array: {kinetic_energies.shape}")
+
 
 # %% [markdown]
 """
@@ -210,6 +224,7 @@ final_state = ts.integrate(
 
 final_atoms = final_state.to_atoms()
 
+
 # %% [markdown]
 """
 ## Batch Processing Multiple Systems
@@ -228,6 +243,7 @@ cu_atoms_supercell = cu_atoms.repeat([2, 2, 2])
 # Pack them into a list
 systems = [cu_atoms, fe_atoms, cu_atoms_supercell, fe_atoms_supercell]
 
+
 # %% [markdown]
 """
 We can simulate all these systems in a single call to `integrate`:
@@ -236,8 +252,8 @@ We can simulate all these systems in a single call to `integrate`:
 # %%
 # Run batch simulation with
 final_state = ts.integrate(
-    system=systems,          # List of systems to simulate
-    model=mace_model,        # Single model for all systems
+    system=systems,  # List of systems to simulate
+    model=mace_model,  # Single model for all systems
     integrator=ts.nvt_langevin,
     n_steps=n_steps,
     temperature=2000,
@@ -247,6 +263,7 @@ final_state = ts.integrate(
 final_atoms = final_state.to_atoms()
 print(f"Number of systems simulated: {len(final_atoms)}")
 print(f"Number of atoms in last system: {len(final_atoms[3])}")
+
 
 # %% [markdown]
 """
@@ -277,6 +294,7 @@ final_state = ts.integrate(
     trajectory_reporter=batch_reporter,
 )
 
+
 # %% [markdown]
 """
 We can analyze each trajectory individually:
@@ -290,7 +308,7 @@ for i, filename in enumerate(filenames):
         final_energy = traj.get_array("potential_energy")[-1].item()
         n_atoms = len(traj.get_atoms(-1))
         final_energies_per_atom.append(final_energy / n_atoms)
-        print(f"System {i}: {final_energy:.6f} eV, {final_energy/n_atoms:.6f} eV/atom")
+        print(f"System {i}: {final_energy:.6f} eV, {final_energy / n_atoms:.6f} eV/atom")
 
 
 # %% [markdown]
@@ -299,7 +317,7 @@ for i, filename in enumerate(filenames):
 
 The `integrate` function also supports autobatching, which automatically determines
 the maximum number of systems that can fit in memory and splits up the systems to make
-optimal use of the GPU. This abstracts away the complexity of managing memory when 
+optimal use of the GPU. This abstracts away the complexity of managing memory when
 running more systems than can fit on the GPU.
 
 We can enable autobatching by setting the `autobatcher` argument to `True`.
@@ -315,6 +333,7 @@ final_state = ts.integrate(
     timestep=0.002,
     autobatcher=True,
 )
+
 
 # %% [markdown]
 """
@@ -335,7 +354,6 @@ Let's use the `optimize` function with the FIRE algorithm to relax our structure
 """
 
 # %%
-
 # Optimize multiple systems
 final_state = ts.optimize(
     system=systems,
@@ -344,6 +362,7 @@ final_state = ts.optimize(
 )
 
 final_atoms = final_state.to_atoms()
+
 
 # %% [markdown]
 """
@@ -357,6 +376,8 @@ previous step. The convergence function should return a boolean tensor of length
 
 This is how we'd manually define the default `convergence_fn`:
 """
+
+
 # %%
 # Define a convergence function based on energy differences
 def default_energy_convergence(state, last_energy):
@@ -366,9 +387,11 @@ def default_energy_convergence(state, last_energy):
     energy_diff = torch.abs(last_energy - state.energy)
     return energy_diff < 1e-6
 
+
 # we arbitrarily add energy so nothing is converged
 convergence_tensor = default_energy_convergence(final_state, final_state.energy + 1)
 print("Any converged?", torch.any(convergence_tensor).item())
+
 
 # %% [markdown]
 """
@@ -376,7 +399,6 @@ For convenience torch-sim provides constructors for common convergence functions
 """
 
 # %%
-
 # we use metal units for these functions
 energy_convergence_fn = ts.generate_energy_convergence_fn(energy_tol=1e-6)
 force_convergence_fn = ts.generate_force_convergence_fn(force_tol=1e-3)
@@ -390,6 +412,7 @@ final_state = ts.optimize(
 )
 
 final_atoms = final_state.to_atoms()
+
 
 # %% [markdown]
 """
@@ -420,14 +443,19 @@ final_results = ts.static(
 )
 
 
-
 print(f"Static returns {len(final_results)} results, one for each system")
 print(f"Matches the number of systems? {len(final_results) == len(systems)}")
 print(len(final_results))
 assert len(final_results) == len(systems)
 
 cu_results = final_results[0]
-print("The Cu system has a final energy of ", cu_results["potential_energy"][-1].item(), " eV")
+print(
+    "The Cu system has a final energy of ",
+    cu_results["potential_energy"][-1].item(),
+    " eV",
+)
+
+
 # %% [markdown]
 """
 ## Working with PyMatGen Structures
@@ -465,6 +493,7 @@ final_state = ts.integrate(
 
 # Convert the final state back to a PyMatGen structure
 final_structure = final_state.to_structures()
+
 
 # %% [markdown]
 """

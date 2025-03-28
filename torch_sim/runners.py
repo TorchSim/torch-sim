@@ -59,7 +59,9 @@ def _configure_reporter(
 
     # ordering is important to ensure we can override defaults
     return TrajectoryReporter(
-        prop_calculators=trajectory_reporter.pop("prop_calculators", {prop_frequency: prop_calculators}),
+        prop_calculators=trajectory_reporter.pop(
+            "prop_calculators", {prop_frequency: prop_calculators}
+        ),
         state_frequency=trajectory_reporter.pop("state_frequency", state_frequency),
         state_kwargs=state_kwargs or {},
         **trajectory_reporter,
@@ -250,6 +252,7 @@ def generate_force_convergence_fn(force_tol: float = 1e-1) -> Callable:
 
     return convergence_fn
 
+
 def generate_energy_convergence_fn(energy_tol: float = 1e-3) -> Callable:
     """Generate an energy-based convergence function for the convergence_fn argument
     of the optimize function.
@@ -264,7 +267,7 @@ def generate_energy_convergence_fn(energy_tol: float = 1e-3) -> Callable:
 
     def convergence_fn(
         state: SimState,
-        last_energy: torch.Tensor | None = None,  # noqa: ARG001
+        last_energy: torch.Tensor | None = None,
     ) -> bool:
         """Check if the system has converged."""
         return torch.abs(state.energy - last_energy) < energy_tol
@@ -278,7 +281,7 @@ def optimize(
     *,
     optimizer: Callable,
     convergence_fn: Callable | None = None,
-    unit_system: UnitSystem = UnitSystem.metal,
+    unit_system: UnitSystem = UnitSystem.metal,  # noqa: ARG001
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: HotSwappingAutoBatcher | bool = False,
     max_steps: int = 10_000,
@@ -394,7 +397,7 @@ def static(
             tracking trajectory. If a dict, will be passed to the TrajectoryReporter
             constructor and must include at least the "filenames" key. Any prop
             calculators will be executed and the results will be returned in a list.
-            Make sure that if multiple unique states are used, that the 
+            Make sure that if multiple unique states are used, that the
             `variable_atomic_numbers` and `variable_masses` are set to `True` in the
             `state_kwargs` argument.
         autobatcher (ChunkingAutoBatcher | bool): Optional autobatcher to use for

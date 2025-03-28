@@ -117,7 +117,9 @@ for step in range(N_steps_npt):
         stress = model(state)["stress"]
         volume = torch.det(state.current_cell)
         pressure = get_pressure(
-            stress, calc_kinetic_energy(masses=state.masses, momenta=state.momenta), volume
+            stress,
+            calc_kinetic_energy(masses=state.masses, momenta=state.momenta),
+            volume,
         ).item()
         xx, yy, zz = torch.diag(state.current_cell)
         print(
@@ -132,6 +134,8 @@ print(f"Final temperature: {final_temp:.4f}")
 final_stress = model(state)["stress"]
 final_volume = torch.det(state.current_cell)
 final_pressure = get_pressure(
-    final_stress, calc_kinetic_energy(masses=state.masses, momenta=state.momenta), final_volume
+    final_stress,
+    calc_kinetic_energy(masses=state.masses, momenta=state.momenta),
+    final_volume,
 )
 print(f"Final pressure: {final_pressure:.4f}")

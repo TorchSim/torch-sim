@@ -17,6 +17,7 @@ Notes:
     for compatibility with the broader TorchSim framework.
 """
 
+import typing
 from collections.abc import Callable
 from pathlib import Path
 
@@ -38,7 +39,9 @@ except ImportError:
         This class is a placeholder for the MaceModel class.
         It raises an ImportError if MACE is not installed.
         """
-        def __init__(self, *args, **kwargs):
+
+        def __init__(self, *_args: typing.Any, **_kwargs: typing.Any) -> None:
+            """Dummy init for type checking."""
             raise ImportError("MACE must be installed to use this model.")
 
 

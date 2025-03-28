@@ -6,7 +6,7 @@ from typing import Any
 
 import torch
 
-from torch_sim.quantities import count_dof, calc_kinetic_energy
+from torch_sim.quantities import calc_kinetic_energy, count_dof
 from torch_sim.state import SimState, StateDict
 from torch_sim.transforms import pbc_wrap_general
 

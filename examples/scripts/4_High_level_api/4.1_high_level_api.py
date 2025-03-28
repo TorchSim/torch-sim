@@ -52,7 +52,9 @@ trajectory_file = "lj_trajectory.h5md"
 # report potential energy every 10 steps and kinetic energy every 20 steps
 prop_calculators = {
     10: {"potential_energy": lambda state: state.energy},
-    20: {"kinetic_energy": lambda state: calc_kinetic_energy(state.momenta, state.masses)},
+    20: {
+        "kinetic_energy": lambda state: calc_kinetic_energy(state.momenta, state.masses)
+    },
 }
 
 reporter = TrajectoryReporter(

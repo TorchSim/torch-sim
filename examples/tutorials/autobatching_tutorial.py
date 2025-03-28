@@ -8,6 +8,7 @@
 # ///
 # </details>
 
+
 # %% [markdown]
 """
 # Understanding Autobatching
@@ -37,12 +38,17 @@ Let's explore how to use these powerful features!
 This next cell can be ignored, it only exists to allow the tutorial to run
 in CI on a CPU. Using the AutoBatcher is generally not supported on CPUs.
 """
+
 # %%
 import torch_sim as ts
+
+
 def mock_determine_max_batch_size(min_state, max_state, max_atoms):
     return 3
 
+
 ts.autobatching.determine_max_batch_size = mock_determine_max_batch_size
+
 
 # %% [markdown]
 """
@@ -75,6 +81,7 @@ density_metric = calculate_memory_scaler(state, memory_scales_with="n_atoms_x_de
 print(f"Atom-based memory metric: {atom_metric}")
 print(f"Density-based memory metric: {density_metric}")
 
+
 # %% [markdown]
 """
 Different simulation models have different memory scaling characteristics: - For models
@@ -86,8 +93,8 @@ The autobatchers will use the memory scaler to determine the maximum batch size 
 your model. Generally this max memory metric is roughly fixed for a given model and
 hardware, assuming you choose the right scaling metric.
 """
-# %%
 
+# %%
 from torch_sim.autobatching import estimate_max_memory_scaler
 from mace.calculators.foundations_models import mace_mp
 from torch_sim.models import MaceModel
@@ -106,6 +113,7 @@ max_memory_metric = estimate_max_memory_scaler(
     mace_model, state_list, metric_values=memory_metric_values
 )
 print(f"Max memory metric: {max_memory_metric}")
+
 
 # %% [markdown]
 """
@@ -134,12 +142,14 @@ batcher = ts.ChunkingAutoBatcher(
 max_memory_scaler = batcher.load_states(state)
 print(f"Max memory scaler: {max_memory_scaler}")
 
+
 # we define a simple function to process the batch, this could be
 # any integrator or optimizer
 def process_batch(batch):
     # Process the batch (e.g., run dynamics or optimization)
     batch.positions += torch.randn_like(batch.positions) * 0.01
     return batch
+
 
 # Process each batch
 processed_batches = []
@@ -151,6 +161,7 @@ for batch in batcher:
 # Restore original order of states
 final_states = batcher.restore_original_order(processed_batches)
 
+
 # %% [markdown]
 """
 If you don't specify `max_memory_scaler`, the batcher will automatically estimate the
@@ -159,12 +170,14 @@ is typically fixed for a given model and simulation setup. To avoid calculating 
 every time, which is a bit slow, you can calculate it once and then include it in the
 `ChunkingAutoBatcher` constructor.
 """
+
 # %%
 batcher = ts.ChunkingAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
     max_memory_scaler=max_memory_scaler,
 )
+
 
 # %% [markdown]
 """
@@ -194,7 +207,6 @@ print("The indices of the states in each bin are: ", batcher.index_bins)
 # Run optimization on each batch
 finished_states = []
 for batch in batcher:
-
     # Run 5 steps of FIRE optimization
     for _ in range(5):
         batch = nvt_update(batch)
@@ -211,11 +223,11 @@ restored_states = batcher.restore_original_order(finished_states)
 
 The `HotSwappingAutoBatcher` optimizes GPU utilization by dynamically removing
 converged states and adding new ones. This is ideal for processes like geometry
-optimization where different states may converge at different rates. 
+optimization where different states may converge at different rates.
 
 The `HotSwappingAutoBatcher` is more complex than the `ChunkingAutoBatcher` because
 it requires the batch to be dynamically updated. The swapping logic is handled internally,
-but the user must regularly provide a convergence tensor indicating which batches in 
+but the user must regularly provide a convergence tensor indicating which batches in
 the state have converged.
 
 ### Usage
@@ -236,7 +248,9 @@ batcher = ts.HotSwappingAutoBatcher(
 batcher.load_states(fire_state)
 
 # add some random displacements to each state
-fire_state.positions = fire_state.positions + torch.randn_like(fire_state.positions) * 0.05
+fire_state.positions = (
+    fire_state.positions + torch.randn_like(fire_state.positions) * 0.05
+)
 total_states = fire_state.n_batches
 
 # Define a convergence function that checks the force on each atom is less than 5e-1
@@ -252,7 +266,7 @@ while (result := batcher.next_batch(fire_state, convergence_tensor))[0] is not N
     # optimize the batch, we stagger the steps to avoid state processing overhead
     for _ in range(10):
         fire_state = fire_update(fire_state)
-    
+
     # Check which states have converged
     convergence_tensor = convergence_fn(fire_state, None)
     print(f"Convergence tensor: {batcher.current_idx}")
@@ -269,6 +283,7 @@ assert len(final_states) == total_states
 # Note that the fire_state has been modified in place
 assert fire_state.n_batches == 0
 
+
 # %%
 fire_state.n_batches
 
@@ -277,7 +292,7 @@ fire_state.n_batches
 """
 ## Tracking Original Indices
 
-Both batchers can return the original indices of states, which is useful for 
+Both batchers can return the original indices of states, which is useful for
 tracking the progress of individual states. This is especially critical when
 using the `TrajectoryReporter`, because the files must be regularly updated.
 """
@@ -296,6 +311,7 @@ batcher.load_states(state)
 for batch, indices in batcher:
     print(f"Processing states with original indices: {indices}")
     # Process batch...
+
 
 # %% [markdown]
 """

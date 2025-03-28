@@ -10,13 +10,14 @@
 # ///
 # </details>
 
+
 # %% [markdown]
 """
 # Understanding Reporting
 
 This tutorial explains how to save and analyze trajectory data from molecular dynamics
 simulations using TorchSim's trajectory module. Though reporting can be automatically
-handled by the `integrate`, `optimize`, and `static` functions, understanding the 
+handled by the `integrate`, `optimize`, and `static` functions, understanding the
 reporting interface is helpful for developing more complex workflows.
 
 ## Introduction
@@ -55,8 +56,9 @@ arrays of data. This is the operation that all other functionality is built on.
 """
 
 # %%
-import torch    
+import torch
 import torch_sim as ts
+
 # Open a trajectory file for writing
 trajectory = ts.TorchSimTrajectory(
     "basic_traj.h5",
@@ -83,6 +85,7 @@ steps = trajectory.get_steps("positions")
 
 trajectory.close()
 
+
 # %% [markdown]
 """
 ### Writing SimState Objects
@@ -93,22 +96,26 @@ to write entire SimState objects:
 
 # %%
 from ase.build import bulk
+
 # Create a bulk Si diamond structure
-state = ts.initialize_state(bulk("Si", "diamond", a=5.43), device="cpu", dtype=torch.float64)
+state = ts.initialize_state(
+    bulk("Si", "diamond", a=5.43), device="cpu", dtype=torch.float64
+)
 
 # Open a new trajectory file in a context manager
 with ts.TorchSimTrajectory("random_state.h5", mode="w") as traj:
     # Write the state with additional options
     for i in range(5):
         traj.write_state(
-            state, 
+            state,
             steps=i + 1,
             save_velocities=False,  # our basic state doesn't have velocities
-            save_forces=False,      # our basic state doesn't have forces
-            variable_cell=False,    # True for an NPT simulation, where the cell changes
+            save_forces=False,  # our basic state doesn't have forces
+            variable_cell=False,  # True for an NPT simulation, where the cell changes
             variable_masses=False,  # True for a Monte Carlo simulation which swaps atoms
         )
     print(traj)
+
 
 # %% [markdown]
 """
@@ -124,10 +131,10 @@ with ts.TorchSimTrajectory("random_state.h5", mode="r") as traj:
     # Get raw arrays
     positions = traj.get_array("positions")
     steps = traj.get_steps("positions")
-    
+
     # Get a SimState object from the first cell
     state = traj.get_state(0)
-    
+
     # Get ase atoms from the second cell
     atoms = traj.get_atoms(2)
 
@@ -136,6 +143,7 @@ with ts.TorchSimTrajectory("random_state.h5", mode="r") as traj:
 
     # write ase trajectory
     traj.write_ase_trajectory("random_state.traj")
+
 
 # %% [markdown]
 """
@@ -169,6 +177,7 @@ for step in range(50):
 traj = reporter.trajectories[0]
 print(traj)
 
+
 # %% [markdown]
 """
 ### Property Calculators
@@ -179,7 +188,7 @@ are functions that:
 2. Optionally take a model as their second argument
 3. Return a tensor that will be saved in the trajectory
 
-The property calculators are organized in a dictionary that maps frequencies to 
+The property calculators are organized in a dictionary that maps frequencies to
 property names and their calculator functions:
 
 ```python
@@ -200,14 +209,17 @@ Let's see an example:
 # %%
 from torch_sim.models import LennardJonesModel
 
+
 # Define some property calculators
 def calculate_com(state: ts.state.SimState) -> torch.Tensor:
     """Calculate center of mass - only needs state"""
     return torch.mean(state.positions * state.masses.unsqueeze(1), dim=0)
 
+
 def calculate_energy(state: ts.state.SimState, model: torch.nn.Module) -> torch.Tensor:
     """Calculate energy - needs both state and model"""
     return model(state)["energy"]
+
 
 # Create a reporter with property calculators
 reporter = ts.TrajectoryReporter(
@@ -216,7 +228,7 @@ reporter = ts.TrajectoryReporter(
     prop_calculators={
         10: {"center_of_mass": calculate_com},
         20: {"energy": calculate_energy},
-    }
+    },
 )
 
 # Initialize a model for energy calculation
@@ -231,6 +243,7 @@ print(traj)
 
 reporter.close()
 
+
 # %% [markdown]
 """
 
@@ -242,7 +255,7 @@ twice, as we expect from the reporting frequency.
 The TrajectoryReporter also accepts `state_kwargs` that are passed to the
 `TorchSimTrajectory.write_state` method, allowing us to save velocities, forces,
 and other properties that might be part of the SimState. Note that velocities and
-forces are not attributes of the base SimState but are attributes of the MDState, 
+forces are not attributes of the base SimState but are attributes of the MDState,
 which it inherits from.
 
 We can also save metadata about the simulation, which will be saved in the HDF5 file
@@ -260,11 +273,12 @@ reporter = ts.TrajectoryReporter(
         "variable_cell": True,
         "variable_masses": False,
         "variable_atomic_numbers": False,
-    }
+    },
 )
 
 traj = reporter.trajectories[0]
 print(traj.metadata)
+
 
 # %% [markdown]
 """
@@ -282,7 +296,7 @@ multi_state = ts.concatenate_states([state.clone() for _ in range(5)])
 reporter = ts.TrajectoryReporter(
     filenames=[f"system{i}.h5" for i in range(5)],
     state_frequency=100,
-    prop_calculators={10: {"energy": calculate_energy}}
+    prop_calculators={10: {"energy": calculate_energy}},
 )
 
 # Report state and properties
@@ -291,6 +305,7 @@ for step in range(5):
 
 print(f"We now have {len(reporter.trajectories)} trajectories.")
 reporter.close()
+
 
 # %% [markdown]
 """
@@ -301,13 +316,14 @@ can also run the prop calculators without writing to a trajectory file.
 This can be useful if we have defined property calculators and want to call
 all of them without writing to a trajectory file.
 """
+
 # %%
 reporter = ts.TrajectoryReporter(
     filenames=None,
     prop_calculators={
         10: {"center_of_mass": calculate_com},
         20: {"energy": calculate_energy},
-    }
+    },
 )
 
 # Report state and properties
@@ -315,6 +331,7 @@ props = reporter.report(state, 0, lj_model)
 print(f"We calculated the following properties: {[list(prop)[0] for prop in props]}")
 
 reporter.close()
+
 
 # %% [markdown]
 """
@@ -330,7 +347,7 @@ you generate.
 
 ### HDF5 File Structure
 
-For experienced HDF5 users, the HDF5 files created by both classes follow this 
+For experienced HDF5 users, the HDF5 files created by both classes follow this
 structure:
 ```
 /

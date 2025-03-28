@@ -29,7 +29,7 @@ if typing.TYPE_CHECKING:
     from pymatgen.core import Structure
 
 
-_T = TypeVar("T", bound="SimState")
+_T = TypeVar("_T", bound="SimState")
 StateLike = Union[
     "Atoms",
     "Structure",
