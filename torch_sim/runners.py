@@ -59,8 +59,8 @@ def _configure_reporter(
 
     # ordering is important to ensure we can override defaults
     return TrajectoryReporter(
-        prop_calculators={prop_frequency: prop_calculators},
-        state_frequency=state_frequency,
+        prop_calculators=trajectory_reporter.pop("prop_calculators", {prop_frequency: prop_calculators}),
+        state_frequency=trajectory_reporter.pop("state_frequency", state_frequency),
         state_kwargs=state_kwargs or {},
         **trajectory_reporter,
     )
@@ -230,7 +230,7 @@ def _configure_hot_swapping_autobatcher(
 
 
 def generate_force_convergence_fn(force_tol: float = 1e-1) -> Callable:
-    """Generate a convergence function for the convergence_fn argument
+    """Generate a force-based convergence function for the convergence_fn argument
     of the optimize function.
 
     Args:
@@ -247,6 +247,27 @@ def generate_force_convergence_fn(force_tol: float = 1e-1) -> Callable:
     ) -> bool:
         """Check if the system has converged."""
         return batchwise_max_force(state) < force_tol
+
+    return convergence_fn
+
+def generate_energy_convergence_fn(energy_tol: float = 1e-3) -> Callable:
+    """Generate an energy-based convergence function for the convergence_fn argument
+    of the optimize function.
+
+    Args:
+        energy_tol (float): Energy tolerance for convergence
+
+    Returns:
+        Convergence function that takes a state and last energy and
+        returns a batchwise boolean function
+    """
+
+    def convergence_fn(
+        state: SimState,
+        last_energy: torch.Tensor | None = None,  # noqa: ARG001
+    ) -> bool:
+        """Check if the system has converged."""
+        return torch.abs(state.energy - last_energy) < energy_tol
 
     return convergence_fn
 
@@ -295,9 +316,7 @@ def optimize(
     # create a default convergence function if one is not provided
     # TODO: document this behavior
     if convergence_fn is None:
-
-        def convergence_fn(state: SimState, last_energy: torch.Tensor) -> bool:
-            return last_energy - state.energy < 1e-6 * unit_system.energy
+        convergence_fn = generate_energy_convergence_fn(energy_tol=1e-3)
 
     # initialize the state
     state: SimState = initialize_state(system, model.device, model.dtype)
@@ -375,6 +394,9 @@ def static(
             tracking trajectory. If a dict, will be passed to the TrajectoryReporter
             constructor and must include at least the "filenames" key. Any prop
             calculators will be executed and the results will be returned in a list.
+            Make sure that if multiple unique states are used, that the 
+            `variable_atomic_numbers` and `variable_masses` are set to `True` in the
+            `state_kwargs` argument.
         autobatcher (ChunkingAutoBatcher | bool): Optional autobatcher to use for
             batching calculations
 
@@ -394,17 +416,9 @@ def static(
             "save_forces": model.compute_forces,
         },
     )
-    if trajectory_reporter.state_frequency != 1:
-        raise ValueError(f"{trajectory_reporter.state_frequency=} must be 1 for statics")
-    prop_calc_keys = set(trajectory_reporter.prop_calculators)
-    if prop_calc_keys != {1}:
-        raise ValueError(
-            "trajectory_reporter.prop_calculators should only have key=1, got "
-            f"{prop_calc_keys}"
-        )
 
     @dataclass
-    class StaticState(SimState):
+    class StaticState(type(state)):
         energy: torch.Tensor
         forces: torch.Tensor
         stress: torch.Tensor
