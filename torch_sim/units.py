@@ -1,5 +1,7 @@
 # ruff: noqa: N815, PIE796
-"""Defines a units system and returns a dictionary of conversion factors.
+"""Unit systems and conversions.
+
+Defines a units system and returns a dictionary of conversion factors.
 Units are defined similar to https://docs.lammps.org/units.html.
 """
 

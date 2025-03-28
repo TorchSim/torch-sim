@@ -1,4 +1,4 @@
-"""Batched optimizers for structure optimization.
+"""Optimizers for geometry relaxations.
 
 This module provides optimization algorithms for atomic structures in a batched format,
 enabling efficient relaxation of multiple atomic structures simultaneously. It includes

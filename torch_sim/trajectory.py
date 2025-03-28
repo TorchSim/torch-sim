@@ -1,4 +1,4 @@
-"""TorchSim Trajectory: Trajectory file handling for molecular dynamics simulations.
+"""Trajectory format and reporting.
 
 This module provides classes for reading and writing trajectory data in HDF5 format.
 The core classes (TorchSimTrajectory and TrajectoryReporter) allow efficient storage

@@ -1,4 +1,4 @@
-"""GPU memory-efficient autobatching for simulations in torchsim.
+"""Automatic batching and GPU memory management.
 
 This module provides utilities for efficient batch processing of simulation states
 by dynamically determining optimal batch sizes based on GPU memory constraints.

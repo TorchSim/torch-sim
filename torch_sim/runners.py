@@ -1,4 +1,4 @@
-"""Simulation runners for molecular dynamics and optimization.
+"""High level runners for atomistic simulations.
 
 This module provides functions for running molecular dynamics simulations and geometry
 optimizations using various models and integrators. It includes utilities for

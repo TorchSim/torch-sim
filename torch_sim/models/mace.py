@@ -1,4 +1,4 @@
-"""MACE model implementation for TorchSim.
+"""Wrapper for MACE model in torch-sim.
 
 This module provides a TorchSim wrapper of the MACE model for computing
 energies, forces, and stresses for atomistic systems. It integrates the MACE model

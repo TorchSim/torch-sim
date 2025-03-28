@@ -1,4 +1,4 @@
-"""SimState: TorchScript-compatible state representation for atomistic systems.
+"""The core state representation.
 
 The main SimState class represents atomistic systems with support for batched
 operations and conversion to/from various atomistic formats.

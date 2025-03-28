@@ -1,4 +1,4 @@
-"""FairChem: PyTorch implementation of FairChem models for atomistic simulations.
+"""Wrapper for FairChem ecosystem models in torch-sim.
 
 This module provides a TorchSim wrapper of the FairChem models for computing
 energies, forces, and stresses of atomistic systems. It serves as a wrapper around
