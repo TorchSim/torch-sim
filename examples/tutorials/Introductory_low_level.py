@@ -10,78 +10,63 @@
 
 # %% [markdown]
 """
-# Introduction to torch-sim low-level API
+# Low-level API: Understanding Optimizers, Integrators, and Models
 
-This is an introductory tutorial on how to use the low-level API of torch-sim package.
-This tutorial will get users familiar with the following:
-- Creating a `torch-sim` state
-- Calling `torch-sim` models
-- Running batched relaxation
-- Running batched molecular dynamics
+The `torch-sim` package is designed to be both flexible and easy to use. It achieves this
+by providing a high level API for common use cases. For most cases, this is the right choice 
+because it bakes in autobatching, reporting, and evaluation. For some use cases, however, 
+the high-level API is limiting. This tutorial introduces the design philosophy and usage of the
+low-level API.
+
+This is an intermediate tutorial that assumes a basic understanding of SimState and
+optimizers.
 """
 
 # %% [markdown]
 """
-## Create a torch-sim state
+## Setting up the system
 
-`torch-sim`'s state aka `SimState` is a class that contains the information of the system
-like positions, cell, etc. of the system(s).
-All the models in the `torch-sim` package take in a `SimState` as an input and return
-the properties of the system(s).
+`torch-sim`'s state aka `SimState` is a class that contains the information of the
+system like positions, cell, etc. of the system(s). All the models in the `torch-sim`
+package take in a `SimState` as an input and return the properties of the system(s).
 
-First we will create two simple structures of 2x2x2 unit cells of
-Body Centered Cubic (BCC) Iron and Diamond Cubic Silicon.
-
-Since we want to do batch simulations, we will create a list of Atoms from which we will
-create a `SimState`.
+First we will create two simple structures of 2x2x2 unit cells of Body Centered Cubic
+(BCC) Iron and Diamond Cubic Silicon and combine them into a batched state.
 """
 
 # %%
-import os
 from ase.build import bulk
+import torch
+from torch_sim.state import initialize_state
 
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 fe_bcc = bulk("Fe", "bcc", a=2.8665, cubic=True).repeat((3, 3, 3))
-
 atoms_list = [si_dc, fe_bcc]
 
-# %% [markdown]
-"""
-You can use any package to create the initial structure or pass the
-attributes directly to the `SimState`. The `io.py` module provides
-a utility to convert multiple ASE Atoms, Pymatgen Structure, and
-PhonopyAtoms to `SimState` and vice versa.
-
-Note that we need to pass the device and dtype to the `atoms_to_state`
-function in order to make sure the correct device and dtype is used.
-
-Let's create a `SimState` from the list of Atoms.
-"""
-
-# %%
-import torch
-from torch_sim.io import atoms_to_state
-
-# Set device and data type
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
-state = atoms_to_state(atoms_list, device=device, dtype=dtype)
+state = initialize_state(atoms_list, device=device, dtype=dtype)
+
 
 # %% [markdown]
 """
-## Calling torch-sim models
+## Calling Models Directly
 
-In order to compute the properties of the systems above,
-we need to first initialize the models.
+In order to compute the properties of the systems above, we need to first initialize
+the models.
 
-In this example, we use the MACE-MPA-0 model for our Si and Fe systems.
-First, we need to download the model file and get the raw model from mace-mp.
+In this example, we use the MACE-MPA-0 model for our Si and Fe systems. First, we need
+to download the model file and get the raw model from mace-mp.
+
+Then we can initialize the MaceModel class with the raw model.
 """
 
 # %%
 from mace.calculators.foundations_models import mace_mp
+from torch_sim.models import MaceModel
 
+# load mace_mp using the mace package
 mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
     model=mace_checkpoint_url,
@@ -90,141 +75,171 @@ loaded_model = mace_mp(
     device=device,
 )
 
-# %% [markdown]
-"""
-Now we can initialize the MACE model.
-"""
-
-# %%
-from torch_sim.models import MaceModel
-
+# wrap the mace_mp model in the MaceModel class
 model = MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,
     compute_stress=True,
     dtype=dtype,
-    enable_cueq=False,
 )
 
 # %% [markdown]
 """
-By default, the model can compute the properties across a batch of systems.
-You can also specify model-specific args to the model.
-
-We can now pass the state to the model and compute the energy of the systems.
+`torch-sim`'s MaceModel, and the other MLIP models, are wrappers around the raw models
+that allow them to interface with the rest of the `torch-sim` package. They expose
+several key properties that are expected by the rest of the package. This contract is
+enforced by the `ModelInterface` class that all models must implement.
 """
 
 # %%
-results = model(state)
-print(results["energy"])
+print("Model device:", model.device)
+print("Model dtype:", model.dtype)
+print("Model compute_forces:", model.compute_forces)
+print("Model compute_stress:", model.compute_stress)
+
+# see the autobatching tutorial for more details
+print("Model memory_scales_with:", model.memory_scales_with)
 
 # %% [markdown]
 """
-## Running batched relaxation
+`SimState` objects can be passed directly to the model and it will compute
+the properties of the systems in the batch. The properties will be returned
+either batchwise, like the energy, or atomwise, like the forces.
 
-We will now run a relaxation of the system (positions + cell)
-using the unit cell filter with the FIRE optimizer.
+Note that the energy here refers to the potential energy of the system.
+"""
 
-First, we need to initialize the optimizer.
+# %%
+model_outputs = model(state)
+print(f"Model outputs: {', '.join(list(model_outputs.keys()))}")
+
+print(f"Energy is a batchwise property with shape: {model_outputs['energy'].shape}")
+print(f"Forces are an atomwise property with shape: {model_outputs['forces'].shape}")
+print(f"Stress is a batchwise property with shape: {model_outputs['stress'].shape}")
+# %% [markdown]
+"""
+## Optimizers and Integrators
+
+All optimizers and integrators share a similar interface. They accept a model and
+return two functions: `init_fn` and `update_fn`. The `init_fn` function returns the
+initialized optimizer-specific state, while the `update_fn` function updates the
+simulation state.
+
+### Unit Cell Fire
+
+We will walk through the `unit_cell_fire` optimizer as an example.
 """
 
 # %%
 from torch_sim.optimizers import unit_cell_fire
 
-fire_init, fire_update = unit_cell_fire(model=model)
+fire_init_fn, fire_update_fn = unit_cell_fire(model=model)
 
 # %% [markdown]
 """
-You can set the optimizer-specific arguments in the optimizer function.
-
-The optimizer returns two functions: `fire_init` and `fire_update`.
-The `fire_init` function returns the initialized optimizer-specific state,
-while the `fire_update` function updates the simulation state.
-
-The optimizer performs optimization across the batch of systems.
-We can access the optimizer attributes from the state object like `state.energy` etc.
-This gives us the energies of the systems in the batch.
+We can then initialize the state and evolve the system with the update function.
+Of course, we could also enforce some convergence criteria on the energy or forces
+and stop the optimization early. Functionality that is automatically handled by the
+high-level API.
 """
 
 # %%
-max_steps = 5 if os.environ.get("CI") else 50
-state = fire_init(state=state)
+state = fire_init_fn(state=state)
 
-for step in range(max_steps):
-    state = fire_update(state=state)
-    if step % 5 == 0:
-        print(f"{step=}: Total energy: {state.energy} eV")
+# add a little noise so we have something to relax
+state.positions = state.positions + torch.randn_like(state.positions) * 0.05
+
+for step in range(20):
+    state = fire_update_fn(state=state)
+    print(f"{step=}: Total energy: {state.energy} eV")
 
 # %% [markdown]
 """
-## Running batched molecular dynamics
+In general, you can set the optimizer-specific arguments in the `optimize` function
+(e.g. `unit_cell_fire`) and they will be baked into the returned functions. Fixed
+parameters can usually be passed to the `init_fn` and parameters that vary over
+the course of the simulation can be passed to the `update_fn`.
+"""
 
-Similarly, we can do molecular dynamics of the systems.
-We need to make sure we are using correct units for the integrator.
-`torch-sim` provides a `units.py` module to help with the units system and conversions.
-The units system is defined similar to the LAMMPS units system.
-Here we use the Metal units as the models return the outputs in similar units.
+fire_init_fn, fire_update_fn = unit_cell_fire(
+    model=model,
+    dt_max=0.1,
+    dt_start=0.02,
+)
+state = fire_init_fn(state=state)
+
+for step in range(5):
+    state = fire_update_fn(state=state)
+
+# %% [markdown]
+"""
+## NVT Langevin Dynamics
+
+Similarly, we can do molecular dynamics of the systems. We need to make sure we are
+using correct units for the integrator. `torch-sim` provides a `units.py` module to
+help with the units system and conversions. All currently supported models implement
+[MetalUnits](https://docs.lammps.org/units.html), so we must convert our units into
+that system.
 """
 
 # %%
-from torch_sim.integrators import nvt_langevin
 from torch_sim.units import MetalUnits
 
-max_md_steps = 5 if os.environ.get("CI") else 500
 dt = 0.002 * MetalUnits.time  # Timestep (ps)
 kT = 300 * MetalUnits.temperature  # Initial temperature (K)
 gamma = 10 / MetalUnits.time  # Langevin friction coefficient (ps^-1)
 
 # %% [markdown]
 """
-We can also compute quantities like temperature that are not present in the state.
-The `quantities.py` module provides a utility to compute quantities
-like temperature, kinetic energy, etc.
 
-Now we perform a Constant Volume, Constant Temperature (NVT) Langevin dynamics
-for the systems.
-Similar to the optimizer, we have two functions:
-`nvt_langevin_init` and `nvt_langevin_update`.
+Like the `unit_cell_fire` optimizer, the `nvt_langevin` integrator accepts
+a model and configuration kwargs and returns an `init_fn` and `update_fn`.
+"""
+
+# %%
+from torch_sim.integrators import nvt_langevin
+
+nvt_langevin_init_fn, nvt_langevin_update_fn = nvt_langevin(
+    model=model, dt=dt, kT=kT, gamma=gamma
+)
+
+# we'll also reinialize the state to clean up the previous state
+state = initialize_state(atoms_list, device=device, dtype=dtype)
+
+
+# %% [markdown]
+"""
+Here we can vary the temperature of the system over time and report it as we go. The
+`quantities.py` module provides a utility to compute quantities like temperature,
+kinetic energy, etc. Note that the temperature will not be stable here because the
+simulation is so short.
 """
 
 # %%
 from torch_sim.quantities import temperature
 
-nvt_langevin_init, nvt_langevin_update = nvt_langevin(
-    model=model, dt=dt, kT=kT, gamma=gamma
-)
+state = nvt_langevin_init_fn(state=state)
 
-# %% [markdown]
-"""
-We can easily pass the final relaxed state to the integrator.
-"""
-
-# %%
-state = nvt_langevin_init(state=state)
-
-for step in range(max_md_steps):
-    state = nvt_langevin_update(state=state)
-    if step % 20 == 0:
-        temp = (
-            temperature(masses=state.masses, momenta=state.momenta, batch=state.batch)
-            / MetalUnits.temperature
+initial_kT = kT
+for step in range(30):
+    state = nvt_langevin_update_fn(state=state, kT=initial_kT * (1 + step / 30))
+    if step % 5 == 0:
+        temp_E_units = temperature(
+            masses=state.masses, momenta=state.momenta, batch=state.batch
         )
+        temp = temp_E_units / MetalUnits.temperature
         print(f"{step=}: Temperature: {temp}")
 
 # %% [markdown]
 """
+If we wanted to report the temperature over time, we could use a `TrajectoryReporter`
+to save the array over time. This sort of functionality is automatically handled by the
+high-level `integrate` function.
+
 ## Concluding remarks
 
-This tutorial shows how to use the low-level API of `torch-sim` to create a state,
-call models, and run optimizers and integrators. However, for most cases,
-one can use the high-level API to run the simulations as covered in the other
-introductory tutorial.
-
-We hope this tutorial gives users a good starting point to use the low-level API in
-the `torch-sim` package. More detailed tutorials and example scripts can be
-found in the examples folder.
-
-If you have any questions, please refer to the documentation or raise an issue on
-the GitHub repository.
+The low-level API is a flexible and powerful way of using `torch-sim`. It provides
+maximum flexibility for advanced users. If you have any additional questions, please
+refer to the documentation or raise an issue on the GitHub repository.
 """
