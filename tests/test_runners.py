@@ -12,7 +12,6 @@ from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.runners import generate_force_convergence_fn, integrate, optimize, static
 from torch_sim.state import SimState, initialize_state
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
-from torch_sim.units import UnitSystem
 
 
 def test_integrate_nve(ar_sim_state: SimState, lj_model: Any, tmp_path: Path) -> None:
