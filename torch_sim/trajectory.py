@@ -255,6 +255,7 @@ class TrajectoryReporter:
             ):
                 self.trajectories[i].write_state(substate, step, **self.state_kwargs)
 
+            all_state_props = {}
             # Process property calculators for this batch
             for report_frequency, calculators in self.prop_calculators.items():
                 if step % report_frequency != 0 or report_frequency == 0:
@@ -270,9 +271,10 @@ class TrajectoryReporter:
 
                 # Write properties to this trajectory
                 if props:
-                    all_props.append(props)
+                    all_state_props.update(props)
                     if self.filenames is not None:
                         self.trajectories[i].write_arrays(props, step)
+            all_props.append(all_state_props)
 
         return all_props
 

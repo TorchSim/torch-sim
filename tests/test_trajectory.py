@@ -557,6 +557,37 @@ def test_report_no_properties(
     assert "atomic_numbers" in trajectory.array_registry
 
 
+def test_report_no_filenames(
+    si_sim_state: SimState, prop_calculators: dict
+) -> None:
+    """Test TrajectoryReporter with no filenames."""
+    from torch_sim.state import initialize_state
+
+    triple_state = initialize_state(
+        [si_sim_state.clone() for _ in range(3)],
+        device=si_sim_state.device,
+        dtype=si_sim_state.dtype,
+    )
+
+    reporter = TrajectoryReporter(
+        filenames=None,
+        state_frequency=1,
+        prop_calculators=prop_calculators,
+    )
+    # Run several steps
+    all_props = []
+    for step in range(5):
+        props = reporter.report(triple_state, step)
+        all_props.append(props)
+
+    reporter.close()
+
+    # 5 steps, 3 batches, 2 properties
+    assert len(all_props) == 5
+    assert len(all_props[0]) == 3
+    assert len(all_props[0][0]) == 2
+
+
 def test_single_batch_reporter(
     si_sim_state: SimState, tmp_path: Path, prop_calculators: dict
 ) -> None:
