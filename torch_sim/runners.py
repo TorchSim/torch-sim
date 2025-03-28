@@ -113,7 +113,6 @@ def integrate(
     n_steps: int,
     temperature: float | ArrayLike,
     timestep: float,
-    unit_system: UnitSystem = UnitSystem.metal,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: ChunkingAutoBatcher | bool = False,
     **integrator_kwargs: dict,
@@ -128,7 +127,6 @@ def integrate(
         temperature (float | ArrayLike): Temperature or array of temperatures for each
             step
         timestep (float): Integration time step
-        unit_system (UnitSystem): Unit system for temperature and time
         integrator_kwargs: Additional keyword arguments for integrator
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
             tracking trajectory. If a dict, will be passed to the TrajectoryReporter
@@ -139,6 +137,7 @@ def integrate(
     Returns:
         SimState: Final state after integration
     """
+    unit_system = UnitSystem.metal
     # create a list of temperatures
     temps = temperature if hasattr(temperature, "__iter__") else [temperature] * n_steps
     if len(temps) != n_steps:
@@ -281,7 +280,6 @@ def optimize(
     *,
     optimizer: Callable,
     convergence_fn: Callable | None = None,
-    unit_system: UnitSystem = UnitSystem.metal,  # noqa: ARG001
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: HotSwappingAutoBatcher | bool = False,
     max_steps: int = 10_000,
@@ -297,7 +295,6 @@ def optimize(
         optimizer (Callable): Optimization algorithm function
         convergence_fn (Callable | None): Condition for convergence, should return a
             boolean tensor of length n_batches
-        unit_system (UnitSystem): Unit system for energy tolerance
         optimizer_kwargs: Additional keyword arguments for optimizer init function
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
             tracking optimization trajectory. If a dict, will be passed to the
@@ -377,7 +374,6 @@ def static(
     system: StateLike,
     model: ModelInterface,
     *,
-    unit_system: UnitSystem = UnitSystem.metal,  # noqa: ARG001
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: ChunkingAutoBatcher | bool = False,
 ) -> list[dict[str, torch.Tensor]]:

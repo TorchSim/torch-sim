@@ -33,7 +33,6 @@ def test_integrate_nve(ar_sim_state: SimState, lj_model: Any, tmp_path: Path) ->
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
-        unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
     )
 
@@ -67,7 +66,6 @@ def test_integrate_single_nvt(
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
-        unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
         gamma=0.1,  # ps^-1
     )
@@ -118,7 +116,6 @@ def test_integrate_double_nvt_with_reporter(
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
-        unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
         gamma=0.1,  # ps^-1
     )
@@ -297,7 +294,6 @@ def test_optimize_fire(ar_sim_state: SimState, lj_model: Any, tmp_path: Path) ->
         model=lj_model,
         optimizer=unit_cell_fire,
         convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
-        unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
     )
 
@@ -361,7 +357,6 @@ def test_batched_optimize_fire(
         model=lj_model,
         optimizer=unit_cell_fire,
         convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
-        unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
     )
 
