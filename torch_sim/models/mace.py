@@ -120,10 +120,10 @@ class MaceModel(torch.nn.Module, ModelInterface):
         # TODO: can we get rid of this shit?
         torch.set_default_dtype(self._dtype)
 
-        print(
-            f"Running BatchedMACEForce on device: {self._device} "
-            f"with dtype: {self._dtype}"
-        )
+        # print(
+        #     f"Running BatchedMACEForce on device: {self._device} "
+        #     f"with dtype: {self._dtype}"
+        # )
 
         # Load model if provided as path
         if isinstance(model, str | Path):
