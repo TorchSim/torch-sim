@@ -199,15 +199,14 @@ Let's see an example:
 """
 
 # %%
-from torch_sim.state import SimState
 from torch_sim.models import LennardJonesModel
 
 # Define some property calculators
-def calculate_com(state: SimState) -> torch.Tensor:
+def calculate_com(state: ts.state.SimState) -> torch.Tensor:
     """Calculate center of mass - only needs state"""
     return torch.mean(state.positions * state.masses.unsqueeze(1), dim=0)
 
-def calculate_energy(state: SimState, model: torch.nn.Module) -> torch.Tensor:
+def calculate_energy(state: ts.state.SimState, model: torch.nn.Module) -> torch.Tensor:
     """Calculate energy - needs both state and model"""
     return model(state)["energy"]
 

@@ -88,9 +88,8 @@ The key components we'll combine are:
 
 # %%
 from dataclasses import dataclass
-from torch_sim.integrators import MDState
 @dataclass
-class HybridSwapMCState(MDState):
+class HybridSwapMCState(ts.integrators.MDState):
     """State for hybrid MD-Monte Carlo simulations.
     
     This state class extends the standard MDState with:
