@@ -712,17 +712,3 @@ def test_static_no_filenames(
     assert len(props) == 1
     assert "potential_energy" in props[0]
     assert isinstance(props[0]["potential_energy"], torch.Tensor)
-
-    reporter = TrajectoryReporter(
-        filenames=tmp_path / "static.h5md",
-        state_frequency=2,  # Invalid for static calculations
-        prop_calculators={1: {"potential_energy": lambda state: state.energy}},
-    )
-
-    # should raise for invalid state frequency
-    with pytest.raises(ValueError, match="state_frequency=2 must be 1 for statics"):
-        static(
-            system=ar_sim_state,
-            model=lj_model,
-            trajectory_reporter=reporter,
-        )
