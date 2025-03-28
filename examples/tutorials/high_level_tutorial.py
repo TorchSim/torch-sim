@@ -320,9 +320,19 @@ the maximum number of systems that can fit in memory and splits up the systems t
 optimal use of the GPU. This abstracts away the complexity of managing memory when
 running more systems than can fit on the GPU.
 
-We can enable autobatching by setting the `autobatcher` argument to `True`.
+Ignore the following cell, it just exists so that the example runs on CPU.
 """
+# %%
+def mock_determine_max_batch_size(min_state, max_state, max_atoms):
+    return 3
+ts.autobatching.determine_max_batch_size = mock_determine_max_batch_size
 
+
+# %% [markdown]
+"""
+We enable autobatching by simply setting the `autobatcher` argument to `True`.
+"""
+# %%
 # Run the simulation with batch reporting
 final_state = ts.integrate(
     system=systems,
@@ -333,7 +343,6 @@ final_state = ts.integrate(
     timestep=0.002,
     autobatcher=True,
 )
-
 
 # %% [markdown]
 """
