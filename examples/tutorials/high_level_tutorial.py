@@ -12,7 +12,7 @@
 
 # %% [markdown]
 """
-# High-Level API Tutorial
+# Introduction to torch-sim
 
 This tutorial introduces torch-sim's high-level API for molecular dynamics simulations
 and geometry optimizations. The high-level API provides simple, powerful interfaces

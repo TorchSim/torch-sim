@@ -11,7 +11,7 @@
 
 # %% [markdown]
 """
-# Implementing New Methods: Hybrid Swap Monte Carlo
+# Implementing New Methods
 
 This tutorial demonstrates how to combine different torch-sim components to implement new 
 simulation methods. We'll implement a hybrid Monte Carlo method that alternates between:

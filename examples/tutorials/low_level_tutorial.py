@@ -10,7 +10,7 @@
 
 # %% [markdown]
 """
-# Low-level API: Understanding Optimizers, Integrators, and Models
+# Fundamentals of torch-sim
 
 The `torch-sim` package is designed to be both flexible and easy to use. It achieves this
 by providing a high level API for common use cases. For most cases, this is the right choice 

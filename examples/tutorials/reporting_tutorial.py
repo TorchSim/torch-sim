@@ -12,7 +12,7 @@
 
 # %% [markdown]
 """
-# Trajectory Reporting in TorchSim
+# Understanding Reporting
 
 This tutorial explains how to save and analyze trajectory data from molecular dynamics
 simulations using TorchSim's trajectory module. Though reporting can be automatically

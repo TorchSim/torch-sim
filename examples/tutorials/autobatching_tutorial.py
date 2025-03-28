@@ -10,7 +10,7 @@
 
 # %% [markdown]
 """
-# Autobatching
+# Understanding Autobatching
 
 This tutorial provides a detailed guide to using torch-sim's autobatching features,
 which help you efficiently process large collections of simulation states on GPUs
