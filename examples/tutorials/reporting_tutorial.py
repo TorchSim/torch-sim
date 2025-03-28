@@ -55,7 +55,6 @@ arrays of data. This is the operation that all other functionality is built on.
 """
 
 # %%
-
 import torch    
 import torch_sim as ts
 # Open a trajectory file for writing

@@ -70,7 +70,6 @@ the simulation:
 """
 
 # %%
-
 # Run NVT simulation at 2000K
 n_steps = 50
 final_state = ts.integrate(
@@ -95,7 +94,6 @@ argument in the `integrate` function. This will assume some reasonable default
 settings for the trajectory reporter and write to the specified files.
 """
 # %%
-
 n_steps = 50
 final_state = ts.integrate(
     system=cu_atoms,          

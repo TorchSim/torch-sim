@@ -13,7 +13,7 @@
 
 # %% [markdown]
 """
-# Understanindg State
+# Understanding State
 
 This tutorial will guide you through the SimState class in TorchSim, which is the
 core data structure for representing atomistic systems. You'll learn how to

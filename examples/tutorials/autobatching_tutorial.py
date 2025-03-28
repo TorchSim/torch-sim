@@ -222,7 +222,6 @@ the state have converged.
 """
 
 # %%
-
 fire_init, fire_update = ts.frechet_cell_fire(mace_model)
 fire_state = fire_init(state)
 
