@@ -6,14 +6,20 @@ import os
 from datetime import datetime
 
 from torch_sim import (
+    autobatching,
+    elastic,
+    integrators,
     io,
+    math,
     models,
+    monte_carlo,
     neighbors,
     optimizers,
     quantities,
     runners,
     state,
     trajectory,
+    transforms,
     units,
 )
 from torch_sim._version import __version__
