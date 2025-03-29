@@ -1,5 +1,6 @@
 """Lennard-Jones simulation in NPT ensemble using Nose-Hoover chain."""
 
+import itertools
 import os
 
 import torch
@@ -48,13 +49,11 @@ base_positions = torch.tensor(
 
 # Create 4x4x4 supercell of FCC Argon manually
 positions = []
-for i in range(4):
-    for j in range(4):
-        for k in range(4):
-            for base_pos in base_positions:
-                # Add unit cell position + offset for supercell
-                pos = base_pos + torch.tensor([i, j, k], device=device, dtype=dtype)
-                positions.append(pos)
+for i, j, k in itertools.product(range(4), range(4), range(4)):
+    for base_pos in base_positions:
+        # Add unit cell position + offset for supercell
+        pos = base_pos + torch.tensor([i, j, k], device=device, dtype=dtype)
+        positions.append(pos)
 
 # Stack the positions into a tensor
 positions = torch.stack(positions)
@@ -102,10 +101,7 @@ kT = 200 * Units.temperature  # Temperature (200 K)
 target_pressure = 10000 * Units.pressure  # Target pressure (10 kbar)
 
 npt_init, npt_update = npt_langevin(
-    model=model,
-    dt=dt,
-    kT=kT,
-    external_pressure=target_pressure,
+    model=model, dt=dt, kT=kT, external_pressure=target_pressure
 )
 
 state = npt_init(state=state, seed=1)

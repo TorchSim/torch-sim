@@ -1,5 +1,6 @@
 """NVE simulation with Lennard-Jones potential."""
 
+import itertools
 import os
 
 import torch
@@ -47,13 +48,11 @@ base_positions = torch.tensor(
 
 # Create 4x4x4 supercell of FCC Argon manually
 positions = []
-for i in range(4):
-    for j in range(4):
-        for k in range(4):
-            for base_pos in base_positions:
-                # Add unit cell position + offset for supercell
-                pos = base_pos + torch.tensor([i, j, k], device=device, dtype=dtype)
-                positions.append(pos)
+for i, j, k in itertools.product(range(4), range(4), range(4)):
+    for base_pos in base_positions:
+        # Add unit cell position + offset for supercell
+        pos = base_pos + torch.tensor([i, j, k], device=device, dtype=dtype)
+        positions.append(pos)
 
 # Stack the positions into a tensor
 positions = torch.stack(positions)
