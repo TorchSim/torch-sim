@@ -1,4 +1,4 @@
-# TorchSim Examples
+# TorchSim Example Scripts
 
 This folder contains a series of examples demonstrating the use of TorchSim, a library for simulating molecular dynamics and structural optimization using classical and machine learning interatomic potentials. Each example showcases different functionalities and models available in TorchSim.
 

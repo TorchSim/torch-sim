@@ -22,7 +22,7 @@ from torch_sim.io import state_to_atoms, state_to_structures
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.models.mace import MaceModel
 from torch_sim.optimizers import unit_cell_fire
-from torch_sim.quantities import kinetic_energy
+from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.runners import integrate, optimize
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 from torch_sim.units import MetalUnits
@@ -52,7 +52,9 @@ trajectory_file = "lj_trajectory.h5md"
 # report potential energy every 10 steps and kinetic energy every 20 steps
 prop_calculators = {
     10: {"potential_energy": lambda state: state.energy},
-    20: {"kinetic_energy": lambda state: kinetic_energy(state.momenta, state.masses)},
+    20: {
+        "kinetic_energy": lambda state: calc_kinetic_energy(state.momenta, state.masses)
+    },
 }
 
 reporter = TrajectoryReporter(

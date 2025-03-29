@@ -1,4 +1,4 @@
-"""Math utilities for torch_sim."""
+"""Mathematical operations and utilities."""
 
 # ruff: noqa: FBT001, FBT002, RUF002, RUF003, RET503
 

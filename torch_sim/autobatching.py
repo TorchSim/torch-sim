@@ -1,4 +1,4 @@
-"""GPU memory-efficient autobatching for simulations in torchsim.
+"""Automatic batching and GPU memory management.
 
 This module provides utilities for efficient batch processing of simulation states
 by dynamically determining optimal batch sizes based on GPU memory constraints.
@@ -347,7 +347,7 @@ def calculate_memory_scaler(
         metric = calculate_memory_scaler(state, memory_scales_with="n_atoms_x_density")
     """
     if state.n_batches > 1:
-        raise ValueError("State must be a single batch")
+        return sum(calculate_memory_scaler(s, memory_scales_with) for s in state.split())
     if memory_scales_with == "n_atoms":
         return state.n_atoms
     if memory_scales_with == "n_atoms_x_density":
@@ -495,7 +495,7 @@ class ChunkingAutoBatcher:
     def load_states(
         self,
         states: list[SimState] | SimState,
-    ) -> None:
+    ) -> float:
         """Load new states into the batcher.
 
         Processes the input states, computes memory scaling metrics for each,
@@ -507,6 +507,9 @@ class ChunkingAutoBatcher:
                 list of individual SimState objects or a single batched SimState that
                 will be split into individual states. Each SimState has shape
                 information specific to its instance.
+
+        Returns:
+            float: Maximum memory scaling metric that fits in GPU memory.
 
         Raises:
             ValueError: If any individual state has a memory scaling metric greater
@@ -536,7 +539,6 @@ class ChunkingAutoBatcher:
                 self.memory_scalers,
                 self.max_atoms_to_try,
             )
-            print(f"Max metric calculated: {self.max_memory_scaler}")
         else:
             self.max_memory_scaler = self.max_memory_scaler
 
@@ -559,6 +561,8 @@ class ChunkingAutoBatcher:
         for index_bin in self.index_bins:
             self.batched_states.append([self.state_slices[i] for i in index_bin])
         self.current_state_bin = 0
+
+        return self.max_memory_scaler
 
     def next_batch(
         self, *, return_indices: bool = False

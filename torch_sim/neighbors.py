@@ -1,4 +1,4 @@
-"""Neighbor list utilities."""
+"""Utilities for neighbor list calculations."""
 
 import warnings
 

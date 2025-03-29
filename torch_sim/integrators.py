@@ -1,4 +1,4 @@
-"""Integrators: Batched molecular dynamics integrators for simulation.
+"""Integrators for molecular dynamics simulations.
 
 This module provides a collection of integrators for molecular dynamics simulations,
 supporting NVE (microcanonical), NVT (canonical), and NPT (isothermal-isobaric) ensembles.

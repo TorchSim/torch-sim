@@ -6,7 +6,7 @@ from typing import Any
 
 import torch
 
-from torch_sim.quantities import count_dof, kinetic_energy
+from torch_sim.quantities import calc_kinetic_energy, count_dof
 from torch_sim.state import SimState, StateDict
 from torch_sim.transforms import pbc_wrap_general
 
@@ -1450,7 +1450,7 @@ def nvt_nose_hoover(
         )
 
         # Calculate initial kinetic energy
-        KE = kinetic_energy(momenta, state.masses)
+        KE = calc_kinetic_energy(momenta, state.masses)
 
         # Initialize chain with calculated KE
         dof = count_dof(state.positions)
@@ -1508,7 +1508,7 @@ def nvt_nose_hoover(
         state = velocity_verlet(state=state, dt=dt, model=model)
 
         # Update chain kinetic energy
-        KE = kinetic_energy(state.momenta, state.masses)
+        KE = calc_kinetic_energy(state.momenta, state.masses)
         chain.kinetic_energy = KE
 
         # Second half-step of chain evolution
@@ -1552,7 +1552,7 @@ def nvt_nose_hoover_invariant(
     """
     # Calculate system energy terms
     e_pot = state.energy
-    e_kin = kinetic_energy(state.momenta, state.masses)
+    e_kin = calc_kinetic_energy(state.momenta, state.masses)
 
     # Get system degrees of freedom
     dof = count_dof(state.positions)
@@ -1929,7 +1929,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         N, dim = positions.shape
 
         # Compute kinetic energy contribution
-        KE2 = 2.0 * kinetic_energy(momenta, masses)
+        KE2 = 2.0 * calc_kinetic_energy(momenta, masses)
 
         # Get stress tensor and compute trace
         internal_pressure = torch.trace(stress)
@@ -2117,7 +2117,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         )
 
         # Calculate cell kinetic energy
-        KE_cell = kinetic_energy(cell_momentum, cell_mass)
+        KE_cell = calc_kinetic_energy(cell_momentum, cell_mass)
 
         # Handle scalar cell input
         if (torch.is_tensor(state.cell) and state.cell.ndim == 0) or isinstance(
@@ -2158,7 +2158,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
 
         # Initialize thermostat
         state.momenta = momenta
-        KE = kinetic_energy(state.momenta, state.masses)
+        KE = calc_kinetic_energy(state.momenta, state.masses)
         state.thermostat = thermostat_fns.initialize(state.positions.numel(), KE, kT)
 
         return state
@@ -2212,10 +2212,10 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         )
 
         # Update kinetic energies for thermostats
-        KE = kinetic_energy(state.momenta, state.masses)
+        KE = calc_kinetic_energy(state.momenta, state.masses)
         state.thermostat.kinetic_energy = KE
 
-        KE_cell = kinetic_energy(state.cell_momentum, state.cell_mass)
+        KE_cell = calc_kinetic_energy(state.cell_momentum, state.cell_mass)
         state.barostat.kinetic_energy = KE_cell
 
         # Second half step of thermostat chains
@@ -2264,7 +2264,7 @@ def npt_nose_hoover_invariant(
     e_pot = state.energy
 
     # Calculate kinetic energy of particles
-    e_kin = kinetic_energy(state.momenta, state.masses)
+    e_kin = calc_kinetic_energy(state.momenta, state.masses)
 
     # Total degrees of freedom
     DOF = state.positions.numel()

@@ -4,7 +4,7 @@ import os
 
 import torch
 
-from torch_sim.quantities import kinetic_energy
+from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.state import SimState
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_integrators import nve
@@ -112,7 +112,7 @@ state = nve_init(state=state)
 for step in range(N_steps):
     if step % 100 == 0:
         # Calculate total energy (potential + kinetic)
-        total_energy = state.energy + kinetic_energy(
+        total_energy = state.energy + calc_kinetic_energy(
             masses=state.masses, momenta=state.momenta
         )
         print(f"{step=}: Total energy: {total_energy.item():.4f}")
@@ -120,7 +120,7 @@ for step in range(N_steps):
     # Update state using NVE integrator
     state = nve_update(state=state, dt=dt)
 
-final_total_energy = state.energy + kinetic_energy(
+final_total_energy = state.energy + calc_kinetic_energy(
     masses=state.masses, momenta=state.momenta
 )
 print(f"Final total energy: {final_total_energy.item():.4f}")

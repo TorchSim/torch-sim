@@ -1,4 +1,4 @@
-"""Lennard-Jones: Classical pairwise interatomic potential model.
+"""Classical pairwise interatomic potential model.
 
 This module implements the Lennard-Jones potential for molecular dynamics simulations.
 It provides efficient calculation of energies, forces, and stresses based on the

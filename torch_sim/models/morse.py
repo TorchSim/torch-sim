@@ -1,4 +1,4 @@
-"""Morse Potential: Anharmonic interatomic potential for molecular dynamics.
+"""Anharmonic interatomic potential for molecular dynamics.
 
 This module implements the Morse potential for molecular dynamics simulations.
 The Morse potential provides a more realistic description of anharmonic bond

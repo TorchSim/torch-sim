@@ -1,4 +1,4 @@
-"""Coordinate transformations and periodic boundary conditions for molecular simulations.
+"""Coordinate transformations and periodic boundary conditions.
 
 This module provides functions for handling coordinate transformations and periodic
 boundary conditions in molecular simulations, including matrix inversions and

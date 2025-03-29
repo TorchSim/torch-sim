@@ -2,13 +2,16 @@
 
 [![CI](https://github.com/radical-ai/torch-sim/actions/workflows/test.yml/badge.svg)](https://github.com/radical-ai/torch-sim/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/radical-ai/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/radical-ai/torch-sim)
+[![This project supports Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg?logo=python&logoColor=white)](https://python.org/downloads)
+[![PyPI](https://img.shields.io/pypi/v/torch-sim?logo=pypi&logoColor=white)](https://pypi.org/project/torch-sim)
+[![Zenodo](https://img.shields.io/badge/DOI-TODO-blue?logo=Zenodo&logoColor=white)](https://zenodo.org/records/TODO)
 
-
+<!-- help docs find start of prose in readme, DO NOT REMOVE -->
 TorchSim is an next-generation open-source atomistic simulation engine for the MLIP era. By rewriting the core primitives of atomistic simulation in Pytorch, it allows orders of magnitude acceleration of popular machine learning potentials.
 
 * automatic batching and GPU memory management allowing up to 200x simulation speedup
-* Support for MACE and Fairchem MLIP models
-* Support for classical lennard jones, morse, and soft-sphere potentials
+* support for MACE and Fairchem MLIP models
+* support for classical lennard jones, morse, and soft-sphere potentials
 * integration with NVE, NVT Langevin, and NPT langevin integrators
 * optimization with gradient descent, unit cell FIRE, or frechet cell FIRE
 * swap monte carlo and hybrid swap monte carlo
@@ -20,33 +23,33 @@ TorchSim is an next-generation open-source atomistic simulation engine for the M
 ## Quick Start
 
 Here is a quick demonstration of many of the core features of TorchSim:
-cpu and gpu support, MLIP models, batching, ASE integration, easy API,
+native support for GPUs, MLIP models, ASE integration, simple API,
 autobatching, and trajectory reporting, all in under 40 lines of code.
 
 ```python
-from ase.build import bulk
-from torch_sim import integrate
-from torch_sim.integrators import nvt_langevin
-from mace.calculators.foundations_models import mace_mp
-from torch_sim.models import MaceModel
+import torch_sim as ts
+import torch
 
-# run on cpu or gpu
-device = "cuda" if torch.cuda.is_available() else "cpu"
+# run natively on gpus
+device = torch.device("cuda")
 
 # easily load the model from mace-mp
+from mace.calculators.foundations_models import mace_mp
+from torch_sim.models import MaceModel
 mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(model=mace, device=device)
 
-# create many replicates of a cu system
+# create many replicates of a cu system using ase
+from ase.build import bulk
 cu_atoms = bulk("Cu", "fcc", a=5.26, cubic=True).repeat(2, 2, 2)
-many_fe_atoms = [cu_atoms] * 500
+many_cu_atoms = [cu_atoms] * 500
 trajectory_files = [f"fe_traj_{i}" for i in many_cu_atoms]
 
 # run them all simultaneously with batching
-final_state = optimize(
-    system=many_fe_atoms,
+final_state = ts.optimize(
+    system=many_cu_atoms,
     model=mace_model,
-    integrator=nvt_langevin,
+    integrator=ts.nvt_langevin,
     n_steps=50,
     temperature=1000,
     timestep=0.002,
@@ -58,12 +61,11 @@ final_atoms_list = state.to_atoms()
 # extract the final energy from the trajectory file
 final_energies = []
 for filename in trajectory_files:
-    with TorchSimTrajectory(filename) as traj:
+    with ts.TorchSimTrajectory(filename) as traj:
         final_energies.append(traj.get_array("potential_energy")[-1])
 
 print(final_energies)
 ```
-
 
 ## Installation
 
@@ -73,25 +75,15 @@ cd torch-sim
 pip install .
 ```
 
-## Running Example Scripts
+## Examples
 
-`torch-sim` has dozens of demos in the [`examples/`](examples) folder. To run any of the them, use the following command:
-
-```sh
-# if uv is not yet installed
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# pick any of the examples
-uv run --with . examples/2_Structural_optimization/2.3_MACE_FIRE.py
-uv run --with . examples/3_Dynamics/3.3_MACE_NVE_cueq.py
-uv run --with . examples/4_High_level_api/4.1_high_level_api.py
-```
+`torch-sim` has dozens of example scripts and tutorials in the [`examples/`](examples/readme.md) folder.
 
 ## Core Modules
+
 (Link to API docs)
 
-- [`torch_sim.integrators`](torch_sim/integrators.py): Provides batched molecular dynamics integrators for simulating the time evolution of atomistic systems.
-
+* [`torch_sim.integrators`](torch_sim/integrators.py): Provides batched molecular dynamics integrators for simulating the time evolution of atomistic systems.
 
 ## Citation
 

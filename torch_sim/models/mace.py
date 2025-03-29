@@ -1,4 +1,4 @@
-"""MACE model implementation for TorchSim.
+"""Wrapper for MACE model in torch-sim.
 
 This module provides a TorchSim wrapper of the MACE model for computing
 energies, forces, and stresses for atomistic systems. It integrates the MACE model
@@ -17,6 +17,7 @@ Notes:
     for compatibility with the broader TorchSim framework.
 """
 
+import typing
 from collections.abc import Callable
 from pathlib import Path
 
@@ -39,7 +40,9 @@ except ImportError:
         It raises an ImportError if MACE is not installed.
         """
 
-        raise ImportError("MACE must be installed to use this model.")
+        def __init__(self, *_args: typing.Any, **_kwargs: typing.Any) -> None:
+            """Dummy init for type checking."""
+            raise ImportError("MACE must be installed to use this model.")
 
 
 class MaceModel(torch.nn.Module, ModelInterface):
@@ -120,10 +123,10 @@ class MaceModel(torch.nn.Module, ModelInterface):
         # TODO: can we get rid of this shit?
         torch.set_default_dtype(self._dtype)
 
-        print(
-            f"Running BatchedMACEForce on device: {self._device} "
-            f"with dtype: {self._dtype}"
-        )
+        # print(
+        #     f"Running BatchedMACEForce on device: {self._device} "
+        #     f"with dtype: {self._dtype}"
+        # )
 
         # Load model if provided as path
         if isinstance(model, str | Path):

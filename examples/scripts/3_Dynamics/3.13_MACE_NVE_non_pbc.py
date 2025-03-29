@@ -15,7 +15,7 @@ from mace.calculators.foundations_models import mace_off
 
 from torch_sim.io import atoms_to_state
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.quantities import kinetic_energy
+from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import nve
 from torch_sim.units import MetalUnits as Units
@@ -76,7 +76,7 @@ state = nve_init(state=state, seed=1)
 print("\nStarting NVE molecular dynamics simulation...")
 start_time = time.perf_counter()
 for step in range(N_steps):
-    total_energy = state.energy + kinetic_energy(
+    total_energy = state.energy + calc_kinetic_energy(
         masses=state.masses, momenta=state.momenta
     )
     if step % 10 == 0:

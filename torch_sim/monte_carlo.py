@@ -1,5 +1,4 @@
-"""Monte Carlo simulations: Implementation of Monte Carlo methods for atomic structure
-optimization.
+"""Propagators for Monte Carlo simulations.
 
 This module provides functionality for performing Monte Carlo simulations,
 particularly focused on swap Monte Carlo for atomic systems. It includes
@@ -238,7 +237,7 @@ def swap_monte_carlo(
     def swap_monte_carlo_step(
         state: SwapMCState,
         kT: float = kT,
-        generator: torch.Generator | None = None,
+        generator: torch.Generator | None = generator,
     ) -> SwapMCState:
         """Perform a single swap Monte Carlo step.
 

@@ -1,4 +1,4 @@
-"""TorchSim Trajectory: Trajectory file handling for molecular dynamics simulations.
+"""Trajectory format and reporting.
 
 This module provides classes for reading and writing trajectory data in HDF5 format.
 The core classes (TorchSimTrajectory and TrajectoryReporter) allow efficient storage
@@ -39,7 +39,7 @@ import torch
 from torch_sim.state import SimState
 
 
-DATA_TYPE_MAP = {
+_DATA_TYPE_MAP = {
     np.dtype("float32"): tables.Float32Atom(),
     np.dtype("float64"): tables.Float64Atom(),
     np.dtype("int32"): tables.Int32Atom(),
@@ -124,13 +124,7 @@ class TrajectoryReporter:
         )  # default will be to force overwrite if none is set
 
         self.prop_calculators = prop_calculators or {}
-        properties = next(iter(self.prop_calculators.values()))
-        save_velocities = "velocities" in properties
-        save_forces = "forces" in properties
-        self.state_kwargs = state_kwargs or {
-            "save_velocities": save_velocities,
-            "save_forces": save_forces,
-        }
+        self.state_kwargs = state_kwargs or {}
         self.shape_warned = False
         self.metadata = metadata
 
@@ -220,7 +214,8 @@ class TrajectoryReporter:
         Args:
             state (SimState): Current system state with n_batches equal to
                 len(filenames)
-            step (int): Current simulation step
+            step (int): Current simulation step, setting step to 0 will write
+                the state and all properties.
             model (torch.nn.Module, optional): Model used for simulation.
                 Defaults to None. Must be provided if any prop_calculators
                 are provided.
@@ -260,6 +255,7 @@ class TrajectoryReporter:
             ):
                 self.trajectories[i].write_state(substate, step, **self.state_kwargs)
 
+            all_state_props = {}
             # Process property calculators for this batch
             for report_frequency, calculators in self.prop_calculators.items():
                 if step % report_frequency != 0 or report_frequency == 0:
@@ -275,9 +271,10 @@ class TrajectoryReporter:
 
                 # Write properties to this trajectory
                 if props:
-                    all_props.append(props)
+                    all_state_props.update(props)
                     if self.filenames is not None:
                         self.trajectories[i].write_arrays(props, step)
+            all_props.append(all_state_props)
 
         return all_props
 
@@ -445,7 +442,7 @@ class TorchSimTrajectory:
         Returns:
             dict: Dictionary mapping numpy/torch dtypes to PyTables atom types
         """
-        type_map = copy.copy(DATA_TYPE_MAP)
+        type_map = copy.copy(_DATA_TYPE_MAP)
         if coerce_to_int32:
             type_map[torch.int64] = tables.Int32Atom()
             type_map[np.dtype("int64")] = tables.Int32Atom()
@@ -923,11 +920,21 @@ class TorchSimTrajectory:
             positions=torch.tensor(arrays["positions"], device=device, dtype=dtype),
             masses=torch.tensor(arrays.get("masses", None), device=device, dtype=dtype),
             cell=torch.tensor(arrays["cell"], device=device, dtype=dtype),
-            pbc=torch.tensor(arrays.get("pbc", True), device=device, dtype=torch.bool),
+            pbc=arrays.get("pbc", True),
             atomic_numbers=torch.tensor(
                 arrays["atomic_numbers"], device=device, dtype=torch.int
             ),
         )
+
+    @property
+    def metadata(self) -> dict:
+        """Get the metadata for the trajectory.
+
+        Returns:
+            dict: Metadata for the trajectory
+        """
+        attrs = self._file.root.metadata._v_attrs
+        return {name: getattr(attrs, name) for name in attrs._f_list()}
 
     def close(self) -> None:
         """Close the HDF5 file handle.

@@ -1,4 +1,4 @@
-"""Model Interface: Core interfaces for all simulation models in torchsim.
+"""Core interfaces for all models in torchsim.
 
 This module defines the abstract base class that all torchsim models must implement.
 It establishes a common API for interacting with different force and energy models,

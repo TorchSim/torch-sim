@@ -1,4 +1,4 @@
-"""Simulation runners for molecular dynamics and optimization.
+"""High level runners for atomistic simulations.
 
 This module provides functions for running molecular dynamics simulations and geometry
 optimizations using various models and integrators. It includes utilities for
@@ -15,7 +15,7 @@ from numpy.typing import ArrayLike
 
 from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
 from torch_sim.models.interface import ModelInterface
-from torch_sim.quantities import batchwise_max_force, kinetic_energy, temperature
+from torch_sim.quantities import batchwise_max_force, calc_kinetic_energy, calc_kT
 from torch_sim.state import SimState, StateLike, concatenate_states, initialize_state
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.units import UnitSystem
@@ -33,8 +33,8 @@ def _configure_reporter(
         return trajectory_reporter
     possible_properties = {
         "potential_energy": lambda state: state.energy,
-        "kinetic_energy": lambda state: kinetic_energy(state.momenta, state.masses),
-        "temperature": lambda state: temperature(state.momenta, state.masses),
+        "kinetic_energy": lambda state: calc_kinetic_energy(state.momenta, state.masses),
+        "temperature": lambda state: calc_kT(state.momenta, state.masses),
     }
     if runner == integrate:
         properties = ["kinetic_energy", "potential_energy", "temperature"]
@@ -59,8 +59,10 @@ def _configure_reporter(
 
     # ordering is important to ensure we can override defaults
     return TrajectoryReporter(
-        prop_calculators={prop_frequency: prop_calculators},
-        state_frequency=state_frequency,
+        prop_calculators=trajectory_reporter.pop(
+            "prop_calculators", {prop_frequency: prop_calculators}
+        ),
+        state_frequency=trajectory_reporter.pop("state_frequency", state_frequency),
         state_kwargs=state_kwargs or {},
         **trajectory_reporter,
     )
@@ -111,7 +113,6 @@ def integrate(
     n_steps: int,
     temperature: float | ArrayLike,
     timestep: float,
-    unit_system: UnitSystem = UnitSystem.metal,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: ChunkingAutoBatcher | bool = False,
     **integrator_kwargs: dict,
@@ -126,7 +127,6 @@ def integrate(
         temperature (float | ArrayLike): Temperature or array of temperatures for each
             step
         timestep (float): Integration time step
-        unit_system (UnitSystem): Unit system for temperature and time
         integrator_kwargs: Additional keyword arguments for integrator
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
             tracking trajectory. If a dict, will be passed to the TrajectoryReporter
@@ -137,6 +137,7 @@ def integrate(
     Returns:
         SimState: Final state after integration
     """
+    unit_system = UnitSystem.metal
     # create a list of temperatures
     temps = temperature if hasattr(temperature, "__iter__") else [temperature] * n_steps
     if len(temps) != n_steps:
@@ -230,7 +231,7 @@ def _configure_hot_swapping_autobatcher(
 
 
 def generate_force_convergence_fn(force_tol: float = 1e-1) -> Callable:
-    """Generate a convergence function for the convergence_fn argument
+    """Generate a force-based convergence function for the convergence_fn argument
     of the optimize function.
 
     Args:
@@ -243,10 +244,32 @@ def generate_force_convergence_fn(force_tol: float = 1e-1) -> Callable:
 
     def convergence_fn(
         state: SimState,
-        last_energy: torch.Tensor,  # noqa: ARG001
+        last_energy: torch.Tensor | None = None,  # noqa: ARG001
     ) -> bool:
         """Check if the system has converged."""
         return batchwise_max_force(state) < force_tol
+
+    return convergence_fn
+
+
+def generate_energy_convergence_fn(energy_tol: float = 1e-3) -> Callable:
+    """Generate an energy-based convergence function for the convergence_fn argument
+    of the optimize function.
+
+    Args:
+        energy_tol (float): Energy tolerance for convergence
+
+    Returns:
+        Convergence function that takes a state and last energy and
+        returns a batchwise boolean function
+    """
+
+    def convergence_fn(
+        state: SimState,
+        last_energy: torch.Tensor | None = None,
+    ) -> bool:
+        """Check if the system has converged."""
+        return torch.abs(state.energy - last_energy) < energy_tol
 
     return convergence_fn
 
@@ -257,7 +280,6 @@ def optimize(
     *,
     optimizer: Callable,
     convergence_fn: Callable | None = None,
-    unit_system: UnitSystem = UnitSystem.metal,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: HotSwappingAutoBatcher | bool = False,
     max_steps: int = 10_000,
@@ -273,7 +295,6 @@ def optimize(
         optimizer (Callable): Optimization algorithm function
         convergence_fn (Callable | None): Condition for convergence, should return a
             boolean tensor of length n_batches
-        unit_system (UnitSystem): Unit system for energy tolerance
         optimizer_kwargs: Additional keyword arguments for optimizer init function
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
             tracking optimization trajectory. If a dict, will be passed to the
@@ -295,9 +316,7 @@ def optimize(
     # create a default convergence function if one is not provided
     # TODO: document this behavior
     if convergence_fn is None:
-
-        def convergence_fn(state: SimState, last_energy: torch.Tensor) -> bool:
-            return last_energy - state.energy < 1e-6 * unit_system.energy
+        convergence_fn = generate_energy_convergence_fn(energy_tol=1e-3)
 
     # initialize the state
     state: SimState = initialize_state(system, model.device, model.dtype)
@@ -355,7 +374,6 @@ def static(
     system: StateLike,
     model: ModelInterface,
     *,
-    unit_system: UnitSystem = UnitSystem.metal,  # noqa: ARG001
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: ChunkingAutoBatcher | bool = False,
 ) -> list[dict[str, torch.Tensor]]:
@@ -375,6 +393,9 @@ def static(
             tracking trajectory. If a dict, will be passed to the TrajectoryReporter
             constructor and must include at least the "filenames" key. Any prop
             calculators will be executed and the results will be returned in a list.
+            Make sure that if multiple unique states are used, that the
+            `variable_atomic_numbers` and `variable_masses` are set to `True` in the
+            `state_kwargs` argument.
         autobatcher (ChunkingAutoBatcher | bool): Optional autobatcher to use for
             batching calculations
 
@@ -394,17 +415,9 @@ def static(
             "save_forces": model.compute_forces,
         },
     )
-    if trajectory_reporter.state_frequency != 1:
-        raise ValueError(f"{trajectory_reporter.state_frequency=} must be 1 for statics")
-    prop_calc_keys = set(trajectory_reporter.prop_calculators)
-    if prop_calc_keys != {1}:
-        raise ValueError(
-            "trajectory_reporter.prop_calculators should only have key=1, got "
-            f"{prop_calc_keys}"
-        )
 
     @dataclass
-    class StaticState(SimState):
+    class StaticState(type(state)):
         energy: torch.Tensor
         forces: torch.Tensor
         stress: torch.Tensor

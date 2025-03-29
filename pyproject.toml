@@ -117,7 +117,8 @@ pep8-naming.ignore-names = ["get_kT", "kT"]
 [tool.ruff.lint.per-file-ignores]
 "**/tests/*" = ["ANN201", "D", "S101"]
 "examples/**/*" = ["B018"]
-"tutorials/**/*" = ["B018"]
+"examples/tutorials/**/*" = ["ALL"]
+
 
 [tool.ruff.format]
 docstring-code-format = true

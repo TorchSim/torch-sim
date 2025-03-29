@@ -9,6 +9,10 @@ This section contains tutorials for torch_sim.
 
 .. toctree::
     :titlesonly:
-    :glob:
 
-    *
+    high_level_tutorial
+    state_tutorial
+    reporting_tutorial
+    autobatching_tutorial
+    low_level_tutorial
+    hybrid_swap_tutorial

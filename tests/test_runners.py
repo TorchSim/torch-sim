@@ -2,18 +2,16 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pytest
 import torch
 
 from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
 from torch_sim.integrators import nve, nvt_langevin
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.optimizers import unit_cell_fire
-from torch_sim.quantities import kinetic_energy
+from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.runners import generate_force_convergence_fn, integrate, optimize, static
 from torch_sim.state import SimState, initialize_state
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
-from torch_sim.units import UnitSystem
 
 
 def test_integrate_nve(ar_sim_state: SimState, lj_model: Any, tmp_path: Path) -> None:
@@ -23,7 +21,7 @@ def test_integrate_nve(ar_sim_state: SimState, lj_model: Any, tmp_path: Path) ->
         filenames=traj_file,
         state_frequency=1,
         prop_calculators={
-            1: {"ke": lambda state: kinetic_energy(state.momenta, state.masses)}
+            1: {"ke": lambda state: calc_kinetic_energy(state.momenta, state.masses)}
         },
     )
 
@@ -34,7 +32,6 @@ def test_integrate_nve(ar_sim_state: SimState, lj_model: Any, tmp_path: Path) ->
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
-        unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
     )
 
@@ -57,7 +54,7 @@ def test_integrate_single_nvt(
         filenames=traj_file,
         state_frequency=1,
         prop_calculators={
-            1: {"ke": lambda state: kinetic_energy(state.momenta, state.masses)}
+            1: {"ke": lambda state: calc_kinetic_energy(state.momenta, state.masses)}
         },
     )
 
@@ -68,7 +65,6 @@ def test_integrate_single_nvt(
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
-        unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
         gamma=0.1,  # ps^-1
     )
@@ -108,7 +104,7 @@ def test_integrate_double_nvt_with_reporter(
         filenames=trajectory_files,
         state_frequency=1,
         prop_calculators={
-            1: {"ke": lambda state: kinetic_energy(state.momenta, state.masses)}
+            1: {"ke": lambda state: calc_kinetic_energy(state.momenta, state.masses)}
         },
     )
 
@@ -119,7 +115,6 @@ def test_integrate_double_nvt_with_reporter(
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
-        unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
         gamma=0.1,  # ps^-1
     )
@@ -156,7 +151,7 @@ def test_integrate_many_nvt(
         filenames=trajectory_files,
         state_frequency=1,
         prop_calculators={
-            1: {"ke": lambda state: kinetic_energy(state.momenta, state.masses)}
+            1: {"ke": lambda state: calc_kinetic_energy(state.momenta, state.masses)}
         },
     )
 
@@ -298,7 +293,6 @@ def test_optimize_fire(ar_sim_state: SimState, lj_model: Any, tmp_path: Path) ->
         model=lj_model,
         optimizer=unit_cell_fire,
         convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
-        unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
     )
 
@@ -353,7 +347,7 @@ def test_batched_optimize_fire(
         filenames=trajectory_files,
         state_frequency=1,
         prop_calculators={
-            1: {"ke": lambda state: kinetic_energy(state.momenta, state.masses)}
+            1: {"ke": lambda state: calc_kinetic_energy(state.momenta, state.masses)}
         },
     )
 
@@ -362,7 +356,6 @@ def test_batched_optimize_fire(
         model=lj_model,
         optimizer=unit_cell_fire,
         convergence_fn=generate_force_convergence_fn(force_tol=1e-1),
-        unit_system=UnitSystem.metal,
         trajectory_reporter=reporter,
     )
 
@@ -696,9 +689,7 @@ def test_static_with_autobatcher_and_reporting(
     )
 
 
-def test_static_no_filenames(
-    ar_sim_state: SimState, lj_model: Any, tmp_path: Path
-) -> None:
+def test_static_no_filenames(ar_sim_state: SimState, lj_model: Any) -> None:
     """Test static calculation with no trajectory filenames."""
     reporter = TrajectoryReporter(
         filenames=None,
@@ -712,17 +703,3 @@ def test_static_no_filenames(
     assert len(props) == 1
     assert "potential_energy" in props[0]
     assert isinstance(props[0]["potential_energy"], torch.Tensor)
-
-    reporter = TrajectoryReporter(
-        filenames=tmp_path / "static.h5md",
-        state_frequency=2,  # Invalid for static calculations
-        prop_calculators={1: {"potential_energy": lambda state: state.energy}},
-    )
-
-    # should raise for invalid state frequency
-    with pytest.raises(ValueError, match="state_frequency=2 must be 1 for statics"):
-        static(
-            system=ar_sim_state,
-            model=lj_model,
-            trajectory_reporter=reporter,
-        )

@@ -3,6 +3,7 @@
 import torch
 
 from torch_sim.state import SimState
+from torch_sim.units import MetalUnits
 
 
 # @torch.jit.script
@@ -19,7 +20,7 @@ def count_dof(tensor: torch.Tensor) -> int:
 
 
 # @torch.jit.script
-def temperature(
+def calc_kT(  # noqa: N802
     momenta: torch.Tensor,
     masses: torch.Tensor,
     velocities: torch.Tensor | None = None,
@@ -29,10 +30,11 @@ def temperature(
     Temperature returned in energy units.
 
     Args:
-        momenta: Particle momenta, shape (n_particles, n_dim)
-        masses: Particle masses, shape (n_particles,)
-        velocities: Particle velocities, shape (n_particles, n_dim)
-        batch: Optional tensor indicating batch membership of each particle
+        momenta (torch.Tensor): Particle momenta, shape (n_particles, n_dim)
+        masses (torch.Tensor): Particle masses, shape (n_particles,)
+        velocities (torch.Tensor | None): Particle velocities, shape (n_particles, n_dim)
+        batch (torch.Tensor | None): Optional tensor indicating batch membership of
+        each particle
 
     Returns:
         Scalar temperature value
@@ -68,8 +70,31 @@ def temperature(
     return batch_sums / dof_per_batch
 
 
+def calc_temperature(
+    momenta: torch.Tensor,
+    masses: torch.Tensor,
+    velocities: torch.Tensor | None = None,
+    batch: torch.Tensor | None = None,
+    units: object = MetalUnits.temperature,
+) -> torch.Tensor:
+    """Calculate temperature from momenta/velocities and masses.
+
+    Args:
+        momenta (torch.Tensor): Particle momenta, shape (n_particles, n_dim)
+        masses (torch.Tensor): Particle masses, shape (n_particles,)
+        velocities (torch.Tensor | None): Particle velocities, shape (n_particles, n_dim)
+        batch (torch.Tensor | None): Optional tensor indicating batch membership of
+        each particle
+        units (object): Units to return the temperature in
+
+    Returns:
+        Temperature value in specified units
+    """
+    return calc_kT(momenta, masses, velocities, batch) / units
+
+
 # @torch.jit.script
-def kinetic_energy(
+def calc_kinetic_energy(
     momenta: torch.Tensor,
     masses: torch.Tensor,
     velocities: torch.Tensor | None = None,
@@ -78,10 +103,11 @@ def kinetic_energy(
     """Computes the kinetic energy of a system.
 
     Args:
-        momenta: Particle momenta, shape (n_particles, n_dim)
-        masses: Particle masses, shape (n_particles,)
-        velocities: Particle velocities, shape (n_particles, n_dim)
-        batch: Optional tensor indicating batch membership of each particle
+        momenta (torch.Tensor): Particle momenta, shape (n_particles, n_dim)
+        masses (torch.Tensor): Particle masses, shape (n_particles,)
+        velocities (torch.Tensor | None): Particle velocities, shape (n_particles, n_dim)
+        batch (torch.Tensor | None): Optional tensor indicating batch membership of
+        each particle
 
     Returns:
         If batch is None: Scalar tensor containing the total kinetic energy
@@ -111,7 +137,7 @@ def batchwise_max_force(state: SimState) -> torch.Tensor:
     """Compute the maximum force per batch.
 
     Args:
-        state: SimState to compute the maximum force per batch for
+        state (SimState): SimState to compute the maximum force per batch for
 
     Returns:
         Tensor of maximum forces per batch

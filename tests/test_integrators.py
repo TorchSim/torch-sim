@@ -10,7 +10,7 @@ from torch_sim.integrators import (
     nvt_langevin,
 )
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.quantities import temperature
+from torch_sim.quantities import calc_kT
 from torch_sim.state import SimState, concatenate_states
 from torch_sim.units import MetalUnits
 
@@ -197,7 +197,7 @@ def test_npt_langevin(ar_double_sim_state: SimState, lj_model: LennardJonesModel
         state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
-        temp = temperature(state.momenta, state.masses, batch=state.batch)
+        temp = calc_kT(state.momenta, state.masses, batch=state.batch)
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
 
@@ -255,7 +255,7 @@ def test_nvt_langevin(ar_double_sim_state: SimState, lj_model: LennardJonesModel
         state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
-        temp = temperature(state.momenta, state.masses, batch=state.batch)
+        temp = calc_kT(state.momenta, state.masses, batch=state.batch)
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
 

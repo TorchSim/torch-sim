@@ -13,7 +13,7 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.quantities import kinetic_energy, temperature
+from torch_sim.quantities import calc_kinetic_energy, calc_kT
 from torch_sim.state import SimState
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import (
@@ -85,7 +85,7 @@ state = nvt_init(state=state, seed=1)
 
 for step in range(N_steps_nvt):
     if step % 10 == 0:
-        temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
+        temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
         invariant = nvt_nose_hoover_invariant(state, kT=kT).item()
         print(f"{step=}: Temperature: {temp:.4f}: invariant: {invariant:.4f}, ")
     state = nvt_update(state, kT=kT)
@@ -109,12 +109,14 @@ def get_pressure(
 
 for step in range(N_steps_npt):
     if step % 10 == 0:
-        temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
+        temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
         stress = model(state)["stress"]
         volume = torch.det(state.cell)
         pressure = (
             get_pressure(
-                stress, kinetic_energy(masses=state.masses, momenta=state.momenta), volume
+                stress,
+                calc_kinetic_energy(masses=state.masses, momenta=state.momenta),
+                volume,
             ).item()
             / Units.pressure
         )
@@ -126,14 +128,14 @@ for step in range(N_steps_npt):
         )
     state = npt_update(state, kT=kT, external_pressure=target_pressure)
 
-final_temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
+final_temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
 print(f"Final temperature: {final_temp:.4f} K")
 final_stress = model(state)["stress"]
 final_volume = torch.det(state.cell)
 final_pressure = (
     get_pressure(
         final_stress,
-        kinetic_energy(masses=state.masses, momenta=state.momenta),
+        calc_kinetic_energy(masses=state.masses, momenta=state.momenta),
         final_volume,
     ).item()
     / Units.pressure

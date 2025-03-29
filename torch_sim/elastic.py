@@ -1,5 +1,7 @@
 # ruff: noqa: RUF002, RUF003, PLC2401
-"""Primary Sources and References for Crystal Elasticity.
+"""Calculation of elastic properties of crystals.
+
+Primary Sources and References for Crystal Elasticity.
 
 - Nye, J.F. (1985) "Physical Properties of Crystals: Their Representation by Tensors and
   Matrices"
