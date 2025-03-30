@@ -23,7 +23,7 @@ from torch_sim.runners import generate_force_convergence_fn
 
 # --- Setup and Configuration ---
 # Device and data type configuration
-device = torch.device("cuda")
+device = torch.device("cpu") if os.getenv("CI") else torch.device("cuda")
 dtype = torch.float32
 print(f"job will run on {device=}")
 
