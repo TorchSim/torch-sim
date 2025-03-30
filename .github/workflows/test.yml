@@ -81,6 +81,44 @@ jobs:
           slug: Radical-AI/torch-sim
           flags: mace,${{ matrix.os }},python-${{ matrix.version.python }}
 
+  test-elastic:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+        version:
+          - { python: "3.11", resolution: highest }
+          - { python: "3.12", resolution: lowest-direct }
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.version.python }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Install torchsim
+        run: uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
+
+      - name: Install mace
+        run: uv pip install mace-torch --system
+
+      - name: Run Tests with Coverage
+        run: pytest --cov=torch_sim --cov-report=xml tests/test_elastic.py
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: Radical-AI/torch-sim
+          flags: elastic,${{ matrix.os }},python-${{ matrix.version.python }}
+
   test-fairchem:
     strategy:
       fail-fast: false
