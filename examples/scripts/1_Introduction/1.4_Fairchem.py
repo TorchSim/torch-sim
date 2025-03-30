@@ -7,9 +7,10 @@
 # ]
 # ///
 
+import sys
+
 import torch
 from ase.build import bulk
-from fairchem.core.models.model_registry import model_name_to_local_file
 
 from torch_sim.models.fairchem import FairChemModel
 from torch_sim.state import atoms_to_state
@@ -17,6 +18,12 @@ from torch_sim.state import atoms_to_state
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
+
+try:
+    from fairchem.core.models.model_registry import model_name_to_local_file
+except ImportError:
+    print("Skipping example due to missing fairchem dependency")
+    sys.exit(0)
 
 MODEL_PATH = model_name_to_local_file(
     "EquiformerV2-31M-S2EF-OC20-All+MD", local_cache="."
