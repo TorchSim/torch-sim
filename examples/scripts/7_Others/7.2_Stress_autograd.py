@@ -2,9 +2,9 @@
 
 The stress is calculated using three different methods:
 
-1. The stress_fn function, which uses a brute force method.
-2. The stress_autograd_fn function, which uses automatic differentiation.
-3. The stress_autograd_fn_functorch function, which uses functorch.
+1. The stress_fn function, explicit force method.
+2. The stress_autograd_fn function, automatic differentiation method.
+3. The stress_autograd_fn_functorch function, functorch automatic differentiation method.
 """
 
 import timeit

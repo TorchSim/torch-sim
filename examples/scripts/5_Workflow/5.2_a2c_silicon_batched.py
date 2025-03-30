@@ -64,7 +64,7 @@ structure_multi = random_packed_structure_multi(
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_omat_0/mace-omat-0-medium.model"
+mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 raw_model = mace_mp(model=mace_checkpoint_url, return_raw_model=True)
 
 # Define system and model
