@@ -5,7 +5,7 @@
 # dependencies = [
 #     "fairchem-core>=1.6",
 #     "torch==2.4.1",
-#     "torch_geometric==2.6.1,
+#     "torch_geometric==2.6.1",
 #     "torch_scatter==2.1.2",
 #     "torch_sparse==0.6.18",
 #     "torch_cluster==1.6.3"
