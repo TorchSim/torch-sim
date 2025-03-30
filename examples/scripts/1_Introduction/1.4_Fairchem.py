@@ -13,43 +13,31 @@
 
 import torch
 from ase.build import bulk
+from fairchem.core.models.model_registry import model_name_to_local_file
 
 from torch_sim.models.fairchem import FairChemModel
+from torch_sim.state import atoms_to_state
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
-MODEL_PATH = "../../../checkpoints/FAIRCHEM/EquiformerV2-31M-S2EF-OC20-All+MD.pt"
-PERIODIC = True
+MODEL_PATH = model_name_to_local_file(
+    "EquiformerV2-31M-S2EF-OC20-All+MD", local_cache="."
+)
 
 # Create diamond cubic Silicon
-si_dc = bulk("Si", "diamond", a=5.43).repeat((4, 4, 4))
+si_dc = bulk("Si", "diamond", a=5.43).repeat((2, 2, 2))
 atomic_numbers = si_dc.get_atomic_numbers()
-batched_model = FairChemModel(
+model = FairChemModel(
     model=MODEL_PATH,
-    atomic_numbers_list=[atomic_numbers, atomic_numbers],
-    pbc=PERIODIC,
     cpu=False,
     seed=0,
 )
+atoms_list = [si_dc, si_dc]
+state = atoms_to_state(atoms_list)
 
-positions = torch.tensor([si_dc.positions, si_dc.positions], device=device, dtype=dtype)
-cell = torch.tensor([si_dc.cell.array, si_dc.cell.array], device=device, dtype=dtype)
-masses = torch.tensor(
-    [si_dc.get_masses(), si_dc.get_masses()], device=device, dtype=dtype
-)
-pbc = torch.tensor([True, True], device=device, dtype=torch.bool)
-
-# Convert batched tensors to lists for the calculator
-cell_list = [cell[idx] for idx in range(len(cell))]
-positions_list = [positions[idx] for idx in range(len(positions))]
-
-print(f"Positions: {positions.shape}")
-print(f"Cell: {cell.shape}")
-
-# TODO: how was this ever passing?
-results = batched_model(positions_list, cell_list)
+results = model(state)
 
 print(results["energy"].shape)
 print(results["forces"].shape)
