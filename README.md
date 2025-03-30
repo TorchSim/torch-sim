@@ -39,22 +39,20 @@ from torch_sim.models import MaceModel
 mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(model=mace, device=device)
 
-# create many replicates of a cu system using ase
 from ase.build import bulk
-cu_atoms = bulk("Cu", "fcc", a=5.26, cubic=True).repeat(2, 2, 2)
+cu_atoms = bulk("Cu", "fcc", a=5.26, cubic=True).repeat((2, 2, 2))
 many_cu_atoms = [cu_atoms] * 50
-trajectory_files = [f"fe_traj_{i}" for i in many_cu_atoms]
+trajectory_files = [f"fe_traj_{i}" for i in range(len(many_cu_atoms))]
 
 # run them all simultaneously with batching
-final_state = ts.optimize(
+final_state = ts.integrate(
     system=many_cu_atoms,
     model=mace_model,
-    integrator=ts.nvt_langevin,
     n_steps=50,
-    temperature=1000,
     timestep=0.002,
+    temperature=1000,
+    integrator=ts.nvt_langevin,
     trajectory_reporter=dict(filenames=trajectory_files, state_frequency=10),
-    autobatching=True
 )
 final_atoms_list = final_state.to_atoms()
 
