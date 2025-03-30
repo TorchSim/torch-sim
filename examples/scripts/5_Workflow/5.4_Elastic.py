@@ -23,7 +23,9 @@ from torch_sim.state import SimState
 from torch_sim.units import UnitConversion
 
 
-def get_bravais_type(state: SimState, tol: float = 1e-3) -> BravaisType:  # noqa : PLR0911
+def get_bravais_type(  # noqa : PLR0911
+    state: SimState, length_tol: float = 1e-3, angle_tol: float = 0.1
+) -> BravaisType:
     """Check and return the crystal system of a structure.
 
     This function determines the crystal system by analyzing the lattice
@@ -31,7 +33,8 @@ def get_bravais_type(state: SimState, tol: float = 1e-3) -> BravaisType:  # noqa
 
     Args:
         state: SimState object representing the crystal structure
-        tol: Tolerance for floating-point comparisons
+        length_tol: Tolerance for floating-point comparisons of lattice lengths
+        angle_tol: Tolerance for floating-point comparisons of lattice angles in degrees
 
     Returns:
         BravaisType: Bravais type
@@ -47,54 +50,58 @@ def get_bravais_type(state: SimState, tol: float = 1e-3) -> BravaisType:  # noqa
 
     # Cubic: a = b = c, alpha = beta = gamma = 90°
     if (
-        abs(a - b) < tol
-        and abs(b - c) < tol
-        and abs(alpha - 90) < tol
-        and abs(beta - 90) < tol
-        and abs(gamma - 90) < tol
+        abs(a - b) < length_tol
+        and abs(b - c) < length_tol
+        and abs(alpha - 90) < angle_tol
+        and abs(beta - 90) < angle_tol
+        and abs(gamma - 90) < angle_tol
     ):
         return BravaisType.CUBIC
 
     # Hexagonal: a = b ≠ c, alpha = beta = 90°, gamma = 120°
     if (
-        abs(a - b) < tol
-        and abs(alpha - 90) < tol
-        and abs(beta - 90) < tol
-        and abs(gamma - 120) < tol
+        abs(a - b) < length_tol
+        and abs(alpha - 90) < angle_tol
+        and abs(beta - 90) < angle_tol
+        and abs(gamma - 120) < angle_tol
     ):
         return BravaisType.HEXAGONAL
 
     # Tetragonal: a = b ≠ c, alpha = beta = gamma = 90°
     if (
-        abs(a - b) < tol
-        and abs(a - c) > tol
-        and abs(alpha - 90) < tol
-        and abs(beta - 90) < tol
-        and abs(gamma - 90) < tol
+        abs(a - b) < length_tol
+        and abs(a - c) > length_tol
+        and abs(alpha - 90) < angle_tol
+        and abs(beta - 90) < angle_tol
+        and abs(gamma - 90) < angle_tol
     ):
         return BravaisType.TETRAGONAL
 
     # Orthorhombic: a ≠ b ≠ c, alpha = beta = gamma = 90°
     if (
-        abs(alpha - 90) < tol
-        and abs(beta - 90) < tol
-        and abs(gamma - 90) < tol
-        and abs(a - b) > tol
-        and (abs(b - c) > tol or abs(a - c) > tol)
+        abs(alpha - 90) < angle_tol
+        and abs(beta - 90) < angle_tol
+        and abs(gamma - 90) < angle_tol
+        and abs(a - b) > length_tol
+        and (abs(b - c) > length_tol or abs(a - c) > length_tol)
     ):
         return BravaisType.ORTHORHOMBIC
 
     # Monoclinic: a ≠ b ≠ c, alpha = gamma = 90°, beta ≠ 90°
-    if abs(alpha - 90) < tol and abs(gamma - 90) < tol and abs(beta - 90) > tol:
+    if (
+        abs(alpha - 90) < angle_tol
+        and abs(gamma - 90) < angle_tol
+        and abs(beta - 90) > angle_tol
+    ):
         return BravaisType.MONOCLINIC
 
     # Trigonal/Rhombohedral: a = b = c, alpha = beta = gamma ≠ 90°
     if (
-        abs(a - b) < tol
-        and abs(b - c) < tol
-        and abs(alpha - beta) < tol
-        and abs(beta - gamma) < tol
-        and abs(alpha - 90) > tol
+        abs(a - b) < length_tol
+        and abs(b - c) < length_tol
+        and abs(alpha - beta) < angle_tol
+        and abs(beta - gamma) < angle_tol
+        and abs(alpha - 90) > angle_tol
     ):
         return BravaisType.TRIGONAL
 

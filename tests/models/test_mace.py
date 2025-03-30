@@ -12,7 +12,7 @@ except ImportError:
 from torch_sim.io import atoms_to_state
 from torch_sim.models.interface import validate_model_outputs
 from torch_sim.models.mace import MaceModel
-from torch_sim.neighbors import wrapping_nl
+from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 
 
@@ -55,9 +55,9 @@ def torchsim_mace_model(device: torch.device) -> UnbatchedMaceModel:
     return UnbatchedMaceModel(
         model=mace_model,
         device=device,
-        neighbor_list_fn=wrapping_nl,
         dtype=torch.float32,
         compute_forces=True,
+        neighbor_list_fn=vesin_nl_ts,
     )
 
 
@@ -78,6 +78,7 @@ def torchsim_batched_mace_model(device: torch.device) -> MaceModel:
         device=device,
         dtype=torch.float32,
         compute_forces=True,
+        neighbor_list_fn=vesin_nl_ts,
     )
 
 
@@ -257,9 +258,9 @@ def torchsim_mace_off_model(device: torch.device) -> UnbatchedMaceModel:
     return UnbatchedMaceModel(
         model=mace_off_model,
         device=device,
-        neighbor_list_fn=wrapping_nl,
         dtype=torch.float32,
         compute_forces=True,
+        neighbor_list_fn=vesin_nl_ts,
     )
 
 
@@ -280,6 +281,7 @@ def torchsim_batched_mace_off_model(device: torch.device) -> MaceModel:
         device=device,
         dtype=torch.float32,
         compute_forces=True,
+        neighbor_list_fn=vesin_nl_ts,
     )
 
 

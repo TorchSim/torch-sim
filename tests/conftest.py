@@ -6,6 +6,7 @@ import pytest
 import torch
 from ase import Atoms
 from ase.build import bulk, molecule
+from ase.spacegroup import crystal
 from phonopy.structure.atoms import PhonopyAtoms
 from pymatgen.core import Structure
 
@@ -32,6 +33,75 @@ def si_atoms() -> Any:
 def ti_atoms() -> Any:
     """Create crystalline titanium using ASE."""
     return bulk("Ti", "hcp", a=2.94, c=4.64)
+
+
+@pytest.fixture
+def cu_atoms() -> Any:
+    """Create crystalline copper using ASE."""
+    return bulk("Cu", "fcc", a=3.58, cubic=True)
+
+
+@pytest.fixture
+def mg_atoms() -> Any:
+    """Create crystalline magnesium using ASE."""
+    return bulk("Mg", "hcp", a=3.17, c=5.14)
+
+
+@pytest.fixture
+def sb_atoms() -> Any:
+    """Create crystalline antimony using ASE."""
+    return bulk("Sb", "rhombohedral", a=4.58, alpha=60)
+
+
+@pytest.fixture
+def tio2_atoms() -> Any:
+    """Create crystalline TiO2 using ASE."""
+    a, c = 4.60, 2.96
+    symbols = ["Ti", "O", "O"]
+    basis = [
+        (0.5, 0.5, 0),  # Ti
+        (0.695679, 0.695679, 0.5),  # O
+    ]
+    return crystal(
+        symbols,
+        basis=basis,
+        spacegroup=136,  # P4_2/mnm
+        cellpar=[a, a, c, 90, 90, 90],
+    )
+
+
+@pytest.fixture
+def ga_atoms() -> Any:
+    """Create crystalline Ga using ASE."""
+    a, b, c = 4.43, 7.60, 4.56
+    symbols = ["Ga"]
+    basis = [
+        (0, 0.344304, 0.415401),  # Ga
+    ]
+    return crystal(
+        symbols,
+        basis=basis,
+        spacegroup=64,  # Cmce
+        cellpar=[a, b, c, 90, 90, 90],
+    )
+
+
+@pytest.fixture
+def niti_atoms() -> Any:
+    """Create crystalline NiTi using ASE."""
+    a, b, c = 2.89, 3.97, 4.83
+    alpha, beta, gamma = 90.00, 105.23, 90.00
+    symbols = ["Ni", "Ti"]
+    basis = [
+        (0.369548, 0.25, 0.217074),  # Ni
+        (0.076622, 0.25, 0.671102),  # Ti
+    ]
+    return crystal(
+        symbols,
+        basis=basis,
+        spacegroup=11,
+        cellpar=[a, b, c, alpha, beta, gamma],
+    )
 
 
 @pytest.fixture
@@ -88,9 +158,45 @@ def si_sim_state(si_atoms: Any, device: torch.device) -> Any:
 
 
 @pytest.fixture
+def sb_sim_state(sb_atoms: Any, device: torch.device) -> Any:
+    """Create a basic state from sb_atoms."""
+    return atoms_to_state(sb_atoms, device, torch.float64)
+
+
+@pytest.fixture
 def fe_fcc_sim_state(device: torch.device) -> Any:
     fe_atoms = bulk("Fe", "fcc", a=5.26, cubic=True).repeat([4, 4, 4])
     return atoms_to_state(fe_atoms, device, torch.float64)
+
+
+@pytest.fixture
+def cu_sim_state(cu_atoms: Any, device: torch.device) -> Any:
+    """Create a basic state from cu_atoms."""
+    return atoms_to_state(cu_atoms, device, torch.float64)
+
+
+@pytest.fixture
+def mg_sim_state(mg_atoms: Any, device: torch.device) -> Any:
+    """Create a basic state from mg_atoms."""
+    return atoms_to_state(mg_atoms, device, torch.float64)
+
+
+@pytest.fixture
+def tio2_sim_state(tio2_atoms: Any, device: torch.device) -> Any:
+    """Create a basic state from tio2_atoms."""
+    return atoms_to_state(tio2_atoms, device, torch.float64)
+
+
+@pytest.fixture
+def ga_sim_state(ga_atoms: Any, device: torch.device) -> Any:
+    """Create a basic state from ga_atoms."""
+    return atoms_to_state(ga_atoms, device, torch.float64)
+
+
+@pytest.fixture
+def niti_sim_state(niti_atoms: Any, device: torch.device) -> Any:
+    """Create a basic state from niti_atoms."""
+    return atoms_to_state(niti_atoms, device, torch.float64)
 
 
 @pytest.fixture
