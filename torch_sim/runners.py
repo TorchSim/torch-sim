@@ -1,4 +1,4 @@
-"""Simulation runners for molecular dynamics and optimization.
+"""High level runners for atomistic simulations.
 
 This module provides functions for running molecular dynamics simulations and geometry
 optimizations using various models and integrators. It includes utilities for
@@ -6,18 +6,66 @@ converting between different atomistic representations and handling simulation s
 """
 
 import warnings
-from collections.abc import Callable, Iterable
-from pathlib import Path
+from collections.abc import Callable
+from dataclasses import dataclass
+from itertools import chain
 
 import torch
 from numpy.typing import ArrayLike
 
 from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
 from torch_sim.models.interface import ModelInterface
-from torch_sim.quantities import batchwise_max_force, kinetic_energy, temperature
+from torch_sim.quantities import batchwise_max_force, calc_kinetic_energy, calc_kT
 from torch_sim.state import SimState, StateLike, concatenate_states, initialize_state
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.units import UnitSystem
+
+
+def _configure_reporter(
+    trajectory_reporter: TrajectoryReporter | dict | None,
+    # TODO: change to callable
+    runner: callable,
+    state_kwargs: dict | None = None,
+) -> TrajectoryReporter:
+    if trajectory_reporter is None:
+        return None
+    if isinstance(trajectory_reporter, TrajectoryReporter):
+        return trajectory_reporter
+    possible_properties = {
+        "potential_energy": lambda state: state.energy,
+        "kinetic_energy": lambda state: calc_kinetic_energy(state.momenta, state.masses),
+        "temperature": lambda state: calc_kT(state.momenta, state.masses),
+    }
+    if runner == integrate:
+        properties = ["kinetic_energy", "potential_energy", "temperature"]
+        prop_frequency = 10
+        state_frequency = 100
+    elif runner == optimize:
+        properties = ["potential_energy"]
+        prop_frequency = 10
+        state_frequency = 100
+    elif runner == static:
+        properties = ["potential_energy"]
+        prop_frequency = 1
+        state_frequency = 1
+    else:
+        raise ValueError(f"Invalid runner: {runner}")
+
+    prop_calculators = {
+        prop: calculator
+        for prop, calculator in possible_properties.items()
+        if prop in properties
+    }
+
+    # ordering is important to ensure we can override defaults
+    return TrajectoryReporter(
+        prop_calculators=trajectory_reporter.pop(
+            "prop_calculators", {prop_frequency: prop_calculators}
+        ),
+        state_frequency=trajectory_reporter.pop("state_frequency", state_frequency),
+        state_kwargs=state_kwargs or {},
+        **trajectory_reporter,
+    )
 
 
 def _configure_batches_iterator(
@@ -28,101 +76,33 @@ def _configure_batches_iterator(
     """Create a batches iterator for the integrate function.
 
     Args:
-        model: The model to use for the integration
-        state: The state to use for the integration
-        autobatcher: The autobatcher to use for the integration
+        model (ModelInterface): The model to use for the integration
+        state (SimState): The state to use for the integration
+        autobatcher (ChunkingAutoBatcher | bool): The autobatcher to use for integration
 
     Returns:
         A batches iterator
     """
     # load and properly configure the autobatcher
-    if autobatcher and isinstance(autobatcher, bool):
+    if autobatcher is True:
         autobatcher = ChunkingAutoBatcher(
             model=model,
             return_indices=True,
         )
         autobatcher.load_states(state)
-        batchs = autobatcher
+        batches = autobatcher
     elif isinstance(autobatcher, ChunkingAutoBatcher):
         autobatcher.load_states(state)
         autobatcher.return_indices = True
-        batchs = autobatcher
-    elif not autobatcher:
-        batchs = [(state, [])]
+        batches = autobatcher
+    elif autobatcher is False:
+        batches = [(state, [])]
     else:
         raise ValueError(
-            f"Invalid autobatcher type: {type(autobatcher)}, "
-            "must be bool, ChunkingAutoBatcher, or None."
+            f"Invalid autobatcher type: {type(autobatcher).__name__}, "
+            "must be bool or ChunkingAutoBatcher."
         )
-    return batchs
-
-
-def create_default_reporter(
-    filenames: str | Path | list[str | Path],
-    property_frequency: int = 10,
-    state_frequency: int = 50,
-    properties: Iterable[str] = (
-        "positions",
-        "kinetic_energy",
-        "potential_energy",
-        "temperature",
-        "stress",
-    ),
-) -> TrajectoryReporter:
-    """Create a default trajectory reporter.
-
-    Args:
-        filenames: Filenames to save the trajectory to.
-        property_frequency: Frequency to save properties at.
-        state_frequency: Frequency to save state at.
-        properties: Properties to save, possible properties are "positions",
-            "kinetic_energy", "potential_energy", "temperature", "stress", "velocities",
-            and "forces".
-        model: The model to use for the reporter
-
-    Returns:
-        A trajectory reporter
-    """
-
-    def compute_stress(state: SimState, model: ModelInterface) -> torch.Tensor:
-        # Check model type by name rather than instance
-        # TODO: this is a bit of a dumb way of tracking stress
-        if not model.compute_stress:
-            try:
-                og_model_stress = model.compute_stress
-                model.compute_stress = True
-            except AttributeError as err:
-                raise ValueError(
-                    "Model stress is not set to true and model stress cannot be "
-                    "set on the fly. Please set model.compute_stress to True."
-                ) from err
-        model_outputs = model(state)
-        if not model.compute_stress:
-            model.compute_stress = og_model_stress
-
-        return model_outputs["stress"]
-
-    possible_properties = {
-        "kinetic_energy": lambda state: kinetic_energy(state.momenta, state.masses),
-        "potential_energy": lambda state: state.energy,
-        "temperature": lambda state: temperature(state.momenta, state.masses),
-        "stress": compute_stress,
-    }
-
-    prop_calculators = {
-        prop: calculator
-        for prop, calculator in possible_properties.items()
-        if prop in properties
-    }
-
-    save_velocities = "velocities" in properties
-    save_forces = "forces" in properties
-    return TrajectoryReporter(
-        filenames=filenames,
-        state_frequency=state_frequency,
-        prop_calculators={property_frequency: prop_calculators},
-        state_kwargs={"save_velocities": save_velocities, "save_forces": save_forces},
-    )
+    return batches
 
 
 def integrate(
@@ -133,29 +113,31 @@ def integrate(
     n_steps: int,
     temperature: float | ArrayLike,
     timestep: float,
-    unit_system: UnitSystem = UnitSystem.metal,
-    trajectory_reporter: TrajectoryReporter | None = None,
+    trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: ChunkingAutoBatcher | bool = False,
     **integrator_kwargs: dict,
 ) -> SimState:
     """Simulate a system using a model and integrator.
 
     Args:
-        system: Input system to simulate
-        model: Neural network model module
-        integrator: Integration algorithm function
-        n_steps: Number of integration steps
-        temperature: Temperature or array of temperatures for each step
-        timestep: Integration time step
-        unit_system: Unit system for temperature and time
+        system (StateLike): Input system to simulate
+        model (ModelInterface): Neural network model module
+        integrator (Callable): Integration algorithm function
+        n_steps (int): Number of integration steps
+        temperature (float | ArrayLike): Temperature or array of temperatures for each
+            step
+        timestep (float): Integration time step
         integrator_kwargs: Additional keyword arguments for integrator
-        trajectory_reporter: Optional reporter for tracking trajectory.
-        autobatcher: Optional autobatcher to use
+        trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
+            tracking trajectory. If a dict, will be passed to the TrajectoryReporter
+            constructor.
+        autobatcher (ChunkingAutoBatcher | bool): Optional autobatcher to use
         **integrator_kwargs: Additional keyword arguments for integrator init function
 
     Returns:
         SimState: Final state after integration
     """
+    unit_system = UnitSystem.metal
     # create a list of temperatures
     temps = temperature if hasattr(temperature, "__iter__") else [temperature] * n_steps
     if len(temps) != n_steps:
@@ -175,8 +157,9 @@ def integrate(
     state = init_fn(state)
 
     batch_iterator = _configure_batches_iterator(model, state, autobatcher)
+    trajectory_reporter = _configure_reporter(trajectory_reporter, integrate)
 
-    final_states = []
+    final_states: list[SimState] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
     for state, batch_indices in batch_iterator:
         # set up trajectory reporters
@@ -215,10 +198,11 @@ def _configure_hot_swapping_autobatcher(
     """Configure the hot swapping autobatcher for the optimize function.
 
     Args:
-        model: The model to use for the autobatcher
-        state: The state to use for the autobatcher
-        autobatcher: The autobatcher to use for the autobatcher
-        max_attempts: The maximum number of attempts for the autobatcher
+        model (ModelInterface): The model to use for the autobatcher
+        state (SimState): The state to use for the autobatcher
+        autobatcher (HotSwappingAutoBatcher | bool): The autobatcher to use for the
+            autobatcher
+        max_attempts (int): The maximum number of attempts for the autobatcher
 
     Returns:
         A hot swapping autobatcher
@@ -247,11 +231,11 @@ def _configure_hot_swapping_autobatcher(
 
 
 def generate_force_convergence_fn(force_tol: float = 1e-1) -> Callable:
-    """Generate a convergence function for the convergence_fn argument
+    """Generate a force-based convergence function for the convergence_fn argument
     of the optimize function.
 
     Args:
-        force_tol: Force tolerance for convergence
+        force_tol (float): Force tolerance for convergence
 
     Returns:
         Convergence function that takes a state and last energy and
@@ -260,10 +244,32 @@ def generate_force_convergence_fn(force_tol: float = 1e-1) -> Callable:
 
     def convergence_fn(
         state: SimState,
-        last_energy: torch.Tensor,  # noqa: ARG001
+        last_energy: torch.Tensor | None = None,  # noqa: ARG001
     ) -> bool:
         """Check if the system has converged."""
         return batchwise_max_force(state) < force_tol
+
+    return convergence_fn
+
+
+def generate_energy_convergence_fn(energy_tol: float = 1e-3) -> Callable:
+    """Generate an energy-based convergence function for the convergence_fn argument
+    of the optimize function.
+
+    Args:
+        energy_tol (float): Energy tolerance for convergence
+
+    Returns:
+        Convergence function that takes a state and last energy and
+        returns a batchwise boolean function
+    """
+
+    def convergence_fn(
+        state: SimState,
+        last_energy: torch.Tensor | None = None,
+    ) -> bool:
+        """Check if the system has converged."""
+        return torch.abs(state.energy - last_energy) < energy_tol
 
     return convergence_fn
 
@@ -274,8 +280,7 @@ def optimize(
     *,
     optimizer: Callable,
     convergence_fn: Callable | None = None,
-    unit_system: UnitSystem = UnitSystem.metal,
-    trajectory_reporter: TrajectoryReporter | None = None,
+    trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: HotSwappingAutoBatcher | bool = False,
     max_steps: int = 10_000,
     steps_between_swaps: int = 5,
@@ -284,21 +289,24 @@ def optimize(
     """Optimize a system using a model and optimizer.
 
     Args:
-        system: Input system to optimize (ASE Atoms, Pymatgen Structure, or SimState)
-        model: Neural network model module
-        optimizer: Optimization algorithm function
-        convergence_fn: Condition for convergence, should return a boolean tensor
-            of length n_batches
-        unit_system: Unit system for energy tolerance
+        system (StateLike): Input system to optimize (ASE Atoms, Pymatgen Structure, or
+            SimState)
+        model (ModelInterface): Neural network model module
+        optimizer (Callable): Optimization algorithm function
+        convergence_fn (Callable | None): Condition for convergence, should return a
+            boolean tensor of length n_batches
         optimizer_kwargs: Additional keyword arguments for optimizer init function
-        trajectory_reporter: Optional reporter for tracking optimization trajectory
-        autobatcher: Optional autobatcher to use. If False, the system will assume
+        trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
+            tracking optimization trajectory. If a dict, will be passed to the
+            TrajectoryReporter constructor.
+        autobatcher (HotSwappingAutoBatcher | bool): Optional autobatcher to use. If
+            False, the system will assume
             infinite memory and will not batch, but will still remove converged
             structures from the batch. If True, the system will estimate the memory
             available and batch accordingly. If a HotSwappingAutoBatcher, the system
             will use the provided autobatcher, but will reset the max_attempts to
             max_steps // steps_between_swaps.
-        max_steps: Maximum number of total optimization steps
+        max_steps (int): Maximum number of total optimization steps
         steps_between_swaps: Number of steps to take before checking convergence
             and swapping out states.
 
@@ -308,9 +316,7 @@ def optimize(
     # create a default convergence function if one is not provided
     # TODO: document this behavior
     if convergence_fn is None:
-
-        def convergence_fn(state: SimState, last_energy: torch.Tensor) -> bool:
-            return last_energy - state.energy < 1e-6 * unit_system.energy
+        convergence_fn = generate_energy_convergence_fn(energy_tol=1e-3)
 
     # initialize the state
     state: SimState = initialize_state(system, model.device, model.dtype)
@@ -321,6 +327,7 @@ def optimize(
     autobatcher = _configure_hot_swapping_autobatcher(
         model, state, autobatcher, max_attempts
     )
+    trajectory_reporter = _configure_reporter(trajectory_reporter, optimize)
 
     step: int = 1
     last_energy = None
@@ -361,3 +368,90 @@ def optimize(
         return concatenate_states(final_states)
 
     return state
+
+
+def static(
+    system: StateLike,
+    model: ModelInterface,
+    *,
+    trajectory_reporter: TrajectoryReporter | dict | None = None,
+    autobatcher: ChunkingAutoBatcher | bool = False,
+) -> list[dict[str, torch.Tensor]]:
+    """Run single point calculations on a batch of systems.
+
+    Unlike the other runners, this function does not return a state. Instead, it
+    returns a list of dictionaries, one for each batch in the input state. Each
+    dictionary contains the properties calculated for that batch. It will also
+    modify the state in place with the "energy", "forces", and "stress" properties
+    if they are present in the model output.
+
+    Args:
+        system (StateLike): Input system to calculate properties for
+        model (ModelInterface): Neural network model module
+        unit_system (UnitSystem): Unit system for energy and forces
+        trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
+            tracking trajectory. If a dict, will be passed to the TrajectoryReporter
+            constructor and must include at least the "filenames" key. Any prop
+            calculators will be executed and the results will be returned in a list.
+            Make sure that if multiple unique states are used, that the
+            `variable_atomic_numbers` and `variable_masses` are set to `True` in the
+            `state_kwargs` argument.
+        autobatcher (ChunkingAutoBatcher | bool): Optional autobatcher to use for
+            batching calculations
+
+    Returns:
+        list[dict[str, torch.Tensor]]: Maps of property names to tensors for all batches
+    """
+    # initialize the state
+    state: SimState = initialize_state(system, model.device, model.dtype)
+
+    batch_iterator = _configure_batches_iterator(model, state, autobatcher)
+    trajectory_reporter = _configure_reporter(
+        trajectory_reporter or dict(filenames=None),
+        static,
+        state_kwargs={
+            "variable_atomic_numbers": True,
+            "variable_masses": True,
+            "save_forces": model.compute_forces,
+        },
+    )
+
+    @dataclass
+    class StaticState(type(state)):
+        energy: torch.Tensor
+        forces: torch.Tensor
+        stress: torch.Tensor
+
+    final_states: list[SimState] = []
+    all_props: list[dict[str, torch.Tensor]] = []
+    og_filenames = trajectory_reporter.filenames
+    for substate, batch_indices in batch_iterator:
+        # set up trajectory reporters
+        if autobatcher and trajectory_reporter and og_filenames is not None:
+            # we must remake the trajectory reporter for each batch
+            trajectory_reporter.load_new_trajectories(
+                filenames=[og_filenames[idx] for idx in batch_indices]
+            )
+
+        model_outputs = model(substate)
+
+        substate = StaticState(
+            **vars(substate),
+            energy=model_outputs["energy"],
+            forces=model_outputs["forces"] if model.compute_forces else None,
+            stress=model_outputs["stress"] if model.compute_stress else None,
+        )
+
+        props = trajectory_reporter.report(substate, 0, model=model)
+        all_props.extend(props)
+
+        final_states.append(substate)
+
+    trajectory_reporter.finish()
+
+    if isinstance(batch_iterator, ChunkingAutoBatcher):
+        # reorder properties to match original order of states
+        original_indices = list(chain.from_iterable(batch_iterator.index_bins))
+        return [all_props[idx] for idx in original_indices]
+
+    return all_props

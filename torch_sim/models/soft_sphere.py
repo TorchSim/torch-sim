@@ -79,7 +79,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         use_neighbor_list (bool): Whether to use neighbor list optimization.
         _device (torch.device): Computation device (CPU/GPU).
         _dtype (torch.dtype): Data type for tensor calculations.
-        _compute_force (bool): Whether to compute forces.
+        _compute_forces (bool): Whether to compute forces.
         _compute_stress (bool): Whether to compute stress tensor.
         per_atom_energies (bool): Whether to compute per-atom energy decomposition.
         per_atom_stresses (bool): Whether to compute per-atom stress decomposition.
@@ -118,7 +118,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
-        compute_force: bool = True,
+        compute_forces: bool = True,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
         per_atom_stresses: bool = False,
@@ -140,7 +140,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             device (torch.device | None): Device for computations. If None, uses CPU.
                 Defaults to None.
             dtype (torch.dtype): Data type for calculations. Defaults to torch.float32.
-            compute_force (bool): Whether to compute forces. Defaults to True.
+            compute_forces (bool): Whether to compute forces. Defaults to True.
             compute_stress (bool): Whether to compute stress tensor. Defaults to False.
             per_atom_energies (bool): Whether to compute per-atom energy decomposition.
                 Defaults to False.
@@ -168,7 +168,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         super().__init__()
         self._device = device or torch.device("cpu")
         self._dtype = dtype
-        self._compute_force = compute_force
+        self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self.per_atom_energies = per_atom_energies
         self.per_atom_stresses = per_atom_stresses
@@ -198,7 +198,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Total potential energy (scalar)
                 - "forces": Atomic forces with shape [n_atoms, 3] (if
-                    compute_force=True)
+                    compute_forces=True)
                 - "stress": Stress tensor with shape [3, 3] (if compute_stress=True)
                 - "energies": Per-atom energies with shape [n_atoms] (if
                     per_atom_energies=True)
@@ -272,7 +272,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
             results["energies"] = atom_energies
 
-        if self.compute_force or self.compute_stress:
+        if self.compute_forces or self.compute_stress:
             # Calculate pair forces
             pair_forces = soft_sphere_pair_force(
                 distances, sigma=self.sigma, epsilon=self.epsilon, alpha=self.alpha
@@ -281,7 +281,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             # Project scalar forces onto displacement vectors
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
-            if self.compute_force:
+            if self.compute_forces:
                 # Compute atomic forces by accumulating pair contributions
                 forces = torch.zeros_like(positions)
                 # Add force contributions (f_ij on j, -f_ij on i)
@@ -323,7 +323,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Potential energy with shape [n_batches]
                 - "forces": Atomic forces with shape [n_atoms, 3]
-                    (if compute_force=True)
+                    (if compute_forces=True)
                 - "stress": Stress tensor with shape [n_batches, 3, 3]
                     (if compute_stress=True)
                 - May include additional outputs based on configuration
@@ -334,7 +334,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         Examples:
             ```python
             # Compute properties for a simulation state
-            model = SoftSphereModel(compute_force=True)
+            model = SoftSphereModel(compute_forces=True)
             results = model(sim_state)
 
             energy = results["energy"]  # Shape: [n_batches]
@@ -384,7 +384,7 @@ class SoftSphereMultiModel(torch.nn.Module):
         alpha_matrix (torch.Tensor): Matrix of exponents for each pair of types.
             Shape: [n_types, n_types].
         cutoff (torch.Tensor): Maximum interaction distance.
-        compute_force (bool): Whether to compute forces.
+        compute_forces (bool): Whether to compute forces.
         compute_stress (bool): Whether to compute stress tensor.
         per_atom_energies (bool): Whether to compute per-atom energy decomposition.
         per_atom_stresses (bool): Whether to compute per-atom stress decomposition.
@@ -419,7 +419,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             species=species,
             sigma_matrix=sigma_matrix,
             epsilon_matrix=epsilon_matrix,
-            compute_force=True,
+            compute_forces=True,
         )
 
         # Compute properties
@@ -436,8 +436,8 @@ class SoftSphereMultiModel(torch.nn.Module):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
-        periodic: bool = True,
-        compute_force: bool = True,
+        pbc: bool = True,
+        compute_forces: bool = True,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
         per_atom_stresses: bool = False,
@@ -465,9 +465,9 @@ class SoftSphereMultiModel(torch.nn.Module):
             device (torch.device | None): Device for computations. If None, uses CPU.
                 Defaults to None.
             dtype (torch.dtype): Data type for calculations. Defaults to torch.float32.
-            periodic (bool): Whether to use periodic boundary conditions. Defaults to
+            pbc (bool): Whether to use periodic boundary conditions. Defaults to
                 True.
-            compute_force (bool): Whether to compute forces. Defaults to True.
+            compute_forces (bool): Whether to compute forces. Defaults to True.
             compute_stress (bool): Whether to compute stress tensor. Defaults to False.
             per_atom_energies (bool): Whether to compute per-atom energy decomposition.
                 Defaults to False.
@@ -512,7 +512,7 @@ class SoftSphereMultiModel(torch.nn.Module):
                 species=species,
                 sigma_matrix=sigma,
                 epsilon_matrix=epsilon,
-                compute_force=True,
+                compute_forces=True,
             )
             ```
 
@@ -524,8 +524,8 @@ class SoftSphereMultiModel(torch.nn.Module):
         super().__init__()
         self.device = device or torch.device("cpu")
         self.dtype = dtype
-        self.periodic = periodic
-        self.compute_force = compute_force
+        self.pbc = pbc
+        self.compute_forces = compute_forces
         self.compute_stress = compute_stress
         self.per_atom_energies = per_atom_energies
         self.per_atom_stresses = per_atom_stresses
@@ -604,7 +604,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Total potential energy (scalar)
                 - "forces": Atomic forces with shape [n_atoms, 3]
-                    (if compute_force=True)
+                    (if compute_forces=True)
                 - "stress": Stress tensor with shape [3, 3]
                     (if compute_stress=True)
                 - "energies": Per-atom energies with shape [n_atoms]
@@ -638,7 +638,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             mapping, shifts = vesin_nl_ts(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=self.pbc,
                 cutoff=self.cutoff,
                 sorti=False,
             )
@@ -646,7 +646,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             dr_vec, distances = get_pair_displacements(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=self.pbc,
                 pairs=mapping,
                 shifts=shifts,
             )
@@ -656,7 +656,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             dr_vec, distances = get_pair_displacements(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=self.pbc,
             )
             # Remove self-interactions and apply cutoff
             mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)
@@ -696,7 +696,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
             results["energies"] = atom_energies
 
-        if self.compute_force or self.compute_stress:
+        if self.compute_forces or self.compute_stress:
             # Calculate pair forces
             pair_forces = soft_sphere_pair_force(
                 distances, sigma=pair_sigmas, epsilon=pair_epsilons, alpha=pair_alphas
@@ -705,7 +705,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             # Project scalar forces onto displacement vectors
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
-            if self.compute_force:
+            if self.compute_forces:
                 # Compute atomic forces by accumulating pair contributions
                 forces = torch.zeros_like(positions)
                 # Add force contributions (f_ij on j, -f_ij on i)
@@ -747,7 +747,7 @@ class SoftSphereMultiModel(torch.nn.Module):
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Potential energy with shape [n_batches]
                 - "forces": Atomic forces with shape [n_atoms, 3]
-                    (if compute_force=True)
+                    (if compute_forces=True)
                 - "stress": Stress tensor with shape [n_batches, 3, 3]
                     (if compute_stress=True)
                 - May include additional outputs based on configuration
@@ -763,7 +763,7 @@ class SoftSphereMultiModel(torch.nn.Module):
                 species=particle_types,
                 sigma_matrix=distance_matrix,
                 epsilon_matrix=strength_matrix,
-                compute_force=True,
+                compute_forces=True,
             )
 
             # Calculate properties
@@ -778,9 +778,9 @@ class SoftSphereMultiModel(torch.nn.Module):
         """
         if not isinstance(state, SimState):
             state = SimState(
-                **state, pbc=self.periodic, masses=torch.ones_like(state["positions"])
+                **state, pbc=self.pbc, masses=torch.ones_like(state["positions"])
             )
-        elif state.pbc != self.periodic:
+        elif state.pbc != self.pbc:
             raise ValueError("PBC mismatch between model and state")
 
         # Handle batch indices if not provided

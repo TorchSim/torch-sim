@@ -13,7 +13,7 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.quantities import temperature
+from torch_sim.quantities import calc_kT
 from torch_sim.state import SimState
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import (
@@ -57,7 +57,7 @@ model = UnbatchedMaceModel(
     model=loaded_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
-    compute_force=True,
+    compute_forces=True,
     compute_stress=False,
     dtype=dtype,
     enable_cueq=False,
@@ -81,10 +81,10 @@ state = nvt_init(state=state, kT=kT, seed=1)
 
 for step in range(N_steps):
     if step % 10 == 0:
-        temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
+        temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
         invariant = nvt_nose_hoover_invariant(state, kT=kT).item()
         print(f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant:.4f}")
     state = nvt_update(state=state, kT=kT)
 
-final_temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
+final_temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
 print(f"Final temperature: {final_temp}")

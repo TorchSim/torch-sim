@@ -1,4 +1,4 @@
-"""MACE model implementation for TorchSim.
+"""Wrapper for MACE model in torch-sim.
 
 This module provides a TorchSim wrapper of the MACE model for computing
 energies, forces, and stresses for atomistic systems. It integrates the MACE model
@@ -8,7 +8,7 @@ systems simultaneously.
 The implementation supports various features including:
 
 * Computing energies, forces, and stresses
-* Handling periodic boundary conditions
+* Handling periodic boundary conditions (PBC)
 * Optional CuEq acceleration for improved performance
 * Batched calculations for multiple systems
 
@@ -17,6 +17,7 @@ Notes:
     for compatibility with the broader TorchSim framework.
 """
 
+import typing
 from collections.abc import Callable
 from pathlib import Path
 
@@ -39,7 +40,9 @@ except ImportError:
         It raises an ImportError if MACE is not installed.
         """
 
-        raise ImportError("MACE must be installed to use this model.")
+        def __init__(self, *_args: typing.Any, **_kwargs: typing.Any) -> None:
+            """Dummy init for type checking."""
+            raise ImportError("MACE must be installed to use this model.")
 
 
 class MaceModel(torch.nn.Module, ModelInterface):
@@ -75,7 +78,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
         batch: torch.Tensor | None = None,
         *,
         neighbor_list_fn: Callable = vesin_nl_ts,
-        compute_force: bool = True,
+        compute_forces: bool = True,
         compute_stress: bool = True,
         enable_cueq: bool = False,
     ) -> None:
@@ -99,7 +102,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 all atoms are assumed to be in the same system.
             neighbor_list_fn (Callable): Function to compute neighbor lists.
                 Defaults to vesin_nl_ts.
-            compute_force (bool): Whether to compute forces. Defaults to True.
+            compute_forces (bool): Whether to compute forces. Defaults to True.
             compute_stress (bool): Whether to compute stress. Defaults to True.
             enable_cueq (bool): Whether to enable CuEq acceleration. Defaults to False.
 
@@ -112,7 +115,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
         self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self._dtype = dtype
-        self._compute_force = compute_force
+        self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self.neighbor_list_fn = neighbor_list_fn
         self._memory_scales_with = "n_atoms_x_density"
@@ -120,10 +123,10 @@ class MaceModel(torch.nn.Module, ModelInterface):
         # TODO: can we get rid of this shit?
         torch.set_default_dtype(self._dtype)
 
-        print(
-            f"Running BatchedMACEForce on device: {self._device} "
-            f"with dtype: {self._dtype}"
-        )
+        # print(
+        #     f"Running BatchedMACEForce on device: {self._device} "
+        #     f"with dtype: {self._dtype}"
+        # )
 
         # Load model if provided as path
         if isinstance(model, str | Path):
@@ -223,7 +226,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
         Returns:
             dict[str, torch.Tensor]: Dictionary containing:
                 - 'energy': System energies with shape [n_systems]
-                - 'forces': Atomic forces with shape [n_atoms, 3] if compute_force=True
+                - 'forces': Atomic forces with shape [n_atoms, 3] if compute_forces=True
                 - 'stress': System stresses with shape [n_systems, 3, 3] if
                     compute_stress=True
 
@@ -334,7 +337,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 unit_shifts=unit_shifts,
                 shifts=shifts,
             ),
-            compute_force=self._compute_force,
+            compute_force=self._compute_forces,
             compute_stress=self._compute_stress,
         )
 
@@ -348,7 +351,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
             results["energy"] = torch.zeros(self.n_systems, device=self._device)
 
         # Process forces
-        if self._compute_force:
+        if self._compute_forces:
             forces = out["forces"]
             if forces is not None:
                 results["forces"] = forces.detach()

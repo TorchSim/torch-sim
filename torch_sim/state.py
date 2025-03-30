@@ -1,10 +1,7 @@
-"""SimState: TorchScript-compatible state representation for atomistic systems.
+"""The core state representation.
 
-This module provides a dataclass decorator that extends Python's built-in dataclass
-functionality to work seamlessly with TorchScript. It enables the creation of
-strongly-typed, immutable data structures that can be used in both Python and
-TorchScript contexts. The main SimState class represents atomistic systems with
-support for batched operations and conversion to/from various atomistic formats.
+The main SimState class represents atomistic systems with support for batched
+operations and conversion to/from various atomistic formats.
 """
 
 import copy
@@ -32,7 +29,7 @@ if typing.TYPE_CHECKING:
     from pymatgen.core import Structure
 
 
-T = TypeVar("T", bound="SimState")
+_T = TypeVar("_T", bound="SimState")
 StateLike = Union[
     "Atoms",
     "Structure",
@@ -40,8 +37,8 @@ StateLike = Union[
     list["Atoms"],
     list["Structure"],
     list["PhonopyAtoms"],
-    T,
-    list[T],
+    _T,
+    list[_T],
 ]
 
 StateDict = dict[
@@ -238,7 +235,7 @@ class SimState:
         Returns:
             list[SimState]: A list of SimState objects, one per batch
         """
-        return split_state(self)
+        return _split_state(self)
 
     def pop(self, batch_indices: int | list[int] | slice | torch.Tensor) -> list[Self]:
         """Pop off states with the specified batch indices.
@@ -261,7 +258,7 @@ class SimState:
         )
 
         # Get the modified state and popped states
-        modified_state, popped_states = pop_states(self, batch_indices)
+        modified_state, popped_states = _pop_states(self, batch_indices)
 
         # Update all attributes of self with the modified state's attributes
         for attr_name, attr_value in vars(modified_state).items():
@@ -301,7 +298,7 @@ class SimState:
             batch_indices, self.n_batches, self.device
         )
 
-        return slice_state(self, batch_indices)
+        return _slice_state(self, batch_indices)
 
 
 def _normalize_batch_indices(
@@ -553,7 +550,7 @@ def _filter_attrs_by_mask(
     return filtered_attrs
 
 
-def split_state(
+def _split_state(
     state: SimState,
     ambiguous_handling: Literal["error", "globalize"] = "error",
 ) -> list[SimState]:
@@ -604,7 +601,7 @@ def split_state(
     return states
 
 
-def pop_states(
+def _pop_states(
     state: SimState,
     pop_indices: list[int] | torch.Tensor,
     ambiguous_handling: Literal["error", "globalize"] = "error",
@@ -652,12 +649,12 @@ def pop_states(
 
     # Create and split the pop state
     pop_state = type(state)(**pop_attrs)
-    pop_states = split_state(pop_state, ambiguous_handling)
+    pop_states = _split_state(pop_state, ambiguous_handling)
 
     return keep_state, pop_states
 
 
-def slice_state(
+def _slice_state(
     state: SimState,
     batch_indices: list[int] | torch.Tensor,
     ambiguous_handling: Literal["error", "globalize"] = "error",

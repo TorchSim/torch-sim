@@ -32,7 +32,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         neighbor_list_fn: Callable,
         *,
         device: torch.device | None = None,
-        compute_force: bool = False,
+        compute_forces: bool = False,
         compute_stress: bool = False,
         dtype: torch.dtype = torch.float32,
         enable_cueq: bool = False,
@@ -46,7 +46,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
             device (str | None): The device to run computations on ('cuda', 'cpu',
                 or None for auto-detection).
             neighbor_list_fn (Callable): The neighbor list function to use.
-            compute_force (bool, optional): Whether to compute forces.
+            compute_forces (bool, optional): Whether to compute forces.
                 Defaults to False.
             compute_stress (bool, optional): Whether to compute stress.
                 Defaults to False.
@@ -58,7 +58,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         super().__init__()
         self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self._dtype = dtype
-        self._compute_force = compute_force
+        self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self.neighbor_list_fn = neighbor_list_fn
 
@@ -206,7 +206,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
                 unit_shifts=shifts_idx,
                 shifts=shifts,
             ),
-            compute_force=self._compute_force,
+            compute_force=self._compute_forces,
             compute_stress=self._compute_stress,
         )
 
@@ -226,7 +226,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         else:
             results["energy"] = torch.tensor(0.0, device=self.device)
 
-        if self._compute_force:
+        if self._compute_forces:
             forces = out["forces"]
             results["forces"] = forces
 

@@ -36,13 +36,28 @@ def si_system(si_atoms: Atoms, device: torch.device) -> dict:
 
 
 @pytest.fixture
+def ti_system(ti_atoms: Atoms, device: torch.device) -> dict:
+    atomic_numbers = ti_atoms.get_atomic_numbers()
+
+    positions = torch.tensor(ti_atoms.positions, device=device, dtype=torch.float32)
+    cell = torch.tensor(ti_atoms.cell.array, device=device, dtype=torch.float32)
+
+    return {
+        "positions": positions,
+        "cell": cell,
+        "atomic_numbers": atomic_numbers,
+        "ase_atoms": ti_atoms,
+    }
+
+
+@pytest.fixture
 def torchsim_mace_model(device: torch.device) -> UnbatchedMaceModel:
     return UnbatchedMaceModel(
         model=mace_model,
         device=device,
         neighbor_list_fn=wrapping_nl,
         dtype=torch.float32,
-        compute_force=True,
+        compute_forces=True,
     )
 
 
@@ -62,11 +77,11 @@ def torchsim_batched_mace_model(device: torch.device) -> MaceModel:
         model=mace_model,
         device=device,
         dtype=torch.float32,
-        compute_force=True,
+        compute_forces=True,
     )
 
 
-def test_mace_consistency(
+def test_mace_consistency_si(
     torchsim_mace_model: UnbatchedMaceModel,
     ase_mace_calculator: MACECalculator,
     si_system: dict,
@@ -99,7 +114,40 @@ def test_mace_consistency(
     )
 
 
-def test_mace_batched_consistency(
+def test_mace_consistency_ti(
+    torchsim_mace_model: UnbatchedMaceModel,
+    ase_mace_calculator: MACECalculator,
+    ti_system: dict,
+    device: torch.device,
+) -> None:
+    # Set up ASE calculator
+    ti_system["ase_atoms"].calc = ase_mace_calculator
+
+    # Get FairChem results
+    torchsim_mace_results = torchsim_mace_model(
+        atoms_to_state([ti_system["ase_atoms"]], device, torch.float32)
+    )
+
+    # Get OCP results
+    ase_mace_forces = torch.tensor(
+        ti_system["ase_atoms"].get_forces(), device=device, dtype=torch.float32
+    )
+    ase_mace_energy = torch.tensor(
+        ti_system["ase_atoms"].get_potential_energy(),
+        device=device,
+        dtype=torch.float32,
+    )
+
+    # Test consistency with reasonable tolerances
+    torch.testing.assert_close(
+        torchsim_mace_results["energy"][0], ase_mace_energy, rtol=1e-3, atol=1e-3
+    )
+    torch.testing.assert_close(
+        torchsim_mace_results["forces"], ase_mace_forces, rtol=1e-3, atol=1e-3
+    )
+
+
+def test_mace_batched_consistency_si(
     torchsim_batched_mace_model: MaceModel,
     ase_mace_calculator: MACECalculator,
     si_system: dict,
@@ -133,6 +181,40 @@ def test_mace_batched_consistency(
     )
 
 
+def test_mace_batched_consistency_ti(
+    torchsim_batched_mace_model: MaceModel,
+    ase_mace_calculator: MACECalculator,
+    ti_system: dict,
+    ti_atoms: Atoms,
+    device: torch.device,
+) -> None:
+    # Set up ASE calculator
+    ti_atoms.calc = ase_mace_calculator
+
+    ti_sim_state = atoms_to_state([ti_atoms], device, torch.float32)
+
+    # Get FairChem results
+    torchsim_mace_results = torchsim_batched_mace_model(ti_sim_state)
+
+    # Get OCP results
+    ase_mace_forces = torch.tensor(
+        ti_system["ase_atoms"].get_forces(), device=device, dtype=torch.float32
+    )
+    ase_mace_energy = torch.tensor(
+        ti_system["ase_atoms"].get_potential_energy(),
+        device=device,
+        dtype=torch.float32,
+    )
+
+    # Test consistency with reasonable tolerances
+    torch.testing.assert_close(
+        torchsim_mace_results["energy"][0], ase_mace_energy, rtol=1e-3, atol=1e-3
+    )
+    torch.testing.assert_close(
+        torchsim_mace_results["forces"], ase_mace_forces, rtol=1e-3, atol=1e-3
+    )
+
+
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_mace_dtype_working(
     si_atoms: Atoms, dtype: torch.dtype, device: torch.device
@@ -141,7 +223,7 @@ def test_mace_dtype_working(
         model=mace_model,
         device=device,
         dtype=dtype,
-        compute_force=True,
+        compute_forces=True,
     )
 
     state = atoms_to_state([si_atoms], device, dtype)
@@ -177,7 +259,7 @@ def torchsim_mace_off_model(device: torch.device) -> UnbatchedMaceModel:
         device=device,
         neighbor_list_fn=wrapping_nl,
         dtype=torch.float32,
-        compute_force=True,
+        compute_forces=True,
     )
 
 
@@ -197,7 +279,7 @@ def torchsim_batched_mace_off_model(device: torch.device) -> MaceModel:
         model=mace_off_model,
         device=device,
         dtype=torch.float32,
-        compute_force=True,
+        compute_forces=True,
     )
 
 
@@ -276,7 +358,7 @@ def test_mace_off_dtype_working(
         model=mace_off_model,
         device=device,
         dtype=dtype,
-        compute_force=True,
+        compute_forces=True,
     )
 
     state = atoms_to_state([benzene_atoms], device, dtype)

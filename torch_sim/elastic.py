@@ -1,5 +1,7 @@
 # ruff: noqa: RUF002, RUF003, PLC2401
-"""Primary Sources and References for Crystal Elasticity.
+"""Calculation of elastic properties of crystals.
+
+Primary Sources and References for Crystal Elasticity.
 
 - Nye, J.F. (1985) "Physical Properties of Crystals: Their Representation by Tensors and
   Matrices"
@@ -45,9 +47,11 @@ Online Resources:
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from ase.atoms import Atoms
-from ase import units
+
 import torch
+from ase import units
+from ase.atoms import Atoms
+
 
 @dataclass
 class ElasticState:
@@ -155,7 +159,7 @@ def regular_symmetry(strains: torch.Tensor) -> torch.Tensor:
     # Create the matrix using torch.zeros for proper device/dtype handling
     matrix = torch.zeros((6, 3), dtype=strains.dtype, device=strains.device)
 
-    # First column 
+    # First column
     matrix[0, 0] = εxx
     matrix[1, 0] = εyy
     matrix[2, 0] = εzz
@@ -237,6 +241,7 @@ def tetragonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     return matrix
 
+
 def orthorhombic_symmetry(strains: torch.Tensor) -> torch.Tensor:
     """Generate equation matrix for orthorhombic crystal symmetry.
 
@@ -298,6 +303,7 @@ def orthorhombic_symmetry(strains: torch.Tensor) -> torch.Tensor:
     matrix[5, 8] = 2 * εxy
 
     return matrix
+
 
 def trigonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
     """Generate equation matrix for trigonal crystal symmetry.
@@ -371,6 +377,7 @@ def trigonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     return matrix
 
+
 def hexagonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
     """Generate equation matrix for hexagonal crystal symmetry.
 
@@ -431,11 +438,12 @@ def hexagonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     return matrix
 
+
 def monoclinic_symmetry(strains: torch.Tensor) -> torch.Tensor:
     """Generate equation matrix for monoclinic crystal symmetry.
 
     Constructs the stress-strain relationship matrix for monoclinic symmetry,
-    which has 13 independent elastic constants: C11, C12, C13, C15, C22, C23, C25, 
+    which has 13 independent elastic constants: C11, C12, C13, C15, C22, C23, C25,
     C33, C35, C44, C46, C55, C66.
 
     Args:
@@ -449,12 +457,12 @@ def monoclinic_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Notes:
         For monoclinic symmetry with unique axis b (y), the matrix has the form:
-        ⎡ εxx    εyy    εzz    2εxz    0      0      0      0      0      0      0      0      0  ⎤
-        ⎢ 0      εxx    0      0       εyy    εzz    2εxz   0      0      0      0      0      0  ⎥
-        ⎢ 0      0      εxx    0       0      εyy    0      εzz    2εxz   0      0      0      0  ⎥
-        ⎢ 0      0      0      0       0      0      0      0      0      2εyz   2εxy   0      0  ⎥
-        ⎢ 0      0      0      εxx     0      0      εyy    0      εzz    0      0      2εxz   0  ⎥
-        ⎣ 0      0      0      0       0      0      0      0      0      0      2εyz   0      2εxy⎦
+        ⎡ εxx  εyy  εzz  2εxz  0    0    0    0    0    0    0    0    0  ⎤
+        ⎢ 0    εxx  0    0     εyy  εzz  2εxz 0    0    0    0    0    0  ⎥
+        ⎢ 0    0    εxx  0     0    εyy  0    εzz  2εxz 0    0    0    0  ⎥
+        ⎢ 0    0    0    0     0    0    0    0    0    2εyz 2εxy 0    0  ⎥
+        ⎢ 0    0    0    εxx   0    0    εyy  0    εzz  0    0    2εxz 0  ⎥
+        ⎣ 0    0    0    0     0    0    0    0    0    0    2εyz 0    2εxy⎦
     """
     if not isinstance(strains, torch.Tensor):
         strains = torch.tensor(strains)
@@ -501,6 +509,7 @@ def monoclinic_symmetry(strains: torch.Tensor) -> torch.Tensor:
     matrix[5, 12] = 2 * εxy
 
     return matrix
+
 
 def triclinic_symmetry(strains: torch.Tensor) -> torch.Tensor:
     """Generate equation matrix for triclinic crystal symmetry.
@@ -700,14 +709,18 @@ def get_elementary_deformations(
         if axis < 3:  # Normal strain
             # Generate symmetric strains around zero
             strains = torch.linspace(
-                -max_strain_normal, max_strain_normal, n_deform, device=device, dtype=dtype
+                -max_strain_normal,
+                max_strain_normal,
+                n_deform,
+                device=device,
+                dtype=dtype,
             )
         else:  # Shear strain
             # Generate symmetric strains around zero
             strains = torch.linspace(
                 -max_strain_shear, max_strain_shear, n_deform, device=device, dtype=dtype
             )
-    
+
         # Skip zero strain
         strains = strains[strains != 0]
 
@@ -903,7 +916,7 @@ def get_elastic_coeffs(
     return Cij, (Bij, residuals, rank, singular_values)
 
 
-def get_elastic_tensor_from_coeffs(  # noqa: C901
+def get_elastic_tensor_from_coeffs(  # noqa: C901, PLR0915
     Cij: torch.Tensor,
     bravais_type: BravaisType,
 ) -> torch.Tensor:
@@ -926,7 +939,8 @@ def get_elastic_tensor_from_coeffs(  # noqa: C901
         - Trigonal: 6 (C11, C12, C13, C14, C33, C44)
         - Tetragonal: 7 (C11, C12, C13, C16, C33, C44, C66)
         - Orthorhombic: 9 (C11, C22, C33, C12, C13, C23, C44, C55, C66)
-        - Monoclinic: 13 constants (C11, C22, C33, C12, C13, C23, C44, C55, C66, C15, C25, C35, C46)
+        - Monoclinic: 13 constants (C11, C22, C33, C12, C13, C23, C44, C55,
+            C66, C15, C25, C35, C46)
         - Triclinic: 21 constants
     """
     # Initialize full tensor
@@ -958,13 +972,13 @@ def get_elastic_tensor_from_coeffs(  # noqa: C901
         C[0, 2] = C[2, 0] = C[1, 2] = C[2, 1] = C13
 
     elif bravais_type == BravaisType.TRIGONAL:
-        C11, C12, C13, C14, C15, C33, C44 = Cij 
+        C11, C12, C13, C14, C15, C33, C44 = Cij
         C.diagonal().copy_(torch.tensor([C11, C11, C33, C44, C44, (C11 - C12) / 2]))
         C[0, 1] = C[1, 0] = C12
         C[0, 2] = C[2, 0] = C[1, 2] = C[2, 1] = C13
         C[0, 3] = C[3, 0] = C14
         C[0, 4] = C[4, 0] = C15
-        C[1, 3] = C[3, 1] = -C14 
+        C[1, 3] = C[3, 1] = -C14
         C[1, 4] = C[4, 1] = -C15
         C[3, 5] = C[5, 3] = -C15
         C[4, 5] = C[5, 4] = C14
@@ -997,18 +1011,17 @@ def get_elastic_tensor_from_coeffs(  # noqa: C901
 
     return C
 
+
 def calculate_elastic_tensor(
-    struct: Atoms, 
-    device: torch.device, 
+    struct: Atoms,
+    device: torch.device,
     dtype: torch.dtype,
     bravais_type: BravaisType = BravaisType.TRICLINIC,
     max_strain_normal: float = 0.01,
     max_strain_shear: float = 0.06,
     n_deform: int = 5,
 ) -> torch.Tensor:
-
-    """Calculate the elastic tensor of a structure (in GPa)"""
-
+    """Calculate the elastic tensor of a structure (in GPa)."""
     # Define elastic state
     state = ElasticState(
         position=torch.tensor(struct.get_positions(), device=device, dtype=dtype),
@@ -1017,33 +1030,38 @@ def calculate_elastic_tensor(
 
     # Calculate deformations for the bravais type
     deformations = get_elementary_deformations(
-        state, 
-        n_deform=n_deform, 
-        max_strain_normal=max_strain_normal, 
-        max_strain_shear=max_strain_shear, 
-        bravais_type=bravais_type
+        state,
+        n_deform=n_deform,
+        max_strain_normal=max_strain_normal,
+        max_strain_shear=max_strain_shear,
+        bravais_type=bravais_type,
     )
 
     # Calculate stresses for deformations
-    ref_pressure = -torch.mean(torch.tensor(struct.get_stress()[:3], device=device), dim=0)
+    ref_pressure = -torch.mean(
+        torch.tensor(struct.get_stress()[:3], device=device), dim=0
+    )
     stresses = torch.zeros((len(deformations), 6), device=device, dtype=torch.float64)
     for i, deformation in enumerate(deformations):
         struct.cell = deformation.cell.cpu().numpy()
         struct.positions = deformation.position.cpu().numpy()
         stresses[i] = torch.tensor(struct.get_stress(), device=device)
 
-    # Caclulate elastic tensor
-    C_ij, B_ij = get_elastic_coeffs(state, deformations, stresses, ref_pressure, bravais_type)
+    # Calculate elastic tensor
+    C_ij, B_ij = get_elastic_coeffs(
+        state, deformations, stresses, ref_pressure, bravais_type
+    )
     C = get_elastic_tensor_from_coeffs(C_ij, bravais_type) / units.GPa
-    
-    return C
+
+    return C  # noqa : RET504
+
 
 def calculate_elastic_moduli(C: torch.Tensor) -> tuple[float, float, float, float]:
     """Calculate elastic moduli from the elastic tensor.
-    
+
     Args:
         C: Elastic tensor (6x6) in GPa
-        
+
     Returns:
         tuple: Four Voigt-Reuss-Hill averaged elastic moduli in order:
             - Bulk modulus (K_VRH) in GPa
@@ -1054,25 +1072,25 @@ def calculate_elastic_moduli(C: torch.Tensor) -> tuple[float, float, float, floa
     # Ensure we're working with a tensor
     if not isinstance(C, torch.Tensor):
         C = torch.tensor(C)
-        
+
     # Components of the elastic tensor
-    C11, C22, C33 = C[0,0], C[1,1], C[2,2]
-    C12, C23, C31 = C[0,1], C[1,2], C[2,0]
-    C44, C55, C66 = C[3,3], C[4,4], C[5,5]
+    C11, C22, C33 = C[0, 0], C[1, 1], C[2, 2]
+    C12, C23, C31 = C[0, 1], C[1, 2], C[2, 0]
+    C44, C55, C66 = C[3, 3], C[4, 4], C[5, 5]
 
     # Calculate compliance tensor
     S = torch.linalg.inv(C)
-    S11, S22, S33 = S[0,0], S[1,1], S[2,2]
-    S12, S23, S31 = S[0,1], S[1,2], S[2,0]
-    S44, S55, S66 = S[3,3], S[4,4], S[5,5]
+    S11, S22, S33 = S[0, 0], S[1, 1], S[2, 2]
+    S12, S23, S31 = S[0, 1], S[1, 2], S[2, 0]
+    S44, S55, S66 = S[3, 3], S[4, 4], S[5, 5]
 
     # Voigt averaging (upper bound)
-    K_V = (1/9) * ((C11 + C22 + C33) + 2*(C12 + C23 + C31))
-    G_V = (1/15) * ((C11 + C22 + C33) - (C12 + C23 + C31) + 3*(C44 + C55 + C66))
+    K_V = (1 / 9) * ((C11 + C22 + C33) + 2 * (C12 + C23 + C31))
+    G_V = (1 / 15) * ((C11 + C22 + C33) - (C12 + C23 + C31) + 3 * (C44 + C55 + C66))
 
     # Reuss averaging (lower bound)
-    K_R = 1 / ((S11 + S22 + S33) + 2*(S12 + S23 + S31))
-    G_R = 15 / (4*(S11 + S22 + S33) - 4*(S12 + S23 + S31) + 3*(S44 + S55 + S66))
+    K_R = 1 / ((S11 + S22 + S33) + 2 * (S12 + S23 + S31))
+    G_R = 15 / (4 * (S11 + S22 + S33) - 4 * (S12 + S23 + S31) + 3 * (S44 + S55 + S66))
 
     # Voigt-Reuss-Hill averaging
     K_VRH = (K_V + K_R) / 2
@@ -1083,7 +1101,11 @@ def calculate_elastic_moduli(C: torch.Tensor) -> tuple[float, float, float, floa
 
     # Pugh's ratio (VRH)
     pugh_ratio_VRH = K_VRH / G_VRH
-    
+
     # Convert to Python floats for the return values
-    return (float(K_VRH.item()), float(G_VRH.item()), 
-            float(v_VRH.item()), float(pugh_ratio_VRH.item()))
+    return (
+        float(K_VRH.item()),
+        float(G_VRH.item()),
+        float(v_VRH.item()),
+        float(pugh_ratio_VRH.item()),
+    )

@@ -7,7 +7,7 @@ default_install_hook_types: [pre-commit, commit-msg]
 
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.0
+    rev: v0.11.2
     hooks:
       - id: ruff
         args: [--fix]
@@ -35,11 +35,6 @@ repos:
       - id: codespell
         stages: [pre-commit, commit-msg]
         args: ["--ignore-words-list", "statics,crate,annote,atomate,nd,te,titel,coo,slite,fro"]
-
-  - repo: https://github.com/janosh/format-ipy-cells
-    rev: v0.1.11
-    hooks:
-      - id: format-ipy-cells
 
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.44.0

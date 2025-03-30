@@ -35,7 +35,7 @@ mace_model = MaceModel(
     model=mace,
     device=device,
     dtype=dtype,
-    compute_force=True,
+    compute_forces=True,
 )
 
 # Optimization parameters

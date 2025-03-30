@@ -24,7 +24,7 @@ from tqdm import tqdm
 
 from torch_sim.io import state_to_structures, structures_to_state
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.quantities import temperature
+from torch_sim.quantities import calc_kT
 from torch_sim.transforms import get_fractional_coordinates
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import (
@@ -83,7 +83,7 @@ model = UnbatchedMaceModel(
     model=raw_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
-    compute_force=True,
+    compute_forces=True,
     compute_stress=False,  # We don't need stress for MD
     dtype=dtype,
     enable_cueq=False,
@@ -142,7 +142,7 @@ def step_fn(
     """Step function for NVT-MD with Nose-Hoover thermostat."""
     current_temp = get_target_temperature(step, equi_steps, cool_steps, T_high, T_low)
     logger["T"][step] = (
-        temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
+        calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
     )
     logger["H"][step] = nvt_nose_hoover_invariant(
         state, kT=current_temp * Units.temperature

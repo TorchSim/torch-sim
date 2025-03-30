@@ -1,10 +1,11 @@
 """Lennard-Jones simulation in NPT ensemble using Nose-Hoover chain."""
 
+import itertools
 import os
 
 import torch
 
-from torch_sim.quantities import kinetic_energy, temperature
+from torch_sim.quantities import calc_kinetic_energy, calc_kT
 from torch_sim.state import SimState
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_integrators import (
@@ -50,13 +51,11 @@ base_positions = torch.tensor(
 
 # Create 4x4x4 supercell of FCC Argon manually
 positions = []
-for i in range(4):
-    for j in range(4):
-        for k in range(4):
-            for base_pos in base_positions:
-                # Add unit cell position + offset for supercell
-                pos = base_pos + torch.tensor([i, j, k], device=device, dtype=dtype)
-                positions.append(pos)
+for i, j, k in itertools.product(range(4), range(4), range(4)):
+    for base_pos in base_positions:
+        # Add unit cell position + offset for supercell
+        pos = base_pos + torch.tensor([i, j, k], device=device, dtype=dtype)
+        positions.append(pos)
 
 # Stack the positions into a tensor
 positions = torch.stack(positions)
@@ -86,7 +85,7 @@ model = UnbatchedLennardJonesModel(
     cutoff=2.5 * 3.405,
     device=device,
     dtype=dtype,
-    compute_force=True,
+    compute_forces=True,
     compute_stress=True,
 )
 state = SimState(
@@ -129,13 +128,13 @@ def get_pressure(
 # Run the simulation
 for step in range(N_steps):
     if step % 50 == 0:
-        temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
+        temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
         invariant = npt_nose_hoover_invariant(
             state, kT=kT, external_pressure=target_pressure
         )
         pressure = get_pressure(
             model(state)["stress"],
-            kinetic_energy(masses=state.masses, momenta=state.momenta),
+            calc_kinetic_energy(masses=state.masses, momenta=state.momenta),
             torch.det(state.current_cell),
         )
         pressure = pressure.item() / Units.pressure
@@ -147,12 +146,12 @@ for step in range(N_steps):
         )
     state = npt_update(state, kT=kT, external_pressure=target_pressure)
 
-temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
+temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
 print(f"Final temperature: {temp:.4f}")
 
 pressure = get_pressure(
     model(state)["stress"],
-    kinetic_energy(masses=state.masses, momenta=state.momenta),
+    calc_kinetic_energy(masses=state.masses, momenta=state.momenta),
     torch.det(state.current_cell),
 )
 pressure = pressure.item() / Units.pressure

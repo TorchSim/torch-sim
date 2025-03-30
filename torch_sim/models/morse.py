@@ -1,4 +1,4 @@
-"""Morse Potential: Anharmonic interatomic potential for molecular dynamics.
+"""Anharmonic interatomic potential for molecular dynamics.
 
 This module implements the Morse potential for molecular dynamics simulations.
 The Morse potential provides a more realistic description of anharmonic bond
@@ -50,7 +50,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
         cutoff (torch.Tensor): Distance cutoff for truncating potential calculation.
         device (torch.device): Device where calculations are performed.
         dtype (torch.dtype): Data type used for calculations.
-        compute_force (bool): Whether to compute atomic forces.
+        compute_forces (bool): Whether to compute atomic forces.
         compute_stress (bool): Whether to compute stress tensor.
         per_atom_energies (bool): Whether to compute per-atom energy decomposition.
         per_atom_stresses (bool): Whether to compute per-atom stress decomposition.
@@ -67,7 +67,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
             sigma=0.96,
             epsilon=4.52,
             alpha=2.0,
-            compute_force=True,
+            compute_forces=True,
             compute_stress=True,
         )
         ```
@@ -81,7 +81,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
-        compute_force: bool = False,
+        compute_forces: bool = False,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
         per_atom_stresses: bool = False,
@@ -104,7 +104,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
             device (torch.device | None): Device to run computations on. If None, uses
                 CPU. Defaults to None.
             dtype (torch.dtype): Data type for calculations. Defaults to torch.float32.
-            compute_force (bool): Whether to compute forces. Defaults to False.
+            compute_forces (bool): Whether to compute forces. Defaults to False.
             compute_stress (bool): Whether to compute stress tensor. Defaults to False.
             per_atom_energies (bool): Whether to compute per-atom energy decomposition.
                 Defaults to False.
@@ -125,7 +125,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
                 sigma=0.74,  # Å
                 epsilon=4.75,  # eV
                 alpha=1.94,  # Steepness parameter
-                compute_force=True,
+                compute_forces=True,
             )
             ```
 
@@ -136,7 +136,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
         super().__init__()
         self._device = device or torch.device("cpu")
         self._dtype = dtype
-        self._compute_force = compute_force
+        self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self._per_atom_energies = per_atom_energies
         self._per_atom_stresses = per_atom_stresses
@@ -165,7 +165,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Total potential energy (scalar)
                 - "forces": Atomic forces with shape [n_atoms, 3] (if
-                    compute_force=True)
+                    compute_forces=True)
                 - "stress": Stress tensor with shape [3, 3] (if compute_stress=True)
                 - "energies": Per-atom energies with shape [n_atoms] (if
                     per_atom_energies=True)
@@ -231,7 +231,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
             atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
             results["energies"] = atom_energies
 
-        if self.compute_force or self.compute_stress:
+        if self.compute_forces or self.compute_stress:
             pair_forces = morse_pair_force(
                 distances, sigma=self.sigma, epsilon=self.epsilon, alpha=self.alpha
             )
@@ -239,7 +239,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
 
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
-            if self._compute_force:
+            if self._compute_forces:
                 forces = torch.zeros_like(state.positions)
                 forces.index_add_(0, mapping[0], -force_vectors)
                 forces.index_add_(0, mapping[1], force_vectors)
@@ -278,7 +278,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
             dict[str, torch.Tensor]: Dictionary of computed properties:
                 - "energy": Potential energy with shape [n_batches]
                 - "forces": Atomic forces with shape [n_atoms, 3]
-                    (if compute_force=True)
+                    (if compute_forces=True)
                 - "stress": Stress tensor with shape [n_batches, 3, 3]
                     (if compute_stress=True)
                 - May include additional outputs based on configuration
@@ -289,7 +289,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
         Examples:
             ```python
             # Compute properties for a simulation state
-            model = MorseModel(compute_force=True)
+            model = MorseModel(compute_forces=True)
             results = model(sim_state)
 
             energy = results["energy"]  # Shape: [n_batches]

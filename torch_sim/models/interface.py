@@ -1,4 +1,4 @@
-"""Model Interface: Core interfaces for all simulation models in torchsim.
+"""Core interfaces for all models in torchsim.
 
 This module defines the abstract base class that all torchsim models must implement.
 It establishes a common API for interacting with different force and energy models,
@@ -15,7 +15,7 @@ Example::
             )
             self._dtype = dtype
             self._compute_stress = True
-            self._compute_force = True
+            self._compute_forces = True
 
         def forward(self, positions, cell, batch, atomic_numbers=None, **kwargs):
             # Implementation that returns energy, forces, and stress
@@ -47,7 +47,7 @@ class ModelInterface(ABC):
         device (torch.device): Device where the model runs computations.
         dtype (torch.dtype): Data type used for tensor calculations.
         compute_stress (bool): Whether the model calculates stress tensors.
-        compute_force (bool): Whether the model calculates atomic forces.
+        compute_forces (bool): Whether the model calculates atomic forces.
 
     Examples:
         ```python
@@ -93,7 +93,7 @@ class ModelInterface(ABC):
 
         Notes:
             All implementing classes must set self._device, self._dtype,
-            self._compute_stress and self._compute_force in their __init__ method.
+            self._compute_stress and self._compute_forces in their __init__ method.
         """
 
     @property
@@ -145,19 +145,19 @@ class ModelInterface(ABC):
         )
 
     @property
-    def compute_force(self) -> bool:
+    def compute_forces(self) -> bool:
         """Whether the model computes forces.
 
         Returns:
             Whether the model computes forces
         """
-        return self._compute_force
+        return self._compute_forces
 
-    @compute_force.setter
-    def compute_force(self, compute_force: bool) -> None:
+    @compute_forces.setter
+    def compute_forces(self, compute_forces: bool) -> None:
         raise NotImplementedError(
-            "No compute_force setter has been defined for this model"
-            " so compute_force cannot be set after initialization."
+            "No compute_forces setter has been defined for this model"
+            " so compute_forces cannot be set after initialization."
         )
 
     @property
@@ -250,7 +250,7 @@ def validate_model_outputs(
     assert model.dtype is not None
     assert model.device is not None
     assert model.compute_stress is not None
-    assert model.compute_force is not None
+    assert model.compute_forces is not None
 
     try:
         if not model.compute_stress:
@@ -260,8 +260,8 @@ def validate_model_outputs(
         stress_computed = False
 
     try:
-        if not model.compute_force:
-            model.compute_force = True
+        if not model.compute_forces:
+            model.compute_forces = True
         force_computed = True
     except NotImplementedError:
         force_computed = False

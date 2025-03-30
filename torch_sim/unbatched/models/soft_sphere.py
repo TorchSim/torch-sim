@@ -105,7 +105,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
-        compute_force: bool = True,
+        compute_forces: bool = True,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
         per_atom_stresses: bool = False,
@@ -117,7 +117,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
         self._device = device or torch.device("cpu")
         self._dtype = dtype
 
-        self._compute_force = compute_force
+        self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self._per_atom_energies = per_atom_energies
         self._per_atom_stresses = per_atom_stresses
@@ -203,7 +203,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
             atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
             results["energies"] = atom_energies
 
-        if self._compute_force or self._compute_stress:
+        if self._compute_forces or self._compute_stress:
             # Calculate pair forces
             pair_forces = soft_sphere_pair_force(
                 distances, sigma=self.sigma, epsilon=self.epsilon, alpha=self.alpha
@@ -212,7 +212,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
             # Project scalar forces onto displacement vectors
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
-            if self._compute_force:
+            if self._compute_forces:
                 # Compute atomic forces by accumulating pair contributions
                 forces = torch.zeros_like(positions)
                 # Add force contributions (f_ij on j, -f_ij on i)
@@ -273,8 +273,8 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
-        periodic: bool = True,
-        compute_force: bool = True,
+        pbc: bool = True,
+        compute_forces: bool = True,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
         per_atom_stresses: bool = False,
@@ -294,8 +294,8 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
                 Shape [n_species, n_species]. Must be symmetric.
             device: PyTorch device to use for calculations (CPU/GPU).
             dtype: PyTorch data type for numerical precision.
-            periodic: Whether to use periodic boundary conditions.
-            compute_force: Whether to compute atomic forces.
+            pbc: Whether to use periodic boundary conditions.
+            compute_forces: Whether to compute atomic forces.
             compute_stress: Whether to compute the stress tensor.
             per_atom_energies: Whether to compute per-atom energy contributions.
             per_atom_stresses: Whether to compute per-atom stress contributions.
@@ -306,8 +306,8 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
         super().__init__()
         self._device = device or torch.device("cpu")
         self._dtype = dtype
-        self.periodic = periodic
-        self._compute_force = compute_force
+        self.pbc = pbc
+        self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self._per_atom_energies = per_atom_energies
         self._per_atom_stresses = per_atom_stresses
@@ -383,7 +383,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
             Dictionary containing computed quantities:
             - 'energy': Total potential energy of the system
             - 'energies': Per-atom energies (if per_atom_energies=True)
-            - 'forces': Atomic forces (if compute_force=True)
+            - 'forces': Atomic forces (if compute_forces=True)
             - 'stress': Stress tensor (if compute_stress=True)
             - 'stresses': Per-atom stress tensors (if per_atom_stresses=True)
         """
@@ -404,7 +404,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
             mapping, shifts = vesin_nl_ts(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=self.pbc,
                 cutoff=self.cutoff,
                 sorti=False,
             )
@@ -412,7 +412,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
             dr_vec, distances = get_pair_displacements(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=self.pbc,
                 pairs=mapping,
                 shifts=shifts,
             )
@@ -422,7 +422,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
             dr_vec, distances = get_pair_displacements(
                 positions=positions,
                 cell=cell,
-                pbc=self.periodic,
+                pbc=self.pbc,
             )
             # Remove self-interactions and apply cutoff
             mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)
@@ -462,7 +462,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
             atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
             results["energies"] = atom_energies
 
-        if self._compute_force or self._compute_stress:
+        if self._compute_forces or self._compute_stress:
             # Calculate pair forces
             pair_forces = soft_sphere_pair_force(
                 distances, sigma=pair_sigmas, epsilon=pair_epsilons, alpha=pair_alphas
@@ -471,7 +471,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
             # Project scalar forces onto displacement vectors
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
-            if self._compute_force:
+            if self._compute_forces:
                 # Compute atomic forces by accumulating pair contributions
                 forces = torch.zeros_like(positions)
                 # Add force contributions (f_ij on j, -f_ij on i)

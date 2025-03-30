@@ -1,5 +1,4 @@
-"""Monte Carlo simulations: Implementation of Monte Carlo methods for atomic structure
-optimization.
+"""Propagators for Monte Carlo simulations.
 
 This module provides functionality for performing Monte Carlo simulations,
 particularly focused on swap Monte Carlo for atomic systems. It includes
@@ -193,6 +192,9 @@ def swap_monte_carlo(
     Monte Carlo steps. The simulation uses the Metropolis criterion to accept or reject
     proposed swaps based on energy differences.
 
+    Make sure that if the trajectory is being reported, the
+    `TorchSimTrajectory.write_state` method is called with `variable_masses=True`.
+
     Args:
         model (torch.nn.Module): Energy model that takes a SimState and returns a dict
             containing 'energy' as a key
@@ -235,7 +237,7 @@ def swap_monte_carlo(
     def swap_monte_carlo_step(
         state: SwapMCState,
         kT: float = kT,
-        generator: torch.Generator | None = None,
+        generator: torch.Generator | None = generator,
     ) -> SwapMCState:
         """Perform a single swap Monte Carlo step.
 

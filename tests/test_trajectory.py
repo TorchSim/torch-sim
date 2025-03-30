@@ -1,5 +1,5 @@
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from pathlib import Path
 
 import numpy as np
@@ -37,9 +37,11 @@ def random_state() -> MDState:
 
 
 @pytest.fixture
-def trajectory(test_file: Path) -> TorchSimTrajectory:
+def trajectory(test_file: Path) -> Generator[TorchSimTrajectory, None, None]:
     """Create a trajectory file for testing."""
-    return TorchSimTrajectory(test_file, compress_data=True, mode="w")
+    traj = TorchSimTrajectory(test_file, compress_data=True, mode="w")
+    yield traj
+    traj.close()
 
 
 def test_initialization(test_file: Path) -> None:
@@ -82,14 +84,12 @@ def test_write_state_single(
     trajectory: TorchSimTrajectory, random_state: MDState
 ) -> None:
     """Test writing a single MDState."""
-    trajectory.write_state(random_state, steps=0, save_energy=True)
+    trajectory.write_state(random_state, steps=0)
 
     assert "positions" in trajectory.array_registry
-    assert "energy" in trajectory.array_registry
     assert len(trajectory) == 1
 
     assert trajectory.get_array("positions").shape == (1, 10, 3)
-    assert trajectory.get_array("energy").shape == (1,)
     assert trajectory.get_array("atomic_numbers").shape == (1, 10)
     assert trajectory.get_array("cell").shape == (1, 3, 3)
     assert trajectory.get_array("pbc").shape == (1,)
@@ -99,13 +99,12 @@ def test_write_state_multiple(
     trajectory: TorchSimTrajectory, random_state: MDState
 ) -> None:
     """Test writing multiple MDStates."""
-    trajectory.write_state([random_state, random_state], [0, 1], save_energy=True)
+    trajectory.write_state([random_state, random_state], [0, 1])
 
     assert len(trajectory) == 2
     assert trajectory.get_array("positions").shape == (2, 10, 3)
-    assert trajectory.get_array("energy").shape == (2,)
     assert trajectory.get_array("atomic_numbers").shape == (1, 10)
-    assert trajectory.get_array("cell").shape == (1, 3, 3)
+    assert trajectory.get_array("cell").shape == (2, 3, 3)
     assert trajectory.get_array("pbc").shape == (1,)
 
 
@@ -531,6 +530,60 @@ def prop_calculators() -> dict[int, dict[str, Callable]]:
     }
 
 
+def test_report_no_properties(si_sim_state: SimState, tmp_path: Path) -> None:
+    """Test TrajectoryReporter with no properties."""
+    reporter = TrajectoryReporter(
+        tmp_path / "no_properties.hdf5",
+        state_frequency=1,
+    )
+    # Run several steps
+    for step in range(5):
+        reporter.report(si_sim_state, step)
+
+    reporter.close()
+
+    # Verify file was created
+    assert os.path.exists(tmp_path / "no_properties.hdf5")
+
+    # Open trajectory and check contents
+    trajectory = TorchSimTrajectory(tmp_path / "no_properties.hdf5", mode="r")
+
+    # Check state data
+    assert len(trajectory) == 5  # 5 frames
+    assert "positions" in trajectory.array_registry
+    assert "cell" in trajectory.array_registry
+    assert "atomic_numbers" in trajectory.array_registry
+
+
+def test_report_no_filenames(si_sim_state: SimState, prop_calculators: dict) -> None:
+    """Test TrajectoryReporter with no filenames."""
+    from torch_sim.state import initialize_state
+
+    triple_state = initialize_state(
+        [si_sim_state.clone() for _ in range(3)],
+        device=si_sim_state.device,
+        dtype=si_sim_state.dtype,
+    )
+
+    reporter = TrajectoryReporter(
+        filenames=None,
+        state_frequency=1,
+        prop_calculators=prop_calculators,
+    )
+    # Run several steps
+    all_props = []
+    for step in range(5):
+        props = reporter.report(triple_state, step)
+        all_props.append(props)
+
+    reporter.close()
+
+    # 5 steps, 3 batches, 2 properties
+    assert len(all_props) == 5
+    assert len(all_props[0]) == 3
+    assert len(all_props[0][0]) == 2
+
+
 def test_single_batch_reporter(
     si_sim_state: SimState, tmp_path: Path, prop_calculators: dict
 ) -> None:
@@ -566,6 +619,31 @@ def test_single_batch_reporter(
     assert trajectory.get_array("ones").shape[0] == 5  # 5 frames
 
     trajectory.close()
+
+
+def test_multi_batch_reporter_filenames_none(
+    si_double_sim_state: SimState, prop_calculators: dict
+) -> None:
+    """Test TrajectoryReporter with multiple batches and no filenames."""
+    reporter = TrajectoryReporter(
+        None,
+        state_frequency=1,
+        prop_calculators=prop_calculators,
+    )
+
+    # Run several steps
+    all_props = []
+    for step in range(5):
+        props = reporter.report(si_double_sim_state, step)
+        all_props.append(props)
+
+    # Check that the properties are the same
+    for props in all_props:
+        assert len(props) == 2  # Two batches
+        assert "ones" in props[0]
+        assert "center_of_mass" in props[0]
+        assert "ones" in props[1]
+        assert "center_of_mass" in props[1]
 
 
 def test_multi_batch_reporter(
@@ -683,9 +761,17 @@ def test_reporter_with_model(
         prop_calculators=prop_calculators,
     )
 
-    # Run with model
-    reporter.report(si_double_sim_state, 0, lj_model)
+    # Run with model and get properties
+    props = reporter.report(si_double_sim_state, 0, lj_model)
     reporter.close()
+
+    # Verify properties were returned
+    assert len(props) == 2  # One dict per batch
+    for batch_props in props:
+        assert set(batch_props) == {"energy"}
+        assert isinstance(batch_props["energy"], torch.Tensor)
+        assert batch_props["energy"].shape == (1,)
+        assert batch_props["energy"] == pytest.approx(49.4150)
 
     # Verify property was calculated correctly
     trajectories = [
@@ -694,17 +780,19 @@ def test_reporter_with_model(
     ]
 
     for batch_idx, trajectory in enumerate(trajectories):
-        # Get the property value
-        energy = trajectory.get_array("energy")[0]
+        # Get the property value from file
+        file_energy = trajectory.get_array("energy")[0]
+        batch_props = props[batch_idx]
 
         # Calculate expected value
         substate = si_double_sim_state[batch_idx]
         expected = lj_model(substate)["energy"]
 
-        # Compare
-        np.testing.assert_allclose(energy, expected.cpu().numpy())
-        # assert energy not na
-        assert not np.isnan(energy)
-        assert len(energy)
+        # Compare file contents with expected
+        np.testing.assert_allclose(file_energy, expected)
+        # Compare returned properties with expected
+        np.testing.assert_allclose(batch_props["energy"], expected)
+        # Compare returned properties with file contents
+        np.testing.assert_allclose(batch_props["energy"], file_energy)
 
         trajectory.close()

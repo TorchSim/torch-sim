@@ -19,7 +19,7 @@ from mace.calculators.foundations_models import mace_mp
 from plotly.subplots import make_subplots
 
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.quantities import temperature
+from torch_sim.quantities import calc_kT
 from torch_sim.state import SimState
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import (
@@ -138,7 +138,7 @@ model = UnbatchedMaceModel(
     model=loaded_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
-    compute_force=True,
+    compute_forces=True,
     compute_stress=False,
     dtype=dtype,
     enable_cueq=False,
@@ -180,7 +180,7 @@ for step in range(n_steps):
     )
 
     # Calculate current temperature and save data
-    temp = temperature(masses=state.masses, momenta=state.momenta) / Units.temperature
+    temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
     actual_temps[step] = temp
     expected_temps[step] = current_kT
 

@@ -1,4 +1,4 @@
-"""FairChem: PyTorch implementation of FairChem models for atomistic simulations.
+"""Wrapper for FairChem ecosystem models in torch-sim.
 
 This module provides a TorchSim wrapper of the FairChem models for computing
 energies, forces, and stresses of atomistic systems. It serves as a wrapper around
@@ -21,7 +21,6 @@ import typing
 from types import MappingProxyType
 
 import torch
-from torch_geometric.data import Batch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState, StateDict
@@ -36,6 +35,8 @@ try:
         update_config,
     )
     from fairchem.core.models.model_registry import model_name_to_local_file
+    from torch_geometric.data import Batch
+
 except ImportError:
 
     class FairChemModel(torch.nn.Module, ModelInterface):
@@ -45,7 +46,9 @@ except ImportError:
         It raises an ImportError if FairChem is not installed.
         """
 
-        raise ImportError("FairChem must be installed to use this model.")
+        def __init__(self, *_args: typing.Any, **_kwargs: typing.Any) -> None:
+            """Dummy init for type checking."""
+            raise ImportError("FairChem must be installed to use this model.")
 
 
 if typing.TYPE_CHECKING:
@@ -81,7 +84,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         pbc (bool): Whether periodic boundary conditions are used
         _dtype (torch.dtype): Data type used for computation
         _compute_stress (bool): Whether to compute stress tensor
-        _compute_force (bool): Whether to compute forces
+        _compute_forces (bool): Whether to compute forces
         _device (torch.device): Device where computation is performed
         _reshaped_props (dict): Properties that need reshaping after computation
 
@@ -145,7 +148,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
 
         self._dtype = dtype or torch.float32
         self._compute_stress = compute_stress
-        self._compute_force = True
+        self._compute_forces = True
         self._memory_scales_with = "n_atoms"
 
         if model_name is not None:

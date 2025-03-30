@@ -43,7 +43,7 @@ mace_model = MaceModel(
     model=mace,
     device=device,
     dtype=torch.float64,
-    compute_force=True,
+    compute_forces=True,
 )
 
 si_state = atoms_to_state(si_atoms, device=device, dtype=torch.float64)

@@ -29,6 +29,12 @@ def si_atoms() -> Any:
 
 
 @pytest.fixture
+def ti_atoms() -> Any:
+    """Create crystalline titanium using ASE."""
+    return bulk("Ti", "hcp", a=2.94, c=4.64)
+
+
+@pytest.fixture
 def benzene_atoms() -> Any:
     """Create benzene using ASE."""
     return molecule("C6H6")
@@ -116,7 +122,7 @@ def unbatched_lj_model(device: torch.device) -> UnbatchedLennardJonesModel:
         epsilon=0.0104,
         device=device,
         dtype=torch.float64,
-        compute_force=True,
+        compute_forces=True,
         compute_stress=True,
         cutoff=2.5 * 3.405,
     )
@@ -131,7 +137,7 @@ def lj_model(device: torch.device) -> LennardJonesModel:
         epsilon=0.0104,
         device=device,
         dtype=torch.float64,
-        compute_force=True,
+        compute_forces=True,
         compute_stress=True,
         cutoff=2.5 * 3.405,
     )

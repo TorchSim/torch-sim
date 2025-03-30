@@ -109,7 +109,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
-        compute_force: bool = True,
+        compute_forces: bool = True,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
         per_atom_stresses: bool = False,
@@ -123,7 +123,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
             epsilon: The epsilon parameter of the Lennard-Jones potential
             device: The device to use for the calculation
             dtype: The data type to use for the calculation
-            compute_force: Whether to compute forces
+            compute_forces: Whether to compute forces
             compute_stress: Whether to compute stresses
             per_atom_energies: Whether to compute per-atom energies
             per_atom_stresses: Whether to compute per-atom stresses
@@ -134,7 +134,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
         self._device = device or torch.device("cpu")
         self._dtype = dtype
 
-        self._compute_force = compute_force
+        self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self._per_atom_energies = per_atom_energies
         self._per_atom_stresses = per_atom_stresses
@@ -223,7 +223,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
             atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
             results["energies"] = atom_energies
 
-        if self._compute_force or self._compute_stress:
+        if self._compute_forces or self._compute_stress:
             # Calculate forces and apply cutoff
             pair_forces = lennard_jones_pair_force(
                 distances, sigma=self.sigma, epsilon=self.epsilon
@@ -233,7 +233,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
             # Project forces along displacement vectors
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
-            if self._compute_force:
+            if self._compute_forces:
                 # Initialize forces tensor
                 forces = torch.zeros_like(positions)
                 # Add force contributions (f_ij on i, -f_ij on j)

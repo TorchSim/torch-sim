@@ -1,8 +1,10 @@
+
 ```{toctree}
 :caption: User Guide
 :hidden:
-user/index
-user/test
+user/introduction
+user/overview
+user/models
 tutorials/index
 ```
 
@@ -16,6 +18,8 @@ reference/index
 :caption: Developer Guide
 :hidden:
 dev/dev_install
+dev/add_model
+dev/batching
 ```
 
 ```{toctree}
@@ -32,17 +36,16 @@ about/license
 
 **Useful links**:
 [Source Repository](https://github.com/Radical-AI/torch-sim) |
-[Issues & Ideas](https://github.com/Radical-AI/torch-sim/issues) |
+[Issues & Ideas](https://github.com/Radical-AI/torch-sim/issues)
 
-Atomate2 is an open-source library providing computational workflows for
-automating first-principles calculations.
+`torch-sim` is a next-generation open-source atomistic simulation engine for the MLIP era.
 
 ::::{grid} 3 1 1 1
 :class-container: text-center
 :gutter: 3
 
 :::{grid-item-card}
-:link: user/index
+:link: user/introduction
 :link-type: doc
 :class-header: bg-light
 **User Guide** 🚀
