@@ -26,6 +26,7 @@ Here is a quick demonstration of many of the core features of TorchSim:
 native support for GPUs, MLIP models, ASE integration, simple API,
 autobatching, and trajectory reporting, all in under 40 lines of code.
 
+### Running batched MD
 ```python
 import torch
 import torch_sim as ts
@@ -40,9 +41,9 @@ mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(model=mace, device=device)
 
 from ase.build import bulk
-cu_atoms = bulk("Cu", "fcc", a=5.26, cubic=True).repeat((2, 2, 2))
+cu_atoms = bulk("Cu", "fcc", a=3.58, cubic=True).repeat((2, 2, 2))
 many_cu_atoms = [cu_atoms] * 50
-trajectory_files = [f"fe_traj_{i}" for i in range(len(many_cu_atoms))]
+trajectory_files = [f"Cu_traj_{i}" for i in range(len(many_cu_atoms))]
 
 # run them all simultaneously with batching
 final_state = ts.integrate(
@@ -63,6 +64,37 @@ for filename in trajectory_files:
         final_energies.append(traj.get_array("potential_energy")[-1])
 
 print(final_energies)
+```
+### Running batched relaxation
+
+```python
+import torch
+import torch_sim as ts
+
+# run natively on gpus
+device = torch.device("cuda")
+
+# easily load the model from mace-mp
+from mace.calculators.foundations_models import mace_mp
+from torch_sim.models import MaceModel
+mace = mace_mp(model="small", return_raw_model=True)
+mace_model = MaceModel(model=mace, device=device)
+
+from ase.build import bulk
+cu_atoms = bulk("Cu", "fcc", a=3.58, cubic=True).repeat((2, 2, 2))
+many_cu_atoms = [cu_atoms] * 20
+trajectory_files = [f"Cu_traj_{i}" for i in range(len(many_cu_atoms))]
+
+# run them all simultaneously with batching
+final_state = ts.optimize(
+    system=many_cu_atoms,
+    model=mace_model,
+    optimizer=ts.frechet_cell_fire,
+    trajectory_reporter=dict(filenames=trajectory_files, state_frequency=10),
+    autobatcher=True,
+)
+
+print(final_state.energy)
 ```
 
 ## Installation
