@@ -155,7 +155,7 @@ def position_step(state: MDState, dt: torch.Tensor) -> MDState:
 
     if state.pbc:
         new_positions = pbc_wrap_general(
-            positions=new_positions, lattice_vectors=state.cell
+            positions=new_positions, lattice_vectors=state.cell.T
         )
 
     state.positions = new_positions
@@ -831,7 +831,7 @@ def npt_langevin(  # noqa: C901, PLR0915
         # Apply periodic boundary conditions if needed
         if state.pbc:
             new_positions = pbc_wrap_general(
-                positions=state.positions, lattice_vectors=state.cell
+                positions=state.positions, lattice_vectors=state.cell.T
             )
             state.positions = new_positions
 
@@ -1845,7 +1845,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         new_positions = state.positions + new_positions
 
         # Apply periodic boundary conditions
-        return pbc_wrap_general(new_positions, state.current_cell)
+        return pbc_wrap_general(new_positions, state.current_cell.T)
 
     def exp_iL2(  # noqa: N802
         alpha: torch.Tensor,

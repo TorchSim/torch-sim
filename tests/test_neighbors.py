@@ -109,6 +109,7 @@ def periodic_structures():
         bulk("Si", "diamond", a=6),
         bulk("Cu", "fcc", a=3.6),
         bulk("Si", "bct", a=6, c=3),
+        bulk("Ti", "hcp", a=2.94, c=4.64, orthorhombic=False),
         # test very skewed unit cell
         bulk("Bi", "rhombohedral", a=6, alpha=20),
         bulk("Bi", "rhombohedral", a=6, alpha=10),

@@ -29,6 +29,12 @@ def si_atoms() -> Any:
 
 
 @pytest.fixture
+def ti_atoms() -> Any:
+    """Create crystalline titanium using ASE."""
+    return bulk("Ti", "hcp", a=2.94, c=4.64)
+
+
+@pytest.fixture
 def benzene_atoms() -> Any:
     """Create benzene using ASE."""
     return molecule("C6H6")
