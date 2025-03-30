@@ -60,7 +60,7 @@ fire_states = fire_init(atoms_to_state(ase_atoms_list, device=device, dtype=dtyp
 batcher = HotSwappingAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms_x_density",
-    max_memory_scaler=None,
+    max_memory_scaler=1000 if os.getenv("CI") else None,
 )
 converge_max_force = generate_force_convergence_fn(force_tol=0.05)
 

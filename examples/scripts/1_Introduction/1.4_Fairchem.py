@@ -7,7 +7,7 @@
 #     "torch>=2.4.0,<2.5.0",
 # ]
 # extra_install = [
-#     "pip install torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.4.0+cpu.html"
+#     "pip install -r fairchem-repo/packages/requirements.txt"
 # ]
 # ///
 
