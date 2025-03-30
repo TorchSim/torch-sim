@@ -56,7 +56,7 @@ final_state = ts.optimize(
     trajectory_reporter=dict(filenames=trajectory_files, state_frequency=10),
     autobatching=True
 )
-final_atoms_list = state.to_atoms()
+final_atoms_list = final_state.to_atoms()
 
 # extract the final energy from the trajectory file
 final_energies = []
