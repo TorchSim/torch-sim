@@ -5,9 +5,13 @@
 # dependencies = [
 #     "fairchem-core>=1.6",
 #     "torch>=2.4.0,<2.5.0",
+#     "torch-scatter",  # Add direct dependency
+#     "torch-sparse",   # Add direct dependency
+#     "torch-geometric",  # Add direct dependency
 # ]
 # install_commands = [
-#     "pip install torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.4.0+cpu.html"
+#     "pip install --no-index torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.4.0+cpu.html",
+#     "pip install --no-deps torch_geometric"
 # ]
 # ///
 
