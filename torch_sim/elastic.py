@@ -3,45 +3,20 @@
 
 Primary Sources and References for Crystal Elasticity.
 
-- Nye, J.F. (1985) "Physical Properties of Crystals: Their Representation by Tensors and
-  Matrices"
-  - Definitive text on crystal elasticity
-  - Contains detailed derivations of elastic constant matrices for all crystal systems
-  - Pages 131-149 cover elastic compliance and stiffness matrices
-
 - Landau, L.D. & Lifshitz, E.M. "Theory of Elasticity" (Volume 7 of Course of
   Theoretical Physics)
-  - Fundamental treatment of elasticity theory
-  - Section 10 covers crystal elasticity
-  - Pages 134-142 specifically discuss elastic symmetry classes
 
 - Teodosiu, C. (1982) "Elastic Models of Crystal Defects"
-  - Chapter 2: "Elastic Properties of Crystals"
-  - Detailed treatment of symmetry constraints on elastic constants
 
 Review Articles:
-- Fast, L., Wills, J. M., Johansson, B., & Eriksson, O. (1995).
-  "Elastic constants of hexagonal transition metals: Theory"
-  Physical Review B, 51(24), 17431
-  - Specific treatment of hexagonal systems
-  - Verification of C66 = (C11-C12)/2 relationship
 
 - Mouhat, F., & Coudert, F. X. (2014).
   "Necessary and sufficient elastic stability conditions in various crystal systems"
   Physical Review B, 90(22), 224104
-  - Modern treatment of elastic stability conditions
-  - Tables of independent elastic constants for each system
 
 Online Resources:
 - Materials Project Documentation
   https://docs.materialsproject.org/methodology/elasticity/
-  - Modern computational implementation details
-  - Verification of symmetry relationships
-
-- USPEX Wiki on Elastic Constants
-  http://uspex-team.org/online_utilities/elastic_constants
-  - Practical guide to elastic constant calculations
-  - Symmetry relationships and constraints
 """
 
 from collections.abc import Callable
@@ -49,26 +24,8 @@ from dataclasses import dataclass
 from enum import Enum
 
 import torch
-from ase import units
-from ase.atoms import Atoms
 
-
-@dataclass
-class ElasticState:
-    """Represents the elastic state of a crystal structure.
-
-    This class encapsulates the atomic positions and unit cell parameters
-    that define the elastic state of a crystalline material.
-
-    Attributes:
-        position: Tensor containing atomic positions in Cartesian coordinates.
-                 Shape: (n_atoms, 3) where each row represents [x, y, z] coordinates.
-        cell: Tensor containing the unit cell matrix.
-              Shape: (3, 3) where rows are the lattice vectors a, b, c.
-    """
-
-    position: torch.Tensor  # Shape: (n_atoms, 3)
-    cell: torch.Tensor  # Shape: (3, 3)
+from torch_sim.state import SimState
 
 
 @dataclass
@@ -594,35 +551,35 @@ def triclinic_symmetry(strains: torch.Tensor) -> torch.Tensor:
     return matrix
 
 
-def get_cart_deformed_cell(
-    base_state: ElasticState, axis: int = 0, size: float = 1.0
-) -> ElasticState:
+def get_cart_deformed_cell(state: SimState, axis: int = 0, size: float = 1.0) -> SimState:
     """Deform a unit cell and scale atomic positions accordingly.
 
     Args:
-        base_state: ElasticState containing positions, mass, and cell
+        state: SimState containing positions, mass, and cell
         axis: Direction of deformation:
             - 0,1,2 for x,y,z cartesian deformations
             - 3,4,5 for yz,xz,xy shear deformations
         size: Deformation magnitude
 
     Returns:
-        ElasticState: New state with deformed cell and scaled positions
+        SimState: New state with deformed cell and scaled positions
 
     Raises:
         ValueError: If axis is not in range [0-5]
         ValueError: If cell is not a 3x3 tensor
         ValueError: If positions is not a (n_atoms, 3) tensor
     """
+    cell = state.cell.squeeze()
+    positions = state.positions
     if not (0 <= axis <= 5):
         raise ValueError("Axis must be between 0 and 5")
-    if base_state.cell.shape != (3, 3):
+    if cell.shape != (3, 3):
         raise ValueError("Cell must be a 3x3 tensor")
-    if base_state.position.shape[-1] != 3:
+    if positions.shape[-1] != 3:
         raise ValueError("Positions must have shape (n_atoms, 3)")
 
     # Create identity matrix for transformation
-    L = torch.eye(3, dtype=base_state.cell.dtype, device=base_state.cell.device)
+    L = torch.eye(3, dtype=cell.dtype, device=cell.device)
 
     # Apply deformation based on axis
     if axis < 3:
@@ -635,23 +592,29 @@ def get_cart_deformed_cell(
         L[0, 1] += size  # xy shear
 
     # Convert positions to fractional coordinates
-    old_inv = torch.linalg.inv(base_state.cell)
-    frac_coords = torch.matmul(base_state.position, old_inv)
+    old_inv = torch.linalg.inv(cell)
+    frac_coords = torch.matmul(positions, old_inv)
 
     # Apply transformation to cell and convert positions back to cartesian
-    new_cell = torch.matmul(base_state.cell, L)
+    new_cell = torch.matmul(cell, L)
     new_positions = torch.matmul(frac_coords, new_cell)
 
-    return ElasticState(position=new_positions, cell=new_cell)
+    return SimState(
+        positions=new_positions,
+        cell=new_cell.unsqueeze(0),
+        masses=state.masses,
+        pbc=state.pbc,
+        atomic_numbers=state.atomic_numbers,
+    )
 
 
 def get_elementary_deformations(
-    base_state: ElasticState,
+    state: SimState,
     n_deform: int = 5,
     max_strain_normal: float = 0.01,
     max_strain_shear: float = 0.06,
     bravais_type: BravaisType = None,
-) -> list[ElasticState]:
+) -> list[SimState]:
     """Generate elementary deformations for elastic tensor calculation.
 
     Creates a series of deformed structures based on the crystal symmetry. The
@@ -659,7 +622,7 @@ def get_elementary_deformations(
     Bravais lattice type.
 
     Args:
-        base_state: ElasticState containing the base structure to be deformed
+        state: SimState containing the base structure to be deformed
         n_deform: Number of deformations per non-equivalent axis
         max_strain_normal: Maximum deformation magnitude
         max_strain_shear: Maximum deformation magnitude
@@ -667,7 +630,7 @@ def get_elementary_deformations(
                      defaults to lowest symmetry (triclinic)
 
     Returns:
-        List[ElasticState]: List of deformed structures
+        List[SimState]: List of deformed structures
 
     Notes:
         - For normal strains (axes 0,1,2), deformations range from -max_strain_normal to
@@ -702,8 +665,8 @@ def get_elementary_deformations(
 
     # Generate deformed structures
     deformed_states = []
-    device = base_state.cell.device
-    dtype = base_state.cell.dtype
+    device = state.cell.device
+    dtype = state.cell.dtype
 
     for axis in allowed_axes:
         if axis < 3:  # Normal strain
@@ -725,16 +688,14 @@ def get_elementary_deformations(
         strains = strains[strains != 0]
 
         for strain in strains:
-            deformed = get_cart_deformed_cell(
-                base_state=base_state, axis=axis, size=strain.item()
-            )
+            deformed = get_cart_deformed_cell(state=state, axis=axis, size=strain)
             deformed_states.append(deformed)
 
     return deformed_states
 
 
 def get_strain(
-    deformed_state: ElasticState, reference_state: ElasticState | None = None
+    deformed_state: SimState, reference_state: SimState | None = None
 ) -> torch.Tensor:
     """Calculate strain tensor in Voigt notation.
 
@@ -742,7 +703,7 @@ def get_strain(
     The calculation is performed relative to a reference (undeformed) state.
 
     Args:
-        deformed_state: ElasticState containing the deformed configuration
+        deformed_state: SimState containing the deformed configuration
         reference_state: Optional reference (undeformed) state. If None,
                         uses deformed_state as reference
 
@@ -762,16 +723,18 @@ def get_strain(
         - ε[4] = εxz = u[2,0]
         - ε[5] = εxy = u[1,0]
     """
-    if not isinstance(deformed_state, ElasticState):
-        raise TypeError("deformed_state must be an ElasticState")
+    dtype = deformed_state.positions.dtype
+    device = deformed_state.positions.device
+    if not isinstance(deformed_state, SimState):
+        raise TypeError("deformed_state must be an SimState")
 
     # Use deformed state as reference if none provided
     if reference_state is None:
         reference_state = deformed_state
 
     # Get cell matrices
-    deformed_cell = deformed_state.cell
-    reference_cell = reference_state.cell
+    deformed_cell = deformed_state.cell.squeeze()
+    reference_cell = reference_state.cell.squeeze()
 
     # Calculate displacement gradient tensor: u = M^(-1)ΔM
     cell_difference = deformed_cell - reference_cell
@@ -791,14 +754,42 @@ def get_strain(
             strain[2, 0],  # εxz
             strain[1, 0],  # εxy
         ],
-        device=deformed_cell.device,
-        dtype=deformed_cell.dtype,
+        device=device,
+        dtype=dtype,
+    )
+
+
+def full_3x3_to_voigt_6_stress(stress: torch.Tensor) -> torch.Tensor:
+    """Form a 6 component stress vector in Voigt notation from a 3x3 matrix.
+
+    Args:
+        stress: Tensor of shape (..., 3, 3) containing stress components
+
+    Returns:
+        torch.Tensor: 6-component stress vector [σxx, σyy, σzz, σyz, σxz, σxy]
+                     following Voigt notation
+    """
+    device = stress.device
+    dtype = stress.dtype
+
+    stress = (stress + stress.transpose(-2, -1)) / 2
+    return torch.tensor(
+        [
+            stress[0, 0],  # σxx
+            stress[1, 1],  # σyy
+            stress[2, 2],  # σzz
+            stress[2, 1],  # σyz
+            stress[2, 0],  # σxz
+            stress[1, 0],  # σxy
+        ],
+        device=device,
+        dtype=dtype,
     )
 
 
 def get_elastic_coeffs(
-    base_state: ElasticState,
-    deformed_states: list[ElasticState],
+    state: SimState,
+    deformed_states: list[SimState],
     stresses: torch.Tensor,
     base_pressure: torch.Tensor,
     bravais_type: BravaisType,
@@ -809,8 +800,8 @@ def get_elastic_coeffs(
     linear equations built from crystal symmetry and deformation data.
 
     Args:
-        base_state: ElasticState containing reference structure
-        deformed_states: List of deformed ElasticStates with calculated stresses
+        state: SimState containing reference structure
+        deformed_states: List of deformed SimStates with calculated stresses
         stresses: Tensor of shape (n_states, 6) containing stress components for each
                  state
         base_pressure: Reference pressure of the base state
@@ -852,7 +843,7 @@ def get_elastic_coeffs(
     # Calculate strains for all deformed states
     strains = []
     for deformed in deformed_states:
-        strain = get_strain(deformed, reference_state=base_state)
+        strain = get_strain(deformed, reference_state=state)
         strains.append(strain)
 
     # Remove ambient pressure from stresses
@@ -1013,20 +1004,29 @@ def get_elastic_tensor_from_coeffs(  # noqa: C901, PLR0915
 
 
 def calculate_elastic_tensor(
-    struct: Atoms,
-    device: torch.device,
-    dtype: torch.dtype,
+    model: torch.nn.Module,
+    *,
+    state: SimState,
     bravais_type: BravaisType = BravaisType.TRICLINIC,
     max_strain_normal: float = 0.01,
     max_strain_shear: float = 0.06,
     n_deform: int = 5,
 ) -> torch.Tensor:
-    """Calculate the elastic tensor of a structure (in GPa)."""
-    # Define elastic state
-    state = ElasticState(
-        position=torch.tensor(struct.get_positions(), device=device, dtype=dtype),
-        cell=torch.tensor(struct.get_cell().array, device=device, dtype=dtype),
-    )
+    """Calculate the elastic tensor of a structure.
+
+    Args:
+        model: Model to use for stress calculation
+        state: SimState containing the reference structure
+        bravais_type: Bravais type of the structure
+        max_strain_normal: Maximum normal strain
+        max_strain_shear: Maximum shear strain
+        n_deform: Number of deformations
+
+    Returns:
+        torch.Tensor: Elastic tensor
+    """
+    device = state.positions.device
+    dtype = state.positions.dtype
 
     # Calculate deformations for the bravais type
     deformations = get_elementary_deformations(
@@ -1038,20 +1038,18 @@ def calculate_elastic_tensor(
     )
 
     # Calculate stresses for deformations
-    ref_pressure = -torch.mean(
-        torch.tensor(struct.get_stress()[:3], device=device), dim=0
-    )
-    stresses = torch.zeros((len(deformations), 6), device=device, dtype=torch.float64)
+    ref_pressure = -torch.trace(state.stress.squeeze()) / 3
+    stresses = torch.zeros((len(deformations), 6), device=device, dtype=dtype)
+
     for i, deformation in enumerate(deformations):
-        struct.cell = deformation.cell.cpu().numpy()
-        struct.positions = deformation.position.cpu().numpy()
-        stresses[i] = torch.tensor(struct.get_stress(), device=device)
+        result = model(deformation)
+        stresses[i] = full_3x3_to_voigt_6_stress(result["stress"].squeeze())
 
     # Calculate elastic tensor
-    C_ij, B_ij = get_elastic_coeffs(
+    C_ij, Res = get_elastic_coeffs(
         state, deformations, stresses, ref_pressure, bravais_type
     )
-    C = get_elastic_tensor_from_coeffs(C_ij, bravais_type) / units.GPa
+    C = get_elastic_tensor_from_coeffs(C_ij, bravais_type)
 
     return C  # noqa : RET504
 
@@ -1060,12 +1058,12 @@ def calculate_elastic_moduli(C: torch.Tensor) -> tuple[float, float, float, floa
     """Calculate elastic moduli from the elastic tensor.
 
     Args:
-        C: Elastic tensor (6x6) in GPa
+        C: Elastic tensor (6x6)
 
     Returns:
         tuple: Four Voigt-Reuss-Hill averaged elastic moduli in order:
-            - Bulk modulus (K_VRH) in GPa
-            - Shear modulus (G_VRH) in GPa
+            - Bulk modulus (K_VRH)
+            - Shear modulus (G_VRH)
             - Poisson's ratio (v_VRH), dimensionless
             - Pugh's ratio (K_VRH/G_VRH), dimensionless
     """
