@@ -325,10 +325,9 @@ def calculate_memory_scaler(
         state (SimState): State to calculate metric for, with shape information
             specific to the SimState instance.
         memory_scales_with (Literal["n_atoms_x_density", "n_atoms"]): Type of metric
-            to use:
-            - "n_atoms": Uses only atom count, suitable for uniform density systems
-            - "n_atoms_x_density": Uses atom count multiplied by number density,
-              better for systems with varying densities
+            to use. "n_atoms" uses only atom count and is suitable for models that
+            have a fixed number of neighbors. "n_atoms_x_density" uses atom count
+            multiplied by number density and is better for models with radial cutoffs
             Defaults to "n_atoms_x_density".
 
     Returns:
@@ -585,8 +584,8 @@ class ChunkingAutoBatcher:
                   where indices are the original positions of the states, or None if no
                   more batches.
 
-        Examples:
-            ```python
+        Example::
+
             # Get batches one by one
             all_converged_state, convergence = [], None
             while (result := batcher.next_batch(state, convergence))[0] is not None:
@@ -597,7 +596,7 @@ class ChunkingAutoBatcher:
                 convergence = convergence_criterion(state)
             else:
                 all_converged_states.extend(result[1])
-            ```
+
         """
         # TODO: need to think about how this intersects with reporting too
         # TODO: definitely a clever treatment to be done with iterators here
@@ -619,12 +618,12 @@ class ChunkingAutoBatcher:
         Returns:
             Iterator[SimState | tuple[SimState, list[int]]]: Self as an iterator.
 
-        Examples:
-            ```python
+        Example::
+
             # Iterate through all batches
             for batch in batcher:
                 process_batch(batch)
-            ```
+
         """
         return self
 
@@ -667,14 +666,14 @@ class ChunkingAutoBatcher:
             ValueError: If the number of states doesn't match the number of
                 original indices.
 
-        Examples:
-            ```python
+        Example::
+
             # Process batches and restore original order
             results = []
             for batch in batcher:
                 results.append(process_batch(batch))
             ordered_results = batcher.restore_original_order(results)
-            ```
+
         """
         state_bins = [state.split() for state in batched_states]
 
@@ -803,8 +802,8 @@ class HotSwappingAutoBatcher:
             ValueError: If any individual state has a memory scaling metric greater
                 than the maximum allowed value.
 
-        Examples:
-            ```python
+        Example::
+
             # Load individual states
             batcher.load_states([state1, state2, state3])
 
@@ -813,7 +812,6 @@ class HotSwappingAutoBatcher:
 
             # Or load states from an iterator
             batcher.load_states(state_generator())
-            ```
 
         Notes:
             This method resets the current state indices and completed state tracking,
@@ -971,8 +969,8 @@ class HotSwappingAutoBatcher:
             AssertionError: If convergence_tensor doesn't match the expected shape or
                 if other validation checks fail.
 
-        Examples:
-            ```python
+        Example::
+
             # Initial call
             batch, completed = batcher.next_batch(None, None)
 
@@ -982,7 +980,6 @@ class HotSwappingAutoBatcher:
 
             # Get next batch with converged states removed and new states added
             batch, completed = batcher.next_batch(batch, convergence)
-            ```
 
         Notes:
             When max_iterations is set, states that exceed this limit will be
@@ -1065,8 +1062,8 @@ class HotSwappingAutoBatcher:
             ValueError: If the number of completed states doesn't match the
                 number of completed indices.
 
-        Examples:
-            ```python
+        Example::
+
             # After processing with next_batch
             all_completed_states = []
 
@@ -1079,7 +1076,6 @@ class HotSwappingAutoBatcher:
 
             # Restore original order
             ordered_results = batcher.restore_original_order(all_completed_states)
-            ```
 
         Notes:
             This method should only be called after all states have been processed,

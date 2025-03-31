@@ -10,14 +10,16 @@ a simple interface for storing and retrieving trajectory data from HDF5 files.
 It aims to support arbitrary arrays from the user in a natural way, allowing
 it to be seamlessly extended to whatever attributes are important to the user.
 
-Examples:
-    # Creating a trajectory file
-    with TorchSimTrajectory('simulation.hdf5', mode='w') as traj:
-        traj.write_state(state, step=0)
+Example:
+    Reading and writing a trajectory file::
 
-    # Writing to multiple trajectory files with a reporter
-    reporter = TrajectoryReporter(['traj1.hdf5', 'traj2.hdf5'], state_frequency=100)
-    reporter.report(state, step=0, model=model)
+        # Writing to multiple trajectory files with a reporter
+        reporter = TrajectoryReporter(["traj1.hdf5", "traj2.hdf5"], state_frequency=100)
+        reporter.report(state, step=0, model=model)
+
+        # Reading the file with a TorchSimTrajectory
+        with TorchSimTrajectory("simulation.hdf5", mode="r") as traj:
+            state = traj.get_state(frame=0)
 
 Notes:
     This module uses PyTables (HDF5) for efficient I/O operations and supports
