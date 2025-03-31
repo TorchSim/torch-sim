@@ -1,10 +1,12 @@
-"""Phonon DOS calculation with MACE in batched mode."""
+"""Calculate Phonon DOS and band structure with MACE in batched mode."""
 
 # /// script
 # dependencies = [
 #     "mace-torch>=0.3.11",
 #     "phonopy>=2.35",
 #     "pymatviz[export-figs]>=0.15.1",
+#     "seekpath",
+#     "ase",
 # ]
 # ///
 
@@ -19,6 +21,78 @@ from torch_sim.io import phonopy_to_state
 from torch_sim.models.mace import MaceModel
 from torch_sim.neighbors import vesin_nl_ts
 
+from torch_sim.optimizers import frechet_cell_fire
+from ase import Atoms
+import seekpath
+from phonopy.phonon.band_structure import get_band_qpoints_and_path_connections, get_band_qpoints_by_seekpath
+from ase.build import bulk
+from torch_sim import optimize
+from torch_sim.io import state_to_atoms, state_to_phonopy
+
+def get_qpts_and_connections(
+        ase_atoms: Atoms,
+        npoints: int = 101,
+    ) -> tuple[list[list[float]], list[bool]]:
+    """
+    Get the high symmetry points and path connections for the band structure.
+    """
+
+    # Define seekpath data
+    seekpath_data = seekpath.get_path(
+        (
+            ase_atoms.cell,
+            ase_atoms.get_scaled_positions(),
+            ase_atoms.numbers,
+        )
+    )
+
+    # Extract high symmetry points and path
+    points = seekpath_data["point_coords"]
+    path = []
+    for segment in seekpath_data["path"]:
+        start_point = points[segment[0]]
+        end_point = points[segment[1]]
+        path.append([start_point, end_point])
+    qpts, connections = get_band_qpoints_and_path_connections(
+        path, npoints=npoints
+    )
+
+    return qpts, connections
+
+def get_labels_qpts(
+        ph: Phonopy,
+        npoints: int = 101,
+    ) -> tuple[list[str], list[bool]]:
+    """
+    Get the labels and coordinates of qpoints for the phonon band structure
+    """
+
+    # Get labels and coordinates for high-symmetry points
+    _, qpts_labels, connections = get_band_qpoints_by_seekpath(
+        ph._primitive, npoints=npoints, is_const_interval=True
+    )
+    connections = [True] + list(connections)
+    connections[-1] = True
+    qpts_labels_connections = []
+    i = 0
+    for connection in connections:
+        if connection:
+            qpts_labels_connections.append(qpts_labels[i])
+            i += 1
+        else:
+            qpts_labels_connections.append(f"{qpts_labels[i]}|{qpts_labels[i+1]}")
+            i += 2
+
+    qpts_labels_arr = [q.replace("\\Gamma", "Γ").replace("$", "").replace("\\", "")
+                   .replace("mathrm", "").replace("{", "").replace("}", "") 
+                   for q in qpts_labels_connections]
+    bands_dict = ph.get_band_structure_dict()
+    npaths = len(bands_dict["frequencies"])
+    qpts_coord = [bands_dict["distances"][n][0] for n in range(npaths)] + [
+        bands_dict["distances"][-1][-1]
+    ]
+
+    return qpts_labels_arr, qpts_coord
 
 # Set device and data type
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -33,43 +107,43 @@ loaded_model = mace_mp(
     device=device,
 )
 
-# Create NaCl structure using PhonopyAtoms
-atoms = PhonopyAtoms(
-    cell=np.eye(3) * 3,
-    scaled_positions=[[0, 0, 0], [0.5, 0.5, 0.5]],
-    symbols=["Na", "Cl"],
-    pbc=True,
-)
+# Structure and input parameters
+struct = bulk('Si', 'diamond', a=5.431, cubic=True) # ASE structure
+supercell_matrix = 2 * np.eye(3) # supercell matrix for phonon calculation
+mesh = [20, 20, 20] # Phonon mesh
+Nrelax = 300 # number of relaxation steps
+displ = 0.01 # atomic displacement for phonons (in Angstrom)
 
-# Create Phonopy object with supercell matrix
-supercell_matrix = 2 * np.eye(3)
-ph = Phonopy(atoms, supercell_matrix)
-
-# Generate displacements
-ph.generate_displacements(distance=0.01)
-supercells = ph.get_supercells_with_displacements()
-
-# Convert PhonopyAtoms to state
-state = phonopy_to_state(supercells, device, dtype)
-
-# Create batched MACE model
-atomic_numbers_list = [cell.get_atomic_numbers() for cell in supercells]
+# Relax atomic positions
 model = MaceModel(
     model=loaded_model,
     device=device,
     neighbor_list_fn=vesin_nl_ts,
     compute_forces=True,
-    compute_stress=False,
+    compute_stress=True,
     dtype=dtype,
     enable_cueq=False,
 )
+final_state = optimize(
+    system=struct,
+    model=model,
+    optimizer=frechet_cell_fire,
+    constant_volume=True,
+    hydrostatic_strain=True,
+    max_steps=Nrelax,
+)
 
-# Run the model in batched mode
+# Define atoms and Phonopy object
+atoms = state_to_phonopy(final_state)[0]
+ph = Phonopy(atoms, supercell_matrix)
+
+# Generate FC2 displacements
+ph.generate_displacements(distance=displ)
+supercells = ph.supercells_with_displacements
+
+# Convert PhonopyAtoms to state
+state = phonopy_to_state(supercells, device, dtype)
 results = model(state)
-
-# Print result keys and shapes
-print(f"Result keys: {results.keys()}")
-print(f"Forces shape: {results['forces'].shape}")
 
 # Extract forces and convert back to list of numpy arrays for phonopy
 n_atoms_per_supercell = [len(cell) for cell in supercells]
@@ -81,15 +155,44 @@ for n_atoms in n_atoms_per_supercell:
     start_idx = end_idx
 
 # Produce force constants
-ph.set_forces(force_sets)
+ph.forces = force_sets
 ph.produce_force_constants()
 
 # Set mesh for DOS calculation
-mesh = [20, 20, 20]
 ph.run_mesh(mesh)
 ph.run_total_dos()
-ph.save(filename="phonopy_params.yaml")
 
 # Visualize phonon DOS
 fig = pmv.phonon_dos(ph.total_dos)
-pmv.save_fig(fig, "phonon_dos.png")
+pmv.save_fig(fig, "phonon_dos.pdf")
+
+# Calculate phonon band structure
+ase_atoms = Atoms(
+    symbols=atoms.symbols,
+    positions=atoms.positions,
+    cell=atoms.cell,
+    pbc=True,
+)
+qpts, connections = get_qpts_and_connections(ase_atoms)    
+ph.run_band_structure(qpts, connections)
+
+# Plot phonon band structure
+ph.auto_band_structure(plot=False)
+fig = pmv.phonon_bands(
+    ph.band_structure,
+    line_kwargs={"width": 2},
+)
+qpts_labels, qpts_coord = get_labels_qpts(ph)
+for q, label in zip(qpts_coord, qpts_labels):
+    fig.add_vline(x=q, line_dash="dash", line_color="black", line_width=2, opacity=1)
+fig.update_layout(
+    xaxis=dict(
+        tickmode='array',
+        tickvals=qpts_coord,
+        ticktext=qpts_labels
+    )
+)
+pmv.save_fig(fig, "phonon_band_structure.pdf")
+
+# Save phonopy parameters
+ph.save(filename="phonopy_params.yaml")
