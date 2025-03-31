@@ -455,10 +455,9 @@ final_results = ts.static(
     trajectory_reporter={"filenames": None, "prop_calculators": prop_calculators},
 )
 
-
 print(f"Static returns {len(final_results)} results, one for each system")
 print(f"Matches the number of systems? {len(final_results) == len(systems)}")
-print(len(final_results))
+print(f"len(final_results): {len(final_results)}")
 assert len(final_results) == len(systems)
 
 cu_results = final_results[0]
