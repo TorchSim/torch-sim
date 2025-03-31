@@ -23,7 +23,7 @@ from pymatgen.io.phonopy import get_phonopy_structure
 from torch_sim.io import phonopy_to_state
 from torch_sim.models.mace import MaceModel
 from torch_sim.neighbors import vesin_nl_ts
-
+import plotly.graph_objects as go
 
 start_time = time.perf_counter()
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -91,7 +91,7 @@ ph3.forces = np.array(force_sets).reshape(-1, len(ph3.supercell), 3)
 ph3.produce_fc3()
 
 # Set mesh numbers
-ph3.mesh_numbers = [3, 3, 3]
+ph3.mesh_numbers = [5, 5, 5]
 
 # Initialize phonon-phonon interaction
 ph3.init_phph_interaction()
@@ -101,3 +101,18 @@ ph3.run_thermal_conductivity()
 
 kappa_time = time.perf_counter() - start_time
 print(f"Kappa calculation time: {kappa_time}s")
+
+# Average thermal conductivity
+temperatures = ph3.thermal_conductivity.temperatures
+kappa = ph3.thermal_conductivity.kappa[0]
+kappa_av = np.mean(kappa[:,:3], axis=1)
+
+# Plot temperatures vs kappa using plotly
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=temperatures, y=kappa_av, mode='lines'))
+fig.update_layout(
+    title="Thermal Conductivity vs Temperature",
+    xaxis_title="Temperature (K)",
+    yaxis_title="Thermal Conductivity (W/mK)"
+)
+fig.write_image("thermal_conductivity.pdf")
