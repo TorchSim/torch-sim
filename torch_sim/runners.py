@@ -23,9 +23,10 @@ from torch_sim.units import UnitSystem
 
 def _configure_reporter(
     trajectory_reporter: TrajectoryReporter | dict | None,
-    # TODO: change to callable
-    runner: callable,
     state_kwargs: dict | None = None,
+    properties: list[str] | None = None,
+    prop_frequency: int = 10,
+    state_frequency: int = 100,
 ) -> TrajectoryReporter:
     if trajectory_reporter is None:
         return None
@@ -33,23 +34,11 @@ def _configure_reporter(
         return trajectory_reporter
     possible_properties = {
         "potential_energy": lambda state: state.energy,
+        "forces": lambda state: state.forces,
+        "stress": lambda state: state.stress,
         "kinetic_energy": lambda state: calc_kinetic_energy(state.momenta, state.masses),
         "temperature": lambda state: calc_kT(state.momenta, state.masses),
     }
-    if runner == integrate:
-        properties = ["kinetic_energy", "potential_energy", "temperature"]
-        prop_frequency = 10
-        state_frequency = 100
-    elif runner == optimize:
-        properties = ["potential_energy"]
-        prop_frequency = 10
-        state_frequency = 100
-    elif runner == static:
-        properties = ["potential_energy"]
-        prop_frequency = 1
-        state_frequency = 1
-    else:
-        raise ValueError(f"Invalid runner: {runner}")
 
     prop_calculators = {
         prop: calculator
@@ -157,7 +146,11 @@ def integrate(
     state = init_fn(state)
 
     batch_iterator = _configure_batches_iterator(model, state, autobatcher)
-    trajectory_reporter = _configure_reporter(trajectory_reporter, integrate)
+    trajectory_reporter = _configure_reporter(
+        trajectory_reporter,
+        integrate,
+        properties=["kinetic_energy", "potential_energy", "temperature"],
+    )
 
     final_states: list[SimState] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
@@ -327,7 +320,11 @@ def optimize(
     autobatcher = _configure_hot_swapping_autobatcher(
         model, state, autobatcher, max_attempts
     )
-    trajectory_reporter = _configure_reporter(trajectory_reporter, optimize)
+    trajectory_reporter = _configure_reporter(
+        trajectory_reporter,
+        optimize,
+        properties=["potential_energy"],
+    )
 
     step: int = 1
     last_energy = None
@@ -406,21 +403,26 @@ def static(
     state: SimState = initialize_state(system, model.device, model.dtype)
 
     batch_iterator = _configure_batches_iterator(model, state, autobatcher)
+    properties = ["potential_energy"]
+    if model.compute_forces:
+        properties.append("forces")
+    if model.compute_stress:
+        properties.append("stress")
     trajectory_reporter = _configure_reporter(
         trajectory_reporter or dict(filenames=None),
-        static,
         state_kwargs={
             "variable_atomic_numbers": True,
             "variable_masses": True,
             "save_forces": model.compute_forces,
         },
+        properties=properties,
     )
 
     @dataclass
     class StaticState(type(state)):
         energy: torch.Tensor
-        forces: torch.Tensor
-        stress: torch.Tensor
+        forces: torch.Tensor | None
+        stress: torch.Tensor | None
 
     final_states: list[SimState] = []
     all_props: list[dict[str, torch.Tensor]] = []
