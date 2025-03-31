@@ -5,7 +5,7 @@ particularly focused on swap Monte Carlo for atomic systems. It includes
 implementations of the Metropolis criterion, swap generation, and utility
 functions for handling permutations in batched systems.
 
-The `swap_monte_carlo` function can be used with `integrate` but if 
+The `swap_monte_carlo` function can be used with `integrate` but if
 a trajectory is being reported, the `TorchSimTrajectory.write_state` method
 must be called with `variable_masses=True`.
 """
