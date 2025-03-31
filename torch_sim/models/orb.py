@@ -1,4 +1,4 @@
-"""ORB: PyTorch implementation of ORB models for atomistic simulations.
+"""Wrapper for ORB model in torch-sim.
 
 This module provides a TorchSim wrapper of the ORB models for computing
 energies, forces, and stresses of atomistic systems. It serves as a wrapper around
