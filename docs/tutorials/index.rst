@@ -3,7 +3,7 @@
 Tutorials
 =========
 
-This section contains tutorials for torch_sim.
+For a high-level overview of the tutorials see :doc:`../user/overview`.
 
 .. currentmodule:: torch_sim
 

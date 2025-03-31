@@ -67,40 +67,23 @@ print(final_energies)
 ```
 ### Running batched relaxation
 
+To then relax those structures with FIRE is just a few more lines.
+
 ```python
-import torch
-import torch_sim as ts
-
-# run natively on gpus
-device = torch.device("cuda")
-
-# easily load the model from mace-mp
-from mace.calculators.foundations_models import mace_mp
-from torch_sim.models import MaceModel
-mace = mace_mp(model="small", return_raw_model=True)
-mace_model = MaceModel(model=mace, device=device)
-
-from ase.build import bulk
-cu_atoms = bulk("Cu", "fcc", a=3.58, cubic=True).repeat((2, 2, 2))
-many_cu_atoms = [cu_atoms] * 20
-trajectory_files = [f"Cu_traj_{i}" for i in range(len(many_cu_atoms))]
-
-# run them all simultaneously with batching
-final_state = ts.optimize(
-    system=many_cu_atoms,
+# relax all of the high temperature states
+relaxed_state = ts.optimize(
+    system=final_state,
     model=mace_model,
     optimizer=ts.frechet_cell_fire,
-    trajectory_reporter=dict(filenames=trajectory_files, state_frequency=10),
     autobatcher=True,
 )
 
-print(final_state.energy)
+print(relaxed_state.energy)
 ```
 
 ## Installation
 ### PyPI Installation
 ```sh
-pip install --upgrade pip
 pip install torch-sim
 ```
 
@@ -115,11 +98,11 @@ pip install .
 
 `torch-sim` has dozens of example scripts and tutorials in the [`examples/`](examples/readme.md) folder.
 
+(link to API docs)
+
 ## Core Modules
 
 (Link to API docs)
-
-* [`torch_sim.integrators`](torch_sim/integrators.py): Provides batched molecular dynamics integrators for simulating the time evolution of atomistic systems.
 
 ## Citation
 

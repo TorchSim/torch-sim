@@ -1,3 +1,0 @@
-# Tips for Batched Implementations
-
-Coming soon...
