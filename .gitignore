@@ -26,3 +26,6 @@ docs/reference/torch_sim.*
 *.h5
 *.hdf5
 *.traj
+
+# env
+uv.lock
