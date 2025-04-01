@@ -19,7 +19,10 @@ formats.
 3. Update test.yml to include proper installation and
 testing of the relevant model.
 
-4. Update .github/workflows/conf.py to include model in
+4. Pull the model import up to `torch_sim.models` by adding import to
+`torch_sim.models.__init__.py` in try except clause.
+
+5. Update .github/workflows/conf.py to include model in
 autodoc_mock_imports = ['mace', 'fairchem']
 
 [optional]
