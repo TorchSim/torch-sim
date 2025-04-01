@@ -26,9 +26,9 @@ testing of the relevant model.
 
 [optional]
 
-5. Write a tutorial or example showing off your model.
+6. Write a tutorial or example showing off your model.
 
-6. Update the `.github/workflows/docs.yml` to ensure your model
+7. Update the `.github/workflows/docs.yml` to ensure your model
 is being correctly included in the documentation.
 
 We are also happy for developers to implement model interfaces in their
