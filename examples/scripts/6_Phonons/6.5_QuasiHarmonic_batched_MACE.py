@@ -1,4 +1,5 @@
-"""Calculate quasi-harmonic thermal properties in batched mode."""
+"""Calculate quasi-harmonic thermal properties batching
+   over FC2 calculations with MACE"""
 
 # /// script
 # dependencies = [
@@ -68,7 +69,7 @@ mesh = [20, 20, 20] # Phonon mesh
 Nrelax = 300 # number of relaxation steps
 fmax = 1e-3 # force convergence
 displ = 0.05 # atomic displacement for phonons (in Angstrom)
-temperatures = np.arange(0, 1600, 10) # temperature range for quasi-harmonic calculation
+temperatures = np.arange(0, 1410, 10) # temperature range for quasi-harmonic calculation
 length_factor = np.linspace(0.85, 1.15, 15) # length factor for quasi-harmonic calculation
 
 # Relax structure
@@ -171,25 +172,21 @@ for i, factor in enumerate(length_factor):
     cell = scaled_atoms.cell
     volume = np.linalg.det(cell)
     volumes.append(volume)
-    energies.append(results["energy"].item() / n_unit_cells)
+
+    # Get the energy - handle multi-element tensor case
+    energies.append(results["energy"][0].item() / n_unit_cells)
     free_energies.append(thermal_props['free_energy'])
     entropies.append(thermal_props['entropy'])
     heat_capacities.append(thermal_props['heat_capacity'])
-
-# Convert lists to numpy arrays for easier manipulation
-volumes = np.array(volumes)
-free_energies = np.array(free_energies)
-entropies = np.array(entropies)
-heat_capacities = np.array(heat_capacities)
 
 # run QHA
 qha = PhonopyQHA(
     volumes=volumes,
     electronic_energies=np.tile(energies, (len(temperatures), 1)),
     temperatures=temperatures,
-    free_energy=free_energies.T,
-    cv=heat_capacities.T,
-    entropy=entropies.T,
+    free_energy=np.array(free_energies).T,
+    cv=np.array(heat_capacities).T,
+    entropy= np.array(entropies).T,
     eos='vinet'
 )
 

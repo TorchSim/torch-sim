@@ -1,4 +1,5 @@
-"""Calculate the thermal conductivity of a material using a batched MACE model."""
+"""Calculate the Wigner thermal conductivity batching over 
+   FC2 and FC3 calculations with MACE"""
 
 # /// script
 # dependencies = [
