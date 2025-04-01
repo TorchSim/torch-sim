@@ -759,6 +759,35 @@ def get_strain(
     )
 
 
+def voigt_6_to_full_3x3_stress(stress_voigt: torch.Tensor) -> torch.Tensor:
+    """Convert a 6-component stress vector in Voigt notation to a 3x3 matrix.
+
+    Args:
+        stress_voigt: Tensor of shape (..., 6) containing stress components
+                     [σxx, σyy, σzz, σyz, σxz, σxy] in Voigt notation
+
+    Returns:
+        torch.Tensor: Tensor of shape (..., 3, 3) containing the full stress matrix
+    """
+    device = stress_voigt.device
+    dtype = stress_voigt.dtype
+
+    # Initialize 3x3 stress tensor
+    stress = torch.zeros((*stress_voigt.shape[:-1], 3, 3), device=device, dtype=dtype)
+
+    # Fill diagonal elements
+    stress[..., 0, 0] = stress_voigt[..., 0]  # σxx
+    stress[..., 1, 1] = stress_voigt[..., 1]  # σyy
+    stress[..., 2, 2] = stress_voigt[..., 2]  # σzz
+
+    # Fill off-diagonal elements (symmetric)
+    stress[..., 2, 1] = stress[..., 1, 2] = stress_voigt[..., 3]  # σyz
+    stress[..., 2, 0] = stress[..., 0, 2] = stress_voigt[..., 4]  # σxz
+    stress[..., 1, 0] = stress[..., 0, 1] = stress_voigt[..., 5]  # σxy
+
+    return stress
+
+
 def full_3x3_to_voigt_6_stress(stress: torch.Tensor) -> torch.Tensor:
     """Form a 6 component stress vector in Voigt notation from a 3x3 matrix.
 
@@ -772,19 +801,21 @@ def full_3x3_to_voigt_6_stress(stress: torch.Tensor) -> torch.Tensor:
     device = stress.device
     dtype = stress.dtype
 
+    # Ensure the tensor is symmetric
     stress = (stress + stress.transpose(-2, -1)) / 2
-    return torch.tensor(
+
+    # Create the Voigt vector while preserving batch dimensions
+    return torch.stack(
         [
-            stress[0, 0],  # σxx
-            stress[1, 1],  # σyy
-            stress[2, 2],  # σzz
-            stress[2, 1],  # σyz
-            stress[2, 0],  # σxz
-            stress[1, 0],  # σxy
+            stress[..., 0, 0],  # σxx
+            stress[..., 1, 1],  # σyy
+            stress[..., 2, 2],  # σzz
+            stress[..., 2, 1],  # σyz
+            stress[..., 2, 0],  # σxz
+            stress[..., 1, 0],  # σxy
         ],
-        device=device,
-        dtype=dtype,
-    )
+        dim=-1,
+    ).to(device=device, dtype=dtype)
 
 
 def get_elastic_coeffs(

@@ -1,12 +1,6 @@
 import pytest
 import torch
 
-
-try:
-    from mace.calculators.foundations_models import mace_mp
-except ImportError:
-    pytest.skip("MACE not installed", allow_module_level=True)
-
 from torch_sim.elastic import (
     BravaisType,
     calculate_elastic_moduli,
@@ -19,11 +13,16 @@ from torch_sim.unbatched.unbatched_optimizers import frechet_cell_fire
 from torch_sim.units import UnitConversion
 
 
-mace_model = mace_mp(model="medium", default_dtype="float64", return_raw_model=True)
+try:
+    from mace.calculators.foundations_models import mace_mp
+except ImportError:
+    pytest.skip("MACE not installed", allow_module_level=True)
 
 
 @pytest.fixture
 def torchsim_mace_model(device: torch.device) -> UnbatchedMaceModel:
+    mace_model = mace_mp(model="medium", default_dtype="float64", return_raw_model=True)
+
     return UnbatchedMaceModel(
         model=mace_model,
         neighbor_list_fn=vesin_nl_ts,

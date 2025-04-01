@@ -175,7 +175,6 @@ jobs:
           slug: Radical-AI/torch-sim
           flags: fairchem,${{ matrix.os }},python-${{ matrix.version.python }}
 
-
   test-orb:
     strategy:
       fail-fast: false
@@ -214,8 +213,47 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: Radical-AI/torch-sim
-          flags: fairchem,${{ matrix.os }},python-${{ matrix.version.python }}
+          flags: orb,${{ matrix.os }},python-${{ matrix.version.python }}
 
+  test-sevennet:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+        version:
+          - { python: "3.11", resolution: highest }
+          - { python: "3.12", resolution: lowest-direct }
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.version.python }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Install sevennet dependencies
+        run: |
+          uv pip install sevenn --system
+
+      - name: Install torchsim
+        run: uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
+
+      - name: Run Tests with Coverage
+        run: |
+          pytest --cov=torchsim --cov-report=xml tests/models/test_sevennet.py
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: Radical-AI/torch-sim
+          flags: sevennet,${{ matrix.os }},python-${{ matrix.version.python }}
 
   find-examples:
     runs-on: ubuntu-latest

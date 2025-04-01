@@ -1,4 +1,4 @@
-"""Wrapper for ORB model in torch-sim.
+"""ORB: PyTorch implementation of ORB models for atomistic simulations.
 
 This module provides a TorchSim wrapper of the ORB models for computing
 energies, forces, and stresses of atomistic systems. It serves as a wrapper around
@@ -19,8 +19,8 @@ import typing
 from pathlib import Path
 
 import torch
-from ase.stress import voigt_6_to_full_3x3_stress
 
+from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState, StateDict
 
@@ -321,7 +321,7 @@ class OrbModel(torch.nn.Module, ModelInterface):
         self._half_supercell = half_supercell
 
         # Load model if path is provided
-        if isinstance(model, (str, Path)):
+        if isinstance(model, str | Path):
             model = torch.load(model, map_location=self._device)
 
         self.model = model.to(self._device)
@@ -417,16 +417,8 @@ class OrbModel(torch.nn.Module, ModelInterface):
             results["forces"] = results[self.model.grad_forces_name]
             results["stress"] = results[self.model.grad_stress_name]
 
-        if len(results["stress"].shape) == 1:
-            stress = results["stress"].cpu().numpy()
-            stress = voigt_6_to_full_3x3_stress(stress)
-            results["stress"] = torch.tensor(stress, device=results["stress"].device)
-        else:
-            stress_results = []
-            for i in range(results["stress"].shape[0]):
-                stress = results["stress"][i].cpu().numpy()
-                stress = voigt_6_to_full_3x3_stress(stress)
-                stress_per_system = torch.tensor(stress, device=results["stress"].device)
-                stress_results.append(stress_per_system)
-            results["stress"] = torch.stack(stress_results)
+        if "stress" in results and results["stress"].shape[-1] == 6:
+            # TODO: is there a point to converting the direct stress if conservative?
+            results["stress"] = voigt_6_to_full_3x3_stress(results["stress"])
+
         return results

@@ -30,13 +30,6 @@ def pretrained_orb_model(device: torch.device):
 
 
 @pytest.fixture
-def si_system(dtype: torch.dtype, device: torch.device) -> SimState:
-    # Create diamond cubic Silicon
-    si_dc = bulk("Si", "diamond", a=5.43)
-    return atoms_to_state([si_dc], device, dtype)
-
-
-@pytest.fixture
 def cu_system(dtype: torch.dtype, device: torch.device) -> SimState:
     # Create FCC Copper
     cu_fcc = bulk("Cu", "fcc", a=3.58, cubic=True)
