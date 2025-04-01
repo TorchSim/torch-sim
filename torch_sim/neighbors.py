@@ -1,7 +1,5 @@
 """Utilities for neighbor list calculations."""
 
-import warnings
-
 import torch
 from vesin import NeighborList as VesinNeighborList
 from vesin.torch import NeighborList as VesinNeighborList_ts

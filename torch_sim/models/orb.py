@@ -164,7 +164,9 @@ def state_to_atom_graphs(  # noqa: PLR0915
     node_feats_list = []
     edge_feats_list = []
     graph_feats_list = []
-    system_edges = torch.repeat_interleave(torch.arange(n_systems, device=state.device), batch_num_edges)
+    system_edges = torch.repeat_interleave(
+        torch.arange(n_systems, device=state.device), batch_num_edges
+    )
     for i in range(n_systems):
         batch_mask = state.batch == i
         system_edge_mask = system_edges == i

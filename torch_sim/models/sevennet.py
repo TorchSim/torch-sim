@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.state import SimState, StateDict
-from torch_sim.elastic import voigt_6_to_full_3x3_stress
 
 
 if TYPE_CHECKING:

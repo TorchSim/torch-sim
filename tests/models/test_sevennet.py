@@ -10,7 +10,6 @@ from torch_sim.state import SimState
 try:
     import sevenn.util
     from sevenn.calculator import SevenNetCalculator
-    from sevenn.nn.sequential import AtomGraphSequential
 
     from torch_sim.models.sevennet import SevenNetModel
 
