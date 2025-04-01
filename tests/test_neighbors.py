@@ -11,7 +11,6 @@ from torch_sim.neighbors import (
     torch_nl_n2,
     vesin_nl,
     vesin_nl_ts,
-    wrapping_nl,
 )
 from torch_sim.transforms import compute_cell_shifts, compute_distances_with_cell_shifts
 
@@ -129,73 +128,6 @@ def structure_set() -> list:
         molecule("OCHCHO"),
         molecule("C3H9C"),
     ]
-
-
-@pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
-def test_wrapping_nl(*, cutoff: int) -> None:
-    """Check that wrapping_nl gives the same NL as ASE by comparing
-    the resulting sorted list of distances between neighbors.
-    """
-    structures = [bulk("Si", "diamond", a=6, cubic=True)]
-
-    for structure in structures:
-        # Convert to torch tensors
-        pos = torch.tensor(structure.positions, device=DEVICE, dtype=DTYPE)
-        cell = torch.tensor(structure.cell.array, device=DEVICE, dtype=DTYPE)
-
-        pbc = structure.pbc.any()
-
-        # Get the neighbor list from wrapping_nl
-        mapping, shifts = wrapping_nl(
-            positions=pos,
-            cell=cell,
-            pbc=pbc,
-            cutoff=torch.tensor(cutoff, device=DEVICE, dtype=DTYPE),
-        )
-
-        # Calculate distances with cell shifts
-        cell_shifts = torch.mm(shifts, cell)
-        dds = compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
-        dds = np.sort(dds.numpy())
-
-        # Get the neighbor list from ase
-        idx_i, idx_j, shifts_ref, dist = neighbor_list(
-            quantities="ijSd",
-            a=structure,
-            cutoff=cutoff,
-            self_interaction=False,
-            max_nbins=1e6,
-        )
-
-        # Convert to torch tensors
-        idx_i = torch.tensor(idx_i, dtype=torch.long, device=torch.device("cpu"))
-        idx_j = torch.tensor(idx_j, dtype=torch.long, device=torch.device("cpu"))
-
-        # Create mapping and shifts
-        mapping_ref = torch.stack((idx_i, idx_j), dim=0)
-        shifts_ref = torch.tensor(
-            shifts_ref, dtype=torch.float64, device=torch.device("cpu")
-        )
-
-        # Calculate distances with cell shifts
-        cell_shifts_ref = torch.mm(shifts_ref, cell)
-        dds_ref = compute_distances_with_cell_shifts(pos, mapping_ref, cell_shifts_ref)
-
-        # Sort the distances
-        dds_ref = np.sort(dds_ref.numpy())
-        dist_ref = np.sort(dist)
-
-        # Debugging information
-        print(dds.shape, dds_ref.shape, cutoff, structure.get_chemical_formula())
-
-        # Check that the distances are the same with ase and torchsim logic
-        np.testing.assert_allclose(dds_ref, dist_ref)
-
-        # Check that the distances are the same with both methods
-        np.testing.assert_allclose(dds, dds_ref)
-
-        # Check that the distances are the same with ase direct neighbor list
-        np.testing.assert_allclose(dds, dist_ref)
 
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
