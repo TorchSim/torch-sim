@@ -21,3 +21,8 @@ try:
     from torch_sim.models.mace import MaceModel
 except ImportError:
     pass
+
+try:
+    from torch_sim.models.sevennet import SevenNetModel
+except ImportError:
+    pass

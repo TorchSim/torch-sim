@@ -63,7 +63,7 @@ myst_enable_extensions = [
     "html_image",
 ]
 
-autodoc_mock_imports = ["mace", "fairchem"]
+autodoc_mock_imports = ["mace", "fairchem", "orb", "sevennet"]
 
 # use type hints
 autodoc_typehints = "description"
