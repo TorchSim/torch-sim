@@ -2,6 +2,7 @@
 
 # /// script
 # dependencies = [
+#     "ase>=3.24",
 #     "scipy>=1.15",
 # ]
 # ///
