@@ -25,6 +25,12 @@ def dtype() -> torch.dtype:
 
 
 @pytest.fixture
+def model_name() -> str:
+    """Fixture to provide the model name for testing."""
+    return "sevennet-mf-ompa"
+
+
+@pytest.fixture
 def cu_system(dtype: torch.dtype, device: torch.device) -> SimState:
     # Create FCC Copper
     cu_fcc = bulk("Cu", "fcc", a=3.58, cubic=True)
@@ -32,9 +38,9 @@ def cu_system(dtype: torch.dtype, device: torch.device) -> SimState:
 
 
 @pytest.fixture
-def pretrained_sevenn_model(device: torch.device):
+def pretrained_sevenn_model(device: torch.device, model_name: str):
     """Load a pretrained SevenNet model for testing."""
-    cp = sevenn.util.load_checkpoint("sevennet-mf-ompa")
+    cp = sevenn.util.load_checkpoint(model_name)
 
     backend = "e3nn"
     model_loaded = cp.build_model(backend)
@@ -56,11 +62,9 @@ def sevenn_model(
 
 
 @pytest.fixture
-def sevenn_calculator(
-    pretrained_sevenn_model: AtomGraphSequential, device: torch.device
-) -> SevenNetCalculator:
+def sevenn_calculator(device: torch.device, model_name: str) -> SevenNetCalculator:
     """Create an SevenNetCalculator for the pretrained model."""
-    return SevenNetCalculator(pretrained_sevenn_model, modal="mpa", device=device)
+    return SevenNetCalculator(model_name, modal="mpa", device=device)
 
 
 def test_sevennet_initialization(
@@ -114,7 +118,6 @@ def test_sevennet_calculator_consistency(
     )
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Validation requires CUDA")
 def test_validate_model_outputs(
     sevenn_model: SevenNetModel, device: torch.device
 ) -> None:

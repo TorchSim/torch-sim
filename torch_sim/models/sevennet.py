@@ -10,6 +10,7 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.state import SimState, StateDict
+from torch_sim.elastic import voigt_6_to_full_3x3_stress
 
 
 if TYPE_CHECKING:
@@ -91,6 +92,8 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
 
         self._dtype = dtype or torch.float32
         self._memory_scales_with = "n_atoms_x_density"
+        self._compute_stress = True
+        self._compute_forces = True
 
         if model.cutoff == 0.0:
             raise ValueError("Model cutoff seems not initialized")
@@ -194,6 +197,7 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
                 key.CELL_SHIFT: shifts,
                 key.CELL_VOLUME: torch.det(cell),
                 key.NUM_ATOMS: torch.tensor(len(atomic_numbers)),
+                key.DATA_MODALITY: self.modal,
             }
             data[key.INFO] = {}
 
@@ -202,8 +206,8 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
 
         batched_data = Collater([], follow_batch=None, exclude_keys=None)(data_list)
 
-        if self.modal:
-            batched_data[key.DATA_MODALITY] = self.modal
+        # if self.modal:
+        #     batched_data[key.DATA_MODALITY] = self.modal
         batched_data.to(self.device)
 
         if isinstance(self.model, torch_script_type):
@@ -237,6 +241,6 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
         # Process stress
         stress = output[key.PRED_STRESS]
         if stress is not None:
-            results["stress"] = stress.detach()
+            results["stress"] = voigt_6_to_full_3x3_stress(stress.detach())
 
         return results

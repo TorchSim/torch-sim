@@ -80,8 +80,11 @@ def test_fairchem_ocp_consistency(
     )
 
 
+# fairchem batching is broken on CPU, do not replicate this skipping
+# logic in other models tests
 @pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="Batching does not work properly on CPU"
+    not torch.cuda.is_available(),
+    reason="Batching does not work properly on CPU for FAIRchem",
 )
 def test_validate_model_outputs(
     fairchem_model: FairChemModel, device: torch.device
