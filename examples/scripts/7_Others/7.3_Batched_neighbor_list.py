@@ -1,5 +1,11 @@
 """Batched neighbor list."""
 
+# /// script
+# dependencies = [
+#     "scipy>=1.15",
+# ]
+# ///
+
 import torch
 from ase.build import bulk
 

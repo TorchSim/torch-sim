@@ -1,5 +1,11 @@
 """Structural optimization with soft sphere potential using FIRE optimizer."""
 
+# /// script
+# dependencies = [
+#     "scipy>=1.15",
+# ]
+# ///
+
 import itertools
 import os
 

@@ -4,6 +4,7 @@
 # dependencies = [
 #     "plotly>=6",
 #     "kaleido",
+#     "scipy>=1.15",
 # ]
 # ///
 

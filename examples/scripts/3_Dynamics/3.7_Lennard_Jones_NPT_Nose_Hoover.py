@@ -1,5 +1,11 @@
 """Lennard-Jones simulation in NPT ensemble using Nose-Hoover chain."""
 
+# /// script
+# dependencies = [
+#     "scipy>=1.15",
+# ]
+# ///
+
 import itertools
 import os
 

@@ -7,6 +7,12 @@ The stress is calculated using three different methods:
 3. The stress_autograd_fn_functorch function, functorch automatic differentiation method.
 """
 
+# /// script
+# dependencies = [
+#     "scipy>=1.15",
+# ]
+# ///
+
 import timeit
 
 import torch

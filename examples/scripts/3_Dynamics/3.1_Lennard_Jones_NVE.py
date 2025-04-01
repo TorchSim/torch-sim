@@ -1,5 +1,11 @@
 """NVE simulation with Lennard-Jones potential."""
 
+# /// script
+# dependencies = [
+#     "scipy>=1.15",
+# ]
+# ///
+
 import itertools
 import os
 

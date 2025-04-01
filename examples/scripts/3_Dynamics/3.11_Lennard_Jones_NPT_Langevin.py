@@ -1,4 +1,10 @@
-"""Lennard-Jones simulation in NPT ensemble using Nose-Hoover chain."""
+"""Lennard-Jones simulation in NPT ensemble using Langevin thermostat."""
+
+# /// script
+# dependencies = [
+#     "scipy>=1.15",
+# ]
+# ///
 
 import itertools
 import os

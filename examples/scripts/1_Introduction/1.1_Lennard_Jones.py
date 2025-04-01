@@ -1,5 +1,11 @@
 """Lennard-Jones simple single system example."""
 
+# /// script
+# dependencies = [
+#     "scipy>=1.15",
+# ]
+# ///
+
 import itertools
 
 import torch

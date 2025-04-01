@@ -14,7 +14,7 @@ from `torch_sim.models.interface.ModelInterface` and `torch.nn.module`.
 
 2. Write a test that runs `torch_sim.models.interface.validate_model_outputs`
 on the model. This ensures the model adheres to the correct input and output
-formats.
+formats. Please check the test passes on both CPU and GPU.
 
 3. Update `test.yml` to include proper installation and
 testing of the relevant model.
@@ -24,7 +24,7 @@ testing of the relevant model.
 
 5. Update `docs/conf.py` to include model in `autodoc_mock_imports = [...]`
 
-[optional]
+## Optional
 
 6. Write a tutorial or example showing off your model.
 

@@ -1,5 +1,11 @@
 """Lennard-Jones FIRE optimization."""
 
+# /// script
+# dependencies = [
+#     "scipy>=1.15",
+# ]
+# ///
+
 import itertools
 import os
 
