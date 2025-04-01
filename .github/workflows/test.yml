@@ -38,7 +38,8 @@ jobs:
           pytest --cov=torch_sim --cov-report=xml \
             --ignore=tests/models/test_mace.py \
             --ignore=tests/models/test_fairchem.py \
-            --ignore=tests/models/test_orb.py
+            --ignore=tests/models/test_orb.py \
+            --ignore=tests/models/test_sevennet.py
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
