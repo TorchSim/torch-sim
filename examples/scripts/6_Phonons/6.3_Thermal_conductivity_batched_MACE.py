@@ -107,12 +107,30 @@ temperatures = ph3.thermal_conductivity.temperatures
 kappa = ph3.thermal_conductivity.kappa[0]
 kappa_av = np.mean(kappa[:,:3], axis=1)
 
+# Axis style
+axis_style = dict(
+    showgrid=False, 
+    zeroline=False, 
+    linecolor='black',
+    showline=True,
+    ticks="inside",
+    mirror=True,
+    linewidth=3,
+    tickwidth=3,
+    ticklen=10,
+)
+
 # Plot temperatures vs kappa using plotly
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=temperatures, y=kappa_av, mode='lines'))
+fig.add_trace(go.Scatter(x=temperatures, y=kappa_av, mode='lines', line=dict(width=4)))
 fig.update_layout(
-    title="Thermal Conductivity vs Temperature",
     xaxis_title="Temperature (K)",
-    yaxis_title="Thermal Conductivity (W/mK)"
+    yaxis_title="Thermal Conductivity (W/mK)",
+    font=dict(size=24),
+    xaxis=axis_style,
+    yaxis=axis_style,
+    width=800,
+    height=600,
+    plot_bgcolor='white'
 )
 fig.write_image("thermal_conductivity.pdf")

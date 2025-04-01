@@ -162,10 +162,6 @@ ph.produce_force_constants()
 ph.run_mesh(mesh)
 ph.run_total_dos()
 
-# Visualize phonon DOS
-fig = pmv.phonon_dos(ph.total_dos)
-pmv.save_fig(fig, "phonon_dos.pdf")
-
 # Calculate phonon band structure
 ase_atoms = Atoms(
     symbols=atoms.symbols,
@@ -176,23 +172,64 @@ ase_atoms = Atoms(
 qpts, connections = get_qpts_and_connections(ase_atoms)    
 ph.run_band_structure(qpts, connections)
 
+# Define axis style for plots
+axis_style = dict(
+    showgrid=False, 
+    zeroline=False, 
+    linecolor='black',
+    showline=True,
+    ticks="inside",
+    mirror=True,
+    linewidth=3,
+    tickwidth=3,
+    ticklen=10,
+)
+
+# Plot phonon DOS
+fig = pmv.phonon_dos(ph.total_dos)
+fig.update_traces(line=dict(width=3)) 
+fig.update_layout(
+    xaxis_title="Frequency (THz)",
+    yaxis_title="DOS",
+    font=dict(size=24),
+    xaxis=axis_style,
+    yaxis=axis_style,
+    width=800,
+    height=600,
+    plot_bgcolor='white'
+)
+pmv.save_fig(fig, "phonon_dos.pdf")
+
 # Plot phonon band structure
 ph.auto_band_structure(plot=False)
 fig = pmv.phonon_bands(
     ph.band_structure,
-    line_kwargs={"width": 2},
+    line_kwargs={"width": 3},
 )
 qpts_labels, qpts_coord = get_labels_qpts(ph)
 for q, label in zip(qpts_coord, qpts_labels):
     fig.add_vline(x=q, line_dash="dash", line_color="black", line_width=2, opacity=1)
 fig.update_layout(
+    xaxis_title="Wave Vector",
+    yaxis_title="Frequency (THz)",
+    font=dict(size=24),
     xaxis=dict(
         tickmode='array',
         tickvals=qpts_coord,
-        ticktext=qpts_labels
-    )
+        ticktext=qpts_labels,
+        showgrid=False, 
+        zeroline=False, 
+        linecolor='black',
+        showline=True,
+        ticks="inside",
+        mirror=True,
+        linewidth=3,
+        tickwidth=3,
+        ticklen=10,
+    ),
+    yaxis=axis_style,
+    width=800,
+    height=600,
+    plot_bgcolor='white'
 )
 pmv.save_fig(fig, "phonon_band_structure.pdf")
-
-# Save phonopy parameters
-ph.save(filename="phonopy_params.yaml")
