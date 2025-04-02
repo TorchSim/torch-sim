@@ -6,7 +6,6 @@ import pytest
 import torch
 from ase import Atoms
 from ase.build import bulk, molecule
-from ase.spacegroup import crystal
 from phonopy.structure.atoms import PhonopyAtoms
 from pymatgen.core import Structure
 
@@ -27,7 +26,6 @@ def device() -> torch.device:
 def cu_atoms() -> Any:
     """Create crystalline copper using ASE."""
     return bulk("Cu", "fcc", a=3.58, cubic=True)
-
 
 
 @pytest.fixture
@@ -93,6 +91,7 @@ def si_phonopy_atoms() -> Any:
 def si_sim_state(si_atoms: Any, device: torch.device) -> Any:
     """Create a basic state from si_structure."""
     return atoms_to_state(si_atoms, device, torch.float64)
+
 
 @pytest.fixture
 def fe_fcc_sim_state(device: torch.device) -> Any:
