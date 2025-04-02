@@ -23,7 +23,7 @@ Notes:
 import logging
 from collections.abc import Callable, Iterator
 from itertools import chain
-from typing import Literal
+from typing import Literal, Any
 
 import torch
 
@@ -270,7 +270,7 @@ def determine_max_batch_size(
             Defaults to 500,000.
         start_size (int): Initial batch size to test. Defaults to 1.
         scale_factor (float): Factor to multiply batch size by in each iteration.
-            Defaults to 1.6.
+            Defaults to 1.3.
 
     Returns:
         int: Maximum number of batches that fit in GPU memory.
@@ -360,7 +360,7 @@ def estimate_max_memory_scaler(
     model: ModelInterface,
     state_list: list[SimState],
     metric_values: list[float],
-    max_atoms: int = 500_000,
+    **kwargs: Any,
 ) -> float:
     """Estimate maximum memory scaling metric that fits in GPU memory.
 
@@ -375,7 +375,7 @@ def estimate_max_memory_scaler(
             specific to the SimState instance.
         metric_values (list[float]): Corresponding metric values for each state,
             as calculated by calculate_memory_scaler().
-        max_atoms (int): Maximum number of atoms to try. Defaults to 500,000.
+        **kwargs: Additional keyword arguments passed to determine_max_batch_size.
 
     Returns:
         float: Maximum safe metric value that fits in GPU memory.
@@ -411,8 +411,8 @@ def estimate_max_memory_scaler(
         min_state.n_atoms,
         min_state.n_batches,
     )
-    min_state_max_batches = determine_max_batch_size(min_state, model, max_atoms)
-    max_state_max_batches = determine_max_batch_size(max_state, model, max_atoms)
+    min_state_max_batches = determine_max_batch_size(min_state, model, **kwargs)
+    max_state_max_batches = determine_max_batch_size(max_state, model, **kwargs)
 
     return min(min_state_max_batches * min_metric, max_state_max_batches * max_metric)
 
@@ -465,8 +465,9 @@ class ChunkingAutoBatcher:
         *,
         memory_scales_with: Literal["n_atoms", "n_atoms_x_density"] = "n_atoms_x_density",
         max_memory_scaler: float | None = None,
-        max_atoms_to_try: int = 500_000,
         return_indices: bool = False,
+        max_atoms_to_try: int = 500_000,
+        memory_scaling_factor: float = 1.6,
     ) -> None:
         """Initialize the chunking auto-batcher.
 
@@ -480,16 +481,20 @@ class ChunkingAutoBatcher:
                 Defaults to "n_atoms_x_density".
             max_memory_scaler (float | None): Maximum metric value allowed per batch. If
                 None, will be automatically estimated. Defaults to None.
-            max_atoms_to_try (int): Maximum number of atoms to try when estimating
-                max_memory_scaler. Defaults to 500,000.
             return_indices (bool): Whether to return original indices along with batches.
                 Defaults to False.
+            max_atoms_to_try (int): Maximum number of atoms to try when estimating
+                max_memory_scaler. Defaults to 500,000.
+            memory_scaling_factor (float): Factor to multiply batch size by in each iteration.
+                Larger values will get a batch size more quickly, smaller values will get a
+                more accurate limit. Must be greater than 1. Defaults to 1.6.
         """
         self.max_memory_scaler = max_memory_scaler
         self.max_atoms_to_try = max_atoms_to_try
         self.memory_scales_with = memory_scales_with
         self.return_indices = return_indices
         self.model = model
+        self.memory_scaling_factor = memory_scaling_factor
 
     def load_states(
         self,
@@ -537,6 +542,7 @@ class ChunkingAutoBatcher:
                 self.state_slices,
                 self.memory_scalers,
                 self.max_atoms_to_try,
+                self.memory_scaling_factor,
             )
         else:
             self.max_memory_scaler = self.max_memory_scaler
@@ -751,6 +757,7 @@ class HotSwappingAutoBatcher:
         memory_scales_with: Literal["n_atoms", "n_atoms_x_density"] = "n_atoms_x_density",
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
+        memory_scaling_factor: float = 1.6,
         return_indices: bool = False,
         max_iterations: int | None = None,
     ) -> None:
@@ -766,10 +773,13 @@ class HotSwappingAutoBatcher:
                 Defaults to "n_atoms_x_density".
             max_memory_scaler (float | None): Maximum metric value allowed per batch.
                 If None, will be automatically estimated. Defaults to None.
-            max_atoms_to_try (int): Maximum number of atoms to try when estimating
-                max_memory_scaler. Defaults to 500,000.
             return_indices (bool): Whether to return original indices along with batches.
                 Defaults to False.
+            max_atoms_to_try (int): Maximum number of atoms to try when estimating
+                max_memory_scaler. Defaults to 500,000.
+            memory_scaling_factor (float): Factor to multiply batch size by in each iteration.
+                Larger values will get a batch size more quickly, smaller values will get a
+                more accurate limit. Must be greater than 1. Defaults to 1.6.
             max_iterations (int | None): Maximum number of iterations to process a state
                 before considering it complete, regardless of convergence. Used to prevent
                 infinite loops. Defaults to None (no limit).
@@ -778,6 +788,7 @@ class HotSwappingAutoBatcher:
         self.memory_scales_with = memory_scales_with
         self.max_memory_scaler = max_memory_scaler or None
         self.max_atoms_to_try = max_atoms_to_try
+        self.memory_scaling_factor = memory_scaling_factor
         self.return_indices = return_indices
         self.max_attempts = max_iterations  # TODO: change to max_iterations
 
@@ -919,6 +930,7 @@ class HotSwappingAutoBatcher:
                 [first_state],
                 [first_metric],
                 max_atoms=self.max_atoms_to_try,
+                memory_scaling_factor=self.memory_scaling_factor,
             )
             self.max_memory_scaler = self.max_memory_scaler * 0.8
 
@@ -930,6 +942,7 @@ class HotSwappingAutoBatcher:
                 [first_state, *states],
                 self.current_scalers,
                 max_atoms=self.max_atoms_to_try,
+                memory_scaling_factor=self.memory_scaling_factor,
             )
             print(f"Max metric calculated: {self.max_memory_scaler}")
         return concatenate_states([first_state, *states])
