@@ -1,5 +1,7 @@
 {
   "ignorePatterns": [
-    { "pattern": "^https://github.com/radical-ai/torch-sim/actions/workflows" }
+    {
+      "pattern": "../tutorials/.+.ipynb$"
+    }
   ]
 }
