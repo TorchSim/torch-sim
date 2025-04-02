@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build-docs:
-    if: github.repository_owner == 'materialsproject' && github.ref == 'refs/heads/main'
+    # if: github.repository_owner == 'materialsproject' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
@@ -42,6 +42,8 @@ jobs:
           jupytext --set-kernel python3 docs/tutorials/*.py
           jupytext --to notebook --execute docs/tutorials/*.py
           rm docs/tutorials/*.py
+          rm docs/tutorials/*.h5*
+          rm docs/tutorials/*.traj*
 
       - name: Build
         run: sphinx-build docs docs_build
