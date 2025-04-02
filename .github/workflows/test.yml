@@ -50,7 +50,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: radical-ai/torch-sim
-          flags: core,${{ matrix.os }},python-${{ matrix.version.python }}
+          flags: core
 
   test-mace:
     strategy:
@@ -88,7 +88,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: radical-ai/torch-sim
-          flags: mace,${{ matrix.os }},python-${{ matrix.version.python }}
+          flags: mace
 
   test-elastic:
     strategy:
@@ -126,7 +126,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: radical-ai/torch-sim
-          flags: elastic,${{ matrix.os }},python-${{ matrix.version.python }}
+          flags: elastic
 
   test-fairchem:
     strategy:
@@ -178,7 +178,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: radical-ai/torch-sim
-          flags: fairchem,${{ matrix.os }},python-${{ matrix.version.python }}
+          flags: fairchem
 
   test-orb:
     strategy:
@@ -218,7 +218,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: radical-ai/torch-sim
-          flags: orb,${{ matrix.os }},python-${{ matrix.version.python }}
+          flags: orb
 
   test-sevennet:
     strategy:
@@ -258,7 +258,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: radical-ai/torch-sim
-          flags: sevennet,${{ matrix.os }},python-${{ matrix.version.python }}
+          flags: sevennet
 
   find-examples:
     runs-on: ubuntu-latest
