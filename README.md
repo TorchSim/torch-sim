@@ -103,13 +103,17 @@ pip install .
 
 ## Examples
 
-`torch-sim` has dozens of example scripts and tutorials in the [`examples/`](examples/readme.md) folder.
+To understand how `torch-sim` works, start with the [comprehensive tutorials](https://radical-ai.github.io/torch-sim/user/overview.html) in the documentation.
 
-(link to API docs)
+Even more usage examples can be found in the [`examples/`](examples/readme.md) folder.
 
 ## Core Modules
 
-(Link to API docs)
+The `torch-sim` structured is summarized in the [API reference](https://radical-ai.github.io/torch-sim/reference/index.html) documentation.
+
+## License
+
+`torch-sim` is released under an [MIT license](LICENSE).
 
 ## Citation
 
