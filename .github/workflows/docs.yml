@@ -35,6 +35,9 @@ jobs:
         run: |
           uv pip install .[strict,docs] --system
 
+      - name: Install mace
+        run: uv pip install mace-torch --system
+
       - name: Copy tutorials
         run: |
           cp -r examples/tutorials docs/
