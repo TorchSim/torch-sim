@@ -1,5 +1,6 @@
-"""Calculate quasi-harmonic thermal properties batching over 
-   different volumes and FC2 calculations with MACE"""
+"""Calculate quasi-harmonic thermal properties batching over
+different volumes and FC2 calculations with MACE.
+"""
 
 # /// script
 # dependencies = [
@@ -9,48 +10,45 @@
 # ]
 # ///
 
+import os
+
 import numpy as np
-import pymatviz as pmv
+import plotly.graph_objects as go
 import torch
+from ase import Atoms
+from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 from phonopy import Phonopy
-from torch_sim.io import phonopy_to_state
+from phonopy.api_qha import PhonopyQHA
+from phonopy.structure.atoms import PhonopyAtoms
+
+import torch_sim as ts
+from torch_sim import TrajectoryReporter, optimize
+from torch_sim.io import state_to_phonopy
 from torch_sim.models.mace import MaceModel
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.optimizers import frechet_cell_fire
-from ase.build import bulk
-from torch_sim import optimize
-from torch_sim.io import state_to_phonopy
-from pymatgen.core.lattice import Lattice
-from phonopy.api_qha import PhonopyQHA
-import plotly.graph_objects as go
-import tqdm
 from torch_sim.runners import generate_force_convergence_fn
-from torch_sim import TrajectoryReporter, TorchSimTrajectory
-from phonopy.structure.atoms import PhonopyAtoms
-import os
-from pymatgen.core.structure import Structure
 from torch_sim.state import SimState
-import torch_sim as ts
-from ase import Atoms
+
 
 def get_relaxed_structure(
-    struct: Atoms, 
-    model: torch.nn.Module | None, 
-    Nrelax: int = 300, 
-    fmax: float = 1e-3, 
-    autobatcher: bool = False
-    ) -> SimState:
-    """
-    Get relaxed structure.
-    
+    struct: Atoms,
+    model: torch.nn.Module | None,
+    Nrelax: int = 300,
+    fmax: float = 1e-3,
+    *,
+    use_autobatcher: bool = False,
+) -> SimState:
+    """Get relaxed structure.
+
     Args:
         struct: ASE structure
         model: MACE model
         Nrelax: Maximum number of relaxation steps
         fmax: Force convergence criterion
-        autobatcher: Whether to use automatic batching
-    
+        use_autobatcher: Whether to use automatic batching
+
     Returns:
         SimState: Relaxed structure
     """
@@ -59,8 +57,10 @@ def get_relaxed_structure(
         trajectory_file,
         state_frequency=0,
         prop_calculators={
-            1: {"potential_energy": lambda state: state.energy, 
-                "forces": lambda state: state.forces},
+            1: {
+                "potential_energy": lambda state: state.energy,
+                "forces": lambda state: state.forces,
+            },
         },
     )
     converge_max_force = generate_force_convergence_fn(force_tol=fmax)
@@ -73,6 +73,7 @@ def get_relaxed_structure(
         max_steps=Nrelax,
         convergence_fn=converge_max_force,
         trajectory_reporter=reporter,
+        autobatcher=use_autobatcher,
     )
 
     # Remove trajectory file
@@ -80,40 +81,42 @@ def get_relaxed_structure(
 
     return final_state
 
+
 def get_qha_structures(
-    state: SimState, 
-    length_factors: np.ndarray, 
-    model: torch.nn.Module | None, 
-    Nmax: int = 300, 
-    fmax: float = 1e-3, 
-    autobatcher: bool = False
-    ) -> list[PhonopyAtoms]:
+    state: SimState,
+    length_factors: np.ndarray,
+    model: torch.nn.Module | None,
+    Nmax: int = 300,
+    fmax: float = 1e-3,
+    *,
+    use_autobatcher: bool = False,
+) -> list[PhonopyAtoms]:
     """Get relaxed structures at different volumes.
-    
+
     Args:
         state: Initial state
         length_factors: Array of scaling factors
         model: Calculator model
         Nmax: Maximum number of relaxation steps
         fmax: Force convergence criterion
-        autobatcher: Whether to use automatic batching
-    
+        use_autobatcher: Whether to use automatic batching
+
     Returns:
         list: Relaxed PhonopyAtoms structures at different volumes
     """
-
     # Convert state to PhonopyAtoms
     relaxed_struct = state_to_phonopy(state)[0]
-    
+
     # Create scaled structures
     scaled_structs = [
         PhonopyAtoms(
             cell=relaxed_struct.cell * factor,
             scaled_positions=relaxed_struct.scaled_positions,
-            symbols=relaxed_struct.symbols
-        ) for factor in length_factors
+            symbols=relaxed_struct.symbols,
+        )
+        for factor in length_factors
     ]
-    
+
     # Relax all structures
     scaled_state = optimize(
         system=scaled_structs,
@@ -123,42 +126,44 @@ def get_qha_structures(
         hydrostatic_strain=True,
         max_steps=Nmax,
         convergence_fn=generate_force_convergence_fn(force_tol=fmax),
-        autobatcher=autobatcher,
+        autobatcher=use_autobatcher,
     )
-    
+
     return scaled_state.to_phonopy()
 
+
 def get_qha_phonons(
-        scaled_structures: list[PhonopyAtoms], 
-        model: torch.nn.Module | None, 
-        supercell_matrix: np.ndarray = np.eye(3), 
-        displ: float = 0.05, 
-        mesh: list[int] = [20, 20, 20], 
-        temperatures: np.ndarray = np.arange(0, 1600, 10), 
-        autobatcher: bool = False, 
-    ) -> tuple[list[Phonopy], list[list[np.ndarray]], np.ndarray]:
+    scaled_structures: list[PhonopyAtoms],
+    model: torch.nn.Module | None,
+    supercell_matrix: np.ndarray | None,
+    displ: float = 0.05,
+    *,
+    use_autobatcher: bool = False,
+) -> tuple[list[Phonopy], list[list[np.ndarray]], np.ndarray]:
     """Get phonon objects for each scaled atom.
-    
+
     Args:
         scaled_structures: List of PhonopyAtoms objects
+        model: Calculator model
         supercell_matrix: Supercell matrix
         displ: Atomic displacement for phonons
-        model: Calculator model
-        autobatcher: Whether to use automatic batching
-        reporter_ph: Reporter for phonon displacements
-    
-    Returns:
-        List of Phonopy objects
-    """
+        use_autobatcher: Whether to use automatic batching
 
+    Returns:
+        tuple: Contains:
+            - List of Phonopy objects
+            - List of force sets for each structure
+            - Array of energies
+    """
     # Generate phonon object for each scaled structure
     supercells_flat = []
-    n_atoms_per_supercell = []
     supercell_boundaries = [0]
     ph_sets = []
+    if supercell_matrix is None:
+        supercell_matrix = np.eye(3)
     for atoms in scaled_structures:
         ph = Phonopy(
-            atoms, 
+            atoms,
             supercell_matrix=supercell_matrix,
             primitive_matrix="auto",
         )
@@ -174,23 +179,27 @@ def get_qha_phonons(
         None,
         state_frequency=0,
         prop_calculators={
-            1: {"potential_energy": lambda state: state.energy, 
-                "forces": lambda state: state.forces},
+            1: {
+                "potential_energy": lambda state: state.energy,
+                "forces": lambda state: state.forces,
+            },
         },
     )
     results = ts.static(
         system=supercells_flat,
         model=model,
-        autobatcher=autobatcher,
+        autobatcher=use_autobatcher,
         trajectory_reporter=reporter,
     )
 
     # Reconstruct force sets and energies
     force_sets = []
-    forces = torch.cat([r['forces'] for r in results]).detach().cpu().numpy()
-    energies = torch.tensor([r['potential_energy'] for r in results]).detach().cpu().numpy()
+    forces = torch.cat([r["forces"] for r in results]).detach().cpu().numpy()
+    energies = (
+        torch.tensor([r["potential_energy"] for r in results]).detach().cpu().numpy()
+    )
     for i, ph in enumerate(ph_sets):
-        start, end = supercell_boundaries[i], supercell_boundaries[i+1]
+        start, end = supercell_boundaries[i], supercell_boundaries[i + 1]
         forces_i = forces[start:end]
         n_atoms = len(ph.supercell)
         n_displacements = len(ph.supercells_with_displacements)
@@ -202,6 +211,7 @@ def get_qha_phonons(
         force_sets.append(force_sets_i)
 
     return ph_sets, force_sets, energies
+
 
 # Set device and data type
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -227,23 +237,40 @@ model = MaceModel(
 )
 
 # Structure and input parameters
-struct = bulk('Si', 'diamond', a=5.431, cubic=True) # ASE structure
-supercell_matrix = 2 * np.eye(3) # supercell matrix for phonon calculation
-mesh = [20, 20, 20] # Phonon mesh
-fmax = 1e-3 # force convergence
-Nmax = 300 # maximum number of relaxation steps
-displ = 0.05 # atomic displacement for phonons (in Angstrom)
-temperatures = np.arange(0, 1410, 10) # temperature range for quasi-harmonic calculation
-length_factors = np.linspace(0.85, 1.15, 15) # length factor for quasi-harmonic calculation
+struct = bulk("Si", "diamond", a=5.431, cubic=True)  # ASE structure
+supercell_matrix = 2 * np.eye(3)  # supercell matrix for phonon calculation
+mesh = [20, 20, 20]  # Phonon mesh
+fmax = 1e-3  # force convergence
+Nmax = 300  # maximum number of relaxation steps
+displ = 0.05  # atomic displacement for phonons (in Angstrom)
+temperatures = np.arange(0, 1410, 10)  # temperature range for quasi-harmonic calculation
+length_factors = np.linspace(
+    0.85, 1.15, 15
+)  # length factor for quasi-harmonic calculation
 
 # Relax initial structure
-state = get_relaxed_structure(struct, model, Nmax, fmax, autobatcher)
+state = get_relaxed_structure(
+    struct=struct, model=model, Nrelax=Nmax, fmax=fmax, use_autobatcher=autobatcher
+)
 
 # Get relaxed structures at different volumes
-scaled_structures = get_qha_structures(state, length_factors, model, Nmax, fmax, autobatcher)
+scaled_structures = get_qha_structures(
+    state=state,
+    length_factors=length_factors,
+    model=model,
+    Nmax=Nmax,
+    fmax=fmax,
+    use_autobatcher=autobatcher,
+)
 
 # Get phonons, FC2 forces, and energies for all set of scaled structures
-ph_sets, force_sets, energy_sets = get_qha_phonons(scaled_structures, model, supercell_matrix, displ, mesh, temperatures, autobatcher)
+ph_sets, force_sets, energy_sets = get_qha_phonons(
+    scaled_structures=scaled_structures,
+    model=model,
+    supercell_matrix=supercell_matrix,
+    displ=displ,
+    use_autobatcher=autobatcher,
+)
 
 # Calculate thermal properties for each supercells
 volumes = []
@@ -259,7 +286,7 @@ for i in range(len(ph_sets)):
     ph_sets[i].run_thermal_properties(
         t_min=temperatures[0],
         t_max=temperatures[-1],
-        t_step=int((temperatures[-1]-temperatures[0])/(len(temperatures)-1)),
+        t_step=int((temperatures[-1] - temperatures[0]) / (len(temperatures) - 1)),
     )
 
     # Store volume, energy, entropies, heat capacities
@@ -269,9 +296,9 @@ for i in range(len(ph_sets)):
     volume = np.linalg.det(cell)
     volumes.append(volume)
     energies.append(energy_sets[i * n_displacements].item() / n_unit_cells)
-    free_energies.append(thermal_props['free_energy'])
-    entropies.append(thermal_props['entropy'])
-    heat_capacities.append(thermal_props['heat_capacity'])
+    free_energies.append(thermal_props["free_energy"])
+    entropies.append(thermal_props["entropy"])
+    heat_capacities.append(thermal_props["heat_capacity"])
 
 # run QHA
 qha = PhonopyQHA(
@@ -281,14 +308,14 @@ qha = PhonopyQHA(
     free_energy=np.array(free_energies).T,
     cv=np.array(heat_capacities).T,
     entropy=np.array(entropies).T,
-    eos='vinet'
+    eos="vinet",
 )
 
 # Axis style
 axis_style = dict(
-    showgrid=False, 
-    zeroline=False, 
-    linecolor='black',
+    showgrid=False,
+    zeroline=False,
+    linecolor="black",
     showline=True,
     ticks="inside",
     mirror=True,
@@ -299,7 +326,9 @@ axis_style = dict(
 
 # Plot thermal expansion vs temperature
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=temperatures, y=qha.thermal_expansion, mode='lines', line=dict(width=4)))
+fig.add_trace(
+    go.Scatter(x=temperatures, y=qha.thermal_expansion, mode="lines", line=dict(width=4))
+)
 fig.update_layout(
     xaxis_title="Temperature (K)",
     yaxis_title="Thermal Expansion (1/K)",
@@ -308,18 +337,17 @@ fig.update_layout(
     yaxis=axis_style,
     width=800,
     height=600,
-    plot_bgcolor='white'
+    plot_bgcolor="white",
 )
-fig.write_image("thermal_expansion_batch.pdf")
+fig.show()
 
 # Plot bulk modulus vs temperature
 fig = go.Figure()
-fig.add_trace(go.Scatter(
-    x=temperatures, 
-    y=qha.bulk_modulus_temperature, 
-    mode='lines', 
-    line=dict(width=4)
-))
+fig.add_trace(
+    go.Scatter(
+        x=temperatures, y=qha.bulk_modulus_temperature, mode="lines", line=dict(width=4)
+    )
+)
 fig.update_layout(
     xaxis_title="Temperature (K)",
     yaxis_title="Bulk Modulus (GPa)",
@@ -328,6 +356,6 @@ fig.update_layout(
     yaxis=axis_style,
     width=800,
     height=600,
-    plot_bgcolor='white'
+    plot_bgcolor="white",
 )
-fig.write_image("bulk_modulus_batch.pdf")
+fig.show()

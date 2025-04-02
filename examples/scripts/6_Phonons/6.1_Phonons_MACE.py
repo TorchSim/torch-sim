@@ -12,31 +12,29 @@
 
 import numpy as np
 import pymatviz as pmv
+import seekpath
 import torch
+from ase import Atoms
+from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 from phonopy import Phonopy
-from phonopy.structure.atoms import PhonopyAtoms
+from phonopy.phonon.band_structure import (
+    get_band_qpoints_and_path_connections,
+    get_band_qpoints_by_seekpath,
+)
 
-from torch_sim.io import phonopy_to_state
+from torch_sim import optimize
+from torch_sim.io import phonopy_to_state, state_to_phonopy
 from torch_sim.models.mace import MaceModel
 from torch_sim.neighbors import vesin_nl_ts
-
 from torch_sim.optimizers import frechet_cell_fire
-from ase import Atoms
-import seekpath
-from phonopy.phonon.band_structure import get_band_qpoints_and_path_connections, get_band_qpoints_by_seekpath
-from ase.build import bulk
-from torch_sim import optimize
-from torch_sim.io import state_to_atoms, state_to_phonopy
+
 
 def get_qpts_and_connections(
-        ase_atoms: Atoms,
-        npoints: int = 101,
-    ) -> tuple[list[list[float]], list[bool]]:
-    """
-    Get the high symmetry points and path connections for the band structure.
-    """
-
+    ase_atoms: Atoms,
+    npoints: int = 101,
+) -> tuple[list[list[float]], list[bool]]:
+    """Get the high symmetry points and path connections for the band structure."""
     # Define seekpath data
     seekpath_data = seekpath.get_path(
         (
@@ -53,25 +51,21 @@ def get_qpts_and_connections(
         start_point = points[segment[0]]
         end_point = points[segment[1]]
         path.append([start_point, end_point])
-    qpts, connections = get_band_qpoints_and_path_connections(
-        path, npoints=npoints
-    )
+    qpts, connections = get_band_qpoints_and_path_connections(path, npoints=npoints)
 
     return qpts, connections
 
-def get_labels_qpts(
-        ph: Phonopy,
-        npoints: int = 101,
-    ) -> tuple[list[str], list[bool]]:
-    """
-    Get the labels and coordinates of qpoints for the phonon band structure
-    """
 
+def get_labels_qpts(
+    ph: Phonopy,
+    npoints: int = 101,
+) -> tuple[list[str], list[bool]]:
+    """Get the labels and coordinates of qpoints for the phonon band structure."""
     # Get labels and coordinates for high-symmetry points
     _, qpts_labels, connections = get_band_qpoints_by_seekpath(
-        ph._primitive, npoints=npoints, is_const_interval=True
+        ph.primitive, npoints=npoints, is_const_interval=True
     )
-    connections = [True] + list(connections)
+    connections = [True, *connections]
     connections[-1] = True
     qpts_labels_connections = []
     i = 0
@@ -80,12 +74,18 @@ def get_labels_qpts(
             qpts_labels_connections.append(qpts_labels[i])
             i += 1
         else:
-            qpts_labels_connections.append(f"{qpts_labels[i]}|{qpts_labels[i+1]}")
+            qpts_labels_connections.append(f"{qpts_labels[i]}|{qpts_labels[i + 1]}")
             i += 2
 
-    qpts_labels_arr = [q.replace("\\Gamma", "Γ").replace("$", "").replace("\\", "")
-                   .replace("mathrm", "").replace("{", "").replace("}", "") 
-                   for q in qpts_labels_connections]
+    qpts_labels_arr = [
+        q.replace("\\Gamma", "Γ")
+        .replace("$", "")
+        .replace("\\", "")
+        .replace("mathrm", "")
+        .replace("{", "")
+        .replace("}", "")
+        for q in qpts_labels_connections
+    ]
     bands_dict = ph.get_band_structure_dict()
     npaths = len(bands_dict["frequencies"])
     qpts_coord = [bands_dict["distances"][n][0] for n in range(npaths)] + [
@@ -93,6 +93,7 @@ def get_labels_qpts(
     ]
 
     return qpts_labels_arr, qpts_coord
+
 
 # Set device and data type
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -108,11 +109,11 @@ loaded_model = mace_mp(
 )
 
 # Structure and input parameters
-struct = bulk('Si', 'diamond', a=5.431, cubic=True) # ASE structure
-supercell_matrix = 2 * np.eye(3) # supercell matrix for phonon calculation
-mesh = [20, 20, 20] # Phonon mesh
-Nrelax = 300 # number of relaxation steps
-displ = 0.01 # atomic displacement for phonons (in Angstrom)
+struct = bulk("Si", "diamond", a=5.431, cubic=True)  # ASE structure
+supercell_matrix = 2 * np.eye(3)  # supercell matrix for phonon calculation
+mesh = [20, 20, 20]  # Phonon mesh
+Nrelax = 300  # number of relaxation steps
+displ = 0.01  # atomic displacement for phonons (in Angstrom)
 
 # Relax atomic positions
 model = MaceModel(
@@ -169,14 +170,14 @@ ase_atoms = Atoms(
     cell=atoms.cell,
     pbc=True,
 )
-qpts, connections = get_qpts_and_connections(ase_atoms)    
+qpts, connections = get_qpts_and_connections(ase_atoms)
 ph.run_band_structure(qpts, connections)
 
 # Define axis style for plots
 axis_style = dict(
-    showgrid=False, 
-    zeroline=False, 
-    linecolor='black',
+    showgrid=False,
+    zeroline=False,
+    linecolor="black",
     showline=True,
     ticks="inside",
     mirror=True,
@@ -187,7 +188,7 @@ axis_style = dict(
 
 # Plot phonon DOS
 fig = pmv.phonon_dos(ph.total_dos)
-fig.update_traces(line=dict(width=3)) 
+fig.update_traces(line=dict(width=3))
 fig.update_layout(
     xaxis_title="Frequency (THz)",
     yaxis_title="DOS",
@@ -196,7 +197,7 @@ fig.update_layout(
     yaxis=axis_style,
     width=800,
     height=600,
-    plot_bgcolor='white'
+    plot_bgcolor="white",
 )
 pmv.save_fig(fig, "phonon_dos.pdf")
 
@@ -207,19 +208,19 @@ fig = pmv.phonon_bands(
     line_kwargs={"width": 3},
 )
 qpts_labels, qpts_coord = get_labels_qpts(ph)
-for q, label in zip(qpts_coord, qpts_labels):
+for q in qpts_coord:
     fig.add_vline(x=q, line_dash="dash", line_color="black", line_width=2, opacity=1)
 fig.update_layout(
     xaxis_title="Wave Vector",
     yaxis_title="Frequency (THz)",
     font=dict(size=24),
     xaxis=dict(
-        tickmode='array',
+        tickmode="array",
         tickvals=qpts_coord,
         ticktext=qpts_labels,
-        showgrid=False, 
-        zeroline=False, 
-        linecolor='black',
+        showgrid=False,
+        zeroline=False,
+        linecolor="black",
         showline=True,
         ticks="inside",
         mirror=True,
@@ -230,6 +231,6 @@ fig.update_layout(
     yaxis=axis_style,
     width=800,
     height=600,
-    plot_bgcolor='white'
+    plot_bgcolor="white",
 )
-pmv.save_fig(fig, "phonon_band_structure.pdf")
+fig.show()

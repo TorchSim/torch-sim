@@ -60,12 +60,14 @@ This folder contains a series of examples demonstrating the use of TorchSim, a l
 
    1. **Workflow** - [`examples/5_Workflow/5.1_a2c_silicon.py`](5_Workflow/5.1_a2c_silicon.py): Run the a2c workflow with the MACE model.
 
+    1. **Workflow** - [`examples/5_Workflow/5.4_Elastic.py`](5_Workflow/5.4_Elastic.py): Calculate elastic tensor, bulk modulus and shear modulus with MACE.
+
 1. **Phonons**
 
-   1. **Phonon DOS with MACE Batched** - [`examples/6_Phonons/6.1_Phonon_dos_batched_MACE.py`](6_Phonons/6.1_Phonon_dos_batched_MACE.py): Compute the phonon density of states using the MACE model in batched mode.
+   1. **Phonon DOS with MACE Batched** - [`examples/6_Phonons/6.1_Phonons_MACE.py`](6_Phonons/6.1_Phonons_MACE.py): Calculate DOS and band structure with MACE, batching over FC2 calculations.
 
-   1. **Thermal Conductivity with MACE** - [`examples/6_Phonons/6.2_Thermal_conductivity_MACE.py`](6_Phonons/6.2_Thermal_conductivity_MACE.py): Compute thermal conductivity using the MACE model.
+   1. **Thermal Conductivity with MACE** - [`examples/6_Phonons/6.2_QuasiHarmonic_MACE.py`](6_Phonons/6.2_QuasiHarmonic_MACE.py): Calculates quasi-harmonic properties with MACE, batching over volumes and FC2 calculations.
 
-   1. **Thermal Conductivity with MACE Batched** - [`examples/6_Phonons/6.3_Thermal_conductivity_batched_MACE.py`](6_Phonons/6.3_Thermal_conductivity_batched_MACE.py): Compute thermal conductivity using the MACE model in batched mode.
+   1. **Thermal Conductivity with MACE Batched** - [`examples/6_Phonons/6.3_Conductivity_MACE.py`](6_Phonons/6.3_Conductivity_MACE.py): Calculate the Wigner lattice conductivity with MACE, batching over FC2 and FC3 calculations.
 
 Each example is self-contained and can be run independently to explore TorchSim capabilities. The examples cover basic model setup to advanced simulation techniques, providing a comprehensive overview of the library's features.
