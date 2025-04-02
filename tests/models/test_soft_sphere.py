@@ -3,15 +3,8 @@
 import pytest
 import torch
 
+import torch_sim.models.soft_sphere as ss
 from torch_sim.models.interface import validate_model_outputs
-from torch_sim.models.soft_sphere import (
-    DEFAULT_ALPHA,
-    DEFAULT_EPSILON,
-    DEFAULT_SIGMA,
-    SoftSphereModel,
-    SoftSphereMultiModel,
-    soft_sphere_pair,
-)
 from torch_sim.state import SimState, concatenate_states
 
 
@@ -29,8 +22,8 @@ def models(
         "compute_stress": True,
     }
 
-    model_nl = SoftSphereModel(use_neighbor_list=True, **calc_params)
-    model_direct = SoftSphereModel(use_neighbor_list=False, **calc_params)
+    model_nl = ss.SoftSphereModel(use_neighbor_list=True, **calc_params)
+    model_direct = ss.SoftSphereModel(use_neighbor_list=False, **calc_params)
 
     return model_nl(fe_fcc_sim_state), model_direct(fe_fcc_sim_state)
 
@@ -51,8 +44,8 @@ def models_with_per_atom(
         "per_atom_stresses": True,
     }
 
-    model_nl = SoftSphereModel(use_neighbor_list=True, **calc_params)
-    model_direct = SoftSphereModel(use_neighbor_list=False, **calc_params)
+    model_nl = ss.SoftSphereModel(use_neighbor_list=True, **calc_params)
+    model_direct = ss.SoftSphereModel(use_neighbor_list=False, **calc_params)
 
     return model_nl(fe_fcc_sim_state), model_direct(fe_fcc_sim_state)
 
@@ -128,8 +121,8 @@ def test_validate_model_outputs(device: torch.device) -> None:
         "compute_stress": True,
     }
 
-    model_nl = SoftSphereModel(use_neighbor_list=True, **model_params)
-    model_direct = SoftSphereModel(use_neighbor_list=False, **model_params)
+    model_nl = ss.SoftSphereModel(use_neighbor_list=True, **model_params)
+    model_direct = ss.SoftSphereModel(use_neighbor_list=False, **model_params)
     for out in [model_nl, model_direct]:
         validate_model_outputs(out, device, torch.float64)
 
@@ -172,7 +165,7 @@ def test_soft_sphere_pair_single(
     distance: float, sigma: float, epsilon: float, alpha: float, expected: float
 ) -> None:
     """Test the soft sphere pair calculation for single values."""
-    energy = soft_sphere_pair(
+    energy = ss.soft_sphere_pair(
         torch.tensor(distance),
         torch.tensor(sigma),
         torch.tensor(epsilon),
@@ -183,13 +176,13 @@ def test_soft_sphere_pair_single(
 
 def test_model_initialization_defaults() -> None:
     """Test initialization with default parameters."""
-    model = SoftSphereModel()
+    model = ss.SoftSphereModel()
 
     # Check default parameters are used
-    assert torch.allclose(model.sigma, DEFAULT_SIGMA)
-    assert torch.allclose(model.epsilon, DEFAULT_EPSILON)
-    assert torch.allclose(model.alpha, DEFAULT_ALPHA)
-    assert torch.allclose(model.cutoff, DEFAULT_SIGMA)  # Default cutoff is sigma
+    assert torch.allclose(model.sigma, ss.DEFAULT_SIGMA)
+    assert torch.allclose(model.epsilon, ss.DEFAULT_EPSILON)
+    assert torch.allclose(model.alpha, ss.DEFAULT_ALPHA)
+    assert torch.allclose(model.cutoff, ss.DEFAULT_SIGMA)  # Default cutoff is sigma
 
 
 @pytest.mark.parametrize(
@@ -209,7 +202,7 @@ def test_model_initialization_custom_params(
         param_name: param_value,
         "dtype": expected_dtype,
     }
-    model = SoftSphereModel(**params)
+    model = ss.SoftSphereModel(**params)
 
     param_tensor = getattr(model, param_name)
     assert torch.allclose(param_tensor, torch.tensor(param_value, dtype=expected_dtype))
@@ -228,7 +221,7 @@ def test_model_initialization_custom_params(
 )
 def test_model_initialization_custom_flags(*, flag_name: str, flag_value: bool) -> None:
     """Test initialization with custom flags."""
-    model = SoftSphereModel(**{flag_name: flag_value})
+    model = ss.SoftSphereModel(**{flag_name: flag_value})
 
     # For compute_forces and compute_stress, we need to check the private attributes
     if flag_name == "compute_forces":
@@ -242,7 +235,7 @@ def test_model_initialization_custom_flags(*, flag_name: str, flag_value: bool) 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_model_dtype(dtype: torch.dtype) -> None:
     """Test model with different dtypes."""
-    model = SoftSphereModel(dtype=dtype)
+    model = ss.SoftSphereModel(dtype=dtype)
 
     assert model.sigma.dtype == dtype
     assert model.epsilon.dtype == dtype
@@ -254,7 +247,7 @@ def test_multispecies_initialization_defaults() -> None:
     """Test initialization of multi-species model with defaults."""
     # Create with minimal parameters
     species = torch.tensor([0, 1], dtype=torch.long)
-    model = SoftSphereMultiModel(species=species)
+    model = ss.SoftSphereMultiModel(species=species)
 
     # Check matrices are created with defaults
     assert model.sigma_matrix.shape == (2, 2)
@@ -262,12 +255,12 @@ def test_multispecies_initialization_defaults() -> None:
     assert model.alpha_matrix.shape == (2, 2)
 
     # Check default values
-    assert torch.allclose(model.sigma_matrix, DEFAULT_SIGMA * torch.ones(2, 2))
-    assert torch.allclose(model.epsilon_matrix, DEFAULT_EPSILON * torch.ones(2, 2))
-    assert torch.allclose(model.alpha_matrix, DEFAULT_ALPHA * torch.ones(2, 2))
+    assert torch.allclose(model.sigma_matrix, ss.DEFAULT_SIGMA * torch.ones(2, 2))
+    assert torch.allclose(model.epsilon_matrix, ss.DEFAULT_EPSILON * torch.ones(2, 2))
+    assert torch.allclose(model.alpha_matrix, ss.DEFAULT_ALPHA * torch.ones(2, 2))
 
     # Check cutoff is max sigma
-    assert model.cutoff.item() == DEFAULT_SIGMA.item()
+    assert model.cutoff.item() == ss.DEFAULT_SIGMA.item()
 
 
 def test_multispecies_initialization_custom() -> None:
@@ -277,7 +270,7 @@ def test_multispecies_initialization_custom() -> None:
     epsilon_matrix = torch.tensor([[1.0, 0.5], [0.5, 1.5]], dtype=torch.float64)
     alpha_matrix = torch.tensor([[2.0, 3.0], [3.0, 4.0]], dtype=torch.float64)
 
-    model = SoftSphereMultiModel(
+    model = ss.SoftSphereMultiModel(
         species=species,
         sigma_matrix=sigma_matrix,
         epsilon_matrix=epsilon_matrix,
@@ -305,7 +298,7 @@ def test_multispecies_matrix_validation() -> None:
 
     # Should raise ValueError due to matrix size mismatch
     with pytest.raises(ValueError, match="sigma_matrix must have shape"):
-        SoftSphereMultiModel(
+        ss.SoftSphereMultiModel(
             species=species,
             sigma_matrix=sigma_matrix,
             epsilon_matrix=epsilon_matrix,
@@ -315,18 +308,9 @@ def test_multispecies_matrix_validation() -> None:
 @pytest.mark.parametrize(
     ("matrix_name", "matrix"),
     [
-        (
-            "sigma_matrix",
-            torch.tensor([[1.0, 1.5], [2.0, 2.0]]),  # Not symmetric
-        ),
-        (
-            "epsilon_matrix",
-            torch.tensor([[1.0, 0.5], [0.7, 1.5]]),  # Not symmetric
-        ),
-        (
-            "alpha_matrix",
-            torch.tensor([[2.0, 3.0], [4.0, 4.0]]),  # Not symmetric
-        ),
+        ("sigma_matrix", torch.tensor([[1.0, 1.5], [2.0, 2.0]])),
+        ("epsilon_matrix", torch.tensor([[1.0, 0.5], [0.7, 1.5]])),
+        ("alpha_matrix", torch.tensor([[2.0, 3.0], [4.0, 4.0]])),
     ],
 )
 def test_matrix_symmetry_validation(matrix_name: str, matrix: torch.Tensor) -> None:
@@ -348,7 +332,7 @@ def test_matrix_symmetry_validation(matrix_name: str, matrix: torch.Tensor) -> N
 
     # Should raise AssertionError due to asymmetric matrix
     with pytest.raises(AssertionError):
-        SoftSphereMultiModel(**params)
+        ss.SoftSphereMultiModel(**params)
 
 
 def test_multispecies_cutoff_default() -> None:
@@ -357,7 +341,7 @@ def test_multispecies_cutoff_default() -> None:
     species = torch.tensor([0, 1, 2], dtype=torch.long)
     sigma_matrix = torch.tensor([[1.0, 1.5, 2.0], [1.5, 2.0, 2.5], [2.0, 2.5, 3.0]])
 
-    model = SoftSphereMultiModel(species=species, sigma_matrix=sigma_matrix)
+    model = ss.SoftSphereMultiModel(species=species, sigma_matrix=sigma_matrix)
 
     # Cutoff should default to max value in sigma_matrix
     assert model.cutoff.item() == 3.0
@@ -380,7 +364,7 @@ def test_multispecies_model_flags(*, flag_name: str, flag_value: bool) -> None:
     """Test flags of the SoftSphereMultiModel."""
     species = torch.tensor([0, 1], dtype=torch.long)
 
-    model = SoftSphereMultiModel(species=species, **{flag_name: flag_value})
+    model = ss.SoftSphereMultiModel(species=species, **{flag_name: flag_value})
 
     # For SoftSphereMultiModel, we don't need to convert attribute names
     # as it uses public attribute names for all flags
