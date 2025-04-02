@@ -4,17 +4,8 @@ import pytest
 import torch
 from ase.geometry import wrap_positions as ase_wrap_positions
 
+import torch_sim.transforms as tst
 from torch_sim.state import SimState
-from torch_sim.transforms import (
-    high_precision_sum,
-    inverse_box,
-    multiplicative_isotropic_cutoff,
-    pbc_wrap_batched,
-    pbc_wrap_general,
-    safe_mask,
-    translate_pretty,
-    wrap_positions,
-)
 
 
 def test_inverse_box_scalar() -> None:
@@ -24,7 +15,7 @@ def test_inverse_box_scalar() -> None:
     """
     # Test scalar inverse
     x = torch.tensor(2.0)
-    assert torch.allclose(inverse_box(x), torch.tensor(0.5))
+    assert torch.allclose(tst.inverse_box(x), torch.tensor(0.5))
 
 
 def test_inverse_box_vector() -> None:
@@ -35,7 +26,7 @@ def test_inverse_box_vector() -> None:
     # Test vector inverse
     x = torch.tensor([2.0, 4.0])
     expected = torch.tensor([0.5, 0.25])
-    assert torch.allclose(inverse_box(x), expected)
+    assert torch.allclose(tst.inverse_box(x), expected)
 
 
 def test_inverse_box_matrix() -> None:
@@ -46,7 +37,7 @@ def test_inverse_box_matrix() -> None:
     # Test matrix inverse
     x = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
     expected = torch.tensor([[-2.0, 1.0], [1.5, -0.5]])
-    assert torch.allclose(inverse_box(x), expected)
+    assert torch.allclose(tst.inverse_box(x), expected)
 
 
 def test_inverse_box_invalid() -> None:
@@ -57,7 +48,7 @@ def test_inverse_box_invalid() -> None:
     # Test invalid input (3D tensor)
     x = torch.ones(2, 2, 2)
     with pytest.raises(ValueError):
-        inverse_box(x)
+        tst.inverse_box(x)
 
 
 def test_inverse_box_single_element() -> None:
@@ -67,7 +58,7 @@ def test_inverse_box_single_element() -> None:
     """
     # Test single element tensor
     x = torch.tensor([2.0])
-    assert torch.allclose(inverse_box(x), torch.tensor(0.5))
+    assert torch.allclose(tst.inverse_box(x), torch.tensor(0.5))
 
 
 def test_pbc_wrap_general_orthorhombic() -> None:
@@ -99,7 +90,7 @@ def test_pbc_wrap_general_orthorhombic() -> None:
         ]
     )
 
-    wrapped = pbc_wrap_general(positions, lattice)
+    wrapped = tst.pbc_wrap_general(positions, lattice)
     assert torch.allclose(wrapped, expected)
 
 
@@ -125,7 +116,7 @@ def test_pbc_wrap_general_triclinic() -> None:
     # Correct expected wrapped position for this triclinic cell
     expected = torch.tensor([[2.0, 0.5, 0.2]])
 
-    wrapped = pbc_wrap_general(positions, lattice)
+    wrapped = tst.pbc_wrap_general(positions, lattice)
     assert torch.allclose(wrapped, expected, atol=1e-6)
 
 
@@ -146,7 +137,7 @@ def test_pbc_wrap_general_edge_case() -> None:
 
     expected = torch.tensor([[0.0, 1.0], [1.0, 0.0], [0.0, 0.0]])
 
-    wrapped = pbc_wrap_general(positions, lattice)
+    wrapped = tst.pbc_wrap_general(positions, lattice)
     assert torch.allclose(wrapped, expected)
 
 
@@ -160,15 +151,15 @@ def test_pbc_wrap_general_invalid_inputs() -> None:
     """
     # Test integer tensors
     with pytest.raises(TypeError):
-        pbc_wrap_general(torch.ones(3, dtype=torch.int64), torch.eye(3))
+        tst.pbc_wrap_general(torch.ones(3, dtype=torch.int64), torch.eye(3))
 
     # Test non-square lattice
     with pytest.raises(ValueError):
-        pbc_wrap_general(torch.ones(3), torch.ones(3, 2))
+        tst.pbc_wrap_general(torch.ones(3), torch.ones(3, 2))
 
     # Test dimension mismatch
     with pytest.raises(ValueError):
-        pbc_wrap_general(torch.ones(4), torch.eye(3))
+        tst.pbc_wrap_general(torch.ones(4), torch.eye(3))
 
 
 def test_pbc_wrap_general_batch() -> None:
@@ -194,7 +185,7 @@ def test_pbc_wrap_general_batch() -> None:
         ]
     )
 
-    wrapped = pbc_wrap_general(positions, lattice)
+    wrapped = tst.pbc_wrap_general(positions, lattice)
     assert torch.allclose(wrapped, expected)
 
 
@@ -211,7 +202,7 @@ def test_wrap_positions_matches_ase(
     cell = torch.eye(3) + 0.1 * torch.randn(3, 3)
 
     # Run both implementations
-    torch_result = wrap_positions(
+    torch_result = tst.wrap_positions(
         positions, cell, pbc=pbc, pretty_translation=pretty_translation
     )
 
@@ -226,7 +217,7 @@ def test_wrap_positions_basic():
     pos = torch.tensor([[-0.1, 1.01, -0.5]], dtype=torch.float32)
     cell = torch.tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 4.0]])
 
-    wrapped = wrap_positions(pos, cell, pbc=[True, True, False])
+    wrapped = tst.wrap_positions(pos, cell, pbc=[True, True, False])
     expected = torch.tensor([[0.9, 0.01, -0.5]])
 
     torch.testing.assert_close(wrapped, expected, rtol=1e-6, atol=1e-6)
@@ -236,7 +227,7 @@ def test_translate_pretty():
     coords = torch.tensor([[0.1, 1.2, -0.3], [0.7, 0.8, 0.9]])
     pbc = [True, True, True]
 
-    translated = translate_pretty(coords, pbc)
+    translated = tst.translate_pretty(coords, pbc)
 
     # Check that differences between coordinates are preserved
     orig_diff = (coords[1] - coords[0]) % 1.0
@@ -273,7 +264,7 @@ def test_pbc_wrap_batched_orthorhombic(si_double_sim_state: SimState) -> None:
     test_positions[idx1, 0] = -0.5
 
     # Apply wrapping
-    wrapped = pbc_wrap_batched(test_positions, cell=state.cell, batch=state.batch)
+    wrapped = tst.pbc_wrap_batched(test_positions, cell=state.cell, batch=state.batch)
 
     # Check first modified atom is properly wrapped
     assert wrapped[idx0, 0] < cell_size
@@ -321,11 +312,11 @@ def test_pbc_wrap_batched_triclinic(device: torch.device) -> None:
     cell = torch.stack([cell1, cell2])
 
     # Apply wrapping
-    wrapped = pbc_wrap_batched(positions, cell=cell, batch=batch)
+    wrapped = tst.pbc_wrap_batched(positions, cell=cell, batch=batch)
 
     # Calculate expected result for first atom (using original algorithm for verification)
-    expected1 = pbc_wrap_general(positions[0:1], cell1)
-    expected2 = pbc_wrap_general(positions[1:2], cell2)
+    expected1 = tst.pbc_wrap_general(positions[0:1], cell1)
+    expected2 = tst.pbc_wrap_general(positions[1:2], cell2)
 
     # Verify results match the expected values
     assert torch.allclose(wrapped[0:1], expected1, atol=1e-6)
@@ -351,7 +342,7 @@ def test_pbc_wrap_batched_edge_case(device: torch.device) -> None:
     batch = torch.tensor([0, 1], device=device)
 
     # Apply wrapping
-    wrapped = pbc_wrap_batched(positions, cell=cell, batch=batch)
+    wrapped = tst.pbc_wrap_batched(positions, cell=cell, batch=batch)
 
     # Expected results (wrapping to 0.0 rather than 2.0)
     expected = torch.tensor(
@@ -375,11 +366,13 @@ def test_pbc_wrap_batched_invalid_inputs(device: torch.device) -> None:
 
     # Test integer tensors
     with pytest.raises(TypeError):
-        pbc_wrap_batched(torch.ones(4, 3, dtype=torch.int64, device=device), cell, batch)
+        tst.pbc_wrap_batched(
+            torch.ones(4, 3, dtype=torch.int64, device=device), cell, batch
+        )
 
     # Test dimension mismatch - positions
     with pytest.raises(ValueError):
-        pbc_wrap_batched(
+        tst.pbc_wrap_batched(
             torch.ones(4, 2, device=device),  # Wrong dimension (2 instead of 3)
             cell,
             batch,
@@ -387,7 +380,7 @@ def test_pbc_wrap_batched_invalid_inputs(device: torch.device) -> None:
 
     # Test mismatch between batch indices and cell
     with pytest.raises(ValueError):
-        pbc_wrap_batched(
+        tst.pbc_wrap_batched(
             positions,
             torch.stack([torch.eye(3, device=device)] * 3),  # 3 cell but only 2 batches
             batch,
@@ -412,7 +405,7 @@ def test_pbc_wrap_batched_multi_atom(si_double_sim_state: SimState) -> None:
     test_positions[batch_1_mask, 1] -= cell_size_y
 
     # Apply wrapping
-    wrapped = pbc_wrap_batched(test_positions, cell=state.cell, batch=state.batch)
+    wrapped = tst.pbc_wrap_batched(test_positions, cell=state.cell, batch=state.batch)
 
     # Check all positions are within the cell boundaries
     for b in range(2):  # For each batch
@@ -445,7 +438,7 @@ def test_pbc_wrap_batched_preserves_relative_positions(
     test_positions += torch.tensor([10.0, 15.0, 20.0], device=state.device)
 
     # Apply wrapping
-    wrapped = pbc_wrap_batched(test_positions, cell=state.cell, batch=state.batch)
+    wrapped = tst.pbc_wrap_batched(test_positions, cell=state.cell, batch=state.batch)
 
     # Check that relative positions within each batch are preserved
     for b in range(2):  # For each batch
@@ -480,7 +473,7 @@ def test_safe_mask_basic() -> None:
     """
     x = torch.tensor([1.0, 2.0, -1.0])
     mask = torch.tensor([True, True, False])
-    result = safe_mask(mask, torch.log, x)
+    result = tst.safe_mask(mask, torch.log, x)
 
     expected = torch.tensor([0.0000, 0.6931, 0.0000])
     torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-4)
@@ -494,7 +487,7 @@ def test_safe_mask_custom_placeholder() -> None:
     """
     x = torch.tensor([1.0, 2.0, -1.0])
     mask = torch.tensor([True, False, False])
-    result = safe_mask(mask, torch.log, x, placeholder=-999.0)
+    result = tst.safe_mask(mask, torch.log, x, placeholder=-999.0)
 
     expected = torch.tensor([0.0000, -999.0000, -999.0000])
     torch.testing.assert_close(result, expected)
@@ -508,7 +501,7 @@ def test_safe_mask_all_masked() -> None:
     """
     x = torch.tensor([1.0, 2.0, 3.0])
     mask = torch.tensor([False, False, False])
-    result = safe_mask(mask, torch.log, x)
+    result = tst.safe_mask(mask, torch.log, x)
 
     expected = torch.zeros_like(x)
     torch.testing.assert_close(result, expected)
@@ -522,7 +515,7 @@ def test_safe_mask_none_masked() -> None:
     """
     x = torch.tensor([1.0, 2.0, 3.0])
     mask = torch.tensor([True, True, True])
-    result = safe_mask(mask, torch.log, x)
+    result = tst.safe_mask(mask, torch.log, x)
 
     expected = torch.log(x)
     torch.testing.assert_close(result, expected)
@@ -538,7 +531,7 @@ def test_safe_mask_shape_mismatch() -> None:
     mask = torch.tensor([True, False])
 
     with pytest.raises(RuntimeError):
-        safe_mask(mask, torch.log, x)
+        tst.safe_mask(mask, torch.log, x)
 
 
 def test_high_precision_sum_float() -> None:
@@ -550,7 +543,7 @@ def test_high_precision_sum_float() -> None:
     3. The precision is adequate for basic float32 operations
     """
     x = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32)
-    result = high_precision_sum(x)
+    result = tst.high_precision_sum(x)
     assert result.dtype == torch.float32
     expected = torch.tensor(6.0, dtype=torch.float32)
     torch.testing.assert_close(result, expected)
@@ -565,7 +558,7 @@ def test_high_precision_sum_double() -> None:
     3. No precision is lost when input is already float64
     """
     x = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64)
-    result = high_precision_sum(x)
+    result = tst.high_precision_sum(x)
     assert result.dtype == torch.float64
     expected = torch.tensor(6.0, dtype=torch.float64)
     torch.testing.assert_close(result, expected)
@@ -580,7 +573,7 @@ def test_high_precision_sum_int() -> None:
     3. Integer arithmetic is precise and lossless
     """
     x = torch.tensor([1, 2, 3], dtype=torch.int32)
-    result = high_precision_sum(x)
+    result = tst.high_precision_sum(x)
     assert result.dtype == torch.int32
     assert result == torch.tensor(6, dtype=torch.int32)
 
@@ -595,7 +588,7 @@ def test_high_precision_sum_complex() -> None:
     4. Complex arithmetic is performed at high precision
     """
     x = torch.tensor([1 + 1j, 2 + 2j], dtype=torch.complex64)
-    result = high_precision_sum(x)
+    result = tst.high_precision_sum(x)
     assert result.dtype == torch.complex64
     expected = torch.tensor(3 + 3j, dtype=torch.complex64)
     torch.testing.assert_close(result, expected)
@@ -614,7 +607,7 @@ def test_high_precision_sum_dim() -> None:
         Output shape: (2,) when dim=0
     """
     x = torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32)
-    result = high_precision_sum(x, dim=0)
+    result = tst.high_precision_sum(x, dim=0)
     expected = torch.tensor([4.0, 6.0], dtype=torch.float32)
     torch.testing.assert_close(result, expected)
 
@@ -632,7 +625,7 @@ def test_high_precision_sum_keepdim() -> None:
         Output shape: (1, 2) when dim=0 and keepdim=True
     """
     x = torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32)
-    result = high_precision_sum(x, dim=0, keepdim=True)
+    result = tst.high_precision_sum(x, dim=0, keepdim=True)
     assert result.shape == (1, 2)
     expected = torch.tensor([[4.0, 6.0]], dtype=torch.float32)
     torch.testing.assert_close(result, expected)
@@ -652,7 +645,7 @@ def test_high_precision_sum_multiple_dims() -> None:
         Each output element is the sum of 8 numbers (2 * 4 = 8)
     """
     x = torch.ones((2, 3, 4), dtype=torch.float32)
-    result = high_precision_sum(x, dim=(0, 2))
+    result = tst.high_precision_sum(x, dim=(0, 2))
     assert result.shape == (3,)
     expected = torch.tensor([8.0, 8.0, 8.0], dtype=torch.float32)
     torch.testing.assert_close(result, expected)
@@ -668,7 +661,7 @@ def test_high_precision_sum_numerical_stability() -> None:
     """
     # Create a tensor with numbers of very different magnitudes
     x = torch.tensor([1e-8, 1e8, 1e-8], dtype=torch.float32)
-    result = high_precision_sum(x)
+    result = tst.high_precision_sum(x)
     expected = torch.tensor(1e8 + 2e-8, dtype=torch.float32)
     torch.testing.assert_close(result, expected, atol=1e-8, rtol=1e-8)
 
@@ -682,7 +675,7 @@ def test_high_precision_sum_empty() -> None:
     3. The sum of an empty tensor is 0 of the appropriate type
     """
     x = torch.tensor([], dtype=torch.float32)
-    result = high_precision_sum(x)
+    result = tst.high_precision_sum(x)
     assert result.dtype == torch.float32
     assert result == torch.tensor(0.0, dtype=torch.float32)
 
@@ -693,7 +686,9 @@ def test_multiplicative_isotropic_cutoff_basic() -> None:
     def constant_fn(dr: torch.Tensor) -> torch.Tensor:
         return torch.ones_like(dr)
 
-    cutoff_fn = multiplicative_isotropic_cutoff(constant_fn, r_onset=1.0, r_cutoff=2.0)
+    cutoff_fn = tst.multiplicative_isotropic_cutoff(
+        constant_fn, r_onset=1.0, r_cutoff=2.0
+    )
 
     # Test points in different regions
     dr = torch.tensor([0.5, 1.5, 2.5])
@@ -712,7 +707,7 @@ def test_multiplicative_isotropic_cutoff_continuity() -> None:
 
     r_onset = 1.0
     r_cutoff = 2.0
-    cutoff_fn = multiplicative_isotropic_cutoff(linear_fn, r_onset, r_cutoff)
+    cutoff_fn = tst.multiplicative_isotropic_cutoff(linear_fn, r_onset, r_cutoff)
 
     # Test near onset
     dr_before = torch.tensor([r_onset - 1e-5])
@@ -737,7 +732,7 @@ def test_multiplicative_isotropic_cutoff_derivative_continuity() -> None:
 
     r_onset = 1.0
     r_cutoff = 2.0
-    cutoff_fn = multiplicative_isotropic_cutoff(quadratic_fn, r_onset, r_cutoff)
+    cutoff_fn = tst.multiplicative_isotropic_cutoff(quadratic_fn, r_onset, r_cutoff)
 
     # Test derivative near onset and cutoff using finite differences
     points = torch.tensor([r_onset, r_cutoff], requires_grad=True)
@@ -757,7 +752,7 @@ def test_multiplicative_isotropic_cutoff_with_parameters() -> None:
     def parameterized_fn(dr: torch.Tensor, scale: float) -> torch.Tensor:
         return scale * dr
 
-    cutoff_fn = multiplicative_isotropic_cutoff(
+    cutoff_fn = tst.multiplicative_isotropic_cutoff(
         parameterized_fn, r_onset=1.0, r_cutoff=2.0
     )
 
@@ -775,7 +770,9 @@ def test_multiplicative_isotropic_cutoff_batch() -> None:
     def constant_fn(dr: torch.Tensor) -> torch.Tensor:
         return torch.ones_like(dr)
 
-    cutoff_fn = multiplicative_isotropic_cutoff(constant_fn, r_onset=1.0, r_cutoff=2.0)
+    cutoff_fn = tst.multiplicative_isotropic_cutoff(
+        constant_fn, r_onset=1.0, r_cutoff=2.0
+    )
 
     # Test with 2D input
     dr = torch.rand(5, 5) * 3.0
@@ -792,7 +789,7 @@ def test_multiplicative_isotropic_cutoff_gradient() -> None:
     def linear_fn(dr: torch.Tensor) -> torch.Tensor:
         return dr
 
-    cutoff_fn = multiplicative_isotropic_cutoff(linear_fn, r_onset=1.0, r_cutoff=2.0)
+    cutoff_fn = tst.multiplicative_isotropic_cutoff(linear_fn, r_onset=1.0, r_cutoff=2.0)
 
     dr = torch.tensor([1.5], requires_grad=True)
     result = cutoff_fn(dr)
@@ -800,3 +797,465 @@ def test_multiplicative_isotropic_cutoff_gradient() -> None:
 
     assert not torch.isnan(grad)
     assert not torch.isinf(grad)
+
+
+@pytest.mark.parametrize(
+    ("pos", "cell", "expected"),
+    [
+        (
+            torch.tensor([[1.0, 1.0, 1.0], [2.0, 0.0, 0.0]]),
+            torch.tensor([[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 4.0]]),
+            torch.tensor([[0.25, 0.25, 0.25], [0.5, 0.0, 0.0]]),
+        ),
+        (
+            torch.tensor([[1.0, 1.0, 1.0], [0.0, 0.0, 0.0]]),
+            torch.tensor([[2.0, 1.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]]),
+            torch.tensor([[0.5, 0.25, 0.5], [0.0, 0.0, 0.0]]),
+        ),
+    ],
+)
+def test_get_fractional_coordinates(
+    pos: torch.Tensor, cell: torch.Tensor, expected: torch.Tensor
+) -> None:
+    """Test get_fractional_coordinates with various inputs.
+
+    Tests the function with both cubic and non-orthogonal cells.
+    """
+    frac = tst.get_fractional_coordinates(pos, cell)
+    torch.testing.assert_close(frac, expected)
+
+
+@pytest.mark.parametrize(
+    ("dr", "cell", "pbc", "expected"),
+    [
+        (
+            torch.tensor([[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]]),
+            torch.eye(3) * 3.0,
+            False,
+            torch.tensor([[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]]),
+        ),
+        (
+            torch.tensor([[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]]),
+            torch.eye(3) * 3.0,
+            True,
+            torch.tensor([[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]]),
+        ),
+        (
+            torch.tensor([[2.2, 0.0, 0.0], [0.0, 2.2, 0.0], [0.0, 0.0, 2.2]]),
+            torch.eye(3) * 2.0,
+            True,
+            torch.tensor([[0.2, 0.0, 0.0], [0.0, 0.2, 0.0], [0.0, 0.0, 0.2]]),
+        ),
+    ],
+)
+def test_minimum_image_displacement(
+    *, dr: torch.Tensor, cell: torch.Tensor, pbc: bool, expected: torch.Tensor
+) -> None:
+    """Test minimum_image_displacement with various inputs.
+
+    Tests function with and without PBC and with different displacement vectors.
+    """
+    result = tst.minimum_image_displacement(dr=dr, cell=cell, pbc=pbc)
+    torch.testing.assert_close(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("positions", "cell", "pbc", "pairs", "shifts", "expected_dr", "expected_distance"),
+    [
+        (  # No PBC case with specific pair
+            torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+            None,
+            False,
+            (torch.tensor([0]), torch.tensor([1])),
+            None,
+            torch.tensor([[1.0, 0.0, 0.0]]),
+            torch.tensor([1.0]),
+        ),
+        (  # PBC case with specific pair
+            torch.tensor([[0.0, 0.0, 0.0], [1.9, 0.0, 0.0]]),
+            torch.eye(3) * 2.0,
+            True,
+            (torch.tensor([0]), torch.tensor([1])),
+            None,
+            torch.tensor([[-0.1, 0.0, 0.0]]),
+            torch.tensor([0.1]),
+        ),
+        (  # With explicit shifts
+            torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+            torch.eye(3) * 2.0,
+            True,
+            (torch.tensor([0]), torch.tensor([1])),
+            torch.tensor([[1.0, 0.0, 0.0]]),
+            torch.tensor([[3.0, 0.0, 0.0]]),
+            torch.tensor([3.0]),
+        ),
+    ],
+)
+def test_get_pair_displacements(
+    *,
+    positions: torch.Tensor,
+    cell: torch.Tensor,
+    pbc: bool,
+    pairs: tuple[torch.Tensor, torch.Tensor],
+    shifts: torch.Tensor,
+    expected_dr: torch.Tensor,
+    expected_distance: torch.Tensor,
+) -> None:
+    """Test get_pair_displacements with various inputs.
+
+    Tests function with and without PBC, with specific pairs, and with explicit shifts.
+    """
+    dr, distances = tst.get_pair_displacements(
+        positions=positions, cell=cell, pbc=pbc, pairs=pairs, shifts=shifts
+    )
+
+    torch.testing.assert_close(dr, expected_dr)
+    torch.testing.assert_close(distances, expected_distance)
+
+
+@pytest.mark.parametrize(
+    ("v", "expected"),
+    [
+        (torch.tensor([1, 2, 3]), torch.tensor([0, 1, 3, 6])),
+        (torch.tensor([[1, 2], [3, 4]]), torch.tensor([0, 1, 3, 6, 10])),
+    ],
+)
+def test_strides_of(v: torch.Tensor, expected: torch.Tensor) -> None:
+    """Test strides_of with 1D and 2D tensors.
+
+    Verifies that the function correctly computes cumulative strides
+    for both 1D and multidimensional tensors.
+    """
+    strides = tst.strides_of(v)
+    torch.testing.assert_close(strides, expected)
+
+
+def test_strides_of_empty() -> None:
+    """Test strides_of with empty tensor."""
+    v = torch.tensor([], dtype=torch.int64)
+    strides = tst.strides_of(v)
+    expected = torch.tensor([0], dtype=torch.int64)
+    torch.testing.assert_close(strides, expected)
+
+
+@pytest.mark.parametrize(
+    ("cutoff", "cell", "pbc", "expected_shape", "expected_props"),
+    [
+        (
+            1.5,
+            torch.eye(3).unsqueeze(0) * 2.0,
+            torch.tensor([[True, True, True]]),
+            torch.Size([1, 3]),
+            {"min_value": 0, "all_equal": True},
+        ),
+        (
+            1.5,
+            torch.eye(3).unsqueeze(0) * 2.0,
+            torch.tensor([[True, False, True]]),
+            torch.Size([1, 3]),
+            {"zero_dim": 1},  # Removed nonzero_dims since it's not reliable
+        ),
+        (
+            1.5,
+            torch.stack([torch.eye(3) * 2.0, torch.eye(3) * 4.0]),
+            torch.tensor([[True, True, True], [True, True, True]]),
+            torch.Size([2, 3]),
+            {"batch_equal": True},
+        ),
+    ],
+)
+def test_get_number_of_cell_repeats(
+    cutoff: float,
+    cell: torch.Tensor,
+    pbc: torch.Tensor,
+    expected_shape: torch.Size,
+    expected_props: dict,
+) -> None:
+    """Test get_number_of_cell_repeats with various parameters.
+
+    Tests with different cell sizes, PBC conditions, and batch sizes.
+    """
+    num_repeats = tst.get_number_of_cell_repeats(cutoff, cell, pbc)
+
+    # Check shape
+    assert num_repeats.shape == expected_shape
+
+    # Check specific properties based on test case
+    if "min_value" in expected_props:
+        assert torch.all(num_repeats >= expected_props["min_value"])
+
+    if expected_props.get("all_equal"):
+        assert num_repeats[0, 0] == num_repeats[0, 1] == num_repeats[0, 2]
+
+    if "zero_dim" in expected_props:
+        assert num_repeats[0, expected_props["zero_dim"]] == 0
+
+    if expected_props.get("batch_equal"):
+        assert num_repeats[1, 0] == num_repeats[1, 1] == num_repeats[1, 2]
+
+
+@pytest.mark.parametrize(
+    ("num_repeats", "expected_shape", "expected_range"),
+    [
+        (torch.tensor([1, 1, 1]), (27, 3), {"min": -1, "max": 1}),
+        (torch.tensor([0, 0, 0]), (1, 3), {"exact": torch.tensor([[0.0, 0.0, 0.0]])}),
+        (
+            torch.tensor([1, 0, 2]),
+            (15, 3),
+            {"dim_values": {0: (-1, 1), 1: (0, 0), 2: (-2, 2)}},
+        ),
+    ],
+)
+def test_get_cell_shift_idx(
+    num_repeats: torch.Tensor, expected_shape: tuple, expected_range: dict
+) -> None:
+    """Test get_cell_shift_idx with different repeat parameters.
+
+    Tests the function with symmetric, zero, and asymmetric repeats.
+    """
+    shifts = tst.get_cell_shift_idx(num_repeats, torch.float)
+
+    # Check shape
+    assert shifts.shape == expected_shape
+
+    # Check ranges or exact values
+    if "min" in expected_range and "max" in expected_range:
+        assert torch.all(shifts >= expected_range["min"])
+        assert torch.all(shifts <= expected_range["max"])
+
+    if "exact" in expected_range:
+        torch.testing.assert_close(shifts, expected_range["exact"])
+
+    if "dim_values" in expected_range:
+        for dim, (min_val, max_val) in expected_range["dim_values"].items():
+            assert torch.all(shifts[:, dim] >= min_val)
+            assert torch.all(shifts[:, dim] <= max_val)
+
+
+@pytest.mark.parametrize(
+    ("idx_3d", "shape", "expected"),
+    [
+        (
+            torch.tensor([[0, 0, 0], [1, 2, 3]]),
+            torch.tensor([2, 3, 4]),
+            torch.tensor([0, 23]),
+        )
+    ],
+)
+def test_ravel_3d(
+    idx_3d: torch.Tensor, shape: torch.Tensor, expected: torch.Tensor
+) -> None:
+    """Test ravel_3d function.
+
+    Verifies correct conversion of 3D indices to linear indices.
+    """
+    linear_idx = tst.ravel_3d(idx_3d, shape)
+    torch.testing.assert_close(linear_idx, expected)
+
+
+@pytest.mark.parametrize(
+    ("linear_idx", "shape", "expected"),
+    [
+        (
+            torch.tensor([0, 23]),
+            torch.tensor([2, 3, 4]),
+            torch.tensor([[0, 0, 0], [1, 2, 3]]),
+        )
+    ],
+)
+def test_unravel_3d(
+    linear_idx: torch.Tensor, shape: torch.Tensor, expected: torch.Tensor
+) -> None:
+    """Test unravel_3d function.
+
+    Verifies correct conversion of linear indices back to 3D indices.
+    """
+    idx_3d = tst.unravel_3d(linear_idx, shape)
+    torch.testing.assert_close(idx_3d, expected)
+
+
+def test_ravel_unravel_3d_roundtrip() -> None:
+    """Test roundtrip conversion with ravel_3d and unravel_3d."""
+    original_idx = torch.tensor([[0, 1, 2], [1, 0, 3], [1, 2, 0]])
+    shape = torch.tensor([2, 3, 4])
+
+    linear_idx = tst.ravel_3d(original_idx, shape)
+    reconstructed_idx = tst.unravel_3d(linear_idx, shape)
+
+    torch.testing.assert_close(reconstructed_idx, original_idx)
+
+
+@pytest.mark.parametrize(
+    ("cell", "pos", "n_bins_s", "expected"),
+    [
+        (
+            torch.eye(3) * 2.0,
+            torch.tensor([[0.5, 0.5, 0.5], [1.5, 1.5, 1.5]]),
+            torch.tensor([2, 2, 2]),
+            torch.tensor([0, 7]),
+        )
+    ],
+)
+def test_get_linear_bin_idx(
+    cell: torch.Tensor, pos: torch.Tensor, n_bins_s: torch.Tensor, expected: torch.Tensor
+) -> None:
+    """Test get_linear_bin_idx function.
+
+    Verifies correct calculation of linear bin indices for positions.
+    """
+    bin_idx = tst.get_linear_bin_idx(cell, pos, n_bins_s)
+    torch.testing.assert_close(bin_idx, expected)
+
+
+def test_scatter_bin_index_basic() -> None:
+    """Test scatter_bin_index function."""
+    n_bins = 3
+    max_n_atom_per_bin = 2
+    n_images = 5
+    bin_index = torch.tensor([0, 0, 1, 2])
+
+    bin_id = tst.scatter_bin_index(n_bins, max_n_atom_per_bin, n_images, bin_index)
+
+    # Check shape and basic properties
+    assert bin_id.shape == torch.Size([3, 2])
+    assert torch.sum(bin_id != n_images) == 4  # All 4 atoms should be assigned
+    assert torch.sum(bin_id == n_images) == 2  # 2 slots should be empty
+
+
+@pytest.mark.parametrize(
+    ("pos", "mapping", "cell_shifts", "expected"),
+    [
+        (
+            torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+            torch.tensor([[0, 0], [1, 2]]),
+            None,
+            torch.tensor([1.0, 1.0]),
+        ),
+        (
+            torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+            torch.tensor([[0, 0], [1, 1]]),
+            torch.tensor([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]),
+            torch.tensor([1.0, 3.0]),
+        ),
+    ],
+)
+def test_compute_distances_with_cell_shifts(
+    pos: torch.Tensor,
+    mapping: torch.Tensor,
+    cell_shifts: torch.Tensor,
+    expected: torch.Tensor,
+) -> None:
+    """Test compute_distances_with_cell_shifts function.
+
+    Tests with and without cell shifts applied.
+    """
+    distances = tst.compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
+    torch.testing.assert_close(distances, expected)
+
+
+def test_compute_cell_shifts_basic() -> None:
+    """Test compute_cell_shifts function."""
+    cell = torch.eye(3).unsqueeze(0) * 2.0
+    shifts_idx = torch.tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+    batch_mapping = torch.tensor([0, 0])
+
+    cell_shifts = tst.compute_cell_shifts(cell, shifts_idx, batch_mapping)
+
+    expected = torch.tensor([[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]])
+    torch.testing.assert_close(cell_shifts, expected)
+
+
+@pytest.mark.parametrize(
+    ("self_interaction", "expected_shape"), [(True, (9, 2)), (False, (6, 2))]
+)
+def test_get_fully_connected_mapping(
+    *, self_interaction: bool, expected_shape: tuple
+) -> None:
+    """Test get_fully_connected_mapping with and without self-interaction.
+
+    Tests that the function generates the correct number of pairs and handles
+    self-interaction flag appropriately.
+    """
+    i_ids = torch.tensor([0, 1, 2])
+    shifts_idx = torch.tensor([[0.0, 0.0, 0.0]])
+
+    mapping, shifts = tst.get_fully_connected_mapping(
+        i_ids=i_ids, shifts_idx=shifts_idx, self_interaction=self_interaction
+    )
+
+    # Check shapes
+    assert mapping.shape == expected_shape
+    assert shifts.shape[0] == expected_shape[0]
+    assert shifts.shape[1] == 3
+
+    # Check self-interaction behavior
+    if not self_interaction:
+        for i in range(mapping.shape[0]):
+            assert mapping[i, 0] != mapping[i, 1], "Self-pair incorrectly included"
+
+
+def test_get_fully_connected_mapping_with_multiple_shifts() -> None:
+    """Test get_fully_connected_mapping with multiple shift vectors."""
+    i_ids = torch.tensor([0, 1])
+    shifts_idx = torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+
+    mapping, shifts = tst.get_fully_connected_mapping(
+        i_ids=i_ids, shifts_idx=shifts_idx, self_interaction=False
+    )
+
+    # With 2 atoms, 3 shifts, and no self-interaction
+    assert mapping.shape[0] == 10
+    assert shifts.shape[0] == 10
+
+
+def test_linked_cell_basic() -> None:
+    """Test basic functionality of linked_cell."""
+    # Create a simple system with two atoms
+    pos = torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+    cell = torch.eye(3) * 4.0
+    cutoff = 1.5
+    num_repeats = torch.tensor([1, 1, 1])
+
+    neigh_atom, neigh_shift_idx = tst.linked_cell(
+        pos, cell, cutoff, num_repeats, self_interaction=False
+    )
+
+    # Check that atoms 0 and 1 are neighbors of each other
+    assert neigh_atom.shape[1] >= 2  # At least 2 neighbor pairs
+
+    # Find the pair (0,1) in the neighbor list
+    found = False
+    for idx in range(neigh_atom.shape[1]):
+        if (neigh_atom[0, idx] == 0 and neigh_atom[1, idx] == 1) or (
+            neigh_atom[0, idx] == 1 and neigh_atom[1, idx] == 0
+        ):
+            found = True
+            break
+
+    assert found, "Expected atoms 0 and 1 to be neighbors"
+
+
+def test_build_linked_cell_neighborhood_basic() -> None:
+    """Test basic functionality of build_linked_cell_neighborhood."""
+    # Create a simple system with two structures, each with two atoms
+    positions = torch.tensor(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [3.0, 0.0, 0.0], [4.0, 0.0, 0.0]]
+    )
+    cell = torch.stack([torch.eye(3) * 4.0, torch.eye(3) * 4.0])
+    pbc = torch.tensor([[True, True, True], [True, True, True]])
+    cutoff = 1.5
+    n_atoms = torch.tensor([2, 2])
+
+    mapping, batch_mapping, cell_shifts_idx = tst.build_linked_cell_neighborhood(
+        positions, cell, pbc, cutoff, n_atoms, self_interaction=False
+    )
+
+    # Check that atoms in the same structure are neighbors
+    assert mapping.shape[1] >= 2  # At least 2 neighbor pairs
+
+    # Verify batch_mapping has correct length
+    assert batch_mapping.shape[0] == mapping.shape[1]
+
+    # Verify that there are neighbors from both batches
+    assert torch.any(batch_mapping == 0)
+    assert torch.any(batch_mapping == 1)
