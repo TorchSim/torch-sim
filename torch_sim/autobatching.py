@@ -23,7 +23,7 @@ Notes:
 import logging
 from collections.abc import Callable, Iterator
 from itertools import chain
-from typing import Literal, Any
+from typing import Any, Literal
 
 import torch
 
@@ -485,9 +485,10 @@ class ChunkingAutoBatcher:
                 Defaults to False.
             max_atoms_to_try (int): Maximum number of atoms to try when estimating
                 max_memory_scaler. Defaults to 500,000.
-            memory_scaling_factor (float): Factor to multiply batch size by in each iteration.
-                Larger values will get a batch size more quickly, smaller values will get a
-                more accurate limit. Must be greater than 1. Defaults to 1.6.
+            memory_scaling_factor (float): Factor to multiply batch size by in each
+                iteration. Larger values will get a batch size more quickly, smaller
+                values will get a more accurate limit. Must be greater than 1. Defaults
+                to 1.6.
         """
         self.max_memory_scaler = max_memory_scaler
         self.max_atoms_to_try = max_atoms_to_try
@@ -777,9 +778,10 @@ class HotSwappingAutoBatcher:
                 Defaults to False.
             max_atoms_to_try (int): Maximum number of atoms to try when estimating
                 max_memory_scaler. Defaults to 500,000.
-            memory_scaling_factor (float): Factor to multiply batch size by in each iteration.
-                Larger values will get a batch size more quickly, smaller values will get a
-                more accurate limit. Must be greater than 1. Defaults to 1.6.
+            memory_scaling_factor (float): Factor to multiply batch size by in each
+                iteration. Larger values will get a batch size more quickly, smaller
+                values will get a more accurate limit. Must be greater than 1. Defaults
+                to 1.6.
             max_iterations (int | None): Maximum number of iterations to process a state
                 before considering it complete, regardless of convergence. Used to prevent
                 infinite loops. Defaults to None (no limit).

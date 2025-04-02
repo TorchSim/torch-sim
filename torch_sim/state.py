@@ -183,7 +183,7 @@ class SimState:
             int: Number of batches in the system
         """
         return torch.unique(self.batch).shape[0]
-    
+
     @property
     def volume(self) -> torch.Tensor:
         """Get the volume of the system.

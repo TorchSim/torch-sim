@@ -1,19 +1,20 @@
+from typing import Any
+
 import pytest
 import torch
-
-from typing import Any
 from ase.build import bulk
 from ase.spacegroup import crystal
+
 from torch_sim.elastic import (
     BravaisType,
     calculate_elastic_moduli,
     calculate_elastic_tensor,
 )
+from torch_sim.io import atoms_to_state
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.state import SimState
 from torch_sim.unbatched.unbatched_optimizers import frechet_cell_fire
 from torch_sim.units import UnitConversion
-from torch_sim.io import atoms_to_state
 
 
 try:
@@ -87,12 +88,10 @@ def niti_atoms() -> Any:
     )
 
 
-
 @pytest.fixture
 def sb_sim_state(sb_atoms: Any, device: torch.device) -> Any:
     """Create a basic state from sb_atoms."""
     return atoms_to_state(sb_atoms, device, torch.float64)
-
 
 
 @pytest.fixture
@@ -123,7 +122,6 @@ def ga_sim_state(ga_atoms: Any, device: torch.device) -> Any:
 def niti_sim_state(niti_atoms: Any, device: torch.device) -> Any:
     """Create a basic state from niti_atoms."""
     return atoms_to_state(niti_atoms, device, torch.float64)
-
 
 
 @pytest.fixture
