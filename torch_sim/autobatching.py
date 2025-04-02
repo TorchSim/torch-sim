@@ -542,8 +542,8 @@ class ChunkingAutoBatcher:
                 self.model,
                 self.state_slices,
                 self.memory_scalers,
-                self.max_atoms_to_try,
-                self.memory_scaling_factor,
+                max_atoms=self.max_atoms_to_try,
+                scale_factor=self.memory_scaling_factor,
             )
         else:
             self.max_memory_scaler = self.max_memory_scaler
@@ -932,7 +932,7 @@ class HotSwappingAutoBatcher:
                 [first_state],
                 [first_metric],
                 max_atoms=self.max_atoms_to_try,
-                memory_scaling_factor=self.memory_scaling_factor,
+                scale_factor=self.memory_scaling_factor,
             )
             self.max_memory_scaler = self.max_memory_scaler * 0.8
 
@@ -944,7 +944,7 @@ class HotSwappingAutoBatcher:
                 [first_state, *states],
                 self.current_scalers,
                 max_atoms=self.max_atoms_to_try,
-                memory_scaling_factor=self.memory_scaling_factor,
+                scale_factor=self.memory_scaling_factor,
             )
             print(f"Max metric calculated: {self.max_memory_scaler}")
         return concatenate_states([first_state, *states])
