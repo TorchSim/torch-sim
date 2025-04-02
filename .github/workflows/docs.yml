@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build-docs:
-    # if: github.repository_owner == 'materialsproject' && github.ref == 'refs/heads/main'
+    # if: github.repository_owner == 'Radical-AI' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
