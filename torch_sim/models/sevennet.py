@@ -60,7 +60,7 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
         modal: str | None = None,
         neighbor_list_fn: Callable = vesin_nl_ts,
         device: torch.device | str | None = None,
-        dtype: torch.dtype | None = None,
+        dtype: torch.dtype = torch.float64,
     ) -> None:
         """Initialize the SevenNetModel with specified configuration.
 
@@ -90,7 +90,7 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
         if isinstance(self._device, str):
             self._device = torch.device(self._device)
 
-        self._dtype = dtype or torch.float32
+        self._dtype = dtype
         self._memory_scales_with = "n_atoms_x_density"
         self._compute_stress = True
         self._compute_forces = True
