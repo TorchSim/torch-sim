@@ -2,7 +2,8 @@ import pytest
 import torch
 
 from typing import Any
-from ase.build import bulk, crystal
+from ase.build import bulk
+from ase.spacegroup import crystal
 from torch_sim.elastic import (
     BravaisType,
     calculate_elastic_moduli,
@@ -21,9 +22,6 @@ try:
     from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 except ImportError:
     pytest.skip("MACE not installed", allow_module_level=True)
-
-
-
 
 
 @pytest.fixture

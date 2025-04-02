@@ -60,7 +60,7 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
         modal: str | None = None,
         neighbor_list_fn: Callable = vesin_nl_ts,
         device: torch.device | str | None = None,
-        dtype: torch.dtype = torch.float64,
+        dtype: torch.dtype = torch.float32,
     ) -> None:
         """Initialize the SevenNetModel with specified configuration.
 
