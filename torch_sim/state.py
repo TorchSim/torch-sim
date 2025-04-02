@@ -183,6 +183,15 @@ class SimState:
             int: Number of batches in the system
         """
         return torch.unique(self.batch).shape[0]
+    
+    @property
+    def volume(self) -> torch.Tensor:
+        """Get the volume of the system.
+
+        Returns:
+            torch.Tensor: Volume of the system with shape (n_batches,)
+        """
+        return torch.det(self.cell) if self.pbc else None
 
     def clone(self) -> Self:
         """Create a deep copy of the SimState.
