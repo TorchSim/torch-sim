@@ -249,7 +249,7 @@ class OrbModel(torch.nn.Module, ModelInterface):
         model (Union[GraphRegressor, ConservativeForcefieldRegressor]): The ORB model
         system_config (SystemConfig): Configuration for the atomic system
         conservative (bool): Whether to use conservative forces/stresses calculation
-        implemented_properties (list): List of properties the model can compute
+        implemented_properties (list): Properties the model can compute
         _dtype (torch.dtype): Data type used for computation
         _device (torch.device): Device where computation is performed
         _edge_method (EdgeCreationMethod): Method for creating edges in the graph

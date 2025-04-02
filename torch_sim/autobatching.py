@@ -371,7 +371,7 @@ def estimate_max_memory_scaler(
     Args:
         model (ModelInterface): Model to test with, implementing the ModelInterface
             protocol.
-        state_list (list[SimState]): List of states to test, each with shape information
+        state_list (list[SimState]): States to test, each with shape information
             specific to the SimState instance.
         metric_values (list[float]): Corresponding metric values for each state,
             as calculated by calculate_memory_scaler().
@@ -661,9 +661,9 @@ class ChunkingAutoBatcher:
         processing to ensure results correspond to the input states.
 
         Args:
-            batched_states (list[SimState]): List of state batches to reorder.
-                These can be either concatenated batch states that will be split,
-                or already split individual states.
+            batched_states (list[SimState]): State batches to reorder. These can be
+                either concatenated batch states that will be split, or already
+                split individual states.
 
         Returns:
             list[SimState]: States in their original order, with shape information
@@ -1065,9 +1065,8 @@ class HotSwappingAutoBatcher:
         the hot-swapping strategy to ensure results correspond to input states.
 
         Args:
-            completed_states (list[SimState]): List of completed states to reorder.
-                Each SimState contains simulation data with shape specific to its
-                instance.
+            completed_states (list[SimState]): Completed states to reorder. Each
+                SimState contains simulation data with shape specific to its instance.
 
         Returns:
             list[SimState]: States in their original order, with shape information

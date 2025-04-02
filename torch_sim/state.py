@@ -257,7 +257,7 @@ class SimState:
                 to pop
 
         Returns:
-            list[SimState]: List of popped SimState objects, one per batch index
+            list[SimState]: Popped SimState objects, one per batch index
 
         Notes:
             This method modifies the original SimState in-place.

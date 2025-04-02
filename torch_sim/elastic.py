@@ -630,7 +630,7 @@ def get_elementary_deformations(
                      defaults to lowest symmetry (triclinic)
 
     Returns:
-        List[SimState]: List of deformed structures
+        List[SimState]: Deformed structures
 
     Notes:
         - For normal strains (axes 0,1,2), deformations range from -max_strain_normal to

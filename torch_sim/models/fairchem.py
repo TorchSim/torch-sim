@@ -80,7 +80,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         config (dict): Complete model configuration dictionary
         trainer: FairChem trainer object that contains the model
         data_object (Batch): Data object containing system information
-        implemented_properties (list): List of model outputs the model can compute
+        implemented_properties (list): Model outputs the model can compute
         pbc (bool): Whether periodic boundary conditions are used
         _dtype (torch.dtype): Data type used for computation
         _compute_stress (bool): Whether to compute stress tensor

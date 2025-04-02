@@ -42,7 +42,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
 
         Args:
             model (torch.nn.Module): The MACE neural network model.
-            atomic_numbers (list[int]): List of atomic numbers for the system.
+            atomic_numbers (list[int]): Atomic numbers for the system.
             device (str | None): The device to run computations on ('cuda', 'cpu',
                 or None for auto-detection).
             neighbor_list_fn (Callable): The neighbor list function to use.

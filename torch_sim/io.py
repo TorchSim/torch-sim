@@ -55,7 +55,7 @@ def state_to_atoms(state: "SimState") -> list["Atoms"]:
         state (SimState): Batched state containing positions, cell, and atomic numbers
 
     Returns:
-        list[Atoms]: List of ASE Atoms objects, one per batch
+        list[Atoms]: ASE Atoms objects, one per batch
 
     Raises:
         ImportError: If ASE is not installed
@@ -105,7 +105,7 @@ def state_to_structures(state: "SimState") -> list["Structure"]:
         state (SimState): Batched state containing positions, cell, and atomic numbers
 
     Returns:
-        list[Structure]: List of Pymatgen Structure objects, one per batch
+        list[Structure]: Pymatgen Structure objects, one per batch
 
     Raises:
         ImportError: If Pymatgen is not installed
@@ -162,7 +162,7 @@ def state_to_phonopy(state: "SimState") -> list["PhonopyAtoms"]:
         state (SimState): Batched state containing positions, cell, and atomic numbers
 
     Returns:
-        list[PhonopyAtoms]: List of PhonopyAtoms objects, one per batch
+        list[PhonopyAtoms]: PhonopyAtoms objects, one per batch
 
     Raises:
         ImportError: If Phonopy is not installed

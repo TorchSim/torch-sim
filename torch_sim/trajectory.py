@@ -68,8 +68,8 @@ class TrajectoryReporter:
         prop_calculators (dict): Dictionary mapping frequencies to property calculators
         state_kwargs (dict): Additional arguments for state writing
         metadata (dict): Metadata to save in trajectory files
-        trajectories (list): List of TorchSimTrajectory instances
-        filenames (list): List of trajectory file paths
+        trajectories (list): TorchSimTrajectory instances
+        filenames (list): Trajectory file paths
         array_registry (dict): Dictionary of array names to (shape, dtype) tuples
         shape_warned (bool): Whether a shape warning has been issued
 
