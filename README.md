@@ -4,7 +4,7 @@
 [![codecov](https://codecov.io/gh/radical-ai/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/radical-ai/torch-sim)
 [![This project supports Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg?logo=python&logoColor=white)](https://python.org/downloads)
 [![PyPI](https://img.shields.io/pypi/v/torch-sim?logo=pypi&logoColor=white)](https://pypi.org/project/torch-sim)
-[![Zenodo](https://img.shields.io/badge/DOI-TODO-blue?logo=Zenodo&logoColor=white)](https://zenodo.org/records/TODO)
+[![Zenodo](https://img.shields.io/badge/DOI-TODO-blue?logo=Zenodo&logoColor=white)](https://zenodo.org/records/15127004)
 
 <!-- help docs find start of prose in readme, DO NOT REMOVE -->
 TorchSim is an next-generation open-source atomistic simulation engine for the MLIP era. By rewriting the core primitives of atomistic simulation in Pytorch, it allows orders of magnitude acceleration of popular machine learning potentials.
@@ -96,20 +96,18 @@ pip install .
 
 ## Examples
 
-`torch-sim` has dozens of example scripts and tutorials in the [`examples/`](examples/readme.md) folder.
+To understand how `torch-sim` works, start with the [comprehensive tutorials](https://radical-ai.github.io/torch-sim/user/overview.html) in the documentation.
 
-(link to API docs)
+Even more usage examples can be found in the [`examples/`](examples/readme.md) folder.
 
 ## Core Modules
 
-(Link to API docs)
+The `torch-sim` structured is summarized in the [API reference](https://radical-ai.github.io/torch-sim/reference/index.html) documentation.
+
+## License
+
+`torch-sim` is released under an [MIT license](LICENSE).
 
 ## Citation
 
-If you use TorchSim in your research, please cite:
-
-```bib
-@repository{gangan-2025-torchsim,
-  ...
-}
-```
+If you use TorchSim in your research, please cite the [Zenodo DOI](https://zenodo.org/records/15127004).
