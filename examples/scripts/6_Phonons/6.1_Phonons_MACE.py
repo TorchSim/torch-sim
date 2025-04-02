@@ -32,16 +32,12 @@ from torch_sim.optimizers import frechet_cell_fire
 
 def get_qpts_and_connections(
     ase_atoms: Atoms,
-    npoints: int = 101,
+    n_points: int = 101,
 ) -> tuple[list[list[float]], list[bool]]:
     """Get the high symmetry points and path connections for the band structure."""
     # Define seekpath data
     seekpath_data = seekpath.get_path(
-        (
-            ase_atoms.cell,
-            ase_atoms.get_scaled_positions(),
-            ase_atoms.numbers,
-        )
+        (ase_atoms.cell, ase_atoms.get_scaled_positions(), ase_atoms.numbers)
     )
 
     # Extract high symmetry points and path
@@ -51,40 +47,37 @@ def get_qpts_and_connections(
         start_point = points[segment[0]]
         end_point = points[segment[1]]
         path.append([start_point, end_point])
-    qpts, connections = get_band_qpoints_and_path_connections(path, npoints=npoints)
+    qpts, connections = get_band_qpoints_and_path_connections(path, npoints=n_points)
 
     return qpts, connections
 
 
-def get_labels_qpts(
-    ph: Phonopy,
-    npoints: int = 101,
-) -> tuple[list[str], list[bool]]:
+def get_labels_qpts(ph: Phonopy, n_points: int = 101) -> tuple[list[str], list[bool]]:
     """Get the labels and coordinates of qpoints for the phonon band structure."""
     # Get labels and coordinates for high-symmetry points
     _, qpts_labels, connections = get_band_qpoints_by_seekpath(
-        ph.primitive, npoints=npoints, is_const_interval=True
+        ph.primitive, npoints=n_points, is_const_interval=True
     )
     connections = [True, *connections]
     connections[-1] = True
     qpts_labels_connections = []
-    i = 0
+    idx = 0
     for connection in connections:
         if connection:
-            qpts_labels_connections.append(qpts_labels[i])
-            i += 1
+            qpts_labels_connections.append(qpts_labels[idx])
+            idx += 1
         else:
-            qpts_labels_connections.append(f"{qpts_labels[i]}|{qpts_labels[i + 1]}")
-            i += 2
+            qpts_labels_connections.append(f"{qpts_labels[idx]}|{qpts_labels[idx + 1]}")
+            idx += 2
 
     qpts_labels_arr = [
-        q.replace("\\Gamma", "Γ")
+        q_label.replace("\\Gamma", "Γ")
         .replace("$", "")
         .replace("\\", "")
         .replace("mathrm", "")
         .replace("{", "")
         .replace("}", "")
-        for q in qpts_labels_connections
+        for q_label in qpts_labels_connections
     ]
     bands_dict = ph.get_band_structure_dict()
     npaths = len(bands_dict["frequencies"])
@@ -188,7 +181,7 @@ axis_style = dict(
 
 # Plot phonon DOS
 fig = pmv.phonon_dos(ph.total_dos)
-fig.update_traces(line=dict(width=3))
+fig.update_traces(line_width=3)
 fig.update_layout(
     xaxis_title="Frequency (THz)",
     yaxis_title="DOS",
@@ -199,7 +192,7 @@ fig.update_layout(
     height=600,
     plot_bgcolor="white",
 )
-pmv.save_fig(fig, "phonon_dos.pdf")
+fig.show()
 
 # Plot phonon band structure
 ph.auto_band_structure(plot=False)
@@ -208,8 +201,8 @@ fig = pmv.phonon_bands(
     line_kwargs={"width": 3},
 )
 qpts_labels, qpts_coord = get_labels_qpts(ph)
-for q in qpts_coord:
-    fig.add_vline(x=q, line_dash="dash", line_color="black", line_width=2, opacity=1)
+for q_pt in qpts_coord:
+    fig.add_vline(x=q_pt, line_dash="dash", line_color="black", line_width=2, opacity=1)
 fig.update_layout(
     xaxis_title="Wave Vector",
     yaxis_title="Frequency (THz)",
