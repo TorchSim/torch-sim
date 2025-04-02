@@ -33,7 +33,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install .[strict,docs] --system
+          uv pip install .[test,docs] --system
 
       - name: Install mace
         run: uv pip install mace-torch --system
