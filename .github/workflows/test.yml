@@ -49,7 +49,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: Radical-AI/torch-sim
+          slug: radical-ai/torch-sim
           flags: core,${{ matrix.os }},python-${{ matrix.version.python }}
 
   test-mace:
@@ -87,7 +87,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: Radical-AI/torch-sim
+          slug: radical-ai/torch-sim
           flags: mace,${{ matrix.os }},python-${{ matrix.version.python }}
 
   test-elastic:
@@ -125,7 +125,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: Radical-AI/torch-sim
+          slug: radical-ai/torch-sim
           flags: elastic,${{ matrix.os }},python-${{ matrix.version.python }}
 
   test-fairchem:
@@ -177,7 +177,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: Radical-AI/torch-sim
+          slug: radical-ai/torch-sim
           flags: fairchem,${{ matrix.os }},python-${{ matrix.version.python }}
 
   test-orb:
@@ -217,7 +217,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: Radical-AI/torch-sim
+          slug: radical-ai/torch-sim
           flags: orb,${{ matrix.os }},python-${{ matrix.version.python }}
 
   test-sevennet:
@@ -257,7 +257,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: Radical-AI/torch-sim
+          slug: radical-ai/torch-sim
           flags: sevennet,${{ matrix.os }},python-${{ matrix.version.python }}
 
   find-examples:

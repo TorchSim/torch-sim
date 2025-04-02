@@ -10,8 +10,7 @@
 
 import os
 import sys
-
-from torch_sim import __version__
+from importlib.metadata import version
 
 
 sys.path.insert(0, os.path.abspath("../../"))
@@ -23,9 +22,9 @@ copyright = "2025, Radical AI"  # noqa: A001
 author = "Abhijeet Gangan, Orion Cohen, Janosh Riebesell"
 
 # The short X.Y version
-version = __version__
+version = version("torch-sim")
 # The full version, including alpha/beta/rc tags
-release = __version__
+release = version("torch-sim")
 
 # -- General configuration ---------------------------------------------------
 
