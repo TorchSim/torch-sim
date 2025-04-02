@@ -4,7 +4,9 @@
 [![codecov](https://codecov.io/gh/radical-ai/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/radical-ai/torch-sim)
 [![This project supports Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg?logo=python&logoColor=white)](https://python.org/downloads)
 [![PyPI](https://img.shields.io/pypi/v/torch-sim?logo=pypi&logoColor=white)](https://pypi.org/project/torch-sim)
-[![Zenodo](https://img.shields.io/badge/DOI-TODO-blue?logo=Zenodo&logoColor=white)](https://zenodo.org/records/15127004)
+[![Zenodo](https://img.shields.io/badge/DOI-TODO-blue?logo=Zenodo&logoColor=white)][zenodo]
+
+[zenodo]: https://zenodo.org/records/15127004
 
 <!-- help docs find start of prose in readme, DO NOT REMOVE -->
 TorchSim is an next-generation open-source atomistic simulation engine for the MLIP era. By rewriting the core primitives of atomistic simulation in Pytorch, it allows orders of magnitude acceleration of popular machine learning potentials.
@@ -111,4 +113,4 @@ pip install .
 
 ## Citation
 
-A manuscript is in preparation. Meanwhile, if you use TorchSim in your research, please [cite the Zenodo archive](https://zenodo.org/records/15127004).
+A manuscript is in preparation. Meanwhile, if you use TorchSim in your research, please [cite the Zenodo archive][zenodo].
