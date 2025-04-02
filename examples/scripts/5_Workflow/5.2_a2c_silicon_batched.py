@@ -1,3 +1,7 @@
+"""Demo of the amorphous-to-crystalline (A2C) algorithm for a-Si, ported to torchsim from
+jax-md https://github.com/jax-md/jax-md/blob/main/jax_md/a2c/a2c_workflow.py.
+"""
+
 # /// script
 # dependencies = [
 #     "mace-torch>=0.3.10",
@@ -5,9 +9,6 @@
 #     "pymatgen>=2025.2.18",
 # ]
 # ///
-"""Demo of the amorphous-to-crystalline (A2C) algorithm for a-Si, ported to torchsim from
-jax-md https://github.com/jax-md/jax-md/blob/main/jax_md/a2c/a2c_workflow.py.
-"""
 
 import os
 import time

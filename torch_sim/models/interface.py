@@ -50,7 +50,7 @@ class ModelInterface(ABC):
         compute_forces (bool): Whether the model calculates atomic forces.
 
     Examples:
-        ```python
+        ```py
         # Using a model that implements ModelInterface
         model = LennardJonesModel(device=torch.device("cuda"))
 
@@ -200,7 +200,7 @@ class ModelInterface(ABC):
                 - May include additional model-specific outputs
 
         Examples:
-            ```python
+            ```py
             # Compute energies and forces with a model
             output = model.forward(state)
 

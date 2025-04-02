@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+title: Torch-Sim
+message: If you use this software, please cite it as below.
+authors:
+  - family-names: Gangan
+    given-names: Abhijeet S.
+  - family-names: Cohen
+    given-names: Orion Archer
+  - family-names: Riebesell
+    given-names: Janosh
+  - family-names: Goodall
+    given-names: Rhys
+  - family-names: Kolluru
+    given-names: Adeesh
+  - family-names: Falletta
+    given-names: Stefano
+license: MIT
+license-url: https://github.com/Radical-AI/torch-sim/blob/main/LICENSE
+repository-code: https://github.com/Radical-AI/torch-sim
+type: software
+url: https://github.com/Radical-AI/torch-sim
+doi: 10.5281/zenodo.7486816
+version: 0.1.0
+date-released: 2025-04-02

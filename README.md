@@ -27,7 +27,8 @@ native support for GPUs, MLIP models, ASE integration, simple API,
 autobatching, and trajectory reporting, all in under 40 lines of code.
 
 ### Running batched MD
-```python
+
+```py
 import torch
 import torch_sim as ts
 
@@ -65,11 +66,12 @@ for filename in trajectory_files:
 
 print(final_energies)
 ```
+
 ### Running batched relaxation
 
 To then relax those structures with FIRE is just a few more lines.
 
-```python
+```py
 # relax all of the high temperature states
 relaxed_state = ts.optimize(
     system=final_state,
@@ -82,12 +84,15 @@ print(relaxed_state.energy)
 ```
 
 ## Installation
+
 ### PyPI Installation
+
 ```sh
 pip install torch-sim
 ```
 
 ### Installing from source
+
 ```sh
 git clone https://github.com/radical-ai/torch-sim
 cd torch-sim
@@ -96,18 +101,14 @@ pip install .
 
 ## Examples
 
-To understand how `torch-sim` works, start with the [comprehensive tutorials](https://radical-ai.github.io/torch-sim/user/overview.html) in the documentation.
+`torch-sim` has dozens of example scripts and tutorials in the [`examples/`](examples/readme.md) folder.
 
-Even more usage examples can be found in the [`examples/`](examples/readme.md) folder.
+(link to API docs)
 
 ## Core Modules
 
-The `torch-sim` structured is summarized in the [API reference](https://radical-ai.github.io/torch-sim/reference/index.html) documentation.
-
-## License
-
-`torch-sim` is released under an [MIT license](LICENSE).
+(Link to API docs)
 
 ## Citation
 
-If you use TorchSim in your research, please cite the [Zenodo DOI](https://zenodo.org/records/15127004).
+A manuscript is in preparation. Meanwhile, if you use TorchSim in your research, please [cite the Zenodo archive](https://zenodo.org/records/15127004).

@@ -191,7 +191,7 @@ are functions that:
 The property calculators are organized in a dictionary that maps frequencies to
 property names and their calculator functions:
 
-```python
+```py
 prop_calculators = {
     frequency1: {
         "prop1": calc_fn1,

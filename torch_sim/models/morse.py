@@ -57,7 +57,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
         use_neighbor_list (bool): Whether to use neighbor list optimization.
 
     Examples:
-        ```python
+        ```py
         # Basic usage with default parameters
         morse_model = MorseModel(device=torch.device("cuda"))
         results = morse_model(sim_state)
@@ -116,7 +116,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
                 If None, uses 2.5*sigma. Defaults to None.
 
         Examples:
-            ```python
+            ```py
             # Basic model with default parameters
             model = MorseModel()
 
@@ -287,7 +287,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
             ValueError: If batch cannot be inferred for multi-cell systems.
 
         Examples:
-            ```python
+            ```py
             # Compute properties for a simulation state
             model = MorseModel(compute_forces=True)
             results = model(sim_state)

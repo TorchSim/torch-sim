@@ -85,7 +85,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         per_atom_stresses (bool): Whether to compute per-atom stress decomposition.
 
     Examples:
-        ```python
+        ```py
         # Basic usage with default parameters
         model = SoftSphereModel()
         results = model(sim_state)
@@ -152,7 +152,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
                 the value of sigma. Defaults to None.
 
         Examples:
-            ```python
+            ```py
             # Default model
             model = SoftSphereModel()
 
@@ -332,7 +332,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             ValueError: If batch cannot be inferred for multi-cell systems.
 
         Examples:
-            ```python
+            ```py
             # Compute properties for a simulation state
             model = SoftSphereModel(compute_forces=True)
             results = model(sim_state)
@@ -394,7 +394,7 @@ class SoftSphereMultiModel(torch.nn.Module):
         _dtype (torch.dtype): Data type for tensor calculations.
 
     Examples:
-        ```python
+        ```py
         # Create a binary mixture with different interaction parameters
         # Define interaction matrices (size 2x2 for binary system)
         sigma_matrix = torch.tensor(
@@ -479,7 +479,7 @@ class SoftSphereMultiModel(torch.nn.Module):
                 the maximum value from sigma_matrix. Defaults to None.
 
         Examples:
-            ```python
+            ```py
             # Binary polymer mixture with different interactions
             # Polymer A (type 0): larger, softer particles
             # Polymer B (type 1): smaller, harder particles
@@ -757,7 +757,7 @@ class SoftSphereMultiModel(torch.nn.Module):
                 species information is missing.
 
         Examples:
-            ```python
+            ```py
             # Create model for binary mixture
             model = SoftSphereMultiModel(
                 species=particle_types,
