@@ -43,7 +43,7 @@ in CI on a CPU. Using the AutoBatcher is generally not supported on CPUs.
 import torch_sim as ts
 
 
-def mock_determine_max_batch_size(min_state, max_state, max_atoms):
+def mock_determine_max_batch_size(*args, **kwargs):
     return 3
 
 
