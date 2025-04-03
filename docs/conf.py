@@ -17,14 +17,14 @@ sys.path.insert(0, os.path.abspath("../../"))
 
 # -- Project information -----------------------------------------------------
 
-project = "torch-sim"
+project = "torch-sim-atomistic"
 copyright = "2025, Radical AI"  # noqa: A001
 author = "Abhijeet Gangan, Orion Cohen, Janosh Riebesell"
 
 # The short X.Y version
-version = importlib.metadata.version("torch-sim")
+version = importlib.metadata.version("torch-sim-atomistic")
 # The full version, including alpha/beta/rc tags
-release = importlib.metadata.version("torch-sim")
+release = importlib.metadata.version("torch-sim-atomistic")
 
 # -- General configuration ---------------------------------------------------
 

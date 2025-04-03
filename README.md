@@ -9,10 +9,12 @@
 [zenodo]: https://zenodo.org/records/15127004
 
 <!-- help docs find start of prose in readme, DO NOT REMOVE -->
-torch-sim is a next-generation open-source atomistic simulation engine for the MLIP era. By rewriting the core primitives of atomistic simulation in Pytorch, it allows orders of magnitude acceleration of popular machine learning potentials.
+torch-sim is a next-generation open-source atomistic simulation engine for the MLIP
+era. By rewriting the core primitives of atomistic simulation in Pytorch, it allows
+orders of magnitude acceleration of popular machine learning potentials.
 
 * Automatic batching and GPU memory management allowing significant simulation speedup
-* Support for MACE and Fairchem MLIP models
+* Support for MACE, Fairchem, and SevenNet MLIP models with easy extensability to more
 * Support for classical lennard jones, morse, and soft-sphere potentials
 * Molecular dynamics integration schemes like NVE, NVT Langevin, and NPT Langevin
 * Relaxation of atomic positions and cell with gradient descent and FIRE
@@ -111,8 +113,8 @@ This figure compares the time per atom of ASE and torch_sim. Time per atom is de
 as the number of atoms / total time. While ASE can only run a single system of n_atoms
 (on the x axis), torch_sim can run as many systems as will fit in memory. On an H100,
 the max atoms that could fit in memory was 8000 for gemnet, 10000 for MACE, and 2500
-for SevenNet. This metric gives a clean comparison of how different models make use of
-the available hardware.
+for SevenNet. This metric describes model performance by capturing speed and memory
+usage simultaneously.
 
 ## Examples
 
