@@ -51,7 +51,9 @@ ase_atoms_list = ase_atoms_from_zip(
 
 # Initialize first batch
 fire_init, fire_update = ts.optimizers.frechet_cell_fire(model=mace_model)
-fire_states = ts.io.atoms_to_state(atoms=ase_atoms_list, device=device, dtype=dtype)
+fire_states = fire_init(
+    ts.io.atoms_to_state(atoms=ase_atoms_list, device=device, dtype=dtype)
+)
 
 batcher = ts.autobatching.HotSwappingAutoBatcher(
     model=mace_model,

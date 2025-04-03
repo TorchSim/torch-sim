@@ -31,7 +31,7 @@ def print_relax_info(trajectory_file: str, device: torch.device) -> None:
         trajectory_file: Path to the trajectory file
         device: Torch device for calculations
     """
-    with ts.Trajectory(trajectory_file) as traj:
+    with ts.TorchSimTrajectory(trajectory_file) as traj:
         energies = traj.get_array("potential_energy")
         forces = traj.get_array("forces")
         if isinstance(forces, np.ndarray):
