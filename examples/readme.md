@@ -1,8 +1,13 @@
-Examples are provided as tutorials and scripts. Tutorials are intended to provide
-pedagogical walkthroughs of TorchSim's core functionality, whereas scripts are intended
-to demonstrate a wide variety of use cases with few interspersed explanation.
+## Types of Examples
 
-Tutorials must follow some formatting rules:
+Examples are provided in two foms:
+* Tutorials are intended to provide pedagogical walkthroughs of TorchSim's core functionality
+* Scripts are a holdover from early torch-sim development, they are not currently recommended as a learning resource. See issue [here](https://github.com/Radical-AI/torch-sim/issues/109).
+
+
+## Tutorial Formatting
+
+All tutorials are built for the documentation and must follow some formatting rules:
 1. They must follow the [jupytext percent format](https://jupytext.readthedocs.io/en/latest/formats-scripts.html#the-percent-format)
 where code blocks are annotated with `# %%` and markdown blocks
 are annotated with `# %% [markdown]`.
@@ -15,11 +20,16 @@ they are correctly executed.
 4. Cells should return sensible values or None as they are executed
 when docs are built.
 
-Both scripts and tutorials are tested in CI. Tutorials are converted to `.ipynb` files
-and executed when the docs are built.
+Tutorials are converted to `.ipynb` files and executed when the docs are built. If you
+add a new tutorial, add it to the
+[/docs/tutorials/index.rst](/docs/tutorials/index.rst) file.
 
+## Example Execution
 
-All of the scripts and tutorials have any additional dependencies included at the top.
+Both scripts and tutorials are tested in CI, this ensures that all documentation stays
+up to date and helps catch edge cases. To support this, all of the scripts and
+tutorials have any additional dependencies included at the top.
+
 If you'd like to execute the scripts or examples locally, you can run them with:
 
 ```sh

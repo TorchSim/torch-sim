@@ -120,8 +120,6 @@ pip install .
 
 To understand how torch-sim works, start with the [comprehensive tutorials](https://radical-ai.github.io/torch-sim/user/overview.html) in the documentation.
 
-Even more usage examples can be found in the [`examples/`](examples/readme.md) folder.
-
 ## Core Modules
 
 torch-sim's structure is summarized in the [API reference](https://radical-ai.github.io/torch-sim/reference/index.html) documentation.
