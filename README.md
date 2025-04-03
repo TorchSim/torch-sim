@@ -9,12 +9,12 @@
 [zenodo]: https://zenodo.org/records/15127004
 
 <!-- help docs find start of prose in readme, DO NOT REMOVE -->
-TorchSim is an next-generation open-source atomistic simulation engine for the MLIP era. By rewriting the core primitives of atomistic simulation in Pytorch, it allows orders of magnitude acceleration of popular machine learning potentials.
+`torch-sim` is a next-generation open-source atomistic simulation engine for the MLIP era. By rewriting the core primitives of atomistic simulation in Pytorch, it allows orders of magnitude acceleration of popular machine learning potentials.
 
 * Automatic batching and GPU memory management allowing significant simulation speedup
 * Support for MACE and Fairchem MLIP models
 * Support for classical lennard jones, morse, and soft-sphere potentials
-* Molecular dynamics integration schemes like NVE, NVT Langevin, and NPT langevin
+* Molecular dynamics integration schemes like NVE, NVT Langevin, and NPT Langevin
 * Relaxation of atomic positions and cell with gradient descent and FIRE
 * Swap monte carlo and hybrid swap monte carlo algorithm
 * An extensible binary trajectory writing format with support for arbitrary properties
