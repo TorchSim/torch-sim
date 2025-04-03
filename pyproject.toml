@@ -134,12 +134,6 @@ omit = [
     "torch_sim/unbatched/*",
 ]
 
-[tool.codecov]
-codecov_yml = '''
-coverage:
-  status:
-    project:
-      default:
-        target: 70%
-        threshold: 1%
-'''
+[tool.codecov.coverage.status.project.default]
+target = "70%"
+threshold = "1%"
