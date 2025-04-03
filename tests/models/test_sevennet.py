@@ -88,7 +88,7 @@ def test_sevennet_calculator_consistency(
 ) -> None:
     """Test consistency between SevenNetModel and SevenNetCalculator."""
     # Get SevenNetModel results
-    sevenn_results = sevenn_model(cu_system)
+    sevenn_results = sevenn_model.forward(cu_system)
 
     # Set up ASE calculator
     cu_fcc = bulk("Cu", "fcc", a=3.58, cubic=True)

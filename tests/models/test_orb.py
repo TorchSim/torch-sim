@@ -80,7 +80,7 @@ def test_orb_calculator_consistency(
 ) -> None:
     """Test consistency between OrbModel and ORBCalculator."""
     # Get OrbModel results
-    orb_results = orb_model(cu_system)
+    orb_results = orb_model.forward(cu_system)
 
     # Set up ASE calculator
     cu_fcc = bulk("Cu", "fcc", a=3.58, cubic=True)
