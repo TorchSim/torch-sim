@@ -12,40 +12,18 @@ The module handles:
 * Batched conversions for multiple structures
 """
 
-import typing
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 
 
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from ase import Atoms
+    from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure
 
     from torch_sim.state import SimState
-
-try:
-    from pymatgen.core import Structure
-except ImportError:
-
-    class Structure:
-        """Stub class for pymatgen Structure when not installed."""
-
-
-try:
-    from ase import Atoms
-except ImportError:
-
-    class Atoms:
-        """Stub class for ASE Atoms when not installed."""
-
-
-try:
-    from phonopy.structure.atoms import PhonopyAtoms
-except ImportError:
-
-    class PhonopyAtoms:
-        """Stub class for PhonopyAtoms when not installed."""
 
 
 def state_to_atoms(state: "SimState") -> list["Atoms"]:
@@ -67,8 +45,8 @@ def state_to_atoms(state: "SimState") -> list["Atoms"]:
     try:
         from ase import Atoms
         from ase.data import chemical_symbols
-    except ImportError as err:
-        raise ImportError("ASE is required for state_to_atoms conversion") from err
+    except ImportError:
+        raise ImportError("ASE is required for state_to_atoms conversion") from None
 
     # Convert tensors to numpy arrays on CPU
     positions = state.positions.detach().cpu().numpy()
@@ -86,14 +64,10 @@ def state_to_atoms(state: "SimState") -> list["Atoms"]:
         # Convert atomic numbers to chemical symbols
         symbols = [chemical_symbols[z] for z in batch_numbers]
 
-        atoms_list.append(
-            Atoms(
-                symbols=symbols,
-                positions=batch_positions,
-                cell=batch_cell,
-                pbc=state.pbc,
-            )
+        atoms = Atoms(
+            symbols=symbols, positions=batch_positions, cell=batch_cell, pbc=state.pbc
         )
+        atoms_list.append(atoms)
 
     return atoms_list
 
@@ -117,10 +91,10 @@ def state_to_structures(state: "SimState") -> list["Structure"]:
     try:
         from pymatgen.core import Lattice, Structure
         from pymatgen.core.periodic_table import Element
-    except ImportError as err:
+    except ImportError:
         raise ImportError(
             "Pymatgen is required for state_to_structure conversion"
-        ) from err
+        ) from None
 
     # Convert tensors to numpy arrays on CPU
     positions = state.positions.detach().cpu().numpy()
@@ -143,14 +117,13 @@ def state_to_structures(state: "SimState") -> list["Structure"]:
         species = [Element.from_Z(z) for z in batch_numbers]
 
         # Create structure for this batch
-        structures.append(
-            Structure(
-                lattice=Lattice(batch_cell),
-                species=species,
-                coords=batch_positions,
-                coords_are_cartesian=True,
-            )
+        struct = Structure(
+            lattice=Lattice(batch_cell),
+            species=species,
+            coords=batch_positions,
+            coords_are_cartesian=True,
         )
+        structures.append(struct)
 
     return structures
 
@@ -174,10 +147,10 @@ def state_to_phonopy(state: "SimState") -> list["PhonopyAtoms"]:
     try:
         from ase.data import chemical_symbols
         from phonopy.structure.atoms import PhonopyAtoms
-    except ImportError as err:
+    except ImportError:
         raise ImportError(
             "Phonopy is required for state_to_phonopy_atoms conversion"
-        ) from err
+        ) from None
 
     # Convert tensors to numpy arrays on CPU
     positions = state.positions.detach().cpu().numpy()
@@ -235,8 +208,8 @@ def atoms_to_state(
 
     try:
         from ase import Atoms
-    except ImportError as err:
-        raise ImportError("ASE is required for state_to_atoms conversion") from err
+    except ImportError:
+        raise ImportError("ASE is required for state_to_atoms conversion") from None
 
     atoms_list = [atoms] if isinstance(atoms, Atoms) else atoms
 
@@ -305,10 +278,10 @@ def structures_to_state(
 
     try:
         from pymatgen.core import Structure
-    except ImportError as err:
+    except ImportError:
         raise ImportError(
             "Pymatgen is required for state_to_structure conversion"
-        ) from err
+        ) from None
 
     struct_list = [structure] if isinstance(structure, Structure) else structure
 
@@ -376,8 +349,8 @@ def phonopy_to_state(
 
     try:
         from phonopy.structure.atoms import PhonopyAtoms
-    except ImportError as err:
-        raise ImportError("Phonopy is required for phonopy_to_state conversion") from err
+    except ImportError:
+        raise ImportError("Phonopy is required for phonopy_to_state conversion") from None
 
     phonopy_atoms_list = (
         [phonopy_atoms] if isinstance(phonopy_atoms, PhonopyAtoms) else phonopy_atoms

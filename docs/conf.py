@@ -22,9 +22,9 @@ copyright = "2025, Radical AI"  # noqa: A001
 author = "Abhijeet Gangan, Orion Cohen, Janosh Riebesell"
 
 # The short X.Y version
-version = importlib.metadata.version("torch-sim-atomistic")
+version = importlib.metadata.version(project)
 # The full version, including alpha/beta/rc tags
-release = importlib.metadata.version("torch-sim-atomistic")
+release = importlib.metadata.version(project)
 
 # -- General configuration ---------------------------------------------------
 

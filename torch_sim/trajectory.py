@@ -932,8 +932,7 @@ class TorchSimTrajectory:
 
         Ensures all data is written to disk and releases the file handle.
         """
-        # TODO: ???
-        if self._file.isopen:
+        if self._file.isopen:  # TODO: ???
             self._file.close()
 
     def __enter__(self) -> "TorchSimTrajectory":
@@ -987,11 +986,10 @@ class TorchSimTrajectory:
         """
         try:
             from ase.io.trajectory import Trajectory
-        except ImportError as err:
+        except ImportError:
             raise ImportError(
-                "ASE is required to convert to ASE trajectory. "
-                "Please install it with 'pip install ase'"
-            ) from err
+                "ASE is required to convert to ASE trajectory. Run `pip install ase`"
+            ) from None
 
         # Create ASE trajectory
         traj = Trajectory(filename, mode="w")
@@ -1002,6 +1000,4 @@ class TorchSimTrajectory:
             traj.write(atoms)
 
         traj.close()
-
-        # Reopen in read mode
-        return Trajectory(filename)
+        return Trajectory(filename)  # Reopen in read mode

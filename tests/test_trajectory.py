@@ -354,12 +354,12 @@ def test_invalid_dtype_handling(test_file: Path) -> None:
     complex_data = {
         "complex": np.random.default_rng(seed=0).random((10, 3)).astype(np.float16)
     }
-    with pytest.raises(ValueError, match="Unsupported dtype"):
+    with pytest.raises(ValueError, match="Unsupported array.dtype="):
         traj.write_arrays(complex_data, steps=0)
 
     # Test string data
     string_data = {"strings": np.array([["a", "b", "c"]] * 10)}
-    with pytest.raises(ValueError, match="Unsupported dtype"):
+    with pytest.raises(ValueError, match="Unsupported array.dtype="):
         traj.write_arrays(string_data, steps=0)
 
     traj.close()
