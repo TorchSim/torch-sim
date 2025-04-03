@@ -22,7 +22,7 @@ repos:
       - id: check-case-conflict
       - id: check-symlinks
       - id: check-yaml
-        exclude: ".*\/copilot\/.*"
+        exclude: .*\/copilot\/.*
       - id: destroyed-symlinks
       - id: end-of-file-fixer
       - id: forbid-new-submodules
@@ -34,7 +34,7 @@ repos:
     hooks:
       - id: codespell
         stages: [pre-commit, commit-msg]
-        args: ["--ignore-words-list", "statics,crate,annote,atomate,nd,te,titel,coo,slite,fro"]
+        args: [--ignore-words-list, "statics,crate,annote,atomate,nd,te,titel,coo,slite,fro"]
 
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.44.0
