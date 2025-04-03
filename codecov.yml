@@ -1,2 +1,10 @@
 ignore: [torch_sim/unbatched]
+
 comment: false
+
+coverage:
+  status:
+    patch:
+      default:
+        target: 80%
+        threshold: 1%
