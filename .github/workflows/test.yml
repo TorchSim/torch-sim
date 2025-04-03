@@ -50,7 +50,6 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: radical-ai/torch-sim
-          flags: core
 
   test-model:
     strategy:
@@ -113,7 +112,6 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: radical-ai/torch-sim
-          flags: ${{ matrix.model.name }}
 
   find-examples:
     runs-on: ubuntu-latest
