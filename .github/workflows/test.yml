@@ -34,7 +34,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v2
 
-      - name: Install torchsim
+      - name: Install torch_sim
         run: uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
 
       - name: Run Tests
@@ -52,7 +52,7 @@ jobs:
           slug: radical-ai/torch-sim
           flags: core
 
-  test-mace:
+  test-model:
     strategy:
       fail-fast: false
       matrix:
@@ -60,11 +60,24 @@ jobs:
         version:
           - { python: "3.11", resolution: highest }
           - { python: "3.12", resolution: lowest-direct }
+        model:
+          - { name: mace, test_path: "tests/models/test_mace.py" }
+          - { name: mace, test_path: "tests/test_elastic.py" }
+          - { name: orb, test_path: "tests/models/test_orb.py" }
+          - { name: sevennet, test_path: "tests/models/test_sevennet.py" }
+          - { name: fairchem, test_path: "tests/models/test_fairchem.py" }
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
+
+      - name: Check out fairchem repository
+        if: ${{ matrix.model.name == 'fairchem' }}
+        uses: actions/checkout@v4
+        with:
+          repository: "FAIR-Chem/fairchem"
+          path: "fairchem-repo"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -74,92 +87,8 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v2
 
-      - name: Install torchsim
-        run: uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
-
-      - name: Install mace
-        run: uv pip install mace-torch --system
-
-      - name: Run Tests with Coverage
-        run: pytest --cov=torch_sim --cov-report=xml tests/models/test_mace.py
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: radical-ai/torch-sim
-          flags: mace
-
-  test-elastic:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-14]
-        version:
-          - { python: "3.11", resolution: highest }
-          - { python: "3.12", resolution: lowest-direct }
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.version.python }}
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v2
-
-      - name: Install torchsim
-        run: uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
-
-      - name: Install mace
-        run: uv pip install mace-torch --system
-
-      - name: Run Tests with Coverage
-        run: pytest --cov=torch_sim --cov-report=xml tests/test_elastic.py
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: radical-ai/torch-sim
-          flags: elastic
-
-  test-fairchem:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-14]
-        version:
-          - { python: "3.11", resolution: highest }
-          - { python: "3.12", resolution: lowest-direct }
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Check out fairchem
-        uses: actions/checkout@v4
-        with:
-          repository: FAIR-Chem/fairchem
-          path: fairchem-repo
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.version.python }}
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v2
-
-      - name: Install torchsim
-        run: uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
-
-      - name: Install fairchem dependencies
+      - name: Install fairchem repository dependencies
+        if: ${{ matrix.model.name == 'fairchem' }}
         run: |
           if [ -f fairchem-repo/packages/requirements.txt ]; then
             uv pip install -r fairchem-repo/packages/requirements.txt --system
@@ -167,98 +96,22 @@ jobs:
           if [ -f fairchem-repo/packages/requirements-optional.txt ]; then
             uv pip install -r fairchem-repo/packages/requirements-optional.txt --system
           fi
-          uv pip install -e fairchem-repo/packages/fairchem-core[dev] --system
+          # uv pip install -e fairchem-repo/packages/fairchem-core[dev] --system
+
+      - name: Install torch_sim with model dependencies
+        run: uv pip install -e .[test,${{ matrix.model.name }}] --resolution=${{ matrix.version.resolution }} --system
+
 
       - name: Run Tests with Coverage
         run: |
-          pytest --cov=torchsim --cov-report=xml tests/models/test_fairchem.py
+          pytest --cov=torch_sim --cov-report=xml ${{ matrix.model.test_path }}
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: radical-ai/torch-sim
-          flags: fairchem
-
-  test-orb:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-14]
-        version:
-          - { python: "3.11", resolution: highest }
-          - { python: "3.12", resolution: lowest-direct }
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.version.python }}
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v2
-
-      - name: Install orb dependencies
-        run: |
-          uv pip install "orb-models@git+https://github.com/orbital-materials/orb-models#egg=637a98d49cfb494e2491a457d9bbd28311fecf21" --system
-
-      - name: Install torchsim
-        run: uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
-
-      - name: Run Tests with Coverage
-        run: |
-          pytest --cov=torchsim --cov-report=xml tests/models/test_orb.py
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: radical-ai/torch-sim
-          flags: orb
-
-  test-sevennet:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-14]
-        version:
-          - { python: "3.11", resolution: highest }
-          - { python: "3.12", resolution: lowest-direct }
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.version.python }}
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v2
-
-      - name: Install sevennet dependencies
-        run: |
-          uv pip install sevenn --system
-
-      - name: Install torchsim
-        run: uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
-
-      - name: Run Tests with Coverage
-        run: |
-          pytest --cov=torchsim --cov-report=xml tests/models/test_sevennet.py
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: radical-ai/torch-sim
-          flags: sevennet
+          flags: ${{ matrix.model.name }}
 
   find-examples:
     runs-on: ubuntu-latest

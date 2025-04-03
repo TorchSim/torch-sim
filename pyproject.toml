@@ -38,7 +38,10 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["ase>=3.24", "pymatgen>=2024.11.3", "pytest-cov>=6", "pytest>=8", "phonopy>=2.37.0"]
-models = ["mace-torch>=0.3.11"]
+mace = ["mace-torch>=0.3.11"]
+sevenn = ["sevenn>=0.11.0"]
+orb = ["orb-models@git+https://github.com/orbital-materials/orb-models#egg=637a98d49cfb494e2491a457d9bbd28311fecf21"]
+fairchem = ["fairchem-core"]
 docs = [
     "autodoc_pydantic==2.2.0",
     "furo==2024.8.6",
