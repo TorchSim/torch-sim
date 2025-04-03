@@ -4,8 +4,8 @@ version = "0.1.0"
 description = "A pytorch toolkit for calculating material properties using MLIPs"
 authors = [
     { name = "Abhijeet Gangan", email = "abhijeetgangan@g.ucla.edu" },
-    { name = "Orion Cohen", email = "orion@radical-ai.com" },
     { name = "Janosh Riebesell", email = "jriebesell@radical-ai.com" },
+    { name = "Orion Cohen", email = "orion@radical-ai.com" },
     { name = "Radical AI", email = "info@radical.ai" },
 ]
 readme = "readme.md"
@@ -37,23 +37,31 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["ase>=3.24", "pymatgen>=2024.11.3", "pytest-cov>=6", "pytest>=8", "phonopy>=2.37.0"]
+test = [
+    "ase>=3.24",
+    "phonopy>=2.37.0",
+    "pymatgen>=2024.11.3",
+    "pytest-cov>=6",
+    "pytest>=8",
+]
 mace = ["mace-torch>=0.3.11"]
 sevenn = ["sevenn>=0.11.0"]
-orb = ["orb-models@git+https://github.com/orbital-materials/orb-models#egg=637a98d49cfb494e2491a457d9bbd28311fecf21"]
+orb = [
+    "orb-models@git+https://github.com/orbital-materials/orb-models#egg=637a98d49cfb494e2491a457d9bbd28311fecf21",
+]
 docs = [
     "autodoc_pydantic==2.2.0",
     "furo==2024.8.6",
     "ipython==8.34.0",
     "jsonschema[format]",
+    "jupyterlab==4.3.4",
+    "jupytext==1.16.7",
     "myst_parser==4.0.0",
+    "nbsphinx>=0.9.7",
     "numpydoc==1.8.0",
     "sphinx-copybutton==0.5.2",
     "sphinx==8.1.3",
     "sphinx_design==0.6.1",
-    "jupyterlab==4.3.4",
-    "jupytext==1.16.7",
-    "nbsphinx>=0.9.7",
 ]
 [project.urls]
 Repo = "https://github.com/radical-ai/torch-sim"
@@ -130,8 +138,3 @@ check-filenames = true
 [tool.pytest]
 addopts = ["--cov-report=term-missing", "--cov=torch_sim", "-v"]
 testpaths = ["tests"]
-
-[tool.coverage.run]
-omit = [
-    "torch_sim/unbatched/*",
-]
