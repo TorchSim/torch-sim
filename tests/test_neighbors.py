@@ -3,11 +3,10 @@ import pytest
 import torch
 from ase import Atoms
 from ase.build import bulk, molecule
-import pytest
 from ase.neighborlist import neighbor_list
-from torch_sim.neighbors import primitive_neighbor_list
 
 from torch_sim.neighbors import (
+    primitive_neighbor_list,
     standard_nl,
     torch_nl_linked_cell,
     torch_nl_n2,
@@ -16,9 +15,11 @@ from torch_sim.neighbors import (
 )
 from torch_sim.transforms import compute_cell_shifts, compute_distances_with_cell_shifts
 
+
 @pytest.fixture
 def dtype() -> torch.dtype:
     return torch.float64
+
 
 def ase_to_torch_batch(
     atoms_list: list[Atoms],
@@ -63,7 +64,6 @@ def ase_to_torch_batch(
         batch.to(device=device),
         n_atoms.to(device=device),
     )
-
 
 
 # Adapted from torch_nl test
@@ -199,7 +199,9 @@ def test_standard_nl(*, cutoff: float, device: torch.device, dtype: torch.dtype)
 
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
-def test_primitive_neighbor_list(*, cutoff: float, device: torch.device, dtype: torch.dtype) -> None:
+def test_primitive_neighbor_list(
+    *, cutoff: float, device: torch.device, dtype: torch.dtype
+) -> None:
     """Check that primitive_neighbor_list gives the same NL as ASE by comparing
     the resulting sorted list of distances between neighbors.
     """
@@ -232,7 +234,7 @@ def test_primitive_neighbor_list(*, cutoff: float, device: torch.device, dtype: 
 
         # Convert shifts_tensor to the same dtype as cell before matrix multiplication
         shifts_tensor = shifts_tensor.to(dtype=dtype)
-        
+
         # Calculate distances with cell shifts
         cell_shifts_prim = torch.mm(shifts_tensor, cell)
         dds_prim = compute_distances_with_cell_shifts(pos, mapping, cell_shifts_prim)
@@ -404,7 +406,9 @@ def test_vesin_nl(*, cutoff: float, device: torch.device, dtype: torch.dtype) ->
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
 @pytest.mark.parametrize("self_interaction", [True, False])
-def test_torch_nl_n2(*, cutoff: float, self_interaction: bool, device: torch.device, dtype: torch.dtype) -> None:
+def test_torch_nl_n2(
+    *, cutoff: float, self_interaction: bool, device: torch.device, dtype: torch.dtype
+) -> None:
     """Check that torch_neighbor_list gives the same NL as ASE by comparing
     the resulting sorted list of distances between neighbors.
     """
@@ -442,7 +446,9 @@ def test_torch_nl_n2(*, cutoff: float, self_interaction: bool, device: torch.dev
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
 @pytest.mark.parametrize("self_interaction", [True, False])
-def test_torch_nl_linked_cell(*, cutoff: float, self_interaction: bool, device: torch.device, dtype: torch.dtype) -> None:
+def test_torch_nl_linked_cell(
+    *, cutoff: float, self_interaction: bool, device: torch.device, dtype: torch.dtype
+) -> None:
     """Check that torch_neighbor_list gives the same NL as ASE by comparing
     the resulting sorted list of distances between neighbors.
     """
