@@ -1,5 +1,5 @@
 [project]
-name = "torch_sim"
+name = "torch_sim_atomistic"
 version = "0.1.0"
 description = "A pytorch toolkit for calculating material properties using MLIPs"
 authors = [
