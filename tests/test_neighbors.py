@@ -199,13 +199,41 @@ def test_standard_nl(*, cutoff: float, device: torch.device, dtype: torch.dtype)
 
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
+@pytest.mark.parametrize("use_jit", [True, False])
 def test_primitive_neighbor_list(
-    *, cutoff: float, device: torch.device, dtype: torch.dtype
+    *, cutoff: float, device: torch.device, dtype: torch.dtype, use_jit: bool
 ) -> None:
     """Check that primitive_neighbor_list gives the same NL as ASE by comparing
     the resulting sorted list of distances between neighbors.
+    
+    Args:
+        cutoff: Cutoff distance for neighbor search
+        device: Torch device to use
+        dtype: Torch dtype to use
+        use_jit: Whether to use the jitted version or disable JIT
     """
     structures = structure_set()
+    
+    # Create a non-jitted version of the function if requested
+    if use_jit:
+        neighbor_list_fn = primitive_neighbor_list
+    else:
+        # Create wrapper that disables JIT
+        import os
+        old_jit_setting = os.environ.get('PYTORCH_JIT')
+        os.environ['PYTORCH_JIT'] = '0'
+        
+        # Import the function again to get the non-jitted version
+        from importlib import reload
+        import torch_sim.neighbors
+        reload(torch_sim.neighbors)
+        neighbor_list_fn = torch_sim.neighbors.primitive_neighbor_list
+        
+        # Restore JIT setting after test
+        if old_jit_setting is not None:
+            os.environ['PYTORCH_JIT'] = old_jit_setting
+        else:
+            os.environ.pop('PYTORCH_JIT', None)
 
     for structure in structures:
         # Convert to torch tensors
@@ -214,9 +242,9 @@ def test_primitive_neighbor_list(
 
         pbc = structure.pbc.any()
 
-        # Get the neighbor list from primitive_neighbor_list
+        # Get the neighbor list using the appropriate function (jitted or non-jitted)
         # Note: No self-interaction
-        idx_i, idx_j, shifts_tensor = primitive_neighbor_list(
+        idx_i, idx_j, shifts_tensor = neighbor_list_fn(
             quantities="ijS",
             positions=pos,
             cell=cell,
@@ -271,7 +299,8 @@ def test_primitive_neighbor_list(
         np.testing.assert_allclose(dds_ref, dist_ref)
 
         # Check that the primitive_neighbor_list distances match ASE's
-        np.testing.assert_allclose(dds_prim, dist_ref)
+        np.testing.assert_allclose(dds_prim, dist_ref, 
+                                   err_msg=f"Failed with use_jit={use_jit}")
 
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
