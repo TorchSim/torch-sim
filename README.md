@@ -26,7 +26,7 @@ orders of magnitude acceleration of popular machine learning potentials.
 
 ## Quick Start
 
-Here is a quick demonstration of many of the core features of TorchSim:
+Here is a quick demonstration of many of the core features of torch-sim:
 native support for GPUs, MLIP models, ASE integration, simple API,
 autobatching, and trajectory reporting, all in under 40 lines of code.
 
@@ -132,4 +132,4 @@ torch-sim's structure is summarized in the [API reference](https://radical-ai.gi
 
 ## Citation
 
-A manuscript is in preparation. Meanwhile, if you use TorchSim in your research, please [cite the Zenodo archive][zenodo].
+A manuscript is in preparation. Meanwhile, if you use torch-sim in your research, please [cite the Zenodo archive][zenodo].
