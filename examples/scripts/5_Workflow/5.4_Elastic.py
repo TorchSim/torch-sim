@@ -11,17 +11,12 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
-from torch_sim import elastic
-from torch_sim.io import atoms_to_state
-from torch_sim.models.mace import MaceModel
-from torch_sim.optimizers import frechet_cell_fire
-from torch_sim.state import SimState
-from torch_sim.units import UnitConversion
+import torch_sim as ts
 
 
 def get_bravais_type(  # noqa : PLR0911
-    state: SimState, length_tol: float = 1e-3, angle_tol: float = 0.1
-) -> elastic.BravaisType:
+    state: ts.state.SimState, length_tol: float = 1e-3, angle_tol: float = 0.1
+) -> ts.elastic.BravaisType:
     """Check and return the crystal system of a structure.
 
     This function determines the crystal system by analyzing the lattice
@@ -52,7 +47,7 @@ def get_bravais_type(  # noqa : PLR0911
         and abs(beta - 90) < angle_tol
         and abs(gamma - 90) < angle_tol
     ):
-        return elastic.BravaisType.CUBIC
+        return ts.elastic.BravaisType.CUBIC
 
     # Hexagonal: a = b ≠ c, alpha = beta = 90°, gamma = 120°
     if (
@@ -61,7 +56,7 @@ def get_bravais_type(  # noqa : PLR0911
         and abs(beta - 90) < angle_tol
         and abs(gamma - 120) < angle_tol
     ):
-        return elastic.BravaisType.HEXAGONAL
+        return ts.elastic.BravaisType.HEXAGONAL
 
     # Tetragonal: a = b ≠ c, alpha = beta = gamma = 90°
     if (
@@ -71,7 +66,7 @@ def get_bravais_type(  # noqa : PLR0911
         and abs(beta - 90) < angle_tol
         and abs(gamma - 90) < angle_tol
     ):
-        return elastic.BravaisType.TETRAGONAL
+        return ts.elastic.BravaisType.TETRAGONAL
 
     # Orthorhombic: a ≠ b ≠ c, alpha = beta = gamma = 90°
     if (
@@ -81,7 +76,7 @@ def get_bravais_type(  # noqa : PLR0911
         and abs(a - b) > length_tol
         and (abs(b - c) > length_tol or abs(a - c) > length_tol)
     ):
-        return elastic.BravaisType.ORTHORHOMBIC
+        return ts.elastic.BravaisType.ORTHORHOMBIC
 
     # Monoclinic: a ≠ b ≠ c, alpha = gamma = 90°, beta ≠ 90°
     if (
@@ -89,7 +84,7 @@ def get_bravais_type(  # noqa : PLR0911
         and abs(gamma - 90) < angle_tol
         and abs(beta - 90) > angle_tol
     ):
-        return elastic.BravaisType.MONOCLINIC
+        return ts.elastic.BravaisType.MONOCLINIC
 
     # Trigonal/Rhombohedral: a = b = c, alpha = beta = gamma ≠ 90°
     if (
@@ -99,13 +94,14 @@ def get_bravais_type(  # noqa : PLR0911
         and abs(beta - gamma) < angle_tol
         and abs(alpha - 90) > angle_tol
     ):
-        return elastic.BravaisType.TRIGONAL
+        return ts.elastic.BravaisType.TRIGONAL
 
     # Triclinic: a ≠ b ≠ c, alpha ≠ beta ≠ gamma ≠ 90°
-    return elastic.BravaisType.TRICLINIC
+    return ts.elastic.BravaisType.TRICLINIC
 
 
 # Calculator
+unit_conv = ts.units.UnitConversion
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float64
 mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
@@ -120,7 +116,7 @@ loaded_model = mace_mp(
 # ASE structure
 struct = bulk("Cu", "fcc", a=3.58, cubic=True).repeat((2, 2, 2))
 
-model = MaceModel(
+model = ts.models.MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,
@@ -132,15 +128,13 @@ model = MaceModel(
 fmax = 1e-3
 
 # Relax positions and cell
-fire_init, fire_update = frechet_cell_fire(model=model, scalar_pressure=0.0)
+fire_init, fire_update = ts.optimizers.frechet_cell_fire(model=model, scalar_pressure=0.0)
 
-state = atoms_to_state(atoms=struct, device=device, dtype=dtype)
+state = ts.io.atoms_to_state(atoms=struct, device=device, dtype=dtype)
 state = fire_init(state=state)
 
 for step in range(300):
-    pressure = (
-        -torch.trace(state.stress.squeeze()) / 3 * UnitConversion.eV_per_Ang3_to_GPa
-    )
+    pressure = -torch.trace(state.stress.squeeze()) / 3 * unit_conv.eV_per_Ang3_to_GPa
     current_fmax = torch.max(torch.abs(state.forces.squeeze()))
     print(
         f"Step {step}, Energy: {state.energy.item():.4f}, "
@@ -155,16 +149,16 @@ for step in range(300):
 bravais_type = get_bravais_type(state)
 
 # Calculate elastic tensor
-elastic_tensor = elastic.calculate_elastic_tensor(
+elastic_tensor = ts.elastic.calculate_elastic_tensor(
     model, state=state, bravais_type=bravais_type
 )
 
 # Convert to GPa
-elastic_tensor = elastic_tensor * UnitConversion.eV_per_Ang3_to_GPa
+elastic_tensor = elastic_tensor * unit_conv.eV_per_Ang3_to_GPa
 
 # Calculate elastic moduli
-bulk_modulus, shear_modulus, poisson_ratio, pugh_ratio = elastic.calculate_elastic_moduli(
-    elastic_tensor
+bulk_modulus, shear_modulus, poisson_ratio, pugh_ratio = (
+    ts.elastic.calculate_elastic_moduli(elastic_tensor)
 )
 
 # Print elastic tensor

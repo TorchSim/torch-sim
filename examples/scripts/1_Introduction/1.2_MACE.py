@@ -10,8 +10,7 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
-from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import atoms_to_state
+import torch_sim as ts
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 
 
@@ -39,7 +38,7 @@ si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 model = UnbatchedMaceModel(
     model=loaded_model,
     device=device,
-    neighbor_list_fn=vesin_nl_ts,
+    neighbor_list_fn=ts.neighbors.vesin_nl_ts,
     compute_forces=True,
     compute_stress=True,
     dtype=dtype,
@@ -47,7 +46,7 @@ model = UnbatchedMaceModel(
 )
 
 # Convert ASE atoms to state
-state = atoms_to_state(si_dc, device=device, dtype=dtype)
+state = ts.state.atoms_to_state(si_dc, device=device, dtype=dtype)
 
 # Run inference
 results = model(state)

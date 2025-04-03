@@ -23,10 +23,7 @@ from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core import Composition, Element, Structure
 from tqdm import tqdm
 
-from torch_sim.io import state_to_structures, structures_to_state
-from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.quantities import calc_kT
-from torch_sim.transforms import get_fractional_coordinates
+import torch_sim as ts
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import (
     NVTNoseHooverState,
@@ -34,13 +31,7 @@ from torch_sim.unbatched.unbatched_integrators import (
     nvt_nose_hoover_invariant,
 )
 from torch_sim.units import MetalUnits as Units
-from torch_sim.workflows.a2c import (
-    get_subcells_to_crystallize,
-    get_target_temperature,
-    get_unit_cell_relaxed_structure,
-    random_packed_structure,
-    subcells_to_structures,
-)
+from torch_sim.workflows import a2c
 
 
 """
@@ -83,14 +74,14 @@ species = [Element.from_Z(Z).symbol for Z in atomic_numbers]
 model = UnbatchedMaceModel(
     model=raw_model,
     device=device,
-    neighbor_list_fn=vesin_nl_ts,
+    neighbor_list_fn=ts.neighbors.vesin_nl_ts,
     compute_forces=True,
     compute_stress=False,  # We don't need stress for MD
     dtype=dtype,
     enable_cueq=False,
 )
 # Workflow starts here
-structure = random_packed_structure(
+structure = a2c.random_packed_structure(
     composition=comp,
     cell=cell,
     auto_diameter=True,
@@ -141,9 +132,10 @@ def step_fn(
     step: int, state: NVTNoseHooverState, logger: dict
 ) -> tuple[NVTNoseHooverState, dict]:
     """Step function for NVT-MD with Nose-Hoover thermostat."""
-    current_temp = get_target_temperature(step, equi_steps, cool_steps, T_high, T_low)
+    current_temp = a2c.get_target_temperature(step, equi_steps, cool_steps, T_high, T_low)
     logger["T"][step] = (
-        calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
+        ts.quantities.calc_kT(masses=state.masses, momenta=state.momenta)
+        / Units.temperature
     )
     logger["H"][step] = nvt_nose_hoover_invariant(
         state, kT=current_temp * Units.temperature
@@ -164,12 +156,12 @@ print(
 )
 
 # Convert positions to fractional coordinates
-fractional_positions = get_fractional_coordinates(
+fractional_positions = ts.transforms.get_fractional_coordinates(
     positions=state.positions, cell=state.cell
 )
 
 # Get subcells to crystallize
-subcells = get_subcells_to_crystallize(
+subcells = a2c.get_subcells_to_crystallize(
     fractional_positions=fractional_positions,
     species=species,
     d_frac=0.2 if os.getenv("CI") else 0.1,
@@ -189,7 +181,7 @@ subcells = [
 ]
 print(f"Subcells kept for this example: {len(subcells)}")
 
-candidate_structures = subcells_to_structures(
+candidate_structures = a2c.subcells_to_structures(
     candidates=subcells,
     fractional_positions=fractional_positions,
     cell=state.cell,
@@ -211,16 +203,18 @@ model._compute_stress = True  # noqa: SLF001
 start_time = time.perf_counter()
 pymatgen_relaxed_struct_list = []
 for struct in tqdm(pymatgen_struct_list):
-    state = structures_to_state(struct, device=device, dtype=dtype)
-    final_state, logger, final_energy, final_pressure = get_unit_cell_relaxed_structure(
-        state=state,
-        model=model,
-        max_iter=max_optim_steps,
+    state = ts.io.structures_to_state(struct, device=device, dtype=dtype)
+    final_state, logger, final_energy, final_pressure = (
+        a2c.get_unit_cell_relaxed_structure(
+            state=state,
+            model=model,
+            max_iter=max_optim_steps,
+        )
     )
 
     # Add batch dimension to cell
     final_state.cell = final_state.cell.reshape(1, 3, 3)
-    final_struct_list = state_to_structures(final_state)
+    final_struct_list = ts.io.state_to_structures(final_state)
 
     # NOTE: Possible OOM, so we don't store the logger
     # relaxed_structures.append((pymatgen_struct, logger, final_energy, final_pressure))

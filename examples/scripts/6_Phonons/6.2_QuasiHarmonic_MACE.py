@@ -23,13 +23,6 @@ from phonopy.api_qha import PhonopyQHA
 from phonopy.structure.atoms import PhonopyAtoms
 
 import torch_sim as ts
-from torch_sim import TrajectoryReporter, optimize
-from torch_sim.io import state_to_phonopy
-from torch_sim.models.mace import MaceModel
-from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.optimizers import frechet_cell_fire
-from torch_sim.runners import generate_force_convergence_fn
-from torch_sim.state import SimState
 
 
 def get_relaxed_structure(
@@ -39,7 +32,7 @@ def get_relaxed_structure(
     fmax: float = 1e-3,
     *,
     use_autobatcher: bool = False,
-) -> SimState:
+) -> ts.state.SimState:
     """Get relaxed structure.
 
     Args:
@@ -53,7 +46,7 @@ def get_relaxed_structure(
         SimState: Relaxed structure
     """
     trajectory_file = "traj.h5"
-    reporter = TrajectoryReporter(
+    reporter = ts.TrajectoryReporter(
         trajectory_file,
         state_frequency=0,
         prop_calculators={
@@ -63,11 +56,11 @@ def get_relaxed_structure(
             },
         },
     )
-    converge_max_force = generate_force_convergence_fn(force_tol=fmax)
-    final_state = optimize(
+    converge_max_force = ts.runners.generate_force_convergence_fn(force_tol=fmax)
+    final_state = ts.optimize(
         system=struct,
         model=model,
-        optimizer=frechet_cell_fire,
+        optimizer=ts.optimizers.frechet_cell_fire,
         constant_volume=True,
         hydrostatic_strain=True,
         max_steps=Nrelax,
@@ -83,7 +76,7 @@ def get_relaxed_structure(
 
 
 def get_qha_structures(
-    state: SimState,
+    state: ts.state.SimState,
     length_factors: np.ndarray,
     model: torch.nn.Module | None,
     Nmax: int = 300,
@@ -105,7 +98,7 @@ def get_qha_structures(
         list[PhonopyAtoms]: Relaxed PhonopyAtoms structures at different volumes
     """
     # Convert state to PhonopyAtoms
-    relaxed_struct = state_to_phonopy(state)[0]
+    relaxed_struct = ts.io.state_to_phonopy(state)[0]
 
     # Create scaled structures
     scaled_structs = [
@@ -118,14 +111,14 @@ def get_qha_structures(
     ]
 
     # Relax all structures
-    scaled_state = optimize(
+    scaled_state = ts.optimize(
         system=scaled_structs,
         model=model,
-        optimizer=frechet_cell_fire,
+        optimizer=ts.optimizers.frechet_cell_fire,
         constant_volume=True,
         hydrostatic_strain=True,
         max_steps=Nmax,
-        convergence_fn=generate_force_convergence_fn(force_tol=fmax),
+        convergence_fn=ts.runners.generate_force_convergence_fn(force_tol=fmax),
         autobatcher=use_autobatcher,
     )
 
@@ -175,7 +168,7 @@ def get_qha_phonons(
         ph_sets.append(ph)
 
     # Run the model on flattened structure
-    reporter = TrajectoryReporter(
+    reporter = ts.TrajectoryReporter(
         None,
         state_frequency=0,
         prop_calculators={
@@ -226,10 +219,10 @@ loaded_model = mace_mp(
     default_dtype=dtype,
     device=device,
 )
-model = MaceModel(
+model = ts.models.MaceModel(
     model=loaded_model,
     device=device,
-    neighbor_list_fn=vesin_nl_ts,
+    neighbor_list_fn=ts.neighbors.vesin_nl_ts,
     compute_forces=True,
     compute_stress=True,
     dtype=dtype,

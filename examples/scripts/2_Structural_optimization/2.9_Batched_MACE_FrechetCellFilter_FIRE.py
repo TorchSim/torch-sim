@@ -13,10 +13,7 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
-from torch_sim.io import atoms_to_state
-from torch_sim.models.mace import MaceModel
-from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.optimizers import frechet_cell_fire
+import torch_sim as ts
 from torch_sim.units import UnitConversion
 
 
@@ -65,10 +62,10 @@ print(f"Iron atoms: {len(fe_dc)}")
 print(f"Total number of structures: {len(atoms_list)}")
 
 # Create batched model
-model = MaceModel(
+model = ts.models.MaceModel(
     model=loaded_model,
     device=device,
-    neighbor_list_fn=vesin_nl_ts,
+    neighbor_list_fn=ts.neighbors.vesin_nl_ts,
     compute_forces=True,
     compute_stress=True,
     dtype=dtype,
@@ -76,12 +73,12 @@ model = MaceModel(
 )
 
 # Convert atoms to state
-state = atoms_to_state(atoms_list, device=device, dtype=dtype)
+state = ts.state.atoms_to_state(atoms_list, device=device, dtype=dtype)
 # Run initial inference
 results = model(state)
 
 # Initialize unit cell gradient descent optimizer
-fire_init, fire_update = frechet_cell_fire(
+fire_init, fire_update = ts.optimizers.frechet_cell_fire(
     model=model,
     cell_factor=None,  # Will default to atoms per batch
     hydrostatic_strain=False,

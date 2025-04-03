@@ -21,12 +21,7 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 from phono3py import Phono3py
 
-from torch_sim import TorchSimTrajectory, TrajectoryReporter, optimize
-from torch_sim.io import phonopy_to_state, state_to_phonopy
-from torch_sim.models.mace import MaceModel
-from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.optimizers import frechet_cell_fire
-from torch_sim.runners import generate_force_convergence_fn
+import torch_sim as ts
 
 
 def print_relax_info(trajectory_file: str, device: torch.device) -> None:
@@ -36,7 +31,7 @@ def print_relax_info(trajectory_file: str, device: torch.device) -> None:
         trajectory_file: Path to the trajectory file
         device: Torch device for calculations
     """
-    with TorchSimTrajectory(trajectory_file) as traj:
+    with ts.Trajectory(trajectory_file) as traj:
         energies = traj.get_array("potential_energy")
         forces = traj.get_array("forces")
         if isinstance(forces, np.ndarray):
@@ -59,10 +54,10 @@ mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace
 loaded_model = mace_mp(
     model=mace_checkpoint_url, return_raw_model=True, default_dtype=dtype, device=device
 )
-model = MaceModel(
+model = ts.models.MaceModel(
     model=loaded_model,
     device=device,
-    neighbor_list_fn=vesin_nl_ts,
+    neighbor_list_fn=ts.neighbors.vesin_nl_ts,
     compute_forces=True,
     compute_stress=True,
     dtype=dtype,
@@ -87,9 +82,9 @@ temperatures = np.arange(
 )  # temperature range for thermal conductivity calculation
 
 # Relax structure
-converge_max_force = generate_force_convergence_fn(force_tol=fmax)
+converge_max_force = ts.runners.generate_force_convergence_fn(force_tol=fmax)
 trajectory_file = "anha.h5"
-reporter = TrajectoryReporter(
+reporter = ts.TrajectoryReporter(
     trajectory_file,
     state_frequency=0,
     prop_calculators={
@@ -99,10 +94,10 @@ reporter = TrajectoryReporter(
         },
     },
 )
-final_state = optimize(
+final_state = ts.optimize(
     system=struct,
     model=model,
-    optimizer=frechet_cell_fire,
+    optimizer=ts.optimizers.frechet_cell_fire,
     constant_volume=True,
     hydrostatic_strain=True,
     max_steps=Nrelax,
@@ -112,7 +107,7 @@ final_state = optimize(
 print_relax_info(trajectory_file, device)
 
 # Phono3py object
-phonopy_atoms = state_to_phonopy(final_state)[0]
+phonopy_atoms = ts.io.state_to_phonopy(final_state)[0]
 ph3 = Phono3py(
     phonopy_atoms,
     supercell_matrix=supercell_matrix,
@@ -123,7 +118,7 @@ ph3 = Phono3py(
 # Calculate FC2
 ph3.generate_fc2_displacements(distance=displ)
 supercells_fc2 = ph3.phonon_supercells_with_displacements
-state = phonopy_to_state(supercells_fc2, device, dtype)
+state = ts.io.phonopy_to_state(supercells_fc2, device, dtype)
 results = model(state)
 n_atoms_per_supercell = [len(sc) for sc in supercells_fc2]
 force_sets = []
@@ -138,7 +133,7 @@ ph3.produce_fc2(symmetrize_fc2=True)
 # Calculate FC3
 ph3.generate_displacements(distance=displ)
 supercells_fc3 = ph3.supercells_with_displacements
-state = phonopy_to_state(supercells_fc3, device, dtype)
+state = ts.io.phonopy_to_state(supercells_fc3, device, dtype)
 results = model(state)
 n_atoms_per_supercell = [len(sc) for sc in supercells_fc3]
 force_sets = []

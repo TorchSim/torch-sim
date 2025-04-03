@@ -23,11 +23,7 @@ from phonopy.phonon.band_structure import (
     get_band_qpoints_by_seekpath,
 )
 
-from torch_sim import optimize
-from torch_sim.io import phonopy_to_state, state_to_phonopy
-from torch_sim.models.mace import MaceModel
-from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.optimizers import frechet_cell_fire
+import torch_sim as ts
 
 
 def get_qpts_and_connections(
@@ -109,26 +105,26 @@ Nrelax = 300  # number of relaxation steps
 displ = 0.01  # atomic displacement for phonons (in Angstrom)
 
 # Relax atomic positions
-model = MaceModel(
+model = ts.models.MaceModel(
     model=loaded_model,
     device=device,
-    neighbor_list_fn=vesin_nl_ts,
+    neighbor_list_fn=ts.neighbors.vesin_nl_ts,
     compute_forces=True,
     compute_stress=True,
     dtype=dtype,
     enable_cueq=False,
 )
-final_state = optimize(
+final_state = ts.optimize(
     system=struct,
     model=model,
-    optimizer=frechet_cell_fire,
+    optimizer=ts.optimizers.frechet_cell_fire,
     constant_volume=True,
     hydrostatic_strain=True,
     max_steps=Nrelax,
 )
 
 # Define atoms and Phonopy object
-atoms = state_to_phonopy(final_state)[0]
+atoms = ts.state.state_to_phonopy(final_state)[0]
 ph = Phonopy(atoms, supercell_matrix)
 
 # Generate FC2 displacements
@@ -136,7 +132,7 @@ ph.generate_displacements(distance=displ)
 supercells = ph.supercells_with_displacements
 
 # Convert PhonopyAtoms to state
-state = phonopy_to_state(supercells, device, dtype)
+state = ts.io.phonopy_to_state(supercells, device, dtype)
 results = model(state)
 
 # Extract forces and convert back to list of numpy arrays for phonopy

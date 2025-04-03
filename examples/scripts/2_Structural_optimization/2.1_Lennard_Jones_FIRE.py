@@ -11,7 +11,7 @@ import os
 
 import torch
 
-from torch_sim.state import SimState
+import torch_sim as ts
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_optimizers import fire
 
@@ -87,7 +87,7 @@ model = UnbatchedLennardJonesModel(
     compute_forces=True,
     compute_stress=False,
 )
-state = SimState(
+state = ts.state.SimState(
     positions=positions,
     masses=masses,
     cell=cell,

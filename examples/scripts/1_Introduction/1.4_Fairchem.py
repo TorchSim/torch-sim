@@ -12,8 +12,7 @@ import sys
 import torch
 from ase.build import bulk
 
-from torch_sim.models.fairchem import FairChemModel
-from torch_sim.state import atoms_to_state
+import torch_sim as ts
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -32,13 +31,13 @@ MODEL_PATH = model_name_to_local_file(
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43).repeat((2, 2, 2))
 atomic_numbers = si_dc.get_atomic_numbers()
-model = FairChemModel(
+model = ts.models.FairChemModel(
     model=MODEL_PATH,
     cpu=False,
     seed=0,
 )
 atoms_list = [si_dc, si_dc]
-state = atoms_to_state(atoms_list)
+state = ts.state.atoms_to_state(atoms_list)
 
 results = model(state)
 

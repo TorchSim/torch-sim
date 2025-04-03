@@ -11,8 +11,7 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
-from torch_sim.models.mace import MaceModel
-from torch_sim.neighbors import vesin_nl_ts
+import torch_sim as ts
 
 
 # Set device and data type
@@ -36,13 +35,13 @@ loaded_model = mace_mp(
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 atoms_list = [si_dc, si_dc]
 
-batched_model = MaceModel(
+batched_model = ts.models.MaceModel(
     # Pass the raw model
     model=loaded_model,
     # Or load from compiled model
     # model=compiled_model,
     device=device,
-    neighbor_list_fn=vesin_nl_ts,
+    neighbor_list_fn=ts.neighbors.vesin_nl_ts,
     compute_forces=True,
     compute_stress=True,
     dtype=dtype,
