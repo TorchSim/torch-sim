@@ -90,7 +90,7 @@ print(relaxed_state.energy)
 ### PyPI Installation
 
 ```sh
-pip install torch-sim
+pip install torch-sim-atomistic
 ```
 
 ### Installing from source
