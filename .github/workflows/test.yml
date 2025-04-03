@@ -96,10 +96,10 @@ jobs:
           if [ -f fairchem-repo/packages/requirements-optional.txt ]; then
             uv pip install -r fairchem-repo/packages/requirements-optional.txt --system
           fi
-          # uv pip install -e fairchem-repo/packages/fairchem-core[dev] --system
+          uv pip install -e fairchem-repo/packages/fairchem-core[dev] --system
 
       - name: Install torch_sim with model dependencies
-        # if: ${{ matrix.model.name != 'fairchem' }}
+        if: ${{ matrix.model.name != 'fairchem' }}
         run: uv pip install -e .[test,${{ matrix.model.name }}] --resolution=${{ matrix.version.resolution }} --system
 
 
