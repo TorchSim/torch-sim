@@ -121,9 +121,8 @@ class TrajectoryReporter:
         """
         self.state_frequency = state_frequency
         self.trajectory_kwargs = trajectory_kwargs or {}
-        self.trajectory_kwargs["mode"] = self.trajectory_kwargs.get(
-            "mode", "w"
-        )  # default will be to force overwrite if none is set
+        # default is to force overwrite
+        self.trajectory_kwargs["mode"] = self.trajectory_kwargs.get("mode", "w")
 
         self.prop_calculators = prop_calculators or {}
         self.state_kwargs = state_kwargs or {}
@@ -131,11 +130,11 @@ class TrajectoryReporter:
         self.metadata = metadata
 
         self.trajectories = []
-        if filenames is not None:
-            self.load_new_trajectories(filenames)
-        else:
+        if filenames is None:
             self.filenames = None
             self.trajectories = []
+        else:
+            self.load_new_trajectories(filenames)
 
         self._add_model_arg_to_prop_calculators()
 
@@ -353,7 +352,7 @@ class TorchSimTrajectory:
 
         Args:
             filename (str | pathlib.Path): Path to the HDF5 file
-            mode (Literal["w", "a", "r"]): Mode to open the file in. "w" will create
+            mode ("w" | "a" | "r"): Mode to open the file in. "w" will create
                 a new file and overwrite any existing file, "a" will append to the
                 existing file and "r" will open the file for reading only. Defaults to
                 "r".

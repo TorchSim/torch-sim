@@ -86,36 +86,36 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
     def _revargsort_bins(lst: list[float]) -> list[int]:
         return sorted(range(len(lst)), key=lambda i: -lst[i])
 
-    isdict = isinstance(items, dict)
+    is_dict = isinstance(items, dict)
 
     if not hasattr(items, "__len__"):
         raise TypeError("d must be iterable")
 
-    if not isdict and hasattr(items[0], "__len__"):
+    if not is_dict and hasattr(items[0], "__len__"):
         if weight_pos is not None:
             key = lambda x: x[weight_pos]  # noqa: E731
         if key is None:
             raise ValueError("Must provide weight_pos or key for tuple list")
 
-    if not isdict and key:
+    if not is_dict and key:
         new_dict = dict(enumerate(items))
         items = {i: key(val) for i, val in enumerate(items)}
-        isdict = True
+        is_dict = True
         is_tuple_list = True
     else:
         is_tuple_list = False
 
-    if isdict:
+    if is_dict:
         # get keys and values (weights)
         keys_vals = items.items()
         keys = [k for k, v in keys_vals]
         vals = [v for k, v in keys_vals]
 
         # sort weights decreasingly
-        ndcs = _revargsort_bins(vals)
+        n_dcs = _revargsort_bins(vals)
 
-        weights = _get_bins(vals, ndcs)
-        keys = _get_bins(keys, ndcs)
+        weights = _get_bins(vals, n_dcs)
+        keys = _get_bins(keys, n_dcs)
 
         bins = [{}]
     else:
@@ -140,7 +140,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
 
     weights = _get_bins(weights, valid_ndcs)
 
-    if isdict:
+    if is_dict:
         keys = _get_bins(keys, valid_ndcs)
 
     # prepare array containing the current weight of the bins
@@ -148,7 +148,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
 
     # iterate through the weight list, starting with heaviest
     for item, weight in enumerate(weights):
-        if isdict:
+        if is_dict:
             key = keys[item]
 
         # find candidate bins where the weight might fit
@@ -170,7 +170,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
             # open a new bin
             b = len(weight_sum)
             weight_sum.append(0.0)
-            if isdict:
+            if is_dict:
                 bins.append({})
             else:
                 bins.append([])
@@ -180,7 +180,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
             b = 0
 
         # put it in
-        if isdict:
+        if is_dict:
             bins[b][key] = weight
         else:
             bins[b].append(weight)
@@ -234,9 +234,7 @@ def measure_model_memory_forward(state: SimState, model: ModelInterface) -> floa
 
     logging.info(  # noqa: LOG015
         "Model Memory Estimation: Running forward pass on state with "
-        "%s atoms and %s batches.",
-        state.n_atoms,
-        state.n_batches,
+        f"{state.n_atoms} atoms and {state.n_batches} batches.",
     )
     # Clear GPU memory
     torch.cuda.synchronize()
@@ -324,7 +322,7 @@ def calculate_memory_scaler(
     Args:
         state (SimState): State to calculate metric for, with shape information
             specific to the SimState instance.
-        memory_scales_with (Literal["n_atoms_x_density", "n_atoms"]): Type of metric
+        memory_scales_with ("n_atoms_x_density" |s "n_atoms"): Type of metric
             to use. "n_atoms" uses only atom count and is suitable for models that
             have a fixed number of neighbors. "n_atoms_x_density" uses atom count
             multiplied by number density and is better for models with radial cutoffs
@@ -404,12 +402,9 @@ def estimate_max_memory_scaler(
 
     logging.info(  # noqa: LOG015
         "Model Memory Estimation: Estimating memory from worst case of "
-        "largest and smallest system. Largest system has %s atoms and %s batches, "
-        "and smallest system has %s atoms and %s batches.",
-        max_state.n_atoms,
-        max_state.n_batches,
-        min_state.n_atoms,
-        min_state.n_batches,
+        f"largest and smallest system. Largest system has {max_state.n_atoms} atoms "
+        f"and {max_state.n_batches} batches, and smallest system has "
+        f"{min_state.n_atoms} atoms and {min_state.n_batches} batches.",
     )
     min_state_max_batches = determine_max_batch_size(min_state, model, **kwargs)
     max_state_max_batches = determine_max_batch_size(max_state, model, **kwargs)
@@ -474,7 +469,7 @@ class ChunkingAutoBatcher:
         Args:
             model (ModelInterface): Model to batch for, used to estimate memory
                 requirements.
-            memory_scales_with (Literal["n_atoms", "n_atoms_x_density"]): Metric to use
+            memory_scales_with ("n_atoms" | "n_atoms_x_density"): Metric to use
                 for estimating memory requirements:
                 - "n_atoms": Uses only atom count
                 - "n_atoms_x_density": Uses atom count multiplied by number density
@@ -767,7 +762,7 @@ class HotSwappingAutoBatcher:
         Args:
             model (ModelInterface): Model to batch for, used to estimate memory
                 requirements.
-            memory_scales_with (Literal["n_atoms", "n_atoms_x_density"]): Metric to use
+            memory_scales_with ("n_atoms" | "n_atoms_x_density"): Metric to use
                 for estimating memory requirements:
                 - "n_atoms": Uses only atom count
                 - "n_atoms_x_density": Uses atom count multiplied by number density

@@ -87,6 +87,7 @@ ignore = [
     "ERA001",  # Found commented-out code
     "FIX002",  # Line contains TODO, consider resolving the issue
     "G003",    # logging-string-concat
+    "G004",    # logging uses f-string
     "INP001",  # implicit-namespace-package
     "ISC001",  # avoid conflicts with the formatter
     "N803",    # Variable name should be lowercase

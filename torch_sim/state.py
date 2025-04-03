@@ -397,7 +397,7 @@ def infer_property_scope(
 
     Args:
         state (SimState): The state to analyze
-        ambiguous_handling (Literal["error", "globalize", "globalize_warn"]): How to
+        ambiguous_handling ("error" | "globalize" | "globalize_warn"): How to
             handle properties with ambiguous scope. Options:
             - "error": Raise an error for ambiguous properties
             - "globalize": Treat ambiguous properties as global
@@ -477,7 +477,7 @@ def _get_property_attrs(
 
     Args:
         state (SimState): The state to extract attributes from
-        ambiguous_handling (Literal["error", "globalize"]): How to handle ambiguous
+        ambiguous_handling ("error" | "globalize"): How to handle ambiguous
             properties
 
     Returns:
@@ -570,7 +570,7 @@ def _split_state(
 
     Args:
         state (SimState): The SimState to split
-        ambiguous_handling (Literal["error", "globalize"]): How to handle ambiguous
+        ambiguous_handling ("error" | "globalize"): How to handle ambiguous
             properties
 
     Returns:
@@ -622,7 +622,7 @@ def _pop_states(
     Args:
         state (SimState): The SimState to modify
         pop_indices (list[int] | torch.Tensor): The batch indices to extract and remove
-        ambiguous_handling (Literal["error", "globalize"]): How to handle ambiguous
+        ambiguous_handling ("error" | "globalize"): How to handle ambiguous
             properties
 
     Returns:
@@ -677,7 +677,7 @@ def _slice_state(
         state (SimState): The state to slice
         batch_indices (list[int] | torch.Tensor): Batch indices to include in the
             sliced state
-        ambiguous_handling (Literal["error", "globalize"]): How to handle ambiguous
+        ambiguous_handling ("error" | "globalize"): How to handle ambiguous
             properties. If "error", an error is raised if a property has ambiguous
             scope. If "globalize", properties with ambiguous scope are treated as
             global.
