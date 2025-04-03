@@ -87,6 +87,19 @@ relaxed_state = ts.optimize(
 print(relaxed_state.energy)
 ```
 
+## Speedup
+
+torch-sim achieves up to 100x speedup compared to ASE with popular MLIPs.
+
+![Speedup comparison](https://github.com/user-attachments/assets/2ad1d8b0-a7aa-467b-9260-acb76a1ed591)
+
+This figure compares the time per atom of ASE and torch_sim. Time per atom is defined
+as the number of atoms / total time. While ASE can only run a single system of n_atoms
+(on the x axis), torch_sim can run as many systems as will fit in memory. On an H100,
+the max atoms that could fit in memory was 8000 for gemnet, 10000 for MACE, and 2500
+for SevenNet. This metric describes model performance by capturing speed and memory
+usage simultaneously.
+
 ## Installation
 
 ### PyPI Installation
@@ -102,19 +115,6 @@ git clone https://github.com/radical-ai/torch-sim
 cd torch-sim
 pip install .
 ```
-
-## Speedup
-
-torch-sim achieves up to 100x speedup compared to ASE with popular MLIPs.
-
-![Speedup comparison](https://github.com/user-attachments/assets/2ad1d8b0-a7aa-467b-9260-acb76a1ed591)
-
-This figure compares the time per atom of ASE and torch_sim. Time per atom is defined
-as the number of atoms / total time. While ASE can only run a single system of n_atoms
-(on the x axis), torch_sim can run as many systems as will fit in memory. On an H100,
-the max atoms that could fit in memory was 8000 for gemnet, 10000 for MACE, and 2500
-for SevenNet. This metric describes model performance by capturing speed and memory
-usage simultaneously.
 
 ## Examples
 
