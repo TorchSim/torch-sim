@@ -205,7 +205,7 @@ def test_primitive_neighbor_list(
 ) -> None:
     """Check that primitive_neighbor_list gives the same NL as ASE by comparing
     the resulting sorted list of distances between neighbors.
-    
+
     Args:
         cutoff: Cutoff distance for neighbor search
         device: Torch device to use
@@ -213,27 +213,30 @@ def test_primitive_neighbor_list(
         use_jit: Whether to use the jitted version or disable JIT
     """
     structures = structure_set()
-    
+
     # Create a non-jitted version of the function if requested
     if use_jit:
         neighbor_list_fn = primitive_neighbor_list
     else:
         # Create wrapper that disables JIT
         import os
-        old_jit_setting = os.environ.get('PYTORCH_JIT')
-        os.environ['PYTORCH_JIT'] = '0'
-        
+
+        old_jit_setting = os.environ.get("PYTORCH_JIT")
+        os.environ["PYTORCH_JIT"] = "0"
+
         # Import the function again to get the non-jitted version
         from importlib import reload
+
         import torch_sim.neighbors
+
         reload(torch_sim.neighbors)
         neighbor_list_fn = torch_sim.neighbors.primitive_neighbor_list
-        
+
         # Restore JIT setting after test
         if old_jit_setting is not None:
-            os.environ['PYTORCH_JIT'] = old_jit_setting
+            os.environ["PYTORCH_JIT"] = old_jit_setting
         else:
-            os.environ.pop('PYTORCH_JIT', None)
+            os.environ.pop("PYTORCH_JIT", None)
 
     for structure in structures:
         # Convert to torch tensors
@@ -299,8 +302,9 @@ def test_primitive_neighbor_list(
         np.testing.assert_allclose(dds_ref, dist_ref)
 
         # Check that the primitive_neighbor_list distances match ASE's
-        np.testing.assert_allclose(dds_prim, dist_ref, 
-                                   err_msg=f"Failed with use_jit={use_jit}")
+        np.testing.assert_allclose(
+            dds_prim, dist_ref, err_msg=f"Failed with use_jit={use_jit}"
+        )
 
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
