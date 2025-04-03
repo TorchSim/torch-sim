@@ -3,7 +3,7 @@
 ## Runners
 
 `torch-sim` makes atomistic simulation easy with a fully featured high-level API. It introduces three "runner" functions: `integrate` for molecular dynamics, `optimize` for relaxation, and `static` for static evaluation. All functions share a similar signature and support auto batching, trajectory reporting, diverse models, and IO with popular libraries. Further, they support all of this across various simulation types, such as integration with NVT or NPT and optimization with gradient descent or FIRE. 
-Runners use the [metal unit system](https://docs.lammps.org/units.html).
+All runners use the [metal unit system](https://docs.lammps.org/units.html).
 
 Learn more in [Introduction to `torch-sim`](../tutorials/high_level_tutorial.ipynb)
 
