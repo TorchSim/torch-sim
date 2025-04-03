@@ -87,7 +87,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v2
 
-      - name: Install fairchem repository dependencies
+      - name: Install fairchem repository and dependencies
         if: ${{ matrix.model.name == 'fairchem' }}
         run: |
           if [ -f fairchem-repo/packages/requirements.txt ]; then
@@ -97,6 +97,7 @@ jobs:
             uv pip install -r fairchem-repo/packages/requirements-optional.txt --system
           fi
           uv pip install -e fairchem-repo/packages/fairchem-core[dev] --system
+          uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
 
       - name: Install torch_sim with model dependencies
         if: ${{ matrix.model.name != 'fairchem' }}
