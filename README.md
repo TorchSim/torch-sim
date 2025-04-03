@@ -122,7 +122,7 @@ Even more usage examples can be found in the [`examples/`](examples/readme.md) f
 
 ## Core Modules
 
-The `torch-sim` structured is summarized in the [API reference](https://radical-ai.github.io/torch-sim/reference/index.html) documentation.
+`torch-sim`'s structure is summarized in the [API reference](https://radical-ai.github.io/torch-sim/reference/index.html) documentation.
 
 ## License
 
