@@ -884,7 +884,7 @@ class TorchSimTrajectory:
 
     def get_state(
         self,
-        frame: int,
+        frame: int = -1,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
     ) -> SimState:

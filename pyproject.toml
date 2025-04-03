@@ -118,7 +118,6 @@ pep8-naming.ignore-names = ["get_kT", "kT"]
 "examples/**/*" = ["B018"]
 "examples/tutorials/**/*" = ["ALL"]
 
-
 [tool.ruff.format]
 docstring-code-format = true
 
@@ -128,3 +127,8 @@ check-filenames = true
 [tool.pytest]
 addopts = ["--cov-report=term-missing", "--cov=torch_sim", "-v"]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+omit = [
+    "torch_sim/unbatched/*",
+]
