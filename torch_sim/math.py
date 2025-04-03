@@ -920,7 +920,7 @@ def _matrix_log_33(  # noqa: C901
         return _matrix_log_case3(T, lambda_val, mu, nu, num_tol)
 
     else:
-        raise ValueError(f"Unknown case: {case}")
+        raise ValueError(f"Unknown eigenvalue {case=}")
 
 
 def matrix_log_scipy(matrix: torch.Tensor) -> torch.Tensor:
@@ -980,9 +980,9 @@ def matrix_log_33(
     matrix = matrix.to(torch.float64)
     try:
         return _matrix_log_33(matrix).to(sim_dtype)
-    except (ValueError, RuntimeError) as e:
+    except (ValueError, RuntimeError) as exc:
         msg = (
-            f"Error computing matrix logarithm with _matrix_log_33 {e} \n"
+            f"Error computing matrix logarithm with _matrix_log_33 {exc} \n"
             "Falling back to scipy"
         )
         if fallback_warning:

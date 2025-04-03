@@ -304,8 +304,8 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
                 maximum sigma value from sigma_matrix.
         """
         super().__init__()
-        self._device = device or torch.device("cpu")
-        self._dtype = dtype
+        self.device = device or torch.device("cpu")
+        self.dtype = dtype
         self.pbc = pbc
         self._compute_forces = compute_forces
         self._compute_stress = compute_stress
@@ -318,9 +318,9 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
         n_species = len(torch.unique(species))
 
         # Initialize parameter matrices with defaults if not provided
-        default_sigma = DEFAULT_SIGMA.to(device=self._device, dtype=self._dtype)
-        default_epsilon = DEFAULT_EPSILON.to(device=self._device, dtype=self._dtype)
-        default_alpha = DEFAULT_ALPHA.to(device=self._device, dtype=self._dtype)
+        default_sigma = DEFAULT_SIGMA.to(device=self.device, dtype=self.dtype)
+        default_epsilon = DEFAULT_EPSILON.to(device=self.device, dtype=self.dtype)
+        default_alpha = DEFAULT_ALPHA.to(device=self.device, dtype=self.dtype)
 
         # Validate matrix shapes match number of species
         if sigma_matrix is not None and sigma_matrix.shape != (n_species, n_species):
@@ -338,19 +338,19 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
             sigma_matrix
             if sigma_matrix is not None
             else default_sigma
-            * torch.ones((n_species, n_species), dtype=self._dtype, device=self._device)
+            * torch.ones((n_species, n_species), dtype=self.dtype, device=self.device)
         )
         self.epsilon_matrix = (
             epsilon_matrix
             if epsilon_matrix is not None
             else default_epsilon
-            * torch.ones((n_species, n_species), dtype=self._dtype, device=self._device)
+            * torch.ones((n_species, n_species), dtype=self.dtype, device=self.device)
         )
         self.alpha_matrix = (
             alpha_matrix
             if alpha_matrix is not None
             else default_alpha
-            * torch.ones((n_species, n_species), dtype=self._dtype, device=self._device)
+            * torch.ones((n_species, n_species), dtype=self.dtype, device=self.device)
         )
 
         # Ensure parameter matrices are symmetric (required for energy conservation)
@@ -361,8 +361,8 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
         # Set interaction cutoff distance
         self.cutoff = torch.tensor(
             cutoff or float(self.sigma_matrix.max()),
-            dtype=self._dtype,
-            device=self._device,
+            dtype=self.dtype,
+            device=self.device,
         )
 
     def forward(
@@ -389,10 +389,10 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
         """
         # Convert inputs to proper device/dtype and handle species
         if cell is not None:
-            cell = cell.to(device=self._device, dtype=self._dtype)
+            cell = cell.to(device=self.device, dtype=self.dtype)
 
         if species is not None:
-            species = species.to(device=self._device, dtype=torch.long)
+            species = species.to(device=self.device, dtype=torch.long)
         else:
             species = self.species
 
@@ -455,7 +455,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
         if self._per_atom_energies:
             # Compute per-atom energy contributions
             atom_energies = torch.zeros(
-                positions.shape[0], dtype=self._dtype, device=self._device
+                positions.shape[0], dtype=self.dtype, device=self.device
             )
             # Each atom gets half of the pair energy
             atom_energies.index_add_(0, mapping[0], 0.5 * pair_energies)
@@ -490,8 +490,8 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
                     # Compute per-atom stress contributions
                     atom_stresses = torch.zeros(
                         (positions.shape[0], 3, 3),
-                        dtype=self._dtype,
-                        device=self._device,
+                        dtype=self.dtype,
+                        device=self.device,
                     )
                     atom_stresses.index_add_(0, mapping[0], -0.5 * stress_per_pair)
                     atom_stresses.index_add_(0, mapping[1], -0.5 * stress_per_pair)

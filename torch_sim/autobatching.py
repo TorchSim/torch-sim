@@ -298,8 +298,8 @@ def determine_max_batch_size(
 
         try:
             measure_model_memory_forward(concat_state, model)
-        except RuntimeError as e:
-            if "CUDA out of memory" in str(e):
+        except RuntimeError as exc:
+            if "CUDA out of memory" in str(exc):
                 # Return the last successful size, with a safety margin
                 return sizes[max(0, i - 2)]
             raise
