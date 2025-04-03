@@ -38,7 +38,7 @@ about/license
 [Source Repository](https://github.com/Radical-AI/torch-sim) |
 [Issues & Ideas](https://github.com/Radical-AI/torch-sim/issues)
 
-`torch-sim` is a next-generation open-source atomistic simulation engine for the MLIP era.
+TorchSim is a next-generation open-source atomistic simulation engine for the MLIP era.
 
 ::::{grid} 3 1 1 1
 :class-container: text-center

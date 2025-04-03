@@ -45,7 +45,7 @@ The TorchSimTrajectory does not aim to be a new trajectory standard, but rather
 a simple interface for storing and retrieving trajectory data from HDF5 files.
 Through the power of HDF5, the TorchSimTrajectory supports:
 * Saving arbitrary arrays from the user in a natural way
-* First class support for `torch-sim.state.SimState` objects
+* First class support for `torch_sim.state.SimState` objects
 * Binary encoding + compression for minimal file sizes
 * Easy interoperability with ASE and pymatgen
 

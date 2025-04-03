@@ -13,16 +13,16 @@
 
 # %% [markdown]
 """
-# Introduction to torch-sim
+# Introduction to TorchSim
 
-This tutorial introduces torch-sim's high-level API for molecular dynamics simulations
+This tutorial introduces TorchSim's high-level API for molecular dynamics simulations
 and geometry optimizations. The high-level API provides simple, powerful interfaces
 that abstract away the complexities of setting up atomistic simulations while still
 allowing for customization.
 
 ## Introduction
 
-torch-sim's high-level API consists of three primary functions:
+TorchSim's high-level API consists of three primary functions:
 
 1. `integrate` - For running molecular dynamics simulations
 2. `optimize` - For geometry optimization
@@ -191,7 +191,7 @@ print(f"Shape of kinetic energy array: {kinetic_energies.shape}")
 """
 ## Using Machine Learning Potentials
 
-torch-sim isn't limited to classical potentials. It also supports machine learning
+TorchSim isn't limited to classical potentials. It also supports machine learning
 potentials like MACE for more accurate simulations. Let's run a similar simulation
 using MACE:
 """
@@ -229,7 +229,7 @@ final_atoms = final_state.to_atoms()
 """
 ## Batch Processing Multiple Systems
 
-One of the most powerful features of torch-sim is the ability to simulate multiple
+One of the most powerful features of TorchSim is the ability to simulate multiple
 systems in parallel. This is especially useful when working with machine learning
 potentials that benefit from GPU acceleration:
 """
@@ -356,7 +356,7 @@ ordering.
 
 ## Geometry Optimization
 
-In addition to molecular dynamics, torch-sim provides a high-level API for geometry
+In addition to molecular dynamics, TorchSim provides a high-level API for geometry
 optimization. The `optimize` function is similar to `integrate` in that it takes a list
 of systems and a model and support reporting and autobatching. The key difference is
 that instead of taking `n_steps` and `temperature`, `optimize` takes a `convergence_fn`
@@ -408,7 +408,7 @@ print("Any converged?", torch.any(convergence_tensor).item())
 
 # %% [markdown]
 """
-For convenience torch-sim provides constructors for common convergence functions.
+For convenience TorchSim provides constructors for common convergence functions.
 """
 
 # %%
@@ -431,7 +431,7 @@ final_atoms = final_state.to_atoms()
 """
 ## Static Calculations
 
-torch-sim also supports static calculations, which are useful for calculating properties
+TorchSim also supports static calculations, which are useful for calculating properties
 across a diverse set of systems without any system evolution. This is a great way to compute
 elastic properties or run a benchmark against DFT energies.
 
@@ -472,7 +472,7 @@ print(
 """
 ## Working with PyMatGen Structures
 
-torch-sim supports PyMatGen Structure objects in addition to ASE Atoms objects:
+TorchSim supports PyMatGen Structure objects in addition to ASE Atoms objects:
 """
 
 # %%
@@ -511,7 +511,7 @@ final_structure = final_state.to_structures()
 """
 ## Conclusion
 
-torch-sim's high-level API provides a simple yet powerful interface for running
+TorchSim's high-level API provides a simple yet powerful interface for running
 molecular simulations:
 
 1. The `integrate` function makes it easy to run MD simulations

@@ -1,4 +1,4 @@
-"""Torch-Sim package base module."""
+"""TorchSim package base module."""
 
 # ruff: noqa: F401
 

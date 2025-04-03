@@ -13,7 +13,7 @@
 """
 # Understanding Autobatching
 
-This tutorial provides a detailed guide to using torch-sim's autobatching features,
+This tutorial provides a detailed guide to using TorchSim's autobatching features,
 which help you efficiently process large collections of simulation states on GPUs
 without running out of memory.
 
@@ -317,7 +317,7 @@ for batch, indices in batcher:
 """
 ## Conclusion
 
-torch-sim's autobatching provides powerful tools for GPU-efficient simulation of
+TorchSim's autobatching provides powerful tools for GPU-efficient simulation of
 multiple systems:
 
 1. Use `ChunkingAutoBatcher` for simpler workflows with fixed iteration counts

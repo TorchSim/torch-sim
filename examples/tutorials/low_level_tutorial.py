@@ -11,9 +11,9 @@
 
 # %% [markdown]
 """
-# Fundamentals of torch-sim
+# Fundamentals of TorchSim
 
-The `torch-sim` package is designed to be both flexible and easy to use. It achieves this
+The TorchSim package is designed to be both flexible and easy to use. It achieves this
 by providing a high level API for common use cases. For most cases, this is the right choice
 because it bakes in autobatching, reporting, and evaluation. For some use cases, however,
 the high-level API is limiting. This tutorial introduces the design philosophy and usage of the
@@ -27,8 +27,8 @@ optimizers.
 """
 ## Setting up the system
 
-`torch-sim`'s state aka `SimState` is a class that contains the information of the
-system like positions, cell, etc. of the system(s). All the models in the `torch-sim`
+TorchSim's state aka `SimState` is a class that contains the information of the
+system like positions, cell, etc. of the system(s). All the models in the TorchSim
 package take in a `SimState` as an input and return the properties of the system(s).
 
 First we will create two simple structures of 2x2x2 unit cells of Body Centered Cubic
@@ -88,8 +88,8 @@ model = MaceModel(
 
 # %% [markdown]
 """
-`torch-sim`'s MaceModel, and the other MLIP models, are wrappers around the raw models
-that allow them to interface with the rest of the `torch-sim` package. They expose
+TorchSim's MaceModel, and the other MLIP models, are wrappers around the raw models
+that allow them to interface with the rest of the TorchSim package. They expose
 several key properties that are expected by the rest of the package. This contract is
 enforced by the `ModelInterface` class that all models must implement.
 """
@@ -183,7 +183,7 @@ for step in range(5):
 ## NVT Langevin Dynamics
 
 Similarly, we can do molecular dynamics of the systems. We need to make sure we are
-using correct units for the integrator. `torch-sim` provides a `units.py` module to
+using correct units for the integrator. TorchSim provides a `units.py` module to
 help with the units system and conversions. All currently supported models implement
 [MetalUnits](https://docs.lammps.org/units.html), so we must convert our units into
 that system.
@@ -243,7 +243,7 @@ high-level `integrate` function.
 
 ## Concluding remarks
 
-The low-level API is a flexible and powerful way of using `torch-sim`. It provides
+The low-level API is a flexible and powerful way of using TorchSim. It provides
 maximum flexibility for advanced users. If you have any additional questions, please
 refer to the documentation or raise an issue on the GitHub repository.
 """

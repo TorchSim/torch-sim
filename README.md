@@ -9,7 +9,7 @@
 [zenodo]: https://zenodo.org/records/15127004
 
 <!-- help docs find start of prose in readme, DO NOT REMOVE -->
-torch-sim is a next-generation open-source atomistic simulation engine for the MLIP
+TorchSim is a next-generation open-source atomistic simulation engine for the MLIP
 era. By rewriting the core primitives of atomistic simulation in Pytorch, it allows
 orders of magnitude acceleration of popular machine learning potentials.
 
@@ -26,7 +26,7 @@ orders of magnitude acceleration of popular machine learning potentials.
 
 ## Quick Start
 
-Here is a quick demonstration of many of the core features of torch-sim:
+Here is a quick demonstration of many of the core features of TorchSim:
 native support for GPUs, MLIP models, ASE integration, simple API,
 autobatching, and trajectory reporting, all in under 40 lines of code.
 
@@ -89,7 +89,7 @@ print(relaxed_state.energy)
 
 ## Speedup
 
-torch-sim achieves up to 100x speedup compared to ASE with popular MLIPs.
+TorchSim achieves up to 100x speedup compared to ASE with popular MLIPs.
 
 ![Speedup comparison](/docs/_static/speedup_plot.svg)
 
@@ -118,16 +118,16 @@ pip install .
 
 ## Examples
 
-To understand how torch-sim works, start with the [comprehensive tutorials](https://radical-ai.github.io/torch-sim/user/overview.html) in the documentation.
+To understand how TorchSim works, start with the [comprehensive tutorials](https://radical-ai.github.io/torch-sim/user/overview.html) in the documentation.
 
 ## Core Modules
 
-torch-sim's structure is summarized in the [API reference](https://radical-ai.github.io/torch-sim/reference/index.html) documentation.
+TorchSim's structure is summarized in the [API reference](https://radical-ai.github.io/torch-sim/reference/index.html) documentation.
 
 ## License
 
-`torch-sim` is released under an [MIT license](LICENSE).
+TorchSim is released under an [MIT license](LICENSE).
 
 ## Citation
 
-A manuscript is in preparation. Meanwhile, if you use torch-sim in your research, please [cite the Zenodo archive][zenodo].
+A manuscript is in preparation. Meanwhile, if you use TorchSim in your research, please [cite the Zenodo archive][zenodo].

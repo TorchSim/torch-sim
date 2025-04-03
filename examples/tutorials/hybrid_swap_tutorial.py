@@ -14,14 +14,14 @@
 """
 # Implementing New Methods
 
-This tutorial demonstrates how to combine different torch-sim components to implement new
+This tutorial demonstrates how to combine different TorchSim components to implement new
 simulation methods. We'll implement a hybrid Monte Carlo method that alternates between:
 - Molecular dynamics (MD) for local exploration
 - Swap Monte Carlo for composition changes
 
 This is an advanced tutorial that will cover:
 - Creating custom state objects
-- Combining different torch-sim integrators
+- Combining different TorchSim integrators
 - Implementing hybrid simulation methods
 """
 
@@ -30,7 +30,7 @@ This is an advanced tutorial that will cover:
 ## Setting up the Environment
 
 First, let's set up our simulation environment and load a model. We'll use MACE
-for this example, but any torch-sim compatible model would work.
+for this example, but any TorchSim compatible model would work.
 """
 
 # %%
@@ -71,7 +71,7 @@ coords = [
 ]
 structure = Structure(lattice, species, coords)
 
-# Convert to torch-sim state
+# Convert to TorchSim state
 state = ts.initialize_state([structure], device=device, dtype=torch.float64)
 
 
@@ -80,7 +80,7 @@ state = ts.initialize_state([structure], device=device, dtype=torch.float64)
 ## Implementing the Hybrid Method
 
 Our hybrid method requires a custom state object that combines properties from both
-MD and Monte Carlo states. In torch-sim, we can create this by inheriting from the
+MD and Monte Carlo states. In TorchSim, we can create this by inheriting from the
 MDState class and adding our Monte Carlo-specific attributes.
 
 The key components we'll combine are:
@@ -170,10 +170,10 @@ for step in range(n_steps):
 """
 ## Concluding Remarks
 
-This tutorial demonstrated how to combine different torch-sim components to create
+This tutorial demonstrated how to combine different TorchSim components to create
 new simulation methods. Key takeaways:
 
-1. torch-sim's components (integrators, MC movers, etc.) are designed to be modular
+1. TorchSim's components (integrators, MC movers, etc.) are designed to be modular
 2. Custom state objects can combine features from different simulation types
 3. Complex simulation workflows can be built by mixing and matching components
 

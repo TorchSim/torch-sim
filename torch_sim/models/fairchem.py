@@ -1,4 +1,4 @@
-"""Wrapper for FairChem ecosystem models in torch-sim.
+"""Wrapper for FairChem ecosystem models in TorchSim.
 
 This module provides a TorchSim wrapper of the FairChem models for computing
 energies, forces, and stresses of atomistic systems. It serves as a wrapper around

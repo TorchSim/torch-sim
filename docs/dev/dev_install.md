@@ -1,6 +1,6 @@
 # Developer Installation
 
-You can install torch-sim with `pip` or from source.
+You can install TorchSim with `pip` or from source.
 
 ## Install using pip
 

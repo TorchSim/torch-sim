@@ -1,4 +1,4 @@
-"""Models for Torch-Sim."""
+"""Models for TorchSim."""
 
 # ruff: noqa: F401
 

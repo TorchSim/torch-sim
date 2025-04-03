@@ -1,1 +1,1 @@
-"""Utilities for Torch-Sim."""
+"""Utilities for TorchSim."""
