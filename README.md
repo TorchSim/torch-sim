@@ -107,7 +107,7 @@ pip install .
 
 torch-sim achieves up to 100x speedup compared to ASE with popular MLIPs.
 
-![Speedup comparison](docs/_static/speedup_plot.png)
+![Speedup comparison](https://github.com/user-attachments/assets/2ad1d8b0-a7aa-467b-9260-acb76a1ed591)
 
 This figure compares the time per atom of ASE and torch_sim. Time per atom is defined
 as the number of atoms / total time. While ASE can only run a single system of n_atoms
