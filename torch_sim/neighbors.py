@@ -72,9 +72,9 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
             the maximum amount of memory required by the neighbor list.
 
     Returns:
-        List of tensors for each quantity specified above. Indices in `i`
-        are returned in ascending order 0..len(a)-1, but the order of (i,j)
-        pairs is not guaranteed.
+        list[torch.Tensor]: One tensor for each item in `quantities`. Indices in `i`
+            are returned in ascending order 0..len(a)-1, but the order of (i,j)
+            pairs is not guaranteed.
 
     References:
         - This code is modified version of the github gist

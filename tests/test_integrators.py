@@ -37,8 +37,7 @@ def batched_initialize_momenta_loop(
         dtype: The data type of the tensors (e.g., torch.float32).
 
     Returns:
-        momenta: Tensor of initialized momenta with shape
-            (n_batches, n_atoms_per_batch, 3).
+        torch.Tensor: initialized momenta with shape (n_batches, n_atoms_per_batch, 3).
     """
     n_batches = positions.shape[0]
     n_atoms_per_batch = positions.shape[1]

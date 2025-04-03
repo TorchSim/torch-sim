@@ -5,7 +5,6 @@
 from typing import Any
 
 import torch
-from scipy.linalg import logm as logm_scipy
 from torch.autograd import Function
 
 
@@ -933,8 +932,10 @@ def matrix_log_scipy(matrix: torch.Tensor) -> torch.Tensor:
         matrix: A square matrix tensor
 
     Returns:
-        The matrix logarithm of the input matrix
+        torch.Tensor: The matrix logarithm of the input matrix
     """
+    import scipy.linalg
+
     # Save original device and dtype
     device = matrix.device
     dtype = matrix.dtype
@@ -944,7 +945,7 @@ def matrix_log_scipy(matrix: torch.Tensor) -> torch.Tensor:
     matrix_cpu = matrix.detach().cpu().numpy()
 
     # Compute the logarithm using scipy
-    result_np = logm_scipy(matrix_cpu)
+    result_np = scipy.linalg.logm(matrix_cpu)
 
     # Convert back to tensor and move to original device
     result = torch.tensor(result_np, dtype=dtype, device=device)

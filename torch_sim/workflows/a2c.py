@@ -566,10 +566,10 @@ def get_subcells_to_crystallize(
             if max_coef is provided. Defaults to None.
 
     Returns:
-        List of tuples, where each tuple contains:
-        - indices: Tensor of atom indices included in the subcell
-        - lower: Tensor of lower bounds for subcell in fractional coords [3]
-        - upper: Tensor of upper bounds for subcell in fractional coords [3]
+        list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]: Each tuple contains:
+            - indices: Tensor of atom indices included in the subcell
+            - lower: Tensor of lower bounds for subcell in fractional coords [3]
+            - upper: Tensor of upper bounds for subcell in fractional coords [3]
 
     Notes:
         - The function uses fractional coordinates internally for consistent slicing
@@ -660,7 +660,10 @@ def subcells_to_structures(
         species: List of atomic species symbols
 
     Returns:
-        List of (fractional_positions, cell, species) tuples for each valid subcell
+        list[tuple[torch.Tensor, torch.Tensor, list[str]]]: Each tuple contains:
+            - fractional_positions: Fractional coordinates of atoms
+            - cell: Unit cell tensor
+            - species: atomic species symbols
     """
     list_subcells = []
     for ids, l, h in candidates:  # noqa: E741

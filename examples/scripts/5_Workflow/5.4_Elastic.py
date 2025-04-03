@@ -11,11 +11,7 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
-from torch_sim.elastic import (
-    BravaisType,
-    calculate_elastic_moduli,
-    calculate_elastic_tensor,
-)
+from torch_sim import elastic
 from torch_sim.io import atoms_to_state
 from torch_sim.models.mace import MaceModel
 from torch_sim.optimizers import frechet_cell_fire
@@ -25,7 +21,7 @@ from torch_sim.units import UnitConversion
 
 def get_bravais_type(  # noqa : PLR0911
     state: SimState, length_tol: float = 1e-3, angle_tol: float = 0.1
-) -> BravaisType:
+) -> elastic.BravaisType:
     """Check and return the crystal system of a structure.
 
     This function determines the crystal system by analyzing the lattice
@@ -56,7 +52,7 @@ def get_bravais_type(  # noqa : PLR0911
         and abs(beta - 90) < angle_tol
         and abs(gamma - 90) < angle_tol
     ):
-        return BravaisType.CUBIC
+        return elastic.BravaisType.CUBIC
 
     # Hexagonal: a = b ≠ c, alpha = beta = 90°, gamma = 120°
     if (
@@ -65,7 +61,7 @@ def get_bravais_type(  # noqa : PLR0911
         and abs(beta - 90) < angle_tol
         and abs(gamma - 120) < angle_tol
     ):
-        return BravaisType.HEXAGONAL
+        return elastic.BravaisType.HEXAGONAL
 
     # Tetragonal: a = b ≠ c, alpha = beta = gamma = 90°
     if (
@@ -75,7 +71,7 @@ def get_bravais_type(  # noqa : PLR0911
         and abs(beta - 90) < angle_tol
         and abs(gamma - 90) < angle_tol
     ):
-        return BravaisType.TETRAGONAL
+        return elastic.BravaisType.TETRAGONAL
 
     # Orthorhombic: a ≠ b ≠ c, alpha = beta = gamma = 90°
     if (
@@ -85,7 +81,7 @@ def get_bravais_type(  # noqa : PLR0911
         and abs(a - b) > length_tol
         and (abs(b - c) > length_tol or abs(a - c) > length_tol)
     ):
-        return BravaisType.ORTHORHOMBIC
+        return elastic.BravaisType.ORTHORHOMBIC
 
     # Monoclinic: a ≠ b ≠ c, alpha = gamma = 90°, beta ≠ 90°
     if (
@@ -93,7 +89,7 @@ def get_bravais_type(  # noqa : PLR0911
         and abs(gamma - 90) < angle_tol
         and abs(beta - 90) > angle_tol
     ):
-        return BravaisType.MONOCLINIC
+        return elastic.BravaisType.MONOCLINIC
 
     # Trigonal/Rhombohedral: a = b = c, alpha = beta = gamma ≠ 90°
     if (
@@ -103,10 +99,10 @@ def get_bravais_type(  # noqa : PLR0911
         and abs(beta - gamma) < angle_tol
         and abs(alpha - 90) > angle_tol
     ):
-        return BravaisType.TRIGONAL
+        return elastic.BravaisType.TRIGONAL
 
     # Triclinic: a ≠ b ≠ c, alpha ≠ beta ≠ gamma ≠ 90°
-    return BravaisType.TRICLINIC
+    return elastic.BravaisType.TRICLINIC
 
 
 # Calculator
@@ -159,13 +155,15 @@ for step in range(300):
 bravais_type = get_bravais_type(state)
 
 # Calculate elastic tensor
-elastic_tensor = calculate_elastic_tensor(model, state=state, bravais_type=bravais_type)
+elastic_tensor = elastic.calculate_elastic_tensor(
+    model, state=state, bravais_type=bravais_type
+)
 
 # Convert to GPa
 elastic_tensor = elastic_tensor * UnitConversion.eV_per_Ang3_to_GPa
 
 # Calculate elastic moduli
-bulk_modulus, shear_modulus, poisson_ratio, pugh_ratio = calculate_elastic_moduli(
+bulk_modulus, shear_modulus, poisson_ratio, pugh_ratio = elastic.calculate_elastic_moduli(
     elastic_tensor
 )
 

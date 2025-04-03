@@ -630,7 +630,7 @@ def get_elementary_deformations(
                      defaults to lowest symmetry (triclinic)
 
     Returns:
-        List[SimState]: Deformed structures
+        list[SimState]: Deformed structures
 
     Notes:
         - For normal strains (axes 0,1,2), deformations range from -max_strain_normal to
@@ -705,11 +705,11 @@ def get_strain(
     Args:
         deformed_state: SimState containing the deformed configuration
         reference_state: Optional reference (undeformed) state. If None,
-                        uses deformed_state as reference
+            uses deformed_state as reference.
 
     Returns:
         torch.Tensor: 6-component strain vector [εxx, εyy, εzz, εyz, εxz, εxy]
-                     following Voigt notation
+            following Voigt notation
 
     Notes:
         The strain is computed as ε = (u + u^T)/2 where u = M^(-1)ΔM,

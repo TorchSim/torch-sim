@@ -102,7 +102,7 @@ def get_qha_structures(
         use_autobatcher: Whether to use automatic batching
 
     Returns:
-        list: Relaxed PhonopyAtoms structures at different volumes
+        list[PhonopyAtoms]: Relaxed PhonopyAtoms structures at different volumes
     """
     # Convert state to PhonopyAtoms
     relaxed_struct = state_to_phonopy(state)[0]
@@ -150,7 +150,7 @@ def get_qha_phonons(
         use_autobatcher: Whether to use automatic batching
 
     Returns:
-        tuple: Contains:
+        tuple[list[Phonopy], list[list[np.ndarray]], np.ndarray]: Contains:
             - List of Phonopy objects
             - List of force sets for each structure
             - Array of energies
@@ -182,7 +182,7 @@ def get_qha_phonons(
             1: {
                 "potential_energy": lambda state: state.energy,
                 "forces": lambda state: state.forces,
-            },
+            }
         },
     )
     results = ts.static(

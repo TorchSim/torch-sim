@@ -842,14 +842,14 @@ class HotSwappingAutoBatcher:
         self.first_batch_returned = False
         self._first_batch = self._get_first_batch()
 
-    def _get_next_states(self) -> None:
+    def _get_next_states(self) -> list[SimState]:
         """Add states from the iterator until max_memory_scaler is reached.
 
         Pulls states from the iterator and adds them to the current batch until
         adding another would exceed the maximum memory scaling metric.
 
         Returns:
-            List of new states added to the batch.
+            list[SimState]: new states added to the batch.
         """
         new_metrics = []
         new_idx = []
@@ -858,9 +858,8 @@ class HotSwappingAutoBatcher:
             metric = calculate_memory_scaler(state, self.memory_scales_with)
             if metric > self.max_memory_scaler:
                 raise ValueError(
-                    f"State metric {metric} is greater than max_metric "
-                    f"{self.max_memory_scaler}, please set a larger max_metric "
-                    f"or run smaller systems metric."
+                    f"State {metric=} is greater than max_metric {self.max_memory_scaler}"
+                    ", please set a larger max_metric or run smaller systems metric."
                 )
             if (
                 sum(self.current_scalers) + sum(new_metrics) + metric
