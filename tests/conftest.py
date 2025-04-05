@@ -43,7 +43,7 @@ def cu_atoms() -> Atoms:
 @pytest.fixture
 def fe_atoms() -> Atoms:
     """Create crystalline iron using ASE."""
-    return bulk("Fe", "fcc", a=2.86, cubic=True)
+    return bulk("Fe", "fcc", a=5.26, cubic=True)
 
 
 @pytest.fixture

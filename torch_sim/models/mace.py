@@ -263,7 +263,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
         ):
             self.setup_from_batch(state.atomic_numbers, state.batch)
 
-        cell = state.cell
+        cell = state.cell.transpose(-2, -1)  # Transpose to ASE convention
         positions = state.positions
         pbc = state.pbc
 

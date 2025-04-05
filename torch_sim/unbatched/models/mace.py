@@ -176,7 +176,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
                 )
                 self.atomic_number_tensor = new_atomic_number_tensor
 
-        cell = state.cell
+        cell = state.cell.transpose(-2, -1)  # Transpose to ASE convention
         positions = state.positions
         pbc = state.pbc
 

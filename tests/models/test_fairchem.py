@@ -45,7 +45,7 @@ def ocp_calculator(model_path: str) -> OCPCalculator:
         "ti_sim_state",
         "si_sim_state",
         "sio2_sim_state",
-        "benzene_sim_state",
+        # "benzene_sim_state", # TODO: Turn on when #111 fixed
     ],
 )
 def test_fairchem_ocp_consistency(

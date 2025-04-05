@@ -331,8 +331,6 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         """
         if isinstance(state, dict):
             state = SimState(**state, masses=torch.ones_like(state["positions"]))
-        if state.pbc is False:
-            raise ValueError("PBC must be True for FairChemModel")
 
         if state.device != self._device:
             state = state.to(self._device)
@@ -340,7 +338,9 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         if state.batch is None:
             state.batch = torch.zeros(state.positions.shape[0], dtype=torch.int)
 
-        cell = state.cell
+        cell = state.cell.transpose(
+            -2, -1
+        )  # Transpose cell from torchsim convention to ASE convention
         positions = state.positions
 
         natoms = torch.bincount(state.batch)
