@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from torch_sim.io import state_to_atoms
+from tests.conftest import make_model_calculator_consistency_test
 from torch_sim.models.interface import validate_model_outputs
 
 
@@ -71,65 +71,20 @@ def test_sevennet_initialization(
     assert model._device == device  # noqa: SLF001
 
 
-@pytest.mark.parametrize(
-    "sim_state_name",
-    [
+test_sevennet_consistency = make_model_calculator_consistency_test(
+    test_name="sevennet",
+    model_fixture_name="sevenn_model",
+    calculator_fixture_name="sevenn_calculator",
+    sim_state_names=[
         "cu_sim_state",
         "ti_sim_state",
         "si_sim_state",
         "sio2_sim_state",
         "benzene_sim_state",
     ],
+    rtol=1e-5,
+    atol=1e-5,
 )
-def test_sevennet_calculator_consistency(
-    sim_state_name: str,
-    sevenn_model: SevenNetModel,
-    sevenn_calculator: SevenNetCalculator,
-    request: pytest.FixtureRequest,
-    device: torch.device,
-    dtype: torch.dtype,
-) -> None:
-    """Test consistency between SevenNetModel and SevenNetCalculator for all sim states.
-
-    Args:
-        sim_state_name: Name of the sim_state fixture to test
-        sevenn_model: The SevenNet model to test
-        sevenn_calculator: The SevenNet calculator to test
-        request: Pytest fixture request object to get dynamic fixtures
-        device: Device to run tests on
-        dtype: Data type to use
-    """
-    # Get the sim_state fixture dynamically using the name
-    sim_state = request.getfixturevalue(sim_state_name).to(device, dtype)
-
-    # Set up ASE calculator
-    atoms = state_to_atoms(sim_state)[0]
-    atoms.calc = sevenn_calculator
-
-    # Get SevenNetModel results
-    sevenn_results = sevenn_model(sim_state)
-
-    # Get calculator results
-    calc_energy = atoms.get_potential_energy()
-    calc_forces = torch.tensor(
-        atoms.get_forces(),
-        device=device,
-        dtype=sevenn_results["forces"].dtype,
-    )
-
-    # Test consistency with reasonable tolerances
-    torch.testing.assert_close(
-        sevenn_results["energy"].item(),
-        calc_energy,
-        rtol=1e-5,
-        atol=1e-5,
-    )
-    torch.testing.assert_close(
-        sevenn_results["forces"],
-        calc_forces,
-        rtol=1e-5,
-        atol=1e-5,
-    )
 
 
 def test_validate_model_outputs(

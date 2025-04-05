@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from torch_sim.io import state_to_atoms
+from tests.conftest import make_model_calculator_consistency_test
 from torch_sim.models.interface import validate_model_outputs
 
 
@@ -63,65 +63,20 @@ def test_orb_initialization(
     assert model._device == device  # noqa: SLF001
 
 
-@pytest.mark.parametrize(
-    "sim_state_name",
-    [
+test_orb_consistency = make_model_calculator_consistency_test(
+    test_name="orb",
+    model_fixture_name="orb_model",
+    calculator_fixture_name="orb_calculator",
+    sim_state_names=[
         "cu_sim_state",
         "ti_sim_state",
         "si_sim_state",
         "sio2_sim_state",
         "benzene_sim_state",
     ],
+    rtol=1e-5,
+    atol=1e-5,
 )
-def test_orb_calculator_consistency(
-    sim_state_name: str,
-    orb_model: OrbModel,
-    orb_calculator: ORBCalculator,
-    request: pytest.FixtureRequest,
-    device: torch.device,
-    dtype: torch.dtype,
-) -> None:
-    """Test consistency between OrbModel and ORBCalculator for all sim states.
-
-    Args:
-        sim_state_name: Name of the sim_state fixture to test
-        orb_model: The ORB model to test
-        orb_calculator: The ORB calculator to test
-        request: Pytest fixture request object to get dynamic fixtures
-        device: Device to run tests on
-        dtype: Data type to use
-    """
-    # Get the sim_state fixture dynamically using the name
-    sim_state = request.getfixturevalue(sim_state_name).to(device, dtype)
-
-    # Set up ASE calculator
-    atoms = state_to_atoms(sim_state)[0]
-    atoms.calc = orb_calculator
-
-    # Get OrbModel results
-    orb_results = orb_model(sim_state)
-
-    # Get calculator results
-    calc_energy = atoms.get_potential_energy()
-    calc_forces = torch.tensor(
-        atoms.get_forces(),
-        device=device,
-        dtype=orb_results["forces"].dtype,
-    )
-
-    # Test consistency with reasonable tolerances
-    torch.testing.assert_close(
-        orb_results["energy"].item(),
-        calc_energy,
-        atol=1e-4,
-        rtol=0.5,
-    )
-    torch.testing.assert_close(
-        orb_results["forces"],
-        calc_forces,
-        atol=1e-4,
-        rtol=0.5,
-    )
 
 
 def test_validate_model_outputs(orb_model: OrbModel, device: torch.device) -> None:
