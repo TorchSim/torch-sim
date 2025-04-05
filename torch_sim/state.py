@@ -197,6 +197,24 @@ class SimState:
         """
         return torch.det(self.cell) if self.pbc else None
 
+    @property
+    def row_vector_cell(self) -> torch.Tensor:
+        """Get the unit cell following the row vector convention.
+
+        Returns:
+            The unit cell as a row vector
+        """
+        return self.cell.transpose(-2, -1)
+
+    @row_vector_cell.setter
+    def row_vector_cell(self, value: torch.Tensor) -> None:
+        """Set the unit cell from value following the row vector convention.
+
+        Args:
+            value: The unit cell as a row vector
+        """
+        self.cell = value.transpose(-2, -1)
+
     def clone(self) -> Self:
         """Create a deep copy of the SimState.
 

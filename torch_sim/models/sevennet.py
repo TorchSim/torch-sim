@@ -168,20 +168,23 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
             batch_mask = state.batch == b
 
             pos = state.positions[batch_mask]
-            cell = state.cell[b]
+            # SevenNet uses row vector cell convention for neighbor list
+            row_vector_cell = state.row_vector_cell[b]
             pbc = state.pbc
             atomic_numbers = state.atomic_numbers[batch_mask]
 
             edge_src, edge_dst, edge_vec, shifts_idx = _graph_build_f(
                 pos=pos.detach().cpu().numpy(),
-                cell=cell.detach().cpu().numpy().T,  # transpose to ASE convention
+                cell=row_vector_cell.detach().cpu().numpy(),
                 pbc=np.array([pbc] * 3, dtype=bool),
                 cutoff=self.cutoff,
             )
 
             edge_idx = torch.tensor(np.array([edge_src, edge_dst]), dtype=torch.int64)
             edge_vec = torch.tensor(edge_vec, dtype=pos.dtype)
-            shifts = torch.mm(torch.tensor(shifts_idx, dtype=cell.dtype), cell)
+            shifts = torch.mm(
+                torch.tensor(shifts_idx, dtype=row_vector_cell.dtype), row_vector_cell
+            )
 
             data = {
                 key.NODE_FEATURE: atomic_numbers,
@@ -189,9 +192,9 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
                 key.POS: pos,
                 key.EDGE_IDX: edge_idx,
                 key.EDGE_VEC: edge_vec,
-                key.CELL: cell,
+                key.CELL: row_vector_cell,
                 key.CELL_SHIFT: shifts,
-                key.CELL_VOLUME: torch.det(cell),
+                key.CELL_VOLUME: torch.det(row_vector_cell),
                 key.NUM_ATOMS: torch.tensor(len(atomic_numbers)),
                 key.DATA_MODALITY: self.modal,
             }

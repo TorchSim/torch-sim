@@ -192,22 +192,24 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
                 )
                 self.atomic_number_tensor = new_atomic_number_tensor
 
-        cell = state.cell.transpose(-2, -1)  # Transpose to ASE convention
+        row_vector_cell = (
+            state.row_vector_cell
+        )  # MACE uses row vector cell convention for nbr list
         positions = state.positions
         pbc = state.pbc
 
-        if cell.dim() == 3:  # Check if there is an extra batch dimension
-            cell = cell.squeeze(0)  # Squeeze the first dimension
+        if row_vector_cell.dim() == 3:  # Check if there is an extra batch dimension
+            row_vector_cell = row_vector_cell.squeeze(0)  # Squeeze the first dimension
 
         # calculate neighbor list
         mapping, shifts_idx = self.neighbor_list_fn(
             positions=positions,
-            cell=cell,
+            cell=row_vector_cell,
             pbc=pbc,
             cutoff=self.r_max,
         )
         edge_index = torch.stack((mapping[0], mapping[1]))
-        shifts = torch.mm(shifts_idx, cell)
+        shifts = torch.mm(shifts_idx, row_vector_cell)
 
         # get model output
         out = self.model(
@@ -216,7 +218,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
                 node_attrs=self.node_attrs,
                 batch=self.batch,
                 pbc=pbc,
-                cell=cell,
+                cell=row_vector_cell,
                 positions=positions,
                 edge_index=edge_index,
                 unit_shifts=shifts_idx,

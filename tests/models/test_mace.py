@@ -49,6 +49,7 @@ def torchsim_unbatched_mace_model(
         device=device,
         dtype=dtype,
         compute_forces=True,
+        compute_stress=True,
     )
 
 
@@ -59,6 +60,7 @@ def torchsim_mace_model(device: torch.device, dtype: torch.dtype) -> MaceModel:
         device=device,
         dtype=dtype,
         compute_forces=True,
+        compute_stress=True,
     )
 
 

@@ -441,3 +441,19 @@ def test_normalize_batch_indices(si_double_sim_state: SimState) -> None:
         raise ValueError("Should have raised TypeError")
     except TypeError:
         pass
+
+
+def test_row_vector_cell(si_sim_state: SimState) -> None:
+    """Test the row_vector_cell property getter and setter."""
+    # Test getter - should return transposed cell
+    original_cell = si_sim_state.cell.clone()
+    row_vector = si_sim_state.row_vector_cell
+    assert torch.allclose(row_vector, original_cell.transpose(-2, -1))
+
+    # Test setter - should update cell with transposed value
+    new_cell = torch.randn_like(original_cell)
+    si_sim_state.row_vector_cell = new_cell.transpose(-2, -1)
+    assert torch.allclose(si_sim_state.cell, new_cell)
+
+    # Test consistency of getter after setting
+    assert torch.allclose(si_sim_state.row_vector_cell, new_cell.transpose(-2, -1))

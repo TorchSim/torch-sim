@@ -287,10 +287,6 @@ class MaceModel(torch.nn.Module, ModelInterface):
         ):
             self.setup_from_batch(state.atomic_numbers, state.batch)
 
-        cell = state.cell.transpose(-2, -1)  # Transpose to ASE convention
-        positions = state.positions
-        pbc = state.pbc
-
         # Process each system's neighbor list separately
         edge_indices = []
         shifts_list = []
@@ -302,9 +298,9 @@ class MaceModel(torch.nn.Module, ModelInterface):
             batch_mask = state.batch == b
             # Calculate neighbor list for this system
             mapping, shifts_idx = self.neighbor_list_fn(
-                positions=positions[batch_mask],
-                cell=cell[b],
-                pbc=pbc,
+                positions=state.positions[batch_mask],
+                cell=state.row_vector_cell[b],
+                pbc=state.pbc,
                 cutoff=self.r_max,
             )
 
@@ -313,14 +309,13 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
             edge_indices.append(mapping)
             unit_shifts_list.append(shifts_idx)
-            shifts = torch.mm(shifts_idx, cell[b])
+            shifts = torch.mm(shifts_idx, state.row_vector_cell[b])
             shifts_list.append(shifts)
 
             offset += len(state.positions[batch_mask])
 
         # Combine all neighbor lists
         edge_index = torch.cat(edge_indices, dim=1)
-        shifts = torch.cat(shifts_list, dim=0)
         unit_shifts = torch.cat(unit_shifts_list, dim=0)
 
         # Get model output
@@ -329,9 +324,9 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 ptr=self.ptr,
                 node_attrs=self.node_attrs,
                 batch=state.batch,
-                pbc=pbc,
-                cell=cell,
-                positions=positions,
+                pbc=state.pbc,
+                cell=state.row_vector_cell,
+                positions=state.positions,
                 edge_index=edge_index,
                 unit_shifts=unit_shifts,
                 shifts=shifts,

@@ -117,7 +117,9 @@ def state_to_atom_graphs(  # noqa: PLR0915
 
     # Extract data from SimState
     positions = state.positions
-    cell = state.cell.transpose(-2, -1)  # Transpose to ASE convention for neighbor list
+    row_vector_cell = (
+        state.row_vector_cell
+    )  # Orb uses row vector cell convention for neighbor list
     atomic_numbers = state.atomic_numbers.long()
 
     # Create PBC tensor based on state.pbc
@@ -141,14 +143,14 @@ def state_to_atom_graphs(  # noqa: PLR0915
     atomic_numbers_embedding = atom_type_embedding.to(output_dtype)
 
     # Wrap positions into the central cell if needed
-    if wrap and (torch.any(cell != 0) and torch.any(pbc)):
-        positions = feat_util.batch_map_to_pbc_cell(positions, cell, n_node)
+    if wrap and (torch.any(row_vector_cell != 0) and torch.any(pbc)):
+        positions = feat_util.batch_map_to_pbc_cell(positions, row_vector_cell, n_node)
 
     # Compute edges of the graph
     edge_index, edge_vectors, unit_shifts, batch_num_edges = (
         feat_util.batch_compute_pbc_radius_graph(
             positions=positions,
-            cells=cell,
+            cells=row_vector_cell,
             pbc=pbc.unsqueeze(0).repeat(len(n_node), 1),
             radius=system_config.radius,
             n_node=n_node,
@@ -181,7 +183,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
 
             pdb.set_trace()  # noqa: T100
 
-        cell_per_system = cell[i]
+        cell_per_system = row_vector_cell[i]
         pbc_per_system = pbc
         lattice_per_system = torch.from_numpy(
             cell_to_cellpar(cell_per_system.squeeze(0).cpu().numpy())
