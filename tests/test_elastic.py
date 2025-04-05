@@ -1,9 +1,5 @@
-from typing import Any
-
 import pytest
 import torch
-from ase.build import bulk
-from ase.spacegroup import crystal
 
 from torch_sim.elastic import (
     BravaisType,
@@ -11,8 +7,6 @@ from torch_sim.elastic import (
     calculate_elastic_tensor,
     get_bravais_type,
 )
-from torch_sim.io import atoms_to_state
-from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.state import SimState
 from torch_sim.unbatched.unbatched_optimizers import frechet_cell_fire
 from torch_sim.units import UnitConversion
@@ -27,111 +21,11 @@ except ImportError:
 
 
 @pytest.fixture
-def mg_atoms() -> Any:
-    """Create crystalline magnesium using ASE."""
-    return bulk("Mg", "hcp", a=3.17, c=5.14)
-
-
-@pytest.fixture
-def sb_atoms() -> Any:
-    """Create crystalline antimony using ASE."""
-    return bulk("Sb", "rhombohedral", a=4.58, alpha=60)
-
-
-@pytest.fixture
-def tio2_atoms() -> Any:
-    """Create crystalline TiO2 using ASE."""
-    a, c = 4.60, 2.96
-    symbols = ["Ti", "O", "O"]
-    basis = [
-        (0.5, 0.5, 0),  # Ti
-        (0.695679, 0.695679, 0.5),  # O
-    ]
-    return crystal(
-        symbols,
-        basis=basis,
-        spacegroup=136,  # P4_2/mnm
-        cellpar=[a, a, c, 90, 90, 90],
-    )
-
-
-@pytest.fixture
-def ga_atoms() -> Any:
-    """Create crystalline Ga using ASE."""
-    a, b, c = 4.43, 7.60, 4.56
-    symbols = ["Ga"]
-    basis = [
-        (0, 0.344304, 0.415401),  # Ga
-    ]
-    return crystal(
-        symbols,
-        basis=basis,
-        spacegroup=64,  # Cmce
-        cellpar=[a, b, c, 90, 90, 90],
-    )
-
-
-@pytest.fixture
-def niti_atoms() -> Any:
-    """Create crystalline NiTi using ASE."""
-    a, b, c = 2.89, 3.97, 4.83
-    alpha, beta, gamma = 90.00, 105.23, 90.00
-    symbols = ["Ni", "Ti"]
-    basis = [
-        (0.369548, 0.25, 0.217074),  # Ni
-        (0.076622, 0.25, 0.671102),  # Ti
-    ]
-    return crystal(
-        symbols,
-        basis=basis,
-        spacegroup=11,
-        cellpar=[a, b, c, alpha, beta, gamma],
-    )
-
-
-@pytest.fixture
-def sb_sim_state(sb_atoms: Any, device: torch.device) -> Any:
-    """Create a basic state from sb_atoms."""
-    return atoms_to_state(sb_atoms, device, torch.float64)
-
-
-@pytest.fixture
-def cu_sim_state(cu_atoms: Any, device: torch.device) -> Any:
-    """Create a basic state from cu_atoms."""
-    return atoms_to_state(cu_atoms, device, torch.float64)
-
-
-@pytest.fixture
-def mg_sim_state(mg_atoms: Any, device: torch.device) -> Any:
-    """Create a basic state from mg_atoms."""
-    return atoms_to_state(mg_atoms, device, torch.float64)
-
-
-@pytest.fixture
-def tio2_sim_state(tio2_atoms: Any, device: torch.device) -> Any:
-    """Create a basic state from tio2_atoms."""
-    return atoms_to_state(tio2_atoms, device, torch.float64)
-
-
-@pytest.fixture
-def ga_sim_state(ga_atoms: Any, device: torch.device) -> Any:
-    """Create a basic state from ga_atoms."""
-    return atoms_to_state(ga_atoms, device, torch.float64)
-
-
-@pytest.fixture
-def niti_sim_state(niti_atoms: Any, device: torch.device) -> Any:
-    """Create a basic state from niti_atoms."""
-    return atoms_to_state(niti_atoms, device, torch.float64)
-
-
-@pytest.fixture
 def torchsim_mace_model(device: torch.device) -> UnbatchedMaceModel:
     mace_model = mace_mp(model="medium", default_dtype="float64", return_raw_model=True)
 
     return UnbatchedMaceModel(
         model=mace_model,
-        neighbor_list_fn=vesin_nl_ts,
         device=device,
         dtype=torch.float64,
         compute_forces=True,

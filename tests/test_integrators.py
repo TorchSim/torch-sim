@@ -316,12 +316,12 @@ def test_nve(ar_double_sim_state: SimState, lj_model: LennardJonesModel):
 
 
 def test_compare_single_vs_batched_integrators(
-    ar_sim_state: SimState, lj_model: Any
+    ar_supercell_sim_state: SimState, lj_model: Any
 ) -> None:
     """Test that single and batched integrators give the same results."""
     initial_states = {
-        "single": ar_sim_state,
-        "batched": concatenate_states([ar_sim_state, ar_sim_state]),
+        "single": ar_supercell_sim_state,
+        "batched": concatenate_states([ar_supercell_sim_state, ar_supercell_sim_state]),
     }
 
     final_states = {}

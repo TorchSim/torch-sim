@@ -14,7 +14,6 @@ except ImportError:
 from torch_sim.io import atoms_to_state
 from torch_sim.models.interface import validate_model_outputs
 from torch_sim.models.mace import MaceModel
-from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 
 
@@ -65,7 +64,6 @@ def torchsim_mace_model(device: torch.device, dtype: torch.dtype) -> UnbatchedMa
         device=device,
         dtype=dtype,
         compute_forces=True,
-        neighbor_list_fn=vesin_nl_ts,
     )
 
 
@@ -86,7 +84,6 @@ def torchsim_batched_mace_model(device: torch.device, dtype: torch.dtype) -> Mac
         device=device,
         dtype=dtype,
         compute_forces=True,
-        neighbor_list_fn=vesin_nl_ts,
     )
 
 
@@ -164,6 +161,11 @@ test_mace_consistency = make_model_calculator_consistency_test(
     calculator_fixture_name="ase_mace_calculator",
     sim_state_names=[
         "cu_sim_state",
+        "mg_sim_state",
+        "sb_sim_state",
+        "tio2_sim_state",
+        "ga_sim_state",
+        "niti_sim_state",
         "ti_sim_state",
         "si_sim_state",
         "sio2_sim_state",
@@ -222,7 +224,6 @@ def torchsim_mace_off_model(
         device=device,
         dtype=dtype,
         compute_forces=True,
-        neighbor_list_fn=vesin_nl_ts,
     )
 
 
@@ -245,7 +246,6 @@ def torchsim_batched_mace_off_model(
         device=device,
         dtype=dtype,
         compute_forces=True,
-        neighbor_list_fn=vesin_nl_ts,
     )
 
 

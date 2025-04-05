@@ -38,7 +38,6 @@ si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 model = UnbatchedMaceModel(
     model=loaded_model,
     device=device,
-    neighbor_list_fn=ts.neighbors.vesin_nl_ts,
     compute_forces=True,
     compute_stress=True,
     dtype=dtype,

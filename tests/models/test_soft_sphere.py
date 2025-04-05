@@ -10,7 +10,7 @@ from torch_sim.state import SimState, concatenate_states
 
 @pytest.fixture
 def models(
-    fe_fcc_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create both neighbor list and direct calculators."""
     calc_params = {
@@ -25,12 +25,12 @@ def models(
     model_nl = ss.SoftSphereModel(use_neighbor_list=True, **calc_params)
     model_direct = ss.SoftSphereModel(use_neighbor_list=False, **calc_params)
 
-    return model_nl(fe_fcc_sim_state), model_direct(fe_fcc_sim_state)
+    return model_nl(fe_supercell_sim_state), model_direct(fe_supercell_sim_state)
 
 
 @pytest.fixture
 def models_with_per_atom(
-    fe_fcc_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create calculators with per-atom properties enabled."""
     calc_params = {
@@ -47,7 +47,7 @@ def models_with_per_atom(
     model_nl = ss.SoftSphereModel(use_neighbor_list=True, **calc_params)
     model_direct = ss.SoftSphereModel(use_neighbor_list=False, **calc_params)
 
-    return model_nl(fe_fcc_sim_state), model_direct(fe_fcc_sim_state)
+    return model_nl(fe_supercell_sim_state), model_direct(fe_supercell_sim_state)
 
 
 @pytest.fixture

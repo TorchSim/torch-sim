@@ -12,7 +12,6 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
-from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.quantities import calc_kT
 from torch_sim.state import SimState
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
@@ -56,7 +55,6 @@ masses = torch.tensor(si_dc.get_masses(), device=device, dtype=dtype)
 model = UnbatchedMaceModel(
     model=loaded_model,
     device=device,
-    neighbor_list_fn=vesin_nl_ts,
     compute_forces=True,
     compute_stress=False,
     dtype=dtype,

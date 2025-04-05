@@ -74,7 +74,6 @@ species = [Element.from_Z(Z).symbol for Z in atomic_numbers]
 model = UnbatchedMaceModel(
     model=raw_model,
     device=device,
-    neighbor_list_fn=ts.neighbors.vesin_nl_ts,
     compute_forces=True,
     compute_stress=False,  # We don't need stress for MD
     dtype=dtype,

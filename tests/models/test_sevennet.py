@@ -77,6 +77,11 @@ test_sevennet_consistency = make_model_calculator_consistency_test(
     calculator_fixture_name="sevenn_calculator",
     sim_state_names=[
         "cu_sim_state",
+        "mg_sim_state",
+        "sb_sim_state",
+        "tio2_sim_state",
+        "ga_sim_state",
+        "niti_sim_state",
         "ti_sim_state",
         "si_sim_state",
         "sio2_sim_state",

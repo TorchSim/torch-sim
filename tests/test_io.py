@@ -92,9 +92,9 @@ def test_multiple_atoms_to_state(si_atoms: Atoms, device: torch.device) -> None:
     )
 
 
-def test_state_to_structure(ar_sim_state: SimState) -> None:
+def test_state_to_structure(ar_supercell_sim_state: SimState) -> None:
     """Test conversion from state tensors to list of pymatgen Structure."""
-    structures = state_to_structures(ar_sim_state)
+    structures = state_to_structures(ar_supercell_sim_state)
     assert len(structures) == 1
     assert isinstance(structures[0], Structure)
     assert len(structures[0]) == 32
@@ -110,9 +110,9 @@ def test_state_to_multiple_structures(ar_double_sim_state: SimState) -> None:
     assert len(structures[1]) == 32
 
 
-def test_state_to_atoms(ar_sim_state: SimState) -> None:
+def test_state_to_atoms(ar_supercell_sim_state: SimState) -> None:
     """Test conversion from state tensors to list of ASE Atoms."""
-    atoms = state_to_atoms(ar_sim_state)
+    atoms = state_to_atoms(ar_supercell_sim_state)
     assert len(atoms) == 1
     assert isinstance(atoms[0], Atoms)
     assert len(atoms[0]) == 32
@@ -128,15 +128,15 @@ def test_state_to_multiple_atoms(ar_double_sim_state: SimState) -> None:
     assert len(atoms[1]) == 32
 
 
-def test_to_atoms(ar_sim_state: SimState) -> None:
+def test_to_atoms(ar_supercell_sim_state: SimState) -> None:
     """Test conversion from SimState to list of ASE Atoms."""
-    atoms = state_to_atoms(ar_sim_state)
+    atoms = state_to_atoms(ar_supercell_sim_state)
     assert isinstance(atoms[0], Atoms)
 
 
-def test_to_structures(ar_sim_state: SimState) -> None:
+def test_to_structures(ar_supercell_sim_state: SimState) -> None:
     """Test conversion from SimState to list of Pymatgen Structure."""
-    structures = state_to_structures(ar_sim_state)
+    structures = state_to_structures(ar_supercell_sim_state)
     assert isinstance(structures[0], Structure)
 
 
@@ -181,9 +181,9 @@ def test_multiple_phonopy_to_state(si_phonopy_atoms: Any, device: torch.device) 
     )
 
 
-def test_state_to_phonopy(ar_sim_state: SimState) -> None:
+def test_state_to_phonopy(ar_supercell_sim_state: SimState) -> None:
     """Test conversion from state tensors to list of PhonopyAtoms."""
-    phonopy_atoms = state_to_phonopy(ar_sim_state)
+    phonopy_atoms = state_to_phonopy(ar_supercell_sim_state)
     assert len(phonopy_atoms) == 1
     assert isinstance(phonopy_atoms[0], PhonopyAtoms)
     assert len(phonopy_atoms[0]) == 32
@@ -202,11 +202,11 @@ def test_state_to_multiple_phonopy(ar_double_sim_state: SimState) -> None:
 @pytest.mark.parametrize(
     "sim_state_name",
     [
-        "ar_sim_state",
+        "ar_supercell_sim_state",
         "si_sim_state",
         "ti_sim_state",
         "sio2_sim_state",
-        "fe_fcc_sim_state",
+        "fe_supercell_sim_state",
         "cu_sim_state",
     ],
 )

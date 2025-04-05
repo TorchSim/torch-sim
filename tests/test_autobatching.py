@@ -136,11 +136,11 @@ def test_split_state(si_double_sim_state: SimState) -> None:
 
 
 def test_chunking_auto_batcher(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test ChunkingAutoBatcher with different states."""
     # Create a list of states with different sizes
-    states = [si_sim_state, fe_fcc_sim_state]
+    states = [si_sim_state, fe_supercell_sim_state]
 
     # Initialize the batcher with a fixed max_metric to avoid GPU memory testing
     batcher = ChunkingAutoBatcher(
@@ -153,7 +153,7 @@ def test_chunking_auto_batcher(
     # Check that the batcher correctly identified the metrics
     assert len(batcher.memory_scalers) == 2
     assert batcher.memory_scalers[0] == si_sim_state.n_atoms
-    assert batcher.memory_scalers[1] == fe_fcc_sim_state.n_atoms
+    assert batcher.memory_scalers[1] == fe_supercell_sim_state.n_atoms
 
     # Get batches until None is returned
     batches = list(batcher)
@@ -175,10 +175,10 @@ def test_chunking_auto_batcher(
 
 
 def test_chunking_auto_batcher_with_indices(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test ChunkingAutoBatcher with return_indices=True."""
-    states = [si_sim_state, fe_fcc_sim_state]
+    states = [si_sim_state, fe_supercell_sim_state]
 
     batcher = ChunkingAutoBatcher(
         model=lj_model,
@@ -202,11 +202,11 @@ def test_chunking_auto_batcher_with_indices(
 
 
 def test_chunking_auto_batcher_restore_order_with_split_states(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test ChunkingAutoBatcher's restore_original_order method with split states."""
     # Create a list of states with different sizes
-    states = [si_sim_state, fe_fcc_sim_state]
+    states = [si_sim_state, fe_supercell_sim_state]
 
     # Initialize the batcher with a fixed max_metric to avoid GPU memory testing
     batcher = ChunkingAutoBatcher(
@@ -243,11 +243,11 @@ def test_chunking_auto_batcher_restore_order_with_split_states(
 
 
 def test_hot_swapping_max_metric_too_small(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test HotSwappingAutoBatcher with different states."""
     # Create a list of states
-    states = [si_sim_state, fe_fcc_sim_state]
+    states = [si_sim_state, fe_supercell_sim_state]
 
     # Initialize the batcher with a fixed max_metric
     batcher = HotSwappingAutoBatcher(
@@ -261,11 +261,11 @@ def test_hot_swapping_max_metric_too_small(
 
 
 def test_hot_swapping_auto_batcher(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test HotSwappingAutoBatcher with different states."""
     # Create a list of states
-    states = [si_sim_state, fe_fcc_sim_state]
+    states = [si_sim_state, fe_supercell_sim_state]
 
     # Initialize the batcher with a fixed max_metric
     batcher = HotSwappingAutoBatcher(
@@ -329,10 +329,10 @@ def test_determine_max_batch_size_fibonacci(
 
 
 def test_hot_swapping_auto_batcher_restore_order(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test HotSwappingAutoBatcher's restore_original_order method."""
-    states = [si_sim_state, fe_fcc_sim_state]
+    states = [si_sim_state, fe_supercell_sim_state]
 
     batcher = HotSwappingAutoBatcher(
         model=lj_model,
@@ -375,12 +375,12 @@ def test_hot_swapping_auto_batcher_restore_order(
 
 
 def test_hot_swapping_with_fire(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     fire_init, fire_update = unit_cell_fire(lj_model)
 
     si_fire_state = fire_init(si_sim_state)
-    fe_fire_state = fire_init(fe_fcc_sim_state)
+    fe_fire_state = fire_init(fe_supercell_sim_state)
 
     fire_states = [si_fire_state, fe_fire_state] * 5
     fire_states = [state.clone() for state in fire_states]
@@ -428,12 +428,12 @@ def test_hot_swapping_with_fire(
 
 
 def test_chunking_auto_batcher_with_fire(
-    si_sim_state: SimState, fe_fcc_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     fire_init, fire_update = unit_cell_fire(lj_model)
 
     si_fire_state = fire_init(si_sim_state)
-    fe_fire_state = fire_init(fe_fcc_sim_state)
+    fe_fire_state = fire_init(fe_supercell_sim_state)
 
     fire_states = [si_fire_state, fe_fire_state] * 5
     fire_states = [state.clone() for state in fire_states]
@@ -470,12 +470,12 @@ def test_chunking_auto_batcher_with_fire(
 
 def test_hot_swapping_max_iterations(
     si_sim_state: SimState,
-    fe_fcc_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
     lj_model: LennardJonesModel,
 ) -> None:
     """Test HotSwappingAutoBatcher with max_iterations limit."""
     # Create states that won't naturally converge
-    states = [si_sim_state.clone(), fe_fcc_sim_state.clone()]
+    states = [si_sim_state.clone(), fe_supercell_sim_state.clone()]
 
     # Set max_attempts to a small value to ensure quick termination
     max_attempts = 3

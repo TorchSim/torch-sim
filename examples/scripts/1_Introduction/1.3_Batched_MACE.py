@@ -41,7 +41,6 @@ batched_model = ts.models.MaceModel(
     # Or load from compiled model
     # model=compiled_model,
     device=device,
-    neighbor_list_fn=ts.neighbors.vesin_nl_ts,
     compute_forces=True,
     compute_stress=True,
     dtype=dtype,

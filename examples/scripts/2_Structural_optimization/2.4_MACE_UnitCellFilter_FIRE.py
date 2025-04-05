@@ -14,7 +14,6 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
 from torch_sim.io import atoms_to_state
-from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_optimizers import unit_cell_fire
 from torch_sim.units import UnitConversion
@@ -52,7 +51,6 @@ state = atoms_to_state([si_dc], device, dtype)
 model = UnbatchedMaceModel(
     model=loaded_model,
     device=device,
-    neighbor_list_fn=vesin_nl_ts,
     compute_forces=True,
     compute_stress=True,
     dtype=dtype,

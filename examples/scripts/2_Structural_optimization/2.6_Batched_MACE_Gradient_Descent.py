@@ -15,7 +15,6 @@ from mace.calculators.foundations_models import mace_mp
 
 from torch_sim.io import atoms_to_state
 from torch_sim.models.mace import MaceModel
-from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.optimizers import gradient_descent
 
 
@@ -56,7 +55,6 @@ atoms_list = [si_dc, fe]
 batched_model = MaceModel(
     model=loaded_model,
     device=device,
-    neighbor_list_fn=vesin_nl_ts,
     compute_forces=True,
     compute_stress=True,
     dtype=dtype,

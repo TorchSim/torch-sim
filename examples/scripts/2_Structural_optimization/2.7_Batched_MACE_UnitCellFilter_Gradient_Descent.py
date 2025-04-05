@@ -66,7 +66,6 @@ print(f"Total number of structures: {len(atoms_list)}")
 model = ts.models.MaceModel(
     model=loaded_model,
     device=device,
-    neighbor_list_fn=ts.neighbors.vesin_nl_ts,
     compute_forces=True,
     compute_stress=True,
     dtype=dtype,

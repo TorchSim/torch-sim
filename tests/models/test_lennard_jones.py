@@ -137,7 +137,7 @@ def test_lennard_jones_force_energy_consistency() -> None:
 #       is not used in the neighbor list calculation. So to get correct results,
 #       we need a system that is large enough (2*cutoff).
 @pytest.fixture
-def ar_sim_state_large(device: torch.device) -> SimState:
+def ar_supercell_sim_state_large(device: torch.device) -> SimState:
     """Create a face-centered cubic (FCC) Argon structure."""
     # Create FCC Ar using ASE, with 4x4x4 supercell
     ar_atoms = bulk("Ar", "fcc", a=5.26, cubic=True).repeat([4, 4, 4])
@@ -146,7 +146,7 @@ def ar_sim_state_large(device: torch.device) -> SimState:
 
 @pytest.fixture
 def models(
-    ar_sim_state_large: SimState,
+    ar_supercell_sim_state_large: SimState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create both neighbor list and direct models with Argon parameters."""
     calc_params = {
@@ -165,7 +165,9 @@ def models(
         use_neighbor_list=False, cutoff=cutoff, **calc_params
     )
 
-    return model_nl(ar_sim_state_large), model_direct(ar_sim_state_large)
+    return model_nl(ar_supercell_sim_state_large), model_direct(
+        ar_supercell_sim_state_large
+    )
 
 
 def test_energy_match(

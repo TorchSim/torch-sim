@@ -72,15 +72,15 @@ class MaceModel(torch.nn.Module, ModelInterface):
     def __init__(
         self,
         model: str | Path | torch.nn.Module | None = None,
+        *,
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float64,
-        atomic_numbers: torch.Tensor | None = None,
-        batch: torch.Tensor | None = None,
-        *,
         neighbor_list_fn: Callable = vesin_nl_ts,
         compute_forces: bool = True,
         compute_stress: bool = True,
         enable_cueq: bool = False,
+        atomic_numbers: torch.Tensor | None = None,
+        batch: torch.Tensor | None = None,
     ) -> None:
         """Initialize the MACE model for energy and force calculations.
 
@@ -112,16 +112,16 @@ class MaceModel(torch.nn.Module, ModelInterface):
             TypeError: If model is neither a path nor a torch.nn.Module.
         """
         super().__init__()
-
-        self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self._device = device or torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
         self._dtype = dtype
+        tkwargs = {"device": self.device, "dtype": self.dtype}
+
         self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self.neighbor_list_fn = neighbor_list_fn
         self._memory_scales_with = "n_atoms_x_density"
-
-        # TODO: can we get rid of this?
-        torch.set_default_dtype(self._dtype)
 
         # Load model if provided as path
         if isinstance(model, str | Path):
@@ -132,14 +132,12 @@ class MaceModel(torch.nn.Module, ModelInterface):
         else:
             raise TypeError("Model must be a path or torch.nn.Module")
 
+        self.model = model.to(**tkwargs)
+        self.model.eval()
+
         if enable_cueq:
             print("Converting models to CuEq for acceleration")
-            self.model = run_e3nn_to_cueq(self.model, device=self._device).to(
-                self._device
-            )
-
-        self.model = self.model.to(dtype=self._dtype, device=self._device)
-        self.model.eval()
+            self.model = run_e3nn_to_cueq(self.model)
 
         # Set model properties
         self.r_max = self.model.r_max
@@ -147,7 +145,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
             [int(z) for z in self.model.atomic_numbers]
         )
         self.model.atomic_numbers = torch.tensor(
-            self.model.atomic_numbers.clone(), device=self._device
+            self.model.atomic_numbers.clone(), **tkwargs
         )
 
         # Store flag to track if atomic numbers were provided at init
