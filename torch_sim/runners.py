@@ -23,6 +23,7 @@ from torch_sim.units import UnitSystem
 
 def _configure_reporter(
     trajectory_reporter: TrajectoryReporter | dict | None,
+    *,
     state_kwargs: dict | None = None,
     properties: list[str] | None = None,
     prop_frequency: int = 10,
@@ -148,7 +149,6 @@ def integrate(
     batch_iterator = _configure_batches_iterator(model, state, autobatcher)
     trajectory_reporter = _configure_reporter(
         trajectory_reporter,
-        integrate,
         properties=["kinetic_energy", "potential_energy", "temperature"],
     )
 
@@ -322,7 +322,6 @@ def optimize(
     )
     trajectory_reporter = _configure_reporter(
         trajectory_reporter,
-        optimize,
         properties=["potential_energy"],
     )
 

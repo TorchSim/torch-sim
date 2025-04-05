@@ -24,6 +24,7 @@ docs/reference/torch_sim.*
 
 # ignore trajectory files
 *.h5
+*.h5md
 *.hdf5
 *.traj
 
