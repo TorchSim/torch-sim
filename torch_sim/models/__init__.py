@@ -26,3 +26,8 @@ try:
     from torch_sim.models.sevennet import SevenNetModel
 except ImportError:
     pass
+
+try:
+    from torch_sim.models.mattersim import MatterSimModel
+except ImportError:
+    pass

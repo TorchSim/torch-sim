@@ -117,7 +117,9 @@ def state_to_atom_graphs(  # noqa: PLR0915
 
     # Extract data from SimState
     positions = state.positions
-    cell = state.cell
+    cell = state.cell.transpose(
+        -2, -1
+    )  # Transpose cell from torchsim convention to ASE convention
     atomic_numbers = state.atomic_numbers.long()
 
     # Create PBC tensor based on state.pbc
@@ -327,6 +329,8 @@ class OrbModel(torch.nn.Module, ModelInterface):
             model = torch.load(model, map_location=self._device)
 
         self.model = model.to(self._device)
+        self.model.eval()
+
         if self._dtype is not None:
             self.model = self.model.to(dtype=self._dtype)
 
@@ -344,7 +348,6 @@ class OrbModel(torch.nn.Module, ModelInterface):
 
         # Set up implemented properties
         self.implemented_properties = self.model.properties
-        self._compute_stress = compute_stress
 
         # Add forces and stress to implemented properties if conservative model
         if self.conservative:
@@ -382,7 +385,7 @@ class OrbModel(torch.nn.Module, ModelInterface):
             state = state.to(self._device)
 
         half_supercell = (
-            torch.max(state.volume) > 1000
+            torch.max(torch.det(state.cell)) > 1000
             if self._half_supercell is None
             else self._half_supercell
         )

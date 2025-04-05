@@ -5,17 +5,15 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
+import numpy as np
 import torch
 
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
-from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.state import SimState, StateDict
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from sevenn.nn.sequential import AtomGraphSequential
 
 
@@ -24,6 +22,7 @@ try:
     import torch
     from sevenn.atom_graph_data import AtomGraphData
     from sevenn.calculator import torch_script_type
+    from sevenn.train.dataload import _graph_build_f
     from torch_geometric.loader.dataloader import Collater
 
 except ImportError:
@@ -58,7 +57,6 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
         model: AtomGraphSequential,
         *,  # force remaining arguments to be keyword-only
         modal: str | None = None,
-        neighbor_list_fn: Callable = vesin_nl_ts,
         device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
     ) -> None:
@@ -103,8 +101,7 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
         )  # TODO: from sevenn not sure if needed
         model.set_is_batch_data(True)
         model_loaded = model
-        self.cutoff = torch.tensor(model.cutoff)
-        self.neighbor_list_fn = neighbor_list_fn
+        self.cutoff = model.cutoff
 
         self.model = model_loaded
 
@@ -123,10 +120,9 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
                 stacklevel=2,
             )
 
-        self.model.to(self.device)
+        self.model = model.to(self._device)
         self.model.eval()
 
-        self.model = model.to(self._device)
         if self._dtype is not None:
             self.model = self.model.to(dtype=self._dtype)
 
@@ -176,16 +172,16 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
             pbc = state.pbc
             atomic_numbers = state.atomic_numbers[batch_mask]
 
-            edge_idx, shifts_idx = self.neighbor_list_fn(
-                positions=pos,
-                cell=cell,
-                pbc=pbc,
+            edge_src, edge_dst, edge_vec, shifts_idx = _graph_build_f(
+                pos=pos.detach().cpu().numpy(),
+                cell=cell.detach().cpu().numpy().T,  # transpose to ASE convention
+                pbc=np.array([pbc] * 3, dtype=bool),
                 cutoff=self.cutoff,
             )
 
-            shifts = torch.mm(shifts_idx, cell)
-
-            edge_vec = pos[edge_idx[0]] - pos[edge_idx[1]] - shifts
+            edge_idx = torch.tensor(np.array([edge_src, edge_dst]), dtype=torch.int64)
+            edge_vec = torch.tensor(edge_vec, dtype=pos.dtype)
+            shifts = torch.mm(torch.tensor(shifts_idx, dtype=cell.dtype), cell)
 
             data = {
                 key.NODE_FEATURE: atomic_numbers,
@@ -205,9 +201,6 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
             data_list.append(data)
 
         batched_data = Collater([], follow_batch=None, exclude_keys=None)(data_list)
-
-        # if self.modal:
-        #     batched_data[key.DATA_MODALITY] = self.modal
         batched_data.to(self.device)
 
         if isinstance(self.model, torch_script_type):
@@ -226,19 +219,16 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
         output = self.model(batched_data)
 
         results = {}
-        # Process energy
         energy = output[key.PRED_TOTAL_ENERGY]
         if energy is not None:
             results["energy"] = energy.detach()
         else:
             results["energy"] = torch.zeros(self.n_systems, device=self._device)
 
-        # Process forces
         forces = output[key.PRED_FORCE]
         if forces is not None:
             results["forces"] = forces.detach()
 
-        # Process stress
         stress = output[key.PRED_STRESS]
         if stress is not None:
             results["stress"] = voigt_6_to_full_3x3_stress(stress.detach())

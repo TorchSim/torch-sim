@@ -1,10 +1,8 @@
 import pytest
 import torch
-from ase.build import bulk
 
-from torch_sim.io import atoms_to_state
+from torch_sim.io import state_to_atoms
 from torch_sim.models.interface import validate_model_outputs
-from torch_sim.state import SimState
 
 
 try:
@@ -27,13 +25,6 @@ def dtype() -> torch.dtype:
 def model_name() -> str:
     """Fixture to provide the model name for testing."""
     return "sevennet-mf-ompa"
-
-
-@pytest.fixture
-def cu_system(dtype: torch.dtype, device: torch.device) -> SimState:
-    # Create FCC Copper
-    cu_fcc = bulk("Cu", "fcc", a=3.58, cubic=True)
-    return atoms_to_state([cu_fcc], device, dtype)
 
 
 @pytest.fixture
@@ -80,24 +71,48 @@ def test_sevennet_initialization(
     assert model._device == device  # noqa: SLF001
 
 
+@pytest.mark.parametrize(
+    "sim_state_name",
+    [
+        "cu_sim_state",
+        "ti_sim_state",
+        "si_sim_state",
+        "sio2_sim_state",
+        "benzene_sim_state",
+    ],
+)
 def test_sevennet_calculator_consistency(
+    sim_state_name: str,
     sevenn_model: SevenNetModel,
     sevenn_calculator: SevenNetCalculator,
-    cu_system: SimState,
+    request: pytest.FixtureRequest,
     device: torch.device,
+    dtype: torch.dtype,
 ) -> None:
-    """Test consistency between SevenNetModel and SevenNetCalculator."""
-    # Get SevenNetModel results
-    sevenn_results = sevenn_model.forward(cu_system)
+    """Test consistency between SevenNetModel and SevenNetCalculator for all sim states.
+
+    Args:
+        sim_state_name: Name of the sim_state fixture to test
+        sevenn_model: The SevenNet model to test
+        sevenn_calculator: The SevenNet calculator to test
+        request: Pytest fixture request object to get dynamic fixtures
+        device: Device to run tests on
+        dtype: Data type to use
+    """
+    # Get the sim_state fixture dynamically using the name
+    sim_state = request.getfixturevalue(sim_state_name).to(device, dtype)
 
     # Set up ASE calculator
-    cu_fcc = bulk("Cu", "fcc", a=3.58, cubic=True)
-    cu_fcc.calc = sevenn_calculator
+    atoms = state_to_atoms(sim_state)[0]
+    atoms.calc = sevenn_calculator
+
+    # Get SevenNetModel results
+    sevenn_results = sevenn_model(sim_state)
 
     # Get calculator results
-    calc_energy = cu_fcc.get_potential_energy()
+    calc_energy = atoms.get_potential_energy()
     calc_forces = torch.tensor(
-        cu_fcc.get_forces(),
+        atoms.get_forces(),
         device=device,
         dtype=sevenn_results["forces"].dtype,
     )
@@ -118,7 +133,7 @@ def test_sevennet_calculator_consistency(
 
 
 def test_validate_model_outputs(
-    sevenn_model: SevenNetModel, device: torch.device
+    sevenn_model: SevenNetModel, device: torch.device, dtype: torch.dtype
 ) -> None:
     """Test that the model passes the standard validation."""
-    validate_model_outputs(sevenn_model, device, torch.float32)
+    validate_model_outputs(sevenn_model, device, dtype)

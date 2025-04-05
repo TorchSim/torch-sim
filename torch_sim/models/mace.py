@@ -120,13 +120,8 @@ class MaceModel(torch.nn.Module, ModelInterface):
         self.neighbor_list_fn = neighbor_list_fn
         self._memory_scales_with = "n_atoms_x_density"
 
-        # TODO: can we get rid of this shit?
+        # TODO: can we get rid of this?
         torch.set_default_dtype(self._dtype)
-
-        # print(
-        #     f"Running BatchedMACEForce on device: {self._device} "
-        #     f"with dtype: {self._dtype}"
-        # )
 
         # Load model if provided as path
         if isinstance(model, str | Path):
@@ -248,21 +243,6 @@ class MaceModel(torch.nn.Module, ModelInterface):
             raise ValueError(
                 "Atomic numbers cannot be provided in both the constructor and forward."
             )
-        # if atomic_numbers is None and self.atomic_numbers_in_init is False:
-        #     raise ValueError(
-        #         "Atomic numbers must be provided in either the constructor or forward."
-        #     )
-        # if atomic_numbers is not None and self.atomic_numbers_in_init is True:
-        #     raise ValueError(
-        #         "Atomic numbers cannot be provided in both the constructor and forward."
-        #     )
-        # if atomic_numbers is not None and self.atomic_numbers_in_init is False:
-        #     new_atomic_number_tensor = torch.tensor(atomic_numbers, device=self.device)
-        #     if new_atomic_number_tensor != self.atomic_number_tensor:
-        #         self.ptr, self.batch, self.node_attrs = self.compute_atomic_numbers(
-        #             new_atomic_number_tensor, self.z_table, self.device
-        #         )
-        #         self.atomic_number_tensor = new_atomic_number_tensor
 
         # Use batch from init if not provided
         if state.batch is None:
@@ -286,11 +266,6 @@ class MaceModel(torch.nn.Module, ModelInterface):
         cell = state.cell
         positions = state.positions
         pbc = state.pbc
-        # Ensure cell has correct shape
-        # if cell is None:
-        #     cell = torch.zeros(
-        #         (self.n_systems, 3, 3), device=self._device, dtype=self._dtype
-        #     )
 
         # Process each system's neighbor list separately
         edge_indices = []

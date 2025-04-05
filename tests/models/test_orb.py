@@ -1,10 +1,8 @@
 import pytest
 import torch
-from ase.build import bulk
 
-from torch_sim.io import atoms_to_state
+from torch_sim.io import state_to_atoms
 from torch_sim.models.interface import validate_model_outputs
-from torch_sim.state import SimState
 
 
 try:
@@ -27,13 +25,6 @@ def dtype() -> torch.dtype:
 def pretrained_orb_model(device: torch.device):
     """Load a pretrained ORB model for testing."""
     return pretrained.orb_v2(device=device)
-
-
-@pytest.fixture
-def cu_system(dtype: torch.dtype, device: torch.device) -> SimState:
-    # Create FCC Copper
-    cu_fcc = bulk("Cu", "fcc", a=3.58, cubic=True)
-    return atoms_to_state([cu_fcc], device, dtype)
 
 
 @pytest.fixture
@@ -72,24 +63,48 @@ def test_orb_initialization(
     assert model._device == device  # noqa: SLF001
 
 
+@pytest.mark.parametrize(
+    "sim_state_name",
+    [
+        "cu_sim_state",
+        "ti_sim_state",
+        "si_sim_state",
+        "sio2_sim_state",
+        "benzene_sim_state",
+    ],
+)
 def test_orb_calculator_consistency(
+    sim_state_name: str,
     orb_model: OrbModel,
     orb_calculator: ORBCalculator,
-    cu_system: SimState,
+    request: pytest.FixtureRequest,
     device: torch.device,
+    dtype: torch.dtype,
 ) -> None:
-    """Test consistency between OrbModel and ORBCalculator."""
-    # Get OrbModel results
-    orb_results = orb_model.forward(cu_system)
+    """Test consistency between OrbModel and ORBCalculator for all sim states.
+
+    Args:
+        sim_state_name: Name of the sim_state fixture to test
+        orb_model: The ORB model to test
+        orb_calculator: The ORB calculator to test
+        request: Pytest fixture request object to get dynamic fixtures
+        device: Device to run tests on
+        dtype: Data type to use
+    """
+    # Get the sim_state fixture dynamically using the name
+    sim_state = request.getfixturevalue(sim_state_name).to(device, dtype)
 
     # Set up ASE calculator
-    cu_fcc = bulk("Cu", "fcc", a=3.58, cubic=True)
-    cu_fcc.calc = orb_calculator
+    atoms = state_to_atoms(sim_state)[0]
+    atoms.calc = orb_calculator
+
+    # Get OrbModel results
+    orb_results = orb_model(sim_state)
 
     # Get calculator results
-    calc_energy = cu_fcc.get_potential_energy()
+    calc_energy = atoms.get_potential_energy()
     calc_forces = torch.tensor(
-        cu_fcc.get_forces(),
+        atoms.get_forces(),
         device=device,
         dtype=orb_results["forces"].dtype,
     )

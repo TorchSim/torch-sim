@@ -225,8 +225,8 @@ def atoms_to_state(
         dtype=torch.int,
         device=device,
     )
-    cell = torch.tensor(
-        np.stack([a.cell.array for a in atoms_list]), dtype=dtype, device=device
+    cell = torch.tensor(  # Transpose cell from ASE convention to torchsim convention
+        np.stack([a.cell.array.T for a in atoms_list]), dtype=dtype, device=device
     )
 
     # Create batch indices using repeat_interleave
