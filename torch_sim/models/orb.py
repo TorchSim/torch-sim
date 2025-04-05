@@ -117,9 +117,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
 
     # Extract data from SimState
     positions = state.positions
-    cell = state.cell.transpose(
-        -2, -1
-    )  # Transpose cell from torchsim convention to ASE convention
+    cell = state.cell.transpose(-2, -1)  # Transpose to ASE convention for neighbor list
     atomic_numbers = state.atomic_numbers.long()
 
     # Create PBC tensor based on state.pbc

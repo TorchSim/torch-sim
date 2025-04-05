@@ -67,6 +67,92 @@ class BravaisType(Enum):
     TRICLINIC = "triclinic"
 
 
+def get_bravais_type(  # noqa: PLR0911
+    state: SimState, length_tol: float = 1e-3, angle_tol: float = 0.1
+) -> BravaisType:
+    """Check and return the crystal system of a structure.
+
+    This function determines the crystal system by analyzing the lattice
+    parameters and angles without using spglib.
+
+    Args:
+        state: SimState object representing the crystal structure
+        length_tol: Tolerance for floating-point comparisons of lattice lengths
+        angle_tol: Tolerance for floating-point comparisons of lattice angles in degrees
+
+    Returns:
+        BravaisType: Bravais type
+    """
+    # Get cell parameters
+    cell = state.cell.transpose(-2, -1).squeeze()
+    a, b, c = torch.linalg.norm(cell, axis=1)
+
+    # Get cell angles in degrees
+    alpha = torch.rad2deg(torch.arccos(torch.dot(cell[1], cell[2]) / (b * c)))
+    beta = torch.rad2deg(torch.arccos(torch.dot(cell[0], cell[2]) / (a * c)))
+    gamma = torch.rad2deg(torch.arccos(torch.dot(cell[0], cell[1]) / (a * b)))
+
+    # Cubic: a = b = c, alpha = beta = gamma = 90°
+    if (
+        abs(a - b) < length_tol
+        and abs(b - c) < length_tol
+        and abs(alpha - 90) < angle_tol
+        and abs(beta - 90) < angle_tol
+        and abs(gamma - 90) < angle_tol
+    ):
+        return BravaisType.CUBIC
+
+    # Hexagonal: a = b ≠ c, alpha = beta = 90°, gamma = 120°
+    if (
+        abs(a - b) < length_tol
+        and abs(alpha - 90) < angle_tol
+        and abs(beta - 90) < angle_tol
+        and abs(gamma - 120) < angle_tol
+    ):
+        return BravaisType.HEXAGONAL
+
+    # Tetragonal: a = b ≠ c, alpha = beta = gamma = 90°
+    if (
+        abs(a - b) < length_tol
+        and abs(a - c) > length_tol
+        and abs(alpha - 90) < angle_tol
+        and abs(beta - 90) < angle_tol
+        and abs(gamma - 90) < angle_tol
+    ):
+        return BravaisType.TETRAGONAL
+
+    # Orthorhombic: a ≠ b ≠ c, alpha = beta = gamma = 90°
+    if (
+        abs(alpha - 90) < angle_tol
+        and abs(beta - 90) < angle_tol
+        and abs(gamma - 90) < angle_tol
+        and abs(a - b) > length_tol
+        and (abs(b - c) > length_tol or abs(a - c) > length_tol)
+    ):
+        return BravaisType.ORTHORHOMBIC
+
+    # Monoclinic: a ≠ b ≠ c, alpha = gamma = 90°, beta ≠ 90°
+    if (
+        abs(alpha - 90) < angle_tol
+        and abs(gamma - 90) < angle_tol
+        and abs(beta - 90) > angle_tol
+    ):
+        return BravaisType.MONOCLINIC
+
+    # Trigonal/Rhombohedral: a = b = c, alpha = beta = gamma ≠ 90°
+    if (
+        abs(a - b) < length_tol
+        and abs(b - c) < length_tol
+        and abs(alpha - beta) < angle_tol
+        and abs(beta - gamma) < angle_tol
+        and abs(alpha - 90) > angle_tol
+    ):
+        return BravaisType.TRIGONAL
+
+    # Triclinic: a ≠ b ≠ c, alpha ≠ beta ≠ gamma ≠ 90°
+    return BravaisType.TRICLINIC
+
+
 def regular_symmetry(strains: torch.Tensor) -> torch.Tensor:
     """Generate equation matrix for cubic (regular) crystal symmetry.
 
@@ -1082,7 +1168,7 @@ def calculate_elastic_tensor(
     )
     C = get_elastic_tensor_from_coeffs(C_ij, bravais_type)
 
-    return C  # noqa : RET504
+    return C  # noqa: RET504
 
 
 def calculate_elastic_moduli(C: torch.Tensor) -> tuple[float, float, float, float]:

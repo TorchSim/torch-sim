@@ -290,14 +290,12 @@ def make_model_calculator_consistency_test(
             atoms.get_potential_energy(),
             rtol=rtol,
             atol=atol,
-            msg=f"Energy mismatch for {sim_state_name}",
         )
         torch.testing.assert_close(
             model_results["forces"],
             calc_forces,
             rtol=rtol,
             atol=atol,
-            msg=f"Forces mismatch for {sim_state_name}",
         )
 
     # Rename the function to include the test name

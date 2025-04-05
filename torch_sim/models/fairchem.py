@@ -338,9 +338,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         if state.batch is None:
             state.batch = torch.zeros(state.positions.shape[0], dtype=torch.int)
 
-        cell = state.cell.transpose(
-            -2, -1
-        )  # Transpose cell from torchsim convention to ASE convention
+        cell = state.cell.transpose(-2, -1)  # Transpose to ASE convention for nbr list
         positions = state.positions
 
         natoms = torch.bincount(state.batch)
