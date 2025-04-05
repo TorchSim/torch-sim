@@ -3,6 +3,7 @@
 This module provides a PyTorch implementation of the MACE model calculator.
 """
 
+import typing
 from collections.abc import Callable
 
 import torch
@@ -12,6 +13,25 @@ from mace.tools import atomic_numbers_to_indices, to_one_hot, utils
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.state import SimState, StateDict
+
+
+try:
+    from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
+    from mace.tools import atomic_numbers_to_indices, utils
+
+    from torch_sim.models.mace import to_one_hot
+except ImportError:
+
+    class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
+        """Unbatched MACE model wrapper for torch_sim.
+
+        This class is a placeholder for the UnbatchedMaceModel class.
+        It raises an ImportError if MACE is not installed.
+        """
+
+        def __init__(self, *_args: typing.Any, **_kwargs: typing.Any) -> None:
+            """Dummy init for type checking."""
+            raise ImportError("MACE must be installed to use this model.")
 
 
 class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
@@ -80,7 +100,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
             [int(z) for z in self.model.atomic_numbers]
         )
         self.model.atomic_numbers = torch.tensor(
-            self.model.atomic_numbers.clone(), **tkwargs
+            self.model.atomic_numbers.detach().clone(), **tkwargs
         )
 
         if atomic_numbers is not None:
@@ -105,6 +125,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         atomic_numbers: list[int] | torch.Tensor,
         z_table: utils.AtomicNumberTable,
         device: torch.device,
+        dtype: torch.dtype,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute the atomic numbers for the system.
 
@@ -112,6 +133,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
             atomic_numbers (list[int] | torch.Tensor): The atomic numbers of the system.
             z_table (utils.AtomicNumberTable): The atomic number table.
             device (torch.device): The device to run the computation on.
+            dtype (torch.dtype): The data type for tensor operations.
         """
         if isinstance(atomic_numbers, torch.Tensor):
             atomic_numbers = atomic_numbers.tolist()
@@ -127,6 +149,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
                 device=device,
             ).unsqueeze(-1),
             num_classes=len(z_table),
+            dtype=dtype,
         )
         return ptr, batch, node_attrs
 
@@ -167,7 +190,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
                 new_atomic_number_tensor, self.atomic_number_tensor
             ):
                 self.ptr, self.batch, self.node_attrs = self.compute_atomic_numbers(
-                    new_atomic_number_tensor, self.z_table, self.device
+                    new_atomic_number_tensor, self.z_table, self.device, self.dtype
                 )
                 self.atomic_number_tensor = new_atomic_number_tensor
 

@@ -30,7 +30,7 @@ from torch_sim.state import SimState, StateDict
 
 try:
     from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
-    from mace.tools import atomic_numbers_to_indices, to_one_hot, utils
+    from mace.tools import atomic_numbers_to_indices, utils
 except ImportError:
 
     class MaceModel(torch.nn.Module, ModelInterface):
@@ -43,6 +43,33 @@ except ImportError:
         def __init__(self, *_args: typing.Any, **_kwargs: typing.Any) -> None:
             """Dummy init for type checking."""
             raise ImportError("MACE must be installed to use this model.")
+
+
+def to_one_hot(
+    indices: torch.Tensor, num_classes: int, dtype: torch.dtype
+) -> torch.Tensor:
+    """Generates one-hot encoding from indices.
+
+    NOTE: this is a modified version of the to_one_hot function in mace.tools,
+    consider using upstream version if possible after https://github.com/ACEsuit/mace/pull/903/
+    is merged.
+
+    Args:
+        indices: A tensor of shape (N x 1) containing class indices.
+        num_classes: An integer specifying the total number of classes.
+        dtype: The desired data type of the output tensor.
+
+    Returns:
+        torch.Tensor: A tensor of shape (N x num_classes) containing the
+            one-hot encodings.
+    """
+    shape = indices.shape[:-1] + (num_classes,)
+    oh = torch.zeros(shape, device=indices.device, dtype=dtype).view(shape)
+
+    # scatter_ is the in-place version of scatter
+    oh.scatter_(dim=-1, index=indices, value=1)
+
+    return oh.view(*shape)
 
 
 class MaceModel(torch.nn.Module, ModelInterface):
@@ -145,7 +172,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
             [int(z) for z in self.model.atomic_numbers]
         )
         self.model.atomic_numbers = torch.tensor(
-            self.model.atomic_numbers.clone(), **tkwargs
+            self.model.atomic_numbers.detach().clone(), **tkwargs
         )
 
         # Store flag to track if atomic numbers were provided at init
@@ -199,6 +226,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 device=self._device,
             ).unsqueeze(-1),
             num_classes=len(self.z_table),
+            dtype=self.dtype,
         )
 
     def forward(  # noqa: C901

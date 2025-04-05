@@ -177,6 +177,22 @@ test_mace_consistency = make_model_calculator_consistency_test(
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_unbatched_mace_dtype_working(
+    si_atoms: Atoms, dtype: torch.dtype, device: torch.device
+) -> None:
+    model = UnbatchedMaceModel(
+        model=mace_model,
+        device=device,
+        dtype=dtype,
+        compute_forces=True,
+    )
+
+    state = atoms_to_state(si_atoms, device, dtype)
+
+    model.forward(state)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_mace_dtype_working(
     si_atoms: Atoms, dtype: torch.dtype, device: torch.device
 ) -> None:
