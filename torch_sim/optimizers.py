@@ -60,7 +60,7 @@ def gradient_descent(
 
     Creates an optimizer that performs standard gradient descent on atomic positions
     for multiple systems in parallel. The optimizer updates atomic positions based on
-    forces computed by the provided model.
+    forces computed by the provided model. The cell is not optimized with this optimizer.
 
     Args:
         model (torch.nn.Module): Model that computes energies and forces
@@ -115,7 +115,8 @@ def gradient_descent(
         )
 
     def gd_step(state: BatchedGDState, lr: torch.Tensor = lr) -> BatchedGDState:
-        """Perform one gradient descent optimization step.
+        """Perform one gradient descent optimization step to update the
+        atomic positions. The cell is not optimized.
 
         Args:
             state: Current optimization state

@@ -1,6 +1,6 @@
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import torch
@@ -16,6 +16,12 @@ from torch_sim.state import SimState, concatenate_states
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_integrators import nve
+
+
+if TYPE_CHECKING:
+    from ase.calculators.calculator import Calculator
+
+    from torch_sim.models.interface import ModelInterface
 
 
 @pytest.fixture
@@ -364,11 +370,11 @@ def make_model_calculator_consistency_test(
     ) -> None:
         """Test consistency between model and calculator implementations."""
         # Get the model and calculator fixtures dynamically
-        model = request.getfixturevalue(model_fixture_name)
-        calculator = request.getfixturevalue(calculator_fixture_name)
+        model: ModelInterface = request.getfixturevalue(model_fixture_name)
+        calculator: Calculator = request.getfixturevalue(calculator_fixture_name)
 
         # Get the sim_state fixture dynamically using the name
-        sim_state = request.getfixturevalue(sim_state_name).to(device, dtype)
+        sim_state: SimState = request.getfixturevalue(sim_state_name).to(device, dtype)
 
         # Set up ASE calculator
         atoms = state_to_atoms(sim_state)[0]
@@ -401,3 +407,74 @@ def make_model_calculator_consistency_test(
     # Rename the function to include the test name
     test_model_calculator_consistency.__name__ = f"test_{test_name}_consistency"
     return test_model_calculator_consistency
+
+
+def make_unbatched_model_calculator_consistency_test(
+    test_name: str,
+    model_fixture_name: str,
+    calculator_fixture_name: str,
+    sim_state_names: list[str],
+    rtol: float = 1e-5,
+    atol: float = 1e-5,
+):
+    """Factory function to create unbatched model-calculator consistency tests.
+
+    Args:
+        test_name: Name of the test (used in the function name and messages)
+        model_fixture_name: Name of the model fixture
+        calculator_fixture_name: Name of the calculator fixture
+        sim_state_names: List of sim_state fixture names to test
+        rtol: Relative tolerance for numerical comparisons
+        atol: Absolute tolerance for numerical comparisons
+    """
+
+    @pytest.mark.parametrize("sim_state_name", sim_state_names)
+    def test_unbatched_model_calculator_consistency(
+        sim_state_name: str,
+        request: pytest.FixtureRequest,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> None:
+        """Test consistency between unbatched model and calculator implementations."""
+        # Get the model and calculator fixtures dynamically
+        model: ModelInterface = request.getfixturevalue(model_fixture_name)
+        calculator: Calculator = request.getfixturevalue(calculator_fixture_name)
+
+        # Get the sim_state fixture dynamically using the name
+        sim_state: SimState = (
+            request.getfixturevalue(sim_state_name).to(device, dtype).split()[0]
+        )
+
+        # Set up ASE calculator
+        atoms = state_to_atoms(sim_state)[0]
+        atoms.calc = calculator
+
+        # Get model results
+        model_results = model(sim_state)
+
+        # Get calculator results
+        calc_forces = torch.tensor(
+            atoms.get_forces(),
+            device=device,
+            dtype=model_results["forces"].dtype,
+        )
+
+        # Test consistency with specified tolerances
+        torch.testing.assert_close(
+            model_results["energy"].item(),
+            atoms.get_potential_energy(),
+            rtol=rtol,
+            atol=atol,
+        )
+        torch.testing.assert_close(
+            model_results["forces"],
+            calc_forces,
+            rtol=rtol,
+            atol=atol,
+        )
+
+    # Rename the function to include the test name
+    test_unbatched_model_calculator_consistency.__name__ = (
+        f"test_unbatched_{test_name}_consistency"
+    )
+    return test_unbatched_model_calculator_consistency
