@@ -81,13 +81,11 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
             "cuda" if torch.cuda.is_available() else "cpu"
         )
         self._dtype = dtype
-        tkwargs = {"device": self.device, "dtype": self.dtype}
-
         self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self.neighbor_list_fn = neighbor_list_fn
 
-        self.model = model.to(**tkwargs)
+        self.model = model.to(device=self.device, dtype=self.dtype)
         self.model.eval()
 
         if enable_cueq:
@@ -100,7 +98,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
             [int(z) for z in self.model.atomic_numbers]
         )
         self.model.atomic_numbers = torch.tensor(
-            self.model.atomic_numbers.detach().clone(), **tkwargs
+            self.model.atomic_numbers.detach().clone(), device=self.device
         )
 
         if atomic_numbers is not None:
@@ -108,7 +106,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
                 atomic_numbers, self.z_table, self.device
             )
             self.atomic_numbers_in_init = True
-            self.atomic_number_tensor = torch.tensor(atomic_numbers, **tkwargs)
+            self.atomic_number_tensor = torch.tensor(atomic_numbers, device=self.device)
         else:
             self.atomic_numbers_in_init = False
             self.atomic_number_tensor = None

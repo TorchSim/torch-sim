@@ -143,8 +143,6 @@ class MaceModel(torch.nn.Module, ModelInterface):
             "cuda" if torch.cuda.is_available() else "cpu"
         )
         self._dtype = dtype
-        tkwargs = {"device": self.device, "dtype": self.dtype}
-
         self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self.neighbor_list_fn = neighbor_list_fn
@@ -159,7 +157,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
         else:
             raise TypeError("Model must be a path or torch.nn.Module")
 
-        self.model = model.to(**tkwargs)
+        self.model = model.to(device=self.device, dtype=self.dtype)
         self.model.eval()
 
         if enable_cueq:
@@ -172,7 +170,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
             [int(z) for z in self.model.atomic_numbers]
         )
         self.model.atomic_numbers = torch.tensor(
-            self.model.atomic_numbers.detach().clone(), **tkwargs
+            self.model.atomic_numbers.detach().clone(), device=self.device
         )
 
         # Store flag to track if atomic numbers were provided at init
@@ -183,7 +181,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
             if batch is None:
                 # If batch is not provided, assume all atoms belong to same system
                 batch = torch.zeros(
-                    len(atomic_numbers), dtype=torch.long, device=self._device
+                    len(atomic_numbers), dtype=torch.long, device=self.device
                 )
 
             self.setup_from_batch(atomic_numbers, batch)
@@ -215,7 +213,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
             self.n_atoms_per_system.append(n_atoms)
             ptr.append(ptr[-1] + n_atoms)
 
-        self.ptr = torch.tensor(ptr, dtype=torch.long, device=self._device)
+        self.ptr = torch.tensor(ptr, dtype=torch.long, device=self.device)
         self.total_atoms = atomic_numbers.shape[0]
 
         # Create one-hot encodings for all atoms
@@ -223,7 +221,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
             torch.tensor(
                 atomic_numbers_to_indices(atomic_numbers.cpu(), z_table=self.z_table),
                 dtype=torch.long,
-                device=self._device,
+                device=self.device,
             ).unsqueeze(-1),
             num_classes=len(self.z_table),
             dtype=self.dtype,
@@ -284,7 +282,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
             and not self.atomic_numbers_in_init
             and not torch.equal(
                 state.atomic_numbers,
-                getattr(self, "atomic_numbers", torch.zeros(0, device=self._device)),
+                getattr(self, "atomic_numbers", torch.zeros(0, device=self.device)),
             )
         ):
             self.setup_from_batch(state.atomic_numbers, state.batch)
@@ -349,7 +347,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
         if energy is not None:
             results["energy"] = energy.detach()
         else:
-            results["energy"] = torch.zeros(self.n_systems, device=self._device)
+            results["energy"] = torch.zeros(self.n_systems, device=self.device)
 
         # Process forces
         if self._compute_forces:
