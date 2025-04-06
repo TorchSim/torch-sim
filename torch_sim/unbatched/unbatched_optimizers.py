@@ -7,7 +7,7 @@ import torch
 
 from torch_sim.math import expm_frechet
 from torch_sim.math import matrix_log_33 as logm
-from torch_sim.state import SimState, StateDict
+from torch_sim.state import DeformGradMixin, SimState, StateDict
 from torch_sim.unbatched.unbatched_integrators import velocity_verlet
 
 
@@ -142,6 +142,8 @@ class FIREState(OptimizerState):
     @property
     def velocities(self) -> torch.Tensor:
         """Calculate velocities from momenta and masses.
+
+        NOTE: this is used for fire_ase implementation.
 
         Returns:
             Atomic velocities tensor of shape (n_atoms, 3)
@@ -501,7 +503,7 @@ def fire_ase(  # noqa: PLR0915
 
 
 @dataclass
-class UnitCellFIREState(OptimizerState):
+class UnitCellFIREState(OptimizerState, DeformGradMixin):
     """State class for FIRE optimization with unit cell.
     Extends OptimizerState with additional variables needed for FIRE dynamics
     and unit cell optimization.
@@ -511,7 +513,7 @@ class UnitCellFIREState(OptimizerState):
         dt: Current timestep
         alpha: Current mixing parameter
         n_pos: Number of consecutive steps with positive power
-        orig_cell: Original unit cell tensor of shape (3, 3)
+        reference_cell: Original unit cell tensor of shape (3, 3)
         cell_factor: Scaling factor for cell optimization
         hydrostatic_strain: Whether to only allow hydrostatic deformation
         constant_volume: Whether to maintain constant volume
@@ -528,7 +530,7 @@ class UnitCellFIREState(OptimizerState):
     stress: torch.Tensor
 
     # optimization-specific attributes
-    orig_cell: torch.Tensor
+    reference_cell: torch.Tensor
     cell_factor: torch.Tensor
     pressure: torch.Tensor
     hydrostatic_strain: bool
@@ -544,15 +546,6 @@ class UnitCellFIREState(OptimizerState):
     dt: torch.Tensor
     alpha: torch.Tensor
     n_pos: torch.Tensor
-
-    @property
-    def momenta(self) -> torch.Tensor:
-        """Calculate momenta from velocities and masses.
-
-        Returns:
-            The momenta of the particles
-        """
-        return self.velocities * self.masses.unsqueeze(-1)
 
 
 def unit_cell_fire(  # noqa: PLR0915, C901
@@ -630,7 +623,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
         # Setup cell factor
         if cell_factor is None:
             cell_factor = float(len(state.positions))
-        if isinstance(cell_factor, (int, float)):
+        if isinstance(cell_factor, int | float):
             cell_factor = torch.full((1, 1), cell_factor, device=device, dtype=dtype)
 
         # Check if there is an extra batch dimension
@@ -647,9 +640,9 @@ def unit_cell_fire(  # noqa: PLR0915, C901
         stress = results["stress"]
 
         # Get current deformation gradient
-        cur_deform_grad = torch.transpose(
-            torch.linalg.solve(state.cell, state.cell), 0, 1
-        )  # Identity matrix
+        cur_deform_grad = DeformGradMixin._deform_grad(  # noqa: SLF001
+            state.row_vector_cell, state.row_vector_cell
+        )
 
         # Calculate cell positions
         cell_positions = (cur_deform_grad * cell_factor).reshape(3, 3)
@@ -684,7 +677,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
             dt=dt_start,
             alpha=alpha_start,
             n_pos=0,
-            orig_cell=state.cell.clone(),
+            reference_cell=state.cell.clone(),
             cell_factor=cell_factor,
             hydrostatic_strain=hydrostatic_strain,
             constant_volume=constant_volume,
@@ -712,9 +705,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
             Updated UnitCellFIREState after one optimization step
         """
         # Get current deformation gradient
-        cur_deform_grad = torch.transpose(
-            torch.linalg.solve(state.orig_cell, state.cell), 0, 1
-        )
+        cur_deform_grad = state.deform_grad()
 
         # Calculate cell positions from deformation gradient
         cell_positions = (cur_deform_grad * state.cell_factor).reshape(3, 3)
@@ -731,11 +722,11 @@ def unit_cell_fire(  # noqa: PLR0915, C901
 
         # Update cell
         cell_update = (cell_positions_new / state.cell_factor).reshape(3, 3)
-        new_cell = torch.mm(state.orig_cell, cell_update.t())
+        new_row_vector_cell = torch.mm(state.reference_row_vector_cell, cell_update.t())
 
         # Get new forces and energy
         state.positions = atomic_positions_new
-        state.cell = new_cell
+        state.row_vector_cell = new_row_vector_cell
         results = model(state)
 
         atomic_forces = results["forces"]
@@ -744,14 +735,14 @@ def unit_cell_fire(  # noqa: PLR0915, C901
 
         # Update state
         state.positions = atomic_positions_new
-        state.cell = new_cell
+        state.row_vector_cell = new_row_vector_cell
         state.stress = stress
         state.energy = energy
         state.forces = atomic_forces
         state.cell_positions = cell_positions_new
 
         # Calculate virial for cell forces
-        volume = torch.linalg.det(new_cell).view(1, 1)
+        volume = torch.linalg.det(new_row_vector_cell).view(1, 1)
         virial = -volume * stress + state.pressure
 
         if state.hydrostatic_strain:
@@ -811,7 +802,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
 
 
 @dataclass
-class FrechetCellFIREState(OptimizerState):
+class FrechetCellFIREState(OptimizerState, DeformGradMixin):
     """State class for FIRE optimization with Frechet cell derivatives.
 
     Extends OptimizerState with additional variables needed for FIRE dynamics
@@ -822,7 +813,7 @@ class FrechetCellFIREState(OptimizerState):
         stress: Stress tensor of shape (3, 3)
 
         # optimization-specific attributes
-        orig_cell: Original unit cell tensor of shape (3, 3)
+        reference_cell: Original unit cell tensor of shape (3, 3)
         cell_factor: Scaling factor for cell optimization
         pressure: Applied pressure tensor
         hydrostatic_strain: Whether to only allow hydrostatic deformation
@@ -845,7 +836,7 @@ class FrechetCellFIREState(OptimizerState):
     stress: torch.Tensor
 
     # optimization-specific attributes
-    orig_cell: torch.Tensor
+    reference_cell: torch.Tensor
     cell_factor: torch.Tensor
     pressure: torch.Tensor
     hydrostatic_strain: bool
@@ -861,23 +852,6 @@ class FrechetCellFIREState(OptimizerState):
     dt: torch.Tensor
     alpha: torch.Tensor
     n_pos: int
-
-    @property
-    def momenta(self) -> torch.Tensor:
-        """Calculate momenta from velocities and masses.
-
-        Returns:
-            The momenta of the particles
-        """
-        return self.velocities * self.masses.unsqueeze(-1)
-
-    def deform_grad(self) -> torch.Tensor:
-        """Calculate the deformation gradient from original cell to current cell.
-
-        Returns:
-            The deformation gradient
-        """
-        return torch.transpose(torch.linalg.solve(self.orig_cell, self.cell), 0, 1)
 
 
 def frechet_cell_fire(  # noqa: PLR0915, C901
@@ -964,7 +938,7 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
         # Setup cell factor
         if cell_factor is None:
             cell_factor = float(len(state.positions))
-        if isinstance(cell_factor, (int, float)):
+        if isinstance(cell_factor, int | float):
             cell_factor = torch.tensor(cell_factor, device=device, dtype=dtype)
 
         # Check if there is an extra batch dimension
@@ -981,9 +955,9 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
         stress = results["stress"]
 
         # Get current deformation gradient
-        cur_deform_grad = torch.transpose(
-            torch.linalg.solve(state.cell, state.cell), 0, 1
-        )  # Identity matrix
+        cur_deform_grad = FrechetCellFIREState._deform_grad(  # noqa: SLF001
+            state.row_vector_cell, state.row_vector_cell
+        )
 
         # Calculate cell positions using log parameterization
         # For identity matrix, logm gives zero matrix, so we multiply by cell_factor
@@ -1020,7 +994,7 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
             dt=dt_start,
             alpha=alpha_start,
             n_pos=0,
-            orig_cell=state.cell.clone(),
+            reference_cell=state.cell.clone(),
             cell_factor=cell_factor,
             hydrostatic_strain=hydrostatic_strain,
             constant_volume=constant_volume,
@@ -1072,11 +1046,13 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
         deform_grad_new = torch.matrix_exp(deform_grad_log_new / state.cell_factor)
 
         # Update cell
-        new_cell = torch.mm(state.orig_cell, deform_grad_new.transpose(0, 1))
+        new_row_vector_cell = torch.mm(
+            state.reference_row_vector_cell, deform_grad_new.transpose(-2, -1)
+        )
 
         # Get new forces and energy
         state.positions = atomic_positions_new
-        state.cell = new_cell
+        state.row_vector_cell = new_row_vector_cell
         results = model(state)
 
         atomic_forces = results["forces"]
@@ -1084,7 +1060,7 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
         stress = results["stress"]
 
         # Calculate virial for cell forces
-        volume = torch.linalg.det(new_cell).view(1, 1)
+        volume = torch.linalg.det(state.cell).view(1, 1)
         virial = -volume * stress + state.pressure
 
         if state.hydrostatic_strain:
@@ -1097,27 +1073,6 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
 
         # Calculate UCF-style cell gradient
         ucf_cell_grad = virial @ torch.linalg.inv(deform_grad_new.transpose(0, 1))
-
-        """
-        # Calculate cell forces using Frechet derivative approach
-        cell_forces = torch.zeros((3, 3), device=device, dtype=dtype)
-        for mu in range(3):
-            for nu in range(3):
-                # Create directional derivative
-                direction = torch.zeros((3, 3), device=device, dtype=dtype)
-                direction[mu, nu] = 1.0
-
-                # Calculate Frechet derivative
-                expm_deriv = expm_frechet(
-                    deform_grad_log_new, direction, compute_expm=False
-                )
-
-                # Sum the element-wise product
-                cell_forces[mu, nu] = torch.sum(expm_deriv * ucf_cell_grad)
-
-        # Scale by cell_factor
-        cell_forces = cell_forces / state.cell_factor
-        """
 
         directions = torch.zeros((9, 3, 3), device=device, dtype=dtype)
         for idx, (i, j) in enumerate([(i, j) for i in range(3) for j in range(3)]):
@@ -1137,7 +1092,6 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
 
         # Update state
         state.positions = atomic_positions_new
-        state.cell = new_cell
         state.stress = stress
         state.energy = energy
         state.forces = atomic_forces

@@ -109,7 +109,6 @@ def test_elastic_tensor_symmetries(
     )
 
 
-@pytest.mark.flaky(reruns=3)
 def test_copper_elastic_properties(
     torchsim_mace_model: UnbatchedMaceModel, cu_sim_state: SimState
 ):

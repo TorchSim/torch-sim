@@ -198,11 +198,29 @@ class SimState:
         return torch.det(self.cell) if self.pbc else None
 
     @property
+    def column_vector_cell(self) -> torch.Tensor:
+        """Get the unit cell following the column vector convention.
+
+        Returns:
+            The unit cell in a column vector format
+        """
+        return self.cell
+
+    @column_vector_cell.setter
+    def column_vector_cell(self, value: torch.Tensor) -> None:
+        """Set the unit cell from value following the column vector convention.
+
+        Args:
+            value: The unit cell as a column vector
+        """
+        self.cell = value
+
+    @property
     def row_vector_cell(self) -> torch.Tensor:
         """Get the unit cell following the row vector convention.
 
         Returns:
-            The unit cell as a row vector
+            The unit cell in a row vector format
         """
         return self.cell.transpose(-2, -1)
 
@@ -330,6 +348,50 @@ class SimState:
         )
 
         return _slice_state(self, batch_indices)
+
+
+class DeformGradMixin:
+    """Mixin for states that support deformation gradients."""
+
+    @property
+    def momenta(self) -> torch.Tensor:
+        """Calculate momenta from velocities and masses.
+
+        Returns:
+            The momenta of the particles
+        """
+        return self.velocities * self.masses.unsqueeze(-1)
+
+    @property
+    def reference_row_vector_cell(self) -> torch.Tensor:
+        """Get the original unit cell in terms of row vectors."""
+        return self.reference_cell.transpose(-2, -1)
+
+    @reference_row_vector_cell.setter
+    def reference_row_vector_cell(self, value: torch.Tensor) -> None:
+        """Set the original unit cell in terms of row vectors."""
+        self.reference_cell = value.transpose(-2, -1)
+
+    @staticmethod
+    def _deform_grad(
+        reference_row_vector_cell: torch.Tensor, row_vector_cell: torch.Tensor
+    ) -> torch.Tensor:
+        """Calculate the deformation gradient from original cell to current cell.
+
+        Returns:
+            The deformation gradient
+        """
+        return torch.linalg.solve(reference_row_vector_cell, row_vector_cell).transpose(
+            -2, -1
+        )
+
+    def deform_grad(self) -> torch.Tensor:
+        """Calculate the deformation gradient from original cell to current cell.
+
+        Returns:
+            The deformation gradient
+        """
+        return self._deform_grad(self.reference_row_vector_cell, self.row_vector_cell)
 
 
 def _normalize_batch_indices(
