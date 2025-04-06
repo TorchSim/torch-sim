@@ -68,8 +68,8 @@ class SimState:
         masses (torch.Tensor): Atomic masses with shape (n_atoms,)
         cell (torch.Tensor): Unit cell vectors with shape (n_batches, 3, 3).
             Note that we use a column vector convention, i.e. the cell vectors are
-            stored as `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`  as opposed to
-            the row vector convention `[[a1, b1, c1], [a2, b2, c2], [a3, b3, c3]]`
+            stored as `[[a1, b1, c1], [a2, b2, c2], [a3, b3, c3]]` as opposed to
+            the row vector convention `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`
             used by ASE.
         pbc (bool): Boolean indicating whether to use periodic boundary conditions
         atomic_numbers (torch.Tensor): Atomic numbers with shape (n_atoms,)

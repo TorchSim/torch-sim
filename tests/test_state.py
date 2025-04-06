@@ -1,10 +1,12 @@
 import typing
 from dataclasses import asdict
 
+import pytest
 import torch
 
 from torch_sim.integrators import MDState
 from torch_sim.state import (
+    DeformGradMixin,
     SimState,
     _normalize_batch_indices,
     _pop_states,
@@ -457,3 +459,143 @@ def test_row_vector_cell(si_sim_state: SimState) -> None:
 
     # Test consistency of getter after setting
     assert torch.allclose(si_sim_state.row_vector_cell, new_cell.transpose(-2, -1))
+
+
+def test_column_vector_cell(si_sim_state: SimState) -> None:
+    """Test the column_vector_cell property getter and setter."""
+    # Test getter - should return cell directly since it's already in column vector format
+    original_cell = si_sim_state.cell.clone()
+    column_vector = si_sim_state.column_vector_cell
+    assert torch.allclose(column_vector, original_cell)
+
+    # Test setter - should update cell directly
+    new_cell = torch.randn_like(original_cell)
+    si_sim_state.column_vector_cell = new_cell
+    assert torch.allclose(si_sim_state.cell, new_cell)
+
+    # Test consistency of getter after setting
+    assert torch.allclose(si_sim_state.column_vector_cell, new_cell)
+
+
+class DeformState(SimState, DeformGradMixin):
+    """Test class that combines SimState with DeformGradMixin."""
+
+    def __init__(
+        self,
+        *args,
+        velocities: torch.Tensor | None = None,
+        reference_cell: torch.Tensor | None = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.velocities = velocities
+        self.reference_cell = reference_cell
+
+
+@pytest.fixture
+def deform_grad_state(device: torch.device) -> DeformState:
+    """Create a test state with deformation gradient support."""
+
+    positions = torch.randn(10, 3, device=device)
+    masses = torch.ones(10, device=device)
+    velocities = torch.randn(10, 3, device=device)
+    reference_cell = torch.eye(3, device=device).unsqueeze(0)
+    current_cell = 2 * reference_cell
+
+    return DeformState(
+        positions=positions,
+        masses=masses,
+        cell=current_cell,
+        pbc=True,
+        atomic_numbers=torch.ones(10, device=device, dtype=torch.long),
+        velocities=velocities,
+        reference_cell=reference_cell,
+    )
+
+
+def test_deform_grad_momenta(deform_grad_state: DeformState) -> None:
+    """Test momenta calculation in DeformGradMixin."""
+    expected_momenta = deform_grad_state.velocities * deform_grad_state.masses.unsqueeze(
+        -1
+    )
+    assert torch.allclose(deform_grad_state.momenta, expected_momenta)
+
+
+def test_deform_grad_reference_cell(deform_grad_state: DeformState) -> None:
+    """Test reference cell getter/setter in DeformGradMixin."""
+    original_ref_cell = deform_grad_state.reference_cell.clone()
+
+    # Test getter
+    assert torch.allclose(
+        deform_grad_state.reference_row_vector_cell, original_ref_cell.transpose(-2, -1)
+    )
+
+    # Test setter
+    new_ref_cell = 3 * torch.eye(3, device=deform_grad_state.device).unsqueeze(0)
+    deform_grad_state.reference_row_vector_cell = new_ref_cell.transpose(-2, -1)
+    assert torch.allclose(deform_grad_state.reference_cell, new_ref_cell)
+
+
+def test_deform_grad_uniform(deform_grad_state: DeformState) -> None:
+    """Test deformation gradient calculation for uniform deformation."""
+    # For 2x uniform expansion, deformation gradient should be 2x identity matrix
+    deform_grad = deform_grad_state.deform_grad()
+    expected = 2 * torch.eye(3, device=deform_grad_state.device).unsqueeze(0)
+    assert torch.allclose(deform_grad, expected)
+
+
+def test_deform_grad_non_uniform(device: torch.device) -> None:
+    """Test deformation gradient calculation for non-uniform deformation."""
+    reference_cell = torch.eye(3, device=device).unsqueeze(0)
+    current_cell = torch.tensor(
+        [[[2.0, 0.1, 0.0], [0.1, 1.5, 0.0], [0.0, 0.0, 1.8]]], device=device
+    )
+
+    state = DeformState(
+        positions=torch.randn(10, 3, device=device),
+        masses=torch.ones(10, device=device),
+        cell=current_cell,
+        pbc=True,
+        atomic_numbers=torch.ones(10, device=device, dtype=torch.long),
+        velocities=torch.randn(10, 3, device=device),
+        reference_cell=reference_cell,
+    )
+
+    deform_grad = state.deform_grad()
+    # Verify that deformation gradient correctly transforms reference cell to current cell
+    reconstructed_cell = torch.matmul(reference_cell, deform_grad.transpose(-2, -1))
+    assert torch.allclose(reconstructed_cell, current_cell)
+
+
+def test_deform_grad_batched(device: torch.device) -> None:
+    """Test deformation gradient calculation with batched states."""
+    batch_size = 3
+    n_atoms = 10
+
+    reference_cell = torch.eye(3, device=device).unsqueeze(0).repeat(batch_size, 1, 1)
+    current_cell = torch.stack(
+        [
+            2.0 * torch.eye(3, device=device),  # Uniform expansion
+            torch.eye(3, device=device),  # No deformation
+            0.5 * torch.eye(3, device=device),  # Uniform compression
+        ]
+    )
+
+    state = DeformState(
+        positions=torch.randn(n_atoms * batch_size, 3, device=device),
+        masses=torch.ones(n_atoms * batch_size, device=device),
+        cell=current_cell,
+        pbc=True,
+        atomic_numbers=torch.ones(n_atoms * batch_size, device=device, dtype=torch.long),
+        velocities=torch.randn(n_atoms * batch_size, 3, device=device),
+        reference_cell=reference_cell,
+        batch=torch.repeat_interleave(torch.arange(batch_size, device=device), n_atoms),
+    )
+
+    deform_grad = state.deform_grad()
+    assert deform_grad.shape == (batch_size, 3, 3)
+
+    expected_factors = torch.tensor([2.0, 1.0, 0.5], device=device)
+    for i in range(batch_size):
+        expected = expected_factors[i] * torch.eye(3, device=device)
+        assert torch.allclose(deform_grad[i], expected)
