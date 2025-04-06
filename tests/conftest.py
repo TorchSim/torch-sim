@@ -489,3 +489,19 @@ def make_unbatched_model_calculator_consistency_test(
         f"test_unbatched_{test_name}_consistency"
     )
     return test_unbatched_model_calculator_consistency
+
+
+consistency_test_simstate_fixtures = [
+    "cu_sim_state",
+    "mg_sim_state",
+    "sb_sim_state",
+    "tio2_sim_state",
+    "ga_sim_state",
+    "niti_sim_state",
+    "ti_sim_state",
+    "si_sim_state",
+    "sio2_sim_state",
+    "ar_supercell_sim_state",
+    "fe_supercell_sim_state",
+    "benzene_sim_state",
+]

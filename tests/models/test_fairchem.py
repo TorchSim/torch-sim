@@ -1,7 +1,10 @@
 import pytest
 import torch
 
-from tests.conftest import make_model_calculator_consistency_test
+from tests.conftest import (
+    consistency_test_simstate_fixtures,
+    make_model_calculator_consistency_test,
+)
 from torch_sim.models.interface import validate_model_outputs
 
 
@@ -42,20 +45,9 @@ test_fairchem_ocp_consistency = make_model_calculator_consistency_test(
     test_name="fairchem_ocp",
     model_fixture_name="fairchem_model",
     calculator_fixture_name="ocp_calculator",
-    sim_state_names=[
-        "cu_sim_state",
-        "mg_sim_state",
-        "sb_sim_state",
-        "tio2_sim_state",
-        "ga_sim_state",
-        "niti_sim_state",
-        "ti_sim_state",
-        "si_sim_state",
-        "sio2_sim_state",
-        # "benzene_sim_state",  # TODO: Turn on when #111 fixed
-    ],
-    rtol=1e-2,
-    atol=1e-2,
+    sim_state_names=consistency_test_simstate_fixtures,
+    rtol=5e-4,  # NOTE: fairchem doesn't pass at the 1e-5 level used for other models
+    atol=5e-4,
 )
 
 

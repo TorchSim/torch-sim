@@ -3,6 +3,7 @@ import torch
 from ase.atoms import Atoms
 
 from tests.conftest import (
+    consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_unbatched_model_calculator_consistency_test,
 )
@@ -86,20 +87,7 @@ test_mace_consistency = make_model_calculator_consistency_test(
     test_name="mace",
     model_fixture_name="torchsim_mace_model",
     calculator_fixture_name="ase_mace_calculator",
-    sim_state_names=[
-        "cu_sim_state",
-        "mg_sim_state",
-        "sb_sim_state",
-        "tio2_sim_state",
-        "ga_sim_state",
-        "niti_sim_state",
-        "ti_sim_state",
-        "si_sim_state",
-        "sio2_sim_state",
-        "benzene_sim_state",
-    ],
-    rtol=1e-5,
-    atol=1e-5,
+    sim_state_names=consistency_test_simstate_fixtures,
 )
 
 
@@ -206,8 +194,6 @@ test_mace_off_consistency = make_model_calculator_consistency_test(
     sim_state_names=[
         "benzene_sim_state",
     ],
-    rtol=1e-5,
-    atol=1e-5,
 )
 
 

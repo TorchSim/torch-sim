@@ -295,7 +295,7 @@ def validate_model_outputs(
     assert model_output["stress"].shape == (2, 3, 3) if stress_computed else True
 
     si_state = atoms_to_state([si_atoms], device, dtype)
-    ar_state = atoms_to_state([fe_atoms], device, dtype)
+    fe_state = atoms_to_state([fe_atoms], device, dtype)
 
     si_model_output = model.forward(si_state)
     assert torch.allclose(
@@ -312,20 +312,14 @@ def validate_model_outputs(
     #     atol=10e-3,
     # )
 
-    ar_model_output = model.forward(ar_state)
+    fe_model_output = model.forward(fe_state)
     si_model_output = model.forward(si_state)
 
-    # print("ar single batch energy", ar_model_output["energy"])
-    # print("si single batch energy", si_model_output["energy"])
-
-    # print("si multi batch energy", model_output["energy"][0])
-    # print("ar multi batch energy", model_output["energy"][1])
-
     assert torch.allclose(
-        ar_model_output["energy"], model_output["energy"][1], atol=10e-2
+        fe_model_output["energy"], model_output["energy"][1], atol=10e-2
     )
     assert torch.allclose(
-        ar_model_output["forces"],
+        fe_model_output["forces"],
         model_output["forces"][si_state.n_atoms :],
         atol=10e-2,
     )
