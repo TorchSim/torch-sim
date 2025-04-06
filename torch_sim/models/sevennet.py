@@ -180,10 +180,15 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
                 cutoff=self.cutoff,
             )
 
-            edge_idx = torch.tensor(np.array([edge_src, edge_dst]), dtype=torch.int64)
-            edge_vec = torch.tensor(edge_vec, dtype=pos.dtype)
+            edge_idx = torch.tensor(
+                np.array([edge_src, edge_dst]), dtype=torch.int64, device=self._device
+            )
+            edge_vec = torch.tensor(edge_vec, dtype=pos.dtype, device=self._device)
             shifts = torch.mm(
-                torch.tensor(shifts_idx, dtype=row_vector_cell.dtype), row_vector_cell
+                torch.tensor(
+                    shifts_idx, dtype=row_vector_cell.dtype, device=self._device
+                ),
+                row_vector_cell,
             )
 
             data = {
@@ -195,7 +200,7 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
                 key.CELL: row_vector_cell,
                 key.CELL_SHIFT: shifts,
                 key.CELL_VOLUME: torch.det(row_vector_cell),
-                key.NUM_ATOMS: torch.tensor(len(atomic_numbers)),
+                key.NUM_ATOMS: torch.tensor(len(atomic_numbers), device=self._device),
                 key.DATA_MODALITY: self.modal,
             }
             data[key.INFO] = {}
