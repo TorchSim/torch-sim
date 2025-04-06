@@ -47,7 +47,6 @@ StateDict = dict[
 ]
 
 
-# TODO: change later on
 @dataclass
 class SimState:
     """State representation for atomistic systems with batched operations support.

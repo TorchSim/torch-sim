@@ -1,3 +1,4 @@
+import itertools
 from typing import Any
 
 import pytest
@@ -200,109 +201,63 @@ def test_state_to_multiple_phonopy(ar_double_sim_state: SimState) -> None:
 
 
 @pytest.mark.parametrize(
-    "sim_state_name",
-    [
-        "ar_supercell_sim_state",
-        "si_sim_state",
-        "ti_sim_state",
-        "sio2_sim_state",
-        "fe_supercell_sim_state",
-        "cu_sim_state",
-    ],
+    ("sim_state_name", "conversion_functions"),
+    list(
+        itertools.product(
+            [
+                "ar_supercell_sim_state",
+                "si_sim_state",
+                "ti_sim_state",
+                "sio2_sim_state",
+                "fe_supercell_sim_state",
+                "cu_sim_state",
+                "ar_double_sim_state",
+                "mixed_double_sim_state",
+                # TODO: round trip benzene/non-pbc systems
+            ],
+            [
+                (state_to_atoms, atoms_to_state),
+                (state_to_structures, structures_to_state),
+                (state_to_phonopy, phonopy_to_state),
+            ],
+        )
+    ),
 )
-def test_state_to_atoms_round_trip(
+def test_state_round_trip(
     sim_state_name: str,
+    conversion_functions: tuple,
     request: pytest.FixtureRequest,
     device: torch.device,
     dtype: torch.dtype,
 ) -> None:
-    """Test round-trip conversion from SimState -> Atoms -> SimState.
+    """Test round-trip conversion from SimState through various formats and back.
 
     Args:
         sim_state_name: Name of the sim_state fixture to test
+        conversion_functions: Tuple of (to_format, from_format) conversion functions
         request: Pytest fixture request object to get dynamic fixtures
         device: Device to run tests on
         dtype: Data type to use
     """
     # Get the sim_state fixture dynamically using the name
     sim_state: SimState = request.getfixturevalue(sim_state_name)
+    to_format_fn, from_format_fn = conversion_functions
+    unique_batches = torch.unique(sim_state.batch)
 
-    # First convert to atoms
-    atoms_list = state_to_atoms(sim_state)
-    assert len(atoms_list) == 1, f"Expected single system for {sim_state_name}"
+    # Convert to intermediate format
+    intermediate_format = to_format_fn(sim_state)
+    assert len(intermediate_format) == len(unique_batches)
 
-    # Then convert back to state
-    round_trip_state = atoms_to_state(atoms_list, device, dtype)
-
-    # Check that all properties match
-    assert torch.allclose(
-        sim_state.positions,
-        round_trip_state.positions,
-    )
-    assert torch.allclose(
-        sim_state.cell,
-        round_trip_state.cell,
-    )
-    assert torch.all(sim_state.atomic_numbers == round_trip_state.atomic_numbers), (
-        f"Atomic numbers mismatch for {sim_state_name}"
-    )
-    assert torch.allclose(
-        sim_state.masses,
-        round_trip_state.masses,
-    )
-    assert torch.all(sim_state.batch == round_trip_state.batch), (
-        f"Batch indices mismatch for {sim_state_name}"
-    )
-    assert sim_state.pbc == round_trip_state.pbc, f"PBC mismatch for {sim_state_name}"
-
-
-@pytest.mark.parametrize(
-    "atoms_name",
-    [
-        "ar_atoms",
-        "cu_atoms",
-        "fe_atoms",
-        "ti_atoms",
-        "si_atoms",
-        "sio2_atoms",
-    ],
-)
-def test_atoms_to_state_round_trip(
-    atoms_name: str,
-    request: pytest.FixtureRequest,
-    device: torch.device,
-    dtype: torch.dtype,
-) -> None:
-    """Test round-trip conversion from Atoms -> SimState -> Atoms.
-
-    Args:
-        atoms_name: Name of the atoms fixture to test
-        request: Pytest fixture request object to get dynamic fixtures
-        device: Device to run tests on
-        dtype: Data type to use
-    """
-    # Get the atoms fixture dynamically using the name
-    atoms: Atoms = request.getfixturevalue(atoms_name)
-
-    # First convert to state
-    sim_state = atoms_to_state(atoms, device, dtype)
-
-    # Then convert back to atoms
-    round_trip_atoms = state_to_atoms(sim_state)[0]  # Get first system
+    # Convert back to state
+    round_trip_state: SimState = from_format_fn(intermediate_format, device, dtype)
 
     # Check that all properties match
-    assert torch.allclose(
-        torch.tensor(atoms.positions, device=device, dtype=dtype),
-        torch.tensor(round_trip_atoms.positions, device=device, dtype=dtype),
-    )
-    assert torch.allclose(
-        torch.tensor(atoms.cell[:], device=device, dtype=dtype),
-        torch.tensor(round_trip_atoms.cell[:], device=device, dtype=dtype),
-    )
-    assert (atoms.numbers == round_trip_atoms.numbers).all(), (
-        f"Atomic numbers mismatch for {atoms_name}"
-    )
-    assert (atoms.get_masses() == round_trip_atoms.get_masses()).all(), (
-        f"Masses mismatch for {atoms_name}"
-    )
-    assert (atoms.pbc == round_trip_atoms.pbc).all(), f"PBC mismatch for {atoms_name}"
+    assert torch.allclose(sim_state.positions, round_trip_state.positions)
+    assert torch.allclose(sim_state.cell, round_trip_state.cell)
+    assert torch.all(sim_state.atomic_numbers == round_trip_state.atomic_numbers)
+    assert torch.all(sim_state.batch == round_trip_state.batch)
+    assert sim_state.pbc == round_trip_state.pbc
+
+    if isinstance(intermediate_format[0], Atoms):
+        # TODO: the round trip for pmg and phonopy masses is not exact.
+        assert torch.allclose(sim_state.masses, round_trip_state.masses)

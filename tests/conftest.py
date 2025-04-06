@@ -279,6 +279,17 @@ def si_double_sim_state(si_atoms: Atoms, device: torch.device, dtype: torch.dtyp
 
 
 @pytest.fixture
+def mixed_double_sim_state(
+    ar_supercell_sim_state: SimState, si_sim_state: SimState
+) -> SimState:
+    """Create a batched state from ar_fcc_sim_state."""
+    return concatenate_states(
+        [ar_supercell_sim_state, si_sim_state],
+        device=ar_supercell_sim_state.device,
+    )
+
+
+@pytest.fixture
 def unbatched_lj_model(
     device: torch.device, dtype: torch.dtype
 ) -> UnbatchedLennardJonesModel:

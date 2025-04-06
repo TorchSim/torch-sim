@@ -287,7 +287,7 @@ def structures_to_state(
 
     # Stack all properties
     cell = torch.tensor(
-        np.stack([s.lattice.matrix for s in struct_list]), dtype=dtype, device=device
+        np.stack([s.lattice.matrix.T for s in struct_list]), dtype=dtype, device=device
     )
     positions = torch.tensor(
         np.concatenate([s.cart_coords for s in struct_list]), dtype=dtype, device=device
@@ -373,7 +373,7 @@ def phonopy_to_state(
         device=device,
     )
     cell = torch.tensor(
-        np.stack([a.cell for a in phonopy_atoms_list]), dtype=dtype, device=device
+        np.stack([a.cell.T for a in phonopy_atoms_list]), dtype=dtype, device=device
     )
 
     # Create batch indices using repeat_interleave
