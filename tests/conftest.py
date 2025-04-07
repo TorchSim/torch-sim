@@ -194,6 +194,16 @@ def sio2_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
 
 
 @pytest.fixture
+def rattled_sio2_sim_state(sio2_sim_state: SimState) -> SimState:
+    """Create a rattled SiO2 system for testing."""
+    sim_state = sio2_sim_state.clone()
+    weibull = torch.distributions.weibull.Weibull(scale=0.5, concentration=1.0)
+    shifts = weibull.sample((sim_state.n_atoms, 3))
+    sim_state.positions = sim_state.positions + shifts
+    return sim_state
+
+
+@pytest.fixture
 def benzene_sim_state(
     benzene_atoms: Any, device: torch.device, dtype: torch.dtype
 ) -> Any:

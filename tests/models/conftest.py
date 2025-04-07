@@ -23,6 +23,7 @@ consistency_test_simstate_fixtures = [
     "ti_sim_state",
     "si_sim_state",
     "sio2_sim_state",
+    "rattled_sio2_sim_state",
     "ar_supercell_sim_state",
     "fe_supercell_sim_state",
     "benzene_sim_state",
