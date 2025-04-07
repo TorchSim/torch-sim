@@ -66,6 +66,8 @@ test_fairchem_ocp_consistency = make_model_calculator_consistency_test(
 test_fairchem_ocp_model_outputs = pytest.mark.skipif(
     not torch.cuda.is_available(),
     reason="Batching does not work properly on CPU for FAIRchem",
-)(make_validate_model_outputs_test(
-    model_fixture_name="fairchem_model",
-))
+)(
+    make_validate_model_outputs_test(
+        model_fixture_name="fairchem_model",
+    )
+)

@@ -2,10 +2,9 @@ import pytest
 import torch
 from ase.atoms import Atoms
 
-from tests.unbatched.conftest import (
-    make_unbatched_model_calculator_consistency_test,
-)
+from tests.unbatched.conftest import make_unbatched_model_calculator_consistency_test
 from torch_sim.io import atoms_to_state
+
 
 try:
     from mace.calculators import MACECalculator
@@ -48,6 +47,7 @@ def torchsim_unbatched_mace_model(
         compute_stress=True,
     )
 
+
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_unbatched_mace_dtype_working(
     si_atoms: Atoms, dtype: torch.dtype, device: torch.device
@@ -62,6 +62,7 @@ def test_unbatched_mace_dtype_working(
     state = atoms_to_state(si_atoms, device, dtype)
 
     model.forward(state)
+
 
 @pytest.fixture
 def ase_mace_off_calculator() -> MACECalculator:
@@ -83,6 +84,7 @@ def torchsim_unbatched_mace_off_model(
         dtype=dtype,
         compute_forces=True,
     )
+
 
 test_unbatched_mace_off_consistency = make_unbatched_model_calculator_consistency_test(
     test_name="mace_off",

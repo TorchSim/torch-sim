@@ -1,6 +1,5 @@
 from dataclasses import asdict
 from pathlib import Path
-import typing
 from typing import Any
 
 import pytest
@@ -11,18 +10,12 @@ from ase.spacegroup import crystal
 from phonopy.structure.atoms import PhonopyAtoms
 from pymatgen.core import Structure
 
-from torch_sim.io import atoms_to_state, state_to_atoms
+from torch_sim.io import atoms_to_state
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.state import SimState, concatenate_states
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_integrators import nve
-
-
-if typing.TYPE_CHECKING:
-    from ase.calculators.calculator import Calculator
-
-    from torch_sim.models.interface import ModelInterface
 
 
 @pytest.fixture
@@ -40,15 +33,18 @@ def ar_atoms() -> Atoms:
     """Create a face-centered cubic (FCC) Argon structure."""
     return bulk("Ar", "fcc", a=5.26, cubic=True)
 
+
 @pytest.fixture
 def fe_atoms() -> Atoms:
     """Create crystalline iron using ASE."""
     return bulk("Fe", "fcc", a=5.26, cubic=True)
 
+
 @pytest.fixture
 def si_atoms() -> Atoms:
     """Create crystalline silicon using ASE."""
     return bulk("Si", "diamond", a=5.43, cubic=True)
+
 
 @pytest.fixture
 def benzene_atoms() -> Atoms:
@@ -109,6 +105,7 @@ def cu_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
     atoms = bulk("Cu", "fcc", a=3.58, cubic=True)
     return atoms_to_state(atoms, device, dtype)
 
+
 @pytest.fixture
 def mg_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
     """Create crystalline magnesium using ASE."""
@@ -128,6 +125,7 @@ def ti_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
     """Create crystalline titanium using ASE."""
     atoms = bulk("Ti", "hcp", a=2.94, c=4.64)
     return atoms_to_state(atoms, device, dtype)
+
 
 @pytest.fixture
 def tio2_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
@@ -193,6 +191,7 @@ def sio2_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
         cellpar=[4.9019, 4.9019, 5.3988, 90, 90, 120],
     )
     return atoms_to_state(atoms, device, dtype)
+
 
 @pytest.fixture
 def benzene_sim_state(

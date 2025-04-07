@@ -1,10 +1,10 @@
-import torch
-
 import typing
+
 import pytest
 import torch
 
 from torch_sim.io import state_to_atoms
+
 
 if typing.TYPE_CHECKING:
     from ase.calculators.calculator import Calculator
@@ -111,11 +111,12 @@ def make_validate_model_outputs_test(
         device: torch.device,
         dtype: torch.dtype,
     ) -> None:
-        """Test that a model implementation correctly follows the ModelInterface contract."""
+        """Test that a model implementation follows the ModelInterface contract."""
         # Get the model fixture dynamically
         model: ModelInterface = request.getfixturevalue(model_fixture_name)
-        
+
         from ase.build import bulk
+
         from torch_sim.io import atoms_to_state
 
         assert model.dtype is not None

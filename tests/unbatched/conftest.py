@@ -1,11 +1,10 @@
-
-import torch
-
 import typing
+
 import pytest
 import torch
 
 from torch_sim.io import state_to_atoms
+
 
 if typing.TYPE_CHECKING:
     from ase.calculators.calculator import Calculator

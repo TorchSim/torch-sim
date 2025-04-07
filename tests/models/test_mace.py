@@ -9,6 +9,7 @@ from tests.models.conftest import (
 )
 from torch_sim.io import atoms_to_state
 
+
 try:
     from mace.calculators import MACECalculator
     from mace.calculators.foundations_models import mace_mp, mace_off
@@ -37,6 +38,7 @@ def ase_mace_calculator() -> MACECalculator:
         dispersion=False,
     )
 
+
 @pytest.fixture
 def torchsim_mace_model(device: torch.device, dtype: torch.dtype) -> MaceModel:
     return MaceModel(
@@ -47,12 +49,14 @@ def torchsim_mace_model(device: torch.device, dtype: torch.dtype) -> MaceModel:
         compute_stress=True,
     )
 
+
 test_mace_consistency = make_model_calculator_consistency_test(
     test_name="mace",
     model_fixture_name="torchsim_mace_model",
     calculator_fixture_name="ase_mace_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
 )
+
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_mace_dtype_working(
@@ -68,6 +72,7 @@ def test_mace_dtype_working(
     state = atoms_to_state([si_atoms], device, dtype)
 
     model.forward(state)
+
 
 @pytest.fixture
 def benzene_system(
@@ -95,6 +100,7 @@ def ase_mace_off_calculator() -> MACECalculator:
         dispersion=False,
     )
 
+
 @pytest.fixture
 def torchsim_mace_off_model(device: torch.device, dtype: torch.dtype) -> MaceModel:
     return MaceModel(
@@ -103,6 +109,7 @@ def torchsim_mace_off_model(device: torch.device, dtype: torch.dtype) -> MaceMod
         dtype=dtype,
         compute_forces=True,
     )
+
 
 test_mace_off_consistency = make_model_calculator_consistency_test(
     test_name="mace_off",
