@@ -1,6 +1,7 @@
 from dataclasses import asdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+import typing
+from typing import Any
 
 import pytest
 import torch
@@ -18,7 +19,7 @@ from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_integrators import nve
 
 
-if TYPE_CHECKING:
+if typing.TYPE_CHECKING:
     from ase.calculators.calculator import Calculator
 
     from torch_sim.models.interface import ModelInterface
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def device() -> torch.device:
-    return torch.device("cpu")
+    return torch.device("cuda")
 
 
 @pytest.fixture
@@ -39,104 +40,15 @@ def ar_atoms() -> Atoms:
     """Create a face-centered cubic (FCC) Argon structure."""
     return bulk("Ar", "fcc", a=5.26, cubic=True)
 
-
-@pytest.fixture
-def cu_atoms() -> Atoms:
-    """Create crystalline copper using ASE."""
-    return bulk("Cu", "fcc", a=3.58, cubic=True)
-
-
 @pytest.fixture
 def fe_atoms() -> Atoms:
     """Create crystalline iron using ASE."""
     return bulk("Fe", "fcc", a=5.26, cubic=True)
 
-
-@pytest.fixture
-def ti_atoms() -> Atoms:
-    """Create crystalline titanium using ASE."""
-    return bulk("Ti", "hcp", a=2.94, c=4.64)
-
-
 @pytest.fixture
 def si_atoms() -> Atoms:
     """Create crystalline silicon using ASE."""
     return bulk("Si", "diamond", a=5.43, cubic=True)
-
-
-@pytest.fixture
-def mg_atoms() -> Any:
-    """Create crystalline magnesium using ASE."""
-    return bulk("Mg", "hcp", a=3.17, c=5.14)
-
-
-@pytest.fixture
-def sb_atoms() -> Any:
-    """Create crystalline antimony using ASE."""
-    return bulk("Sb", "rhombohedral", a=4.58, alpha=60)
-
-
-@pytest.fixture
-def tio2_atoms() -> Any:
-    """Create crystalline TiO2 using ASE."""
-    a, c = 4.60, 2.96
-    symbols = ["Ti", "O", "O"]
-    basis = [
-        (0.5, 0.5, 0),  # Ti
-        (0.695679, 0.695679, 0.5),  # O
-    ]
-    return crystal(
-        symbols,
-        basis=basis,
-        spacegroup=136,  # P4_2/mnm
-        cellpar=[a, a, c, 90, 90, 90],
-    )
-
-
-@pytest.fixture
-def ga_atoms() -> Any:
-    """Create crystalline Ga using ASE."""
-    a, b, c = 4.43, 7.60, 4.56
-    symbols = ["Ga"]
-    basis = [
-        (0, 0.344304, 0.415401),  # Ga
-    ]
-    return crystal(
-        symbols,
-        basis=basis,
-        spacegroup=64,  # Cmce
-        cellpar=[a, b, c, 90, 90, 90],
-    )
-
-
-@pytest.fixture
-def niti_atoms() -> Any:
-    """Create crystalline NiTi using ASE."""
-    a, b, c = 2.89, 3.97, 4.83
-    alpha, beta, gamma = 90.00, 105.23, 90.00
-    symbols = ["Ni", "Ti"]
-    basis = [
-        (0.369548, 0.25, 0.217074),  # Ni
-        (0.076622, 0.25, 0.671102),  # Ti
-    ]
-    return crystal(
-        symbols,
-        basis=basis,
-        spacegroup=11,
-        cellpar=[a, b, c, alpha, beta, gamma],
-    )
-
-
-@pytest.fixture
-def sio2_atoms() -> Atoms:
-    """Create an alpha-quartz SiO2 system for testing."""
-    return crystal(
-        symbols=["O", "Si"],
-        basis=[[0.413, 0.2711, 0.2172], [0.4673, 0, 0.3333]],
-        spacegroup=152,
-        cellpar=[4.9019, 4.9019, 5.3988, 90, 90, 120],
-    )
-
 
 @pytest.fixture
 def benzene_atoms() -> Atoms:
@@ -186,58 +98,101 @@ def si_phonopy_atoms() -> Any:
 
 
 @pytest.fixture
-def sb_sim_state(sb_atoms: Any, device: torch.device, dtype: torch.dtype) -> Any:
-    """Create a basic state from sb_atoms."""
-    return atoms_to_state(sb_atoms, device, dtype)
-
-
-@pytest.fixture
-def cu_sim_state(cu_atoms: Any, device: torch.device, dtype: torch.dtype) -> Any:
-    """Create a basic state from cu_atoms."""
-    return atoms_to_state(cu_atoms, device, dtype)
-
-
-@pytest.fixture
-def mg_sim_state(mg_atoms: Any, device: torch.device, dtype: torch.dtype) -> Any:
-    """Create a basic state from mg_atoms."""
-    return atoms_to_state(mg_atoms, device, dtype)
-
-
-@pytest.fixture
-def ga_sim_state(ga_atoms: Any, device: torch.device, dtype: torch.dtype) -> Any:
-    """Create a basic state from ga_atoms."""
-    return atoms_to_state(ga_atoms, device, dtype)
-
-
-@pytest.fixture
-def niti_sim_state(niti_atoms: Any, device: torch.device, dtype: torch.dtype) -> Any:
-    """Create a basic state from niti_atoms."""
-    return atoms_to_state(niti_atoms, device, dtype)
-
-
-@pytest.fixture
-def ti_sim_state(ti_atoms: Any, device: torch.device, dtype: torch.dtype) -> Any:
-    """Create a basic state from si_structure."""
-    return atoms_to_state(ti_atoms, device, dtype)
-
-
-@pytest.fixture
-def tio2_sim_state(tio2_atoms: Any, device: torch.device, dtype: torch.dtype) -> Any:
-    """Create a basic state from tio2_atoms."""
-    return atoms_to_state(tio2_atoms, device, dtype)
-
-
-@pytest.fixture
 def si_sim_state(si_atoms: Any, device: torch.device, dtype: torch.dtype) -> Any:
     """Create a basic state from si_structure."""
     return atoms_to_state(si_atoms, device, dtype)
 
 
 @pytest.fixture
-def sio2_sim_state(sio2_atoms: Any, device: torch.device, dtype: torch.dtype) -> Any:
-    """Create a basic state from si_structure."""
-    return atoms_to_state(sio2_atoms, device, dtype)
+def cu_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+    """Create crystalline copper using ASE."""
+    atoms = bulk("Cu", "fcc", a=3.58, cubic=True)
+    return atoms_to_state(atoms, device, dtype)
 
+@pytest.fixture
+def mg_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+    """Create crystalline magnesium using ASE."""
+    atoms = bulk("Mg", "hcp", a=3.17, c=5.14)
+    return atoms_to_state(atoms, device, dtype)
+
+
+@pytest.fixture
+def sb_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+    """Create crystalline antimony using ASE."""
+    atoms = bulk("Sb", "rhombohedral", a=4.58, alpha=60)
+    return atoms_to_state(atoms, device, dtype)
+
+
+@pytest.fixture
+def ti_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+    """Create crystalline titanium using ASE."""
+    atoms = bulk("Ti", "hcp", a=2.94, c=4.64)
+    return atoms_to_state(atoms, device, dtype)
+
+@pytest.fixture
+def tio2_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+    """Create crystalline TiO2 using ASE."""
+    a, c = 4.60, 2.96
+    symbols = ["Ti", "O", "O"]
+    basis = [
+        (0.5, 0.5, 0),  # Ti
+        (0.695679, 0.695679, 0.5),  # O
+    ]
+    atoms = crystal(
+        symbols,
+        basis=basis,
+        spacegroup=136,  # P4_2/mnm
+        cellpar=[a, a, c, 90, 90, 90],
+    )
+    return atoms_to_state(atoms, device, dtype)
+
+
+@pytest.fixture
+def ga_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+    """Create crystalline Ga using ASE."""
+    a, b, c = 4.43, 7.60, 4.56
+    symbols = ["Ga"]
+    basis = [
+        (0, 0.344304, 0.415401),  # Ga
+    ]
+    atoms = crystal(
+        symbols,
+        basis=basis,
+        spacegroup=64,  # Cmce
+        cellpar=[a, b, c, 90, 90, 90],
+    )
+    return atoms_to_state(atoms, device, dtype)
+
+
+@pytest.fixture
+def niti_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+    """Create crystalline NiTi using ASE."""
+    a, b, c = 2.89, 3.97, 4.83
+    alpha, beta, gamma = 90.00, 105.23, 90.00
+    symbols = ["Ni", "Ti"]
+    basis = [
+        (0.369548, 0.25, 0.217074),  # Ni
+        (0.076622, 0.25, 0.671102),  # Ti
+    ]
+    atoms = crystal(
+        symbols,
+        basis=basis,
+        spacegroup=11,
+        cellpar=[a, b, c, alpha, beta, gamma],
+    )
+    return atoms_to_state(atoms, device, dtype)
+
+
+@pytest.fixture
+def sio2_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+    """Create an alpha-quartz SiO2 system for testing."""
+    atoms = crystal(
+        symbols=["O", "Si"],
+        basis=[[0.413, 0.2711, 0.2172], [0.4673, 0, 0.3333]],
+        spacegroup=152,
+        cellpar=[4.9019, 4.9019, 5.3988, 90, 90, 120],
+    )
+    return atoms_to_state(atoms, device, dtype)
 
 @pytest.fixture
 def benzene_sim_state(
@@ -351,157 +306,3 @@ def torchsim_trajectory(
     yield reporter.trajectory
 
     reporter.close()
-
-
-def make_model_calculator_consistency_test(
-    test_name: str,
-    model_fixture_name: str,
-    calculator_fixture_name: str,
-    sim_state_names: list[str],
-    rtol: float = 1e-5,
-    atol: float = 1e-5,
-):
-    """Factory function to create model-calculator consistency tests.
-
-    Args:
-        test_name: Name of the test (used in the function name and messages)
-        model_fixture_name: Name of the model fixture
-        calculator_fixture_name: Name of the calculator fixture
-        sim_state_names: List of sim_state fixture names to test
-        rtol: Relative tolerance for numerical comparisons
-        atol: Absolute tolerance for numerical comparisons
-    """
-
-    @pytest.mark.parametrize("sim_state_name", sim_state_names)
-    def test_model_calculator_consistency(
-        sim_state_name: str,
-        request: pytest.FixtureRequest,
-        device: torch.device,
-        dtype: torch.dtype,
-    ) -> None:
-        """Test consistency between model and calculator implementations."""
-        # Get the model and calculator fixtures dynamically
-        model: ModelInterface = request.getfixturevalue(model_fixture_name)
-        calculator: Calculator = request.getfixturevalue(calculator_fixture_name)
-
-        # Get the sim_state fixture dynamically using the name
-        sim_state: SimState = request.getfixturevalue(sim_state_name).to(device, dtype)
-
-        # Set up ASE calculator
-        atoms = state_to_atoms(sim_state)[0]
-        atoms.calc = calculator
-
-        # Get model results
-        model_results = model(sim_state)
-
-        # Get calculator results
-        calc_forces = torch.tensor(
-            atoms.get_forces(),
-            device=device,
-            dtype=model_results["forces"].dtype,
-        )
-
-        # Test consistency with specified tolerances
-        torch.testing.assert_close(
-            model_results["energy"].item(),
-            atoms.get_potential_energy(),
-            rtol=rtol,
-            atol=atol,
-        )
-        torch.testing.assert_close(
-            model_results["forces"],
-            calc_forces,
-            rtol=rtol,
-            atol=atol,
-        )
-
-    # Rename the function to include the test name
-    test_model_calculator_consistency.__name__ = f"test_{test_name}_consistency"
-    return test_model_calculator_consistency
-
-
-def make_unbatched_model_calculator_consistency_test(
-    test_name: str,
-    model_fixture_name: str,
-    calculator_fixture_name: str,
-    sim_state_names: list[str],
-    rtol: float = 1e-5,
-    atol: float = 1e-5,
-):
-    """Factory function to create unbatched model-calculator consistency tests.
-
-    Args:
-        test_name: Name of the test (used in the function name and messages)
-        model_fixture_name: Name of the model fixture
-        calculator_fixture_name: Name of the calculator fixture
-        sim_state_names: List of sim_state fixture names to test
-        rtol: Relative tolerance for numerical comparisons
-        atol: Absolute tolerance for numerical comparisons
-    """
-
-    @pytest.mark.parametrize("sim_state_name", sim_state_names)
-    def test_unbatched_model_calculator_consistency(
-        sim_state_name: str,
-        request: pytest.FixtureRequest,
-        device: torch.device,
-        dtype: torch.dtype,
-    ) -> None:
-        """Test consistency between unbatched model and calculator implementations."""
-        # Get the model and calculator fixtures dynamically
-        model: ModelInterface = request.getfixturevalue(model_fixture_name)
-        calculator: Calculator = request.getfixturevalue(calculator_fixture_name)
-
-        # Get the sim_state fixture dynamically using the name
-        sim_state: SimState = (
-            request.getfixturevalue(sim_state_name).to(device, dtype).split()[0]
-        )
-
-        # Set up ASE calculator
-        atoms = state_to_atoms(sim_state)[0]
-        atoms.calc = calculator
-
-        # Get model results
-        model_results = model(sim_state)
-
-        # Get calculator results
-        calc_forces = torch.tensor(
-            atoms.get_forces(),
-            device=device,
-            dtype=model_results["forces"].dtype,
-        )
-
-        # Test consistency with specified tolerances
-        torch.testing.assert_close(
-            model_results["energy"].item(),
-            atoms.get_potential_energy(),
-            rtol=rtol,
-            atol=atol,
-        )
-        torch.testing.assert_close(
-            model_results["forces"],
-            calc_forces,
-            rtol=rtol,
-            atol=atol,
-        )
-
-    # Rename the function to include the test name
-    test_unbatched_model_calculator_consistency.__name__ = (
-        f"test_unbatched_{test_name}_consistency"
-    )
-    return test_unbatched_model_calculator_consistency
-
-
-consistency_test_simstate_fixtures = [
-    "cu_sim_state",
-    "mg_sim_state",
-    "sb_sim_state",
-    "tio2_sim_state",
-    "ga_sim_state",
-    "niti_sim_state",
-    "ti_sim_state",
-    "si_sim_state",
-    "sio2_sim_state",
-    "ar_supercell_sim_state",
-    "fe_supercell_sim_state",
-    "benzene_sim_state",
-]
