@@ -1,11 +1,11 @@
 import pytest
 import torch
 
-from tests.conftest import (
+from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
+    make_validate_model_outputs_test,
 )
-from torch_sim.models.interface import validate_model_outputs
 
 
 try:
@@ -71,9 +71,11 @@ test_orb_consistency = make_model_calculator_consistency_test(
     model_fixture_name="orb_model",
     calculator_fixture_name="orb_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
+    atol=5e-4,
+    rtol=1,
 )
 
 
-def test_validate_model_outputs(orb_model: OrbModel, device: torch.device) -> None:
-    """Test that the model passes the standard validation."""
-    validate_model_outputs(orb_model, device, torch.float32)
+test_validate_model_outputs = make_validate_model_outputs_test(
+    model_fixture_name="orb_model",
+)

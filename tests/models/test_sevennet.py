@@ -1,11 +1,11 @@
 import pytest
 import torch
 
-from tests.conftest import (
+from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
+    make_validate_model_outputs_test,
 )
-from torch_sim.models.interface import validate_model_outputs
 
 
 try:
@@ -82,8 +82,6 @@ test_sevennet_consistency = make_model_calculator_consistency_test(
 )
 
 
-def test_validate_model_outputs(
-    sevenn_model: SevenNetModel, device: torch.device, dtype: torch.dtype
-) -> None:
-    """Test that the model passes the standard validation."""
-    validate_model_outputs(sevenn_model, device, dtype)
+test_sevennet_model_outputs = make_validate_model_outputs_test(
+    model_fixture_name="sevenn_model",
+)

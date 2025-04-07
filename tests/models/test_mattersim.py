@@ -5,11 +5,11 @@ import ase.units
 import pytest
 import torch
 
-from tests.conftest import (
+from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
+    make_validate_model_outputs_test,
 )
-from torch_sim.models.interface import validate_model_outputs
 
 
 try:
@@ -84,9 +84,6 @@ test_mattersim_consistency = make_model_calculator_consistency_test(
     sim_state_names=consistency_test_simstate_fixtures,
 )
 
-
-def test_validate_model_outputs(
-    mattersim_model: MatterSimModel, device: torch.device
-) -> None:
-    """Test that the model passes the standard validation."""
-    validate_model_outputs(mattersim_model, device, torch.float32)
+test_mattersim_model_outputs = make_validate_model_outputs_test(
+    model_fixture_name="mattersim_model",
+)

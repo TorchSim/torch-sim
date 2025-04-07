@@ -1,11 +1,11 @@
 import pytest
 import torch
 
-from tests.conftest import (
+from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
+    make_validate_model_outputs_test,
 )
-from torch_sim.models.interface import validate_model_outputs
 
 
 try:
@@ -53,11 +53,19 @@ test_fairchem_ocp_consistency = make_model_calculator_consistency_test(
 
 # fairchem batching is broken on CPU, do not replicate this skipping
 # logic in other models tests
-@pytest.mark.skipif(
+# @pytest.mark.skipif(
+#     not torch.cuda.is_available(),
+#     reason="Batching does not work properly on CPU for FAIRchem",
+# )
+# def test_validate_model_outputs(
+#     fairchem_model: FairChemModel, device: torch.device
+# ) -> None:
+#     validate_model_outputs(fairchem_model, device, torch.float32)
+
+
+test_fairchem_ocp_model_outputs = pytest.mark.skipif(
     not torch.cuda.is_available(),
     reason="Batching does not work properly on CPU for FAIRchem",
-)
-def test_validate_model_outputs(
-    fairchem_model: FairChemModel, device: torch.device
-) -> None:
-    validate_model_outputs(fairchem_model, device, torch.float32)
+)(make_validate_model_outputs_test(
+    model_fixture_name="fairchem_model",
+))
