@@ -5,15 +5,17 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
-import numpy as np
 import torch
 
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
+from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.state import SimState, StateDict
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from sevenn.nn.sequential import AtomGraphSequential
 
 
@@ -22,7 +24,6 @@ try:
     import torch
     from sevenn.atom_graph_data import AtomGraphData
     from sevenn.calculator import torch_script_type
-    from sevenn.train.dataload import _graph_build_f
     from torch_geometric.loader.dataloader import Collater
 
 except ImportError:
@@ -57,6 +58,7 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
         model: AtomGraphSequential,
         *,  # force remaining arguments to be keyword-only
         modal: str | None = None,
+        neighbor_list_fn: Callable = vesin_nl_ts,
         device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
     ) -> None:
@@ -97,11 +99,12 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
             raise ValueError("Model cutoff seems not initialized")
 
         model.eval_type_map = torch.tensor(
-            True  # noqa: FBT003
+            data=True,
         )  # TODO: from sevenn not sure if needed
         model.set_is_batch_data(True)
         model_loaded = model
-        self.cutoff = model.cutoff
+        self.cutoff = torch.tensor(model.cutoff)
+        self.neighbor_list_fn = neighbor_list_fn
 
         self.model = model_loaded
 
@@ -173,34 +176,28 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
             pbc = state.pbc
             atomic_numbers = state.atomic_numbers[batch_mask]
 
-            edge_src, edge_dst, edge_vec, shifts_idx = _graph_build_f(
-                pos=pos.detach().cpu().numpy(),
-                cell=row_vector_cell.detach().cpu().numpy(),
-                pbc=np.array([pbc] * 3, dtype=bool),
+            edge_idx, shifts_idx = self.neighbor_list_fn(
+                positions=pos,
+                cell=row_vector_cell,
+                pbc=pbc,
                 cutoff=self.cutoff,
             )
 
-            edge_idx = torch.tensor(
-                np.array([edge_src, edge_dst]), dtype=torch.int64, device=self._device
-            )
-            edge_vec = torch.tensor(edge_vec, dtype=pos.dtype, device=self._device)
-            shifts = torch.mm(
-                torch.tensor(
-                    shifts_idx, dtype=row_vector_cell.dtype, device=self._device
-                ),
-                row_vector_cell,
-            )
+            shifts = torch.mm(shifts_idx, row_vector_cell)
+            edge_vec = pos[edge_idx[1]] - pos[edge_idx[0]] + shifts
 
             data = {
                 key.NODE_FEATURE: atomic_numbers,
-                key.ATOMIC_NUMBERS: atomic_numbers.to(dtype=torch.int64),
+                key.ATOMIC_NUMBERS: atomic_numbers.to(
+                    dtype=torch.int64, device=self.device
+                ),
                 key.POS: pos,
                 key.EDGE_IDX: edge_idx,
                 key.EDGE_VEC: edge_vec,
                 key.CELL: row_vector_cell,
-                key.CELL_SHIFT: shifts,
+                key.CELL_SHIFT: shifts_idx,
                 key.CELL_VOLUME: torch.det(row_vector_cell),
-                key.NUM_ATOMS: torch.tensor(len(atomic_numbers), device=self._device),
+                key.NUM_ATOMS: torch.tensor(len(atomic_numbers), device=self.device),
                 key.DATA_MODALITY: self.modal,
             }
             data[key.INFO] = {}
@@ -231,7 +228,9 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
         if energy is not None:
             results["energy"] = energy.detach()
         else:
-            results["energy"] = torch.zeros(self.n_systems, device=self._device)
+            results["energy"] = torch.zeros(
+                state.batch.max().item() + 1, device=self.device
+            )
 
         forces = output[key.PRED_FORCE]
         if forces is not None:

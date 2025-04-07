@@ -151,7 +151,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         )
         return ptr, batch, node_attrs
 
-    def forward(
+    def forward(  # noqa: C901
         self,
         state: SimState | StateDict,
     ) -> dict[str, torch.Tensor]:
@@ -169,6 +169,9 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         """
         if isinstance(state, dict):
             state = SimState(**state, masses=torch.ones_like(state["positions"]))
+
+        if state.batch is not None and state.batch.max() > 0:
+            raise ValueError("UnbatchedMaceModel does not support batched systems.")
 
         if state.atomic_numbers is None and not self.atomic_numbers_in_init:
             raise ValueError(
@@ -202,13 +205,12 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
             row_vector_cell = row_vector_cell.squeeze(0)  # Squeeze the first dimension
 
         # calculate neighbor list
-        mapping, shifts_idx = self.neighbor_list_fn(
+        edge_index, shifts_idx = self.neighbor_list_fn(
             positions=positions,
             cell=row_vector_cell,
             pbc=pbc,
             cutoff=self.r_max,
         )
-        edge_index = torch.stack((mapping[0], mapping[1]))
         shifts = torch.mm(shifts_idx, row_vector_cell)
 
         # get model output

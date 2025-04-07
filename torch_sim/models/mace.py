@@ -297,7 +297,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
         for b in range(self.n_systems):
             batch_mask = state.batch == b
             # Calculate neighbor list for this system
-            mapping, shifts_idx = self.neighbor_list_fn(
+            edge_idx, shifts_idx = self.neighbor_list_fn(
                 positions=state.positions[batch_mask],
                 cell=state.row_vector_cell[b],
                 pbc=state.pbc,
@@ -305,11 +305,11 @@ class MaceModel(torch.nn.Module, ModelInterface):
             )
 
             # Adjust indices for the batch
-            mapping = mapping + offset
-
-            edge_indices.append(mapping)
-            unit_shifts_list.append(shifts_idx)
+            edge_idx = edge_idx + offset
             shifts = torch.mm(shifts_idx, state.row_vector_cell[b])
+
+            edge_indices.append(edge_idx)
+            unit_shifts_list.append(shifts_idx)
             shifts_list.append(shifts)
 
             offset += len(state.positions[batch_mask])
@@ -329,7 +329,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 positions=state.positions,
                 edge_index=edge_index,
                 unit_shifts=unit_shifts,
-                shifts=shifts,
+                shifts=shifts_list,
             ),
             compute_force=self._compute_forces,
             compute_stress=self._compute_stress,
