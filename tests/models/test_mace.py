@@ -121,7 +121,7 @@ test_mace_off_consistency = make_model_calculator_consistency_test(
 )
 
 test_mace_off_model_outputs = make_validate_model_outputs_test(
-    model_fixture_name="torchsim_mace_off_model",
+    model_fixture_name="torchsim_mace_model",
 )
 
 
