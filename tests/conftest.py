@@ -27,7 +27,7 @@ if typing.TYPE_CHECKING:
 
 @pytest.fixture
 def device() -> torch.device:
-    return torch.device("cuda")
+    return torch.device("cpu")
 
 
 @pytest.fixture
