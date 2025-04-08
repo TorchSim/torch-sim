@@ -124,7 +124,7 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
             )
 
         self.model = model.to(self._device)
-        self.model.eval()
+        self.model = self.model.eval()
 
         if self._dtype is not None:
             self.model = self.model.to(dtype=self._dtype)

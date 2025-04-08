@@ -256,9 +256,12 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             amp=False if dtype is not None else config.get("amp", False),
             inference_only=True,
         )
+
+        self.trainer.model = self.trainer.model.eval()
+
         if dtype is not None:
             # Convert model parameters to specified dtype
-            self.trainer.model.to(dtype=self.dtype)
+            self.trainer.model = self.trainer.model.to(dtype=self.dtype)
 
         if model is not None:
             self.load_checkpoint(checkpoint_path=model, checkpoint=checkpoint)

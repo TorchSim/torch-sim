@@ -157,8 +157,11 @@ class MaceModel(torch.nn.Module, ModelInterface):
         else:
             raise TypeError("Model must be a path or torch.nn.Module")
 
-        self.model = model.to(device=self.device, dtype=self.dtype)
-        self.model.eval()
+        self.model = model.to(self._device)
+        self.model = self.model.eval()
+
+        if self._dtype is not None:
+            self.model = self.model.to(dtype=self._dtype)
 
         if enable_cueq:
             print("Converting models to CuEq for acceleration")
