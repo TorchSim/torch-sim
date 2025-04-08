@@ -718,3 +718,44 @@ def test_static_no_filenames(ar_supercell_sim_state: SimState, lj_model: Any) ->
     assert len(props) == 1
     assert "potential_energy" in props[0]
     assert isinstance(props[0]["potential_energy"], torch.Tensor)
+
+
+def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:
+    # this tests the example from the readme, update as needed
+
+    import torch_sim as ts
+
+    from ase.build import bulk
+    cu_atoms = bulk("Cu", "fcc", a=3.58, cubic=True).repeat((2, 2, 2))
+    many_cu_atoms = [cu_atoms] * 5
+    trajectory_files = [tmp_path / f"Cu_traj_{i}" for i in range(len(many_cu_atoms))]
+
+    # run them all simultaneously with batching
+    final_state = ts.integrate(
+        system=many_cu_atoms,
+        model=lj_model,
+        n_steps=50,
+        timestep=0.002,
+        temperature=1000,
+        integrator=ts.nvt_langevin,
+        trajectory_reporter=dict(filenames=trajectory_files, state_frequency=10),
+    )
+    final_atoms_list = final_state.to_atoms()
+
+    # extract the final energy from the trajectory file
+    final_energies = []
+    for filename in trajectory_files:
+        with ts.TorchSimTrajectory(filename) as traj:
+            final_energies.append(traj.get_array("potential_energy")[-1])
+
+    print(final_energies)
+
+    # relax all of the high temperature states
+    relaxed_state = ts.optimize(
+        system=final_state,
+        model=lj_model,
+        optimizer=ts.frechet_cell_fire,
+        # autobatcher=True,
+    )
+
+    print(relaxed_state.energy)
