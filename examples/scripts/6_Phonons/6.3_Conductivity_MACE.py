@@ -50,7 +50,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float64
 
 # Load the raw model from URL
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
+mace_checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
     model=mace_checkpoint_url, return_raw_model=True, default_dtype=dtype, device=device
 )
@@ -66,11 +66,8 @@ model = ts.models.MaceModel(
 # Structure and input parameters
 struct = bulk("Si", "diamond", a=5.431, cubic=True)  # ASE structure
 mesh = [8, 8, 8]  # Phonon mesh
-supercell_matrix = [
-    1,
-    1,
-    1,
-]  # supercell matrix for phonon calculation (use larger supercell for better accuracy)
+# supercell matrix for phonon calculation (use larger cell for better accuracy)
+supercell_matrix = [1, 1, 1]
 supercell_matrix_fc2 = [2, 2, 2]  # supercell matrix for FC2 calculation
 Nrelax = 300  # number of relaxation steps
 fmax = 1e-3  # force convergence

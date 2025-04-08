@@ -19,7 +19,7 @@ from torch_sim.elastic import get_bravais_type
 unit_conv = ts.units.UnitConversion
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float64
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
+mace_checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
     model=mace_checkpoint_url,
     enable_cueq=False,

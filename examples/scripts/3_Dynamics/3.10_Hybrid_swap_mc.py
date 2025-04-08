@@ -26,7 +26,7 @@ dtype = torch.float64
 kT = 1000 * MetalUnits.temperature
 
 # Option 1: Load the raw model from the downloaded model
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
+mace_checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
     model=mace_checkpoint_url,
     return_raw_model=True,

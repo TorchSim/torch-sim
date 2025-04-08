@@ -25,7 +25,7 @@ print(f"job will run on {device=}")
 
 # --- Model Initialization ---
 print("Loading MACE model...")
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
+mace_checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 mace = mace_mp(model=mace_checkpoint_url, return_raw_model=True)
 mace_model = ts.models.MaceModel(
     model=mace,

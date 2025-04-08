@@ -81,7 +81,7 @@ dtype = torch.float32
 
 # Model configuration
 # Option 1: Load from URL (uncomment to use)
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
+mace_checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
     model=mace_checkpoint_url,
     return_raw_model=True,
