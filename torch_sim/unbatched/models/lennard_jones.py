@@ -160,7 +160,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
         if isinstance(state, dict):
             state = SimState(**state, masses=torch.ones_like(state["positions"]))
 
-        cell = state.cell
+        cell = state.row_vector_cell
         positions = state.positions
         pbc = state.pbc
 

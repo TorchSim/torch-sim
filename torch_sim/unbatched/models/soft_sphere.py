@@ -144,7 +144,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
             state = SimState(**state, masses=torch.ones_like(state["positions"]))
 
         positions = state.positions
-        cell = state.cell
+        cell = state.row_vector_cell
         pbc = state.pbc
         if cell.dim() == 3:  # Check if there is an extra batch dimension
             cell = cell.squeeze(0)  # Squeeze the first dimension

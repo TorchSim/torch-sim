@@ -48,7 +48,8 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
                   D = positions[j]-positions[i]+S.dot(cell)
         pbc: 3-tuple indicating giving periodic boundaries in the three Cartesian
             directions.
-        cell: Unit cell vectors. Must be completed.
+        cell: Unit cell vectors according to the row vector convention, i.e.
+            `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
         positions: Atomic positions. Anything that can be converted to an ndarray of
             shape (n, 3) will do: [(x1,y1,z1), (x2,y2,z2), ...]. If
             use_scaled_positions is set to true, this must be scaled positions.
@@ -436,7 +437,8 @@ def standard_nl(
 
     Args:
         positions: Atomic positions tensor of shape (num_atoms, 3)
-        cell: Unit cell matrix of shape (3, 3) defining the periodic boundary conditions
+        cell: Unit cell vectors according to the row vector convention, i.e.
+            `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
         pbc: Whether to use periodic boundary conditions (applied to all directions)
         cutoff: Maximum distance for considering atoms as neighbors
         sort_id: If True, sort neighbors by first atom index for better memory
@@ -513,7 +515,8 @@ def vesin_nl_ts(
 
     Args:
         positions: Atomic positions tensor of shape (num_atoms, 3)
-        cell: Unit cell matrix of shape (3, 3) defining the periodic boundary conditions
+        cell: Unit cell vectors according to the row vector convention, i.e.
+            `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
         pbc: Whether to use periodic boundary conditions (applied to all directions)
         cutoff: Maximum distance (scalar tensor) for considering atoms as neighbors
         sort_id: If True, sort neighbors by first atom index for better memory
@@ -583,7 +586,8 @@ def vesin_nl(
 
     Args:
         positions: Atomic positions tensor of shape (num_atoms, 3)
-        cell: Unit cell matrix of shape (3, 3) defining the periodic boundary conditions
+        cell: Unit cell vectors according to the row vector convention, i.e.
+            `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
         pbc: Whether to use periodic boundary conditions (applied to all directions)
         cutoff: Maximum distance (scalar tensor) for considering atoms as neighbors
         sort_id: If True, sort neighbors by first atom index for better memory
@@ -654,11 +658,10 @@ def strict_nl(
         cutoff (float):
             The maximum distance for considering two atoms as neighbors. This value
             is used to filter the neighbor pairs based on their distances.
-        positions (torch.Tensor):
-            A tensor of shape (n_atoms, 3) representing the positions of the atoms.
-        cell (torch.Tensor):
-            A tensor representing the unit cell dimensions, used for computing cell
-            shifts.
+        positions (torch.Tensor): A tensor of shape (n_atoms, 3) representing
+            the positions of the atoms.
+        cell (torch.Tensor): Unit cell vectors according to the row vector convention,
+            i.e. `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
         mapping (torch.Tensor):
             A tensor of shape (2, n_pairs) that specifies pairs of indices in `positions`
             for which to compute distances.
@@ -721,11 +724,10 @@ def torch_nl_n2(
     Args:
         cutoff (float):
             The cutoff radius used for the neighbor search.
-        positions (torch.Tensor [n_atom, 3]):
-            A tensor containing the positions of atoms wrapped inside their
-            respective unit cells.
-        cell (torch.Tensor [3*n_structure, 3]):
-            A tensor representing the unit cell vectors in the format [a_1, a_2, a_3].
+        positions (torch.Tensor [n_atom, 3]): A tensor containing the positions
+            of atoms wrapped inside their respective unit cells.
+        cell (torch.Tensor [3*n_structure, 3]): Unit cell vectors according to
+            the row vector convention, i.e. `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
         pbc (torch.Tensor [n_structure, 3] bool):
             A tensor indicating the periodic boundary conditions to apply.
             Partial PBC are not supported yet.
@@ -779,8 +781,8 @@ def torch_nl_linked_cell(
         positions (torch.Tensor [n_atom, 3]):
             A tensor containing the positions of atoms wrapped inside
             their respective unit cells.
-        cell (torch.Tensor [3*n_structure, 3]):
-            A tensor representing the unit cell vectors in the format [a_1, a_2, a_3].
+        cell (torch.Tensor [3*n_structure, 3]): Unit cell vectors according to
+            the row vector convention, i.e. `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
         pbc (torch.Tensor [n_structure, 3] bool):
             A tensor indicating the periodic boundary conditions to apply.
             Partial PBC are not supported yet.
