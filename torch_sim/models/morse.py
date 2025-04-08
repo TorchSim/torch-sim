@@ -180,7 +180,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
             state = SimState(**state, masses=torch.ones_like(state["positions"]))
 
         positions = state.positions
-        cell = state.cell
+        cell = state.row_vector_cell
         cell = cell.squeeze()
         pbc = state.pbc
 
