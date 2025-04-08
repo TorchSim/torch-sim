@@ -7,24 +7,24 @@ from torch_sim.elastic import (
     calculate_elastic_tensor,
     get_bravais_type,
 )
+from torch_sim.optimizers import frechet_cell_fire
 from torch_sim.state import SimState
-from torch_sim.unbatched.unbatched_optimizers import frechet_cell_fire
 from torch_sim.units import UnitConversion
 
 
 try:
     from mace.calculators.foundations_models import mace_mp
 
-    from torch_sim.unbatched.models.mace import UnbatchedMaceModel
+    from torch_sim.models.mace import MaceModel
 except ImportError:
     pytest.skip("MACE not installed", allow_module_level=True)
 
 
 @pytest.fixture
-def torchsim_mace_model(device: torch.device) -> UnbatchedMaceModel:
+def mace_model(device: torch.device) -> MaceModel:
     mace_model = mace_mp(model="medium", default_dtype="float64", return_raw_model=True)
 
-    return UnbatchedMaceModel(
+    return MaceModel(
         model=mace_model,
         device=device,
         dtype=torch.float64,
@@ -34,19 +34,19 @@ def torchsim_mace_model(device: torch.device) -> UnbatchedMaceModel:
 
 
 @pytest.mark.parametrize(
-    ("sim_state_name", "model_fixture_name", "expected_bravais_type", "atol"),
+    ("sim_state_name", "expected_bravais_type", "atol"),
     [
-        ("cu_sim_state", "torchsim_mace_model", BravaisType.CUBIC, 2e-1),
-        ("mg_sim_state", "torchsim_mace_model", BravaisType.HEXAGONAL, 5e-1),
-        ("sb_sim_state", "torchsim_mace_model", BravaisType.TRIGONAL, 5e-1),
-        ("tio2_sim_state", "torchsim_mace_model", BravaisType.TETRAGONAL, 5e-1),
-        ("ga_sim_state", "torchsim_mace_model", BravaisType.ORTHORHOMBIC, 5e-1),
-        ("niti_sim_state", "torchsim_mace_model", BravaisType.MONOCLINIC, 5e-1),
+        ("cu_sim_state", BravaisType.CUBIC, 2e-1),
+        ("mg_sim_state", BravaisType.HEXAGONAL, 5e-1),
+        ("sb_sim_state", BravaisType.TRIGONAL, 5e-1),
+        ("tio2_sim_state", BravaisType.TETRAGONAL, 5e-1),
+        ("ga_sim_state", BravaisType.ORTHORHOMBIC, 5e-1),
+        ("niti_sim_state", BravaisType.MONOCLINIC, 5e-1),
     ],
 )
 def test_elastic_tensor_symmetries(
     sim_state_name: str,
-    model_fixture_name: str,
+    mace_model: MaceModel,
     expected_bravais_type: BravaisType,
     atol: float,
     request: pytest.FixtureRequest,
@@ -61,7 +61,7 @@ def test_elastic_tensor_symmetries(
         request: Pytest fixture request object
     """
     # Get fixtures
-    model = request.getfixturevalue(model_fixture_name)
+    model = mace_model
     state = request.getfixturevalue(sim_state_name)
 
     # Verify the Bravais type of the unrelaxed structure
@@ -109,15 +109,11 @@ def test_elastic_tensor_symmetries(
     )
 
 
-def test_copper_elastic_properties(
-    torchsim_mace_model: UnbatchedMaceModel, cu_sim_state: SimState
-):
+def test_copper_elastic_properties(mace_model: MaceModel, cu_sim_state: SimState):
     """Test calculation of elastic properties for copper."""
 
     # Relax positions and cell
-    fire_init, fire_update = frechet_cell_fire(
-        model=torchsim_mace_model, scalar_pressure=0.0
-    )
+    fire_init, fire_update = frechet_cell_fire(model=mace_model, scalar_pressure=0.0)
     state = fire_init(state=cu_sim_state)
     fmax = 1e-5
     for _ in range(300):
@@ -132,7 +128,7 @@ def test_copper_elastic_properties(
     # Calculate elastic tensor
     bravais_type = get_bravais_type(state)
     elastic_tensor = calculate_elastic_tensor(
-        torchsim_mace_model, state=state, bravais_type=bravais_type
+        mace_model, state=state, bravais_type=bravais_type
     )
 
     # Convert to GPa
