@@ -723,9 +723,10 @@ def test_static_no_filenames(ar_supercell_sim_state: SimState, lj_model: Any) ->
 def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:
     # this tests the example from the readme, update as needed
 
+    from ase.build import bulk
+
     import torch_sim as ts
 
-    from ase.build import bulk
     cu_atoms = bulk("Cu", "fcc", a=3.58, cubic=True).repeat((2, 2, 2))
     many_cu_atoms = [cu_atoms] * 5
     trajectory_files = [tmp_path / f"Cu_traj_{i}" for i in range(len(many_cu_atoms))]
@@ -740,7 +741,7 @@ def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:
         integrator=ts.nvt_langevin,
         trajectory_reporter=dict(filenames=trajectory_files, state_frequency=10),
     )
-    final_atoms_list = final_state.to_atoms()
+    final_atoms_list = final_state.to_atoms()  # noqa: F841
 
     # extract the final energy from the trajectory file
     final_energies = []

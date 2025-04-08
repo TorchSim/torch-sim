@@ -15,7 +15,7 @@ even if you haven't finished your implementation yet.
 from `torch_sim.models.interface.ModelInterface` and `torch.nn.module`.
 
 2. Add `torch_sim.models.tests.make_validate_model_outputs_test` and
-`torch_sim.models.tests.make_model_calculator_consistency_test` as 
+`torch_sim.models.tests.make_model_calculator_consistency_test` as
 models tests. See any of the other model tests for examples.
 
 3. Update `test.yml` to include proper installation and
