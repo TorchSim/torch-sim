@@ -322,9 +322,6 @@ class FairChemModel(torch.nn.Module, ModelInterface):
                 - stress (torch.Tensor): Stress tensor with shape [batch_size, 3, 3],
                     if compute_stress is True
 
-        Raises:
-            ValueError: If state.pbc is False, as FairChemModel requires PBC.
-
         Notes:
             The state is automatically transferred to the model's device if needed.
             All output tensors are detached from the computation graph.
