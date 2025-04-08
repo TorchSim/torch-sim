@@ -48,6 +48,11 @@ class ModelInterface(ABC):
         dtype (torch.dtype): Data type used for tensor calculations.
         compute_stress (bool): Whether the model calculates stress tensors.
         compute_forces (bool): Whether the model calculates atomic forces.
+        memory_scales_with (Literal["n_atoms", "n_atoms_x_density"]): The metric
+            that the model scales with. "n_atoms" uses only atom count and is suitable
+            for models that have a fixed number of neighbors. "n_atoms_x_density" uses
+            atom count multiplied by number density and is better for models with
+            radial cutoffs. Defaults to "n_atoms_x_density".
 
     Examples:
         ```py
