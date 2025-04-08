@@ -138,79 +138,6 @@ def molecule_atoms_set() -> list:
 
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
-@pytest.mark.parametrize("atoms_list", ["periodic_atoms_set", "molecule_atoms_set"])
-def test_standard_nl(
-    *,
-    cutoff: float,
-    atoms_list: str,
-    device: torch.device,
-    dtype: torch.dtype,
-    request: pytest.FixtureRequest,
-) -> None:
-    """Check that standard_nl gives the same NL as ASE by comparing
-    the resulting sorted list of distances between neighbors.
-    """
-    atoms_list = request.getfixturevalue(atoms_list)
-
-    for atoms in atoms_list:
-        # Convert to torch tensors
-        pos = torch.tensor(atoms.positions, device=device, dtype=dtype)
-        row_vector_cell = torch.tensor(atoms.cell.array, device=device, dtype=dtype)
-
-        pbc = atoms.pbc.any() if atoms.pbc.any() else False
-
-        # Get the neighbor list from standard_nl
-        # Note: No self-interaction
-        mapping, shifts = standard_nl(
-            positions=pos,
-            cell=row_vector_cell,
-            pbc=pbc,
-            cutoff=torch.tensor(cutoff, dtype=dtype, device=device),
-        )
-
-        # Calculate distances with cell shifts
-        cell_shifts = torch.mm(shifts, row_vector_cell)
-        dds = compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
-        dds = np.sort(dds.numpy())
-
-        # Get the neighbor list from ase
-        idx_i, idx_j, shifts_ref, dist = neighbor_list(
-            quantities="ijSd",
-            a=atoms,
-            cutoff=cutoff,
-            self_interaction=False,
-            max_nbins=1e6,
-        )
-
-        # Convert to torch tensors
-        idx_i = torch.tensor(idx_i, dtype=torch.long, device=torch.device("cpu"))
-        idx_j = torch.tensor(idx_j, dtype=torch.long, device=torch.device("cpu"))
-
-        # Create mapping and shifts
-        mapping_ref = torch.stack((idx_i, idx_j), dim=0)
-        shifts_ref = torch.tensor(
-            shifts_ref, dtype=torch.float64, device=torch.device("cpu")
-        )
-
-        # Calculate distances with cell shifts
-        cell_shifts_ref = torch.mm(shifts_ref, row_vector_cell)
-        dds_ref = compute_distances_with_cell_shifts(pos, mapping_ref, cell_shifts_ref)
-
-        # Sort the distances
-        dds_ref = np.sort(dds_ref.numpy())
-        dist_ref = np.sort(dist)
-
-        # Check that the distances are the same with ase and torchsim logic
-        np.testing.assert_allclose(dds_ref, dist_ref)
-
-        # Check that the distances are the same with both methods
-        np.testing.assert_allclose(dds, dds_ref)
-
-        # Check that the distances are the same with ase direct neighbor list
-        np.testing.assert_allclose(dds, dist_ref)
-
-
-@pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
 @pytest.mark.parametrize("use_jit", [True, False])
 @pytest.mark.parametrize("atoms_list", ["periodic_atoms_set", "molecule_atoms_set"])
 def test_primitive_neighbor_list(
@@ -328,16 +255,18 @@ def test_primitive_neighbor_list(
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
 @pytest.mark.parametrize("atoms_list", ["periodic_atoms_set", "molecule_atoms_set"])
-def test_vesin_nl_ts(
+@pytest.mark.parametrize("nl_implementation", [standard_nl, vesin_nl, vesin_nl_ts])
+def test_neighbor_list_implementations(
     *,
     cutoff: float,
     atoms_list: str,
+    nl_implementation: callable,
     device: torch.device,
     dtype: torch.dtype,
     request: pytest.FixtureRequest,
 ) -> None:
-    """Check that vesin_nl gives the same NL as ASE by comparing
-    the resulting sorted list of distances between neighbors.
+    """Check that different neighbor list implementations give the same results as ASE
+    by comparing the resulting sorted list of distances between neighbors.
     """
     atoms_list = request.getfixturevalue(atoms_list)
 
@@ -345,12 +274,10 @@ def test_vesin_nl_ts(
         # Convert to torch tensors
         pos = torch.tensor(atoms.positions, device=device, dtype=dtype)
         row_vector_cell = torch.tensor(atoms.cell.array, device=device, dtype=dtype)
-
         pbc = atoms.pbc.any()
 
-        # Get the neighbor list from vesin_nl_ts
-        # Note: No self-interaction
-        mapping, shifts = vesin_nl_ts(
+        # Get the neighbor list from the implementation being tested
+        mapping, shifts = nl_implementation(
             positions=pos,
             cell=row_vector_cell,
             pbc=pbc,
@@ -362,7 +289,7 @@ def test_vesin_nl_ts(
         dds = compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
         dds = np.sort(dds.numpy())
 
-        # Get the neighbor list from ase
+        # Get the reference neighbor list from ASE
         idx_i, idx_j, shifts_ref, dist = neighbor_list(
             quantities="ijSd",
             a=atoms,
@@ -371,121 +298,38 @@ def test_vesin_nl_ts(
             max_nbins=1e6,
         )
 
-        # Convert to torch tensors
+        # Convert to torch tensors and calculate reference distances
         idx_i = torch.tensor(idx_i, dtype=torch.long, device=torch.device("cpu"))
         idx_j = torch.tensor(idx_j, dtype=torch.long, device=torch.device("cpu"))
-
-        # Create mapping and shifts
         mapping_ref = torch.stack((idx_i, idx_j), dim=0)
         shifts_ref = torch.tensor(
             shifts_ref, dtype=torch.float64, device=torch.device("cpu")
         )
-
-        # Calculate distances with cell shifts
         cell_shifts_ref = torch.mm(shifts_ref, row_vector_cell)
         dds_ref = compute_distances_with_cell_shifts(pos, mapping_ref, cell_shifts_ref)
-
-        # Sort the distances
         dds_ref = np.sort(dds_ref.numpy())
         dist_ref = np.sort(dist)
 
-        # Check that the distances are the same with ase and torchsim logic
+        # Verify results
         np.testing.assert_allclose(dds_ref, dist_ref)
-
-        # Check that the distances are the same with both methods
         np.testing.assert_allclose(dds, dds_ref)
-
-        # Check that the distances are the same with ase direct neighbor list
-        np.testing.assert_allclose(dds, dist_ref)
-
-
-@pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
-@pytest.mark.parametrize("atoms_list", ["periodic_atoms_set", "molecule_atoms_set"])
-def test_vesin_nl(
-    *,
-    cutoff: float,
-    atoms_list: str,
-    device: torch.device,
-    dtype: torch.dtype,
-    request: pytest.FixtureRequest,
-) -> None:
-    """Check that vesin_nl gives the same NL as ASE by comparing
-    the resulting sorted list of distances between neighbors.
-    """
-    atoms_list = request.getfixturevalue(atoms_list)
-
-    for atoms in atoms_list:
-        # Convert to torch tensors
-        pos = torch.tensor(atoms.positions, device=device, dtype=dtype)
-        row_vector_cell = torch.tensor(atoms.cell.array, device=device, dtype=dtype)
-
-        pbc = atoms.pbc.any()
-
-        # Get the neighbor list from vesin_nl
-        # Note: No self-interaction
-        mapping, shifts = vesin_nl(
-            positions=pos,
-            cell=row_vector_cell,
-            pbc=pbc,
-            cutoff=torch.tensor(cutoff, device=device, dtype=dtype),
-        )
-
-        # Calculate distances with cell shifts
-        cell_shifts = torch.mm(shifts, row_vector_cell)
-        dds = compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
-        dds = np.sort(dds.numpy())
-
-        # Get the neighbor list from ase
-        idx_i, idx_j, shifts_ref, dist = neighbor_list(
-            quantities="ijSd",
-            a=atoms,
-            cutoff=cutoff,
-            self_interaction=False,
-            max_nbins=1e6,
-        )
-
-        # Convert to torch tensors
-        idx_i = torch.tensor(idx_i, dtype=torch.long, device=torch.device("cpu"))
-        idx_j = torch.tensor(idx_j, dtype=torch.long, device=torch.device("cpu"))
-
-        # Create mapping and shifts
-        mapping_ref = torch.stack((idx_i, idx_j), dim=0)
-        shifts_ref = torch.tensor(
-            shifts_ref, dtype=torch.float64, device=torch.device("cpu")
-        )
-
-        # Calculate distances with cell shifts
-        cell_shifts_ref = torch.mm(shifts_ref, row_vector_cell)
-        dds_ref = compute_distances_with_cell_shifts(pos, mapping_ref, cell_shifts_ref)
-
-        # Sort the distances
-        dds_ref = np.sort(dds_ref.numpy())
-        dist_ref = np.sort(dist)
-
-        # Check that the distances are the same with ase and torchsim logic
-        np.testing.assert_allclose(dds_ref, dist_ref)
-
-        # Check that the distances are the same with both methods
-        np.testing.assert_allclose(dds, dds_ref)
-
-        # Check that the distances are the same with ase direct neighbor list
         np.testing.assert_allclose(dds, dist_ref)
 
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
 @pytest.mark.parametrize("self_interaction", [True, False])
-def test_torch_nl_n2(
+@pytest.mark.parametrize("nl_implementation", [torch_nl_n2, torch_nl_linked_cell])
+def test_torch_nl_implementations(
     *,
     cutoff: float,
     self_interaction: bool,
+    nl_implementation: callable,
     device: torch.device,
     dtype: torch.dtype,
     molecule_atoms_set: list[Atoms],
     periodic_atoms_set: list[Atoms],
 ) -> None:
-    """Check that torch_neighbor_list gives the same NL as ASE by comparing
-    the resulting sorted list of distances between neighbors.
-    """
+    """Check that torch neighbor list implementations give the same results as ASE."""
     atoms_list = molecule_atoms_set + periodic_atoms_set
 
     # Convert to torch batch (concatenate all tensors)
@@ -495,20 +339,20 @@ def test_torch_nl_n2(
         atoms_list, device=device, dtype=dtype
     )
 
-    # Get the neighbor list from torch_nl_n2
-    mapping, mapping_batch, shifts_idx = torch_nl_n2(
+    # Get the neighbor list from the implementation being tested
+    mapping, mapping_batch, shifts_idx = nl_implementation(
         cutoff, pos, row_vector_cell, pbc, batch, self_interaction
     )
 
-    # Calculate distances with cell shifts (batch version)
+    # Calculate distances
     cell_shifts = compute_cell_shifts(row_vector_cell, shifts_idx, mapping_batch)
     dds = compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
     dds = np.sort(dds.numpy())
 
-    # Get the neighbor list from ase
+    # Get reference results from ASE
     dd_ref = []
     for atoms in atoms_list:
-        idx_i, idx_j, idx_S, dist = neighbor_list(
+        _, _, _, dist = neighbor_list(
             quantities="ijSd",
             a=atoms,
             cutoff=cutoff,
@@ -518,78 +362,5 @@ def test_torch_nl_n2(
         dd_ref.extend(dist)
     dd_ref = np.sort(dd_ref)
 
-    # Check that the distances are the same with ase and torchsim
-    np.testing.assert_allclose(dd_ref, dds)
-
-
-@pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
-@pytest.mark.parametrize("self_interaction", [True, False])
-def test_torch_nl_linked_cell(
-    *,
-    cutoff: float,
-    self_interaction: bool,
-    device: torch.device,
-    dtype: torch.dtype,
-    molecule_atoms_set: list[Atoms],
-    periodic_atoms_set: list[Atoms],
-) -> None:
-    """Check that torch_neighbor_list gives the same NL as ASE by comparing
-    the resulting sorted list of distances between neighbors.
-    """
-    atoms_list = molecule_atoms_set + periodic_atoms_set
-
-    # Convert to torch batch (concatenate all tensors)
-    # NOTE we can't use atoms_to_state here because we want to test mixed
-    # periodic and non-periodic systems
-    pos, row_vector_cell, pbc, batch, _ = ase_to_torch_batch(
-        atoms_list, device=device, dtype=dtype
-    )
-
-    # Get the neighbor list from torch_nl_linked_cell
-    mapping, mapping_batch, shifts_idx = torch_nl_linked_cell(
-        cutoff, pos, row_vector_cell, pbc, batch, self_interaction
-    )
-
-    # Calculate distances with cell shifts (batch version)
-    cell_shifts = compute_cell_shifts(row_vector_cell, shifts_idx, mapping_batch)
-    dds = compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
-    dds = np.sort(dds.numpy())
-
-    # Get the neighbor list from ase
-    dd_ref = []
-    for atoms in atoms_list:
-        idx_i, idx_j, idx_S, dist = neighbor_list(
-            quantities="ijSd",
-            a=atoms,
-            cutoff=cutoff,
-            self_interaction=self_interaction,
-            max_nbins=1e6,
-        )
-        dd_ref.extend(dist)
-
-    # Convert to torch tensors
-    idx_S = torch.from_numpy(idx_S).to(torch.float64)
-
-    missing_entries = []
-    for idx_neigh in range(idx_i.shape[0]):
-        mask = torch.logical_and(
-            idx_i[idx_neigh] == mapping[0], idx_j[idx_neigh] == mapping[1]
-        )
-
-        if torch.any(torch.all(idx_S[idx_neigh] == shifts_idx[mask], dim=1)):
-            pass
-        else:
-            missing_entries.append((idx_i[idx_neigh], idx_j[idx_neigh], idx_S[idx_neigh]))
-            print(missing_entries[-1])
-            print(
-                compute_cell_shifts(
-                    row_vector_cell,
-                    idx_S[idx_neigh].view((1, -1)),
-                    torch.tensor([0], dtype=torch.long),
-                )
-            )
-
-    dd_ref = np.sort(dd_ref)
-
-    # Check that the distances are the same with ase and torchsim
+    # Verify results
     np.testing.assert_allclose(dd_ref, dds)
