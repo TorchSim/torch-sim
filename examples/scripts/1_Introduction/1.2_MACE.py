@@ -51,6 +51,6 @@ state = ts.io.atoms_to_state(si_dc, device=device, dtype=dtype)
 results = model(state)
 
 # Print results
-print(f"Energy: {results['energy']}")
+print(f"Energy: {results['energy']:.4f}")
 print(f"Forces: {results['forces']}")
 print(f"Stress: {results['stress']}")

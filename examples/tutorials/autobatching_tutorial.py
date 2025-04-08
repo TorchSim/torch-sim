@@ -132,7 +132,7 @@ batched integration.
 """
 
 # %% Initialize the batcher, the max memory scaler will be computed automatically
-batcher = ts.BinningAutoBatcher(
+batcher = ts.ChunkingAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
 )
@@ -296,7 +296,7 @@ using the `TrajectoryReporter`, because the files must be regularly updated.
 """
 
 # %% Initialize with return_indices=True
-batcher = ts.BinningAutoBatcher(
+batcher = ts.ChunkingAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
     max_memory_scaler=80,

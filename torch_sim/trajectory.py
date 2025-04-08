@@ -798,7 +798,7 @@ class TorchSimTrajectory:
             frame = n_frames + frame
 
         if frame > n_frames:
-            raise ValueError(f"{frame=} is out of range. Total frames: {n_frames}")
+            raise ValueError(f"{frame=} is out of range. Total frames: {n_frames:,}")
 
         arrays["positions"] = self.get_array("positions", start=frame, stop=frame + 1)[0]
 

@@ -130,9 +130,7 @@ def integrate(
     # create a list of temperatures
     temps = temperature if hasattr(temperature, "__iter__") else [temperature] * n_steps
     if len(temps) != n_steps:
-        raise ValueError(
-            f"len(temperature) = {len(temps)}. It must equal n_steps = {n_steps}"
-        )
+        raise ValueError(f"{len(temps)=:,}. It must equal n_steps = {n_steps=:,}")
 
     # initialize the state
     state: SimState = initialize_state(system, model.device, model.dtype)
