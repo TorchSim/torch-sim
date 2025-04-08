@@ -12,7 +12,7 @@
 
 # %% [markdown]
 """
-# Using GraphPES
+# Integrating TorchSim with `graph-pes`
 
 This brief tutorial demonstrates how to use models trained with the
 [graph-pes](https://github.com/mir-group/graph-pes) package to drive

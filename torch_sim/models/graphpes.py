@@ -41,6 +41,10 @@ except ImportError:
         def __init__(self, *_args: typing.Any, **_kwargs: typing.Any) -> None:  # noqa: D107
             raise ImportError("graph_pes must be installed to use this model.")
 
+    class AtomicGraph:  # type: ignore[reportRedeclaration]  # noqa: D101
+        def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:  # noqa: D107
+            raise ImportError("graph_pes must be installed to use this model.")
+
 
 def state_to_atomic_graph(state: SimState, cutoff: torch.Tensor) -> AtomicGraph:
     """Convert a SimState object into an AtomicGraph object.
@@ -58,8 +62,17 @@ def state_to_atomic_graph(state: SimState, cutoff: torch.Tensor) -> AtomicGraph:
         batch_mask = state.batch == i
         R = state.positions[batch_mask]
         Z = state.atomic_numbers[batch_mask]
-        cell = state.cell[i]
-        nl, shifts = vesin_nl_ts(R, cell, state.pbc, cutoff)
+        cell = state.row_vector_cell[i]
+        nl, shifts = vesin_nl_ts(
+            R,
+            cell,
+            state.pbc,
+            # graph-pes models internally trim the neighbour list to the
+            # model's cutoff value. To ensure no strange edge effects whereby
+            # edges that are exactly `cutoff` long are included/excluded,
+            # we bump this up slightly here
+            cutoff + 0.05,
+        )
 
         graphs.append(
             AtomicGraph(
@@ -148,6 +161,9 @@ class GraphPESWrapper(torch.nn.Module, ModelInterface):
             self._properties.append("forces")
         if self._compute_stress:
             self._properties.append("stress")
+
+        if self._gp_model.cutoff.item() < 0.5:
+            self._memory_scales_with = "n_atoms"
 
     def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
         """Forward pass for the GraphPESWrapper.

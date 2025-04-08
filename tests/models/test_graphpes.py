@@ -2,13 +2,18 @@ import pytest
 import torch
 from ase.build import bulk, molecule
 
+from tests.models.conftest import (
+    consistency_test_simstate_fixtures,
+    make_model_calculator_consistency_test,
+    make_validate_model_outputs_test,
+)
 from torch_sim.io import atoms_to_state
 from torch_sim.models.graphpes import GraphPESWrapper
 
 
 try:
     from graph_pes.atomic_graph import AtomicGraph, to_batch
-    from graph_pes.models import SchNet, TensorNet
+    from graph_pes.models import LennardJones, SchNet, TensorNet
 except ImportError:
     pytest.skip("graph-pes not installed", allow_module_level=True)
 
@@ -112,3 +117,35 @@ def test_graphpes_dtype(device: torch.device, dtype: torch.dtype):
     ts_output = ts_wrapper(atoms_to_state([water], device, dtype))
     assert ts_output["energy"].dtype == dtype
     assert ts_output["forces"].dtype == dtype
+
+
+_lj_model = LennardJones()
+
+
+@pytest.fixture
+def ts_lj_model(device: torch.device, dtype: torch.dtype):
+    return GraphPESWrapper(
+        _lj_model,
+        device=device,
+        dtype=dtype,
+        compute_stress=False,
+    )
+
+
+@pytest.fixture
+def ase_lj_calculator():
+    return _lj_model.ase_calculator()
+
+
+test_graphpes_lj_consistency = make_model_calculator_consistency_test(
+    test_name="graphpes-lj",
+    model_fixture_name="ts_lj_model",
+    calculator_fixture_name="ase_lj_calculator",
+    sim_state_names=consistency_test_simstate_fixtures,
+    rtol=1e-3,
+    atol=1e-3,
+)
+
+test_graphpes_lj_model_outputs = make_validate_model_outputs_test(
+    model_fixture_name="ts_lj_model",
+)
