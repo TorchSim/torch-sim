@@ -203,7 +203,7 @@ def rattled_sio2_sim_state(sio2_sim_state: SimState) -> SimState:
     try:
         # Temporarily set a fixed seed
         torch.manual_seed(3)
-        weibull = torch.distributions.weibull.Weibull(scale=0.2, concentration=1.0)
+        weibull = torch.distributions.weibull.Weibull(scale=0.5, concentration=1.0)
         shifts = weibull.sample((sim_state.n_atoms, 3))
         sim_state.positions = sim_state.positions + shifts
     finally:

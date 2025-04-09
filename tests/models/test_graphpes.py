@@ -159,7 +159,7 @@ test_graphpes_nequip_model_outputs = make_validate_model_outputs_test(
 @pytest.fixture
 def ts_mace_model(device: torch.device, dtype: torch.dtype):
     return GraphPESWrapper(
-        mace_mp("small"),
+        mace_mp("medium-mpa-0"),
         device=device,
         dtype=dtype,
         compute_stress=False,
@@ -168,7 +168,7 @@ def ts_mace_model(device: torch.device, dtype: torch.dtype):
 
 @pytest.fixture
 def ase_mace_calculator(device: torch.device, dtype: torch.dtype):
-    return mace_mp("small").to(device, dtype).ase_calculator()
+    return mace_mp("medium-mpa-0").to(device, dtype).ase_calculator()
 
 
 test_graphpes_mace_consistency = make_model_calculator_consistency_test(
