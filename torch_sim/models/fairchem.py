@@ -76,7 +76,6 @@ class FairChemModel(torch.nn.Module, ModelInterface):
 
     Attributes:
         neighbor_list_fn (Callable | None): Function to compute neighbor lists
-        r_max (float): Maximum cutoff radius for atomic interactions in Ångström
         config (dict): Complete model configuration dictionary
         trainer: FairChem trainer object that contains the model
         data_object (Batch): Data object containing system information
@@ -108,9 +107,9 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         trainer: str | None = None,
         cpu: bool = False,
         seed: int | None = None,
-        r_max: float | None = None,  # noqa: ARG002
         dtype: torch.dtype | None = None,
         compute_stress: bool = False,
+        pbc: bool = True,
     ) -> None:
         """Initialize the FairChemModel with specified configuration.
 
@@ -128,9 +127,9 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             trainer (str | None): Name of trainer class to use
             cpu (bool): Whether to use CPU instead of GPU for computation
             seed (int | None): Random seed for reproducibility
-            r_max (float | None): Maximum cutoff radius (overrides model default)
             dtype (torch.dtype | None): Data type to use for computation
             compute_stress (bool): Whether to compute stress tensor
+            pbc (bool): Whether to use periodic boundary conditions
 
         Raises:
             RuntimeError: If both model_name and model are specified
@@ -150,6 +149,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         self._compute_stress = compute_stress
         self._compute_forces = True
         self._memory_scales_with = "n_atoms"
+        self.pbc = pbc
 
         if model_name is not None:
             if model is not None:
@@ -215,6 +215,14 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             )
 
         if "backbone" in config["model"]:
+            if config["model"]["backbone"]["use_pbc"] != pbc:
+                print(
+                    f"WARNING: PBC mismatch between model and state. "
+                    "The model loaded was trained with"
+                    f"PBC={config['model']['backbone']['use_pbc']} "
+                    f"and you are using PBC={pbc}."
+                )
+            config["model"]["backbone"]["use_pbc"] = pbc
             config["model"]["backbone"]["use_pbc_single"] = False
             if dtype is not None:
                 try:
@@ -224,14 +232,26 @@ class FairChemModel(torch.nn.Module, ModelInterface):
                             {"dtype": _DTYPE_DICT[dtype]}
                         )
                 except KeyError:
-                    print("dtype not found in backbone, using default float32")
+                    print(
+                        "WARNING: dtype not found in backbone, using default model dtype"
+                    )
         else:
+            if config["model"]["use_pbc"] != pbc:
+                print(
+                    f"WARNING: PBC mismatch between model and state. "
+                    f"The model loaded was trained with"
+                    f"PBC={config['model']['use_pbc']} "
+                    f"and you are using PBC={pbc}."
+                )
+            config["model"]["use_pbc"] = pbc
             config["model"]["use_pbc_single"] = False
             if dtype is not None:
                 try:
                     config["model"].update({"dtype": _DTYPE_DICT[dtype]})
                 except KeyError:
-                    print("dtype not found in backbone, using default dtype")
+                    print(
+                        "WARNING: dtype not found in backbone, using default model dtype"
+                    )
 
         ### backwards compatibility with OCP v<2.0
         config = update_config(config)
@@ -257,11 +277,9 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             inference_only=True,
         )
 
-        self.trainer.model = self.trainer.model.eval()
-
         if dtype is not None:
             # Convert model parameters to specified dtype
-            self.trainer.model = self.trainer.model.to(dtype=self.dtype)
+            self.trainer.model = self.trainer.model.to(dtype=self._dtype)
 
         if model is not None:
             self.load_checkpoint(checkpoint_path=model, checkpoint=checkpoint)
@@ -337,6 +355,12 @@ class FairChemModel(torch.nn.Module, ModelInterface):
 
         if state.batch is None:
             state.batch = torch.zeros(state.positions.shape[0], dtype=torch.int)
+
+        if self.pbc != state.pbc:
+            raise ValueError(
+                "PBC mismatch between model and state. "
+                "For FairChemModel PBC needs to be defined in the model class."
+            )
 
         natoms = torch.bincount(state.batch)
         pbc = torch.tensor(
