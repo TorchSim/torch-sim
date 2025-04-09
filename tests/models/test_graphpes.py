@@ -13,9 +13,16 @@ from torch_sim.models.graphpes import GraphPESWrapper
 
 try:
     from graph_pes.atomic_graph import AtomicGraph, to_batch
-    from graph_pes.models import LennardJones, SchNet, TensorNet
+    from graph_pes.interfaces import mace_mp
+    from graph_pes.models import LennardJones, SchNet, TensorNet, ZEmbeddingNequIP
 except ImportError:
     pytest.skip("graph-pes not installed", allow_module_level=True)
+
+
+@pytest.fixture
+def dtype() -> torch.dtype:
+    """Fixture to provide the default dtype for testing."""
+    return torch.float32
 
 
 def test_graphpes_isolated(device: torch.device):
@@ -119,7 +126,64 @@ def test_graphpes_dtype(device: torch.device, dtype: torch.dtype):
     assert ts_output["forces"].dtype == dtype
 
 
-_lj_model = LennardJones()
+_nequip_model = ZEmbeddingNequIP()
+
+
+@pytest.fixture
+def ts_nequip_model(device: torch.device, dtype: torch.dtype):
+    return GraphPESWrapper(
+        _nequip_model,
+        device=device,
+        dtype=dtype,
+        compute_stress=False,
+    )
+
+
+@pytest.fixture
+def ase_nequip_calculator(device: torch.device, dtype: torch.dtype):
+    return _nequip_model.to(device, dtype).ase_calculator()
+
+
+test_graphpes_nequip_consistency = make_model_calculator_consistency_test(
+    test_name="graphpes-nequip",
+    model_fixture_name="ts_nequip_model",
+    calculator_fixture_name="ase_nequip_calculator",
+    sim_state_names=consistency_test_simstate_fixtures,
+)
+
+test_graphpes_nequip_model_outputs = make_validate_model_outputs_test(
+    model_fixture_name="ts_nequip_model",
+)
+
+
+@pytest.fixture
+def ts_mace_model(device: torch.device, dtype: torch.dtype):
+    return GraphPESWrapper(
+        mace_mp("small"),
+        device=device,
+        dtype=dtype,
+        compute_stress=False,
+    )
+
+
+@pytest.fixture
+def ase_mace_calculator(device: torch.device, dtype: torch.dtype):
+    return mace_mp("small").to(device, dtype).ase_calculator()
+
+
+test_graphpes_mace_consistency = make_model_calculator_consistency_test(
+    test_name="graphpes-mace",
+    model_fixture_name="ts_mace_model",
+    calculator_fixture_name="ase_mace_calculator",
+    sim_state_names=consistency_test_simstate_fixtures,
+)
+
+test_graphpes_mace_model_outputs = make_validate_model_outputs_test(
+    model_fixture_name="ts_mace_model",
+)
+
+
+_lj_model = LennardJones(sigma=0.5)
 
 
 @pytest.fixture
@@ -133,8 +197,8 @@ def ts_lj_model(device: torch.device, dtype: torch.dtype):
 
 
 @pytest.fixture
-def ase_lj_calculator():
-    return _lj_model.ase_calculator()
+def ase_lj_calculator(device: torch.device, dtype: torch.dtype):
+    return _lj_model.to(device, dtype).ase_calculator()
 
 
 test_graphpes_lj_consistency = make_model_calculator_consistency_test(
@@ -142,10 +206,4 @@ test_graphpes_lj_consistency = make_model_calculator_consistency_test(
     model_fixture_name="ts_lj_model",
     calculator_fixture_name="ase_lj_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
-    rtol=1e-3,
-    atol=1e-3,
-)
-
-test_graphpes_lj_model_outputs = make_validate_model_outputs_test(
-    model_fixture_name="ts_lj_model",
 )

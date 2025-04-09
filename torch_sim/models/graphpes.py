@@ -42,8 +42,11 @@ except ImportError:
             raise ImportError("graph_pes must be installed to use this model.")
 
     class AtomicGraph:  # type: ignore[reportRedeclaration]  # noqa: D101
-        def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:  # noqa: D107
+        def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:  # noqa: D107,ARG002
             raise ImportError("graph_pes must be installed to use this model.")
+
+    class GraphPESModel(torch.nn.Module):  # type: ignore[reportRedeclaration]  # noqa: D101
+        pass
 
 
 def state_to_atomic_graph(state: SimState, cutoff: torch.Tensor) -> AtomicGraph:

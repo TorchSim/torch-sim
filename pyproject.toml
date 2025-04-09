@@ -51,7 +51,7 @@ orb = [
     "orb-models@git+https://github.com/orbital-materials/orb-models#egg=637a98d49cfb494e2491a457d9bbd28311fecf21",
 ]
 sevenn = ["sevenn>=0.11.0"]
-graphpes = ["graph-pes>=0.0.30"]
+graphpes = ["graph-pes>=0.0.30", "mace-torch>=0.3.11"]
 docs = [
     "autodoc_pydantic==2.2.0",
     "furo==2024.8.6",
