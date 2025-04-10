@@ -74,7 +74,7 @@ def state_to_atomic_graph(state: SimState, cutoff: torch.Tensor) -> AtomicGraph:
             # model's cutoff value. To ensure no strange edge effects whereby
             # edges that are exactly `cutoff` long are included/excluded,
             # we bump this up slightly here
-            cutoff + 0.05,
+            cutoff + 1e-5,
         )
 
         graphs.append(
