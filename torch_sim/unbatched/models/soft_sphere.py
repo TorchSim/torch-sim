@@ -175,7 +175,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
                 pbc=pbc,
             )
             # Remove self-interactions and apply cutoff
-            mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self._device)
+            mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)
             distances = distances.masked_fill(mask, float("inf"))
             mask = distances < self.cutoff
 
@@ -196,7 +196,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
         if self._per_atom_energies:
             # Compute per-atom energy contributions
             atom_energies = torch.zeros(
-                positions.shape[0], dtype=self._dtype, device=self._device
+                positions.shape[0], dtype=self.dtype, device=self.device
             )
             # Each atom gets half of the pair energy
             atom_energies.index_add_(0, mapping[0], 0.5 * pair_energies)
@@ -231,8 +231,8 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
                     # Compute per-atom stress contributions
                     atom_stresses = torch.zeros(
                         (positions.shape[0], 3, 3),
-                        dtype=self._dtype,
-                        device=self._device,
+                        dtype=self.dtype,
+                        device=self.device,
                     )
                     atom_stresses.index_add_(0, mapping[0], -0.5 * stress_per_pair)
                     atom_stresses.index_add_(0, mapping[1], -0.5 * stress_per_pair)

@@ -85,8 +85,8 @@ class MatterSimModel(torch.nn.Module, ModelInterface):
         self.model = model.to(self._device)
         self.model = self.model.eval()
 
-        if self._dtype is not None:
-            self.model = self.model.to(dtype=self._dtype)
+        if self.dtype is not None:
+            self.model = self.model.to(dtype=self.dtype)
 
         model_args = self.model.model.model_args
         self.two_body_cutoff = model_args["cutoff"]

@@ -331,8 +331,8 @@ class OrbModel(torch.nn.Module, ModelInterface):
         self.model = model.to(self._device)
         self.model = self.model.eval()
 
-        if self._dtype is not None:
-            self.model = self.model.to(dtype=self._dtype)
+        if self.dtype is not None:
+            self.model = self.model.to(dtype=self.dtype)
 
         # Determine if the model is conservative
         model_is_conservative = hasattr(self.model, "grad_forces_name")
@@ -397,7 +397,7 @@ class OrbModel(torch.nn.Module, ModelInterface):
             max_num_neighbors=self._max_num_neighbors,
             edge_method=self._edge_method,
             half_supercell=half_supercell,
-            device=self._device,
+            device=self.device,
         )
 
         # Run forward pass

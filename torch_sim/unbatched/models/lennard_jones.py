@@ -141,11 +141,9 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
         self.use_neighbor_list = use_neighbor_list
 
         # Convert parameters to tensors
-        self.sigma = torch.tensor(sigma, dtype=dtype, device=self._device)
-        self.cutoff = torch.tensor(
-            cutoff or 2.5 * sigma, dtype=dtype, device=self._device
-        )
-        self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self._device)
+        self.sigma = torch.tensor(sigma, dtype=dtype, device=self.device)
+        self.cutoff = torch.tensor(cutoff or 2.5 * sigma, dtype=dtype, device=self.device)
+        self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self.device)
 
     def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute energies and forces.
@@ -192,7 +190,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
                 pbc=pbc,
             )
             # Mask out self-interactions
-            mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self._device)
+            mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)
             distances = distances.masked_fill(mask, float("inf"))
             # Apply cutoff
             mask = distances < self.cutoff
@@ -216,7 +214,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
 
         if self._per_atom_energies:
             atom_energies = torch.zeros(
-                positions.shape[0], dtype=self._dtype, device=self._device
+                positions.shape[0], dtype=self.dtype, device=self.device
             )
             # Each atom gets half of the pair energy
             atom_energies.index_add_(0, mapping[0], 0.5 * pair_energies)
@@ -251,8 +249,8 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
                 if self._per_atom_stresses:
                     atom_stresses = torch.zeros(
                         (positions.shape[0], 3, 3),
-                        dtype=self._dtype,
-                        device=self._device,
+                        dtype=self.dtype,
+                        device=self.device,
                     )
                     atom_stresses.index_add_(0, mapping[0], -0.5 * stress_per_pair)
                     atom_stresses.index_add_(0, mapping[1], -0.5 * stress_per_pair)

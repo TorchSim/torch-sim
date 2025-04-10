@@ -154,7 +154,7 @@ class GraphPESWrapper(torch.nn.Module, ModelInterface):
                 model if isinstance(model, GraphPESModel) else load_model(model)  # type: ignore[arg-type]
             ),
         )
-        self._gp_model = _model.to(device=self._device, dtype=self._dtype)
+        self._gp_model = _model.to(device=self.device, dtype=self.dtype)
 
         self._compute_forces = compute_forces
         self._compute_stress = compute_stress

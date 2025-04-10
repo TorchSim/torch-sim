@@ -279,7 +279,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
 
         if dtype is not None:
             # Convert model parameters to specified dtype
-            self.trainer.model = self.trainer.model.to(dtype=self._dtype)
+            self.trainer.model = self.trainer.model.to(dtype=self.dtype)
 
         if model is not None:
             self.load_checkpoint(checkpoint_path=model, checkpoint=checkpoint)
@@ -374,9 +374,9 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             pbc=pbc,
         )
 
-        if self._dtype is not None:
-            self.data_object.pos = self.data_object.pos.to(self._dtype)
-            self.data_object.cell = self.data_object.cell.to(self._dtype)
+        if self.dtype is not None:
+            self.data_object.pos = self.data_object.pos.to(self.dtype)
+            self.data_object.cell = self.data_object.cell.to(self.dtype)
 
         predictions = self.trainer.predict(
             self.data_object, per_image=False, disable_tqdm=True
