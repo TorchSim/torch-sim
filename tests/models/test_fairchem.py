@@ -27,12 +27,13 @@ def model_path(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 
 @pytest.fixture
-def fairchem_model(model_path: str, device: torch.device) -> FairChemModel:
+def fairchem_model_pbc(model_path: str, device: torch.device) -> FairChemModel:
     cpu = device.type == "cpu"
     return FairChemModel(
         model=model_path,
         cpu=cpu,
         seed=0,
+        pbc=True,
     )
 
 
@@ -41,28 +42,20 @@ def ocp_calculator(model_path: str) -> OCPCalculator:
     return OCPCalculator(checkpoint_path=model_path, cpu=False, seed=0)
 
 
-test_fairchem_ocp_consistency = make_model_calculator_consistency_test(
+test_fairchem_ocp_consistency_pbc = make_model_calculator_consistency_test(
     test_name="fairchem_ocp",
-    model_fixture_name="fairchem_model",
+    model_fixture_name="fairchem_model_pbc",
     calculator_fixture_name="ocp_calculator",
-    sim_state_names=consistency_test_simstate_fixtures,
+    sim_state_names=consistency_test_simstate_fixtures[:-1],
     rtol=5e-4,  # NOTE: fairchem doesn't pass at the 1e-5 level used for other models
     atol=5e-4,
 )
 
+# TODO: add test for non-PBC model
 
 # fairchem batching is broken on CPU, do not replicate this skipping
-# logic in other models tests
-# @pytest.mark.skipif(
-#     not torch.cuda.is_available(),
-#     reason="Batching does not work properly on CPU for FAIRchem",
-# )
-# def test_validate_model_outputs(
-#     fairchem_model: FairChemModel, device: torch.device
-# ) -> None:
-#     validate_model_outputs(fairchem_model, device, torch.float32)
-
-
+# logic in other models tests. This is due to issues with how the models
+# handle supercells (see related issue here: https://github.com/FAIR-Chem/fairchem/issues/428)
 test_fairchem_ocp_model_outputs = pytest.mark.skipif(
     not torch.cuda.is_available(),
     reason="Batching does not work properly on CPU for FAIRchem",
