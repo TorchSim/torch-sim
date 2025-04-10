@@ -101,7 +101,7 @@ def integrate(
     *,
     integrator: Callable,
     n_steps: int,
-    temperature: float | ArrayLike,
+    temperature: float | list | torch.Tensor,
     timestep: float,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: ChunkingAutoBatcher | bool = False,
@@ -138,9 +138,10 @@ def integrate(
     # initialize the state
     state: SimState = initialize_state(system, model.device, model.dtype)
     dtype, device = state.dtype, state.device
+    kTs = torch.tensor(temps, dtype=dtype, device=device) * unit_system.temperature
     init_fn, update_fn = integrator(
         model=model,
-        kT=torch.tensor(temps[0] * unit_system.temperature, dtype=dtype, device=device),
+        kT=kTs[0],
         dt=torch.tensor(timestep * unit_system.time, dtype=dtype, device=device),
         **integrator_kwargs,
     )
@@ -164,7 +165,7 @@ def integrate(
 
         # run the simulation
         for step in range(1, n_steps + 1):
-            state = update_fn(state, kT=temps[step - 1] * unit_system.temperature)
+            state = update_fn(state, kT=kTs[step - 1])
 
             if trajectory_reporter:
                 trajectory_reporter.report(state, step, model=model)
