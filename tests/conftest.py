@@ -293,35 +293,3 @@ def lj_model(device: torch.device, dtype: torch.dtype) -> LennardJonesModel:
         compute_stress=True,
         cutoff=2.5 * 3.405,
     )
-
-
-@pytest.fixture
-def torchsim_trajectory(
-    si_sim_state: SimState,
-    lj_model: Any,
-    tmp_path: Path,
-    device: torch.device,
-    dtype: torch.dtype,
-):
-    """Test NVE integration conserves energy."""
-    # Initialize integrator
-    kT = torch.tensor(300.0, device=device, dtype=dtype)  # Temperature in K
-    dt = torch.tensor(0.001, device=device, dtype=dtype)  # Small timestep for stability
-
-    state, update_fn = nve(
-        **asdict(si_sim_state),
-        model=lj_model,
-        dt=dt,
-        kT=kT,
-    )
-
-    reporter = TrajectoryReporter(tmp_path / "test.hdf5", state_frequency=1)
-
-    # Run several steps
-    for step in range(10):
-        state = update_fn(state, dt)
-        reporter.report(state, step)
-
-    yield reporter.trajectory
-
-    reporter.close()
