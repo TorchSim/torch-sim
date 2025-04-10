@@ -69,65 +69,6 @@ class MDState(SimState):
         return self.momenta / self.masses.unsqueeze(-1)
 
 
-def batched_initialize_momenta(
-    positions: torch.Tensor,  # shape: (n_batches, n_atoms_per_batch, 3)
-    masses: torch.Tensor,  # shape: (n_batches, n_atoms_per_batch)
-    kT: torch.Tensor,  # shape: (n_batches,)
-    seeds: torch.Tensor,  # shape: (n_batches,)
-    device: torch.device,
-    dtype: torch.dtype,
-) -> torch.Tensor:
-    """Initialize momenta for batched molecular dynamics simulations.
-
-    Generates random momenta following the Maxwell-Boltzmann distribution at the
-    specified temperature for each batch. The center of mass motion is removed
-    for each batch with more than one atom to prevent system drift.
-
-    Args:
-        positions (torch.Tensor): Atomic positions [n_batches, n_atoms_per_batch, 3]
-        masses (torch.Tensor): Atomic masses [n_batches, n_atoms_per_batch]
-        kT (torch.Tensor): Temperature in energy units [n_batches]
-        seeds (torch.Tensor): Random seeds [n_batches]
-        device (torch.device): Torch device for tensor operations
-        dtype (torch.dtype): Torch data type for tensor precision
-
-    Returns:
-        torch.Tensor: Random momenta [n_batches, n_atoms_per_batch, 3]
-            scaled to the specified temperature
-    """
-    n_atoms_per_batch = positions.shape[1]
-
-    # Create a generator for each batch using the provided seeds
-    generators = [torch.Generator(device=device).manual_seed(int(seed)) for seed in seeds]
-
-    # Generate random momenta for all batches at once
-    momenta = torch.stack(
-        [
-            torch.randn((n_atoms_per_batch, 3), device=device, dtype=dtype, generator=gen)
-            for gen in generators
-        ]
-    )
-
-    # Scale by sqrt(mass * kT)
-    mass_factors = torch.sqrt(masses).unsqueeze(-1)  # shape: (n_batches, n_atoms, 1)
-    kT_factors = torch.sqrt(kT).view(-1, 1, 1)  # shape: (n_batches, 1, 1)
-    momenta *= mass_factors * kT_factors
-
-    # Remove center of mass motion for batches with more than one atom
-    # Calculate mean momentum for each batch
-    mean_momentum = torch.mean(momenta, dim=1, keepdim=True)  # shape: (n_batches, 1, 3)
-
-    # Create a mask for batches with more than one atom
-    multi_atom_mask = torch.tensor(n_atoms_per_batch > 1, device=device, dtype=torch.bool)
-
-    # Subtract mean momentum where needed (broadcasting handles the rest)
-    return torch.where(
-        multi_atom_mask.view(-1, 1, 1),  # shape: (n_batches, 1, 1)
-        momenta - mean_momentum,
-        momenta,
-    )
-
-
 def calculate_momenta(
     positions: torch.Tensor,
     masses: torch.Tensor,
@@ -166,11 +107,24 @@ def calculate_momenta(
         positions.shape, device=device, dtype=dtype, generator=generator
     ) * torch.sqrt(masses * kT).unsqueeze(-1)
 
-    # Center the momentum if more than one particle
-    if positions.shape[0] > 1:
-        momenta = momenta - torch.mean(momenta, dim=0, keepdim=True)
-
-    return momenta
+    batchwise_momenta = torch.zeros((batch[-1] + 1, momenta.shape[1]), device=device, dtype=dtype)
+    
+    # create 3 copies of batch
+    batch_3 = batch.view(-1, 1).repeat(1, 3)
+    bincount = torch.bincount(batch)
+    mean_momenta = torch.scatter_reduce(
+        batchwise_momenta,
+        dim=0,
+        index=batch_3,
+        src=momenta,
+        reduce="sum",
+    ) / bincount.view(-1, 1)
+    adjusted_momenta = torch.where(
+        torch.repeat_interleave(bincount > 1, bincount).view(-1, 1),
+        momenta - mean_momenta[batch],
+        momenta,
+    )
+    return adjusted_momenta
 
 
 def momentum_step(state: MDState, dt: torch.Tensor) -> MDState:
