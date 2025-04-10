@@ -21,8 +21,11 @@ MD simulations and geometry optimizations in TorchSim.
 ## Step 1: loading a model
 
 As an output of the `graph-pes-train` command, you receive a path
-to a `.pt` file containing your trained model. Below, we mimic this
-by first saving a dummy model to disk:
+to a `.pt` file containing your trained model. To use this model
+with TorchSim, pass the path to this `.pt` file, or the model itself,
+to the `GraphPESWrapper` constructor.
+
+Below, we create a dummy TensorNet model with random weights as a demonstration:
 """
 
 # %%
