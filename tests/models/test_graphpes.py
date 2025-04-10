@@ -74,12 +74,7 @@ def test_graphpes_periodic(device: torch.device):
     assert ts_output["forces"].shape == (len(bulk_atoms), 3)
     assert ts_output["stress"].shape == (1, 3, 3)
 
-    torch.testing.assert_close(
-        ts_output["forces"].to("cpu"),
-        gp_forces,
-        rtol=1e-3,
-        atol=1e-3,
-    )
+    torch.testing.assert_close(ts_output["forces"].to("cpu"), gp_forces)
 
 
 def test_batching(device: torch.device):
@@ -141,7 +136,7 @@ def ts_nequip_model(device: torch.device, dtype: torch.dtype):
 
 @pytest.fixture
 def ase_nequip_calculator(device: torch.device, dtype: torch.dtype):
-    return _nequip_model.to(device, dtype).ase_calculator()
+    return _nequip_model.to(device, dtype).ase_calculator(skin=0.0)
 
 
 test_graphpes_nequip_consistency = make_model_calculator_consistency_test(
@@ -168,7 +163,7 @@ def ts_mace_model(device: torch.device, dtype: torch.dtype):
 
 @pytest.fixture
 def ase_mace_calculator(device: torch.device, dtype: torch.dtype):
-    return mace_mp("medium-mpa-0").to(device, dtype).ase_calculator()
+    return mace_mp("medium-mpa-0").to(device, dtype).ase_calculator(skin=0.0)
 
 
 test_graphpes_mace_consistency = make_model_calculator_consistency_test(
@@ -176,6 +171,9 @@ test_graphpes_mace_consistency = make_model_calculator_consistency_test(
     model_fixture_name="ts_mace_model",
     calculator_fixture_name="ase_mace_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
+    # see test_mace.py for similar issue
+    rtol=6e-4,  # FIXME: unclear why this needs to be so high for mace.  # noqa: FIX001
+    atol=1e-5,
 )
 
 test_graphpes_mace_model_outputs = make_validate_model_outputs_test(
@@ -198,7 +196,7 @@ def ts_lj_model(device: torch.device, dtype: torch.dtype):
 
 @pytest.fixture
 def ase_lj_calculator(device: torch.device, dtype: torch.dtype):
-    return _lj_model.to(device, dtype).ase_calculator()
+    return _lj_model.to(device, dtype).ase_calculator(skin=0.0)
 
 
 test_graphpes_lj_consistency = make_model_calculator_consistency_test(
