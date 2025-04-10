@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+  pull_request:
 
 # set GITHUB_TOKEN permissions to allow deployment to GitHub Pages
 permissions:
@@ -13,7 +14,6 @@ permissions:
 
 jobs:
   build-docs:
-    if: github.repository_owner == 'Radical-AI' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
@@ -35,8 +35,8 @@ jobs:
         run: |
           uv pip install .[test,docs] --system
 
-      - name: Install mace
-        run: uv pip install mace-torch --system
+      - name: Install extras for tutorial generation
+        run: uv pip install ".[graphpes,mace]" --system
 
       - name: Copy tutorials
         run: |
@@ -57,6 +57,7 @@ jobs:
           path: ./docs_build
 
   deploy:
+    if: github.repository_owner == 'Radical-AI' && github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

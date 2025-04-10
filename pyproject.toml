@@ -46,11 +46,11 @@ test = [
 ]
 mace = ["mace-torch>=0.3.11"]
 mattersim = ["mattersim>=0.1.2"]
-
 orb = [
     "orb-models@git+https://github.com/orbital-materials/orb-models#egg=637a98d49cfb494e2491a457d9bbd28311fecf21",
 ]
 sevenn = ["sevenn>=0.11.0"]
+graphpes = ["graph-pes>=0.0.34", "mace-torch>=0.3.11"]
 docs = [
     "autodoc_pydantic==2.2.0",
     "furo==2024.8.6",

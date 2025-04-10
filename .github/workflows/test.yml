@@ -66,6 +66,7 @@ jobs:
           - { name: mattersim, test_path: "tests/models/test_mattersim.py" }
           - { name: orb, test_path: "tests/models/test_orb.py" }
           - { name: sevenn, test_path: "tests/models/test_sevennet.py" }
+          - { name: graphpes, test_path: "tests/models/test_graphpes.py" }
     runs-on: ${{ matrix.os }}
 
     steps:
