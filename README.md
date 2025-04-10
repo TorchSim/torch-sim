@@ -31,6 +31,7 @@ native support for GPUs, MLIP models, ASE integration, simple API,
 autobatching, and trajectory reporting, all in under 40 lines of code.
 
 ### Running batched MD
+<!-- tested in tests/test_runners::test_readme_example, update as needed -->
 
 ```py
 import torch

@@ -313,7 +313,7 @@ for i, filename in enumerate(filenames):
 
 # %% [markdown]
 """
-# Autobatching
+## Autobatching
 
 The `integrate` function also supports autobatching, which automatically determines
 the maximum number of systems that can fit in memory and splits up the systems to make
