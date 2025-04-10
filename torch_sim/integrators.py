@@ -73,7 +73,7 @@ def calculate_momenta(
     positions: torch.Tensor,
     masses: torch.Tensor,
     batch: torch.Tensor,
-    kT: torch.Tensor,
+    kT: torch.Tensor | float,
     seed: int | None = None,
 ) -> torch.Tensor:
     """Initialize particle momenta based on temperature.
@@ -97,6 +97,9 @@ def calculate_momenta(
     generator = torch.Generator(device=device)
     if seed is not None:
         generator.manual_seed(seed)
+
+    if isinstance(kT, float):
+        kT = torch.tensor(kT, device=device, dtype=dtype)
 
     if len(kT.shape) > 0:
         # kT is a tensor with shape (n_batches,)
