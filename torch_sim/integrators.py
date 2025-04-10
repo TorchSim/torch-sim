@@ -85,6 +85,7 @@ def calculate_momenta(
     Args:
         positions (torch.Tensor): Particle positions [n_particles, n_dim]
         masses (torch.Tensor): Particle masses [n_particles]
+        batch (torch.Tensor): Batch indices [n_particles]
         kT (torch.Tensor): Temperature in energy units [n_batches]
         seed (int, optional): Random seed for reproducibility. Defaults to None.
 
@@ -110,8 +111,10 @@ def calculate_momenta(
         positions.shape, device=device, dtype=dtype, generator=generator
     ) * torch.sqrt(masses * kT).unsqueeze(-1)
 
-    batchwise_momenta = torch.zeros((batch[-1] + 1, momenta.shape[1]), device=device, dtype=dtype)
-    
+    batchwise_momenta = torch.zeros(
+        (batch[-1] + 1, momenta.shape[1]), device=device, dtype=dtype
+    )
+
     # create 3 copies of batch
     batch_3 = batch.view(-1, 1).repeat(1, 3)
     bincount = torch.bincount(batch)
@@ -122,12 +125,12 @@ def calculate_momenta(
         src=momenta,
         reduce="sum",
     ) / bincount.view(-1, 1)
-    adjusted_momenta = torch.where(
+
+    return torch.where(
         torch.repeat_interleave(bincount > 1, bincount).view(-1, 1),
         momenta - mean_momenta[batch],
         momenta,
     )
-    return adjusted_momenta
 
 
 def momentum_step(state: MDState, dt: torch.Tensor) -> MDState:
@@ -249,7 +252,9 @@ def nve(
         model_output = model(state)
 
         momenta = getattr(
-            state, "momenta", calculate_momenta(state.positions, state.masses, state.batch, kT, seed)
+            state,
+            "momenta",
+            calculate_momenta(state.positions, state.masses, state.batch, kT, seed),
         )
 
         initial_state = MDState(
@@ -441,7 +446,9 @@ def nvt_langevin(
         model_output = model(state)
 
         momenta = getattr(
-            state, "momenta", calculate_momenta(state.positions, state.masses, state.batch, kT, seed)
+            state,
+            "momenta",
+            calculate_momenta(state.positions, state.masses, state.batch, kT, seed),
         )
 
         initial_state = MDState(
@@ -1094,7 +1101,9 @@ def npt_langevin(  # noqa: C901, PLR0915
 
         # Initialize momenta if not provided
         momenta = getattr(
-            state, "momenta", calculate_momenta(state.positions, state.masses, state.batch, kT, seed)
+            state,
+            "momenta",
+            calculate_momenta(state.positions, state.masses, state.batch, kT, seed),
         )
 
         # Initialize cell parameters

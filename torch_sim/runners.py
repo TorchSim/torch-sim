@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from itertools import chain
 
 import torch
-from numpy.typing import ArrayLike
 
 from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
 from torch_sim.models.interface import ModelInterface

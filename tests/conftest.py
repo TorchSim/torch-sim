@@ -1,5 +1,3 @@
-from dataclasses import asdict
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -13,9 +11,7 @@ from pymatgen.core import Structure
 from torch_sim.io import atoms_to_state
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.state import SimState, concatenate_states
-from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
-from torch_sim.unbatched.unbatched_integrators import nve
 
 
 @pytest.fixture

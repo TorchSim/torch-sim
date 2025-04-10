@@ -2,12 +2,7 @@ from typing import Any
 
 import torch
 
-from torch_sim.integrators import (
-    calculate_momenta,
-    npt_langevin,
-    nve,
-    nvt_langevin,
-)
+from torch_sim.integrators import calculate_momenta, npt_langevin, nve, nvt_langevin
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.quantities import calc_kT
 from torch_sim.state import SimState, concatenate_states
@@ -18,61 +13,70 @@ def test_calculate_momenta_basic(device: torch.device):
     """Test basic functionality of calculate_momenta."""
     seed = 42
     dtype = torch.float64
-    
+
     # Create test inputs for 3 batches with 2 atoms each
     n_atoms = 8
     positions = torch.randn(n_atoms, 3, dtype=dtype, device=device)
     masses = torch.rand(n_atoms, dtype=dtype, device=device) + 0.5
-    batch = torch.tensor([0, 0, 1, 1, 2, 2, 3, 3], device=device)  # 3 batches with 2 atoms each
+    batch = torch.tensor(
+        [0, 0, 1, 1, 2, 2, 3, 3], device=device
+    )  # 3 batches with 2 atoms each
     kT = torch.tensor([0.1, 0.2, 0.3, 0.4], dtype=dtype, device=device)
-    
+
     # Run the function
     momenta = calculate_momenta(positions, masses, batch, kT, seed=seed)
-    
+
     # Basic checks
     assert momenta.shape == positions.shape
     assert momenta.dtype == dtype
     assert momenta.device == device
-    
+
     # Check that each batch has zero center of mass momentum
     for b in range(4):
-        batch_mask = (batch == b)
+        batch_mask = batch == b
         batch_momenta = momenta[batch_mask]
         com_momentum = torch.mean(batch_momenta, dim=0)
-        assert torch.allclose(com_momentum, torch.zeros(3, dtype=dtype, device=device), atol=1e-10)
+        assert torch.allclose(
+            com_momentum, torch.zeros(3, dtype=dtype, device=device), atol=1e-10
+        )
 
 
 def test_calculate_momenta_single_atoms(device: torch.device):
     """Test that calculate_momenta preserves momentum for batches with single atoms."""
     seed = 42
     dtype = torch.float64
-    
+
     # Create test inputs with some batches having single atoms
     positions = torch.randn(5, 3, dtype=dtype, device=device)
     masses = torch.rand(5, dtype=dtype, device=device) + 0.5
-    batch = torch.tensor([0, 1, 1, 2, 3], device=device)  # Batches 0, 2, and 3 have single atoms
+    batch = torch.tensor(
+        [0, 1, 1, 2, 3], device=device
+    )  # Batches 0, 2, and 3 have single atoms
     kT = torch.tensor([0.1, 0.2, 0.3, 0.4], dtype=dtype, device=device)
-    
+
     # Generate momenta and save the raw values before COM correction
     generator = torch.Generator(device=device).manual_seed(seed)
-    raw_momenta = torch.randn(positions.shape, device=device, dtype=dtype, generator=generator) * \
-                  torch.sqrt(masses * kT[batch]).unsqueeze(-1)
-    
+    raw_momenta = torch.randn(
+        positions.shape, device=device, dtype=dtype, generator=generator
+    ) * torch.sqrt(masses * kT[batch]).unsqueeze(-1)
+
     # Run the function
     momenta = calculate_momenta(positions, masses, batch, kT, seed=seed)
-    
+
     # Check that single-atom batches have unchanged momenta
     for b in [0, 2, 3]:  # Single atom batches
-        batch_mask = (batch == b)
+        batch_mask = batch == b
         # The momentum should be exactly the same as the raw value for single atoms
         assert torch.allclose(momenta[batch_mask], raw_momenta[batch_mask])
-    
+
     # Check that multi-atom batches have zero COM
     for b in [1]:  # Multi-atom batches
-        batch_mask = (batch == b)
+        batch_mask = batch == b
         batch_momenta = momenta[batch_mask]
         com_momentum = torch.mean(batch_momenta, dim=0)
-        assert torch.allclose(com_momentum, torch.zeros(3, dtype=dtype, device=device), atol=1e-10)
+        assert torch.allclose(
+            com_momentum, torch.zeros(3, dtype=dtype, device=device), atol=1e-10
+        )
 
 
 def test_npt_langevin(ar_double_sim_state: SimState, lj_model: LennardJonesModel):
@@ -136,8 +140,9 @@ def test_npt_langevin(ar_double_sim_state: SimState, lj_model: LennardJonesModel
     assert pos_diff > 0.0001  # Systems should remain separated
 
 
-
-def test_npt_langevin_multi_kt(ar_double_sim_state: SimState, lj_model: LennardJonesModel):
+def test_npt_langevin_multi_kt(
+    ar_double_sim_state: SimState, lj_model: LennardJonesModel
+):
     dtype = torch.float64
     n_steps = 200
     dt = torch.tensor(0.001, dtype=dtype)
@@ -239,8 +244,9 @@ def test_nvt_langevin(ar_double_sim_state: SimState, lj_model: LennardJonesModel
     assert pos_diff > 0.0001  # Systems should remain separated
 
 
-
-def test_nvt_langevin_multi_kt(ar_double_sim_state: SimState, lj_model: LennardJonesModel):
+def test_nvt_langevin_multi_kt(
+    ar_double_sim_state: SimState, lj_model: LennardJonesModel
+):
     dtype = torch.float64
     n_steps = 200
     dt = torch.tensor(0.001, dtype=dtype)
