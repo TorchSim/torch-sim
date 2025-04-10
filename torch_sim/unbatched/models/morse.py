@@ -214,13 +214,13 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
 
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
-            if self._compute_forces:
+            if self.compute_forces:
                 forces = torch.zeros_like(positions)
                 forces.index_add_(0, mapping[0], -force_vectors)
                 forces.index_add_(0, mapping[1], force_vectors)
                 results["forces"] = forces
 
-            if self._compute_stress and cell is not None:
+            if self.compute_stress and cell is not None:
                 stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
                 volume = torch.abs(torch.linalg.det(cell))
 

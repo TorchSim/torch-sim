@@ -160,9 +160,9 @@ class GraphPESWrapper(torch.nn.Module, ModelInterface):
         self._compute_stress = compute_stress
 
         self._properties: list[PropertyKey] = ["energy"]
-        if self._compute_forces:
+        if self.compute_forces:
             self._properties.append("forces")
-        if self._compute_stress:
+        if self.compute_stress:
             self._properties.append("stress")
 
         if self._gp_model.cutoff.item() < 0.5:

@@ -203,7 +203,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
             atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
             results["energies"] = atom_energies
 
-        if self._compute_forces or self._compute_stress:
+        if self.compute_forces or self.compute_stress:
             # Calculate pair forces
             pair_forces = soft_sphere_pair_force(
                 distances, sigma=self.sigma, epsilon=self.epsilon, alpha=self.alpha
@@ -212,7 +212,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
             # Project scalar forces onto displacement vectors
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
-            if self._compute_forces:
+            if self.compute_forces:
                 # Compute atomic forces by accumulating pair contributions
                 forces = torch.zeros_like(positions)
                 # Add force contributions (f_ij on j, -f_ij on i)
@@ -220,7 +220,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
                 forces.index_add_(0, mapping[1], -force_vectors)
                 results["forces"] = forces
 
-            if self._compute_stress and cell is not None:
+            if self.compute_stress and cell is not None:
                 # Compute stress tensor using virial formula
                 stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
                 volume = torch.abs(torch.linalg.det(cell))
@@ -244,7 +244,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
 # TODO: Standardize the interface for multi-species models
 
 
-class UnbatchedSoftSphereMultiModel(torch.nn.Module):
+class UnbatchedSoftSphereMultiModel(torch.nn.Module, ModelInterface):
     """Calculator for soft sphere potential with multiple atomic species.
 
     This model implements a multi-species soft sphere potential where the interaction
@@ -462,7 +462,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
             atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
             results["energies"] = atom_energies
 
-        if self._compute_forces or self._compute_stress:
+        if self.compute_forces or self.compute_stress:
             # Calculate pair forces
             pair_forces = soft_sphere_pair_force(
                 distances, sigma=pair_sigmas, epsilon=pair_epsilons, alpha=pair_alphas
@@ -471,7 +471,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
             # Project scalar forces onto displacement vectors
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
-            if self._compute_forces:
+            if self.compute_forces:
                 # Compute atomic forces by accumulating pair contributions
                 forces = torch.zeros_like(positions)
                 # Add force contributions (f_ij on j, -f_ij on i)
@@ -479,7 +479,7 @@ class UnbatchedSoftSphereMultiModel(torch.nn.Module):
                 forces.index_add_(0, mapping[1], -force_vectors)
                 results["forces"] = forces
 
-            if self._compute_stress and cell is not None:
+            if self.compute_stress and cell is not None:
                 # Compute stress tensor using virial formula
                 stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
                 volume = torch.abs(torch.linalg.det(cell))

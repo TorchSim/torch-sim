@@ -334,8 +334,8 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 unit_shifts=unit_shifts,
                 shifts=shifts_list,
             ),
-            compute_force=self._compute_forces,
-            compute_stress=self._compute_stress,
+            compute_force=self.compute_forces,
+            compute_stress=self.compute_stress,
         )
 
         results = {}
@@ -348,13 +348,13 @@ class MaceModel(torch.nn.Module, ModelInterface):
             results["energy"] = torch.zeros(self.n_systems, device=self.device)
 
         # Process forces
-        if self._compute_forces:
+        if self.compute_forces:
             forces = out["forces"]
             if forces is not None:
                 results["forces"] = forces.detach()
 
         # Process stress
-        if self._compute_stress:
+        if self.compute_stress:
             stress = out["stress"]
             if stress is not None:
                 results["stress"] = stress.detach()
