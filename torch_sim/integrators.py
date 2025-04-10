@@ -99,10 +99,7 @@ def calculate_momenta(
     if seed is not None:
         generator.manual_seed(seed)
 
-    if isinstance(kT, float):
-        kT = torch.tensor(kT, device=device, dtype=dtype)
-
-    if len(kT.shape) > 0:
+    if isinstance(kT, torch.Tensor) and len(kT.shape) > 0:
         # kT is a tensor with shape (n_batches,)
         kT = kT[batch]
 
@@ -399,7 +396,7 @@ def nvt_langevin(
         """
         c1 = torch.exp(-gamma * dt)
 
-        if len(kT.shape) > 0:
+        if isinstance(kT, torch.Tensor) and len(kT.shape) > 0:
             # kT is a tensor with shape (n_batches,)
             kT = kT[state.batch]
 
