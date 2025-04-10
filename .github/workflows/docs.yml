@@ -35,8 +35,8 @@ jobs:
         run: |
           uv pip install .[test,docs] --system
 
-      - name: Install mace
-        run: uv pip install mace-torch --system
+      - name: Install extras for tutorial generation
+        run: uv pip install mace-torch graph-pes --system
 
       - name: Copy tutorials
         run: |
