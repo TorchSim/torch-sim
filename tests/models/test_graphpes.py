@@ -171,9 +171,6 @@ test_graphpes_mace_consistency = make_model_calculator_consistency_test(
     model_fixture_name="ts_mace_model",
     calculator_fixture_name="ase_mace_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
-    # see test_mace.py for similar issue
-    rtol=6e-4,  # FIXME: unclear why this needs to be so high for mace.  # noqa: FIX001
-    atol=1e-5,
 )
 
 test_graphpes_mace_model_outputs = make_validate_model_outputs_test(
