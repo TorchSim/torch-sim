@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+  pull_request:
 
 # set GITHUB_TOKEN permissions to allow deployment to GitHub Pages
 permissions:
