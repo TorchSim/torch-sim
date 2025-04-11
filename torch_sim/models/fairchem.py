@@ -110,6 +110,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         dtype: torch.dtype | None = None,
         compute_stress: bool = False,
         pbc: bool = True,
+        disable_amp: bool = True,
     ) -> None:
         """Initialize the FairChemModel with specified configuration.
 
@@ -130,7 +131,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             dtype (torch.dtype | None): Data type to use for computation
             compute_stress (bool): Whether to compute stress tensor
             pbc (bool): Whether to use periodic boundary conditions
-
+            disable_amp (bool): Whether to disable AMP
         Raises:
             RuntimeError: If both model_name and model are specified
             NotImplementedError: If local_cache is not set when model_name is used
@@ -215,13 +216,6 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             )
 
         if "backbone" in config["model"]:
-            if config["model"]["backbone"]["use_pbc"] != pbc:
-                print(
-                    f"WARNING: PBC mismatch between model and state. "
-                    "The model loaded was trained with"
-                    f"PBC={config['model']['backbone']['use_pbc']} "
-                    f"and you are using PBC={pbc}."
-                )
             config["model"]["backbone"]["use_pbc"] = pbc
             config["model"]["backbone"]["use_pbc_single"] = False
             if dtype is not None:
@@ -236,13 +230,6 @@ class FairChemModel(torch.nn.Module, ModelInterface):
                         "WARNING: dtype not found in backbone, using default model dtype"
                     )
         else:
-            if config["model"]["use_pbc"] != pbc:
-                print(
-                    f"WARNING: PBC mismatch between model and state. "
-                    f"The model loaded was trained with"
-                    f"PBC={config['model']['use_pbc']} "
-                    f"and you are using PBC={pbc}."
-                )
             config["model"]["use_pbc"] = pbc
             config["model"]["use_pbc_single"] = False
             if dtype is not None:
@@ -292,6 +279,9 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             )
         else:
             self.trainer.set_seed(seed)
+
+        if disable_amp:
+            self.trainer.scaler = None
 
         self.implemented_properties = list(self.config["outputs"])
 
