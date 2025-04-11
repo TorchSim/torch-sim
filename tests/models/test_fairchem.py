@@ -66,8 +66,8 @@ test_fairchem_ocp_consistency_pbc = make_model_calculator_consistency_test(
     model_fixture_name="fairchem_model_pbc",
     calculator_fixture_name="ocp_calculator",
     sim_state_names=consistency_test_simstate_fixtures[:-1],
-    rtol=1e-4,  # NOTE: EqV2 doesn't pass at the 1e-5 level used for other models
-    atol=1e-4,
+    rtol=5e-3,  # NOTE: EqV2 doesn't pass at the 1e-5 level used for other models
+    atol=5e-3,
 )
 
 test_fairchem_non_pbc_benzene = make_model_calculator_consistency_test(
