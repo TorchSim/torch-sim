@@ -33,6 +33,7 @@ from torch_sim.optimizers import (
     unit_cell_fire,
     unit_cell_gradient_descent,
 )
+from torch_sim.properties.correlations import CorrelationCalculator
 
 # quantities
 from torch_sim.quantities import calc_kinetic_energy, calc_kT

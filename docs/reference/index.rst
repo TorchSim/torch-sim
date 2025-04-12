@@ -13,6 +13,7 @@ This section gives an overview of the API for torch_sim.
     :nosignatures:
 
     autobatching
+    properties.correlations
     elastic
     io
     math

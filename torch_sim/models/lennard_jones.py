@@ -138,11 +138,9 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         self.use_neighbor_list = use_neighbor_list
 
         # Convert parameters to tensors
-        self.sigma = torch.tensor(sigma, dtype=dtype, device=self._device)
-        self.cutoff = torch.tensor(
-            cutoff or 2.5 * sigma, dtype=dtype, device=self._device
-        )
-        self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self._device)
+        self.sigma = torch.tensor(sigma, dtype=dtype, device=self.device)
+        self.cutoff = torch.tensor(cutoff or 2.5 * sigma, dtype=dtype, device=self.device)
+        self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self.device)
 
     def unbatched_forward(
         self,
@@ -209,7 +207,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
                 pbc=pbc,
             )
             # Mask out self-interactions
-            mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self._device)
+            mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)
             distances = distances.masked_fill(mask, float("inf"))
             # Apply cutoff
             mask = distances < self.cutoff
@@ -233,14 +231,14 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
 
         if self.per_atom_energies:
             atom_energies = torch.zeros(
-                positions.shape[0], dtype=self._dtype, device=self._device
+                positions.shape[0], dtype=self.dtype, device=self.device
             )
             # Each atom gets half of the pair energy
             atom_energies.index_add_(0, mapping[0], 0.5 * pair_energies)
             atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
             results["energies"] = atom_energies
 
-        if self._compute_forces or self._compute_stress:
+        if self.compute_forces or self.compute_stress:
             # Calculate forces and apply cutoff
             pair_forces = lennard_jones_pair_force(
                 distances, sigma=self.sigma, epsilon=self.epsilon
@@ -250,7 +248,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
             # Project forces along displacement vectors
             force_vectors = (pair_forces / distances)[:, None] * dr_vec
 
-            if self._compute_forces:
+            if self.compute_forces:
                 # Initialize forces tensor
                 forces = torch.zeros_like(positions)
                 # Add force contributions (f_ij on i, -f_ij on j)
@@ -258,7 +256,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
                 forces.index_add_(0, mapping[1], force_vectors)
                 results["forces"] = forces
 
-            if self._compute_stress and cell is not None:
+            if self.compute_stress and cell is not None:
                 # Compute stress tensor
                 stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
                 volume = torch.abs(torch.linalg.det(cell))
@@ -268,8 +266,8 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
                 if self.per_atom_stresses:
                     atom_stresses = torch.zeros(
                         (state.positions.shape[0], 3, 3),
-                        dtype=self._dtype,
-                        device=self._device,
+                        dtype=self.dtype,
+                        device=self.device,
                     )
                     atom_stresses.index_add_(0, mapping[0], -0.5 * stress_per_pair)
                     atom_stresses.index_add_(0, mapping[1], -0.5 * stress_per_pair)

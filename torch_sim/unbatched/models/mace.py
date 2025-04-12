@@ -226,8 +226,8 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
                 unit_shifts=shifts_idx,
                 shifts=shifts,
             ),
-            compute_force=self._compute_forces,
-            compute_stress=self._compute_stress,
+            compute_force=self.compute_forces,
+            compute_stress=self.compute_stress,
         )
 
         energy = out["energy"]
@@ -239,11 +239,11 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         else:
             results["energy"] = torch.tensor(0.0, device=self.device)
 
-        if self._compute_forces:
+        if self.compute_forces:
             forces = out["forces"]
             results["forces"] = forces
 
-        if self._compute_stress:
+        if self.compute_stress:
             stress = out["stress"].squeeze()
             results["stress"] = stress
 
