@@ -91,7 +91,11 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
             self._device = torch.device(self._device)
 
         if torch.dtype is not torch.float32:
-            raise ValueError("SevenNetModel currently only supports float32")
+            warnings.warn(
+                "SevenNetModel currently only supports float32, but received different dtype",
+                UserWarning,
+                stacklevel=2,
+            )
 
         self._dtype = dtype
         self._memory_scales_with = "n_atoms_x_density"
