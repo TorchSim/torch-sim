@@ -11,7 +11,7 @@ Work-in-progress pull requests are encouraged, but please enable the draft statu
 
 Before a pull request can be merged, the following items must be checked:
 
-* [ ] Doc strings have been added in the [Numpy docstring format](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_numpy.html).
+* [ ] Doc strings have been added in the [Google docstring format](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html#example-google).
   Run [ruff](https://beta.ruff.rs/docs/rules/#pydocstyle-d) on your code.
 * [ ] Tests have been added for any new functionality or bug fixes.
 * [ ] All linting and tests pass.
