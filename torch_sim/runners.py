@@ -227,8 +227,7 @@ def _chunked_apply(
     fn: Callable,
     states: SimState,
     model: ModelInterface,
-    max_memory_scaler: int,
-    memory_scales_with: str,
+    **batcher_kwargs: dict,
 ) -> SimState:
     """Apply a function to a state in chunks.
 
@@ -239,8 +238,7 @@ def _chunked_apply(
         fn (Callable): The function to apply
         states (SimState): The state to apply the function to
         model (ModelInterface): The model to use for the autobatcher
-        max_memory_scaler (int): The maximum memory scaler
-        memory_scales_with (str): The memory scaling metric
+        **batcher_kwargs: Additional keyword arguments for the autobatcher
 
     Returns:
         A state with the function applied
@@ -248,13 +246,12 @@ def _chunked_apply(
     autobatcher = ChunkingAutoBatcher(
         model=model,
         return_indices=False,
-        max_memory_scaler=max_memory_scaler,
-        memory_scales_with=memory_scales_with,
+        **batcher_kwargs,
     )
     autobatcher.load_states(states)
     initialized_states = []
-    for batch in autobatcher:
-        initialized_states.append(fn(batch))
+
+    initialized_states = [fn(batch) for batch in autobatcher]
 
     ordered_states = autobatcher.restore_original_order(initialized_states)
     return concatenate_states(ordered_states)

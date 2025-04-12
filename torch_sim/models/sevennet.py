@@ -92,7 +92,8 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
 
         if torch.dtype is not torch.float32:
             warnings.warn(
-                "SevenNetModel currently only supports float32, but received different dtype",
+                "SevenNetModel currently only supports"
+                "float32, but received different dtype",
                 UserWarning,
                 stacklevel=2,
             )
