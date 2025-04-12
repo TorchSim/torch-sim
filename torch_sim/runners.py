@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from itertools import chain
 
 import torch
-from numpy.typing import ArrayLike
 
 from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
 from torch_sim.models.interface import ModelInterface
@@ -101,7 +100,7 @@ def integrate(
     *,
     integrator: Callable,
     n_steps: int,
-    temperature: float | ArrayLike,
+    temperature: float | list | torch.Tensor,
     timestep: float,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: ChunkingAutoBatcher | bool = False,
@@ -138,13 +137,14 @@ def integrate(
     # initialize the state
     state: SimState = initialize_state(system, model.device, model.dtype)
     dtype, device = state.dtype, state.device
+    kTs = torch.tensor(temps, dtype=dtype, device=device) * unit_system.temperature
     init_fn, update_fn = integrator(
         model=model,
-        kT=torch.tensor(temps[0] * unit_system.temperature, dtype=dtype, device=device),
+        kT=kTs[0],
         dt=torch.tensor(timestep * unit_system.time, dtype=dtype, device=device),
         **integrator_kwargs,
     )
-    state = init_fn(state)
+    # state = init_fn(state)
 
     batch_iterator = _configure_batches_iterator(model, state, autobatcher)
     trajectory_reporter = _configure_reporter(
@@ -155,6 +155,8 @@ def integrate(
     final_states: list[SimState] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
     for state, batch_indices in batch_iterator:
+        state = init_fn(state)
+
         # set up trajectory reporters
         if autobatcher and trajectory_reporter:
             # we must remake the trajectory reporter for each batch
@@ -164,7 +166,7 @@ def integrate(
 
         # run the simulation
         for step in range(1, n_steps + 1):
-            state = update_fn(state, kT=temps[step - 1] * unit_system.temperature)
+            state = update_fn(state, kT=kTs[step - 1])
 
             if trajectory_reporter:
                 trajectory_reporter.report(state, step, model=model)
@@ -204,7 +206,6 @@ def _configure_hot_swapping_autobatcher(
     if isinstance(autobatcher, HotSwappingAutoBatcher):
         autobatcher.return_indices = True
         autobatcher.max_attempts = max_attempts
-        autobatcher.load_states(state)
     else:
         if autobatcher:
             memory_scales_with = model.memory_scales_with
@@ -219,8 +220,41 @@ def _configure_hot_swapping_autobatcher(
             memory_scales_with=memory_scales_with,
             max_iterations=max_attempts,
         )
-        autobatcher.load_states(state)
     return autobatcher
+
+
+def _chunked_apply(
+    fn: Callable,
+    states: SimState,
+    model: ModelInterface,
+    **batcher_kwargs: dict,
+) -> SimState:
+    """Apply a function to a state in chunks.
+
+    This prevents us from running out of memory when applying a function to a large
+    number of states.
+
+    Args:
+        fn (Callable): The function to apply
+        states (SimState): The state to apply the function to
+        model (ModelInterface): The model to use for the autobatcher
+        **batcher_kwargs: Additional keyword arguments for the autobatcher
+
+    Returns:
+        A state with the function applied
+    """
+    autobatcher = ChunkingAutoBatcher(
+        model=model,
+        return_indices=False,
+        **batcher_kwargs,
+    )
+    autobatcher.load_states(states)
+    initialized_states = []
+
+    initialized_states = [fn(batch) for batch in autobatcher]
+
+    ordered_states = autobatcher.restore_original_order(initialized_states)
+    return concatenate_states(ordered_states)
 
 
 def generate_force_convergence_fn(force_tol: float = 1e-1) -> Callable:
@@ -314,12 +348,19 @@ def optimize(
     # initialize the state
     state: SimState = initialize_state(system, model.device, model.dtype)
     init_fn, update_fn = optimizer(model=model, **optimizer_kwargs)
-    state = init_fn(state)
 
     max_attempts = max_steps // steps_between_swaps
     autobatcher = _configure_hot_swapping_autobatcher(
         model, state, autobatcher, max_attempts
     )
+    state = _chunked_apply(
+        init_fn,
+        state,
+        model,
+        max_memory_scaler=autobatcher.max_memory_scaler,
+        memory_scales_with=autobatcher.memory_scales_with,
+    )
+    autobatcher.load_states(state)
     trajectory_reporter = _configure_reporter(
         trajectory_reporter,
         properties=["potential_energy"],
