@@ -12,7 +12,12 @@ import argparse
 import ast
 import colorsys
 import os
+import tomllib
 from collections import defaultdict
+
+
+with open("pyproject.toml", "rb") as pyproject:
+    github_base_url = tomllib.load(pyproject)["project"]["urls"]["Repo"]
 
 
 def rgb_to_hex(red: float, green: float, blue: float) -> str:
@@ -197,14 +202,23 @@ def generate_dot_file(  # noqa: C901, PLR0915
 
         # Count lines if it's a torch_sim module
         label = simple_name
+        github_url = ""
+
         if module.startswith("torch_sim"):
             relative_module = module.replace(".", os.sep)
-            module_path = f"{package_path}/{relative_module[len('torch_sim') + 1 :]}.py"
-            if os.path.exists(module_path):
+            module_name = relative_module[len("torch_sim") + 1 :]
+            module_path = f"{package_path}/{module_name}.py"
+            # Include 'torch_sim' in the GitHub URL path
+            github_url = f"{github_base_url}/blob/main/torch_sim/{module_name}.py"
+
+            if os.path.isfile(module_path):
                 line_count = count_lines(module_path)
                 label = f"{simple_name}\\n({line_count} lines)"
 
         node_style = f'fillcolor="{color}",fontcolor="white",label="{label}",shape="box"'
+        if github_url:
+            node_style += f',URL="{github_url}",tooltip="View source on GitHub"'
+
         lines.append(f"    {node_id} [{node_style}];")
 
     # Add edges
