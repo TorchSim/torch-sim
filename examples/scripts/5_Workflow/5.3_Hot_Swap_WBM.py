@@ -43,6 +43,7 @@ if not os.getenv("CI"):
     n_structures_to_relax = 100
     print(f"Loading {n_structures_to_relax:,} structures...")
     from matbench_discovery.data import DataFiles, ase_atoms_from_zip
+
     ase_atoms_list = ase_atoms_from_zip(
         DataFiles.wbm_initial_atoms.path, limit=n_structures_to_relax
     )
@@ -50,6 +51,7 @@ else:
     n_structures_to_relax = 2
     print(f"Loading {n_structures_to_relax:,} structures...")
     from ase.build import bulk
+
     al_atoms = bulk("Al", "hcp", a=4.05)
     fe_atoms = bulk("Fe", "bcc", a=2.86)
     ase_atoms_list = [al_atoms, fe_atoms]
