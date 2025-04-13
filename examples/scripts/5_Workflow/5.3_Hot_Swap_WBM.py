@@ -10,6 +10,7 @@
 import os
 import time
 
+import numpy as np
 import torch
 from mace.calculators.foundations_models import mace_mp
 
@@ -53,7 +54,9 @@ else:
     from ase.build import bulk
 
     al_atoms = bulk("Al", "hcp", a=4.05)
-    fe_atoms = bulk("Fe", "bcc", a=2.86)
+    al_atoms.positions += 0.1 * np.random.randn(*al_atoms.positions.shape)
+    fe_atoms = bulk("Fe", "bcc", a=2.86).repeat((2, 2, 2))
+    fe_atoms.positions += 0.1 * np.random.randn(*fe_atoms.positions.shape)
     ase_atoms_list = [al_atoms, fe_atoms]
 
 # --- Optimization Setup ---
