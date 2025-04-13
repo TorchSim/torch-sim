@@ -46,7 +46,6 @@ test = [
 ]
 mace = ["mace-torch>=0.3.11"]
 mattersim = ["mattersim>=0.1.2"]
-metatensor = ["metatensor-torch >=0.7,<0.8", "metatrain[pet] >=2025.4"]
 orb = [
     "orb-models@git+https://github.com/orbital-materials/orb-models#egg=637a98d49cfb494e2491a457d9bbd28311fecf21",
 ]

@@ -36,8 +36,3 @@ try:
     from torch_sim.models.graphpes import GraphPESWrapper
 except ImportError:
     pass
-
-try:
-    from torch_sim.models.metatensor import MetatensorModel
-except ImportError:
-    pass
