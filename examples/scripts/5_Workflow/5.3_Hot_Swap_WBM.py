@@ -54,9 +54,9 @@ else:
     from ase.build import bulk
 
     al_atoms = bulk("Al", "hcp", a=4.05)
-    al_atoms.positions += 0.1 * np.random.randn(*al_atoms.positions.shape)
+    al_atoms.positions += 0.1 * np.random.randn(*al_atoms.positions.shape)  # noqa: NPY002
     fe_atoms = bulk("Fe", "bcc", a=2.86).repeat((2, 2, 2))
-    fe_atoms.positions += 0.1 * np.random.randn(*fe_atoms.positions.shape)
+    fe_atoms.positions += 0.1 * np.random.randn(*fe_atoms.positions.shape)  # noqa: NPY002
     ase_atoms_list = [al_atoms, fe_atoms]
 
 # --- Optimization Setup ---
