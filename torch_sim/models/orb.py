@@ -312,17 +312,15 @@ class OrbModel(torch.nn.Module, ModelInterface):
             self._device = torch.device(self._device)
 
         self._dtype = dtype
-        self._memory_scales_with = "n_atoms"
         self._compute_stress = compute_stress
         self._compute_forces = compute_forces
 
         # Set up system configuration
-        self.system_config = system_config or SystemConfig(
-            radius=6.0, max_num_neighbors=20
-        )
+        self.system_config = system_config or model.system_config
         self._max_num_neighbors = max_num_neighbors
         self._edge_method = edge_method
         self._half_supercell = half_supercell
+        self.conservative = conservative
 
         # Load model if path is provided
         if isinstance(model, str | Path):
@@ -336,9 +334,8 @@ class OrbModel(torch.nn.Module, ModelInterface):
 
         # Determine if the model is conservative
         model_is_conservative = hasattr(self.model, "grad_forces_name")
-        self.conservative = (
-            conservative if conservative is not None else model_is_conservative
-        )
+        if self.conservative is None:
+            self.conservative = model_is_conservative
 
         if self.conservative and not model_is_conservative:
             raise ValueError(
@@ -351,10 +348,7 @@ class OrbModel(torch.nn.Module, ModelInterface):
 
         # Add forces and stress to implemented properties if conservative model
         if self.conservative:
-            if "forces" not in self.implemented_properties:
-                self.implemented_properties.append("forces")
-            if compute_stress and "stress" not in self.implemented_properties:
-                self.implemented_properties.append("stress")
+            self.implemented_properties.extend(["forces", "stress"])
 
     def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
@@ -417,13 +411,10 @@ class OrbModel(torch.nn.Module, ModelInterface):
             results[prop] = predictions[_property].squeeze()
 
         if self.conservative:
-            results["direct_forces"] = results["forces"]
-            results["direct_stress"] = results["stress"]
             results["forces"] = results[self.model.grad_forces_name]
             results["stress"] = results[self.model.grad_stress_name]
 
         if "stress" in results and results["stress"].shape[-1] == 6:
-            # TODO: is there a point to converting the direct stress if conservative?
             results["stress"] = voigt_6_to_full_3x3_stress(results["stress"])
 
         return results
