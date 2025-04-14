@@ -43,7 +43,8 @@ jobs:
             --ignore=tests/models/test_mace.py \
             --ignore=tests/models/test_fairchem.py \
             --ignore=tests/models/test_orb.py \
-            --ignore=tests/models/test_sevennet.py
+            --ignore=tests/models/test_sevennet.py \
+            --ignore=tests/models/test_metatensor.py
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -64,6 +65,7 @@ jobs:
           - { name: mace, test_path: "tests/models/test_mace.py" }
           - { name: mace, test_path: "tests/test_elastic.py" }
           - { name: mattersim, test_path: "tests/models/test_mattersim.py" }
+          - { name: metatensor, test_path: "tests/models/test_metatensor.py" }
           - { name: orb, test_path: "tests/models/test_orb.py" }
           - { name: sevenn, test_path: "tests/models/test_sevennet.py" }
           - { name: graphpes, test_path: "tests/models/test_graphpes.py" }
@@ -111,7 +113,6 @@ jobs:
       - name: Install torch_sim with model dependencies
         if: ${{ matrix.model.name != 'fairchem' }}
         run: uv pip install -e .[test,${{ matrix.model.name }}] --resolution=${{ matrix.version.resolution }} --system
-
 
       - name: Run Tests with Coverage
         run: |

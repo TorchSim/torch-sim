@@ -19,3 +19,4 @@ versions of the tutorials can also be found in the `torch-sim /examples/tutorial
     low_level_tutorial
     hybrid_swap_tutorial
     using_graphpes_tutorial
+    metatensor_tutorial

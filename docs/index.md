@@ -30,7 +30,7 @@ about/contributing
 about/license
 ```
 
-# torch_sim documentation
+# TorchSim documentation
 
 **Date**: {sub-ref}`today`
 
@@ -50,7 +50,7 @@ TorchSim is a next-generation open-source atomistic simulation engine for the ML
 :class-header: bg-light
 **User Guide** 🚀
 ^^^
-The user guide provides in-depth information and tutorials for using *torch_sim*.
+The user guide provides in-depth information and tutorials for using *TorchSim*.
 :::
 
 :::{grid-item-card}
@@ -59,7 +59,7 @@ The user guide provides in-depth information and tutorials for using *torch_sim*
 :class-header: bg-light
 **API reference** 📖
 ^^^
-The reference guide contains a detailed description of the *torch_sim* API. It
+The reference guide contains a detailed description of the *TorchSim* API. It
 assumes that you have an understanding of the key concepts.
 :::
 

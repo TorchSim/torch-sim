@@ -33,10 +33,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install .[test,docs] --system
+          uv pip install ".[test,docs]" --system
 
       - name: Install extras for tutorial generation
-        run: uv pip install ".[graphpes,mace]" --system
+        run: uv pip install ".[graphpes,mace,metatensor]" --system
 
       - name: Copy tutorials
         run: |
