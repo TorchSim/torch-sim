@@ -10,7 +10,7 @@
 * Support for Orbv3, https://github.com/Radical-AI/torch-sim/pull/140, @AdeeshKolluru
 * Support metatensor models, https://github.com/Radical-AI/torch-sim/pull/141, @frostedoyter @Luthaf
 * Support for graph-pes models, https://github.com/Radical-AI/torch-sim/pull/118 @jla-gardner
-* Support MatterSim and fix ASE cell convention issues, https://github.com/Radical-AI/torch-sim/pull/112 @Comhys
+* Support MatterSim and fix ASE cell convention issues, https://github.com/Radical-AI/torch-sim/pull/112 @CompRhys
 * Implement positions only FIRE optimization, https://github.com/Radical-AI/torch-sim/pull/139 @abhijeetgangan
 * Allow different temperatures in batches, https://github.com/Radical-AI/torch-sim/pull/123 @orionarcher
 * FairChem model updates: PBC handling, test on OMat24 e-trained model, https://github.com/Radical-AI/torch-sim/pull/126 @AdeeshKolluru
@@ -19,12 +19,12 @@
 
 ### Documentation 📖
 * Imoved model documentation, https://github.com/Radical-AI/torch-sim/pull/121 @orionarcher
-* Reduced test flakiness, https://github.com/Radical-AI/torch-sim/pull/143 @orionarcher
 * Plot of TorchSim module graph in docs, https://github.com/Radical-AI/torch-sim/pull/132 @janosh
 
 ### House-Keeping 🧹
-* Only install HF for fairchem tests, https://github.com/Radical-AI/torch-sim/pull/134 @Comhys
+* Only install HF for fairchem tests, https://github.com/Radical-AI/torch-sim/pull/134 @CompRhys
 * Don't download MBD in CI, https://github.com/Radical-AI/torch-sim/pull/135 @orionarcher
+* Tigthen graph-pes test bounds, https://github.com/Radical-AI/torch-sim/pull/143 @orionarcher
 
 ## v0.1.0
 
