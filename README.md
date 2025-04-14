@@ -14,7 +14,7 @@ era. By rewriting the core primitives of atomistic simulation in Pytorch, it all
 orders of magnitude acceleration of popular machine learning potentials.
 
 * Automatic batching and GPU memory management allowing significant simulation speedup
-* Support for MACE, Fairchem, and SevenNet MLIP models with more in progress
+* Support for MACE, Fairchem, SevenNet, ORB, MatterSim and metatensor MLIP models
 * Support for classical lennard jones, morse, and soft-sphere potentials
 * Molecular dynamics integration schemes like NVE, NVT Langevin, and NPT Langevin
 * Relaxation of atomic positions and cell with gradient descent and FIRE
