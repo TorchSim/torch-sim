@@ -1,6 +1,6 @@
 [project]
 name = "torch_sim_atomistic"
-version = "0.1.0"
+version = "0.2.0"
 description = "A pytorch toolkit for calculating material properties using MLIPs"
 authors = [
     { name = "Abhijeet Gangan", email = "abhijeetgangan@g.ucla.edu" },
@@ -47,9 +47,7 @@ test = [
 mace = ["mace-torch>=0.3.11"]
 mattersim = ["mattersim>=0.1.2"]
 metatensor = ["metatensor-torch >=0.7,<0.8", "metatrain[pet] >=2025.4"]
-orb = [
-    "orb-models@git+https://github.com/orbital-materials/orb-models#egg=637a98d49cfb494e2491a457d9bbd28311fecf21",
-]
+orb = ["orb-models>=0.5.2"]
 sevenn = ["sevenn>=0.11.0"]
 graphpes = ["graph-pes>=0.0.34", "mace-torch>=0.3.11"]
 docs = [
