@@ -26,7 +26,7 @@ from torch_sim.state import DeformGradMixin, SimState, StateDict
 
 
 @dataclass
-class BatchedGDState(SimState):
+class GDState(SimState):
     """State class for batched gradient descent optimization.
 
     This class extends SimState to store and track the evolution of system state
@@ -53,8 +53,8 @@ def gradient_descent(
     *,
     lr: torch.Tensor | float = 0.01,
 ) -> tuple[
-    Callable[[StateDict | SimState], BatchedGDState],
-    Callable[[BatchedGDState], BatchedGDState],
+    Callable[[StateDict | SimState], GDState],
+    Callable[[GDState], GDState],
 ]:
     """Initialize a batched gradient descent optimization.
 
@@ -83,7 +83,7 @@ def gradient_descent(
     def gd_init(
         state: SimState | StateDict,
         **kwargs: Any,
-    ) -> BatchedGDState:
+    ) -> GDState:
         """Initialize the batched gradient descent optimization state.
 
         Args:
@@ -103,7 +103,7 @@ def gradient_descent(
         energy = model_output["energy"]
         forces = model_output["forces"]
 
-        return BatchedGDState(
+        return GDState(
             positions=state.positions,
             forces=forces,
             energy=energy,
@@ -114,7 +114,7 @@ def gradient_descent(
             batch=state.batch,
         )
 
-    def gd_step(state: BatchedGDState, lr: torch.Tensor = lr) -> BatchedGDState:
+    def gd_step(state: GDState, lr: torch.Tensor = lr) -> GDState:
         """Perform one gradient descent optimization step to update the
         atomic positions. The cell is not optimized.
 
@@ -123,7 +123,7 @@ def gradient_descent(
             lr: Learning rate(s) to use for this step, overriding the default
 
         Returns:
-            Updated BatchedGDState after one optimization step
+            Updated GDState after one optimization step
         """
         # Get per-atom learning rates by mapping batch learning rates to atoms
         if isinstance(lr, float):
@@ -147,15 +147,15 @@ def gradient_descent(
 
 
 @dataclass
-class BatchedUnitCellGDState(BatchedGDState, DeformGradMixin):
+class UnitCellGDState(GDState, DeformGradMixin):
     """State class for batched gradient descent optimization with unit cell.
 
-    Extends BatchedGDState to include unit cell optimization parameters and stress
+    Extends GDState to include unit cell optimization parameters and stress
     information. This class maintains the state variables needed for simultaneously
     optimizing atomic positions and unit cell parameters.
 
     Attributes:
-        # Inherited from BatchedGDState
+        # Inherited from GDState
         positions (torch.Tensor): Atomic positions with shape [n_atoms, 3]
         masses (torch.Tensor): Atomic masses with shape [n_atoms]
         cell (torch.Tensor): Unit cell vectors with shape [n_batches, 3, 3]
@@ -203,8 +203,8 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
     constant_volume: bool = False,
     scalar_pressure: float = 0.0,
 ) -> tuple[
-    Callable[[SimState | StateDict], BatchedUnitCellGDState],
-    Callable[[BatchedUnitCellGDState], BatchedUnitCellGDState],
+    Callable[[SimState | StateDict], UnitCellGDState],
+    Callable[[UnitCellGDState], UnitCellGDState],
 ]:
     """Initialize a batched gradient descent optimization with unit cell parameters.
 
@@ -252,7 +252,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         hydrostatic_strain: bool = hydrostatic_strain,  # noqa: FBT001
         constant_volume: bool = constant_volume,  # noqa: FBT001
         scalar_pressure: float = scalar_pressure,
-    ) -> BatchedUnitCellGDState:
+    ) -> UnitCellGDState:
         """Initialize the batched gradient descent optimization state with unit cell.
 
         Args:
@@ -264,7 +264,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
             **kwargs: Additional keyword arguments for state initialization
 
         Returns:
-            Initial BatchedUnitCellGDState with system configuration and forces
+            Initial UnitCellGDState with system configuration and forces
         """
         if not isinstance(state, SimState):
             state = SimState(**state)
@@ -336,7 +336,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         # Reshape virial for cell forces
         cell_forces = virial  # shape: (n_batches, 3, 3)
 
-        return BatchedUnitCellGDState(
+        return UnitCellGDState(
             positions=state.positions,
             forces=forces,
             energy=energy,
@@ -357,10 +357,10 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         )
 
     def gd_step(
-        state: BatchedUnitCellGDState,
+        state: UnitCellGDState,
         positions_lr: torch.Tensor = positions_lr,
         cell_lr: torch.Tensor = cell_lr,
-    ) -> BatchedUnitCellGDState:
+    ) -> UnitCellGDState:
         """Perform one gradient descent optimization step with unit cell.
 
         Updates both atomic positions and cell parameters based on forces and stress.
@@ -371,7 +371,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
             cell_lr: Learning rate for unit cell optimization
 
         Returns:
-            Updated BatchedUnitCellGDState after one optimization step
+            Updated UnitCellGDState after one optimization step
         """
         # Get dimensions
         n_batches = state.n_batches
@@ -692,7 +692,7 @@ def fire(
 
 
 @dataclass
-class BatchedUnitCellFireState(SimState, DeformGradMixin):
+class UnitCellFireState(SimState, DeformGradMixin):
     """State information for batched FIRE optimization with unit cell degrees of
     freedom.
 
@@ -781,8 +781,8 @@ def unit_cell_fire(  # noqa: C901, PLR0915
     constant_volume: bool = False,
     scalar_pressure: float = 0.0,
 ) -> tuple[
-    BatchedUnitCellFireState,
-    Callable[[BatchedUnitCellFireState], BatchedUnitCellFireState],
+    UnitCellFireState,
+    Callable[[UnitCellFireState], UnitCellFireState],
 ]:
     """Initialize a batched FIRE optimization with unit cell degrees of freedom.
 
@@ -844,7 +844,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         scalar_pressure: float = scalar_pressure,
         dt_start: float = dt_start,
         alpha_start: float = alpha_start,
-    ) -> BatchedUnitCellFireState:
+    ) -> UnitCellFireState:
         """Initialize a batched FIRE optimization state with unit cell.
 
         Args:
@@ -856,7 +856,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
             alpha_start: Initial mixing parameter per batch
 
         Returns:
-            BatchedUnitCellFireState with initialized optimization tensors
+            UnitCellFireState with initialized optimization tensors
         """
         if not isinstance(state, SimState):
             state = SimState(**state)
@@ -924,7 +924,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         n_pos = torch.zeros((n_batches,), device=device, dtype=torch.int32)
 
         # Create initial state
-        return BatchedUnitCellFireState(
+        return UnitCellFireState(
             # Copy SimState attributes
             positions=state.positions.clone(),
             masses=state.masses.clone(),
@@ -954,10 +954,10 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         )
 
     def fire_step(  # noqa: PLR0915
-        state: BatchedUnitCellFireState,
+        state: UnitCellFireState,
         alpha_start: float = alpha_start,
         dt_start: float = dt_start,
-    ) -> BatchedUnitCellFireState:
+    ) -> UnitCellFireState:
         """Perform one FIRE optimization step for batched atomic systems with unit cell
         optimization.
 
@@ -1108,7 +1108,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
 
 
 @dataclass
-class BatchedFrechetCellFIREState(SimState, DeformGradMixin):
+class FrechetCellFIREState(SimState, DeformGradMixin):
     """State class for batched FIRE optimization with Frechet cell derivatives.
 
     This class extends SimState to store and track the system state during FIRE
@@ -1197,8 +1197,8 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
     constant_volume: bool = False,
     scalar_pressure: float = 0.0,
 ) -> tuple[
-    BatchedFrechetCellFIREState,
-    Callable[[BatchedFrechetCellFIREState], BatchedFrechetCellFIREState],
+    FrechetCellFIREState,
+    Callable[[FrechetCellFIREState], FrechetCellFIREState],
 ]:
     """Initialize a batched FIRE optimization with Frechet cell parameterization.
 
@@ -1226,7 +1226,7 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
 
     Returns:
         tuple: A pair of functions:
-            - Initialization function that creates a BatchedFrechetCellFIREState
+            - Initialization function that creates a FrechetCellFIREState
             - Update function that performs one FIRE step with Frechet derivatives
 
     Notes:
@@ -1260,7 +1260,7 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
         scalar_pressure: float = scalar_pressure,
         dt_start: float = dt_start,
         alpha_start: float = alpha_start,
-    ) -> BatchedFrechetCellFIREState:
+    ) -> FrechetCellFIREState:
         """Initialize a batched FIRE optimization state with Frechet cell
         parameterization.
 
@@ -1273,7 +1273,7 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
             alpha_start: Initial mixing parameter per batch
 
         Returns:
-            BatchedFrechetCellFIREState with initialized optimization tensors
+            FrechetCellFIREState with initialized optimization tensors
         """
         if not isinstance(state, SimState):
             state = SimState(**state)
@@ -1353,7 +1353,7 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
         n_pos = torch.zeros((n_batches,), device=device, dtype=torch.int32)
 
         # Create initial state
-        return BatchedFrechetCellFIREState(
+        return FrechetCellFIREState(
             # Copy SimState attributes
             positions=state.positions,
             masses=state.masses,
@@ -1383,10 +1383,10 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
         )
 
     def fire_step(  # noqa: PLR0915
-        state: BatchedFrechetCellFIREState,
+        state: FrechetCellFIREState,
         alpha_start: float = alpha_start,
         dt_start: float = dt_start,
-    ) -> BatchedFrechetCellFIREState:
+    ) -> FrechetCellFIREState:
         """Perform one FIRE optimization step for batched atomic systems with
         Frechet cell parameterization.
 
