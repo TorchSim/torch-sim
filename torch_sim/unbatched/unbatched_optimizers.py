@@ -270,7 +270,7 @@ def fire(
         alpha_curr = state.alpha
         n_pos = state.n_pos
 
-        state = velocity_verlet(state, dt_curr, model=model)
+        state = velocity_verlet(state=state, dt=dt_curr, model=model)
 
         state.dt = dt_curr
         state.alpha = alpha_curr

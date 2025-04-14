@@ -29,7 +29,7 @@ Simulating many molecular systems on GPUs can be challenging when the total numb
 atoms exceeds available GPU memory. The `torch_sim.autobatching` module solves this by:
 
 1. Automatically determining optimal batch sizes based on GPU memory constraints
-2. Providing two complementary strategies: chunking and hot-swapping
+2. Providing two complementary strategies: binning and in-flight
 3. Efficiently managing memory resources during large-scale simulations
 
 Let's explore how to use these powerful features!
@@ -120,9 +120,9 @@ print(f"Max memory metric: {max_memory_metric}")
 This is a verbose way to determine the max memory metric, we'll see a simpler way
 shortly.
 
-## ChunkingAutoBatcher: Fixed Batching Strategy
+## BinningAutoBatcher: Fixed Batching Strategy
 
-Now on to the exciting part, autobatching! The `ChunkingAutoBatcher` groups states into
+Now on to the exciting part, autobatching! The `BinningAutoBatcher` groups states into
 batches with a binpacking algorithm, ensuring that we minimize the total number of
 batches while maximizing the GPU utilization of each batch. This approach is ideal for
 scenarios where all states need to be processed the same number of times, such as
@@ -132,7 +132,7 @@ batched integration.
 """
 
 # %% Initialize the batcher, the max memory scaler will be computed automatically
-batcher = ts.ChunkingAutoBatcher(
+batcher = ts.BinningAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
 )
@@ -167,11 +167,11 @@ If you don't specify `max_memory_scaler`, the batcher will automatically estimat
 maximum safe batch size through test runs on your GPU. However, the max memory scaler
 is typically fixed for a given model and simulation setup. To avoid calculating it
 every time, which is a bit slow, you can calculate it once and then include it in the
-`ChunkingAutoBatcher` constructor.
+`BinningAutoBatcher` constructor.
 """
 
 # %%
-batcher = ts.ChunkingAutoBatcher(
+batcher = ts.BinningAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
     max_memory_scaler=max_memory_scaler,
@@ -192,7 +192,7 @@ nvt_init, nvt_update = ts.nvt_langevin(mace_model, dt=0.001, kT=0.01)
 nvt_state = nvt_init(state)
 
 # Initialize the batcher
-batcher = ts.ChunkingAutoBatcher(
+batcher = ts.BinningAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
 )
@@ -217,13 +217,13 @@ restored_states = batcher.restore_original_order(finished_states)
 
 # %% [markdown]
 """
-## HotSwappingAutoBatcher: Dynamic Batching Strategy
+## InFlightAutoBatcher: Dynamic Batching Strategy
 
-The `HotSwappingAutoBatcher` optimizes GPU utilization by dynamically removing
+The `InFlightAutoBatcher` optimizes GPU utilization by dynamically removing
 converged states and adding new ones. This is ideal for processes like geometry
 optimization where different states may converge at different rates.
 
-The `HotSwappingAutoBatcher` is more complex than the `ChunkingAutoBatcher` because
+The `InFlightAutoBatcher` is more complex than the `BinningAutoBatcher` because
 it requires the batch to be dynamically updated. The swapping logic is handled internally,
 but the user must regularly provide a convergence tensor indicating which batches in
 the state have converged.
@@ -236,7 +236,7 @@ fire_init, fire_update = ts.frechet_cell_fire(mace_model)
 fire_state = fire_init(state)
 
 # Initialize the batcher
-batcher = ts.HotSwappingAutoBatcher(
+batcher = ts.InFlightAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
     max_memory_scaler=1000,
@@ -296,7 +296,7 @@ using the `TrajectoryReporter`, because the files must be regularly updated.
 """
 
 # %% Initialize with return_indices=True
-batcher = ts.ChunkingAutoBatcher(
+batcher = ts.BinningAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
     max_memory_scaler=80,
@@ -317,8 +317,8 @@ for batch, indices in batcher:
 TorchSim's autobatching provides powerful tools for GPU-efficient simulation of
 multiple systems:
 
-1. Use `ChunkingAutoBatcher` for simpler workflows with fixed iteration counts
-2. Use `HotSwappingAutoBatcher` for optimization problems with varying convergence
+1. Use `BinningAutoBatcher` for simpler workflows with fixed iteration counts
+2. Use `InFlightAutoBatcher` for optimization problems with varying convergence
    rates
 3. Let the library handle memory management automatically, or specify limits manually
 

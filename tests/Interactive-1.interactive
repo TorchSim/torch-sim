@@ -1,0 +1,633 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Connected to .venv (Python 3.12.9)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "35d12cef-0642-4f4d-8546-1d63bb6315d6",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "torch.Size([])"
+      ]
+     },
+     "execution_count": 1,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "import torch\n",
+    "torch.tensor([1, 2, 3, 4, 5])[0].shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "891faeb7-346d-4ef9-afe4-1cb027f7b24a",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "torch.Size([])"
+      ]
+     },
+     "execution_count": 2,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "import torch\n",
+    "torch.tensor([1, 2, 3, 4, 5])[0].shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "525a99a3-3606-4ab8-91dc-4bce2bd82a43",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "tensor([])"
+      ]
+     },
+     "execution_count": 3,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "import torch\n",
+    "a = torch.tensor([1, 2, 3, 4, 5])[0].shape\n",
+    "\n",
+    "torch.tensor(a)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "75cc33ec-eef6-4862-ac99-a659c499e92e",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "<ipython-input-4-ce6180aeef7e>:6: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).\n",
+      "  torch.tensor(a)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "tensor([1, 2, 3, 4, 5])"
+      ]
+     },
+     "execution_count": 4,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "import torch\n",
+    "a = torch.tensor([1, 2, 3, 4, 5])\n",
+    "\n",
+    "torch.tensor(a)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "c7b39b27-38f9-4eed-8529-4dc6004a8484",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "<ipython-input-5-3e6c6021c60a>:6: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).\n",
+      "  torch.tensor(a, device=torch.device(\"cuda\"))\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "tensor([1, 2, 3, 4, 5], device='cuda:0')"
+      ]
+     },
+     "execution_count": 5,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "import torch\n",
+    "a = torch.tensor([1, 2, 3, 4, 5])\n",
+    "\n",
+    "torch.tensor(a, device=torch.device(\"cuda\"))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "1eb08b1e-c30f-4fef-90a4-64f5777cc73e",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "<ipython-input-6-c12dfe999641>:6: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).\n",
+      "  torch.tensor(a, device=torch.device(\"cuda\"), dtype=torch.float64)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "tensor([1., 2., 3., 4., 5.], device='cuda:0', dtype=torch.float64)"
+      ]
+     },
+     "execution_count": 6,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "import torch\n",
+    "a = torch.tensor([1, 2, 3, 4, 5])\n",
+    "\n",
+    "torch.tensor(a, device=torch.device(\"cuda\"), dtype=torch.float64)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "No kernel connected"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "No kernel connected"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "No kernel connected"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Connected to .venv (Python 3.12.9)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "d3686e13-8270-4cdf-ad51-f37c2faac450",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "/workspaces/propfoliotorchsim/propfolio/.venv/lib/python3.12/site-packages/e3nn/o3/_wigner.py:10: UserWarning: Environment variable TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD detected, since the`weights_only` argument was not explicitly passed to `torch.load`, forcing weights_only=False.\n",
+      "  _Jd, _W3j_flat, _W3j_indices = torch.load(os.path.join(os.path.dirname(__file__), 'constants.pt'))\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "cuequivariance or cuequivariance_torch is not available. Cuequivariance acceleration will be disabled.\n",
+      "job will run on device=device(type='cuda')\n",
+      "Loading MACE model...\n",
+      "Using medium MPA-0 model as default MACE-MP model, to use previous (before 3.10) default model please specify 'medium' as model argument\n",
+      "Using Materials Project MACE for MACECalculator with /home/ray/.cache/mace/macempa0mediummodel\n",
+      "Using float32 for MACECalculator, which is faster but less accurate. Recommended for MD. Use float64 for geometry optimization.\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "/workspaces/propfoliotorchsim/propfolio/.venv/lib/python3.12/site-packages/mace/calculators/foundations_models.py:169: UserWarning: Environment variable TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD detected, since the`weights_only` argument was not explicitly passed to `torch.load`, forcing weights_only=False.\n",
+      "  return torch.load(model_path, map_location=device)\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Loading 2 structures...\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "/workspaces/propfoliotorchsim/torch-sim/torch_sim/models/mace.py:175: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).\n",
+      "  self.model.atomic_numbers = torch.tensor(\n"
+     ]
+    }
+   ],
+   "source": [
+    "import os\n",
+    "import time\n",
+    "\n",
+    "import numpy as np\n",
+    "import torch\n",
+    "from mace.calculators.foundations_models import mace_mp\n",
+    "\n",
+    "import torch_sim as ts\n",
+    "\n",
+    "\n",
+    "# --- Setup and Configuration ---\n",
+    "# Device and data type configuration\n",
+    "device = torch.device(\"cpu\") if os.getenv(\"CI\") else torch.device(\"cuda\")\n",
+    "dtype = torch.float32\n",
+    "print(f\"job will run on {device=}\")\n",
+    "\n",
+    "# --- Model Initialization ---\n",
+    "print(\"Loading MACE model...\")\n",
+    "mace_checkpoint_url = \"https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model\"\n",
+    "mace = mace_mp(model=mace_checkpoint_url, return_raw_model=True)\n",
+    "mace_model = ts.models.MaceModel(\n",
+    "    model=mace,\n",
+    "    device=device,\n",
+    "    dtype=dtype,\n",
+    "    compute_forces=True,\n",
+    ")\n",
+    "\n",
+    "# Optimization parameters\n",
+    "fmax = 0.05  # Force convergence threshold\n",
+    "n_steps = 10 if os.getenv(\"CI\") else 200_000_000\n",
+    "max_atoms_in_batch = 50 if os.getenv(\"CI\") else 8_000\n",
+    "\n",
+    "# --- Data Loading ---\n",
+    "if not True:\n",
+    "    n_structures_to_relax = 100\n",
+    "    print(f\"Loading {n_structures_to_relax:,} structures...\")\n",
+    "    from matbench_discovery.data import DataFiles, ase_atoms_from_zip\n",
+    "\n",
+    "    ase_atoms_list = ase_atoms_from_zip(\n",
+    "        DataFiles.wbm_initial_atoms.path, limit=n_structures_to_relax\n",
+    "    )\n",
+    "else:\n",
+    "    n_structures_to_relax = 2\n",
+    "    print(f\"Loading {n_structures_to_relax:,} structures...\")\n",
+    "    from ase.build import bulk\n",
+    "\n",
+    "    al_atoms = bulk(\"Al\", \"hcp\", a=4.05)\n",
+    "    al_atoms.positions += 0.1 * np.random.randn(*al_atoms.positions.shape)\n",
+    "    fe_atoms = bulk(\"Fe\", \"bcc\", a=2.86)\n",
+    "    fe_atoms.positions += 0.1 * np.random.randn(*fe_atoms.positions.shape)\n",
+    "    ase_atoms_list = [al_atoms, fe_atoms]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "bf323d76-279b-4f05-a778-f9d186cfe7e8",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# --- Optimization Setup ---\n",
+    "# Statistics tracking\n",
+    "\n",
+    "# Initialize first batch\n",
+    "fire_init, fire_update = ts.optimizers.frechet_cell_fire(model=mace_model)\n",
+    "fire_states = fire_init(\n",
+    "    ts.io.atoms_to_state(atoms=ase_atoms_list, device=device, dtype=dtype)\n",
+    ")\n",
+    "\n",
+    "batcher = ts.autobatching.InFlightAutoBatcher(\n",
+    "    model=mace_model,\n",
+    "    memory_scales_with=\"n_atoms_x_density\",\n",
+    "    max_memory_scaler=1000 if os.getenv(\"CI\") else None,\n",
+    ")\n",
+    "converge_max_force = ts.runners.generate_force_convergence_fn(force_tol=0.05)\n",
+    "\n",
+    "start_time = time.perf_counter()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "89c3c813-3ee9-4439-9899-935d0618e46b",
+   "metadata": {},
+   "outputs": [
+    {
+     "ename": "ValueError",
+     "evalue": "n_atoms (1) and n_batches (1) are equal, which means shapes cannot be inferred unambiguously.",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+      "\u001b[0;31mValueError\u001b[0m                                Traceback (most recent call last)",
+      "File \u001b[1;32m/workspaces/propfoliotorchsim/torch-sim/examples/scripts/5_Workflow/5.3_Hot_Swap_WBM.py:3\u001b[0m\n\u001b[1;32m      1\u001b[0m \u001b[39m# %%\u001b[39;00m\n\u001b[1;32m      2\u001b[0m \u001b[39m# --- Main Optimization Loop ---\u001b[39;00m\n\u001b[0;32m----> 3\u001b[0m batcher\u001b[39m.\u001b[39;49mload_states(fire_states)\n\u001b[1;32m      4\u001b[0m all_completed_states, convergence_tensor, state \u001b[39m=\u001b[39m [], \u001b[39mNone\u001b[39;00m, \u001b[39mNone\u001b[39;00m\n\u001b[1;32m      5\u001b[0m \u001b[39mwhile\u001b[39;00m (result \u001b[39m:=\u001b[39m batcher\u001b[39m.\u001b[39mnext_batch(state, convergence_tensor))[\u001b[39m0\u001b[39m] \u001b[39mis\u001b[39;00m \u001b[39mnot\u001b[39;00m \u001b[39mNone\u001b[39;00m:\n",
+      "File \u001b[0;32m/workspaces/propfoliotorchsim/torch-sim/torch_sim/autobatching.py:845\u001b[0m, in \u001b[0;36mHotSwappingAutoBatcher.load_states\u001b[0;34m(self, states)\u001b[0m\n\u001b[1;32m    842\u001b[0m \u001b[39mself\u001b[39m\u001b[39m.\u001b[39mcompleted_idx_og_order \u001b[39m=\u001b[39m []\n\u001b[1;32m    844\u001b[0m \u001b[39mself\u001b[39m\u001b[39m.\u001b[39mfirst_batch_returned \u001b[39m=\u001b[39m \u001b[39mFalse\u001b[39;00m\n\u001b[0;32m--> 845\u001b[0m \u001b[39mself\u001b[39m\u001b[39m.\u001b[39m_first_batch \u001b[39m=\u001b[39m \u001b[39mself\u001b[39;49m\u001b[39m.\u001b[39;49m_get_first_batch()\n",
+      "File \u001b[0;32m/workspaces/propfoliotorchsim/torch-sim/torch_sim/autobatching.py:938\u001b[0m, in \u001b[0;36mHotSwappingAutoBatcher._get_first_batch\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m    935\u001b[0m states \u001b[39m=\u001b[39m \u001b[39mself\u001b[39m\u001b[39m.\u001b[39m_get_next_states()\n\u001b[1;32m    937\u001b[0m \u001b[39mif\u001b[39;00m \u001b[39mnot\u001b[39;00m has_max_metric:\n\u001b[0;32m--> 938\u001b[0m     \u001b[39mself\u001b[39m\u001b[39m.\u001b[39mmax_memory_scaler \u001b[39m=\u001b[39m estimate_max_memory_scaler(\n\u001b[1;32m    939\u001b[0m         \u001b[39mself\u001b[39;49m\u001b[39m.\u001b[39;49mmodel,\n\u001b[1;32m    940\u001b[0m         [first_state, \u001b[39m*\u001b[39;49mstates],\n\u001b[1;32m    941\u001b[0m         \u001b[39mself\u001b[39;49m\u001b[39m.\u001b[39;49mcurrent_scalers,\n\u001b[1;32m    942\u001b[0m         max_atoms\u001b[39m=\u001b[39;49m\u001b[39mself\u001b[39;49m\u001b[39m.\u001b[39;49mmax_atoms_to_try,\n\u001b[1;32m    943\u001b[0m         scale_factor\u001b[39m=\u001b[39;49m\u001b[39mself\u001b[39;49m\u001b[39m.\u001b[39;49mmemory_scaling_factor,\n\u001b[1;32m    944\u001b[0m     )\n\u001b[1;32m    945\u001b[0m     \u001b[39mprint\u001b[39m(\u001b[39mf\u001b[39m\u001b[39m\"\u001b[39m\u001b[39mMax metric calculated: \u001b[39m\u001b[39m{\u001b[39;00m\u001b[39mself\u001b[39m\u001b[39m.\u001b[39mmax_memory_scaler\u001b[39m}\u001b[39;00m\u001b[39m\"\u001b[39m)\n\u001b[1;32m    946\u001b[0m \u001b[39mreturn\u001b[39;00m concatenate_states([first_state, \u001b[39m*\u001b[39mstates])\n",
+      "File \u001b[0;32m/workspaces/propfoliotorchsim/torch-sim/torch_sim/autobatching.py:410\u001b[0m, in \u001b[0;36mestimate_max_memory_scaler\u001b[0;34m(model, state_list, metric_values, **kwargs)\u001b[0m\n\u001b[1;32m    403\u001b[0m logging\u001b[39m.\u001b[39minfo(  \u001b[39m# noqa: LOG015\u001b[39;00m\n\u001b[1;32m    404\u001b[0m     \u001b[39m\"\u001b[39m\u001b[39mModel Memory Estimation: Estimating memory from worst case of \u001b[39m\u001b[39m\"\u001b[39m\n\u001b[1;32m    405\u001b[0m     \u001b[39mf\u001b[39m\u001b[39m\"\u001b[39m\u001b[39mlargest and smallest system. Largest system has \u001b[39m\u001b[39m{\u001b[39;00mmax_state\u001b[39m.\u001b[39mn_atoms\u001b[39m}\u001b[39;00m\u001b[39m atoms \u001b[39m\u001b[39m\"\u001b[39m\n\u001b[1;32m    406\u001b[0m     \u001b[39mf\u001b[39m\u001b[39m\"\u001b[39m\u001b[39mand \u001b[39m\u001b[39m{\u001b[39;00mmax_state\u001b[39m.\u001b[39mn_batches\u001b[39m}\u001b[39;00m\u001b[39m batches, and smallest system has \u001b[39m\u001b[39m\"\u001b[39m\n\u001b[1;32m    407\u001b[0m     \u001b[39mf\u001b[39m\u001b[39m\"\u001b[39m\u001b[39m{\u001b[39;00mmin_state\u001b[39m.\u001b[39mn_atoms\u001b[39m}\u001b[39;00m\u001b[39m atoms and \u001b[39m\u001b[39m{\u001b[39;00mmin_state\u001b[39m.\u001b[39mn_batches\u001b[39m}\u001b[39;00m\u001b[39m batches.\u001b[39m\u001b[39m\"\u001b[39m,\n\u001b[1;32m    408\u001b[0m )\n\u001b[1;32m    409\u001b[0m min_state_max_batches \u001b[39m=\u001b[39m determine_max_batch_size(min_state, model, \u001b[39m*\u001b[39m\u001b[39m*\u001b[39mkwargs)\n\u001b[0;32m--> 410\u001b[0m max_state_max_batches \u001b[39m=\u001b[39m determine_max_batch_size(max_state, model, \u001b[39m*\u001b[39;49m\u001b[39m*\u001b[39;49mkwargs)\n\u001b[1;32m    412\u001b[0m \u001b[39mreturn\u001b[39;00m \u001b[39mmin\u001b[39m(min_state_max_batches \u001b[39m*\u001b[39m min_metric, max_state_max_batches \u001b[39m*\u001b[39m max_metric)\n",
+      "File \u001b[0;32m/workspaces/propfoliotorchsim/torch-sim/torch_sim/autobatching.py:297\u001b[0m, in \u001b[0;36mdetermine_max_batch_size\u001b[0;34m(state, model, max_atoms, start_size, scale_factor)\u001b[0m\n\u001b[1;32m    295\u001b[0m \u001b[39mfor\u001b[39;00m i \u001b[39min\u001b[39;00m \u001b[39mrange\u001b[39m(\u001b[39mlen\u001b[39m(sizes)):\n\u001b[1;32m    296\u001b[0m     n_batches \u001b[39m=\u001b[39m sizes[i]\n\u001b[0;32m--> 297\u001b[0m     concat_state \u001b[39m=\u001b[39m concatenate_states([state] \u001b[39m*\u001b[39;49m n_batches)\n\u001b[1;32m    299\u001b[0m     \u001b[39mtry\u001b[39;00m:\n\u001b[1;32m    300\u001b[0m         measure_model_memory_forward(concat_state, model)\n",
+      "File \u001b[0;32m/workspaces/propfoliotorchsim/torch-sim/torch_sim/state.py:833\u001b[0m, in \u001b[0;36mconcatenate_states\u001b[0;34m(states, device)\u001b[0m\n\u001b[1;32m    829\u001b[0m target_device \u001b[39m=\u001b[39m device \u001b[39mor\u001b[39;00m first_state\u001b[39m.\u001b[39mdevice\n\u001b[1;32m    831\u001b[0m \u001b[39m# Get property scopes from the first state to identify\u001b[39;00m\n\u001b[1;32m    832\u001b[0m \u001b[39m# global/per-atom/per-batch properties\u001b[39;00m\n\u001b[0;32m--> 833\u001b[0m first_scope \u001b[39m=\u001b[39m infer_property_scope(first_state)\n\u001b[1;32m    834\u001b[0m global_props \u001b[39m=\u001b[39m \u001b[39mset\u001b[39m(first_scope[\u001b[39m\"\u001b[39m\u001b[39mglobal\u001b[39m\u001b[39m\"\u001b[39m])\n\u001b[1;32m    835\u001b[0m per_atom_props \u001b[39m=\u001b[39m \u001b[39mset\u001b[39m(first_scope[\u001b[39m\"\u001b[39m\u001b[39mper_atom\u001b[39m\u001b[39m\"\u001b[39m])\n",
+      "File \u001b[0;32m/workspaces/propfoliotorchsim/torch-sim/torch_sim/state.py:502\u001b[0m, in \u001b[0;36minfer_property_scope\u001b[0;34m(state, ambiguous_handling)\u001b[0m\n\u001b[1;32m    497\u001b[0m \u001b[39m# TODO: this cannot effectively resolve global properties with\u001b[39;00m\n\u001b[1;32m    498\u001b[0m \u001b[39m# length of n_atoms or n_batches, they will be classified incorrectly,\u001b[39;00m\n\u001b[1;32m    499\u001b[0m \u001b[39m# no clear fix\u001b[39;00m\n\u001b[1;32m    501\u001b[0m \u001b[39mif\u001b[39;00m state\u001b[39m.\u001b[39mn_atoms \u001b[39m==\u001b[39m state\u001b[39m.\u001b[39mn_batches:\n\u001b[0;32m--> 502\u001b[0m     \u001b[39mraise\u001b[39;00m \u001b[39mValueError\u001b[39;00m(\n\u001b[1;32m    503\u001b[0m         \u001b[39mf\u001b[39m\u001b[39m\"\u001b[39m\u001b[39mn_atoms (\u001b[39m\u001b[39m{\u001b[39;00mstate\u001b[39m.\u001b[39mn_atoms\u001b[39m}\u001b[39;00m\u001b[39m) and n_batches (\u001b[39m\u001b[39m{\u001b[39;00mstate\u001b[39m.\u001b[39mn_batches\u001b[39m}\u001b[39;00m\u001b[39m) are equal, \u001b[39m\u001b[39m\"\u001b[39m\n\u001b[1;32m    504\u001b[0m         \u001b[39m\"\u001b[39m\u001b[39mwhich means shapes cannot be inferred unambiguously.\u001b[39m\u001b[39m\"\u001b[39m\n\u001b[1;32m    505\u001b[0m     )\n\u001b[1;32m    507\u001b[0m scope \u001b[39m=\u001b[39m {\n\u001b[1;32m    508\u001b[0m     \u001b[39m\"\u001b[39m\u001b[39mglobal\u001b[39m\u001b[39m\"\u001b[39m: [],\n\u001b[1;32m    509\u001b[0m     \u001b[39m\"\u001b[39m\u001b[39mper_atom\u001b[39m\u001b[39m\"\u001b[39m: [],\n\u001b[1;32m    510\u001b[0m     \u001b[39m\"\u001b[39m\u001b[39mper_batch\u001b[39m\u001b[39m\"\u001b[39m: [],\n\u001b[1;32m    511\u001b[0m }\n\u001b[1;32m    513\u001b[0m \u001b[39m# Iterate through all attributes\u001b[39;00m\n",
+      "\u001b[0;31mValueError\u001b[0m: n_atoms (1) and n_batches (1) are equal, which means shapes cannot be inferred unambiguously."
+     ]
+    }
+   ],
+   "source": [
+    "# --- Main Optimization Loop ---\n",
+    "batcher.load_states(fire_states)\n",
+    "all_completed_states, convergence_tensor, state = [], None, None\n",
+    "while (result := batcher.next_batch(state, convergence_tensor))[0] is not None:\n",
+    "    state, completed_states = result\n",
+    "    print(f\"Starting new batch of {state.n_batches} states.\")\n",
+    "\n",
+    "    all_completed_states.extend(completed_states)\n",
+    "    print(\"Total number of completed states\", len(all_completed_states))\n",
+    "\n",
+    "    for _step in range(10):\n",
+    "        state = fire_update(state)\n",
+    "    convergence_tensor = converge_max_force(state, last_energy=None)\n",
+    "all_completed_states.extend(result[1])\n",
+    "print(\"Total number of completed states\", len(all_completed_states))\n",
+    "\n",
+    "# --- Final Statistics ---\n",
+    "end_time = time.perf_counter()\n",
+    "total_time = end_time - start_time\n",
+    "print(f\"Total time taken: {total_time:.2f} seconds\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "a5fced48-964f-4516-bf71-4877b49cc7df",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "2"
+      ]
+     },
+     "execution_count": 4,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "len(al_atoms)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "c45802b0-a644-4e43-81be-e71ecc94e885",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "1"
+      ]
+     },
+     "execution_count": 5,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "len(fe_atoms)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "9e6a723f-299c-4333-b02f-ce098cf6d42b",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "job will run on device=device(type='cuda')\n",
+      "Loading MACE model...\n",
+      "Using medium MPA-0 model as default MACE-MP model, to use previous (before 3.10) default model please specify 'medium' as model argument\n",
+      "Using Materials Project MACE for MACECalculator with /home/ray/.cache/mace/macempa0mediummodel\n",
+      "Using float32 for MACECalculator, which is faster but less accurate. Recommended for MD. Use float64 for geometry optimization.\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "/workspaces/propfoliotorchsim/propfolio/.venv/lib/python3.12/site-packages/mace/calculators/foundations_models.py:169: UserWarning: Environment variable TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD detected, since the`weights_only` argument was not explicitly passed to `torch.load`, forcing weights_only=False.\n",
+      "  return torch.load(model_path, map_location=device)\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Loading 2 structures...\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "/workspaces/propfoliotorchsim/torch-sim/torch_sim/models/mace.py:175: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).\n",
+      "  self.model.atomic_numbers = torch.tensor(\n"
+     ]
+    }
+   ],
+   "source": [
+    "import os\n",
+    "import time\n",
+    "\n",
+    "import numpy as np\n",
+    "import torch\n",
+    "from mace.calculators.foundations_models import mace_mp\n",
+    "\n",
+    "import torch_sim as ts\n",
+    "\n",
+    "\n",
+    "# --- Setup and Configuration ---\n",
+    "# Device and data type configuration\n",
+    "device = torch.device(\"cpu\") if os.getenv(\"CI\") else torch.device(\"cuda\")\n",
+    "dtype = torch.float32\n",
+    "print(f\"job will run on {device=}\")\n",
+    "\n",
+    "# --- Model Initialization ---\n",
+    "print(\"Loading MACE model...\")\n",
+    "mace_checkpoint_url = \"https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model\"\n",
+    "mace = mace_mp(model=mace_checkpoint_url, return_raw_model=True)\n",
+    "mace_model = ts.models.MaceModel(\n",
+    "    model=mace,\n",
+    "    device=device,\n",
+    "    dtype=dtype,\n",
+    "    compute_forces=True,\n",
+    ")\n",
+    "\n",
+    "# Optimization parameters\n",
+    "fmax = 0.05  # Force convergence threshold\n",
+    "n_steps = 10 if os.getenv(\"CI\") else 200_000_000\n",
+    "max_atoms_in_batch = 50 if os.getenv(\"CI\") else 8_000\n",
+    "\n",
+    "# --- Data Loading ---\n",
+    "if not True:\n",
+    "    n_structures_to_relax = 100\n",
+    "    print(f\"Loading {n_structures_to_relax:,} structures...\")\n",
+    "    from matbench_discovery.data import DataFiles, ase_atoms_from_zip\n",
+    "\n",
+    "    ase_atoms_list = ase_atoms_from_zip(\n",
+    "        DataFiles.wbm_initial_atoms.path, limit=n_structures_to_relax\n",
+    "    )\n",
+    "else:\n",
+    "    n_structures_to_relax = 2\n",
+    "    print(f\"Loading {n_structures_to_relax:,} structures...\")\n",
+    "    from ase.build import bulk\n",
+    "\n",
+    "    al_atoms = bulk(\"Al\", \"hcp\", a=4.05)\n",
+    "    al_atoms.positions += 0.1 * np.random.randn(*al_atoms.positions.shape)\n",
+    "    fe_atoms = bulk(\"Fe\", \"bcc\", a=2.86).repeat((2, 2, 2))\n",
+    "    fe_atoms.positions += 0.1 * np.random.randn(*fe_atoms.positions.shape)\n",
+    "    ase_atoms_list = [al_atoms, fe_atoms]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "76b32821-543c-4380-b44c-f2f23947ec78",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "8"
+      ]
+     },
+     "execution_count": 7,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "len(fe_atoms)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "f10afde7-35e2-4f05-9f5e-3807af1ce3f5",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# --- Optimization Setup ---\n",
+    "# Statistics tracking\n",
+    "\n",
+    "# Initialize first batch\n",
+    "fire_init, fire_update = ts.optimizers.frechet_cell_fire(model=mace_model)\n",
+    "fire_states = fire_init(\n",
+    "    ts.io.atoms_to_state(atoms=ase_atoms_list, device=device, dtype=dtype)\n",
+    ")\n",
+    "\n",
+    "batcher = ts.autobatching.InFlightAutoBatcher(\n",
+    "    model=mace_model,\n",
+    "    memory_scales_with=\"n_atoms_x_density\",\n",
+    "    max_memory_scaler=1000 if os.getenv(\"CI\") else None,\n",
+    ")\n",
+    "converge_max_force = ts.runners.generate_force_convergence_fn(force_tol=0.05)\n",
+    "\n",
+    "start_time = time.perf_counter()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "6f7eff0c-7397-43dc-b6d6-4c3f68363fd6",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Max metric calculated: 404571.15625\n",
+      "Starting new batch of 2 states.\n",
+      "Total number of completed states 0\n",
+      "Starting new batch of 1 states.\n",
+      "Total number of completed states 1\n",
+      "Starting new batch of 1 states.\n",
+      "Total number of completed states 1\n",
+      "Starting new batch of 1 states.\n",
+      "Total number of completed states 1\n",
+      "Starting new batch of 1 states.\n",
+      "Total number of completed states 1\n",
+      "Total number of completed states 2\n",
+      "Total time taken: 78.69 seconds\n"
+     ]
+    }
+   ],
+   "source": [
+    "# --- Main Optimization Loop ---\n",
+    "batcher.load_states(fire_states)\n",
+    "all_completed_states, convergence_tensor, state = [], None, None\n",
+    "while (result := batcher.next_batch(state, convergence_tensor))[0] is not None:\n",
+    "    state, completed_states = result\n",
+    "    print(f\"Starting new batch of {state.n_batches} states.\")\n",
+    "\n",
+    "    all_completed_states.extend(completed_states)\n",
+    "    print(\"Total number of completed states\", len(all_completed_states))\n",
+    "\n",
+    "    for _step in range(10):\n",
+    "        state = fire_update(state)\n",
+    "    convergence_tensor = converge_max_force(state, last_energy=None)\n",
+    "all_completed_states.extend(result[1])\n",
+    "print(\"Total number of completed states\", len(all_completed_states))\n",
+    "\n",
+    "# --- Final Statistics ---\n",
+    "end_time = time.perf_counter()\n",
+    "total_time = end_time - start_time\n",
+    "print(f\"Total time taken: {total_time:.2f} seconds\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "No kernel connected"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": ".venv",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "name": "python",
+   "version": "3.12.9"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}

@@ -3,12 +3,12 @@
 This module provides utilities for efficient batch processing of simulation states
 by dynamically determining optimal batch sizes based on GPU memory constraints.
 It includes tools for memory usage estimation, batch size determination, and
-two complementary strategies for batching: chunking and hot-swapping.
+two complementary strategies for batching: binning and hot-swapping.
 
 Example:
-    Using ChunkingAutoBatcher with a model::
+    Using BinningAutoBatcher with a model::
 
-        batcher = ChunkingAutoBatcher(model, memory_scales_with="n_atoms")
+        batcher = BinningAutoBatcher(model, memory_scales_with="n_atoms")
         batcher.load_states(states)
         final_states = []
         for batch in batcher:
@@ -412,7 +412,7 @@ def estimate_max_memory_scaler(
     return min(min_state_max_batches * min_metric, max_state_max_batches * max_metric)
 
 
-class ChunkingAutoBatcher:
+class BinningAutoBatcher:
     """Batcher that groups states into bins of similar computational cost.
 
     Divides a collection of states into batches that can be processed efficiently
@@ -440,7 +440,7 @@ class ChunkingAutoBatcher:
     Example::
 
         # Create a batcher with a Lennard-Jones model
-        batcher = ChunkingAutoBatcher(
+        batcher = BinningAutoBatcher(
             model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=1000.0
         )
 
@@ -464,7 +464,7 @@ class ChunkingAutoBatcher:
         max_atoms_to_try: int = 500_000,
         memory_scaling_factor: float = 1.6,
     ) -> None:
-        """Initialize the chunking auto-batcher.
+        """Initialize the binning auto-batcher.
 
         Args:
             model (ModelInterface): Model to batch for, used to estimate memory
@@ -694,7 +694,7 @@ class ChunkingAutoBatcher:
         return [state for _, state in sorted(indexed_states, key=lambda x: x[0])]
 
 
-class HotSwappingAutoBatcher:
+class InFlightAutoBatcher:
     """Batcher that dynamically swaps states based on convergence.
 
     Optimizes GPU utilization by removing converged states from the batch and
@@ -725,7 +725,7 @@ class HotSwappingAutoBatcher:
     Example::
 
         # Create a hot-swapping batcher
-        batcher = HotSwappingAutoBatcher(
+        batcher = InFlightAutoBatcher(
             model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=1000.0
         )
 
@@ -799,7 +799,7 @@ class HotSwappingAutoBatcher:
 
         Processes the input states, computes memory scaling metrics for each,
         and prepares them for dynamic batching based on convergence criteria.
-        Unlike ChunkingAutoBatcher, this doesn't create fixed batches upfront.
+        Unlike BinningAutoBatcher, this doesn't create fixed batches upfront.
 
         Args:
             states (list[SimState] | Iterator[SimState] | SimState): Collection of
@@ -957,7 +957,7 @@ class HotSwappingAutoBatcher:
 
         Removes converged states from the batch, adds new states if possible,
         and returns both the updated batch and the completed states. This method
-        implements the core dynamic batching strategy of the HotSwappingAutoBatcher.
+        implements the core dynamic batching strategy of the InFlightAutoBatcher.
 
         Args:
             updated_state (SimState | None): Current state after processing, or None
