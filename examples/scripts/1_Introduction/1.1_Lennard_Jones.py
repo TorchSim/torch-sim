@@ -10,6 +10,7 @@ import itertools
 
 import torch
 
+from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 
 
@@ -69,6 +70,8 @@ model = UnbatchedLennardJonesModel(
     dtype=dtype,
     compute_forces=True,
     compute_stress=True,
+    per_atom_energies=True,
+    per_atom_stresses=True,
 )
 
 # Print system information
@@ -88,3 +91,37 @@ results = model(state)
 print(f"Energy: {results['energy']}")
 print(f"Forces: {results['forces']}")
 print(f"Stress: {results['stress']}")
+print(f"Energies: {results['energies']}")
+print(f"Stresses: {results['stresses']}")
+
+# Batched model
+batched_model = LennardJonesModel(
+    use_neighbor_list=True,
+    cutoff=2.5 * 3.405,
+    sigma=3.405,
+    epsilon=0.0104,
+    device=device,
+    dtype=dtype,
+    compute_forces=True,
+    compute_stress=True,
+    per_atom_energies=True,
+    per_atom_stresses=True,
+)
+
+# Batched state
+state = dict(
+    positions=positions,
+    cell=cell.unsqueeze(0),
+    atomic_numbers=atomic_numbers,
+    pbc=True,
+)
+
+# Run the simulation and get results
+results = batched_model(state)
+
+# Print the results
+print(f"Energy: {results['energy']}")
+print(f"Forces: {results['forces']}")
+print(f"Stress: {results['stress']}")
+print(f"Energies: {results['energies']}")
+print(f"Stresses: {results['stresses']}")
