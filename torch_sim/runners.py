@@ -61,7 +61,7 @@ def _configure_batches_iterator(
     model: ModelInterface,
     state: SimState,
     autobatcher: BinningAutoBatcher | bool,
-) -> BinningAutoBatcher:
+) -> BinningAutoBatcher | list[tuple[SimState, list[int]]]:
     """Create a batches iterator for the integrate function.
 
     Args:
@@ -144,8 +144,8 @@ def integrate(
         dt=torch.tensor(timestep * unit_system.time, dtype=dtype, device=device),
         **integrator_kwargs,
     )
-    # state = init_fn(state)
 
+    # batch_iterator will be a list if autobatcher is False
     batch_iterator = _configure_batches_iterator(model, state, autobatcher)
     trajectory_reporter = _configure_reporter(
         trajectory_reporter,
