@@ -24,7 +24,7 @@
 ### House-Keeping 🧹
 * Only install HF for fairchem tests, https://github.com/Radical-AI/torch-sim/pull/134 @CompRhys
 * Don't download MBD in CI, https://github.com/Radical-AI/torch-sim/pull/135 @orionarcher
-* Tigthen graph-pes test bounds, https://github.com/Radical-AI/torch-sim/pull/143 @orionarcher
+* Tighten graph-pes test bounds, https://github.com/Radical-AI/torch-sim/pull/143 @orionarcher
 
 ## v0.1.0
 
