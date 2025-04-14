@@ -68,7 +68,7 @@ fire_states = fire_init(
     ts.io.atoms_to_state(atoms=ase_atoms_list, device=device, dtype=dtype)
 )
 
-batcher = ts.autobatching.HotSwappingAutoBatcher(
+batcher = ts.autobatching.InFlightAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms_x_density",
     max_memory_scaler=1000 if os.getenv("CI") else None,

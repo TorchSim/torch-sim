@@ -12,7 +12,7 @@ from itertools import chain
 
 import torch
 
-from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
+from torch_sim.autobatching import BinningAutoBatcher, InFlightAutoBatcher
 from torch_sim.models.interface import ModelInterface
 from torch_sim.quantities import batchwise_max_force, calc_kinetic_energy, calc_kT
 from torch_sim.state import SimState, StateLike, concatenate_states, initialize_state
@@ -60,27 +60,27 @@ def _configure_reporter(
 def _configure_batches_iterator(
     model: ModelInterface,
     state: SimState,
-    autobatcher: ChunkingAutoBatcher | bool,
-) -> ChunkingAutoBatcher:
+    autobatcher: BinningAutoBatcher | bool,
+) -> BinningAutoBatcher:
     """Create a batches iterator for the integrate function.
 
     Args:
         model (ModelInterface): The model to use for the integration
         state (SimState): The state to use for the integration
-        autobatcher (ChunkingAutoBatcher | bool): The autobatcher to use for integration
+        autobatcher (BinningAutoBatcher | bool): The autobatcher to use for integration
 
     Returns:
         A batches iterator
     """
     # load and properly configure the autobatcher
     if autobatcher is True:
-        autobatcher = ChunkingAutoBatcher(
+        autobatcher = BinningAutoBatcher(
             model=model,
             return_indices=True,
         )
         autobatcher.load_states(state)
         batches = autobatcher
-    elif isinstance(autobatcher, ChunkingAutoBatcher):
+    elif isinstance(autobatcher, BinningAutoBatcher):
         autobatcher.load_states(state)
         autobatcher.return_indices = True
         batches = autobatcher
@@ -89,7 +89,7 @@ def _configure_batches_iterator(
     else:
         raise ValueError(
             f"Invalid autobatcher type: {type(autobatcher).__name__}, "
-            "must be bool or ChunkingAutoBatcher."
+            "must be bool or BinningAutoBatcher."
         )
     return batches
 
@@ -103,7 +103,7 @@ def integrate(
     temperature: float | list | torch.Tensor,
     timestep: float,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
-    autobatcher: ChunkingAutoBatcher | bool = False,
+    autobatcher: BinningAutoBatcher | bool = False,
     **integrator_kwargs: dict,
 ) -> SimState:
     """Simulate a system using a model and integrator.
@@ -120,7 +120,7 @@ def integrate(
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
             tracking trajectory. If a dict, will be passed to the TrajectoryReporter
             constructor.
-        autobatcher (ChunkingAutoBatcher | bool): Optional autobatcher to use
+        autobatcher (BinningAutoBatcher | bool): Optional autobatcher to use
         **integrator_kwargs: Additional keyword arguments for integrator init function
 
     Returns:
@@ -177,25 +177,25 @@ def integrate(
     if trajectory_reporter:
         trajectory_reporter.finish()
 
-    if isinstance(batch_iterator, ChunkingAutoBatcher):
+    if isinstance(batch_iterator, BinningAutoBatcher):
         reordered_states = batch_iterator.restore_original_order(final_states)
         return concatenate_states(reordered_states)
 
     return state
 
 
-def _configure_hot_swapping_autobatcher(
+def _configure_in_flight_autobatcher(
     model: ModelInterface,
     state: SimState,
-    autobatcher: HotSwappingAutoBatcher | bool,
+    autobatcher: InFlightAutoBatcher | bool,
     max_attempts: int,  # TODO: change name to max_iterations
-) -> HotSwappingAutoBatcher:
+) -> InFlightAutoBatcher:
     """Configure the hot swapping autobatcher for the optimize function.
 
     Args:
         model (ModelInterface): The model to use for the autobatcher
         state (SimState): The state to use for the autobatcher
-        autobatcher (HotSwappingAutoBatcher | bool): The autobatcher to use for the
+        autobatcher (InFlightAutoBatcher | bool): The autobatcher to use for the
             autobatcher
         max_attempts (int): The maximum number of attempts for the autobatcher
 
@@ -203,7 +203,7 @@ def _configure_hot_swapping_autobatcher(
         A hot swapping autobatcher
     """
     # load and properly configure the autobatcher
-    if isinstance(autobatcher, HotSwappingAutoBatcher):
+    if isinstance(autobatcher, InFlightAutoBatcher):
         autobatcher.return_indices = True
         autobatcher.max_attempts = max_attempts
     else:
@@ -213,7 +213,7 @@ def _configure_hot_swapping_autobatcher(
         else:
             memory_scales_with = "n_atoms"
             max_memory_scaler = state.n_atoms + 1
-        autobatcher = HotSwappingAutoBatcher(
+        autobatcher = InFlightAutoBatcher(
             model=model,
             return_indices=True,
             max_memory_scaler=max_memory_scaler,
@@ -243,7 +243,7 @@ def _chunked_apply(
     Returns:
         A state with the function applied
     """
-    autobatcher = ChunkingAutoBatcher(
+    autobatcher = BinningAutoBatcher(
         model=model,
         return_indices=False,
         **batcher_kwargs,
@@ -308,7 +308,7 @@ def optimize(
     optimizer: Callable,
     convergence_fn: Callable | None = None,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
-    autobatcher: HotSwappingAutoBatcher | bool = False,
+    autobatcher: InFlightAutoBatcher | bool = False,
     max_steps: int = 10_000,
     steps_between_swaps: int = 5,
     **optimizer_kwargs: dict,
@@ -326,11 +326,11 @@ def optimize(
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
             tracking optimization trajectory. If a dict, will be passed to the
             TrajectoryReporter constructor.
-        autobatcher (HotSwappingAutoBatcher | bool): Optional autobatcher to use. If
+        autobatcher (InFlightAutoBatcher | bool): Optional autobatcher to use. If
             False, the system will assume
             infinite memory and will not batch, but will still remove converged
             structures from the batch. If True, the system will estimate the memory
-            available and batch accordingly. If a HotSwappingAutoBatcher, the system
+            available and batch accordingly. If a InFlightAutoBatcher, the system
             will use the provided autobatcher, but will reset the max_attempts to
             max_steps // steps_between_swaps.
         max_steps (int): Maximum number of total optimization steps
@@ -350,7 +350,7 @@ def optimize(
     init_fn, update_fn = optimizer(model=model, **optimizer_kwargs)
 
     max_attempts = max_steps // steps_between_swaps
-    autobatcher = _configure_hot_swapping_autobatcher(
+    autobatcher = _configure_in_flight_autobatcher(
         model, state, autobatcher, max_attempts
     )
     state = _chunked_apply(
@@ -412,7 +412,7 @@ def static(
     model: ModelInterface,
     *,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
-    autobatcher: ChunkingAutoBatcher | bool = False,
+    autobatcher: BinningAutoBatcher | bool = False,
 ) -> list[dict[str, torch.Tensor]]:
     """Run single point calculations on a batch of systems.
 
@@ -433,7 +433,7 @@ def static(
             Make sure that if multiple unique states are used, that the
             `variable_atomic_numbers` and `variable_masses` are set to `True` in the
             `state_kwargs` argument.
-        autobatcher (ChunkingAutoBatcher | bool): Optional autobatcher to use for
+        autobatcher (BinningAutoBatcher | bool): Optional autobatcher to use for
             batching calculations
 
     Returns:
@@ -491,7 +491,7 @@ def static(
 
     trajectory_reporter.finish()
 
-    if isinstance(batch_iterator, ChunkingAutoBatcher):
+    if isinstance(batch_iterator, BinningAutoBatcher):
         # reorder properties to match original order of states
         original_indices = list(chain.from_iterable(batch_iterator.index_bins))
         return [all_props[idx] for idx in original_indices]

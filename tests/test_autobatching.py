@@ -4,8 +4,8 @@ import pytest
 import torch
 
 from torch_sim.autobatching import (
-    ChunkingAutoBatcher,
-    HotSwappingAutoBatcher,
+    BinningAutoBatcher,
+    InFlightAutoBatcher,
     calculate_memory_scaler,
     determine_max_batch_size,
     to_constant_volume_bins,
@@ -124,15 +124,15 @@ def test_split_state(si_double_sim_state: SimState) -> None:
         assert state[1].cell.shape[0] == 1
 
 
-def test_chunking_auto_batcher(
+def test_binning_auto_batcher(
     si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
-    """Test ChunkingAutoBatcher with different states."""
+    """Test BinningAutoBatcher with different states."""
     # Create a list of states with different sizes
     states = [si_sim_state, fe_supercell_sim_state]
 
     # Initialize the batcher with a fixed max_metric to avoid GPU memory testing
-    batcher = ChunkingAutoBatcher(
+    batcher = BinningAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260.0,  # Set a small value to force multiple batches
@@ -163,13 +163,13 @@ def test_chunking_auto_batcher(
     assert torch.all(restored_states[1].atomic_numbers == states[1].atomic_numbers)
 
 
-def test_chunking_auto_batcher_with_indices(
+def test_binning_auto_batcher_with_indices(
     si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
-    """Test ChunkingAutoBatcher with return_indices=True."""
+    """Test BinningAutoBatcher with return_indices=True."""
     states = [si_sim_state, fe_supercell_sim_state]
 
-    batcher = ChunkingAutoBatcher(
+    batcher = BinningAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260.0,
@@ -190,15 +190,15 @@ def test_chunking_auto_batcher_with_indices(
         assert indices == batcher.index_bins[i]
 
 
-def test_chunking_auto_batcher_restore_order_with_split_states(
+def test_binning_auto_batcher_restore_order_with_split_states(
     si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
-    """Test ChunkingAutoBatcher's restore_original_order method with split states."""
+    """Test BinningAutoBatcher's restore_original_order method with split states."""
     # Create a list of states with different sizes
     states = [si_sim_state, fe_supercell_sim_state]
 
     # Initialize the batcher with a fixed max_metric to avoid GPU memory testing
-    batcher = ChunkingAutoBatcher(
+    batcher = BinningAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260.0,  # Set a small value to force multiple batches
@@ -231,15 +231,15 @@ def test_chunking_auto_batcher_restore_order_with_split_states(
     assert torch.all(restored_states[1].atomic_numbers == states[1].atomic_numbers)
 
 
-def test_hot_swapping_max_metric_too_small(
+def test_in_flight_max_metric_too_small(
     si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
-    """Test HotSwappingAutoBatcher with different states."""
+    """Test InFlightAutoBatcher with different states."""
     # Create a list of states
     states = [si_sim_state, fe_supercell_sim_state]
 
     # Initialize the batcher with a fixed max_metric
-    batcher = HotSwappingAutoBatcher(
+    batcher = InFlightAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=1.0,  # Set a small value to force multiple batches
@@ -249,15 +249,15 @@ def test_hot_swapping_max_metric_too_small(
         batcher.load_states(states)
 
 
-def test_hot_swapping_auto_batcher(
+def test_in_flight_auto_batcher(
     si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
-    """Test HotSwappingAutoBatcher with different states."""
+    """Test InFlightAutoBatcher with different states."""
     # Create a list of states
     states = [si_sim_state, fe_supercell_sim_state]
 
     # Initialize the batcher with a fixed max_metric
-    batcher = HotSwappingAutoBatcher(
+    batcher = InFlightAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260,  # Set a small value to force multiple batches
@@ -317,13 +317,13 @@ def test_determine_max_batch_size_fibonacci(
     assert max_size == 8
 
 
-def test_hot_swapping_auto_batcher_restore_order(
+def test_in_flight_auto_batcher_restore_order(
     si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
-    """Test HotSwappingAutoBatcher's restore_original_order method."""
+    """Test InFlightAutoBatcher's restore_original_order method."""
     states = [si_sim_state, fe_supercell_sim_state]
 
-    batcher = HotSwappingAutoBatcher(
+    batcher = InFlightAutoBatcher(
         model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=260.0
     )
     batcher.load_states(states)
@@ -361,7 +361,7 @@ def test_hot_swapping_auto_batcher_restore_order(
     #     batcher.restore_original_order([si_sim_state])
 
 
-def test_hot_swapping_with_fire(
+def test_in_flight_with_fire(
     si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     fire_init, fire_update = unit_cell_fire(lj_model)
@@ -374,7 +374,7 @@ def test_hot_swapping_with_fire(
     for state in fire_states:
         state.positions += torch.randn_like(state.positions) * 0.01
 
-    batcher = HotSwappingAutoBatcher(
+    batcher = InFlightAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         # max_metric=400_000,
@@ -411,7 +411,7 @@ def test_hot_swapping_with_fire(
     assert len(all_completed_states) == len(fire_states)
 
 
-def test_chunking_auto_batcher_with_fire(
+def test_binning_auto_batcher_with_fire(
     si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     fire_init, fire_update = unit_cell_fire(lj_model)
@@ -428,7 +428,7 @@ def test_chunking_auto_batcher_with_fire(
     optimal_batches = to_constant_volume_bins(batch_lengths, 400)
     optimal_n_batches = len(optimal_batches)
 
-    batcher = ChunkingAutoBatcher(
+    batcher = BinningAutoBatcher(
         model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=400
     )
     batcher.load_states(fire_states)
@@ -450,18 +450,18 @@ def test_chunking_auto_batcher_with_fire(
     assert n_batches == optimal_n_batches
 
 
-def test_hot_swapping_max_iterations(
+def test_in_flight_max_iterations(
     si_sim_state: SimState,
     fe_supercell_sim_state: SimState,
     lj_model: LennardJonesModel,
 ) -> None:
-    """Test HotSwappingAutoBatcher with max_iterations limit."""
+    """Test InFlightAutoBatcher with max_iterations limit."""
     # Create states that won't naturally converge
     states = [si_sim_state.clone(), fe_supercell_sim_state.clone()]
 
     # Set max_attempts to a small value to ensure quick termination
     max_attempts = 3
-    batcher = HotSwappingAutoBatcher(
+    batcher = InFlightAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=800.0,

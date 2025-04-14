@@ -18,8 +18,8 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
 from torch_sim.autobatching import (
-    ChunkingAutoBatcher,
-    HotSwappingAutoBatcher,
+    BinningAutoBatcher,
+    InFlightAutoBatcher,
     calculate_memory_scaler,
 )
 from torch_sim.integrators import nvt_langevin
@@ -65,7 +65,7 @@ len(fire_states)
 # %% TODO: add max steps
 converge_max_force = generate_force_convergence_fn(force_tol=1e-1)
 single_system_memory = calculate_memory_scaler(fire_states[0])
-batcher = HotSwappingAutoBatcher(
+batcher = InFlightAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms_x_density",
     max_memory_scaler=single_system_memory * 2.5 if os.getenv("CI") else None,
@@ -86,7 +86,7 @@ all_completed_states.extend(result[1])
 print("Total number of completed states", len(all_completed_states))
 
 
-# %% run chunking autobatcher
+# %% run binning autobatcher
 nvt_init, nvt_update = nvt_langevin(
     model=mace_model, dt=0.001, kT=300 * MetalUnits.temperature
 )
@@ -105,7 +105,7 @@ for state in nvt_states:
 
 
 single_system_memory = calculate_memory_scaler(fire_states[0])
-batcher = ChunkingAutoBatcher(
+batcher = BinningAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms_x_density",
     max_memory_scaler=single_system_memory * 2.5 if os.getenv("CI") else None,
