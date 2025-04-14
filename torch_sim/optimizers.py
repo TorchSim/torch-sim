@@ -446,6 +446,253 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
 
 
 @dataclass
+class FireState(SimState):
+    """State information for batched FIRE optimization.
+
+    This class extends SimState to store and track the system state during FIRE
+    (Fast Inertial Relaxation Engine) optimization. It maintains the atomic
+    parameters along with their velocities and forces for structure relaxation using
+    the FIRE algorithm.
+
+    Attributes:
+        # Inherited from SimState
+        positions (torch.Tensor): Atomic positions with shape [n_atoms, 3]
+        masses (torch.Tensor): Atomic masses with shape [n_atoms]
+        cell (torch.Tensor): Unit cell vectors with shape [n_batches, 3, 3]
+        pbc (bool): Whether to use periodic boundary conditions
+        atomic_numbers (torch.Tensor): Atomic numbers with shape [n_atoms]
+        batch (torch.Tensor): Batch indices with shape [n_atoms]
+
+        # Atomic quantities
+        forces (torch.Tensor): Forces on atoms with shape [n_atoms, 3]
+        velocities (torch.Tensor): Atomic velocities with shape [n_atoms, 3]
+        energy (torch.Tensor): Energy per batch with shape [n_batches]
+
+        # FIRE optimization parameters
+        dt (torch.Tensor): Current timestep per batch with shape [n_batches]
+        alpha (torch.Tensor): Current mixing parameter per batch with shape [n_batches]
+        n_pos (torch.Tensor): Number of positive power steps per batch with shape
+            [n_batches]
+
+    Properties:
+        momenta (torch.Tensor): Atomwise momenta of the system with shape [n_atoms, 3],
+            calculated as velocities * masses
+    """
+
+    # Required attributes not in SimState
+    forces: torch.Tensor
+    energy: torch.Tensor
+    velocities: torch.Tensor
+
+    # FIRE algorithm parameters
+    dt: torch.Tensor
+    alpha: torch.Tensor
+    n_pos: torch.Tensor
+
+
+def fire(
+    model: torch.nn.Module,
+    *,
+    dt_max: float = 1.0,
+    dt_start: float = 0.1,
+    n_min: int = 5,
+    f_inc: float = 1.1,
+    f_dec: float = 0.5,
+    alpha_start: float = 0.1,
+    f_alpha: float = 0.99,
+) -> tuple[
+    FireState,
+    Callable[[FireState], FireState],
+]:
+    """Initialize a batched FIRE optimization.
+
+    Creates an optimizer that performs FIRE (Fast Inertial Relaxation Engine)
+    optimization on atomic positions.
+
+    Args:
+        model (torch.nn.Module): Model that computes energies, forces, and stress
+        dt_max (float): Maximum allowed timestep
+        dt_start (float): Initial timestep
+        n_min (int): Minimum steps before timestep increase
+        f_inc (float): Factor for timestep increase when power is positive
+        f_dec (float): Factor for timestep decrease when power is negative
+        alpha_start (float): Initial velocity mixing parameter
+        f_alpha (float): Factor for mixing parameter decrease
+
+    Returns:
+        tuple: A pair of functions:
+            - Initialization function that creates a FireState
+            - Update function that performs one FIRE optimization step
+
+    Notes:
+        - FIRE is generally more efficient than standard gradient descent for atomic
+          structure optimization
+        - The algorithm adaptively adjusts step sizes and mixing parameters based
+          on the dot product of forces and velocities
+    """
+    device = model.device
+    dtype = model.dtype
+
+    eps = 1e-8 if dtype == torch.float32 else 1e-16
+
+    # Setup parameters
+    params = [dt_max, dt_start, alpha_start, f_inc, f_dec, f_alpha, n_min]
+    dt_max, dt_start, alpha_start, f_inc, f_dec, f_alpha, n_min = [
+        (
+            p
+            if isinstance(p, torch.Tensor)
+            else torch.tensor(p, device=device, dtype=dtype)
+        )
+        for p in params
+    ]
+
+    def fire_init(
+        state: SimState | StateDict,
+        dt_start: float = dt_start,
+        alpha_start: float = alpha_start,
+    ) -> FireState:
+        """Initialize a batched FIRE optimization state.
+
+        Args:
+            state: Input state as SimState object or state parameter dict
+            dt_start: Initial timestep per batch
+            alpha_start: Initial mixing parameter per batch
+
+        Returns:
+            FireState with initialized optimization tensors
+        """
+        if not isinstance(state, SimState):
+            state = SimState(**state)
+
+        # Get dimensions
+        n_batches = state.n_batches
+
+        # Get initial forces and energy from model
+        model_output = model(state)
+
+        energy = model_output["energy"]  # [n_batches]
+        forces = model_output["forces"]  # [n_total_atoms, 3]
+
+        # Setup parameters
+        dt_start = torch.full((n_batches,), dt_start, device=device, dtype=dtype)
+        alpha_start = torch.full((n_batches,), alpha_start, device=device, dtype=dtype)
+
+        n_pos = torch.zeros((n_batches,), device=device, dtype=torch.int32)
+
+        # Create initial state
+        return FireState(
+            # Copy SimState attributes
+            positions=state.positions.clone(),
+            masses=state.masses.clone(),
+            cell=state.cell.clone(),
+            atomic_numbers=state.atomic_numbers.clone(),
+            batch=state.batch.clone(),
+            pbc=state.pbc,
+            # New attributes
+            velocities=torch.zeros_like(state.positions),
+            forces=forces,
+            energy=energy,
+            # Optimization attributes
+            dt=dt_start,
+            alpha=alpha_start,
+            n_pos=n_pos,
+        )
+
+    def fire_step(
+        state: FireState,
+        alpha_start: float = alpha_start,
+        dt_start: float = dt_start,
+    ) -> FireState:
+        """Perform one FIRE optimization step for batched atomic systems.
+
+        Implements one step of the Fast Inertial Relaxation Engine (FIRE) algorithm for
+        optimizing atomic positions in a batched setting. Uses velocity Verlet
+        integration with adaptive velocity mixing.
+
+        Args:
+            state: Current optimization state containing atomic parameters
+            alpha_start: Initial mixing parameter for velocity update
+            dt_start: Initial timestep for velocity Verlet integration
+
+        Returns:
+            Updated state after performing one FIRE step
+        """
+        n_batches = state.n_batches
+
+        # Setup parameters
+        dt_start = torch.full((n_batches,), dt_start, device=device, dtype=dtype)
+        alpha_start = torch.full((n_batches,), alpha_start, device=device, dtype=dtype)
+
+        # Velocity Verlet first half step (v += 0.5*a*dt)
+        atom_wise_dt = state.dt[state.batch].unsqueeze(-1)
+        state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
+
+        # Split positions and forces into atomic and cell components
+        atomic_positions = state.positions  # shape: (n_atoms, 3)
+
+        # Update atomic positions
+        atomic_positions_new = atomic_positions + atom_wise_dt * state.velocities
+
+        # Update state with new positions and cell
+        state.positions = atomic_positions_new
+
+        # Get new forces, energy, and stress
+        results = model(state)
+        state.energy = results["energy"]
+        state.forces = results["forces"]
+
+        # Velocity Verlet first half step (v += 0.5*a*dt)
+        state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
+
+        # Calculate power (F·V) for atoms
+        atomic_power = (state.forces * state.velocities).sum(dim=1)  # [n_atoms]
+        atomic_power_per_batch = torch.zeros(
+            n_batches, device=device, dtype=atomic_power.dtype
+        )
+        atomic_power_per_batch.scatter_add_(
+            dim=0, index=state.batch, src=atomic_power
+        )  # [n_batches]
+
+        # Calculate power for cell DOFs
+        batch_power = atomic_power_per_batch
+
+        for batch_idx in range(n_batches):
+            # FIRE specific updates
+            if batch_power[batch_idx] > 0:  # Power is positive
+                state.n_pos[batch_idx] += 1
+                if state.n_pos[batch_idx] > n_min:
+                    state.dt[batch_idx] = min(state.dt[batch_idx] * f_inc, dt_max)
+                    state.alpha[batch_idx] = state.alpha[batch_idx] * f_alpha
+            else:  # Power is negative
+                state.n_pos[batch_idx] = 0
+                state.dt[batch_idx] = state.dt[batch_idx] * f_dec
+                state.alpha[batch_idx] = alpha_start[batch_idx]
+                # Reset velocities for both atoms and cell
+                state.velocities[state.batch == batch_idx] = 0
+                state.cell_velocities[batch_idx] = 0
+
+        # Mix velocity and force direction using FIRE for atoms
+        v_norm = torch.norm(state.velocities, dim=1, keepdim=True)
+        f_norm = torch.norm(state.forces, dim=1, keepdim=True)
+        # Avoid division by zero
+        # mask = f_norm > 1e-10
+        # state.velocity = torch.where(
+        #     mask,
+        #     (1.0 - state.alpha) * state.velocity
+        #     + state.alpha * state.forces * v_norm / f_norm,
+        #     state.velocity,
+        # )
+        batch_wise_alpha = state.alpha[state.batch].unsqueeze(-1)
+        state.velocities = (
+            1.0 - batch_wise_alpha
+        ) * state.velocities + batch_wise_alpha * state.forces * v_norm / (f_norm + eps)
+
+        return state
+
+    return fire_init, fire_step
+
+
+@dataclass
 class BatchedUnitCellFireState(SimState, DeformGradMixin):
     """State information for batched FIRE optimization with unit cell degrees of
     freedom.
