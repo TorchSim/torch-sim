@@ -22,7 +22,7 @@ from torch_sim import (
     transforms,
     units,
 )
-from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
+from torch_sim.autobatching import BinningAutoBatcher, InFlightAutoBatcher
 from torch_sim.integrators import npt_langevin, nve, nvt_langevin
 
 # state propagators

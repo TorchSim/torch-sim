@@ -4,7 +4,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from torch_sim.autobatching import ChunkingAutoBatcher, HotSwappingAutoBatcher
+from torch_sim.autobatching import BinningAutoBatcher, InFlightAutoBatcher
 from torch_sim.integrators import nve, nvt_langevin
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.optimizers import unit_cell_fire
@@ -189,7 +189,7 @@ def test_integrate_with_autobatcher(
         lj_model.device,
         lj_model.dtype,
     )
-    autobatcher = ChunkingAutoBatcher(
+    autobatcher = BinningAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260,
@@ -224,7 +224,7 @@ def test_integrate_with_autobatcher_and_reporting(
         lj_model.device,
         lj_model.dtype,
     )
-    autobatcher = ChunkingAutoBatcher(
+    autobatcher = BinningAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260,
@@ -382,7 +382,7 @@ def test_optimize_with_autobatcher(
         lj_model.device,
         lj_model.dtype,
     )
-    autobatcher = HotSwappingAutoBatcher(
+    autobatcher = InFlightAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260,
@@ -417,7 +417,7 @@ def test_optimize_with_autobatcher_and_reporting(
     )
     triple_state.positions += torch.randn_like(triple_state.positions) * 0.1
 
-    autobatcher = HotSwappingAutoBatcher(
+    autobatcher = InFlightAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260,
@@ -626,7 +626,7 @@ def test_static_with_autobatcher(
         lj_model.device,
         lj_model.dtype,
     )
-    autobatcher = ChunkingAutoBatcher(
+    autobatcher = BinningAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260,
@@ -660,7 +660,7 @@ def test_static_with_autobatcher_and_reporting(
         lj_model.device,
         lj_model.dtype,
     )
-    autobatcher = ChunkingAutoBatcher(
+    autobatcher = BinningAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260,
