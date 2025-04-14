@@ -320,7 +320,7 @@ class OrbModel(torch.nn.Module, ModelInterface):
         self._max_num_neighbors = max_num_neighbors
         self._edge_method = edge_method
         self._half_supercell = half_supercell
-        self._conservative = conservative
+        self.conservative = conservative
 
         # Load model if path is provided
         if isinstance(model, str | Path):
@@ -334,10 +334,10 @@ class OrbModel(torch.nn.Module, ModelInterface):
 
         # Determine if the model is conservative
         model_is_conservative = hasattr(self.model, "grad_forces_name")
-        if self._conservative is None:
-            self._conservative = model_is_conservative
+        if self.conservative is None:
+            self.conservative = model_is_conservative
 
-        if self._conservative and not model_is_conservative:
+        if self.conservative and not model_is_conservative:
             raise ValueError(
                 "Conservative mode requested, but model is not a "
                 "ConservativeForcefieldRegressor."
@@ -347,7 +347,7 @@ class OrbModel(torch.nn.Module, ModelInterface):
         self.implemented_properties = self.model.properties
 
         # Add forces and stress to implemented properties if conservative model
-        if self._conservative:
+        if self.conservative:
             self.implemented_properties.extend(["forces", "stress"])
 
     def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
@@ -410,7 +410,7 @@ class OrbModel(torch.nn.Module, ModelInterface):
             _property = "energy" if prop == "free_energy" else prop
             results[prop] = predictions[_property].squeeze()
 
-        if self._conservative:
+        if self.conservative:
             if self.model.forces_name in results:
                 results["direct_forces"] = results[self.model.forces_name]
             if self.model.stress_name in results:
