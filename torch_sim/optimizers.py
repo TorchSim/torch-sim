@@ -669,7 +669,6 @@ def fire(
                 state.alpha[batch_idx] = alpha_start[batch_idx]
                 # Reset velocities for both atoms and cell
                 state.velocities[state.batch == batch_idx] = 0
-                state.cell_velocities[batch_idx] = 0
 
         # Mix velocity and force direction using FIRE for atoms
         v_norm = torch.norm(state.velocities, dim=1, keepdim=True)
