@@ -29,15 +29,3 @@
 ## v0.1.0
 
 Initial release.
-
-[contributors]: <> (CONTRIBUTOR SECTION)
-[abhijeetgangan]: https://github.com/abhijeetgangan
-[orionarcher]: https://github.com/orionarcher
-[janosh]: https://github.com/janosh
-[AdeeshKolluru]: https://github.com/AdeeshKolluru
-[Comhys]: https://github.com/Comhys
-[jla-gardner]: https://github.com/jla-gardner
-[stefanbringuier]: https://github.com/stefanbringuier
-[frostedoyter]: https://github.com/frostedoyter
-[Luthaf]: https://github.com/Luthaf
-[ryanliu30]: https://github.com/ryanliu30
