@@ -352,13 +352,15 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         natoms = torch.bincount(state.batch)
         fixed = torch.zeros((state.batch.size(0), natoms.sum()), dtype=torch.int)
         data_list = []
-        for i, (n, c) in enumerate(zip(natoms, torch.cumsum(natoms, dim=0))):
+        for i, (n, c) in enumerate(
+            zip(natoms, torch.cumsum(natoms, dim=0), strict=False)
+        ):
             data_list.append(
                 Data(
-                    pos=state.positions[c-n: c].clone(),
+                    pos=state.positions[c - n : c].clone(),
                     cell=state.row_vector_cell[i, None].clone(),
-                    atomic_numbers=state.atomic_numbers[c-n: c].clone(),
-                    fixed=fixed[c-n: c].clone(),
+                    atomic_numbers=state.atomic_numbers[c - n : c].clone(),
+                    fixed=fixed[c - n : c].clone(),
                     natoms=n,
                     pbc=torch.tensor([state.pbc, state.pbc, state.pbc], dtype=torch.bool),
                 )
