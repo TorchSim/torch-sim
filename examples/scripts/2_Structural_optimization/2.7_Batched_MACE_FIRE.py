@@ -1,4 +1,4 @@
-"""Batched MACE unit cell filter with gradient descent optimizer."""
+"""Batched MACE FIRE optimizer."""
 
 # /// script
 # dependencies = [
