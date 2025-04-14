@@ -62,8 +62,7 @@ for state in fire_states:
 len(fire_states)
 
 
-# %%
-# TODO: add max steps
+# %% TODO: add max steps
 converge_max_force = generate_force_convergence_fn(force_tol=1e-1)
 single_system_memory = calculate_memory_scaler(fire_states[0])
 batcher = HotSwappingAutoBatcher(

@@ -125,8 +125,7 @@ Once we've written a trajectory, we can get the raw arrays, a SimState object, o
 convert the state to an atoms or ase.Atoms object.
 """
 
-# %%
-# Open for reading
+# %% Open for reading
 with ts.TorchSimTrajectory("random_state.h5", mode="r") as traj:
     # Get raw arrays
     positions = traj.get_array("positions")
@@ -160,8 +159,7 @@ multi-batch simulations.
 Let's start with the simplest use case - saving states periodically:
 """
 
-# %%
-# Initialize a basic reporter
+# %% Initialize a basic reporter
 reporter = ts.TrajectoryReporter(
     filenames="reported_traj.h5",
     state_frequency=5,  # Save full state every 100 steps
@@ -288,8 +286,7 @@ When simulating multiple systems simultaneously, the reporter can split the data
 multiple trajectory files:
 """
 
-# %%
-# Create a double-batch simulation state
+# %% Create a double-batch simulation state
 multi_state = ts.concatenate_states([state.clone() for _ in range(5)])
 
 # Create a reporter with multiple files

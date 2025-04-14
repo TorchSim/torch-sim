@@ -1,0 +1,142 @@
+digraph G {
+    layout=dot;
+    concentrate = true;
+    ratio = 0.8;
+    nodesep = 0.08;
+    ranksep = 0.1;
+    rankdir = LR;
+    overlap = false;
+    node [style=filled,fillcolor="#ffffff",fontcolor="#000000",fontname=Helvetica,fontsize=10,margin="0.08,0.02",height=0.5];
+
+    // Color legend by node connectedness
+    // #2d35e5 = 0-1 connections
+    // #2daee5 = 2-3 connections
+    // #2de5a3 = 4-5 connections
+    // #31e52d = 6-7 connections
+    // #aae52d = 8-10 connections
+    // #e5a72d = 11-15 connections
+    // #e52d2d = 16+ connections
+
+    torch_sim_autobatching [fillcolor="#2daee5",fontcolor="white",label="autobatching\n(821 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/autobatching.py",tooltip="View source on GitHub"];
+    torch_sim_elastic [fillcolor="#2daee5",fontcolor="white",label="elastic\n(887 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/elastic.py",tooltip="View source on GitHub"];
+    torch_sim_integrators [fillcolor="#2daee5",fontcolor="white",label="integrators\n(953 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/integrators.py",tooltip="View source on GitHub"];
+    torch_sim_io [fillcolor="#2daee5",fontcolor="white",label="io\n(307 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/io.py",tooltip="View source on GitHub"];
+    torch_sim_math [fillcolor="#2daee5",fontcolor="white",label="math\n(732 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/math.py",tooltip="View source on GitHub"];
+    torch_sim_models_fairchem [fillcolor="#2daee5",fontcolor="white",label="models.fairchem\n(315 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/models/fairchem.py",tooltip="View source on GitHub"];
+    torch_sim_models_graphpes [fillcolor="#2daee5",fontcolor="white",label="models.graphpes\n(144 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/models/graphpes.py",tooltip="View source on GitHub"];
+    torch_sim_models_interface [fillcolor="#e52d2d",fontcolor="white",label="models.interface\n(250 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/models/interface.py",tooltip="View source on GitHub"];
+    torch_sim_models_lennard_jones [fillcolor="#2de5a3",fontcolor="white",label="models.lennard_jones\n(251 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/models/lennard_jones.py",tooltip="View source on GitHub"];
+    torch_sim_models_mace [fillcolor="#2de5a3",fontcolor="white",label="models.mace\n(277 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/models/mace.py",tooltip="View source on GitHub"];
+    torch_sim_models_mattersim [fillcolor="#2daee5",fontcolor="white",label="models.mattersim\n(114 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/models/mattersim.py",tooltip="View source on GitHub"];
+    torch_sim_models_morse [fillcolor="#2de5a3",fontcolor="white",label="models.morse\n(258 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/models/morse.py",tooltip="View source on GitHub"];
+    torch_sim_models_orb [fillcolor="#2daee5",fontcolor="white",label="models.orb\n(341 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/models/orb.py",tooltip="View source on GitHub"];
+    torch_sim_models_sevennet [fillcolor="#2de5a3",fontcolor="white",label="models.sevennet\n(191 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/models/sevennet.py",tooltip="View source on GitHub"];
+    torch_sim_models_soft_sphere [fillcolor="#2de5a3",fontcolor="white",label="models.soft_sphere\n(616 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/models/soft_sphere.py",tooltip="View source on GitHub"];
+    torch_sim_monte_carlo [fillcolor="#2d35e5",fontcolor="white",label="monte_carlo\n(208 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/monte_carlo.py",tooltip="View source on GitHub"];
+    torch_sim_neighbors [fillcolor="#e5a72d",fontcolor="white",label="neighbors\n(621 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/neighbors.py",tooltip="View source on GitHub"];
+    torch_sim_optimizers [fillcolor="#2daee5",fontcolor="white",label="optimizers\n(961 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/optimizers.py",tooltip="View source on GitHub"];
+    torch_sim_properties_correlations [fillcolor="#2d35e5",fontcolor="white",label="properties.correlations\n(349 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/properties/correlations.py",tooltip="View source on GitHub"];
+    torch_sim_quantities [fillcolor="#2de5a3",fontcolor="white",label="quantities\n(114 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/quantities.py",tooltip="View source on GitHub"];
+    torch_sim_runners [fillcolor="#31e52d",fontcolor="white",label="runners\n(368 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/runners.py",tooltip="View source on GitHub"];
+    torch_sim_state [fillcolor="#e52d2d",fontcolor="white",label="state\n(687 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/state.py",tooltip="View source on GitHub"];
+    torch_sim_trajectory [fillcolor="#2daee5",fontcolor="white",label="trajectory\n(762 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/trajectory.py",tooltip="View source on GitHub"];
+    torch_sim_transforms [fillcolor="#e5a72d",fontcolor="white",label="transforms\n(891 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/transforms.py",tooltip="View source on GitHub"];
+    torch_sim_unbatched_models_lennard_jones [fillcolor="#2de5a3",fontcolor="white",label="unbatched.models.lennard_jones\n(188 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/unbatched/models/lennard_jones.py",tooltip="View source on GitHub"];
+    torch_sim_unbatched_models_mace [fillcolor="#2de5a3",fontcolor="white",label="unbatched.models.mace\n(199 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/unbatched/models/mace.py",tooltip="View source on GitHub"];
+    torch_sim_unbatched_models_morse [fillcolor="#2de5a3",fontcolor="white",label="unbatched.models.morse\n(190 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/unbatched/models/morse.py",tooltip="View source on GitHub"];
+    torch_sim_unbatched_models_particle_life [fillcolor="#2de5a3",fontcolor="white",label="unbatched.models.particle_life\n(151 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/unbatched/models/particle_life.py",tooltip="View source on GitHub"];
+    torch_sim_unbatched_models_soft_sphere [fillcolor="#31e52d",fontcolor="white",label="unbatched.models.soft_sphere\n(373 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/unbatched/models/soft_sphere.py",tooltip="View source on GitHub"];
+    torch_sim_unbatched_unbatched_integrators [fillcolor="#2de5a3",fontcolor="white",label="unbatched.unbatched_integrators\n(1723 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/unbatched/unbatched_integrators.py",tooltip="View source on GitHub"];
+    torch_sim_unbatched_unbatched_optimizers [fillcolor="#2de5a3",fontcolor="white",label="unbatched.unbatched_optimizers\n(854 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/unbatched/unbatched_optimizers.py",tooltip="View source on GitHub"];
+    torch_sim_units [fillcolor="#2daee5",fontcolor="white",label="units\n(98 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/units.py",tooltip="View source on GitHub"];
+    torch_sim_workflows_a2c [fillcolor="#2de5a3",fontcolor="white",label="workflows.a2c\n(703 lines)",shape="box",URL="https://github.com/radical-ai/torch-sim/blob/main/torch_sim/workflows/a2c.py",tooltip="View source on GitHub"];
+
+    torch_sim_autobatching -> torch_sim_models_interface;
+    torch_sim_autobatching -> torch_sim_state;
+    torch_sim_elastic -> torch_sim_state;
+    torch_sim_integrators -> torch_sim_state;
+    torch_sim_integrators -> torch_sim_transforms;
+    torch_sim_io -> torch_sim_state;
+    torch_sim_models_fairchem -> torch_sim_models_interface;
+    torch_sim_models_fairchem -> torch_sim_state;
+    torch_sim_models_graphpes -> torch_sim_models_interface;
+    torch_sim_models_graphpes -> torch_sim_neighbors;
+    torch_sim_models_graphpes -> torch_sim_state;
+    torch_sim_models_interface -> torch_sim_io;
+    torch_sim_models_interface -> torch_sim_state;
+    torch_sim_models_lennard_jones -> torch_sim_models_interface;
+    torch_sim_models_lennard_jones -> torch_sim_neighbors;
+    torch_sim_models_lennard_jones -> torch_sim_state;
+    torch_sim_models_lennard_jones -> torch_sim_transforms;
+    torch_sim_models_lennard_jones -> torch_sim_unbatched_models_lennard_jones;
+    torch_sim_models_mace -> torch_sim_models_interface;
+    torch_sim_models_mace -> torch_sim_neighbors;
+    torch_sim_models_mace -> torch_sim_state;
+    torch_sim_models_mattersim -> torch_sim_models_interface;
+    torch_sim_models_mattersim -> torch_sim_state;
+    torch_sim_models_mattersim -> torch_sim_units;
+    torch_sim_models_morse -> torch_sim_models_interface;
+    torch_sim_models_morse -> torch_sim_neighbors;
+    torch_sim_models_morse -> torch_sim_state;
+    torch_sim_models_morse -> torch_sim_transforms;
+    torch_sim_models_morse -> torch_sim_unbatched_models_morse;
+    torch_sim_models_orb -> torch_sim_elastic;
+    torch_sim_models_orb -> torch_sim_models_interface;
+    torch_sim_models_orb -> torch_sim_state;
+    torch_sim_models_sevennet -> torch_sim_elastic;
+    torch_sim_models_sevennet -> torch_sim_models_interface;
+    torch_sim_models_sevennet -> torch_sim_neighbors;
+    torch_sim_models_sevennet -> torch_sim_state;
+    torch_sim_models_soft_sphere -> torch_sim_models_interface;
+    torch_sim_models_soft_sphere -> torch_sim_neighbors;
+    torch_sim_models_soft_sphere -> torch_sim_state;
+    torch_sim_models_soft_sphere -> torch_sim_transforms;
+    torch_sim_models_soft_sphere -> torch_sim_unbatched_models_soft_sphere;
+    torch_sim_monte_carlo -> torch_sim_state;
+    torch_sim_neighbors -> torch_sim_math;
+    torch_sim_neighbors -> torch_sim_transforms;
+    torch_sim_optimizers -> torch_sim_math;
+    torch_sim_optimizers -> torch_sim_state;
+    torch_sim_properties_correlations -> torch_sim_state;
+    torch_sim_quantities -> torch_sim_state;
+    torch_sim_quantities -> torch_sim_units;
+    torch_sim_runners -> torch_sim_autobatching;
+    torch_sim_runners -> torch_sim_models_interface;
+    torch_sim_runners -> torch_sim_quantities;
+    torch_sim_runners -> torch_sim_state;
+    torch_sim_runners -> torch_sim_trajectory;
+    torch_sim_runners -> torch_sim_units;
+    torch_sim_state -> torch_sim_io;
+    torch_sim_trajectory -> torch_sim_state;
+    torch_sim_unbatched_models_lennard_jones -> torch_sim_models_interface;
+    torch_sim_unbatched_models_lennard_jones -> torch_sim_neighbors;
+    torch_sim_unbatched_models_lennard_jones -> torch_sim_transforms;
+    torch_sim_unbatched_models_lennard_jones -> torch_sim_unbatched_unbatched_integrators;
+    torch_sim_unbatched_models_mace -> torch_sim_models_interface;
+    torch_sim_unbatched_models_mace -> torch_sim_models_mace;
+    torch_sim_unbatched_models_mace -> torch_sim_neighbors;
+    torch_sim_unbatched_models_mace -> torch_sim_state;
+    torch_sim_unbatched_models_morse -> torch_sim_models_interface;
+    torch_sim_unbatched_models_morse -> torch_sim_neighbors;
+    torch_sim_unbatched_models_morse -> torch_sim_state;
+    torch_sim_unbatched_models_morse -> torch_sim_transforms;
+    torch_sim_unbatched_models_particle_life -> torch_sim_models_interface;
+    torch_sim_unbatched_models_particle_life -> torch_sim_neighbors;
+    torch_sim_unbatched_models_particle_life -> torch_sim_state;
+    torch_sim_unbatched_models_particle_life -> torch_sim_transforms;
+    torch_sim_unbatched_models_soft_sphere -> torch_sim_models_interface;
+    torch_sim_unbatched_models_soft_sphere -> torch_sim_neighbors;
+    torch_sim_unbatched_models_soft_sphere -> torch_sim_state;
+    torch_sim_unbatched_models_soft_sphere -> torch_sim_transforms;
+    torch_sim_unbatched_unbatched_integrators -> torch_sim_quantities;
+    torch_sim_unbatched_unbatched_integrators -> torch_sim_state;
+    torch_sim_unbatched_unbatched_integrators -> torch_sim_transforms;
+    torch_sim_unbatched_unbatched_optimizers -> torch_sim_math;
+    torch_sim_unbatched_unbatched_optimizers -> torch_sim_state;
+    torch_sim_unbatched_unbatched_optimizers -> torch_sim_unbatched_unbatched_integrators;
+    torch_sim_workflows_a2c -> torch_sim_optimizers;
+    torch_sim_workflows_a2c -> torch_sim_state;
+    torch_sim_workflows_a2c -> torch_sim_transforms;
+    torch_sim_workflows_a2c -> torch_sim_unbatched_models_soft_sphere;
+    torch_sim_workflows_a2c -> torch_sim_unbatched_unbatched_optimizers;
+}

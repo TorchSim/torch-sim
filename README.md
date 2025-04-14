@@ -125,6 +125,8 @@ To understand how TorchSim works, start with the [comprehensive tutorials](https
 
 TorchSim's structure is summarized in the [API reference](https://radical-ai.github.io/torch-sim/reference/index.html) documentation.
 
+> `torch-sim` module graph. Each node represents a Python module. Arrows indicate imports between modules. Node color indicates connectedness: blue nodes have fewer dependents, red nodes have more (up to 16). The number in parentheses is the number of lines of code in the module.
+
 ## License
 
 TorchSim is released under an [MIT license](LICENSE).

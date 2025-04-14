@@ -79,7 +79,7 @@ atom_metric = calculate_memory_scaler(state, memory_scales_with="n_atoms")
 density_metric = calculate_memory_scaler(state, memory_scales_with="n_atoms_x_density")
 
 print(f"Atom-based memory metric: {atom_metric}")
-print(f"Density-based memory metric: {density_metric}")
+print(f"Density-based memory metric: {density_metric:.2f}")
 
 
 # %% [markdown]
@@ -131,8 +131,7 @@ batched integration.
 ### Basic Usage
 """
 
-# %%
-# Initialize the batcher, the max memory scaler will be computed automatically
+# %% Initialize the batcher, the max memory scaler will be computed automatically
 batcher = ts.ChunkingAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",
@@ -186,8 +185,7 @@ batcher = ts.ChunkingAutoBatcher(
 Here's a real example using FIRE optimization from the test suite:
 """
 
-# %%
-# Initialize nvt langevin integrator
+# %% Initialize nvt langevin integrator
 nvt_init, nvt_update = ts.nvt_langevin(mace_model, dt=0.001, kT=0.01)
 
 # Prepare states for optimization
@@ -297,8 +295,7 @@ tracking the progress of individual states. This is especially critical when
 using the `TrajectoryReporter`, because the files must be regularly updated.
 """
 
-# %%
-# Initialize with return_indices=True
+# %% Initialize with return_indices=True
 batcher = ts.ChunkingAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms",

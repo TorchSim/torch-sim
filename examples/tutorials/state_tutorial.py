@@ -99,8 +99,7 @@ via batching. To create a batch of multiple systems, you can simply pass
 a list of atomistic objects to the `initialize_state` function.
 """
 
-# %%
-# Create multiple systems
+# %% Create multiple systems
 cu_atoms = bulk("Cu", "fcc", a=3.61, cubic=True)
 al_atoms = bulk("Al", "fcc", a=4.05, cubic=True)
 ag_atoms = bulk("Ag", "fcc", a=4.09, cubic=True)
@@ -147,8 +146,7 @@ containing only the first three batches. The other operations are available thro
 `pop`, `split`, `clone`, and `to` methods.
 """
 
-# %%
-# we can copy the state with the clone method
+# %% we can copy the state with the clone method
 multi_state_copy = multi_state.clone()
 print(f"This state has {multi_state_copy.n_batches} batches")
 
@@ -216,8 +214,7 @@ SimState objects can be converted back to other atomistic representations. This 
 useful when you need to use external libraries for analysis or visualization:
 """
 
-# %%
-# Convert to ASE Atoms
+# %% Convert to ASE Atoms
 atoms_list = multi_state.to_atoms()
 print(f"Converted to {len(atoms_list)} ASE Atoms objects")
 print(f"First atoms object has chemical formula: {atoms_list[0].get_chemical_formula()}")
@@ -254,11 +251,9 @@ from dataclasses import asdict
 # Create an MDState from a SimState
 md_state = MDState(
     **asdict(si_state),  # Copy all SimState properties
-    momenta=torch.zeros_like(si_state.positions),  # Initial zero momenta
-    forces=torch.zeros_like(si_state.positions),  # Initial zero forces
-    energy=torch.zeros(
-        (si_state.n_batches,), device=si_state.device
-    ),  # Initial zero energy
+    momenta=torch.zeros_like(si_state.positions),  # Initial 0 momenta
+    forces=torch.zeros_like(si_state.positions),  # Initial 0 forces
+    energy=torch.zeros((si_state.n_batches,), device=si_state.device),  # Initial 0 energy
 )
 
 print("MDState properties:")
