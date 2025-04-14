@@ -783,7 +783,8 @@ def test_unit_cell_frechet_fire_batch_consistency(
 def test_fire_fixed_cell_frechet_consistency(  # noqa: C901
     ar_supercell_sim_state: SimState, lj_model: torch.nn.Module
 ) -> None:
-    """Test batched FIRE optimization is consistent with individual optimizations."""
+    """Test batched Frechet Fixed cell FIRE optimization is
+    consistent with FIRE (position only) optimizations."""
     generator = torch.Generator(device=ar_supercell_sim_state.device)
 
     ar_supercell_sim_state_1 = copy.deepcopy(ar_supercell_sim_state)
@@ -875,10 +876,11 @@ def test_fire_fixed_cell_frechet_consistency(  # noqa: C901
     individual_energies_fire = [
         state.energy.item() for state in final_individual_states_fire
     ]
-    # Check that final energies from batched optimization match individual optimizations
+    # Check that final energies from fixed cell optimization match
+    # position only optimizations
     for step, energy_frechet in enumerate(individual_energies_frechet):
         assert abs(energy_frechet - individual_energies_fire[step]) < 1e-4, (
-            f"Energy for batch {step} doesn't match individual optimization: "
+            f"Energy for batch {step} doesn't match position only optimization: "
             f"batch={energy_frechet}, individual={individual_energies_fire[step]}"
         )
 
@@ -886,7 +888,8 @@ def test_fire_fixed_cell_frechet_consistency(  # noqa: C901
 def test_fire_fixed_cell_unit_cell_consistency(  # noqa: C901
     ar_supercell_sim_state: SimState, lj_model: torch.nn.Module
 ) -> None:
-    """Test batched FIRE optimization is consistent with individual optimizations."""
+    """Test batched Frechet Fixed cell FIRE optimization is
+    consistent with FIRE (position only) optimizations."""
     generator = torch.Generator(device=ar_supercell_sim_state.device)
 
     ar_supercell_sim_state_1 = copy.deepcopy(ar_supercell_sim_state)
@@ -978,9 +981,10 @@ def test_fire_fixed_cell_unit_cell_consistency(  # noqa: C901
     individual_energies_fire = [
         state.energy.item() for state in final_individual_states_fire
     ]
-    # Check that final energies from batched optimization match individual optimizations
+    # Check that final energies from fixed cell optimization match
+    # position only optimizations
     for step, energy_unit_cell in enumerate(individual_energies_unit_cell):
         assert abs(energy_unit_cell - individual_energies_fire[step]) < 1e-4, (
-            f"Energy for batch {step} doesn't match individual optimization: "
+            f"Energy for batch {step} doesn't match position only optimization: "
             f"batch={energy_unit_cell}, individual={individual_energies_fire[step]}"
         )
