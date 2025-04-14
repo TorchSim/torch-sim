@@ -7,7 +7,7 @@ Include a summary of major changes in bullet points:
 
 ## Checklist
 
-Work-in-progress pull requests are encouraged, but please enable the draft status on your PR.
+<!-- Work-in-progress pull requests are encouraged, but please enable the draft status on your PR. -->
 
 Before a pull request can be merged, the following items must be checked:
 
