@@ -411,11 +411,6 @@ class OrbModel(torch.nn.Module, ModelInterface):
             results[prop] = predictions[_property].squeeze()
 
         if self.conservative:
-            if self.model.forces_name in results:
-                results["direct_forces"] = results[self.model.forces_name]
-            if self.model.stress_name in results:
-                results["direct_stress"] = results[self.model.stress_name]
-
             results["forces"] = results[self.model.grad_forces_name]
             results["stress"] = results[self.model.grad_stress_name]
 
