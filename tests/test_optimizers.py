@@ -778,3 +778,209 @@ def test_unit_cell_frechet_fire_batch_consistency(
             f"Energy for batch {step} doesn't match individual optimization: "
             f"batch={batch_state.energy[step].item()}, individual={individual_energy}"
         )
+
+
+def test_fire_fixed_cell_frechet_consistency(  # noqa: C901
+    ar_supercell_sim_state: SimState, lj_model: torch.nn.Module
+) -> None:
+    """Test batched FIRE optimization is consistent with individual optimizations."""
+    generator = torch.Generator(device=ar_supercell_sim_state.device)
+
+    ar_supercell_sim_state_1 = copy.deepcopy(ar_supercell_sim_state)
+    ar_supercell_sim_state_2 = copy.deepcopy(ar_supercell_sim_state)
+
+    # Add same random perturbation to both states
+    for state in [ar_supercell_sim_state_1, ar_supercell_sim_state_2]:
+        generator.manual_seed(43)
+        state.positions += (
+            torch.randn(
+                state.positions.shape,
+                device=state.device,
+                generator=generator,
+            )
+            * 0.1
+        )
+
+    # Optimize each state individually
+    final_individual_states_frechet = []
+    total_steps_frechet = []
+
+    def energy_converged(current_energy: float, prev_energy: float) -> bool:
+        """Check if optimization should continue based on energy convergence."""
+        return not torch.allclose(current_energy, prev_energy, atol=1e-6)
+
+    for state in [ar_supercell_sim_state_1, ar_supercell_sim_state_2]:
+        init_fn, update_fn = unit_cell_fire(
+            model=lj_model,
+            dt_max=0.3,
+            dt_start=0.1,
+            hydrostatic_strain=True,
+            constant_volume=True,
+        )
+
+        state_opt = init_fn(state)
+
+        # Run optimization until convergence
+        current_energy = state_opt.energy
+        prev_energy = current_energy + 1
+
+        step = 0
+        while energy_converged(current_energy, prev_energy):
+            prev_energy = current_energy
+            state_opt = update_fn(state_opt)
+            current_energy = state_opt.energy
+            step += 1
+            if step > 1000:
+                raise ValueError("Optimization did not converge")
+
+        final_individual_states_frechet.append(state_opt)
+        total_steps_frechet.append(step)
+
+    # Optimize each state individually
+    final_individual_states_fire = []
+    total_steps_fire = []
+
+    def energy_converged(current_energy: float, prev_energy: float) -> bool:
+        """Check if optimization should continue based on energy convergence."""
+        return not torch.allclose(current_energy, prev_energy, atol=1e-6)
+
+    for state in [ar_supercell_sim_state_1, ar_supercell_sim_state_2]:
+        init_fn, update_fn = fire(
+            model=lj_model,
+            dt_max=0.3,
+            dt_start=0.1,
+        )
+
+        state_opt = init_fn(state)
+
+        # Run optimization until convergence
+        current_energy = state_opt.energy
+        prev_energy = current_energy + 1
+
+        step = 0
+        while energy_converged(current_energy, prev_energy):
+            prev_energy = current_energy
+            state_opt = update_fn(state_opt)
+            current_energy = state_opt.energy
+            step += 1
+            if step > 1000:
+                raise ValueError("Optimization did not converge")
+
+        final_individual_states_fire.append(state_opt)
+        total_steps_fire.append(step)
+
+    individual_energies_frechet = [
+        state.energy.item() for state in final_individual_states_frechet
+    ]
+    individual_energies_fire = [
+        state.energy.item() for state in final_individual_states_fire
+    ]
+    # Check that final energies from batched optimization match individual optimizations
+    for step, energy_frechet in enumerate(individual_energies_frechet):
+        assert abs(energy_frechet - individual_energies_fire[step]) < 1e-4, (
+            f"Energy for batch {step} doesn't match individual optimization: "
+            f"batch={energy_frechet}, individual={individual_energies_fire[step]}"
+        )
+
+
+def test_fire_fixed_cell_unit_cell_consistency(  # noqa: C901
+    ar_supercell_sim_state: SimState, lj_model: torch.nn.Module
+) -> None:
+    """Test batched FIRE optimization is consistent with individual optimizations."""
+    generator = torch.Generator(device=ar_supercell_sim_state.device)
+
+    ar_supercell_sim_state_1 = copy.deepcopy(ar_supercell_sim_state)
+    ar_supercell_sim_state_2 = copy.deepcopy(ar_supercell_sim_state)
+
+    # Add same random perturbation to both states
+    for state in [ar_supercell_sim_state_1, ar_supercell_sim_state_2]:
+        generator.manual_seed(43)
+        state.positions += (
+            torch.randn(
+                state.positions.shape,
+                device=state.device,
+                generator=generator,
+            )
+            * 0.1
+        )
+
+    # Optimize each state individually
+    final_individual_states_unit_cell = []
+    total_steps_unit_cell = []
+
+    def energy_converged(current_energy: float, prev_energy: float) -> bool:
+        """Check if optimization should continue based on energy convergence."""
+        return not torch.allclose(current_energy, prev_energy, atol=1e-6)
+
+    for state in [ar_supercell_sim_state_1, ar_supercell_sim_state_2]:
+        init_fn, update_fn = unit_cell_fire(
+            model=lj_model,
+            dt_max=0.3,
+            dt_start=0.1,
+            hydrostatic_strain=True,
+            constant_volume=True,
+        )
+
+        state_opt = init_fn(state)
+
+        # Run optimization until convergence
+        current_energy = state_opt.energy
+        prev_energy = current_energy + 1
+
+        step = 0
+        while energy_converged(current_energy, prev_energy):
+            prev_energy = current_energy
+            state_opt = update_fn(state_opt)
+            current_energy = state_opt.energy
+            step += 1
+            if step > 1000:
+                raise ValueError("Optimization did not converge")
+
+        final_individual_states_unit_cell.append(state_opt)
+        total_steps_unit_cell.append(step)
+
+    # Optimize each state individually
+    final_individual_states_fire = []
+    total_steps_fire = []
+
+    def energy_converged(current_energy: float, prev_energy: float) -> bool:
+        """Check if optimization should continue based on energy convergence."""
+        return not torch.allclose(current_energy, prev_energy, atol=1e-6)
+
+    for state in [ar_supercell_sim_state_1, ar_supercell_sim_state_2]:
+        init_fn, update_fn = fire(
+            model=lj_model,
+            dt_max=0.3,
+            dt_start=0.1,
+        )
+
+        state_opt = init_fn(state)
+
+        # Run optimization until convergence
+        current_energy = state_opt.energy
+        prev_energy = current_energy + 1
+
+        step = 0
+        while energy_converged(current_energy, prev_energy):
+            prev_energy = current_energy
+            state_opt = update_fn(state_opt)
+            current_energy = state_opt.energy
+            step += 1
+            if step > 1000:
+                raise ValueError("Optimization did not converge")
+
+        final_individual_states_fire.append(state_opt)
+        total_steps_fire.append(step)
+
+    individual_energies_unit_cell = [
+        state.energy.item() for state in final_individual_states_unit_cell
+    ]
+    individual_energies_fire = [
+        state.energy.item() for state in final_individual_states_fire
+    ]
+    # Check that final energies from batched optimization match individual optimizations
+    for step, energy_unit_cell in enumerate(individual_energies_unit_cell):
+        assert abs(energy_unit_cell - individual_energies_fire[step]) < 1e-4, (
+            f"Energy for batch {step} doesn't match individual optimization: "
+            f"batch={energy_unit_cell}, individual={individual_energies_fire[step]}"
+        )
