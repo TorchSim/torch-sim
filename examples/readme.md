@@ -1,13 +1,14 @@
 ## Types of Examples
 
 Examples are provided in two foms:
+
 * Tutorials are intended to provide pedagogical walkthroughs of TorchSim's core functionality
 * Scripts are a holdover from early torch-sim development, they are not currently recommended as a learning resource. See issue [here](https://github.com/Radical-AI/torch-sim/issues/109).
-
 
 ## Tutorial Formatting
 
 All tutorials are built for the documentation and must follow some formatting rules:
+
 1. They must follow the [jupytext percent format](https://jupytext.readthedocs.io/en/latest/formats-scripts.html#the-percent-format)
 where code blocks are annotated with `# %%` and markdown blocks
 are annotated with `# %% [markdown]`.

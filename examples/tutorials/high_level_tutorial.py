@@ -71,8 +71,7 @@ function takes care of initializing the state, setting up the integrator, and ru
 the simulation:
 """
 
-# %%
-# Run NVT simulation at 2000K
+# %% Run NVT simulation at 2000K
 n_steps = 50
 final_state = ts.integrate(
     system=cu_atoms,  # Input atomic system
@@ -123,8 +122,7 @@ frequency that the state is saved.
 For more detail, see the [trajectory reporter tutorial](./trajectory_reporter.ipynb).
 """
 
-# %%
-# Define the output trajectory file
+# %% Define the output trajectory file
 trajectory_file = "lj_trajectory.h5"
 
 # Define property calculators to track energies
@@ -152,8 +150,7 @@ reporter = ts.TrajectoryReporter(
 Now we can run the simulation with trajectory reporting:
 """
 
-# %%
-# Run the simulation with trajectory reporting
+# %% Run the simulation with trajectory reporting
 final_state = ts.integrate(
     system=cu_atoms,
     model=lj_model,
@@ -172,8 +169,7 @@ After the simulation is complete, we can analyze the trajectory using the
 trajectory data.
 """
 
-# %%
-# Open the trajectory file and extract data
+# %% Open the trajectory file and extract data
 with ts.TorchSimTrajectory(trajectory_file) as traj:
     # Read energy arrays
     kinetic_energies = traj.get_array("kinetic_energy")
@@ -234,8 +230,7 @@ systems in parallel. This is especially useful when working with machine learnin
 potentials that benefit from GPU acceleration:
 """
 
-# %%
-# Create multiple systems to simulate
+# %% Create multiple systems to simulate
 fe_atoms = bulk("Fe", "fcc", a=5.26, cubic=True)
 fe_atoms_supercell = fe_atoms.repeat([2, 2, 2])
 cu_atoms_supercell = cu_atoms.repeat([2, 2, 2])
@@ -249,8 +244,7 @@ systems = [cu_atoms, fe_atoms, cu_atoms_supercell, fe_atoms_supercell]
 We can simulate all these systems in a single call to `integrate`:
 """
 
-# %%
-# Run batch simulation with
+# %% Run batch simulation with
 final_state = ts.integrate(
     system=systems,  # List of systems to simulate
     model=mace_model,  # Single model for all systems
@@ -272,8 +266,7 @@ print(f"Number of atoms in last system: {len(final_atoms[3])}")
 When simulating multiple systems, we can save each to its own trajectory file:
 """
 
-# %%
-# Create individual filenames for each system
+# %% Create individual filenames for each system
 filenames = [f"batch_traj_{i}.h5" for i in range(len(systems))]
 
 # Create a reporter that handles multiple trajectories
@@ -300,8 +293,7 @@ final_state = ts.integrate(
 We can analyze each trajectory individually:
 """
 
-# %%
-# Calculate final energy per atom for each system
+# %% Calculate final energy per atom for each system
 final_energies_per_atom = []
 for i, filename in enumerate(filenames):
     with ts.TorchSimTrajectory(filename) as traj:
@@ -336,8 +328,7 @@ ts.autobatching.determine_max_batch_size = mock_determine_max_batch_size
 """
 We enable autobatching by simply setting the `autobatcher` argument to `True`.
 """
-# %%
-# Run the simulation with batch reporting
+# %% Run the simulation with batch reporting
 final_state = ts.integrate(
     system=systems,
     model=mace_model,
@@ -366,8 +357,7 @@ wait until the energy difference between steps is less than 1 meV.
 Let's use the `optimize` function with the FIRE algorithm to relax our structures:
 """
 
-# %%
-# Optimize multiple systems
+# %% Optimize multiple systems
 final_state = ts.optimize(
     system=systems,
     model=mace_model,
@@ -391,8 +381,7 @@ This is how we'd manually define the default `convergence_fn`:
 """
 
 
-# %%
-# Define a convergence function based on energy differences
+# %% Define a convergence function based on energy differences
 def default_energy_convergence(state, last_energy):
     # Consider converged when energy change is less than 1e-6 eV
     if last_energy is None:
@@ -411,8 +400,7 @@ print("Any converged?", torch.any(convergence_tensor).item())
 For convenience TorchSim provides constructors for common convergence functions.
 """
 
-# %%
-# we use metal units for these functions
+# %% we use metal units for these functions
 energy_convergence_fn = ts.generate_energy_convergence_fn(energy_tol=1e-6)
 force_convergence_fn = ts.generate_force_convergence_fn(force_tol=1e-3)
 
@@ -441,8 +429,7 @@ return a final state, but rather a list of dictionaries containing the outputs o
 specified in the `TrajectoryReporter`.
 """
 
-# %%
-# static will report all of the properties for each system, regardless of frequency
+# %% static will report all of the properties for each system, regardless of frequency
 prop_calculators = {
     10: {"potential_energy": lambda state: state.energy},
     20: {"stress": lambda state: state.stress},

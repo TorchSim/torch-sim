@@ -22,11 +22,7 @@ def test_exact_fit():
 
 
 def test_weight_pos():
-    values = [
-        [1, "x"],
-        [2, "y"],
-        [1, "z"],
-    ]
+    values = [[1, "x"], [2, "y"], [1, "z"]]
     bins = to_constant_volume_bins(values, 2, weight_pos=0)
     for bin_ in bins:
         for item in bin_:
@@ -35,11 +31,7 @@ def test_weight_pos():
 
 
 def test_key_func():
-    values = [
-        {"x": "a", "y": 1},
-        {"x": "b", "y": 5},
-        {"x": "b", "y": 3},
-    ]
+    values = [{"x": "a", "y": 1}, {"x": "b", "y": 5}, {"x": "b", "y": 3}]
     bins = to_constant_volume_bins(values, 2, key=lambda x: x["y"])
 
     for bin_ in bins:
@@ -93,10 +85,7 @@ def test_bounds_and_tuples():
     assert bins == [
         [("a", 10, "foo")],
         [("b", 10, "log")],
-        [
-            ("e", 2, "bommel"),
-            ("f", 7, "floggo"),
-        ],
+        [("e", 2, "bommel"), ("f", 7, "floggo")],
     ]
 
 
@@ -335,9 +324,7 @@ def test_hot_swapping_auto_batcher_restore_order(
     states = [si_sim_state, fe_supercell_sim_state]
 
     batcher = HotSwappingAutoBatcher(
-        model=lj_model,
-        memory_scales_with="n_atoms",
-        max_memory_scaler=260.0,
+        model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=260.0
     )
     batcher.load_states(states)
 
@@ -401,10 +388,7 @@ def test_hot_swapping_with_fire(
         )
         max_forces = state.forces.norm(dim=1)
         batch_wise_max_force = batch_wise_max_force.scatter_reduce(
-            dim=0,
-            index=state.batch,
-            src=max_forces,
-            reduce="amax",
+            dim=0, index=state.batch, src=max_forces, reduce="amax"
         )
         return batch_wise_max_force < 5e-1
 
@@ -445,9 +429,7 @@ def test_chunking_auto_batcher_with_fire(
     optimal_n_batches = len(optimal_batches)
 
     batcher = ChunkingAutoBatcher(
-        model=lj_model,
-        memory_scales_with="n_atoms",
-        max_memory_scaler=400,
+        model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=400
     )
     batcher.load_states(fire_states)
 

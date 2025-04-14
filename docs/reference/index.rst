@@ -3,7 +3,7 @@
 API reference
 =============
 
-This section gives an overview of the API for torch_sim.
+Overview of the torch_sim API.
 
 .. currentmodule:: torch_sim
 
@@ -27,3 +27,8 @@ This section gives an overview of the API for torch_sim.
     trajectory
     transforms
     units
+
+.. image:: /_static/torch-sim-module-graph.svg
+   :alt: torch-sim Module Graph
+   :width: 100%
+   :align: center

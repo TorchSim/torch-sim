@@ -705,6 +705,8 @@ class HotSwappingAutoBatcher:
     To avoid a slow memory estimation step, set the `max_memory_scaler` to a
     known value.
 
+    ![Hot-swapping auto-batcher diagram](https://raw.githubusercontent.com/janosh/diagrams/830c1b6817e712958b6f5f3afa1268ce5d440924/assets/hot-swapping-auto-batcher/hot-swapping-auto-batcher-hd.png)
+
     Attributes:
         model (ModelInterface): Model used for memory estimation and processing.
         memory_scales_with (str): Metric type used for memory estimation.

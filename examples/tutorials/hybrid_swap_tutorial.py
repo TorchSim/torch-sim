@@ -151,8 +151,7 @@ This creates a simulation that can both:
 - Make larger compositional changes through swap moves
 """
 
-# %%
-# Run the hybrid simulation
+# %% Run the hybrid simulation
 n_steps = 100
 for step in range(n_steps):
     if step % 10 == 0:
