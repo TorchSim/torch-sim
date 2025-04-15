@@ -1,19 +1,14 @@
+import time
+
 import numpy as np
+import psutil
 import pytest
 import torch
 from ase import Atoms
 from ase.build import bulk, molecule
 from ase.neighborlist import neighbor_list
 
-from torch_sim.neighbors import (
-    primitive_neighbor_list,
-    standard_nl,
-    strict_nl,
-    torch_nl_linked_cell,
-    torch_nl_n2,
-    vesin_nl,
-    vesin_nl_ts,
-)
+from torch_sim import neighbors
 from torch_sim.transforms import compute_cell_shifts, compute_distances_with_cell_shifts
 
 
@@ -160,7 +155,7 @@ def test_primitive_neighbor_list(
 
     # Create a non-jitted version of the function if requested
     if use_jit:
-        neighbor_list_fn = primitive_neighbor_list
+        neighbor_list_fn = neighbors.primitive_neighbor_list
     else:
         # Create wrapper that disables JIT
         import os
@@ -251,7 +246,10 @@ def test_primitive_neighbor_list(
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
 @pytest.mark.parametrize("atoms_list", ["periodic_atoms_set", "molecule_atoms_set"])
-@pytest.mark.parametrize("nl_implementation", [standard_nl, vesin_nl, vesin_nl_ts])
+@pytest.mark.parametrize(
+    "nl_implementation",
+    [neighbors.standard_nl, neighbors.vesin_nl, neighbors.vesin_nl_ts],
+)
 def test_neighbor_list_implementations(
     *,
     cutoff: float,
@@ -314,7 +312,10 @@ def test_neighbor_list_implementations(
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
 @pytest.mark.parametrize("self_interaction", [True, False])
-@pytest.mark.parametrize("nl_implementation", [torch_nl_n2, torch_nl_linked_cell])
+@pytest.mark.parametrize(
+    "nl_implementation",
+    [neighbors.torch_nl_n2, neighbors.torch_nl_linked_cell],
+)
 def test_torch_nl_implementations(
     *,
     cutoff: float,
@@ -374,7 +375,7 @@ def test_primitive_neighbor_list_edge_cases(
 
     # Test all PBC combinations
     for pbc in [(True, False, False), (False, True, False), (False, False, True)]:
-        idx_i, idx_j, shifts = primitive_neighbor_list(
+        idx_i, idx_j, shifts = neighbors.primitive_neighbor_list(
             quantities="ijS",
             positions=pos,
             cell=cell,
@@ -386,7 +387,7 @@ def test_primitive_neighbor_list_edge_cases(
         assert len(idx_i) > 0  # Should find at least one neighbor
 
     # Test self-interaction
-    idx_i, idx_j, shifts = primitive_neighbor_list(
+    idx_i, idx_j, shifts = neighbors.primitive_neighbor_list(
         quantities="ijS",
         positions=pos,
         cell=cell,
@@ -411,7 +412,7 @@ def test_standard_nl_edge_cases(
 
     # Test different PBC combinations
     for pbc in (True, False):
-        mapping, shifts = standard_nl(
+        mapping, shifts = neighbors.standard_nl(
             positions=pos,
             cell=cell,
             pbc=pbc,
@@ -420,7 +421,7 @@ def test_standard_nl_edge_cases(
         assert len(mapping[0]) > 0  # Should find neighbors
 
     # Test sort_id
-    mapping, shifts = standard_nl(
+    mapping, shifts = neighbors.standard_nl(
         positions=pos,
         cell=cell,
         pbc=True,
@@ -441,7 +442,7 @@ def test_vesin_nl_edge_cases(
     cutoff = torch.tensor(1.5, device=device, dtype=dtype)
 
     # Test both implementations
-    for nl_fn in (vesin_nl, vesin_nl_ts):
+    for nl_fn in (neighbors.vesin_nl, neighbors.vesin_nl_ts):
         # Test different PBC combinations
         for pbc in (True, False):
             mapping, shifts = nl_fn(
@@ -464,7 +465,7 @@ def test_vesin_nl_edge_cases(
         assert torch.all(mapping[0][1:] >= mapping[0][:-1])
 
         # Test different precisions
-        if nl_fn == vesin_nl:  # vesin_nl_ts doesn't support float32
+        if nl_fn == neighbors.vesin_nl:  # vesin_nl_ts doesn't support float32
             pos_f32 = pos.to(dtype=torch.float32)
             cell_f32 = cell.to(dtype=torch.float32)
             cutoff_f32 = cutoff.to(dtype=torch.float32)
@@ -491,7 +492,7 @@ def test_strict_nl_edge_cases(
     batch_mapping = torch.tensor([0], device=device, dtype=torch.long)
     shifts_idx = torch.zeros((1, 3), device=device, dtype=torch.long)
 
-    new_mapping, new_batch, new_shifts = strict_nl(
+    new_mapping, new_batch, new_shifts = neighbors.strict_nl(
         cutoff=1.5,
         positions=pos,
         cell=cell,
@@ -506,7 +507,7 @@ def test_strict_nl_edge_cases(
     batch_mapping = torch.tensor([0, 1], device=device, dtype=torch.long)
     shifts_idx = torch.zeros((2, 3), device=device, dtype=torch.long)
 
-    new_mapping, new_batch, new_shifts = strict_nl(
+    new_mapping, new_batch, new_shifts = neighbors.strict_nl(
         cutoff=1.5,
         positions=pos,
         cell=cell,
@@ -515,3 +516,67 @@ def test_strict_nl_edge_cases(
         shifts_idx=shifts_idx,
     )
     assert len(new_mapping[0]) > 0  # Should find neighbors
+
+
+def test_neighbor_lists_time_and_memory(
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Test performance and memory characteristics of neighbor list implementations."""
+    # Create a smaller system to reduce memory usage
+    n_atoms = 100
+    pos = torch.rand(n_atoms, 3, device=device, dtype=dtype)
+    cell = torch.eye(3, device=device, dtype=dtype) * 10.0
+    cutoff = torch.tensor(2.0, device=device, dtype=dtype)
+
+    # Test different implementations
+    for nl_fn in (
+        neighbors.standard_nl,
+        neighbors.vesin_nl,
+        neighbors.vesin_nl_ts,
+        neighbors.torch_nl_n2,
+        neighbors.torch_nl_linked_cell,
+    ):
+        # Get initial memory usage
+        process = psutil.Process()
+        initial_cpu_memory = process.memory_info().rss  # in bytes
+
+        if device.type == "cuda":
+            torch.cuda.reset_peak_memory_stats()
+            initial_gpu_memory = torch.cuda.memory_allocated()
+
+        # Time the execution
+        start_time = time.perf_counter()
+
+        if nl_fn in [neighbors.torch_nl_n2, neighbors.torch_nl_linked_cell]:
+            batch = torch.zeros(n_atoms, dtype=torch.long, device=device)
+            # Fix pbc tensor shape
+            pbc = torch.tensor([[True, True, True]], device=device)
+            mapping, mapping_batch, shifts_idx = nl_fn(
+                cutoff, pos, cell, pbc, batch, self_interaction=False
+            )
+        else:
+            mapping, shifts = nl_fn(positions=pos, cell=cell, pbc=True, cutoff=cutoff)
+
+        end_time = time.perf_counter()
+        execution_time = end_time - start_time
+
+        # Get final memory usage
+        final_cpu_memory = process.memory_info().rss
+        cpu_memory_used = final_cpu_memory - initial_cpu_memory
+        fn_name = str(nl_fn)
+
+        # Warning: cuda case was never tested, to be tweaked later
+        if device.type == "cuda":
+            final_gpu_memory = torch.cuda.memory_allocated()
+            gpu_memory_used = final_gpu_memory - initial_gpu_memory
+            assert execution_time < 0.01, f"{fn_name} took too long: {execution_time}s"
+            assert gpu_memory_used < 5e8, (
+                f"{fn_name} used too much GPU memory: {gpu_memory_used / 1e6:.2f}MB"
+            )
+            torch.cuda.empty_cache()
+        else:
+            assert cpu_memory_used < 5e8, (
+                f"{fn_name} used too much CPU memory: {cpu_memory_used / 1e6:.2f}MB"
+            )
+            assert execution_time < 0.1, f"{fn_name} took too long: {execution_time}s"
