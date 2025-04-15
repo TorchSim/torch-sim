@@ -25,7 +25,7 @@ from torch_sim.unbatched.models.lennard_jones import (
 
 torch.set_default_tensor_type(torch.DoubleTensor)
 # Set simulation parameters
-n_steps = 10000
+n_steps = 10_000
 kT = 0.722  # Temperature in energy units
 sigma = 1.0  # Length parameter
 epsilon = 1.0  # Energy parameter

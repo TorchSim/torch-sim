@@ -152,8 +152,8 @@ def test_npt_langevin_multi_kt(
     dtype = torch.float64
     n_steps = 200
     dt = torch.tensor(0.001, dtype=dtype)
-    kT = torch.tensor([300.0, 10000.0], dtype=dtype) * MetalUnits.temperature
-    external_pressure = torch.tensor(0.0, dtype=dtype) * MetalUnits.pressure
+    kT = torch.tensor([300, 10_000], dtype=dtype) * MetalUnits.temperature
+    external_pressure = torch.tensor(0, dtype=dtype) * MetalUnits.pressure
 
     # Initialize integrator
     init_fn, update_fn = npt_langevin(
@@ -256,7 +256,7 @@ def test_nvt_langevin_multi_kt(
     dtype = torch.float64
     n_steps = 200
     dt = torch.tensor(0.001, dtype=dtype)
-    kT = torch.tensor([300.0, 10000.0], dtype=dtype) * MetalUnits.temperature
+    kT = torch.tensor([300, 10_000], dtype=dtype) * MetalUnits.temperature
 
     # Initialize integrator
     init_fn, update_fn = nvt_langevin(

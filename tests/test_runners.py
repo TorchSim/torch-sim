@@ -475,7 +475,7 @@ def test_integrate_with_default_autobatcher(
     """Test integration with autobatcher."""
 
     def mock_estimate(*args, **kwargs) -> float:  # noqa: ARG001
-        return 10000.0
+        return 10_000.0
 
     monkeypatch.setattr(
         "torch_sim.autobatching.estimate_max_memory_scaler", mock_estimate
@@ -515,7 +515,7 @@ def test_optimize_with_default_autobatcher(
     """Test optimize with autobatcher."""
 
     def mock_estimate(*args, **kwargs) -> float:  # noqa: ARG001
-        return 10000.0
+        return 10_000.0
 
     monkeypatch.setattr(
         "torch_sim.autobatching.estimate_max_memory_scaler", mock_estimate

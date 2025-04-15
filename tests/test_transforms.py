@@ -475,7 +475,7 @@ def test_safe_mask_basic() -> None:
     mask = torch.tensor([True, True, False])
     result = tst.safe_mask(mask, torch.log, x)
 
-    expected = torch.tensor([0.0000, 0.6931, 0.0000])
+    expected = torch.tensor([0, 0.6931, 0])
     torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-4)
 
 
@@ -489,7 +489,7 @@ def test_safe_mask_custom_placeholder() -> None:
     mask = torch.tensor([True, False, False])
     result = tst.safe_mask(mask, torch.log, x, placeholder=-999.0)
 
-    expected = torch.tensor([0.0000, -999.0000, -999.0000])
+    expected = torch.tensor([0.0, -999, -999])
     torch.testing.assert_close(result, expected)
 
 

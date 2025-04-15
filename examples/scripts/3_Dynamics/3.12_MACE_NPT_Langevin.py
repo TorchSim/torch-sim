@@ -76,7 +76,7 @@ N_steps_nvt = 20 if os.getenv("CI") else 2_000
 N_steps_npt = 20 if os.getenv("CI") else 2_000
 dt = 0.001 * Units.time  # Time step (1 ps)
 kT = 300 * Units.temperature  # Initial temperature (300 K)
-target_pressure = 10000 * Units.pressure  # Target pressure (0 bar)
+target_pressure = 10_000 * Units.pressure  # Target pressure (0 bar)
 
 nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
 state = nvt_init(state=state, seed=1)

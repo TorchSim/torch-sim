@@ -19,40 +19,40 @@ except ImportError:
 
 @pytest.fixture
 def orbv3_conservative_inf_omat_model(device: torch.device) -> OrbModel:
-    orbff = pretrained.orb_v3_conservative_inf_omat(
+    orb_ff = pretrained.orb_v3_conservative_inf_omat(
         device=device,
         precision="float32-high",
     )
-    return OrbModel(model=orbff, device=device)
+    return OrbModel(model=orb_ff, device=device)
 
 
 @pytest.fixture
 def orbv3_direct_20_omat_model(device: torch.device) -> OrbModel:
-    orbff = pretrained.orb_v3_direct_20_omat(
+    orb_ff = pretrained.orb_v3_direct_20_omat(
         device=device,
         precision="float32-high",
     )
-    return OrbModel(model=orbff, device=device)
+    return OrbModel(model=orb_ff, device=device)
 
 
 @pytest.fixture
 def orbv3_conservative_inf_omat_calculator(device: torch.device) -> ORBCalculator:
     """Create an ORBCalculator for the pretrained model."""
-    orbff = pretrained.orb_v3_conservative_inf_omat(
+    orb_ff = pretrained.orb_v3_conservative_inf_omat(
         device=device,
         precision="float32-high",
     )
-    return ORBCalculator(model=orbff, device=device)
+    return ORBCalculator(model=orb_ff, device=device)
 
 
 @pytest.fixture
 def orbv3_direct_20_omat_calculator(device: torch.device) -> ORBCalculator:
     """Create an ORBCalculator for the pretrained model."""
-    orbff = pretrained.orb_v3_direct_20_omat(
+    orb_ff = pretrained.orb_v3_direct_20_omat(
         device=device,
         precision="float32-high",
     )
-    return ORBCalculator(model=orbff, device=device)
+    return ORBCalculator(model=orb_ff, device=device)
 
 
 test_orb_conservative_consistency = make_model_calculator_consistency_test(

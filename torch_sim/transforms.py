@@ -37,8 +37,8 @@ def get_fractional_coordinates(
         >>> cell = torch.tensor([[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 4.0]])
         >>> frac = get_fractional_coordinates(pos, cell)
         >>> print(frac)
-        tensor([[0.2500, 0.2500, 0.2500],
-                [0.5000, 0.0000, 0.0000]])
+        tensor([[0.25, 0.25, 0.25],
+                [0.50, 0.00, 0.00]])
     """
     return torch.linalg.solve(cell.T, positions.T).T
 
@@ -80,8 +80,8 @@ def inverse_box(box: torch.Tensor) -> torch.Tensor:
         >>> # Matrix inverse
         >>> mat = torch.tensor([[1.0, 2.0], [0.0, 1.0]])
         >>> inverse_box(mat)
-        tensor([[ 1.0000, -2.0000],
-                [ 0.0000,  1.0000]])
+        tensor([[ 1, -2],
+                [ 0,  1]])
     """
     if (torch.is_tensor(box) and box.ndim == 0) or box.numel() == 1 or box.ndim == 1:
         return 1 / box
@@ -1157,7 +1157,7 @@ def safe_mask(
         >>> x = torch.tensor([1.0, 2.0, -1.0])
         >>> mask = torch.tensor([True, True, False])
         >>> safe_mask(mask, torch.log, x)
-        tensor([0.0000, 0.6931, 0.0000])
+        tensor([0, 0.6931, 0])
     """
     masked = torch.where(mask, operand, torch.zeros_like(operand))
     return torch.where(mask, fn(masked), torch.full_like(operand, placeholder))

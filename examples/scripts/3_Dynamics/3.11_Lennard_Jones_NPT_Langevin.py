@@ -104,7 +104,7 @@ results = model(state)
 
 dt = 0.001 * Units.time  # Time step (1 ps)
 kT = 200 * Units.temperature  # Temperature (200 K)
-target_pressure = 10000 * Units.pressure  # Target pressure (10 kbar)
+target_pressure = 10_000 * Units.pressure  # Target pressure (10 kbar)
 
 npt_init, npt_update = npt_langevin(
     model=model, dt=dt, kT=kT, external_pressure=target_pressure

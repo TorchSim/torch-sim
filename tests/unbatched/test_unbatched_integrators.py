@@ -122,7 +122,7 @@ def test_npt_langevin_integrator(
     # Initialize integrator
     target_temp = torch.tensor(100.0) * MetalUnits.temperature
     dt = torch.tensor(0.001) * MetalUnits.time
-    external_pressure = torch.tensor(10000) * MetalUnits.pressure
+    external_pressure = torch.tensor(10_000) * MetalUnits.pressure
     n_steps = 4000
     dim = ar_supercell_sim_state.positions.shape[1]
     langevin_init, langevin_update = npt_langevin(
