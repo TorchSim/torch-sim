@@ -8,6 +8,7 @@ from ase.neighborlist import neighbor_list
 from torch_sim.neighbors import (
     primitive_neighbor_list,
     standard_nl,
+    strict_nl,
     torch_nl_linked_cell,
     torch_nl_n2,
     vesin_nl,
@@ -359,3 +360,158 @@ def test_torch_nl_implementations(
 
     # Verify results
     np.testing.assert_allclose(dd_ref, dds)
+
+
+def test_primitive_neighbor_list_edge_cases(
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Test edge cases for primitive_neighbor_list."""
+    # Test different PBC combinations
+    pos = torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]], device=device, dtype=dtype)
+    cell = torch.eye(3, device=device, dtype=dtype) * 2.0
+    cutoff = torch.tensor(1.5, device=device, dtype=dtype)
+
+    # Test all PBC combinations
+    for pbc in [(True, False, False), (False, True, False), (False, False, True)]:
+        idx_i, idx_j, shifts = primitive_neighbor_list(
+            quantities="ijS",
+            positions=pos,
+            cell=cell,
+            pbc=pbc,
+            cutoff=cutoff,
+            device=device,
+            dtype=dtype,
+        )
+        assert len(idx_i) > 0  # Should find at least one neighbor
+
+    # Test self-interaction
+    idx_i, idx_j, shifts = primitive_neighbor_list(
+        quantities="ijS",
+        positions=pos,
+        cell=cell,
+        pbc=(True, True, True),
+        cutoff=cutoff,
+        device=device,
+        dtype=dtype,
+        self_interaction=True,
+    )
+    # Should find self-interactions
+    assert torch.any(idx_i == idx_j)
+
+
+def test_standard_nl_edge_cases(
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Test edge cases for standard_nl."""
+    pos = torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]], device=device, dtype=dtype)
+    cell = torch.eye(3, device=device, dtype=dtype) * 2.0
+    cutoff = torch.tensor(1.5, device=device, dtype=dtype)
+
+    # Test different PBC combinations
+    for pbc in (True, False):
+        mapping, shifts = standard_nl(
+            positions=pos,
+            cell=cell,
+            pbc=pbc,
+            cutoff=cutoff,
+        )
+        assert len(mapping[0]) > 0  # Should find neighbors
+
+    # Test sort_id
+    mapping, shifts = standard_nl(
+        positions=pos,
+        cell=cell,
+        pbc=True,
+        cutoff=cutoff,
+        sort_id=True,
+    )
+    # Check if indices are sorted
+    assert torch.all(mapping[0][1:] >= mapping[0][:-1])
+
+
+def test_vesin_nl_edge_cases(
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Test edge cases for vesin_nl and vesin_nl_ts."""
+    pos = torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]], device=device, dtype=dtype)
+    cell = torch.eye(3, device=device, dtype=dtype) * 2.0
+    cutoff = torch.tensor(1.5, device=device, dtype=dtype)
+
+    # Test both implementations
+    for nl_fn in (vesin_nl, vesin_nl_ts):
+        # Test different PBC combinations
+        for pbc in (True, False):
+            mapping, shifts = nl_fn(
+                positions=pos,
+                cell=cell,
+                pbc=pbc,
+                cutoff=cutoff,
+            )
+            assert len(mapping[0]) > 0  # Should find neighbors
+
+        # Test sort_id
+        mapping, shifts = nl_fn(
+            positions=pos,
+            cell=cell,
+            pbc=True,
+            cutoff=cutoff,
+            sort_id=True,
+        )
+        # Check if indices are sorted
+        assert torch.all(mapping[0][1:] >= mapping[0][:-1])
+
+        # Test different precisions
+        if nl_fn == vesin_nl:  # vesin_nl_ts doesn't support float32
+            pos_f32 = pos.to(dtype=torch.float32)
+            cell_f32 = cell.to(dtype=torch.float32)
+            cutoff_f32 = cutoff.to(dtype=torch.float32)
+            mapping, shifts = nl_fn(
+                positions=pos_f32,
+                cell=cell_f32,
+                pbc=True,
+                cutoff=cutoff_f32,
+            )
+            assert len(mapping[0]) > 0  # Should find neighbors
+
+
+def test_strict_nl_edge_cases(
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Test edge cases for strict_nl."""
+    pos = torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]], device=device, dtype=dtype)
+    # Create a cell tensor for each batch
+    cell = torch.eye(3, device=device, dtype=torch.long).repeat(2, 1, 1) * 2
+
+    # Test with no cell shifts
+    mapping = torch.tensor([[0], [1]], device=device, dtype=torch.long)
+    batch_mapping = torch.tensor([0], device=device, dtype=torch.long)
+    shifts_idx = torch.zeros((1, 3), device=device, dtype=torch.long)
+
+    new_mapping, new_batch, new_shifts = strict_nl(
+        cutoff=1.5,
+        positions=pos,
+        cell=cell,
+        mapping=mapping,
+        batch_mapping=batch_mapping,
+        shifts_idx=shifts_idx,
+    )
+    assert len(new_mapping[0]) > 0  # Should find neighbors
+
+    # Test with different batch mappings
+    mapping = torch.tensor([[0, 1], [1, 0]], device=device, dtype=torch.long)
+    batch_mapping = torch.tensor([0, 1], device=device, dtype=torch.long)
+    shifts_idx = torch.zeros((2, 3), device=device, dtype=torch.long)
+
+    new_mapping, new_batch, new_shifts = strict_nl(
+        cutoff=1.5,
+        positions=pos,
+        cell=cell,
+        mapping=mapping,
+        batch_mapping=batch_mapping,
+        shifts_idx=shifts_idx,
+    )
+    assert len(new_mapping[0]) > 0  # Should find neighbors
