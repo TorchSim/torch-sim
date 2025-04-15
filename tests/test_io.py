@@ -197,25 +197,23 @@ def test_state_to_multiple_phonopy(ar_double_sim_state: SimState) -> None:
 
 @pytest.mark.parametrize(
     ("sim_state_name", "conversion_functions"),
-    list(
-        itertools.product(
-            [
-                "ar_supercell_sim_state",
-                "si_sim_state",
-                "ti_sim_state",
-                "sio2_sim_state",
-                "fe_supercell_sim_state",
-                "cu_sim_state",
-                "ar_double_sim_state",
-                "mixed_double_sim_state",
-                # TODO: round trip benzene/non-pbc systems
-            ],
-            [
-                (ts.io.state_to_atoms, ts.io.atoms_to_state),
-                (ts.io.state_to_structures, ts.io.structures_to_state),
-                (ts.io.state_to_phonopy, ts.io.phonopy_to_state),
-            ],
-        )
+    itertools.product(
+        [
+            "ar_supercell_sim_state",
+            "si_sim_state",
+            "ti_sim_state",
+            "sio2_sim_state",
+            "fe_supercell_sim_state",
+            "cu_sim_state",
+            "ar_double_sim_state",
+            "mixed_double_sim_state",
+            # TODO: round trip benzene/non-pbc systems
+        ],
+        [
+            (ts.io.state_to_atoms, ts.io.atoms_to_state),
+            (ts.io.state_to_structures, ts.io.structures_to_state),
+            (ts.io.state_to_phonopy, ts.io.phonopy_to_state),
+        ],
     ),
 )
 def test_state_round_trip(
