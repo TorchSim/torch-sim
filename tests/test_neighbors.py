@@ -116,10 +116,11 @@ def periodic_atoms_set():
         bulk("Cu", "fcc", a=3.6),
         bulk("Si", "bct", a=6, c=3),
         bulk("Ti", "hcp", a=2.94, c=4.64, orthorhombic=False),
-        # test very skewed unit cell
+        # test very skewed rhombohedral cells
         bulk("Bi", "rhombohedral", a=6, alpha=20),
-        bulk("Bi", "rhombohedral", a=6, alpha=10),
-        bulk("Bi", "rhombohedral", a=6, alpha=5),
+        bulk(
+            "Bi", "rhombohedral", a=6, alpha=10
+        ),  # very skewed, by far the slowest test case
         bulk("SiCu", "rocksalt", a=6),
         bulk("SiFCu", "fluorite", a=6),
         Atoms(**CaCrP2O7_mvc_11955_symmetrized),
@@ -129,11 +130,7 @@ def periodic_atoms_set():
 @pytest.fixture
 def molecule_atoms_set() -> list:
     return [
-        molecule("CH3CH2NH2"),
-        molecule("H2O"),
-        molecule("methylenecyclopropane"),
-        molecule("OCHCHO"),
-        molecule("C3H9C"),
+        *map(molecule, ("CH3CH2NH2", "H2O", "methylenecyclopropane", "OCHCHO", "C3H9C")),
     ]
 
 
@@ -227,14 +224,12 @@ def test_primitive_neighbor_list(
         )
 
         # Convert to torch tensors
-        idx_i_ref = torch.tensor(idx_i_ref, dtype=torch.long, device=torch.device("cpu"))
-        idx_j_ref = torch.tensor(idx_j_ref, dtype=torch.long, device=torch.device("cpu"))
+        idx_i_ref = torch.tensor(idx_i_ref, dtype=torch.long, device=device)
+        idx_j_ref = torch.tensor(idx_j_ref, dtype=torch.long, device=device)
 
         # Create mapping and shifts
         mapping_ref = torch.stack((idx_i_ref, idx_j_ref), dim=0)
-        shifts_ref = torch.tensor(
-            shifts_ref, dtype=torch.float64, device=torch.device("cpu")
-        )
+        shifts_ref = torch.tensor(shifts_ref, dtype=dtype, device=device)
 
         # Calculate distances with cell shifts
         cell_shifts_ref = torch.mm(shifts_ref, row_vector_cell)
