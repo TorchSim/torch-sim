@@ -275,7 +275,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
 
         return results
 
-    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:  # noqa: C901
+    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute Lennard-Jones energies, forces, and stresses for a system.
 
         Main entry point for Lennard-Jones calculations that handles batched states by
@@ -329,15 +329,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
         for key in ("stress", "energy"):
             if key in properties:
                 results[key] = torch.stack([out[key] for out in outputs])
-        for key in ("forces",):
-            if key in properties:
-                results[key] = torch.cat([out[key] for out in outputs], dim=0)
-
-        for key in ("energies",):
-            if key in properties:
-                results[key] = torch.cat([out[key] for out in outputs], dim=0)
-
-        for key in ("stresses",):
+        for key in ("forces", "energies", "stresses"):
             if key in properties:
                 results[key] = torch.cat([out[key] for out in outputs], dim=0)
 
