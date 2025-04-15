@@ -37,7 +37,7 @@ model = ts.models.FairChemModel(
     seed=0,
 )
 atoms_list = [si_dc, si_dc]
-state = ts.state.atoms_to_state(atoms_list)
+state = ts.io.atoms_to_state(atoms_list)
 
 results = model(state)
 

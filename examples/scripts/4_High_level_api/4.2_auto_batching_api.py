@@ -17,13 +17,13 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
+import torch_sim as ts
 from torch_sim.autobatching import (
     BinningAutoBatcher,
     InFlightAutoBatcher,
     calculate_memory_scaler,
 )
 from torch_sim.integrators import nvt_langevin
-from torch_sim.io import atoms_to_state
 from torch_sim.models.mace import MaceModel
 from torch_sim.optimizers import unit_cell_fire
 from torch_sim.runners import generate_force_convergence_fn
@@ -46,8 +46,8 @@ mace_model = MaceModel(
     compute_forces=True,
 )
 
-si_state = atoms_to_state(si_atoms, device=device, dtype=torch.float64)
-fe_state = atoms_to_state(fe_atoms, device=device, dtype=torch.float64)
+si_state = ts.io.atoms_to_state(si_atoms, device=device, dtype=torch.float64)
+fe_state = ts.io.atoms_to_state(fe_atoms, device=device, dtype=torch.float64)
 
 fire_init, fire_update = unit_cell_fire(mace_model)
 
@@ -92,8 +92,8 @@ nvt_init, nvt_update = nvt_langevin(
 )
 
 
-si_state = atoms_to_state(si_atoms, device=device, dtype=torch.float64)
-fe_state = atoms_to_state(fe_atoms, device=device, dtype=torch.float64)
+si_state = ts.io.atoms_to_state(si_atoms, device=device, dtype=torch.float64)
+fe_state = ts.io.atoms_to_state(fe_atoms, device=device, dtype=torch.float64)
 
 si_nvt_state = nvt_init(si_state)
 fe_nvt_state = nvt_init(fe_state)

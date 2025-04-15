@@ -123,7 +123,7 @@ final_state = ts.optimize(
 )
 
 # Define atoms and Phonopy object
-atoms = ts.state.state_to_phonopy(final_state)[0]
+atoms = ts.io.state_to_phonopy(final_state)[0]
 ph = Phonopy(atoms, supercell_matrix)
 
 # Generate FC2 displacements

@@ -13,7 +13,7 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
-from torch_sim.io import atoms_to_state
+import torch_sim as ts
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_optimizers import unit_cell_fire
 from torch_sim.units import UnitConversion
@@ -45,7 +45,7 @@ si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 si_dc.positions = si_dc.positions + 0.2 * rng.standard_normal(si_dc.positions.shape)
 si_dc.cell = si_dc.cell.array * 0.95
 
-state = atoms_to_state([si_dc], device, dtype)
+state = ts.io.atoms_to_state([si_dc], device, dtype)
 
 # Initialize the unbatched MACE model
 model = UnbatchedMaceModel(

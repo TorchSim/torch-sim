@@ -31,23 +31,13 @@ def model_path_oc20(tmp_path_factory: pytest.TempPathFactory) -> str:
 @pytest.fixture
 def eqv2_oc20_model_pbc(model_path_oc20: str, device: torch.device) -> FairChemModel:
     cpu = device.type == "cpu"
-    return FairChemModel(
-        model=model_path_oc20,
-        cpu=cpu,
-        seed=0,
-        pbc=True,
-    )
+    return FairChemModel(model=model_path_oc20, cpu=cpu, seed=0, pbc=True)
 
 
 @pytest.fixture
 def eqv2_oc20_model_non_pbc(model_path_oc20: str, device: torch.device) -> FairChemModel:
     cpu = device.type == "cpu"
-    return FairChemModel(
-        model=model_path_oc20,
-        cpu=cpu,
-        seed=0,
-        pbc=False,
-    )
+    return FairChemModel(model=model_path_oc20, cpu=cpu, seed=0, pbc=False)
 
 
 if get_token():
@@ -63,12 +53,7 @@ if get_token():
         model_path_omat24: str, device: torch.device
     ) -> FairChemModel:
         cpu = device.type == "cpu"
-        return FairChemModel(
-            model=model_path_omat24,
-            cpu=cpu,
-            seed=0,
-            pbc=True,
-        )
+        return FairChemModel(model=model_path_omat24, cpu=cpu, seed=0, pbc=True)
 
 
 @pytest.fixture
@@ -101,8 +86,4 @@ test_fairchem_non_pbc_benzene = make_model_calculator_consistency_test(
 test_fairchem_ocp_model_outputs = pytest.mark.skipif(
     os.environ.get("HF_TOKEN") is None,
     reason="Issues in graph construction of older models",
-)(
-    make_validate_model_outputs_test(
-        model_fixture_name="eqv2_omat24_model_pbc",
-    )
-)
+)(make_validate_model_outputs_test(model_fixture_name="eqv2_omat24_model_pbc"))

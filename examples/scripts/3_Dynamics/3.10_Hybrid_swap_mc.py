@@ -13,8 +13,8 @@ import torch
 from mace.calculators.foundations_models import mace_mp
 from pymatgen.core import Structure
 
+import torch_sim as ts
 from torch_sim.integrators import MDState, nvt_langevin
-from torch_sim.io import structures_to_state
 from torch_sim.models.mace import MaceModel
 from torch_sim.monte_carlo import swap_monte_carlo
 from torch_sim.units import MetalUnits
@@ -61,7 +61,7 @@ coords = [
 ]
 structure = Structure(lattice, species, coords)
 
-state = structures_to_state([structure], device=device, dtype=dtype)
+state = ts.io.structures_to_state([structure], device=device, dtype=dtype)
 
 
 # %%

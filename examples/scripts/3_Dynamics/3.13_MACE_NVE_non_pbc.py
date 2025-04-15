@@ -13,7 +13,7 @@ import torch
 from ase.build import molecule
 from mace.calculators.foundations_models import mace_off
 
-from torch_sim.io import atoms_to_state
+import torch_sim as ts
 from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import nve
@@ -52,7 +52,7 @@ model = UnbatchedMaceModel(
     enable_cueq=False,
 )
 
-state = atoms_to_state(mol, device, dtype)
+state = ts.io.atoms_to_state(mol, device, dtype)
 
 # Run initial inference
 results = model(state)

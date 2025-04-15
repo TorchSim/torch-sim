@@ -2,8 +2,8 @@ import pytest
 import torch
 from ase.atoms import Atoms
 
+import torch_sim as ts
 from tests.unbatched.conftest import make_unbatched_model_calculator_consistency_test
-from torch_sim.io import atoms_to_state
 
 
 try:
@@ -59,7 +59,7 @@ def test_unbatched_mace_dtype_working(
         compute_forces=True,
     )
 
-    state = atoms_to_state(si_atoms, device, dtype)
+    state = ts.io.atoms_to_state(si_atoms, device, dtype)
 
     model.forward(state)
 

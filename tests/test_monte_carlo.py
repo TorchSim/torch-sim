@@ -2,7 +2,7 @@ import pytest
 import torch
 from pymatgen.core import Structure
 
-from torch_sim.io import structures_to_state
+import torch_sim as ts
 from torch_sim.monte_carlo import (
     SwapMCState,
     generate_swaps,
@@ -39,7 +39,7 @@ def generator(device: torch.device) -> torch.Generator:
 
 @pytest.fixture
 def batched_diverse_state(diverse_structure: Structure, device: torch.device) -> SimState:
-    return structures_to_state(
+    return ts.io.structures_to_state(
         [diverse_structure] * 2, device=device, dtype=torch.float64
     )
 

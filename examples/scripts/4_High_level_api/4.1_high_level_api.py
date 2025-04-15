@@ -17,8 +17,8 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 from pymatgen.core import Structure
 
+import torch_sim as ts
 from torch_sim.integrators import nvt_langevin
-from torch_sim.io import state_to_atoms, state_to_structures
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.models.mace import MaceModel
 from torch_sim.optimizers import unit_cell_fire
@@ -45,7 +45,7 @@ final_state = integrate(
     temperature=2000,
     timestep=0.002,
 )
-final_atoms = state_to_atoms(final_state)
+final_atoms = ts.io.state_to_atoms(final_state)
 
 
 trajectory_file = "lj_trajectory.h5md"
@@ -113,7 +113,7 @@ final_state = integrate(
     timestep=0.002,
     trajectory_reporter=reporter,
 )
-final_atoms = state_to_atoms(final_state)
+final_atoms = ts.io.state_to_atoms(final_state)
 
 
 ### basic mace example with batching
@@ -130,7 +130,7 @@ final_state = integrate(
     temperature=2000,
     timestep=0.002,
 )
-final_atoms = state_to_atoms(final_state)
+final_atoms = ts.io.state_to_atoms(final_state)
 final_fe_atoms_supercell = final_atoms[3]
 
 
@@ -208,4 +208,4 @@ final_state = integrate(
     temperature=2000,
     timestep=0.002,
 )
-final_structure = state_to_structures(final_state)
+final_structure = ts.io.state_to_structures(final_state)

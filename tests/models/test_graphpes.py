@@ -2,12 +2,12 @@ import pytest
 import torch
 from ase.build import bulk, molecule
 
+import torch_sim as ts
 from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
-from torch_sim.io import atoms_to_state
 from torch_sim.models.graphpes import GraphPESWrapper
 
 
@@ -43,7 +43,7 @@ def test_graphpes_isolated(device: torch.device):
         compute_forces=True,
         compute_stress=False,
     )
-    ts_output = ts_model(atoms_to_state([water_atoms], device, torch.float32))
+    ts_output = ts_model(ts.io.atoms_to_state([water_atoms], device, torch.float32))
     assert set(ts_output.keys()) == {"energy", "forces"}
     assert ts_output["energy"].shape == (1,)
 
@@ -68,7 +68,7 @@ def test_graphpes_periodic(device: torch.device):
         compute_forces=True,
         compute_stress=True,
     )
-    ts_output = ts_model(atoms_to_state([bulk_atoms], device, torch.float32))
+    ts_output = ts_model(ts.io.atoms_to_state([bulk_atoms], device, torch.float32))
     assert set(ts_output.keys()) == {"energy", "forces", "stress"}
     assert ts_output["energy"].shape == (1,)
     assert ts_output["forces"].shape == (len(bulk_atoms), 3)
@@ -99,7 +99,7 @@ def test_batching(device: torch.device):
         compute_forces=True,
         compute_stress=True,
     )
-    ts_output = ts_model(atoms_to_state(systems, device, torch.float32))
+    ts_output = ts_model(ts.io.atoms_to_state(systems, device, torch.float32))
 
     assert set(ts_output.keys()) == {"energy", "forces", "stress"}
     assert ts_output["energy"].shape == (2,)
@@ -116,7 +116,7 @@ def test_graphpes_dtype(device: torch.device, dtype: torch.dtype):
     model = SchNet()
 
     ts_wrapper = GraphPESWrapper(model, device=device, dtype=dtype, compute_stress=False)
-    ts_output = ts_wrapper(atoms_to_state([water], device, dtype))
+    ts_output = ts_wrapper(ts.io.atoms_to_state([water], device, dtype))
     assert ts_output["energy"].dtype == dtype
     assert ts_output["forces"].dtype == dtype
 
