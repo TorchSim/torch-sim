@@ -2,7 +2,7 @@
 
 # ruff: noqa: FBT001, FBT002, RUF002, RUF003, RET503
 
-from typing import Any
+from typing import Any, Final
 
 import torch
 from torch.autograd import Function
@@ -122,7 +122,7 @@ def expm_frechet_block_enlarge(
 
 # Maximal values ell_m of ||2**-s A|| such that the backward error bound
 # does not exceed 2**-53.
-ell_table_61 = (
+ell_table_61: Final = (
     None,
     # 1
     2.11e-8,
