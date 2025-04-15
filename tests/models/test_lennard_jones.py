@@ -155,6 +155,8 @@ def models(
         "dtype": torch.float64,
         "compute_forces": True,
         "compute_stress": True,
+        "per_atom_energies": True,
+        "per_atom_stresses": True,
     }
 
     cutoff = 2.5 * 3.405  # Standard LJ cutoff * sigma
@@ -178,6 +180,14 @@ def test_energy_match(
     assert torch.allclose(results_nl["energy"], results_direct["energy"], rtol=1e-10)
 
 
+def test_per_atom_energy_match(
+    models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
+) -> None:
+    """Test that per-atom energy matches between neighbor list and direct calculations."""
+    results_nl, results_direct = models
+    assert torch.allclose(results_nl["energies"], results_direct["energies"], rtol=1e-10)
+
+
 def test_forces_match(
     models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
 ) -> None:
@@ -192,6 +202,15 @@ def test_stress_match(
     """Test that stress tensors match between neighbor list and direct calculations."""
     results_nl, results_direct = models
     assert torch.allclose(results_nl["stress"], results_direct["stress"], rtol=1e-10)
+
+
+def test_per_atom_stress_match(
+    models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
+) -> None:
+    """Test that per-atom stress tensors match between neighbor list
+    and direct calculations."""
+    results_nl, results_direct = models
+    assert torch.allclose(results_nl["stresses"], results_direct["stresses"], rtol=1e-10)
 
 
 def test_force_conservation(
