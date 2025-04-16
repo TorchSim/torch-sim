@@ -76,7 +76,7 @@ class MatterSimModel(torch.nn.Module, ModelInterface):
             self._device = torch.device(self._device)
 
         self._dtype = dtype or torch.float32
-        self._memory_scales_with = "n_atoms_x_density" # should be density^2 bc triplets
+        self._memory_scales_with = "n_atoms_x_density"  # should be density^2 bc triplets
         self._compute_stress = True
         self._compute_forces = True
 

@@ -191,7 +191,9 @@ def sio2_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
 
 @pytest.fixture
 def rattled_sio2_sim_state(
-    sio2_sim_state: SimState, device: torch.device, dtype: torch.dtype,
+    sio2_sim_state: SimState,
+    device: torch.device,
+    dtype: torch.dtype,
 ) -> SimState:
     """Create a rattled SiO2 system for testing."""
     sim_state = sio2_sim_state.clone()
