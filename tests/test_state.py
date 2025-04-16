@@ -153,6 +153,15 @@ def test_concatenate_si_and_fe_states(
     )
     assert torch.all(concatenated.batch == expected_batch)
 
+    # check n_atoms_per_batch
+    assert torch.all(
+        concatenated.n_atoms_per_batch
+        == torch.tensor(
+            [si_sim_state.n_atoms, fe_supercell_sim_state.n_atoms],
+            device=concatenated.device,
+        )
+    )
+
     # Check that positions match for each original state
     assert torch.allclose(concatenated.positions[:si_atoms], si_sim_state.positions)
     assert torch.allclose(
