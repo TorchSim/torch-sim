@@ -170,6 +170,20 @@ class SimState:
             int: Total number of atoms in the system
         """
         return self.positions.shape[0]
+    
+    @property
+    def n_atoms_per_batch(self) -> int:
+        """Get the number of atoms per batch.
+
+        Returns:
+            int: Number of atoms per batch
+        """
+        # TODO: parallelize this
+        ns = []
+        for i in range(self.n_batches):
+            n = (self.batch == i).sum()
+            ns.append(n)
+        return torch.tensor(ns, device=self.device)
 
     @property
     def n_batches(self) -> int:

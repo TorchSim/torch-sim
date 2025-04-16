@@ -776,7 +776,7 @@ def npt_langevin(  # noqa: C901, PLR0915
             3, device=device, dtype=dtype
         ).unsqueeze(0)
 
-        return virial + kinetic_term
+        return virial + kinetic_term * state.n_atoms_per_batch
 
     def cell_position_step(
         state: NPTLangevinState,
