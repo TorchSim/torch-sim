@@ -803,60 +803,60 @@ def test_multiplicative_isotropic_cutoff_gradient() -> None:
     ("pos", "cell", "expected"),
     [
         (
-            torch.tensor([[1.0, 1.0, 1.0], [2.0, 0.0, 0.0]]),
-            torch.tensor([[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 4.0]]),
-            torch.tensor([[0.25, 0.25, 0.25], [0.5, 0.0, 0.0]]),
+            [[1.0, 1.0, 1.0], [2.0, 0.0, 0.0]],
+            [[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 4.0]],
+            [[0.25, 0.25, 0.25], [0.5, 0.0, 0.0]],
         ),
         (
-            torch.tensor([[1.0, 1.0, 1.0], [0.0, 0.0, 0.0]]),
-            torch.tensor([[2.0, 1.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]]),
-            torch.tensor([[0.5, 0.25, 0.5], [0.0, 0.0, 0.0]]),
+            [[1.0, 1.0, 1.0], [0.0, 0.0, 0.0]],
+            [[2.0, 1.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]],
+            [[0.5, 0.25, 0.5], [0.0, 0.0, 0.0]],
         ),
     ],
 )
 def test_get_fractional_coordinates(
-    pos: torch.Tensor, cell: torch.Tensor, expected: torch.Tensor
+    pos: list[list[float]], cell: list[list[float]], expected: list[list[float]]
 ) -> None:
     """Test get_fractional_coordinates with various inputs.
 
     Tests the function with both cubic and non-orthogonal cells.
     """
-    frac = tst.get_fractional_coordinates(pos, cell)
-    torch.testing.assert_close(frac, expected)
+    frac = tst.get_fractional_coordinates(torch.tensor(pos), torch.tensor(cell))
+    torch.testing.assert_close(frac, torch.tensor(expected))
 
 
 @pytest.mark.parametrize(
     ("dr", "cell", "pbc", "expected"),
     [
         (
-            torch.tensor([[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]]),
+            [[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]],
             torch.eye(3) * 3.0,
             False,
-            torch.tensor([[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]]),
+            [[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]],
         ),
         (
-            torch.tensor([[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]]),
+            [[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]],
             torch.eye(3) * 3.0,
             True,
-            torch.tensor([[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]]),
+            [[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]],
         ),
         (
-            torch.tensor([[2.2, 0.0, 0.0], [0.0, 2.2, 0.0], [0.0, 0.0, 2.2]]),
+            [[2.2, 0.0, 0.0], [0.0, 2.2, 0.0], [0.0, 0.0, 2.2]],
             torch.eye(3) * 2.0,
             True,
-            torch.tensor([[0.2, 0.0, 0.0], [0.0, 0.2, 0.0], [0.0, 0.0, 0.2]]),
+            [[0.2, 0.0, 0.0], [0.0, 0.2, 0.0], [0.0, 0.0, 0.2]],
         ),
     ],
 )
 def test_minimum_image_displacement(
-    *, dr: torch.Tensor, cell: torch.Tensor, pbc: bool, expected: torch.Tensor
+    *, dr: list[list[float]], cell: torch.Tensor, pbc: bool, expected: list[list[float]]
 ) -> None:
     """Test minimum_image_displacement with various inputs.
 
     Tests function with and without PBC and with different displacement vectors.
     """
-    result = tst.minimum_image_displacement(dr=dr, cell=cell, pbc=pbc)
-    torch.testing.assert_close(result, expected)
+    result = tst.minimum_image_displacement(dr=torch.tensor(dr), cell=cell, pbc=pbc)
+    torch.testing.assert_close(result, torch.tensor(expected))
 
 
 @pytest.mark.parametrize(
@@ -916,18 +916,18 @@ def test_get_pair_displacements(
 @pytest.mark.parametrize(
     ("v", "expected"),
     [
-        (torch.tensor([1, 2, 3]), torch.tensor([0, 1, 3, 6])),
-        (torch.tensor([[1, 2], [3, 4]]), torch.tensor([0, 1, 3, 6, 10])),
+        ([1, 2, 3], [0, 1, 3, 6]),
+        ([[1, 2], [3, 4]], [0, 1, 3, 6, 10]),
     ],
 )
-def test_strides_of(v: torch.Tensor, expected: torch.Tensor) -> None:
+def test_strides_of(v: list[int], expected: list[int]) -> None:
     """Test strides_of with 1D and 2D tensors.
 
     Verifies that the function correctly computes cumulative strides
     for both 1D and multidimensional tensors.
     """
-    strides = tst.strides_of(v)
-    torch.testing.assert_close(strides, expected)
+    strides = tst.strides_of(torch.tensor(v))
+    torch.testing.assert_close(strides, torch.tensor(expected))
 
 
 def test_strides_of_empty() -> None:
@@ -997,23 +997,20 @@ def test_get_number_of_cell_repeats(
 @pytest.mark.parametrize(
     ("num_repeats", "expected_shape", "expected_range"),
     [
-        (torch.tensor([1, 1, 1]), (27, 3), {"min": -1, "max": 1}),
-        (torch.tensor([0, 0, 0]), (1, 3), {"exact": torch.tensor([[0.0, 0.0, 0.0]])}),
-        (
-            torch.tensor([1, 0, 2]),
-            (15, 3),
-            {"dim_values": {0: (-1, 1), 1: (0, 0), 2: (-2, 2)}},
-        ),
+        ([1, 1, 1], (27, 3), {"min": -1, "max": 1}),
+        ([0, 0, 0], (1, 3), {"exact": [[0.0, 0.0, 0.0]]}),
+        ([1, 0, 2], (15, 3), {"dim_values": {0: (-1, 1), 1: (0, 0), 2: (-2, 2)}}),
     ],
 )
 def test_get_cell_shift_idx(
-    num_repeats: torch.Tensor, expected_shape: tuple, expected_range: dict
+    num_repeats: list[int], expected_shape: tuple, expected_range: dict
 ) -> None:
     """Test get_cell_shift_idx with different repeat parameters.
 
     Tests the function with symmetric, zero, and asymmetric repeats.
     """
-    shifts = tst.get_cell_shift_idx(num_repeats, torch.float)
+    n_repeats = torch.tensor(num_repeats)
+    shifts = tst.get_cell_shift_idx(n_repeats, torch.float)
 
     # Check shape
     assert shifts.shape == expected_shape
@@ -1024,7 +1021,7 @@ def test_get_cell_shift_idx(
         assert torch.all(shifts <= expected_range["max"])
 
     if "exact" in expected_range:
-        torch.testing.assert_close(shifts, expected_range["exact"])
+        torch.testing.assert_close(shifts, torch.tensor(expected_range["exact"]))
 
     if "dim_values" in expected_range:
         for dim, (min_val, max_val) in expected_range["dim_values"].items():
@@ -1034,44 +1031,30 @@ def test_get_cell_shift_idx(
 
 @pytest.mark.parametrize(
     ("idx_3d", "shape", "expected"),
-    [
-        (
-            torch.tensor([[0, 0, 0], [1, 2, 3]]),
-            torch.tensor([2, 3, 4]),
-            torch.tensor([0, 23]),
-        )
-    ],
+    [([[0, 0, 0], [1, 2, 3]], [2, 3, 4], [0, 23])],
 )
-def test_ravel_3d(
-    idx_3d: torch.Tensor, shape: torch.Tensor, expected: torch.Tensor
-) -> None:
+def test_ravel_3d(idx_3d: list[list[int]], shape: list[int], expected: list[int]) -> None:
     """Test ravel_3d function.
 
     Verifies correct conversion of 3D indices to linear indices.
     """
-    linear_idx = tst.ravel_3d(idx_3d, shape)
-    torch.testing.assert_close(linear_idx, expected)
+    linear_idx = tst.ravel_3d(torch.tensor(idx_3d), torch.tensor(shape))
+    torch.testing.assert_close(linear_idx, torch.tensor(expected))
 
 
 @pytest.mark.parametrize(
     ("linear_idx", "shape", "expected"),
-    [
-        (
-            torch.tensor([0, 23]),
-            torch.tensor([2, 3, 4]),
-            torch.tensor([[0, 0, 0], [1, 2, 3]]),
-        )
-    ],
+    [([0, 23], [2, 3, 4], [[0, 0, 0], [1, 2, 3]])],
 )
 def test_unravel_3d(
-    linear_idx: torch.Tensor, shape: torch.Tensor, expected: torch.Tensor
+    linear_idx: list[int], shape: list[int], expected: list[list[int]]
 ) -> None:
     """Test unravel_3d function.
 
     Verifies correct conversion of linear indices back to 3D indices.
     """
-    idx_3d = tst.unravel_3d(linear_idx, shape)
-    torch.testing.assert_close(idx_3d, expected)
+    idx_3d = tst.unravel_3d(torch.tensor(linear_idx), torch.tensor(shape))
+    torch.testing.assert_close(idx_3d, torch.tensor(expected))
 
 
 def test_ravel_unravel_3d_roundtrip() -> None:
@@ -1087,24 +1070,17 @@ def test_ravel_unravel_3d_roundtrip() -> None:
 
 @pytest.mark.parametrize(
     ("cell", "pos", "n_bins_s", "expected"),
-    [
-        (
-            torch.eye(3) * 2.0,
-            torch.tensor([[0.5, 0.5, 0.5], [1.5, 1.5, 1.5]]),
-            torch.tensor([2, 2, 2]),
-            torch.tensor([0, 7]),
-        )
-    ],
+    [(torch.eye(3) * 2.0, [[0.5, 0.5, 0.5], [1.5, 1.5, 1.5]], [2, 2, 2], [0, 7])],
 )
 def test_get_linear_bin_idx(
-    cell: torch.Tensor, pos: torch.Tensor, n_bins_s: torch.Tensor, expected: torch.Tensor
+    cell: torch.Tensor, pos: list[float], n_bins_s: list[float], expected: list[float]
 ) -> None:
     """Test get_linear_bin_idx function.
 
     Verifies correct calculation of linear bin indices for positions.
     """
-    bin_idx = tst.get_linear_bin_idx(cell, pos, n_bins_s)
-    torch.testing.assert_close(bin_idx, expected)
+    bin_idx = tst.get_linear_bin_idx(cell, torch.tensor(pos), torch.tensor(n_bins_s))
+    torch.testing.assert_close(bin_idx, torch.tensor(expected))
 
 
 def test_scatter_bin_index_basic() -> None:

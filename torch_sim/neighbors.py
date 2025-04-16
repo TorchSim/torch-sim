@@ -4,7 +4,7 @@ import torch
 from vesin import NeighborList as VesinNeighborList
 from vesin.torch import NeighborList as VesinNeighborList_ts
 
-from torch_sim.math import torch_divmod
+import torch_sim.math as tsm
 from torch_sim.transforms import (
     build_linked_cell_neighborhood,
     build_naive_neighborhood,
@@ -174,7 +174,7 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     for c in range(3):
         if pbc[c]:
             # (Note: torch.divmod does not exist in older numpy versions)
-            cell_shift_ic[:, c], bin_index_ic[:, c] = torch_divmod(
+            cell_shift_ic[:, c], bin_index_ic[:, c] = tsm.torch_divmod(
                 bin_index_ic[:, c], n_bins_c[c]
             )
         else:
@@ -264,9 +264,9 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
         for dy in range(-int(neigh_search_y.item()), int(neigh_search_y.item()) + 1):
             for dx in range(-int(neigh_search_x.item()), int(neigh_search_x.item()) + 1):
                 # Bin index of neighboring bin and shift vector.
-                shiftx_xyz, neighbinx_xyz = torch_divmod(binx_xyz + dx, n_bins_c[0])
-                shifty_xyz, neighbiny_xyz = torch_divmod(biny_xyz + dy, n_bins_c[1])
-                shiftz_xyz, neighbinz_xyz = torch_divmod(binz_xyz + dz, n_bins_c[2])
+                shiftx_xyz, neighbinx_xyz = tsm.torch_divmod(binx_xyz + dx, n_bins_c[0])
+                shifty_xyz, neighbiny_xyz = tsm.torch_divmod(biny_xyz + dy, n_bins_c[1])
+                shiftz_xyz, neighbinz_xyz = tsm.torch_divmod(binz_xyz + dz, n_bins_c[2])
                 neighbin_b = (
                     neighbinx_xyz
                     + n_bins_c[0] * (neighbiny_xyz + n_bins_c[1] * neighbinz_xyz)

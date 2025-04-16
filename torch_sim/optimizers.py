@@ -20,8 +20,7 @@ from typing import Any
 
 import torch
 
-from torch_sim.math import expm_frechet
-from torch_sim.math import matrix_log_33 as logm
+import torch_sim.math as tsm
 from torch_sim.state import DeformGradMixin, SimState, StateDict
 
 
@@ -1414,7 +1413,7 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
         # Calculate log of deformation gradient
         deform_grad_log = torch.zeros_like(cur_deform_grad)
         for b in range(n_batches):
-            deform_grad_log[b] = logm(cur_deform_grad[b])
+            deform_grad_log[b] = tsm.matrix_log_33(cur_deform_grad[b])
 
         # Scale to get cell positions
         cell_positions = deform_grad_log * state.cell_factor
@@ -1495,7 +1494,9 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
             # Calculate all 9 Frechet derivatives at once
             expm_derivs = torch.stack(
                 [
-                    expm_frechet(deform_grad_log_new[b], direction, compute_expm=False)
+                    tsm.expm_frechet(
+                        deform_grad_log_new[b], direction, compute_expm=False
+                    )
                     for direction in directions
                 ]
             )

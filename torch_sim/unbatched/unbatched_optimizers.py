@@ -5,8 +5,7 @@ from dataclasses import dataclass
 
 import torch
 
-from torch_sim.math import expm_frechet
-from torch_sim.math import matrix_log_33 as logm
+import torch_sim.math as tsm
 from torch_sim.state import DeformGradMixin, SimState, StateDict
 from torch_sim.unbatched.unbatched_integrators import velocity_verlet
 
@@ -961,7 +960,7 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
 
         # Calculate cell positions using log parameterization
         # For identity matrix, logm gives zero matrix, so we multiply by cell_factor
-        cell_positions = logm(cur_deform_grad, sim_dtype=dtype) * cell_factor
+        cell_positions = tsm.matrix_log_33(cur_deform_grad) * cell_factor
 
         # Calculate virial
         volume = torch.linalg.det(state.cell).view(1, 1)
@@ -1026,7 +1025,7 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
         cur_deform_grad = state.deform_grad()
 
         # Get log of deformation gradient
-        cur_deform_grad_log = logm(cur_deform_grad, sim_dtype=dtype)
+        cur_deform_grad_log = tsm.matrix_log_33(cur_deform_grad)
 
         # Scale to get cell positions
         cell_positions = cur_deform_grad_log * state.cell_factor
@@ -1081,7 +1080,7 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
         # Compute all Frechet derivatives in one batch operation
         expm_derivs = torch.stack(
             [
-                expm_frechet(deform_grad_log_new, direction, compute_expm=False)
+                tsm.expm_frechet(deform_grad_log_new, direction, compute_expm=False)
                 for direction in directions
             ]
         )
