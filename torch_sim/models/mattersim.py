@@ -76,7 +76,7 @@ class MatterSimModel(torch.nn.Module, ModelInterface):
             self._device = torch.device(self._device)
 
         self._dtype = dtype or torch.float32
-        self._memory_scales_with = "n_atoms"  # scale memory with n_atoms due to triplets
+        self._memory_scales_with = "n_atoms_x_density" # should be density^2 bc triplets
         self._compute_stress = True
         self._compute_forces = True
 
@@ -136,8 +136,9 @@ class MatterSimModel(torch.nn.Module, ModelInterface):
         atoms_list = state_to_atoms(state)
         data_list = [self.convertor.convert(atoms) for atoms in atoms_list]
         batched_data = Collater([], follow_batch=None, exclude_keys=None)(data_list)
+        batched_data.to(self._device)
         output = self.model.forward(
-            batch_to_dict(batched_data, device=self.device),
+            batch_to_dict(batched_data),
             include_forces=self.compute_forces,
             include_stresses=self.compute_stress,
         )
