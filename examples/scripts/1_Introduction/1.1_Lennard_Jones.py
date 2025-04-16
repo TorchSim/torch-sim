@@ -88,7 +88,7 @@ state = dict(
 results = model(state)
 
 # Print the results
-print(f"Energy: {results['energy']:.4f}")
+print(f"Energy: {float(results['energy']):.4f}")
 print(f"Forces: {results['forces']}")
 print(f"Stress: {results['stress']}")
 print(f"Energies: {results['energies']}")
