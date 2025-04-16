@@ -2,7 +2,13 @@ from typing import Any
 
 import torch
 
-from torch_sim.integrators import calculate_momenta, npt_langevin, nve, nvt_langevin
+from torch_sim.integrators import (
+    NPTLangevinState,
+    calculate_momenta,
+    npt_langevin,
+    nve,
+    nvt_langevin,
+)
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.quantities import calc_kT
 from torch_sim.state import SimState, concatenate_states
@@ -346,3 +352,39 @@ def test_compare_single_vs_batched_integrators(
         assert torch.allclose(ar_single_state.forces, final_state.forces)
         assert torch.allclose(ar_single_state.masses, final_state.masses)
         assert torch.allclose(ar_single_state.cell, final_state.cell)
+
+
+def test_compute_cell_force_atoms_per_batch():
+    """Test that compute_cell_force correctly scales by number of atoms per batch.
+
+    Covers fix in https://github.com/Radical-AI/torch-sim/pull/153."""
+    from torch_sim.integrators import _compute_cell_force
+
+    # Setup minimal state with two batches having 8:1 atom ratio
+    s1, s2 = torch.zeros(8, dtype=torch.long), torch.ones(64, dtype=torch.long)
+
+    state = NPTLangevinState(
+        positions=torch.zeros((72, 3)),
+        velocities=torch.zeros((72, 3)),
+        energy=torch.zeros(2),
+        forces=torch.zeros((72, 3)),
+        masses=torch.ones(72),
+        cell=torch.eye(3).repeat(2, 1, 1),
+        pbc=True,
+        batch=torch.cat([s1, s2]),
+        atomic_numbers=torch.ones(72, dtype=torch.long),
+        stress=torch.zeros((2, 3, 3)),
+        reference_cell=torch.eye(3).repeat(2, 1, 1),
+        cell_positions=torch.ones((2, 3, 3)),
+        cell_velocities=torch.zeros((2, 3, 3)),
+        cell_masses=torch.ones(2),
+    )
+
+    # Get forces and compare ratio
+    cell_force = _compute_cell_force(state, torch.tensor(0.0), torch.tensor([1.0, 1.0]))
+    force_ratio = (
+        torch.diagonal(cell_force[1]).mean() / torch.diagonal(cell_force[0]).mean()
+    )
+
+    # Force ratio should match atom ratio (8:1) with the fix
+    assert abs(force_ratio - 8.0) / 8.0 < 0.1

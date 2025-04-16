@@ -563,6 +563,63 @@ class NPTLangevinState(SimState):
         return self.velocities * self.masses.unsqueeze(-1)
 
 
+# Extracted out from npt_langevin body to test fix in https://github.com/Radical-AI/torch-sim/pull/153
+def _compute_cell_force(
+    state: NPTLangevinState,
+    external_pressure: torch.Tensor,
+    kT: torch.Tensor,
+) -> torch.Tensor:
+    """Compute forces on the cell for NPT dynamics.
+
+    This function calculates the forces acting on the simulation cell
+    based on the difference between internal stress and external pressure,
+    plus a kinetic contribution. These forces drive the volume changes
+    needed to maintain constant pressure.
+
+    Args:
+        state (NPTLangevinState): Current NPT state
+        external_pressure (torch.Tensor): Target external pressure, either scalar or
+            tensor with shape [n_batches, n_dimensions, n_dimensions]
+        kT (torch.Tensor): Temperature in energy units, either scalar or
+            shape [n_batches]
+
+    Returns:
+        torch.Tensor: Force acting on the cell [n_batches, n_dim, n_dim]
+    """
+    # Get current volumes for each batch
+    volumes = torch.linalg.det(state.cell)  # shape: (n_batches,)
+
+    # Reshape for broadcasting
+    volumes = volumes.view(-1, 1, 1)  # shape: (n_batches, 1, 1)
+
+    # Create pressure tensor (diagonal with external pressure)
+    if external_pressure.ndim == 0:
+        # Scalar pressure - create diagonal pressure tensors for each batch
+        pressure_tensor = external_pressure * torch.eye(
+            3, device=state.device, dtype=state.dtype
+        )
+        pressure_tensor = pressure_tensor.unsqueeze(0).expand(state.n_batches, -1, -1)
+    else:
+        # Already a tensor with shape compatible with n_batches
+        pressure_tensor = external_pressure
+
+    # Calculate virials from stress and external pressure
+    # Internal stress is negative of virial tensor divided by volume
+    virial = -volumes * state.stress + pressure_tensor * volumes
+
+    # Add kinetic contribution (kT * Identity)
+    batch_kT = kT
+    if kT.ndim == 0:
+        batch_kT = kT.expand(state.n_batches)
+
+    e_kin_per_atom = batch_kT.view(-1, 1, 1) * torch.eye(
+        3, device=state.device, dtype=state.dtype
+    ).unsqueeze(0)
+
+    # Correct implementation with scaling by n_atoms_per_batch
+    return virial + e_kin_per_atom * state.n_atoms_per_batch.view(-1, 1, 1)
+
+
 def npt_langevin(  # noqa: C901, PLR0915
     model: torch.nn.Module,
     *,
@@ -748,35 +805,7 @@ def npt_langevin(  # noqa: C901, PLR0915
         Returns:
             torch.Tensor: Force acting on the cell [n_batches, n_dim, n_dim]
         """
-        # Get current volumes for each batch
-        volumes = torch.linalg.det(state.cell)  # shape: (n_batches,)
-
-        # Reshape for broadcasting
-        volumes = volumes.view(-1, 1, 1)  # shape: (n_batches, 1, 1)
-
-        # Create pressure tensor (diagonal with external pressure)
-        if external_pressure.ndim == 0:
-            # Scalar pressure - create diagonal pressure tensors for each batch
-            pressure_tensor = external_pressure * torch.eye(3, device=device, dtype=dtype)
-            pressure_tensor = pressure_tensor.unsqueeze(0).expand(state.n_batches, -1, -1)
-        else:
-            # Already a tensor with shape compatible with n_batches
-            pressure_tensor = external_pressure
-
-        # Calculate virials from stress and external pressure
-        # Internal stress is negative of virial tensor divided by volume
-        virial = -volumes * state.stress + pressure_tensor * volumes
-
-        # Add kinetic contribution (kT * Identity)
-        batch_kT = kT
-        if kT.ndim == 0:
-            batch_kT = kT.expand(state.n_batches)
-
-        kinetic_term = batch_kT.view(-1, 1, 1) * torch.eye(
-            3, device=device, dtype=dtype
-        ).unsqueeze(0)
-
-        return virial + kinetic_term * state.n_atoms_per_batch.view(-1, 1, 1)
+        return _compute_cell_force(state, external_pressure, kT)
 
     def cell_position_step(
         state: NPTLangevinState,
