@@ -16,7 +16,7 @@ from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 
 @pytest.fixture
 def device() -> torch.device:
-    return torch.device("cuda")
+    return torch.device("cpu")
 
 
 @pytest.fixture
