@@ -4,7 +4,7 @@ import pytest
 import torch
 from ase.build import bulk
 
-from torch_sim.io import atoms_to_state
+import torch_sim as ts
 from torch_sim.models.interface import validate_model_outputs
 from torch_sim.state import SimState
 from torch_sim.unbatched.models.lennard_jones import (
@@ -141,7 +141,7 @@ def ar_supercell_sim_state_large(device: torch.device) -> SimState:
     """Create a face-centered cubic (FCC) Argon structure."""
     # Create FCC Ar using ASE, with 4x4x4 supercell
     ar_atoms = bulk("Ar", "fcc", a=5.26, cubic=True).repeat([4, 4, 4])
-    return atoms_to_state(ar_atoms, device, torch.float64)
+    return ts.io.atoms_to_state(ar_atoms, device, torch.float64)
 
 
 @pytest.fixture

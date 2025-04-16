@@ -2,12 +2,12 @@ import pytest
 import torch
 from ase.atoms import Atoms
 
+import torch_sim as ts
 from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
-from torch_sim.io import atoms_to_state
 
 
 try:
@@ -71,7 +71,7 @@ def test_mace_dtype_working(
         compute_forces=True,
     )
 
-    state = atoms_to_state([si_atoms], device, dtype)
+    state = ts.io.atoms_to_state([si_atoms], device, dtype)
 
     model.forward(state)
 
@@ -138,6 +138,6 @@ def test_mace_off_dtype_working(
         compute_forces=True,
     )
 
-    state = atoms_to_state([benzene_atoms], device, dtype)
+    state = ts.io.atoms_to_state([benzene_atoms], device, dtype)
 
     model.forward(state)

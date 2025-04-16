@@ -1,9 +1,10 @@
 import typing
+from typing import Final
 
 import pytest
 import torch
 
-from torch_sim.io import state_to_atoms
+import torch_sim as ts
 
 
 if typing.TYPE_CHECKING:
@@ -13,7 +14,7 @@ if typing.TYPE_CHECKING:
     from torch_sim.state import SimState
 
 
-consistency_test_simstate_fixtures = [
+consistency_test_simstate_fixtures: Final[list[str]] = [
     "cu_sim_state",
     "mg_sim_state",
     "sb_sim_state",
@@ -65,7 +66,7 @@ def make_model_calculator_consistency_test(
         sim_state: SimState = request.getfixturevalue(sim_state_name).to(device, dtype)
 
         # Set up ASE calculator
-        atoms = state_to_atoms(sim_state)[0]
+        atoms = ts.io.state_to_atoms(sim_state)[0]
         atoms.calc = calculator
 
         # Get model results
@@ -118,8 +119,6 @@ def make_validate_model_outputs_test(
 
         from ase.build import bulk
 
-        from torch_sim.io import atoms_to_state
-
         assert model.dtype is not None
         assert model.device is not None
         assert model.compute_stress is not None
@@ -142,7 +141,7 @@ def make_validate_model_outputs_test(
         si_atoms = bulk("Si", "diamond", a=5.43, cubic=True)
         fe_atoms = bulk("Fe", "fcc", a=5.26, cubic=True).repeat([3, 1, 1])
 
-        sim_state = atoms_to_state([si_atoms, fe_atoms], device, dtype)
+        sim_state = ts.io.atoms_to_state([si_atoms, fe_atoms], device, dtype)
 
         og_positions = sim_state.positions.clone()
         og_cell = sim_state.cell.clone()
@@ -167,8 +166,8 @@ def make_validate_model_outputs_test(
         assert model_output["forces"].shape == (20, 3) if force_computed else True
         assert model_output["stress"].shape == (2, 3, 3) if stress_computed else True
 
-        si_state = atoms_to_state([si_atoms], device, dtype)
-        fe_state = atoms_to_state([fe_atoms], device, dtype)
+        si_state = ts.io.atoms_to_state([si_atoms], device, dtype)
+        fe_state = ts.io.atoms_to_state([fe_atoms], device, dtype)
 
         si_model_output = model.forward(si_state)
         assert torch.allclose(

@@ -13,7 +13,7 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
-from torch_sim.io import atoms_to_state
+import torch_sim as ts
 from torch_sim.models.mace import MaceModel
 from torch_sim.optimizers import gradient_descent
 
@@ -102,7 +102,7 @@ batch_indices = torch.repeat_interleave(
 )
 """
 
-state = atoms_to_state(atoms_list, device=device, dtype=dtype)
+state = ts.io.atoms_to_state(atoms_list, device=device, dtype=dtype)
 
 print(f"Positions shape: {state.positions.shape}")
 print(f"Cell shape: {state.cell.shape}")

@@ -8,7 +8,7 @@ from ase.spacegroup import crystal
 from phonopy.structure.atoms import PhonopyAtoms
 from pymatgen.core import Structure
 
-from torch_sim.io import atoms_to_state
+import torch_sim as ts
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.state import SimState, concatenate_states
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
@@ -92,35 +92,35 @@ def si_phonopy_atoms() -> Any:
 @pytest.fixture
 def si_sim_state(si_atoms: Any, device: torch.device, dtype: torch.dtype) -> Any:
     """Create a basic state from si_structure."""
-    return atoms_to_state(si_atoms, device, dtype)
+    return ts.io.atoms_to_state(si_atoms, device, dtype)
 
 
 @pytest.fixture
 def cu_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
     """Create crystalline copper using ASE."""
     atoms = bulk("Cu", "fcc", a=3.58, cubic=True)
-    return atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, device, dtype)
 
 
 @pytest.fixture
 def mg_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
     """Create crystalline magnesium using ASE."""
     atoms = bulk("Mg", "hcp", a=3.17, c=5.14)
-    return atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, device, dtype)
 
 
 @pytest.fixture
 def sb_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
     """Create crystalline antimony using ASE."""
     atoms = bulk("Sb", "rhombohedral", a=4.58, alpha=60)
-    return atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, device, dtype)
 
 
 @pytest.fixture
 def ti_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
     """Create crystalline titanium using ASE."""
     atoms = bulk("Ti", "hcp", a=2.94, c=4.64)
-    return atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, device, dtype)
 
 
 @pytest.fixture
@@ -138,7 +138,7 @@ def tio2_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
         spacegroup=136,  # P4_2/mnm
         cellpar=[a, a, c, 90, 90, 90],
     )
-    return atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, device, dtype)
 
 
 @pytest.fixture
@@ -155,7 +155,7 @@ def ga_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
         spacegroup=64,  # Cmce
         cellpar=[a, b, c, 90, 90, 90],
     )
-    return atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, device, dtype)
 
 
 @pytest.fixture
@@ -174,7 +174,7 @@ def niti_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
         spacegroup=11,
         cellpar=[a, b, c, alpha, beta, gamma],
     )
-    return atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, device, dtype)
 
 
 @pytest.fixture
@@ -186,7 +186,7 @@ def sio2_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
         spacegroup=152,
         cellpar=[4.9019, 4.9019, 5.3988, 90, 90, 120],
     )
-    return atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, device, dtype)
 
 
 @pytest.fixture
@@ -220,7 +220,7 @@ def benzene_sim_state(
     benzene_atoms: Any, device: torch.device, dtype: torch.dtype
 ) -> Any:
     """Create a basic state from benzene_atoms."""
-    return atoms_to_state(benzene_atoms, device, dtype)
+    return ts.io.atoms_to_state(benzene_atoms, device, dtype)
 
 
 @pytest.fixture
@@ -228,7 +228,7 @@ def fe_supercell_sim_state(
     fe_atoms: Atoms, device: torch.device, dtype: torch.dtype
 ) -> Any:
     """Create a face-centered cubic (FCC) iron structure with 4x4x4 supercell."""
-    return atoms_to_state(fe_atoms.repeat([4, 4, 4]), device, dtype)
+    return ts.io.atoms_to_state(fe_atoms.repeat([4, 4, 4]), device, dtype)
 
 
 @pytest.fixture
@@ -236,7 +236,7 @@ def ar_supercell_sim_state(
     ar_atoms: Atoms, device: torch.device, dtype: torch.dtype
 ) -> SimState:
     """Create a face-centered cubic (FCC) Argon structure with 2x2x2 supercell."""
-    return atoms_to_state(ar_atoms.repeat([2, 2, 2]), device, dtype)
+    return ts.io.atoms_to_state(ar_atoms.repeat([2, 2, 2]), device, dtype)
 
 
 @pytest.fixture
@@ -251,7 +251,7 @@ def ar_double_sim_state(ar_supercell_sim_state: SimState) -> SimState:
 @pytest.fixture
 def si_double_sim_state(si_atoms: Atoms, device: torch.device, dtype: torch.dtype) -> Any:
     """Create a basic state from si_structure."""
-    return atoms_to_state([si_atoms, si_atoms], device, dtype)
+    return ts.io.atoms_to_state([si_atoms, si_atoms], device, dtype)
 
 
 @pytest.fixture

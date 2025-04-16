@@ -45,7 +45,7 @@ model = UnbatchedMaceModel(
 )
 
 # Convert ASE atoms to state
-state = ts.state.atoms_to_state(si_dc, device=device, dtype=dtype)
+state = ts.io.atoms_to_state(si_dc, device=device, dtype=dtype)
 
 # Run inference
 results = model(state)

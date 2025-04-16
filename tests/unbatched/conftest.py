@@ -3,7 +3,7 @@ import typing
 import pytest
 import torch
 
-from torch_sim.io import state_to_atoms
+import torch_sim as ts
 
 
 if typing.TYPE_CHECKING:
@@ -66,7 +66,7 @@ def make_unbatched_model_calculator_consistency_test(
         )
 
         # Set up ASE calculator
-        atoms = state_to_atoms(sim_state)[0]
+        atoms = ts.io.state_to_atoms(sim_state)[0]
         atoms.calc = calculator
 
         # Get model results

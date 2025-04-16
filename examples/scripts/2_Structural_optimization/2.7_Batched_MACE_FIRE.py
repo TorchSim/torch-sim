@@ -72,7 +72,7 @@ model = ts.models.MaceModel(
 )
 
 # Convert atoms to state
-state = ts.state.atoms_to_state(atoms_list, device=device, dtype=dtype)
+state = ts.io.atoms_to_state(atoms_list, device=device, dtype=dtype)
 # Run initial inference
 results = model(state)
 

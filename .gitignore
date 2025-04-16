@@ -28,5 +28,6 @@ docs/reference/torch_sim.*
 *.hdf5
 *.traj
 
-# env
-uv.lock
+# coverage
+coverage.xml
+.coverage

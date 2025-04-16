@@ -13,14 +13,7 @@ from typing import Literal, Self, TypeVar, Union
 
 import torch
 
-from torch_sim.io import (
-    atoms_to_state,
-    phonopy_to_state,
-    state_to_atoms,
-    state_to_phonopy,
-    state_to_structures,
-    structures_to_state,
-)
+import torch_sim as ts
 
 
 if typing.TYPE_CHECKING:
@@ -256,7 +249,7 @@ class SimState:
         Returns:
             list[Atoms]: A list of ASE Atoms objects, one per batch
         """
-        return state_to_atoms(self)
+        return ts.io.state_to_atoms(self)
 
     def to_structures(self) -> list["Structure"]:
         """Convert the SimState to a list of pymatgen Structure objects.
@@ -264,7 +257,7 @@ class SimState:
         Returns:
             list[Structure]: A list of pymatgen Structure objects, one per batch
         """
-        return state_to_structures(self)
+        return ts.io.state_to_structures(self)
 
     def to_phonopy(self) -> list["PhonopyAtoms"]:
         """Convert the SimState to a list of PhonopyAtoms objects.
@@ -272,7 +265,7 @@ class SimState:
         Returns:
             list[PhonopyAtoms]: A list of PhonopyAtoms objects, one per batch
         """
-        return state_to_phonopy(self)
+        return ts.io.state_to_phonopy(self)
 
     def split(self) -> list[Self]:
         """Split the SimState into a list of single-batch SimStates.
@@ -434,9 +427,7 @@ def _normalize_batch_indices(
 
 
 def state_to_device(
-    state: SimState,
-    device: torch.device | None = None,
-    dtype: torch.dtype | None = None,
+    state: SimState, device: torch.device | None = None, dtype: torch.dtype | None = None
 ) -> Self:
     """Convert the SimState to a new device and dtype.
 
@@ -919,9 +910,9 @@ def initialize_state(
         return concatenate_states(system)
 
     converters = [
-        ("pymatgen.core", "Structure", structures_to_state),
-        ("ase", "Atoms", atoms_to_state),
-        ("phonopy.structure.atoms", "PhonopyAtoms", phonopy_to_state),
+        ("pymatgen.core", "Structure", ts.io.structures_to_state),
+        ("ase", "Atoms", ts.io.atoms_to_state),
+        ("phonopy.structure.atoms", "PhonopyAtoms", ts.io.phonopy_to_state),
     ]
 
     # Try each converter
