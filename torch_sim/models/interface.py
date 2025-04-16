@@ -104,11 +104,7 @@ class ModelInterface(ABC):
 
     @property
     def device(self) -> torch.device:
-        """The device of the model.
-
-        Returns:
-            The device of the model
-        """
+        """The device of the model."""
         return self._device
 
     @device.setter
@@ -120,11 +116,7 @@ class ModelInterface(ABC):
 
     @property
     def dtype(self) -> torch.dtype:
-        """The data type of the model.
-
-        Returns:
-            The data type of the model
-        """
+        """The data type of the model."""
         return self._dtype
 
     @dtype.setter
@@ -136,11 +128,7 @@ class ModelInterface(ABC):
 
     @property
     def compute_stress(self) -> bool:
-        """Whether the model computes stresses.
-
-        Returns:
-            Whether the model computes stresses
-        """
+        """Whether the model computes stresses."""
         return self._compute_stress
 
     @compute_stress.setter
@@ -152,11 +140,7 @@ class ModelInterface(ABC):
 
     @property
     def compute_forces(self) -> bool:
-        """Whether the model computes forces.
-
-        Returns:
-            Whether the model computes forces
-        """
+        """Whether the model computes forces."""
         return self._compute_forces
 
     @compute_forces.setter
@@ -173,9 +157,6 @@ class ModelInterface(ABC):
         Models with radial neighbor cutoffs scale with "n_atoms_x_density",
         while models with a fixed number of neighbors scale with "n_atoms".
         Default is "n_atoms_x_density" because most models are radial cutoff based.
-
-        Returns:
-            The metric that the model scales with
         """
         return getattr(self, "_memory_scales_with", "n_atoms_x_density")
 

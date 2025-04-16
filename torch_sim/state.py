@@ -134,50 +134,30 @@ class SimState:
 
     @property
     def wrap_positions(self) -> torch.Tensor:
-        """Get positions wrapped into the primary unit cell.
-
-        Returns:
-            torch.Tensor: Atomic positions wrapped according to periodic boundary
-                conditions if pbc=True, otherwise returns unwrapped positions with
-                shape (n_atoms, 3).
+        """Atomic positions wrapped according to periodic boundary conditions if pbc=True,
+        otherwise returns unwrapped positions with shape (n_atoms, 3).
         """
         # TODO: implement a wrapping method
         return self.positions
 
     @property
     def device(self) -> torch.device:
-        """Get the device of the positions tensor.
-
-        Returns:
-            torch.device: The device where the tensor data is located
-        """
+        """The device where the tensor data is located."""
         return self.positions.device
 
     @property
     def dtype(self) -> torch.dtype:
-        """Get the data type of the positions tensor.
-
-        Returns:
-            torch.dtype: The data type of the positions tensor
-        """
+        """The data type of the positions tensor."""
         return self.positions.dtype
 
     @property
     def n_atoms(self) -> int:
-        """Get the total number of atoms in the system across all batches.
-
-        Returns:
-            int: Total number of atoms in the system
-        """
+        """Total number of atoms in the system across all batches."""
         return self.positions.shape[0]
 
     @property
     def n_atoms_per_batch(self) -> torch.Tensor:
-        """Get the number of atoms per batch.
-
-        Returns:
-            torch.Tensor: Number of atoms per batch with shape (n_batches,)
-        """
+        """Number of atoms per batch."""
         return (
             self.batch.bincount()
             if self.batch is not None
@@ -186,29 +166,17 @@ class SimState:
 
     @property
     def n_batches(self) -> int:
-        """Get the number of batches in the system.
-
-        Returns:
-            int: Number of batches in the system
-        """
+        """Number of batches in the system."""
         return torch.unique(self.batch).shape[0]
 
     @property
     def volume(self) -> torch.Tensor:
-        """Get the volume of the system.
-
-        Returns:
-            torch.Tensor: Volume of the system with shape (n_batches,)
-        """
+        """Volume of the system."""
         return torch.det(self.cell) if self.pbc else None
 
     @property
     def column_vector_cell(self) -> torch.Tensor:
-        """Get the unit cell following the column vector convention.
-
-        Returns:
-            The unit cell in a column vector format
-        """
+        """Unit cell following the column vector convention."""
         return self.cell
 
     @column_vector_cell.setter
@@ -222,11 +190,7 @@ class SimState:
 
     @property
     def row_vector_cell(self) -> torch.Tensor:
-        """Get the unit cell following the row vector convention.
-
-        Returns:
-            The unit cell in a row vector format
-        """
+        """Unit cell following the row vector convention."""
         return self.cell.transpose(-2, -1)
 
     @row_vector_cell.setter

@@ -61,10 +61,8 @@ class MDState(SimState):
 
     @property
     def velocities(self) -> torch.Tensor:
-        """Calculate velocities from momenta and masses.
-
-        Returns:
-            torch.Tensor: Velocities with shape [n_particles, n_dimensions]
+        """Velocities calculated from momenta and masses with shape
+        [n_particles, n_dimensions].
         """
         return self.momenta / self.masses.unsqueeze(-1)
 

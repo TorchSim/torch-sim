@@ -171,12 +171,7 @@ class TrajectoryReporter:
 
     @property
     def array_registry(self) -> dict[str, tuple[tuple[int, ...], np.dtype]]:
-        """Get the registry of array shapes and dtypes.
-
-        Returns:
-            dict[str, tuple[tuple[int, ...], np.dtype]]: Dictionary mapping array names to
-                tuples of (shape, dtype)
-        """
+        """Registry of array shapes and dtypes."""
         # Return the registry from the first trajectory
         if self.trajectories:
             return self.trajectories[0].array_registry
@@ -918,11 +913,7 @@ class TorchSimTrajectory:
 
     @property
     def metadata(self) -> dict:
-        """Get the metadata for the trajectory.
-
-        Returns:
-            dict: Metadata for the trajectory
-        """
+        """Metadata for the trajectory."""
         attrs = self._file.root.metadata._v_attrs
         return {name: getattr(attrs, name) for name in attrs._f_list()}
 

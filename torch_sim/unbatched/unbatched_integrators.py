@@ -40,10 +40,8 @@ class MDState(SimState):
 
     @property
     def velocities(self) -> torch.Tensor:
-        """Calculate velocities from momenta and masses.
-
-        Returns:
-            The velocities of the particles
+        """Velocities calculated from momenta and masses with shape
+        [n_particles, n_dimensions].
         """
         return self.momenta / self.masses.unsqueeze(-1)
 
@@ -526,10 +524,8 @@ class NPTLangevinState(SimState):
 
     @property
     def momenta(self) -> torch.Tensor:
-        """Calculate momenta from velocities and masses.
-
-        Returns:
-            The momenta of the particles
+        """Calculate momenta from velocities and masses with shape
+        [n_particles, n_dimensions].
         """
         return self.masses.unsqueeze(-1) * self.velocities
 
@@ -1342,10 +1338,8 @@ class NVTNoseHooverState(MDState):
 
     @property
     def velocities(self) -> torch.Tensor:
-        """Calculate velocities from momenta and masses.
-
-        Returns:
-            torch.Tensor: Particle velocities with shape [n_particles, n_dimensions]
+        """Velocities calculated from momenta and masses with shape
+        [n_particles, n_dimensions].
         """
         return self.momenta / self.masses.unsqueeze(-1)
 
