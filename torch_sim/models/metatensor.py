@@ -223,9 +223,14 @@ class MetatensorModel(torch.nn.Module, ModelInterface):
             )
 
         # Calculate the required neighbor list(s) for all the systems
+
+        # move data to CPU because vesin only supports CPU for now
+        systems = [system.to(device="cpu") for system in systems]
         vesin.torch.metatensor.compute_requested_neighbors(
             systems, system_length_unit="Angstrom", model=self._model
         )
+        # move back to the proper device
+        systems = [system.to(device=self.device) for system in systems]
 
         # Get model output
         model_outputs = self._model(
