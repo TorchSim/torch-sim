@@ -960,7 +960,7 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
 
         # Calculate cell positions using log parameterization
         # For identity matrix, logm gives zero matrix, so we multiply by cell_factor
-        cell_positions = tsm.matrix_log_33(cur_deform_grad) * cell_factor
+        cell_positions = tsm.matrix_log_33(cur_deform_grad, sim_dtype=dtype) * cell_factor
 
         # Calculate virial
         volume = torch.linalg.det(state.cell).view(1, 1)
@@ -1025,7 +1025,7 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
         cur_deform_grad = state.deform_grad()
 
         # Get log of deformation gradient
-        cur_deform_grad_log = tsm.matrix_log_33(cur_deform_grad)
+        cur_deform_grad_log = tsm.matrix_log_33(cur_deform_grad, sim_dtype=dtype)
 
         # Scale to get cell positions
         cell_positions = cur_deform_grad_log * state.cell_factor
