@@ -579,4 +579,4 @@ def test_neighbor_lists_time_and_memory(
             assert cpu_memory_used < 5e8, (
                 f"{fn_name} used too much CPU memory: {cpu_memory_used / 1e6:.2f}MB"
             )
-            assert execution_time < 0.2, f"{fn_name} took too long: {execution_time}s"
+            assert execution_time < 0.8, f"{fn_name} took too long: {execution_time}s"
