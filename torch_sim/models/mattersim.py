@@ -8,7 +8,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, StateDict
+from torch_sim.state import SimState
 from torch_sim.units import MetalUnits
 
 
@@ -33,6 +33,8 @@ except ImportError:
 
 if TYPE_CHECKING:
     from mattersim.forcefield import Potential
+
+    from torch_sim.typing import StateDict
 
 
 class MatterSimModel(torch.nn.Module, ModelInterface):

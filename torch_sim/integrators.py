@@ -24,8 +24,9 @@ from dataclasses import dataclass
 
 import torch
 
-from torch_sim.state import SimState, StateDict
+from torch_sim.state import SimState
 from torch_sim.transforms import pbc_wrap_batched
+from torch_sim.typing import StateDict
 
 
 @dataclass

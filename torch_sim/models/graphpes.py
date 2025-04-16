@@ -20,7 +20,8 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState, StateDict
+from torch_sim.state import SimState
+from torch_sim.typing import StateDict
 
 
 try:

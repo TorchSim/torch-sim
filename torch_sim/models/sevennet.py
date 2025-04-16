@@ -10,13 +10,15 @@ import torch
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState, StateDict
+from torch_sim.state import SimState
 
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from sevenn.nn.sequential import AtomGraphSequential
+
+    from torch_sim.typing import StateDict
 
 
 try:

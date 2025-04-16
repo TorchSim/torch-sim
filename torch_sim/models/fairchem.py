@@ -19,11 +19,12 @@ from __future__ import annotations
 import copy
 import typing
 from types import MappingProxyType
+from typing import Any
 
 import torch
 
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, StateDict
+from torch_sim.state import SimState
 
 
 try:
@@ -46,7 +47,7 @@ except ImportError:
         It raises an ImportError if FairChem is not installed.
         """
 
-        def __init__(self, *_args: typing.Any, **_kwargs: typing.Any) -> None:
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
             """Dummy init for type checking."""
             raise ImportError("FairChem must be installed to use this model.")
 
@@ -54,6 +55,8 @@ except ImportError:
 if typing.TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
+
+    from torch_sim.typing import StateDict
 
 _DTYPE_DICT = {
     torch.float16: "float16",

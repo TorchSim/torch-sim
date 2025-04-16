@@ -22,7 +22,7 @@ import torch
 
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, StateDict
+from torch_sim.state import SimState
 
 
 try:
@@ -59,6 +59,8 @@ if typing.TYPE_CHECKING:
     )
     from orb_models.forcefield.featurization_utilities import EdgeCreationMethod
     from orb_models.forcefield.graph_regressor import GraphRegressor
+
+    from torch_sim.typing import StateDict
 
 
 def state_to_atom_graphs(  # noqa: PLR0915

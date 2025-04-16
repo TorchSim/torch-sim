@@ -323,7 +323,7 @@ def test_in_flight_auto_batcher_restore_order(
     """Test InFlightAutoBatcher's restore_original_order method."""
     states = [si_sim_state, fe_supercell_sim_state]
 
-    batcher = HotSwappingAutoBatcher(
+    batcher = InFlightAutoBatcher(
         model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=260.0
     )
     batcher.load_states(states)
@@ -428,7 +428,7 @@ def test_binning_auto_batcher_with_fire(
     optimal_batches = to_constant_volume_bins(batch_lengths, 400)
     optimal_n_batches = len(optimal_batches)
 
-    batcher = ChunkingAutoBatcher(
+    batcher = BinningAutoBatcher(
         model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=400
     )
     batcher.load_states(fire_states)

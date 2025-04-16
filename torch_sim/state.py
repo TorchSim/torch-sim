@@ -6,17 +6,16 @@ operations and conversion to/from various atomistic formats.
 
 import copy
 import importlib
-import typing
 import warnings
 from dataclasses import dataclass, field
-from typing import Literal, Self, TypeVar, Union
+from typing import TYPE_CHECKING, Literal, Self, TypeVar, Union
 
 import torch
 
 import torch_sim as ts
 
 
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from ase import Atoms
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure
@@ -32,11 +31,6 @@ StateLike = Union[
     list["PhonopyAtoms"],
     _T,
     list[_T],
-]
-
-StateDict = dict[
-    Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "batch"],
-    torch.Tensor,
 ]
 
 
@@ -622,7 +616,9 @@ def _split_state(
     Args:
         state (SimState): The SimState to split
         ambiguous_handling ("error" | "globalize"): How to handle ambiguous
-            properties
+            properties. If "error", an error is raised if a property has ambiguous
+            scope. If "globalize", properties with ambiguous scope are treated as
+            global.
 
     Returns:
         list[SimState]: A list of SimState objects, each containing a single
@@ -674,7 +670,9 @@ def _pop_states(
         state (SimState): The SimState to modify
         pop_indices (list[int] | torch.Tensor): The batch indices to extract and remove
         ambiguous_handling ("error" | "globalize"): How to handle ambiguous
-            properties
+            properties. If "error", an error is raised if a property has ambiguous
+            scope. If "globalize", properties with ambiguous scope are treated as
+            global.
 
     Returns:
         tuple[SimState, list[SimState]]: A tuple containing:

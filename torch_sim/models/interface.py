@@ -28,12 +28,13 @@ Notes:
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Literal, Self
+from typing import Self
 
 import torch
 
 import torch_sim as ts
-from torch_sim.state import SimState, StateDict
+from torch_sim.state import SimState
+from torch_sim.typing import MemoryScaler, StateDict
 
 
 class ModelInterface(ABC):
@@ -151,7 +152,7 @@ class ModelInterface(ABC):
         )
 
     @property
-    def memory_scales_with(self) -> Literal["n_atoms", "n_atoms_x_density"]:
+    def memory_scales_with(self) -> MemoryScaler:
         """The metric that the model scales with.
 
         Models with radial neighbor cutoffs scale with "n_atoms_x_density",

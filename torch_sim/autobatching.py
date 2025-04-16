@@ -23,12 +23,13 @@ Notes:
 import logging
 from collections.abc import Callable, Iterator
 from itertools import chain
-from typing import Any, Literal
+from typing import Any, get_args
 
 import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState, concatenate_states
+from torch_sim.typing import MemoryScaler
 
 
 def to_constant_volume_bins(  # noqa: C901, PLR0915
@@ -262,7 +263,7 @@ def determine_max_batch_size(
     error or reaches the specified maximum atom count.
 
     Args:
-        state (SimState): SimState to replicate for testing.
+        state (SimState): State to replicate for testing.
         model (ModelInterface): Model to test with.
         max_atoms (int): Upper limit on number of atoms to try (for safety).
             Defaults to 500,000.
@@ -309,7 +310,7 @@ def determine_max_batch_size(
 
 def calculate_memory_scaler(
     state: SimState,
-    memory_scales_with: Literal["n_atoms_x_density", "n_atoms"] = "n_atoms_x_density",
+    memory_scales_with: MemoryScaler = "n_atoms_x_density",
 ) -> float:
     """Calculate a metric that estimates memory requirements for a state.
 
@@ -322,7 +323,7 @@ def calculate_memory_scaler(
     Args:
         state (SimState): State to calculate metric for, with shape information
             specific to the SimState instance.
-        memory_scales_with ("n_atoms_x_density" |s "n_atoms"): Type of metric
+        memory_scales_with ("n_atoms_x_density" | "n_atoms"): Type of metric
             to use. "n_atoms" uses only atom count and is suitable for models that
             have a fixed number of neighbors. "n_atoms_x_density" uses atom count
             multiplied by number density and is better for models with radial cutoffs
@@ -351,7 +352,9 @@ def calculate_memory_scaler(
         volume = torch.abs(torch.linalg.det(state.cell[0])) / 1000
         number_density = state.n_atoms / volume.item()
         return state.n_atoms * number_density
-    raise ValueError(f"Invalid metric: {memory_scales_with}")
+    raise ValueError(
+        f"Invalid metric: {memory_scales_with}, must be one of {get_args(MemoryScaler)}"
+    )
 
 
 def estimate_max_memory_scaler(
@@ -458,7 +461,7 @@ class BinningAutoBatcher:
         self,
         model: ModelInterface,
         *,
-        memory_scales_with: Literal["n_atoms", "n_atoms_x_density"] = "n_atoms_x_density",
+        memory_scales_with: MemoryScaler = "n_atoms_x_density",
         max_memory_scaler: float | None = None,
         return_indices: bool = False,
         max_atoms_to_try: int = 500_000,
@@ -752,7 +755,7 @@ class InFlightAutoBatcher:
         self,
         model: ModelInterface,
         *,
-        memory_scales_with: Literal["n_atoms", "n_atoms_x_density"] = "n_atoms_x_density",
+        memory_scales_with: MemoryScaler = "n_atoms_x_density",
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         memory_scaling_factor: float = 1.6,

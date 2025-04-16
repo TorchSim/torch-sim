@@ -6,7 +6,8 @@ from dataclasses import dataclass
 import torch
 
 import torch_sim.math as tsm
-from torch_sim.state import DeformGradMixin, SimState, StateDict
+from torch_sim.state import DeformGradMixin, SimState
+from torch_sim.typing import StateDict
 from torch_sim.unbatched.unbatched_integrators import velocity_verlet
 
 

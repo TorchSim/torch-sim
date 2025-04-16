@@ -29,8 +29,9 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState, StateDict
+from torch_sim.state import SimState
 from torch_sim.transforms import get_pair_displacements
+from torch_sim.typing import StateDict
 from torch_sim.unbatched.models.morse import morse_pair, morse_pair_force
 
 
