@@ -15,7 +15,7 @@ try:
     from mace.calculators.foundations_models import mace_mp, mace_off
 
     from torch_sim.models.mace import MaceModel
-except ImportError:
+except (ImportError, ValueError):
     pytest.skip("MACE not installed", allow_module_level=True)
 
 
