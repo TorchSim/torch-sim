@@ -535,12 +535,7 @@ def fire(
     # Setup parameters
     params = [dt_max, dt_start, alpha_start, f_inc, f_dec, f_alpha, n_min]
     dt_max, dt_start, alpha_start, f_inc, f_dec, f_alpha, n_min = [
-        (
-            p
-            if isinstance(p, torch.Tensor)
-            else torch.tensor(p, device=device, dtype=dtype)
-        )
-        for p in params
+        torch.as_tensor(p, device=device, dtype=dtype) for p in params
     ]
 
     def fire_init(
@@ -826,12 +821,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
     # Setup parameters
     params = [dt_max, dt_start, alpha_start, f_inc, f_dec, f_alpha, n_min]
     dt_max, dt_start, alpha_start, f_inc, f_dec, f_alpha, n_min = [
-        (
-            p
-            if isinstance(p, torch.Tensor)
-            else torch.tensor(p, device=device, dtype=dtype)
-        )
-        for p in params
+        torch.as_tensor(p, device=device, dtype=dtype) for p in params
     ]
 
     def fire_init(
@@ -1241,12 +1231,7 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
     # Setup parameters
     params = [dt_max, dt_start, alpha_start, f_inc, f_dec, f_alpha, n_min]
     dt_max, dt_start, alpha_start, f_inc, f_dec, f_alpha, n_min = [
-        (
-            p
-            if isinstance(p, torch.Tensor)
-            else torch.tensor(p, device=device, dtype=dtype)
-        )
-        for p in params
+        torch.as_tensor(p, device=device, dtype=dtype) for p in params
     ]
 
     def fire_init(
