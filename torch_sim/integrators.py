@@ -349,8 +349,7 @@ def nvt_langevin(
         - Weak coupling (small gamma) preserves dynamics but with slower thermalization
         - Strong coupling (large gamma) faster thermalization but may distort dynamics
     """
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
 
     gamma = gamma or 1 / (100 * dt)
 
@@ -670,8 +669,7 @@ def npt_langevin(  # noqa: C901, PLR0915
     Notes:
         - The model must provide stress tensor calculations for proper pressure coupling
     """
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
 
     # Set default values if not provided
     if alpha is None:

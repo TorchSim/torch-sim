@@ -2,13 +2,13 @@ import pytest
 import torch
 
 from torch_sim.elastic import (
-    BravaisType,
     calculate_elastic_moduli,
     calculate_elastic_tensor,
     get_bravais_type,
 )
 from torch_sim.optimizers import frechet_cell_fire
 from torch_sim.state import SimState
+from torch_sim.typing import BravaisType
 from torch_sim.units import UnitConversion
 
 

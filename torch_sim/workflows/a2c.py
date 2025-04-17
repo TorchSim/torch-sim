@@ -738,8 +738,7 @@ def get_unit_cell_relaxed_structure(
             - float: Final pressure in eV/Å³
     """
     # Get device and dtype from model
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
 
     logger = {
         "energy": torch.zeros((max_iter, 1), device=device, dtype=dtype),
@@ -811,8 +810,7 @@ def get_unit_cell_relaxed_structure_batched(
             - float: Final pressure in eV/Å³
     """
     # Get device and dtype from model
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
 
     logger = {
         "energy": torch.zeros((max_iter, state.n_batches), device=device, dtype=dtype),
@@ -885,8 +883,7 @@ def get_relaxed_structure(
             - float: Final pressure in eV/Å³
     """
     # Get device and dtype from model
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
 
     logger = {"energy": torch.zeros((max_iter, 1), device=device, dtype=dtype)}
 

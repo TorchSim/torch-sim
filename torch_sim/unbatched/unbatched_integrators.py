@@ -229,8 +229,7 @@ def nve(
         - Initial velocities sampled from Maxwell-Boltzmann distribution
         - Model must return dict with 'energy' and 'forces' keys
     """
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
 
     def nve_init(
         state: SimState | StateDict,
@@ -349,8 +348,7 @@ def nvt_langevin(
         - Preserves detailed balance for correct NVT sampling
         - Handles periodic boundary conditions if enabled in state
     """
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
     gamma = gamma or 1 / (100 * dt)
 
     if isinstance(gamma, float):
@@ -566,8 +564,7 @@ def npt_langevin(  # noqa: C901, PLR0915
             - Callable[[MDState, torch.Tensor], MDState]: Update function that evolves
               system by one timestep
     """
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
 
     # Set default values for coupling parameters if not provided
     alpha = alpha or 1 / (100 * dt)
@@ -1397,8 +1394,7 @@ def nvt_nose_hoover(
         4. Update chain kinetic energy
         5. Second half-step of chain evolution
     """
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
 
     def nvt_nose_hoover_init(
         state: SimState | StateDict,
@@ -1697,8 +1693,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         - Cell dynamics use logarithmic coordinates for volume updates
         - Conserves extended system Hamiltonian
     """
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
 
     def _npt_cell_info(
         state: NPTNoseHooverState,

@@ -59,8 +59,7 @@ def gradient_descent(
     Notes:
         - Best suited for systems close to their minimum energy configuration
     """
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
 
     # Convert learning rate to tensor
     if not isinstance(lr, torch.Tensor):
@@ -195,8 +194,7 @@ def fire(
     References:
         - Bitzek et al., PRL 97, 170201 (2006) - Original FIRE paper
     """
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
 
     # Convert parameters to tensors
     params = [dt_max, n_min, f_inc, f_dec, f_alpha, dt_start, alpha_start]
@@ -377,8 +375,7 @@ def fire_ase(  # noqa: PLR0915
         - Bitzek et al., PRL 97, 170201 (2006) - Original FIRE paper
         - ASE implementation: https://wiki.fysik.dtu.dk/ase/ase/optimize.html
     """
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
 
     eps = 1e-8 if dtype == torch.float32 else 1e-16
 
@@ -586,8 +583,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
         - Initialization function that creates a UnitCellFIREState
         - Update function that performs one FIRE step
     """
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
 
     eps = 1e-8 if dtype == torch.float32 else 1e-16
 
@@ -901,8 +897,7 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
         - https://github.com/lan496/lan496.github.io/blob/main/notes/cell_grad.pdf
         - https://github.com/JuliaMolSim/JuLIP.jl/blob/master/src/expcell.jl
     """
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
 
     eps = 1e-8 if dtype == torch.float32 else 1e-16
 
