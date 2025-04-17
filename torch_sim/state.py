@@ -8,30 +8,18 @@ import copy
 import importlib
 import warnings
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, Self, TypeVar, Union
+from typing import TYPE_CHECKING, Literal, Self
 
 import torch
 
 import torch_sim as ts
+from torch_sim.typing import StateLike
 
 
 if TYPE_CHECKING:
     from ase import Atoms
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure
-
-
-_T = TypeVar("_T", bound="SimState")
-StateLike = Union[
-    "Atoms",
-    "Structure",
-    "PhonopyAtoms",
-    list["Atoms"],
-    list["Structure"],
-    list["PhonopyAtoms"],
-    _T,
-    list[_T],
-]
 
 
 @dataclass
