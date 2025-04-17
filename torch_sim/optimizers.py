@@ -315,7 +315,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
 
         # Calculate virial
         volumes = torch.linalg.det(state.cell).view(-1, 1, 1)
-        virial = -volumes * stress + pressure
+        virial = -volumes * (stress + pressure)
 
         if hydrostatic_strain:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
@@ -420,7 +420,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
 
         # Calculate virial for cell forces
         volumes = torch.linalg.det(new_row_vector_cell).view(-1, 1, 1)
-        virial = -volumes * state.stress + state.pressure
+        virial = -volumes * (state.stress + state.pressure)
         if state.hydrostatic_strain:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
             virial = diag_mean.unsqueeze(-1) * torch.eye(3, device=device).unsqueeze(
@@ -537,12 +537,7 @@ def fire(
     # Setup parameters
     params = [dt_max, dt_start, alpha_start, f_inc, f_dec, f_alpha, n_min]
     dt_max, dt_start, alpha_start, f_inc, f_dec, f_alpha, n_min = [
-        (
-            p
-            if isinstance(p, torch.Tensor)
-            else torch.tensor(p, device=device, dtype=dtype)
-        )
-        for p in params
+        torch.as_tensor(p, device=device, dtype=dtype) for p in params
     ]
 
     def fire_init(
@@ -680,10 +675,10 @@ def fire(
         #     + state.alpha * state.forces * v_norm / f_norm,
         #     state.velocity,
         # )
-        batch_wise_alpha = state.alpha[state.batch].unsqueeze(-1)
+        atom_wise_alpha = state.alpha[state.batch].unsqueeze(-1)
         state.velocities = (
-            1.0 - batch_wise_alpha
-        ) * state.velocities + batch_wise_alpha * state.forces * v_norm / (f_norm + eps)
+            1.0 - atom_wise_alpha
+        ) * state.velocities + atom_wise_alpha * state.forces * v_norm / (f_norm + eps)
 
         return state
 
@@ -890,7 +885,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         stress = model_output["stress"]  # [n_batches, 3, 3]
 
         volumes = torch.linalg.det(state.cell).view(-1, 1, 1)
-        virial = -volumes * stress + pressure
+        virial = -volumes * (stress + pressure)  # P is P_ext * I
 
         if hydrostatic_strain:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
@@ -1022,7 +1017,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
         state.stress = stress
         # Calculate virial
         volumes = torch.linalg.det(new_cell).view(-1, 1, 1)
-        virial = -volumes * stress + state.pressure
+        virial = -volumes * (stress + state.pressure)
         if state.hydrostatic_strain:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
             virial = diag_mean.unsqueeze(-1) * torch.eye(3, device=device).unsqueeze(
@@ -1318,7 +1313,7 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
 
         # Calculate virial for cell forces
         volumes = torch.linalg.det(state.cell).view(-1, 1, 1)
-        virial = -volumes * stress + pressure
+        virial = -volumes * (stress + pressure)  # P is P_ext * I
 
         if hydrostatic_strain:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
@@ -1466,7 +1461,7 @@ def frechet_cell_fire(  # noqa: C901, PLR0915
 
         # Calculate virial
         volumes = torch.linalg.det(state.cell).view(-1, 1, 1)
-        virial = -volumes * stress + state.pressure
+        virial = -volumes * (stress + state.pressure)  # P is P_ext * I
         if state.hydrostatic_strain:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
             virial = diag_mean.unsqueeze(-1) * torch.eye(3, device=device).unsqueeze(

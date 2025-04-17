@@ -603,7 +603,7 @@ def _compute_cell_force(
 
     # Calculate virials from stress and external pressure
     # Internal stress is negative of virial tensor divided by volume
-    virial = -volumes * state.stress + pressure_tensor * volumes
+    virial = -volumes * (state.stress + pressure_tensor)
 
     # Add kinetic contribution (kT * Identity)
     batch_kT = kT
