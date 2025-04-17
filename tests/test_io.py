@@ -252,5 +252,7 @@ def test_state_round_trip(
     assert sim_state.pbc == round_trip_state.pbc
 
     if isinstance(intermediate_format[0], Atoms):
-        # TODO: the round trip for pmg and phonopy masses is not exact.
+        # TODO: masses round trip for pmg and phonopy masses is not exact
+        # since both use their own isotope masses based on species,
+        # not the ones in the state
         assert torch.allclose(sim_state.masses, round_trip_state.masses)
