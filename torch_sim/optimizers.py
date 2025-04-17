@@ -329,12 +329,6 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
                 3, device=device
             ).unsqueeze(0).expand(state.n_batches, -1, -1)
 
-        # Scale virial by cell_factor
-        virial = virial / cell_factor
-
-        # Reshape virial for cell forces
-        cell_forces = virial  # shape: (n_batches, 3, 3)
-
         return UnitCellGDState(
             positions=state.positions,
             forces=forces,
@@ -351,7 +345,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
             atomic_numbers=state.atomic_numbers,
             batch=state.batch,
             cell_positions=cell_positions,
-            cell_forces=cell_forces,
+            cell_forces=virial / cell_factor,
             cell_masses=cell_masses,
         )
 
@@ -432,12 +426,9 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
                 3, device=device
             ).unsqueeze(0).expand(n_batches, -1, -1)
 
-        # Scale virial by cell_factor
-        virial = virial / state.cell_factor
-
         # Update cell forces
         state.cell_positions = cell_positions_new
-        state.cell_forces = virial
+        state.cell_forces = virial / state.cell_factor
 
         return state
 
@@ -899,8 +890,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
                 3, device=device
             ).unsqueeze(0).expand(n_batches, -1, -1)
 
-        virial = virial / cell_factor
-        cell_forces = virial
+        cell_forces = virial / cell_factor
 
         # Sum masses per batch using segment_reduce
         # TODO (AG): check this
@@ -1029,8 +1019,7 @@ def unit_cell_fire(  # noqa: C901, PLR0915
                 3, device=device
             ).unsqueeze(0).expand(n_batches, -1, -1)
 
-        virial = virial / state.cell_factor
-        state.cell_forces = virial
+        state.cell_forces = virial / state.cell_factor
 
         # Velocity Verlet first half step (v += 0.5*a*dt)
         state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
