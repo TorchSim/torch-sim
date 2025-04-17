@@ -463,6 +463,7 @@ class BinningAutoBatcher:
         return_indices: bool = False,
         max_atoms_to_try: int = 500_000,
         memory_scaling_factor: float = 1.6,
+        max_memory_padding: float = 1.0,
     ) -> None:
         """Initialize the binning auto-batcher.
 
@@ -484,6 +485,8 @@ class BinningAutoBatcher:
                 iteration. Larger values will get a batch size more quickly, smaller
                 values will get a more accurate limit. Must be greater than 1. Defaults
                 to 1.6.
+            max_memory_padding (float): Multiply the autodetermined max_memory_scaler
+                by this value to account for fluctuations in max memory. Defaults to 1.0.
         """
         self.max_memory_scaler = max_memory_scaler
         self.max_atoms_to_try = max_atoms_to_try
@@ -491,6 +494,7 @@ class BinningAutoBatcher:
         self.return_indices = return_indices
         self.model = model
         self.memory_scaling_factor = memory_scaling_factor
+        self.max_memory_padding = max_memory_padding
 
     def load_states(
         self,
@@ -540,6 +544,7 @@ class BinningAutoBatcher:
                 max_atoms=self.max_atoms_to_try,
                 scale_factor=self.memory_scaling_factor,
             )
+            self.max_memory_scaler += self.max_memory_padding
         else:
             self.max_memory_scaler = self.max_memory_scaler
 
@@ -758,6 +763,7 @@ class InFlightAutoBatcher:
         memory_scaling_factor: float = 1.6,
         return_indices: bool = False,
         max_iterations: int | None = None,
+        max_memory_padding: float = 1.0,
     ) -> None:
         """Initialize the hot-swapping auto-batcher.
 
@@ -782,6 +788,8 @@ class InFlightAutoBatcher:
             max_iterations (int | None): Maximum number of iterations to process a state
                 before considering it complete, regardless of convergence. Used to prevent
                 infinite loops. Defaults to None (no limit).
+            max_memory_padding (float): Multiply the autodetermined max_memory_scaler
+                by this value to account for fluctuations in max memory. Defaults to 1.0.
         """
         self.model = model
         self.memory_scales_with = memory_scales_with
@@ -790,6 +798,7 @@ class InFlightAutoBatcher:
         self.memory_scaling_factor = memory_scaling_factor
         self.return_indices = return_indices
         self.max_attempts = max_iterations  # TODO: change to max_iterations
+        self.max_memory_padding = max_memory_padding
 
     def load_states(
         self,
@@ -942,6 +951,7 @@ class InFlightAutoBatcher:
                 max_atoms=self.max_atoms_to_try,
                 scale_factor=self.memory_scaling_factor,
             )
+            self.max_memory_scaler += self.max_memory_padding
             print(f"Max metric calculated: {self.max_memory_scaler}")
         return concatenate_states([first_state, *states])
 

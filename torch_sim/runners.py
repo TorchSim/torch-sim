@@ -77,6 +77,7 @@ def _configure_batches_iterator(
         autobatcher = BinningAutoBatcher(
             model=model,
             return_indices=True,
+            max_memory_padding=0.9,
         )
         autobatcher.load_states(state)
         batches = autobatcher
@@ -219,6 +220,7 @@ def _configure_in_flight_autobatcher(
             max_memory_scaler=max_memory_scaler,
             memory_scales_with=memory_scales_with,
             max_iterations=max_attempts,
+            max_memory_padding=0.9,
         )
     return autobatcher
 
