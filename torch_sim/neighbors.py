@@ -738,7 +738,7 @@ def torch_nl_n2(
             Default is False.
 
     Returns:
-        Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
             mapping (torch.Tensor [2, n_neighbors]):
                 A tensor containing the indices of the neighbor list for the given
                 positions array. `mapping[0]` corresponds to the central atom indices,
@@ -793,7 +793,7 @@ def torch_nl_linked_cell(
             Default is False.
 
     Returns:
-        Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
             A tuple containing:
                 - mapping (torch.Tensor [2, n_neighbors]):
                     A tensor containing the indices of the neighbor list for the given

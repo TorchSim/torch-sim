@@ -48,11 +48,11 @@ def gradient_descent(
     energy surfaces.
 
     Args:
-        model: Neural network model that computes energies and forces
-        lr: Step size for position updates (default: 0.01)
+        model (torch.nn.Module): Neural network model that computes energies and forces
+        lr (float): Step size for position updates (default: 0.01)
 
     Returns:
-        Tuple containing:
+        tuple containing:
         - Initialization function that creates the initial GDState
         - Update function that performs one gradient descent step
 
@@ -359,7 +359,7 @@ def fire_ase(  # noqa: PLR0915
         downhill_check: Whether to verify energy decreases each step (default: False)
 
     Returns:
-        Tuple containing:
+        tuple containing:
         - Initial FIREState with system state and optimization parameters
         - Update function that performs one FIRE step
     Notes:
@@ -582,7 +582,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
         cell_factor: Scaling factor for cell optimization (default: number of atoms)
 
     Returns:
-        Tuple containing:
+        tuple containing:
         - Initialization function that creates a UnitCellFIREState
         - Update function that performs one FIRE step
     """
@@ -893,7 +893,7 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
         cell_factor: Scaling factor for cell optimization (default: number of atoms)
 
     Returns:
-        Tuple containing:
+        tuple containing:
         - Initialization function that creates a FrechetCellFIREState
         - Update function that performs one FIRE step with Frechet derivatives
 

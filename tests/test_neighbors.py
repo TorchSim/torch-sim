@@ -33,7 +33,7 @@ def ase_to_torch_batch(
             Defaults to torch.float32.
 
     Returns:
-        Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
             A tuple containing:
             - pos: Tensor of atomic positions.
             - cell: Tensor of unit cell vectors.

@@ -1373,7 +1373,7 @@ def nvt_nose_hoover(
         sy_steps: Number of Suzuki-Yoshida steps - must be 1, 3, 5, or 7 (default: 3)
 
     Returns:
-        Tuple containing:
+        tuple containing:
         - Initialization function that takes a state and returns NVTNoseHooverState
         - Update function that performs one complete integration step
 

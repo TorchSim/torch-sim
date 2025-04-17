@@ -931,9 +931,9 @@ def get_elastic_coeffs(
         bravais_type: Crystal system (BravaisType enum)
 
     Returns:
-        Tuple containing:
+        tuple containing:
         - torch.Tensor: Cij elastic constants
-        - Tuple containing:
+        - tuple containing:
             - torch.Tensor: Bij Birch coefficients
             - torch.Tensor: Residuals from least squares fit
             - int: Rank of solution

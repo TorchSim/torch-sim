@@ -29,7 +29,7 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState, concatenate_states
-from torch_sim.typing import MemoryScaler
+from torch_sim.typing import MemoryScaling
 
 
 def to_constant_volume_bins(  # noqa: C901, PLR0915
@@ -310,7 +310,7 @@ def determine_max_batch_size(
 
 def calculate_memory_scaler(
     state: SimState,
-    memory_scales_with: MemoryScaler = "n_atoms_x_density",
+    memory_scales_with: MemoryScaling = "n_atoms_x_density",
 ) -> float:
     """Calculate a metric that estimates memory requirements for a state.
 
@@ -353,7 +353,7 @@ def calculate_memory_scaler(
         number_density = state.n_atoms / volume.item()
         return state.n_atoms * number_density
     raise ValueError(
-        f"Invalid metric: {memory_scales_with}, must be one of {get_args(MemoryScaler)}"
+        f"Invalid metric: {memory_scales_with}, must be one of {get_args(MemoryScaling)}"
     )
 
 
@@ -461,7 +461,7 @@ class BinningAutoBatcher:
         self,
         model: ModelInterface,
         *,
-        memory_scales_with: MemoryScaler = "n_atoms_x_density",
+        memory_scales_with: MemoryScaling = "n_atoms_x_density",
         max_memory_scaler: float | None = None,
         return_indices: bool = False,
         max_atoms_to_try: int = 500_000,
@@ -755,7 +755,7 @@ class InFlightAutoBatcher:
         self,
         model: ModelInterface,
         *,
-        memory_scales_with: MemoryScaler = "n_atoms_x_density",
+        memory_scales_with: MemoryScaling = "n_atoms_x_density",
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         memory_scaling_factor: float = 1.6,

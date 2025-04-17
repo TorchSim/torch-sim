@@ -34,7 +34,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.state import SimState
-from torch_sim.typing import MemoryScaler, StateDict
+from torch_sim.typing import MemoryScaling, StateDict
 
 
 class ModelInterface(ABC):
@@ -50,7 +50,7 @@ class ModelInterface(ABC):
         dtype (torch.dtype): Data type used for tensor calculations.
         compute_stress (bool): Whether the model calculates stress tensors.
         compute_forces (bool): Whether the model calculates atomic forces.
-        memory_scales_with (Literal["n_atoms", "n_atoms_x_density"]): The metric
+        memory_scales_with (MemoryScaling): The metric
             that the model scales with. "n_atoms" uses only atom count and is suitable
             for models that have a fixed number of neighbors. "n_atoms_x_density" uses
             atom count multiplied by number density and is better for models with
@@ -152,7 +152,7 @@ class ModelInterface(ABC):
         )
 
     @property
-    def memory_scales_with(self) -> MemoryScaler:
+    def memory_scales_with(self) -> MemoryScaling:
         """The metric that the model scales with.
 
         Models with radial neighbor cutoffs scale with "n_atoms_x_density",

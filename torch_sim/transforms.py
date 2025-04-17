@@ -258,7 +258,7 @@ def get_pair_displacements(
         shifts (Optional[torch.Tensor]): Shift vectors for periodic images [n_pairs, 3].
 
     Returns:
-        Tuple[torch.Tensor, torch.Tensor]:
+        tuple[torch.Tensor, torch.Tensor]:
             - Displacement vectors [n_pairs, 3].
             - Distances [n_pairs].
     """
@@ -580,7 +580,7 @@ def get_fully_connected_mapping(
             self-interactions in the mapping.
 
     Returns:
-        Tuple[torch.Tensor, torch.Tensor]: A tuple containing:
+        tuple[torch.Tensor, torch.Tensor]: A tuple containing:
             - mapping (torch.Tensor): A tensor of shape (n_pairs, 2)
                 representing the pairs of indices for which distances
                 will be computed.
@@ -637,7 +637,7 @@ def build_naive_neighborhood(
             self-interactions.
 
     Returns:
-        Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: A tuple containing:
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor]: A tuple containing:
             - mapping (torch.Tensor): A tensor of shape (n_pairs, 2)
                 representing the pairs of indices for neighboring atoms.
             - batch_mapping (torch.Tensor): A tensor of shape (n_pairs,)
@@ -823,7 +823,7 @@ def linked_cell(  # noqa: PLR0915
             atoms will be included as their own neighbors. Default is False.
 
     Returns:
-        Tuple[torch.Tensor, torch.Tensor]:
+        tuple[torch.Tensor, torch.Tensor]:
             - neigh_atom (torch.Tensor): A tensor containing pairs of indices
               where neigh_atom[0] represents the original atom indices
               and neigh_atom[1] represents their corresponding neighbor
@@ -989,7 +989,7 @@ def build_linked_cell_neighborhood(
             their own neighbors. Default is False.
 
     Returns:
-        Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
             - mapping (torch.Tensor): A tensor containing pairs of indices where
               mapping[0] represents the central atom indices and mapping[1]
               represents their corresponding neighbor indices.
