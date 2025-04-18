@@ -89,7 +89,7 @@ def _configure_batches_iterator(
     elif autobatcher is False:
         batches = [(state, [])]
     else:
-        raise ValueError(
+        raise TypeError(
             f"Invalid autobatcher type: {type(autobatcher).__name__}, "
             "must be bool or BinningAutoBatcher."
         )
@@ -206,7 +206,7 @@ def _configure_in_flight_autobatcher(
     if isinstance(autobatcher, InFlightAutoBatcher):
         autobatcher.return_indices = True
         autobatcher.max_attempts = max_attempts
-    else:
+    elif isinstance(autobatcher, bool):
         if autobatcher:
             memory_scales_with = model.memory_scales_with
             max_memory_scaler = None
@@ -220,6 +220,11 @@ def _configure_in_flight_autobatcher(
             memory_scales_with=memory_scales_with,
             max_iterations=max_attempts,
             max_memory_padding=0.9,
+        )
+    else:
+        raise TypeError(
+            f"Invalid autobatcher type: {type(autobatcher).__name__}, "
+            "must be bool or InFlightAutoBatcher."
         )
     return autobatcher
 
