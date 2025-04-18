@@ -29,12 +29,13 @@ Overview of the TorchSim API.
     units
 
 
-TorchSim module graph. Each node represents a Python module. Arrows indicate
+TorchSim module treemap. Each node represents a Python module. Arrows indicate
 imports between modules. Node color indicates connectedness: blue nodes have fewer
 dependents, red nodes have more (up to 16). The number in parentheses is the number of
 lines of code in the module. Click on nodes to navigate to the file.
 
-.. image:: /_static/torch-sim-module-graph.svg
-   :alt: torch-sim Module Graph
+.. raw:: html
+   :file: docs/_static/torch-sim-pkg-treemap.html
+   :alt: torch-sim Module treemap
    :width: 100%
    :align: center
