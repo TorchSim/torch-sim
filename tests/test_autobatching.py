@@ -173,7 +173,7 @@ def test_binning_auto_batcher_auto_metric(
     # monkeypath determine max memory scaler
     monkeypatch.setattr(
         "torch_sim.autobatching.determine_max_batch_size",
-        lambda *args, **kwargs: 50,
+        lambda *args, **kwargs: 50,  # noqa: ARG005
     )
 
     # Create a list of states with different sizes
