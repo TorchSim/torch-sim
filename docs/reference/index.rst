@@ -34,4 +34,6 @@ imports between modules. Node color indicates connectedness: blue nodes have few
 dependents, red nodes have more (up to 16). The number in parentheses is the number of
 lines of code in the module. Click on nodes to navigate to the file.
 
-<iframe src="../_static/torch-sim-pkg-treemap.html" width="100%" height="600px" style="border:none;"></iframe>
+.. raw:: html
+
+   <iframe src="../_static/torch-sim-pkg-treemap.html" width="100%" height="600px" style="border:none;"></iframe>

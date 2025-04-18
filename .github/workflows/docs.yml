@@ -46,6 +46,9 @@ jobs:
           rm docs/tutorials/*.h5*
           rm docs/tutorials/*.traj*
 
+      - name: Generate package treemap
+        run: python docs/_static/draw_pkg_treemap.py
+
       - name: Build
         run: sphinx-build docs docs_build
 
