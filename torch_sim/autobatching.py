@@ -929,19 +929,17 @@ class InFlightAutoBatcher:
         self.current_idx += [0]
         self.swap_attempts.append(0)  # Initialize attempt counter for first state
         self.iterator_idx += 1
-        # self.total_metric += first_metric
 
         # if max_metric is not set, estimate it
         has_max_metric = bool(self.max_memory_scaler)
         if not has_max_metric:
-            self.max_memory_scaler = estimate_max_memory_scaler(
+            n_batches = determine_max_batch_size(
+                first_state,
                 self.model,
-                [first_state],
-                [first_metric],
                 max_atoms=self.max_atoms_to_try,
                 scale_factor=self.memory_scaling_factor,
             )
-            self.max_memory_scaler = self.max_memory_scaler * 0.8
+            self.max_memory_scaler = n_batches * first_metric * 0.8
 
         states = self._get_next_states()
 
