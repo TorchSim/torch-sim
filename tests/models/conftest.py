@@ -14,7 +14,7 @@ if typing.TYPE_CHECKING:
     from torch_sim.state import SimState
 
 
-consistency_test_simstate_fixtures: Final[list[str]] = [
+consistency_test_simstate_fixtures: Final[tuple[str, ...]] = (
     "cu_sim_state",
     "mg_sim_state",
     "sb_sim_state",
@@ -28,14 +28,14 @@ consistency_test_simstate_fixtures: Final[list[str]] = [
     "ar_supercell_sim_state",
     "fe_supercell_sim_state",
     "benzene_sim_state",
-]
+)
 
 
 def make_model_calculator_consistency_test(
     test_name: str,
     model_fixture_name: str,
     calculator_fixture_name: str,
-    sim_state_names: list[str],
+    sim_state_names: tuple[str, ...],
     rtol: float = 1e-5,
     atol: float = 1e-5,
 ):
@@ -45,7 +45,7 @@ def make_model_calculator_consistency_test(
         test_name: Name of the test (used in the function name and messages)
         model_fixture_name: Name of the model fixture
         calculator_fixture_name: Name of the calculator fixture
-        sim_state_names: List of sim_state fixture names to test
+        sim_state_names: sim_state fixture names to test
         rtol: Relative tolerance for numerical comparisons
         atol: Absolute tolerance for numerical comparisons
     """

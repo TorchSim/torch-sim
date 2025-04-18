@@ -222,10 +222,9 @@ def _configure_in_flight_autobatcher(
             max_memory_padding=0.9,
         )
     else:
-        raise TypeError(
-            f"Invalid autobatcher type: {type(autobatcher).__name__}, "
-            "must be bool or InFlightAutoBatcher."
-        )
+        autobatcher_type = type(autobatcher).__name__
+        cls_name = InFlightAutoBatcher.__name__
+        raise TypeError(f"Invalid {autobatcher_type=}, must be bool or {cls_name}.")
     return autobatcher
 
 
