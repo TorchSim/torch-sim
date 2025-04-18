@@ -517,9 +517,7 @@ def test_optimize_with_default_autobatcher(
     def mock_estimate(*args, **kwargs) -> float:  # noqa: ARG001
         return 200
 
-    monkeypatch.setattr(
-        "torch_sim.autobatching.determine_max_batch_size", mock_estimate
-    )
+    monkeypatch.setattr("torch_sim.autobatching.determine_max_batch_size", mock_estimate)
 
     states = [ar_supercell_sim_state, fe_supercell_sim_state, ar_supercell_sim_state]
     triple_state = initialize_state(
