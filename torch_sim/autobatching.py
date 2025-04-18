@@ -853,6 +853,7 @@ class InFlightAutoBatcher:
 
         self.first_batch_returned = False
         self._first_batch = self._get_first_batch()
+        return self.max_memory_scaler
 
     def _get_next_states(self) -> list[SimState]:
         """Add states from the iterator until max_memory_scaler is reached.
@@ -953,7 +954,6 @@ class InFlightAutoBatcher:
                 scale_factor=self.memory_scaling_factor,
             )
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
-            print(f"Max metric calculated: {self.max_memory_scaler}")
         return concatenate_states([first_state, *states])
 
     def next_batch(
