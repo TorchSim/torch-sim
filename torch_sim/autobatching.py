@@ -544,9 +544,7 @@ class BinningAutoBatcher:
                 max_atoms=self.max_atoms_to_try,
                 scale_factor=self.memory_scaling_factor,
             )
-            self.max_memory_scaler += self.max_memory_padding
-        else:
-            self.max_memory_scaler = self.max_memory_scaler
+            self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
 
         # verify that no systems are too large
         max_metric_value = max(self.memory_scalers)
@@ -951,7 +949,7 @@ class InFlightAutoBatcher:
                 max_atoms=self.max_atoms_to_try,
                 scale_factor=self.memory_scaling_factor,
             )
-            self.max_memory_scaler += self.max_memory_padding
+            self.max_memory_scaler *= self.max_memory_padding
             print(f"Max metric calculated: {self.max_memory_scaler}")
         return concatenate_states([first_state, *states])
 

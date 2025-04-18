@@ -163,6 +163,53 @@ def test_binning_auto_batcher(
     assert torch.all(restored_states[1].atomic_numbers == states[1].atomic_numbers)
 
 
+def test_binning_auto_batcher_auto_metric(
+    si_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: Any,
+) -> None:
+    """Test BinningAutoBatcher with different states."""
+    # monkeypath determine max memory scaler
+    monkeypatch.setattr(
+        "torch_sim.autobatching.determine_max_batch_size",
+        lambda *args, **kwargs: 50,
+    )
+
+    # Create a list of states with different sizes
+    states = [si_sim_state, fe_supercell_sim_state]
+
+    # Initialize the batcher with a fixed max_metric to avoid GPU memory testing
+    batcher = BinningAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+    )
+    batcher.load_states(states)
+
+    # Check that the batcher correctly identified the metrics
+    assert len(batcher.memory_scalers) == 2
+    assert batcher.memory_scalers[0] == si_sim_state.n_atoms
+    assert batcher.memory_scalers[1] == fe_supercell_sim_state.n_atoms
+
+    # Get batches until None is returned
+    batches = list(batcher)
+
+    # Check we got the expected number of batches
+    assert len(batches) == len(batcher.batched_states)
+
+    # Test restore_original_order
+    restored_states = batcher.restore_original_order(batches)
+    assert len(restored_states) == len(states)
+
+    # Check that the restored states match the original states in order
+    assert restored_states[0].n_atoms == states[0].n_atoms
+    assert restored_states[1].n_atoms == states[1].n_atoms
+
+    # Check atomic numbers to verify the correct order
+    assert torch.all(restored_states[0].atomic_numbers == states[0].atomic_numbers)
+    assert torch.all(restored_states[1].atomic_numbers == states[1].atomic_numbers)
+
+
 def test_binning_auto_batcher_with_indices(
     si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
