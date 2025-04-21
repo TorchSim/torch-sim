@@ -4,7 +4,7 @@ different volumes and FC2 calculations with MACE.
 
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.11",
+#     "mace-torch>=0.3.12",
 #     "phonopy>=2.35",
 #     "pymatviz[export-figs]>=0.15.1",
 # ]

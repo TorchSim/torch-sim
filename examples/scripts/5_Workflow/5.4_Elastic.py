@@ -3,7 +3,7 @@
 # /// script
 # dependencies = [
 #     "ase>=3.24",
-#     "mace-torch>=0.3.11",
+#     "mace-torch>=0.3.12",
 # ]
 # ///
 

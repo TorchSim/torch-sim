@@ -2,7 +2,7 @@
 
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.11",
+#     "mace-torch>=0.3.12",
 #     "phonopy>=2.35",
 #     "pymatviz[export-figs]>=0.15.1",
 #     "seekpath",
@@ -158,8 +158,8 @@ ase_atoms = Atoms(
     cell=atoms.cell,
     pbc=True,
 )
-qpts, connections = get_qpts_and_connections(ase_atoms)
-ph.run_band_structure(qpts, connections)
+q_pts, connections = get_qpts_and_connections(ase_atoms)
+ph.run_band_structure(q_pts, connections)
 
 # Define axis style for plots
 axis_style = dict(
