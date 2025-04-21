@@ -711,7 +711,8 @@ class InFlightAutoBatcher:
     To avoid a slow memory estimation step, set the `max_memory_scaler` to a
     known value.
 
-    ![Hot-swapping auto-batcher diagram](https://raw.githubusercontent.com/janosh/diagrams/830c1b6817e712958b6f5f3afa1268ce5d440924/assets/hot-swapping-auto-batcher/hot-swapping-auto-batcher-hd.png)
+    .. image:: https://github.com/janosh/diagrams/raw/main/assets/in-flight-auto-batcher/in-flight-auto-batcher.svg
+       :alt: In-flight auto-batcher diagram
 
     Attributes:
         model (ModelInterface): Model used for memory estimation and processing.
