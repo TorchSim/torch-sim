@@ -83,6 +83,7 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
             ValueError: the model doesn't have a cutoff
             ValueError: the model has a modal_map but modal is not given
             ValueError: the modal given is not in the modal_map
+            ValueError: the model doesn't have a type_map
         """
         super().__init__()
 
@@ -100,6 +101,10 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
                 stacklevel=2,
             )
 
+        if not model.type_map:
+            raise ValueError("type_map is missing")
+        model.eval_type_map = torch.tensor(data=True)
+
         self._dtype = dtype
         self._memory_scales_with = "n_atoms_x_density"
         self._compute_stress = True
@@ -108,9 +113,6 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
         if model.cutoff == 0.0:
             raise ValueError("Model cutoff seems not initialized")
 
-        model.eval_type_map = torch.tensor(
-            data=True,
-        )  # TODO: from sevenn not sure if needed
         model.set_is_batch_data(True)
         model_loaded = model
         self.cutoff = torch.tensor(model.cutoff)
