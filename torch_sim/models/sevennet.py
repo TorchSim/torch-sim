@@ -77,7 +77,7 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
             neighbor_list_fn (Callable): Neighbor list function to use.
                 Default is vesin_nl_ts.
             device (torch.device | str | None): Device to run the model on
-            dtype (torch.dtype | None): Data type for computation
+            dtype (torch.dtype): Data type for computation
 
         Raises:
             ValueError: the model doesn't have a cutoff
@@ -92,7 +92,7 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
         if isinstance(self._device, str):
             self._device = torch.device(self._device)
 
-        if torch.dtype is not torch.float32:
+        if dtype is not torch.float32:
             warnings.warn(
                 "SevenNetModel currently only supports"
                 "float32, but received different dtype",
