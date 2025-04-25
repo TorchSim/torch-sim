@@ -168,9 +168,7 @@ def position_step(state: MDState, dt: torch.Tensor) -> MDState:
 
     if state.pbc:
         # Split positions and cells by batch
-        new_positions = pbc_wrap_batched(
-            new_positions, state.cell.swapaxes(1, 2), state.batch
-        )
+        new_positions = pbc_wrap_batched(new_positions, state.cell, state.batch)
 
     state.positions = new_positions
     return state
@@ -1027,9 +1025,7 @@ def npt_langevin(  # noqa: C901, PLR0915
 
         # Apply periodic boundary conditions if needed
         if state.pbc:
-            state.positions = pbc_wrap_batched(
-                state.positions, state.cell.swapaxes(1, 2), state.batch
-            )
+            state.positions = pbc_wrap_batched(state.positions, state.cell, state.batch)
 
         return state
 
