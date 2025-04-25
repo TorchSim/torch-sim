@@ -62,7 +62,7 @@ print(f"Iron atoms: {len(fe_dc)}")
 print(f"Total number of structures: {len(atoms_list)}")
 
 # Create batched model
-model = ts.models.MaceModel(
+model = ts.models.mace.MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,

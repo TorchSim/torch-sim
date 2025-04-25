@@ -105,7 +105,7 @@ Nrelax = 300  # number of relaxation steps
 displ = 0.01  # atomic displacement for phonons (in Angstrom)
 
 # Relax atomic positions
-model = ts.models.MaceModel(
+model = ts.models.mace.MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,

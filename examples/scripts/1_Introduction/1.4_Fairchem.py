@@ -31,7 +31,7 @@ MODEL_PATH = model_name_to_local_file(
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43).repeat((2, 2, 2))
 atomic_numbers = si_dc.get_atomic_numbers()
-model = ts.models.FairChemModel(
+model = ts.models.fairchem.FairChemModel(
     model=MODEL_PATH,
     cpu=False,
     seed=0,

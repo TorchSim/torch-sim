@@ -31,7 +31,7 @@ loaded_model = mace_mp(
 # ASE structure
 struct = bulk("Cu", "fcc", a=3.58, cubic=True).repeat((2, 2, 2))
 
-model = ts.models.MaceModel(
+model = ts.models.mace.MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,

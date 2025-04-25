@@ -219,7 +219,7 @@ loaded_model = mace_mp(
     default_dtype=dtype,
     device=device,
 )
-model = ts.models.MaceModel(
+model = ts.models.mace.MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,

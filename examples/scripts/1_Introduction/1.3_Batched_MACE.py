@@ -35,7 +35,7 @@ loaded_model = mace_mp(
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 atoms_list = [si_dc, si_dc]
 
-batched_model = ts.models.MaceModel(
+batched_model = ts.models.mace.MaceModel(
     # Pass the raw model
     model=loaded_model,
     # Or load from compiled model

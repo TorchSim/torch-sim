@@ -201,7 +201,7 @@ pymatgen_struct_list = [
 
 start_time = time.perf_counter()
 # Create a batched model
-model = ts.models.MaceModel(
+model = ts.models.mace.MaceModel(
     model=raw_model,
     device=device,
     compute_forces=True,

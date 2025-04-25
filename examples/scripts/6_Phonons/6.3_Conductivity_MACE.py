@@ -54,7 +54,7 @@ mace_checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/down
 loaded_model = mace_mp(
     model=mace_checkpoint_url, return_raw_model=True, default_dtype=dtype, device=device
 )
-model = ts.models.MaceModel(
+model = ts.models.mace.MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,
