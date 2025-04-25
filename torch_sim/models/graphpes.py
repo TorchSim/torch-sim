@@ -113,7 +113,7 @@ class GraphPESWrapper(torch.nn.Module, ModelInterface):
         compute_stress: Whether to compute stress
 
     Example:
-        >>> from torch_sim.models import GraphPESWrapper
+        >>> from torch_sim.models.graphpes import GraphPESWrapper
         >>> from graph_pes.models import load_model
         >>> model = load_model("path/to/model.pt")
         >>> wrapper = GraphPESWrapper(model)

@@ -49,7 +49,7 @@ If you intend to drive simulations that require stresses, you will need to speci
 """
 
 # %%
-from torch_sim.models import GraphPESWrapper
+from torch_sim.models.graphpes import GraphPESWrapper
 
 # wrap the model for use with TorchSim
 ts_model = GraphPESWrapper(model, compute_stress=False)

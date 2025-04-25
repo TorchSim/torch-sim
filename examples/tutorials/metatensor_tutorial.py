@@ -26,7 +26,7 @@ device is chosen automatically.)
 """
 
 # %%
-from torch_sim.models import MetatensorModel
+from torch_sim.models.metatensor import MetatensorModel
 
 model = MetatensorModel("pet-mad")
 
