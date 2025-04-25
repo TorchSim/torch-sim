@@ -8,8 +8,8 @@ authors = [
     { name = "Orion Cohen", email = "orion@radical-ai.com" },
     { name = "Radical AI", email = "info@radical.ai" },
 ]
-readme = "readme.md"
-license = { file = "license" }
+readme = "README.md"
+license = { file = "LICENSE" }
 keywords = [
     "chemistry",
     "interatomic-potentials",
@@ -71,6 +71,9 @@ Repo = "https://github.com/radical-ai/torch-sim"
 [build-system]
 requires = ["hatchling>=1.8.0"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["torch_sim"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/"]
