@@ -8,8 +8,8 @@ authors = [
     { name = "Orion Cohen", email = "orion@radical-ai.com" },
     { name = "Radical AI", email = "info@radical.ai" },
 ]
-readme = "readme.md"
-license = { file = "license" }
+readme = "README.md"
+license = { file = "LICENSE" }
 keywords = [
     "chemistry",
     "interatomic-potentials",
@@ -68,17 +68,15 @@ docs = [
 [project.urls]
 Repo = "https://github.com/radical-ai/torch-sim"
 
-[tool.setuptools.packages.find]
-include = ["torch_sim*"]
-exclude = ["examples*", "tests*"]
-
 [build-system]
-requires = ["setuptools==77.0.3"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
 
-[tool.pytest.ini_options]
-testpaths = ["tests/"]
-addopts = "-p no:warnings"
+[tool.hatch.build.targets.wheel]
+packages = ["torch_sim"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/torch_sim"]
 
 [tool.ruff]
 target-version = "py311"
@@ -138,6 +136,11 @@ docstring-code-format = true
 check-filenames = true
 ignore-words-list = ["convertor"]
 
-[tool.pytest]
-addopts = ["--cov-report=term-missing", "--cov=torch_sim", "-v"]
+[tool.pytest.ini_options]
+addopts = [
+    "--cov-report=term-missing",
+    "--cov=torch_sim",
+    "-p no:warnings",
+    "-v",
+]
 testpaths = ["tests"]
