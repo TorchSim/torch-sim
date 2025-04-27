@@ -47,10 +47,7 @@ jobs:
           rm docs/tutorials/*.traj*
 
       - name: Generate package treemap
-        run: |
-          uv pip install --system . --config-settings editable-mode=compat
-          uv pip install --system git+https://github.com/janosh/pymatviz
-          python docs/_static/draw_pkg_treemap.py
+        run: uv run docs/_static/draw_pkg_treemap.py
 
       - name: Build
         run: sphinx-build docs docs_build
