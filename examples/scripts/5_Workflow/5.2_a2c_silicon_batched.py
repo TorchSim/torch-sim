@@ -24,6 +24,7 @@ from pymatgen.core import Composition, Element, Structure
 from tqdm import tqdm
 
 import torch_sim as ts
+from torch_sim.models.mace import MaceModel
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import (
     NVTNoseHooverState,
@@ -201,7 +202,7 @@ pymatgen_struct_list = [
 
 start_time = time.perf_counter()
 # Create a batched model
-model = ts.models.mace.MaceModel(
+model = MaceModel(
     model=raw_model,
     device=device,
     compute_forces=True,

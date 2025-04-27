@@ -11,7 +11,7 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
-import torch_sim as ts
+from torch_sim.models.mace import MaceModel
 
 
 # Set device and data type
@@ -35,7 +35,7 @@ loaded_model = mace_mp(
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 atoms_list = [si_dc, si_dc]
 
-batched_model = ts.models.mace.MaceModel(
+batched_model = MaceModel(
     # Pass the raw model
     model=loaded_model,
     # Or load from compiled model

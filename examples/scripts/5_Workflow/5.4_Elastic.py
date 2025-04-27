@@ -13,6 +13,7 @@ from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
 from torch_sim.elastic import get_bravais_type
+from torch_sim.models.mace import MaceModel
 
 
 # Calculator
@@ -31,7 +32,7 @@ loaded_model = mace_mp(
 # ASE structure
 struct = bulk("Cu", "fcc", a=3.58, cubic=True).repeat((2, 2, 2))
 
-model = ts.models.mace.MaceModel(
+model = MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,

@@ -14,6 +14,7 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
+from torch_sim.models.mace import MaceModel
 from torch_sim.units import UnitConversion
 
 
@@ -62,7 +63,7 @@ print(f"Iron atoms: {len(fe_dc)}")
 print(f"Total number of structures: {len(atoms_list)}")
 
 # Create batched model
-model = ts.models.mace.MaceModel(
+model = MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,
