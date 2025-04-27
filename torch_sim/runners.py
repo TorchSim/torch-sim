@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from itertools import chain
 
 import torch
+from tqdm import tqdm
 
 from torch_sim.autobatching import BinningAutoBatcher, InFlightAutoBatcher
 from torch_sim.models.interface import ModelInterface
@@ -106,6 +107,7 @@ def integrate(
     timestep: float,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: BinningAutoBatcher | bool = False,
+    verbose: bool = False,
     **integrator_kwargs: dict,
 ) -> SimState:
     """Simulate a system using a model and integrator.
@@ -123,6 +125,7 @@ def integrate(
             tracking trajectory. If a dict, will be passed to the TrajectoryReporter
             constructor.
         autobatcher (BinningAutoBatcher | bool): Optional autobatcher to use
+        verbose (bool): If True and 'autobatcher' is not False, print a progress bar.
         **integrator_kwargs: Additional keyword arguments for integrator init function
 
     Returns:
@@ -154,6 +157,7 @@ def integrate(
 
     final_states: list[SimState] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
+    pbar = tqdm(total=state.n_batches, disable=None) if verbose and autobatcher else None
     for state, batch_indices in batch_iterator:
         state = init_fn(state)
 
@@ -173,6 +177,8 @@ def integrate(
 
         # finish the trajectory reporter
         final_states.append(state)
+        if pbar:
+            pbar.update(state.n_batches)
 
     if trajectory_reporter:
         trajectory_reporter.finish()
@@ -316,6 +322,7 @@ def optimize(
     autobatcher: InFlightAutoBatcher | bool = False,
     max_steps: int = 10_000,
     steps_between_swaps: int = 5,
+    verbose: bool = False,
     **optimizer_kwargs: dict,
 ) -> SimState:
     """Optimize a system using a model and optimizer.
@@ -339,6 +346,7 @@ def optimize(
             will use the provided autobatcher, but will reset the max_attempts to
             max_steps // steps_between_swaps.
         max_steps (int): Maximum number of total optimization steps
+        verbose (bool): If True and 'autobatcher' is not False, print a progress bar.
         steps_between_swaps: Number of steps to take before checking convergence
             and swapping out states.
 
@@ -375,6 +383,8 @@ def optimize(
     last_energy = None
     all_converged_states, convergence_tensor = [], None
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
+
+    pbar = tqdm(total=state.n_batches, disable=None) if verbose and autobatcher else None
     while (result := autobatcher.next_batch(state, convergence_tensor))[0] is not None:
         state, converged_states, batch_indices = result
         all_converged_states.extend(converged_states)
@@ -399,6 +409,8 @@ def optimize(
                 break
 
         convergence_tensor = convergence_fn(state, last_energy)
+        if pbar:
+            pbar.update(len([tf for tf in convergence_tensor if tf]))
 
     all_converged_states.extend(result[1])
 
@@ -418,6 +430,7 @@ def static(
     *,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: BinningAutoBatcher | bool = False,
+    verbose: bool = False,
 ) -> list[dict[str, torch.Tensor]]:
     """Run single point calculations on a batch of systems.
 
@@ -440,6 +453,7 @@ def static(
             `state_kwargs` argument.
         autobatcher (BinningAutoBatcher | bool): Optional autobatcher to use for
             batching calculations
+        verbose (bool): If True and 'autobatcher' is not False, print a progress bar.
 
     Returns:
         list[dict[str, torch.Tensor]]: Maps of property names to tensors for all batches
@@ -472,6 +486,8 @@ def static(
     final_states: list[SimState] = []
     all_props: list[dict[str, torch.Tensor]] = []
     og_filenames = trajectory_reporter.filenames
+
+    pbar = tqdm(total=state.n_batches, disable=None) if verbose and autobatcher else None
     for substate, batch_indices in batch_iterator:
         # set up trajectory reporters
         if autobatcher and trajectory_reporter and og_filenames is not None:
@@ -493,6 +509,8 @@ def static(
         all_props.extend(props)
 
         final_states.append(substate)
+        if pbar:
+            pbar.update(substate.n_batches)
 
     trajectory_reporter.finish()
 
