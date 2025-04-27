@@ -517,6 +517,7 @@ def static(
     if isinstance(batch_iterator, BinningAutoBatcher):
         # reorder properties to match original order of states
         original_indices = list(chain.from_iterable(batch_iterator.index_bins))
-        return [all_props[idx] for idx in original_indices]
+        indexed_props = list(zip(original_indices, all_props, strict=True))
+        return [prop for _, prop in sorted(indexed_props, key=lambda x: x[0])]
 
     return all_props
