@@ -40,8 +40,9 @@ def morse_pair(
             well. Either a scalar float or tensor of shape [n, m].
 
     Returns:
-        Pairwise Morse interaction energies between particles. Shape: [n, m].
-        Each element [i,j] represents the interaction energy between particles i and j.
+        torch.Tensor: Pairwise Morse interaction energies between particles.
+            Shape: [n, m]. Each element [i,j] represents the interaction energy between
+            particles i and j.
     """
     # Calculate potential energy
     energy = epsilon * (1.0 - torch.exp(-alpha * (dr - sigma))).pow(2) - epsilon
@@ -77,8 +78,8 @@ def morse_pair_force(
             tensor of shape [n, m].
 
     Returns:
-        Pairwise Morse forces between particles. Shape: [n, m].
-        Positive values indicate repulsion, negative values indicate attraction.
+        torch.Tensor: Pairwise Morse forces between particles. Shape: [n, m].
+            Positive values indicate repulsion, negative values indicate attraction.
     """
     exp_term = torch.exp(-alpha * (dr - sigma))
     force = -2.0 * alpha * epsilon * exp_term * (1.0 - exp_term)

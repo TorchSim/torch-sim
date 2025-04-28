@@ -150,14 +150,13 @@ def regular_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Args:
         strains: Tensor of shape (6,) containing strain components
-                [εxx, εyy, εzz, εyz, εxz, εxy]
-                where:
-                - εxx, εyy, εzz are normal strains
-                - εyz, εxz, εxy are shear strains
+            [εxx, εyy, εzz, εyz, εxz, εxy] where:
+            - εxx, εyy, εzz are normal strains
+            - εyz, εxz, εxy are shear strains
 
     Returns:
         torch.Tensor: Matrix of shape (6, 3) where columns correspond to
-                     coefficients for C11, C12, and C44 respectively
+            coefficients for C11, C12, and C44 respectively
 
     Notes:
         The resulting matrix M has the form:
@@ -214,14 +213,13 @@ def tetragonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Args:
         strains: Tensor of shape (6,) containing strain components
-                [εxx, εyy, εzz, εyz, εxz, εxy]
-                where:
-                - εxx, εyy, εzz are normal strains
-                - εyz, εxz, εxy are shear strains
+            [εxx, εyy, εzz, εyz, εxz, εxy] where:
+            - εxx, εyy, εzz are normal strains
+            - εyz, εxz, εxy are shear strains
 
     Returns:
         torch.Tensor: Matrix of shape (6, 7) where columns correspond to
-                     coefficients for C11, C12, C13, C16, C33, C44, C66
+            coefficients for C11, C12, C13, C16, C33, C44, C66
 
     Notes:
         The resulting matrix M has the form:
@@ -280,11 +278,11 @@ def orthorhombic_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Args:
         strains: Tensor of shape (6,) containing strain components
-                [εxx, εyy, εzz, εyz, εxz, εxy]
+            [εxx, εyy, εzz, εyz, εxz, εxy]
 
     Returns:
         torch.Tensor: Matrix of shape (6, 9) where columns correspond to
-                     coefficients for C11, C12, C13, C22, C23, C33, C44, C55, C66
+            coefficients for C11, C12, C13, C22, C23, C33, C44, C55, C66
 
     Notes:
         The resulting matrix M has the form:
@@ -343,11 +341,11 @@ def trigonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Args:
         strains: Tensor of shape (6,) containing strain components
-                [εxx, εyy, εzz, εyz, εxz, εxy]
+            [εxx, εyy, εzz, εyz, εxz, εxy]
 
     Returns:
         torch.Tensor: Matrix of shape (6, 7) where columns correspond to
-                     coefficients for C11, C12, C13, C14, C15, C33, C44
+            coefficients for C11, C12, C13, C14, C15, C33, C44
 
     Notes:
         The resulting matrix M has the form:
@@ -416,11 +414,11 @@ def hexagonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Args:
         strains: Tensor of shape (6,) containing strain components
-                [εxx, εyy, εzz, εyz, εxz, εxy]
+            [εxx, εyy, εzz, εyz, εxz, εxy]
 
     Returns:
         torch.Tensor: Matrix of shape (6, 5) where columns correspond to
-                     coefficients for C11, C33, C12, C13, C44
+            coefficients for C11, C33, C12, C13, C44
 
     Notes:
         The resulting matrix M has the form:
@@ -477,12 +475,12 @@ def monoclinic_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Args:
         strains: Tensor of shape (6,) containing strain components
-                [εxx, εyy, εzz, εyz, εxz, εxy]
+            [εxx, εyy, εzz, εyz, εxz, εxy]
 
     Returns:
         torch.Tensor: Matrix of shape (6, 13) where columns correspond to
-                     coefficients for the 13 independent constants in order:
-                     [C11, C12, C13, C15, C22, C23, C25, C33, C35, C44, C46, C55, C66]
+            coefficients for the 13 independent constants in order:
+            [C11, C12, C13, C15, C22, C23, C25, C33, C35, C44, C46, C55, C66]
 
     Notes:
         For monoclinic symmetry with unique axis b (y), the matrix has the form:
