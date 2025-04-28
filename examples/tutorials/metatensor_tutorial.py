@@ -17,6 +17,10 @@
 This tutorial explains how to use the PET-MAD model (https://arxiv.org/abs/2503.14118)
 via TorchSim's metatensor interface.
 
+NOTE: This tutorial is not currently run as part of CI due to an issue with how
+uv run resolves the dependencies and the recent release of pytorch 2.7. The following
+issue is relevant to tracking the dependency issues: https://github.com/astral-sh/uv/issues/13173
+
 ## Loading the model
 
 Loading the model is simple: you simply need to specify the model name (in this case

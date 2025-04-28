@@ -135,8 +135,8 @@ jobs:
       - name: Find example scripts
         id: set-matrix
         run: |
-          # Find all example scripts but exclude known failing ones
-          EXAMPLES=$(find examples -name "*.py" | jq -R -s -c 'split("\n")[:-1]')
+          # Find all example scripts but exclude the metatensor tutorial
+          EXAMPLES=$(find examples -name "*.py" -not -path "examples/tutorials/metatensor_tutorial.py" | jq -R -s -c 'split("\n")[:-1]')
           echo "examples=$EXAMPLES" >> $GITHUB_OUTPUT
 
   test-examples:
