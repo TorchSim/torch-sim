@@ -1,6 +1,7 @@
 from typing import Any
 
 import torch
+from pymatgen.core import Lattice, Structure
 
 from torch_sim.integrators import (
     NPTLangevinState,
@@ -317,13 +318,45 @@ def test_nve(ar_double_sim_state: SimState, lj_model: LennardJonesModel):
     assert torch.allclose(energies_tensor[:, 1], energies_tensor[0, 1], atol=1e-4)
 
 
-def test_compare_single_vs_batched_integrators(
-    ar_supercell_sim_state: SimState, lj_model: Any
-) -> None:
-    """Test that single and batched integrators give the same results."""
+def test_compare_single_vs_batched_integrators(lj_model: Any) -> None:
+    """Test NVE single vs batched for a tilted cell to verify PBC wrapping.
+
+    Was made more stringent by testing tilted cell after https://github.com/Radical-AI/torch-sim/issues/171.
+    """
+    dtype = torch.float64
+    device = lj_model.device if hasattr(lj_model, "device") else torch.device("cpu")
+    n_steps = 100  # Revert to fewer steps
+
+    # Create a tilted cell structure (e.g., monoclinic)
+    a, b, c = 5.0, 6.0, 7.0
+    alpha, beta, gamma = 90.0, 110.0, 90.0  # Monoclinic tilt
+    lattice = Lattice.from_parameters(a, b, c, alpha, beta, gamma)
+    # Revert to 2 atoms
+    structure = Structure(lattice, ["Ar", "Ar"], [[0.25, 0.25, 0.25], [0.75, 0.75, 0.75]])
+
+    # Create SimState from the tilted structure
+    cell_tensor = torch.tensor(structure.lattice.matrix, dtype=dtype, device=device)
+    positions = torch.tensor(structure.cart_coords, dtype=dtype, device=device)
+    n_atoms = len(structure)
+    atomic_numbers = torch.tensor(
+        structure.atomic_numbers, dtype=torch.long, device=device
+    )
+    # Approximate Argon mass in metal units
+    masses = torch.full((n_atoms,), 39.948 * MetalUnits.mass, dtype=dtype, device=device)
+    batch = torch.zeros(n_atoms, dtype=torch.long, device=device)
+
+    single_tilted_state = SimState(
+        positions=positions,
+        masses=masses,
+        atomic_numbers=atomic_numbers,
+        cell=cell_tensor.unsqueeze(0),  # Add batch dimension
+        pbc=True,  # Use boolean as defined in SimState
+        batch=batch,
+    )
+
     initial_states = {
-        "single": ar_supercell_sim_state,
-        "batched": concatenate_states([ar_supercell_sim_state, ar_supercell_sim_state]),
+        "single": single_tilted_state,
+        "batched": concatenate_states([single_tilted_state, single_tilted_state]),
     }
 
     final_states = {}
@@ -333,25 +366,31 @@ def test_compare_single_vs_batched_integrators(
         dt = torch.tensor(0.001)  # Small timestep for stability
 
         nve_init, nve_update = nve(model=lj_model, dt=dt, kT=kT)
-        state = nve_init(state=state, seed=42)
-        state.momenta = torch.zeros_like(state.momenta)
+        # Initialize momenta (even if zero) and get forces
+        state = nve_init(state=state, seed=42)  # kT is ignored if momenta are set below
+        # Ensure momenta start at zero AFTER init which might randomize them based on kT
+        state.momenta = torch.zeros_like(state.momenta)  # Start from rest
 
-        for _step in range(100):
+        for _step in range(n_steps):
             state = nve_update(state=state, dt=dt)
 
         final_states[state_name] = state
 
     # Check energy conservation
-    ar_single_state = final_states["single"]
-    ar_batched_state_0 = final_states["batched"][0]
-    ar_batched_state_1 = final_states["batched"][1]
+    single_state = final_states["single"]
+    batched_state_0 = final_states["batched"][0]
+    batched_state_1 = final_states["batched"][1]
 
-    for final_state in [ar_batched_state_0, ar_batched_state_1]:
-        assert torch.allclose(ar_single_state.positions, final_state.positions)
-        assert torch.allclose(ar_single_state.momenta, final_state.momenta)
-        assert torch.allclose(ar_single_state.forces, final_state.forces)
-        assert torch.allclose(ar_single_state.masses, final_state.masses)
-        assert torch.allclose(ar_single_state.cell, final_state.cell)
+    # Compare single state results with each part of the batched state
+    for final_state in [batched_state_0, batched_state_1]:
+        # Check positions first - most likely to fail with incorrect PBC
+        assert torch.allclose(single_state.positions, final_state.positions)
+        # Check other state components
+        assert torch.allclose(single_state.momenta, final_state.momenta)
+        assert torch.allclose(single_state.forces, final_state.forces)
+        assert torch.allclose(single_state.masses, final_state.masses)
+        assert torch.allclose(single_state.cell, final_state.cell)
+        assert torch.allclose(single_state.energy, final_state.energy)
 
 
 def test_compute_cell_force_atoms_per_batch():
