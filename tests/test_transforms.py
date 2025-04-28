@@ -99,25 +99,30 @@ def test_pbc_wrap_general_triclinic() -> None:
 
     Tests wrapping in a non-orthogonal cell where lattice vectors have
     off-diagonal components (tilt factors). This verifies the general
-    matrix transformation approach works for arbitrary cell shapes.
+    matrix transformation approach works for arbitrary cell shapes,
+    assuming the standard row vector convention (M_row) for the lattice matrix.
     """
-    # Triclinic cell with tilt
+    # Triclinic cell (M_row convention)
     lattice = torch.tensor(
         [
-            [2.0, 0.5, 0.0],  # a vector with b-tilt
+            [2.0, 0.5, 0.0],  # a vector
             [0.0, 2.0, 0.0],  # b vector
-            [0.0, 0.3, 2.0],  # c vector with b-tilt
-        ]
+            [0.0, 0.3, 2.0],  # c vector
+        ],
+        dtype=torch.float64,
     )
 
     # Position outside triclinic box
-    positions = torch.tensor([[2.5, 2.5, 2.5]])
+    positions = torch.tensor([[2.5, 2.5, 2.5]], dtype=torch.float64)
 
-    # Correct expected wrapped position for this triclinic cell
-    expected = torch.tensor([[2.0, 0.5, 0.2]])
+    # Expected wrapped position calculated using r' = (r @ inv(M_row.T) % 1) @ M_row
+    expected = torch.tensor([[1.875, 0.9875, 0.125]], dtype=torch.float64)
 
+    # Apply the function under test
     wrapped = tst.pbc_wrap_general(positions, lattice)
-    assert torch.allclose(wrapped, expected, atol=1e-6)
+
+    # Assert against the mathematically correct result for row vectors
+    torch.testing.assert_close(wrapped, expected, rtol=1e-6, atol=1e-6)
 
 
 def test_pbc_wrap_general_edge_case() -> None:
@@ -277,50 +282,61 @@ def test_pbc_wrap_batched_orthorhombic(si_double_sim_state: SimState) -> None:
 
 def test_pbc_wrap_batched_triclinic(device: torch.device) -> None:
     """Test batched periodic boundary wrapping with triclinic cell."""
-    # Create two triclinic cells with different tilt factors
+    # Define cell matrices (M_row convention)
     cell1 = torch.tensor(
         [
             [2.0, 0.5, 0.0],  # a vector with b-tilt
             [0.0, 2.0, 0.0],  # b vector
             [0.0, 0.3, 2.0],  # c vector with b-tilt
         ],
+        dtype=torch.float64,
         device=device,
     )
-
     cell2 = torch.tensor(
         [
             [2.0, 0.0, 0.5],  # a vector with c-tilt
             [0.3, 2.0, 0.0],  # b vector with a-tilt
             [0.0, 0.0, 2.0],  # c vector
         ],
+        dtype=torch.float64,
         device=device,
     )
-
-    # Create positions for two atoms, one in each batch
-    positions = torch.tensor(
-        [
-            [2.5, 2.5, 2.5],  # First atom, outside batch 0's cell
-            [2.7, 2.7, 2.7],  # Second atom, outside batch 1's cell
-        ],
-        device=device,
-    )
-
-    # Create batch indices
-    batch = torch.tensor([0, 1], device=device)
-
-    # Stack the cells for batched processing
     cell = torch.stack([cell1, cell2])
 
-    # Apply wrapping
+    # Define positions (r_row convention)
+    positions = torch.tensor(
+        [
+            [2.5, 2.5, 2.5],  # Atom 0 (batch 0)
+            [2.7, 2.7, 2.7],  # Atom 1 (batch 1)
+        ],
+        dtype=torch.float64,
+        device=device,
+    )
+    batch = torch.tensor([0, 1], device=device)
+
+    # --- Calculate Expected Results Manually (M_row, r_row) --- #
+    def manual_wrap(r_row: torch.Tensor, M_row: torch.Tensor) -> torch.Tensor:
+        inv_M_row_T = torch.linalg.inv(M_row.T)
+        f_row = r_row @ inv_M_row_T
+        wrapped_f_row = f_row - torch.floor(f_row)
+        # Handle boundary cases (optional but good practice)
+        wrapped_f_row = torch.where(
+            torch.isclose(wrapped_f_row, torch.ones_like(wrapped_f_row)),
+            torch.zeros_like(wrapped_f_row),
+            wrapped_f_row,
+        )
+        return wrapped_f_row @ M_row
+
+    expected1 = manual_wrap(positions[0], cell1)
+    expected2 = manual_wrap(positions[1], cell2)
+    expected_stacked = torch.stack([expected1, expected2])
+    # --- End Manual Calculation --- #
+
+    # Apply the function under test
     wrapped = tst.pbc_wrap_batched(positions, cell=cell, batch=batch)
 
-    # Calculate expected result for first atom (using original algorithm for verification)
-    expected1 = tst.pbc_wrap_general(positions[0:1], cell1)
-    expected2 = tst.pbc_wrap_general(positions[1:2], cell2)
-
     # Verify results match the expected values
-    assert torch.allclose(wrapped[0:1], expected1, atol=1e-6)
-    assert torch.allclose(wrapped[1:2], expected2, atol=1e-6)
+    torch.testing.assert_close(wrapped, expected_stacked, rtol=1e-6, atol=1e-6)
 
 
 def test_pbc_wrap_batched_edge_case(device: torch.device) -> None:
