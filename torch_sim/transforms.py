@@ -107,7 +107,7 @@ def pbc_wrap_general(
         positions (torch.Tensor): Tensor of shape (..., d)
             containing particle positions as row vectors (r_row).
         lattice_vectors (torch.Tensor): Tensor of shape (d, d)
-            containing lattice vectors as rows (M_row).
+            containing lattice vectors as column vectors.
 
     Returns:
         torch.Tensor: Tensor of wrapped positions in real space as row vectors (r_row').
@@ -134,7 +134,7 @@ def pbc_wrap_general(
     wrapped_frac = frac_coords % 1.0
 
     # Transform back to real space: r_row_wrapped = wrapped_f_row @ M_row
-    return wrapped_frac @ lattice_vectors
+    return wrapped_frac @ lattice_vectors.T
 
 
 def pbc_wrap_batched(
@@ -150,17 +150,13 @@ def pbc_wrap_batched(
         positions (torch.Tensor): Tensor of shape (n_atoms, 3) containing
             particle positions as **row vectors**.
         cell (torch.Tensor): Tensor of shape (n_batches, 3, 3) containing
-            lattice vectors as **rows** (M_row).
+            lattice vectors as column vectors.
         batch (torch.Tensor): Tensor of shape (n_atoms,) containing batch
             indices for each atom.
 
     Returns:
         torch.Tensor: Tensor of wrapped positions in real space as **row vectors**
             with shape (n_atoms, 3).
-
-    Note:
-        The transformation follows r_row' = f_row' @ M_row,
-        where f_row = r_row @ inv(M_row.T).
     """
     # Validate inputs
     if not torch.is_floating_point(positions) or not torch.is_floating_point(cell):
@@ -222,7 +218,8 @@ def minimum_image_displacement(
 
     Args:
         dr (torch.Tensor): Displacement vectors [N, 3] or [N, N, 3].
-        cell (Optional[torch.Tensor]): Unit cell matrix [3, 3].
+        cell (Optional[torch.Tensor]): Tensor of shape (3, 3) containing
+            lattice vectors as column vectors.
         pbc (bool): Whether to apply periodic boundary conditions.
 
     Returns:
@@ -359,7 +356,8 @@ def wrap_positions(
 
     Args:
         positions (torch.Tensor): Atomic positions [N, 3].
-        cell (torch.Tensor): Unit cell matrix [3, 3].
+        cell (torch.Tensor): Tensor of shape (3, 3) containing
+            lattice vectors as column vectors.
         pbc (Union[bool, list[bool], torch.Tensor]): Whether to apply
             periodic boundary conditions.
         center (Tuple[float, float, float]): Center of the cell as
@@ -443,14 +441,14 @@ def get_number_of_cell_repeats(
 
     Args:
         cutoff (float): The cutoff distance for interactions.
-        cell (torch.Tensor): A tensor of shape (n_cells, 3, 3)
-            representing the unit cell matrices.
+        cell (torch.Tensor): Tensor of shape (n_batches, 3, 3) containing
+            lattice vectors as column vectors.
         pbc (torch.Tensor): A tensor of shape (n_cells, 3)
             indicating whether periodic boundary conditions are
             applied in each dimension.
 
     Returns:
-        torch.Tensor: A tensor of shape (n_cells, 3)
+        torch.Tensor: A tensor of shape (n_batches, 3)
             containing the number of repeats for each dimension,
             where non-PBC dimensions are set to zero.
     """
@@ -541,8 +539,8 @@ def compute_cell_shifts(
     indices and the unit cell matrix. If the cell is None, it returns None.
 
     Args:
-        cell (torch.Tensor): A tensor of shape (n_cells, 3, 3)
-            representing the unit cell matrices.
+        cell (torch.Tensor): Tensor of shape (n_batches, 3, 3) containing
+            lattice vectors as column vectors.
         shifts_idx (torch.Tensor): A tensor of shape (n_shifts, 3)
             representing the indices for shifts.
         batch_mapping (torch.Tensor): A tensor of shape (n_batches,)
@@ -628,8 +626,8 @@ def build_naive_neighborhood(
     Args:
         positions (torch.Tensor): A tensor of shape (n_atoms, 3)
             representing the positions of atoms.
-        cell (torch.Tensor): A tensor of shape (n_cells, 3, 3)
-            representing the unit cell matrices.
+        cell (torch.Tensor): Tensor of shape (n_batches, 3, 3) containing
+            lattice vectors as column vectors.
         pbc (torch.Tensor): A tensor indicating whether
             periodic boundary conditions are applied.
         cutoff (float): The cutoff distance beyond which atoms are not
@@ -742,8 +740,8 @@ def get_linear_bin_idx(
     cell dimensions, and then the corresponding bin indices are determined.
 
     Args:
-        cell (torch.Tensor): A tensor of shape [3, 3]
-            representing the cell vectors defining the box.
+        cell (torch.Tensor): Tensor of shape (3, 3) containing
+            lattice vectors as column vectors.
         pos (torch.Tensor): A tensor of shape [-1, 3]
             representing the set of positions to be binned.
         n_bins_s (torch.Tensor): A tensor of shape [3]
@@ -815,8 +813,8 @@ def linked_cell(  # noqa: PLR0915
     Args:
         pos (torch.Tensor): A tensor of shape [n_atom, 3] representing
             atomic positions in the unit cell.
-        cell (torch.Tensor): A tensor of shape [3, 3] representing
-            the unit cell vectors.
+        cell (torch.Tensor): Tensor of shape (3, 3) containing
+            lattice vectors as column vectors.
         cutoff (float): The distance threshold used to determine which
             atoms are considered neighbors.
         num_repeats (torch.Tensor): A tensor indicating the number of
@@ -980,8 +978,8 @@ def build_linked_cell_neighborhood(
         positions (torch.Tensor): A tensor containing the atomic positions
             for each structure, where each row corresponds to an atom's position
             in 3D space.
-        cell (torch.Tensor): A tensor containing the unit cell vectors for
-            each structure, formatted as a 3D array.
+        cell (torch.Tensor): Tensor of shape (n_batches, 3, 3) containing
+            lattice vectors as column vectors.
         pbc (torch.Tensor): A boolean tensor indicating the periodic boundary
             conditions to apply for each structure.
         cutoff (float): The distance threshold used to determine which atoms are

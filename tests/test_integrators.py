@@ -1,7 +1,7 @@
 from typing import Any
 
+import pytest
 import torch
-from pymatgen.core import Lattice, Structure
 
 from torch_sim.integrators import (
     NPTLangevinState,
@@ -318,45 +318,23 @@ def test_nve(ar_double_sim_state: SimState, lj_model: LennardJonesModel):
     assert torch.allclose(energies_tensor[:, 1], energies_tensor[0, 1], atol=1e-4)
 
 
-def test_compare_single_vs_batched_integrators(lj_model: Any) -> None:
+@pytest.mark.parametrize(
+    "sim_state_fixture_name", ["casio3_sim_state", "ar_supercell_sim_state"]
+)
+def test_compare_single_vs_batched_integrators(
+    sim_state_fixture_name: str, request: pytest.FixtureRequest, lj_model: Any
+) -> None:
     """Test NVE single vs batched for a tilted cell to verify PBC wrapping.
 
-    Was made more stringent by testing tilted cell after https://github.com/Radical-AI/torch-sim/issues/171.
+    NOTE: added triclinic cell after https://github.com/Radical-AI/torch-sim/issues/171.
+    Although the addition doesn't fail if we do not add the changes suggested in issue.
     """
-    dtype = torch.float64
-    device = lj_model.device if hasattr(lj_model, "device") else torch.device("cpu")
-    n_steps = 100  # Revert to fewer steps
-
-    # Create a tilted cell structure (e.g., monoclinic)
-    a, b, c = 5.0, 6.0, 7.0
-    alpha, beta, gamma = 90.0, 110.0, 90.0  # Monoclinic tilt
-    lattice = Lattice.from_parameters(a, b, c, alpha, beta, gamma)
-    # Revert to 2 atoms
-    structure = Structure(lattice, ["Ar", "Ar"], [[0.25, 0.25, 0.25], [0.75, 0.75, 0.75]])
-
-    # Create SimState from the tilted structure
-    cell_tensor = torch.tensor(structure.lattice.matrix, dtype=dtype, device=device)
-    positions = torch.tensor(structure.cart_coords, dtype=dtype, device=device)
-    n_atoms = len(structure)
-    atomic_numbers = torch.tensor(
-        structure.atomic_numbers, dtype=torch.long, device=device
-    )
-    # Approximate Argon mass in metal units
-    masses = torch.full((n_atoms,), 39.948 * MetalUnits.mass, dtype=dtype, device=device)
-    batch = torch.zeros(n_atoms, dtype=torch.long, device=device)
-
-    single_tilted_state = SimState(
-        positions=positions,
-        masses=masses,
-        atomic_numbers=atomic_numbers,
-        cell=cell_tensor.unsqueeze(0),  # Add batch dimension
-        pbc=True,  # Use boolean as defined in SimState
-        batch=batch,
-    )
+    sim_state = request.getfixturevalue(sim_state_fixture_name)
+    n_steps = 100
 
     initial_states = {
-        "single": single_tilted_state,
-        "batched": concatenate_states([single_tilted_state, single_tilted_state]),
+        "single": sim_state,
+        "batched": concatenate_states([sim_state, sim_state]),
     }
 
     final_states = {}
