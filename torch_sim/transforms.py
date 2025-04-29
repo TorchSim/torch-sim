@@ -93,24 +93,24 @@ def inverse_box(box: torch.Tensor) -> torch.Tensor:
 def pbc_wrap_general(
     positions: torch.Tensor, lattice_vectors: torch.Tensor
 ) -> torch.Tensor:
-    """Apply periodic boundary conditions using lattice vector transformation.
+    """Apply periodic boundary conditions using lattice
+        vector transformation method.
 
-    Assumes positions are row vectors and the lattice_vectors matrix has
-    **row vectors** (M_row convention), where rows correspond to lattice vectors a, b, c.
-
-    Formula:
-    f_row = r_row @ inv(M_row.T)
-    wrapped_f_row = f_row % 1.0
-    r_row_wrapped = wrapped_f_row @ M_row
+    This implementation follows the general matrix-based approach for
+    periodic boundary conditions in arbitrary triclinic cells:
+    1. Transform positions to fractional coordinates using B = A^(-1)
+    2. Wrap fractional coordinates to [0,1) using modulo
+    3. Transform back to real space using A
 
     Args:
         positions (torch.Tensor): Tensor of shape (..., d)
-            containing particle positions as row vectors (r_row).
+            containing particle positions in real space.
         lattice_vectors (torch.Tensor): Tensor of shape (d, d)
-            containing lattice vectors as column vectors.
+            containing lattice vectors as columns (A matrix in the equations).
 
     Returns:
-        torch.Tensor: Tensor of wrapped positions in real space as row vectors (r_row').
+        torch.Tensor: Tensor of wrapped positions in real space with
+            same shape as input positions.
     """
     # Validate inputs
     if not torch.is_floating_point(positions) or not torch.is_floating_point(
@@ -119,16 +119,13 @@ def pbc_wrap_general(
         raise TypeError("Positions and lattice vectors must be floating point tensors.")
 
     if lattice_vectors.ndim != 2 or lattice_vectors.shape[0] != lattice_vectors.shape[1]:
-        raise ValueError("Lattice vectors must be a square matrix (d, d).")
+        raise ValueError("Lattice vectors must be a square matrix.")
 
     if positions.shape[-1] != lattice_vectors.shape[0]:
         raise ValueError("Position dimensionality must match lattice vectors.")
 
-    # Compute inv(M_row.T)
-    inv_lattice_vectors_T = torch.linalg.inv(lattice_vectors.T)
-
-    # Transform to fractional coordinates: f_row = r_row @ inv(M_row.T)
-    frac_coords = positions @ inv_lattice_vectors_T
+    # Transform to fractional coordinates: f = Br
+    frac_coords = positions @ torch.linalg.inv(lattice_vectors).T
 
     # Wrap to reference cell [0,1) using modulo
     wrapped_frac = frac_coords % 1.0
@@ -142,21 +139,21 @@ def pbc_wrap_batched(
 ) -> torch.Tensor:
     """Apply periodic boundary conditions to batched systems.
 
-    Handles wrapping positions for multiple systems (batches). Assumes the
-    input cell matrix contains lattice vectors as **rows** and input
-    positions are **row vectors**.
+    This function handles wrapping positions for multiple atomistic systems
+    (batches) in one operation. It uses the batch indices to determine which
+    atoms belong to which system and applies the appropriate cell vectors.
 
     Args:
         positions (torch.Tensor): Tensor of shape (n_atoms, 3) containing
-            particle positions as **row vectors**.
+            particle positions in real space.
         cell (torch.Tensor): Tensor of shape (n_batches, 3, 3) containing
             lattice vectors as column vectors.
         batch (torch.Tensor): Tensor of shape (n_atoms,) containing batch
             indices for each atom.
 
     Returns:
-        torch.Tensor: Tensor of wrapped positions in real space as **row vectors**
-            with shape (n_atoms, 3).
+        torch.Tensor: Tensor of wrapped positions in real space with
+            same shape as input positions.
     """
     # Validate inputs
     if not torch.is_floating_point(positions) or not torch.is_floating_point(cell):
@@ -176,36 +173,30 @@ def pbc_wrap_batched(
         )
 
     # Efficient approach without explicit loops
+    # Get the cell for each atom based on its batch index
+    B = torch.linalg.inv(cell)  # Shape: (n_batches, 3, 3)
+    B_per_atom = B[batch]  # Shape: (n_atoms, 3, 3)
 
-    # Calculate inverse transpose of cell: inv(M_row.T)
-    # Need M_col = M_row.T for fractional calculation convention
-    # inv_cell_T = torch.linalg.inv(cell.mT) # Fails for non-batched? Needs checking.
-    # Alternative: compute inv(M_row) first, then transpose.
-    inv_cell = torch.linalg.inv(cell)  # inv(M_row)
-    inv_cell_T = inv_cell.mT  # inv(M_row).T = inv(M_row.T)
+    # Transform to fractional coordinates: f = B·r
+    # For each atom, multiply its position by its batch's inverse cell matrix
+    frac_coords = torch.bmm(B_per_atom, positions.unsqueeze(2)).squeeze(2)
 
-    # Map inv(M_row.T) to each atom
-    inv_cell_T_per_atom = inv_cell_T[batch]  # Shape: (n_atoms, 3, 3)
-
-    # Transform to fractional coordinates: f_row = r_row @ inv(M_row.T)
-    frac_coords = torch.einsum("ni,nij->nj", positions, inv_cell_T_per_atom)
-
-    # Wrap fractional coordinates to [0, 1) using f - floor(f)
+    # Wrap to reference cell [0,1) using f - floor(f)
     wrapped_frac = frac_coords - torch.floor(frac_coords)
 
-    # Handle edge case for positions exactly on upper boundary
+    # Handle edge case of positions exactly on upper boundary
     wrapped_frac = torch.where(
         torch.isclose(wrapped_frac, torch.ones_like(wrapped_frac)),
         torch.zeros_like(wrapped_frac),
         wrapped_frac,
     )
 
-    # Transform back to real space: r_row' = f_row' @ M_row
-    # Map M_row to each atom
+    # Transform back to real space: r = A·f
+    # Get the cell for each atom based on its batch index
     cell_per_atom = cell[batch]  # Shape: (n_atoms, 3, 3)
 
-    # Transform back to real space: r'_i = f'_i @ M_row_i
-    return torch.einsum("ni,nij->nj", wrapped_frac, cell_per_atom)
+    # For each atom, multiply its wrapped fractional coords by its batch's cell matrix
+    return torch.bmm(cell_per_atom, wrapped_frac.unsqueeze(2)).squeeze(2)
 
 
 def minimum_image_displacement(
@@ -218,8 +209,7 @@ def minimum_image_displacement(
 
     Args:
         dr (torch.Tensor): Displacement vectors [N, 3] or [N, N, 3].
-        cell (Optional[torch.Tensor]): Tensor of shape (3, 3) containing
-            lattice vectors as column vectors.
+        cell (Optional[torch.Tensor]): Unit cell matrix [3, 3].
         pbc (bool): Whether to apply periodic boundary conditions.
 
     Returns:
@@ -356,8 +346,7 @@ def wrap_positions(
 
     Args:
         positions (torch.Tensor): Atomic positions [N, 3].
-        cell (torch.Tensor): Tensor of shape (3, 3) containing
-            lattice vectors as column vectors.
+        cell (torch.Tensor): Unit cell matrix [3, 3].
         pbc (Union[bool, list[bool], torch.Tensor]): Whether to apply
             periodic boundary conditions.
         center (Tuple[float, float, float]): Center of the cell as
@@ -441,14 +430,14 @@ def get_number_of_cell_repeats(
 
     Args:
         cutoff (float): The cutoff distance for interactions.
-        cell (torch.Tensor): Tensor of shape (n_batches, 3, 3) containing
-            lattice vectors as column vectors.
+        cell (torch.Tensor): A tensor of shape (n_cells, 3, 3)
+            representing the unit cell matrices.
         pbc (torch.Tensor): A tensor of shape (n_cells, 3)
             indicating whether periodic boundary conditions are
             applied in each dimension.
 
     Returns:
-        torch.Tensor: A tensor of shape (n_batches, 3)
+        torch.Tensor: A tensor of shape (n_cells, 3)
             containing the number of repeats for each dimension,
             where non-PBC dimensions are set to zero.
     """
@@ -539,8 +528,8 @@ def compute_cell_shifts(
     indices and the unit cell matrix. If the cell is None, it returns None.
 
     Args:
-        cell (torch.Tensor): Tensor of shape (n_batches, 3, 3) containing
-            lattice vectors as column vectors.
+        cell (torch.Tensor): A tensor of shape (n_cells, 3, 3)
+            representing the unit cell matrices.
         shifts_idx (torch.Tensor): A tensor of shape (n_shifts, 3)
             representing the indices for shifts.
         batch_mapping (torch.Tensor): A tensor of shape (n_batches,)
@@ -626,8 +615,8 @@ def build_naive_neighborhood(
     Args:
         positions (torch.Tensor): A tensor of shape (n_atoms, 3)
             representing the positions of atoms.
-        cell (torch.Tensor): Tensor of shape (n_batches, 3, 3) containing
-            lattice vectors as column vectors.
+        cell (torch.Tensor): A tensor of shape (n_cells, 3, 3)
+            representing the unit cell matrices.
         pbc (torch.Tensor): A tensor indicating whether
             periodic boundary conditions are applied.
         cutoff (float): The cutoff distance beyond which atoms are not
@@ -740,8 +729,8 @@ def get_linear_bin_idx(
     cell dimensions, and then the corresponding bin indices are determined.
 
     Args:
-        cell (torch.Tensor): Tensor of shape (3, 3) containing
-            lattice vectors as column vectors.
+        cell (torch.Tensor): A tensor of shape [3, 3]
+            representing the cell vectors defining the box.
         pos (torch.Tensor): A tensor of shape [-1, 3]
             representing the set of positions to be binned.
         n_bins_s (torch.Tensor): A tensor of shape [3]
@@ -813,8 +802,8 @@ def linked_cell(  # noqa: PLR0915
     Args:
         pos (torch.Tensor): A tensor of shape [n_atom, 3] representing
             atomic positions in the unit cell.
-        cell (torch.Tensor): Tensor of shape (3, 3) containing
-            lattice vectors as column vectors.
+        cell (torch.Tensor): A tensor of shape [3, 3] representing
+            the unit cell vectors.
         cutoff (float): The distance threshold used to determine which
             atoms are considered neighbors.
         num_repeats (torch.Tensor): A tensor indicating the number of
@@ -978,8 +967,8 @@ def build_linked_cell_neighborhood(
         positions (torch.Tensor): A tensor containing the atomic positions
             for each structure, where each row corresponds to an atom's position
             in 3D space.
-        cell (torch.Tensor): Tensor of shape (n_batches, 3, 3) containing
-            lattice vectors as column vectors.
+        cell (torch.Tensor): A tensor containing the unit cell vectors for
+            each structure, formatted as a 3D array.
         pbc (torch.Tensor): A boolean tensor indicating the periodic boundary
             conditions to apply for each structure.
         cutoff (float): The distance threshold used to determine which atoms are

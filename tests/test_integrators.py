@@ -362,13 +362,13 @@ def test_compare_single_vs_batched_integrators(
     # Compare single state results with each part of the batched state
     for final_state in [batched_state_0, batched_state_1]:
         # Check positions first - most likely to fail with incorrect PBC
-        assert torch.allclose(single_state.positions, final_state.positions)
+        torch.testing.assert_close(single_state.positions, final_state.positions)
         # Check other state components
-        assert torch.allclose(single_state.momenta, final_state.momenta)
-        assert torch.allclose(single_state.forces, final_state.forces)
-        assert torch.allclose(single_state.masses, final_state.masses)
-        assert torch.allclose(single_state.cell, final_state.cell)
-        assert torch.allclose(single_state.energy, final_state.energy)
+        torch.testing.assert_close(single_state.momenta, final_state.momenta)
+        torch.testing.assert_close(single_state.forces, final_state.forces)
+        torch.testing.assert_close(single_state.masses, final_state.masses)
+        torch.testing.assert_close(single_state.cell, final_state.cell)
+        torch.testing.assert_close(single_state.energy, final_state.energy)
 
 
 def test_compute_cell_force_atoms_per_batch():
