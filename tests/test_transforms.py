@@ -98,38 +98,17 @@ def test_pbc_wrap_general_orthorhombic() -> None:
     ("cell", "shift"),
     [
         # Cubic cell, integer shift [1, 1, 1]
-        (
-            torch.eye(3, dtype=torch.float64) * 2.0,
-            torch.tensor([1, 1, 1], dtype=torch.float64),
-        ),
+        (torch.eye(3, dtype=torch.float64) * 2.0, [1, 1, 1]),
         # Triclinic cell, integer shift [1, 1, 1]
-        (
-            torch.tensor(
-                [
-                    [2.0, 0.5, 0.0],
-                    [0.0, 2.0, 0.0],
-                    [0.0, 0.3, 2.0],
-                ],
-                dtype=torch.float64,
-            ).T,
-            torch.tensor([1, 1, 1], dtype=torch.float64),
-        ),
+        (([[2.0, 0.0, 0.0], [0.5, 2.0, 0.0], [0.0, 0.3, 2.0]]), [1, 1, 1]),
         # Triclinic cell, integer shift [-1, 2, 0]
-        (
-            torch.tensor(
-                [
-                    [2.0, 0.5, 0.0],
-                    [0.0, 2.0, 0.0],
-                    [0.0, 0.3, 2.0],
-                ],
-                dtype=torch.float64,
-            ).T,
-            torch.tensor([-1, 2, 0], dtype=torch.float64),
-        ),
+        (([[2.0, 0.5, 0.0], [0.0, 2.0, 0.0], [0.0, 0.3, 2.0]]), [-1, 2, 0]),
     ],
 )
 def test_pbc_wrap_general_param(cell: torch.Tensor, shift: torch.Tensor) -> None:
     """Test periodic boundary wrapping for various cells and integer shifts."""
+    cell = torch.as_tensor(cell, dtype=torch.float64)
+    shift = torch.as_tensor(shift, dtype=torch.float64)
     base_frac = torch.tensor([[0.25, 0.5, 0.75]], dtype=torch.float64)
     base_cart = base_frac @ cell.T
     shifted_cart = base_cart + (shift @ cell.T)
