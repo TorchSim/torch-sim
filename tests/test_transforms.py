@@ -103,6 +103,14 @@ def test_pbc_wrap_general_orthorhombic() -> None:
         (([[2.0, 0.0, 0.0], [0.5, 2.0, 0.0], [0.0, 0.3, 2.0]]), [1, 1, 1]),
         # Triclinic cell, integer shift [-1, 2, 0]
         (([[2.0, 0.5, 0.0], [0.0, 2.0, 0.0], [0.0, 0.3, 2.0]]), [-1, 2, 0]),
+        # triclinic, all negative shift
+        (([[2.0, 0.5, 0.0], [0.0, 2.0, 0.0], [0.0, 0.3, 2.0]]), [-2, -1, -3]),
+        # cubic, large mixed shift
+        (torch.eye(3, dtype=torch.float64) * 2.0, [5, 0, -10]),
+        # highly tilted cell
+        (([[1.3, 0.9, 0.8], [0.0, 1.0, 0.9], [0.0, 0.0, 1.0]]), [1, -2, 3]),
+        # Left-handed cell
+        (([[2.0, 0.0, 0.0], [0.0, -2.0, 0.0], [0.0, 0.0, 2.0]]), [1, 1, 1]),
     ],
 )
 def test_pbc_wrap_general_param(cell: torch.Tensor, shift: torch.Tensor) -> None:
