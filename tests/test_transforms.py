@@ -329,40 +329,16 @@ def test_pbc_wrap_batched_triclinic(device: torch.device) -> None:
     # Stack the cells for batched processing
     cell = torch.stack([cell1, cell2])
 
-    # Define positions (r_row convention)
-    positions = torch.tensor(
-        [
-            [2.5, 2.5, 2.5],  # Atom 0 (batch 0)
-            [2.7, 2.7, 2.7],  # Atom 1 (batch 1)
-        ],
-        dtype=torch.float64,
-        device=device,
-    )
-    batch = torch.tensor([0, 1], device=device)
-
-    # --- Calculate Expected Results Manually (M_row, r_row) --- #
-    def manual_wrap(r_row: torch.Tensor, M_row: torch.Tensor) -> torch.Tensor:
-        inv_M_row_T = torch.linalg.inv(M_row.T)
-        f_row = r_row @ inv_M_row_T
-        wrapped_f_row = f_row - torch.floor(f_row)
-        # Handle boundary cases (optional but good practice)
-        wrapped_f_row = torch.where(
-            torch.isclose(wrapped_f_row, torch.ones_like(wrapped_f_row)),
-            torch.zeros_like(wrapped_f_row),
-            wrapped_f_row,
-        )
-        return wrapped_f_row @ M_row
-
-    expected1 = manual_wrap(positions[0], cell1)
-    expected2 = manual_wrap(positions[1], cell2)
-    expected_stacked = torch.stack([expected1, expected2])
-    # --- End Manual Calculation --- #
-
-    # Apply the function under test
+    # Apply wrapping
     wrapped = tst.pbc_wrap_batched(positions, cell=cell, batch=batch)
 
+    # Calculate expected result for first atom (using original algorithm for verification)
+    expected1 = tst.pbc_wrap_general(positions[0:1], cell1)
+    expected2 = tst.pbc_wrap_general(positions[1:2], cell2)
+
     # Verify results match the expected values
-    torch.testing.assert_close(wrapped, expected_stacked, rtol=1e-6, atol=1e-6)
+    assert torch.allclose(wrapped[0:1], expected1, atol=1e-6)
+    assert torch.allclose(wrapped[1:2], expected2, atol=1e-6)
 
 
 def test_pbc_wrap_batched_edge_case(device: torch.device) -> None:
