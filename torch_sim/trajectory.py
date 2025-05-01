@@ -32,7 +32,7 @@ import inspect
 import pathlib
 from collections.abc import Callable
 from functools import partial
-from typing import Any, Literal, Self
+from typing import TYPE_CHECKING, Any, Literal, Self
 
 import numpy as np
 import tables
@@ -40,6 +40,10 @@ import torch
 
 from torch_sim.state import SimState
 
+
+if TYPE_CHECKING:
+    from ase import Atoms
+    from ase.io.trajectory import Trajectory
 
 _DATA_TYPE_MAP = {
     np.dtype("float32"): tables.Float32Atom(),
@@ -848,7 +852,7 @@ class TorchSimTrajectory:
             validate_proximity=False,
         )
 
-    def get_atoms(self, frame: int = -1) -> Any:
+    def get_atoms(self, frame: int = -1) -> "Atoms":
         """Get an ASE Atoms object for a given frame.
 
         Converts the state at the specified frame to an ASE Atoms object
@@ -863,7 +867,12 @@ class TorchSimTrajectory:
         Raises:
             ImportError: If ASE is not installed
         """
-        from ase import Atoms
+        try:
+            from ase import Atoms
+        except ImportError:
+            raise ImportError(
+                "ASE is required to convert to ASE Atoms. Run `pip install ase`"
+            ) from None
 
         arrays = self._get_state_arrays(frame)
 
@@ -959,7 +968,7 @@ class TorchSimTrajectory:
         """
         return self._file.root.data.positions.shape[0]
 
-    def write_ase_trajectory(self, filename: str | pathlib.Path) -> Any:
+    def write_ase_trajectory(self, filename: str | pathlib.Path) -> "Trajectory":
         """Convert trajectory to ASE Trajectory format.
 
         Writes the entire trajectory to a new file in ASE format for compatibility
