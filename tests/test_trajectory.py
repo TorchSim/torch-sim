@@ -1,4 +1,5 @@
 import os
+import sys
 from collections.abc import Callable, Generator
 from pathlib import Path
 
@@ -796,3 +797,47 @@ def test_reporter_with_model(
         np.testing.assert_allclose(batch_props["energy"], file_energy)
 
         trajectory.close()
+
+
+def test_get_atoms_importerror(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    # Simulate missing ase
+    monkeypatch.setitem(sys.modules, "ase", None)
+
+    traj = TorchSimTrajectory(tmp_path / "dummy.h5", mode="w")
+    # Write minimal data so get_atoms can be called
+    state = SimState(
+        positions=torch.zeros(1, 3),
+        masses=torch.ones(1),
+        cell=torch.eye(3).unsqueeze(0),
+        pbc=True,
+        atomic_numbers=torch.ones(1, dtype=torch.int),
+    )
+    traj.write_state(state, steps=0)
+
+    with pytest.raises(ImportError, match="ASE is required to convert to ASE Atoms"):
+        traj.get_atoms(0)
+    traj.close()
+
+
+def test_write_ase_trajectory_importerror(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Simulate missing ase.io.trajectory
+    monkeypatch.setitem(sys.modules, "ase", None)
+    monkeypatch.setitem(sys.modules, "ase.io", None)
+    monkeypatch.setitem(sys.modules, "ase.io.trajectory", None)
+
+    traj = TorchSimTrajectory(tmp_path / "dummy.h5", mode="w")
+    # Write minimal data so write_ase_trajectory can be called
+    state = SimState(
+        positions=torch.zeros(1, 3),
+        masses=torch.ones(1),
+        cell=torch.eye(3).unsqueeze(0),
+        pbc=True,
+        atomic_numbers=torch.ones(1, dtype=torch.int),
+    )
+    traj.write_state(state, steps=0)
+
+    with pytest.raises(ImportError, match="ASE is required to convert to ASE trajectory"):
+        traj.write_ase_trajectory(tmp_path / "dummy.traj")
+    traj.close()
