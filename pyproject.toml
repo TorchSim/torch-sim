@@ -48,7 +48,7 @@ test = [
 io = ["ase>=3.24", "phonopy>=2.37.0", "pymatgen>=2024.11.3"]
 mace = ["mace-torch>=0.3.12"]
 mattersim = ["mattersim>=0.1.2"]
-metatensor = ["metatensor-torch>=0.7,<0.8", "metatrain[pet]>=2025.4"]
+metatensor = ["metatensor-torch>=0.7,<0.8", "metatrain[pet]>=2025.6"]
 orb = ["orb-models>=0.5.2"]
 sevenn = ["sevenn>=0.11.0"]
 graphpes = ["graph-pes>=0.0.34", "mace-torch>=0.3.12"]
