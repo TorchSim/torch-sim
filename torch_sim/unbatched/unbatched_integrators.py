@@ -822,7 +822,7 @@ def npt_langevin(  # noqa: C901, PLR0915
 
         # Apply periodic boundary conditions if needed
         if state.pbc:
-            new_positions = pbc_wrap_general(state.positions, state.cell)
+            new_positions = pbc_wrap_general(new_positions, state.cell)
 
         state.positions = new_positions
         return state
