@@ -153,9 +153,7 @@ def position_step(state: MDState, dt: torch.Tensor) -> MDState:
     new_positions = state.positions + state.velocities * dt
 
     if state.pbc:
-        new_positions = pbc_wrap_general(
-            positions=new_positions, lattice_vectors=state.cell.T
-        )
+        new_positions = pbc_wrap_general(new_positions, state.cell)
 
     state.positions = new_positions
     return state
@@ -820,15 +818,13 @@ def npt_langevin(  # noqa: C901, PLR0915
         )
 
         # Update positions with all contributions
-        state.positions = c_1 + c_2 * c_3
+        new_positions = c_1 + c_2 * c_3
 
         # Apply periodic boundary conditions if needed
         if state.pbc:
-            new_positions = pbc_wrap_general(
-                positions=state.positions, lattice_vectors=state.cell.T
-            )
-            state.positions = new_positions
+            new_positions = pbc_wrap_general(state.positions, state.cell)
 
+        state.positions = new_positions
         return state
 
     def langevin_velocity_step(

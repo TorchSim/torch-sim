@@ -105,8 +105,8 @@ def pbc_wrap_general(
     Args:
         positions (torch.Tensor): Tensor of shape (..., d)
             containing particle positions in real space.
-        lattice_vectors (torch.Tensor): Tensor of shape (d, d)
-            containing lattice vectors as columns (A matrix in the equations).
+        lattice_vectors (torch.Tensor): Tensor of shape (d, d) containing
+            lattice vectors as columns (A matrix in the equations).
 
     Returns:
         torch.Tensor: Tensor of wrapped positions in real space with
@@ -181,15 +181,8 @@ def pbc_wrap_batched(
     # For each atom, multiply its position by its batch's inverse cell matrix
     frac_coords = torch.bmm(B_per_atom, positions.unsqueeze(2)).squeeze(2)
 
-    # Wrap to reference cell [0,1) using f - floor(f)
-    wrapped_frac = frac_coords - torch.floor(frac_coords)
-
-    # Handle edge case of positions exactly on upper boundary
-    wrapped_frac = torch.where(
-        torch.isclose(wrapped_frac, torch.ones_like(wrapped_frac)),
-        torch.zeros_like(wrapped_frac),
-        wrapped_frac,
-    )
+    # Wrap to reference cell [0,1) using modulo
+    wrapped_frac = frac_coords % 1.0
 
     # Transform back to real space: r = A·f
     # Get the cell for each atom based on its batch index
