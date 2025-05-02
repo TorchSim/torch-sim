@@ -425,7 +425,8 @@ def optimize(
 
         convergence_tensor = convergence_fn(state, last_energy)
         if pbar_tracker:
-            pbar_tracker.update(len([tf for tf in convergence_tensor if tf]))
+            # assume convergence_tensor shape is correct
+            pbar_tracker.update(torch.count_nonzero(convergence_tensor).item())
 
     all_converged_states.extend(result[1])
 
