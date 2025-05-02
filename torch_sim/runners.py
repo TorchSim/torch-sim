@@ -8,7 +8,6 @@ converting between different atomistic representations and handling simulation s
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, make_dataclass
-from itertools import chain
 
 import torch
 from tqdm import tqdm
@@ -500,7 +499,7 @@ def static(
     # prop_calculator: dict[int, dict[str, _]], we want dict[str, _]
     extra_prop_keys = [
         prop_key
-        for prop_key in list(trajectory_reporter.prop_calculators.values())[0]
+        for prop_key in next(iter(trajectory_reporter.prop_calculators.values()))
         if prop_key not in ["energy", "forces", "stress"]
     ]
     # dynamically extend class fields for extra properties
