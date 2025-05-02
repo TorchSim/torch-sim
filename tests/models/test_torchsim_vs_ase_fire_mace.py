@@ -110,7 +110,7 @@ def test_unit_cell_frechet_fire_vs_ase(
     final_custom_forces_max = torch.norm(custom_state.forces, dim=-1).max().item()
 
     final_custom_pos = custom_state.positions.detach()
-    final_custom_cell = custom_state.cell.squeeze(0).detach()
+    final_custom_cell = custom_state.row_vector_cell.squeeze(0).detach()
 
     final_ase_energy = ase_atoms.get_potential_energy()
     final_ase_forces = torch.tensor(ase_atoms.get_forces(), device=device, dtype=dtype)
