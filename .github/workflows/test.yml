@@ -40,11 +40,14 @@ jobs:
       - name: Run Tests
         run: |
           pytest --cov=torch_sim --cov-report=xml \
-            --ignore=tests/models/test_mace.py \
+            --ignore=tests/test_elastic.py \
             --ignore=tests/models/test_fairchem.py \
+            --ignore=tests/models/test_graphpes.py \
+            --ignore=tests/models/test_mace.py \
             --ignore=tests/models/test_orb.py \
             --ignore=tests/models/test_sevennet.py \
-            --ignore=tests/models/test_metatensor.py
+            --ignore=tests/models/test_mattersim.py \
+            --ignore=tests/models/test_metatensor.py \
             --ignore=tests/models/test_torchsim_vs_ase_fire_mace.py \
 
       - name: Upload coverage to Codecov
@@ -63,6 +66,7 @@ jobs:
           - { python: "3.12", resolution: lowest-direct }
         model:
           - { name: fairchem, test_path: "tests/models/test_fairchem.py" }
+          - { name: graphpes, test_path: "tests/models/test_graphpes.py" }
           - { name: mace, test_path: "tests/models/test_mace.py" }
           - { name: mace, test_path: "tests/test_elastic.py" }
           - { name: mace, test_path: "tests/models/test_torchsim_vs_ase_fire_mace.py" }
@@ -70,7 +74,6 @@ jobs:
           - { name: metatensor, test_path: "tests/models/test_metatensor.py" }
           - { name: orb, test_path: "tests/models/test_orb.py" }
           - { name: sevenn, test_path: "tests/models/test_sevennet.py" }
-          - { name: graphpes, test_path: "tests/models/test_graphpes.py" }
     runs-on: ${{ matrix.os }}
 
     steps:
