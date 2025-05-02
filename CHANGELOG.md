@@ -1,13 +1,12 @@
 ## v0.2.1
 
 2025-05-01
-<!-- Release notes generated using configuration in .github/release.yml at v0.2.1 -->
 
 ## What's Changed
 
 ### 💥 Breaking Changes
 
-* [BREAKING] Remove higher level model imports by @CompRhys in https://github.com/Radical-AI/torch-sim/pull/179
+* Remove higher level model imports by @CompRhys in https://github.com/Radical-AI/torch-sim/pull/179
 
 ### 🛠 Enhancements
 

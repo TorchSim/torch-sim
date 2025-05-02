@@ -17,7 +17,9 @@ Notes:
 from __future__ import annotations
 
 import copy
+import traceback
 import typing
+import warnings
 from types import MappingProxyType
 from typing import Any
 
@@ -38,7 +40,8 @@ try:
     from fairchem.core.models.model_registry import model_name_to_local_file
     from torch_geometric.data import Batch, Data
 
-except ImportError:
+except ImportError as exc:
+    warnings.warn(f"FairChem import failed: {traceback.format_exc()}", stacklevel=2)
 
     class FairChemModel(torch.nn.Module, ModelInterface):
         """FairChem model wrapper for torch_sim.
@@ -47,9 +50,9 @@ except ImportError:
         It raises an ImportError if FairChem is not installed.
         """
 
-        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
             """Dummy init for type checking."""
-            raise ImportError("FairChem must be installed to use this model.")
+            raise err
 
 
 if typing.TYPE_CHECKING:
