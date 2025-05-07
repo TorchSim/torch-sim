@@ -106,7 +106,7 @@ def integrate(
     timestep: float,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: BinningAutoBatcher | bool = False,
-    pbar: bool | dict[str, str | float | bool] = True,
+    pbar: bool | dict[str, str | float | bool] = False,
     **integrator_kwargs: dict,
 ) -> SimState:
     """Simulate a system using a model and integrator.
@@ -124,8 +124,9 @@ def integrate(
             tracking trajectory. If a dict, will be passed to the TrajectoryReporter
             constructor.
         autobatcher (BinningAutoBatcher | bool): Optional autobatcher to use
-        pbar (bool | dict[str, str | float | bool], optional): Whether to show progress
-            bar. Defaults to True.
+        pbar (bool | dict[str, str | float | bool], optional): Show a progress bar.
+            Only works with an autobatcher in interactive shell. If a dict is given,
+            it's passed to `tqdm` as kwargs.
         **integrator_kwargs: Additional keyword arguments for integrator init function
 
     Returns:
@@ -329,7 +330,7 @@ def optimize(
     autobatcher: InFlightAutoBatcher | bool = False,
     max_steps: int = 10_000,
     steps_between_swaps: int = 5,
-    pbar: bool | dict[str, str | float | bool] = True,
+    pbar: bool | dict[str, str | float | bool] = False,
     **optimizer_kwargs: dict,
 ) -> SimState:
     """Optimize a system using a model and optimizer.
@@ -355,8 +356,9 @@ def optimize(
         max_steps (int): Maximum number of total optimization steps
         steps_between_swaps: Number of steps to take before checking convergence
             and swapping out states.
-        pbar (bool | dict[str, str | float | bool], optional): Whether to show progress
-            bar when autobatcher is used. Defaults to False.
+        pbar (bool | dict[str, str | float | bool], optional): Show a progress bar.
+            Only works with an autobatcher in interactive shell. If a dict is given,
+            it's passed to `tqdm` as kwargs.
 
     Returns:
         Optimized system state
@@ -445,7 +447,7 @@ def static(
     *,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: BinningAutoBatcher | bool = False,
-    pbar: bool | dict[str, str | float | bool] = True,
+    pbar: bool | dict[str, str | float | bool] = False,
 ) -> SimState:
     """Run single point calculations on a batch of systems.
 
@@ -465,8 +467,9 @@ def static(
             `state_kwargs` argument.
         autobatcher (BinningAutoBatcher | bool): Optional autobatcher to use for
             batching calculations
-        pbar (bool | dict[str, str | float | bool], optional): Whether to show progress
-            bar. Defaults to True.
+        pbar (bool | dict[str, str | float | bool], optional): Show a progress bar.
+            Only works with an autobatcher in interactive shell. If a dict is given,
+            it's passed to `tqdm` as kwargs.
 
     Returns:
         SimState: state with properties attached
