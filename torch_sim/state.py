@@ -8,7 +8,7 @@ import copy
 import importlib
 import warnings
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, Literal, Self, cast
 
 import torch
 
@@ -391,7 +391,7 @@ def _normalize_batch_indices(
 
 def state_to_device(
     state: SimState, device: torch.device | None = None, dtype: torch.dtype | None = None
-) -> Self:
+) -> SimState:
     """Convert the SimState to a new device and dtype.
 
     Creates a new SimState with all tensors moved to the specified device and
@@ -868,6 +868,7 @@ def initialize_state(
         return state_to_device(system, device, dtype)
 
     if isinstance(system, list) and all(isinstance(s, SimState) for s in system):
+        system = cast(list[SimState], system)
         if not all(state.n_batches == 1 for state in system):
             raise ValueError(
                 "When providing a list of states, to the initialize_state function, "
