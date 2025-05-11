@@ -146,3 +146,13 @@ addopts = [
     "-v",
 ]
 testpaths = ["tests"]
+
+[tool.uv]
+# make these dependencies mutually exclusive since they use incompatible e3nn versions
+# see https://docs.astral.sh/uv/concepts/projects/config/#conflicting-dependencies for more details
+conflicts = [
+  [{ extra = "mace" }, { extra = "mattersim" }],
+  [{ extra = "mattersim" }, { extra = "graphpes" }],
+  [{ extra = "sevenn" }, { extra = "graphpes" }],
+  [{ extra = "mace" }, { extra = "sevenn" }],
+]
