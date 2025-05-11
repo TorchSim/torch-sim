@@ -8,7 +8,7 @@ import copy
 import importlib
 import warnings
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, Literal, cast
 
 import torch
 
@@ -152,7 +152,7 @@ class SimState:
         return torch.unique(self.batch).shape[0]
 
     @property
-    def volume(self) -> torch.Tensor:
+    def volume(self) -> torch.Tensor | None:
         """Volume of the system."""
         return torch.det(self.cell) if self.pbc else None
 
@@ -184,7 +184,7 @@ class SimState:
         """
         self.cell = value.transpose(-2, -1)
 
-    def clone(self) -> Self:
+    def clone(self) -> "SimState":
         """Create a deep copy of the SimState.
 
         Creates a new SimState object with identical but independent tensors,
@@ -226,7 +226,7 @@ class SimState:
         """
         return ts.io.state_to_phonopy(self)
 
-    def split(self) -> list[Self]:
+    def split(self) -> list["SimState"]:
         """Split the SimState into a list of single-batch SimStates.
 
         Divides the current state into separate states, each containing a single batch,
@@ -237,7 +237,9 @@ class SimState:
         """
         return _split_state(self)
 
-    def pop(self, batch_indices: int | list[int] | slice | torch.Tensor) -> list[Self]:
+    def pop(
+        self, batch_indices: int | list[int] | slice | torch.Tensor
+    ) -> list["SimState"]:
         """Pop off states with the specified batch indices.
 
         This method modifies the original state object by removing the specified
@@ -268,7 +270,7 @@ class SimState:
 
     def to(
         self, device: torch.device | None = None, dtype: torch.dtype | None = None
-    ) -> Self:
+    ) -> "SimState":
         """Convert the SimState to a new device and/or data type.
 
         Args:
@@ -282,7 +284,9 @@ class SimState:
         """
         return state_to_device(self, device, dtype)
 
-    def __getitem__(self, batch_indices: int | list[int] | slice | torch.Tensor) -> Self:
+    def __getitem__(
+        self, batch_indices: int | list[int] | slice | torch.Tensor
+    ) -> "SimState":
         """Enable standard Python indexing syntax for slicing batches.
 
         Args:
@@ -387,7 +391,7 @@ def _normalize_batch_indices(
 
 def state_to_device(
     state: SimState, device: torch.device | None = None, dtype: torch.dtype | None = None
-) -> Self:
+) -> SimState:
     """Convert the SimState to a new device and dtype.
 
     Creates a new SimState with all tensors moved to the specified device and
@@ -864,6 +868,7 @@ def initialize_state(
         return state_to_device(system, device, dtype)
 
     if isinstance(system, list) and all(isinstance(s, SimState) for s in system):
+        system = cast("list[SimState]", system)
         if not all(state.n_batches == 1 for state in system):
             raise ValueError(
                 "When providing a list of states, to the initialize_state function, "
