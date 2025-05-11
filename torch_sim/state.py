@@ -152,7 +152,7 @@ class SimState:
         return torch.unique(self.batch).shape[0]
 
     @property
-    def volume(self) -> torch.Tensor:
+    def volume(self) -> torch.Tensor | None:
         """Volume of the system."""
         return torch.det(self.cell) if self.pbc else None
 
@@ -226,7 +226,7 @@ class SimState:
         """
         return ts.io.state_to_phonopy(self)
 
-    def split(self) -> list[Self]:
+    def split(self) -> list["SimState"]:
         """Split the SimState into a list of single-batch SimStates.
 
         Divides the current state into separate states, each containing a single batch,
@@ -237,7 +237,9 @@ class SimState:
         """
         return _split_state(self)
 
-    def pop(self, batch_indices: int | list[int] | slice | torch.Tensor) -> list[Self]:
+    def pop(
+        self, batch_indices: int | list[int] | slice | torch.Tensor
+    ) -> list["SimState"]:
         """Pop off states with the specified batch indices.
 
         This method modifies the original state object by removing the specified
@@ -282,7 +284,9 @@ class SimState:
         """
         return state_to_device(self, device, dtype)
 
-    def __getitem__(self, batch_indices: int | list[int] | slice | torch.Tensor) -> Self:
+    def __getitem__(
+        self, batch_indices: int | list[int] | slice | torch.Tensor
+    ) -> "SimState":
         """Enable standard Python indexing syntax for slicing batches.
 
         Args:
