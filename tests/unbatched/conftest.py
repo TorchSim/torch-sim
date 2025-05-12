@@ -4,6 +4,7 @@ import pytest
 import torch
 
 import torch_sim as ts
+from torch_sim.elastic import full_3x3_to_voigt_6_stress
 
 
 if typing.TYPE_CHECKING:
@@ -92,6 +93,20 @@ def make_unbatched_model_calculator_consistency_test(
             rtol=rtol,
             atol=atol,
         )
+
+        if "stress" in model_results:
+            calc_stress = torch.tensor(
+                atoms.get_stress(),
+                device=device,
+                dtype=model_results["stress"].dtype,
+            )
+
+            torch.testing.assert_close(
+                full_3x3_to_voigt_6_stress(model_results["stress"]),
+                calc_stress,
+                rtol=rtol,
+                atol=atol,
+            )
 
     # Rename the function to include the test name
     test_unbatched_model_calculator_consistency.__name__ = (

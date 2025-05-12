@@ -30,7 +30,7 @@ docs/reference/torch_sim.*
 
 # coverage
 coverage.xml
-.coverage
+.coverage*
 
 # env
 uv.lock
