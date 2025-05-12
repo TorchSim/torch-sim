@@ -112,7 +112,7 @@ print(
     f"Multi-state has {multi_state.n_atoms} total atoms across {multi_state.n_batches} batches"
 )
 
-# we can see how the shapes of batchwise, atomwise, and global properties change
+# we can see how the shapes of batchwise, atomwise, and per-graph properties change
 print(f"Positions shape: {multi_state.positions.shape}")
 print(f"Cell shape: {multi_state.cell.shape}")
 print(f"PBC: {multi_state.pbc}")
@@ -258,7 +258,7 @@ md_state = MDState(
 
 print("MDState properties:")
 scope = infer_property_scope(md_state)
-print("Global properties:", scope["per_graph"])
+print("Per-graph properties:", scope["per_graph"])
 print("Per-atom properties:", scope["per_atom"])
 print("Per-batch properties:", scope["per_batch"])
 

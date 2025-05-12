@@ -325,7 +325,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
 
         # we always return tensors
         # per atom properties are returned as (atoms, ...) tensors
-        # global properties are returned as shape (..., n) tensors
+        # per-graph properties are returned as shape (..., n) tensors
         results = {}
         for key in ("stress", "energy"):
             if key in properties:

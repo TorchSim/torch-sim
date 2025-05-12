@@ -455,7 +455,7 @@ def infer_property_scope(
         ValueError: If n_atoms equals n_batches (making scope inference ambiguous) or
             if ambiguous_handling="error" and an ambiguous property is encountered
     """
-    # TODO: this cannot effectively resolve global properties with
+    # TODO: this cannot effectively resolve per-graph properties with
     # length of n_atoms or n_batches, they will be classified incorrectly,
     # no clear fix
 
@@ -473,7 +473,7 @@ def infer_property_scope(
 
     # Iterate through all attributes
     for attr_name, attr_value in vars(state).items():
-        # Handle scalar values (global properties)
+        # Handle scalar values (per-graph properties)
         if not isinstance(attr_value, torch.Tensor):
             scope["per_graph"].append(attr_name)
             continue
@@ -532,7 +532,7 @@ def _get_property_attrs(
 
     attrs: dict[str, dict] = {"per_graph": {}, "per_atom": {}, "per_batch": {}}
 
-    # Process global properties
+    # Process per-graph properties
     for attr_name in scope["per_graph"]:
         attrs["per_graph"][attr_name] = getattr(state, attr_name)
 
@@ -764,7 +764,7 @@ def concatenate_states(
     """Concatenate a list of SimStates into a single SimState.
 
     Combines multiple states into a single state with multiple batches.
-    Global properties are taken from the first state, and per-atom and per-batch
+    per-graph properties are taken from the first state, and per-atom and per-batch
     properties are concatenated.
 
     Args:
@@ -794,13 +794,13 @@ def concatenate_states(
     target_device = device or first_state.device
 
     # Get property scopes from the first state to identify
-    # global/per-atom/per-batch properties
+    # per-graph/per-atom/per-batch properties
     first_scope = infer_property_scope(first_state)
     per_graph_props = set(first_scope["per_graph"])
     per_atom_props = set(first_scope["per_atom"])
     per_batch_props = set(first_scope["per_batch"])
 
-    # Initialize result with global properties from first state
+    # Initialize result with per-graph properties from first state
     concatenated = {prop: getattr(first_state, prop) for prop in per_graph_props}
 
     # Pre-allocate lists for tensors to concatenate
