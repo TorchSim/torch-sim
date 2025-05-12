@@ -425,6 +425,10 @@ class OrbModel(torch.nn.Module, ModelInterface):
             results["stress"] = results[self.model.grad_stress_name]
 
         if "stress" in results and results["stress"].shape[-1] == 6:
-            results["stress"] = voigt_6_to_full_3x3_stress(results["stress"])
+            # NOTE: atleast_2d needed because orb internally gets rid of the batch
+            # dimension of the stress if it is 1.
+            results["stress"] = voigt_6_to_full_3x3_stress(
+                torch.atleast_2d(results["stress"])
+            )
 
         return results
