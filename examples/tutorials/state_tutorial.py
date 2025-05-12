@@ -258,7 +258,7 @@ md_state = MDState(
 
 print("MDState properties:")
 scope = infer_property_scope(md_state)
-print("Global properties:", scope["global"])
+print("Global properties:", scope["per_graph"])
 print("Per-atom properties:", scope["per_atom"])
 print("Per-batch properties:", scope["per_batch"])
 

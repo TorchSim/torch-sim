@@ -26,7 +26,7 @@ if typing.TYPE_CHECKING:
 def test_infer_sim_state_property_scope(si_sim_state: SimState) -> None:
     """Test inference of property scope."""
     scope = infer_property_scope(si_sim_state)
-    assert set(scope["global"]) == {"pbc"}
+    assert set(scope["per_graph"]) == {"pbc"}
     assert set(scope["per_atom"]) == {"positions", "masses", "atomic_numbers", "batch"}
     assert set(scope["per_batch"]) == {"cell"}
 
@@ -40,7 +40,7 @@ def test_infer_md_state_property_scope(si_sim_state: SimState) -> None:
         energy=torch.zeros((1,)),
     )
     scope = infer_property_scope(state)
-    assert set(scope["global"]) == {"pbc"}
+    assert set(scope["per_graph"]) == {"pbc"}
     assert set(scope["per_atom"]) == {
         "positions",
         "masses",

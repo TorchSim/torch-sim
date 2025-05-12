@@ -8,7 +8,7 @@ import copy
 import importlib
 import warnings
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, Self, cast
+from typing import TYPE_CHECKING, Literal, Self, TypedDict, cast
 
 import torch
 
@@ -270,7 +270,7 @@ class SimState:
 
     def to(
         self, device: torch.device | None = None, dtype: torch.dtype | None = None
-    ) -> Self:
+    ) -> "SimState":
         """Convert the SimState to a new device and/or data type.
 
         Args:
@@ -423,10 +423,18 @@ def state_to_device(
     return type(state)(**attrs)
 
 
+class Scope(TypedDict):
+    """Dictionary mapping each scope category to a list of property names"""
+
+    per_graph: list[str]
+    per_atom: list[str]
+    per_batch: list[str]
+
+
 def infer_property_scope(
     state: SimState,
     ambiguous_handling: Literal["error", "globalize", "globalize_warn"] = "error",
-) -> dict[Literal["global", "per_atom", "per_batch"], list[str]]:
+) -> Scope:
     """Infer whether a property is global, per-atom, or per-batch.
 
     Analyzes the shapes of tensor attributes to determine their scope within
@@ -441,8 +449,7 @@ def infer_property_scope(
             - "globalize_warn": Treat ambiguous properties as global with a warning
 
     Returns:
-        dict[Literal["global", "per_atom", "per_batch"], list[str]]: Dictionary mapping
-            each scope category to a list of property names
+        Scope: Dictionary mapping each scope category to a list of property names
 
     Raises:
         ValueError: If n_atoms equals n_batches (making scope inference ambiguous) or
@@ -458,8 +465,8 @@ def infer_property_scope(
             "which means shapes cannot be inferred unambiguously."
         )
 
-    scope = {
-        "global": [],
+    scope: Scope = {
+        "per_graph": [],
         "per_atom": [],
         "per_batch": [],
     }
@@ -468,7 +475,7 @@ def infer_property_scope(
     for attr_name, attr_value in vars(state).items():
         # Handle scalar values (global properties)
         if not isinstance(attr_value, torch.Tensor):
-            scope["global"].append(attr_name)
+            scope["per_graph"].append(attr_name)
             continue
 
         # Handle tensor properties based on shape
@@ -476,7 +483,7 @@ def infer_property_scope(
 
         # Empty tensor case
         if len(shape) == 0:
-            scope["global"].append(attr_name)
+            scope["per_graph"].append(attr_name)
         # Vector/matrix with first dimension matching number of atoms
         elif shape[0] == state.n_atoms:
             scope["per_atom"].append(attr_name)
@@ -491,7 +498,7 @@ def infer_property_scope(
                 f"{state.n_batches} (per-batch), or a scalar (global)."
             )
         elif ambiguous_handling in ("globalize", "globalize_warn"):
-            scope["global"].append(attr_name)
+            scope["per_graph"].append(attr_name)
 
             if ambiguous_handling == "globalize_warn":
                 warnings.warn(
@@ -523,11 +530,11 @@ def _get_property_attrs(
     """
     scope = infer_property_scope(state, ambiguous_handling=ambiguous_handling)
 
-    attrs = {"global": {}, "per_atom": {}, "per_batch": {}}
+    attrs: dict[str, dict] = {"per_graph": {}, "per_atom": {}, "per_batch": {}}
 
     # Process global properties
-    for attr_name in scope["global"]:
-        attrs["global"][attr_name] = getattr(state, attr_name)
+    for attr_name in scope["per_graph"]:
+        attrs["per_graph"][attr_name] = getattr(state, attr_name)
 
     # Process per-atom properties
     for attr_name in scope["per_atom"]:
@@ -541,7 +548,7 @@ def _get_property_attrs(
 
 
 def _filter_attrs_by_mask(
-    attrs: dict[str, dict],
+    attrs: Scope,
     atom_mask: torch.Tensor,
     batch_mask: torch.Tensor,
 ) -> dict:
@@ -550,7 +557,7 @@ def _filter_attrs_by_mask(
     Selects subsets of attributes based on boolean masks for atoms and batches.
 
     Args:
-        attrs (dict[str, dict]): Dictionary with 'global', 'per_atom', and 'per_batch'
+        attrs (Scope): Dictionary with 'per_graph', 'per_atom', and 'per_batch'
             attributes
         atom_mask (torch.Tensor): Boolean mask for atoms to include with shape
             (n_atoms,)
@@ -563,7 +570,7 @@ def _filter_attrs_by_mask(
     filtered_attrs = {}
 
     # Copy global attributes directly
-    filtered_attrs.update(attrs["global"])
+    filtered_attrs.update(attrs["per_graph"])
 
     # Filter per-atom attributes
     for attr_name, attr_value in attrs["per_atom"].items():
@@ -642,7 +649,7 @@ def _split_state(
             # Add the split per-batch attributes
             **{attr_name: split_per_batch[attr_name][i] for attr_name in split_per_batch},
             # Add the global attributes
-            **attrs["global"],
+            **attrs["per_graph"],
         }
         states.append(type(state)(**batch_attrs))
 
@@ -789,12 +796,12 @@ def concatenate_states(
     # Get property scopes from the first state to identify
     # global/per-atom/per-batch properties
     first_scope = infer_property_scope(first_state)
-    global_props = set(first_scope["global"])
+    per_graph_props = set(first_scope["per_graph"])
     per_atom_props = set(first_scope["per_atom"])
     per_batch_props = set(first_scope["per_batch"])
 
     # Initialize result with global properties from first state
-    concatenated = {prop: getattr(first_state, prop) for prop in global_props}
+    concatenated = {prop: getattr(first_state, prop) for prop in per_graph_props}
 
     # Pre-allocate lists for tensors to concatenate
     per_atom_tensors = {prop: [] for prop in per_atom_props}
