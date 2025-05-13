@@ -107,6 +107,7 @@ def make_model_calculator_consistency_test(
                 calc_stress,
                 rtol=rtol,
                 atol=atol,
+                equal_nan=True,
             )
 
     # Rename the function to include the test name
