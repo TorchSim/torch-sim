@@ -250,6 +250,8 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
 
         stress = output[key.PRED_STRESS]
         if stress is not None:
-            results["stress"] = -voigt_6_to_full_3x3_stress(stress.detach())
+            results["stress"] = -voigt_6_to_full_3x3_stress(
+                stress.detach()[..., [0, 1, 2, 4, 5, 3]]
+            )
 
         return results
