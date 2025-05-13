@@ -1,0 +1,36 @@
+changelog:
+  exclude:
+    authors: [github-actions, pre-commit-ci]
+  categories:
+    - title: 💥 Breaking Changes
+      labels: [breaking]
+    - title: 🎉 New Features
+      labels: [feature]
+    - title: 🛠 Enhancements
+      labels: [enhancement, DX, UX]
+    - title: 🐛 Bug Fixes
+      labels: [fix]
+    - title: 📖 Documentation
+      labels: [docs]
+    - title: 🧹 House-Keeping
+      labels: [housekeeping]
+    - title: 🚀 Performance
+      labels: [perf]
+    - title: 🚧 CI
+      labels: [ci]
+    - title: 💡 Refactoring
+      labels: [refactor]
+    - title: 🧪 Tests
+      labels: [tests]
+    - title: 🔒 Security Fixes
+      labels: [security]
+    - title: 🏥 Package Health
+      labels: [pkg]
+    - title: 📦 Dependencies
+      labels: [deps, outdated]
+    - title: 🏷️ Type Hints
+      labels: [types]
+    - title: 🧹 Linting
+      labels: [linting]
+    - title: 🤷‍♂️ Other Changes
+      labels: ["*"]

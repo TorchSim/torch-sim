@@ -42,7 +42,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # easily load the model from mace-mp
 from mace.calculators.foundations_models import mace_mp
-from torch_sim.models import MaceModel
+from torch_sim.models.mace import MaceModel
 mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(model=mace, device=device)
 

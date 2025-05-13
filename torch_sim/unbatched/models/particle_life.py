@@ -29,7 +29,7 @@ def asymmetric_particle_pair_force(
             shape [n, m].
 
     Returns:
-        Tensor of energies with shape [n, m].
+        torch.Tensor: Energies with shape [n, m].
     """
     inner_mask = dr < beta
     outer_mask = (dr < sigma) & (dr > beta)
@@ -64,7 +64,7 @@ def asymmetric_particle_pair_force_jit(
             shape [n, m].
 
     Returns:
-        Tensor of energies with shape [n, m].
+        torch.Tensor: Energies with shape [n, m].
     """
     inner_mask = dr < beta
     outer_mask = (dr < sigma) & (dr > beta)

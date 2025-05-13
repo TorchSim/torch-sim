@@ -3,7 +3,7 @@
 #   <summary>Dependencies</summary>
 # /// script
 # dependencies = [
-#     "metatrain[pet]>=2025.4",
+#     "metatrain[pet]>=2025.6",
 #     "metatensor-torch>=0.7,<0.8"
 # ]
 # ///
@@ -26,7 +26,7 @@ device is chosen automatically.)
 """
 
 # %%
-from torch_sim.models import MetatensorModel
+from torch_sim.models.metatensor import MetatensorModel
 
 model = MetatensorModel("pet-mad")
 

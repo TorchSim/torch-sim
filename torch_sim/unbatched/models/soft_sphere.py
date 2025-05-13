@@ -38,8 +38,8 @@ def soft_sphere_pair(
             float or tensor of shape [n, m].
 
     Returns:
-        Pairwise interaction energies between particles. Shape: [n, m]. Each element
-        [i,j] represents the repulsive energy between particles i and j.
+        torch.Tensor: Pairwise interaction energies between particles. Shape: [n, m].
+            Each element [i,j] represents the repulsive energy between particles i and j.
     """
 
     def fn(dr: torch.Tensor) -> torch.Tensor:
@@ -76,7 +76,7 @@ def soft_sphere_pair_force(
 
     Returns:
         torch.Tensor: Forces between particle pairs with shape [n, m]. Forces are zero
-        for distances greater than sigma.
+            for distances greater than sigma.
     """
 
     def fn(dr: torch.Tensor) -> torch.Tensor:

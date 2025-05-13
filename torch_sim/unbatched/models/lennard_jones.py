@@ -34,8 +34,9 @@ def lennard_jones_pair(
             or tensor of shape [n, m] for pair-specific interaction strengths.
 
     Returns:
-        Pairwise Lennard-Jones interaction energies between particles. Shape: [n, m].
-        Each element [i,j] represents the interaction energy between particles i and j.
+        torch.Tensor: Pairwise Lennard-Jones interaction energies between particles.
+            Shape: [n, m]. Each element [i,j] represents the interaction energy between
+            particles i and j.
     """
     # Calculate inverse dr and its powers
     idr = sigma / dr
@@ -76,9 +77,9 @@ def lennard_jones_pair_force(
             of shape [n, m] for pair-specific interaction strengths.
 
     Returns:
-        Pairwise Lennard-Jones forces between particles. Shape: [n, m].
-        Each element [i,j] represents the force magnitude between particles i and j.
-        Positive values indicate repulsion, negative values indicate attraction.
+        torch.Tensor: Pairwise Lennard-Jones forces between particles. Shape: [n, m].
+            Each element [i,j] represents the force magnitude between particles i and j.
+            Positive values indicate repulsion, negative values indicate attraction.
     """
     # Calculate inverse dr and its powers
     idr = sigma / dr

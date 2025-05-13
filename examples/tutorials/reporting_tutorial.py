@@ -205,7 +205,7 @@ Let's see an example:
 """
 
 # %%
-from torch_sim.models import LennardJonesModel
+from torch_sim.models.lennard_jones import LennardJonesModel
 
 
 # Define some property calculators

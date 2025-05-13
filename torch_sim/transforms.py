@@ -99,14 +99,14 @@ def pbc_wrap_general(
     This implementation follows the general matrix-based approach for
     periodic boundary conditions in arbitrary triclinic cells:
     1. Transform positions to fractional coordinates using B = A^(-1)
-    2. Wrap fractional coordinates to [0,1) using f - floor(f)
+    2. Wrap fractional coordinates to [0,1) using modulo
     3. Transform back to real space using A
 
     Args:
         positions (torch.Tensor): Tensor of shape (..., d)
             containing particle positions in real space.
-        lattice_vectors (torch.Tensor): Tensor of shape (d, d)
-            containing lattice vectors as columns (A matrix in the equations).
+        lattice_vectors (torch.Tensor): Tensor of shape (d, d) containing
+            lattice vectors as columns (A matrix in the equations).
 
     Returns:
         torch.Tensor: Tensor of wrapped positions in real space with
@@ -124,23 +124,13 @@ def pbc_wrap_general(
     if positions.shape[-1] != lattice_vectors.shape[0]:
         raise ValueError("Position dimensionality must match lattice vectors.")
 
-    # Compute B = A^(-1) to transform to fractional coordinates
-    B = torch.linalg.inv(lattice_vectors)
-
     # Transform to fractional coordinates: f = Br
-    frac_coords = positions @ B.T
+    frac_coords = positions @ torch.linalg.inv(lattice_vectors).T
 
-    # Wrap to reference cell [0,1) using f - floor(f)
-    wrapped_frac = frac_coords - torch.floor(frac_coords)
+    # Wrap to reference cell [0,1) using modulo
+    wrapped_frac = frac_coords % 1.0
 
-    # Handle edge case of positions exactly on upper boundary
-    wrapped_frac = torch.where(
-        torch.isclose(wrapped_frac, torch.ones_like(wrapped_frac)),
-        torch.zeros_like(wrapped_frac),
-        wrapped_frac,
-    )
-
-    # Transform back to real space: t = Ag
+    # Transform back to real space: r_row_wrapped = wrapped_f_row @ M_row
     return wrapped_frac @ lattice_vectors.T
 
 
@@ -157,7 +147,7 @@ def pbc_wrap_batched(
         positions (torch.Tensor): Tensor of shape (n_atoms, 3) containing
             particle positions in real space.
         cell (torch.Tensor): Tensor of shape (n_batches, 3, 3) containing
-            lattice vectors for each batch.
+            lattice vectors as column vectors.
         batch (torch.Tensor): Tensor of shape (n_atoms,) containing batch
             indices for each atom.
 
@@ -191,15 +181,8 @@ def pbc_wrap_batched(
     # For each atom, multiply its position by its batch's inverse cell matrix
     frac_coords = torch.bmm(B_per_atom, positions.unsqueeze(2)).squeeze(2)
 
-    # Wrap to reference cell [0,1) using f - floor(f)
-    wrapped_frac = frac_coords - torch.floor(frac_coords)
-
-    # Handle edge case of positions exactly on upper boundary
-    wrapped_frac = torch.where(
-        torch.isclose(wrapped_frac, torch.ones_like(wrapped_frac)),
-        torch.zeros_like(wrapped_frac),
-        wrapped_frac,
-    )
+    # Wrap to reference cell [0,1) using modulo
+    wrapped_frac = frac_coords % 1.0
 
     # Transform back to real space: r = A·f
     # Get the cell for each atom based on its batch index

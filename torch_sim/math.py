@@ -376,7 +376,7 @@ def matrix_exp(A: torch.Tensor) -> torch.Tensor:
         A: Input matrix
 
     Returns:
-        Matrix exponential of A
+        torch.Tensor: Matrix exponential of A
     """
     return torch.matrix_exp(A)
 
@@ -390,7 +390,7 @@ def vec(M: torch.Tensor) -> torch.Tensor:
         M: Input matrix
 
     Returns:
-        Output vector
+        torch.Tensor: Output vector
     """
     return M.t().reshape(-1)
 
@@ -408,7 +408,7 @@ def expm_frechet_kronform(
             (crashes, non-termination) if the inputs do contain infinities or NaNs.
 
     Returns:
-        K: Kronecker form of the Frechet derivative of the matrix exponential
+        torch.Tensor: Kronecker form of the Frechet derivative of the matrix exponential
             with shape (N*N, N*N)
     """
     if check_finite and not torch.isfinite(A).all():
@@ -519,7 +519,7 @@ def _is_valid_matrix(T: torch.Tensor, n: int = 3) -> bool:
         n: The expected dimension of the matrix, default=3
 
     Returns:
-        True if T is a valid nxn tensor, False otherwise
+        bool: True if T is a valid nxn tensor, False otherwise
     """
     return isinstance(T, torch.Tensor) and T.shape == (n, n)
 

@@ -390,14 +390,13 @@ def random_packed_structure_multi(
     # Extract element information from composition into a robust dictionary format
     element_dict = composition.as_dict()
     element_symbols = list(element_dict)  # Get unique elements
-    element_counts = [
-        int(element_dict[el]) for el in element_symbols
-    ]  # Get counts directly
+    element_counts = [int(element_dict[el]) for el in element_symbols]
 
     # Create species indices tensor mapping each atom to its species type
     # e.g. for Fe80B20: [0,0,...,0,1,1,...,1] where 0=Fe, 1=B
     species_idx = torch.tensor(
-        [i for i, count in enumerate(element_counts) for _ in range(count)], device=device
+        [i for i, count in enumerate(element_counts) for _ in range(count)],
+        device=device,
     )
 
     # Calculate total atoms and number of unique species
@@ -450,10 +449,8 @@ def random_packed_structure_multi(
         # Run FIRE optimization until convergence or max iterations
         for _step in range(max_iter):
             # Check if minimum distance criterion is met (95% of smallest target diameter)
-            if (
-                min_distance(state.positions, cell, distance_tolerance)
-                > diameter_matrix.min() * 0.95
-            ):
+            min_dist = min_distance(state.positions, cell, distance_tolerance)
+            if min_dist > diameter_matrix.min() * 0.95:
                 break
             state = fire_update(state)
         print(f"Final energy: {state.energy.item():.4f}")
@@ -666,24 +663,22 @@ def subcells_to_structures(
             - species: atomic species symbols
     """
     list_subcells = []
-    for ids, l, h in candidates:  # noqa: E741
+    for ids, lower_bound, upper_bound in candidates:
         # Get positions of atoms in this subcell
         pos = fractional_positions[ids]
 
         # Shift positions to start from origin
-        new_frac_pos = pos - l
+        new_frac_pos = pos - lower_bound
 
         # Scale positions to [0,1] range
-        new_frac_pos = new_frac_pos / (h - l)
+        new_frac_pos = new_frac_pos / (upper_bound - lower_bound)
 
         # Calculate new cell parameters
-        new_cell = cell * (h - l).unsqueeze(0)
+        new_cell = cell * (upper_bound - lower_bound).unsqueeze(0)
 
-        # Convert tensor indices to list/numpy array before indexing species list
-        species_indices = ids.cpu().numpy()  # Convert to numpy array
-        subcell_species = [
-            species[int(i)] for i in species_indices
-        ]  # Get species for these atoms
+        # Get species for these atoms and convert tensor indices to list/numpy array
+        # before indexing species list
+        subcell_species = [species[int(i)] for i in ids.cpu().numpy()]
 
         list_subcells.append((new_frac_pos, new_cell, subcell_species))
 

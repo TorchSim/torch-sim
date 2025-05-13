@@ -23,6 +23,7 @@ from phonopy.api_qha import PhonopyQHA
 from phonopy.structure.atoms import PhonopyAtoms
 
 import torch_sim as ts
+from torch_sim.models.mace import MaceModel
 
 
 def get_relaxed_structure(
@@ -219,7 +220,7 @@ loaded_model = mace_mp(
     default_dtype=dtype,
     device=device,
 )
-model = ts.models.MaceModel(
+model = MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,

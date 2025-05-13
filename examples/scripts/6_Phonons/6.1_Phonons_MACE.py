@@ -24,6 +24,7 @@ from phonopy.phonon.band_structure import (
 )
 
 import torch_sim as ts
+from torch_sim.models.mace import MaceModel
 
 
 def get_qpts_and_connections(
@@ -105,7 +106,7 @@ Nrelax = 300  # number of relaxation steps
 displ = 0.01  # atomic displacement for phonons (in Angstrom)
 
 # Relax atomic positions
-model = ts.models.MaceModel(
+model = MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,

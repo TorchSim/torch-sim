@@ -94,30 +94,34 @@ def test_pbc_wrap_general_orthorhombic() -> None:
     assert torch.allclose(wrapped, expected)
 
 
-def test_pbc_wrap_general_triclinic() -> None:
-    """Test periodic boundary wrapping with triclinic cell.
-
-    Tests wrapping in a non-orthogonal cell where lattice vectors have
-    off-diagonal components (tilt factors). This verifies the general
-    matrix transformation approach works for arbitrary cell shapes.
-    """
-    # Triclinic cell with tilt
-    lattice = torch.tensor(
-        [
-            [2.0, 0.5, 0.0],  # a vector with b-tilt
-            [0.0, 2.0, 0.0],  # b vector
-            [0.0, 0.3, 2.0],  # c vector with b-tilt
-        ]
-    )
-
-    # Position outside triclinic box
-    positions = torch.tensor([[2.5, 2.5, 2.5]])
-
-    # Correct expected wrapped position for this triclinic cell
-    expected = torch.tensor([[2.0, 0.5, 0.2]])
-
-    wrapped = tst.pbc_wrap_general(positions, lattice)
-    assert torch.allclose(wrapped, expected, atol=1e-6)
+@pytest.mark.parametrize(
+    ("cell", "shift"),
+    [
+        # Cubic cell, integer shift [1, 1, 1]
+        (torch.eye(3, dtype=torch.float64) * 2.0, [1, 1, 1]),
+        # Triclinic cell, integer shift [1, 1, 1]
+        (([[2.0, 0.0, 0.0], [0.5, 2.0, 0.0], [0.0, 0.3, 2.0]]), [1, 1, 1]),
+        # Triclinic cell, integer shift [-1, 2, 0]
+        (([[2.0, 0.5, 0.0], [0.0, 2.0, 0.0], [0.0, 0.3, 2.0]]), [-1, 2, 0]),
+        # triclinic, all negative shift
+        (([[2.0, 0.5, 0.0], [0.0, 2.0, 0.0], [0.0, 0.3, 2.0]]), [-2, -1, -3]),
+        # cubic, large mixed shift
+        (torch.eye(3, dtype=torch.float64) * 2.0, [5, 0, -10]),
+        # highly tilted cell
+        (([[1.3, 0.9, 0.8], [0.0, 1.0, 0.9], [0.0, 0.0, 1.0]]), [1, -2, 3]),
+        # Left-handed cell
+        (([[2.0, 0.0, 0.0], [0.0, -2.0, 0.0], [0.0, 0.0, 2.0]]), [1, 1, 1]),
+    ],
+)
+def test_pbc_wrap_general_param(cell: torch.Tensor, shift: torch.Tensor) -> None:
+    """Test periodic boundary wrapping for various cells and integer shifts."""
+    cell = torch.as_tensor(cell, dtype=torch.float64)
+    shift = torch.as_tensor(shift, dtype=torch.float64)
+    base_frac = torch.tensor([[0.25, 0.5, 0.75]], dtype=torch.float64)
+    base_cart = base_frac @ cell.T
+    shifted_cart = base_cart + (shift @ cell.T)
+    wrapped = tst.pbc_wrap_general(shifted_cart, cell)
+    torch.testing.assert_close(wrapped, base_cart, rtol=1e-6, atol=1e-6)
 
 
 def test_pbc_wrap_general_edge_case() -> None:
@@ -277,35 +281,36 @@ def test_pbc_wrap_batched_orthorhombic(si_double_sim_state: SimState) -> None:
 
 def test_pbc_wrap_batched_triclinic(device: torch.device) -> None:
     """Test batched periodic boundary wrapping with triclinic cell."""
-    # Create two triclinic cells with different tilt factors
+    # Define cell matrices (M_row convention)
     cell1 = torch.tensor(
         [
             [2.0, 0.5, 0.0],  # a vector with b-tilt
             [0.0, 2.0, 0.0],  # b vector
             [0.0, 0.3, 2.0],  # c vector with b-tilt
         ],
+        dtype=torch.float64,
         device=device,
     )
-
     cell2 = torch.tensor(
         [
             [2.0, 0.0, 0.5],  # a vector with c-tilt
             [0.3, 2.0, 0.0],  # b vector with a-tilt
             [0.0, 0.0, 2.0],  # c vector
         ],
+        dtype=torch.float64,
         device=device,
     )
+    cell = torch.stack([cell1, cell2])
 
-    # Create positions for two atoms, one in each batch
+    # Define positions (r_row convention)
     positions = torch.tensor(
         [
-            [2.5, 2.5, 2.5],  # First atom, outside batch 0's cell
-            [2.7, 2.7, 2.7],  # Second atom, outside batch 1's cell
+            [2.5, 2.5, 2.5],  # Atom 0 (batch 0)
+            [2.7, 2.7, 2.7],  # Atom 1 (batch 1)
         ],
+        dtype=torch.float64,
         device=device,
     )
-
-    # Create batch indices
     batch = torch.tensor([0, 1], device=device)
 
     # Stack the cells for batched processing

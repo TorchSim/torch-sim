@@ -22,6 +22,7 @@ from mace.calculators.foundations_models import mace_mp
 from phono3py import Phono3py
 
 import torch_sim as ts
+from torch_sim.models.mace import MaceModel
 
 
 def print_relax_info(trajectory_file: str, device: torch.device) -> None:
@@ -54,7 +55,7 @@ mace_checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/down
 loaded_model = mace_mp(
     model=mace_checkpoint_url, return_raw_model=True, default_dtype=dtype, device=device
 )
-model = ts.models.MaceModel(
+model = MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,
