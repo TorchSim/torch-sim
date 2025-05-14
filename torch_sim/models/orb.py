@@ -372,7 +372,7 @@ class OrbModel(torch.nn.Module, ModelInterface):
                 it will be converted to a SimState.
 
         Returns:
-            dict: Dictionary of model predictions, which may include:
+            dict: Model predictions, which may include:
                 - energy (torch.Tensor): Energy with shape [batch_size]
                 - forces (torch.Tensor): Forces with shape [n_atoms, 3]
                 - stress (torch.Tensor): Stress tensor with shape [batch_size, 3, 3],

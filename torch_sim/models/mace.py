@@ -247,7 +247,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 dictionary with the relevant fields.
 
         Returns:
-            dict[str, torch.Tensor]: Dictionary containing:
+            dict[str, torch.Tensor]: Computed properties:
                 - 'energy': System energies with shape [n_systems]
                 - 'forces': Atomic forces with shape [n_atoms, 3] if compute_forces=True
                 - 'stress': System stresses with shape [n_systems, 3, 3] if

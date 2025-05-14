@@ -180,7 +180,7 @@ class ModelInterface(ABC):
             **kwargs: Additional model-specific parameters.
 
         Returns:
-            dict[str, torch.Tensor]: Dictionary containing computed properties:
+            dict[str, torch.Tensor]: Computed properties:
                 - "energy": Potential energy with shape [n_batches]
                 - "forces": Atomic forces with shape [n_atoms, 3]
                 - "stress": Stress tensor with shape [n_batches, 3, 3] (if

@@ -158,7 +158,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
                 positions, cell vectors, and other system information.
 
         Returns:
-            dict[str, torch.Tensor]: Dictionary of computed properties:
+            dict[str, torch.Tensor]: Computed properties:
                 - "energy": Total potential energy (scalar)
                 - "forces": Atomic forces with shape [n_atoms, 3] (if
                     compute_forces=True)
@@ -288,7 +288,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
                 or a dictionary with the same keys.
 
         Returns:
-            dict[str, torch.Tensor]: Dictionary of computed properties:
+            dict[str, torch.Tensor]: Computed properties:
                 - "energy": Potential energy with shape [n_batches]
                 - "forces": Atomic forces with shape [n_atoms, 3] (if
                     compute_forces=True)

@@ -437,8 +437,8 @@ def infer_property_scope(
             - "globalize_warn": Treat ambiguous properties as global with a warning
 
     Returns:
-        dict[Literal["global", "per_atom", "per_batch"], list[str]]: Dictionary mapping
-            each scope category to a list of property names
+        dict[Literal["global", "per_atom", "per_batch"], list[str]]: Map of scope
+            category to list of property names
 
     Raises:
         ValueError: If n_atoms equals n_batches (making scope inference ambiguous) or
@@ -514,8 +514,8 @@ def _get_property_attrs(
             properties
 
     Returns:
-        dict[str, dict]: Dictionary with 'global', 'per_atom', and 'per_batch' keys,
-            each containing a dictionary of attribute names to values
+        dict[str, dict]: Keys are 'global', 'per_atom', and 'per_batch', each
+            containing a dictionary of attribute names to values
     """
     scope = infer_property_scope(state, ambiguous_handling=ambiguous_handling)
 
@@ -546,15 +546,15 @@ def _filter_attrs_by_mask(
     Selects subsets of attributes based on boolean masks for atoms and batches.
 
     Args:
-        attrs (dict[str, dict]): Dictionary with 'global', 'per_atom', and 'per_batch'
-            attributes
+        attrs (dict[str, dict]): Keys are 'global', 'per_atom', and 'per_batch', each
+            containing a dictionary of attribute names to values
         atom_mask (torch.Tensor): Boolean mask for atoms to include with shape
             (n_atoms,)
         batch_mask (torch.Tensor): Boolean mask for batches to include with shape
             (n_batches,)
 
     Returns:
-        dict: Dictionary of filtered attributes with appropriate handling for each scope
+        dict: Filtered attributes with appropriate handling for each scope
     """
     filtered_attrs = {}
 
