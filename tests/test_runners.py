@@ -228,15 +228,6 @@ def test_integrate_with_autobatcher_and_reporting(
         memory_scales_with="n_atoms",
         max_memory_scaler=260,
     )
-    final_state = ts.integrate(
-        system=triple_state,
-        model=lj_model,
-        integrator=nve,
-        n_steps=10,
-        temperature=300.0,
-        timestep=0.001,
-        autobatcher=autobatcher,
-    )
     trajectory_files = [
         tmp_path / f"nvt_{batch}.h5md" for batch in range(triple_state.n_batches)
     ]
@@ -645,58 +636,119 @@ def test_static_with_autobatcher(
 
 
 def test_static_with_autobatcher_and_reporting(
-    ar_supercell_sim_state: ts.SimState,
-    fe_supercell_sim_state: ts.SimState,
-    lj_model: Any,
+    lj_model: LennardJonesModel,  # Changed type from Any, removed unused fixtures
     tmp_path: Path,
 ) -> None:
-    """Test static calculation with autobatcher and trajectory reporting."""
-    states = [ar_supercell_sim_state, fe_supercell_sim_state, ar_supercell_sim_state]
-    triple_state = ts.initialize_state(
-        states,
-        lj_model.device,
-        lj_model.dtype,
+    """Test static calculation with autobatcher, trajectory reporting, and robust
+    reordering."""
+    from ase.build import bulk
+
+    # 1. Create diverse SimState objects for robust binning test
+    # Atom counts: Ar(4), Fe(8), Cu(8), Ar(4, different lattice)
+    s0_atoms = bulk("Ar", "fcc", a=5.2, cubic=True)
+    s1_atoms = bulk("Fe", "bcc", a=2.8, cubic=True).repeat((2, 2, 1))
+    s2_atoms = bulk("Cu", "fcc", a=3.6, cubic=True).repeat((2, 1, 1))
+    s3_atoms = bulk("Ar", "fcc", a=5.3, cubic=True)  # Different params from s0_atoms
+
+    ase_states = [s0_atoms, s1_atoms, s2_atoms, s3_atoms]
+    initial_sim_states_list: list[ts.SimState] = []
+    for idx, atoms_obj in enumerate(ase_states):
+        sim_state_batched = ts.initialize_state(
+            atoms_obj, device=lj_model.device, dtype=lj_model.dtype
+        )
+        sim_state = sim_state_batched.split()[0]
+        torch.manual_seed(idx)  # Ensure different perturbations for each state
+        sim_state.positions += torch.randn_like(sim_state.positions) * 0.05
+        initial_sim_states_list.append(sim_state)
+
+    batched_initial_state = ts.initialize_state(
+        initial_sim_states_list, lj_model.device, lj_model.dtype
     )
+    split_initial_states = batched_initial_state.split()
+
+    # 2. Pre-calculate expected potential energies
+    expected_energies: list[float] = []
+    for s_init in split_initial_states:
+        energy = lj_model(s_init)["energy"].item()
+        expected_energies.append(energy)
+
+    unique_energies = set(expected_energies)
+    assert len(unique_energies) == len(expected_energies), (
+        f"Need unique energies for robust ordering test. Got: {expected_energies}"
+    )
+
+    # 3. Configure BinningAutoBatcher to force multiple batches
+    # Atom counts: 4, 8, 8, 4. LennardJonesModel memory_scales_with="n_atoms" by default.
+    # max_memory_scaler=10 should force batches like [4,4], [8], [8] or similar.
     autobatcher = BinningAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
-        max_memory_scaler=260,
+        max_memory_scaler=10,
+        return_indices=True,
     )
 
-    trajectory_files = [tmp_path / f"static_{batch}.h5md" for batch in range(len(states))]
+    # 4. Call ts.static with trajectory reporting
+    trajectory_files = [
+        tmp_path / f"static_merged_reorder_{i}.h5md"
+        for i in range(len(split_initial_states))
+    ]
     reporter = TrajectoryReporter(
         filenames=trajectory_files,
         state_frequency=1,
         prop_calculators={1: {"potential_energy": lambda state: state.energy}},
     )
 
-    props = ts.static(
-        system=triple_state,
+    returned_props_list = ts.static(
+        system=batched_initial_state,
         model=lj_model,
-        trajectory_reporter=reporter,
         autobatcher=autobatcher,
+        trajectory_reporter=reporter,
     )
 
-    assert all(traj_file.is_file() for traj_file in trajectory_files)
-    assert len(props) == 3
+    # 5. Assertions
+    assert len(returned_props_list) == len(expected_energies), (
+        f"Expected {len(expected_energies)} prop dicts, got {len(returned_props_list)}"
+    )
+    assert all(traj_file.is_file() for traj_file in trajectory_files), (
+        "Not all trajectory files were created."
+    )
 
-    # Verify that properties were saved correctly to trajectory files
-    for idx, traj_file in enumerate(trajectory_files):
-        with TorchSimTrajectory(traj_file) as traj:
-            saved_energy = traj.get_array("potential_energy")
-            assert len(saved_energy) == 1
+    for idx in range(len(expected_energies)):
+        # Check returned properties list order
+        actual_energy_props = returned_props_list[idx]["potential_energy"].item()
+        np.testing.assert_allclose(
+            actual_energy_props,
+            expected_energies[idx],
+            rtol=1e-5,
+            err_msg=f"Energy mismatch in returned props for original state {idx}",
+        )
+
+        # Check trajectory file content and order
+        with TorchSimTrajectory(trajectory_files[idx]) as traj:
+            saved_energy_array = traj.get_array("potential_energy")
+            assert len(saved_energy_array) == 1, (
+                "Static calc should have one frame in trajectory"
+            )
+            saved_energy_traj = saved_energy_array[0]
+
+            file_name = trajectory_files[idx].name
+            err_msg = (
+                f"Trajectory energy mismatch for original state={idx} in {file_name=}"
+            )
             np.testing.assert_allclose(
-                saved_energy[0], props[idx]["potential_energy"].numpy()
+                saved_energy_traj, expected_energies[idx], rtol=1e-5, err_msg=err_msg
             )
 
-    # Check that identical systems have identical energies
-    np.testing.assert_allclose(
-        props[0]["potential_energy"].numpy(), props[2]["potential_energy"].numpy()
-    )
-    # Check that different systems have different energies
-    assert not np.allclose(
-        props[0]["potential_energy"].numpy(), props[1]["potential_energy"].numpy()
-    )
+            original_state_for_traj = split_initial_states[idx]
+            saved_atomic_numbers = traj.get_array("atomic_numbers")[0]
+            expected_atomic_numbers = (
+                original_state_for_traj.atomic_numbers[0].cpu().numpy()
+            )
+            np.testing.assert_equal(
+                saved_atomic_numbers,
+                expected_atomic_numbers,
+                err_msg=f"Atomic numbers mismatch for state {idx} in {file_name=}",
+            )
 
 
 def test_static_no_filenames(ar_supercell_sim_state: ts.SimState, lj_model: Any) -> None:
