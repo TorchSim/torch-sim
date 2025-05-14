@@ -11,7 +11,6 @@ if typing.TYPE_CHECKING:
     from ase.calculators.calculator import Calculator
 
     from torch_sim.models.interface import ModelInterface
-    from torch_sim.state import SimState
 
 
 consistency_test_simstate_fixtures: Final[tuple[str, ...]] = (
@@ -64,7 +63,7 @@ def make_model_calculator_consistency_test(
         calculator: Calculator = request.getfixturevalue(calculator_fixture_name)
 
         # Get the sim_state fixture dynamically using the name
-        sim_state: SimState = request.getfixturevalue(sim_state_name).to(device, dtype)
+        sim_state: ts.SimState = request.getfixturevalue(sim_state_name).to(device, dtype)
 
         # Set up ASE calculator
         atoms = ts.io.state_to_atoms(sim_state)[0]

@@ -4,6 +4,7 @@ from dataclasses import asdict
 import pytest
 import torch
 
+import torch_sim as ts
 from torch_sim.integrators import MDState
 from torch_sim.state import (
     DeformGradMixin,
@@ -23,7 +24,7 @@ if typing.TYPE_CHECKING:
     from pymatgen.core import Structure
 
 
-def test_infer_sim_state_property_scope(si_sim_state: SimState) -> None:
+def test_infer_sim_state_property_scope(si_sim_state: ts.SimState) -> None:
     """Test inference of property scope."""
     scope = infer_property_scope(si_sim_state)
     assert set(scope["global"]) == {"pbc"}
@@ -31,7 +32,7 @@ def test_infer_sim_state_property_scope(si_sim_state: SimState) -> None:
     assert set(scope["per_batch"]) == {"cell"}
 
 
-def test_infer_md_state_property_scope(si_sim_state: SimState) -> None:
+def test_infer_md_state_property_scope(si_sim_state: ts.SimState) -> None:
     """Test inference of property scope."""
     state = MDState(
         **asdict(si_sim_state),
@@ -52,7 +53,9 @@ def test_infer_md_state_property_scope(si_sim_state: SimState) -> None:
     assert set(scope["per_batch"]) == {"cell", "energy"}
 
 
-def test_slice_substate(si_double_sim_state: SimState, si_sim_state: SimState) -> None:
+def test_slice_substate(
+    si_double_sim_state: ts.SimState, si_sim_state: ts.SimState
+) -> None:
     """Test slicing a substate from the SimState."""
     for batch_index in range(2):
         substate = _slice_state(si_double_sim_state, [batch_index])
@@ -67,7 +70,7 @@ def test_slice_substate(si_double_sim_state: SimState, si_sim_state: SimState) -
         assert torch.allclose(substate.batch, torch.zeros_like(substate.batch))
 
 
-def test_slice_md_substate(si_double_sim_state: SimState) -> None:
+def test_slice_md_substate(si_double_sim_state: ts.SimState) -> None:
     state = MDState(
         **asdict(si_double_sim_state),
         momenta=torch.randn_like(si_double_sim_state.positions),
@@ -86,7 +89,7 @@ def test_slice_md_substate(si_double_sim_state: SimState) -> None:
 
 
 def test_concatenate_two_si_states(
-    si_sim_state: SimState, si_double_sim_state: SimState
+    si_sim_state: ts.SimState, si_double_sim_state: ts.SimState
 ) -> None:
     """Test concatenating two identical silicon states."""
     # Concatenate two copies of the sim state
@@ -124,7 +127,7 @@ def test_concatenate_two_si_states(
 
 
 def test_concatenate_si_and_fe_states(
-    si_sim_state: SimState, fe_supercell_sim_state: SimState
+    si_sim_state: ts.SimState, fe_supercell_sim_state: ts.SimState
 ) -> None:
     """Test concatenating silicon and argon states."""
     # Concatenate silicon and argon states
@@ -174,7 +177,7 @@ def test_concatenate_si_and_fe_states(
 
 
 def test_concatenate_double_si_and_fe_states(
-    si_double_sim_state: SimState, fe_supercell_sim_state: SimState
+    si_double_sim_state: ts.SimState, fe_supercell_sim_state: ts.SimState
 ) -> None:
     """Test concatenating a double silicon state and an argon state."""
     # Concatenate double silicon and argon states
@@ -217,12 +220,12 @@ def test_concatenate_double_si_and_fe_states(
     assert torch.allclose(fe_slice.positions, fe_supercell_sim_state.positions)
 
 
-def test_split_state(si_double_sim_state: SimState) -> None:
+def test_split_state(si_double_sim_state: ts.SimState) -> None:
     """Test splitting a state into a list of states."""
     states = si_double_sim_state.split()
     assert len(states) == si_double_sim_state.n_batches
     for state in states:
-        assert isinstance(state, SimState)
+        assert isinstance(state, ts.SimState)
         assert state.positions.shape == (8, 3)
         assert state.masses.shape == (8,)
         assert state.cell.shape == (1, 3, 3)
@@ -231,9 +234,9 @@ def test_split_state(si_double_sim_state: SimState) -> None:
 
 
 def test_split_many_states(
-    si_sim_state: SimState,
-    ar_supercell_sim_state: SimState,
-    fe_supercell_sim_state: SimState,
+    si_sim_state: ts.SimState,
+    ar_supercell_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
 ) -> None:
     """Test splitting a state into a list of states."""
     states = [si_sim_state, ar_supercell_sim_state, fe_supercell_sim_state]
@@ -251,9 +254,9 @@ def test_split_many_states(
 
 
 def test_pop_states(
-    si_sim_state: SimState,
-    ar_supercell_sim_state: SimState,
-    fe_supercell_sim_state: SimState,
+    si_sim_state: ts.SimState,
+    ar_supercell_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
 ) -> None:
     """Test popping states from a state."""
     states = [si_sim_state, ar_supercell_sim_state, fe_supercell_sim_state]
@@ -281,17 +284,17 @@ def test_initialize_state_from_structure(
 ) -> None:
     """Test conversion from pymatgen Structure to state tensors."""
     state = initialize_state([si_structure], device, torch.float64)
-    assert isinstance(state, SimState)
+    assert isinstance(state, ts.SimState)
     assert state.positions.shape == si_structure.cart_coords.shape
     assert state.cell.shape[1:] == si_structure.lattice.matrix.shape
 
 
 def test_initialize_state_from_state(
-    ar_supercell_sim_state: SimState, device: torch.device
+    ar_supercell_sim_state: ts.SimState, device: torch.device
 ) -> None:
     """Test conversion from SimState to SimState."""
     state = initialize_state(ar_supercell_sim_state, device, torch.float64)
-    assert isinstance(state, SimState)
+    assert isinstance(state, ts.SimState)
     assert state.positions.shape == ar_supercell_sim_state.positions.shape
     assert state.masses.shape == ar_supercell_sim_state.masses.shape
     assert state.cell.shape == ar_supercell_sim_state.cell.shape
@@ -300,7 +303,7 @@ def test_initialize_state_from_state(
 def test_initialize_state_from_atoms(si_atoms: "Atoms", device: torch.device) -> None:
     """Test conversion from ASE Atoms to SimState."""
     state = initialize_state([si_atoms], device, torch.float64)
-    assert isinstance(state, SimState)
+    assert isinstance(state, ts.SimState)
     assert state.positions.shape == si_atoms.positions.shape
     assert state.masses.shape == si_atoms.get_masses().shape
     assert state.cell.shape[1:] == si_atoms.cell.array.T.shape
@@ -311,16 +314,16 @@ def test_initialize_state_from_phonopy_atoms(
 ) -> None:
     """Test conversion from PhonopyAtoms to SimState."""
     state = initialize_state([si_phonopy_atoms], device, torch.float64)
-    assert isinstance(state, SimState)
+    assert isinstance(state, ts.SimState)
     assert state.positions.shape == si_phonopy_atoms.positions.shape
     assert state.masses.shape == si_phonopy_atoms.masses.shape
     assert state.cell.shape[1:] == si_phonopy_atoms.cell.shape
 
 
 def test_state_pop_method(
-    si_sim_state: SimState,
-    ar_supercell_sim_state: SimState,
-    fe_supercell_sim_state: SimState,
+    si_sim_state: ts.SimState,
+    ar_supercell_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
 ) -> None:
     """Test the pop method of SimState."""
     # Create a concatenated state
@@ -351,9 +354,9 @@ def test_state_pop_method(
 
 
 def test_state_getitem(
-    si_sim_state: SimState,
-    ar_supercell_sim_state: SimState,
-    fe_supercell_sim_state: SimState,
+    si_sim_state: ts.SimState,
+    ar_supercell_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
 ) -> None:
     """Test the __getitem__ method of SimState."""
     # Create a concatenated state
@@ -398,7 +401,7 @@ def test_state_getitem(
     assert concatenated.n_batches == 3
 
 
-def test_normalize_batch_indices(si_double_sim_state: SimState) -> None:
+def test_normalize_batch_indices(si_double_sim_state: ts.SimState) -> None:
     """Test the _normalize_batch_indices utility method."""
     state = si_double_sim_state  # State with 2 batches
     n_batches = state.n_batches
@@ -454,7 +457,7 @@ def test_normalize_batch_indices(si_double_sim_state: SimState) -> None:
         pass
 
 
-def test_row_vector_cell(si_sim_state: SimState) -> None:
+def test_row_vector_cell(si_sim_state: ts.SimState) -> None:
     """Test the row_vector_cell property getter and setter."""
     # Test getter - should return transposed cell
     original_cell = si_sim_state.cell.clone()
@@ -470,7 +473,7 @@ def test_row_vector_cell(si_sim_state: SimState) -> None:
     assert torch.allclose(si_sim_state.row_vector_cell, new_cell.transpose(-2, -1))
 
 
-def test_column_vector_cell(si_sim_state: SimState) -> None:
+def test_column_vector_cell(si_sim_state: ts.SimState) -> None:
     """Test the column_vector_cell property getter and setter."""
     # Test getter - should return cell directly since it's already in column vector format
     original_cell = si_sim_state.cell.clone()

@@ -386,7 +386,9 @@ def _normalize_batch_indices(
 
 
 def state_to_device(
-    state: SimState, device: torch.device | None = None, dtype: torch.dtype | None = None
+    state: SimState,
+    device: torch.device | None = None,
+    dtype: torch.dtype | None = None,
 ) -> Self:
     """Convert the SimState to a new device and dtype.
 

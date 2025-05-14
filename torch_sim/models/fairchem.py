@@ -23,8 +23,8 @@ from typing import Any
 
 import torch
 
+import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState
 
 
 try:
@@ -315,7 +315,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         except NotImplementedError:
             print("Unable to load checkpoint!")
 
-    def forward(self, state: SimState | StateDict) -> dict:
+    def forward(self, state: ts.SimState | StateDict) -> dict:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by the model,
@@ -338,7 +338,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             All output tensors are detached from the computation graph.
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         if state.device != self._device:
             state = state.to(self._device)

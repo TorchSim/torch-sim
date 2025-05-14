@@ -16,8 +16,8 @@ from pathlib import Path
 import torch
 import vesin.torch.metatensor
 
+import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
@@ -146,7 +146,7 @@ class MetatensorModel(torch.nn.Module, ModelInterface):
 
     def forward(  # noqa: C901, PLR0915
         self,
-        state: SimState | StateDict,
+        state: ts.SimState | StateDict,
     ) -> dict[str, torch.Tensor]:
         """Compute energies, forces, and stresses for the given atomic systems.
 
@@ -168,7 +168,7 @@ class MetatensorModel(torch.nn.Module, ModelInterface):
         """
         # Extract required data from input
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         # Input validation is already done inside the forward method of the
         # MetatensorAtomisticModel class, so we don't need to do it again here.

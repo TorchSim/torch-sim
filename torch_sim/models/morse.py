@@ -27,10 +27,10 @@ Notes:
 
 import torch
 
+import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 from torch_sim.unbatched.models.morse import morse_pair, morse_pair_force
 
@@ -150,7 +150,9 @@ class MorseModel(torch.nn.Module, ModelInterface):
         self.epsilon = torch.tensor(epsilon, dtype=self.dtype, device=self.device)
         self.alpha = torch.tensor(alpha, dtype=self.dtype, device=self.device)
 
-    def unbatched_forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def unbatched_forward(
+        self, state: ts.SimState | StateDict
+    ) -> dict[str, torch.Tensor]:
         """Compute Morse potential properties for a single unbatched system.
 
         Internal implementation that processes a single, non-batched simulation state.
@@ -178,7 +180,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
             In both cases, interactions are truncated at the cutoff distance.
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         positions = state.positions
         cell = state.row_vector_cell
@@ -264,7 +266,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
 
         return results
 
-    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute Morse potential energies, forces, and stresses for a system.
 
         Main entry point for Morse potential calculations that handles batched states
@@ -298,7 +300,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
             ```
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         if state.batch is None and state.cell.shape[0] > 1:
             raise ValueError("Batch can only be inferred for batch size 1.")

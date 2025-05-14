@@ -44,10 +44,10 @@ Example::
 
 import torch
 
+import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 from torch_sim.unbatched.models.soft_sphere import (
     soft_sphere_pair,
@@ -101,7 +101,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
 
         # Get forces for a system with periodic boundary conditions
         results = colloid_model(
-            SimState(
+            ts.SimState(
                 positions=positions,
                 cell=box_vectors,
                 pbc=torch.tensor([True, True, True]),
@@ -183,7 +183,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
 
     def unbatched_forward(
         self,
-        state: SimState,
+        state: ts.SimState,
     ) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single unbatched system.
 
@@ -212,7 +212,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             the cutoff distance.
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         positions = state.positions
         cell = state.row_vector_cell
@@ -308,7 +308,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
 
         return results
 
-    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute soft sphere potential energies, forces, and stresses for a system.
 
         Main entry point for soft sphere potential calculations that handles batched
@@ -343,7 +343,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             ```
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         # Handle batch indices if not provided
         if state.batch is None and state.cell.shape[0] > 1:
@@ -584,7 +584,7 @@ class SoftSphereMultiModel(torch.nn.Module):
 
     def unbatched_forward(  # noqa: PLR0915
         self,
-        state: SimState,
+        state: ts.SimState,
         species: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single unbatched system with multiple
@@ -620,8 +620,8 @@ class SoftSphereMultiModel(torch.nn.Module):
             of the two particles.
         """
         # Convert inputs to proper device/dtype and handle species
-        if not isinstance(state, SimState):
-            state = SimState(**state)
+        if not isinstance(state, ts.SimState):
+            state = ts.SimState(**state)
 
         if species is not None:
             species = species.to(device=self.device, dtype=torch.long)
@@ -732,7 +732,7 @@ class SoftSphereMultiModel(torch.nn.Module):
 
         return results
 
-    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute soft sphere potential properties for multi-component systems.
 
         Main entry point for multi-species soft sphere calculations that handles
@@ -777,8 +777,8 @@ class SoftSphereMultiModel(torch.nn.Module):
             This method requires species information either provided during initialization
             or included in the state object's metadata.
         """
-        if not isinstance(state, SimState):
-            state = SimState(
+        if not isinstance(state, ts.SimState):
+            state = ts.SimState(
                 **state, pbc=self.pbc, masses=torch.ones_like(state["positions"])
             )
         elif state.pbc != self.pbc:

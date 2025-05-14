@@ -13,8 +13,8 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
+import torch_sim as ts
 from torch_sim.quantities import calc_kinetic_energy
-from torch_sim.state import SimState
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import nve
 from torch_sim.units import MetalUnits as Units
@@ -59,7 +59,7 @@ model = UnbatchedMaceModel(
     enable_cueq=False,
 )
 
-state = SimState(
+state = ts.SimState(
     positions=positions,
     masses=masses,
     cell=cell,

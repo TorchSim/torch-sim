@@ -18,8 +18,8 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 from plotly.subplots import make_subplots
 
+import torch_sim as ts
 from torch_sim.quantities import calc_kT
-from torch_sim.state import SimState
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import (
     nvt_nose_hoover,
@@ -141,7 +141,7 @@ model = UnbatchedMaceModel(
     dtype=dtype,
     enable_cueq=False,
 )
-state = SimState(
+state = ts.SimState(
     positions=positions,
     masses=masses,
     cell=cell,

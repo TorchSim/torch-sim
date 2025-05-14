@@ -18,9 +18,9 @@ from pathlib import Path
 
 import torch
 
+import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
@@ -50,7 +50,7 @@ except ImportError:
         pass
 
 
-def state_to_atomic_graph(state: SimState, cutoff: torch.Tensor) -> AtomicGraph:
+def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGraph:
     """Convert a SimState object into an AtomicGraph object.
 
     Args:
@@ -117,7 +117,7 @@ class GraphPESWrapper(torch.nn.Module, ModelInterface):
         >>> from graph_pes.models import load_model
         >>> model = load_model("path/to/model.pt")
         >>> wrapper = GraphPESWrapper(model)
-        >>> state = SimState(
+        >>> state = ts.SimState(
         ...     positions=torch.randn(10, 3),
         ...     cell=torch.eye(3),
         ...     atomic_numbers=torch.randint(1, 104, (10,)),
@@ -169,7 +169,7 @@ class GraphPESWrapper(torch.nn.Module, ModelInterface):
         if self._gp_model.cutoff.item() < 0.5:
             self._memory_scales_with = "n_atoms"
 
-    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Forward pass for the GraphPESWrapper.
 
         Args:
@@ -179,8 +179,8 @@ class GraphPESWrapper(torch.nn.Module, ModelInterface):
             Dictionary containing the computed energies, forces, and stresses
             (where applicable)
         """
-        if not isinstance(state, SimState):
-            state = SimState(**state)  # type: ignore[arg-type]
+        if not isinstance(state, ts.SimState):
+            state = ts.SimState(**state)  # type: ignore[arg-type]
 
         atomic_graph = state_to_atomic_graph(state, self._gp_model.cutoff)
         return self._gp_model.predict(atomic_graph, self._properties)  # type: ignore[return-value]

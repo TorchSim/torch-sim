@@ -2,10 +2,10 @@
 
 import torch
 
+import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
@@ -131,7 +131,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
         self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self.device)
         self.alpha = torch.tensor(alpha, dtype=dtype, device=self.device)
 
-    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single system.
 
         Args:
@@ -142,7 +142,7 @@ class UnbatchedSoftSphereModel(torch.nn.Module, ModelInterface):
             A dictionary containing the energy, forces, and stresses
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         positions = state.positions
         cell = state.row_vector_cell

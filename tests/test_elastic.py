@@ -1,13 +1,13 @@
 import pytest
 import torch
 
+import torch_sim as ts
 from torch_sim.elastic import (
     calculate_elastic_moduli,
     calculate_elastic_tensor,
     get_bravais_type,
 )
 from torch_sim.optimizers import frechet_cell_fire
-from torch_sim.state import SimState
 from torch_sim.typing import BravaisType
 from torch_sim.units import UnitConversion
 
@@ -109,7 +109,7 @@ def test_elastic_tensor_symmetries(
     )
 
 
-def test_copper_elastic_properties(mace_model: MaceModel, cu_sim_state: SimState):
+def test_copper_elastic_properties(mace_model: MaceModel, cu_sim_state: ts.SimState):
     """Test calculation of elastic properties for copper."""
 
     # Relax positions and cell

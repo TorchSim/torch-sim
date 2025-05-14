@@ -10,9 +10,9 @@ import torch
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.tools import atomic_numbers_to_indices, to_one_hot, utils
 
+import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
@@ -154,7 +154,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
 
     def forward(  # noqa: C901
         self,
-        state: SimState | StateDict,
+        state: ts.SimState | StateDict,
     ) -> dict[str, torch.Tensor]:
         """Compute the energy of the system given atomic positions and box vectors.
 
@@ -169,7 +169,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
                 forces, and stress of the system.
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         if state.batch is not None and state.batch.max() > 0:
             raise ValueError("UnbatchedMaceModel does not support batched systems.")

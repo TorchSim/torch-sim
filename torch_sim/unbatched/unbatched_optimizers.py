@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import torch
 
+import torch_sim as ts
 import torch_sim.math as tsm
 from torch_sim.state import DeformGradMixin, SimState
 from torch_sim.typing import StateDict
@@ -65,7 +66,7 @@ def gradient_descent(
     if not isinstance(lr, torch.Tensor):
         lr = torch.tensor(lr, device=device, dtype=dtype)
 
-    def gd_init(state: SimState | StateDict, **kwargs) -> GDState:
+    def gd_init(state: ts.SimState | StateDict, **kwargs) -> GDState:
         """Initialize the gradient descent optimizer state.
 
         Args:
@@ -75,8 +76,8 @@ def gradient_descent(
         Returns:
             Initial GDState with system configuration and forces
         """
-        if not isinstance(state, SimState):
-            state = SimState(**state)
+        if not isinstance(state, ts.SimState):
+            state = ts.SimState(**state)
 
         # Check if there is an extra batch dimension
         if state.cell.dim() == 3:
@@ -161,7 +162,9 @@ def fire(
     f_alpha: float = 0.99,
     alpha_start: float = 0.1,
     eps: float = 1e-8,
-) -> tuple[Callable[[SimState | StateDict], FIREState], Callable[[FIREState], FIREState]]:
+) -> tuple[
+    Callable[[ts.SimState | StateDict], FIREState], Callable[[FIREState], FIREState]
+]:
     """Initialize a FIRE (Fast Inertial Relaxation Engine) optimization.
 
     FIRE is a molecular dynamics-based optimization algorithm that combines velocity
@@ -202,7 +205,7 @@ def fire(
         torch.as_tensor(p, device=device, dtype=dtype) for p in params
     ]
 
-    def fire_init(state: SimState | StateDict, **kwargs) -> FIREState:
+    def fire_init(state: ts.SimState | StateDict, **kwargs) -> FIREState:
         """Initialize the FIRE optimizer state.
 
         Args:
@@ -212,8 +215,8 @@ def fire(
         Returns:
             Initial FIREState with system configuration and forces
         """
-        if not isinstance(state, SimState):
-            state = SimState(**state)
+        if not isinstance(state, ts.SimState):
+            state = ts.SimState(**state)
 
         # Check if there is an extra batch dimension
         if state.cell.dim() == 3:
@@ -322,7 +325,9 @@ def fire_ase(  # noqa: C901, PLR0915
     alpha_start: float = 0.1,
     f_alpha: float = 0.99,
     downhill_check: bool = False,
-) -> tuple[Callable[[SimState | StateDict], FIREState], Callable[[FIREState], FIREState]]:
+) -> tuple[
+    Callable[[ts.SimState | StateDict], FIREState], Callable[[FIREState], FIREState]
+]:
     """Initialize a FIRE (Fast Inertial Relaxation Engine) optimization following
     ASE's implementation.
 
@@ -384,7 +389,7 @@ def fire_ase(  # noqa: C901, PLR0915
         torch.as_tensor(p, device=device, dtype=dtype) for p in params
     ]
 
-    def fire_init(state: SimState | StateDict, **kwargs) -> FIREState:
+    def fire_init(state: ts.SimState | StateDict, **kwargs) -> FIREState:
         """Initialize the FIRE optimizer state.
 
         Args:
@@ -394,8 +399,8 @@ def fire_ase(  # noqa: C901, PLR0915
         Returns:
             Initial FIREState with system configuration and forces
         """
-        if not isinstance(state, SimState):
-            state = SimState(**state)
+        if not isinstance(state, ts.SimState):
+            state = ts.SimState(**state)
 
         # Check if there is an extra batch dimension
         if state.cell.dim() == 3:
@@ -556,7 +561,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
     scalar_pressure: float = 0.0,
     cell_factor: float | None = None,
 ) -> tuple[
-    Callable[[SimState | StateDict], UnitCellFIREState],
+    Callable[[ts.SimState | StateDict], UnitCellFIREState],
     Callable[[UnitCellFIREState], UnitCellFIREState],
 ]:
     """Initialize a FIRE optimization with unit cell.
@@ -591,7 +596,7 @@ def unit_cell_fire(  # noqa: PLR0915, C901
     )
 
     def fire_init(
-        state: SimState | StateDict,
+        state: ts.SimState | StateDict,
         cell_factor: torch.Tensor | None = cell_factor,
         scalar_pressure: float = scalar_pressure,
         **kwargs,
@@ -607,8 +612,8 @@ def unit_cell_fire(  # noqa: PLR0915, C901
         Returns:
             Initial UnitCellFIREState with system configuration and forces
         """
-        if not isinstance(state, SimState):
-            state = SimState(**state)
+        if not isinstance(state, ts.SimState):
+            state = ts.SimState(**state)
 
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
@@ -857,7 +862,7 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
     scalar_pressure: float = 0.0,
     cell_factor: float | None = None,
 ) -> tuple[
-    Callable[[SimState | StateDict], FrechetCellFIREState],
+    Callable[[ts.SimState | StateDict], FrechetCellFIREState],
     Callable[[FrechetCellFIREState], FrechetCellFIREState],
 ]:
     """Initialize a FIRE optimization with Frechet cell parameterization.
@@ -900,7 +905,7 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
     )
 
     def fire_init(
-        state: SimState | StateDict,
+        state: ts.SimState | StateDict,
         cell_factor: float | None = cell_factor,
         scalar_pressure: float = scalar_pressure,
         **kwargs,
@@ -916,8 +921,8 @@ def frechet_cell_fire(  # noqa: PLR0915, C901
         Returns:
             Initial FrechetCellFIREState with system configuration and forces
         """
-        if not isinstance(state, SimState):
-            state = SimState(**state)
+        if not isinstance(state, ts.SimState):
+            state = ts.SimState(**state)
 
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 

@@ -26,10 +26,10 @@ Example::
 
 import torch
 
+import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 from torch_sim.unbatched.models.lennard_jones import (
     lennard_jones_pair,
@@ -145,7 +145,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
 
     def unbatched_forward(
         self,
-        state: SimState,
+        state: ts.SimState,
     ) -> dict[str, torch.Tensor]:
         """Compute Lennard-Jones properties for a single unbatched system.
 
@@ -175,8 +175,8 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
 
             The implementation applies cutoff distance to both approaches for consistency.
         """
-        if not isinstance(state, SimState):
-            state = SimState(**state)
+        if not isinstance(state, ts.SimState):
+            state = ts.SimState(**state)
 
         positions = state.positions
         cell = state.row_vector_cell
@@ -276,7 +276,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
 
         return results
 
-    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute Lennard-Jones energies, forces, and stresses for a system.
 
         Main entry point for Lennard-Jones calculations that handles batched states by
@@ -315,7 +315,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
             stresses = results["stresses"]  # Shape: [n_atoms, 3, 3]
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         if state.batch is None and state.cell.shape[0] > 1:
             raise ValueError("Batch can only be inferred for batch size 1.")
