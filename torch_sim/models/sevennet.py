@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import traceback
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -28,7 +29,8 @@ try:
     from sevenn.calculator import torch_script_type
     from torch_geometric.loader.dataloader import Collater
 
-except ImportError:
+except ImportError as exc:
+    warnings.warn(f"SevenNet import failed: {traceback.format_exc()}", stacklevel=2)
 
     class SevenNetModel(torch.nn.Module, ModelInterface):
         """SevenNet model wrapper for torch_sim.
@@ -37,9 +39,9 @@ except ImportError:
         It raises an ImportError if sevenn is not installed.
         """
 
-        def __init__(self, *args, **kwargs) -> None:  # noqa: ARG002
-            """Dummy constructor to raise ImportError."""
-            raise ImportError("sevenn must be installed to use this model.")
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
+            """Dummy init for type checking."""
+            raise err
 
 
 class SevenNetModel(torch.nn.Module, ModelInterface):

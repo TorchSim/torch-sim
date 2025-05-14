@@ -11,7 +11,10 @@ Notes:
     This module depends on the metatensor-torch package.
 """
 
+import traceback
+import warnings
 from pathlib import Path
+from typing import Any
 
 import torch
 import vesin.torch.metatensor
@@ -30,7 +33,8 @@ try:
     )
     from metatrain.utils.io import load_model
 
-except ImportError:
+except ImportError as exc:
+    warnings.warn(f"Metatensor import failed: {traceback.format_exc()}", stacklevel=2)
 
     class MetatensorModel(torch.nn.Module, ModelInterface):
         """Metatensor model wrapper for torch_sim.
@@ -39,9 +43,9 @@ except ImportError:
         It raises an ImportError if metatensor is not installed.
         """
 
-        def __init__(self, *args, **kwargs) -> None:  # noqa: ARG002
-            """Dummy constructor."""
-            raise ImportError("metatensor must be installed to use MetatensorModel.")
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
+            """Dummy init for type checking."""
+            raise err
 
 
 class MetatensorModel(torch.nn.Module, ModelInterface):

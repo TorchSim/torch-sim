@@ -17,7 +17,9 @@ Notes:
     for compatibility with the broader TorchSim framework.
 """
 
+import traceback
 import typing
+import warnings
 from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
@@ -33,7 +35,8 @@ from torch_sim.typing import StateDict
 try:
     from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
     from mace.tools import atomic_numbers_to_indices, utils
-except ImportError:
+except ImportError as exc:
+    warnings.warn(f"MACE import failed: {traceback.format_exc()}", stacklevel=2)
 
     class MaceModel(torch.nn.Module, ModelInterface):
         """MACE model wrapper for torch_sim.
@@ -42,9 +45,11 @@ except ImportError:
         It raises an ImportError if MACE is not installed.
         """
 
-        def __init__(self, *_args: typing.Any, **_kwargs: typing.Any) -> None:
+        def __init__(
+            self, err: ImportError = exc, *_args: typing.Any, **_kwargs: typing.Any
+        ) -> None:
             """Dummy init for type checking."""
-            raise ImportError("MACE must be installed to use this model.")
+            raise err
 
 
 def to_one_hot(

@@ -3,8 +3,10 @@
 This module provides a PyTorch implementation of the MACE model calculator.
 """
 
-import typing
+import traceback
+import warnings
 from collections.abc import Callable
+from typing import Any
 
 import torch
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
@@ -21,7 +23,8 @@ try:
     from mace.tools import atomic_numbers_to_indices, utils
 
     from torch_sim.models.mace import to_one_hot
-except ImportError:
+except ImportError as exc:
+    warnings.warn(f"MACE import failed: {traceback.format_exc()}", stacklevel=2)
 
     class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         """Unbatched MACE model wrapper for torch_sim.
@@ -30,9 +33,9 @@ except ImportError:
         It raises an ImportError if MACE is not installed.
         """
 
-        def __init__(self, *_args: typing.Any, **_kwargs: typing.Any) -> None:
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
             """Dummy init for type checking."""
-            raise ImportError("MACE must be installed to use this model.")
+            raise err
 
 
 class UnbatchedMaceModel(torch.nn.Module, ModelInterface):

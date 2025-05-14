@@ -15,7 +15,9 @@ Notes:
 
 from __future__ import annotations
 
+import traceback
 import typing
+import warnings
 from pathlib import Path
 
 import torch
@@ -30,16 +32,11 @@ try:
     from orb_models.forcefield import featurization_utilities as feat_util
     from orb_models.forcefield.atomic_system import SystemConfig
     from orb_models.forcefield.base import AtomGraphs, _map_concat
+    from orb_models.forcefield.featurization_utilities import EdgeCreationMethod
     from orb_models.forcefield.graph_regressor import GraphRegressor
 
-    try:
-        from orb_models.forcefield.featurization_utilities import EdgeCreationMethod
-    except ImportError as exp:
-        raise ImportError(
-            "Orb model version is too old, interface requires >v0.4.2. If release is "
-            "not yet available, install from github."
-        ) from exp
-except ImportError:
+except ImportError as exc:
+    warnings.warn(f"Orb import failed: {traceback.format_exc()}", stacklevel=2)
 
     class OrbModel(torch.nn.Module, ModelInterface):
         """ORB model wrapper for torch_sim.
@@ -48,9 +45,11 @@ except ImportError:
         It raises an ImportError if orb_models is not installed.
         """
 
-        def __init__(self, *args, **kwargs) -> None:  # noqa: ARG002
-            """Dummy constructor to raise ImportError."""
-            raise ImportError("orb_models must be installed to use this model.")
+        def __init__(
+            self, err: ImportError = exc, *_args: typing.Any, **_kwargs: typing.Any
+        ) -> None:
+            """Dummy init for type checking."""
+            raise err
 
 
 if typing.TYPE_CHECKING:
