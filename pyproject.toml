@@ -139,10 +139,5 @@ check-filenames = true
 ignore-words-list = ["convertor"]
 
 [tool.pytest.ini_options]
-addopts = [
-    "--cov-report=term-missing",
-    "--cov=torch_sim",
-    "-p no:warnings",
-    "-v",
-]
+addopts = ["-p no:warnings"]
 testpaths = ["tests"]
