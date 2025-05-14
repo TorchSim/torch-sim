@@ -3,6 +3,7 @@ import torch
 from ase.atoms import Atoms
 
 import torch_sim as ts
+from tests.conftest import MaceUrls
 from tests.unbatched.conftest import make_unbatched_model_calculator_consistency_test
 
 
@@ -15,8 +16,8 @@ except ImportError:
     pytest.skip("MACE not installed", allow_module_level=True)
 
 
-mace_model = mace_mp(model="small", return_raw_model=True)
-mace_off_model = mace_off(model="small", return_raw_model=True)
+mace_model = mace_mp(model=MaceUrls.mace_small, return_raw_model=True)
+mace_off_model = mace_off(model=MaceUrls.mace_off_small, return_raw_model=True)
 
 
 @pytest.fixture
@@ -28,7 +29,7 @@ def dtype() -> torch.dtype:
 @pytest.fixture
 def ase_mace_calculator() -> MACECalculator:
     return mace_mp(
-        model="small",
+        model=MaceUrls.mace_small,
         device="cpu",
         default_dtype="float32",
         dispersion=False,

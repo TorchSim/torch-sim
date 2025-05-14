@@ -1,4 +1,5 @@
-from typing import TYPE_CHECKING, Any, Final
+from enum import StrEnum
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import torch
@@ -17,6 +18,11 @@ from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 
 if TYPE_CHECKING:
     from mace.calculators import MACECalculator
+
+
+class MaceUrls(StrEnum):
+    mace_small = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mace_agnesi_small.model"
+    mace_off_small = "https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model?raw=true"
 
 
 @pytest.fixture
@@ -324,18 +330,13 @@ def lj_model(device: torch.device, dtype: torch.dtype) -> LennardJonesModel:
     )
 
 
-MACE_CHECKPOINT_URL: Final[str] = (
-    "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mace_agnesi_small.model"
-)
-
-
 @pytest.fixture
 def ase_mace_mpa() -> "MACECalculator":
     """Provides an ASE MACECalculator instance using mace_mp."""
     from mace.calculators.foundations_models import mace_mp
 
     # Ensure dtype matches the one used in the torchsim fixture (float64)
-    return mace_mp(model=MACE_CHECKPOINT_URL, default_dtype="float64")
+    return mace_mp(model=MaceUrls.mace_small, default_dtype="float64")
 
 
 @pytest.fixture
@@ -346,7 +347,7 @@ def torchsim_mace_mpa() -> MaceModel:
     # Use float64 for potentially higher precision needed in optimization
     dtype = getattr(torch, dtype_str := "float64")
     raw_mace = mace_mp(
-        model=MACE_CHECKPOINT_URL, return_raw_model=True, default_dtype=dtype_str
+        model=MaceUrls.mace_small, return_raw_model=True, default_dtype=dtype_str
     )
     return MaceModel(
         model=raw_mace,
