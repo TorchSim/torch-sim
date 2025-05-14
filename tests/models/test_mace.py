@@ -140,3 +140,10 @@ def test_mace_off_dtype_working(
     state = ts.io.atoms_to_state([benzene_atoms], device, dtype)
 
     model.forward(state)
+
+
+def test_mace_urls_enum() -> None:
+    assert len(MaceUrls) > 2
+    for key in MaceUrls:
+        assert key.value.startswith("https://github.com/ACEsuit/mace-")
+        assert key.value.endswith((".model", ".model?raw=true"))
