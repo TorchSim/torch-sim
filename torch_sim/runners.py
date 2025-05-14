@@ -503,7 +503,6 @@ def static(
         forces: torch.Tensor | None
         stress: torch.Tensor | None
 
-    final_states: list[SimState] = []
     all_props: list[dict[str, torch.Tensor]] = []
     og_filenames = trajectory_reporter.filenames
 
@@ -515,6 +514,7 @@ def static(
         pbar_tracker = tqdm(total=state.n_batches, **pbar_kwargs)
 
     for substate, batch_indices in batch_iterator:
+        print(substate.atomic_numbers)
         # set up trajectory reporters
         if autobatcher and trajectory_reporter and og_filenames is not None:
             # we must remake the trajectory reporter for each batch
