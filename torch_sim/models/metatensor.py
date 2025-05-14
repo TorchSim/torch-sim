@@ -11,13 +11,16 @@ Notes:
     This module depends on the metatensor-torch package.
 """
 
+import traceback
+import warnings
 from pathlib import Path
+from typing import Any
 
 import torch
 import vesin.torch.metatensor
 
+import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
@@ -30,7 +33,8 @@ try:
     )
     from metatrain.utils.io import load_model
 
-except ImportError:
+except ImportError as exc:
+    warnings.warn(f"Metatensor import failed: {traceback.format_exc()}", stacklevel=2)
 
     class MetatensorModel(torch.nn.Module, ModelInterface):
         """Metatensor model wrapper for torch_sim.
@@ -39,9 +43,9 @@ except ImportError:
         It raises an ImportError if metatensor is not installed.
         """
 
-        def __init__(self, *args, **kwargs) -> None:  # noqa: ARG002
-            """Dummy constructor."""
-            raise ImportError("metatensor must be installed to use MetatensorModel.")
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
+            """Dummy init for type checking."""
+            raise err
 
 
 class MetatensorModel(torch.nn.Module, ModelInterface):
@@ -146,7 +150,7 @@ class MetatensorModel(torch.nn.Module, ModelInterface):
 
     def forward(  # noqa: C901, PLR0915
         self,
-        state: SimState | StateDict,
+        state: ts.SimState | StateDict,
     ) -> dict[str, torch.Tensor]:
         """Compute energies, forces, and stresses for the given atomic systems.
 
@@ -160,7 +164,7 @@ class MetatensorModel(torch.nn.Module, ModelInterface):
                 dictionary with the relevant fields.
 
         Returns:
-            dict[str, torch.Tensor]: Dictionary containing:
+            dict[str, torch.Tensor]: Computed properties:
                 - 'energy': System energies with shape [n_systems]
                 - 'forces': Atomic forces with shape [n_atoms, 3] if compute_forces=True
                 - 'stress': System stresses with shape [n_systems, 3, 3] if
@@ -168,7 +172,7 @@ class MetatensorModel(torch.nn.Module, ModelInterface):
         """
         # Extract required data from input
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         # Input validation is already done inside the forward method of the
         # MetatensorAtomisticModel class, so we don't need to do it again here.

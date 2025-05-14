@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 import torch
 
+import torch_sim as ts
 from torch_sim.integrators import (
     NPTLangevinState,
     calculate_momenta,
@@ -12,7 +13,7 @@ from torch_sim.integrators import (
 )
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.quantities import calc_kT
-from torch_sim.state import SimState, concatenate_states
+from torch_sim.state import concatenate_states
 from torch_sim.units import MetalUnits
 
 
@@ -86,7 +87,7 @@ def test_calculate_momenta_single_atoms(device: torch.device):
         )
 
 
-def test_npt_langevin(ar_double_sim_state: SimState, lj_model: LennardJonesModel):
+def test_npt_langevin(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
     dtype = torch.float64
     n_steps = 200
     dt = torch.tensor(0.001, dtype=dtype)
@@ -148,7 +149,7 @@ def test_npt_langevin(ar_double_sim_state: SimState, lj_model: LennardJonesModel
 
 
 def test_npt_langevin_multi_kt(
-    ar_double_sim_state: SimState, lj_model: LennardJonesModel
+    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
 ):
     dtype = torch.float64
     n_steps = 200
@@ -193,7 +194,7 @@ def test_npt_langevin_multi_kt(
     assert torch.allclose(mean_temps, kT / MetalUnits.temperature, rtol=0.5)
 
 
-def test_nvt_langevin(ar_double_sim_state: SimState, lj_model: LennardJonesModel):
+def test_nvt_langevin(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
     dtype = torch.float64
     n_steps = 100
     dt = torch.tensor(0.001, dtype=dtype)
@@ -252,7 +253,7 @@ def test_nvt_langevin(ar_double_sim_state: SimState, lj_model: LennardJonesModel
 
 
 def test_nvt_langevin_multi_kt(
-    ar_double_sim_state: SimState, lj_model: LennardJonesModel
+    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
 ):
     dtype = torch.float64
     n_steps = 200
@@ -294,7 +295,7 @@ def test_nvt_langevin_multi_kt(
     assert torch.allclose(mean_temps, kT / MetalUnits.temperature, rtol=0.5)
 
 
-def test_nve(ar_double_sim_state: SimState, lj_model: LennardJonesModel):
+def test_nve(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
     dtype = torch.float64
     n_steps = 100
     dt = torch.tensor(0.001, dtype=dtype)

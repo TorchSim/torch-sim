@@ -108,8 +108,8 @@ class TrajectoryReporter:
                 trajectories but `TrajectoryReporter.report` can still
                 be used to compute properties directly.
             state_frequency (int): How often to save state (in steps)
-            prop_calculators (dict[int, dict[str, Callable]], optional): Dictionary
-                mapping frequencies to property calculators where each calculator is a
+            prop_calculators (dict[int, dict[str, Callable]], optional): Map of
+                frequencies to property calculators where each calculator is a
                 function that takes a state and optionally a model and returns a tensor.
                 Defaults to None.
             state_kwargs (dict, optional): Additional arguments for state writing.
@@ -440,7 +440,7 @@ class TorchSimTrajectory:
             coerce_to_int32 (bool): Whether to coerce int64 data to int32
 
         Returns:
-            dict: Dictionary mapping numpy/torch dtypes to PyTables atom types
+            dict: Map of numpy/torch dtypes to PyTables atom types
         """
         type_map = copy.copy(_DATA_TYPE_MAP)
         if coerce_to_int32:
@@ -467,8 +467,8 @@ class TorchSimTrajectory:
         file and that the steps are monotonically increasing.
 
         Args:
-            data (dict[str, np.ndarray | torch.Tensor]): Dictionary mapping array
-                names to numpy arrays or torch tensors with shapes [n_frames, ...]
+            data (dict[str, np.ndarray | torch.Tensor]): Map of array names to numpy
+                arrays or torch tensors with shapes [n_frames, ...]
             steps (int | list[int]): Step number(s) for the frame(s) being written.
                 If steps is an integer, arrays will be treated as single frame data.
 
@@ -780,7 +780,7 @@ class TorchSimTrajectory:
             frame (int): Frame index to retrieve (-1 for last frame)
 
         Returns:
-            dict[str, torch.Tensor]: Dictionary of tensor names to their values
+            dict[str, torch.Tensor]: Map of tensor names to their values
 
         Raises:
             ValueError: If required arrays are missing from trajectory or frame is

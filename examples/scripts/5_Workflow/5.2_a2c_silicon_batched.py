@@ -24,7 +24,7 @@ from pymatgen.core import Composition, Element, Structure
 from tqdm import tqdm
 
 import torch_sim as ts
-from torch_sim.models.mace import MaceModel
+from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import (
     NVTNoseHooverState,
@@ -56,8 +56,7 @@ structure_multi = random_packed_structure_multi(
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
-raw_model = mace_mp(model=mace_checkpoint_url, return_raw_model=True)
+raw_model = mace_mp(model=MaceUrls.mace_mpa_medium, return_raw_model=True)
 
 # Define system and model
 comp = Composition("Si64")

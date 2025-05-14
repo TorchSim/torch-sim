@@ -15,7 +15,7 @@
 # Integrating TorchSim with `graph-pes`
 
 This brief tutorial demonstrates how to use models trained with the
-[graph-pes](https://github.com/mir-group/graph-pes) package to drive
+[graph-pes](https://github.com/jla-gardner/graph-pes) package to drive
 MD simulations and geometry optimizations in TorchSim.
 
 ## Step 1: loading a model

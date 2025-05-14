@@ -1,4 +1,4 @@
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import torch
@@ -10,8 +10,13 @@ from pymatgen.core import Structure
 
 import torch_sim as ts
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.state import SimState, concatenate_states
+from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.state import concatenate_states
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
+
+
+if TYPE_CHECKING:
+    from mace.calculators import MACECalculator
 
 
 @pytest.fixture
@@ -96,35 +101,35 @@ def si_sim_state(si_atoms: Any, device: torch.device, dtype: torch.dtype) -> Any
 
 
 @pytest.fixture
-def cu_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+def cu_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
     """Create crystalline copper using ASE."""
     atoms = bulk("Cu", "fcc", a=3.58, cubic=True)
     return ts.io.atoms_to_state(atoms, device, dtype)
 
 
 @pytest.fixture
-def mg_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+def mg_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
     """Create crystalline magnesium using ASE."""
     atoms = bulk("Mg", "hcp", a=3.17, c=5.14)
     return ts.io.atoms_to_state(atoms, device, dtype)
 
 
 @pytest.fixture
-def sb_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+def sb_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
     """Create crystalline antimony using ASE."""
     atoms = bulk("Sb", "rhombohedral", a=4.58, alpha=60)
     return ts.io.atoms_to_state(atoms, device, dtype)
 
 
 @pytest.fixture
-def ti_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+def ti_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
     """Create crystalline titanium using ASE."""
     atoms = bulk("Ti", "hcp", a=2.94, c=4.64)
     return ts.io.atoms_to_state(atoms, device, dtype)
 
 
 @pytest.fixture
-def tio2_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+def tio2_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
     """Create crystalline TiO2 using ASE."""
     a, c = 4.60, 2.96
     basis = [("Ti", 0.5, 0.5, 0), ("O", 0.695679, 0.695679, 0.5)]
@@ -138,7 +143,7 @@ def tio2_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
 
 
 @pytest.fixture
-def ga_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+def ga_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
     """Create crystalline Ga using ASE."""
     a, b, c = 4.43, 7.60, 4.56
     basis = [("Ga", 0, 0.344304, 0.415401)]
@@ -152,7 +157,7 @@ def ga_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
 
 
 @pytest.fixture
-def niti_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+def niti_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
     """Create crystalline NiTi using ASE."""
     a, b, c = 2.89, 3.97, 4.83
     alpha, beta, gamma = 90.00, 105.23, 90.00
@@ -170,7 +175,7 @@ def niti_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
 
 
 @pytest.fixture
-def sio2_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+def sio2_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
     """Create an alpha-quartz SiO2 system for testing."""
     atoms = crystal(
         symbols=["O", "Si"],
@@ -183,10 +188,10 @@ def sio2_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
 
 @pytest.fixture
 def rattled_sio2_sim_state(
-    sio2_sim_state: SimState,
+    sio2_sim_state: ts.SimState,
     device: torch.device,
     dtype: torch.dtype,
-) -> SimState:
+) -> ts.SimState:
     """Create a rattled SiO2 system for testing."""
     sim_state = sio2_sim_state.clone()
 
@@ -208,7 +213,7 @@ def rattled_sio2_sim_state(
 
 
 @pytest.fixture
-def casio3_sim_state(device: torch.device, dtype: torch.dtype) -> SimState:
+def casio3_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
     a, b, c = 7.9258, 7.3202, 7.0653
     alpha, beta, gamma = 90.055, 95.217, 103.426
     basis = [
@@ -256,13 +261,13 @@ def fe_supercell_sim_state(
 @pytest.fixture
 def ar_supercell_sim_state(
     ar_atoms: Atoms, device: torch.device, dtype: torch.dtype
-) -> SimState:
+) -> ts.SimState:
     """Create a face-centered cubic (FCC) Argon structure with 2x2x2 supercell."""
     return ts.io.atoms_to_state(ar_atoms.repeat([2, 2, 2]), device, dtype)
 
 
 @pytest.fixture
-def ar_double_sim_state(ar_supercell_sim_state: SimState) -> SimState:
+def ar_double_sim_state(ar_supercell_sim_state: ts.SimState) -> ts.SimState:
     """Create a batched state from ar_fcc_sim_state."""
     return concatenate_states(
         [ar_supercell_sim_state, ar_supercell_sim_state],
@@ -278,8 +283,8 @@ def si_double_sim_state(si_atoms: Atoms, device: torch.device, dtype: torch.dtyp
 
 @pytest.fixture
 def mixed_double_sim_state(
-    ar_supercell_sim_state: SimState, si_sim_state: SimState
-) -> SimState:
+    ar_supercell_sim_state: ts.SimState, si_sim_state: ts.SimState
+) -> ts.SimState:
     """Create a batched state from ar_fcc_sim_state."""
     return concatenate_states(
         [ar_supercell_sim_state, si_sim_state],
@@ -316,4 +321,32 @@ def lj_model(device: torch.device, dtype: torch.dtype) -> LennardJonesModel:
         compute_forces=True,
         compute_stress=True,
         cutoff=2.5 * 3.405,
+    )
+
+
+@pytest.fixture
+def ase_mace_mpa() -> "MACECalculator":
+    """Provides an ASE MACECalculator instance using mace_mp."""
+    from mace.calculators.foundations_models import mace_mp
+
+    # Ensure dtype matches the one used in the torchsim fixture (float64)
+    return mace_mp(model=MaceUrls.mace_mp_small, default_dtype="float64")
+
+
+@pytest.fixture
+def torchsim_mace_mpa() -> MaceModel:
+    """Provides a MACE MP model instance for the optimizer tests."""
+    from mace.calculators.foundations_models import mace_mp
+
+    # Use float64 for potentially higher precision needed in optimization
+    dtype = getattr(torch, dtype_str := "float64")
+    raw_mace = mace_mp(
+        model=MaceUrls.mace_mp_small, return_raw_model=True, default_dtype=dtype_str
+    )
+    return MaceModel(
+        model=raw_mace,
+        device="cpu",
+        dtype=dtype,
+        compute_forces=True,
+        compute_stress=True,
     )

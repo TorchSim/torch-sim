@@ -23,7 +23,6 @@ from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.models.mace import MaceModel
 from torch_sim.optimizers import unit_cell_fire
 from torch_sim.quantities import calc_kinetic_energy
-from torch_sim.runners import integrate, optimize
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 from torch_sim.units import MetalUnits
 
@@ -37,7 +36,7 @@ lj_model = LennardJonesModel(
 
 si_atoms = bulk("Si", "fcc", a=5.43, cubic=True)
 
-final_state = integrate(
+final_state = ts.integrate(
     system=si_atoms,
     model=lj_model,
     integrator=nvt_langevin,
@@ -64,7 +63,7 @@ reporter = TrajectoryReporter(
     prop_calculators=prop_calculators,
 )
 
-final_state = integrate(
+final_state = ts.integrate(
     system=si_atoms,
     model=lj_model,
     integrator=nvt_langevin,
@@ -104,7 +103,7 @@ reporter = TrajectoryReporter(
     prop_calculators=prop_calculators,
 )
 
-final_state = integrate(
+final_state = ts.integrate(
     system=si_atoms,
     model=mace_model,
     integrator=nvt_langevin,
@@ -122,7 +121,7 @@ fe_atoms = bulk("Fe", "fcc", a=5.26, cubic=True)
 fe_atoms_supercell = fe_atoms.repeat([2, 2, 2])
 si_atoms_supercell = si_atoms.repeat([2, 2, 2])
 
-final_state = integrate(
+final_state = ts.integrate(
     system=[si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell],
     model=mace_model,
     integrator=nvt_langevin,
@@ -144,7 +143,7 @@ batch_reporter = TrajectoryReporter(
     state_frequency=100,
     prop_calculators=prop_calculators,
 )
-final_state = integrate(
+final_state = ts.integrate(
     system=systems,
     model=mace_model,
     integrator=nvt_langevin,
@@ -163,7 +162,7 @@ for filename in filenames:
 
 systems = [si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell]
 
-final_state = optimize(
+final_state = ts.optimize(
     system=systems,
     model=mace_model,
     optimizer=unit_cell_fire,
@@ -177,7 +176,7 @@ rng = np.random.default_rng()
 for system in systems:
     system.positions += rng.random(system.positions.shape) * 0.01
 
-final_state = optimize(
+final_state = ts.optimize(
     system=systems,
     model=mace_model,
     optimizer=unit_cell_fire,
@@ -200,7 +199,7 @@ coords = [
     [0.75, 0.75, 0.25],
 ]
 structure = Structure(lattice, species, coords)
-final_state = integrate(
+final_state = ts.integrate(
     system=structure,
     model=lj_model,
     integrator=nvt_langevin,

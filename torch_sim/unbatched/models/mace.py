@@ -3,16 +3,18 @@
 This module provides a PyTorch implementation of the MACE model calculator.
 """
 
-import typing
+import traceback
+import warnings
 from collections.abc import Callable
+from typing import Any
 
 import torch
 from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
 from mace.tools import atomic_numbers_to_indices, to_one_hot, utils
 
+import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
@@ -21,7 +23,8 @@ try:
     from mace.tools import atomic_numbers_to_indices, utils
 
     from torch_sim.models.mace import to_one_hot
-except ImportError:
+except ImportError as exc:
+    warnings.warn(f"MACE import failed: {traceback.format_exc()}", stacklevel=2)
 
     class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
         """Unbatched MACE model wrapper for torch_sim.
@@ -30,9 +33,9 @@ except ImportError:
         It raises an ImportError if MACE is not installed.
         """
 
-        def __init__(self, *_args: typing.Any, **_kwargs: typing.Any) -> None:
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
             """Dummy init for type checking."""
-            raise ImportError("MACE must be installed to use this model.")
+            raise err
 
 
 class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
@@ -154,7 +157,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
 
     def forward(  # noqa: C901
         self,
-        state: SimState | StateDict,
+        state: ts.SimState | StateDict,
     ) -> dict[str, torch.Tensor]:
         """Compute the energy of the system given atomic positions and box vectors.
 
@@ -169,7 +172,7 @@ class UnbatchedMaceModel(torch.nn.Module, ModelInterface):
                 forces, and stress of the system.
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         if state.batch is not None and state.batch.max() > 0:
             raise ValueError("UnbatchedMaceModel does not support batched systems.")

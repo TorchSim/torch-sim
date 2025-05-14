@@ -14,6 +14,7 @@ from ase.build import molecule
 from mace.calculators.foundations_models import mace_off
 
 import torch_sim as ts
+from torch_sim.models.mace import MaceUrls
 from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.unbatched.models.mace import UnbatchedMaceModel
 from torch_sim.unbatched.unbatched_integrators import nve
@@ -25,9 +26,8 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
 # Option 1: Load the raw model from the downloaded model
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-off/raw/refs/heads/main/mace_off23/MACE-OFF23b_medium.model"
 loaded_model = mace_off(
-    model=mace_checkpoint_url,
+    model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
     default_dtype=dtype,
     device=device,

@@ -461,15 +461,13 @@ def expm_cond(A: torch.Tensor, check_finite: bool = True) -> torch.Tensor:
     K = expm_frechet_kronform(A, check_finite=False)
 
     # The following norm choices are deliberate.
-    # The norms of A and X are Frobenius norms,
-    # and the norm of K is the induced 2-norm.
-    norm_p = "fro"
+    # norms of A and X are Frobenius norms, and norm of K is the induced 2-norm.
+    norm_p = "fro"  # codespell:ignore
     A_norm = torch.norm(A, p=norm_p)
     X_norm = torch.norm(X, p=norm_p)
     K_norm = torch.linalg.matrix_norm(K, ord=2)
 
-    # kappa
-    return (K_norm * A_norm) / X_norm
+    return (K_norm * A_norm) / X_norm  # kappa
 
 
 class expm(Function):  # noqa: N801

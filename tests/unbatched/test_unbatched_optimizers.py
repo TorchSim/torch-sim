@@ -2,7 +2,7 @@ from typing import Any
 
 import torch
 
-from torch_sim.state import SimState
+import torch_sim as ts
 from torch_sim.unbatched.unbatched_optimizers import (
     fire,
     frechet_cell_fire,
@@ -12,7 +12,7 @@ from torch_sim.unbatched.unbatched_optimizers import (
 
 
 def test_fire_optimizer(
-    ar_supercell_sim_state: SimState, unbatched_lj_model: Any
+    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: Any
 ) -> None:
     """Test FIRE optimization of Ar FCC structure."""
     # perturb the structure
@@ -50,7 +50,7 @@ def test_fire_optimizer(
 
 
 def test_gradient_descent_optimizer(
-    ar_supercell_sim_state: SimState, unbatched_lj_model: Any
+    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: Any
 ) -> None:
     """Test gradient descent optimization of Ar FCC structure."""
     # perturb the structure
@@ -77,7 +77,7 @@ def test_gradient_descent_optimizer(
 
 
 def test_unit_cell_fire_optimizer(
-    ar_supercell_sim_state: SimState, unbatched_lj_model: Any
+    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: Any
 ) -> None:
     """Test FIRE optimization of Ar FCC structure."""
     # perturb the structure
@@ -121,7 +121,7 @@ def test_unit_cell_fire_optimizer(
 
 
 def test_frechet_cell_fire_optimizer(
-    ar_supercell_sim_state: SimState, unbatched_lj_model: Any
+    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: Any
 ) -> None:
     """Test FIRE optimization of Ar FCC structure."""
     # perturb the structure
@@ -165,7 +165,7 @@ def test_frechet_cell_fire_optimizer(
 
 
 def test_optimizer_convergence(
-    ar_supercell_sim_state: SimState, unbatched_lj_model: Any
+    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: Any
 ) -> None:
     """Test that both optimizers can reach similar final states."""
     # perturb the structure

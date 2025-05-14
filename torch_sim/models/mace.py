@@ -17,22 +17,26 @@ Notes:
     for compatibility with the broader TorchSim framework.
 """
 
-import typing
+import traceback
+import warnings
 from collections.abc import Callable
+from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 import torch
 
+import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
 try:
     from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
     from mace.tools import atomic_numbers_to_indices, utils
-except ImportError:
+except ImportError as exc:
+    warnings.warn(f"MACE import failed: {traceback.format_exc()}", stacklevel=2)
 
     class MaceModel(torch.nn.Module, ModelInterface):
         """MACE model wrapper for torch_sim.
@@ -41,9 +45,9 @@ except ImportError:
         It raises an ImportError if MACE is not installed.
         """
 
-        def __init__(self, *_args: typing.Any, **_kwargs: typing.Any) -> None:
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
             """Dummy init for type checking."""
-            raise ImportError("MACE must be installed to use this model.")
+            raise err
 
 
 def to_one_hot(
@@ -233,7 +237,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
     def forward(  # noqa: C901
         self,
-        state: SimState | StateDict,
+        state: ts.SimState | StateDict,
     ) -> dict[str, torch.Tensor]:
         """Compute energies, forces, and stresses for the given atomic systems.
 
@@ -247,7 +251,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 dictionary with the relevant fields.
 
         Returns:
-            dict[str, torch.Tensor]: Dictionary containing:
+            dict[str, torch.Tensor]: Computed properties:
                 - 'energy': System energies with shape [n_systems]
                 - 'forces': Atomic forces with shape [n_atoms, 3] if compute_forces=True
                 - 'stress': System stresses with shape [n_systems, 3, 3] if
@@ -260,7 +264,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
         """
         # Extract required data from input
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         # Handle input validation for atomic numbers
         if state.atomic_numbers is None and not self.atomic_numbers_in_init:
@@ -361,3 +365,11 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 results["stress"] = stress.detach()
 
         return results
+
+
+class MaceUrls(StrEnum):
+    """Checkpoint download URLs for MACE models."""
+
+    mace_mp_small = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mace_agnesi_small.model"
+    mace_mpa_medium = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
+    mace_off_small = "https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model?raw=true"

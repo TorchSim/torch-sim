@@ -17,14 +17,16 @@ Notes:
 from __future__ import annotations
 
 import copy
+import traceback
 import typing
+import warnings
 from types import MappingProxyType
 from typing import Any
 
 import torch
 
+import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState
 
 
 try:
@@ -38,7 +40,8 @@ try:
     from fairchem.core.models.model_registry import model_name_to_local_file
     from torch_geometric.data import Batch, Data
 
-except ImportError:
+except ImportError as exc:
+    warnings.warn(f"FairChem import failed: {traceback.format_exc()}", stacklevel=2)
 
     class FairChemModel(torch.nn.Module, ModelInterface):
         """FairChem model wrapper for torch_sim.
@@ -47,9 +50,9 @@ except ImportError:
         It raises an ImportError if FairChem is not installed.
         """
 
-        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
             """Dummy init for type checking."""
-            raise ImportError("FairChem must be installed to use this model.")
+            raise err
 
 
 if typing.TYPE_CHECKING:
@@ -315,7 +318,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         except NotImplementedError:
             print("Unable to load checkpoint!")
 
-    def forward(self, state: SimState | StateDict) -> dict:
+    def forward(self, state: ts.SimState | StateDict) -> dict:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by the model,
@@ -338,7 +341,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             All output tensors are detached from the computation graph.
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         if state.device != self._device:
             state = state.to(self._device)

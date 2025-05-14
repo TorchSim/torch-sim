@@ -15,14 +15,17 @@ Notes:
 
 from __future__ import annotations
 
+import traceback
 import typing
+import warnings
 from pathlib import Path
+from typing import Any
 
 import torch
 
+import torch_sim as ts
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState
 
 
 try:
@@ -30,16 +33,11 @@ try:
     from orb_models.forcefield import featurization_utilities as feat_util
     from orb_models.forcefield.atomic_system import SystemConfig
     from orb_models.forcefield.base import AtomGraphs, _map_concat
+    from orb_models.forcefield.featurization_utilities import EdgeCreationMethod
     from orb_models.forcefield.graph_regressor import GraphRegressor
 
-    try:
-        from orb_models.forcefield.featurization_utilities import EdgeCreationMethod
-    except ImportError as exp:
-        raise ImportError(
-            "Orb model version is too old, interface requires >v0.4.2. If release is "
-            "not yet available, install from github."
-        ) from exp
-except ImportError:
+except ImportError as exc:
+    warnings.warn(f"Orb import failed: {traceback.format_exc()}", stacklevel=2)
 
     class OrbModel(torch.nn.Module, ModelInterface):
         """ORB model wrapper for torch_sim.
@@ -48,9 +46,9 @@ except ImportError:
         It raises an ImportError if orb_models is not installed.
         """
 
-        def __init__(self, *args, **kwargs) -> None:  # noqa: ARG002
-            """Dummy constructor to raise ImportError."""
-            raise ImportError("orb_models must be installed to use this model.")
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
+            """Dummy init for type checking."""
+            raise err
 
 
 if typing.TYPE_CHECKING:
@@ -64,7 +62,7 @@ if typing.TYPE_CHECKING:
 
 
 def state_to_atom_graphs(  # noqa: PLR0915
-    state: SimState,
+    state: ts.SimState,
     *,
     wrap: bool = True,
     edge_method: EdgeCreationMethod | None = None,
@@ -360,7 +358,7 @@ class OrbModel(torch.nn.Module, ModelInterface):
         if self.conservative:
             self.implemented_properties.extend(["forces", "stress"])
 
-    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by the model,
@@ -372,7 +370,7 @@ class OrbModel(torch.nn.Module, ModelInterface):
                 it will be converted to a SimState.
 
         Returns:
-            dict: Dictionary of model predictions, which may include:
+            dict: Model predictions, which may include:
                 - energy (torch.Tensor): Energy with shape [batch_size]
                 - forces (torch.Tensor): Forces with shape [n_atoms, 3]
                 - stress (torch.Tensor): Stress tensor with shape [batch_size, 3, 3],
@@ -383,7 +381,7 @@ class OrbModel(torch.nn.Module, ModelInterface):
             All output tensors are detached from the computation graph.
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         if state.device != self._device:
             state = state.to(self._device)

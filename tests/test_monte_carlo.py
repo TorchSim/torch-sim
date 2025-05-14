@@ -10,7 +10,6 @@ from torch_sim.monte_carlo import (
     swaps_to_permutation,
     validate_permutation,
 )
-from torch_sim.state import SimState
 
 
 @pytest.fixture
@@ -38,21 +37,23 @@ def generator(device: torch.device) -> torch.Generator:
 
 
 @pytest.fixture
-def batched_diverse_state(diverse_structure: Structure, device: torch.device) -> SimState:
+def batched_diverse_state(
+    diverse_structure: Structure, device: torch.device
+) -> ts.SimState:
     return ts.io.structures_to_state(
         [diverse_structure] * 2, device=device, dtype=torch.float64
     )
 
 
 def test_generate_permutation(
-    batched_diverse_state: SimState, generator: torch.Generator
+    batched_diverse_state: ts.SimState, generator: torch.Generator
 ):
     swaps = generate_swaps(batched_diverse_state, generator=generator)
     permutation = swaps_to_permutation(swaps, batched_diverse_state.n_atoms)
     validate_permutation(permutation, batched_diverse_state.batch)
 
 
-def test_generate_swaps(batched_diverse_state: SimState, generator: torch.Generator):
+def test_generate_swaps(batched_diverse_state: ts.SimState, generator: torch.Generator):
     swaps = generate_swaps(batched_diverse_state, generator=generator)
 
     # Check shape and type
@@ -69,7 +70,7 @@ def test_generate_swaps(batched_diverse_state: SimState, generator: torch.Genera
 
 
 def test_swaps_to_permutation(
-    batched_diverse_state: SimState, generator: torch.Generator
+    batched_diverse_state: ts.SimState, generator: torch.Generator
 ):
     swaps = generate_swaps(batched_diverse_state, generator=generator)
     n_atoms = batched_diverse_state.n_atoms
@@ -90,7 +91,7 @@ def test_swaps_to_permutation(
         assert permutation[j] == i
 
 
-def test_validate_permutation(batched_diverse_state: SimState):
+def test_validate_permutation(batched_diverse_state: ts.SimState):
     # Valid permutation
     swaps = generate_swaps(batched_diverse_state)
     permutation = swaps_to_permutation(swaps, batched_diverse_state.n_atoms)
@@ -108,7 +109,7 @@ def test_validate_permutation(batched_diverse_state: SimState):
 
 
 def test_monte_carlo(
-    batched_diverse_state: SimState,
+    batched_diverse_state: ts.SimState,
     lj_model: torch.nn.Module,
 ):
     """Test the monte_carlo function that returns a step function and initial state."""

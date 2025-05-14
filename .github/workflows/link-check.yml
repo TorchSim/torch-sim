@@ -6,18 +6,17 @@ on:
   pull_request:
     branches: [main]
 
-concurrency:
-  group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
 jobs:
-  markdown-link-check:
+  link-check:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Run markdown link check
-        uses: gaurav-nelson/github-action-markdown-link-check@v1
+      - name: Discover broken links
+        uses: lycheeverse/lychee-action@v2
         with:
-          config-file: .github/workflows/link-check-config.json
+          # ignore ipynb links since they're generated on the fly
+          args: --exclude-path dist --exclude '\.ipynb$' --accept 100..=103,200..=299,403,429,500 -- ./**/*.{md,py,yml,json}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

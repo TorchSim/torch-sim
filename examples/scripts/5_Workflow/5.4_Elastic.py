@@ -13,16 +13,15 @@ from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
 from torch_sim.elastic import get_bravais_type
-from torch_sim.models.mace import MaceModel
+from torch_sim.models.mace import MaceModel, MaceUrls
 
 
 # Calculator
 unit_conv = ts.units.UnitConversion
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float64
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
-    model=mace_checkpoint_url,
+    model=MaceUrls.mace_mpa_medium,
     enable_cueq=False,
     device=device,
     default_dtype="float64",

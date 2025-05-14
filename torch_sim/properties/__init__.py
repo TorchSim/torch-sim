@@ -6,7 +6,5 @@ Currently includes:
 - VelocityAutoCorrelation: Calculator for velocity autocorrelation.
 """
 
+# ruff: noqa: F401
 from .correlations import CorrelationCalculator, VelocityAutoCorrelation
-
-
-__all__ = ["CorrelationCalculator", "VelocityAutoCorrelation"]

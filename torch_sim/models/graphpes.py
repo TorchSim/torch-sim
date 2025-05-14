@@ -13,14 +13,17 @@ Notes:
     It supports various model configurations through model instances or model paths.
 """
 
+import traceback
 import typing
+import warnings
 from pathlib import Path
+from typing import Any
 
 import torch
 
+import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
@@ -29,7 +32,8 @@ try:
     from graph_pes.atomic_graph import PropertyKey, to_batch
     from graph_pes.models import load_model
 
-except ImportError:
+except ImportError as exc:
+    warnings.warn(f"GraphPES import failed: {traceback.format_exc()}", stacklevel=2)
     PropertyKey = str
 
     class GraphPESWrapper(torch.nn.Module, ModelInterface):  # type: ignore[reportRedeclaration]
@@ -39,18 +43,19 @@ except ImportError:
         It raises an ImportError if graph_pes is not installed.
         """
 
-        def __init__(self, *_args: typing.Any, **_kwargs: typing.Any) -> None:  # noqa: D107
-            raise ImportError("graph_pes must be installed to use this model.")
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
+            """Dummy init for type checking."""
+            raise err
 
     class AtomicGraph:  # type: ignore[reportRedeclaration]  # noqa: D101
-        def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:  # noqa: D107,ARG002
+        def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: D107,ARG002
             raise ImportError("graph_pes must be installed to use this model.")
 
     class GraphPESModel(torch.nn.Module):  # type: ignore[reportRedeclaration]  # noqa: D101
         pass
 
 
-def state_to_atomic_graph(state: SimState, cutoff: torch.Tensor) -> AtomicGraph:
+def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGraph:
     """Convert a SimState object into an AtomicGraph object.
 
     Args:
@@ -117,7 +122,7 @@ class GraphPESWrapper(torch.nn.Module, ModelInterface):
         >>> from graph_pes.models import load_model
         >>> model = load_model("path/to/model.pt")
         >>> wrapper = GraphPESWrapper(model)
-        >>> state = SimState(
+        >>> state = ts.SimState(
         ...     positions=torch.randn(10, 3),
         ...     cell=torch.eye(3),
         ...     atomic_numbers=torch.randint(1, 104, (10,)),
@@ -169,7 +174,7 @@ class GraphPESWrapper(torch.nn.Module, ModelInterface):
         if self._gp_model.cutoff.item() < 0.5:
             self._memory_scales_with = "n_atoms"
 
-    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Forward pass for the GraphPESWrapper.
 
         Args:
@@ -179,8 +184,8 @@ class GraphPESWrapper(torch.nn.Module, ModelInterface):
             Dictionary containing the computed energies, forces, and stresses
             (where applicable)
         """
-        if not isinstance(state, SimState):
-            state = SimState(**state)  # type: ignore[arg-type]
+        if not isinstance(state, ts.SimState):
+            state = ts.SimState(**state)  # type: ignore[arg-type]
 
         atomic_graph = state_to_atomic_graph(state, self._gp_model.cutoff)
         return self._gp_model.predict(atomic_graph, self._properties)  # type: ignore[return-value]

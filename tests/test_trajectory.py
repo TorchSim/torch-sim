@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 import torch
 
+import torch_sim as ts
 from torch_sim.integrators import MDState
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.state import SimState
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 
 
@@ -531,7 +531,7 @@ def prop_calculators() -> dict[int, dict[str, Callable]]:
     }
 
 
-def test_report_no_properties(si_sim_state: SimState, tmp_path: Path) -> None:
+def test_report_no_properties(si_sim_state: ts.SimState, tmp_path: Path) -> None:
     """Test TrajectoryReporter with no properties."""
     reporter = TrajectoryReporter(
         tmp_path / "no_properties.hdf5",
@@ -556,7 +556,7 @@ def test_report_no_properties(si_sim_state: SimState, tmp_path: Path) -> None:
     assert "atomic_numbers" in trajectory.array_registry
 
 
-def test_report_no_filenames(si_sim_state: SimState, prop_calculators: dict) -> None:
+def test_report_no_filenames(si_sim_state: ts.SimState, prop_calculators: dict) -> None:
     """Test TrajectoryReporter with no filenames."""
     from torch_sim.state import initialize_state
 
@@ -586,7 +586,7 @@ def test_report_no_filenames(si_sim_state: SimState, prop_calculators: dict) -> 
 
 
 def test_single_batch_reporter(
-    si_sim_state: SimState, tmp_path: Path, prop_calculators: dict
+    si_sim_state: ts.SimState, tmp_path: Path, prop_calculators: dict
 ) -> None:
     """Test TrajectoryReporter with a single batch."""
     # Create a reporter with a single file
@@ -623,7 +623,7 @@ def test_single_batch_reporter(
 
 
 def test_multi_batch_reporter_filenames_none(
-    si_double_sim_state: SimState, prop_calculators: dict
+    si_double_sim_state: ts.SimState, prop_calculators: dict
 ) -> None:
     """Test TrajectoryReporter with multiple batches and no filenames."""
     reporter = TrajectoryReporter(
@@ -648,7 +648,7 @@ def test_multi_batch_reporter_filenames_none(
 
 
 def test_multi_batch_reporter(
-    si_double_sim_state: SimState, tmp_path: Path, prop_calculators: dict
+    si_double_sim_state: ts.SimState, tmp_path: Path, prop_calculators: dict
 ) -> None:
     """Test TrajectoryReporter with multiple batches."""
     # Create a reporter with multiple files
@@ -693,7 +693,7 @@ def test_multi_batch_reporter(
 
 
 def test_property_model_consistency(
-    si_double_sim_state: SimState, tmp_path: Path, prop_calculators: dict
+    si_double_sim_state: ts.SimState, tmp_path: Path, prop_calculators: dict
 ) -> None:
     """Test property models are consistent for single and multi-batch cases."""
     # Create reporters for single and multi-batch cases
@@ -743,12 +743,12 @@ def test_property_model_consistency(
 
 
 def test_reporter_with_model(
-    si_double_sim_state: SimState, tmp_path: Path, lj_model: LennardJonesModel
+    si_double_sim_state: ts.SimState, tmp_path: Path, lj_model: LennardJonesModel
 ) -> None:
     """Test TrajectoryReporter with a model argument in property calculators."""
 
     # Create a property calculator that uses the model
-    def energy_calculator(state: SimState, model: torch.nn.Module) -> torch.Tensor:
+    def energy_calculator(state: ts.SimState, model: torch.nn.Module) -> torch.Tensor:
         output = model(state)
         # Calculate a property that depends on the model
         return output["energy"]
@@ -805,7 +805,7 @@ def test_get_atoms_importerror(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
 
     traj = TorchSimTrajectory(tmp_path / "dummy.h5", mode="w")
     # Write minimal data so get_atoms can be called
-    state = SimState(
+    state = ts.SimState(
         positions=torch.zeros(1, 3),
         masses=torch.ones(1),
         cell=torch.eye(3).unsqueeze(0),
@@ -829,7 +829,7 @@ def test_write_ase_trajectory_importerror(
 
     traj = TorchSimTrajectory(tmp_path / "dummy.h5", mode="w")
     # Write minimal data so write_ase_trajectory can be called
-    state = SimState(
+    state = ts.SimState(
         positions=torch.zeros(1, 3),
         masses=torch.ones(1),
         cell=torch.eye(3).unsqueeze(0),

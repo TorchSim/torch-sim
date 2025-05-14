@@ -2,10 +2,11 @@
 
 import torch
 
+import torch_sim as ts
+from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.transforms import get_pair_displacements
-from torch_sim.unbatched.unbatched_integrators import SimState, StateDict
+from torch_sim.unbatched.unbatched_integrators import StateDict
 
 
 # Default parameter values defined at module level
@@ -146,7 +147,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
         self.cutoff = torch.tensor(cutoff or 2.5 * sigma, dtype=dtype, device=self.device)
         self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self.device)
 
-    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute energies and forces.
 
         Args:
@@ -157,7 +158,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
             A dictionary containing the energy, forces, and stresses
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         cell = state.row_vector_cell
         positions = state.positions
@@ -176,7 +177,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
                 sort_id=False,
             )
             # Get displacements using neighbor list
-            dr_vec, distances = get_pair_displacements(
+            dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
@@ -185,7 +186,7 @@ class UnbatchedLennardJonesModel(torch.nn.Module, ModelInterface):
             )
         else:
             # Get all pairwise displacements
-            dr_vec, distances = get_pair_displacements(
+            dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,

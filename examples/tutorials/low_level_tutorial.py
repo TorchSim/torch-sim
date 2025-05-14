@@ -65,12 +65,11 @@ Then we can initialize the MaceModel class with the raw model.
 
 # %%
 from mace.calculators.foundations_models import mace_mp
-from torch_sim.models.mace import MaceModel
+from torch_sim.models.mace import MaceModel, MaceUrls
 
 # load mace_mp using the mace package
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
-    model=mace_checkpoint_url,
+    model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
     default_dtype=dtype,
     device=device,

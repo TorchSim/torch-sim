@@ -5,11 +5,7 @@ from vesin import NeighborList as VesinNeighborList
 from vesin.torch import NeighborList as VesinNeighborList_ts
 
 import torch_sim.math as tsm
-from torch_sim.transforms import (
-    build_linked_cell_neighborhood,
-    build_naive_neighborhood,
-    compute_cell_shifts,
-)
+from torch_sim import transforms
 
 
 @torch.jit.script
@@ -691,7 +687,7 @@ def strict_nl(
     References:
         - https://github.com/felixmusil/torch_nl
     """
-    cell_shifts = compute_cell_shifts(cell, shifts_idx, batch_mapping)
+    cell_shifts = transforms.compute_cell_shifts(cell, shifts_idx, batch_mapping)
     if cell_shifts is None:
         d2 = (positions[mapping[0]] - positions[mapping[1]]).square().sum(dim=1)
     else:
@@ -753,7 +749,7 @@ def torch_nl_n2(
         - https://github.com/felixmusil/torch_nl
     """
     n_atoms = torch.bincount(batch)
-    mapping, batch_mapping, shifts_idx = build_naive_neighborhood(
+    mapping, batch_mapping, shifts_idx = transforms.build_naive_neighborhood(
         positions, cell, pbc, cutoff, n_atoms, self_interaction
     )
     mapping, mapping_batch, shifts_idx = strict_nl(
@@ -809,7 +805,7 @@ def torch_nl_linked_cell(
         - https://github.com/felixmusil/torch_nl
     """
     n_atoms = torch.bincount(batch)
-    mapping, batch_mapping, shifts_idx = build_linked_cell_neighborhood(
+    mapping, batch_mapping, shifts_idx = transforms.build_linked_cell_neighborhood(
         positions, cell, pbc, cutoff, n_atoms, self_interaction
     )
 

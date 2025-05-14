@@ -11,8 +11,8 @@ import os
 
 import torch
 
+import torch_sim as ts
 from torch_sim.quantities import calc_kinetic_energy, calc_kT
-from torch_sim.state import SimState
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_integrators import (
     npt_nose_hoover,
@@ -94,7 +94,7 @@ model = UnbatchedLennardJonesModel(
     compute_forces=True,
     compute_stress=True,
 )
-state = SimState(
+state = ts.SimState(
     positions=positions,
     masses=masses,
     cell=cell,

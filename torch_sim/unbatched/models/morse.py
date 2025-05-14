@@ -2,10 +2,10 @@
 
 import torch
 
+import torch_sim as ts
+from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState
-from torch_sim.transforms import get_pair_displacements
 from torch_sim.typing import StateDict
 
 
@@ -142,7 +142,7 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
         self.epsilon = torch.tensor(epsilon, dtype=self.dtype, device=self.device)
         self.alpha = torch.tensor(alpha, dtype=self.dtype, device=self.device)
 
-    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute energies and forces.
 
         Args:
@@ -152,7 +152,7 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
             Dictionary containing computed properties (energy, forces, stress, etc.)
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         positions = state.positions
         cell = state.row_vector_cell
@@ -169,7 +169,7 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
                 cutoff=self.cutoff,
                 sort_id=False,
             )
-            dr_vec, distances = get_pair_displacements(
+            dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
@@ -177,7 +177,7 @@ class UnbatchedMorseModel(torch.nn.Module, ModelInterface):
                 shifts=shifts,
             )
         else:
-            dr_vec, distances = get_pair_displacements(
+            dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,

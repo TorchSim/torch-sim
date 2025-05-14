@@ -8,6 +8,7 @@ from tests.models.conftest import (
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
+from torch_sim.models.mace import MaceUrls
 
 
 try:
@@ -19,8 +20,8 @@ except (ImportError, ValueError):
     pytest.skip("MACE not installed", allow_module_level=True)
 
 
-mace_model = mace_mp(model="small", return_raw_model=True)
-mace_off_model = mace_off(model="small", return_raw_model=True)
+mace_model = mace_mp(model=MaceUrls.mace_mp_small, return_raw_model=True)
+mace_off_model = mace_off(model=MaceUrls.mace_off_small, return_raw_model=True)
 
 
 @pytest.fixture
@@ -32,7 +33,7 @@ def dtype() -> torch.dtype:
 @pytest.fixture
 def ase_mace_calculator() -> MACECalculator:
     return mace_mp(
-        model="small",
+        model=MaceUrls.mace_mp_small,
         device="cpu",
         default_dtype="float32",
         dispersion=False,
@@ -96,7 +97,7 @@ def benzene_system(
 @pytest.fixture
 def ase_mace_off_calculator() -> MACECalculator:
     return mace_off(
-        model="small",
+        model=MaceUrls.mace_off_small,
         device="cpu",
         default_dtype="float32",
         dispersion=False,
@@ -117,13 +118,11 @@ test_mace_off_consistency = make_model_calculator_consistency_test(
     test_name="mace_off",
     model_fixture_name="torchsim_mace_off_model",
     calculator_fixture_name="ase_mace_off_calculator",
-    sim_state_names=[
-        "benzene_sim_state",
-    ],
+    sim_state_names=["benzene_sim_state"],
 )
 
 test_mace_off_model_outputs = make_validate_model_outputs_test(
-    model_fixture_name="torchsim_mace_model",
+    model_fixture_name="torchsim_mace_model"
 )
 
 
@@ -141,3 +140,10 @@ def test_mace_off_dtype_working(
     state = ts.io.atoms_to_state([benzene_atoms], device, dtype)
 
     model.forward(state)
+
+
+def test_mace_urls_enum() -> None:
+    assert len(MaceUrls) > 2
+    for key in MaceUrls:
+        assert key.value.startswith("https://github.com/ACEsuit/mace-")
+        assert key.value.endswith((".model", ".model?raw=true"))

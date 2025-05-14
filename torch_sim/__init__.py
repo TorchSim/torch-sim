@@ -33,9 +33,9 @@ from torch_sim.optimizers import (
     unit_cell_fire,
     unit_cell_gradient_descent,
 )
-from torch_sim.properties.correlations import CorrelationCalculator
 
-# quantities
+# quantities/properties
+from torch_sim.properties.correlations import CorrelationCalculator
 from torch_sim.quantities import calc_kinetic_energy, calc_kT
 
 # high level runners and support
@@ -48,7 +48,7 @@ from torch_sim.runners import (
 )
 
 # state and state manipulation
-from torch_sim.state import concatenate_states, initialize_state
+from torch_sim.state import SimState, concatenate_states, initialize_state
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 
 

@@ -9,7 +9,6 @@ from phonopy.structure.atoms import PhonopyAtoms
 from pymatgen.core import Structure
 
 import torch_sim as ts
-from torch_sim.state import SimState
 
 
 def test_single_structure_to_state(si_structure: Structure, device: torch.device) -> None:
@@ -17,7 +16,7 @@ def test_single_structure_to_state(si_structure: Structure, device: torch.device
     state = ts.io.structures_to_state(si_structure, device, torch.float64)
 
     # Check basic properties
-    assert isinstance(state, SimState)
+    assert isinstance(state, ts.SimState)
     assert all(
         t.device.type == device.type for t in [state.positions, state.masses, state.cell]
     )
@@ -43,7 +42,7 @@ def test_multiple_structures_to_state(
     state = ts.io.structures_to_state([si_structure, si_structure], device, torch.float64)
 
     # Check basic properties
-    assert isinstance(state, SimState)
+    assert isinstance(state, ts.SimState)
     assert state.positions.shape == (16, 3)
     assert state.masses.shape == (16,)
     assert state.cell.shape == (2, 3, 3)
@@ -60,7 +59,7 @@ def test_single_atoms_to_state(si_atoms: Atoms, device: torch.device) -> None:
     state = ts.io.atoms_to_state(si_atoms, device, torch.float64)
 
     # Check basic properties
-    assert isinstance(state, SimState)
+    assert isinstance(state, ts.SimState)
     assert state.positions.shape == (8, 3)
     assert state.masses.shape == (8,)
     assert state.cell.shape == (1, 3, 3)
@@ -75,7 +74,7 @@ def test_multiple_atoms_to_state(si_atoms: Atoms, device: torch.device) -> None:
     state = ts.io.atoms_to_state([si_atoms, si_atoms], device, torch.float64)
 
     # Check basic properties
-    assert isinstance(state, SimState)
+    assert isinstance(state, ts.SimState)
     assert state.positions.shape == (16, 3)
     assert state.masses.shape == (16,)
     assert state.cell.shape == (2, 3, 3)
@@ -87,7 +86,7 @@ def test_multiple_atoms_to_state(si_atoms: Atoms, device: torch.device) -> None:
     )
 
 
-def test_state_to_structure(ar_supercell_sim_state: SimState) -> None:
+def test_state_to_structure(ar_supercell_sim_state: ts.SimState) -> None:
     """Test conversion from state tensors to list of pymatgen Structure."""
     structures = ts.io.state_to_structures(ar_supercell_sim_state)
     assert len(structures) == 1
@@ -95,7 +94,7 @@ def test_state_to_structure(ar_supercell_sim_state: SimState) -> None:
     assert len(structures[0]) == 32
 
 
-def test_state_to_multiple_structures(ar_double_sim_state: SimState) -> None:
+def test_state_to_multiple_structures(ar_double_sim_state: ts.SimState) -> None:
     """Test conversion from state tensors to list of pymatgen Structure."""
     structures = ts.io.state_to_structures(ar_double_sim_state)
     assert len(structures) == 2
@@ -105,7 +104,7 @@ def test_state_to_multiple_structures(ar_double_sim_state: SimState) -> None:
     assert len(structures[1]) == 32
 
 
-def test_state_to_atoms(ar_supercell_sim_state: SimState) -> None:
+def test_state_to_atoms(ar_supercell_sim_state: ts.SimState) -> None:
     """Test conversion from state tensors to list of ASE Atoms."""
     atoms = ts.io.state_to_atoms(ar_supercell_sim_state)
     assert len(atoms) == 1
@@ -113,7 +112,7 @@ def test_state_to_atoms(ar_supercell_sim_state: SimState) -> None:
     assert len(atoms[0]) == 32
 
 
-def test_state_to_multiple_atoms(ar_double_sim_state: SimState) -> None:
+def test_state_to_multiple_atoms(ar_double_sim_state: ts.SimState) -> None:
     """Test conversion from state tensors to list of ASE Atoms."""
     atoms = ts.io.state_to_atoms(ar_double_sim_state)
     assert len(atoms) == 2
@@ -123,13 +122,13 @@ def test_state_to_multiple_atoms(ar_double_sim_state: SimState) -> None:
     assert len(atoms[1]) == 32
 
 
-def test_to_atoms(ar_supercell_sim_state: SimState) -> None:
+def test_to_atoms(ar_supercell_sim_state: ts.SimState) -> None:
     """Test conversion from SimState to list of ASE Atoms."""
     atoms = ts.io.state_to_atoms(ar_supercell_sim_state)
     assert isinstance(atoms[0], Atoms)
 
 
-def test_to_structures(ar_supercell_sim_state: SimState) -> None:
+def test_to_structures(ar_supercell_sim_state: ts.SimState) -> None:
     """Test conversion from SimState to list of Pymatgen Structure."""
     structures = ts.io.state_to_structures(ar_supercell_sim_state)
     assert isinstance(structures[0], Structure)
@@ -140,7 +139,7 @@ def test_single_phonopy_to_state(si_phonopy_atoms: Any, device: torch.device) ->
     state = ts.io.phonopy_to_state(si_phonopy_atoms, device, torch.float64)
 
     # Check basic properties
-    assert isinstance(state, SimState)
+    assert isinstance(state, ts.SimState)
     assert all(
         t.device.type == device.type for t in [state.positions, state.masses, state.cell]
     )
@@ -166,7 +165,7 @@ def test_multiple_phonopy_to_state(si_phonopy_atoms: Any, device: torch.device) 
     )
 
     # Check basic properties
-    assert isinstance(state, SimState)
+    assert isinstance(state, ts.SimState)
     assert state.positions.shape == (16, 3)
     assert state.masses.shape == (16,)
     assert state.cell.shape == (2, 3, 3)
@@ -178,7 +177,7 @@ def test_multiple_phonopy_to_state(si_phonopy_atoms: Any, device: torch.device) 
     )
 
 
-def test_state_to_phonopy(ar_supercell_sim_state: SimState) -> None:
+def test_state_to_phonopy(ar_supercell_sim_state: ts.SimState) -> None:
     """Test conversion from state tensors to list of PhonopyAtoms."""
     phonopy_atoms = ts.io.state_to_phonopy(ar_supercell_sim_state)
     assert len(phonopy_atoms) == 1
@@ -186,7 +185,7 @@ def test_state_to_phonopy(ar_supercell_sim_state: SimState) -> None:
     assert len(phonopy_atoms[0]) == 32
 
 
-def test_state_to_multiple_phonopy(ar_double_sim_state: SimState) -> None:
+def test_state_to_multiple_phonopy(ar_double_sim_state: ts.SimState) -> None:
     """Test conversion from state tensors to list of PhonopyAtoms."""
     phonopy_atoms = ts.io.state_to_phonopy(ar_double_sim_state)
     assert len(phonopy_atoms) == 2
@@ -234,7 +233,7 @@ def test_state_round_trip(
         dtype: Data type to use
     """
     # Get the sim_state fixture dynamically using the name
-    sim_state: SimState = request.getfixturevalue(sim_state_name)
+    sim_state: ts.SimState = request.getfixturevalue(sim_state_name)
     to_format_fn, from_format_fn = conversion_functions
     unique_batches = torch.unique(sim_state.batch)
 
@@ -243,7 +242,7 @@ def test_state_round_trip(
     assert len(intermediate_format) == len(unique_batches)
 
     # Convert back to state
-    round_trip_state: SimState = from_format_fn(intermediate_format, device, dtype)
+    round_trip_state: ts.SimState = from_format_fn(intermediate_format, device, dtype)
 
     # Check that all properties match
     assert torch.allclose(sim_state.positions, round_trip_state.positions)

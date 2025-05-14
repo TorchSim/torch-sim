@@ -2,7 +2,7 @@ import pytest
 import torch
 from pymatgen.core.composition import Composition
 
-from torch_sim.state import SimState
+import torch_sim as ts
 from torch_sim.unbatched.models.soft_sphere import UnbatchedSoftSphereModel
 from torch_sim.unbatched.unbatched_optimizers import UnitCellFIREState
 from torch_sim.workflows import a2c
@@ -342,11 +342,11 @@ def create_test_model(
     )
 
 
-def create_test_state(positions: torch.Tensor, cell: torch.Tensor) -> SimState:
+def create_test_state(positions: torch.Tensor, cell: torch.Tensor) -> ts.SimState:
     """Create a simple simulation state for testing."""
     n_atoms = positions.shape[0]
     device = positions.device
-    return SimState(
+    return ts.SimState(
         positions=positions,
         cell=cell,
         pbc=True,

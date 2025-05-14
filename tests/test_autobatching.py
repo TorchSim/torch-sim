@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 import torch
 
+import torch_sim as ts
 from torch_sim.autobatching import (
     BinningAutoBatcher,
     InFlightAutoBatcher,
@@ -12,7 +13,6 @@ from torch_sim.autobatching import (
 )
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.optimizers import unit_cell_fire
-from torch_sim.state import SimState
 
 
 def test_exact_fit():
@@ -89,7 +89,7 @@ def test_bounds_and_tuples():
     ]
 
 
-def test_calculate_scaling_metric(si_sim_state: SimState) -> None:
+def test_calculate_scaling_metric(si_sim_state: ts.SimState) -> None:
     """Test calculation of scaling metrics for a state."""
     # Test n_atoms metric
     n_atoms_metric = calculate_memory_scaler(si_sim_state, "n_atoms")
@@ -106,7 +106,7 @@ def test_calculate_scaling_metric(si_sim_state: SimState) -> None:
         calculate_memory_scaler(si_sim_state, "invalid_metric")
 
 
-def test_split_state(si_double_sim_state: SimState) -> None:
+def test_split_state(si_double_sim_state: ts.SimState) -> None:
     """Test splitting a batched state into individual states."""
     split_states = si_double_sim_state.split()
 
@@ -125,7 +125,9 @@ def test_split_state(si_double_sim_state: SimState) -> None:
 
 
 def test_binning_auto_batcher(
-    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
 ) -> None:
     """Test BinningAutoBatcher with different states."""
     # Create a list of states with different sizes
@@ -164,8 +166,8 @@ def test_binning_auto_batcher(
 
 
 def test_binning_auto_batcher_auto_metric(
-    si_sim_state: SimState,
-    fe_supercell_sim_state: SimState,
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
     lj_model: LennardJonesModel,
     monkeypatch: Any,
 ) -> None:
@@ -211,7 +213,9 @@ def test_binning_auto_batcher_auto_metric(
 
 
 def test_binning_auto_batcher_with_indices(
-    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
 ) -> None:
     """Test BinningAutoBatcher with return_indices=True."""
     states = [si_sim_state, fe_supercell_sim_state]
@@ -238,7 +242,9 @@ def test_binning_auto_batcher_with_indices(
 
 
 def test_binning_auto_batcher_restore_order_with_split_states(
-    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
 ) -> None:
     """Test BinningAutoBatcher's restore_original_order method with split states."""
     # Create a list of states with different sizes
@@ -279,7 +285,9 @@ def test_binning_auto_batcher_restore_order_with_split_states(
 
 
 def test_in_flight_max_metric_too_small(
-    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
 ) -> None:
     """Test InFlightAutoBatcher with different states."""
     # Create a list of states
@@ -297,7 +305,9 @@ def test_in_flight_max_metric_too_small(
 
 
 def test_in_flight_auto_batcher(
-    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
 ) -> None:
     """Test InFlightAutoBatcher with different states."""
     # Create a list of states
@@ -314,16 +324,16 @@ def test_in_flight_auto_batcher(
 
     # Get the first batch
     first_batch, [], _ = batcher.next_batch(states, None)
-    assert isinstance(first_batch, SimState)
+    assert isinstance(first_batch, ts.SimState)
 
     # Create a convergence tensor where the first state has converged
     convergence = torch.tensor([True])
 
     # Get the next batch
     next_batch, popped_batch, idx = batcher.next_batch(first_batch, convergence)
-    assert isinstance(next_batch, SimState)
+    assert isinstance(next_batch, ts.SimState)
     assert isinstance(popped_batch, list)
-    assert isinstance(popped_batch[0], SimState)
+    assert isinstance(popped_batch[0], ts.SimState)
     assert idx == [1]
 
     # Check that the converged state was removed
@@ -343,7 +353,7 @@ def test_in_flight_auto_batcher(
 
 
 def test_determine_max_batch_size_fibonacci(
-    si_sim_state: SimState, lj_model: LennardJonesModel, monkeypatch: Any
+    si_sim_state: ts.SimState, lj_model: LennardJonesModel, monkeypatch: Any
 ) -> None:
     """Test that determine_max_batch_size uses Fibonacci sequence correctly."""
 
@@ -365,7 +375,9 @@ def test_determine_max_batch_size_fibonacci(
 
 
 def test_in_flight_auto_batcher_restore_order(
-    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
 ) -> None:
     """Test InFlightAutoBatcher's restore_original_order method."""
     states = [si_sim_state, fe_supercell_sim_state]
@@ -409,7 +421,9 @@ def test_in_flight_auto_batcher_restore_order(
 
 
 def test_in_flight_with_fire(
-    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
 ) -> None:
     fire_init, fire_update = unit_cell_fire(lj_model)
 
@@ -429,7 +443,7 @@ def test_in_flight_with_fire(
     )
     batcher.load_states(fire_states)
 
-    def convergence_fn(state: SimState) -> bool:
+    def convergence_fn(state: ts.SimState) -> bool:
         batch_wise_max_force = torch.zeros(
             state.n_batches, device=state.device, dtype=torch.float64
         )
@@ -459,7 +473,9 @@ def test_in_flight_with_fire(
 
 
 def test_binning_auto_batcher_with_fire(
-    si_sim_state: SimState, fe_supercell_sim_state: SimState, lj_model: LennardJonesModel
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
 ) -> None:
     fire_init, fire_update = unit_cell_fire(lj_model)
 
@@ -498,8 +514,8 @@ def test_binning_auto_batcher_with_fire(
 
 
 def test_in_flight_max_iterations(
-    si_sim_state: SimState,
-    fe_supercell_sim_state: SimState,
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
     lj_model: LennardJonesModel,
 ) -> None:
     """Test InFlightAutoBatcher with max_iterations limit."""
