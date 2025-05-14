@@ -79,8 +79,9 @@ jobs:
         if: ${{ matrix.model.name == 'fairchem' }}
         uses: actions/checkout@v4
         with:
-          repository: "FAIR-Chem/fairchem"
-          path: "fairchem-repo"
+          repository: FAIR-Chem/fairchem
+          path: fairchem-repo
+          ref: fairchem_core-1.10.0
 
       - name: Set up Python
         uses: actions/setup-python@v5
