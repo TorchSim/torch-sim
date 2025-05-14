@@ -6,9 +6,9 @@ from typing import Any
 
 import torch
 
+from torch_sim import transforms
 from torch_sim.quantities import calc_kinetic_energy, count_dof
 from torch_sim.state import SimState
-from torch_sim.transforms import pbc_wrap_general
 from torch_sim.typing import StateDict
 
 
@@ -153,7 +153,7 @@ def position_step(state: MDState, dt: torch.Tensor) -> MDState:
     new_positions = state.positions + state.velocities * dt
 
     if state.pbc:
-        new_positions = pbc_wrap_general(new_positions, state.cell)
+        new_positions = transforms.pbc_wrap_general(new_positions, state.cell)
 
     state.positions = new_positions
     return state
@@ -822,7 +822,7 @@ def npt_langevin(  # noqa: C901, PLR0915
 
         # Apply periodic boundary conditions if needed
         if state.pbc:
-            new_positions = pbc_wrap_general(new_positions, state.cell)
+            new_positions = transforms.pbc_wrap_general(new_positions, state.cell)
 
         state.positions = new_positions
         return state
@@ -1831,7 +1831,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         new_positions = state.positions + new_positions
 
         # Apply periodic boundary conditions
-        return pbc_wrap_general(new_positions, state.current_cell.T)
+        return transforms.pbc_wrap_general(new_positions, state.current_cell.T)
 
     def exp_iL2(  # noqa: N802
         alpha: torch.Tensor,

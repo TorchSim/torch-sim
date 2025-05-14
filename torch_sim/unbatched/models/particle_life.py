@@ -2,10 +2,10 @@
 
 import torch
 
+from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.state import SimState
-from torch_sim.transforms import get_pair_displacements
 
 
 DEFAULT_BETA = torch.tensor(0.3)
@@ -155,7 +155,7 @@ class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
                 sort_id=False,
             )
             # Get displacements using neighbor list
-            dr_vec, distances = get_pair_displacements(
+            dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
@@ -164,7 +164,7 @@ class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
             )
         else:
             # Get all pairwise displacements
-            dr_vec, distances = get_pair_displacements(
+            dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,

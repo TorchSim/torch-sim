@@ -8,8 +8,7 @@ from ase import Atoms
 from ase.build import bulk, molecule
 from ase.neighborlist import neighbor_list
 
-from torch_sim import neighbors
-from torch_sim.transforms import compute_cell_shifts, compute_distances_with_cell_shifts
+from torch_sim import neighbors, transforms
 
 
 @pytest.fixture
@@ -207,7 +206,9 @@ def test_primitive_neighbor_list(
 
         # Calculate distances with cell shifts
         cell_shifts_prim = torch.mm(shifts_tensor, row_vector_cell)
-        dds_prim = compute_distances_with_cell_shifts(pos, mapping, cell_shifts_prim)
+        dds_prim = transforms.compute_distances_with_cell_shifts(
+            pos, mapping, cell_shifts_prim
+        )
         dds_prim = np.sort(dds_prim.numpy())
 
         # Get the neighbor list from ase
@@ -229,7 +230,9 @@ def test_primitive_neighbor_list(
 
         # Calculate distances with cell shifts
         cell_shifts_ref = torch.mm(shifts_ref, row_vector_cell)
-        dds_ref = compute_distances_with_cell_shifts(pos, mapping_ref, cell_shifts_ref)
+        dds_ref = transforms.compute_distances_with_cell_shifts(
+            pos, mapping_ref, cell_shifts_ref
+        )
 
         # Sort the distances
         dds_ref = np.sort(dds_ref.numpy())
@@ -280,7 +283,7 @@ def test_neighbor_list_implementations(
 
         # Calculate distances with cell shifts
         cell_shifts = torch.mm(shifts, row_vector_cell)
-        dds = compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
+        dds = transforms.compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
         dds = np.sort(dds.numpy())
 
         # Get the reference neighbor list from ASE
@@ -300,7 +303,9 @@ def test_neighbor_list_implementations(
             shifts_ref, dtype=torch.float64, device=torch.device("cpu")
         )
         cell_shifts_ref = torch.mm(shifts_ref, row_vector_cell)
-        dds_ref = compute_distances_with_cell_shifts(pos, mapping_ref, cell_shifts_ref)
+        dds_ref = transforms.compute_distances_with_cell_shifts(
+            pos, mapping_ref, cell_shifts_ref
+        )
         dds_ref = np.sort(dds_ref.numpy())
         dist_ref = np.sort(dist)
 
@@ -342,8 +347,10 @@ def test_torch_nl_implementations(
     )
 
     # Calculate distances
-    cell_shifts = compute_cell_shifts(row_vector_cell, shifts_idx, mapping_batch)
-    dds = compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
+    cell_shifts = transforms.compute_cell_shifts(
+        row_vector_cell, shifts_idx, mapping_batch
+    )
+    dds = transforms.compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
     dds = np.sort(dds.numpy())
 
     # Get reference results from ASE

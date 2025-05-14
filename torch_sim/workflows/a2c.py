@@ -15,9 +15,9 @@ import numpy as np
 import torch
 from pymatgen.core.composition import Composition
 
+from torch_sim import transforms
 from torch_sim.optimizers import unit_cell_fire as batched_unit_cell_fire
 from torch_sim.state import SimState
-from torch_sim.transforms import get_pair_displacements
 from torch_sim.unbatched.models.soft_sphere import (
     UnbatchedSoftSphereModel,
     UnbatchedSoftSphereMultiModel,
@@ -60,7 +60,7 @@ def min_distance(
     """
     # Calculate all pairwise distances between atoms, considering periodic boundaries
     # Returns both displacement vectors and scalar distances, but we only need distances
-    _, distances = get_pair_displacements(
+    _, distances = transforms.get_pair_displacements(
         positions=positions,
         cell=cell,
         pbc=True,  # Use periodic boundary conditions

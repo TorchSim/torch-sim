@@ -27,10 +27,10 @@ Notes:
 
 import torch
 
+from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.state import SimState
-from torch_sim.transforms import get_pair_displacements
 from torch_sim.typing import StateDict
 from torch_sim.unbatched.models.morse import morse_pair, morse_pair_force
 
@@ -193,7 +193,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
                 cutoff=self.cutoff,
                 sort_id=False,
             )
-            dr_vec, distances = get_pair_displacements(
+            dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
@@ -201,7 +201,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
                 shifts=shifts,
             )
         else:
-            dr_vec, distances = get_pair_displacements(
+            dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
