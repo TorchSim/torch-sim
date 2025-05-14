@@ -7,7 +7,8 @@ converting between different atomistic representations and handling simulation s
 
 import warnings
 from collections.abc import Callable
-from dataclasses import dataclass, make_dataclass
+from dataclasses import dataclass
+from itertools import chain
 
 import torch
 from tqdm import tqdm
@@ -448,11 +449,14 @@ def static(
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: BinningAutoBatcher | bool = False,
     pbar: bool | dict[str, str | float | bool] = False,
-) -> SimState:
+) -> list[dict[str, torch.Tensor]]:
     """Run single point calculations on a batch of systems.
 
-    Returns state with "energy", "forces", "stress", and optionally other fields defined
-    in the trajectory_reporter's prop_calculators.
+    Unlike the other runners, this function does not return a state. Instead, it
+    returns a list of dictionaries, one for each batch in the input state. Each
+    dictionary contains the properties calculated for that batch. It will also
+    modify the state in place with the "energy", "forces", and "stress" properties
+    if they are present in the model output.
 
     Args:
         system (StateLike): Input system to calculate properties for
@@ -472,7 +476,7 @@ def static(
             it's passed to `tqdm` as kwargs.
 
     Returns:
-        SimState: state with properties attached
+        list[dict[str, torch.Tensor]]: Maps of property names to tensors for all batches
     """
     # initialize the state
     state: SimState = initialize_state(system, model.device, model.dtype)
@@ -494,25 +498,13 @@ def static(
     )
 
     @dataclass
-    class _StaticState(type(state)):
+    class StaticState(type(state)):
         energy: torch.Tensor
         forces: torch.Tensor | None
         stress: torch.Tensor | None
 
-    # prop_calculator: dict[int, dict[str, _]], we want dict[str, _]
-    extra_prop_keys = [
-        prop_key
-        for prop_key in next(iter(trajectory_reporter.prop_calculators.values()))
-        if prop_key not in ["energy", "forces", "stress"]
-    ]
-    # dynamically extend class fields for extra properties
-    StaticState = make_dataclass(
-        cls_name="StaticState",
-        fields=[(prop_key, torch.Tensor, None) for prop_key in extra_prop_keys],
-        bases=(_StaticState,),
-    )
-
     final_states: list[SimState] = []
+    all_props: list[dict[str, torch.Tensor]] = []
     og_filenames = trajectory_reporter.filenames
 
     pbar_tracker = None
@@ -540,17 +532,17 @@ def static(
         )
 
         props = trajectory_reporter.report(substate, 0, model=model)
+        all_props.extend(props)
 
-        for prop_key in extra_prop_keys:
-            setattr(substate, prop_key, torch.concat([prop[prop_key] for prop in props]))
-
-        final_states.append(substate)
         if pbar_tracker:
             pbar_tracker.update(substate.n_batches)
 
     trajectory_reporter.finish()
 
     if isinstance(batch_iterator, BinningAutoBatcher):
-        final_states = batch_iterator.restore_original_order(final_states)
+        # reorder properties to match original order of states
+        original_indices = list(chain.from_iterable(batch_iterator.index_bins))
+        indexed_props = list(zip(original_indices, all_props, strict=True))
+        return [prop for _, prop in sorted(indexed_props, key=lambda x: x[0])]
 
-    return concatenate_states(final_states)
+    return all_props
