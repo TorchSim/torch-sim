@@ -198,10 +198,7 @@ def test_model_initialization_custom_params(
     param_name: str, param_value: float, expected_dtype: torch.dtype
 ) -> None:
     """Test initialization with custom parameters."""
-    params = {
-        param_name: param_value,
-        "dtype": expected_dtype,
-    }
+    params = {param_name: param_value, "dtype": expected_dtype}
     model = ss.SoftSphereModel(**params)
 
     param_tensor = getattr(model, param_name)

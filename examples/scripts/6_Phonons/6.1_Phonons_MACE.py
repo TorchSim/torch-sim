@@ -24,7 +24,7 @@ from phonopy.phonon.band_structure import (
 )
 
 import torch_sim as ts
-from torch_sim.models.mace import MaceModel
+from torch_sim.models.mace import MaceModel, MaceUrls
 
 
 def get_qpts_and_connections(
@@ -90,9 +90,8 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
 # Load the raw model
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
-    model=mace_checkpoint_url,
+    model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
     default_dtype=dtype,
     device=device,

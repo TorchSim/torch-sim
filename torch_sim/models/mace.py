@@ -19,6 +19,7 @@ Notes:
 
 import typing
 from collections.abc import Callable
+from enum import StrEnum
 from pathlib import Path
 
 import torch
@@ -361,3 +362,11 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 results["stress"] = stress.detach()
 
         return results
+
+
+class MaceUrls(StrEnum):
+    """Checkpoint download URLs for MACE models."""
+
+    mace_mp_small = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mace_agnesi_small.model"
+    mace_mpa_medium = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
+    mace_off_small = "https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model?raw=true"

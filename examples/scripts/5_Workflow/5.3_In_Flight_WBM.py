@@ -15,7 +15,7 @@ import torch
 from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
-from torch_sim.models.mace import MaceModel
+from torch_sim.models.mace import MaceModel, MaceUrls
 
 
 # --- Setup and Configuration ---
@@ -26,8 +26,7 @@ print(f"job will run on {device=}")
 
 # --- Model Initialization ---
 print("Loading MACE model...")
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
-mace = mace_mp(model=mace_checkpoint_url, return_raw_model=True)
+mace = mace_mp(model=MaceUrls.mace_mpa_medium, return_raw_model=True)
 mace_model = MaceModel(
     model=mace,
     device=device,

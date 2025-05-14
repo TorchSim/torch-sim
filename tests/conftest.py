@@ -1,4 +1,3 @@
-from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -11,18 +10,13 @@ from pymatgen.core import Structure
 
 import torch_sim as ts
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.models.mace import MaceModel
+from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.state import concatenate_states
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 
 
 if TYPE_CHECKING:
     from mace.calculators import MACECalculator
-
-
-class MaceUrls(StrEnum):
-    mace_small = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mace_agnesi_small.model"
-    mace_off_small = "https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model?raw=true"
 
 
 @pytest.fixture
@@ -336,7 +330,7 @@ def ase_mace_mpa() -> "MACECalculator":
     from mace.calculators.foundations_models import mace_mp
 
     # Ensure dtype matches the one used in the torchsim fixture (float64)
-    return mace_mp(model=MaceUrls.mace_small, default_dtype="float64")
+    return mace_mp(model=MaceUrls.mace_mp_small, default_dtype="float64")
 
 
 @pytest.fixture
@@ -347,7 +341,7 @@ def torchsim_mace_mpa() -> MaceModel:
     # Use float64 for potentially higher precision needed in optimization
     dtype = getattr(torch, dtype_str := "float64")
     raw_mace = mace_mp(
-        model=MaceUrls.mace_small, return_raw_model=True, default_dtype=dtype_str
+        model=MaceUrls.mace_mp_small, return_raw_model=True, default_dtype=dtype_str
     )
     return MaceModel(
         model=raw_mace,
