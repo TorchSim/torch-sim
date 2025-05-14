@@ -1050,7 +1050,7 @@ def multiplicative_isotropic_cutoff(
 
     References:
         HOOMD-blue documentation:
-        https://hoomd-blue.readthedocs.io/en/stable/module-md-pair.html#hoomd.md.pair.pair
+        https://hoomd-blue.readthedocs.io/en/latest/hoomd/md/module-pair.html
     """
     r_c = r_cutoff**2
     r_o = r_onset**2

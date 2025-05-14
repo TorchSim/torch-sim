@@ -26,9 +26,11 @@ This folder contains a series of examples demonstrating the use of TorchSim, a l
 
    1. **Batched MACE Gradient Descent** - [`examples/2_Structural_optimization/2.6_Batched_MACE_Gradient_Descent.py`](2_Structural_optimization/2.6_Batched_MACE_Gradient_Descent.py): Optimize multiple structures simultaneously using batched gradient descent with the MACE model.
 
-   1. **Batched MACE UnitCellFilter Gradient Descent** - [`examples/2_Structural_optimization/2.7_Batched_MACE_UnitCellFilter_Gradient_Descent.py`](2_Structural_optimization/2.7_Batched_MACE_UnitCellFilter_Gradient_Descent.py): Optimize multiple structures and their unit cells using batched gradient descent with MACE.
+   1. **Batched MACE FIRE** - [`examples/2_Structural_optimization/2.7_Batched_MACE_FIRE.py`](2_Structural_optimization/2.7_Batched_MACE_FIRE.py): Optimize multiple structures simultaneously using the batched FIRE optimizer with MACE.
 
-   1. **Batched MACE UnitCellFilter FIRE** - [`examples/2_Structural_optimization/2.8_Batched_MACE_UnitCellFilter_FIRE.py`](2_Structural_optimization/2.8_Batched_MACE_UnitCellFilter_FIRE.py): Optimize multiple structures and their unit cells using the batched FIRE optimizer with MACE.
+   1. **Batched MACE UnitCellFilter Gradient Descent** - [`examples/2_Structural_optimization/2.8_Batched_MACE_UnitCellFilter_Gradient_Descent.py`](2_Structural_optimization/2.8_Batched_MACE_UnitCellFilter_Gradient_Descent.py): Optimize multiple structures and their unit cells using batched gradient descent with MACE.
+
+   1. **Batched MACE UnitCellFilter FIRE** - [`examples/2_Structural_optimization/2.9_Batched_MACE_UnitCellFilter_FIRE.py`](2_Structural_optimization/2.9_Batched_MACE_UnitCellFilter_FIRE.py): Optimize multiple structures and their unit cells using the batched FIRE optimizer with MACE.
 
 1. **Dynamics**
 

@@ -81,7 +81,7 @@ test_fairchem_non_pbc_benzene = make_model_calculator_consistency_test(
 
 
 # Skip this test due to issues with how the older models
-# handled supercells (see related issue here: https://github.com/FAIR-Chem/fairchem/issues/428)
+# handled supercells (see related issue here: https://github.com/facebookresearch/fairchem/issues/428)
 
 test_fairchem_ocp_model_outputs = pytest.mark.skipif(
     os.environ.get("HF_TOKEN") is None,
