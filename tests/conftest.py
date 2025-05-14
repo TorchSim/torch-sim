@@ -1,12 +1,10 @@
-from typing import Any
+from typing import TYPE_CHECKING, Any, Final
 
 import pytest
 import torch
 from ase import Atoms
 from ase.build import bulk, molecule
 from ase.spacegroup import crystal
-from mace.calculators import MACECalculator
-from mace.calculators.foundations_models import mace_mp
 from phonopy.structure.atoms import PhonopyAtoms
 from pymatgen.core import Structure
 
@@ -15,6 +13,10 @@ from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.models.mace import MaceModel
 from torch_sim.state import SimState, concatenate_states
 from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
+
+
+if TYPE_CHECKING:
+    from mace.calculators import MACECalculator
 
 
 @pytest.fixture
@@ -322,12 +324,16 @@ def lj_model(device: torch.device, dtype: torch.dtype) -> LennardJonesModel:
     )
 
 
-MACE_CHECKPOINT_URL = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
+MACE_CHECKPOINT_URL: Final[str] = (
+    "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mace_agnesi_small.model"
+)
 
 
 @pytest.fixture
-def ase_mace_mpa() -> MACECalculator:
+def ase_mace_mpa() -> "MACECalculator":
     """Provides an ASE MACECalculator instance using mace_mp."""
+    from mace.calculators.foundations_models import mace_mp
+
     # Ensure dtype matches the one used in the torchsim fixture (float64)
     return mace_mp(model=MACE_CHECKPOINT_URL, default_dtype="float64")
 
@@ -335,6 +341,8 @@ def ase_mace_mpa() -> MACECalculator:
 @pytest.fixture
 def torchsim_mace_mpa() -> MaceModel:
     """Provides a MACE MP model instance for the optimizer tests."""
+    from mace.calculators.foundations_models import mace_mp
+
     # Use float64 for potentially higher precision needed in optimization
     dtype = getattr(torch, dtype_str := "float64")
     raw_mace = mace_mp(

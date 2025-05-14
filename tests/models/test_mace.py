@@ -117,13 +117,11 @@ test_mace_off_consistency = make_model_calculator_consistency_test(
     test_name="mace_off",
     model_fixture_name="torchsim_mace_off_model",
     calculator_fixture_name="ase_mace_off_calculator",
-    sim_state_names=[
-        "benzene_sim_state",
-    ],
+    sim_state_names=["benzene_sim_state"],
 )
 
 test_mace_off_model_outputs = make_validate_model_outputs_test(
-    model_fixture_name="torchsim_mace_model",
+    model_fixture_name="torchsim_mace_model"
 )
 
 
