@@ -160,12 +160,12 @@ def integrate(
     final_states: list[SimState] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
 
-    pbar_tracker = None
+    tqdm_pbar = None
     if pbar and autobatcher:
         pbar_kwargs = pbar if isinstance(pbar, dict) else {}
         pbar_kwargs.setdefault("desc", "Integrate")
         pbar_kwargs.setdefault("disable", None)
-        pbar_tracker = tqdm(total=state.n_batches, **pbar_kwargs)
+        tqdm_pbar = tqdm(total=state.n_batches, **pbar_kwargs)
 
     for state, batch_indices in batch_iterator:
         state = init_fn(state)
@@ -186,8 +186,8 @@ def integrate(
 
         # finish the trajectory reporter
         final_states.append(state)
-        if pbar_tracker:
-            pbar_tracker.update(state.n_batches)
+        if tqdm_pbar:
+            tqdm_pbar.update(state.n_batches)
 
     if trajectory_reporter:
         trajectory_reporter.finish()
@@ -395,12 +395,12 @@ def optimize(  # noqa: C901
     all_converged_states, convergence_tensor = [], None
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
 
-    pbar_tracker = None
+    tqdm_pbar = None
     if pbar and autobatcher:
         pbar_kwargs = pbar if isinstance(pbar, dict) else {}
         pbar_kwargs.setdefault("desc", "Optimize")
         pbar_kwargs.setdefault("disable", None)
-        pbar_tracker = tqdm(total=state.n_batches, **pbar_kwargs)
+        tqdm_pbar = tqdm(total=state.n_batches, **pbar_kwargs)
 
     while (result := autobatcher.next_batch(state, convergence_tensor))[0] is not None:
         state, converged_states, batch_indices = result
@@ -426,9 +426,9 @@ def optimize(  # noqa: C901
                 break
 
         convergence_tensor = convergence_fn(state, last_energy)
-        if pbar_tracker:
+        if tqdm_pbar:
             # assume convergence_tensor shape is correct
-            pbar_tracker.update(torch.count_nonzero(convergence_tensor).item())
+            tqdm_pbar.update(torch.count_nonzero(convergence_tensor).item())
 
     all_converged_states.extend(result[1])
 
@@ -506,12 +506,12 @@ def static(
     all_props: list[dict[str, torch.Tensor]] = []
     og_filenames = trajectory_reporter.filenames
 
-    pbar_tracker = None
+    tqdm_pbar = None
     if pbar and autobatcher:
         pbar_kwargs = pbar if isinstance(pbar, dict) else {}
         pbar_kwargs.setdefault("desc", "Static")
         pbar_kwargs.setdefault("disable", None)
-        pbar_tracker = tqdm(total=state.n_batches, **pbar_kwargs)
+        tqdm_pbar = tqdm(total=state.n_batches, **pbar_kwargs)
 
     for substate, batch_indices in batch_iterator:
         print(substate.atomic_numbers)
@@ -534,8 +534,8 @@ def static(
         props = trajectory_reporter.report(substate, 0, model=model)
         all_props.extend(props)
 
-        if pbar_tracker:
-            pbar_tracker.update(substate.n_batches)
+        if tqdm_pbar:
+            tqdm_pbar.update(substate.n_batches)
 
     trajectory_reporter.finish()
 
