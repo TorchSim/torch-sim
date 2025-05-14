@@ -19,6 +19,7 @@ import traceback
 import typing
 import warnings
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -45,9 +46,7 @@ except ImportError as exc:
         It raises an ImportError if orb_models is not installed.
         """
 
-        def __init__(
-            self, err: ImportError = exc, *_args: typing.Any, **_kwargs: typing.Any
-        ) -> None:
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
             """Dummy init for type checking."""
             raise err
 

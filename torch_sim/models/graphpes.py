@@ -17,6 +17,7 @@ import traceback
 import typing
 import warnings
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -42,14 +43,12 @@ except ImportError as exc:
         It raises an ImportError if graph_pes is not installed.
         """
 
-        def __init__(
-            self, err: ImportError = exc, *_args: typing.Any, **_kwargs: typing.Any
-        ) -> None:
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
             """Dummy init for type checking."""
             raise err
 
     class AtomicGraph:  # type: ignore[reportRedeclaration]  # noqa: D101
-        def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:  # noqa: D107,ARG002
+        def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: D107,ARG002
             raise ImportError("graph_pes must be installed to use this model.")
 
     class GraphPESModel(torch.nn.Module):  # type: ignore[reportRedeclaration]  # noqa: D101

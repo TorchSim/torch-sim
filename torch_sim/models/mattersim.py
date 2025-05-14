@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import traceback
-import typing
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -29,9 +28,7 @@ except ImportError as exc:
         It raises an ImportError if sevenn is not installed.
         """
 
-        def __init__(
-            self, err: ImportError = exc, *_args: typing.Any, **_kwargs: typing.Any
-        ) -> None:
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
             """Dummy init for type checking."""
             raise err
 
