@@ -321,7 +321,7 @@ def generate_energy_convergence_fn(energy_tol: float = 1e-3) -> Callable:
     return convergence_fn
 
 
-def optimize(
+def optimize(  # noqa: C901
     system: StateLike,
     model: ModelInterface,
     *,
