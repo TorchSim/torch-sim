@@ -177,8 +177,8 @@ class MaceModel(torch.nn.Module, ModelInterface):
         self.z_table = utils.AtomicNumberTable(
             [int(z) for z in self.model.atomic_numbers]
         )
-        self.model.atomic_numbers = torch.tensor(
-            self.model.atomic_numbers.detach().clone(), device=self.device
+        self.model.atomic_numbers = (
+            self.model.atomic_numbers.detach().clone().to(device=self.device)
         )
 
         # Store flag to track if atomic numbers were provided at init
