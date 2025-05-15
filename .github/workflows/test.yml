@@ -103,7 +103,6 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
         run: |
-          uv pip install "torch>2" --index-url https://download.pytorch.org/whl/cpu --system
           uv pip install huggingface_hub --system
           if [ -n "$HF_TOKEN" ]; then
             huggingface-cli login --token "$HF_TOKEN"
@@ -122,7 +121,6 @@ jobs:
       - name: Install torch_sim with model dependencies
         if: ${{ matrix.model.name != 'fairchem' }}
         run: |
-          uv pip install "torch>2" --index-url https://download.pytorch.org/whl/cpu --system
           uv pip install -e .[test,${{ matrix.model.name }}] --resolution=${{ matrix.version.resolution }} --system
 
       - name: Run ${{ matrix.model.test_path }} tests
