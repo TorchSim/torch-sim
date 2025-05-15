@@ -144,12 +144,6 @@ test_graphpes_nequip_consistency = make_model_calculator_consistency_test(
     model_fixture_name="ts_nequip_model",
     calculator_fixture_name="ase_nequip_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
-    energy_rtol=8e-5,
-    energy_atol=8e-5,
-    force_rtol=8e-5,
-    force_atol=8e-5,
-    stress_rtol=8e-5,
-    stress_atol=8e-5,
 )
 
 test_graphpes_nequip_model_outputs = make_validate_model_outputs_test(
@@ -177,16 +171,6 @@ test_graphpes_mace_consistency = make_model_calculator_consistency_test(
     model_fixture_name="ts_mace_model",
     calculator_fixture_name="ase_mace_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
-    # graph-pes passes data directly to the underlying mace-torch model
-    # from test_mace.py, it seems that these mace-torch models can be
-    # surprisingly variable in the CI (these tests pass locally on
-    # MacBooks with no need for high tolerances)
-    # While investigating, I found that mace-torch model predictions are
-    # mildly sensitive to the order of items in the neighbourlist - this
-    # could be the cause of the discrepancies between the ASE calculator
-    # and the TorchSim wrapper, both here and in test_mace.py
-    rtol=6e-4,
-    atol=1e-5,
 )
 
 test_graphpes_mace_model_outputs = make_validate_model_outputs_test(
