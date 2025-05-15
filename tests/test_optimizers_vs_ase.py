@@ -1,10 +1,10 @@
 import copy
 import functools
 
+import pytest
 import torch
 from ase.filters import FrechetCellFilter
 from ase.optimize import FIRE
-from mace.calculators import MACECalculator
 
 import torch_sim as ts
 from torch_sim.io import state_to_atoms
@@ -12,6 +12,13 @@ from torch_sim.models.mace import MaceModel
 from torch_sim.optimizers import frechet_cell_fire
 
 
+try:
+    from mace.calculators import MACECalculator
+except ImportError:
+    MACECalculator = None
+
+
+@pytest.mark.skipif(MACECalculator is None, reason="MACECalculator not installed")
 def test_torchsim_frechet_cell_fire_vs_ase_mace(
     rattled_sio2_sim_state: ts.state.SimState,
     torchsim_mace_mpa: MaceModel,

@@ -144,8 +144,12 @@ test_graphpes_nequip_consistency = make_model_calculator_consistency_test(
     model_fixture_name="ts_nequip_model",
     calculator_fixture_name="ase_nequip_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
-    rtol=8e-5,
-    atol=8e-5,
+    energy_rtol=8e-5,
+    energy_atol=8e-5,
+    force_rtol=8e-5,
+    force_atol=8e-5,
+    stress_rtol=8e-5,
+    stress_atol=8e-5,
 )
 
 test_graphpes_nequip_model_outputs = make_validate_model_outputs_test(

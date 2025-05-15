@@ -199,6 +199,8 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
 
             shifts = torch.mm(shifts_idx, row_vector_cell)
             edge_vec = pos[edge_idx[1]] - pos[edge_idx[0]] + shifts
+            vol = torch.det(row_vector_cell)
+            # vol = vol if vol > 0.0 else torch.tensor(np.finfo(float).eps)
 
             data = {
                 key.NODE_FEATURE: atomic_numbers,
@@ -210,7 +212,7 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
                 key.EDGE_VEC: edge_vec,
                 key.CELL: row_vector_cell,
                 key.CELL_SHIFT: shifts_idx,
-                key.CELL_VOLUME: torch.det(row_vector_cell),
+                key.CELL_VOLUME: vol,
                 key.NUM_ATOMS: torch.tensor(len(atomic_numbers), device=self.device),
                 key.DATA_MODALITY: self.modal,
             }

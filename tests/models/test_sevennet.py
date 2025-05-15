@@ -31,6 +31,12 @@ def model_name() -> str:
 
 
 @pytest.fixture
+def modal_name() -> str:
+    """Fixture to provide the modal name for testing."""
+    return "mpa"
+
+
+@pytest.fixture
 def pretrained_sevenn_model(device: torch.device, model_name: str):
     """Load a pretrained SevenNet model for testing."""
     cp = sevenn.util.load_checkpoint(model_name)
@@ -44,20 +50,22 @@ def pretrained_sevenn_model(device: torch.device, model_name: str):
 
 @pytest.fixture
 def sevenn_model(
-    pretrained_sevenn_model: torch.nn.Module, device: torch.device
+    pretrained_sevenn_model: torch.nn.Module, device: torch.device, modal_name: str
 ) -> SevenNetModel:
     """Create an SevenNetModel wrapper for the pretrained model."""
     return SevenNetModel(
         model=pretrained_sevenn_model,
-        modal="mpa",
+        modal=modal_name,
         device=device,
     )
 
 
 @pytest.fixture
-def sevenn_calculator(device: torch.device, model_name: str) -> SevenNetCalculator:
+def sevenn_calculator(
+    device: torch.device, model_name: str, modal_name: str
+) -> SevenNetCalculator:
     """Create an SevenNetCalculator for the pretrained model."""
-    return SevenNetCalculator(model_name, modal="mpa", device=device)
+    return SevenNetCalculator(model_name, modal=modal_name, device=device)
 
 
 def test_sevennet_initialization(
@@ -74,11 +82,13 @@ def test_sevennet_initialization(
     assert model._device == device  # noqa: SLF001
 
 
+# NOTE: we take [:-1] to skipbenzene due to eps volume giving numerically
+# unstable stress off diagonal in xy. See: https://github.com/MDIL-SNU/SevenNet/issues/212
 test_sevennet_consistency = make_model_calculator_consistency_test(
     test_name="sevennet",
     model_fixture_name="sevenn_model",
     calculator_fixture_name="sevenn_calculator",
-    sim_state_names=consistency_test_simstate_fixtures,
+    sim_state_names=consistency_test_simstate_fixtures[:-1],
 )
 
 
