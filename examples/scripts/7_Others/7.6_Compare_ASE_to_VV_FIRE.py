@@ -37,20 +37,21 @@ loaded_model = mace_mp(
 
 # Number of steps to run
 max_iterations = 10 if os.getenv("CI") else 500
+supercell_scale = (1, 1, 1) if os.getenv("CI") else (3, 2, 2)
 
 # Set random seed for reproducibility
 rng = np.random.default_rng(seed=0)
 
 # Create diamond cubic Silicon
-si_dc = bulk("Si", "diamond", a=5.21, cubic=True).repeat((4, 4, 4))
+si_dc = bulk("Si", "diamond", a=5.21, cubic=True).repeat(supercell_scale)
 si_dc.positions += 0.1 * rng.standard_normal(si_dc.positions.shape).clip(-1, 1)
 
 # Create FCC Copper
-cu_dc = bulk("Cu", "fcc", a=3.85).repeat((5, 5, 5))
+cu_dc = bulk("Cu", "fcc", a=3.85).repeat([r + 1 for r in supercell_scale])
 cu_dc.positions += 0.1 * rng.standard_normal(cu_dc.positions.shape).clip(-1, 1)
 
 # Create BCC Iron
-fe_dc = bulk("Fe", "bcc", a=2.95).repeat((5, 5, 5))
+fe_dc = bulk("Fe", "bcc", a=2.95).repeat([r + 1 for r in supercell_scale])
 fe_dc.positions += 0.1 * rng.standard_normal(fe_dc.positions.shape).clip(-1, 1)
 
 si_dc_vac = si_dc.copy()
@@ -237,9 +238,9 @@ print(f"{force_tol=:.2f} eV/Å")
 ase_final_states_list = ase_final_state.split()
 vv_final_states_list = vv_final_state.split()
 mean_displacements = []
-for idx in range(len(ase_final_states_list)):
-    ase_pos = ase_final_states_list[idx].positions
-    vv_pos = vv_final_states_list[idx].positions
+for ase_state, vv_state in zip(ase_final_states_list, vv_final_states_list, strict=True):
+    ase_pos = ase_state.positions - ase_state.positions.mean(dim=0)
+    vv_pos = vv_state.positions - vv_state.positions.mean(dim=0)
     displacement = torch.norm(ase_pos - vv_pos, dim=1)
     mean_disp = torch.mean(displacement).item()
     mean_displacements.append(mean_disp)
