@@ -217,6 +217,7 @@ class MetatensorModel(torch.nn.Module, ModelInterface):
                 )
                 system_positions = system_positions @ strain
                 system_cell = system_cell @ strain
+                strains.append(strain)  # Add strain to the list
 
             systems.append(
                 System(

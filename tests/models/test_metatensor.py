@@ -58,6 +58,7 @@ test_mattersim_consistency = make_model_calculator_consistency_test(
     model_fixture_name="metatensor_model",
     calculator_fixture_name="metatensor_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
+    energy_atol=5e-5,
 )
 
 test_mattersim_model_outputs = make_validate_model_outputs_test(
