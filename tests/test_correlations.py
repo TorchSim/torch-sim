@@ -8,7 +8,6 @@ with known correlation properties.
 
 import math
 from collections.abc import Callable
-from typing import Any
 
 import pytest
 import torch
@@ -63,7 +62,7 @@ def corr_calc(device: torch.device) -> CorrelationCalculator:
     """Fixture for creating a CorrelationCalculator instance."""
     window_size = 5
 
-    def velocity_getter(state: Any) -> torch.Tensor:
+    def velocity_getter(state: MockState) -> torch.Tensor:
         return state.velocities
 
     properties = {"velocity": velocity_getter}

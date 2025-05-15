@@ -169,7 +169,7 @@ def test_binning_auto_batcher_auto_metric(
     si_sim_state: ts.SimState,
     fe_supercell_sim_state: ts.SimState,
     lj_model: LennardJonesModel,
-    monkeypatch: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test BinningAutoBatcher with different states."""
     # monkeypath determine max memory scaler
@@ -353,7 +353,9 @@ def test_in_flight_auto_batcher(
 
 
 def test_determine_max_batch_size_fibonacci(
-    si_sim_state: ts.SimState, lj_model: LennardJonesModel, monkeypatch: Any
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test that determine_max_batch_size uses Fibonacci sequence correctly."""
 

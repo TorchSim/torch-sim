@@ -1,5 +1,3 @@
-from typing import Any
-
 import pytest
 import torch
 
@@ -323,7 +321,9 @@ def test_nve(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
     "sim_state_fixture_name", ["casio3_sim_state", "ar_supercell_sim_state"]
 )
 def test_compare_single_vs_batched_integrators(
-    sim_state_fixture_name: str, request: pytest.FixtureRequest, lj_model: Any
+    sim_state_fixture_name: str,
+    request: pytest.FixtureRequest,
+    lj_model: LennardJonesModel,
 ) -> None:
     """Test NVE single vs batched for a tilted cell to verify PBC wrapping.
 

@@ -1,10 +1,9 @@
-from typing import Any
-
 import pytest
 import torch
 
 import torch_sim as ts
 from torch_sim.quantities import calc_kinetic_energy, calc_kT
+from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.unbatched.unbatched_integrators import (
     MDState,
     calculate_momenta,
@@ -20,7 +19,7 @@ from torch_sim.units import MetalUnits
 
 
 def test_nve_integrator(
-    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: Any
+    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: UnbatchedLennardJonesModel
 ) -> None:
     """Test NVE integration conserves energy."""
     # Initialize integrator
@@ -48,7 +47,7 @@ def test_nve_integrator(
 
 
 def test_nvt_langevin_integrator(
-    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: Any
+    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: UnbatchedLennardJonesModel
 ) -> None:
     """Test Langevin thermostat maintains target temperature."""
     # Initialize integrator
@@ -77,7 +76,7 @@ def test_nvt_langevin_integrator(
 
 
 def test_nvt_nose_hoover_integrator(
-    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: Any
+    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: UnbatchedLennardJonesModel
 ) -> None:
     """Test Nose-Hoover chain thermostat maintains temperature."""
     # Initialize integrator
@@ -116,7 +115,7 @@ def test_nvt_nose_hoover_integrator(
 
 
 def test_npt_langevin_integrator(
-    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: Any
+    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: UnbatchedLennardJonesModel
 ) -> None:
     """Test Langevin thermostat maintains target temperature."""
     # Initialize integrator
@@ -163,7 +162,7 @@ def test_npt_langevin_integrator(
 
 
 def test_integrator_state_properties(
-    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: Any
+    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: UnbatchedLennardJonesModel
 ) -> None:
     """Test that all integrators preserve state properties."""
     device = ar_supercell_sim_state.positions.device
@@ -215,7 +214,7 @@ def test_integrator_state_properties(
 
 
 def test_nvt_nose_hoover_invariant(
-    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: Any
+    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: UnbatchedLennardJonesModel
 ) -> None:
     """Test Nose-Hoover chain thermostat maintains temperature."""
     # Initialize integrator
@@ -248,7 +247,7 @@ def test_nvt_nose_hoover_invariant(
 
 @pytest.mark.skip(reason="NPT Nose-Hoover needs debugging")
 def test_npt_nose_hoover_invariant(
-    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: Any
+    ar_supercell_sim_state: ts.SimState, unbatched_lj_model: UnbatchedLennardJonesModel
 ) -> None:
     """Test NPT Nose-Hoover chain thermostats maintain temperature and pressure."""
     # Initialize integrator
