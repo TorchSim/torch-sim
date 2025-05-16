@@ -1,15 +1,13 @@
 import copy
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
 import pytest
 import torch
-from ase.build import bulk
 from ase.filters import FrechetCellFilter, UnitCellFilter
 from ase.optimize import FIRE
 
 import torch_sim as ts
-from torch_sim.io import atoms_to_state, state_to_atoms
+from torch_sim.io import state_to_atoms
 from torch_sim.models.mace import MaceModel
 from torch_sim.optimizers import frechet_cell_fire, unit_cell_fire
 
@@ -18,50 +16,6 @@ if TYPE_CHECKING:
     from mace.calculators import MACECalculator
 
 
-@pytest.fixture
-def osn2_sim_state(torchsim_mace_mpa: MaceModel) -> ts.state.SimState:
-    """Provides an initial SimState for rhombohedral OsN2."""
-    # For pymatgen Structure initialization
-    from pymatgen.core import Lattice, Structure
-
-    a = 3.211996
-    lattice = Lattice.from_parameters(a, a, a, 60, 60, 60)
-    species = ["Os", "N"]
-    frac_coords = [[0.75, 0.7501, -0.25], [0, 0, 0]]  # Slightly perturbed
-    structure = Structure(lattice, species, frac_coords, coords_are_cartesian=False)
-    return ts.initialize_state(
-        structure, dtype=torchsim_mace_mpa.dtype, device=torchsim_mace_mpa.device
-    )
-
-
-@pytest.fixture
-def distorted_fcc_al_conventional_sim_state(
-    torchsim_mace_mpa: MaceModel,
-) -> ts.state.SimState:
-    """Initial SimState for a slightly distorted FCC Al conventional cell (4 atoms)."""
-    # Create a standard 4-atom conventional FCC Al cell
-    atoms_fcc = bulk("Al", crystalstructure="fcc", a=4.05, cubic=True)
-
-    # Define a small triclinic strain matrix (deviations from identity)
-    strain_matrix = np.array([[1.0, 0.05, -0.03], [0.04, 1.0, 0.06], [-0.02, 0.03, 1.0]])
-
-    original_cell = atoms_fcc.get_cell()
-    new_cell = original_cell @ strain_matrix.T  # Apply strain
-    atoms_fcc.set_cell(new_cell, scale_atoms=True)
-
-    # Slightly perturb atomic positions to break perfect symmetry after strain
-    positions = atoms_fcc.get_positions()
-    np_rng = np.random.default_rng(seed=42)
-    positions += np_rng.normal(scale=0.01, size=positions.shape)
-    atoms_fcc.set_positions(positions)
-
-    dtype = torchsim_mace_mpa.dtype
-    device = torchsim_mace_mpa.device
-    # Convert the ASE Atoms object to SimState (will be a single batch with 4 atoms)
-    return atoms_to_state(atoms_fcc, device=device, dtype=dtype)
-
-
-# Helper function to run and compare optimizations
 def _run_and_compare_optimizers(
     initial_sim_state_fixture: ts.state.SimState,
     torchsim_mace_mpa: MaceModel,
@@ -73,6 +27,7 @@ def _run_and_compare_optimizers(
     tolerances: dict[str, float],
     test_id_prefix: str,
 ) -> None:
+    """Run and compare optimizations between torch-sim and ASE."""
     pytest.importorskip("mace")
     dtype = torch.float64
     device = torchsim_mace_mpa.device
