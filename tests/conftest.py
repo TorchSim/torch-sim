@@ -32,6 +32,66 @@ def dtype() -> torch.dtype:
 
 
 @pytest.fixture
+def unbatched_lj_model(
+    device: torch.device, dtype: torch.dtype
+) -> UnbatchedLennardJonesModel:
+    """Create a Lennard-Jones model with reasonable parameters for Ar."""
+    return UnbatchedLennardJonesModel(
+        use_neighbor_list=True,
+        sigma=3.405,
+        epsilon=0.0104,
+        device=device,
+        dtype=dtype,
+        compute_forces=True,
+        compute_stress=True,
+        cutoff=2.5 * 3.405,
+    )
+
+
+@pytest.fixture
+def lj_model(device: torch.device, dtype: torch.dtype) -> LennardJonesModel:
+    """Create a Lennard-Jones model with reasonable parameters for Ar."""
+    return LennardJonesModel(
+        use_neighbor_list=True,
+        sigma=3.405,
+        epsilon=0.0104,
+        device=device,
+        dtype=dtype,
+        compute_forces=True,
+        compute_stress=True,
+        cutoff=2.5 * 3.405,
+    )
+
+
+@pytest.fixture
+def ase_mace_mpa() -> "MACECalculator":
+    """Provides an ASE MACECalculator instance using mace_mp."""
+    from mace.calculators.foundations_models import mace_mp
+
+    # Ensure dtype matches the one used in the torchsim fixture (float64)
+    return mace_mp(model=MaceUrls.mace_mp_small, default_dtype="float64")
+
+
+@pytest.fixture
+def torchsim_mace_mpa() -> MaceModel:
+    """Provides a MACE MP model instance for the optimizer tests."""
+    from mace.calculators.foundations_models import mace_mp
+
+    # Use float64 for potentially higher precision needed in optimization
+    dtype = getattr(torch, dtype_str := "float64")
+    raw_mace = mace_mp(
+        model=MaceUrls.mace_mp_small, return_raw_model=True, default_dtype=dtype_str
+    )
+    return MaceModel(
+        model=raw_mace,
+        device="cpu",
+        dtype=dtype,
+        compute_forces=True,
+        compute_stress=True,
+    )
+
+
+@pytest.fixture
 def ar_atoms() -> Atoms:
     """Create a face-centered cubic (FCC) Argon structure."""
     return bulk("Ar", "fcc", a=5.26, cubic=True)
@@ -291,66 +351,6 @@ def mixed_double_sim_state(
     return concatenate_states(
         [ar_supercell_sim_state, si_sim_state],
         device=ar_supercell_sim_state.device,
-    )
-
-
-@pytest.fixture
-def unbatched_lj_model(
-    device: torch.device, dtype: torch.dtype
-) -> UnbatchedLennardJonesModel:
-    """Create a Lennard-Jones model with reasonable parameters for Ar."""
-    return UnbatchedLennardJonesModel(
-        use_neighbor_list=True,
-        sigma=3.405,
-        epsilon=0.0104,
-        device=device,
-        dtype=dtype,
-        compute_forces=True,
-        compute_stress=True,
-        cutoff=2.5 * 3.405,
-    )
-
-
-@pytest.fixture
-def lj_model(device: torch.device, dtype: torch.dtype) -> LennardJonesModel:
-    """Create a Lennard-Jones model with reasonable parameters for Ar."""
-    return LennardJonesModel(
-        use_neighbor_list=True,
-        sigma=3.405,
-        epsilon=0.0104,
-        device=device,
-        dtype=dtype,
-        compute_forces=True,
-        compute_stress=True,
-        cutoff=2.5 * 3.405,
-    )
-
-
-@pytest.fixture
-def ase_mace_mpa() -> "MACECalculator":
-    """Provides an ASE MACECalculator instance using mace_mp."""
-    from mace.calculators.foundations_models import mace_mp
-
-    # Ensure dtype matches the one used in the torchsim fixture (float64)
-    return mace_mp(model=MaceUrls.mace_mp_small, default_dtype="float64")
-
-
-@pytest.fixture
-def torchsim_mace_mpa() -> MaceModel:
-    """Provides a MACE MP model instance for the optimizer tests."""
-    from mace.calculators.foundations_models import mace_mp
-
-    # Use float64 for potentially higher precision needed in optimization
-    dtype = getattr(torch, dtype_str := "float64")
-    raw_mace = mace_mp(
-        model=MaceUrls.mace_mp_small, return_raw_model=True, default_dtype=dtype_str
-    )
-    return MaceModel(
-        model=raw_mace,
-        device="cpu",
-        dtype=dtype,
-        compute_forces=True,
-        compute_stress=True,
     )
 
 

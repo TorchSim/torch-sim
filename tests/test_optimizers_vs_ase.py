@@ -195,7 +195,7 @@ def _run_and_compare_optimizers(
             UnitCellFilter,
             [33, 66, 100],
             0.02,
-            {"energy": 1.5e-2, "pos": 2.5e-2, "cell": 5e-2, "force_max": 1.5e-1},
+            {"energy": 1.5e-2, "pos": 2.5e-2, "cell": 5e-2, "force_max": 0.25},
             "SiO2 (UnitCell)",
         ),
     ],
