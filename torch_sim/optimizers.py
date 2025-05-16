@@ -514,8 +514,7 @@ def fire(
         f_alpha (float): Factor for mixing parameter decrease
         max_step (float): Maximum distance an atom can move per iteration (default
             value is 0.2). Only used when md_flavor='ase_fire'.
-        md_flavor (MdFlavor): Optimization flavor, either "vv_fire" or "ase_fire".
-            Default is "ase_fire".
+        md_flavor ("vv_fire" | "ase_fire"): Optimization flavor. Default is "ase_fire".
 
     Returns:
         tuple[Callable, Callable]:
@@ -736,8 +735,7 @@ def unit_cell_fire(
         constant_volume (bool): Whether to maintain constant volume during optimization
         scalar_pressure (float): Applied external pressure in GPa
         max_step (float): Maximum allowed step size for ase_fire
-        md_flavor (MdFlavor): Optimization flavor, either "vv_fire" or "ase_fire".
-            Default is "ase_fire".
+        md_flavor ("vv_fire" | "ase_fire"): Optimization flavor. Default is "ase_fire".
 
     Returns:
         tuple: A pair of functions:
@@ -1023,8 +1021,7 @@ def frechet_cell_fire(
         constant_volume (bool): Whether to maintain constant volume during optimization
         scalar_pressure (float): Applied external pressure in GPa
         max_step (float): Maximum allowed step size for ase_fire
-        md_flavor (MdFlavor): Optimization flavor, either "vv_fire" or "ase_fire".
-            Default is "ase_fire".
+        md_flavor ("vv_fire" | "ase_fire"): Optimization flavor. Default is "ase_fire".
 
     Returns:
         tuple: A pair of functions:
@@ -1593,11 +1590,10 @@ def _ase_fire_step(  # noqa: C901, PLR0915
         state.stress = results["stress"]
         volumes = torch.linalg.det(state.cell).view(-1, 1, 1)
         if torch.any(volumes <= 0):
-            bad_idx = torch.where(volumes <= 0)[0]
+            bad_indices = torch.where(volumes <= 0)[0].tolist()
             print(
                 f"WARNING: Non-positive volume(s) detected during _ase_fire_step: "
-                f"{volumes[bad_idx].tolist()} at indices {bad_idx.tolist()} "
-                f"(is_frechet={is_frechet})"
+                f"{volumes[bad_indices].tolist()} at {bad_indices=} ({is_frechet=})"
             )
             # volumes = torch.clamp(volumes, min=eps) # Optional: for stability
 
