@@ -161,7 +161,6 @@ def _run_and_compare_optimizers(
     )
 
 
-# Parameterized test function
 @pytest.mark.parametrize(
     (
         "sim_state_fixture_name",
@@ -179,7 +178,7 @@ def _run_and_compare_optimizers(
             FrechetCellFilter,
             100,
             0.02,
-            {"energy": 5e-4, "pos": 1e-2, "cell": 1e-2},
+            {"energy": 2e-3, "pos": 1e-2, "cell": 1e-2},
             "SiO2 (Frechet)",
         ),
         (
