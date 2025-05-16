@@ -1531,6 +1531,7 @@ def _ase_fire_step(  # noqa: C901, PLR0915
         mask_atom_max_step, max_step * dr_atom / (dr_norm_atom + eps), dr_atom
     )
 
+    old_row_vector_cell: torch.Tensor | None = None
     if is_cell_optimization:
         assert isinstance(state, (UnitCellFireState, FrechetCellFIREState))
         # Cell clamp to max_step (Frobenius norm)
@@ -1542,7 +1543,12 @@ def _ase_fire_step(  # noqa: C901, PLR0915
             dr_cell,
         )
 
-    # 7. Position / cell update
+        # 7. Position / cell update
+        # Store old cell for scaling atoms
+        # Ensure old_row_vector_cell is cloned before any modification to state.cell or
+        # state.row_vector_cell
+        old_row_vector_cell = state.row_vector_cell.clone()
+
     state.positions = state.positions + dr_atom
 
     # F_new stores F_new for Frechet's ucf_cell_grad if needed
@@ -1577,8 +1583,32 @@ def _ase_fire_step(  # noqa: C901, PLR0915
             F_new_scaled = current_F_scaled + dr_cell
             state.cell_positions = F_new_scaled  # track the scaled deformation gradient
             F_new = F_new_scaled / (cell_factor_exp_mult + eps)  # Division by (N,3,1)
-            new_cell = torch.bmm(state.reference_cell, F_new.transpose(-2, -1))
-            state.cell = new_cell
+            # When state.cell is set, state.row_vector_cell is auto-updated
+            new_cell_column_vectors = torch.bmm(
+                state.reference_cell, F_new.transpose(-2, -1)
+            )
+            state.cell = new_cell_column_vectors
+
+    # Scale atomic positions according to cell change (mimicking scale_atoms=True)
+    if is_cell_optimization and old_row_vector_cell is not None:
+        current_new_row_vector_cell = state.row_vector_cell  # This is A_new after update
+
+        inv_old_cell_batch = torch.linalg.inv(old_row_vector_cell)
+        # Transform matrix T such that A_new = A_old @ T (for row vectors A)
+        # This means cartesian positions P_new_row = P_old_row @ T
+        transform_matrix_batch = torch.bmm(
+            inv_old_cell_batch, current_new_row_vector_cell
+        )  # Shape [N_batch, 3, 3]
+
+        # Shape: [N_atoms, 3, 3]
+        atom_specific_transform = transform_matrix_batch[state.batch]
+
+        # state.positions is [N_atoms, 3]. Unsqueeze to [N_atoms, 1, 3] for bmm
+        # Result of bmm will be [N_atoms, 1, 3], then squeeze
+        scaled_positions = torch.bmm(
+            state.positions.unsqueeze(1), atom_specific_transform
+        ).squeeze(1)
+        state.positions = scaled_positions
 
     # 8. Force / stress refresh & new cell forces
     results = model(state)
