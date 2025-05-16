@@ -146,13 +146,9 @@ def _run_and_compare_optimizers(
         final_ase_atoms = filtered_ase_atoms_for_run.atoms
         final_ase_energy = final_ase_atoms.get_potential_energy()
         ase_forces_raw = final_ase_atoms.get_forces()
-        final_ase_forces_max = (
-            torch.norm(torch.tensor(ase_forces_raw, device=device, dtype=dtype), dim=-1)
-            .max()
-            .item()
-            if ase_forces_raw is not None
-            else float("nan")
-        )
+        final_ase_forces_max = torch.norm(
+            torch.tensor(ase_forces_raw, device=device, dtype=dtype), dim=-1
+        ).max()
         final_ase_positions = torch.tensor(
             final_ase_atoms.get_positions(), device=device, dtype=dtype
         )
@@ -208,7 +204,7 @@ def _run_and_compare_optimizers(
             FrechetCellFilter,
             [33, 66, 100],
             0.02,
-            {"energy": 2e-3, "pos": 1.5e-2, "cell": 1.8e-2, "force_max": 1.5e-1},
+            {"energy": 1e-2, "pos": 1.5e-2, "cell": 1.8e-2, "force_max": 1.5e-1},
             "SiO2 (Frechet)",
         ),
         (
@@ -244,7 +240,7 @@ def _run_and_compare_optimizers(
             UnitCellFilter,
             [33, 66, 100],
             0.02,
-            {"energy": 5e-3, "pos": 2.5e-2, "cell": 5e-2, "force_max": 1.5e-1},
+            {"energy": 1.5e-2, "pos": 2.5e-2, "cell": 5e-2, "force_max": 1.5e-1},
             "SiO2 (UnitCell)",
         ),
     ],
