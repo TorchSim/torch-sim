@@ -1,5 +1,6 @@
 import copy
 import functools
+from typing import TYPE_CHECKING
 
 import pytest
 import torch
@@ -12,17 +13,14 @@ from torch_sim.models.mace import MaceModel
 from torch_sim.optimizers import frechet_cell_fire
 
 
-try:
+if TYPE_CHECKING:
     from mace.calculators import MACECalculator
-except ImportError:
-    MACECalculator = None
 
 
-@pytest.mark.skipif(MACECalculator is None, reason="MACECalculator not installed")
 def test_torchsim_frechet_cell_fire_vs_ase_mace(
     rattled_sio2_sim_state: ts.state.SimState,
     torchsim_mace_mpa: MaceModel,
-    ase_mace_mpa: MACECalculator,
+    ase_mace_mpa: "MACECalculator",
 ) -> None:
     """Compare torch-sim's Frechet Cell FIRE optimizer with ASE's FIRE + FrechetCellFilter
     using MACE-MPA-0.
@@ -31,6 +29,8 @@ def test_torchsim_frechet_cell_fire_vs_ase_mace(
     to the established ASE equivalent when using a MACE force field.
     It checks for consistency in final energies, forces, positions, and cell parameters.
     """
+    pytest.importorskip("mace")
+
     # Use float64 for consistency with the MACE model fixture and for precision
     dtype = torch.float64
     device = torchsim_mace_mpa.device  # Use device from the model
@@ -45,7 +45,7 @@ def test_torchsim_frechet_cell_fire_vs_ase_mace(
     )
     initial_state.cell = initial_state.cell.detach().requires_grad_(requires_grad=True)
 
-    n_steps = 20  # Number of optimization steps
+    n_steps = 100  # Number of optimization steps (increased from 20)
     force_tol = 0.02  # Convergence criterion for forces
 
     # --- Run torch-sim Frechet Cell FIRE with MACE model ---
@@ -97,7 +97,7 @@ def test_torchsim_frechet_cell_fire_vs_ase_mace(
     # Compare energies (looser tolerance for ML potentials due to potential minor
     # numerical differences)
     energy_diff = abs(final_custom_energy - final_ase_energy)
-    assert energy_diff < 5e-2, (
+    assert energy_diff < 5e-4, (
         f"Final energies differ significantly after {n_steps} steps: "
         f"torch-sim={final_custom_energy:.6f}, ASE={final_ase_energy:.6f}, "
         f"Diff={energy_diff:.2e}"
@@ -113,13 +113,13 @@ def test_torchsim_frechet_cell_fire_vs_ase_mace(
     avg_displacement = (
         torch.norm(final_custom_positions - final_ase_positions, dim=-1).mean().item()
     )
-    assert avg_displacement < 1.0, (
+    assert avg_displacement < 1e-2, (
         f"Final positions differ significantly (avg displacement: {avg_displacement:.4f})"
     )
 
     # Compare cell matrices (Frobenius norm, looser tolerance)
     cell_diff = torch.norm(final_custom_cell - final_ase_cell).item()
-    assert cell_diff < 1.0, (
+    assert cell_diff < 1e-2, (
         f"Final cell matrices differ significantly (Frobenius norm: {cell_diff:.4f})"
         f"\nTorch-sim Cell:\n{final_custom_cell}"
         f"\nASE Cell:\n{final_ase_cell}"
