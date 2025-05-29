@@ -3,8 +3,8 @@
 #   <summary>Dependencies</summary>
 # /// script
 # dependencies = [
-#     "metatrain[pet]>=2025.6",
-#     "metatensor-torch>=0.7,<0.8"
+#     "metatrain[pet]==2025.6",
+#     "metatensor-torch==0.7.6"
 # ]
 # ///
 # </details>
