@@ -34,7 +34,7 @@ jobs:
           uv pip install ".[test,docs]" --system
 
       - name: Install extras for tutorial generation
-        run: uv pip install ".[graphpes,mace,metatensor]" --system
+        run: uv pip install ".[graphpes,mace,metatomic]" --system
 
       - name: Copy tutorials
         run: |

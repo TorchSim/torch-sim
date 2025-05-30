@@ -1,14 +1,14 @@
-"""Wrapper for metatensor-based models in TorchSim.
+"""Wrapper for metatomic-based models in TorchSim.
 
-This module provides a TorchSim wrapper of metatensor models for computing
+This module provides a TorchSim wrapper of metatomic models for computing
 energies, forces, and stresses for atomistic systems, including batched computations
 for multiple systems simultaneously.
 
-The MetatensorModel class adapts metatensor models to the ModelInterface protocol,
+The MetatomicModel class adapts metatomic models to the ModelInterface protocol,
 allowing them to be used within the broader torch_sim simulation framework.
 
 Notes:
-    This module depends on the metatensor-torch package.
+    This module depends on the metatomic-torch package.
 """
 
 import traceback
@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
-import vesin.torch.metatensor
+import vesin.metatomic
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
@@ -25,7 +25,7 @@ from torch_sim.typing import StateDict
 
 
 try:
-    from metatensor.torch.atomistic import (
+    from metatomic.torch import (
         ModelEvaluationOptions,
         ModelOutput,
         System,
@@ -34,13 +34,13 @@ try:
     from metatrain.utils.io import load_model
 
 except ImportError as exc:
-    warnings.warn(f"Metatensor import failed: {traceback.format_exc()}", stacklevel=2)
+    warnings.warn(f"Metatomic import failed: {traceback.format_exc()}", stacklevel=2)
 
-    class MetatensorModel(torch.nn.Module, ModelInterface):
-        """Metatensor model wrapper for torch_sim.
+    class MetatomicModel(torch.nn.Module, ModelInterface):
+        """Metatomic model wrapper for torch_sim.
 
-        This class is a placeholder for the MetatensorModel class.
-        It raises an ImportError if metatensor is not installed.
+        This class is a placeholder for the MetatomicModel class.
+        It raises an ImportError if metatomic is not installed.
         """
 
         def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
@@ -48,13 +48,13 @@ except ImportError as exc:
             raise err
 
 
-class MetatensorModel(torch.nn.Module, ModelInterface):
-    """Computes energies for a list of systems using a metatensor model.
+class MetatomicModel(torch.nn.Module, ModelInterface):
+    """Computes energies for a list of systems using a metatomic model.
 
-    This class wraps a metatensor model to compute energies, forces, and stresses for
+    This class wraps a metatomic model to compute energies, forces, and stresses for
     atomic systems within the TorchSim framework. It supports batched calculations
     for multiple systems and handles the necessary transformations between
-    TorchSim's data structures and metatensor's expected inputs.
+    TorchSim's data structures and metatomic's expected inputs.
 
     Attributes:
         ...
@@ -70,14 +70,14 @@ class MetatensorModel(torch.nn.Module, ModelInterface):
         compute_forces: bool = True,
         compute_stress: bool = True,
     ) -> None:
-        """Initialize the metatensor model for energy, force and stress calculations.
+        """Initialize the metatomic model for energy, force and stress calculations.
 
-        Sets up a metatensor model for energy, force, and stress calculations within
+        Sets up a metatomic model for energy, force, and stress calculations within
         the TorchSim framework. The model can be initialized with atomic numbers
         and batch indices, or these can be provided during the forward pass.
 
         Args:
-            model (str | Path | None): Path to the metatensor model file or a
+            model (str | Path | None): Path to the metatomic model file or a
                 pre-defined model name. Currently only "pet-mad"
                 (https://arxiv.org/abs/2503.14118) is supported as a pre-defined model.
                 If None, defaults to "pet-mad".
@@ -155,7 +155,7 @@ class MetatensorModel(torch.nn.Module, ModelInterface):
         """Compute energies, forces, and stresses for the given atomic systems.
 
         Processes the provided state information and computes energies, forces, and
-        stresses using the underlying metatensor model. Handles batched calculations for
+        stresses using the underlying metatomic model. Handles batched calculations for
         multiple systems as well as constructing the necessary neighbor lists.
 
         Args:
@@ -175,21 +175,21 @@ class MetatensorModel(torch.nn.Module, ModelInterface):
             state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         # Input validation is already done inside the forward method of the
-        # MetatensorAtomisticModel class, so we don't need to do it again here.
+        # AtomisticModel class, so we don't need to do it again here.
 
         atomic_numbers = state.atomic_numbers
         cell = state.row_vector_cell
         positions = state.positions
         pbc = state.pbc
 
-        # Check dtype (metatensor models require a specific input dtype)
+        # Check dtype (metatomic models require a specific input dtype)
         if positions.dtype != self._dtype:
             raise TypeError(
                 f"Positions dtype {positions.dtype} does not match model dtype "
                 f"{self._dtype}"
             )
 
-        # Compared to other models, metatensor models have two peculiarities:
+        # Compared to other models, metatomic models have two peculiarities:
         # - different structures are fed to the models separately as a list of System
         #   objects, and not as a single graph-like batch
         # - the model does not compute forces and stresses itself, but rather the
@@ -232,7 +232,7 @@ class MetatensorModel(torch.nn.Module, ModelInterface):
 
         # move data to CPU because vesin only supports CPU for now
         systems = [system.to(device="cpu") for system in systems]
-        vesin.torch.metatensor.compute_requested_neighbors(
+        vesin.metatomic.compute_requested_neighbors(
             systems, system_length_unit="Angstrom", model=self._model
         )
         # move back to the proper device
