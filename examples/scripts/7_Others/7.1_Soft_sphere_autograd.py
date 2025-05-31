@@ -12,10 +12,7 @@ import numpy as np
 import torch
 from plotly.subplots import make_subplots
 
-from torch_sim.unbatched.models.soft_sphere import (
-    soft_sphere_pair,
-    soft_sphere_pair_force,
-)
+from torch_sim.models.soft_sphere import soft_sphere_pair, soft_sphere_pair_force
 
 
 sigma = 1.0

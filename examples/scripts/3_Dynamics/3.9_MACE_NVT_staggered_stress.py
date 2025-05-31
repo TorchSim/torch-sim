@@ -1,4 +1,4 @@
-"""NVT simulation with MACE and staggered stress calculation."""
+"""MACE NVT simulation with staggered stress calculation."""
 
 # /// script
 # dependencies = [
@@ -13,13 +13,9 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
-from torch_sim.models.mace import MaceUrls
+from torch_sim.integrators import nvt_langevin
+from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.quantities import calc_kT
-from torch_sim.unbatched.models.mace import UnbatchedMaceModel
-from torch_sim.unbatched.unbatched_integrators import (
-    nvt_nose_hoover,
-    nvt_nose_hoover_invariant,
-)
 from torch_sim.units import MetalUnits as Units
 
 
@@ -51,12 +47,12 @@ cell = torch.tensor(si_dc.cell.array, device=device, dtype=dtype)
 atomic_numbers = torch.tensor(si_dc.get_atomic_numbers(), device=device, dtype=torch.int)
 masses = torch.tensor(si_dc.get_masses(), device=device, dtype=dtype)
 
-# Initialize the unbatched MACE model
-model = UnbatchedMaceModel(
+# Initialize the MACE model
+model = MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,
-    compute_stress=False,
+    compute_stress=True,
     dtype=dtype,
     enable_cueq=False,
 )
@@ -72,19 +68,17 @@ state = ts.SimState(
 dt = 0.002 * Units.time  # Timestep (ps)
 kT = 1000 * Units.temperature  # Initial temperature (K)
 
-nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
+nvt_init, nvt_update = nvt_langevin(model=model, kT=kT, dt=dt)
 state = nvt_init(state, kT=kT, seed=1)
 
 stress = torch.zeros(N_steps // 10, 3, 3, device=device, dtype=dtype)
 for step in range(N_steps):
     temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
-    invariant = nvt_nose_hoover_invariant(state, kT=kT).item()
+    invariant = nvt_langevin(state, kT=kT).item()
     print(f"{step=}: Temperature: {temp:.4f}: invariant: {invariant:.4f}")
     state = nvt_update(state, kT=kT)
     if step % 10 == 0:
-        model._compute_stress = True  # noqa: SLF001
         results = model(state)
         stress[step // 10] = results["stress"]
-        model._compute_stress = False  # noqa: SLF001
 
 print(f"Stress: {stress} eV/Å^3")

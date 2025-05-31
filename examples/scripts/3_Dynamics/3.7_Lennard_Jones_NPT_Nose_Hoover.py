@@ -12,12 +12,9 @@ import os
 import torch
 
 import torch_sim as ts
+from torch_sim.integrators import npt_nose_hoover, npt_nose_hoover_invariant
+from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.quantities import calc_kinetic_energy, calc_kT
-from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
-from torch_sim.unbatched.unbatched_integrators import (
-    npt_nose_hoover,
-    npt_nose_hoover_invariant,
-)
 from torch_sim.units import MetalUnits as Units
 
 
@@ -84,7 +81,7 @@ masses = torch.full((positions.shape[0],), 39.948, device=device, dtype=dtype)
 #  - sigma: distance at which potential is zero (3.405 Å for Ar)
 #  - epsilon: depth of potential well (0.0104 eV for Ar)
 #  - cutoff: distance beyond which interactions are ignored (typically 2.5*sigma)
-model = UnbatchedLennardJonesModel(
+model = LennardJonesModel(
     use_neighbor_list=False,
     sigma=3.405,
     epsilon=0.0104,

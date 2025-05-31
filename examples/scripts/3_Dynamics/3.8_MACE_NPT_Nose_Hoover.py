@@ -13,15 +13,9 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
-from torch_sim.models.mace import MaceUrls
+from torch_sim.integrators import npt_nose_hoover, npt_nose_hoover_invariant
+from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.quantities import calc_kinetic_energy, calc_kT
-from torch_sim.unbatched.models.mace import UnbatchedMaceModel
-from torch_sim.unbatched.unbatched_integrators import (
-    npt_nose_hoover,
-    npt_nose_hoover_invariant,
-    nvt_nose_hoover,
-    nvt_nose_hoover_invariant,
-)
 from torch_sim.units import MetalUnits as Units
 
 
@@ -54,8 +48,8 @@ masses = torch.tensor(si_dc.get_masses(), device=device, dtype=dtype)
 print(f"Positions: {positions.shape}")
 print(f"Cell: {cell.shape}")
 
-# Initialize the unbatched MACE model
-model = UnbatchedMaceModel(
+# Initialize the MACE model
+model = MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,
@@ -79,13 +73,15 @@ dt = 0.001 * Units.time  # Time step (1 ps)
 kT = 300 * Units.temperature  # Initial temperature (300 K)
 target_pressure = 0.0 * Units.pressure  # Target pressure (0 bar)
 
-nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
+nvt_init, nvt_update = npt_nose_hoover(model=model, kT=kT, dt=dt)
 state = nvt_init(state=state, seed=1)
 
 for step in range(N_steps_nvt):
     if step % 10 == 0:
         temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
-        invariant = nvt_nose_hoover_invariant(state, kT=kT).item()
+        invariant = npt_nose_hoover_invariant(
+            state, kT=kT, external_pressure=target_pressure
+        ).item()
         print(f"{step=}: Temperature: {temp:.4f}: invariant: {invariant:.4f}, ")
     state = nvt_update(state, kT=kT)
 

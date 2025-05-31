@@ -13,14 +13,9 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
-from torch_sim.models.mace import MaceUrls
+from torch_sim.integrators import npt_langevin, nvt_nose_hoover, nvt_nose_hoover_invariant
+from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.quantities import calc_kinetic_energy, calc_kT
-from torch_sim.unbatched.models.mace import UnbatchedMaceModel
-from torch_sim.unbatched.unbatched_integrators import (
-    npt_langevin,
-    nvt_nose_hoover,
-    nvt_nose_hoover_invariant,
-)
 from torch_sim.units import MetalUnits as Units
 
 
@@ -53,8 +48,8 @@ masses = torch.tensor(si_dc.get_masses(), device=device, dtype=dtype)
 print(f"Positions: {positions.shape}")
 print(f"Cell: {cell.shape}")
 
-# Initialize the unbatched MACE model
-model = UnbatchedMaceModel(
+# Initialize the MACE model
+model = MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,

@@ -1,4 +1,4 @@
-"""Integrators for atomistic dynamics simulations."""
+"""Implementations of NVT integrators."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -7,158 +7,13 @@ from typing import Any
 import torch
 
 import torch_sim as ts
-from torch_sim import transforms
+from torch_sim.integrators import MDState, calculate_momenta, momentum_step, position_step
 from torch_sim.quantities import calc_kinetic_energy, count_dof
+from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
-@dataclass
-class MDState(ts.SimState):
-    """State information for MD.
-
-    This class represents the complete state of a molecular system being integrated
-    with Langevin dynamics in the NVT (constant particle number, volume, temperature)
-    ensemble. The Langevin thermostat adds stochastic noise and friction to maintain
-    constant temperature.
-
-    Attributes:
-        positions: Particle positions with shape [n_particles, n_dimensions]
-        momenta: Particle momenta with shape [n_particles, n_dimensions]
-        energy: Energy of the system
-        forces: Forces on particles with shape [n_particles, n_dimensions]
-        masses: Particle masses with shape [n_particles]
-        cell: Simulation cell matrix with shape [n_dimensions, n_dimensions]
-        pbc: Whether to use periodic boundary conditions
-
-    Properties:
-        velocities: Particle velocities computed as momenta/masses
-            Has shape [n_particles, n_dimensions]
-    """
-
-    momenta: torch.Tensor
-    energy: torch.Tensor
-    forces: torch.Tensor
-
-    @property
-    def velocities(self) -> torch.Tensor:
-        """Velocities calculated from momenta and masses with shape
-        [n_particles, n_dimensions].
-        """
-        return self.momenta / self.masses.unsqueeze(-1)
-
-
-def calculate_momenta(
-    positions: torch.Tensor,
-    masses: torch.Tensor,
-    kT: torch.Tensor,
-    device: torch.device,
-    dtype: torch.dtype,
-    seed: int | None = None,
-) -> torch.Tensor:
-    """Calculate momenta from positions and masses.
-
-    Args:
-        positions: The positions of the particles
-        masses: The masses of the particles
-        kT: The temperature of the system
-        device: The device to use for the calculation
-        dtype: The data type to use for the calculation
-        seed: The seed to use for the calculation
-
-    Returns:
-        The momenta of the particles
-    """
-    generator = torch.Generator(device=device)
-    if seed is not None:
-        generator.manual_seed(seed)
-
-    # Generate random momenta from normal distribution
-    momenta = torch.randn(
-        positions.shape, device=device, dtype=dtype, generator=generator
-    ) * torch.sqrt(masses * kT).unsqueeze(-1)
-
-    # Center the momentum if more than one particle
-    if positions.shape[0] > 1:
-        momenta = momenta - torch.mean(momenta, dim=0, keepdim=True)
-
-    return momenta
-
-
-def initialize_momenta(
-    state: MDState,
-    kT: torch.Tensor,
-    device: torch.device,
-    dtype: torch.dtype,
-    seed: int,
-) -> MDState:
-    """Initialize particle momenta from Maxwell-Boltzmann distribution.
-
-    Args:
-        state: Current system state containing particle masses and positions
-        kT: Temperature in energy units to initialize momenta at
-        device: Device to initialize momenta on
-        dtype: Data type to initialize momenta as
-        seed: Random seed for reproducibility (optional)
-
-    Returns:
-        Updated state with initialized momenta
-    """
-    state.momenta = calculate_momenta(
-        state.positions, state.masses, kT, device, dtype, seed
-    )
-    return state
-
-
-def momentum_step(state: MDState, dt: torch.Tensor) -> MDState:
-    """Update particle momenta using current forces.
-
-    This function performs the momentum update step of velocity Verlet integration
-    by applying forces over the timestep dt.
-
-    Args:
-        state: Current system state containing forces and momenta
-        dt: Integration timestep
-
-    Returns:
-        Updated state with new momenta after force application
-
-    Notes:
-        - Implements p(t+dt) = p(t) + F(t)*dt
-        - Used as half-steps in velocity Verlet algorithm
-        - Preserves time-reversibility when used symmetrically
-    """
-    new_momenta = state.momenta + state.forces * dt
-    state.momenta = new_momenta
-    return state
-
-
-def position_step(state: MDState, dt: torch.Tensor) -> MDState:
-    """Update particle positions using current velocities.
-
-    This function performs the position update step of velocity Verlet integration
-    by propagating particles according to their velocities over timestep dt.
-
-    Args:
-        state: Current system state containing positions and velocities
-        dt: Integration timestep
-
-    Returns:
-        Updated state with new positions after propagation
-
-    Notes:
-        - Implements r(t+dt) = r(t) + v(t)*dt
-        - Handles periodic boundary conditions if enabled
-        - Used as half-steps in velocity Verlet algorithm
-    """
-    new_positions = state.positions + state.velocities * dt
-
-    if state.pbc:
-        new_positions = transforms.pbc_wrap_general(new_positions, state.cell)
-
-    state.positions = new_positions
-    return state
-
-
+# TODO can this be removed?
 def velocity_verlet(state: MDState, dt: torch.Tensor, model: torch.nn.Module) -> MDState:
     """Perform one complete velocity Verlet integration step.
 
@@ -194,132 +49,15 @@ def velocity_verlet(state: MDState, dt: torch.Tensor, model: torch.nn.Module) ->
     return momentum_step(state, dt_2)
 
 
-def nve(
-    *,
-    model: torch.nn.Module,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
-) -> tuple[
-    Callable[[ts.SimState | dict, torch.Tensor], MDState],
-    Callable[[MDState, torch.Tensor], MDState],
-]:
-    """Initialize and return an NVE (microcanonical) integrator.
-
-    This function sets up integration in the NVE ensemble, where particle number (N),
-    volume (V), and total energy (E) are conserved. It returns both an initial state
-    and an update function for time evolution.
-
-    Args:
-        model: Neural network model that computes energies and forces
-        dt: Integration timestep
-        kT: Temperature in energy units for initializing momenta
-
-    Returns:
-        tuple:
-            - Callable[[ts.SimState | StateDict, torch.Tensor], MDState]: Function to
-              initialize the MDState from input data and kT
-            - Callable[[MDState, torch.Tensor], MDState]: Update function that evolves
-              system by one timestep
-
-    Notes:
-        - Uses velocity Verlet algorithm for time-reversible integration
-        - Conserves total energy in the absence of numerical errors
-        - Initial velocities sampled from Maxwell-Boltzmann distribution
-        - Model must return dict with 'energy' and 'forces' keys
-    """
-    device, dtype = model.device, model.dtype
-
-    def nve_init(
-        state: ts.SimState | StateDict,
-        kT: torch.Tensor = kT,
-        seed: int | None = None,
-        **kwargs: Any,
-    ) -> MDState:
-        """Initialize an NVE state from input data.
-
-        Args:
-            state: Either a SimState object or a dictionary containing positions,
-                masses, cell, pbc
-            kT: Temperature in energy units for initializing momenta
-            seed: Random seed for reproducibility
-            **kwargs: Additional state arguments
-
-        Returns:
-            MDState: Initialized state for NVE integration
-        """
-        # Extract required data from input
-        if not isinstance(state, ts.SimState):
-            state = ts.SimState(**state)
-
-        # Check if there is an extra batch dimension
-        if state.cell.dim() == 3:
-            state.cell = state.cell.squeeze(0)
-
-        # Override with kwargs if provided
-        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
-
-        model_output = model(state)
-
-        momenta = kwargs.get(
-            "momenta",
-            calculate_momenta(state.positions, state.masses, kT, device, dtype, seed),
-        )
-
-        initial_state = MDState(
-            positions=state.positions,
-            momenta=momenta,
-            energy=model_output["energy"],
-            forces=model_output["forces"],
-            masses=state.masses,
-            cell=state.cell,
-            pbc=state.pbc,
-            atomic_numbers=atomic_numbers,
-        )
-        return initial_state  # noqa: RET504
-
-    def nve_update(state: MDState, dt: torch.Tensor = dt, **_) -> MDState:
-        """Perform one complete NVE (microcanonical) integration step.
-
-        This function implements the velocity Verlet algorithm for NVE dynamics,
-        which provides energy-conserving time evolution. The integration sequence is:
-        1. Half momentum update
-        2. Full position update
-        3. Force update
-        4. Half momentum update
-
-        Args:
-            state: Current system state containing positions, momenta, forces
-            dt: Integration timestep
-
-        Returns:
-            Updated state after one complete NVE step
-
-        Notes:
-            - Uses velocity Verlet algorithm for time reversible integration
-            - Conserves energy in the absence of numerical errors
-            - Handles periodic boundary conditions if enabled in state
-            - Symplectic integrator preserving phase space volume
-        """
-        state = momentum_step(state, dt / 2)
-        state = position_step(state, dt)
-
-        model_output = model(state)
-        state.energy = model_output["energy"]
-        state.forces = model_output["forces"]
-
-        return momentum_step(state, dt / 2)
-
-    return nve_init, nve_update
-
-
 def nvt_langevin(
-    *,
     model: torch.nn.Module,
+    *,
     dt: torch.Tensor,
     kT: torch.Tensor,
     gamma: torch.Tensor | None = None,
+    seed: int | None = None,
 ) -> tuple[
-    Callable[[ts.SimState | StateDict, torch.Tensor], MDState],
+    Callable[[SimState | StateDict, torch.Tensor], MDState],
     Callable[[MDState, torch.Tensor], MDState],
 ]:
     """Initialize and return an NVT (canonical) integrator using Langevin dynamics.
@@ -328,25 +66,37 @@ def nvt_langevin(
     volume (V), and temperature (T) are conserved. It returns both an initial state
     and an update function for time evolution.
 
+    It uses Langevin dynamics with stochastic noise and friction to maintain constant
+    temperature. The integration scheme combines deterministic velocity Verlet steps with
+    stochastic Ornstein-Uhlenbeck processes following the BAOAB splitting scheme.
+
     Args:
-        model: Neural network model that computes energies and forces
-        dt: Integration timestep
-        kT: Target temperature in energy units
-        gamma: Friction coefficient for Langevin thermostat (default: 1/(100*dt))
+        model (torch.nn.Module): Neural network model that computes energies and forces.
+            Must return a dict with 'energy' and 'forces' keys.
+        dt (torch.Tensor): Integration timestep, either scalar or with shape [n_batches]
+        kT (torch.Tensor): Target temperature in energy units, either scalar or
+            with shape [n_batches]
+        gamma (torch.Tensor, optional): Friction coefficient for Langevin thermostat,
+            either scalar or with shape [n_batches]. Defaults to 1/(100*dt).
+        seed (int, optional): Random seed for reproducibility. Defaults to None.
 
     Returns:
         tuple:
-            - Callable[[ts.SimState | StateDict, torch.Tensor], MDState]: Function to
-              initialize the MDState from input data and kT
-            - Callable[[MDState, torch.Tensor], MDState]: Update function that evolves
-              system by one timestep
+            - callable: Function to initialize the MDState from input data
+              with signature: init_fn(state, kT=kT, seed=seed) -> MDState
+            - callable: Update function that evolves system by one timestep
+              with signature: update_fn(state, dt=dt, kT=kT, gamma=gamma) -> MDState
 
     Notes:
         - Uses BAOAB splitting scheme for Langevin dynamics
         - Preserves detailed balance for correct NVT sampling
         - Handles periodic boundary conditions if enabled in state
+        - Friction coefficient gamma controls the thermostat coupling strength
+        - Weak coupling (small gamma) preserves dynamics but with slower thermalization
+        - Strong coupling (large gamma) faster thermalization but may distort dynamics
     """
     device, dtype = model.device, model.dtype
+
     gamma = gamma or 1 / (100 * dt)
 
     if isinstance(gamma, float):
@@ -360,36 +110,44 @@ def nvt_langevin(
         dt: torch.Tensor,
         kT: torch.Tensor,
         gamma: torch.Tensor,
-        device: torch.device,
-        dtype: torch.dtype,
     ) -> MDState:
         """Apply stochastic noise and friction for Langevin dynamics.
 
-        This function implements the stochastic part of Langevin dynamics by applying
-        random noise and friction forces to particle momenta. The noise amplitude is
-        chosen to maintain the target temperature kT.
+        This function implements the Ornstein-Uhlenbeck process for Langevin dynamics,
+        applying random noise and friction forces to particle momenta. The noise amplitude
+        is chosen to satisfy the fluctuation-dissipation theorem, ensuring proper
+        sampling of the canonical ensemble at temperature kT.
 
         Args:
-            state: Current system state containing positions, momenta, etc.
-            dt: Integration timestep
-            kT: Target temperature in energy units
-            gamma: Friction coefficient controlling noise strength
-            device: Device to initialize momenta on
-            dtype: Data type to initialize momenta as
+            state (MDState): Current system state containing positions, momenta, etc.
+            dt (torch.Tensor): Integration timestep, either scalar or shape [n_batches]
+            kT (torch.Tensor): Target temperature in energy units, either scalar or
+                with shape [n_batches]
+            gamma (torch.Tensor): Friction coefficient controlling noise strength,
+                either scalar or with shape [n_batches]
 
         Returns:
-            Updated state with new momenta after stochastic step
+            MDState: Updated state with new momenta after stochastic step
 
         Notes:
+            - Implements the "O" step in the BAOAB Langevin integration scheme
             - Uses Ornstein-Uhlenbeck process for correct thermal sampling
             - Noise amplitude scales with sqrt(mass) for equipartition
             - Preserves detailed balance through fluctuation-dissipation relation
+            - The equation implemented is:
+              p(t+dt) = c1*p(t) + c2*sqrt(m)*N(0,1)
+              where c1 = exp(-gamma*dt) and c2 = sqrt(kT*(1-c1²))
         """
         c1 = torch.exp(-gamma * dt)
-        c2 = torch.sqrt(kT * (1 - c1**2))
+
+        if isinstance(kT, torch.Tensor) and len(kT.shape) > 0:
+            # kT is a tensor with shape (n_batches,)
+            kT = kT[state.batch]
+
+        c2 = torch.sqrt(kT * (1 - c1**2)).unsqueeze(-1)
 
         # Generate random noise from normal distribution
-        noise = torch.randn_like(state.momenta, device=device, dtype=dtype)
+        noise = torch.randn_like(state.momenta, device=state.device, dtype=state.dtype)
         new_momenta = (
             c1 * state.momenta + c2 * torch.sqrt(state.masses).unsqueeze(-1) * noise
         )
@@ -397,37 +155,41 @@ def nvt_langevin(
         return state
 
     def langevin_init(
-        state: ts.SimState | StateDict,
+        state: SimState | StateDict,
         kT: torch.Tensor = kT,
-        seed: int | None = None,
-        **kwargs: Any,
+        seed: int | None = seed,
     ) -> MDState:
-        """Initialize an NVT Langevin state from input data.
+        """Initialize an NVT state from input data for Langevin dynamics.
+
+        Creates an initial state for NVT molecular dynamics by computing initial
+        energies and forces, and sampling momenta from a Maxwell-Boltzmann distribution
+        at the specified temperature.
 
         Args:
-            state: Either a SimState object or a dictionary containing positions,
-                masses, cell, pbc
-            kT: Temperature in energy units for initializing momenta
-            seed: Random seed for reproducibility
-            **kwargs: Additional state arguments
+            state (SimState | StateDict): Either a SimState object or a dictionary
+                containing positions, masses, cell, pbc, and other required state vars
+            kT (torch.Tensor): Temperature in energy units for initializing momenta,
+                either scalar or with shape [n_batches]
+            seed (int, optional): Random seed for reproducibility
 
         Returns:
-            MDState: Initialized state for NVT Langevin integration
+            MDState: Initialized state for NVT integration containing positions,
+                momenta, forces, energy, and other required attributes
+
+        Notes:
+            The initial momenta are sampled from a Maxwell-Boltzmann distribution
+            at the specified temperature. This provides a proper thermal initial
+            state for the subsequent Langevin dynamics.
         """
-        if not isinstance(state, ts.SimState):
-            state = ts.SimState(**state)
-
-        # Check if there is an extra batch dimension
-        if state.cell.dim() == 3:
-            state.cell = state.cell.squeeze(0)
-
-        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         model_output = model(state)
 
-        momenta = kwargs.get(
+        momenta = getattr(
+            state,
             "momenta",
-            calculate_momenta(state.positions, state.masses, kT, device, dtype, seed),
+            calculate_momenta(state.positions, state.masses, state.batch, kT, seed),
         )
 
         initial_state = MDState(
@@ -438,7 +200,8 @@ def nvt_langevin(
             masses=state.masses,
             cell=state.cell,
             pbc=state.pbc,
-            atomic_numbers=atomic_numbers,
+            batch=state.batch,
+            atomic_numbers=state.atomic_numbers,
         )
         return initial_state  # noqa: RET504
 
@@ -453,20 +216,23 @@ def nvt_langevin(
         This function implements the BAOAB splitting scheme for Langevin dynamics,
         which provides accurate sampling of the canonical ensemble. The integration
         sequence is:
-        1. Half momentum update (B)
-        2. Half position update (A)
-        3. Full stochastic update (O)
-        4. Half position update (A)
-        5. Half momentum update (B)
+        1. Half momentum update using forces (B step)
+        2. Half position update using updated momenta (A step)
+        3. Full stochastic update with noise and friction (O step)
+        4. Half position update using updated momenta (A step)
+        5. Half momentum update using new forces (B step)
 
         Args:
-            state: Current system state containing positions, momenta, forces
-            dt: Integration timestep
-            kT: Target temperature in energy units
-            gamma: Friction coefficient for Langevin thermostat
+            state (MDState): Current system state containing positions, momenta, forces
+            dt (torch.Tensor): Integration timestep, either scalar or shape [n_batches]
+            kT (torch.Tensor): Target temperature in energy units, either scalar or
+                with shape [n_batches]
+            gamma (torch.Tensor): Friction coefficient for Langevin thermostat,
+                either scalar or with shape [n_batches]
 
         Returns:
-            MDState: Updated state after one complete Langevin step
+            MDState: Updated state after one complete Langevin step with new positions,
+                momenta, forces, and energy
         """
         if isinstance(gamma, float):
             gamma = torch.tensor(gamma, device=device, dtype=dtype)
@@ -476,7 +242,7 @@ def nvt_langevin(
 
         state = momentum_step(state, dt / 2)
         state = position_step(state, dt / 2)
-        state = ou_step(state, dt, kT, gamma, device, dtype)
+        state = ou_step(state, dt, kT, gamma)
         state = position_step(state, dt / 2)
 
         model_output = model(state)
@@ -486,570 +252,6 @@ def nvt_langevin(
         return momentum_step(state, dt / 2)
 
     return langevin_init, langevin_update
-
-
-@dataclass
-class NPTLangevinState(ts.SimState):
-    """State information for an NPT system with Langevin dynamics.
-
-    This class represents the complete state of a molecular system being integrated
-    in the NPT (constant particle number, pressure, temperature) ensemble using
-    Langevin dynamics.
-
-    Attributes:
-        energy: Total energy of the system
-        forces: Forces acting on each particle
-        stress: Stress tensor of the system
-        velocities: Velocities of each particle
-        reference_cell: Original cell vectors used as reference for scaling
-        cell_positions: Cell positions (effectively the volume)
-        cell_velocities: Cell velocities (rate of volume change)
-        cell_masses: Masses associated with the cell degrees of freedom
-    """
-
-    # System state variables
-    energy: torch.Tensor
-    forces: torch.Tensor
-    stress: torch.Tensor
-    velocities: torch.Tensor
-
-    # Cell variables
-    reference_cell: torch.Tensor
-    cell_positions: torch.Tensor
-    cell_velocities: torch.Tensor
-    cell_masses: torch.Tensor
-
-    @property
-    def momenta(self) -> torch.Tensor:
-        """Calculate momenta from velocities and masses with shape
-        [n_particles, n_dimensions].
-        """
-        return self.masses.unsqueeze(-1) * self.velocities
-
-
-def npt_langevin(  # noqa: C901, PLR0915
-    *,
-    model: torch.nn.Module,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
-    external_pressure: torch.Tensor,
-    alpha: torch.Tensor | None = None,
-    cell_alpha: torch.Tensor | None = None,
-    b_tau: torch.Tensor | None = None,
-) -> tuple[
-    Callable[[ts.SimState | StateDict, torch.Tensor], MDState],
-    Callable[[MDState, torch.Tensor], MDState],
-]:
-    """Initialize and return an NPT (canonical) integrator using Langevin dynamics.
-
-    This function sets up integration in the NPT ensemble, where particle number (N),
-    pressure (P), and temperature (T) are conserved. It returns both an initialization
-    function and an update function for time evolution.
-
-    Args:
-        model: Neural network model that computes energies and forces
-        dt: Integration timestep
-        kT: Target temperature in energy units
-        external_pressure: Target pressure for the system
-        alpha: Friction coefficient for position updates (default: 1/(100*dt))
-        cell_alpha: Friction coefficient for cell updates (default: 1/(100*dt))
-        b_tau: Pressure damping parameter (default: 1/(1000*dt))
-
-    Returns:
-        tuple:
-            - Callable[[ts.SimState | StateDict, torch.Tensor], MDState]: Function to
-              initialize the MDState from input data and kT
-            - Callable[[MDState, torch.Tensor], MDState]: Update function that evolves
-              system by one timestep
-    """
-    device, dtype = model.device, model.dtype
-
-    # Set default values for coupling parameters if not provided
-    alpha = alpha or 1 / (100 * dt)
-    cell_alpha = cell_alpha or 1 / (100 * dt)
-    b_tau = b_tau or 1 / (1000 * dt)
-
-    # Convert float parameters to tensors with appropriate device and dtype
-    if isinstance(alpha, float):
-        alpha = torch.tensor(alpha, device=device, dtype=dtype)
-
-    if isinstance(cell_alpha, float):
-        cell_alpha = torch.tensor(cell_alpha, device=device, dtype=dtype)
-
-    if isinstance(b_tau, float):
-        b_tau = torch.tensor(b_tau, device=device, dtype=dtype)
-
-    if isinstance(dt, float):
-        dt = torch.tensor(dt, device=device, dtype=dtype)
-
-    def cell_beta(
-        state: NPTLangevinState,
-        cell_alpha: torch.Tensor,
-        kT: torch.Tensor,
-        dt: torch.Tensor,
-        device: torch.device = device,
-        dtype: torch.dtype = dtype,
-    ) -> torch.Tensor:
-        """Generate random noise for cell fluctuations in NPT dynamics.
-
-        This function creates properly scaled random noise for cell dynamics in NPT
-        simulations, following the fluctuation-dissipation theorem. The noise amplitude
-        is scaled to maintain the target temperature.
-
-        Args:
-            state: Current NPT state
-            cell_alpha: Coupling parameter controlling noise strength
-            kT: System temperature in energy units
-            dt: Integration timestep
-            device: Device to place the tensor on (CPU or GPU)
-            dtype: Data type for the tensor
-
-        Returns:
-            torch.Tensor: Scaled random noise for cell dynamics
-        """
-        # Generate standard normal distribution (zero mean, unit variance)
-        noise = torch.randn_like(state.cell_positions, device=device, dtype=dtype)
-
-        # Scale to satisfy the fluctuation-dissipation theorem
-        # The standard deviation should be sqrt(2*alpha*kB*T*dt)
-        scaling_factor = torch.sqrt(2.0 * cell_alpha * kT * dt)
-
-        return scaling_factor * noise
-
-    def beta(
-        state: NPTLangevinState,
-        alpha: torch.Tensor,
-        kT: torch.Tensor,
-        dt: torch.Tensor,
-        device: torch.device = device,
-        dtype: torch.dtype = dtype,
-    ) -> torch.Tensor:
-        """Generate random noise for particle fluctuations in NPT dynamics.
-
-        This function creates properly scaled random noise for particle dynamics in NPT
-        simulations, following the fluctuation-dissipation theorem. The noise amplitude
-        is scaled to maintain the target temperature.
-
-        Args:
-            state: Current NPT state
-            alpha: Coupling parameter controlling noise strength
-            kT: System temperature in energy units
-            dt: Integration timestep
-            device: Device to place the tensor on (CPU or GPU)
-            dtype: Data type for the tensor
-
-        Returns:
-            torch.Tensor: Scaled random noise for particle dynamics
-        """
-        # Generate standard normal distribution (zero mean, unit variance)
-        noise = torch.randn_like(state.positions, device=device, dtype=dtype)
-
-        # Scale to satisfy the fluctuation-dissipation theorem
-        # The standard deviation should be sqrt(2*alpha*kB*T*dt)
-        scaling_factor = torch.sqrt(2.0 * alpha * kT * dt)
-
-        return scaling_factor * noise
-
-    def cell_position_step(
-        state: NPTLangevinState,
-        dt: torch.Tensor,
-        pressure_force: torch.Tensor,
-        kT: torch.Tensor = kT,
-        cell_alpha: torch.Tensor = cell_alpha,
-    ) -> NPTLangevinState:
-        """Update the cell position in NPT dynamics.
-
-        This function updates the cell position in NPT dynamics using the barostat force.
-        It applies a half-step update to the cell position based on the barostat force.
-
-        Args:
-            state: Current NPT state
-            dt: Integration timestep
-            pressure_force: Pressure force for barostat
-            kT: Target temperature in energy units
-            cell_alpha: Cell friction coefficient
-
-        Returns:
-            NPTLangevinState: Updated state with new cell positions
-        """
-        # Calculate effective mass term
-        Q_2 = 2 * state.cell_masses
-
-        # Calculate damping factor for cell position update
-        cell_b = 1 / (1 + ((cell_alpha * dt) / Q_2))
-
-        # Deterministic velocity contribution
-        c_1 = cell_b * dt * state.cell_velocities
-
-        # Force contribution
-        c_2 = cell_b * dt * dt * pressure_force / Q_2
-
-        # Random noise contribution (thermal fluctuations)
-        c_3 = (
-            cell_b
-            * dt
-            * cell_beta(state=state, cell_alpha=cell_alpha, kT=kT, dt=dt)
-            / Q_2
-        )
-
-        # Update cell positions with all contributions
-        state.cell_positions = state.cell_positions + c_1 + c_2 + c_3
-        return state
-
-    def cell_velocity_step(
-        state: NPTLangevinState,
-        F_p_n: torch.Tensor,
-        dt: torch.Tensor,
-        pressure_force: torch.Tensor,
-        cell_alpha: torch.Tensor,
-        kT: torch.Tensor = kT,
-    ) -> NPTLangevinState:
-        """Update the cell momentum in NPT dynamics.
-
-        This function updates the cell velocities based on the pressure forces and
-        thermal fluctuations, following the Langevin dynamics equations.
-
-        Args:
-            state: Current NPT state
-            F_p_n: Previous pressure force
-            dt: Integration timestep
-            pressure_force: Updated pressure force
-            cell_alpha: Cell friction coefficient
-            kT: Target temperature in energy units
-
-        Returns:
-            NPTLangevinState: Updated state with new cell velocities
-        """
-        # Calculate denominator for update equations
-        Q_2 = 2 * state.cell_masses
-
-        # Calculate damping factors
-        cell_a = (1 - (cell_alpha * dt) / Q_2) / (1 + (cell_alpha * dt) / Q_2)
-        cell_b = 1 / (1 + (cell_alpha * dt) / Q_2)
-
-        # Deterministic velocity contribution
-        c_1 = cell_alpha * state.cell_velocities
-
-        # Force contribution (average of initial and final forces)
-        c_2 = dt / Q_2 * (cell_a * F_p_n + pressure_force)
-
-        # Random noise contribution (thermal fluctuations)
-        c_3 = (
-            cell_b
-            * cell_beta(state=state, cell_alpha=cell_alpha, kT=kT, dt=dt)
-            / state.cell_masses
-        )
-
-        # Update cell velocities with all contributions
-        state.cell_velocities = c_1 + c_2 + c_3
-        return state
-
-    def compute_cell_force(
-        state: NPTLangevinState,
-        external_pressure: torch.Tensor,
-        kT: torch.Tensor,
-    ) -> torch.Tensor:
-        """Compute the cell force in NPT dynamics.
-
-        This function calculates the force on the cell based on the difference between
-        the internal stress and the external pressure.
-
-        Args:
-            state: Current NPT state
-            external_pressure: Target external pressure
-            kT: System temperature in energy units
-
-        Returns:
-            torch.Tensor: Computed cell force for barostat
-        """
-        # Kinetic contribution
-        N = state.n_atoms
-        volume = state.cell_positions
-        KE_cell = N * kT
-
-        # Calculate internal pressure from stress tensor
-        # (average of diagonal elements for isotropic pressure)
-        internal_pressure = torch.trace(state.stress) / state.positions.shape[1]
-
-        # Force is proportional to pressure difference
-        # F = V * (P_internal - P_external) + kinetic contribution
-        return KE_cell - (internal_pressure * volume) - (external_pressure * volume)
-
-    def langevin_position_step(
-        state: NPTLangevinState,
-        L_n: torch.Tensor,
-        dt: torch.Tensor,
-        kT: torch.Tensor,
-    ) -> NPTLangevinState:
-        """Update the particle positions in NPT dynamics.
-
-        This function updates the particle positions in NPT dynamics, accounting for
-        both the forces on particles and the cell volume changes.
-
-        Args:
-            state: Current NPT state
-            L_n: Previous cell length scale
-            dt: Integration timestep
-            kT: Target temperature in energy units
-
-        Returns:
-            NPTLangevinState: Updated state with new positions
-        """
-        # Calculate effective mass term
-        M_2 = 2 * state.masses.unsqueeze(-1)
-
-        # Calculate new cell length scale (cube root of volume for isotropic scaling)
-        L_n_new = torch.pow(state.cell_positions, 1 / 3)
-
-        # Calculate damping factor
-        b = 1 / (1 + ((alpha * dt) / M_2))
-
-        # Scale positions due to cell volume change
-        c_1 = (L_n_new / L_n) * state.positions
-
-        # Time step factor with average length scale
-        c_2 = (2 * L_n_new / (L_n_new + L_n)) * b * dt
-
-        # Velocity and force contributions with random noise
-        c_3 = (
-            state.velocities
-            + dt * state.forces / (M_2)
-            + 1 / (M_2) * beta(state=state, alpha=alpha, kT=kT, dt=dt)
-        )
-
-        # Update positions with all contributions
-        new_positions = c_1 + c_2 * c_3
-
-        # Apply periodic boundary conditions if needed
-        if state.pbc:
-            new_positions = transforms.pbc_wrap_general(new_positions, state.cell)
-
-        state.positions = new_positions
-        return state
-
-    def langevin_velocity_step(
-        state: NPTLangevinState,
-        forces: torch.Tensor,
-        dt: torch.Tensor,
-        kT: torch.Tensor,
-        device: torch.device = device,
-        dtype: torch.dtype = dtype,
-    ) -> NPTLangevinState:
-        """Update the particle velocities in NPT dynamics.
-
-        This function updates the particle velocities based on the forces and
-        thermal fluctuations, following the Langevin dynamics equations.
-
-        Args:
-            state: Current NPT state
-            forces: Forces on particles
-            dt: Integration timestep
-            kT: Target temperature in energy units
-            device: Device to place the tensor on (CPU or GPU)
-            dtype: Data type for the tensor
-
-        Returns:
-            NPTLangevinState: Updated state with new velocities
-        """
-        # Calculate denominator for update equations
-        M_2 = 2 * state.masses.unsqueeze(-1)
-
-        # Calculate damping factors
-        a = (1 - (alpha * dt) / M_2) / (1 + (alpha * dt) / M_2)
-        b = 1 / (1 + (alpha * dt) / M_2)
-
-        # Velocity contribution with damping
-        c_1 = a * state.velocities
-
-        # Force contribution (average of initial and final forces)
-        c_2 = dt * ((a * forces) + state.forces) / M_2
-
-        # Random noise contribution (thermal fluctuations)
-        c_3 = (
-            b
-            * beta(state=state, alpha=alpha, kT=kT, dt=dt, device=device, dtype=dtype)
-            / state.masses.unsqueeze(-1)
-        )
-
-        # Update velocities with all contributions
-        state.velocities = c_1 + c_2 + c_3
-        return state
-
-    def npt_init(
-        state: ts.SimState | StateDict,
-        kT: torch.Tensor = kT,
-        device: torch.device = device,
-        dtype: torch.dtype = dtype,
-        seed: int | None = None,
-        **kwargs: Any,
-    ) -> MDState:
-        """Initialize an NPT state from input data.
-
-        This function creates an initial NPT state from the provided state or
-        state dictionary, initializing all necessary variables for NPT simulation.
-
-        Args:
-            state: Either a SimState object or a dictionary containing positions,
-                momenta, cell, pbc
-            kT: Target temperature in energy units
-            device: Device to place the tensor on (CPU or GPU)
-            dtype: Data type for the tensor
-            seed: Random seed for reproducibility
-            **kwargs: Additional state arguments
-
-        Returns:
-            MDState: Initialized state for NPT integration
-        """
-        # Convert dictionary to BaseState if needed
-        if not isinstance(state, ts.SimState):
-            state = ts.SimState(**state)
-
-        # Check if there is an extra batch dimension
-        if state.cell.dim() == 3:
-            state.cell = state.cell.squeeze(0)
-
-        # Get atomic numbers from kwargs or state
-        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
-
-        # Compute initial energy, forces, and stress
-        model_output = model(state)
-
-        # Initialize cell variables
-        # Cell position is the volume
-        cell_positions = torch.linalg.det(state.cell)
-        # Initial cell velocity is zero
-        cell_velocities = torch.zeros_like(cell_positions)
-        # Cell mass depends on system size, temperature and barostat time constant
-        cell_masses = (state.n_atoms + 1) * kT * b_tau * b_tau
-
-        # Initialize momenta (from kwargs or calculated)
-        momenta = kwargs.get(
-            "momenta",
-            calculate_momenta(state.positions, state.masses, kT, device, dtype, seed),
-        )
-
-        # Create and return the NPT state
-        return NPTLangevinState(
-            positions=state.positions,
-            velocities=momenta / state.masses.unsqueeze(-1),
-            cell=state.cell,
-            pbc=state.pbc,
-            masses=state.masses,
-            energy=model_output["energy"],
-            forces=model_output["forces"],
-            stress=model_output["stress"],
-            reference_cell=state.cell.clone(),
-            cell_positions=cell_positions,
-            cell_velocities=cell_velocities,
-            cell_masses=cell_masses,
-            atomic_numbers=atomic_numbers,
-        )
-
-    def npt_update(
-        state: NPTLangevinState,
-        dt: torch.Tensor = dt,
-        kT: torch.Tensor = kT,
-        external_pressure: torch.Tensor = external_pressure,
-        alpha: torch.Tensor = alpha,
-        cell_alpha: torch.Tensor = cell_alpha,
-    ) -> NPTLangevinState:
-        """Update the NPT state for one timestep.
-
-        This function performs a single timestep of NPT integration for the given state.
-        It includes both position and cell updates, following a modified BAOAB scheme
-        adapted for NPT dynamics.
-
-        Args:
-            state: Current NPT state
-            dt: Integration timestep
-            kT: Target temperature in energy units
-            external_pressure: Target external pressure
-            alpha: Position friction coefficient
-            cell_alpha: Cell friction coefficient
-
-        Returns:
-            NPTLangevinState: Updated NPT state after one timestep
-        """
-        # Convert float parameters to tensors if needed
-        if isinstance(alpha, float):
-            alpha = torch.tensor(alpha, device=device, dtype=dtype)
-
-        if isinstance(kT, float):
-            kT = torch.tensor(kT, device=device, dtype=dtype)
-
-        if isinstance(cell_alpha, float):
-            cell_alpha = torch.tensor(cell_alpha, device=device, dtype=dtype)
-
-        if isinstance(dt, float):
-            dt = torch.tensor(dt, device=device, dtype=dtype)
-
-        # Update barostat mass based on current temperature
-        # This ensures proper coupling as temperature changes
-        state.cell_masses = (state.n_atoms + 1) * kT * b_tau * b_tau
-
-        # Compute model output for current state
-        model_output = model(state)
-        state.forces = model_output["forces"]
-        state.stress = model_output["stress"]
-
-        # Store initial values for integration
-        forces = state.forces
-        F_p_n = compute_cell_force(
-            state=state, external_pressure=external_pressure, kT=kT
-        )
-        L_n = torch.pow(state.cell_positions, 1 / 3)  # Current length scale
-
-        # Step 1: Update cell position
-        state = cell_position_step(state=state, dt=dt, pressure_force=F_p_n, kT=kT)
-
-        # Update cell (currently only isotropic fluctuations)
-        dim = state.positions.shape[1]
-        V_0 = torch.det(state.reference_cell)
-        V = state.cell_positions
-
-        # Scale cell uniformly in all dimensions
-        new_cell = (V / V_0) ** (1.0 / dim) * state.reference_cell
-        state.cell = new_cell
-
-        # NOTE: Better to scale each dimension independently?
-        # state.cell = torch.tensor([[L_x, 0, 0],
-        #                            [0, L_x, 0],
-        #                            [0, 0, L_x]], device=device, dtype=dtype)
-
-        # Step 2: Update particle positions
-        state = langevin_position_step(state=state, L_n=L_n, dt=dt, kT=kT)
-
-        # state.positions = state.positions + dt * state.velocities
-
-        # Recompute model output after position updates
-        model_output = model(state)
-        state.energy = model_output["energy"]
-        state.forces = model_output["forces"]
-        state.stress = model_output["stress"]
-
-        # Compute updated pressure force
-        F_p_n_new = compute_cell_force(
-            state=state, external_pressure=external_pressure, kT=kT
-        )
-
-        # Step 3: Update cell velocities
-        state = cell_velocity_step(
-            state=state,
-            F_p_n=F_p_n,
-            dt=dt,
-            pressure_force=F_p_n_new,
-            cell_alpha=cell_alpha,
-            kT=kT,
-        )
-
-        # Step 4: Update particle velocities
-        state = langevin_velocity_step(state=state, forces=forces, dt=dt, kT=kT)
-
-        # state.velocities = state.velocities + dt * forces / state.masses.unsqueeze(-1)
-
-        return state  # noqa: RET504
-
-    return npt_init, npt_update
 
 
 @dataclass
@@ -1833,7 +1035,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         new_positions = state.positions + new_positions
 
         # Apply periodic boundary conditions
-        return transforms.pbc_wrap_general(new_positions, state.current_cell.T)
+        return ts.transforms.pbc_wrap_general(new_positions, state.current_cell.T)
 
     def exp_iL2(  # noqa: N802
         alpha: torch.Tensor,

@@ -17,13 +17,13 @@ import torch_sim as ts
 from torch_sim.integrators import MDState, nvt_langevin
 from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.monte_carlo import swap_monte_carlo
-from torch_sim.units import MetalUnits
+from torch_sim.units import MetalUnits as Units
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float64
 
-kT = 1000 * MetalUnits.temperature
+kT = 1000 * Units.temperature
 
 # Option 1: Load the raw model from the downloaded model
 loaded_model = mace_mp(
@@ -40,6 +40,8 @@ loaded_model = mace_mp(
 model = MaceModel(
     model=loaded_model,
     device=device,
+    compute_forces=True,
+    compute_stress=False,
     dtype=dtype,
     enable_cueq=False,
 )

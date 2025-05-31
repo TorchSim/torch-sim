@@ -14,10 +14,9 @@ from ase.build import molecule
 from mace.calculators.foundations_models import mace_off
 
 import torch_sim as ts
-from torch_sim.models.mace import MaceUrls
+from torch_sim.integrators import nve
+from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.quantities import calc_kinetic_energy
-from torch_sim.unbatched.models.mace import UnbatchedMaceModel
-from torch_sim.unbatched.unbatched_integrators import nve
 from torch_sim.units import MetalUnits as Units
 
 
@@ -42,8 +41,8 @@ N_steps = 20 if os.getenv("CI") else 2_000
 
 mol = molecule("methylenecyclopropane")
 
-# Initialize the unbatched MACE model
-model = UnbatchedMaceModel(
+# Initialize the MACE model
+model = MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,
