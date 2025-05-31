@@ -6,8 +6,8 @@ from typing import Any
 
 import torch
 
-import torch_sim as ts
-from torch_sim.integrators import (
+from torch_sim import transforms
+from torch_sim.integrators.md import (
     MDState,
     calculate_momenta,
     momentum_step,
@@ -519,9 +519,7 @@ def nvt_nose_hoover(
     chain_steps: int = 3,
     sy_steps: int = 3,
 ) -> tuple[
-    Callable[
-        [ts.SimState | StateDict, torch.Tensor, int | None, Any], NVTNoseHooverState
-    ],
+    Callable[[SimState | StateDict, torch.Tensor, int | None, Any], NVTNoseHooverState],
     Callable[[NVTNoseHooverState, torch.Tensor], NVTNoseHooverState],
 ]:
     """Initialize NVT Nose-Hoover chain thermostat integration.
@@ -567,7 +565,7 @@ def nvt_nose_hoover(
     device, dtype = model.device, model.dtype
 
     def nvt_nose_hoover_init(
-        state: ts.SimState | StateDict,
+        state: SimState | StateDict,
         kT: torch.Tensor = kT,
         tau: torch.Tensor | None = None,
         seed: int | None = None,
@@ -595,8 +593,8 @@ def nvt_nose_hoover(
             dt, chain_length, chain_steps, sy_steps, tau
         )
 
-        if not isinstance(state, ts.SimState):
-            state = ts.SimState(**state)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         # Check if there is an extra batch dimension
         if state.cell.dim() == 3:
@@ -833,7 +831,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
     chain_steps: int = 2,
     sy_steps: int = 3,
 ) -> tuple[
-    Callable[[ts.SimState | StateDict], NPTNoseHooverState],
+    Callable[[SimState | StateDict], NPTNoseHooverState],
     Callable[[NPTNoseHooverState, torch.Tensor], NPTNoseHooverState],
 ]:
     """Create an NPT simulation with Nose-Hoover chain thermostats.
@@ -852,7 +850,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
 
     Returns:
         tuple:
-            - Callable[[ts.SimState | StateDict], NPTNoseHooverState]: Initialization
+            - Callable[[SimState | StateDict], NPTNoseHooverState]: Initialization
               function
             - Callable[[NPTNoseHooverState, torch.Tensor], NPTNoseHooverState]: Update
               function
@@ -1005,7 +1003,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         new_positions = state.positions + new_positions
 
         # Apply periodic boundary conditions
-        return ts.transforms.pbc_wrap_general(new_positions, state.current_cell.T)
+        return transforms.pbc_wrap_general(new_positions, state.current_cell.T)
 
     def exp_iL2(  # noqa: N802
         alpha: torch.Tensor,
@@ -1200,7 +1198,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         return state
 
     def npt_nose_hoover_init(
-        state: ts.SimState | StateDict,
+        state: SimState | StateDict,
         kT: torch.Tensor = kT,
         t_tau: torch.Tensor | None = None,
         b_tau: torch.Tensor | None = None,
@@ -1259,8 +1257,8 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             dt, chain_length, chain_steps, sy_steps, t_tau
         )
 
-        if not isinstance(state, ts.SimState):
-            state = ts.SimState(**state)
+        if not isinstance(state, SimState):
+            state = SimState(**state)
 
         # Check if there is an extra batch dimension
         if state.cell.dim() == 3:

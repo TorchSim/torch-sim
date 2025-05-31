@@ -4,7 +4,12 @@ from collections.abc import Callable
 
 import torch
 
-from torch_sim.integrators import MDState, calculate_momenta, momentum_step, position_step
+from torch_sim.integrators.md import (
+    MDState,
+    calculate_momenta,
+    momentum_step,
+    position_step,
+)
 from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import torch
 
 import torch_sim as ts
-from torch_sim.integrators import calculate_momenta
+from torch_sim.integrators.md import calculate_momenta
 from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
