@@ -11,7 +11,6 @@ import itertools
 import torch
 
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 
 
 # Set up the device and data type
@@ -61,41 +60,7 @@ atomic_numbers = torch.full((positions.shape[0],), 18, device=device, dtype=torc
 #  - sigma: distance at which potential is zero (3.405 Å for Ar)
 #  - epsilon: depth of potential well (0.0104 eV for Ar)
 #  - cutoff: distance beyond which interactions are ignored (typically 2.5*sigma)
-model = UnbatchedLennardJonesModel(
-    use_neighbor_list=True,
-    cutoff=2.5 * 3.405,
-    sigma=3.405,
-    epsilon=0.0104,
-    device=device,
-    dtype=dtype,
-    compute_forces=True,
-    compute_stress=True,
-    per_atom_energies=True,
-    per_atom_stresses=True,
-)
-
-# Print system information
-print(f"Positions: {positions.shape}")
-print(f"Cell: {cell.shape}")
-
-state = dict(
-    positions=positions,
-    cell=cell,
-    atomic_numbers=atomic_numbers,
-    pbc=True,
-)
-# Run the simulation and get results
-results = model(state)
-
-# Print the results
-print(f"Energy: {float(results['energy']):.4f}")
-print(f"Forces: {results['forces']}")
-print(f"Stress: {results['stress']}")
-print(f"Energies: {results['energies']}")
-print(f"Stresses: {results['stresses']}")
-
-# Batched model
-batched_model = LennardJonesModel(
+model = LennardJonesModel(
     use_neighbor_list=True,
     cutoff=2.5 * 3.405,
     sigma=3.405,
@@ -117,7 +82,7 @@ state = dict(
 )
 
 # Run the simulation and get results
-results = batched_model(state)
+results = model(state)
 
 # Print the results
 print(f"Energy: {results['energy']}")

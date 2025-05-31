@@ -3,7 +3,7 @@
 
 # /// script
 # dependencies = [
-#     "fairchem-core",
+#     "fairchem-core==1.10.0",
 # ]
 # ///
 

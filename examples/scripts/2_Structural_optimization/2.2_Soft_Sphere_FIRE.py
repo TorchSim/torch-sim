@@ -12,8 +12,8 @@ import os
 import torch
 
 import torch_sim as ts
-from torch_sim.unbatched.models.soft_sphere import UnbatchedSoftSphereModel
-from torch_sim.unbatched.unbatched_optimizers import fire
+from torch_sim.models.soft_sphere import SoftSphereModel
+from torch_sim.optimizers import fire
 
 
 # Set up the device and data type
@@ -47,7 +47,6 @@ base_positions = torch.tensor(
 positions = []
 for i, j, k in itertools.product(range(4), range(4), range(4)):
     for base_pos in base_positions:
-        # Add unit cell position + offset for supercell
         pos = base_pos + torch.tensor([i, j, k], device=device, dtype=dtype)
         positions.append(pos)
 
@@ -75,15 +74,17 @@ atomic_numbers = torch.full((positions.shape[0],), 29, device=device, dtype=torc
 # Cu atomic mass in atomic mass units
 masses = torch.full((positions.shape[0],), 63.546, device=device, dtype=dtype)
 
-state = ts.SimState(
-    positions=positions,
-    masses=masses,
-    cell=cell,
+# Create state with batch dimension
+state = ts.state.SimState(
+    positions=positions.unsqueeze(0),  # Add batch dimension
+    masses=masses.unsqueeze(0),
+    cell=cell.unsqueeze(0),
     pbc=True,
-    atomic_numbers=atomic_numbers,
+    atomic_numbers=atomic_numbers.unsqueeze(0),
 )
+
 # Initialize the Soft Sphere model
-model = UnbatchedSoftSphereModel(
+model = SoftSphereModel(
     sigma=2.5,
     device=device,
     dtype=dtype,
@@ -95,23 +96,23 @@ model = UnbatchedSoftSphereModel(
 # Run initial simulation and get results
 results = model(state)
 
-# Initialize FIRE (Fast Inertial Relaxation Engine) optimizer
+# Initialize FIRE optimizer
 fire_init, fire_update = fire(
     model=model,
-    dt_start=0.005,  # Initial timestep
-    dt_max=0.01,  # Maximum timestep
+    dt_start=0.005,
+    dt_max=0.01,
 )
 
 state = fire_init(state=state)
 
-# Run optimization for 2000 steps
+# Run optimization for N_steps
 for step in range(N_steps):
     if step % 100 == 0:
-        print(f"{step=}: Total energy: {state.energy.item()} eV")
+        print(f"{step=}: Total energy: {state.energy[0].item()} eV")
     state = fire_update(state)
 
 # Print max force after optimization
-print(f"Initial energy: {results['energy'].item()} eV")
-print(f"Final energy: {state.energy.item()} eV")
-print(f"Initial max force: {torch.max(torch.abs(results['forces'])).item()} eV/Å")
-print(f"Final max force: {torch.max(torch.abs(state.forces)).item()} eV/Å")
+print(f"Initial energy: {results['energy'][0].item()} eV")
+print(f"Final energy: {state.energy[0].item()} eV")
+print(f"Initial max force: {torch.max(torch.abs(results['forces'][0])).item()} eV/Å")
+print(f"Final max force: {torch.max(torch.abs(state.forces[0])).item()} eV/Å")

@@ -12,8 +12,8 @@ import os
 import torch
 
 import torch_sim as ts
-from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
-from torch_sim.unbatched.unbatched_optimizers import fire
+from torch_sim.models.lennard_jones import LennardJonesModel
+from torch_sim.optimizers import fire
 
 
 # Set up the device and data type
@@ -47,7 +47,6 @@ base_positions = torch.tensor(
 positions = []
 for i, j, k in itertools.product(range(4), range(4), range(4)):
     for base_pos in base_positions:
-        # Add unit cell position + offset for supercell
         pos = base_pos + torch.tensor([i, j, k], device=device, dtype=dtype)
         positions.append(pos)
 
@@ -73,11 +72,7 @@ positions = positions + 0.2 * torch.randn(
 masses = torch.full((positions.shape[0],), 39.948, device=device, dtype=dtype)
 
 # Initialize the Lennard-Jones model
-# Parameters:
-#  - sigma: distance at which potential is zero (3.405 Å for Ar)
-#  - epsilon: depth of potential well (0.0104 eV for Ar)
-#  - cutoff: distance beyond which interactions are ignored (typically 2.5*sigma)
-model = UnbatchedLennardJonesModel(
+model = LennardJonesModel(
     use_neighbor_list=False,
     sigma=3.405,
     epsilon=0.0104,
@@ -87,36 +82,36 @@ model = UnbatchedLennardJonesModel(
     compute_forces=True,
     compute_stress=False,
 )
-state = ts.state.SimState(
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    pbc=True,
-    atomic_numbers=atomic_numbers,
-)
 
+# Create state with batch dimension
+state = ts.state.SimState(
+    positions=positions.unsqueeze(0),  # Add batch dimension
+    masses=masses.unsqueeze(0),
+    cell=cell.unsqueeze(0),
+    pbc=True,
+    atomic_numbers=atomic_numbers.unsqueeze(0),
+)
 
 # Run initial simulation and get results
 results = model(state)
 
-# Initialize FIRE (Fast Inertial Relaxation Engine) optimizer
-# FIRE is an efficient method for finding local energy minima in atomistic systems
+# Initialize FIRE optimizer
 fire_init, fire_update = fire(
     model=model,
-    dt_start=0.005,  # Initial timestep
-    dt_max=0.01,  # Maximum timestep
+    dt_start=0.005,
+    dt_max=0.01,
 )
 
 state = fire_init(state=state)
 
-# Run optimization for 1000 steps
+# Run optimization for N_steps
 for step in range(N_steps):
     if step % 100 == 0:
-        print(f"{step=}: Potential energy: {state.energy.item()} eV")
+        print(f"{step=}: Potential energy: {state.energy[0].item()} eV")
     state = fire_update(state)
 
 # Print max force after optimization
-print(f"Initial energy: {results['energy'].item()} eV")
-print(f"Final energy: {state.energy.item()} eV")
-print(f"Initial max force: {torch.max(torch.abs(results['forces'])).item()} eV/Å")
-print(f"Final max force: {torch.max(torch.abs(state.forces)).item()} eV/Å")
+print(f"Initial energy: {results['energy'][0].item()} eV")
+print(f"Final energy: {state.energy[0].item()} eV")
+print(f"Initial max force: {torch.max(torch.abs(results['forces'][0])).item()} eV/Å")
+print(f"Final max force: {torch.max(torch.abs(state.forces[0])).item()} eV/Å")
