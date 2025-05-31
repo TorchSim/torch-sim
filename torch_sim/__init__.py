@@ -22,7 +22,7 @@ from torch_sim import (
     units,
 )
 from torch_sim.autobatching import BinningAutoBatcher, InFlightAutoBatcher
-from torch_sim.integrators import integrators, npt_langevin, nve, nvt_langevin
+from torch_sim.integrators import npt_langevin, nve, nvt_langevin
 
 # state propagators
 from torch_sim.monte_carlo import swap_monte_carlo

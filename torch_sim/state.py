@@ -106,6 +106,12 @@ class SimState:
                 f"masses {shapes[1]}, atomic_numbers {shapes[2]}"
             )
 
+        if self.cell.ndim != 3 and self.batch is None:
+            self.cell = self.cell.unsqueeze(0)
+
+        if self.cell.shape[-2:] != (3, 3):
+            raise ValueError("Cell must have shape (n_batches, 3, 3)")
+
         if self.batch is None:
             self.batch = torch.zeros(self.n_atoms, device=self.device, dtype=torch.int64)
         else:
@@ -113,6 +119,9 @@ class SimState:
             _, counts = torch.unique_consecutive(self.batch, return_counts=True)
             if not torch.all(counts == torch.bincount(self.batch)):
                 raise ValueError("Batch indices must be unique consecutive integers")
+
+        if self.cell.shape[0] != self.n_batches:
+            raise ValueError("Cell must have shape (n_batches, 3, 3)")
 
     @property
     def wrap_positions(self) -> torch.Tensor:

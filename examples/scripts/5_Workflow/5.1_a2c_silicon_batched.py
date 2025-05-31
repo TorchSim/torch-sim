@@ -24,13 +24,12 @@ from pymatgen.core import Composition, Element, Structure
 from tqdm import tqdm
 
 import torch_sim as ts
-from torch_sim.models.mace import MaceModel, MaceUrls
-from torch_sim.unbatched.models.mace import UnbatchedMaceModel
-from torch_sim.unbatched.unbatched_integrators import (
+from torch_sim.integrators.nvt import (
     NVTNoseHooverState,
     nvt_nose_hoover,
     nvt_nose_hoover_invariant,
 )
+from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.units import MetalUnits as Units
 from torch_sim.workflows import a2c
 
@@ -71,7 +70,7 @@ atomic_masses = [Element(el).atomic_mass for el in comp.get_el_amt_dict()] * int
 )
 species = [Element.from_Z(Z).symbol for Z in atomic_numbers]
 
-model = UnbatchedMaceModel(
+model = MaceModel(
     model=raw_model,
     device=device,
     compute_forces=True,
@@ -218,7 +217,7 @@ for i in tqdm(range(0, len(pymatgen_struct_list), batch_size)):
     batch_state = ts.io.structures_to_state(batch_structs, device=device, dtype=dtype)
 
     final_state, logger, final_energy, final_pressure = (
-        a2c.get_unit_cell_relaxed_structure_batched(
+        a2c.get_unit_cell_relaxed_structure(
             state=batch_state,
             model=model,
             max_iter=max_optim_steps,

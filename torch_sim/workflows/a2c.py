@@ -17,17 +17,9 @@ from pymatgen.core.composition import Composition
 
 import torch_sim as ts
 from torch_sim import transforms
+from torch_sim.models.soft_sphere import SoftSphereModel, SoftSphereMultiModel
+from torch_sim.optimizers import FireState, UnitCellFireState, fire
 from torch_sim.optimizers import unit_cell_fire as batched_unit_cell_fire
-from torch_sim.unbatched.models.soft_sphere import (
-    UnbatchedSoftSphereModel,
-    UnbatchedSoftSphereMultiModel,
-)
-from torch_sim.unbatched.unbatched_optimizers import (
-    FIREState,
-    UnitCellFIREState,
-    fire,
-    unit_cell_fire,
-)
 
 
 def min_distance(
@@ -234,7 +226,7 @@ def random_packed_structure(
     device: torch.device | None = None,
     dtype: torch.dtype = torch.float32,
     log: Any | None = None,
-) -> FIREState:
+) -> FireState:
     """Generates a random packed atomic structure and minimizes atomic overlaps.
 
     This function creates a random atomic structure within a given cell and optionally
@@ -295,7 +287,7 @@ def random_packed_structure(
         positions_cart = torch.matmul(positions, cell)
 
         # Initialize soft sphere potential calculator
-        model = UnbatchedSoftSphereModel(
+        model = SoftSphereModel(
             sigma=diameter,
             device=device,
             dtype=dtype,
@@ -346,7 +338,7 @@ def random_packed_structure_multi(
     distance_tolerance: float = 0.0001,
     device: torch.device | None = None,
     dtype: torch.dtype = torch.float32,
-) -> FIREState:
+) -> FireState:
     """Generates a random packed atomic structure with multiple species
     and minimizes overlaps.
 
@@ -423,7 +415,7 @@ def random_packed_structure_multi(
         positions_cart = torch.matmul(positions, cell)
 
         # Initialize multi-species soft sphere potential calculator
-        model = UnbatchedSoftSphereMultiModel(
+        model = SoftSphereMultiModel(
             species=species_idx,
             sigma_matrix=diameter_matrix,
             device=device,
@@ -713,79 +705,7 @@ def get_unit_cell_relaxed_structure(
     state: ts.SimState,
     model: torch.nn.Module,
     max_iter: int = 200,
-) -> tuple[UnitCellFIREState, dict]:
-    """Relax both atomic positions and cell parameters using FIRE algorithm.
-
-    This function performs geometry optimization of both atomic positions and unit cell
-    parameters simultaneously. Uses the Fast Inertial Relaxation Engine (FIRE) algorithm
-    to minimize forces on atoms and stresses on the cell.
-
-    Args:
-        state: State containing positions, cell and atomic numbers
-        model: Model to compute energies, forces, and stresses
-        max_iter: Maximum number of FIRE iterations. Defaults to 200.
-
-    Returns:
-        tuple containing:
-            - UnitCellFIREState: Final state containing relaxed positions, cell and more
-            - dict: Logger with energy and stress trajectories
-            - float: Final energy in eV
-            - float: Final pressure in eV/Å³
-    """
-    # Get device and dtype from model
-    device, dtype = model.device, model.dtype
-
-    logger = {
-        "energy": torch.zeros((max_iter, 1), device=device, dtype=dtype),
-        "stress": torch.zeros((max_iter, 3, 3), device=device, dtype=dtype),
-    }
-
-    results = model(state)
-    init_energy = results["energy"].item()
-    init_stress = results["stress"]
-    init_pressure = (torch.trace(init_stress) / 3.0).item()
-    print(
-        f"Initial energy: {init_energy:.4f} eV, "
-        f"Initial pressure: {init_pressure:.4f} eV/A^3"
-    )
-
-    unit_cell_fire_init, unit_cell_fire_update = unit_cell_fire(
-        model=model,
-    )
-    state = unit_cell_fire_init(state)
-
-    def step_fn(
-        step: int, state: UnitCellFIREState, logger: dict
-    ) -> tuple[UnitCellFIREState, dict]:
-        logger["energy"][step] = state.energy
-        logger["stress"][step] = state.stress
-        state = unit_cell_fire_update(state)
-        return state, logger
-
-    for step in range(max_iter):
-        state, logger = step_fn(step, state, logger)
-        # energy, stress = logger["energy"][step].item(), logger["stress"][step]
-        # pressure = -torch.trace(stress) / 3.0
-        # print(f"Step {step}: Energy = {energy} eV: Pressure = {pressure} eV/A^3")
-
-    # Get final results
-    final_results = model(state)
-
-    final_energy = final_results["energy"].item()
-    final_stress = final_results["stress"]
-    final_pressure = (torch.trace(final_stress) / 3.0).item()
-    print(
-        f"Final energy: {final_energy:.4f} eV, "
-        f"Final pressure: {final_pressure:.4f} eV/A^3"
-    )
-    return state, logger, final_energy, final_pressure
-
-
-def get_unit_cell_relaxed_structure_batched(
-    state: ts.SimState,
-    model: torch.nn.Module,
-    max_iter: int = 200,
-) -> tuple[UnitCellFIREState, dict]:
+) -> tuple[UnitCellFireState, dict]:
     """Relax both atomic positions and cell parameters using FIRE algorithm.
 
     This function performs geometry optimization of both atomic positions and unit cell
@@ -829,8 +749,8 @@ def get_unit_cell_relaxed_structure_batched(
     state = unit_cell_fire_init(state)
 
     def step_fn(
-        step: int, state: UnitCellFIREState, logger: dict
-    ) -> tuple[UnitCellFIREState, dict]:
+        step: int, state: UnitCellFireState, logger: dict
+    ) -> tuple[UnitCellFireState, dict]:
         logger["energy"][step] = state.energy
         logger["stress"][step] = state.stress
         state = unit_cell_fire_update(state)
@@ -838,9 +758,6 @@ def get_unit_cell_relaxed_structure_batched(
 
     for step in range(max_iter):
         state, logger = step_fn(step, state, logger)
-        # energy, stress = logger["energy"][step].item(), logger["stress"][step]
-        # pressure = -torch.trace(stress) / 3.0
-        # print(f"Step {step}: Energy = {energy} eV: Pressure = {pressure} eV/A^3")
 
     # Get final results
     final_results = model(state)
@@ -859,7 +776,7 @@ def get_relaxed_structure(
     state: ts.SimState,
     model: torch.nn.Module,
     max_iter: int = 200,
-) -> tuple[FIREState, dict]:
+) -> tuple[FireState, dict]:
     """Relax atomic positions at fixed cell parameters using FIRE algorithm.
 
     Does geometry optimization of atomic positions while keeping the unit cell fixed.
@@ -889,14 +806,13 @@ def get_relaxed_structure(
     state_init_fn, fire_update = fire(model=model)
     state = state_init_fn(state)
 
-    def step_fn(idx: int, state: FIREState, logger: dict) -> tuple[FIREState, dict]:
+    def step_fn(idx: int, state: FireState, logger: dict) -> tuple[FireState, dict]:
         logger["energy"][idx] = state.energy
         state = fire_update(state)
         return state, logger
 
     for idx in range(max_iter):
         state, logger = step_fn(idx, state, logger)
-        # print(f"Step {i}: Energy = {logger['energy'][i].item()} eV")
 
     # Get final results
     model.compute_stress = True

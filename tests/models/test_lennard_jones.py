@@ -6,8 +6,8 @@ from ase.build import bulk
 
 import torch_sim as ts
 from torch_sim.models.interface import validate_model_outputs
-from torch_sim.unbatched.models.lennard_jones import (
-    UnbatchedLennardJonesModel,
+from torch_sim.models.lennard_jones import (
+    LennardJonesModel,
     lennard_jones_pair,
     lennard_jones_pair_force,
 )
@@ -159,10 +159,8 @@ def models(
     }
 
     cutoff = 2.5 * 3.405  # Standard LJ cutoff * sigma
-    model_nl = UnbatchedLennardJonesModel(
-        use_neighbor_list=True, cutoff=cutoff, **calc_params
-    )
-    model_direct = UnbatchedLennardJonesModel(
+    model_nl = LennardJonesModel(use_neighbor_list=True, cutoff=cutoff, **calc_params)
+    model_direct = LennardJonesModel(
         use_neighbor_list=False, cutoff=cutoff, **calc_params
     )
 
@@ -233,7 +231,7 @@ def test_stress_tensor_symmetry(
 
 
 def test_validate_model_outputs(
-    lj_model: UnbatchedLennardJonesModel,
+    lj_model: LennardJonesModel,
     device: torch.device,
 ) -> None:
     """Test that the model outputs are valid."""

@@ -376,7 +376,7 @@ def test_compute_cell_force_atoms_per_batch():
     """Test that compute_cell_force correctly scales by number of atoms per batch.
 
     Covers fix in https://github.com/Radical-AI/torch-sim/pull/153."""
-    from torch_sim.integrators import _compute_cell_force
+    from torch_sim.integrators.npt import _compute_cell_force
 
     # Setup minimal state with two batches having 8:1 atom ratio
     s1, s2 = torch.zeros(8, dtype=torch.long), torch.ones(64, dtype=torch.long)

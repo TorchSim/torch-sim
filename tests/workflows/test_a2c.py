@@ -3,8 +3,8 @@ import torch
 from pymatgen.core.composition import Composition
 
 import torch_sim as ts
-from torch_sim.unbatched.models.soft_sphere import UnbatchedSoftSphereModel
-from torch_sim.unbatched.unbatched_optimizers import UnitCellFIREState
+from torch_sim.models.soft_sphere import SoftSphereModel
+from torch_sim.optimizers import UnitCellFireState
 from torch_sim.workflows import a2c
 
 
@@ -330,9 +330,9 @@ def test_get_target_temperature_parametrized(
 
 def create_test_model(
     *, device: torch.device, compute_stress: bool = True
-) -> UnbatchedSoftSphereModel:
+) -> SoftSphereModel:
     """Create a simple soft sphere model for testing."""
-    return UnbatchedSoftSphereModel(
+    return SoftSphereModel(
         sigma=2.5,
         epsilon=0.01,
         alpha=2.0,
@@ -374,10 +374,10 @@ def test_get_unit_cell_relaxed_structure(max_iter: int, device: torch.device) ->
     )
 
     # Basic checks
-    assert isinstance(relaxed_state, UnitCellFIREState)
+    assert isinstance(relaxed_state, UnitCellFireState)
     assert logger["energy"].shape[0] == max_iter
-    assert isinstance(final_energy, float)
-    assert isinstance(final_pressure, float)
+    assert isinstance(final_energy[0], float)
+    assert isinstance(final_pressure[0], float)
 
 
 @pytest.mark.parametrize(

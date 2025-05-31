@@ -14,7 +14,6 @@ from torch_sim.io import atoms_to_state
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.state import concatenate_states
-from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
 
 
 if TYPE_CHECKING:
@@ -29,23 +28,6 @@ def device() -> torch.device:
 @pytest.fixture
 def dtype() -> torch.dtype:
     return torch.float64
-
-
-@pytest.fixture
-def unbatched_lj_model(
-    device: torch.device, dtype: torch.dtype
-) -> UnbatchedLennardJonesModel:
-    """Create a Lennard-Jones model with reasonable parameters for Ar."""
-    return UnbatchedLennardJonesModel(
-        use_neighbor_list=True,
-        sigma=3.405,
-        epsilon=0.0104,
-        device=device,
-        dtype=dtype,
-        compute_forces=True,
-        compute_stress=True,
-        cutoff=2.5 * 3.405,
-    )
 
 
 @pytest.fixture

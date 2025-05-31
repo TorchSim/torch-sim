@@ -7,46 +7,16 @@ from typing import Any
 import torch
 
 import torch_sim as ts
-from torch_sim.integrators import MDState, calculate_momenta, momentum_step, position_step
+from torch_sim.integrators import (
+    MDState,
+    calculate_momenta,
+    momentum_step,
+    position_step,
+    velocity_verlet,
+)
 from torch_sim.quantities import calc_kinetic_energy, count_dof
 from torch_sim.state import SimState
 from torch_sim.typing import StateDict
-
-
-# TODO can this be removed?
-def velocity_verlet(state: MDState, dt: torch.Tensor, model: torch.nn.Module) -> MDState:
-    """Perform one complete velocity Verlet integration step.
-
-    This function implements the velocity Verlet algorithm, which provides
-    time-reversible integration of the equations of motion. The integration
-    sequence is:
-    1. Half momentum update
-    2. Full position update
-    3. Force update
-    4. Half momentum update
-
-    Args:
-        state: Current system state containing positions, momenta, forces
-        dt: Integration timestep
-        model: Neural network model that computes energies and forces
-
-    Returns:
-        Updated state after one complete velocity Verlet step
-
-    Notes:
-        - Time-reversible and symplectic integrator
-        - Conserves energy in the absence of numerical errors
-        - Handles periodic boundary conditions if enabled in state
-    """
-    dt_2 = dt / 2
-    state = momentum_step(state, dt_2)
-    state = position_step(state, dt)
-
-    model_output = model(state)
-
-    state.energy = model_output["energy"]
-    state.forces = model_output["forces"]
-    return momentum_step(state, dt_2)
 
 
 def nvt_langevin(
