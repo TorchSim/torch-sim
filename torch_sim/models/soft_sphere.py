@@ -49,16 +49,86 @@ from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.typing import StateDict
-from torch_sim.unbatched.models.soft_sphere import (
-    soft_sphere_pair,
-    soft_sphere_pair_force,
-)
 
 
 # Default parameter values defined at module level
 DEFAULT_SIGMA = torch.tensor(1.0)
 DEFAULT_EPSILON = torch.tensor(1.0)
 DEFAULT_ALPHA = torch.tensor(2.0)
+
+
+def soft_sphere_pair(
+    dr: torch.Tensor,
+    sigma: torch.Tensor = DEFAULT_SIGMA,
+    epsilon: torch.Tensor = DEFAULT_EPSILON,
+    alpha: torch.Tensor = DEFAULT_ALPHA,
+) -> torch.Tensor:
+    """Calculate pairwise repulsive energies between soft spheres with finite-range
+    interactions.
+
+    Computes a soft-core repulsive potential between particle pairs based on
+    their separation distance, size, and interaction parameters. The potential
+    goes to zero at finite range.
+
+    Args:
+        dr: Pairwise distances between particles. Shape: [n, m].
+        sigma: Particle diameters. Either a scalar float or tensor of shape [n, m]
+            for particle-specific sizes.
+        epsilon: Energy scale of the interaction. Either a scalar float or tensor
+            of shape [n, m] for pair-specific interaction strengths.
+        alpha: Stiffness exponent controlling the interaction decay. Either a scalar
+            float or tensor of shape [n, m].
+
+    Returns:
+        torch.Tensor: Pairwise interaction energies between particles. Shape: [n, m].
+            Each element [i,j] represents the repulsive energy between particles i and j.
+    """
+
+    def fn(dr: torch.Tensor) -> torch.Tensor:
+        return epsilon / alpha * (1.0 - (dr / sigma)).pow(alpha)
+
+    # Create mask for distances within cutoff i.e sigma
+    mask = dr < sigma
+
+    # Use transforms.safe_mask to compute energies only where mask is True
+    return transforms.safe_mask(mask, fn, dr)
+
+
+def soft_sphere_pair_force(
+    dr: torch.Tensor,
+    sigma: torch.Tensor = DEFAULT_SIGMA,
+    epsilon: torch.Tensor = DEFAULT_EPSILON,
+    alpha: torch.Tensor = DEFAULT_ALPHA,
+) -> torch.Tensor:
+    """Computes the pairwise repulsive forces between soft spheres with finite range.
+
+    This function implements a soft-core repulsive interaction that smoothly goes to zero
+    at the cutoff distance sigma. The force magnitude is controlled by epsilon and its
+    stiffness by alpha.
+
+    Args:
+        dr: A tensor of shape [n, m] containing pairwise distances between particles,
+            where n and m represent different particle indices.
+        sigma: Particle diameter defining the interaction cutoff distance. Can be either
+            a float scalar or a tensor of shape [n, m] for particle-specific diameters.
+        epsilon: Energy scale of the interaction. Can be either a float scalar or a
+            tensor of shape [n, m] for particle-specific interaction strengths.
+        alpha: Exponent controlling the stiffness of the repulsion. Higher values create
+            a harder repulsion. Can be either a float scalar or a tensor of shape [n, m].
+
+    Returns:
+        torch.Tensor: Forces between particle pairs with shape [n, m]. Forces are zero
+            for distances greater than sigma.
+    """
+
+    def fn(dr: torch.Tensor) -> torch.Tensor:
+        return (-epsilon / sigma) * (1.0 - (dr / sigma)).pow(alpha - 1)
+
+    # Create mask for distances within cutoff i.e sigma
+    mask = dr < sigma
+
+    # Use transforms.safe_mask to compute energies only where mask is True
+    return transforms.safe_mask(mask, fn, dr)
 
 
 class SoftSphereModel(torch.nn.Module, ModelInterface):

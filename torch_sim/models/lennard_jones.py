@@ -31,15 +31,93 @@ from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.typing import StateDict
-from torch_sim.unbatched.models.lennard_jones import (
-    lennard_jones_pair,
-    lennard_jones_pair_force,
-)
 
 
 # Default parameter values defined at module level
 DEFAULT_SIGMA = torch.tensor(1.0)
 DEFAULT_EPSILON = torch.tensor(1.0)
+
+
+def lennard_jones_pair(
+    dr: torch.Tensor,
+    sigma: torch.Tensor = DEFAULT_SIGMA,
+    epsilon: torch.Tensor = DEFAULT_EPSILON,
+) -> torch.Tensor:
+    """Calculate pairwise Lennard-Jones interaction energies between particles.
+
+    Implements the standard 12-6 Lennard-Jones potential that combines short-range
+    repulsion with longer-range attraction. The potential has a minimum at r=sigma.
+
+    The functional form is:
+    V(r) = 4*epsilon*[(sigma/r)^12 - (sigma/r)^6]
+
+    Args:
+        dr: Pairwise distances between particles. Shape: [n, m].
+        sigma: Distance at which potential reaches its minimum. Either a scalar float
+            or tensor of shape [n, m] for particle-specific interaction distances.
+        epsilon: Depth of the potential well (energy scale). Either a scalar float
+            or tensor of shape [n, m] for pair-specific interaction strengths.
+
+    Returns:
+        torch.Tensor: Pairwise Lennard-Jones interaction energies between particles.
+            Shape: [n, m]. Each element [i,j] represents the interaction energy between
+            particles i and j.
+    """
+    # Calculate inverse dr and its powers
+    idr = sigma / dr
+    idr2 = idr * idr
+    idr6 = idr2 * idr2 * idr2
+    idr12 = idr6 * idr6
+
+    # Calculate potential energy
+    energy = 4.0 * epsilon * (idr12 - idr6)
+
+    # Handle potential numerical instabilities and infinities
+    return torch.where(dr > 0, energy, torch.zeros_like(energy))
+    # return torch.nan_to_num(energy, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def lennard_jones_pair_force(
+    dr: torch.Tensor,
+    sigma: torch.Tensor = DEFAULT_SIGMA,
+    epsilon: torch.Tensor = DEFAULT_EPSILON,
+) -> torch.Tensor:
+    """Calculate pairwise Lennard-Jones forces between particles.
+
+    Implements the force derived from the 12-6 Lennard-Jones potential. The force
+    is repulsive at short range and attractive at long range, with a zero-crossing
+    at r=sigma.
+
+    The functional form is:
+    F(r) = 24*epsilon/r * [(2*sigma^12/r^12) - (sigma^6/r^6)]
+
+    This is the negative gradient of the Lennard-Jones potential energy.
+
+    Args:
+        dr: Pairwise distances between particles. Shape: [n, m].
+        sigma: Distance at which force changes from repulsive to attractive.
+            Either a scalar float or tensor of shape [n, m] for particle-specific
+            interaction distances.
+        epsilon: Energy scale of the interaction. Either a scalar float or tensor
+            of shape [n, m] for pair-specific interaction strengths.
+
+    Returns:
+        torch.Tensor: Pairwise Lennard-Jones forces between particles. Shape: [n, m].
+            Each element [i,j] represents the force magnitude between particles i and j.
+            Positive values indicate repulsion, negative values indicate attraction.
+    """
+    # Calculate inverse dr and its powers
+    idr = sigma / dr
+    idr2 = idr * idr
+    idr6 = idr2 * idr2 * idr2
+    idr12 = idr6 * idr6
+
+    # Calculate force (negative gradient of potential)
+    # F = -24*epsilon/r * ((sigma/r)^6 - 2*(sigma/r)^12)
+    force = 24.0 * epsilon / dr * (2.0 * idr12 - idr6)
+
+    # Handle potential numerical instabilities and infinities
+    return torch.where(dr > 0, force, torch.zeros_like(force))
 
 
 class LennardJonesModel(torch.nn.Module, ModelInterface):

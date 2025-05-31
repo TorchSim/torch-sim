@@ -32,7 +32,85 @@ from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.typing import StateDict
-from torch_sim.unbatched.models.morse import morse_pair, morse_pair_force
+
+
+# Default parameter values defined at module level
+DEFAULT_SIGMA = torch.tensor(1.0)
+DEFAULT_EPSILON = torch.tensor(5.0)
+DEFAULT_ALPHA = torch.tensor(5.0)
+
+
+def morse_pair(
+    dr: torch.Tensor,
+    sigma: torch.Tensor = DEFAULT_SIGMA,
+    epsilon: torch.Tensor = DEFAULT_EPSILON,
+    alpha: torch.Tensor = DEFAULT_ALPHA,
+) -> torch.Tensor:
+    """Calculate pairwise Morse potential energies between particles.
+
+    Implements the Morse potential that combines short-range repulsion with
+    longer-range attraction. The potential has a minimum at r=sigma and approaches
+    -epsilon as r→∞.
+
+    The functional form is:
+    V(r) = epsilon * (1 - exp(-alpha*(r-sigma)))^2 - epsilon
+
+    Args:
+        dr: Pairwise distances between particles. Shape: [n, m].
+        sigma: Distance at which potential reaches its minimum. Either a scalar float
+            or tensor of shape [n, m] for particle-specific equilibrium distances.
+        epsilon: Depth of the potential well (energy scale). Either a scalar float
+            or tensor of shape [n, m] for pair-specific interaction strengths.
+        alpha: Controls the width of the potential well. Larger values give a narrower
+            well. Either a scalar float or tensor of shape [n, m].
+
+    Returns:
+        torch.Tensor: Pairwise Morse interaction energies between particles.
+            Shape: [n, m]. Each element [i,j] represents the interaction energy between
+            particles i and j.
+    """
+    # Calculate potential energy
+    energy = epsilon * (1.0 - torch.exp(-alpha * (dr - sigma))).pow(2) - epsilon
+
+    # Handle potential numerical instabilities
+    return torch.where(dr > 0, energy, torch.zeros_like(energy))
+    # return torch.nan_to_num(energy, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def morse_pair_force(
+    dr: torch.Tensor,
+    sigma: torch.Tensor = DEFAULT_SIGMA,
+    epsilon: torch.Tensor = DEFAULT_EPSILON,
+    alpha: torch.Tensor = DEFAULT_ALPHA,
+) -> torch.Tensor:
+    """Calculate pairwise Morse forces between particles.
+
+    Implements the force derived from the Morse potential. The force changes
+    from repulsive to attractive at r=sigma.
+
+    The functional form is:
+    F(r) = 2*alpha*epsilon * exp(-alpha*(r-sigma)) * (1 - exp(-alpha*(r-sigma)))
+
+    This is the negative gradient of the Morse potential energy.
+
+    Args:
+        dr: Pairwise distances between particles. Shape: [n, m].
+        sigma: Distance at which force changes from repulsive to attractive.
+            Either a scalar float or tensor of shape [n, m].
+        epsilon: Energy scale of the interaction. Either a scalar float or tensor
+            of shape [n, m].
+        alpha: Controls the force range and stiffness. Either a scalar float or
+            tensor of shape [n, m].
+
+    Returns:
+        torch.Tensor: Pairwise Morse forces between particles. Shape: [n, m].
+            Positive values indicate repulsion, negative values indicate attraction.
+    """
+    exp_term = torch.exp(-alpha * (dr - sigma))
+    force = -2.0 * alpha * epsilon * exp_term * (1.0 - exp_term)
+
+    # Handle potential numerical instabilities
+    return torch.where(dr > 0, force, torch.zeros_like(force))
 
 
 class MorseModel(torch.nn.Module, ModelInterface):
