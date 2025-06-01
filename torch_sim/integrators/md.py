@@ -1,5 +1,6 @@
 """Core molecular dynamics state and operations."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import torch
@@ -188,3 +189,248 @@ def velocity_verlet(state: MDState, dt: torch.Tensor, model: torch.nn.Module) ->
     state.energy = model_output["energy"]
     state.forces = model_output["forces"]
     return momentum_step(state, dt_2)
+
+
+@dataclass
+class NoseHooverChain:
+    """State information for a Nose-Hoover chain thermostat.
+
+    The Nose-Hoover chain is a deterministic thermostat that maintains constant
+    temperature by coupling the system to a chain of thermostats. Each thermostat
+    in the chain has its own positions, momenta, and masses.
+
+    Attributes:
+        positions: Positions of the chain thermostats. Shape: [chain_length]
+        momenta: Momenta of the chain thermostats. Shape: [chain_length]
+        masses: Masses of the chain thermostats. Shape: [chain_length]
+        tau: Thermostat relaxation time. Longer values give better stability
+            but worse temperature control. Shape: scalar
+        kinetic_energy: Current kinetic energy of the coupled system. Shape: scalar
+        degrees_of_freedom: Number of degrees of freedom in the coupled system
+    """
+
+    positions: torch.Tensor
+    momenta: torch.Tensor
+    masses: torch.Tensor
+    tau: torch.Tensor
+    kinetic_energy: torch.Tensor
+    degrees_of_freedom: int
+
+
+@dataclass
+class NoseHooverChainFns:
+    """Collection of functions for operating on a Nose-Hoover chain.
+
+    Attributes:
+        initialize (Callable): Function to initialize the chain state
+        half_step (Callable): Function to perform half-step integration of chain
+        update_mass (Callable): Function to update the chain masses
+    """
+
+    initialize: Callable
+    half_step: Callable
+    update_mass: Callable
+
+
+# Suzuki-Yoshida weights for multi-timestep integration
+SUZUKI_YOSHIDA_WEIGHTS = {
+    1: torch.tensor([1.0]),
+    3: torch.tensor([0.828981543588751, -0.657963087177502, 0.828981543588751]),
+    5: torch.tensor(
+        [
+            0.2967324292201065,
+            0.2967324292201065,
+            -0.186929716880426,
+            0.2967324292201065,
+            0.2967324292201065,
+        ]
+    ),
+    7: torch.tensor(
+        [
+            0.784513610477560,
+            0.235573213359357,
+            -1.17767998417887,
+            1.31518632068391,
+            -1.17767998417887,
+            0.235573213359357,
+            0.784513610477560,
+        ]
+    ),
+}
+
+
+def construct_nose_hoover_chain(
+    dt: torch.Tensor,
+    chain_length: int,
+    chain_steps: int,
+    sy_steps: int,
+    tau: torch.Tensor,
+) -> NoseHooverChainFns:
+    """Creates functions to simulate a Nose-Hoover Chain thermostat.
+
+    Implements the direct translation method from Martyna et al. for thermal ensemble
+    sampling using Nose-Hoover chains. The chains are updated using a symmetric
+    splitting scheme with two half-steps per simulation step.
+
+    The integration uses a multi-timestep approach with Suzuki-Yoshida (SY) splitting:
+    - The chain evolution is split into nc substeps (chain_steps)
+    - Each substep is further split into sy_steps
+    - Each SY step has length δi = Δt*wi/nc where wi are the SY weights
+
+    Args:
+        dt: Simulation timestep
+        chain_length: Number of thermostats in the chain
+        chain_steps: Number of outer substeps for chain integration
+        sy_steps: Number of Suzuki-Yoshida steps (must be 1, 3, 5, or 7)
+        tau: Temperature equilibration timescale (in units of dt)
+            Larger values give better stability but slower equilibration
+
+    Returns:
+        NoseHooverChainFns containing:
+        - initialize: Function to create initial chain state
+        - half_step: Function to evolve chain for half timestep
+        - update_mass: Function to update chain masses
+
+    References:
+        Martyna et al. "Nose-Hoover chains: the canonical ensemble via
+            continuous dynamics"
+        J. Chem. Phys. 97, 2635 (1992)
+    """
+
+    def init_fn(
+        degrees_of_freedom: int, KE: torch.Tensor, kT: torch.Tensor
+    ) -> NoseHooverChain:
+        """Initialize a Nose-Hoover chain state.
+
+        Args:
+            degrees_of_freedom: Number of degrees of freedom in coupled system
+            KE: Initial kinetic energy of the system
+            kT: Target temperature in energy units
+
+        Returns:
+            Initial NoseHooverChain state
+        """
+        device = KE.device
+        dtype = KE.dtype
+
+        xi = torch.zeros(chain_length, dtype=dtype, device=device)
+        p_xi = torch.zeros(chain_length, dtype=dtype, device=device)
+
+        Q = kT * tau**2 * torch.ones(chain_length, dtype=dtype, device=device)
+        Q[0] *= degrees_of_freedom
+
+        return NoseHooverChain(xi, p_xi, Q, tau, KE, degrees_of_freedom)
+
+    def substep_fn(
+        delta: torch.Tensor, P: torch.Tensor, state: NoseHooverChain, kT: torch.Tensor
+    ) -> tuple[torch.Tensor, NoseHooverChain, torch.Tensor]:
+        """Perform single update of chain parameters and rescale velocities.
+
+        Args:
+            delta: Integration timestep for this substep
+            P: System momenta to be rescaled
+            state: Current chain state
+            kT: Target temperature
+
+        Returns:
+            Tuple of (rescaled momenta, updated chain state, temperature)
+        """
+        xi, p_xi, Q, _tau, KE, DOF = (
+            state.positions,
+            state.momenta,
+            state.masses,
+            state.tau,
+            state.kinetic_energy,
+            state.degrees_of_freedom,
+        )
+
+        delta_2 = delta / 2.0
+        delta_4 = delta_2 / 2.0
+        delta_8 = delta_4 / 2.0
+
+        M = chain_length - 1
+
+        # Update chain momenta backwards
+        G = p_xi[M - 1] ** 2 / Q[M - 1] - kT
+        p_xi[M] += delta_4 * G
+
+        for m in range(M - 1, 0, -1):
+            G = p_xi[m - 1] ** 2 / Q[m - 1] - kT
+            scale = torch.exp(-delta_8 * p_xi[m + 1] / Q[m + 1])
+            p_xi[m] = scale * (scale * p_xi[m] + delta_4 * G)
+
+        # Update system coupling
+        G = 2.0 * KE - DOF * kT
+        scale = torch.exp(-delta_8 * p_xi[1] / Q[1])
+        p_xi[0] = scale * (scale * p_xi[0] + delta_4 * G)
+
+        # Rescale system momenta
+        scale = torch.exp(-delta_2 * p_xi[0] / Q[0])
+        KE = KE * scale**2
+        P = P * scale
+
+        # Update positions
+        xi = xi + delta_2 * p_xi / Q
+
+        # Update chain momenta forwards
+        G = 2.0 * KE - DOF * kT
+        for m in range(M):
+            scale = torch.exp(-delta_8 * p_xi[m + 1] / Q[m + 1])
+            p_xi[m] = scale * (scale * p_xi[m] + delta_4 * G)
+            G = p_xi[m] ** 2 / Q[m] - kT
+        p_xi[M] += delta_4 * G
+
+        return P, NoseHooverChain(xi, p_xi, Q, _tau, KE, DOF), kT
+
+    def half_step_chain_fn(
+        P: torch.Tensor, state: NoseHooverChain, kT: torch.Tensor
+    ) -> tuple[torch.Tensor, NoseHooverChain]:
+        """Evolve chain for half timestep using multi-timestep integration.
+
+        Args:
+            P: System momenta to be rescaled
+            state: Current chain state
+            kT: Target temperature
+
+        Returns:
+            Tuple of (rescaled momenta, updated chain state)
+        """
+        if chain_steps == 1 and sy_steps == 1:
+            P, state, _ = substep_fn(dt, P, state, kT)
+            return P, state
+
+        delta = dt / chain_steps
+        weights = SUZUKI_YOSHIDA_WEIGHTS[sy_steps]
+
+        for step in range(chain_steps * sy_steps):
+            d = delta * weights[step % sy_steps]
+            P, state, _ = substep_fn(d, P, state, kT)
+
+        return P, state
+
+    def update_chain_mass_fn(state: NoseHooverChain, kT: torch.Tensor) -> NoseHooverChain:
+        """Update chain masses to maintain target oscillation period.
+
+        Args:
+            state: Current chain state
+            kT: Target temperature
+
+        Returns:
+            Updated chain state with new masses
+        """
+        device = state.positions.device
+        dtype = state.positions.dtype
+
+        Q = kT * state.tau**2 * torch.ones(chain_length, dtype=dtype, device=device)
+        Q[0] *= state.degrees_of_freedom
+
+        return NoseHooverChain(
+            state.positions,
+            state.momenta,
+            Q,
+            state.tau,
+            state.kinetic_energy,
+            state.degrees_of_freedom,
+        )
+
+    return NoseHooverChainFns(init_fn, half_step_chain_fn, update_chain_mass_fn)

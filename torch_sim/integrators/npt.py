@@ -2,11 +2,19 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 
 import torch_sim as ts
-from torch_sim.integrators.md import calculate_momenta
+from torch_sim.integrators.md import (
+    MDState,
+    NoseHooverChain,
+    NoseHooverChainFns,
+    calculate_momenta,
+    construct_nose_hoover_chain,
+)
+from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
@@ -783,3 +791,730 @@ def npt_langevin(  # noqa: C901, PLR0915
         return state  # noqa: RET504
 
     return npt_init, npt_update
+
+
+@dataclass
+class NPTNoseHooverState(MDState):
+    """State information for an NPT system with Nose-Hoover chain thermostats.
+
+    This class represents the complete state of a molecular system being integrated
+    in the NPT (constant particle number, pressure, temperature) ensemble using
+    Nose-Hoover chain thermostats for both temperature and pressure control.
+
+    The cell dynamics are parameterized using a logarithmic coordinate system where
+    cell_position = (1/d)ln(V/V_0), with V being the current volume, V_0 the reference
+    volume, and d the spatial dimension. This ensures volume positivity and simplifies
+    the equations of motion.
+
+    Attributes:
+        positions (torch.Tensor): Particle positions with shape [n_particles, n_dims]
+        momenta (torch.Tensor): Particle momenta with shape [n_particles, n_dims]
+        forces (torch.Tensor): Forces on particles with shape [n_particles, n_dims]
+        masses (torch.Tensor): Particle masses with shape [n_particles]
+        reference_cell (torch.Tensor): Reference simulation cell matrix with shape
+            [n_dimensions, n_dimensions]. Used to measure relative volume changes.
+        cell_position (torch.Tensor): Logarithmic cell coordinate.
+            Scalar value representing (1/d)ln(V/V_0) where V is current volume
+            and V_0 is reference volume.
+        cell_momentum (torch.Tensor): Cell momentum (velocity) conjugate to cell_position.
+            Scalar value controlling volume changes.
+        cell_mass (torch.Tensor): Mass parameter for cell dynamics. Controls coupling
+            between volume fluctuations and pressure.
+        barostat (NoseHooverChain): Chain thermostat coupled to cell dynamics for
+            pressure control
+        thermostat (NoseHooverChain): Chain thermostat coupled to particle dynamics
+            for temperature control
+        barostat_fns (NoseHooverChainFns): Functions for barostat chain updates
+        thermostat_fns (NoseHooverChainFns): Functions for thermostat chain updates
+
+    Properties:
+        velocities (torch.Tensor): Particle velocities computed as momenta
+            divided by masses. Shape: [n_particles, n_dimensions]
+        current_cell (torch.Tensor): Current simulation cell matrix derived from
+            cell_position. Shape: [n_dimensions, n_dimensions]
+
+    Notes:
+        - The cell parameterization ensures volume positivity
+        - Nose-Hoover chains provide deterministic control of T and P
+        - Extended system approach conserves an extended Hamiltonian
+        - Time-reversible when integrated with appropriate algorithms
+    """
+
+    # Cell variables
+    reference_cell: torch.Tensor
+    cell_position: torch.Tensor
+    cell_momentum: torch.Tensor
+    cell_mass: torch.Tensor
+
+    # Thermostat variables
+    thermostat: NoseHooverChain
+    thermostat_fns: NoseHooverChainFns
+
+    # Barostat variables
+    barostat: NoseHooverChain
+    barostat_fns: NoseHooverChainFns
+
+    @property
+    def velocities(self) -> torch.Tensor:
+        """Calculate particle velocities from momenta and masses.
+
+        Returns:
+            torch.Tensor: Particle velocities with shape [n_particles, n_dimensions]
+        """
+        return self.momenta / self.masses.unsqueeze(-1)
+
+    @property
+    def current_cell(self) -> torch.Tensor:
+        """Calculate current simulation cell from cell position.
+
+        The cell is computed from the reference cell and cell_position using:
+        cell = (V/V_0)^(1/d) * reference_cell
+        where V = V_0 * exp(d * cell_position)
+
+        Returns:
+            torch.Tensor: Current simulation cell matrix with shape
+                [n_dimensions, n_dimensions]
+        """
+        dim = self.positions.shape[1]
+        V_0 = torch.det(self.reference_cell)  # Reference volume
+        V = V_0 * torch.exp(dim * self.cell_position)  # Current volume
+        scale = (V / V_0) ** (1.0 / dim)
+        return scale * self.reference_cell
+
+
+def npt_nose_hoover(  # noqa: C901, PLR0915
+    *,
+    model: torch.nn.Module,
+    kT: torch.Tensor,
+    external_pressure: torch.Tensor,
+    dt: torch.Tensor,
+    chain_length: int = 3,
+    chain_steps: int = 2,
+    sy_steps: int = 3,
+) -> tuple[
+    Callable[[SimState | StateDict], NPTNoseHooverState],
+    Callable[[NPTNoseHooverState, torch.Tensor], NPTNoseHooverState],
+]:
+    """Create an NPT simulation with Nose-Hoover chain thermostats.
+
+    This function returns initialization and update functions for NPT molecular dynamics
+    with Nose-Hoover chain thermostats for temperature and pressure control.
+
+    Args:
+        model (torch.nn.Module): Model to compute forces and energies
+        kT (torch.Tensor): Target temperature in energy units
+        external_pressure (torch.Tensor): Target external pressure
+        dt (torch.Tensor): Integration timestep
+        chain_length (int, optional): Length of Nose-Hoover chains. Defaults to 3.
+        chain_steps (int, optional): Chain integration substeps. Defaults to 2.
+        sy_steps (int, optional): Suzuki-Yoshida integration order. Defaults to 3.
+
+    Returns:
+        tuple:
+            - Callable[[SimState | StateDict], NPTNoseHooverState]: Initialization
+              function
+            - Callable[[NPTNoseHooverState, torch.Tensor], NPTNoseHooverState]: Update
+              function
+
+    Notes:
+        - Uses Nose-Hoover chains for both temperature and pressure control
+        - Implements symplectic integration with Suzuki-Yoshida decomposition
+        - Cell dynamics use logarithmic coordinates for volume updates
+        - Conserves extended system Hamiltonian
+    """
+    device, dtype = model.device, model.dtype
+
+    def _npt_cell_info(
+        state: NPTNoseHooverState,
+    ) -> tuple[torch.Tensor, Callable[[torch.Tensor], torch.Tensor]]:
+        """Gets the current volume and a function to compute the cell from volume.
+
+        This helper function computes the current system volume and returns a function
+        that can compute the simulation cell for any given volume. This is useful for
+        integration algorithms that need to update the cell based on volume changes.
+
+        Args:
+            state (NPTNoseHooverState): Current state of the NPT system
+        Returns:
+            tuple:
+                - torch.Tensor: Current system volume
+                - callable: Function that takes a volume and returns the corresponding
+                    cell matrix
+
+        Notes:
+            - Uses logarithmic cell coordinate parameterization
+            - Volume changes are measured relative to reference cell
+            - Cell scaling preserves shape while changing volume
+        """
+        dim = state.positions.shape[1]
+        ref = state.reference_cell
+        V_0 = torch.det(ref)  # Reference volume
+        V = V_0 * torch.exp(dim * state.cell_position)  # Current volume
+
+        def volume_to_cell(V: torch.Tensor) -> torch.Tensor:
+            """Compute cell matrix for a given volume."""
+            return (V / V_0) ** (1.0 / dim) * ref
+
+        return V, volume_to_cell
+
+    def update_cell_mass(
+        state: NPTNoseHooverState, kT: torch.Tensor
+    ) -> NPTNoseHooverState:
+        """Update the cell mass parameter in an NPT simulation.
+
+        This function updates the mass parameter associated with cell volume fluctuations
+        based on the current system size and target temperature. The cell mass controls
+        how quickly the volume can change and is chosen to maintain stable pressure
+        control.
+
+        Args:
+            state (NPTNoseHooverState): Current state of the NPT system
+            kT (torch.Tensor): Target temperature in energy units
+
+        Returns:
+            NPTNoseHooverState: Updated state with new cell mass
+
+        Notes:
+            - Cell mass scales with system size (N+1) and dimensionality
+            - Larger cell mass gives slower but more stable volume fluctuations
+            - Mass depends on barostat relaxation time (tau)
+        """
+        n_particles, dim = state.positions.shape
+        cell_mass = torch.tensor(
+            dim * (n_particles + 1) * kT * state.barostat.tau**2,
+            device=device,
+            dtype=dtype,
+        )
+        # Create new state with updated cell mass
+        state.cell_mass = cell_mass
+        return state
+
+    def sinhx_x(x: torch.Tensor) -> torch.Tensor:
+        """Compute sinh(x)/x using Taylor series expansion near x=0.
+
+        This function implements a Taylor series approximation of sinh(x)/x that is
+        accurate near x=0. The series expansion is:
+        sinh(x)/x = 1 + x²/6 + x⁴/120 + x⁶/5040 + x⁸/362880 + x¹⁰/39916800
+
+        Args:
+            x (torch.Tensor): Input tensor
+
+        Returns:
+            torch.Tensor: Approximation of sinh(x)/x
+
+        Notes:
+            - Uses 6 terms of Taylor series for good accuracy near x=0
+            - Relative error < 1e-12 for |x| < 0.5
+            - More efficient than direct sinh(x)/x computation for small x
+            - Avoids division by zero at x=0
+
+        Example:
+            >>> x = torch.tensor([0.0, 0.1, 0.2])
+            >>> y = sinhx_x(x)
+            >>> print(y)  # tensor([1, 1.0017, 1.0067])
+        """
+        return (
+            1 + x**2 / 6 + x**4 / 120 + x**6 / 5040 + x**8 / 362_880 + x**10 / 39_916_800
+        )
+
+    def exp_iL1(  # noqa: N802
+        state: NPTNoseHooverState,
+        velocities: torch.Tensor,
+        cell_velocity: torch.Tensor,
+        dt: torch.Tensor,
+    ) -> torch.Tensor:
+        """Apply the exp(iL1) operator for NPT dynamics position updates.
+
+        This function implements the position update operator for NPT dynamics using
+        a symplectic integration scheme. It accounts for both particle motion and
+        cell scaling effects through the cell velocity, with optional periodic boundary
+        conditions.
+
+        The update follows the form:
+        R_new = R + (exp(x) - 1)R + dt*V*exp(x/2)*sinh(x/2)/(x/2)
+        where x = V_b * dt is the cell velocity term
+
+        Args:
+            state (NPTNoseHooverState): Current simulation state
+            velocities (torch.Tensor): Particle velocities [n_particles, n_dimensions]
+            cell_velocity (torch.Tensor): Cell velocity (scalar)
+            dt (torch.Tensor): Integration timestep
+
+        Returns:
+            torch.Tensor: Updated particle positions with optional periodic wrapping
+
+        Notes:
+            - Uses Taylor series for sinh(x)/x near x=0 for numerical stability
+            - Properly handles cell scaling through cell_velocity
+            - Maintains time-reversibility of the integration scheme
+            - Applies periodic boundary conditions if state.pbc is True
+        """
+        # Compute cell velocity terms
+        x = cell_velocity * dt
+        x_2 = x / 2
+
+        # Compute sinh(x/2)/(x/2) using stable Taylor series
+        sinh_term = sinhx_x(x_2)
+
+        # Compute position updates
+        new_positions = (
+            state.positions * (torch.exp(x) - 1)
+            + dt * velocities * torch.exp(x_2) * sinh_term
+        )
+        new_positions = state.positions + new_positions
+
+        # Apply periodic boundary conditions
+        return ts.transforms.pbc_wrap_general(new_positions, state.current_cell.T)
+
+    def exp_iL2(  # noqa: N802
+        alpha: torch.Tensor,
+        momenta: torch.Tensor,
+        forces: torch.Tensor,
+        cell_velocity: torch.Tensor,
+        dt_2: torch.Tensor,
+    ) -> torch.Tensor:
+        """Apply the exp(iL2) operator for NPT dynamics momentum updates.
+
+        This function implements the momentum update operator for NPT dynamics using
+        a symplectic integration scheme. It accounts for both force terms and
+        cell velocity scaling effects.
+
+        The update follows the form:
+        P_new = P*exp(-x) + dt/2 * F * exp(-x/2) * sinh(x/2)/(x/2)
+        where x = alpha * V_b * dt/2
+
+        Args:
+            alpha (torch.Tensor): Cell scaling parameter
+            momenta (torch.Tensor): Current particle momenta [n_particles, n_dimensions]
+            forces (torch.Tensor): Forces on particles [n_particles, n_dimensions]
+            cell_velocity (torch.Tensor): Cell velocity (scalar)
+            dt_2 (torch.Tensor): Half timestep (dt/2)
+
+        Returns:
+            torch.Tensor: Updated particle momenta
+
+        Notes:
+            - Uses Taylor series for sinh(x)/x near x=0 for numerical stability
+            - Properly handles cell velocity scaling effects
+            - Maintains time-reversibility of the integration scheme
+            - Part of the NPT integration algorithm
+        """
+        # Compute scaling terms
+        x = alpha * cell_velocity * dt_2
+        x_2 = x / 2
+
+        # Compute sinh(x/2)/(x/2) using stable Taylor series
+        sinh_term = sinhx_x(x_2)
+
+        # Update momenta with both scaling and force terms
+        return momenta * torch.exp(-x) + dt_2 * forces * sinh_term * torch.exp(-x_2)
+
+    def compute_cell_force(
+        alpha: torch.Tensor,
+        volume: torch.Tensor,
+        positions: torch.Tensor,
+        momenta: torch.Tensor,
+        masses: torch.Tensor,
+        stress: torch.Tensor,
+        external_pressure: torch.Tensor,
+    ) -> torch.Tensor:
+        """Compute the force on the cell degree of freedom in NPT dynamics.
+
+        This function calculates the force driving cell volume changes in NPT simulations.
+        The force includes contributions from:
+        1. Kinetic energy scaling (alpha * KE)
+        2. Internal stress (from stress_fn)
+        3. External pressure (P*V)
+
+        Args:
+            alpha (torch.Tensor): Cell scaling parameter
+            volume (torch.Tensor): Current system volume
+            positions (torch.Tensor): Particle positions [n_particles, n_dimensions]
+            momenta (torch.Tensor): Particle momenta [n_particles, n_dimensions]
+            masses (torch.Tensor): Particle masses [n_particles]
+            stress (torch.Tensor): Stress tensor [n_dimensions, n_dimensions]
+            external_pressure (torch.Tensor): Target external pressure
+
+
+        Returns:
+            torch.Tensor: Force on the cell degree of freedom
+
+        Notes:
+            - Force drives volume changes to maintain target pressure
+            - Includes both kinetic and potential contributions
+            - Uses stress tensor for potential energy contribution
+            - Properly handles periodic boundary conditions
+        """
+        N, dim = positions.shape
+
+        # Compute kinetic energy contribution
+        KE2 = 2.0 * calc_kinetic_energy(momenta, masses)
+
+        # Get stress tensor and compute trace
+        internal_pressure = torch.trace(stress)
+
+        # Compute force on cell coordinate
+        # F = alpha * KE - dU/dV - P*V*d
+        return (
+            (alpha * KE2)
+            - (internal_pressure * volume)
+            - (external_pressure * volume * dim)
+        )
+
+    def npt_inner_step(
+        state: NPTNoseHooverState,
+        dt: torch.Tensor,
+        external_pressure: torch.Tensor,
+    ) -> NPTNoseHooverState:
+        """Perform one inner step of NPT integration using velocity Verlet algorithm.
+
+        This function implements a single integration step for NPT dynamics, including:
+        1. Cell momentum and particle momentum updates (half step)
+        2. Position and cell position updates (full step)
+        3. Force updates with new positions and cell
+        4. Final momentum updates (half step)
+
+        Args:
+            state (NPTNoseHooverState): Current system state
+            dt (torch.Tensor): Integration timestep
+            external_pressure (torch.Tensor): Target external pressure
+
+        Returns:
+            NPTNoseHooverState: Updated state after one integration step
+        """
+        # Get target pressure from kwargs or use default
+        dt_2 = dt / 2
+
+        # Unpack state variables for clarity
+        positions = state.positions
+        momenta = state.momenta
+        masses = state.masses
+        forces = state.forces
+        cell_position = state.cell_position
+        cell_momentum = state.cell_momentum
+        cell_mass = state.cell_mass
+
+        n_particles, dim = positions.shape
+
+        # Get current volume and cell function
+        volume, volume_to_cell = _npt_cell_info(state)
+        cell = volume_to_cell(volume)
+
+        # Get model output
+        state.cell = cell
+        model_output = model(state)
+
+        # First half step: Update momenta
+        alpha = 1 + 1 / n_particles
+        cell_force_val = compute_cell_force(
+            alpha=alpha,
+            volume=volume,
+            positions=positions,
+            momenta=momenta,
+            masses=masses,
+            stress=model_output["stress"],
+            external_pressure=external_pressure,
+        )
+
+        # Update cell momentum and particle momenta
+        cell_momentum = cell_momentum + dt_2 * cell_force_val
+        momenta = exp_iL2(alpha, momenta, forces, cell_momentum / cell_mass, dt_2)
+
+        # Full step: Update positions
+        cell_position = cell_position + cell_momentum / cell_mass * dt
+
+        # Get updated cell
+        volume, volume_to_cell = _npt_cell_info(state)
+        cell = volume_to_cell(volume)
+
+        # Update particle positions and forces
+        positions = exp_iL1(state, state.velocities, cell_momentum / cell_mass, dt)
+        state.positions = positions
+        state.cell = cell
+        model_output = model(state)
+
+        # Second half step: Update momenta
+        momenta = exp_iL2(
+            alpha, momenta, model_output["forces"], cell_momentum / cell_mass, dt_2
+        )
+        cell_force_val = compute_cell_force(
+            alpha=alpha,
+            volume=volume,
+            positions=positions,
+            momenta=momenta,
+            masses=masses,
+            stress=model_output["stress"],
+            external_pressure=external_pressure,
+        )
+        cell_momentum = cell_momentum + dt_2 * cell_force_val
+
+        # Return updated state
+        state.positions = positions
+        state.momenta = momenta
+        state.forces = model_output["forces"]
+        state.energy = model_output["energy"]
+        state.cell_position = cell_position
+        state.cell_momentum = cell_momentum
+        state.cell_mass = cell_mass
+        return state
+
+    def npt_nose_hoover_init(
+        state: SimState | StateDict,
+        kT: torch.Tensor = kT,
+        t_tau: torch.Tensor | None = None,
+        b_tau: torch.Tensor | None = None,
+        seed: int | None = None,
+        **kwargs: Any,
+    ) -> NPTNoseHooverState:
+        """Initialize the NPT Nose-Hoover state.
+
+        This function initializes a state for NPT molecular dynamics with Nose-Hoover
+        chain thermostats for both temperature and pressure control. It sets up the
+        system with appropriate initial conditions including particle positions, momenta,
+        cell variables, and thermostat chains.
+
+        Args:
+            state: Initial system state as SimState or dict containing positions, masses,
+                cell, and PBC information
+            kT: Target temperature in energy units
+            t_tau: Thermostat relaxation time. Controls how quickly temperature
+                equilibrates. Defaults to 100*dt
+            b_tau: Barostat relaxation time. Controls how quickly pressure equilibrates.
+                Defaults to 1000*dt
+            seed: Random seed for momenta initialization. Used for reproducible runs
+            **kwargs: Additional state variables like atomic_numbers or
+                pre-initialized momenta
+
+        Returns:
+            NPTNoseHooverState: Initialized state containing:
+                - Particle positions, momenta, forces
+                - Cell position, momentum and mass
+                - Reference cell matrix
+                - Thermostat and barostat chain variables
+                - System energy
+                - Other state variables (masses, PBC, etc.)
+
+        Notes:
+            - Uses separate Nose-Hoover chains for temperature and pressure control
+            - Cell mass is set based on system size and barostat relaxation time
+            - Initial momenta are drawn from Maxwell-Boltzmann distribution if not
+              provided
+            - Cell dynamics use logarithmic coordinates for volume updates
+        """
+        # Initialize the NPT Nose-Hoover state
+        # Thermostat relaxation time
+        if t_tau is None:
+            t_tau = 100 * dt
+
+        # Barostat relaxation time
+        if b_tau is None:
+            b_tau = 1000 * dt
+
+        # Setup thermostats with appropriate timescales
+        barostat_fns = construct_nose_hoover_chain(
+            dt, chain_length, chain_steps, sy_steps, b_tau
+        )
+        thermostat_fns = construct_nose_hoover_chain(
+            dt, chain_length, chain_steps, sy_steps, t_tau
+        )
+
+        if not isinstance(state, SimState):
+            state = SimState(**state)
+
+        # Check if there is an extra batch dimension
+        if state.cell.dim() == 3:
+            state.cell = state.cell.squeeze(0)
+
+        dim, n_particles = state.positions.shape
+        atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
+
+        # Initialize cell variables
+        cell_position = torch.zeros((), device=device, dtype=dtype)
+        cell_momentum = torch.zeros((), device=device, dtype=dtype)
+        cell_mass = torch.tensor(
+            dim * (n_particles + 1) * kT * b_tau**2, device=device, dtype=dtype
+        )
+
+        # Calculate cell kinetic energy
+        KE_cell = calc_kinetic_energy(cell_momentum, cell_mass)
+
+        # Handle scalar cell input
+        if (torch.is_tensor(state.cell) and state.cell.ndim == 0) or isinstance(
+            state.cell, int | float
+        ):
+            state.cell = torch.eye(dim, device=device, dtype=dtype) * state.cell
+
+        # Get model output
+        model_output = model(state)
+        forces = model_output["forces"]
+        energy = model_output["energy"]
+
+        # Create initial state
+        state = NPTNoseHooverState(
+            positions=state.positions,
+            momenta=None,
+            energy=energy,
+            forces=forces,
+            masses=state.masses,
+            atomic_numbers=atomic_numbers,
+            cell=state.cell,
+            pbc=state.pbc,
+            reference_cell=state.cell,
+            cell_position=cell_position,
+            cell_momentum=cell_momentum,
+            cell_mass=cell_mass,
+            barostat=barostat_fns.initialize(1, KE_cell, kT),
+            thermostat=None,
+            barostat_fns=barostat_fns,
+            thermostat_fns=thermostat_fns,
+        )
+
+        # Initialize momenta
+        momenta = kwargs.get(
+            "momenta",
+            calculate_momenta(state.positions, state.masses, kT, device, dtype, seed),
+        )
+
+        # Initialize thermostat
+        state.momenta = momenta
+        KE = calc_kinetic_energy(state.momenta, state.masses)
+        state.thermostat = thermostat_fns.initialize(state.positions.numel(), KE, kT)
+
+        return state
+
+    def npt_nose_hoover_update(
+        state: NPTNoseHooverState,
+        dt: torch.Tensor = dt,
+        kT: torch.Tensor = kT,
+        external_pressure: torch.Tensor = external_pressure,
+    ) -> NPTNoseHooverState:
+        """Perform a complete NPT integration step with Nose-Hoover chain thermostats.
+
+        This function performs a full NPT integration step including:
+        1. Mass parameter updates for thermostats and cell
+        2. Thermostat chain updates (half step)
+        3. Inner NPT dynamics step
+        4. Energy updates for thermostats
+        5. Final thermostat chain updates (half step)
+
+        Args:
+            state (NPTNoseHooverState): Current system state
+            dt (torch.Tensor): Integration timestep
+            kT (torch.Tensor): Target temperature
+            external_pressure (torch.Tensor): Target external pressure
+
+        Returns:
+            NPTNoseHooverState: Updated state after complete integration step
+        """
+        # Unpack state variables for clarity
+        barostat = state.barostat
+        thermostat = state.thermostat
+
+        # Update mass parameters
+        state.barostat = state.barostat_fns.update_mass(barostat, kT)
+        state.thermostat = state.thermostat_fns.update_mass(thermostat, kT)
+        state = update_cell_mass(state, kT)
+
+        # First half step of thermostat chains
+        state.cell_momentum, state.barostat = state.barostat_fns.half_step(
+            state.cell_momentum, state.barostat, kT
+        )
+        state.momenta, state.thermostat = state.thermostat_fns.half_step(
+            state.momenta, state.thermostat, kT
+        )
+
+        # Perform inner NPT step
+        state = npt_inner_step(
+            state=state,
+            dt=dt,
+            external_pressure=external_pressure,
+        )
+
+        # Update kinetic energies for thermostats
+        KE = calc_kinetic_energy(state.momenta, state.masses)
+        state.thermostat.kinetic_energy = KE
+
+        KE_cell = calc_kinetic_energy(state.cell_momentum, state.cell_mass)
+        state.barostat.kinetic_energy = KE_cell
+
+        # Second half step of thermostat chains
+        state.momenta, state.thermostat = state.thermostat_fns.half_step(
+            state.momenta, state.thermostat, kT
+        )
+        state.cell_momentum, state.barostat = state.barostat_fns.half_step(
+            state.cell_momentum, state.barostat, kT
+        )
+        return state
+
+    return npt_nose_hoover_init, npt_nose_hoover_update
+
+
+def npt_nose_hoover_invariant(
+    state: NPTNoseHooverState,
+    kT: torch.Tensor,
+    external_pressure: torch.Tensor,
+) -> torch.Tensor:
+    """Computes the conserved quantity for NPT ensemble with Nose-Hoover thermostat.
+
+    This function calculates the Hamiltonian of the extended NPT dynamics, which should
+    be conserved during the simulation. It's useful for validating the correctness of
+    NPT simulations.
+
+    The conserved quantity includes:
+    - Potential energy of the system
+    - Kinetic energy of the particles
+    - Energy contributions from thermostat chains
+    - Energy contributions from barostat chains
+    - PV work term
+    - Cell kinetic energy
+
+    Args:
+        state: Current state of the NPT simulation system.
+            Must contain position, momentum, cell, cell_momentum, cell_mass, thermostat,
+            and barostat.
+        external_pressure: Target external pressure of the system.
+        kT: Target thermal energy (Boltzmann constant x temperature).
+
+    Returns:
+        torch.Tensor: The conserved quantity (extended Hamiltonian) of the NPT system.
+    """
+    # Calculate volume and potential energy
+    volume = torch.det(state.current_cell)
+    e_pot = state.energy
+
+    # Calculate kinetic energy of particles
+    e_kin = calc_kinetic_energy(state.momenta, state.masses)
+
+    # Total degrees of freedom
+    DOF = state.positions.numel()
+
+    # Initialize total energy with PE + KE
+    e_tot = e_pot + e_kin
+
+    # Add thermostat chain contributions
+    e_tot += (state.thermostat.momenta[0] ** 2) / (2 * state.thermostat.masses[0])
+    e_tot += DOF * kT * state.thermostat.positions[0]
+
+    # Add remaining thermostat terms
+    for pos, momentum, mass in zip(
+        state.thermostat.positions[1:],
+        state.thermostat.momenta[1:],
+        state.thermostat.masses[1:],
+        strict=True,
+    ):
+        e_tot += (momentum**2) / (2 * mass) + kT * pos
+
+    # Add barostat chain contributions
+    for pos, momentum, mass in zip(
+        state.barostat.positions,
+        state.barostat.momenta,
+        state.barostat.masses,
+        strict=True,
+    ):
+        e_tot += (momentum**2) / (2 * mass) + kT * pos
+
+    # Add PV term and cell kinetic energy
+    e_tot += external_pressure * volume
+    e_tot += (state.cell_momentum**2) / (2 * state.cell_mass)
+
+    return e_tot

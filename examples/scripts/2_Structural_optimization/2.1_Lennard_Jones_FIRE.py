@@ -85,11 +85,11 @@ model = LennardJonesModel(
 
 # Create state with batch dimension
 state = ts.state.SimState(
-    positions=positions.unsqueeze(0),  # Add batch dimension
-    masses=masses.unsqueeze(0),
+    positions=positions,
+    masses=masses,
     cell=cell.unsqueeze(0),
     pbc=True,
-    atomic_numbers=atomic_numbers.unsqueeze(0),
+    atomic_numbers=atomic_numbers,
 )
 
 # Run initial simulation and get results

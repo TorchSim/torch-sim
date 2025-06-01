@@ -76,11 +76,11 @@ masses = torch.full((positions.shape[0],), 63.546, device=device, dtype=dtype)
 
 # Create state with batch dimension
 state = ts.state.SimState(
-    positions=positions.unsqueeze(0),  # Add batch dimension
-    masses=masses.unsqueeze(0),
+    positions=positions,
+    masses=masses,
     cell=cell.unsqueeze(0),
     pbc=True,
-    atomic_numbers=atomic_numbers.unsqueeze(0),
+    atomic_numbers=atomic_numbers,
 )
 
 # Initialize the Soft Sphere model

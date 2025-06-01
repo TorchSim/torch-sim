@@ -15,7 +15,7 @@ from mace.calculators.foundations_models import mace_mp
 import torch_sim as ts
 from torch_sim.integrators import npt_nose_hoover, npt_nose_hoover_invariant
 from torch_sim.models.mace import MaceModel, MaceUrls
-from torch_sim.quantities import calc_kinetic_energy, calc_kT
+from torch_sim.quantities import calc_kinetic_energy, calc_kT, get_pressure
 from torch_sim.units import MetalUnits as Units
 
 
@@ -89,18 +89,6 @@ npt_init, npt_update = npt_nose_hoover(
     model=model, kT=kT, dt=dt, external_pressure=target_pressure
 )
 state = npt_init(state=state, seed=1)
-
-
-def get_pressure(
-    stress: torch.Tensor, kinetic_energy: torch.Tensor, volume: torch.Tensor, dim: int = 3
-) -> torch.Tensor:
-    """Compute the pressure from the stress tensor.
-
-    The stress tensor is defined as 1/volume * dU/de_ij
-    So the pressure is -1/volume * trace(dU/de_ij)
-    """
-    return 1 / dim * ((2 * kinetic_energy / volume) - torch.trace(stress))
-
 
 for step in range(N_steps_npt):
     if step % 10 == 0:
