@@ -66,7 +66,7 @@ autodoc_mock_imports = [
     "fairchem",
     "mace",
     "mattersim",
-    "metatensor",
+    "metatomic",
     "orb",
     "sevennet",
     "graphpes",

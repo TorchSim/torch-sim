@@ -32,8 +32,8 @@ dependencies = [
     "tables>=3.10.2",
     "torch>=2",
     "tqdm>=4.67",
-    "vesin-torch>=0.3.1",
-    "vesin>=0.3.1",
+    "vesin-torch>=0.3.7",
+    "vesin>=0.3.7",
 ]
 
 [project.optional-dependencies]
@@ -48,7 +48,7 @@ test = [
 io = ["ase>=3.24", "phonopy>=2.37.0", "pymatgen>=2024.11.3"]
 mace = ["mace-torch>=0.3.12"]
 mattersim = ["mattersim>=0.1.2"]
-metatensor = ["metatensor-torch==0.7.6", "metatrain[pet]==2025.6"]
+metatomic = ["metatomic-torch>=0.1.1,<0.2", "metatrain[pet]==2025.7"]
 orb = ["orb-models>=0.5.2"]
 sevenn = ["sevenn>=0.11.0"]
 graphpes = ["graph-pes>=0.0.34", "mace-torch>=0.3.12"]
