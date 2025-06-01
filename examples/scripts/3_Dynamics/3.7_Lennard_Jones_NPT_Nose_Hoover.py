@@ -34,7 +34,8 @@ generator = torch.Generator(device=device)
 generator.manual_seed(42)  # For reproducibility
 
 # Number of steps to run
-N_steps = 100 if os.getenv("CI") else 10_000
+SMOKE_TEST = os.getenv("CI") is not None
+N_steps = 100 if SMOKE_TEST else 10_000
 
 # Create face-centered cubic (FCC) Argon
 # 5.26 Å is a typical lattice constant for Ar

@@ -37,7 +37,8 @@ loaded_model = mace_off(
 # loaded_model = torch.load(MODEL_PATH, map_location=device)
 
 # Number of steps to run
-N_steps = 20 if os.getenv("CI") else 2_000
+SMOKE_TEST = os.getenv("CI") is not None
+N_steps = 20 if SMOKE_TEST else 2_000
 
 mol = molecule("methylenecyclopropane")
 
@@ -57,7 +58,9 @@ state = ts.io.atoms_to_state(mol, device, dtype)
 results = model(state)
 
 # Setup NVE MD simulation parameters
-kT = 300 * Units.temperature  # Initial temperature (K)
+kT = (
+    torch.tensor(300, device=device, dtype=dtype) * Units.temperature
+)  # Initial temperature (K)
 dt = 0.002 * Units.time  # Timestep (ps)
 
 
@@ -74,7 +77,7 @@ print("\nStarting NVE molecular dynamics simulation...")
 start_time = time.perf_counter()
 for step in range(N_steps):
     total_energy = state.energy + calc_kinetic_energy(
-        masses=state.masses, momenta=state.momenta
+        masses=state.masses, momenta=state.momenta, batch=state.batch
     )
     if step % 10 == 0:
         print(f"Step {step}: Total energy: {total_energy.item():.4f} eV")

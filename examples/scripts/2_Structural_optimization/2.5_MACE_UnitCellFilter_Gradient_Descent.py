@@ -36,7 +36,8 @@ loaded_model = mace_mp(
 # loaded_model = torch.load(MODEL_PATH, map_location=device)
 
 # Number of steps to run
-N_steps = 10 if os.getenv("CI") else 500
+SMOKE_TEST = os.getenv("CI") is not None
+N_steps = 10 if SMOKE_TEST else 500
 
 # Set random seed for reproducibility
 rng = np.random.default_rng(seed=0)

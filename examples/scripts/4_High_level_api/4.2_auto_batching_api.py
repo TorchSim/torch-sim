@@ -33,6 +33,8 @@ from torch_sim.units import MetalUnits
 if not torch.cuda.is_available():
     raise SystemExit(0)
 
+SMOKE_TEST = os.getenv("CI") is not None
+
 si_atoms = bulk("Si", "fcc", a=5.43, cubic=True).repeat((3, 3, 3))
 fe_atoms = bulk("Fe", "fcc", a=5.43, cubic=True).repeat((3, 3, 3))
 
@@ -54,7 +56,7 @@ fire_init, fire_update = unit_cell_fire(mace_model)
 si_fire_state = fire_init(si_state)
 fe_fire_state = fire_init(fe_state)
 
-fire_states = [si_fire_state, fe_fire_state] * (2 if os.getenv("CI") else 20)
+fire_states = [si_fire_state, fe_fire_state] * (2 if SMOKE_TEST else 20)
 fire_states = [state.clone() for state in fire_states]
 for state in fire_states:
     state.positions += torch.randn_like(state.positions) * 0.01
@@ -68,7 +70,7 @@ single_system_memory = calculate_memory_scaler(fire_states[0])
 batcher = InFlightAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms_x_density",
-    max_memory_scaler=single_system_memory * 2.5 if os.getenv("CI") else None,
+    max_memory_scaler=single_system_memory * 2.5 if SMOKE_TEST else None,
 )
 batcher.load_states(fire_states)
 all_completed_states, convergence_tensor, state = [], None, None
@@ -98,7 +100,7 @@ fe_state = ts.io.atoms_to_state(fe_atoms, device=device, dtype=torch.float64)
 si_nvt_state = nvt_init(si_state)
 fe_nvt_state = nvt_init(fe_state)
 
-nvt_states = [si_nvt_state, fe_nvt_state] * (2 if os.getenv("CI") else 20)
+nvt_states = [si_nvt_state, fe_nvt_state] * (2 if SMOKE_TEST else 20)
 nvt_states = [state.clone() for state in nvt_states]
 for state in nvt_states:
     state.positions += torch.randn_like(state.positions) * 0.01
@@ -108,7 +110,7 @@ single_system_memory = calculate_memory_scaler(fire_states[0])
 batcher = BinningAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms_x_density",
-    max_memory_scaler=single_system_memory * 2.5 if os.getenv("CI") else None,
+    max_memory_scaler=single_system_memory * 2.5 if SMOKE_TEST else None,
 )
 batcher.load_states(nvt_states)
 finished_states = []

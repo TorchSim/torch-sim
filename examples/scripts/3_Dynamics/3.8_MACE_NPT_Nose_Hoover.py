@@ -67,10 +67,13 @@ state = ts.SimState(
 # Run initial inference
 results = model(state)
 
-N_steps_nvt = 20 if os.getenv("CI") else 2_000
-N_steps_npt = 20 if os.getenv("CI") else 2_000
+SMOKE_TEST = os.getenv("CI") is not None
+N_steps_nvt = 20 if SMOKE_TEST else 2_000
+N_steps_npt = 20 if SMOKE_TEST else 2_000
 dt = 0.001 * Units.time  # Time step (1 ps)
-kT = 300 * Units.temperature  # Initial temperature (300 K)
+kT = (
+    torch.tensor(300, device=device, dtype=dtype) * Units.temperature
+)  # Initial temperature (300 K)
 target_pressure = 0.0 * Units.pressure  # Target pressure (0 bar)
 
 nvt_init, nvt_update = npt_nose_hoover(model=model, kT=kT, dt=dt)
@@ -78,11 +81,14 @@ state = nvt_init(state=state, seed=1)
 
 for step in range(N_steps_nvt):
     if step % 10 == 0:
-        temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
+        temp = (
+            calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+            / Units.temperature
+        )
         invariant = npt_nose_hoover_invariant(
             state, kT=kT, external_pressure=target_pressure
         ).item()
-        print(f"{step=}: Temperature: {temp:.4f}: invariant: {invariant:.4f}, ")
+        print(f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant:.4f}, ")
     state = nvt_update(state, kT=kT)
 
 npt_init, npt_update = npt_nose_hoover(
@@ -92,7 +98,10 @@ state = npt_init(state=state, seed=1)
 
 for step in range(N_steps_npt):
     if step % 10 == 0:
-        temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
+        temp = (
+            calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+            / Units.temperature
+        )
         invariant = npt_nose_hoover_invariant(
             state, kT=kT, external_pressure=target_pressure
         ).item()
@@ -100,24 +109,29 @@ for step in range(N_steps_npt):
         volume = torch.det(state.current_cell)
         pressure = get_pressure(
             stress,
-            calc_kinetic_energy(masses=state.masses, momenta=state.momenta),
+            calc_kinetic_energy(
+                masses=state.masses, momenta=state.momenta, batch=state.batch
+            ),
             volume,
         ).item()
         xx, yy, zz = torch.diag(state.current_cell)
         print(
-            f"{step=}: Temperature: {temp:.4f}: invariant: {invariant:.4f}, "
+            f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant:.4f}, "
             f"pressure: {pressure:.4f}, "
             f"cell xx yy zz: {xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}"
         )
     state = npt_update(state, kT=kT, external_pressure=target_pressure)
 
-final_temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
-print(f"Final temperature: {final_temp:.4f}")
+final_temp = (
+    calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+    / Units.temperature
+)
+print(f"Final temperature: {final_temp.item():.4f}")
 final_stress = model(state)["stress"]
 final_volume = torch.det(state.current_cell)
 final_pressure = get_pressure(
     final_stress,
-    calc_kinetic_energy(masses=state.masses, momenta=state.momenta),
+    calc_kinetic_energy(masses=state.masses, momenta=state.momenta, batch=state.batch),
     final_volume,
 )
 print(f"Final pressure: {final_pressure:.4f}")

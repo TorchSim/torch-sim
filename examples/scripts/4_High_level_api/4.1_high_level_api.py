@@ -27,6 +27,8 @@ from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 from torch_sim.units import MetalUnits
 
 
+SMOKE_TEST = os.getenv("CI") is not None
+
 lj_model = LennardJonesModel(
     sigma=2.0,  # Å, typical for Si-Si interaction
     epsilon=0.1,  # eV, typical for Si-Si interaction
@@ -40,7 +42,7 @@ final_state = ts.integrate(
     system=si_atoms,
     model=lj_model,
     integrator=nvt_langevin,
-    n_steps=100 if os.getenv("CI") else 1000,
+    n_steps=100 if SMOKE_TEST else 1000,
     temperature=2000,
     timestep=0.002,
 )
@@ -67,7 +69,7 @@ final_state = ts.integrate(
     system=si_atoms,
     model=lj_model,
     integrator=nvt_langevin,
-    n_steps=100 if os.getenv("CI") else 1000,
+    n_steps=100 if SMOKE_TEST else 1000,
     temperature=2000,
     timestep=0.002,
     trajectory_reporter=reporter,
@@ -107,7 +109,7 @@ final_state = ts.integrate(
     system=si_atoms,
     model=mace_model,
     integrator=nvt_langevin,
-    n_steps=100 if os.getenv("CI") else 1000,
+    n_steps=100 if SMOKE_TEST else 1000,
     temperature=2000,
     timestep=0.002,
     trajectory_reporter=reporter,
@@ -125,7 +127,7 @@ final_state = ts.integrate(
     system=[si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell],
     model=mace_model,
     integrator=nvt_langevin,
-    n_steps=100 if os.getenv("CI") else 1000,
+    n_steps=100 if SMOKE_TEST else 1000,
     temperature=2000,
     timestep=0.002,
 )
@@ -147,7 +149,7 @@ final_state = ts.integrate(
     system=systems,
     model=mace_model,
     integrator=nvt_langevin,
-    n_steps=100 if os.getenv("CI") else 1000,
+    n_steps=100 if SMOKE_TEST else 1000,
     temperature=2000,
     timestep=0.002,
     trajectory_reporter=batch_reporter,
@@ -166,7 +168,7 @@ final_state = ts.optimize(
     system=systems,
     model=mace_model,
     optimizer=unit_cell_fire,
-    max_steps=10 if os.getenv("CI") else 1000,
+    max_steps=10 if SMOKE_TEST else 1000,
 )
 
 
@@ -182,7 +184,7 @@ final_state = ts.optimize(
     optimizer=unit_cell_fire,
     convergence_fn=lambda state, last_energy: last_energy - state.energy
     < 1e-6 * MetalUnits.energy,
-    max_steps=10 if os.getenv("CI") else 1000,
+    max_steps=10 if SMOKE_TEST else 1000,
 )
 
 
@@ -203,7 +205,7 @@ final_state = ts.integrate(
     system=structure,
     model=lj_model,
     integrator=nvt_langevin,
-    n_steps=100 if os.getenv("CI") else 1000,
+    n_steps=100 if SMOKE_TEST else 1000,
     temperature=2000,
     timestep=0.002,
 )

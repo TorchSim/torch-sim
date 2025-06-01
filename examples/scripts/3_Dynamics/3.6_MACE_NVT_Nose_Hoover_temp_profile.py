@@ -96,11 +96,12 @@ cooling_temp = 300
 annealing_temp = 300
 
 # Step counts for different phases
-n_steps_initial = 20 if os.getenv("CI") else 200
-n_steps_ramp_up = 20 if os.getenv("CI") else 200
-n_steps_melt = 20 if os.getenv("CI") else 200
-n_steps_ramp_down = 20 if os.getenv("CI") else 200
-n_steps_anneal = 20 if os.getenv("CI") else 200
+SMOKE_TEST = os.getenv("CI") is not None
+n_steps_initial = 20 if SMOKE_TEST else 200
+n_steps_ramp_up = 20 if SMOKE_TEST else 200
+n_steps_melt = 20 if SMOKE_TEST else 200
+n_steps_ramp_down = 20 if SMOKE_TEST else 200
+n_steps_anneal = 20 if SMOKE_TEST else 200
 
 n_steps = (
     n_steps_initial + n_steps_ramp_up + n_steps_melt + n_steps_ramp_down + n_steps_anneal
@@ -149,7 +150,7 @@ results = model(state)
 
 # Set up simulation parameters
 dt = 0.002 * Units.time
-kT = init_temp * Units.temperature
+kT = torch.tensor(init_temp, device=device, dtype=dtype) * Units.temperature
 
 nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
 state = nvt_init(state, kT=kT, seed=1)
@@ -174,7 +175,10 @@ for step in range(n_steps):
     )
 
     # Calculate current temperature and save data
-    temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
+    temp = (
+        calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+        / Units.temperature
+    )
     actual_temps[step] = temp
     expected_temps[step] = current_kT
 

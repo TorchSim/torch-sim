@@ -20,7 +20,8 @@ from torch_sim.models.mace import MaceModel, MaceUrls
 
 # --- Setup and Configuration ---
 # Device and data type configuration
-device = torch.device("cpu") if os.getenv("CI") else torch.device("cuda")
+SMOKE_TEST = os.getenv("CI") is not None
+device = torch.device("cpu") if SMOKE_TEST else torch.device("cuda")
 dtype = torch.float32
 print(f"job will run on {device=}")
 
@@ -36,8 +37,8 @@ mace_model = MaceModel(
 
 # Optimization parameters
 fmax = 0.05  # Force convergence threshold
-n_steps = 10 if os.getenv("CI") else 200_000_000
-max_atoms_in_batch = 50 if os.getenv("CI") else 8_000
+n_steps = 10 if SMOKE_TEST else 200_000_000
+max_atoms_in_batch = 50 if SMOKE_TEST else 8_000
 
 # --- Data Loading ---
 if not os.getenv("CI"):
@@ -71,7 +72,7 @@ fire_states = fire_init(
 batcher = ts.autobatching.InFlightAutoBatcher(
     model=mace_model,
     memory_scales_with="n_atoms_x_density",
-    max_memory_scaler=1000 if os.getenv("CI") else None,
+    max_memory_scaler=1000 if SMOKE_TEST else None,
 )
 converge_max_force = ts.runners.generate_force_convergence_fn(force_tol=0.05)
 

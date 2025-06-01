@@ -30,6 +30,7 @@ from torch_sim.state import SimState
 
 
 # Set device, data type and unit conversion
+SMOKE_TEST = os.getenv("CI") is not None
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 unit_conv = ts.units.UnitConversion
@@ -43,8 +44,8 @@ loaded_model = mace_mp(
 )
 
 # Number of steps to run
-max_iterations = 10 if os.getenv("CI") else 500
-supercell_scale = (1, 1, 1) if os.getenv("CI") else (3, 2, 2)
+max_iterations = 10 if SMOKE_TEST else 500
+supercell_scale = (1, 1, 1) if SMOKE_TEST else (3, 2, 2)
 # Max steps for each individual ASE optimization run
 ase_max_optimizer_steps = max_iterations * 10
 

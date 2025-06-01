@@ -36,7 +36,8 @@ loaded_model = mace_mp(
 # loaded_model = torch.load(MODEL_PATH, map_location=device)
 
 # Number of steps to run
-N_steps = 20 if os.getenv("CI") else 2_000
+SMOKE_TEST = os.getenv("CI") is not None
+N_steps = 20 if SMOKE_TEST else 2_000
 
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
@@ -67,7 +68,9 @@ state = ts.SimState(
 results = model(state)
 
 dt = 0.002 * Units.time  # Timestep (ps)
-kT = 1000 * Units.temperature  # Initial temperature (K)
+kT = (
+    torch.tensor(1000, device=device, dtype=dtype) * Units.temperature
+)  # Initial temperature (K)
 
 
 nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
@@ -75,10 +78,16 @@ state = nvt_init(state=state, kT=kT, seed=1)
 
 for step in range(N_steps):
     if step % 10 == 0:
-        temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
+        temp = (
+            calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+            / Units.temperature
+        )
         invariant = nvt_nose_hoover_invariant(state, kT=kT).item()
         print(f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant:.4f}")
     state = nvt_update(state=state, kT=kT)
 
-final_temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
-print(f"Final temperature: {final_temp}")
+final_temp = (
+    calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+    / Units.temperature
+)
+print(f"Final temperature: {final_temp.item():.4f}")

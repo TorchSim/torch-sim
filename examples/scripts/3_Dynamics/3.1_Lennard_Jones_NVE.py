@@ -23,7 +23,8 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
 # Number of steps to run
-N_steps = 100 if os.getenv("CI") else 2_000
+SMOKE_TEST = os.getenv("CI") is not None
+N_steps = 100 if SMOKE_TEST else 2_000
 
 # Set random seed and deterministic behavior for reproducibility
 torch.manual_seed(42)

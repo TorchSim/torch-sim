@@ -52,6 +52,8 @@ structure_multi = random_packed_structure_multi(
 )
 """
 
+SMOKE_TEST = os.getenv("CI") is not None
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
@@ -89,17 +91,15 @@ structure = a2c.random_packed_structure(
 )
 
 # Relax structure in batches of 6
-batch_size = 1 if os.getenv("CI") else 6
+batch_size = 1 if SMOKE_TEST else 6
 max_optim_steps = (
-    1 if os.getenv("CI") else 100
+    1 if SMOKE_TEST else 100
 )  # Number of optimization steps for unit cell relaxation
 
 # MD parameters
-equi_steps = 25 if os.getenv("CI") else 2500  # MD steps for melt equilibration
-cool_steps = 25 if os.getenv("CI") else 2500  # MD steps for quenching equilibration
-final_steps = (
-    25 if os.getenv("CI") else 2500
-)  # MD steps for amorphous phase equilibration
+equi_steps = 25 if SMOKE_TEST else 2500  # MD steps for melt equilibration
+cool_steps = 25 if SMOKE_TEST else 2500  # MD steps for quenching equilibration
+final_steps = 25 if SMOKE_TEST else 2500  # MD steps for amorphous phase equilibration
 T_high = 2000  # Melt temperature
 T_low = 300  # Quench to this temperature
 dt = 0.002 * Units.time  # time step = 2fs
@@ -164,7 +164,7 @@ fractional_positions = ts.transforms.get_fractional_coordinates(
 subcells = a2c.get_subcells_to_crystallize(
     fractional_positions=fractional_positions,
     species=species,
-    d_frac=0.2 if os.getenv("CI") else 0.1,
+    d_frac=0.2 if SMOKE_TEST else 0.1,
     n_min=2,
     n_max=8,
 )

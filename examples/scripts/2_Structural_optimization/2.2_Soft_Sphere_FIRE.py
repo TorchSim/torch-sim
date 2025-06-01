@@ -25,7 +25,8 @@ generator = torch.Generator(device=device)
 generator.manual_seed(42)  # For reproducibility
 
 # Number of steps to run
-N_steps = 10 if os.getenv("CI") else 2_000
+SMOKE_TEST = os.getenv("CI") is not None
+N_steps = 10 if SMOKE_TEST else 2_000
 
 # Create face-centered cubic (FCC) Cu
 # 3.61 Å is a typical lattice constant for Cu
