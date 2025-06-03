@@ -42,12 +42,6 @@ N_steps = 20 if SMOKE_TEST else 2_000
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 
-# Prepare input tensors
-positions = torch.tensor(si_dc.positions, device=device, dtype=dtype)
-cell = torch.tensor(si_dc.cell.array, device=device, dtype=dtype)
-atomic_numbers = torch.tensor(si_dc.get_atomic_numbers(), device=device, dtype=torch.int)
-masses = torch.tensor(si_dc.get_masses(), device=device, dtype=dtype)
-
 # Initialize the MACE model
 model = MaceModel(
     model=loaded_model,
@@ -57,13 +51,8 @@ model = MaceModel(
     dtype=dtype,
     enable_cueq=False,
 )
-state = ts.SimState(
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    pbc=True,
-    atomic_numbers=atomic_numbers,
-)
+state = ts.io.atoms_to_state(si_dc, device=device, dtype=dtype)
+
 # Run initial inference
 results = model(state)
 

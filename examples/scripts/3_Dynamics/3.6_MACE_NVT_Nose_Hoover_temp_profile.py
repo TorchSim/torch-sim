@@ -121,14 +121,6 @@ random_species = np.random.default_rng(seed=0).choice(
 )
 fcc_lattice.set_chemical_symbols(random_species)
 
-# Prepare input tensors
-positions = torch.tensor(fcc_lattice.positions, device=device, dtype=dtype)
-cell = torch.tensor(fcc_lattice.cell.array, device=device, dtype=dtype)
-atomic_numbers = torch.tensor(
-    fcc_lattice.get_atomic_numbers(), device=device, dtype=torch.int
-)
-masses = torch.tensor(fcc_lattice.get_masses(), device=device, dtype=dtype)
-
 # Initialize the MACE model
 model = MaceModel(
     model=loaded_model,
@@ -138,13 +130,8 @@ model = MaceModel(
     dtype=dtype,
     enable_cueq=False,
 )
-state = ts.SimState(
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    pbc=True,
-    atomic_numbers=atomic_numbers,
-)
+state = ts.io.atoms_to_state(fcc_lattice, device=device, dtype=dtype)
+
 # Run initial inference
 results = model(state)
 
