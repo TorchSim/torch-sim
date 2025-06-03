@@ -3,7 +3,7 @@
 Examples are provided in two foms:
 
 * Tutorials are intended to provide pedagogical walkthroughs of TorchSim's core functionality
-* Scripts are a holdover from early torch-sim development, they are not currently recommended as a learning resource. See issue [here](https://github.com/Radical-AI/torch-sim/issues/109).
+* Scripts are a holdover from early torch-sim development, they are not currently recommended as a learning resource. See issue [issue 109](https://github.com/Radical-AI/torch-sim/issues/109).
 
 ## Tutorial Formatting
 

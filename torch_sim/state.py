@@ -121,7 +121,9 @@ class SimState:
                 raise ValueError("Batch indices must be unique consecutive integers")
 
         if self.cell.shape[0] != self.n_batches:
-            raise ValueError("Cell must have shape (n_batches, 3, 3)")
+            raise ValueError(
+                f"Cell must have shape (n_batches, 3, 3), got {self.cell.shape}"
+            )
 
     @property
     def wrap_positions(self) -> torch.Tensor:

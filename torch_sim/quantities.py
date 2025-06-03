@@ -117,11 +117,9 @@ def calc_kinetic_energy(
     if momenta is None and velocities is None:
         raise ValueError("Must pass either momenta or velocities")
 
-    if momenta is None:
-        # Using velocities
+    if momenta is None:  # Using velocities
         squared_term = (velocities**2) * masses.unsqueeze(-1)
-    else:
-        # Using momentum
+    else:  # Using momenta
         squared_term = (momenta**2) / masses.unsqueeze(-1)
 
     if batch is None:
@@ -140,7 +138,7 @@ def get_pressure(
     The stress tensor is defined as 1/volume * dU/de_ij
     So the pressure is -1/volume * trace(dU/de_ij)
     """
-    return 1 / (dim) * ((2 * kinetic_energy / volume) - torch.einsum("...ii", stress))
+    return 1 / dim * ((2 * kinetic_energy / volume) - torch.einsum("...ii", stress))
 
 
 def batchwise_max_force(state: SimState) -> torch.Tensor:

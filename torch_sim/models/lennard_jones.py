@@ -33,7 +33,6 @@ from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.typing import StateDict
 
 
-# Default parameter values defined at module level
 DEFAULT_SIGMA = torch.tensor(1.0)
 DEFAULT_EPSILON = torch.tensor(1.0)
 
