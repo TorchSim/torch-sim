@@ -16,6 +16,12 @@ from tqdm import tqdm
 
 from torch_sim.autobatching import BinningAutoBatcher, InFlightAutoBatcher
 from torch_sim.models.interface import ModelInterface
+from torch_sim.optimizers import (
+    FireState,
+    FrechetCellFIREState,
+    UnitCellFireState,
+    UnitCellGDState,
+)
 from torch_sim.quantities import batchwise_max_force, calc_kinetic_energy, calc_kT
 from torch_sim.state import SimState, concatenate_states, initialize_state
 from torch_sim.trajectory import TrajectoryReporter
@@ -278,12 +284,16 @@ def _chunked_apply(
     return concatenate_states(ordered_states)
 
 
-def generate_force_convergence_fn(force_tol: float = 1e-1) -> Callable:
+def generate_force_convergence_fn(
+    force_tol: float = 1e-1, *, include_cell_forces: bool = False
+) -> Callable:
     """Generate a force-based convergence function for the convergence_fn argument
     of the optimize function.
 
     Args:
         force_tol (float): Force tolerance for convergence
+        include_cell_forces (bool): Whether to include the `cell_forces` in
+            the convergence check.
 
     Returns:
         Convergence function that takes a state and last energy and
@@ -295,7 +305,16 @@ def generate_force_convergence_fn(force_tol: float = 1e-1) -> Callable:
         last_energy: torch.Tensor | None = None,  # noqa: ARG001
     ) -> bool:
         """Check if the system has converged."""
-        return batchwise_max_force(state) < force_tol
+        force_conv = batchwise_max_force(state) < force_tol
+
+        if include_cell_forces:
+            if (cell_forces := getattr(state, "cell_forces", None)) is None:
+                raise ValueError("cell_forces not found in state")
+            cell_forces_norm, _ = cell_forces.norm(dim=2).max(dim=1)
+            cell_force_conv = cell_forces_norm < force_tol
+            return force_conv & cell_force_conv
+
+        return force_conv
 
     return convergence_fn
 
@@ -378,13 +397,17 @@ def optimize(  # noqa: C901
     autobatcher = _configure_in_flight_autobatcher(
         model, state, autobatcher, max_attempts
     )
-    state = _chunked_apply(
-        init_fn,
-        state,
-        model,
-        max_memory_scaler=autobatcher.max_memory_scaler,
-        memory_scales_with=autobatcher.memory_scales_with,
-    )
+
+    if not isinstance(
+        state, (FireState, UnitCellFireState, UnitCellGDState, FrechetCellFIREState)
+    ):
+        state = _chunked_apply(
+            init_fn,
+            state,
+            model,
+            max_memory_scaler=autobatcher.max_memory_scaler,
+            memory_scales_with=autobatcher.memory_scales_with,
+        )
     autobatcher.load_states(state)
     trajectory_reporter = _configure_reporter(
         trajectory_reporter,
@@ -514,8 +537,8 @@ def static(
         pbar_kwargs.setdefault("disable", None)
         tqdm_pbar = tqdm(total=state.n_batches, **pbar_kwargs)
 
-    for substate, batch_indices in batch_iterator:
-        print(substate.atomic_numbers)
+    for sub_state, batch_indices in batch_iterator:
+        print(sub_state.atomic_numbers)
         # set up trajectory reporters
         if autobatcher and trajectory_reporter and og_filenames is not None:
             # we must remake the trajectory reporter for each batch
@@ -523,20 +546,20 @@ def static(
                 filenames=[og_filenames[idx] for idx in batch_indices]
             )
 
-        model_outputs = model(substate)
+        model_outputs = model(sub_state)
 
-        substate = StaticState(
-            **vars(substate),
+        sub_state = StaticState(
+            **vars(sub_state),
             energy=model_outputs["energy"],
             forces=model_outputs["forces"] if model.compute_forces else None,
             stress=model_outputs["stress"] if model.compute_stress else None,
         )
 
-        props = trajectory_reporter.report(substate, 0, model=model)
+        props = trajectory_reporter.report(sub_state, 0, model=model)
         all_props.extend(props)
 
         if tqdm_pbar:
-            tqdm_pbar.update(substate.n_batches)
+            tqdm_pbar.update(sub_state.n_batches)
 
     trajectory_reporter.finish()
 

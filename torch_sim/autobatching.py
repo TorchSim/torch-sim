@@ -1030,7 +1030,9 @@ class InFlightAutoBatcher:
         # Increment attempt counters and check for max attempts in a single loop
         for cur_idx, abs_idx in enumerate(self.current_idx):
             self.swap_attempts[abs_idx] += 1
-            if self.max_attempts and (self.swap_attempts[abs_idx] >= self.max_attempts):
+            if self.max_attempts is not None and (
+                self.swap_attempts[abs_idx] >= self.max_attempts
+            ):
                 # Force convergence for states that have reached max attempts
                 convergence_tensor[cur_idx] = torch.tensor(True)  # noqa: FBT003
 

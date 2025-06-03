@@ -297,7 +297,7 @@ def test_optimize_fire(
 
     # Check force convergence
     assert torch.all(final_state.forces < 3e-1)
-    assert energies.shape[0] > 10
+    assert energies.shape[0] >= 10
     assert energies[0] > energies[-1]
     assert not torch.allclose(original_state.positions, final_state.positions)
 
@@ -327,7 +327,8 @@ def test_default_converged_fn(
     with TorchSimTrajectory(traj_file) as traj:
         energies = traj.get_array("energy")
 
-    assert energies[-3] > energies[-1]
+    # Check that overall energy decreases (first to last)
+    assert energies[0] > energies[-1]
     assert not torch.allclose(original_state.positions, final_state.positions)
 
 

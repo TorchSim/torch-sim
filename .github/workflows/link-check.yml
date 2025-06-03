@@ -18,5 +18,3 @@ jobs:
         with:
           # ignore ipynb links since they're generated on the fly
           args: --exclude-path dist --exclude '\.ipynb$' --accept 100..=103,200..=299,403,429,500 -- ./**/*.{md,py,yml,json}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
