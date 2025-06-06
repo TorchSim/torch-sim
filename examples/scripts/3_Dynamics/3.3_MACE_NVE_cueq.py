@@ -50,7 +50,7 @@ model = MaceModel(
     compute_forces=True,
     compute_stress=False,
     dtype=dtype,
-    enable_cueq=True,
+    enable_cueq=torch.cuda.is_available(),
 )
 state = ts.io.atoms_to_state(si_dc, device=device, dtype=dtype)
 

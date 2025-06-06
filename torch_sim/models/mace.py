@@ -325,6 +325,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
         # Combine all neighbor lists
         edge_index = torch.cat(edge_indices, dim=1)
         unit_shifts = torch.cat(unit_shifts_list, dim=0)
+        shifts = torch.cat(shifts_list, dim=0)
 
         # Get model output
         out = self.model(
