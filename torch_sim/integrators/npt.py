@@ -999,6 +999,10 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         """
         n_particles, dim = state.positions.shape
 
+        # Convert kT to tensor if it's not already one
+        if not isinstance(kT, torch.Tensor):
+            kT = torch.tensor(kT, device=device, dtype=dtype)
+
         # Handle both scalar and batched kT
         kT_batch = kT.expand(state.n_batches) if kT.ndim == 0 else kT
 
@@ -1207,8 +1211,15 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
                 batch_masses = masses[batch_mask]
                 KE_per_batch[b] = calc_kinetic_energy(batch_momenta, batch_masses)
 
-        # Get stress tensor and compute trace
-        internal_pressure = torch.trace(stress)
+        # Get stress tensor and compute trace per batch
+        # Handle stress tensor with batch dimension
+        if stress.ndim == 3:
+            internal_pressure = torch.diagonal(stress, dim1=-2, dim2=-1).sum(
+                dim=-1
+            )  # [n_batches]
+        else:
+            # Single batch case - expand to batch dimension
+            internal_pressure = torch.trace(stress).unsqueeze(0).expand(n_batches)
 
         # Compute force on cell coordinate per batch
         # F = alpha * KE - dU/dV - P*V*d
@@ -1393,6 +1404,10 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         # Initialize cell variables with proper batch dimensions
         cell_position = torch.zeros(n_batches, device=device, dtype=dtype)
         cell_momentum = torch.zeros(n_batches, device=device, dtype=dtype)
+
+        # Convert kT to tensor if it's not already one
+        if not isinstance(kT, torch.Tensor):
+            kT = torch.tensor(kT, device=device, dtype=dtype)
 
         # Handle both scalar and batched kT
         kT_batch = kT.expand(n_batches) if kT.ndim == 0 else kT
