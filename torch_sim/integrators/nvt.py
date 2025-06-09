@@ -16,7 +16,7 @@ from torch_sim.integrators.md import (
     position_step,
     velocity_verlet,
 )
-from torch_sim.quantities import calc_kinetic_energy, count_dof
+from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
@@ -369,10 +369,15 @@ def nvt_nose_hoover(
         # Calculate initial kinetic energy per batch
         KE = calc_kinetic_energy(momenta, state.masses, batch=state.batch)
 
-        # Initialize chain with calculated KE
-        # For now, use the total degrees of freedom as chain expects an int
+        # Calculate degrees of freedom per batch
+        n_atoms_per_batch = torch.bincount(state.batch)
+        dof_per_batch = (
+            n_atoms_per_batch * state.positions.shape[-1]
+        )  # n_atoms * n_dimensions
+
+        # For now, sum the per-batch DOF as chain expects a single int
         # This is a limitation that should be addressed in the chain implementation
-        total_dof = count_dof(state.positions)
+        total_dof = int(dof_per_batch.sum().item())
 
         # Initialize state
         state = NVTNoseHooverState(
