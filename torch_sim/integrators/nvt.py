@@ -69,7 +69,8 @@ def nvt_langevin(  # noqa: C901
     """
     device, dtype = model.device, model.dtype
 
-    gamma = gamma or 1 / (100 * dt)
+    if gamma is None:
+        gamma = 1 / (100 * dt)
 
     if isinstance(gamma, float):
         gamma = torch.tensor(gamma, device=device, dtype=dtype)
