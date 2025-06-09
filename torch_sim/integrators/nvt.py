@@ -324,7 +324,6 @@ def nvt_nose_hoover(
         4. Update chain kinetic energy
         5. Second half-step of chain evolution
     """
-    device, dtype = model.device, model.dtype
 
     def nvt_nose_hoover_init(
         state: SimState | StateDict,
@@ -358,16 +357,12 @@ def nvt_nose_hoover(
         if not isinstance(state, SimState):
             state = SimState(**state)
 
-        # Check if there is an extra batch dimension
-        if state.cell.dim() == 3:
-            state.cell = state.cell.squeeze(0)
-
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         model_output = model(state)
         momenta = kwargs.get(
             "momenta",
-            calculate_momenta(state.positions, state.masses, kT, device, dtype, seed),
+            calculate_momenta(state.positions, state.masses, state.batch, kT, seed),
         )
 
         # Calculate initial kinetic energy
