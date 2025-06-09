@@ -365,11 +365,13 @@ def nvt_nose_hoover(
             calculate_momenta(state.positions, state.masses, state.batch, kT, seed),
         )
 
-        # Calculate initial kinetic energy
-        KE = calc_kinetic_energy(momenta, state.masses)
+        # Calculate initial kinetic energy per batch
+        KE = calc_kinetic_energy(momenta, state.masses, batch=state.batch)
 
         # Initialize chain with calculated KE
-        dof = count_dof(state.positions)
+        # For now, use the total degrees of freedom as chain expects an int
+        # This is a limitation that should be addressed in the chain implementation
+        total_dof = count_dof(state.positions)
 
         # Initialize state
         state = NVTNoseHooverState(
@@ -381,7 +383,7 @@ def nvt_nose_hoover(
             cell=state.cell,
             pbc=state.pbc,
             atomic_numbers=atomic_numbers,
-            chain=chain_fns.initialize(dof, KE, kT),
+            chain=chain_fns.initialize(total_dof, KE, kT),
             _chain_fns=chain_fns,  # Store the chain functions
         )
         return state  # noqa: RET504
@@ -423,8 +425,8 @@ def nvt_nose_hoover(
         # Full velocity Verlet step
         state = velocity_verlet(state=state, dt=dt, model=model)
 
-        # Update chain kinetic energy
-        KE = calc_kinetic_energy(state.momenta, state.masses)
+        # Update chain kinetic energy per batch
+        KE = calc_kinetic_energy(state.momenta, state.masses, batch=state.batch)
         chain.kinetic_energy = KE
 
         # Second half-step of chain evolution
@@ -466,24 +468,44 @@ def nvt_nose_hoover_invariant(
         - Includes both physical and thermostat degrees of freedom
         - Useful for debugging thermostat behavior
     """
-    # Calculate system energy terms
+    # Calculate system energy terms per batch
     e_pot = state.energy
-    e_kin = calc_kinetic_energy(state.momenta, state.masses)
+    e_kin = calc_kinetic_energy(state.momenta, state.masses, batch=state.batch)
 
-    # Get system degrees of freedom
-    dof = count_dof(state.positions)
+    # Get system degrees of freedom per batch
+    n_atoms_per_batch = torch.bincount(state.batch)
+    dof = n_atoms_per_batch * state.positions.shape[-1]  # n_atoms * n_dimensions
 
     # Start with system energy
     e_tot = e_pot + e_kin
 
     # Add first thermostat term
     c = state.chain
-    e_tot = e_tot + c.momenta[0] ** 2 / (2 * c.masses[0]) + dof * kT * c.positions[0]
+    # Ensure chain momenta and masses broadcast correctly with batch dimensions
+    chain_ke_0 = c.momenta[0] ** 2 / (2 * c.masses[0])
+    chain_pe_0 = dof * kT * c.positions[0]
+
+    # If chain variables are scalars but we have batches, broadcast them
+    if chain_ke_0.numel() == 1 and e_tot.numel() > 1:
+        chain_ke_0 = chain_ke_0.expand_as(e_tot)
+    if chain_pe_0.numel() == 1 and e_tot.numel() > 1:
+        chain_pe_0 = chain_pe_0.expand_as(e_tot)
+
+    e_tot = e_tot + chain_ke_0 + chain_pe_0
 
     # Add remaining chain terms
     for pos, momentum, mass in zip(
         c.positions[1:], c.momenta[1:], c.masses[1:], strict=True
     ):
-        e_tot = e_tot + momentum**2 / (2 * mass) + kT * pos
+        chain_ke = momentum**2 / (2 * mass)
+        chain_pe = kT * pos
+
+        # Ensure proper broadcasting for batch dimensions
+        if chain_ke.numel() == 1 and e_tot.numel() > 1:
+            chain_ke = chain_ke.expand_as(e_tot)
+        if chain_pe.numel() == 1 and e_tot.numel() > 1:
+            chain_pe = chain_pe.expand_as(e_tot)
+
+        e_tot = e_tot + chain_ke + chain_pe
 
     return e_tot

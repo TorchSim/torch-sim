@@ -1482,7 +1482,9 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
 
         # Initialize thermostat
         npt_state.momenta = momenta
-        KE = calc_kinetic_energy(npt_state.momenta, npt_state.masses)
+        KE = calc_kinetic_energy(
+            npt_state.momenta, npt_state.masses, batch=npt_state.batch
+        )
         npt_state.thermostat = thermostat_fns.initialize(
             npt_state.positions.numel(), KE, kT
         )
@@ -1538,7 +1540,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         )
 
         # Update kinetic energies for thermostats
-        KE = calc_kinetic_energy(state.momenta, state.masses)
+        KE = calc_kinetic_energy(state.momenta, state.masses, batch=state.batch)
         state.thermostat.kinetic_energy = KE
 
         KE_cell = calc_kinetic_energy(state.cell_momentum, state.cell_mass)
@@ -1592,21 +1594,13 @@ def npt_nose_hoover_invariant(
     e_pot = state.energy  # Should be scalar or [n_batches]
 
     # Calculate kinetic energy of particles per batch
-    n_batches = state.n_batches
-    e_kin_per_batch = torch.zeros(
-        n_batches, device=state.positions.device, dtype=state.positions.dtype
-    )
-    DOF_per_batch = torch.zeros(
-        n_batches, device=state.positions.device, dtype=state.positions.dtype
-    )
+    e_kin_per_batch = calc_kinetic_energy(state.momenta, state.masses, batch=state.batch)
 
-    for b in range(n_batches):
-        batch_mask = state.batch == b
-        if batch_mask.any():
-            batch_momenta = state.momenta[batch_mask]
-            batch_masses = state.masses[batch_mask]
-            e_kin_per_batch[b] = calc_kinetic_energy(batch_momenta, batch_masses)
-            DOF_per_batch[b] = batch_momenta.numel()
+    # Calculate degrees of freedom per batch
+    n_atoms_per_batch = torch.bincount(state.batch)
+    DOF_per_batch = (
+        n_atoms_per_batch * state.positions.shape[-1]
+    )  # n_atoms * n_dimensions
 
     # Initialize total energy with PE + KE
     if isinstance(e_pot, torch.Tensor) and e_pot.ndim > 0:
@@ -1669,6 +1663,6 @@ def npt_nose_hoover_invariant(
     e_tot += (state.cell_momentum**2) / (2 * state.cell_mass)
 
     # Return scalar if single batch, otherwise return per-batch values
-    if n_batches == 1:
+    if state.n_batches == 1:
         return e_tot.squeeze()
     return e_tot
