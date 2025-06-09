@@ -1065,7 +1065,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         new_positions = state.positions + new_positions
 
         # Apply periodic boundary conditions
-        return ts.transforms.pbc_wrap_general(new_positions, state.current_cell.T)
+        return ts.transforms.pbc_wrap_general(new_positions, state.current_cell)
 
     def exp_iL2(  # noqa: N802
         alpha: torch.Tensor,
