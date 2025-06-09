@@ -935,6 +935,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
 
         Args:
             state (NPTNoseHooverState): Current state of the NPT system
+
         Returns:
             tuple:
                 - torch.Tensor: Current system volume

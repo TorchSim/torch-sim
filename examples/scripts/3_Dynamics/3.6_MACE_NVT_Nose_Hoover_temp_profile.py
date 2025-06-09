@@ -170,8 +170,8 @@ for step in range(n_steps):
     expected_temps[step] = current_kT
 
     # Calculate invariant and progress report
-    invariant = nvt_nose_hoover_invariant(state, kT=current_kT * Units.temperature)
-    print(f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant.item():.4f}")
+    invariant = float(nvt_nose_hoover_invariant(state, kT=current_kT * Units.temperature))
+    print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}")
 
     # Update simulation state
     state = nvt_update(state, kT=current_kT * Units.temperature)

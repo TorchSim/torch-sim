@@ -71,8 +71,8 @@ for step in range(N_steps):
             calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
             / Units.temperature
         )
-        invariant = nvt_nose_hoover_invariant(state, kT=kT).item()
-        print(f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant:.4f}")
+        invariant = float(nvt_nose_hoover_invariant(state, kT=kT))
+        print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}")
     state = nvt_update(state=state, kT=kT)
 
 final_temp = (

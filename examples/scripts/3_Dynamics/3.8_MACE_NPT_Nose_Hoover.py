@@ -72,10 +72,10 @@ for step in range(N_steps_nvt):
             calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
             / Units.temperature
         )
-        invariant = npt_nose_hoover_invariant(
-            state, kT=kT, external_pressure=target_pressure
-        ).item()
-        print(f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant:.4f}, ")
+        invariant = float(
+            npt_nose_hoover_invariant(state, kT=kT, external_pressure=target_pressure)
+        )
+        print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}, ")
     state = npt_update(state, kT=kT)
 
 npt_init, npt_update = npt_nose_hoover(
@@ -89,22 +89,19 @@ for step in range(N_steps_npt):
             calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
             / Units.temperature
         )
-        invariant = npt_nose_hoover_invariant(
-            state, kT=kT, external_pressure=target_pressure
-        ).item()
+        invariant = float(
+            npt_nose_hoover_invariant(state, kT=kT, external_pressure=target_pressure)
+        )
         stress = model(state)["stress"]
         volume = torch.det(state.current_cell)
-        pressure = get_pressure(
-            stress,
-            calc_kinetic_energy(
-                masses=state.masses, momenta=state.momenta, batch=state.batch
-            ),
-            volume,
-        ).item()
+        e_kin = calc_kinetic_energy(
+            masses=state.masses, momenta=state.momenta, batch=state.batch
+        )
+        pressure = float(get_pressure(stress, e_kin, volume))
         xx, yy, zz = torch.diag(state.current_cell)
         print(
-            f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant:.4f}, "
-            f"pressure: {pressure:.4f}, "
+            f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}, "
+            f"{pressure=:.4f}, "
             f"cell xx yy zz: {xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}"
         )
     state = npt_update(state, kT=kT, external_pressure=target_pressure)
