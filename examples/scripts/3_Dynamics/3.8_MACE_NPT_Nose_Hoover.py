@@ -61,7 +61,9 @@ kT = (
 )  # Initial temperature (300 K)
 target_pressure = 0.0 * Units.pressure  # Target pressure (0 bar)
 
-npt_init, npt_update = npt_nose_hoover(model=model, kT=kT, dt=dt)
+npt_init, npt_update = npt_nose_hoover(
+    model=model, kT=kT, dt=dt, external_pressure=target_pressure
+)
 state = npt_init(state=state, seed=1)
 
 for step in range(N_steps_nvt):
