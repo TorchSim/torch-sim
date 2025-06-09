@@ -1325,7 +1325,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         if state.cell.dim() == 3:
             state.cell = state.cell.squeeze(0)
 
-        dim, n_particles = state.positions.shape
+        n_particles, dim = state.positions.shape
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
         # Initialize cell variables
