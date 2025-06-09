@@ -830,6 +830,45 @@ def test_get_fractional_coordinates(
     torch.testing.assert_close(frac, torch.tensor(expected))
 
 
+def test_get_fractional_coordinates_batched() -> None:
+    """Test get_fractional_coordinates with batched cell tensors."""
+    device = torch.device("cpu")
+    dtype = torch.float64
+
+    positions = torch.tensor(
+        [[1.0, 1.0, 1.0], [2.0, 0.0, 0.0]], device=device, dtype=dtype
+    )
+
+    # Test single batch case (should work)
+    cell_single_batch = torch.tensor(
+        [[[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 4.0]]], device=device, dtype=dtype
+    )
+    frac_batched = tst.get_fractional_coordinates(positions, cell_single_batch)
+
+    # Compare with 2D case
+    cell_2d = torch.tensor(
+        [[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 4.0]], device=device, dtype=dtype
+    )
+    frac_2d = tst.get_fractional_coordinates(positions, cell_2d)
+
+    assert torch.allclose(frac_batched, frac_2d), (
+        "Single batch case should produce same result as 2D case"
+    )
+
+    # Test multi-batch case (should raise NotImplementedError)
+    cell_multi_batch = torch.tensor(
+        [
+            [[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 4.0]],
+            [[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, 5.0]],
+        ],
+        device=device,
+        dtype=dtype,
+    )
+
+    with pytest.raises(NotImplementedError, match="Multiple batched cell tensors"):
+        tst.get_fractional_coordinates(positions, cell_multi_batch)
+
+
 @pytest.mark.parametrize(
     ("dr", "cell", "pbc", "expected"),
     [
