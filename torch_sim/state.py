@@ -184,7 +184,7 @@ class SimState:
     @property
     def row_vector_cell(self) -> torch.Tensor:
         """Unit cell following the row vector convention."""
-        return self.cell.transpose(-2, -1)
+        return self.cell.mT
 
     @row_vector_cell.setter
     def row_vector_cell(self, value: torch.Tensor) -> None:
@@ -193,7 +193,7 @@ class SimState:
         Args:
             value: The unit cell as a row vector
         """
-        self.cell = value.transpose(-2, -1)
+        self.cell = value.mT
 
     def clone(self) -> Self:
         """Create a deep copy of the SimState.
@@ -327,12 +327,12 @@ class DeformGradMixin:
     @property
     def reference_row_vector_cell(self) -> torch.Tensor:
         """Get the original unit cell in terms of row vectors."""
-        return self.reference_cell.transpose(-2, -1)
+        return self.reference_cell.mT
 
     @reference_row_vector_cell.setter
     def reference_row_vector_cell(self, value: torch.Tensor) -> None:
         """Set the original unit cell in terms of row vectors."""
-        self.reference_cell = value.transpose(-2, -1)
+        self.reference_cell = value.mT
 
     @staticmethod
     def _deform_grad(

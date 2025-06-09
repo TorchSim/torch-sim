@@ -401,9 +401,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
 
         # Update cell with deformation gradient
         cell_update = cell_positions_new / cell_factor_expanded
-        new_row_vector_cell = torch.bmm(
-            state.reference_row_vector_cell, cell_update.transpose(-2, -1)
-        )
+        new_row_vector_cell = torch.bmm(state.reference_row_vector_cell, cell_update.mT)
 
         # Update state
         state.positions = atomic_positions_new
@@ -1569,9 +1567,7 @@ def _ase_fire_step(  # noqa: C901, PLR0915
             state.cell_positions = new_logm_F_scaled
             logm_F_new = new_logm_F_scaled / (state.cell_factor + eps)
             F_new = torch.matrix_exp(logm_F_new)
-            new_row_vector_cell = torch.bmm(
-                state.reference_row_vector_cell, F_new.transpose(-2, -1)
-            )
+            new_row_vector_cell = torch.bmm(state.reference_row_vector_cell, F_new.mT)
             state.row_vector_cell = new_row_vector_cell
         else:
             assert isinstance(state, UnitCellFireState)
@@ -1582,13 +1578,11 @@ def _ase_fire_step(  # noqa: C901, PLR0915
             F_new_scaled = current_F_scaled + dr_cell
             state.cell_positions = F_new_scaled
             F_new = F_new_scaled / (cell_factor_exp_mult + eps)
-            new_row_vector_cell = torch.bmm(
-                state.reference_row_vector_cell, F_new.transpose(-2, -1)
-            )
+            new_row_vector_cell = torch.bmm(state.reference_row_vector_cell, F_new.mT)
             state.row_vector_cell = new_row_vector_cell
 
         state.positions = torch.bmm(
-            state.positions.unsqueeze(1), F_new[state.batch].transpose(-2, -1)
+            state.positions.unsqueeze(1), F_new[state.batch].mT
         ).squeeze(1)
     else:
         state.positions = state.positions + dr_atom

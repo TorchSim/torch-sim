@@ -62,7 +62,7 @@ def test_symmetry():
     voigt = torch.rand(6)
     full = voigt_6_to_full_3x3_stress(voigt)
 
-    assert torch.allclose(full, full.transpose(-2, -1))
+    assert torch.allclose(full, full.mT)
 
 
 def test_device_dtype_preservation():

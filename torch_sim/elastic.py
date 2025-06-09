@@ -671,7 +671,7 @@ def get_cart_deformed_cell(state: SimState, axis: int = 0, size: float = 1.0) ->
 
     return SimState(
         positions=new_positions,
-        cell=row_vector_cell.transpose(-2, -1).unsqueeze(0),
+        cell=row_vector_cell.mT.unsqueeze(0),
         masses=state.masses,
         pbc=state.pbc,
         atomic_numbers=state.atomic_numbers,
@@ -812,7 +812,7 @@ def get_strain(
     u = torch.matmul(reference_inverse, cell_difference)
 
     # Compute symmetric strain tensor: ε = (u + u^T)/2
-    strain = (u + u.transpose(-2, -1)) / 2
+    strain = (u + u.mT) / 2
 
     # Convert to Voigt notation
     return torch.tensor(
@@ -872,7 +872,7 @@ def full_3x3_to_voigt_6_stress(stress: torch.Tensor) -> torch.Tensor:
     dtype = stress.dtype
 
     # Ensure the tensor is symmetric
-    stress = (stress + stress.transpose(-2, -1)) / 2
+    stress = (stress + stress.mT) / 2
 
     # Create the Voigt vector while preserving batch dimensions
     return torch.stack(

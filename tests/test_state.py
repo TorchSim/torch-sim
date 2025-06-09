@@ -462,15 +462,15 @@ def test_row_vector_cell(si_sim_state: ts.SimState) -> None:
     # Test getter - should return transposed cell
     original_cell = si_sim_state.cell.clone()
     row_vector = si_sim_state.row_vector_cell
-    assert torch.allclose(row_vector, original_cell.transpose(-2, -1))
+    assert torch.allclose(row_vector, original_cell.mT)
 
     # Test setter - should update cell with transposed value
     new_cell = torch.randn_like(original_cell)
-    si_sim_state.row_vector_cell = new_cell.transpose(-2, -1)
+    si_sim_state.row_vector_cell = new_cell.mT
     assert torch.allclose(si_sim_state.cell, new_cell)
 
     # Test consistency of getter after setting
-    assert torch.allclose(si_sim_state.row_vector_cell, new_cell.transpose(-2, -1))
+    assert torch.allclose(si_sim_state.row_vector_cell, new_cell.mT)
 
 
 def test_column_vector_cell(si_sim_state: ts.SimState) -> None:
@@ -539,12 +539,12 @@ def test_deform_grad_reference_cell(deform_grad_state: DeformState) -> None:
 
     # Test getter
     assert torch.allclose(
-        deform_grad_state.reference_row_vector_cell, original_ref_cell.transpose(-2, -1)
+        deform_grad_state.reference_row_vector_cell, original_ref_cell.mT
     )
 
     # Test setter
     new_ref_cell = 3 * torch.eye(3, device=deform_grad_state.device).unsqueeze(0)
-    deform_grad_state.reference_row_vector_cell = new_ref_cell.transpose(-2, -1)
+    deform_grad_state.reference_row_vector_cell = new_ref_cell.mT
     assert torch.allclose(deform_grad_state.reference_cell, new_ref_cell)
 
 
@@ -575,7 +575,7 @@ def test_deform_grad_non_uniform(device: torch.device) -> None:
 
     deform_grad = state.deform_grad()
     # Verify that deformation gradient correctly transforms reference cell to current cell
-    reconstructed_cell = torch.matmul(reference_cell, deform_grad.transpose(-2, -1))
+    reconstructed_cell = torch.matmul(reference_cell, deform_grad.mT)
     assert torch.allclose(reconstructed_cell, current_cell)
 
 
