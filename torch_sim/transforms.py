@@ -40,7 +40,13 @@ def get_fractional_coordinates(
         tensor([[0.25, 0.25, 0.25],
                 [0.50, 0.00, 0.00]])
     """
-    return torch.linalg.solve(cell.T, positions.T).T
+    if cell.ndim == 3:  # Handle batched cell tensors
+        # For batched systems, we assume single batch for now
+        # Extract the first batch's cell matrix
+        cell_2d = cell[0]  # Shape: [3, 3]
+        return torch.linalg.solve(cell_2d.mT, positions.mT).mT
+    # Original case for 2D cell matrix
+    return torch.linalg.solve(cell.mT, positions.mT).mT
 
 
 def inverse_box(box: torch.Tensor) -> torch.Tensor:

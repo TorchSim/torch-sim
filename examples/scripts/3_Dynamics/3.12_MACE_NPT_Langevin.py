@@ -98,7 +98,7 @@ for step in range(N_steps_npt):
             ).item()
             / Units.pressure
         )
-        xx, yy, zz = torch.diag(state.cell)
+        xx, yy, zz = torch.diag(state.cell[0])
         print(
             f"{step=}: Temperature: {temp.item():.4f}, "
             f"pressure: {pressure:.4f}, "

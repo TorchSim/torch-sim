@@ -95,6 +95,16 @@ def _compute_cell_force(
     Returns:
         torch.Tensor: Force acting on the cell [n_batches, n_dim, n_dim]
     """
+    # Convert external_pressure to tensor if it's not already one
+    if not isinstance(external_pressure, torch.Tensor):
+        external_pressure = torch.tensor(
+            external_pressure, device=state.device, dtype=state.dtype
+        )
+
+    # Convert kT to tensor if it's not already one
+    if not isinstance(kT, torch.Tensor):
+        kT = torch.tensor(kT, device=state.device, dtype=state.dtype)
+
     # Get current volumes for each batch
     volumes = torch.linalg.det(state.cell)  # shape: (n_batches,)
 
