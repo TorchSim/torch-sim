@@ -538,7 +538,6 @@ def static(
         tqdm_pbar = tqdm(total=state.n_batches, **pbar_kwargs)
 
     for sub_state, batch_indices in batch_iterator:
-        print(sub_state.atomic_numbers)
         # set up trajectory reporters
         if autobatcher and trajectory_reporter and og_filenames is not None:
             # we must remake the trajectory reporter for each batch

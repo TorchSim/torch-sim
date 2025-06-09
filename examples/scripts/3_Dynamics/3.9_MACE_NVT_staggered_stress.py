@@ -14,6 +14,7 @@ from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
 from torch_sim.integrators import nvt_langevin
+from torch_sim.integrators.nvt import nvt_nose_hoover_invariant
 from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.quantities import calc_kT
 from torch_sim.units import MetalUnits as Units
@@ -68,7 +69,7 @@ for step in range(N_steps):
         calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
         / Units.temperature
     )
-    invariant = nvt_langevin(state, kT=kT).item()
+    invariant = nvt_nose_hoover_invariant(state, kT=kT).item()
     print(f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant:.4f}")
     state = nvt_update(state, kT=kT)
     if step % 10 == 0:
