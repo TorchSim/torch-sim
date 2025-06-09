@@ -1453,6 +1453,8 @@ def _ase_fire_step(  # noqa: C901, PLR0915
     device, dtype = state.positions.device, state.positions.dtype
     n_batches = state.n_batches
 
+    cur_deform_grad = None  # Initialize cur_deform_grad to prevent UnboundLocalError
+
     if state.velocities is None:
         state.velocities = torch.zeros_like(state.positions)
         forces = state.forces
