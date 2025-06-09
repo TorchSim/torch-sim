@@ -21,7 +21,7 @@ from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
-def nvt_langevin(
+def nvt_langevin(  # noqa: C901
     model: torch.nn.Module,
     *,
     dt: torch.Tensor,
@@ -116,12 +116,17 @@ def nvt_langevin(
             # kT is a tensor with shape (n_batches,)
             kT = kT[state.batch]
 
+        # Index c1 and c2 with state.batch to align shapes with state.momenta
+        if isinstance(c1, torch.Tensor) and len(c1.shape) > 0:
+            c1 = c1[state.batch]
+
         c2 = torch.sqrt(kT * (1 - c1**2)).unsqueeze(-1)
 
         # Generate random noise from normal distribution
         noise = torch.randn_like(state.momenta, device=state.device, dtype=state.dtype)
         new_momenta = (
-            c1 * state.momenta + c2 * torch.sqrt(state.masses).unsqueeze(-1) * noise
+            c1.unsqueeze(-1) * state.momenta
+            + c2 * torch.sqrt(state.masses).unsqueeze(-1) * noise
         )
         state.momenta = new_momenta
         return state

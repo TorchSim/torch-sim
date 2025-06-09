@@ -14,7 +14,6 @@ from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
 from torch_sim.integrators import nvt_langevin
-from torch_sim.integrators.nvt import nvt_nose_hoover_invariant
 from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.quantities import calc_kT
 from torch_sim.units import MetalUnits as Units
@@ -69,8 +68,13 @@ for step in range(N_steps):
         calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
         / Units.temperature
     )
-    invariant = nvt_nose_hoover_invariant(state, kT=kT).item()
-    print(f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant:.4f}")
+
+    # Calculate kinetic energy: KE = 0.5 * sum(p^2 / m)
+    kinetic_energy = 0.5 * torch.sum(state.momenta**2 / state.masses.unsqueeze(-1))
+    # Total energy = kinetic + potential
+    invariant = float(kinetic_energy + state.energy)
+
+    print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}")
     state = nvt_update(state, kT=kT)
     if step % 10 == 0:
         results = model(state)
