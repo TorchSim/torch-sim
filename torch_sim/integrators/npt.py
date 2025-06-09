@@ -1223,6 +1223,9 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         # Full step: Update positions
         cell_position = cell_position + cell_momentum / cell_mass * dt
 
+        # Update state with new cell_position before calling functions that depend on it
+        state.cell_position = cell_position
+
         # Get updated cell
         volume, volume_to_cell = _npt_cell_info(state)
         cell = volume_to_cell(volume)
