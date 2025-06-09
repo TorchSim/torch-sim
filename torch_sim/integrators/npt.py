@@ -1107,10 +1107,12 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         )
         new_positions = state.positions + new_positions
 
-        # Apply periodic boundary conditions
-        return ts.transforms.pbc_wrap_batched(
-            new_positions, state.current_cell, state.batch
-        )
+        # Apply periodic boundary conditions if needed
+        if state.pbc:
+            return ts.transforms.pbc_wrap_batched(
+                new_positions, state.current_cell, state.batch
+            )
+        return new_positions
 
     def exp_iL2(  # noqa: N802
         state: NPTNoseHooverState,
