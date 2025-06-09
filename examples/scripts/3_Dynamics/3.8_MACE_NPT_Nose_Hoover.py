@@ -98,7 +98,7 @@ for step in range(N_steps_npt):
             masses=state.masses, momenta=state.momenta, batch=state.batch
         )
         pressure = float(get_pressure(stress, e_kin, volume))
-        xx, yy, zz = torch.diag(state.current_cell)
+        xx, yy, zz = torch.diag(state.current_cell[0])
         print(
             f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}, "
             f"{pressure=:.4f}, "
@@ -118,4 +118,4 @@ final_pressure = get_pressure(
     calc_kinetic_energy(masses=state.masses, momenta=state.momenta, batch=state.batch),
     final_volume,
 )
-print(f"Final pressure: {final_pressure:.4f}")
+print(f"Final pressure: {final_pressure.item():.4f}")
