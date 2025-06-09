@@ -13,7 +13,7 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
-from torch_sim.integrators import npt_nose_hoover, npt_nose_hoover_invariant
+from torch_sim.integrators.npt import npt_nose_hoover, npt_nose_hoover_invariant
 from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.quantities import calc_kinetic_energy, calc_kT, get_pressure
 from torch_sim.units import MetalUnits as Units
@@ -61,8 +61,8 @@ kT = (
 )  # Initial temperature (300 K)
 target_pressure = 0.0 * Units.pressure  # Target pressure (0 bar)
 
-nvt_init, nvt_update = npt_nose_hoover(model=model, kT=kT, dt=dt)
-state = nvt_init(state=state, seed=1)
+npt_init, npt_update = npt_nose_hoover(model=model, kT=kT, dt=dt)
+state = npt_init(state=state, seed=1)
 
 for step in range(N_steps_nvt):
     if step % 10 == 0:
@@ -74,7 +74,7 @@ for step in range(N_steps_nvt):
             state, kT=kT, external_pressure=target_pressure
         ).item()
         print(f"{step=}: Temperature: {temp.item():.4f}: invariant: {invariant:.4f}, ")
-    state = nvt_update(state, kT=kT)
+    state = npt_update(state, kT=kT)
 
 npt_init, npt_update = npt_nose_hoover(
     model=model, kT=kT, dt=dt, external_pressure=target_pressure

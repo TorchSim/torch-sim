@@ -1372,7 +1372,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         # Initialize momenta
         momenta = kwargs.get(
             "momenta",
-            calculate_momenta(state.positions, state.masses, kT, device, dtype, seed),
+            calculate_momenta(state.positions, state.masses, state.batch, kT, seed),
         )
 
         # Initialize thermostat
