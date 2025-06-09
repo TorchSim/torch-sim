@@ -41,10 +41,13 @@ def get_fractional_coordinates(
                 [0.50, 0.00, 0.00]])
     """
     if cell.ndim == 3:  # Handle batched cell tensors
-        # For batched systems, we assume single batch for now
-        # Extract the first batch's cell matrix
-        cell_2d = cell[0]  # Shape: [3, 3]
-        return torch.linalg.solve(cell_2d.mT, positions.mT).mT
+        raise NotImplementedError(
+            "Batched cell tensors are not yet supported in get_fractional_coordinates. "
+            "The function currently only supports 2D cell matrices [3, 3]. "
+            "For batched systems, please use individual calls per batch or implement "
+            "proper batch support by incorporating the batch dimension in the solve "
+            "operation."
+        )
     # Original case for 2D cell matrix
     return torch.linalg.solve(cell.mT, positions.mT).mT
 
