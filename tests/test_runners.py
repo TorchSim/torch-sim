@@ -901,9 +901,12 @@ def test_generate_force_convergence_fn_tolerance_ordering(
         for tol in tolerances
     ]
 
-    # Higher tolerance should be less restrictive (more converged)
+    # If converged at lower tolerance, must be converged at higher tolerance
     for idx in range(len(tolerances) - 1):
-        assert (results[idx + 1] >= results[idx]).all()
+        # Logical implication: results[idx] → results[idx + 1]
+        # Equivalent to: ~results[idx] | results[idx + 1]
+        implication = torch.logical_or(torch.logical_not(results[idx]), results[idx + 1])
+        assert implication.all()
 
 
 @pytest.mark.parametrize(
