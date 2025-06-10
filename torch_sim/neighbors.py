@@ -79,19 +79,18 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     """
     # Naming conventions: Suffixes indicate the dimension of an array. The
     # following convention is used here:
-    #     c: Cartesian index, can have values 0, 1, 2
-    #     i: Global atom index, can have values 0..len(a)-1
-    #     xyz: Bin index, three values identifying x-, y- and z-component of a
-    #          spatial bin that is used to make neighbor search O(n)
-    #     b: Linearized version of the 'xyz' bin index
-    #     a: Bin-local atom index, i.e. index identifying an atom *within* a
-    #        bin
-    #     p: Pair index, can have value 0 or 1
-    #     n: (Linear) neighbor index
+    # c: Cartesian index, can have values 0, 1, 2
+    # i: Global atom index, can have values 0..len(a)-1
+    # xyz: Bin index, three values identifying x-, y- and z-component of a
+    #         spatial bin that is used to make neighbor search O(n)
+    # b: Linearized version of the 'xyz' bin index
+    # a: Bin-local atom index, i.e. index identifying an atom *within* a
+    #     bin
+    # p: Pair index, can have value 0 or 1
+    # n: (Linear) neighbor index
 
-    # Return empty neighbor list if no atoms are passed here
     if len(positions) == 0:
-        raise AssertionError("No atoms provided")
+        raise RuntimeError("No atoms provided")
 
     # Compute reciprocal lattice vectors.
     recip_cell = torch.linalg.pinv(cell).T
