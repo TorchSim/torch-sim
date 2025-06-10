@@ -285,7 +285,7 @@ def _chunked_apply(
 
 
 def generate_force_convergence_fn(
-    force_tol: float = 1e-1, *, include_cell_forces: bool = False
+    force_tol: float = 1e-1, *, include_cell_forces: bool = True
 ) -> Callable:
     """Generate a force-based convergence function for the convergence_fn argument
     of the optimize function.
@@ -293,7 +293,7 @@ def generate_force_convergence_fn(
     Args:
         force_tol (float): Force tolerance for convergence
         include_cell_forces (bool): Whether to include the `cell_forces` in
-            the convergence check.
+            the convergence check. Defaults to True.
 
     Returns:
         Convergence function that takes a state and last energy and

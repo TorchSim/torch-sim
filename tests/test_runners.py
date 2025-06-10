@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -798,3 +799,199 @@ def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:
     )
 
     print(relaxed_state.energy)
+
+
+@pytest.fixture
+def mock_state() -> Callable:
+    """Create a mock state for testing convergence functions."""
+    device = torch.device("cpu")
+    dtype = torch.float64
+    n_batches = 2
+    n_atoms = 8
+
+    class MockState:
+        def __init__(self, *, include_cell_forces: bool = True) -> None:
+            self.forces = torch.randn(n_atoms, 3, device=device, dtype=dtype)
+            self.batch = torch.repeat_interleave(
+                torch.arange(n_batches), n_atoms // n_batches
+            )
+            self.device = device
+            self.dtype = dtype
+            self.n_batches = n_batches
+            if include_cell_forces:
+                self.cell_forces = torch.randn(
+                    n_batches, 3, 3, device=device, dtype=dtype
+                )
+
+    return MockState
+
+
+@pytest.mark.parametrize(
+    ("force_tol", "include_cell_forces", "has_cell_forces", "should_error"),
+    [
+        (1e-2, True, True, False),  # Standard case with cell forces
+        (1e-2, False, False, False),  # Standard case without cell forces
+        (1e2, True, True, False),  # High tolerance - should converge
+        (1e-6, True, True, False),  # Low tolerance - may not converge
+        (1e-2, True, False, True),  # Error case - cell forces required but missing
+    ],
+)
+def test_generate_force_convergence_fn(
+    *,
+    ar_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    mock_state: Callable,
+    force_tol: float,
+    include_cell_forces: bool,
+    has_cell_forces: bool,
+    should_error: bool,
+) -> None:
+    """Test generate_force_convergence_fn with various parameter combinations."""
+    # Use mock state for error case, real state otherwise
+    if should_error:
+        state = mock_state(include_cell_forces=False)
+    else:
+        # Prepare real state
+        model_output = lj_model(ar_supercell_sim_state)
+        ar_supercell_sim_state.forces = model_output["forces"]
+        ar_supercell_sim_state.energy = model_output["energy"]
+
+        if has_cell_forces:
+            ar_supercell_sim_state.cell_forces = torch.randn(
+                ar_supercell_sim_state.n_batches,
+                3,
+                3,
+                device=ar_supercell_sim_state.device,
+                dtype=ar_supercell_sim_state.dtype,
+            )
+        state = ar_supercell_sim_state
+
+    convergence_fn = ts.generate_force_convergence_fn(
+        force_tol=force_tol, include_cell_forces=include_cell_forces
+    )
+
+    if should_error:
+        with pytest.raises(ValueError, match="cell_forces not found in state"):
+            convergence_fn(state)
+    else:
+        result = convergence_fn(state)
+        assert isinstance(result, torch.Tensor)
+        assert result.dtype == torch.bool
+        assert result.shape == (state.n_batches,)
+
+
+def test_generate_force_convergence_fn_tolerance_ordering(
+    ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesModel
+) -> None:
+    """Test that higher tolerances are less restrictive than lower ones."""
+    model_output = lj_model(ar_supercell_sim_state)
+    ar_supercell_sim_state.forces = model_output["forces"]
+    ar_supercell_sim_state.energy = model_output["energy"]
+    ar_supercell_sim_state.cell_forces = torch.randn(
+        ar_supercell_sim_state.n_batches,
+        3,
+        3,
+        device=ar_supercell_sim_state.device,
+        dtype=ar_supercell_sim_state.dtype,
+    )
+
+    tolerances = [1e-4, 1e-2, 1e0, 1e2]
+    results = [
+        ts.generate_force_convergence_fn(force_tol=tol)(ar_supercell_sim_state)
+        for tol in tolerances
+    ]
+
+    # Higher tolerance should be less restrictive (more converged)
+    for idx in range(len(tolerances) - 1):
+        assert (results[idx + 1] >= results[idx]).all()
+
+
+@pytest.mark.parametrize(
+    ("atomic_forces", "cell_forces", "force_tol", "expected_convergence"),
+    [
+        ([0.05, 0.05], [0.05, 0.05], 0.1, [True, True]),  # Both converged
+        ([0.15, 0.05], [0.05, 0.05], 0.1, [False, True]),  # Only second converged
+        ([0.05, 0.05], [0.15, 0.05], 0.1, [False, True]),  # Cell forces block first
+        ([0.15, 0.15], [0.15, 0.15], 0.1, [False, False]),  # None converged
+    ],
+)
+def test_generate_force_convergence_fn_logic(
+    atomic_forces: list[float],
+    cell_forces: list[float],
+    force_tol: float,
+    expected_convergence: list[bool],
+) -> None:
+    """Test convergence logic with controlled force values."""
+    device, dtype = torch.device("cpu"), torch.float64
+    n_batches, n_atoms = len(atomic_forces), 8
+
+    class ControlledMockState:
+        def __init__(self) -> None:
+            self.n_batches = n_batches
+            self.device, self.dtype = device, dtype
+            self.batch = torch.repeat_interleave(
+                torch.arange(n_batches), n_atoms // n_batches
+            )
+
+            # Set specific force magnitudes per batch
+            self.forces = torch.zeros(n_atoms, 3, device=device, dtype=dtype)
+            self.cell_forces = torch.zeros(n_batches, 3, 3, device=device, dtype=dtype)
+
+            for batch_idx, (atomic_force, cell_force) in enumerate(
+                zip(atomic_forces, cell_forces, strict=False)
+            ):
+                batch_mask = self.batch == batch_idx
+                self.forces[batch_mask, 0] = atomic_force
+                self.cell_forces[batch_idx, 0, 0] = cell_force
+
+    state = ControlledMockState()
+    convergence_fn = ts.generate_force_convergence_fn(
+        force_tol=force_tol, include_cell_forces=True
+    )
+    result = convergence_fn(state)
+
+    assert result.tolist() == expected_convergence
+
+
+def test_generate_force_convergence_fn_ignores_last_energy(
+    ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesModel
+) -> None:
+    """Test that convergence function ignores last_energy parameter."""
+    model_output = lj_model(ar_supercell_sim_state)
+    ar_supercell_sim_state.forces = model_output["forces"]
+    ar_supercell_sim_state.energy = model_output["energy"]
+
+    convergence_fn = ts.generate_force_convergence_fn(
+        force_tol=1e-2, include_cell_forces=False
+    )
+
+    results = [
+        convergence_fn(ar_supercell_sim_state),
+        convergence_fn(ar_supercell_sim_state, last_energy=torch.tensor([1.0])),
+        convergence_fn(ar_supercell_sim_state, last_energy=None),
+    ]
+
+    # All results should be identical
+    assert all(torch.equal(results[0], result) for result in results[1:])
+
+
+def test_generate_force_convergence_fn_default_behavior(
+    mock_state: Callable,
+) -> None:
+    """Test that default behavior includes cell forces."""
+    state = mock_state(include_cell_forces=True)
+    # Set very small forces to ensure convergence
+    state.forces.fill_(0.01)
+    state.cell_forces.fill_(0.01)
+
+    # Default and explicit should give same results
+    default_fn = ts.generate_force_convergence_fn(force_tol=0.1)
+    explicit_fn = ts.generate_force_convergence_fn(
+        force_tol=0.1, include_cell_forces=True
+    )
+
+    result_default = default_fn(state)
+    result_explicit = explicit_fn(state)
+
+    assert torch.equal(result_default, result_explicit)
+    assert result_default.all()  # Should converge with low forces
