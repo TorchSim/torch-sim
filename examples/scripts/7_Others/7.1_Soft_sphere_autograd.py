@@ -8,6 +8,8 @@
 # ]
 # ///
 
+# ruff: noqa: RUF001
+
 import numpy as np
 import torch
 from plotly.subplots import make_subplots
@@ -62,10 +64,7 @@ fig.add_scatter(
 )
 
 # Add figure titles and labels
-fig.update_layout(
-    title="Soft Sphere Potential",
-    xaxis_title="Distance (r/σ)",
-)
+fig.update_layout(title="Soft Sphere Potential", xaxis_title="Distance (r/σ)")
 
 # Update y-axes labels
 fig.update_yaxes(title_text="Energy (ε)", secondary_y=False)
