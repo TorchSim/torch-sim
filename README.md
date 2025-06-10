@@ -125,7 +125,7 @@ To understand how TorchSim works, start with the [comprehensive tutorials](https
 
 TorchSim's package structure is summarized in the [API reference](https://radical-ai.github.io/torch-sim/reference/index.html) documentation and drawn as a treemap below.
 
-![TorchSim package treemap](https://github.com/user-attachments/assets/1e67879b-cdca-4ebc-bbbd-061fed90dfed)
+![TorchSim package treemap](https://github.com/user-attachments/assets/1ccb3a15-233d-4bc0-b11c-35a676a2bcf3)
 
 ## License
 
