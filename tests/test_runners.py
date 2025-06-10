@@ -806,8 +806,8 @@ def mock_state() -> Callable:
     """Create a mock state for testing convergence functions."""
     device = torch.device("cpu")
     dtype = torch.float64
-    n_batches = 2
-    n_atoms = 8
+    n_batches, n_atoms = 2, 8
+    torch.manual_seed(0)  # deterministic forces
 
     class MockState:
         def __init__(self, *, include_cell_forces: bool = True) -> None:

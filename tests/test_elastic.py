@@ -241,7 +241,9 @@ def test_get_elementary_deformations_strain_consistency(
 
         # The strain component corresponding to this axis should be the largest
         max_strain_component = torch.max(torch.abs(strain))
-        assert torch.abs(strain[strain_idx]) == max_strain_component
+        assert torch.isclose(
+            torch.abs(strain[strain_idx]), max_strain_component, rtol=1e-10, atol=1e-12
+        )
 
         # Verify strain magnitude is within expected bounds
         if axis < 3:  # Normal strain
