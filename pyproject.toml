@@ -71,14 +71,12 @@ docs = [
 Repo = "https://github.com/radical-ai/torch-sim"
 
 [build-system]
-requires = ["hatchling>=1.27.0"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.7.12"]
+build-backend = "uv_build"
 
-[tool.hatch.build.targets.wheel]
-packages = ["torch_sim"]
-
-[tool.hatch.build.targets.sdist]
-include = ["/torch_sim"]
+[tool.uv.build-backend]
+module-name = "torch_sim"
+module-root = ""
 
 [tool.ruff]
 target-version = "py311"
