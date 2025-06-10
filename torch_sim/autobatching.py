@@ -20,7 +20,6 @@ Notes:
     model architectures and GPU configurations.
 """
 
-import logging
 from collections.abc import Callable, Iterator
 from itertools import chain
 from typing import Any, get_args
@@ -233,7 +232,7 @@ def measure_model_memory_forward(state: SimState, model: ModelInterface) -> floa
             "Memory estimation does not make sense on CPU and is unsupported."
         )
 
-    logging.info(  # noqa: LOG015
+    print(  # noqa: T201
         "Model Memory Estimation: Running forward pass on state with "
         f"{state.n_atoms} atoms and {state.n_batches} batches.",
     )
@@ -403,7 +402,7 @@ def estimate_max_memory_scaler(
     min_state = state_list[metric_values.argmin()]
     max_state = state_list[metric_values.argmax()]
 
-    logging.info(  # noqa: LOG015
+    print(  # noqa: T201
         "Model Memory Estimation: Estimating memory from worst case of "
         f"largest and smallest system. Largest system has {max_state.n_atoms} atoms "
         f"and {max_state.n_batches} batches, and smallest system has "
