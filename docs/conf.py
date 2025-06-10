@@ -1,4 +1,4 @@
-# ruff: noqa: E501
+# ruff: noqa: E501, INP001
 
 """Sphinx configuration file."""
 

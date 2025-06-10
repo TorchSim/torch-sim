@@ -96,8 +96,6 @@ ignore = [
     "EM102",   # Exception must not use an f-string literal, assign to variable first
     "ERA001",  # Found commented-out code
     "FIX002",  # Line contains TODO, consider resolving the issue
-    "INP001",  # implicit-namespace-package
-    "ISC001",  # avoid conflicts with the formatter
     "N803",    # Variable name should be lowercase
     "N806",    # Uppercase letters in variable names
     "PLR0912", # too many branches
@@ -117,7 +115,7 @@ isort.lines-after-imports = 2
 pep8-naming.ignore-names = ["get_kT", "kT"]
 
 [tool.ruff.lint.per-file-ignores]
-"**/tests/*" = ["ANN201", "D", "S101"]
+"**/tests/*" = ["ANN201", "D", "INP001", "S101"]
 "examples/**/*" = ["B018", "T201"]
 "examples/tutorials/**/*" = ["ALL"]
 
