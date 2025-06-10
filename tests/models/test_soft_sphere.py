@@ -327,8 +327,8 @@ def test_matrix_symmetry_validation(matrix_name: str, matrix: torch.Tensor) -> N
     # Replace one matrix with the non-symmetric version
     params[matrix_name] = matrix
 
-    # Should raise AssertionError due to asymmetric matrix
-    with pytest.raises(AssertionError):
+    # Should raise ValueError due to asymmetric matrix
+    with pytest.raises(ValueError, match="is not symmetric"):
         ss.SoftSphereMultiModel(**params)
 
 
