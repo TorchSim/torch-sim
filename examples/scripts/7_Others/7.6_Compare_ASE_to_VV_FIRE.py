@@ -484,7 +484,8 @@ for config_run in configs_to_run:
     final_state_opt: SimState | GDState | None = None
 
     if optimizer_type_val == "torch_sim":
-        assert ts_md_flavor_val is not None, "ts_md_flavor must be provided for torch_sim"
+        if ts_md_flavor_val is None:
+            raise ValueError(f"{ts_md_flavor_val=} must be provided for torch_sim")
         steps, final_state_opt = run_optimization_ts(
             initial_state=state.clone(),
             ts_md_flavor=ts_md_flavor_val,

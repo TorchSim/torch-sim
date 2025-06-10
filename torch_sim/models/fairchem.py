@@ -175,7 +175,8 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             )
 
         # Either the config path or the checkpoint path needs to be provided
-        assert config_yml or model is not None
+        if not config_yml and model is None:
+            raise ValueError("Either config_yml or model must be provided")
 
         checkpoint = None
         if config_yml is not None:

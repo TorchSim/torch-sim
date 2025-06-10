@@ -521,8 +521,10 @@ def compute_distances_with_cell_shifts(
         torch.Tensor: A tensor of shape (n_pairs,) containing the
             computed distances for each pair.
     """
-    assert mapping.dim() == 2
-    assert mapping.shape[0] == 2
+    if mapping.dim() != 2:
+        raise ValueError(f"Mapping must be a 2D tensor, got {mapping.shape}")
+    if mapping.shape[0] != 2:
+        raise ValueError(f"Mapping must have 2 rows, got {mapping.shape[0]}")
 
     if cell_shifts is None:
         dr = pos[mapping[1]] - pos[mapping[0]]

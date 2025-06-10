@@ -1273,7 +1273,8 @@ def _vv_fire_step(  # noqa: C901, PLR0915
     if is_cell_optimization:
         cell_factor_reshaped = state.cell_factor.view(n_batches, 1, 1)
         if is_frechet:
-            assert isinstance(state, FrechetCellFIREState)
+            if not isinstance(state, expected_cls := FrechetCellFIREState):
+                raise ValueError(f"{type(state)=} must be a {expected_cls.__name__}")
             cur_deform_grad = state.deform_grad()
             deform_grad_log = torch.zeros_like(cur_deform_grad)
             for b in range(n_batches):
@@ -1291,7 +1292,8 @@ def _vv_fire_step(  # noqa: C901, PLR0915
             state.row_vector_cell = new_row_vector_cell
             state.cell_positions = cell_positions_log_scaled_new
         else:
-            assert isinstance(state, UnitCellFireState)
+            if not isinstance(state, expected_cls := UnitCellFireState):
+                raise ValueError(f"{type(state)=} must be a {expected_cls.__name__}")
             cur_deform_grad = state.deform_grad()
             cell_factor_expanded = state.cell_factor.expand(n_batches, 3, 1)
             current_cell_positions_scaled = (
@@ -1329,7 +1331,8 @@ def _vv_fire_step(  # noqa: C901, PLR0915
             ).unsqueeze(0).expand(n_batches, -1, -1)
 
         if is_frechet:
-            assert isinstance(state, FrechetCellFIREState)
+            if not isinstance(state, expected_cls := FrechetCellFIREState):
+                raise ValueError(f"{type(state)=} must be a {expected_cls.__name__}")
             ucf_cell_grad = torch.bmm(
                 virial, torch.linalg.inv(torch.transpose(deform_grad_new, 1, 2))
             )
@@ -1353,7 +1356,8 @@ def _vv_fire_step(  # noqa: C901, PLR0915
                 new_cell_forces[b] = forces_flat.reshape(3, 3)
             state.cell_forces = new_cell_forces / cell_factor_reshaped
         else:
-            assert isinstance(state, UnitCellFireState)
+            if not isinstance(state, expected_cls := UnitCellFireState):
+                raise ValueError(f"{type(state)=} must be a {expected_cls.__name__}")
             state.cell_forces = virial / cell_factor_reshaped
 
     state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
@@ -1564,7 +1568,8 @@ def _ase_fire_step(  # noqa: C901, PLR0915
         )
 
         if is_frechet:
-            assert isinstance(state, FrechetCellFIREState)
+            if not isinstance(state, expected_cls := FrechetCellFIREState):
+                raise ValueError(f"{type(state)=} must be a {expected_cls.__name__}")
             new_logm_F_scaled = state.cell_positions + dr_cell
             state.cell_positions = new_logm_F_scaled
             logm_F_new = new_logm_F_scaled / (state.cell_factor + eps)
@@ -1572,7 +1577,8 @@ def _ase_fire_step(  # noqa: C901, PLR0915
             new_row_vector_cell = torch.bmm(state.reference_row_vector_cell, F_new.mT)
             state.row_vector_cell = new_row_vector_cell
         else:
-            assert isinstance(state, UnitCellFireState)
+            if not isinstance(state, expected_cls := UnitCellFireState):
+                raise ValueError(f"{type(state)=} must be a {expected_cls.__name__}")
             F_current = state.deform_grad()
             cell_factor_exp_mult = state.cell_factor.expand(n_batches, 3, 1)
             current_F_scaled = F_current * cell_factor_exp_mult
@@ -1619,13 +1625,16 @@ def _ase_fire_step(  # noqa: C901, PLR0915
             ).unsqueeze(0).expand(n_batches, -1, -1)
 
         if is_frechet:
-            assert isinstance(state, FrechetCellFIREState)
-            assert F_new is not None, (
-                "F_new should be defined for Frechet cell force calculation"
-            )
-            assert logm_F_new is not None, (
-                "logm_F_new should be defined for Frechet cell force calculation"
-            )
+            if not isinstance(state, expected_cls := FrechetCellFIREState):
+                raise ValueError(f"{type(state)=} must be a {expected_cls.__name__}")
+            if F_new is None:
+                raise ValueError(
+                    "F_new should be defined for Frechet cell force calculation"
+                )
+            if logm_F_new is None:
+                raise ValueError(
+                    "logm_F_new should be defined for Frechet cell force calculation"
+                )
             ucf_cell_grad = torch.bmm(
                 virial, torch.linalg.inv(torch.transpose(F_new, 1, 2))
             )
@@ -1649,7 +1658,8 @@ def _ase_fire_step(  # noqa: C901, PLR0915
                 new_cell_forces_log_space[b_idx] = forces_flat.reshape(3, 3)
             state.cell_forces = new_cell_forces_log_space / (state.cell_factor + eps)
         else:
-            assert isinstance(state, UnitCellFireState)
+            if not isinstance(state, expected_cls := UnitCellFireState):
+                raise ValueError(f"{type(state)=} must be a {expected_cls.__name__}")
             state.cell_forces = virial / state.cell_factor
 
     return state

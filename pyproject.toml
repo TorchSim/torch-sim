@@ -102,14 +102,11 @@ ignore = [
     "ISC001",  # avoid conflicts with the formatter
     "N803",    # Variable name should be lowercase
     "N806",    # Uppercase letters in variable names
-    "PD010",   # .pivot_table is preferred to .pivot or .unstack; provides same functionality
-    "PD015",   # pandas-use-of-pd-merge
     "PLR0912", # too many branches
     "PLR0913", # too many function arguments
     "PLR2004", # Magic value used in comparison, consider replacing {value} with a constant variable
     "PLW2901", # Outer for loop variable overwritten by inner assignment target
     "PTH",     # flake8-use-pathlib
-    "S101",    # Use of assertion statements
     "S301",    # pickle and modules that wrap it can be unsafe, possible security issue
     "S311",    # Standard pseudo-random generators are not suitable for cryptographic purposes
     "SIM105",  # Use contextlib.suppress instead of try-except-pass

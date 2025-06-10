@@ -642,9 +642,10 @@ class SoftSphereMultiModel(torch.nn.Module):
         )
 
         # Ensure parameter matrices are symmetric (required for energy conservation)
-        assert torch.allclose(self.sigma_matrix, self.sigma_matrix.T)
-        assert torch.allclose(self.epsilon_matrix, self.epsilon_matrix.T)
-        assert torch.allclose(self.alpha_matrix, self.alpha_matrix.T)
+        for matrix_name in ("sigma_matrix", "epsilon_matrix", "alpha_matrix"):
+            matrix = getattr(self, matrix_name)
+            if not torch.allclose(matrix, matrix.T):
+                raise ValueError(f"{matrix_name} is not symmetric")
 
         # Set interaction cutoff distance
         self.cutoff = torch.tensor(

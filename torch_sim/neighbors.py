@@ -109,7 +109,8 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
             1 / l3 if l3 > 0 else pytorch_scalar_1,
         ]
     )
-    assert face_dist_c.shape == (3,)
+    if face_dist_c.shape != (3,):
+        raise ValueError(f"{face_dist_c.shape=} != (3,)")
 
     # we don't handle other fancier cutoffs
     max_cutoff: torch.Tensor = cutoff
@@ -214,8 +215,10 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
         bin_index_i = bin_index_i[mask]
 
     # Make sure that all atoms have been sorted into bins.
-    assert len(atom_i) == 0
-    assert len(bin_index_i) == 0
+    if len(atom_i) != 0:
+        raise ValueError(f"{len(atom_i)=} != 0")
+    if len(bin_index_i) != 0:
+        raise ValueError(f"{len(bin_index_i)=} != 0")
 
     # Now we construct neighbor pairs by pairing up all atoms within a bin or
     # between bin and neighboring bin. atom_pairs_pn is a helper buffer that
