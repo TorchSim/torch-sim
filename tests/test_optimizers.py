@@ -152,8 +152,9 @@ def test_fire_optimization(
         energies.append(state.energy.item())
         steps_taken += 1
 
-    if steps_taken == max_steps:
-        print(f"FIRE optimization for {md_flavor=} did not converge in {max_steps} steps")
+    assert steps_taken < max_steps, (
+        f"FIRE optimization for {md_flavor=} did not converge in {max_steps=}"
+    )
 
     energies = energies[1:]
 
@@ -327,7 +328,6 @@ def test_unit_cell_fire_optimization(
     ar_supercell_sim_state: ts.SimState, lj_model: torch.nn.Module, md_flavor: MdFlavor
 ) -> None:
     """Test that the Unit Cell FIRE optimizer actually minimizes energy."""
-    print(f"\n--- Starting test_unit_cell_fire_optimization for {md_flavor=} ---")
 
     # Add random displacement to positions and cell
     current_positions = (
@@ -347,48 +347,33 @@ def test_unit_cell_fire_optimization(
         atomic_numbers=ar_supercell_sim_state.atomic_numbers.clone(),
         batch=ar_supercell_sim_state.batch.clone(),
     )
-    print(f"[{md_flavor}] Initial SimState created.")
 
     initial_state_positions = current_sim_state.positions.clone()
     initial_state_cell = current_sim_state.cell.clone()
 
     # Initialize FIRE optimizer
-    print(f"Initializing {md_flavor} optimizer...")
     init_fn, update_fn = unit_cell_fire(
         model=lj_model,
         dt_max=0.3,
         dt_start=0.1,
         md_flavor=md_flavor,
     )
-    print(f"[{md_flavor}] Optimizer functions obtained.")
 
     state = init_fn(current_sim_state)
-    energy = float(getattr(state, "energy", "nan"))
-    print(f"[{md_flavor}] Initial state created by init_fn. {energy=:.4f}")
 
     # Run optimization for a few steps
     energies = [1000.0, state.energy.item()]
     max_steps = 1000
     steps_taken = 0
-    print(f"[{md_flavor}] Entering optimization loop (max_steps: {max_steps})...")
 
     while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
         state = update_fn(state)
         energies.append(state.energy.item())
         steps_taken += 1
 
-    print(f"[{md_flavor}] Loop finished after {steps_taken} steps.")
-
-    if steps_taken == max_steps and abs(energies[-2] - energies[-1]) > 1e-6:
-        print(
-            f"WARNING: Unit Cell FIRE {md_flavor=} optimization did not converge "
-            f"in {max_steps} steps. Final energy: {energies[-1]:.4f}"
-        )
-    else:
-        print(
-            f"Unit Cell FIRE {md_flavor=} optimization converged in {steps_taken} "
-            f"steps. Final energy: {energies[-1]:.4f}"
-        )
+    assert steps_taken < max_steps, (
+        f"Unit Cell FIRE {md_flavor=} optimization did not converge in {max_steps=}"
+    )
 
     energies = energies[1:]
 
@@ -522,7 +507,6 @@ def test_frechet_cell_fire_optimization(
 ) -> None:
     """Test that the Frechet Cell FIRE optimizer actually minimizes energy for different
     md_flavors."""
-    print(f"\n--- Starting test_frechet_cell_fire_optimization for {md_flavor=} ---")
 
     # Add random displacement to positions and cell
     # Create a fresh copy for each test run to avoid interference
@@ -543,48 +527,33 @@ def test_frechet_cell_fire_optimization(
         atomic_numbers=ar_supercell_sim_state.atomic_numbers.clone(),
         batch=ar_supercell_sim_state.batch.clone(),
     )
-    print(f"[{md_flavor}] Initial SimState created for Frechet test.")
 
     initial_state_positions = current_sim_state.positions.clone()
     initial_state_cell = current_sim_state.cell.clone()
 
     # Initialize FIRE optimizer
-    print(f"Initializing Frechet {md_flavor} optimizer...")
     init_fn, update_fn = frechet_cell_fire(
         model=lj_model,
         dt_max=0.3,
         dt_start=0.1,
         md_flavor=md_flavor,
     )
-    print(f"[{md_flavor}] Frechet optimizer functions obtained.")
 
     state = init_fn(current_sim_state)
-    energy = float(getattr(state, "energy", "nan"))
-    print(f"[{md_flavor}] Initial state created by Frechet init_fn. {energy=:.4f}")
 
     # Run optimization for a few steps
     energies = [1000.0, state.energy.item()]  # Ensure float for comparison
     max_steps = 1000
     steps_taken = 0
-    print(f"[{md_flavor}] Entering Frechet optimization loop (max_steps: {max_steps})...")
 
     while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
         state = update_fn(state)
         energies.append(state.energy.item())
         steps_taken += 1
 
-    print(f"[{md_flavor}] Frechet loop finished after {steps_taken} steps.")
-
-    if steps_taken == max_steps and abs(energies[-2] - energies[-1]) > 1e-6:
-        print(
-            f"WARNING: Frechet Cell FIRE {md_flavor=} optimization did not converge "
-            f"in {max_steps} steps. Final energy: {energies[-1]:.4f}"
-        )
-    else:
-        print(
-            f"Frechet Cell FIRE {md_flavor=} optimization converged in {steps_taken} "
-            f"steps. Final energy: {energies[-1]:.4f}"
-        )
+    assert steps_taken < max_steps, (
+        f"Frechet FIRE {md_flavor=} optimization did not converge in {max_steps=}"
+    )
 
     energies = energies[1:]
 
@@ -600,8 +569,7 @@ def test_frechet_cell_fire_optimization(
     pressure = torch.trace(state.stress.squeeze(0)) / 3.0
 
     # Adjust tolerances if needed, Frechet might behave slightly differently
-    pressure_tol = 0.01
-    force_tol = 0.2
+    pressure_tol, force_tol = 0.01, 0.2
 
     assert torch.abs(pressure) < pressure_tol, (
         f"{md_flavor=} pressure should be below {pressure_tol=} after Frechet "

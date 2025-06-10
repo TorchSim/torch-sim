@@ -1599,7 +1599,7 @@ def _ase_fire_step(  # noqa: C901, PLR0915
         volumes = torch.linalg.det(state.cell).view(n_batches, 1, 1)
         if torch.any(volumes <= 0):
             bad_indices = torch.where(volumes <= 0)[0].tolist()
-            print(
+            print(  # noqa: T201
                 f"WARNING: Non-positive volume(s) detected during _ase_fire_step: "
                 f"{volumes[bad_indices].tolist()} at {bad_indices=} ({is_frechet=})"
             )

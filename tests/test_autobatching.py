@@ -457,10 +457,7 @@ def test_in_flight_with_fire(
 
     all_completed_states, convergence_tensor = [], None
     while True:
-        print(f"Starting new batch of {state.n_batches} states.")
-
         state, completed_states = batcher.next_batch(state, convergence_tensor)
-        print("Number of completed states", len(completed_states))
 
         all_completed_states.extend(completed_states)
         if state is None:

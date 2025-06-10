@@ -768,12 +768,12 @@ def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:
 
     cu_atoms = bulk("Cu", "fcc", a=3.58, cubic=True).repeat((2, 2, 2))
     many_cu_atoms = [cu_atoms] * 5
-    trajectory_files = [tmp_path / f"Cu_traj_{i}" for i in range(len(many_cu_atoms))]
+    trajectory_files = [tmp_path / f"Cu_traj_{i}.h5md" for i in range(len(many_cu_atoms))]
 
     # run them all simultaneously with batching
     final_state = ts.integrate(
         system=many_cu_atoms,
-        model=lj_model,
+        model=lj_model,  # using LJ instead of MACE for testing
         n_steps=50,
         timestep=0.002,
         temperature=1000,
@@ -788,17 +788,17 @@ def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:
         with ts.TorchSimTrajectory(filename) as traj:
             final_energies.append(traj.get_array("potential_energy")[-1])
 
-    print(final_energies)
+    assert len(final_energies) == len(trajectory_files)
 
     # relax all of the high temperature states
     relaxed_state = ts.optimize(
         system=final_state,
         model=lj_model,
         optimizer=ts.frechet_cell_fire,
-        # autobatcher=True,
+        # autobatcher=True,  # disabled for CPU-based LJ model in test
     )
 
-    print(relaxed_state.energy)
+    assert relaxed_state.energy.shape == (final_state.n_batches,)
 
 
 @pytest.fixture

@@ -114,10 +114,8 @@ ignore = [
     "S301",    # pickle and modules that wrap it can be unsafe, possible security issue
     "S311",    # Standard pseudo-random generators are not suitable for cryptographic purposes
     "SIM105",  # Use contextlib.suppress instead of try-except-pass
-    "T201",    # print found
     "TD",      # flake8-todos
     "TRY003",  # Avoid specifying long messages outside the exception class
-    "TRY301",  # Abstract raise to an inner function
 ]
 pydocstyle.convention = "google"
 isort.split-on-trailing-comma = false
@@ -126,7 +124,7 @@ pep8-naming.ignore-names = ["get_kT", "kT"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/*" = ["ANN201", "D", "S101"]
-"examples/**/*" = ["B018"]
+"examples/**/*" = ["B018", "T201"]
 "examples/tutorials/**/*" = ["ALL"]
 
 [tool.ruff.format]

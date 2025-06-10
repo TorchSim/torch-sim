@@ -7,6 +7,8 @@ This module provides functions for:
 - Converting between different structural representations
 """
 
+# ruff: noqa: T201
+
 import itertools
 from collections.abc import Sequence
 from typing import Any

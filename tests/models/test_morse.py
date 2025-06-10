@@ -28,7 +28,6 @@ def test_morse_pair_asymptotic() -> None:
     dr = torch.tensor([[1.0]])  # Large distance
     epsilon = 5.0
     energy = morse_pair(dr, epsilon=epsilon)
-    print(energy, -epsilon * torch.ones_like(energy))
     torch.testing.assert_close(
         energy, -epsilon * torch.ones_like(energy), rtol=1e-2, atol=1e-5
     )
@@ -55,8 +54,6 @@ def test_morse_force_energy_consistency() -> None:
     force_from_grad = -torch.autograd.grad(energy.sum(), dr, create_graph=True)[0]
 
     # Compare forces
-    print(force_direct)
-    print(force_from_grad)
     assert torch.allclose(force_direct, force_from_grad, rtol=1e-4, atol=1e-4)
 
 

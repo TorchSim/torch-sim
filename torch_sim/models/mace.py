@@ -169,7 +169,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
             self.model = self.model.to(dtype=self.dtype)
 
         if enable_cueq:
-            print("Converting models to CuEq for acceleration")
+            print("Converting models to CuEq for acceleration")  # noqa: T201
             self.model = run_e3nn_to_cueq(self.model)
 
         # Set model properties

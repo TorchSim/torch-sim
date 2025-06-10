@@ -984,7 +984,7 @@ def matrix_log_33(
             "Falling back to scipy"
         )
         if fallback_warning:
-            print(msg)
+            print(msg)  # noqa: T201
         # Fall back to scipy implementation
         return matrix_log_scipy(matrix).to(sim_dtype)
 
