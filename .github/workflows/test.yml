@@ -92,11 +92,14 @@ jobs:
 
       - name: Install fairchem and dependencies
         if: ${{ matrix.model.name == 'fairchem' }}
+        env:
+          HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
         run: |
           uv pip install "torch>2" --index-url https://download.pytorch.org/whl/cpu --system
           uv pip install "torch-scatter" -f https://data.pyg.org/whl/torch-2.6.0+cpu.html --system
           uv pip install "torch-sparse" -f https://data.pyg.org/whl/torch-2.6.0+cpu.html --system
           uv pip install "fairchem-core>=2.2.0" --system
+          uv pip install "huggingface_hub[cli]" --system
           uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
 
       - name: Install torch_sim with model dependencies
@@ -108,6 +111,9 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
         run: |
+          if [ "${{ matrix.model.name }}" == "fairchem" ]; then
+            huggingface-cli login --token "$HF_TOKEN"
+          fi
           pytest --cov=torch_sim --cov-report=xml ${{ matrix.model.test_path }}
 
       - name: Upload coverage to Codecov
@@ -151,4 +157,11 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Run example
-        run: uv run --with . ${{ matrix.example }}
+        env:
+          HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
+        run: |
+          if [[ "${{ matrix.example }}" == *"fairchem"* ]]; then
+            uv pip install "huggingface_hub[cli]" --system
+            huggingface-cli login --token "$HF_TOKEN"
+          fi
+          uv run --with . ${{ matrix.example }}
