@@ -82,14 +82,6 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Check out fairchem repository
-        if: ${{ matrix.model.name == 'fairchem' }}
-        uses: actions/checkout@v4
-        with:
-          repository: FAIR-Chem/fairchem
-          path: fairchem-repo
-          ref: fairchem_core-1.10.0
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -98,24 +90,13 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
 
-      - name: Install fairchem repository and dependencies
+      - name: Install fairchem and dependencies
         if: ${{ matrix.model.name == 'fairchem' }}
-        env:
-          HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
         run: |
-          uv pip install huggingface_hub --system
-          if [ -n "$HF_TOKEN" ]; then
-            huggingface-cli login --token "$HF_TOKEN"
-          else
-            echo "HF_TOKEN is not set. Skipping login."
-          fi
-          if [ -f fairchem-repo/packages/requirements.txt ]; then
-            uv pip install -r fairchem-repo/packages/requirements.txt --system
-          fi
-          if [ -f fairchem-repo/packages/requirements-optional.txt ]; then
-            uv pip install -r fairchem-repo/packages/requirements-optional.txt --system
-          fi
-          uv pip install -e fairchem-repo/packages/fairchem-core[dev] --system
+          uv pip install "torch>2" --index-url https://download.pytorch.org/whl/cpu --system
+          uv pip install "torch-scatter" -f https://data.pyg.org/whl/torch-2.6.0+cpu.html --system
+          uv pip install "torch-sparse" -f https://data.pyg.org/whl/torch-2.6.0+cpu.html --system
+          uv pip install "fairchem-core>=2.2.0" --system
           uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
 
       - name: Install torch_sim with model dependencies
@@ -124,6 +105,8 @@ jobs:
           uv pip install -e .[test,${{ matrix.model.name }}] --resolution=${{ matrix.version.resolution }} --system
 
       - name: Run ${{ matrix.model.test_path }} tests
+        env:
+          HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
         run: |
           pytest --cov=torch_sim --cov-report=xml ${{ matrix.model.test_path }}
 
