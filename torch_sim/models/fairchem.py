@@ -1,20 +1,10 @@
-"""Wrapper for FairChem ecosystem models in TorchSim.
+"""FairChem model wrapper for torch_sim.
 
-This module provides a TorchSim wrapper of the FairChem models for computing
-energies, forces, and stresses of atomistic systems. It serves as a wrapper around
-the FairChem library, integrating it with the torch_sim framework to enable seamless
-simulation of atomistic systems with machine learning potentials.
+Provides a TorchSim-compatible interface to FairChem models for computing
+energies, forces, and stresses of atomistic systems.
 
-The FairChemModel class adapts FairChem models to the ModelInterface protocol,
-allowing them to be used within the broader torch_sim simulation framework.
-
-Notes:
-    This implementation requires FairChem to be installed and accessible.
-    It supports various model configurations through configuration files or
-    pretrained model checkpoints.
+Requires fairchem-core to be installed.
 """
-
-# ruff: noqa: T201
 
 from __future__ import annotations
 
@@ -58,18 +48,12 @@ if typing.TYPE_CHECKING:
 
 
 class FairChemModel(torch.nn.Module, ModelInterface):
-    """Computes atomistic energies, forces and stresses using a FairChem model.
+    """FairChem model wrapper for computing atomistic properties.
 
-    This class wraps a FairChem model to compute energies, forces, and stresses for
-    atomistic systems. It handles model initialization, checkpoint loading, and
-    provides a forward pass that accepts a SimState object and returns model
-    predictions.
+    Wraps FairChem models to compute energies, forces, and stresses. Can be
+    initialized with a model checkpoint path or pretrained model name.
 
-    The model can be initialized either with a configuration file or a pretrained
-    checkpoint. It supports various model architectures and configurations supported by
-    FairChem.
-
-    This version uses the efficient fairchem-core-2.2.0+ predictor API.
+    Uses the fairchem-core-2.2.0+ predictor API for batch inference.
 
     Attributes:
         predictor: The FairChem predictor for batch inference
@@ -95,9 +79,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         compute_stress: bool = False,
         task_name: UMATask | str | None = None,
     ) -> None:
-        """Initialize the FairChemModel with specified configuration.
-
-        Uses the efficient FairChem predictor interface for optimal performance.
+        """Initialize the FairChem model.
 
         Args:
             model (str | Path | None): Path to model checkpoint file
@@ -107,16 +89,13 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             cpu (bool): Whether to use CPU instead of GPU for computation
             dtype (torch.dtype | None): Data type to use for computation
             compute_stress (bool): Whether to compute stress tensor
-            task_name (UMATask | str | None): Task type for the model
+            task_name (UMATask | str | None): Task type for UMA models (optional,
+                only needed for UMA models)
 
         Raises:
             RuntimeError: If both model_name and model are specified
             NotImplementedError: If custom neighbor list function is provided
             ValueError: If neither model nor model_name is provided
-
-        Notes:
-            This uses the efficient fairchem-core-2.2.0+ predictor API for
-            optimal batch inference performance.
         """
         setup_imports()
         setup_logging()
@@ -143,7 +122,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         if model is None:
             raise ValueError("Either model or model_name must be provided")
 
-        # Convert task_name to UMATask if it's a string
+        # Convert task_name to UMATask if it's a string (only for UMA models)
         if isinstance(task_name, str):
             task_name = UMATask(task_name)
 
@@ -173,10 +152,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         return self._device
 
     def forward(self, state: ts.SimState | StateDict) -> dict:
-        """Perform forward pass to compute energies, forces, and other properties.
-
-        Uses efficient batch inference with FairChem's native tensor interface for
-        optimal performance on both single systems and large batches.
+        """Compute energies, forces, and other properties.
 
         Args:
             state (SimState | StateDict): State object containing positions, cells,
@@ -188,10 +164,6 @@ class FairChemModel(torch.nn.Module, ModelInterface):
                 - energy (torch.Tensor): Energy with shape [batch_size]
                 - forces (torch.Tensor): Forces with shape [n_atoms, 3]
                 - stress (torch.Tensor): Stress tensor with shape [batch_size, 3, 3]
-
-        Notes:
-            This implementation uses FairChem's efficient batch predictor interface
-            for optimal performance on both single systems and large batches.
         """
         if isinstance(state, dict):
             state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
@@ -228,8 +200,11 @@ class FairChemModel(torch.nn.Module, ModelInterface):
                 pbc=state.pbc if cell is not None else False,
             )
 
-            # Convert ASE Atoms to AtomicData with task_name
-            atomic_data = AtomicData.from_ase(atoms, task_name=self.task_name)
+            # Convert ASE Atoms to AtomicData (task_name only applies to UMA models)
+            if self.task_name is None:
+                atomic_data = AtomicData.from_ase(atoms)
+            else:
+                atomic_data = AtomicData.from_ase(atoms, task_name=self.task_name)
             atomic_data_list.append(atomic_data)
 
         # Create batch for efficient inference
