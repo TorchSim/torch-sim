@@ -30,12 +30,10 @@ from torch_sim.models.interface import ModelInterface
 
 
 try:
-    from fairchem.core.calculate.ase_calculator import (
-        FAIRChemCalculator,
-        InferenceSettings,
-        UMATask,
-    )
+    from fairchem.core import pretrained_mlip
+    from fairchem.core.calculate.ase_calculator import UMATask
     from fairchem.core.common.utils import setup_imports, setup_logging
+    from fairchem.core.datasets.atomic_data import AtomicData, atomicdata_list_to_batch
 
 except ImportError as exc:
     warnings.warn(f"FairChem import failed: {traceback.format_exc()}", stacklevel=2)
@@ -71,10 +69,11 @@ class FairChemModel(torch.nn.Module, ModelInterface):
     checkpoint. It supports various model architectures and configurations supported by
     FairChem.
 
-    This version uses the modern fairchem-core-2.2.0+ API with FAIRChemCalculator.
+    This version uses the efficient fairchem-core-2.2.0+ predictor API.
 
     Attributes:
-        calculator (FAIRChemCalculator): The underlying FairChem calculator
+        predictor: The FairChem predictor for batch inference
+        task_name (UMATask): Task type for the model
         _device (torch.device): Device where computation is performed
         _dtype (torch.dtype): Data type used for computation
         _compute_stress (bool): Whether to compute stress tensor
@@ -92,17 +91,13 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         *,  # force remaining arguments to be keyword-only
         model_name: str | None = None,
         cpu: bool = False,
-        seed: int = 41,
         dtype: torch.dtype | None = None,
         compute_stress: bool = False,
         task_name: UMATask | str | None = None,
-        inference_settings: InferenceSettings | str = "default",
-        overrides: dict | None = None,
     ) -> None:
         """Initialize the FairChemModel with specified configuration.
 
-        Uses the modern FAIRChemCalculator.from_model_checkpoint API for simplified
-        model loading and configuration.
+        Uses the efficient FairChem predictor interface for optimal performance.
 
         Args:
             model (str | Path | None): Path to model checkpoint file
@@ -110,12 +105,9 @@ class FairChemModel(torch.nn.Module, ModelInterface):
                 (not currently supported)
             model_name (str | None): Name of pretrained model to load
             cpu (bool): Whether to use CPU instead of GPU for computation
-            seed (int): Random seed for reproducibility
             dtype (torch.dtype | None): Data type to use for computation
             compute_stress (bool): Whether to compute stress tensor
             task_name (UMATask | str | None): Task type for the model
-            inference_settings (InferenceSettings | str): Inference configuration
-            overrides (dict | None): Configuration overrides
 
         Raises:
             RuntimeError: If both model_name and model are specified
@@ -123,8 +115,8 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             ValueError: If neither model nor model_name is provided
 
         Notes:
-            This uses the new fairchem-core-2.2.0+ API which is much simpler than
-            the previous versions.
+            This uses the efficient fairchem-core-2.2.0+ predictor API for
+            optimal batch inference performance.
         """
         setup_imports()
         setup_logging()
@@ -146,8 +138,6 @@ class FairChemModel(torch.nn.Module, ModelInterface):
                     "model_name and checkpoint_path were both specified, "
                     "please use only one at a time"
                 )
-            # For fairchem-core-2.2.0+, model_name can be used directly
-            # as it supports pretrained model names from available_models
             model = model_name
 
         if model is None:
@@ -157,21 +147,15 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         if isinstance(task_name, str):
             task_name = UMATask(task_name)
 
-        # Use the new simplified API
+        # Use the efficient predictor API for optimal performance
         device_str = "cpu" if cpu else "cuda" if torch.cuda.is_available() else "cpu"
-
-        self.calculator = FAIRChemCalculator.from_model_checkpoint(
-            name_or_path=str(model),
-            task_name=task_name,
-            inference_settings=inference_settings,
-            overrides=overrides,
-            device=device_str,
-            seed=seed,
-        )
-
         self._device = torch.device(device_str)
+        self.task_name = task_name
 
-        # Determine implemented properties from the calculator
+        # Create efficient batch predictor for fast inference
+        self.predictor = pretrained_mlip.get_predict_unit(str(model), device=device_str)
+
+        # Determine implemented properties
         # This is a simplified approach - in practice you might want to
         # inspect the model configuration more carefully
         self.implemented_properties = ["energy", "forces"]
@@ -191,8 +175,8 @@ class FairChemModel(torch.nn.Module, ModelInterface):
     def forward(self, state: ts.SimState | StateDict) -> dict:
         """Perform forward pass to compute energies, forces, and other properties.
 
-        Takes a simulation state and computes the properties implemented by the model,
-        such as energy, forces, and stresses.
+        Uses efficient batch inference with FairChem's native tensor interface for
+        optimal performance on both single systems and large batches.
 
         Args:
             state (SimState | StateDict): State object containing positions, cells,
@@ -206,8 +190,8 @@ class FairChemModel(torch.nn.Module, ModelInterface):
                 - stress (torch.Tensor): Stress tensor with shape [batch_size, 3, 3]
 
         Notes:
-            This implementation uses the FAIRChemCalculator which expects ASE Atoms
-            objects. The conversion is handled internally.
+            This implementation uses FairChem's efficient batch predictor interface
+            for optimal performance on both single systems and large batches.
         """
         if isinstance(state, dict):
             state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
@@ -215,18 +199,19 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         if state.device != self._device:
             state = state.to(self._device)
 
-        # Convert torch_sim SimState to ASE Atoms objects for FAIRChemCalculator
-        from ase import Atoms
-
         if state.batch is None:
             state.batch = torch.zeros(state.positions.shape[0], dtype=torch.int)
 
+        # Convert SimState to AtomicData objects for efficient batch processing
+        from ase import Atoms
+
         natoms = torch.bincount(state.batch)
-        atoms_list = []
+        atomic_data_list = []
 
         for i, (n, c) in enumerate(
             zip(natoms, torch.cumsum(natoms, dim=0), strict=False)
         ):
+            # Extract system data
             positions = state.positions[c - n : c].cpu().numpy()
             atomic_numbers = state.atomic_numbers[c - n : c].cpu().numpy()
             cell = (
@@ -235,51 +220,36 @@ class FairChemModel(torch.nn.Module, ModelInterface):
                 else None
             )
 
+            # Create ASE Atoms object first
             atoms = Atoms(
                 numbers=atomic_numbers,
                 positions=positions,
                 cell=cell,
                 pbc=state.pbc if cell is not None else False,
             )
-            atoms_list.append(atoms)
 
-        # Use FAIRChemCalculator to compute properties
+            # Convert ASE Atoms to AtomicData with task_name
+            atomic_data = AtomicData.from_ase(atoms, task_name=self.task_name)
+            atomic_data_list.append(atomic_data)
+
+        # Create batch for efficient inference
+        batch = atomicdata_list_to_batch(atomic_data_list)
+        batch = batch.to(self._device)
+
+        # Run efficient batch prediction
+        predictions = self.predictor.predict(batch)
+
+        # Convert predictions to torch_sim format
         results = {}
-        energies = []
-        forces_list = []
-        stress_list = []
+        results["energy"] = predictions["energy"].to(dtype=self._dtype)
+        results["forces"] = predictions["forces"].to(dtype=self._dtype)
 
-        for atoms in atoms_list:
-            atoms.calc = self.calculator
-
-            # Get energy
-            energy = atoms.get_potential_energy()
-            energies.append(energy)
-
-            # Get forces
-            forces = atoms.get_forces()
-            forces_list.append(
-                torch.from_numpy(forces).to(self._device, dtype=self._dtype)
-            )
-
-            # Get stress if requested
-            if self._compute_stress:
-                try:
-                    stress = atoms.get_stress(voigt=False)  # 3x3 tensor
-                    stress_list.append(
-                        torch.from_numpy(stress).to(self._device, dtype=self._dtype)
-                    )
-                except (RuntimeError, AttributeError, NotImplementedError):
-                    # If stress computation fails, fill with zeros
-                    stress_list.append(
-                        torch.zeros(3, 3, device=self._device, dtype=self._dtype)
-                    )
-
-        # Combine results
-        results["energy"] = torch.tensor(energies, device=self._device, dtype=self._dtype)
-        results["forces"] = torch.cat(forces_list, dim=0)
-
-        if self._compute_stress and stress_list:
-            results["stress"] = torch.stack(stress_list, dim=0)
+        # Handle stress if requested and available
+        if self._compute_stress and "stress" in predictions:
+            stress = predictions["stress"].to(dtype=self._dtype)
+            # Ensure stress has correct shape [batch_size, 3, 3]
+            if stress.dim() == 2 and stress.shape[0] == len(atomic_data_list):
+                stress = stress.view(-1, 3, 3)
+            results["stress"] = stress
 
         return results
