@@ -38,19 +38,22 @@ model = FairChemModel(
     seed=0,
 )
 atoms_list = [si_dc, si_dc]
-state = ts.io.atoms_to_state(atoms_list)
+state = ts.io.atoms_to_state(atoms_list, device=device, dtype=dtype)
 
 results = model(state)
 
 print(results["energy"].shape)
 print(results["forces"].shape)
-print(results["stress"].shape)
+if stress := results.get("stress"):
+    print(stress.shape)
 
 print(f"Energy: {results['energy']}")
 print(f"Forces: {results['forces']}")
-print(f"Stress: {results['stress']}")
+if stress := results.get("stress"):
+    print(f"{stress=}")
 
 # Check if the energy, forces, and stress are the same for the Si system across the batch
 print(torch.max(torch.abs(results["energy"][0] - results["energy"][1])))
 print(torch.max(torch.abs(results["forces"][0] - results["forces"][1])))
-print(torch.max(torch.abs(results["stress"][0] - results["stress"][1])))
+if stress := results.get("stress"):
+    print(torch.max(torch.abs(stress[0] - stress[1])))
