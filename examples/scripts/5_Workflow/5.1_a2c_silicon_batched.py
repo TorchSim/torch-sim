@@ -243,7 +243,7 @@ spg_counter = defaultdict(int)
 for struct in pymatgen_relaxed_struct_list:
     sym_data = MoyoDataset(MoyoAdapter.from_py_obj(struct[0]))
     sp = (sym_data.number, SpaceGroupType(sym_data.number).arithmetic_symbol)
-spg_counter[sp] += 1
+    spg_counter[sp] += 1
 
 print("All space groups encountered:", dict(spg_counter))
 si_diamond = Structure(
