@@ -778,7 +778,7 @@ def get_relaxed_structure(
     state: ts.SimState,
     model: torch.nn.Module,
     max_iter: int = 200,
-) -> tuple[FireState, dict]:
+) -> tuple[FireState, dict, float, float]:
     """Relax atomic positions at fixed cell parameters using FIRE algorithm.
 
     Does geometry optimization of atomic positions while keeping the unit cell fixed.
@@ -822,9 +822,9 @@ def get_relaxed_structure(
         positions=state.positions, cell=state.cell, atomic_numbers=state.atomic_numbers
     )
 
-    final_energy = final_results["energy"].item()
+    final_energy: float = final_results["energy"].item()
     final_stress = final_results["stress"]
-    final_pressure = (torch.trace(final_stress) / 3.0).item()
+    final_pressure: float = (torch.trace(final_stress) / 3.0).item()
     print(
         f"Final energy: {final_energy:.4f} eV, "
         f"Final pressure: {final_pressure:.4f} eV/A^3"
