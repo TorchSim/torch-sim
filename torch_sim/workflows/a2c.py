@@ -228,7 +228,7 @@ def random_packed_structure(
     device: torch.device | None = None,
     dtype: torch.dtype = torch.float32,
     log: Any | None = None,
-) -> FireState:
+) -> FireState | tuple[FireState, list[np.ndarray]]:
     """Generates a random packed atomic structure and minimizes atomic overlaps.
 
     This function creates a random atomic structure within a given cell and optionally

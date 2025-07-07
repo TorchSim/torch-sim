@@ -1,10 +1,12 @@
+from typing import cast
+
 import pytest
 import torch
 from pymatgen.core.composition import Composition
 
 import torch_sim as ts
 from torch_sim.models.soft_sphere import SoftSphereModel
-from torch_sim.optimizers import UnitCellFireState
+from torch_sim.optimizers import FireState, UnitCellFireState
 from torch_sim.workflows import a2c
 
 
@@ -155,6 +157,7 @@ def test_random_packed_structure_auto_diameter(device: torch.device) -> None:
         max_iter=3,
         device=device,
     )
+    state = cast("FireState", state)
 
     # Just check that it ran without errors
     assert state.positions is not None
