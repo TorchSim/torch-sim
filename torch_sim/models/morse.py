@@ -380,7 +380,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
             state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         if state.graph_idx is None and state.cell.shape[0] > 1:
-            raise ValueError("Batch can only be inferred for batch size 1.")
+            raise ValueError("graph_idx can only be inferred if there is only one graph.")
 
         outputs = [self.unbatched_forward(state[i]) for i in range(state.n_graphs)]
         properties = outputs[0]
