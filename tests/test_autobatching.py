@@ -115,10 +115,10 @@ def test_split_state(si_double_sim_state: ts.SimState) -> None:
 
     # Check each state has the correct properties
     for state in enumerate(split_states):
-        assert state[1].n_batches == 1
+        assert state[1].n_graphs == 1
         assert torch.all(
-            state[1].batch == 0
-        )  # Each split state should have batch indices reset to 0
+            state[1].graph_idx == 0
+        )  # Each split state should have graph indices reset to 0
         assert state[1].n_atoms == si_double_sim_state.n_atoms // 2
         assert state[1].positions.shape[0] == si_double_sim_state.n_atoms // 2
         assert state[1].cell.shape[0] == 1
@@ -472,14 +472,14 @@ def test_in_flight_with_fire(
     batcher.load_states(fire_states)
 
     def convergence_fn(state: ts.SimState) -> bool:
-        batch_wise_max_force = torch.zeros(
-            state.n_batches, device=state.device, dtype=torch.float64
+        graph_wise_max_force = torch.zeros(
+            state.n_graphs, device=state.device, dtype=torch.float64
         )
         max_forces = state.forces.norm(dim=1)
-        batch_wise_max_force = batch_wise_max_force.scatter_reduce(
-            dim=0, index=state.batch, src=max_forces, reduce="amax"
+        graph_wise_max_force = graph_wise_max_force.scatter_reduce(
+            dim=0, index=state.graph_idx, src=max_forces, reduce="amax"
         )
-        return batch_wise_max_force < 5e-1
+        return graph_wise_max_force < 5e-1
 
     all_completed_states, convergence_tensor = [], None
     while True:
@@ -514,7 +514,7 @@ def test_binning_auto_batcher_with_fire(
 
     batch_lengths = [state.n_atoms for state in fire_states]
     optimal_batches = to_constant_volume_bins(batch_lengths, 400)
-    optimal_n_batches = len(optimal_batches)
+    optimal_n_graphs = len(optimal_batches)
 
     batcher = BinningAutoBatcher(
         model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=400
@@ -522,9 +522,9 @@ def test_binning_auto_batcher_with_fire(
     batcher.load_states(fire_states)
 
     finished_states = []
-    n_batches = 0
+    n_graphs = 0
     for batch in batcher:
-        n_batches += 1
+        n_graphs += 1
         for _ in range(5):
             batch = fire_update(batch)
 
@@ -535,7 +535,7 @@ def test_binning_auto_batcher_with_fire(
     for restored, original in zip(restored_states, fire_states, strict=True):
         assert torch.all(restored.atomic_numbers == original.atomic_numbers)
     # analytically determined to be optimal
-    assert n_batches == optimal_n_batches
+    assert n_graphs == optimal_n_graphs
 
 
 def test_in_flight_max_iterations(
@@ -561,7 +561,7 @@ def test_in_flight_max_iterations(
     state, [] = batcher.next_batch(None, None)
 
     # Create a convergence tensor that never converges
-    convergence_tensor = torch.zeros(state.n_batches, dtype=torch.bool)
+    convergence_tensor = torch.zeros(state.n_graphs, dtype=torch.bool)
 
     all_completed_states = []
     iteration_count = 0
@@ -574,7 +574,7 @@ def test_in_flight_max_iterations(
 
         # Update convergence tensor for next iteration (still all False)
         if state is not None:
-            convergence_tensor = torch.zeros(state.n_batches, dtype=torch.bool)
+            convergence_tensor = torch.zeros(state.n_graphs, dtype=torch.bool)
 
         if iteration_count > max_attempts + 4:
             raise ValueError("Should have terminated by now")

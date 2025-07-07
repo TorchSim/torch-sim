@@ -119,13 +119,13 @@ state = npt_init(state=state, seed=1)
 for step in range(N_steps):
     if step % 50 == 0:
         temp = (
-            calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+            calc_kT(masses=state.masses, momenta=state.momenta, graph_idx=state.graph_idx)
             / Units.temperature
         )
         pressure = get_pressure(
             model(state)["stress"],
             calc_kinetic_energy(
-                masses=state.masses, momenta=state.momenta, batch=state.batch
+                masses=state.masses, momenta=state.momenta, graph_idx=state.graph_idx
             ),
             torch.linalg.det(state.cell),
         )
@@ -139,7 +139,7 @@ for step in range(N_steps):
     state = npt_update(state, kT=kT, external_pressure=target_pressure)
 
 temp = (
-    calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+    calc_kT(masses=state.masses, momenta=state.momenta, graph_idx=state.graph_idx)
     / Units.temperature
 )
 print(f"Final temperature: {temp.item():.4f}")
@@ -147,7 +147,7 @@ print(f"Final temperature: {temp.item():.4f}")
 
 stress = model(state)["stress"]
 calc_kinetic_energy = calc_kinetic_energy(
-    masses=state.masses, momenta=state.momenta, batch=state.batch
+    masses=state.masses, momenta=state.momenta, graph_idx=state.graph_idx
 )
 volume = torch.linalg.det(state.cell)
 pressure = get_pressure(stress, calc_kinetic_energy, volume)

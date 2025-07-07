@@ -249,7 +249,7 @@ batcher.load_states(fire_state)
 fire_state.positions = (
     fire_state.positions + torch.randn_like(fire_state.positions) * 0.05
 )
-total_states = fire_state.n_batches
+total_states = fire_state.n_graphs
 
 # Define a convergence function that checks the force on each atom is less than 5e-1
 convergence_fn = ts.generate_force_convergence_fn(5e-1)
@@ -279,11 +279,11 @@ final_states = batcher.restore_original_order(all_converged_states)
 assert len(final_states) == total_states
 
 # Note that the fire_state has been modified in place
-assert fire_state.n_batches == 0
+assert fire_state.n_graphs == 0
 
 
 # %%
-fire_state.n_batches
+fire_state.n_graphs
 
 
 # %% [markdown]

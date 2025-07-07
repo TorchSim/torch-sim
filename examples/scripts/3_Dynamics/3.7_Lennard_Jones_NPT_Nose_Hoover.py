@@ -123,14 +123,14 @@ state = npt_init(state=state, seed=1)
 for step in range(N_steps):
     if step % 50 == 0:
         temp = (
-            calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+            calc_kT(masses=state.masses, momenta=state.momenta, graph_idx=state.graph_idx)
             / Units.temperature
         )
         invariant = float(
             npt_nose_hoover_invariant(state, kT=kT, external_pressure=target_pressure)
         )
         e_kin = calc_kinetic_energy(
-            masses=state.masses, momenta=state.momenta, batch=state.batch
+            masses=state.masses, momenta=state.momenta, graph_idx=state.graph_idx
         )
         pressure = get_pressure(
             model(state)["stress"], e_kin, torch.det(state.current_cell)
@@ -145,14 +145,16 @@ for step in range(N_steps):
     state = npt_update(state, kT=kT, external_pressure=target_pressure)
 
 temp = (
-    calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+    calc_kT(masses=state.masses, momenta=state.momenta, graph_idx=state.graph_idx)
     / Units.temperature
 )
 print(f"Final temperature: {temp.item():.4f}")
 
 pressure = get_pressure(
     model(state)["stress"],
-    calc_kinetic_energy(masses=state.masses, momenta=state.momenta, batch=state.batch),
+    calc_kinetic_energy(
+        masses=state.masses, momenta=state.momenta, graph_idx=state.graph_idx
+    ),
     torch.det(state.current_cell),
 )
 pressure = pressure.item() / Units.pressure

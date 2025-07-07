@@ -81,7 +81,7 @@ results = model(state)
 # Initialize unit cell gradient descent optimizer
 fire_init, fire_update = unit_cell_fire(
     model=model,
-    cell_factor=None,  # Will default to atoms per batch
+    cell_factor=None,  # Will default to atoms per graph
     hydrostatic_strain=False,
     constant_volume=False,
     scalar_pressure=0.0,

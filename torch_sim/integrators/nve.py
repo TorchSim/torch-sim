@@ -37,9 +37,9 @@ def nve(
     Args:
         model (torch.nn.Module): Neural network model that computes energies and forces.
             Must return a dict with 'energy' and 'forces' keys.
-        dt (torch.Tensor): Integration timestep, either scalar or with shape [n_batches]
+        dt (torch.Tensor): Integration timestep, either scalar or with shape [n_graphs]
         kT (torch.Tensor): Temperature in energy units for initializing momenta,
-            either scalar or with shape [n_batches]
+            either scalar or with shape [n_graphs]
         seed (int, optional): Random seed for reproducibility. Defaults to None.
 
     Returns:
@@ -72,7 +72,7 @@ def nve(
                 containing positions, masses, cell, pbc, and other required state
                 variables
             kT (torch.Tensor): Temperature in energy units for initializing momenta,
-                scalar or with shape [n_batches]
+                scalar or with shape [n_graphs]
             seed (int, optional): Random seed for reproducibility
 
         Returns:
@@ -88,7 +88,7 @@ def nve(
         momenta = getattr(
             state,
             "momenta",
-            calculate_momenta(state.positions, state.masses, state.batch, kT, seed),
+            calculate_momenta(state.positions, state.masses, state.graph_idx, kT, seed),
         )
 
         initial_state = MDState(
@@ -99,7 +99,7 @@ def nve(
             masses=state.masses,
             cell=state.cell,
             pbc=state.pbc,
-            batch=state.batch,
+            graph_idx=state.graph_idx,
             atomic_numbers=state.atomic_numbers,
         )
         return initial_state  # noqa: RET504
@@ -116,7 +116,7 @@ def nve(
 
         Args:
             state (MDState): Current system state containing positions, momenta, forces
-            dt (torch.Tensor): Integration timestep, either scalar or shape [n_batches]
+            dt (torch.Tensor): Integration timestep, either scalar or shape [n_graphs]
             **_: Additional unused keyword arguments (for compatibility)
 
         Returns:

@@ -169,7 +169,7 @@ def make_validate_model_outputs_test(
 
         og_positions = sim_state.positions.clone()
         og_cell = sim_state.cell.clone()
-        og_batch = sim_state.batch.clone()
+        og_batch = sim_state.graph_idx.clone()
         og_atomic_numbers = sim_state.atomic_numbers.clone()
 
         model_output = model.forward(sim_state)
@@ -177,7 +177,7 @@ def make_validate_model_outputs_test(
         # assert model did not mutate the input
         assert torch.allclose(og_positions, sim_state.positions)
         assert torch.allclose(og_cell, sim_state.cell)
-        assert torch.allclose(og_batch, sim_state.batch)
+        assert torch.allclose(og_batch, sim_state.graph_idx)
         assert torch.allclose(og_atomic_numbers, sim_state.atomic_numbers)
 
         # assert model output has the correct keys

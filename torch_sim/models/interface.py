@@ -65,9 +65,9 @@ class ModelInterface(ABC):
         output = model(sim_state)
 
         # Access computed properties
-        energy = output["energy"]  # Shape: [n_batches]
+        energy = output["energy"]  # Shape: [n_graphs]
         forces = output["forces"]  # Shape: [n_atoms, 3]
-        stress = output["stress"]  # Shape: [n_batches, 3, 3]
+        stress = output["stress"]  # Shape: [n_graphs, 3, 3]
         ```
     """
 
@@ -174,16 +174,16 @@ class ModelInterface(ABC):
                 dictionary is dependent on the model but typically must contain the
                 following keys:
                 - "positions": Atomic positions with shape [n_atoms, 3]
-                - "cell": Unit cell vectors with shape [n_batches, 3, 3]
-                - "batch": Batch indices for each atom with shape [n_atoms]
+                - "cell": Unit cell vectors with shape [n_graphs, 3, 3]
+                - "graph_idx": Graph indices for each atom with shape [n_atoms]
                 - "atomic_numbers": Atomic numbers with shape [n_atoms] (optional)
             **kwargs: Additional model-specific parameters.
 
         Returns:
             dict[str, torch.Tensor]: Computed properties:
-                - "energy": Potential energy with shape [n_batches]
+                - "energy": Potential energy with shape [n_graphs]
                 - "forces": Atomic forces with shape [n_atoms, 3]
-                - "stress": Stress tensor with shape [n_batches, 3, 3] (if
+                - "stress": Stress tensor with shape [n_graphs, 3, 3] (if
                     compute_stress=True)
                 - May include additional model-specific outputs
 
@@ -256,7 +256,7 @@ def validate_model_outputs(  # noqa: C901, PLR0915
 
     og_positions = sim_state.positions.clone()
     og_cell = sim_state.cell.clone()
-    og_batch = sim_state.batch.clone()
+    og_graph_idx = sim_state.graph_idx.clone()
     og_atomic_numbers = sim_state.atomic_numbers.clone()
 
     model_output = model.forward(sim_state)
@@ -266,8 +266,8 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         raise ValueError(f"{og_positions=} != {sim_state.positions=}")
     if not torch.allclose(og_cell, sim_state.cell):
         raise ValueError(f"{og_cell=} != {sim_state.cell=}")
-    if not torch.allclose(og_batch, sim_state.batch):
-        raise ValueError(f"{og_batch=} != {sim_state.batch=}")
+    if not torch.allclose(og_graph_idx, sim_state.graph_idx):
+        raise ValueError(f"{og_graph_idx=} != {sim_state.graph_idx=}")
     if not torch.allclose(og_atomic_numbers, sim_state.atomic_numbers):
         raise ValueError(f"{og_atomic_numbers=} != {sim_state.atomic_numbers=}")
 

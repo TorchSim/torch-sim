@@ -34,3 +34,6 @@ coverage.xml
 
 # env
 uv.lock
+
+# IDE
+.vscode/

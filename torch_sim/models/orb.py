@@ -102,7 +102,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
         system_config = SystemConfig(radius=6.0, max_num_neighbors=20)
 
     # Handle batch information if present
-    n_node = torch.bincount(state.batch)
+    n_node = torch.bincount(state.graph_idx)
 
     # Set default dtype if not provided
     output_dtype = torch.get_default_dtype() if output_dtype is None else output_dtype
@@ -143,7 +143,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
     if wrap and (torch.any(row_vector_cell != 0) and torch.any(pbc)):
         positions = feat_util.batch_map_to_pbc_cell(positions, row_vector_cell, n_node)
 
-    n_systems = state.batch.max().item() + 1
+    n_systems = state.graph_idx.max().item() + 1
 
     # Prepare lists to collect data from each system
     all_edges = []
@@ -157,7 +157,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
     # Process each system in a single loop
     offset = 0
     for i in range(n_systems):
-        batch_mask = state.batch == i
+        batch_mask = state.graph_idx == i
         positions_per_system = positions[batch_mask]
         atomic_numbers_per_system = atomic_numbers[batch_mask]
         atomic_numbers_embedding_per_system = atomic_numbers_embedding[batch_mask]

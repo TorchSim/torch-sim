@@ -29,48 +29,49 @@ class SimState:
     Contains the fundamental properties needed to describe an atomistic system:
     positions, masses, unit cell, periodic boundary conditions, and atomic numbers.
     Supports batched operations where multiple atomistic systems can be processed
-    simultaneously, managed through batch indices.
+    simultaneously, managed through graph indices.
 
     States support slicing, cloning, splitting, popping, and movement to other
     data structures or devices. Slicing is supported through fancy indexing,
     e.g. `state[[0, 1, 2]]` will return a new state containing only the first three
-    batches. The other operations are available through the `pop`, `split`, `clone`,
+    graphs. The other operations are available through the `pop`, `split`, `clone`,
     and `to` methods.
 
     Attributes:
         positions (torch.Tensor): Atomic positions with shape (n_atoms, 3)
         masses (torch.Tensor): Atomic masses with shape (n_atoms,)
-        cell (torch.Tensor): Unit cell vectors with shape (n_batches, 3, 3).
+        cell (torch.Tensor): Unit cell vectors with shape (n_graphs, 3, 3).
             Note that we use a column vector convention, i.e. the cell vectors are
             stored as `[[a1, b1, c1], [a2, b2, c2], [a3, b3, c3]]` as opposed to
             the row vector convention `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`
             used by ASE.
         pbc (bool): Boolean indicating whether to use periodic boundary conditions
         atomic_numbers (torch.Tensor): Atomic numbers with shape (n_atoms,)
-        batch (torch.Tensor, optional): Batch indices with shape (n_atoms,),
-            defaults to None, must be unique consecutive integers starting from 0
+        graph_idx (torch.Tensor, optional): Maps each atom index to its graph index.
+            Has shape (n_atoms,), defaults to None, must be unique consecutive
+            integers starting from 0
 
     Properties:
         wrap_positions (torch.Tensor): Positions wrapped according to periodic boundary
             conditions
         device (torch.device): Device of the positions tensor
         dtype (torch.dtype): Data type of the positions tensor
-        n_atoms (int): Total number of atoms across all batches
-        n_batches (int): Number of unique batches in the system
+        n_atoms (int): Total number of atoms across all graphs
+        n_graphs (int): Number of unique graphs in the system
 
     Notes:
         - positions, masses, and atomic_numbers must have shape (n_atoms, 3).
         - cell must be in the conventional matrix form.
-        - batch indices must be unique consecutive integers starting from 0.
+        - graph indices must be unique consecutive integers starting from 0.
 
     Examples:
         >>> state = initialize_state(
         ...     [ase_atoms_1, ase_atoms_2, ase_atoms_3], device, dtype
         ... )
-        >>> state.n_batches
+        >>> state.n_graphs
         3
         >>> new_state = state[[0, 1]]
-        >>> new_state.n_batches
+        >>> new_state.n_graphs
         2
         >>> cloned_state = state.clone()
     """
@@ -80,11 +81,11 @@ class SimState:
     cell: torch.Tensor
     pbc: bool  # TODO: do all calculators support mixed pbc?
     atomic_numbers: torch.Tensor
-    batch: torch.Tensor | None = field(default=None, kw_only=True)
+    graph_idx: torch.Tensor | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         """Validate and process the state after initialization."""
-        # data validation and fill batch
+        # data validation and fill graph_idx
         # should make pbc a tensor here
         # if devices aren't all the same, raise an error, in a clean way
         devices = {
@@ -106,23 +107,27 @@ class SimState:
                 f"masses {shapes[1]}, atomic_numbers {shapes[2]}"
             )
 
-        if self.cell.ndim != 3 and self.batch is None:
+        if self.cell.ndim != 3 and self.graph_idx is None:
             self.cell = self.cell.unsqueeze(0)
 
         if self.cell.shape[-2:] != (3, 3):
-            raise ValueError("Cell must have shape (n_batches, 3, 3)")
+            raise ValueError("Cell must have shape (n_graphs, 3, 3)")
 
-        if self.batch is None:
-            self.batch = torch.zeros(self.n_atoms, device=self.device, dtype=torch.int64)
+        if self.graph_idx is None:
+            self.graph_idx = torch.zeros(
+                self.n_atoms, device=self.device, dtype=torch.int64
+            )
         else:
-            # assert that batch indices are unique consecutive integers
-            _, counts = torch.unique_consecutive(self.batch, return_counts=True)
-            if not torch.all(counts == torch.bincount(self.batch)):
-                raise ValueError("Batch indices must be unique consecutive integers")
+            # assert that graph indices are unique consecutive integers
+            # TODO(curtis): I feel like this logic is not reliable.
+            # I'll come up with something better later.
+            _, counts = torch.unique_consecutive(self.graph_idx, return_counts=True)
+            if not torch.all(counts == torch.bincount(self.graph_idx)):
+                raise ValueError("Graph indices must be unique consecutive integers")
 
-        if self.cell.shape[0] != self.n_batches:
+        if self.cell.shape[0] != self.n_graphs:
             raise ValueError(
-                f"Cell must have shape (n_batches, 3, 3), got {self.cell.shape}"
+                f"Cell must have shape (n_graphs, 3, 3), got {self.cell.shape}"
             )
 
     @property
@@ -145,22 +150,58 @@ class SimState:
 
     @property
     def n_atoms(self) -> int:
-        """Total number of atoms in the system across all batches."""
+        """Total number of atoms in the system across all graphs."""
         return self.positions.shape[0]
 
     @property
-    def n_atoms_per_batch(self) -> torch.Tensor:
-        """Number of atoms per batch."""
+    def n_atoms_per_graph(self) -> torch.Tensor:
+        """Number of atoms per graph."""
         return (
-            self.batch.bincount()
-            if self.batch is not None
+            self.graph_idx.bincount()
+            if self.graph_idx is not None
             else torch.tensor([self.n_atoms], device=self.device)
         )
 
     @property
+    def n_atoms_per_batch(self) -> torch.Tensor:
+        """Number of atoms per batch.
+
+        deprecated::
+            Use :attr:`n_atoms_per_graph` instead.
+        """
+        return self.n_atoms_per_graph
+
+    @property
+    def batch(self) -> torch.Tensor | None:
+        """Graph indices.
+
+        deprecated::
+            Use :attr:`graph_idx` instead.
+        """
+        return self.graph_idx
+
+    @batch.setter
+    def batch(self, graph_idx: torch.Tensor) -> None:
+        """Set the graph indices from a batch index.
+
+        deprecated::
+            Use :attr:`graph_idx` instead.
+        """
+        self.graph_idx = graph_idx
+
+    @property
     def n_batches(self) -> int:
-        """Number of batches in the system."""
-        return torch.unique(self.batch).shape[0]
+        """Number of batches in the system.
+
+        deprecated::
+            Use :attr:`n_graphs` instead.
+        """
+        return self.n_graphs
+
+    @property
+    def n_graphs(self) -> int:
+        """Number of graphs in the system."""
+        return torch.unique(self.graph_idx).shape[0]
 
     @property
     def volume(self) -> torch.Tensor:
@@ -217,7 +258,7 @@ class SimState:
         """Convert the SimState to a list of ASE Atoms objects.
 
         Returns:
-            list[Atoms]: A list of ASE Atoms objects, one per batch
+            list[Atoms]: A list of ASE Atoms objects, one per graph
         """
         return ts.io.state_to_atoms(self)
 
@@ -225,7 +266,7 @@ class SimState:
         """Convert the SimState to a list of pymatgen Structure objects.
 
         Returns:
-            list[Structure]: A list of pymatgen Structure objects, one per batch
+            list[Structure]: A list of pymatgen Structure objects, one per graph
         """
         return ts.io.state_to_structures(self)
 
@@ -233,43 +274,43 @@ class SimState:
         """Convert the SimState to a list of PhonopyAtoms objects.
 
         Returns:
-            list[PhonopyAtoms]: A list of PhonopyAtoms objects, one per batch
+            list[PhonopyAtoms]: A list of PhonopyAtoms objects, one per graph
         """
         return ts.io.state_to_phonopy(self)
 
     def split(self) -> list[Self]:
-        """Split the SimState into a list of single-batch SimStates.
+        """Split the SimState into a list of single-graph SimStates.
 
-        Divides the current state into separate states, each containing a single batch,
-        preserving all properties appropriately for each batch.
+        Divides the current state into separate states, each containing a single graph,
+        preserving all properties appropriately for each graph.
 
         Returns:
-            list[SimState]: A list of SimState objects, one per batch
+            list[SimState]: A list of SimState objects, one per graph
         """
         return _split_state(self)
 
-    def pop(self, batch_indices: int | list[int] | slice | torch.Tensor) -> list[Self]:
-        """Pop off states with the specified batch indices.
+    def pop(self, graph_indices: int | list[int] | slice | torch.Tensor) -> list[Self]:
+        """Pop off states with the specified graph indices.
 
         This method modifies the original state object by removing the specified
-        batches and returns the removed batches as separate SimState objects.
+        graphs and returns the removed graphs as separate SimState objects.
 
         Args:
-            batch_indices (int | list[int] | slice | torch.Tensor): The batch indices
+            graph_indices (int | list[int] | slice | torch.Tensor): The graph indices
                 to pop
 
         Returns:
-            list[SimState]: Popped SimState objects, one per batch index
+            list[SimState]: Popped SimState objects, one per graph index
 
         Notes:
             This method modifies the original SimState in-place.
         """
-        batch_indices = _normalize_batch_indices(
-            batch_indices, self.n_batches, self.device
+        graph_indices = _normalize_graph_indices(
+            graph_indices, self.n_graphs, self.device
         )
 
         # Get the modified state and popped states
-        modified_state, popped_states = _pop_states(self, batch_indices)
+        modified_state, popped_states = _pop_states(self, graph_indices)
 
         # Update all attributes of self with the modified state's attributes
         for attr_name, attr_value in vars(modified_state).items():
@@ -293,23 +334,23 @@ class SimState:
         """
         return state_to_device(self, device, dtype)
 
-    def __getitem__(self, batch_indices: int | list[int] | slice | torch.Tensor) -> Self:
+    def __getitem__(self, graph_indices: int | list[int] | slice | torch.Tensor) -> Self:
         """Enable standard Python indexing syntax for slicing batches.
 
         Args:
-            batch_indices (int | list[int] | slice | torch.Tensor): The batch indices
+            graph_indices (int | list[int] | slice | torch.Tensor): The graph indices
                 to include
 
         Returns:
-            SimState: A new SimState containing only the specified batches
+            SimState: A new SimState containing only the specified graphs
         """
         # TODO: need to document that slicing is supported
         # Reuse the existing slice method
-        batch_indices = _normalize_batch_indices(
-            batch_indices, self.n_batches, self.device
+        graph_indices = _normalize_graph_indices(
+            graph_indices, self.n_graphs, self.device
         )
 
-        return _slice_state(self, batch_indices)
+        return _slice_state(self, graph_indices)
 
 
 class DeformGradMixin:
@@ -356,44 +397,44 @@ class DeformGradMixin:
         return self._deform_grad(self.reference_row_vector_cell, self.row_vector_cell)
 
 
-def _normalize_batch_indices(
-    batch_indices: int | list[int] | slice | torch.Tensor,
-    n_batches: int,
+def _normalize_graph_indices(
+    graph_indices: int | list[int] | slice | torch.Tensor,
+    n_graphs: int,
     device: torch.device,
 ) -> torch.Tensor:
-    """Normalize batch indices to handle negative indices and different input types.
+    """Normalize graph indices to handle negative indices and different input types.
 
-    Converts various batch index representations to a consistent tensor format,
+    Converts various graph index representations to a consistent tensor format,
     handling negative indices in the Python style (counting from the end).
 
     Args:
-        batch_indices (int | list[int] | slice | torch.Tensor): The batch indices to
+        graph_indices (int | list[int] | slice | torch.Tensor): The graph indices to
             normalize
-        n_batches (int): Total number of batches in the system
+        n_graphs (int): Total number of graphs in the system
         device (torch.device): Device to place the output tensor on
 
     Returns:
-        torch.Tensor: Normalized batch indices as a tensor
+        torch.Tensor: Normalized graph indices as a tensor
 
     Raises:
-        TypeError: If batch_indices is of an unsupported type
+        TypeError: If graph_indices is of an unsupported type
     """
-    if isinstance(batch_indices, int):
+    if isinstance(graph_indices, int):
         # Handle negative integer indexing
-        if batch_indices < 0:
-            batch_indices = n_batches + batch_indices
-        return torch.tensor([batch_indices], device=device)
-    if isinstance(batch_indices, list):
+        if graph_indices < 0:
+            graph_indices = n_graphs + graph_indices
+        return torch.tensor([graph_indices], device=device)
+    if isinstance(graph_indices, list):
         # Handle negative indices in lists
-        normalized = [idx if idx >= 0 else n_batches + idx for idx in batch_indices]
+        normalized = [idx if idx >= 0 else n_graphs + idx for idx in graph_indices]
         return torch.tensor(normalized, device=device)
-    if isinstance(batch_indices, slice):
+    if isinstance(graph_indices, slice):
         # Let PyTorch handle the slice conversion with negative indices
-        return torch.arange(n_batches, device=device)[batch_indices]
-    if isinstance(batch_indices, torch.Tensor):
+        return torch.arange(n_graphs, device=device)[graph_indices]
+    if isinstance(graph_indices, torch.Tensor):
         # Handle negative indices in tensors
-        return torch.where(batch_indices < 0, n_batches + batch_indices, batch_indices)
-    raise TypeError(f"Unsupported index type: {type(batch_indices)}")
+        return torch.where(graph_indices < 0, n_graphs + graph_indices, graph_indices)
+    raise TypeError(f"Unsupported index type: {type(graph_indices)}")
 
 
 def state_to_device(
@@ -435,8 +476,8 @@ def state_to_device(
 def infer_property_scope(
     state: SimState,
     ambiguous_handling: Literal["error", "globalize", "globalize_warn"] = "error",
-) -> dict[Literal["global", "per_atom", "per_batch"], list[str]]:
-    """Infer whether a property is global, per-atom, or per-batch.
+) -> dict[Literal["global", "per_atom", "per_graph"], list[str]]:
+    """Infer whether a property is global, per-atom, or per-graph.
 
     Analyzes the shapes of tensor attributes to determine their scope within
     the atomistic system representation.
@@ -450,27 +491,27 @@ def infer_property_scope(
             - "globalize_warn": Treat ambiguous properties as global with a warning
 
     Returns:
-        dict[Literal["global", "per_atom", "per_batch"], list[str]]: Map of scope
+        dict[Literal["global", "per_atom", "per_graph"], list[str]]: Map of scope
             category to list of property names
 
     Raises:
-        ValueError: If n_atoms equals n_batches (making scope inference ambiguous) or
+        ValueError: If n_atoms equals n_graphs (making scope inference ambiguous) or
             if ambiguous_handling="error" and an ambiguous property is encountered
     """
     # TODO: this cannot effectively resolve global properties with
-    # length of n_atoms or n_batches, they will be classified incorrectly,
+    # length of n_atoms or n_graphs, they will be classified incorrectly,
     # no clear fix
 
-    if state.n_atoms == state.n_batches:
+    if state.n_atoms == state.n_graphs:
         raise ValueError(
-            f"n_atoms ({state.n_atoms}) and n_batches ({state.n_batches}) are equal, "
+            f"n_atoms ({state.n_atoms}) and n_graphs ({state.n_graphs}) are equal, "
             "which means shapes cannot be inferred unambiguously."
         )
 
     scope = {
         "global": [],
         "per_atom": [],
-        "per_batch": [],
+        "per_graph": [],
     }
 
     # Iterate through all attributes
@@ -489,15 +530,15 @@ def infer_property_scope(
         # Vector/matrix with first dimension matching number of atoms
         elif shape[0] == state.n_atoms:
             scope["per_atom"].append(attr_name)
-        # Tensor with first dimension matching number of batches
-        elif shape[0] == state.n_batches:
-            scope["per_batch"].append(attr_name)
+        # Tensor with first dimension matching number of graphs
+        elif shape[0] == state.n_graphs:
+            scope["per_graph"].append(attr_name)
         # Any other shape is ambiguous
         elif ambiguous_handling == "error":
             raise ValueError(
                 f"Cannot categorize property '{attr_name}' with shape {shape}. "
                 f"Expected first dimension to be either {state.n_atoms} (per-atom) or "
-                f"{state.n_batches} (per-batch), or a scalar (global)."
+                f"{state.n_graphs} (per-graph), or a scalar (global)."
             )
         elif ambiguous_handling in ("globalize", "globalize_warn"):
             scope["global"].append(attr_name)
@@ -516,10 +557,10 @@ def infer_property_scope(
 def _get_property_attrs(
     state: SimState, ambiguous_handling: Literal["error", "globalize"] = "error"
 ) -> dict[str, dict]:
-    """Get global, per-atom, and per-batch attributes from a state.
+    """Get global, per-atom, and per-graph attributes from a state.
 
     Categorizes all attributes of the state based on their scope
-    (global, per-atom, or per-batch).
+    (global, per-atom, or per-graph).
 
     Args:
         state (SimState): The state to extract attributes from
@@ -527,12 +568,12 @@ def _get_property_attrs(
             properties
 
     Returns:
-        dict[str, dict]: Keys are 'global', 'per_atom', and 'per_batch', each
+        dict[str, dict]: Keys are 'global', 'per_atom', and 'per_graph', each
             containing a dictionary of attribute names to values
     """
     scope = infer_property_scope(state, ambiguous_handling=ambiguous_handling)
 
-    attrs = {"global": {}, "per_atom": {}, "per_batch": {}}
+    attrs = {"global": {}, "per_atom": {}, "per_graph": {}}
 
     # Process global properties
     for attr_name in scope["global"]:
@@ -542,9 +583,9 @@ def _get_property_attrs(
     for attr_name in scope["per_atom"]:
         attrs["per_atom"][attr_name] = getattr(state, attr_name)
 
-    # Process per-batch properties
-    for attr_name in scope["per_batch"]:
-        attrs["per_batch"][attr_name] = getattr(state, attr_name)
+    # Process per-graph properties
+    for attr_name in scope["per_graph"]:
+        attrs["per_graph"][attr_name] = getattr(state, attr_name)
 
     return attrs
 
@@ -552,19 +593,19 @@ def _get_property_attrs(
 def _filter_attrs_by_mask(
     attrs: dict[str, dict],
     atom_mask: torch.Tensor,
-    batch_mask: torch.Tensor,
+    graph_mask: torch.Tensor,
 ) -> dict:
-    """Filter attributes by atom and batch masks.
+    """Filter attributes by atom and graph masks.
 
-    Selects subsets of attributes based on boolean masks for atoms and batches.
+    Selects subsets of attributes based on boolean masks for atoms and graphs.
 
     Args:
-        attrs (dict[str, dict]): Keys are 'global', 'per_atom', and 'per_batch', each
+        attrs (dict[str, dict]): Keys are 'global', 'per_atom', and 'per_graph', each
             containing a dictionary of attribute names to values
         atom_mask (torch.Tensor): Boolean mask for atoms to include with shape
             (n_atoms,)
-        batch_mask (torch.Tensor): Boolean mask for batches to include with shape
-            (n_batches,)
+        graph_mask (torch.Tensor): Boolean mask for graphs to include with shape
+            (n_graphs,)
 
     Returns:
         dict: Filtered attributes with appropriate handling for each scope
@@ -576,31 +617,31 @@ def _filter_attrs_by_mask(
 
     # Filter per-atom attributes
     for attr_name, attr_value in attrs["per_atom"].items():
-        if attr_name == "batch":
-            # Get the old batch indices for the selected atoms
-            old_batch = attr_value[atom_mask]
+        if attr_name == "graph_idx":
+            # Get the old graph indices for the selected atoms
+            old_graph_idxs = attr_value[atom_mask]
 
-            # Get the batch indices that are kept
+            # Get the graph indices that are kept
             kept_indices = torch.arange(attr_value.max() + 1, device=attr_value.device)[
-                batch_mask
+                graph_mask
             ]
 
-            # Create a mapping from old batch indices to new consecutive indices
-            batch_map = {idx.item(): i for i, idx in enumerate(kept_indices)}
+            # Create a mapping from old graph indices to new consecutive indices
+            graph_idx_map = {idx.item(): i for i, idx in enumerate(kept_indices)}
 
-            # Create new batch tensor with remapped indices
-            new_batch = torch.tensor(
-                [batch_map[b.item()] for b in old_batch],
+            # Create new graph tensor with remapped indices
+            new_graph_idxs = torch.tensor(
+                [graph_idx_map[b.item()] for b in old_graph_idxs],
                 device=attr_value.device,
                 dtype=attr_value.dtype,
             )
-            filtered_attrs[attr_name] = new_batch
+            filtered_attrs[attr_name] = new_graph_idxs
         else:
             filtered_attrs[attr_name] = attr_value[atom_mask]
 
-    # Filter per-batch attributes
-    for attr_name, attr_value in attrs["per_batch"].items():
-        filtered_attrs[attr_name] = attr_value[batch_mask]
+    # Filter per-graph attributes
+    for attr_name, attr_value in attrs["per_graph"].items():
+        filtered_attrs[attr_name] = attr_value[graph_mask]
 
     return filtered_attrs
 
@@ -609,10 +650,10 @@ def _split_state(
     state: SimState,
     ambiguous_handling: Literal["error", "globalize"] = "error",
 ) -> list[SimState]:
-    """Split a SimState into a list of states, each containing a single batch element.
+    """Split a SimState into a list of states, each containing a single graph.
 
-    Divides a multi-batch state into individual single-batch states, preserving
-    appropriate properties for each batch.
+    Divides a multi-graph state into individual single-graph states, preserving
+    appropriate properties for each graph.
 
     Args:
         state (SimState): The SimState to split
@@ -623,37 +664,39 @@ def _split_state(
 
     Returns:
         list[SimState]: A list of SimState objects, each containing a single
-            batch element
+            graph
     """
     attrs = _get_property_attrs(state, ambiguous_handling)
-    batch_sizes = torch.bincount(state.batch).tolist()
+    graph_sizes = torch.bincount(state.graph_idx).tolist()
 
-    # Split per-atom attributes by batch
+    # Split per-atom attributes by graph
     split_per_atom = {}
     for attr_name, attr_value in attrs["per_atom"].items():
-        if attr_name == "batch":
+        if attr_name == "graph_idx":
             continue
-        split_per_atom[attr_name] = torch.split(attr_value, batch_sizes, dim=0)
+        split_per_atom[attr_name] = torch.split(attr_value, graph_sizes, dim=0)
 
-    # Split per-batch attributes into individual elements
-    split_per_batch = {}
-    for attr_name, attr_value in attrs["per_batch"].items():
-        split_per_batch[attr_name] = torch.split(attr_value, 1, dim=0)
+    # Split per-graph attributes into individual elements
+    split_per_graph = {}
+    for attr_name, attr_value in attrs["per_graph"].items():
+        split_per_graph[attr_name] = torch.split(attr_value, 1, dim=0)
 
-    # Create a state for each batch
+    # Create a state for each graph
     states = []
-    for i in range(state.n_batches):
-        batch_attrs = {
-            # Create a batch tensor with all zeros for this batch
-            "batch": torch.zeros(batch_sizes[i], device=state.device, dtype=torch.int64),
+    for i in range(state.n_graphs):
+        graph_attrs = {
+            # Create a graph tensor with all zeros for this graph
+            "graph_idx": torch.zeros(
+                graph_sizes[i], device=state.device, dtype=torch.int64
+            ),
             # Add the split per-atom attributes
             **{attr_name: split_per_atom[attr_name][i] for attr_name in split_per_atom},
-            # Add the split per-batch attributes
-            **{attr_name: split_per_batch[attr_name][i] for attr_name in split_per_batch},
+            # Add the split per-graph attributes
+            **{attr_name: split_per_graph[attr_name][i] for attr_name in split_per_graph},
             # Add the global attributes
             **attrs["global"],
         }
-        states.append(type(state)(**batch_attrs))
+        states.append(type(state)(**graph_attrs))
 
     return states
 
@@ -665,11 +708,11 @@ def _pop_states(
 ) -> tuple[SimState, list[SimState]]:
     """Pop off the states with the specified indices.
 
-    Extracts and removes the specified batch indices from the state.
+    Extracts and removes the specified graph indices from the state.
 
     Args:
         state (SimState): The SimState to modify
-        pop_indices (list[int] | torch.Tensor): The batch indices to extract and remove
+        pop_indices (list[int] | torch.Tensor): The graph indices to extract and remove
         ambiguous_handling ("error" | "globalize"): How to handle ambiguous
             properties. If "error", an error is raised if a property has ambiguous
             scope. If "globalize", properties with ambiguous scope are treated as
@@ -677,8 +720,8 @@ def _pop_states(
 
     Returns:
         tuple[SimState, list[SimState]]: A tuple containing:
-            - The modified original state with specified batches removed
-            - A list of the extracted SimStates, one per popped batch
+            - The modified original state with specified graphs removed
+            - A list of the extracted SimStates, one per popped graph
 
     Notes:
         Unlike the pop method, this function does not modify the input state.
@@ -691,17 +734,17 @@ def _pop_states(
 
     attrs = _get_property_attrs(state, ambiguous_handling)
 
-    # Create masks for the atoms and batches to keep and pop
-    batch_range = torch.arange(state.n_batches, device=state.device)
-    pop_batch_mask = torch.isin(batch_range, pop_indices)
-    keep_batch_mask = ~pop_batch_mask
+    # Create masks for the atoms and graphs to keep and pop
+    graph_range = torch.arange(state.n_graphs, device=state.device)
+    pop_graph_mask = torch.isin(graph_range, pop_indices)
+    keep_graph_mask = ~pop_graph_mask
 
-    pop_atom_mask = torch.isin(state.batch, pop_indices)
+    pop_atom_mask = torch.isin(state.graph_idx, pop_indices)
     keep_atom_mask = ~pop_atom_mask
 
     # Filter attributes for keep and pop states
-    keep_attrs = _filter_attrs_by_mask(attrs, keep_atom_mask, keep_batch_mask)
-    pop_attrs = _filter_attrs_by_mask(attrs, pop_atom_mask, pop_batch_mask)
+    keep_attrs = _filter_attrs_by_mask(attrs, keep_atom_mask, keep_graph_mask)
+    pop_attrs = _filter_attrs_by_mask(attrs, pop_atom_mask, pop_graph_mask)
 
     # Create the keep state
     keep_state = type(state)(**keep_attrs)
@@ -715,17 +758,17 @@ def _pop_states(
 
 def _slice_state(
     state: SimState,
-    batch_indices: list[int] | torch.Tensor,
+    graph_indices: list[int] | torch.Tensor,
     ambiguous_handling: Literal["error", "globalize"] = "error",
 ) -> SimState:
-    """Slice a substate from the SimState containing only the specified batch indices.
+    """Slice a substate from the SimState containing only the specified graph indices.
 
-    Creates a new SimState containing only the specified batches, preserving
+    Creates a new SimState containing only the specified graphs, preserving
     all relevant properties.
 
     Args:
         state (SimState): The state to slice
-        batch_indices (list[int] | torch.Tensor): Batch indices to include in the
+        graph_indices (list[int] | torch.Tensor): Graph indices to include in the
             sliced state
         ambiguous_handling ("error" | "globalize"): How to handle ambiguous
             properties. If "error", an error is raised if a property has ambiguous
@@ -733,28 +776,28 @@ def _slice_state(
             global.
 
     Returns:
-        SimState: A new SimState object containing only the specified batches
+        SimState: A new SimState object containing only the specified graphs
 
     Raises:
-        ValueError: If batch_indices is empty
+        ValueError: If graph_indices is empty
     """
-    if isinstance(batch_indices, list):
-        batch_indices = torch.tensor(
-            batch_indices, device=state.device, dtype=torch.int64
+    if isinstance(graph_indices, list):
+        graph_indices = torch.tensor(
+            graph_indices, device=state.device, dtype=torch.int64
         )
 
-    if len(batch_indices) == 0:
-        raise ValueError("batch_indices cannot be empty")
+    if len(graph_indices) == 0:
+        raise ValueError("graph_indices cannot be empty")
 
     attrs = _get_property_attrs(state, ambiguous_handling)
 
-    # Create masks for the atoms and batches to include
-    batch_range = torch.arange(state.n_batches, device=state.device)
-    batch_mask = torch.isin(batch_range, batch_indices)
-    atom_mask = torch.isin(state.batch, batch_indices)
+    # Create masks for the atoms and graphs to include
+    graph_range = torch.arange(state.n_graphs, device=state.device)
+    graph_mask = torch.isin(graph_range, graph_indices)
+    atom_mask = torch.isin(state.graph_idx, graph_indices)
 
     # Filter attributes
-    filtered_attrs = _filter_attrs_by_mask(attrs, atom_mask, batch_mask)
+    filtered_attrs = _filter_attrs_by_mask(attrs, atom_mask, graph_mask)
 
     # Create the sliced state
     return type(state)(**filtered_attrs)
@@ -765,8 +808,8 @@ def concatenate_states(
 ) -> SimState:
     """Concatenate a list of SimStates into a single SimState.
 
-    Combines multiple states into a single state with multiple batches.
-    Global properties are taken from the first state, and per-atom and per-batch
+    Combines multiple states into a single state with multiple graphs.
+    Global properties are taken from the first state, and per-atom and per-graph
     properties are concatenated.
 
     Args:
@@ -775,7 +818,7 @@ def concatenate_states(
             Defaults to the device of the first state.
 
     Returns:
-        SimState: A new SimState containing all input states as separate batches
+        SimState: A new SimState containing all input states as separate graphs
 
     Raises:
         ValueError: If states is empty
@@ -796,20 +839,20 @@ def concatenate_states(
     target_device = device or first_state.device
 
     # Get property scopes from the first state to identify
-    # global/per-atom/per-batch properties
+    # global/per-atom/per-graph properties
     first_scope = infer_property_scope(first_state)
     global_props = set(first_scope["global"])
     per_atom_props = set(first_scope["per_atom"])
-    per_batch_props = set(first_scope["per_batch"])
+    per_graph_props = set(first_scope["per_graph"])
 
     # Initialize result with global properties from first state
     concatenated = {prop: getattr(first_state, prop) for prop in global_props}
 
     # Pre-allocate lists for tensors to concatenate
     per_atom_tensors = {prop: [] for prop in per_atom_props}
-    per_batch_tensors = {prop: [] for prop in per_batch_props}
-    new_batch_indices = []
-    batch_offset = 0
+    per_graph_tensors = {prop: [] for prop in per_graph_props}
+    new_graph_indices = []
+    graph_offset = 0
 
     # Process all states in a single pass
     for state in states:
@@ -822,28 +865,28 @@ def concatenate_states(
             # if hasattr(state, prop):
             per_atom_tensors[prop].append(getattr(state, prop))
 
-        # Collect per-batch properties
-        for prop in per_batch_props:
+        # Collect per-graph properties
+        for prop in per_graph_props:
             # if hasattr(state, prop):
-            per_batch_tensors[prop].append(getattr(state, prop))
+            per_graph_tensors[prop].append(getattr(state, prop))
 
-        # Update batch indices
-        num_batches = state.n_batches
-        new_indices = state.batch + batch_offset
-        new_batch_indices.append(new_indices)
-        batch_offset += num_batches
+        # Update graph indices
+        num_graphs = state.n_graphs
+        new_indices = state.graph_idx + graph_offset
+        new_graph_indices.append(new_indices)
+        graph_offset += num_graphs
 
     # Concatenate collected tensors
     for prop, tensors in per_atom_tensors.items():
         # if tensors:
         concatenated[prop] = torch.cat(tensors, dim=0)
 
-    for prop, tensors in per_batch_tensors.items():
+    for prop, tensors in per_graph_tensors.items():
         # if tensors:
         concatenated[prop] = torch.cat(tensors, dim=0)
 
-    # Concatenate batch indices
-    concatenated["batch"] = torch.cat(new_batch_indices)
+    # Concatenate graph indices
+    concatenated["graph_idx"] = torch.cat(new_graph_indices)
 
     # Create a new instance of the same class
     return state_class(**concatenated)
@@ -877,10 +920,10 @@ def initialize_state(
         return state_to_device(system, device, dtype)
 
     if isinstance(system, list) and all(isinstance(s, SimState) for s in system):
-        if not all(state.n_batches == 1 for state in system):
+        if not all(state.n_graphs == 1 for state in system):
             raise ValueError(
                 "When providing a list of states, to the initialize_state function, "
-                "all states must have n_batches == 1. To fix this, you can split the "
+                "all states must have n_graphs == 1. To fix this, you can split the "
                 "states into individual states with the split_state function."
             )
         return concatenate_states(system)

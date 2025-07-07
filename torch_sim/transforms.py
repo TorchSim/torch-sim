@@ -23,9 +23,9 @@ def get_fractional_coordinates(
 
     Args:
         positions (torch.Tensor): Atomic positions in Cartesian coordinates.
-            Shape: [..., 3] where ... represents optional batch dimensions.
+            Shape: [..., 3] where ... represents optional graph dimensions.
         cell (torch.Tensor): Unit cell matrix with lattice vectors as rows.
-            Shape: [..., 3, 3] where ... matches positions' batch dimensions.
+            Shape: [..., 3, 3] where ... matches positions' graph dimensions.
 
     Returns:
         torch.Tensor: Atomic positions in fractional coordinates with same shape as input
@@ -42,21 +42,21 @@ def get_fractional_coordinates(
     """
     if cell.ndim == 3:  # Handle batched cell tensors
         # For batched cells, we need to determine if this is:
-        # 1. A single batch (n_batches=1) - can be squeezed and handled normally
-        # 2. Multiple batches - need proper batch handling
+        # 1. A single graph (n_graphs=1) - can be squeezed and handled normally
+        # 2. Multiple graphs - need proper graph handling
 
         if cell.shape[0] == 1:
-            # Single batch case - squeeze and use the 2D implementation
+            # Single graph case - squeeze and use the 2D implementation
             cell_2d = cell.squeeze(0)  # Remove batch dimension
             return torch.linalg.solve(cell_2d.mT, positions.mT).mT
-        # Multiple batches case - this would require batch indices to know which
-        # atoms belong to which batch. For now, this is not implemented.
+        # Multiple graphs case - this would require graph indices to know which
+        # atoms belong to which graph. For now, this is not implemented.
         raise NotImplementedError(
-            f"Multiple batched cell tensors with shape {cell.shape} are not yet "
-            "supported in get_fractional_coordinates. For multiple batch systems, "
-            "you need to provide batch indices to determine which atoms belong to "
-            "which batch. For single batch systems, consider squeezing the batch "
-            "dimension or using individual calls per batch."
+            f"Multiple graph cell tensors with shape {cell.shape} are not yet "
+            "supported in get_fractional_coordinates. For multiple graph systems, "
+            "you need to provide graph indices to determine which atoms belong to "
+            "which graph. For single graph systems, consider squeezing the batch "
+            "dimension or using individual calls per graph."
         )
 
     # Original case for 2D cell matrix
@@ -155,20 +155,20 @@ def pbc_wrap_general(
 
 
 def pbc_wrap_batched(
-    positions: torch.Tensor, cell: torch.Tensor, batch: torch.Tensor
+    positions: torch.Tensor, cell: torch.Tensor, graph_idx: torch.Tensor
 ) -> torch.Tensor:
     """Apply periodic boundary conditions to batched systems.
 
     This function handles wrapping positions for multiple atomistic systems
-    (batches) in one operation. It uses the batch indices to determine which
+    (graphs) in one operation. It uses the graph indices to determine which
     atoms belong to which system and applies the appropriate cell vectors.
 
     Args:
         positions (torch.Tensor): Tensor of shape (n_atoms, 3) containing
             particle positions in real space.
-        cell (torch.Tensor): Tensor of shape (n_batches, 3, 3) containing
+        cell (torch.Tensor): Tensor of shape (n_graphs, 3, 3) containing
             lattice vectors as column vectors.
-        batch (torch.Tensor): Tensor of shape (n_atoms,) containing batch
+        graph_idx (torch.Tensor): Tensor of shape (n_atoms,) containing graph
             indices for each atom.
 
     Returns:
@@ -182,33 +182,33 @@ def pbc_wrap_batched(
     if positions.shape[-1] != cell.shape[-1]:
         raise ValueError("Position dimensionality must match lattice vectors.")
 
-    # Get unique batch indices and counts
-    unique_batches = torch.unique(batch)
-    n_batches = len(unique_batches)
+    # Get unique graph indices and counts
+    unique_graphs = torch.unique(graph_idx)
+    n_graphs = len(unique_graphs)
 
-    if n_batches != cell.shape[0]:
+    if n_graphs != cell.shape[0]:
         raise ValueError(
-            f"Number of unique batches ({n_batches}) doesn't "
+            f"Number of unique graphs ({n_graphs}) doesn't "
             f"match number of cells ({cell.shape[0]})"
         )
 
     # Efficient approach without explicit loops
-    # Get the cell for each atom based on its batch index
-    B = torch.linalg.inv(cell)  # Shape: (n_batches, 3, 3)
-    B_per_atom = B[batch]  # Shape: (n_atoms, 3, 3)
+    # Get the cell for each atom based on its graph index
+    B = torch.linalg.inv(cell)  # Shape: (n_graphs, 3, 3)
+    B_per_atom = B[graph_idx]  # Shape: (n_atoms, 3, 3)
 
     # Transform to fractional coordinates: f = B·r
-    # For each atom, multiply its position by its batch's inverse cell matrix
+    # For each atom, multiply its position by its graph's inverse cell matrix
     frac_coords = torch.bmm(B_per_atom, positions.unsqueeze(2)).squeeze(2)
 
     # Wrap to reference cell [0,1) using modulo
     wrapped_frac = frac_coords % 1.0
 
     # Transform back to real space: r = A·f
-    # Get the cell for each atom based on its batch index
-    cell_per_atom = cell[batch]  # Shape: (n_atoms, 3, 3)
+    # Get the cell for each atom based on its graph index
+    cell_per_atom = cell[graph_idx]  # Shape: (n_atoms, 3, 3)
 
-    # For each atom, multiply its wrapped fractional coords by its batch's cell matrix
+    # For each atom, multiply its wrapped fractional coords by its graph's cell matrix
     return torch.bmm(cell_per_atom, wrapped_frac.unsqueeze(2)).squeeze(2)
 
 
@@ -535,7 +535,7 @@ def compute_distances_with_cell_shifts(
 
 
 def compute_cell_shifts(
-    cell: torch.Tensor, shifts_idx: torch.Tensor, batch_mapping: torch.Tensor
+    cell: torch.Tensor, shifts_idx: torch.Tensor, graph_mapping: torch.Tensor
 ) -> torch.Tensor:
     """Compute the cell shifts based on the provided indices and cell matrix.
 
@@ -547,18 +547,18 @@ def compute_cell_shifts(
             representing the unit cell matrices.
         shifts_idx (torch.Tensor): A tensor of shape (n_shifts, 3)
             representing the indices for shifts.
-        batch_mapping (torch.Tensor): A tensor of shape (n_batches,)
+        graph_mapping (torch.Tensor): A tensor of shape (n_graphs,)
             that maps the shifts to the corresponding cells.
 
     Returns:
-        torch.Tensor: A tensor of shape (n_batches, 3) containing
+        torch.Tensor: A tensor of shape (n_graphs, 3) containing
             the computed cell shifts.
     """
     if cell is None:
         cell_shifts = None
     else:
         cell_shifts = torch.einsum(
-            "jn,jnm->jm", shifts_idx, cell.view(-1, 3, 3)[batch_mapping]
+            "jn,jnm->jm", shifts_idx, cell.view(-1, 3, 3)[graph_mapping]
         )
     return cell_shifts
 
@@ -625,7 +625,7 @@ def build_naive_neighborhood(
     This function computes a neighborhood list of atoms within a
     specified cutoff distance, considering periodic boundary conditions
     defined by the unit cell. It returns the mapping of atom pairs,
-    the batch mapping for each structure, and the corresponding shifts.
+    the graph mapping for each structure, and the corresponding shifts.
 
     Args:
         positions (torch.Tensor): A tensor of shape (n_atoms, 3)
@@ -645,7 +645,7 @@ def build_naive_neighborhood(
         tuple[torch.Tensor, torch.Tensor, torch.Tensor]: A tuple containing:
             - mapping (torch.Tensor): A tensor of shape (n_pairs, 2)
                 representing the pairs of indices for neighboring atoms.
-            - batch_mapping (torch.Tensor): A tensor of shape (n_pairs,)
+            - graph_mapping (torch.Tensor): A tensor of shape (n_pairs,)
                 indicating the structure index for each pair.
             - shifts_idx (torch.Tensor): A tensor of shape (n_pairs, 3)
                 representing the shifts applied for periodic boundary
@@ -659,7 +659,7 @@ def build_naive_neighborhood(
     stride = strides_of(n_atoms)
     ids = torch.arange(positions.shape[0], device=device, dtype=torch.long)
 
-    mapping, batch_mapping, shifts_idx_ = [], [], []
+    mapping, graph_mapping, shifts_idx_ = [], [], []
     for i_structure in range(n_atoms.shape[0]):
         num_repeats = num_repeats_[i_structure]
         shifts_idx = get_cell_shift_idx(num_repeats, dtype)
@@ -669,7 +669,7 @@ def build_naive_neighborhood(
             i_ids=i_ids, shifts_idx=shifts_idx, self_interaction=self_interaction
         )
         mapping.append(s_mapping)
-        batch_mapping.append(
+        graph_mapping.append(
             torch.full(
                 (s_mapping.shape[0],),
                 i_structure,
@@ -680,7 +680,7 @@ def build_naive_neighborhood(
         shifts_idx_.append(shifts_idx)
     return (
         torch.cat(mapping, dim=0).t(),
-        torch.cat(batch_mapping, dim=0),
+        torch.cat(graph_mapping, dim=0),
         torch.cat(shifts_idx_, dim=0),
     )
 
@@ -998,7 +998,7 @@ def build_linked_cell_neighborhood(
             - mapping (torch.Tensor): A tensor containing pairs of indices where
               mapping[0] represents the central atom indices and mapping[1]
               represents their corresponding neighbor indices.
-            - batch_mapping (torch.Tensor): A tensor containing the structure indices
+            - graph_mapping (torch.Tensor): A tensor containing the structure indices
               corresponding to each neighbor atom.
             - cell_shifts_idx (torch.Tensor): A tensor containing the cell
               shift indices for each neighbor atom, which are necessary for
@@ -1014,7 +1014,7 @@ def build_linked_cell_neighborhood(
 
     stride = strides_of(n_atoms)
 
-    mapping, batch_mapping, cell_shifts_idx = [], [], []
+    mapping, graph_mapping, cell_shifts_idx = [], [], []
     for i_structure in range(n_structure):
         # Compute the neighborhood with the linked cell algorithm
         neigh_atom, neigh_shift_idx = linked_cell(
@@ -1025,7 +1025,7 @@ def build_linked_cell_neighborhood(
             self_interaction,
         )
 
-        batch_mapping.append(
+        graph_mapping.append(
             i_structure * torch.ones(neigh_atom.shape[1], dtype=torch.long, device=device)
         )
         # Shift the mapping indices to access positions
@@ -1034,7 +1034,7 @@ def build_linked_cell_neighborhood(
 
     return (
         torch.cat(mapping, dim=1),
-        torch.cat(batch_mapping, dim=0),
+        torch.cat(graph_mapping, dim=0),
         torch.cat(cell_shifts_idx, dim=0),
     )
 

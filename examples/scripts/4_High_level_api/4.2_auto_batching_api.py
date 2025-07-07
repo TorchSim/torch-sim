@@ -76,7 +76,7 @@ batcher.load_states(fire_states)
 all_completed_states, convergence_tensor, state = [], None, None
 while (result := batcher.next_batch(state, convergence_tensor))[0] is not None:
     state, completed_states = result
-    print(f"Starting new batch of {state.n_batches} states.")
+    print(f"Starting new batch of {state.n_graphs} states.")
 
     all_completed_states.extend(completed_states)
     print("Total number of completed states", len(all_completed_states))

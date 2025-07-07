@@ -91,7 +91,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
         model (torch.nn.Module): The underlying MACE neural network model.
         neighbor_list_fn (Callable): Function used to compute neighbor lists.
         atomic_numbers (torch.Tensor): Atomic numbers with shape [n_atoms].
-        batch (torch.Tensor): Batch indices with shape [n_atoms].
+        graph_idx (torch.Tensor): Graph indices with shape [n_atoms].
         n_systems (int): Number of systems in the batch.
         n_atoms_per_system (list[int]): Number of atoms in each system.
         ptr (torch.Tensor): Pointers to the start of each system in the batch with
@@ -112,13 +112,13 @@ class MaceModel(torch.nn.Module, ModelInterface):
         compute_stress: bool = True,
         enable_cueq: bool = False,
         atomic_numbers: torch.Tensor | None = None,
-        batch: torch.Tensor | None = None,
+        graph_idx: torch.Tensor | None = None,
     ) -> None:
         """Initialize the MACE model for energy and force calculations.
 
         Sets up the MACE model for energy, force, and stress calculations within
         the TorchSim framework. The model can be initialized with atomic numbers
-        and batch indices, or these can be provided during the forward pass.
+        and graph indices, or these can be provided during the forward pass.
 
         Args:
             model (str | Path | torch.nn.Module | None): The MACE neural network model,
@@ -129,7 +129,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 Defaults to torch.float64.
             atomic_numbers (torch.Tensor | None): Atomic numbers with shape [n_atoms].
                 If provided at initialization, cannot be provided again during forward.
-            batch (torch.Tensor | None): Batch indices with shape [n_atoms] indicating
+            graph_idx (torch.Tensor | None): Graph indices with shape [n_atoms] indicating
                 which system each atom belongs to. If not provided with atomic_numbers,
                 all atoms are assumed to be in the same system.
             neighbor_list_fn (Callable): Function to compute neighbor lists.
@@ -186,38 +186,40 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
         # Set up batch information if atomic numbers are provided
         if atomic_numbers is not None:
-            if batch is None:
+            if graph_idx is None:
                 # If batch is not provided, assume all atoms belong to same system
-                batch = torch.zeros(
+                graph_idx = torch.zeros(
                     len(atomic_numbers), dtype=torch.long, device=self.device
                 )
 
-            self.setup_from_batch(atomic_numbers, batch)
+            self.setup_from_batch(atomic_numbers, graph_idx)
 
-    def setup_from_batch(self, atomic_numbers: torch.Tensor, batch: torch.Tensor) -> None:
-        """Set up internal state from atomic numbers and batch indices.
+    def setup_from_batch(
+        self, atomic_numbers: torch.Tensor, graph_idx: torch.Tensor
+    ) -> None:
+        """Set up internal state from atomic numbers and graph indices.
 
-        Processes the atomic numbers and batch indices to prepare the model for
+        Processes the atomic numbers and graph indices to prepare the model for
         forward pass calculations. Creates the necessary data structures for
         batched processing of multiple systems.
 
         Args:
             atomic_numbers (torch.Tensor): Atomic numbers tensor with shape [n_atoms].
-            batch (torch.Tensor): Batch indices tensor with shape [n_atoms] indicating
+            graph_idx (torch.Tensor): Graph indices tensor with shape [n_atoms] indicating
                 which system each atom belongs to.
         """
         self.atomic_numbers = atomic_numbers
-        self.batch = batch
+        self.graph_idx = graph_idx
 
         # Determine number of systems and atoms per system
-        self.n_systems = batch.max().item() + 1
+        self.n_systems = graph_idx.max().item() + 1
 
-        # Create ptr tensor for batch boundaries
+        # Create ptr tensor for graph boundaries
         self.n_atoms_per_system = []
         ptr = [0]
-        for b in range(self.n_systems):
-            batch_mask = batch == b
-            n_atoms = batch_mask.sum().item()
+        for i in range(self.n_systems):
+            graph_mask = graph_idx == i
+            n_atoms = graph_mask.sum().item()
             self.n_atoms_per_system.append(n_atoms)
             ptr.append(ptr[-1] + n_atoms)
 
@@ -260,7 +262,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
         Raises:
             ValueError: If atomic numbers are not provided either in the constructor
                 or in the forward pass, or if provided in both places.
-            ValueError: If batch indices are not provided when needed.
+            ValueError: If graph indices are not provided when needed.
         """
         # Extract required data from input
         if isinstance(state, dict):
@@ -276,13 +278,13 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 "Atomic numbers cannot be provided in both the constructor and forward."
             )
 
-        # Use batch from init if not provided
-        if state.batch is None:
-            if not hasattr(self, "batch"):
+        # Use graph_idx from init if not provided
+        if state.graph_idx is None:
+            if not hasattr(self, "graph_idx"):
                 raise ValueError(
-                    "Batch indices must be provided if not set during initialization"
+                    "Graph indices must be provided if not set during initialization"
                 )
-            state.batch = self.batch
+            state.graph_idx = self.graph_idx
 
         # Update batch information if new atomic numbers are provided
         if (
@@ -293,7 +295,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 getattr(self, "atomic_numbers", torch.zeros(0, device=self.device)),
             )
         ):
-            self.setup_from_batch(state.atomic_numbers, state.batch)
+            self.setup_from_batch(state.atomic_numbers, state.graph_idx)
 
         # Process each system's neighbor list separately
         edge_indices = []
@@ -303,7 +305,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
         # TODO (AG): Currently doesn't work for batched neighbor lists
         for b in range(self.n_systems):
-            batch_mask = state.batch == b
+            batch_mask = state.graph_idx == b
             # Calculate neighbor list for this system
             edge_idx, shifts_idx = self.neighbor_list_fn(
                 positions=state.positions[batch_mask],
@@ -332,7 +334,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
             dict(
                 ptr=self.ptr,
                 node_attrs=self.node_attrs,
-                batch=state.batch,
+                batch=state.graph_idx,
                 pbc=state.pbc,
                 cell=state.row_vector_cell,
                 positions=state.positions,

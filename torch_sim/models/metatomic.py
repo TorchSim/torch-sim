@@ -74,7 +74,7 @@ class MetatomicModel(torch.nn.Module, ModelInterface):
 
         Sets up a metatomic model for energy, force, and stress calculations within
         the TorchSim framework. The model can be initialized with atomic numbers
-        and batch indices, or these can be provided during the forward pass.
+        and graph indices, or these can be provided during the forward pass.
 
         Args:
             model (str | Path | None): Path to the metatomic model file or a
@@ -200,7 +200,7 @@ class MetatomicModel(torch.nn.Module, ModelInterface):
         systems: list[System] = []
         strains = []
         for b in range(len(cell)):
-            system_mask = state.batch == b
+            system_mask = state.graph_idx == b
             system_positions = positions[system_mask]
             system_cell = cell[b]
             system_pbc = torch.tensor(

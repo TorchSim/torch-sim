@@ -730,9 +730,9 @@ def get_unit_cell_relaxed_structure(
     device, dtype = model.device, model.dtype
 
     logger = {
-        "energy": torch.zeros((max_iter, state.n_batches), device=device, dtype=dtype),
+        "energy": torch.zeros((max_iter, state.n_graphs), device=device, dtype=dtype),
         "stress": torch.zeros(
-            (max_iter, state.n_batches, 3, 3), device=device, dtype=dtype
+            (max_iter, state.n_graphs, 3, 3), device=device, dtype=dtype
         ),
     }
 

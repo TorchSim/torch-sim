@@ -69,7 +69,7 @@ state = npt_init(state=state, seed=1)
 for step in range(N_steps_nvt):
     if step % 10 == 0:
         temp = (
-            calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+            calc_kT(masses=state.masses, momenta=state.momenta, graph_idx=state.graph_idx)
             / Units.temperature
         )
         invariant = float(
@@ -86,7 +86,7 @@ state = npt_init(state=state, seed=1)
 for step in range(N_steps_npt):
     if step % 10 == 0:
         temp = (
-            calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+            calc_kT(masses=state.masses, momenta=state.momenta, graph_idx=state.graph_idx)
             / Units.temperature
         )
         invariant = float(
@@ -95,7 +95,7 @@ for step in range(N_steps_npt):
         stress = model(state)["stress"]
         volume = torch.det(state.current_cell)
         e_kin = calc_kinetic_energy(
-            masses=state.masses, momenta=state.momenta, batch=state.batch
+            masses=state.masses, momenta=state.momenta, graph_idx=state.graph_idx
         )
         pressure = float(get_pressure(stress, e_kin, volume))
         xx, yy, zz = torch.diag(state.current_cell[0])
@@ -107,7 +107,7 @@ for step in range(N_steps_npt):
     state = npt_update(state, kT=kT, external_pressure=target_pressure)
 
 final_temp = (
-    calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+    calc_kT(masses=state.masses, momenta=state.momenta, graph_idx=state.graph_idx)
     / Units.temperature
 )
 print(f"Final temperature: {final_temp.item():.4f}")
@@ -115,7 +115,9 @@ final_stress = model(state)["stress"]
 final_volume = torch.det(state.current_cell)
 final_pressure = get_pressure(
     final_stress,
-    calc_kinetic_energy(masses=state.masses, momenta=state.momenta, batch=state.batch),
+    calc_kinetic_energy(
+        masses=state.masses, momenta=state.momenta, graph_idx=state.graph_idx
+    ),
     final_volume,
 )
 print(f"Final pressure: {final_pressure.item():.4f}")

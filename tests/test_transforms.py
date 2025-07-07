@@ -250,8 +250,8 @@ def test_pbc_wrap_batched_orthorhombic(si_double_sim_state: ts.SimState) -> None
 
     # Modify a specific atom's position in each batch to be outside the cell
     # Get the first atom in each batch
-    batch_0_mask = state.batch == 0
-    batch_1_mask = state.batch == 1
+    batch_0_mask = state.graph_idx == 0
+    batch_1_mask = state.graph_idx == 1
 
     # Get current cell size (assume cubic for simplicity)
     cell_size = state.cell[0, 0, 0]
@@ -268,7 +268,9 @@ def test_pbc_wrap_batched_orthorhombic(si_double_sim_state: ts.SimState) -> None
     test_positions[idx1, 0] = -0.5
 
     # Apply wrapping
-    wrapped = tst.pbc_wrap_batched(test_positions, cell=state.cell, batch=state.batch)
+    wrapped = tst.pbc_wrap_batched(
+        test_positions, cell=state.cell, graph_idx=state.graph_idx
+    )
 
     # Check first modified atom is properly wrapped
     assert wrapped[idx0, 0] < cell_size
@@ -317,7 +319,7 @@ def test_pbc_wrap_batched_triclinic(device: torch.device) -> None:
     cell = torch.stack([cell1, cell2])
 
     # Apply wrapping
-    wrapped = tst.pbc_wrap_batched(positions, cell=cell, batch=batch)
+    wrapped = tst.pbc_wrap_batched(positions, cell=cell, graph_idx=batch)
 
     # Calculate expected result for first atom (using original algorithm for verification)
     expected1 = tst.pbc_wrap_general(positions[0:1], cell1)
@@ -343,11 +345,11 @@ def test_pbc_wrap_batched_edge_case(device: torch.device) -> None:
         device=device,
     )
 
-    # Create batch indices
-    batch = torch.tensor([0, 1], device=device)
+    # Create graph indices
+    graph_idx = torch.tensor([0, 1], device=device)
 
     # Apply wrapping
-    wrapped = tst.pbc_wrap_batched(positions, cell=cell, batch=batch)
+    wrapped = tst.pbc_wrap_batched(positions, cell=cell, graph_idx=graph_idx)
 
     # Expected results (wrapping to 0.0 rather than 2.0)
     expected = torch.tensor(
@@ -367,12 +369,12 @@ def test_pbc_wrap_batched_invalid_inputs(device: torch.device) -> None:
     # Valid inputs for reference
     positions = torch.ones(4, 3, device=device)
     cell = torch.stack([torch.eye(3, device=device)] * 2)
-    batch = torch.tensor([0, 0, 1, 1], device=device)
+    graph_idx = torch.tensor([0, 0, 1, 1], device=device)
 
     # Test integer tensors
     with pytest.raises(TypeError):
         tst.pbc_wrap_batched(
-            torch.ones(4, 3, dtype=torch.int64, device=device), cell, batch
+            torch.ones(4, 3, dtype=torch.int64, device=device), cell, graph_idx
         )
 
     # Test dimension mismatch - positions
@@ -380,15 +382,15 @@ def test_pbc_wrap_batched_invalid_inputs(device: torch.device) -> None:
         tst.pbc_wrap_batched(
             torch.ones(4, 2, device=device),  # Wrong dimension (2 instead of 3)
             cell,
-            batch,
+            graph_idx,
         )
 
-    # Test mismatch between batch indices and cell
+    # Test mismatch between graph indices and cell
     with pytest.raises(ValueError):
         tst.pbc_wrap_batched(
             positions,
             torch.stack([torch.eye(3, device=device)] * 3),  # 3 cell but only 2 batches
-            batch,
+            graph_idx,
         )
 
 
@@ -399,40 +401,42 @@ def test_pbc_wrap_batched_multi_atom(si_double_sim_state: ts.SimState) -> None:
     # Get a copy of positions to modify
     test_positions = state.positions.clone()
 
-    # Move all atoms of the first batch outside the cell in +x
-    batch_0_mask = state.batch == 0
+    # Move all atoms of the first graph outside the cell in +x
+    graph_0_mask = state.graph_idx == 0
     cell_size_x = state.cell[0, 0, 0].item()
-    test_positions[batch_0_mask, 0] += cell_size_x
+    test_positions[graph_0_mask, 0] += cell_size_x
 
-    # Move all atoms of the second batch outside the cell in -y
-    batch_1_mask = state.batch == 1
+    # Move all atoms of the second graph outside the cell in -y
+    graph_1_mask = state.graph_idx == 1
     cell_size_y = state.cell[0, 1, 1].item()
-    test_positions[batch_1_mask, 1] -= cell_size_y
+    test_positions[graph_1_mask, 1] -= cell_size_y
 
     # Apply wrapping
-    wrapped = tst.pbc_wrap_batched(test_positions, cell=state.cell, batch=state.batch)
+    wrapped = tst.pbc_wrap_batched(
+        test_positions, cell=state.cell, graph_idx=state.graph_idx
+    )
 
     # Check all positions are within the cell boundaries
-    for b in range(2):  # For each batch
-        batch_mask = state.batch == b
+    for b in range(2):  # For each graph
+        graph_mask = state.graph_idx == b
 
         # Check x coordinates
-        assert torch.all(wrapped[batch_mask, 0] >= 0)
-        assert torch.all(wrapped[batch_mask, 0] < state.cell[b, 0, 0])
+        assert torch.all(wrapped[graph_mask, 0] >= 0)
+        assert torch.all(wrapped[graph_mask, 0] < state.cell[b, 0, 0])
 
         # Check y coordinates
-        assert torch.all(wrapped[batch_mask, 1] >= 0)
-        assert torch.all(wrapped[batch_mask, 1] < state.cell[b, 1, 1])
+        assert torch.all(wrapped[graph_mask, 1] >= 0)
+        assert torch.all(wrapped[graph_mask, 1] < state.cell[b, 1, 1])
 
         # Check z coordinates
-        assert torch.all(wrapped[batch_mask, 2] >= 0)
-        assert torch.all(wrapped[batch_mask, 2] < state.cell[b, 2, 2])
+        assert torch.all(wrapped[graph_mask, 2] >= 0)
+        assert torch.all(wrapped[graph_mask, 2] < state.cell[b, 2, 2])
 
 
 def test_pbc_wrap_batched_preserves_relative_positions(
     si_double_sim_state: ts.SimState,
 ) -> None:
-    """Test that relative positions within each batch are preserved after wrapping."""
+    """Test that relative positions within each graph are preserved after wrapping."""
     state = si_double_sim_state
 
     # Get a copy of positions
@@ -443,20 +447,22 @@ def test_pbc_wrap_batched_preserves_relative_positions(
     test_positions += torch.tensor([10.0, 15.0, 20.0], device=state.device)
 
     # Apply wrapping
-    wrapped = tst.pbc_wrap_batched(test_positions, cell=state.cell, batch=state.batch)
+    wrapped = tst.pbc_wrap_batched(
+        test_positions, cell=state.cell, graph_idx=state.graph_idx
+    )
 
-    # Check that relative positions within each batch are preserved
+    # Check that relative positions within each graph are preserved
     for b in range(2):  # For each batch
-        batch_mask = state.batch == b
+        graph_idx_mask = state.graph_idx == b
 
         # Calculate pairwise distances before wrapping
-        atoms_in_batch = torch.sum(batch_mask).item()
+        atoms_in_batch = torch.sum(graph_idx_mask).item()
         for n_atoms in range(atoms_in_batch - 1):
             for j in range(n_atoms + 1, atoms_in_batch):
                 # Get the indices of atoms i and j in this batch
-                batch_indices = torch.where(batch_mask)[0]
-                idx_i = batch_indices[n_atoms]
-                idx_j = batch_indices[j]
+                graph_indices = torch.where(graph_idx_mask)[0]
+                idx_i = graph_indices[n_atoms]
+                idx_j = graph_indices[j]
 
                 # Original vector from i to j
                 orig_vec = (
@@ -839,11 +845,11 @@ def test_get_fractional_coordinates_batched() -> None:
         [[1.0, 1.0, 1.0], [2.0, 0.0, 0.0]], device=device, dtype=dtype
     )
 
-    # Test single batch case (should work)
-    cell_single_batch = torch.tensor(
+    # Test single graph case (should work)
+    cell_single_graph = torch.tensor(
         [[[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 4.0]]], device=device, dtype=dtype
     )
-    frac_batched = tst.get_fractional_coordinates(positions, cell_single_batch)
+    frac_batched = tst.get_fractional_coordinates(positions, cell_single_graph)
 
     # Compare with 2D case
     cell_2d = torch.tensor(
@@ -852,11 +858,11 @@ def test_get_fractional_coordinates_batched() -> None:
     frac_2d = tst.get_fractional_coordinates(positions, cell_2d)
 
     assert torch.allclose(frac_batched, frac_2d), (
-        "Single batch case should produce same result as 2D case"
+        "Single graph case should produce same result as 2D case"
     )
 
-    # Test multi-batch case (should raise NotImplementedError)
-    cell_multi_batch = torch.tensor(
+    # Test multi-graph case (should raise NotImplementedError)
+    cell_multi_graph = torch.tensor(
         [
             [[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 4.0]],
             [[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, 5.0]],
@@ -865,8 +871,8 @@ def test_get_fractional_coordinates_batched() -> None:
         dtype=dtype,
     )
 
-    with pytest.raises(NotImplementedError, match="Multiple batched cell tensors"):
-        tst.get_fractional_coordinates(positions, cell_multi_batch)
+    with pytest.raises(NotImplementedError, match="Multiple graph cell tensors"):
+        tst.get_fractional_coordinates(positions, cell_multi_graph)
 
 
 @pytest.mark.parametrize(

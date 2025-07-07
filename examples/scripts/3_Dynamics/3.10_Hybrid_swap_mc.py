@@ -86,7 +86,7 @@ swap_state = swap_init(md_state)
 hybrid_state = HybridSwapMCState(
     **vars(md_state),
     last_permutation=torch.zeros(
-        md_state.n_batches, device=md_state.device, dtype=torch.bool
+        md_state.n_graphs, device=md_state.device, dtype=torch.bool
     ),
 )
 

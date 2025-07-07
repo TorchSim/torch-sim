@@ -181,8 +181,8 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
         state = state.clone()
 
         data_list = []
-        for b in range(state.batch.max().item() + 1):
-            batch_mask = state.batch == b
+        for b in range(state.graph_idx.max().item() + 1):
+            batch_mask = state.graph_idx == b
 
             pos = state.positions[batch_mask]
             # SevenNet uses row vector cell convention for neighbor list
@@ -245,7 +245,7 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
             results["energy"] = energy.detach()
         else:
             results["energy"] = torch.zeros(
-                state.batch.max().item() + 1, device=self.device
+                state.graph_idx.max().item() + 1, device=self.device
             )
 
         forces = output[key.PRED_FORCE]

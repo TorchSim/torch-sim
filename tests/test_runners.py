@@ -149,7 +149,7 @@ def test_integrate_many_nvt(
         lj_model.dtype,
     )
     trajectory_files = [
-        tmp_path / f"nvt_{batch}.h5md" for batch in range(triple_state.n_batches)
+        tmp_path / f"nvt_{batch}.h5md" for batch in range(triple_state.n_graphs)
     ]
     reporter = TrajectoryReporter(
         filenames=trajectory_files,
@@ -231,7 +231,7 @@ def test_integrate_with_autobatcher_and_reporting(
         max_memory_scaler=260,
     )
     trajectory_files = [
-        tmp_path / f"nvt_{batch}.h5md" for batch in range(triple_state.n_batches)
+        tmp_path / f"nvt_{batch}.h5md" for batch in range(triple_state.n_graphs)
     ]
     reporter = TrajectoryReporter(
         filenames=trajectory_files,
@@ -340,7 +340,7 @@ def test_batched_optimize_fire(
 ) -> None:
     """Test batched FIRE optimization with LJ potential."""
     trajectory_files = [
-        tmp_path / f"nvt_{idx}.h5md" for idx in range(ar_double_sim_state.n_batches)
+        tmp_path / f"nvt_{idx}.h5md" for idx in range(ar_double_sim_state.n_graphs)
     ]
     reporter = TrajectoryReporter(
         filenames=trajectory_files,
@@ -414,7 +414,7 @@ def test_optimize_with_autobatcher_and_reporting(
     )
 
     trajectory_files = [
-        tmp_path / f"opt_{batch}.h5md" for batch in range(triple_state.n_batches)
+        tmp_path / f"opt_{batch}.h5md" for batch in range(triple_state.n_graphs)
     ]
     reporter = TrajectoryReporter(
         filenames=trajectory_files,
@@ -798,7 +798,7 @@ def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:
         # autobatcher=True,  # disabled for CPU-based LJ model in test
     )
 
-    assert relaxed_state.energy.shape == (final_state.n_batches,)
+    assert relaxed_state.energy.shape == (final_state.n_graphs,)
 
 
 @pytest.fixture
@@ -806,22 +806,20 @@ def mock_state() -> Callable:
     """Create a mock state for testing convergence functions."""
     device = torch.device("cpu")
     dtype = torch.float64
-    n_batches, n_atoms = 2, 8
+    n_graphs, n_atoms = 2, 8
     torch.manual_seed(0)  # deterministic forces
 
     class MockState:
         def __init__(self, *, include_cell_forces: bool = True) -> None:
             self.forces = torch.randn(n_atoms, 3, device=device, dtype=dtype)
-            self.batch = torch.repeat_interleave(
-                torch.arange(n_batches), n_atoms // n_batches
+            self.graph_idx = torch.repeat_interleave(
+                torch.arange(n_graphs), n_atoms // n_graphs
             )
             self.device = device
             self.dtype = dtype
-            self.n_batches = n_batches
+            self.n_graphs = n_graphs
             if include_cell_forces:
-                self.cell_forces = torch.randn(
-                    n_batches, 3, 3, device=device, dtype=dtype
-                )
+                self.cell_forces = torch.randn(n_graphs, 3, 3, device=device, dtype=dtype)
 
     return MockState
 
@@ -858,7 +856,7 @@ def test_generate_force_convergence_fn(
 
         if has_cell_forces:
             ar_supercell_sim_state.cell_forces = torch.randn(
-                ar_supercell_sim_state.n_batches,
+                ar_supercell_sim_state.n_graphs,
                 3,
                 3,
                 device=ar_supercell_sim_state.device,
@@ -877,7 +875,7 @@ def test_generate_force_convergence_fn(
         result = convergence_fn(state)
         assert isinstance(result, torch.Tensor)
         assert result.dtype == torch.bool
-        assert result.shape == (state.n_batches,)
+        assert result.shape == (state.n_graphs,)
 
 
 def test_generate_force_convergence_fn_tolerance_ordering(
@@ -888,7 +886,7 @@ def test_generate_force_convergence_fn_tolerance_ordering(
     ar_supercell_sim_state.forces = model_output["forces"]
     ar_supercell_sim_state.energy = model_output["energy"]
     ar_supercell_sim_state.cell_forces = torch.randn(
-        ar_supercell_sim_state.n_batches,
+        ar_supercell_sim_state.n_graphs,
         3,
         3,
         device=ar_supercell_sim_state.device,
@@ -926,26 +924,26 @@ def test_generate_force_convergence_fn_logic(
 ) -> None:
     """Test convergence logic with controlled force values."""
     device, dtype = torch.device("cpu"), torch.float64
-    n_batches, n_atoms = len(atomic_forces), 8
+    n_graphs, n_atoms = len(atomic_forces), 8
 
     class ControlledMockState:
         def __init__(self) -> None:
-            self.n_batches = n_batches
+            self.n_graphs = n_graphs
             self.device, self.dtype = device, dtype
-            self.batch = torch.repeat_interleave(
-                torch.arange(n_batches), n_atoms // n_batches
+            self.graph_idx = torch.repeat_interleave(
+                torch.arange(n_graphs), n_atoms // n_graphs
             )
 
-            # Set specific force magnitudes per batch
+            # Set specific force magnitudes per graph
             self.forces = torch.zeros(n_atoms, 3, device=device, dtype=dtype)
-            self.cell_forces = torch.zeros(n_batches, 3, 3, device=device, dtype=dtype)
+            self.cell_forces = torch.zeros(n_graphs, 3, 3, device=device, dtype=dtype)
 
-            for batch_idx, (atomic_force, cell_force) in enumerate(
+            for graph_idx, (atomic_force, cell_force) in enumerate(
                 zip(atomic_forces, cell_forces, strict=False)
             ):
-                batch_mask = self.batch == batch_idx
-                self.forces[batch_mask, 0] = atomic_force
-                self.cell_forces[batch_idx, 0, 0] = cell_force
+                graph_mask = self.graph_idx == graph_idx
+                self.forces[graph_mask, 0] = atomic_force
+                self.cell_forces[graph_idx, 0, 0] = cell_force
 
     state = ControlledMockState()
     convergence_fn = ts.generate_force_convergence_fn(

@@ -356,10 +356,10 @@ class MorseModel(torch.nn.Module, ModelInterface):
 
         Returns:
             dict[str, torch.Tensor]: Computed properties:
-                - "energy": Potential energy with shape [n_batches]
+                - "energy": Potential energy with shape [n_graphs]
                 - "forces": Atomic forces with shape [n_atoms, 3]
                     (if compute_forces=True)
-                - "stress": Stress tensor with shape [n_batches, 3, 3]
+                - "stress": Stress tensor with shape [n_graphs, 3, 3]
                     (if compute_stress=True)
                 - May include additional outputs based on configuration
 
@@ -372,17 +372,17 @@ class MorseModel(torch.nn.Module, ModelInterface):
             model = MorseModel(compute_forces=True)
             results = model(sim_state)
 
-            energy = results["energy"]  # Shape: [n_batches]
+            energy = results["energy"]  # Shape: [n_graphs]
             forces = results["forces"]  # Shape: [n_atoms, 3]
             ```
         """
         if isinstance(state, dict):
             state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
-        if state.batch is None and state.cell.shape[0] > 1:
+        if state.graph_idx is None and state.cell.shape[0] > 1:
             raise ValueError("Batch can only be inferred for batch size 1.")
 
-        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_batches)]
+        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_graphs)]
         properties = outputs[0]
 
         # we always return tensors
