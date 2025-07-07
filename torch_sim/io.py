@@ -33,7 +33,7 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
         state (SimState): Batched state containing positions, cell, and atomic numbers
 
     Returns:
-        list[Atoms]: ASE Atoms objects, one per batch
+        list[Atoms]: ASE Atoms objects, one per system
 
     Raises:
         ImportError: If ASE is not installed
@@ -50,22 +50,22 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
 
     # Convert tensors to numpy arrays on CPU
     positions = state.positions.detach().cpu().numpy()
-    cell = state.cell.detach().cpu().numpy()  # Shape: (n_batches, 3, 3)
+    cell = state.cell.detach().cpu().numpy()  # Shape: (n_systems, 3, 3)
     atomic_numbers = state.atomic_numbers.detach().cpu().numpy()
-    batch = state.batch.detach().cpu().numpy()
+    system_idx = state.system_idx.detach().cpu().numpy()
 
     atoms_list = []
-    for batch_idx in np.unique(batch):
-        mask = batch == batch_idx
-        batch_positions = positions[mask]
-        batch_numbers = atomic_numbers[mask]
-        batch_cell = cell[batch_idx].T  # Transpose for ASE convention
+    for idx in np.unique(system_idx):
+        mask = system_idx == idx
+        system_positions = positions[mask]
+        system_numbers = atomic_numbers[mask]
+        system_cell = cell[idx].T  # Transpose for ASE convention
 
         # Convert atomic numbers to chemical symbols
-        symbols = [chemical_symbols[z] for z in batch_numbers]
+        symbols = [chemical_symbols[z] for z in system_numbers]
 
         atoms = Atoms(
-            symbols=symbols, positions=batch_positions, cell=batch_cell, pbc=state.pbc
+            symbols=symbols, positions=system_positions, cell=system_cell, pbc=state.pbc
         )
         atoms_list.append(atoms)
 
@@ -79,7 +79,7 @@ def state_to_structures(state: "ts.SimState") -> list["Structure"]:
         state (SimState): Batched state containing positions, cell, and atomic numbers
 
     Returns:
-        list[Structure]: Pymatgen Structure objects, one per batch
+        list[Structure]: Pymatgen Structure objects, one per system
 
     Raises:
         ImportError: If Pymatgen is not installed
@@ -98,29 +98,29 @@ def state_to_structures(state: "ts.SimState") -> list["Structure"]:
 
     # Convert tensors to numpy arrays on CPU
     positions = state.positions.detach().cpu().numpy()
-    cell = state.cell.detach().cpu().numpy()  # Shape: (n_batches, 3, 3)
+    cell = state.cell.detach().cpu().numpy()  # Shape: (n_systems, 3, 3)
     atomic_numbers = state.atomic_numbers.detach().cpu().numpy()
-    batch = state.batch.detach().cpu().numpy()
+    system_idx = state.system_idx.detach().cpu().numpy()
 
-    # Get unique batch indices and counts
-    unique_batches = np.unique(batch)
+    # Get unique system indices and counts
+    unique_systems = np.unique(system_idx)
     structures = []
 
-    for batch_idx in unique_batches:
-        # Get mask for current batch
-        mask = batch == batch_idx
-        batch_positions = positions[mask]
-        batch_numbers = atomic_numbers[mask]
-        batch_cell = cell[batch_idx].T  # Transpose for conventional form
+    for unique_system_idx in unique_systems:
+        # Get mask for current system
+        mask = system_idx == unique_system_idx
+        system_positions = positions[mask]
+        system_numbers = atomic_numbers[mask]
+        system_cell = cell[unique_system_idx].T  # Transpose for conventional form
 
         # Create species list from atomic numbers
-        species = [Element.from_Z(z) for z in batch_numbers]
+        species = [Element.from_Z(z) for z in system_numbers]
 
-        # Create structure for this batch
+        # Create structure for this system
         struct = Structure(
-            lattice=Lattice(batch_cell),
+            lattice=Lattice(system_cell),
             species=species,
-            coords=batch_positions,
+            coords=system_positions,
             coords_are_cartesian=True,
         )
         structures.append(struct)
@@ -135,7 +135,7 @@ def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
         state (SimState): Batched state containing positions, cell, and atomic numbers
 
     Returns:
-        list[PhonopyAtoms]: PhonopyAtoms objects, one per batch
+        list[PhonopyAtoms]: PhonopyAtoms objects, one per system
 
     Raises:
         ImportError: If Phonopy is not installed
@@ -152,24 +152,24 @@ def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
 
     # Convert tensors to numpy arrays on CPU
     positions = state.positions.detach().cpu().numpy()
-    cell = state.cell.detach().cpu().numpy()  # Shape: (n_batches, 3, 3)
+    cell = state.cell.detach().cpu().numpy()  # Shape: (n_systems, 3, 3)
     atomic_numbers = state.atomic_numbers.detach().cpu().numpy()
-    batch = state.batch.detach().cpu().numpy()
+    system_idx = state.system_idx.detach().cpu().numpy()
 
     phonopy_atoms_list = []
-    for batch_idx in np.unique(batch):
-        mask = batch == batch_idx
-        batch_positions = positions[mask]
-        batch_numbers = atomic_numbers[mask]
-        batch_cell = cell[batch_idx].T  # Transpose for Phonopy convention
+    for idx in np.unique(system_idx):
+        mask = system_idx == idx
+        system_positions = positions[mask]
+        system_numbers = atomic_numbers[mask]
+        system_cell = cell[idx].T  # Transpose for Phonopy convention
 
         # Convert atomic numbers to chemical symbols
-        symbols = [chemical_symbols[z] for z in batch_numbers]
+        symbols = [chemical_symbols[z] for z in system_numbers]
         phonopy_atoms_list.append(
             PhonopyAtoms(
                 symbols=symbols,
-                positions=batch_positions,
-                cell=batch_cell,
+                positions=system_positions,
+                cell=system_cell,
                 pbc=state.pbc,
             )
         )
@@ -225,10 +225,10 @@ def atoms_to_state(
         np.stack([a.cell.array.T for a in atoms_list]), dtype=dtype, device=device
     )
 
-    # Create batch indices using repeat_interleave
-    atoms_per_batch = torch.tensor([len(a) for a in atoms_list], device=device)
-    batch = torch.repeat_interleave(
-        torch.arange(len(atoms_list), device=device), atoms_per_batch
+    # Create system indices using repeat_interleave
+    atoms_per_system = torch.tensor([len(a) for a in atoms_list], device=device)
+    system_idx = torch.repeat_interleave(
+        torch.arange(len(atoms_list), device=device), atoms_per_system
     )
 
     # Verify consistent pbc
@@ -241,7 +241,7 @@ def atoms_to_state(
         cell=cell,
         pbc=all(atoms_list[0].pbc),
         atomic_numbers=atomic_numbers,
-        batch=batch,
+        system_idx=system_idx,
     )
 
 
@@ -297,10 +297,10 @@ def structures_to_state(
         device=device,
     )
 
-    # Create batch indices
-    atoms_per_batch = torch.tensor([len(s) for s in struct_list], device=device)
-    batch = torch.repeat_interleave(
-        torch.arange(len(struct_list), device=device), atoms_per_batch
+    # Create system indices
+    atoms_per_system = torch.tensor([len(s) for s in struct_list], device=device)
+    system_idx = torch.repeat_interleave(
+        torch.arange(len(struct_list), device=device), atoms_per_system
     )
 
     return ts.SimState(
@@ -309,7 +309,7 @@ def structures_to_state(
         cell=cell,
         pbc=True,  # Structures are always periodic
         atomic_numbers=atomic_numbers,
-        batch=batch,
+        system_idx=system_idx,
     )
 
 
@@ -368,10 +368,10 @@ def phonopy_to_state(
         np.stack([a.cell.T for a in phonopy_atoms_list]), dtype=dtype, device=device
     )
 
-    # Create batch indices using repeat_interleave
-    atoms_per_batch = torch.tensor([len(a) for a in phonopy_atoms_list], device=device)
-    batch = torch.repeat_interleave(
-        torch.arange(len(phonopy_atoms_list), device=device), atoms_per_batch
+    # Create system indices using repeat_interleave
+    atoms_per_system = torch.tensor([len(a) for a in phonopy_atoms_list], device=device)
+    system_idx = torch.repeat_interleave(
+        torch.arange(len(phonopy_atoms_list), device=device), atoms_per_system
     )
 
     """
@@ -387,5 +387,5 @@ def phonopy_to_state(
         cell=cell,
         pbc=True,
         atomic_numbers=atomic_numbers,
-        batch=batch,
+        system_idx=system_idx,
     )

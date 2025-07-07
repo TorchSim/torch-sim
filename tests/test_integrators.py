@@ -109,7 +109,7 @@ def test_npt_langevin(ar_double_sim_state: ts.SimState, lj_model: LennardJonesMo
         state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
-        temp = calc_kT(state.momenta, state.masses, batch=state.batch)
+        temp = calc_kT(state.momenta, state.masses, system_idx=state.system_idx)
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
 
@@ -172,7 +172,7 @@ def test_npt_langevin_multi_kt(
         state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
-        temp = calc_kT(state.momenta, state.masses, batch=state.batch)
+        temp = calc_kT(state.momenta, state.masses, system_idx=state.system_idx)
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
 
@@ -213,7 +213,7 @@ def test_nvt_langevin(ar_double_sim_state: ts.SimState, lj_model: LennardJonesMo
         state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
-        temp = calc_kT(state.momenta, state.masses, batch=state.batch)
+        temp = calc_kT(state.momenta, state.masses, system_idx=state.system_idx)
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
 
@@ -273,7 +273,7 @@ def test_nvt_langevin_multi_kt(
         state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
-        temp = calc_kT(state.momenta, state.masses, batch=state.batch)
+        temp = calc_kT(state.momenta, state.masses, system_idx=state.system_idx)
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
 
@@ -372,8 +372,8 @@ def test_compare_single_vs_batched_integrators(
         torch.testing.assert_close(single_state.energy, final_state.energy)
 
 
-def test_compute_cell_force_atoms_per_batch():
-    """Test that compute_cell_force correctly scales by number of atoms per batch.
+def test_compute_cell_force_atoms_per_system():
+    """Test that compute_cell_force correctly scales by number of atoms per system.
 
     Covers fix in https://github.com/Radical-AI/torch-sim/pull/153."""
     from torch_sim.integrators.npt import _compute_cell_force
@@ -389,7 +389,7 @@ def test_compute_cell_force_atoms_per_batch():
         masses=torch.ones(72),
         cell=torch.eye(3).repeat(2, 1, 1),
         pbc=True,
-        batch=torch.cat([s1, s2]),
+        system_idx=torch.cat([s1, s2]),
         atomic_numbers=torch.ones(72, dtype=torch.long),
         stress=torch.zeros((2, 3, 3)),
         reference_cell=torch.eye(3).repeat(2, 1, 1),

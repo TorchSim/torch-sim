@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 MemoryScaling = Literal["n_atoms_x_density", "n_atoms"]
-StateKey = Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "batch"]
+StateKey = Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "system_idx"]
 StateDict = dict[StateKey, torch.Tensor]
 SimStateVar = TypeVar("SimStateVar", bound="SimState")
 

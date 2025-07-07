@@ -128,7 +128,7 @@ def test_fire_optimization(
         cell=ar_supercell_sim_state.cell.clone(),
         pbc=ar_supercell_sim_state.pbc,
         atomic_numbers=ar_supercell_sim_state.atomic_numbers.clone(),
-        batch=ar_supercell_sim_state.batch.clone(),
+        system_idx=ar_supercell_sim_state.system_idx.clone(),
     )
 
     initial_state_positions = current_sim_state.positions.clone()
@@ -229,7 +229,7 @@ def test_fire_ase_negative_power_branch(
     state = init_fn(ar_supercell_sim_state)
 
     # Save parameters from initial state
-    initial_dt_batch = state.dt.clone()  # per-batch dt
+    initial_dt_batch = state.dt.clone()  # per-system dt
 
     # Manipulate state to ensure P < 0 for the update_fn step
     # Ensure forces are non-trivial
@@ -262,10 +262,10 @@ def test_fire_ase_negative_power_branch(
     # Assertions for velocity update in ASE P < 0 case:
     # v_after_mixing_is_0, then v_final = dt_new * F_at_power_calc
     expected_final_velocities = (
-        expected_dt_val * forces_at_power_calc[updated_state.batch == 0]
+        expected_dt_val * forces_at_power_calc[updated_state.system_idx == 0]
     )
     assert torch.allclose(
-        updated_state.velocities[updated_state.batch == 0],
+        updated_state.velocities[updated_state.system_idx == 0],
         expected_final_velocities,
         atol=1e-6,
     )
@@ -317,8 +317,8 @@ def test_fire_vv_negative_power_branch(
 
     # If P<0 branch was taken, velocities should be zeroed
     assert torch.allclose(
-        updated_state.velocities[updated_state.batch == 0],
-        torch.zeros_like(updated_state.velocities[updated_state.batch == 0]),
+        updated_state.velocities[updated_state.system_idx == 0],
+        torch.zeros_like(updated_state.velocities[updated_state.system_idx == 0]),
         atol=1e-7,
     )
 
@@ -345,7 +345,7 @@ def test_unit_cell_fire_optimization(
         cell=current_cell,
         pbc=ar_supercell_sim_state.pbc,
         atomic_numbers=ar_supercell_sim_state.atomic_numbers.clone(),
-        batch=ar_supercell_sim_state.batch.clone(),
+        system_idx=ar_supercell_sim_state.system_idx.clone(),
     )
 
     initial_state_positions = current_sim_state.positions.clone()
@@ -429,7 +429,7 @@ def test_cell_optimizer_init_with_dict_and_cell_factor(
     assert opt_state.forces is not None
     assert opt_state.stress is not None
     expected_cf_tensor = torch.full(
-        (opt_state.n_batches, 1, 1),
+        (opt_state.n_systems, 1, 1),
         float(cell_factor_val),  # Ensure float for comparison if int is passed
         device=lj_model.device,
         dtype=lj_model.dtype,
@@ -452,11 +452,11 @@ def test_cell_optimizer_init_cell_factor_none(
 ) -> None:
     """Test cell optimizer init_fn with cell_factor=None."""
     init_fn, _ = optimizer_fn(model=lj_model, cell_factor=None)
-    # Ensure n_batches > 0 for cell_factor calculation from counts
-    assert ar_supercell_sim_state.n_batches > 0
+    # Ensure n_systems > 0 for cell_factor calculation from counts
+    assert ar_supercell_sim_state.n_systems > 0
     opt_state = init_fn(ar_supercell_sim_state)  # Uses ts.SimState directly
     assert isinstance(opt_state, expected_state_type)
-    _, counts = torch.unique(ar_supercell_sim_state.batch, return_counts=True)
+    _, counts = torch.unique(ar_supercell_sim_state.system_idx, return_counts=True)
     expected_cf_tensor = counts.to(dtype=lj_model.dtype).view(-1, 1, 1)
     assert torch.allclose(opt_state.cell_factor, expected_cf_tensor)
     assert opt_state.energy is not None
@@ -525,7 +525,7 @@ def test_frechet_cell_fire_optimization(
         cell=current_cell,
         pbc=ar_supercell_sim_state.pbc,
         atomic_numbers=ar_supercell_sim_state.atomic_numbers.clone(),
-        batch=ar_supercell_sim_state.batch.clone(),
+        system_idx=ar_supercell_sim_state.system_idx.clone(),
     )
 
     initial_state_positions = current_sim_state.positions.clone()
@@ -874,6 +874,6 @@ def test_fire_fixed_cell_unit_cell_consistency(  # noqa: C901
     # position only optimizations
     for step, energy_unit_cell in enumerate(individual_energies_unit_cell):
         assert abs(energy_unit_cell - individual_energies_fire[step]) < 1e-4, (
-            f"Energy for batch {step} doesn't match position only optimization: "
-            f"batch={energy_unit_cell}, individual={individual_energies_fire[step]}"
+            f"Energy for system {step} doesn't match position only optimization: "
+            f"system={energy_unit_cell}, individual={individual_energies_fire[step]}"
         )

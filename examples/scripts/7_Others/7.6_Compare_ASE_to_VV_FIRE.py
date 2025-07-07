@@ -141,7 +141,7 @@ def run_optimization_ts(  # noqa: PLR0915
     start_time = time.perf_counter()
 
     print("Initial cell parameters (Torch-Sim):")
-    for k_idx in range(initial_state.n_batches):
+    for k_idx in range(initial_state.n_systems):
         cell_tensor_k = initial_state.cell[k_idx].cpu().numpy()
         ase_cell_k = Cell(cell_tensor_k)
         params_str = ", ".join([f"{p:.2f}" for p in ase_cell_k.cellpar()])
@@ -168,7 +168,7 @@ def run_optimization_ts(  # noqa: PLR0915
     )
     batcher.load_states(opt_state)
 
-    total_structures = opt_state.n_batches
+    total_structures = opt_state.n_systems
     convergence_steps = torch.full(
         (total_structures,), -1, dtype=torch.long, device=device
     )
@@ -219,7 +219,7 @@ def run_optimization_ts(  # noqa: PLR0915
 
         if global_step % 50 == 0:
             total_converged_frac = converged_tensor_global.sum().item() / total_structures
-            active_structures = opt_state.n_batches if opt_state else 0
+            active_structures = opt_state.n_systems if opt_state else 0
             print(
                 f"{global_step=}: Active structures: {active_structures}, "
                 f"Total converged: {total_converged_frac:.2%}"
@@ -230,7 +230,7 @@ def run_optimization_ts(  # noqa: PLR0915
 
     if final_state_concatenated is not None and hasattr(final_state_concatenated, "cell"):
         print("Final cell parameters (Torch-Sim):")
-        for k_idx in range(final_state_concatenated.n_batches):
+        for k_idx in range(final_state_concatenated.n_systems):
             cell_tensor_k = final_state_concatenated.cell[k_idx].cpu().numpy()
             ase_cell_k = Cell(cell_tensor_k)
             params_str = ", ".join([f"{p:.2f}" for p in ase_cell_k.cellpar()])
@@ -329,12 +329,12 @@ def run_optimization_ase(  # noqa: C901, PLR0915
     all_masses = []
     all_atomic_numbers = []
     all_cells = []
-    all_batches_for_gd = []
+    all_systems_for_gd = []
     final_energies_ase = []
     final_forces_ase_tensors = []
 
     current_atom_offset = 0
-    for batch_idx, ats_final in enumerate(final_ase_atoms_list):
+    for system_idx, ats_final in enumerate(final_ase_atoms_list):
         all_positions.append(
             torch.tensor(ats_final.get_positions(), device=device, dtype=dtype)
         )
@@ -350,9 +350,9 @@ def run_optimization_ase(  # noqa: C901, PLR0915
         )
 
         num_atoms_in_current = len(ats_final)
-        all_batches_for_gd.append(
+        all_systems_for_gd.append(
             torch.full(
-                (num_atoms_in_current,), batch_idx, device=device, dtype=torch.long
+                (num_atoms_in_current,), system_idx, device=device, dtype=torch.long
             )
         )
         current_atom_offset += num_atoms_in_current
@@ -361,7 +361,7 @@ def run_optimization_ase(  # noqa: C901, PLR0915
             if ats_final.calc is None:
                 print(
                     "Re-attaching ASE calculator for final energy/forces for "
-                    f"structure {batch_idx}."
+                    f"structure {system_idx}."
                 )
                 temp_calc = mace_mp_calculator_for_ase(
                     model=MaceUrls.mace_mpa_medium,
@@ -375,7 +375,7 @@ def run_optimization_ase(  # noqa: C901, PLR0915
             )
         except Exception as e:  # noqa: BLE001
             print(
-                f"Could not get final energy/forces for an ASE structure {batch_idx}: {e}"
+                f"Couldn't get final energy/forces for an ASE structure {system_idx}: {e}"
             )
             final_energies_ase.append(float("nan"))
             if all_positions and len(all_positions[-1]) > 0:
@@ -393,8 +393,8 @@ def run_optimization_ase(  # noqa: C901, PLR0915
     concatenated_positions = torch.cat(all_positions, dim=0)
     concatenated_masses = torch.cat(all_masses, dim=0)
     concatenated_atomic_numbers = torch.cat(all_atomic_numbers, dim=0)
-    concatenated_cells = torch.stack(all_cells, dim=0)  # Cells are (N_batch, 3, 3)
-    concatenated_batch_indices = torch.cat(all_batches_for_gd, dim=0)
+    concatenated_cells = torch.stack(all_cells, dim=0)  # Cells are (n_systems, 3, 3)
+    concatenated_system_indices = torch.cat(all_systems_for_gd, dim=0)
 
     concatenated_energies = torch.tensor(final_energies_ase, device=device, dtype=dtype)
     concatenated_forces = torch.cat(final_forces_ase_tensors, dim=0)
@@ -413,7 +413,7 @@ def run_optimization_ase(  # noqa: C901, PLR0915
         cell=concatenated_cells,
         pbc=initial_state.pbc,
         atomic_numbers=concatenated_atomic_numbers,
-        batch=concatenated_batch_indices,
+        system_idx=concatenated_system_indices,
         energy=concatenated_energies,
         forces=concatenated_forces,
     )

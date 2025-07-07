@@ -71,7 +71,7 @@ print("\nStarting NVE molecular dynamics simulation...")
 start_time = time.perf_counter()
 for step in range(N_steps):
     total_energy = state.energy + calc_kinetic_energy(
-        masses=state.masses, momenta=state.momenta, batch=state.batch
+        masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
     )
     if step % 10 == 0:
         print(f"Step {step}: Total energy: {total_energy.item():.4f} eV")

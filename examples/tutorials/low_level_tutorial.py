@@ -228,7 +228,7 @@ for step in range(30):
     state = nvt_langevin_update_fn(state=state, kT=initial_kT * (1 + step / 30))
     if step % 5 == 0:
         temp_E_units = ts.calc_kT(
-            masses=state.masses, momenta=state.momenta, batch=state.batch
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
         )
         temp = temp_E_units / MetalUnits.temperature
         print(f"{step=}: Temperature: {temp}")

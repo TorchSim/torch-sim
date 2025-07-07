@@ -766,7 +766,7 @@ def torch_nl_linked_cell(
     positions: torch.Tensor,
     cell: torch.Tensor,
     pbc: torch.Tensor,
-    batch: torch.Tensor,
+    system_idx: torch.Tensor,
     self_interaction: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute the neighbor list for a set of atomic structures using the linked
@@ -784,7 +784,7 @@ def torch_nl_linked_cell(
         pbc (torch.Tensor [n_structure, 3] bool):
             A tensor indicating the periodic boundary conditions to apply.
             Partial PBC are not supported yet.
-        batch (torch.Tensor [n_atom,] torch.long):
+        system_idx (torch.Tensor [n_atom,] torch.long):
             A tensor containing the index of the structure to which each atom belongs.
         self_interaction (bool, optional):
             A flag to indicate whether to keep the center atoms as their own neighbors.
@@ -806,7 +806,7 @@ def torch_nl_linked_cell(
     References:
         - https://github.com/felixmusil/torch_nl
     """
-    n_atoms = torch.bincount(batch)
+    n_atoms = torch.bincount(system_idx)
     mapping, batch_mapping, shifts_idx = transforms.build_linked_cell_neighborhood(
         positions, cell, pbc, cutoff, n_atoms, self_interaction
     )

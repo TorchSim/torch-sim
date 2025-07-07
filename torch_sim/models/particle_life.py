@@ -223,10 +223,10 @@ class ParticleLifeModel(torch.nn.Module, ModelInterface):
 
         Returns:
             dict[str, torch.Tensor]: Computed properties:
-                - "energy": Potential energy with shape [n_batches]
+                - "energy": Potential energy with shape [n_systems]
                 - "forces": Atomic forces with shape [n_atoms, 3] (if
                     compute_forces=True)
-                - "stress": Stress tensor with shape [n_batches, 3, 3] (if
+                - "stress": Stress tensor with shape [n_systems, 3, 3] (if
                     compute_stress=True)
                 - "energies": Per-atom energies with shape [n_atoms] (if
                     per_atom_energies=True)
@@ -239,10 +239,12 @@ class ParticleLifeModel(torch.nn.Module, ModelInterface):
         if isinstance(state, dict):
             state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
-        if state.batch is None and state.cell.shape[0] > 1:
-            raise ValueError("Batch can only be inferred for batch size 1.")
+        if state.system_idx is None and state.cell.shape[0] > 1:
+            raise ValueError(
+                "system_idx can only be inferred if there is only one system."
+            )
 
-        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_batches)]
+        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_systems)]
         properties = outputs[0]
 
         # we always return tensors

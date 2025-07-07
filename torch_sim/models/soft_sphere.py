@@ -381,7 +381,7 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
         """Compute soft sphere potential energies, forces, and stresses for a system.
 
         Main entry point for soft sphere potential calculations that handles batched
-        states by dispatching each batch to the unbatched implementation and combining
+        states by dispatching each system to the unbatched implementation and combining
         results.
 
         Args:
@@ -391,15 +391,15 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
 
         Returns:
             dict[str, torch.Tensor]: Computed properties:
-                - "energy": Potential energy with shape [n_batches]
+                - "energy": Potential energy with shape [n_systems]
                 - "forces": Atomic forces with shape [n_atoms, 3]
                     (if compute_forces=True)
-                - "stress": Stress tensor with shape [n_batches, 3, 3]
+                - "stress": Stress tensor with shape [n_systems, 3, 3]
                     (if compute_stress=True)
                 - May include additional outputs based on configuration
 
         Raises:
-            ValueError: If batch cannot be inferred for multi-cell systems.
+            ValueError: If system indices cannot be inferred for multi-cell systems.
 
         Examples:
             ```py
@@ -407,18 +407,20 @@ class SoftSphereModel(torch.nn.Module, ModelInterface):
             model = SoftSphereModel(compute_forces=True)
             results = model(sim_state)
 
-            energy = results["energy"]  # Shape: [n_batches]
+            energy = results["energy"]  # Shape: [n_systems]
             forces = results["forces"]  # Shape: [n_atoms, 3]
             ```
         """
         if isinstance(state, dict):
             state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
-        # Handle batch indices if not provided
-        if state.batch is None and state.cell.shape[0] > 1:
-            raise ValueError("Batch can only be inferred for batch size 1.")
+        # Handle System indices if not provided
+        if state.system_idx is None and state.cell.shape[0] > 1:
+            raise ValueError(
+                "system_idx can only be inferred if there is only one system"
+            )
 
-        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_batches)]
+        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_systems)]
         properties = outputs[0]
 
         # Combine results
@@ -816,10 +818,10 @@ class SoftSphereMultiModel(torch.nn.Module):
 
         Returns:
             dict[str, torch.Tensor]: Computed properties:
-                - "energy": Potential energy with shape [n_batches]
+                - "energy": Potential energy with shape [n_systems]
                 - "forces": Atomic forces with shape [n_atoms, 3]
                     (if compute_forces=True)
-                - "stress": Stress tensor with shape [n_batches, 3, 3]
+                - "stress": Stress tensor with shape [n_systems, 3, 3]
                     (if compute_stress=True)
                 - May include additional outputs based on configuration
 
@@ -854,11 +856,13 @@ class SoftSphereMultiModel(torch.nn.Module):
         elif state.pbc != self.pbc:
             raise ValueError("PBC mismatch between model and state")
 
-        # Handle batch indices if not provided
-        if state.batch is None and state.cell.shape[0] > 1:
-            raise ValueError("Batch can only be inferred for batch size 1.")
+        # Handle system indices if not provided
+        if state.system_idx is None and state.cell.shape[0] > 1:
+            raise ValueError(
+                "system_idx can only be inferred if there is only one system"
+            )
 
-        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_batches)]
+        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_systems)]
         properties = outputs[0]
 
         # Combine results

@@ -9,7 +9,7 @@ from torch_sim.integrators import MDState
 from torch_sim.state import (
     DeformGradMixin,
     SimState,
-    _normalize_batch_indices,
+    _normalize_system_indices,
     _pop_states,
     _slice_state,
     concatenate_states,
@@ -28,8 +28,13 @@ def test_infer_sim_state_property_scope(si_sim_state: ts.SimState) -> None:
     """Test inference of property scope."""
     scope = infer_property_scope(si_sim_state)
     assert set(scope["global"]) == {"pbc"}
-    assert set(scope["per_atom"]) == {"positions", "masses", "atomic_numbers", "batch"}
-    assert set(scope["per_batch"]) == {"cell"}
+    assert set(scope["per_atom"]) == {
+        "positions",
+        "masses",
+        "atomic_numbers",
+        "system_idx",
+    }
+    assert set(scope["per_system"]) == {"cell"}
 
 
 def test_infer_md_state_property_scope(si_sim_state: ts.SimState) -> None:
@@ -46,19 +51,19 @@ def test_infer_md_state_property_scope(si_sim_state: ts.SimState) -> None:
         "positions",
         "masses",
         "atomic_numbers",
-        "batch",
+        "system_idx",
         "forces",
         "momenta",
     }
-    assert set(scope["per_batch"]) == {"cell", "energy"}
+    assert set(scope["per_system"]) == {"cell", "energy"}
 
 
 def test_slice_substate(
     si_double_sim_state: ts.SimState, si_sim_state: ts.SimState
 ) -> None:
     """Test slicing a substate from the SimState."""
-    for batch_index in range(2):
-        substate = _slice_state(si_double_sim_state, [batch_index])
+    for system_index in range(2):
+        substate = _slice_state(si_double_sim_state, [system_index])
         assert isinstance(substate, SimState)
         assert substate.positions.shape == (8, 3)
         assert substate.masses.shape == (8,)
@@ -67,7 +72,7 @@ def test_slice_substate(
         assert torch.allclose(substate.masses, si_sim_state.masses)
         assert torch.allclose(substate.cell, si_sim_state.cell)
         assert torch.allclose(substate.atomic_numbers, si_sim_state.atomic_numbers)
-        assert torch.allclose(substate.batch, torch.zeros_like(substate.batch))
+        assert torch.allclose(substate.system_idx, torch.zeros_like(substate.system_idx))
 
 
 def test_slice_md_substate(si_double_sim_state: ts.SimState) -> None:
@@ -77,8 +82,8 @@ def test_slice_md_substate(si_double_sim_state: ts.SimState) -> None:
         energy=torch.zeros((2,), device=si_double_sim_state.device),
         forces=torch.randn_like(si_double_sim_state.positions),
     )
-    for batch_index in range(2):
-        substate = _slice_state(state, [batch_index])
+    for system_index in range(2):
+        substate = _slice_state(state, [system_index])
         assert isinstance(substate, MDState)
         assert substate.positions.shape == (8, 3)
         assert substate.masses.shape == (8,)
@@ -101,10 +106,10 @@ def test_concatenate_two_si_states(
     assert concatenated.masses.shape == si_double_sim_state.masses.shape
     assert concatenated.cell.shape == si_double_sim_state.cell.shape
     assert concatenated.atomic_numbers.shape == si_double_sim_state.atomic_numbers.shape
-    assert concatenated.batch.shape == si_double_sim_state.batch.shape
+    assert concatenated.system_idx.shape == si_double_sim_state.system_idx.shape
 
-    # Check batch indices
-    expected_batch = torch.cat(
+    # Check system indices
+    expected_system_indices = torch.cat(
         [
             torch.zeros(
                 si_sim_state.n_atoms, dtype=torch.int64, device=si_sim_state.device
@@ -114,12 +119,12 @@ def test_concatenate_two_si_states(
             ),
         ]
     )
-    assert torch.all(concatenated.batch == expected_batch)
+    assert torch.all(concatenated.system_idx == expected_system_indices)
 
-    # Check that positions match (accounting for batch indices)
-    for batch_idx in range(2):
-        mask_concat = concatenated.batch == batch_idx
-        mask_double = si_double_sim_state.batch == batch_idx
+    # Check that positions match (accounting for system indices)
+    for system_idx in range(2):
+        mask_concat = concatenated.system_idx == system_idx
+        mask_double = si_double_sim_state.system_idx == system_idx
         assert torch.allclose(
             concatenated.positions[mask_concat],
             si_double_sim_state.positions[mask_double],
@@ -143,22 +148,22 @@ def test_concatenate_si_and_fe_states(
         concatenated.masses.shape[0]
         == si_sim_state.masses.shape[0] + fe_supercell_sim_state.masses.shape[0]
     )
-    assert concatenated.cell.shape[0] == 2  # One cell per batch
+    assert concatenated.cell.shape[0] == 2  # One cell per system
 
-    # Check batch indices
+    # Check system indices
     si_atoms = si_sim_state.n_atoms
     fe_atoms = fe_supercell_sim_state.n_atoms
-    expected_batch = torch.cat(
+    expected_system_indices = torch.cat(
         [
             torch.zeros(si_atoms, dtype=torch.int64, device=si_sim_state.device),
             torch.ones(fe_atoms, dtype=torch.int64, device=fe_supercell_sim_state.device),
         ]
     )
-    assert torch.all(concatenated.batch == expected_batch)
+    assert torch.all(concatenated.system_idx == expected_system_indices)
 
-    # check n_atoms_per_batch
+    # check n_atoms_per_system
     assert torch.all(
-        concatenated.n_atoms_per_batch
+        concatenated.n_atoms_per_system
         == torch.tensor(
             [si_sim_state.n_atoms, fe_supercell_sim_state.n_atoms],
             device=concatenated.device,
@@ -192,22 +197,22 @@ def test_concatenate_double_si_and_fe_states(
     )
     assert (
         concatenated.cell.shape[0] == 3
-    )  # One cell for each original batch (2 Si + 1 Ar)
+    )  # One cell for each original system (2 Si + 1 Ar)
 
-    # Check batch indices
+    # Check system indices
     fe_atoms = fe_supercell_sim_state.n_atoms
 
-    # The double Si state already has batches 0 and 1, so Ar should be batch 2
-    expected_batch = torch.cat(
+    # The double Si state already has systems 0 and 1, so Ar should be system 2
+    expected_system_indices = torch.cat(
         [
-            si_double_sim_state.batch,
+            si_double_sim_state.system_idx,
             torch.full(
                 (fe_atoms,), 2, dtype=torch.int64, device=fe_supercell_sim_state.device
             ),
         ]
     )
-    assert torch.all(concatenated.batch == expected_batch)
-    assert torch.unique(concatenated.batch).shape[0] == 3
+    assert torch.all(concatenated.system_idx == expected_system_indices)
+    assert torch.unique(concatenated.system_idx).shape[0] == 3
 
     # Check that we can slice back to the original states
     si_slice_0 = concatenated[0]
@@ -223,14 +228,14 @@ def test_concatenate_double_si_and_fe_states(
 def test_split_state(si_double_sim_state: ts.SimState) -> None:
     """Test splitting a state into a list of states."""
     states = si_double_sim_state.split()
-    assert len(states) == si_double_sim_state.n_batches
+    assert len(states) == si_double_sim_state.n_systems
     for state in states:
         assert isinstance(state, ts.SimState)
         assert state.positions.shape == (8, 3)
         assert state.masses.shape == (8,)
         assert state.cell.shape == (1, 3, 3)
         assert state.atomic_numbers.shape == (8,)
-        assert torch.allclose(state.batch, torch.zeros_like(state.batch))
+        assert torch.allclose(state.system_idx, torch.zeros_like(state.system_idx))
 
 
 def test_split_many_states(
@@ -248,7 +253,7 @@ def test_split_many_states(
         assert torch.allclose(sub_state.masses, state.masses)
         assert torch.allclose(sub_state.cell, state.cell)
         assert torch.allclose(sub_state.atomic_numbers, state.atomic_numbers)
-        assert torch.allclose(sub_state.batch, state.batch)
+        assert torch.allclose(sub_state.system_idx, state.system_idx)
 
     assert len(states) == 3
 
@@ -276,7 +281,7 @@ def test_pop_states(
     assert kept_state.masses.shape == (len_kept,)
     assert kept_state.cell.shape == (2, 3, 3)
     assert kept_state.atomic_numbers.shape == (len_kept,)
-    assert kept_state.batch.shape == (len_kept,)
+    assert kept_state.system_idx.shape == (len_kept,)
 
 
 def test_initialize_state_from_structure(
@@ -337,8 +342,8 @@ def test_state_pop_method(
     assert torch.allclose(popped_states[0].positions, ar_supercell_sim_state.positions)
 
     # Verify the original state was modified
-    assert concatenated.n_batches == 2
-    assert torch.unique(concatenated.batch).tolist() == [0, 1]
+    assert concatenated.n_systems == 2
+    assert torch.unique(concatenated.system_idx).tolist() == [0, 1]
 
     # Test popping multiple batches
     multi_state = concatenate_states(states)
@@ -348,8 +353,8 @@ def test_state_pop_method(
     assert torch.allclose(popped_multi[1].positions, fe_supercell_sim_state.positions)
 
     # Verify the original multi-state was modified
-    assert multi_state.n_batches == 1
-    assert torch.unique(multi_state.batch).tolist() == [0]
+    assert multi_state.n_systems == 1
+    assert torch.unique(multi_state.system_idx).tolist() == [0]
     assert torch.allclose(multi_state.positions, ar_supercell_sim_state.positions)
 
 
@@ -367,19 +372,19 @@ def test_state_getitem(
     single_state = concatenated[1]
     assert isinstance(single_state, SimState)
     assert torch.allclose(single_state.positions, ar_supercell_sim_state.positions)
-    assert single_state.n_batches == 1
+    assert single_state.n_systems == 1
 
     # Test list indexing
     multi_state = concatenated[[0, 2]]
     assert isinstance(multi_state, SimState)
-    assert multi_state.n_batches == 2
+    assert multi_state.n_systems == 2
     assert torch.allclose(multi_state[0].positions, si_sim_state.positions)
     assert torch.allclose(multi_state[1].positions, fe_supercell_sim_state.positions)
 
     # Test slice indexing
     slice_state = concatenated[1:3]
     assert isinstance(slice_state, SimState)
-    assert slice_state.n_batches == 2
+    assert slice_state.n_systems == 2
     assert torch.allclose(slice_state[0].positions, ar_supercell_sim_state.positions)
     assert torch.allclose(slice_state[1].positions, fe_supercell_sim_state.positions)
 
@@ -391,67 +396,67 @@ def test_state_getitem(
     # Test step in slice
     step_state = concatenated[::2]
     assert isinstance(step_state, SimState)
-    assert step_state.n_batches == 2
+    assert step_state.n_systems == 2
     assert torch.allclose(step_state[0].positions, si_sim_state.positions)
     assert torch.allclose(step_state[1].positions, fe_supercell_sim_state.positions)
 
     full_state = concatenated[:]
     assert torch.allclose(full_state.positions, concatenated.positions)
     # Verify original state is unchanged
-    assert concatenated.n_batches == 3
+    assert concatenated.n_systems == 3
 
 
-def test_normalize_batch_indices(si_double_sim_state: ts.SimState) -> None:
-    """Test the _normalize_batch_indices utility method."""
+def test_normalize_system_indices(si_double_sim_state: ts.SimState) -> None:
+    """Test the _normalize_system_indices utility method."""
     state = si_double_sim_state  # State with 2 batches
-    n_batches = state.n_batches
+    n_systems = state.n_systems
     device = state.device
 
     # Test integer indexing
-    assert _normalize_batch_indices(0, n_batches, device).tolist() == [0]
-    assert _normalize_batch_indices(1, n_batches, device).tolist() == [1]
+    assert _normalize_system_indices(0, n_systems, device).tolist() == [0]
+    assert _normalize_system_indices(1, n_systems, device).tolist() == [1]
 
     # Test negative integer indexing
-    assert _normalize_batch_indices(-1, n_batches, device).tolist() == [1]
-    assert _normalize_batch_indices(-2, n_batches, device).tolist() == [0]
+    assert _normalize_system_indices(-1, n_systems, device).tolist() == [1]
+    assert _normalize_system_indices(-2, n_systems, device).tolist() == [0]
 
     # Test list indexing
-    assert _normalize_batch_indices([0, 1], n_batches, device).tolist() == [0, 1]
+    assert _normalize_system_indices([0, 1], n_systems, device).tolist() == [0, 1]
 
     # Test list with negative indices
-    assert _normalize_batch_indices([0, -1], n_batches, device).tolist() == [0, 1]
-    assert _normalize_batch_indices([-2, -1], n_batches, device).tolist() == [0, 1]
+    assert _normalize_system_indices([0, -1], n_systems, device).tolist() == [0, 1]
+    assert _normalize_system_indices([-2, -1], n_systems, device).tolist() == [0, 1]
 
     # Test slice indexing
-    indices = _normalize_batch_indices(slice(0, 2), n_batches, device)
+    indices = _normalize_system_indices(slice(0, 2), n_systems, device)
     assert isinstance(indices, torch.Tensor)
     assert torch.all(indices == torch.tensor([0, 1], device=state.device))
 
     # Test slice with negative indices
-    indices = _normalize_batch_indices(slice(-2, None), n_batches, device)
+    indices = _normalize_system_indices(slice(-2, None), n_systems, device)
     assert isinstance(indices, torch.Tensor)
     assert torch.all(indices == torch.tensor([0, 1], device=state.device))
 
     # Test slice with step
-    indices = _normalize_batch_indices(slice(0, 2, 2), n_batches, device)
+    indices = _normalize_system_indices(slice(0, 2, 2), n_systems, device)
     assert isinstance(indices, torch.Tensor)
     assert torch.all(indices == torch.tensor([0], device=state.device))
 
     # Test tensor indexing
     tensor_indices = torch.tensor([0, 1], device=state.device)
-    indices = _normalize_batch_indices(tensor_indices, n_batches, device)
+    indices = _normalize_system_indices(tensor_indices, n_systems, device)
     assert isinstance(indices, torch.Tensor)
     assert torch.all(indices == tensor_indices)
 
     # Test tensor with negative indices
     tensor_indices = torch.tensor([0, -1], device=state.device)
-    indices = _normalize_batch_indices(tensor_indices, n_batches, device)
+    indices = _normalize_system_indices(tensor_indices, n_systems, device)
     assert isinstance(indices, torch.Tensor)
     assert torch.all(indices == torch.tensor([0, 1], device=state.device))
 
     # Test error for unsupported type
     try:
-        _normalize_batch_indices((0, 1), n_batches, device)  # Tuple is not supported
+        _normalize_system_indices((0, 1), n_systems, device)  # Tuple is not supported
         raise ValueError("Should have raised TypeError")
     except TypeError:
         pass
@@ -601,7 +606,9 @@ def test_deform_grad_batched(device: torch.device) -> None:
         atomic_numbers=torch.ones(n_atoms * batch_size, device=device, dtype=torch.long),
         velocities=torch.randn(n_atoms * batch_size, 3, device=device),
         reference_cell=reference_cell,
-        batch=torch.repeat_interleave(torch.arange(batch_size, device=device), n_atoms),
+        system_idx=torch.repeat_interleave(
+            torch.arange(batch_size, device=device), n_atoms
+        ),
     )
 
     deform_grad = state.deform_grad()
@@ -611,3 +618,28 @@ def test_deform_grad_batched(device: torch.device) -> None:
     for i in range(batch_size):
         expected = expected_factors[i] * torch.eye(3, device=device)
         assert torch.allclose(deform_grad[i], expected)
+
+
+def test_deprecated_batch_properties_equal_to_new_system_properties(
+    device: torch.device,
+) -> None:
+    """Test that deprecated batch properties are equal to new system properties.
+
+    This tests that the rename from batch to system is not breaking anything."""
+    state = SimState(
+        positions=torch.randn(10, 3, device=device),
+        masses=torch.ones(10, device=device),
+        cell=torch.eye(3, device=device).unsqueeze(0).repeat(2, 1, 1),
+        pbc=True,
+        atomic_numbers=torch.ones(10, device=device, dtype=torch.long),
+        system_idx=torch.repeat_interleave(torch.arange(2, device=device), 5),
+    )
+    assert state.batch is state.system_idx
+    assert state.n_batches == state.n_systems
+    assert torch.allclose(state.n_atoms_per_batch, state.n_atoms_per_system)
+
+    # now test that assigning the old .batch property behaves the same
+    new_system_idx = torch.arange(4, device=device)
+    state.batch = new_system_idx
+    assert torch.allclose(state.system_idx, new_system_idx)
+    assert torch.allclose(state.batch, new_system_idx)

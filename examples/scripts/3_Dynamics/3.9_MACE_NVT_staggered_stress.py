@@ -65,7 +65,7 @@ state = nvt_init(state, kT=kT, seed=1)
 stress = torch.zeros(N_steps // 10, 3, 3, device=device, dtype=dtype)
 for step in range(N_steps):
     temp = (
-        calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+        calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
         / Units.temperature
     )
 

@@ -24,7 +24,7 @@ def calc_kT(  # noqa: N802
     momenta: torch.Tensor,
     masses: torch.Tensor,
     velocities: torch.Tensor | None = None,
-    batch: torch.Tensor | None = None,
+    system_idx: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Calculate temperature in energy units from momenta/velocities and masses.
 
@@ -32,7 +32,7 @@ def calc_kT(  # noqa: N802
         momenta (torch.Tensor): Particle momenta, shape (n_particles, n_dim)
         masses (torch.Tensor): Particle masses, shape (n_particles,)
         velocities (torch.Tensor | None): Particle velocities, shape (n_particles, n_dim)
-        batch (torch.Tensor | None): Optional tensor indicating batch membership of
+        system_idx (torch.Tensor | None): Optional tensor indicating system membership of
         each particle
 
     Returns:
@@ -51,29 +51,29 @@ def calc_kT(  # noqa: N802
         # If momentum provided, calculate v^2 = p^2/m^2
         squared_term = (momenta**2) / masses.unsqueeze(-1)
 
-    if batch is None:
+    if system_idx is None:
         # Count total degrees of freedom
         dof = count_dof(squared_term)
         return torch.sum(squared_term) / dof
-    # Sum squared terms for each batch
+    # Sum squared terms for each system
     flattened_squared = torch.sum(squared_term, dim=-1)
 
-    # Count degrees of freedom per batch
-    batch_sizes = torch.bincount(batch)
-    dof_per_batch = batch_sizes * squared_term.shape[-1]  # multiply by n_dimensions
+    # Count degrees of freedom per system
+    system_sizes = torch.bincount(system_idx)
+    dof_per_system = system_sizes * squared_term.shape[-1]  # multiply by n_dimensions
 
-    # Calculate temperature per batch
-    batch_sums = torch.segment_reduce(
-        flattened_squared, reduce="sum", lengths=batch_sizes
+    # Calculate temperature per system
+    system_sums = torch.segment_reduce(
+        flattened_squared, reduce="sum", lengths=system_sizes
     )
-    return batch_sums / dof_per_batch
+    return system_sums / dof_per_system
 
 
 def calc_temperature(
     momenta: torch.Tensor,
     masses: torch.Tensor,
     velocities: torch.Tensor | None = None,
-    batch: torch.Tensor | None = None,
+    system_idx: torch.Tensor | None = None,
     units: object = MetalUnits.temperature,
 ) -> torch.Tensor:
     """Calculate temperature from momenta/velocities and masses.
@@ -82,14 +82,14 @@ def calc_temperature(
         momenta (torch.Tensor): Particle momenta, shape (n_particles, n_dim)
         masses (torch.Tensor): Particle masses, shape (n_particles,)
         velocities (torch.Tensor | None): Particle velocities, shape (n_particles, n_dim)
-        batch (torch.Tensor | None): Optional tensor indicating batch membership of
+        system_idx (torch.Tensor | None): Optional tensor indicating system membership of
         each particle
         units (object): Units to return the temperature in
 
     Returns:
         torch.Tensor: Temperature value in specified units
     """
-    return calc_kT(momenta, masses, velocities, batch) / units
+    return calc_kT(momenta, masses, velocities, system_idx) / units
 
 
 # @torch.jit.script
@@ -97,7 +97,7 @@ def calc_kinetic_energy(
     momenta: torch.Tensor,
     masses: torch.Tensor,
     velocities: torch.Tensor | None = None,
-    batch: torch.Tensor | None = None,
+    system_idx: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Computes the kinetic energy of a system.
 
@@ -105,12 +105,12 @@ def calc_kinetic_energy(
         momenta (torch.Tensor): Particle momenta, shape (n_particles, n_dim)
         masses (torch.Tensor): Particle masses, shape (n_particles,)
         velocities (torch.Tensor | None): Particle velocities, shape (n_particles, n_dim)
-        batch (torch.Tensor | None): Optional tensor indicating batch membership of
+        system_idx (torch.Tensor | None): Optional tensor indicating system membership of
         each particle
 
     Returns:
-        If batch is None: Scalar tensor containing the total kinetic energy
-        If batch is provided: Tensor of kinetic energies per batch
+        If system_idx is None: Scalar tensor containing the total kinetic energy
+        If system_idx is provided: Tensor of kinetic energies per system
     """
     if momenta is not None and velocities is not None:
         raise ValueError("Must pass either momenta or velocities, not both")
@@ -122,11 +122,11 @@ def calc_kinetic_energy(
     else:  # Using momenta
         squared_term = (momenta**2) / masses.unsqueeze(-1)
 
-    if batch is None:
+    if system_idx is None:
         return 0.5 * torch.sum(squared_term)
     flattened_squared = torch.sum(squared_term, dim=-1)
     return 0.5 * torch.segment_reduce(
-        flattened_squared, reduce="sum", lengths=torch.bincount(batch)
+        flattened_squared, reduce="sum", lengths=torch.bincount(system_idx)
     )
 
 
@@ -142,18 +142,18 @@ def get_pressure(
 
 
 def batchwise_max_force(state: SimState) -> torch.Tensor:
-    """Compute the maximum force per batch.
+    """Compute the maximum force per system.
 
     Args:
-        state (SimState): State to compute the maximum force per batch for.
+        state (SimState): State to compute the maximum force per system for.
 
     Returns:
-        torch.Tensor: Maximum forces per batch
+        torch.Tensor: Maximum forces per system
     """
-    batch_wise_max_force = torch.zeros(
-        state.n_batches, device=state.device, dtype=state.dtype
+    system_wise_max_force = torch.zeros(
+        state.n_systems, device=state.device, dtype=state.dtype
     )
     max_forces = state.forces.norm(dim=1)
-    return batch_wise_max_force.scatter_reduce(
-        dim=0, index=state.batch, src=max_forces, reduce="amax"
+    return system_wise_max_force.scatter_reduce(
+        dim=0, index=state.system_idx, src=max_forces, reduce="amax"
     )

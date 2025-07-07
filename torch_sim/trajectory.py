@@ -208,11 +208,11 @@ class TrajectoryReporter:
         """Report a state and step to the trajectory files.
 
         Writes states and calculated properties to all trajectory files at the
-        specified frequencies. Splits multi-batch states across separate trajectory
-        files. The number of batches must match the number of trajectory files.
+        specified frequencies. Splits multi-system states across separate trajectory
+        files. The number of systems must match the number of trajectory files.
 
         Args:
-            state (SimState): Current system state with n_batches equal to
+            state (SimState): Current system state with n_systems equal to
                 len(filenames)
             step (int): Current simulation step, setting step to 0 will write
                 the state and all properties.
@@ -224,27 +224,28 @@ class TrajectoryReporter:
                 are being collected separately.
 
         Returns:
-            list[dict[str, torch.Tensor]]: Map of property names to tensors for each batch
+            list[dict[str, torch.Tensor]]: Map of property names to tensors for each
+                system.
 
         Raises:
-            ValueError: If number of batches doesn't match number of trajectory files
+            ValueError: If number of systems doesn't match number of trajectory files
         """
-        # Get unique batch indices
-        batch_indices = range(state.n_batches)
-        # batch_indices = torch.unique(state.batch).cpu().tolist()
+        # Get unique system indices
+        system_indices = range(state.n_systems)
+        # system_indices = torch.unique(state.system_idx).cpu().tolist()
 
         # Ensure we have the right number of trajectories
-        if self.filenames is not None and len(batch_indices) != len(self.trajectories):
+        if self.filenames is not None and len(system_indices) != len(self.trajectories):
             raise ValueError(
-                f"Number of batches ({len(batch_indices)}) doesn't match "
+                f"Number of systems ({len(system_indices)}) doesn't match "
                 f"number of trajectory files ({len(self.trajectories)})"
             )
 
         split_states = state.split()
         all_props: list[dict[str, torch.Tensor]] = []
-        # Process each batch separately
+        # Process each system separately
         for idx, substate in enumerate(split_states):
-            # Slice the state once to get only the data for this batch
+            # Slice the state once to get only the data for this system
             self.shape_warned = True
 
             # Write state to trajectory if it's time
@@ -256,7 +257,7 @@ class TrajectoryReporter:
                 self.trajectories[idx].write_state(substate, step, **self.state_kwargs)
 
             all_state_props = {}
-            # Process property calculators for this batch
+            # Process property calculators for this system
             for report_frequency, calculators in self.prop_calculators.items():
                 if step % report_frequency != 0 or report_frequency == 0:
                     continue
@@ -672,7 +673,7 @@ class TorchSimTrajectory:
         self,
         state: SimState | list[SimState],
         steps: int | list[int],
-        batch_index: int | None = None,
+        system_index: int | None = None,
         *,
         save_velocities: bool = False,
         save_forces: bool = False,
@@ -692,7 +693,7 @@ class TorchSimTrajectory:
         Args:
             state (SimState | list[SimState]): SimState or list of SimStates to write
             steps (int | list[int]): Step number(s) for the frame(s)
-            batch_index (int, optional): Batch index to save.
+            system_index (int, optional): System index to save.
             save_velocities (bool, optional): Whether to save velocities.
             save_forces (bool, optional): Whether to save forces.
             variable_cell (bool, optional): Whether the cell varies between frames.
@@ -712,15 +713,15 @@ class TorchSimTrajectory:
         if isinstance(steps, int):
             steps = [steps]
 
-        if isinstance(batch_index, int):
-            batch_index = [batch_index]
-            sub_states = [state[batch_index] for state in state]
-        elif batch_index is None and torch.unique(state[0].batch) == 0:
-            batch_index = 0
+        if isinstance(system_index, int):
+            system_index = [system_index]
+            sub_states = [state[system_index] for state in state]
+        elif system_index is None and torch.unique(state[0].system_idx) == 0:
+            system_index = 0
             sub_states = state
         else:
             raise ValueError(
-                "Batch index must be specified if there are multiple batches"
+                "System index must be specified if there are multiple systems"
             )
 
         if len(sub_states) != len(steps):

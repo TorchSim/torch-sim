@@ -83,14 +83,16 @@ state = langevin_init(state=state, seed=1)
 for step in range(N_steps):
     if step % 10 == 0:
         temp = (
-            calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+            calc_kT(
+                masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+            )
             / Units.temperature
         )
         print(f"{step=}: Temperature: {temp.item():.4f}")
     state = langevin_update(state=state, kT=kT)
 
 final_temp = (
-    calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+    calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
     / Units.temperature
 )
 print(f"Final temperature: {final_temp.item():.4f}")

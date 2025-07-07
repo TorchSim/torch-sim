@@ -48,9 +48,10 @@ def test_multiple_structures_to_state(
     assert state.cell.shape == (2, 3, 3)
     assert state.pbc
     assert state.atomic_numbers.shape == (16,)
-    assert state.batch.shape == (16,)
+    assert state.system_idx.shape == (16,)
     assert torch.all(
-        state.batch == torch.repeat_interleave(torch.tensor([0, 1], device=device), 8)
+        state.system_idx
+        == torch.repeat_interleave(torch.tensor([0, 1], device=device), 8)
     )
 
 
@@ -65,8 +66,8 @@ def test_single_atoms_to_state(si_atoms: Atoms, device: torch.device) -> None:
     assert state.cell.shape == (1, 3, 3)
     assert state.pbc
     assert state.atomic_numbers.shape == (8,)
-    assert state.batch.shape == (8,)
-    assert torch.all(state.batch == 0)
+    assert state.system_idx.shape == (8,)
+    assert torch.all(state.system_idx == 0)
 
 
 def test_multiple_atoms_to_state(si_atoms: Atoms, device: torch.device) -> None:
@@ -80,9 +81,10 @@ def test_multiple_atoms_to_state(si_atoms: Atoms, device: torch.device) -> None:
     assert state.cell.shape == (2, 3, 3)
     assert state.pbc
     assert state.atomic_numbers.shape == (16,)
-    assert state.batch.shape == (16,)
+    assert state.system_idx.shape == (16,)
     assert torch.all(
-        state.batch == torch.repeat_interleave(torch.tensor([0, 1], device=device), 8),
+        state.system_idx
+        == torch.repeat_interleave(torch.tensor([0, 1], device=device), 8),
     )
 
 
@@ -171,9 +173,10 @@ def test_multiple_phonopy_to_state(si_phonopy_atoms: Any, device: torch.device) 
     assert state.cell.shape == (2, 3, 3)
     assert state.pbc
     assert state.atomic_numbers.shape == (16,)
-    assert state.batch.shape == (16,)
+    assert state.system_idx.shape == (16,)
     assert torch.all(
-        state.batch == torch.repeat_interleave(torch.tensor([0, 1], device=device), 8),
+        state.system_idx
+        == torch.repeat_interleave(torch.tensor([0, 1], device=device), 8),
     )
 
 
@@ -235,11 +238,11 @@ def test_state_round_trip(
     # Get the sim_state fixture dynamically using the name
     sim_state: ts.SimState = request.getfixturevalue(sim_state_name)
     to_format_fn, from_format_fn = conversion_functions
-    unique_batches = torch.unique(sim_state.batch)
+    unique_systems = torch.unique(sim_state.system_idx)
 
     # Convert to intermediate format
     intermediate_format = to_format_fn(sim_state)
-    assert len(intermediate_format) == len(unique_batches)
+    assert len(intermediate_format) == len(unique_systems)
 
     # Convert back to state
     round_trip_state: ts.SimState = from_format_fn(intermediate_format, device, dtype)
@@ -248,7 +251,7 @@ def test_state_round_trip(
     assert torch.allclose(sim_state.positions, round_trip_state.positions)
     assert torch.allclose(sim_state.cell, round_trip_state.cell)
     assert torch.all(sim_state.atomic_numbers == round_trip_state.atomic_numbers)
-    assert torch.all(sim_state.batch == round_trip_state.batch)
+    assert torch.all(sim_state.system_idx == round_trip_state.system_idx)
     assert sim_state.pbc == round_trip_state.pbc
 
     if isinstance(intermediate_format[0], Atoms):

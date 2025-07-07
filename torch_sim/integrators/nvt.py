@@ -45,11 +45,11 @@ def nvt_langevin(  # noqa: C901
     Args:
         model (torch.nn.Module): Neural network model that computes energies and forces.
             Must return a dict with 'energy' and 'forces' keys.
-        dt (torch.Tensor): Integration timestep, either scalar or with shape [n_batches]
+        dt (torch.Tensor): Integration timestep, either scalar or with shape [n_systems]
         kT (torch.Tensor): Target temperature in energy units, either scalar or
-            with shape [n_batches]
+            with shape [n_systems]
         gamma (torch.Tensor, optional): Friction coefficient for Langevin thermostat,
-            either scalar or with shape [n_batches]. Defaults to 1/(100*dt).
+            either scalar or with shape [n_systems]. Defaults to 1/(100*dt).
         seed (int, optional): Random seed for reproducibility. Defaults to None.
 
     Returns:
@@ -93,11 +93,11 @@ def nvt_langevin(  # noqa: C901
 
         Args:
             state (MDState): Current system state containing positions, momenta, etc.
-            dt (torch.Tensor): Integration timestep, either scalar or shape [n_batches]
+            dt (torch.Tensor): Integration timestep, either scalar or shape [n_systems]
             kT (torch.Tensor): Target temperature in energy units, either scalar or
-                with shape [n_batches]
+                with shape [n_systems]
             gamma (torch.Tensor): Friction coefficient controlling noise strength,
-                either scalar or with shape [n_batches]
+                either scalar or with shape [n_systems]
 
         Returns:
             MDState: Updated state with new momenta after stochastic step
@@ -114,12 +114,12 @@ def nvt_langevin(  # noqa: C901
         c1 = torch.exp(-gamma * dt)
 
         if isinstance(kT, torch.Tensor) and len(kT.shape) > 0:
-            # kT is a tensor with shape (n_batches,)
-            kT = kT[state.batch]
+            # kT is a tensor with shape (n_systems,)
+            kT = kT[state.system_idx]
 
-        # Index c1 and c2 with state.batch to align shapes with state.momenta
+        # Index c1 and c2 with state.system_idx to align shapes with state.momenta
         if isinstance(c1, torch.Tensor) and len(c1.shape) > 0:
-            c1 = c1[state.batch]
+            c1 = c1[state.system_idx]
 
         c2 = torch.sqrt(kT * (1 - c1**2)).unsqueeze(-1)
 
@@ -147,7 +147,7 @@ def nvt_langevin(  # noqa: C901
             state (SimState | StateDict): Either a SimState object or a dictionary
                 containing positions, masses, cell, pbc, and other required state vars
             kT (torch.Tensor): Temperature in energy units for initializing momenta,
-                either scalar or with shape [n_batches]
+                either scalar or with shape [n_systems]
             seed (int, optional): Random seed for reproducibility
 
         Returns:
@@ -167,7 +167,7 @@ def nvt_langevin(  # noqa: C901
         momenta = getattr(
             state,
             "momenta",
-            calculate_momenta(state.positions, state.masses, state.batch, kT, seed),
+            calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
         )
 
         initial_state = MDState(
@@ -178,7 +178,7 @@ def nvt_langevin(  # noqa: C901
             masses=state.masses,
             cell=state.cell,
             pbc=state.pbc,
-            batch=state.batch,
+            system_idx=state.system_idx,
             atomic_numbers=state.atomic_numbers,
         )
         return initial_state  # noqa: RET504
@@ -202,11 +202,11 @@ def nvt_langevin(  # noqa: C901
 
         Args:
             state (MDState): Current system state containing positions, momenta, forces
-            dt (torch.Tensor): Integration timestep, either scalar or shape [n_batches]
+            dt (torch.Tensor): Integration timestep, either scalar or shape [n_systems]
             kT (torch.Tensor): Target temperature in energy units, either scalar or
-                with shape [n_batches]
+                with shape [n_systems]
             gamma (torch.Tensor): Friction coefficient for Langevin thermostat,
-                either scalar or with shape [n_batches]
+                either scalar or with shape [n_systems]
 
         Returns:
             MDState: Updated state after one complete Langevin step with new positions,
@@ -363,21 +363,21 @@ def nvt_nose_hoover(
         model_output = model(state)
         momenta = kwargs.get(
             "momenta",
-            calculate_momenta(state.positions, state.masses, state.batch, kT, seed),
+            calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
         )
 
-        # Calculate initial kinetic energy per batch
-        KE = calc_kinetic_energy(momenta, state.masses, batch=state.batch)
+        # Calculate initial kinetic energy per system
+        KE = calc_kinetic_energy(momenta, state.masses, system_idx=state.system_idx)
 
-        # Calculate degrees of freedom per batch
-        n_atoms_per_batch = torch.bincount(state.batch)
-        dof_per_batch = (
-            n_atoms_per_batch * state.positions.shape[-1]
+        # Calculate degrees of freedom per system
+        n_atoms_per_system = torch.bincount(state.system_idx)
+        dof_per_system = (
+            n_atoms_per_system * state.positions.shape[-1]
         )  # n_atoms * n_dimensions
 
-        # For now, sum the per-batch DOF as chain expects a single int
+        # For now, sum the per-system DOF as chain expects a single int
         # This is a limitation that should be addressed in the chain implementation
-        total_dof = int(dof_per_batch.sum().item())
+        total_dof = int(dof_per_system.sum().item())
 
         # Initialize state
         state = NVTNoseHooverState(
@@ -431,8 +431,8 @@ def nvt_nose_hoover(
         # Full velocity Verlet step
         state = velocity_verlet(state=state, dt=dt, model=model)
 
-        # Update chain kinetic energy per batch
-        KE = calc_kinetic_energy(state.momenta, state.masses, batch=state.batch)
+        # Update chain kinetic energy per system
+        KE = calc_kinetic_energy(state.momenta, state.masses, system_idx=state.system_idx)
         chain.kinetic_energy = KE
 
         # Second half-step of chain evolution
@@ -474,13 +474,13 @@ def nvt_nose_hoover_invariant(
         - Includes both physical and thermostat degrees of freedom
         - Useful for debugging thermostat behavior
     """
-    # Calculate system energy terms per batch
+    # Calculate system energy terms per system
     e_pot = state.energy
-    e_kin = calc_kinetic_energy(state.momenta, state.masses, batch=state.batch)
+    e_kin = calc_kinetic_energy(state.momenta, state.masses, system_idx=state.system_idx)
 
-    # Get system degrees of freedom per batch
-    n_atoms_per_batch = torch.bincount(state.batch)
-    dof = n_atoms_per_batch * state.positions.shape[-1]  # n_atoms * n_dimensions
+    # Get system degrees of freedom per system
+    n_atoms_per_system = torch.bincount(state.system_idx)
+    dof = n_atoms_per_system * state.positions.shape[-1]  # n_atoms * n_dimensions
 
     # Start with system energy
     e_tot = e_pot + e_kin

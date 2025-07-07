@@ -172,7 +172,7 @@ def integrate(
         pbar_kwargs = pbar if isinstance(pbar, dict) else {}
         pbar_kwargs.setdefault("desc", "Integrate")
         pbar_kwargs.setdefault("disable", None)
-        tqdm_pbar = tqdm(total=state.n_batches, **pbar_kwargs)
+        tqdm_pbar = tqdm(total=state.n_systems, **pbar_kwargs)
 
     for state, batch_indices in batch_iterator:
         state = init_fn(state)
@@ -194,7 +194,7 @@ def integrate(
         # finish the trajectory reporter
         final_states.append(state)
         if tqdm_pbar:
-            tqdm_pbar.update(state.n_batches)
+            tqdm_pbar.update(state.n_systems)
 
     if trajectory_reporter:
         trajectory_reporter.finish()
@@ -307,7 +307,7 @@ def generate_force_convergence_fn(
         """Check if the system has converged.
 
         Returns:
-            torch.Tensor: Boolean tensor of shape (n_batches,) indicating
+            torch.Tensor: Boolean tensor of shape (n_systems,) indicating
                 convergence status for each batch.
         """
         force_conv = batchwise_max_force(state) < force_tol
@@ -343,7 +343,7 @@ def generate_energy_convergence_fn(energy_tol: float = 1e-3) -> Callable:
         """Check if the system has converged.
 
         Returns:
-            torch.Tensor: Boolean tensor of shape (n_batches,) indicating
+            torch.Tensor: Boolean tensor of shape (n_systems,) indicating
                 convergence status for each batch.
         """
         return torch.abs(state.energy - last_energy) < energy_tol
@@ -372,7 +372,7 @@ def optimize(  # noqa: C901
         model (ModelInterface): Neural network model module
         optimizer (Callable): Optimization algorithm function
         convergence_fn (Callable | None): Condition for convergence, should return a
-            boolean tensor of length n_batches
+            boolean tensor of length n_systems
         optimizer_kwargs: Additional keyword arguments for optimizer init function
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
             tracking optimization trajectory. If a dict, will be passed to the
@@ -434,7 +434,7 @@ def optimize(  # noqa: C901
         pbar_kwargs = pbar if isinstance(pbar, dict) else {}
         pbar_kwargs.setdefault("desc", "Optimize")
         pbar_kwargs.setdefault("disable", None)
-        tqdm_pbar = tqdm(total=state.n_batches, **pbar_kwargs)
+        tqdm_pbar = tqdm(total=state.n_systems, **pbar_kwargs)
 
     while (result := autobatcher.next_batch(state, convergence_tensor))[0] is not None:
         state, converged_states, batch_indices = result
@@ -545,7 +545,7 @@ def static(
         pbar_kwargs = pbar if isinstance(pbar, dict) else {}
         pbar_kwargs.setdefault("desc", "Static")
         pbar_kwargs.setdefault("disable", None)
-        tqdm_pbar = tqdm(total=state.n_batches, **pbar_kwargs)
+        tqdm_pbar = tqdm(total=state.n_systems, **pbar_kwargs)
 
     for sub_state, batch_indices in batch_iterator:
         # set up trajectory reporters
@@ -568,7 +568,7 @@ def static(
         all_props.extend(props)
 
         if tqdm_pbar:
-            tqdm_pbar.update(sub_state.n_batches)
+            tqdm_pbar.update(sub_state.n_systems)
 
     trajectory_reporter.finish()
 

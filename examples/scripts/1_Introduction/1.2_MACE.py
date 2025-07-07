@@ -63,19 +63,19 @@ positions = torch.tensor(positions_numpy, device=device, dtype=dtype)
 cell = torch.tensor(cell_numpy, device=device, dtype=dtype)
 atomic_numbers = torch.tensor(atomic_numbers_numpy, device=device, dtype=torch.int)
 
-# create batch index array of shape (16,) which is 0 for first 8 atoms, 1 for last 8 atoms
-atoms_per_batch = torch.tensor(
+# create system idx array of shape (16,) which is 0 for first 8 atoms, 1 for last 8 atoms
+atoms_per_system = torch.tensor(
     [len(atoms) for atoms in atoms_list], device=device, dtype=torch.int
 )
-batch = torch.repeat_interleave(
-    torch.arange(len(atoms_per_batch), device=device), atoms_per_batch
+system_idx = torch.repeat_interleave(
+    torch.arange(len(atoms_per_system), device=device), atoms_per_system
 )
 
 # You can see their shapes are as expected
 print(f"Positions: {positions.shape}")
 print(f"Cell: {cell.shape}")
 print(f"Atomic numbers: {atomic_numbers.shape}")
-print(f"Batch: {batch.shape}")
+print(f"System indices: {system_idx.shape}")
 
 # Now we can pass them to the model
 results = batched_model(
@@ -83,18 +83,18 @@ results = batched_model(
         positions=positions,
         cell=cell,
         atomic_numbers=atomic_numbers,
-        batch=batch,
+        system_idx=system_idx,
         pbc=True,
     )
 )
 
-# The energy has shape (n_batches,) as the structures in a batch
+# The energy has shape (n_systems,) as the structures in a batch
 print(f"Energy: {results['energy'].shape}")
 
 # The forces have shape (n_atoms, 3) same as positions
 print(f"Forces: {results['forces'].shape}")
 
-# The stress has shape (n_batches, 3, 3) same as cell
+# The stress has shape (n_systems, 3, 3) same as cell
 print(f"Stress: {results['stress'].shape}")
 
 # Check if the energy, forces, and stress are the same for the Si system across the batch
