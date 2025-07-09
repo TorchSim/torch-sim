@@ -169,6 +169,11 @@ class SimState:
         deprecated::
             Use :attr:`n_atoms_per_system` instead.
         """
+        warnings.warn(
+            "n_atoms_per_batch is deprecated, use n_atoms_per_system instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.n_atoms_per_system
 
     @property
@@ -178,6 +183,11 @@ class SimState:
         deprecated::
             Use :attr:`system_idx` instead.
         """
+        warnings.warn(
+            "batch is deprecated, use system_idx instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.system_idx
 
     @batch.setter
@@ -187,6 +197,11 @@ class SimState:
         deprecated::
             Use :attr:`system_idx` instead.
         """
+        warnings.warn(
+            "Setting batch is deprecated, use system_idx instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.system_idx = system_idx
 
     @property
@@ -196,6 +211,11 @@ class SimState:
         deprecated::
             Use :attr:`n_systems` instead.
         """
+        warnings.warn(
+            "n_batches is deprecated, use n_systems instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.n_systems
 
     @property
