@@ -389,7 +389,7 @@ class SimState:
         return _slice_state(self, system_indices)
 
 
-class MDSimState(SimState):
+class MDSimState:
     """SimState with additional velocity and mass attributes."""
 
     velocities: torch.Tensor

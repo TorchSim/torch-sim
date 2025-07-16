@@ -500,8 +500,8 @@ class DeformState(SimState, DeformGradMixin):
     def __init__(
         self,
         *args,
-        velocities: torch.Tensor | None = None,
-        reference_cell: torch.Tensor | None = None,
+        velocities: torch.Tensor,
+        reference_cell: torch.Tensor,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
