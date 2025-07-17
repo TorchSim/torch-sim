@@ -1,3 +1,4 @@
+# type: ignore
 """Workflows for generating random packed structures and crystallization.
 
 This module provides functions for:
