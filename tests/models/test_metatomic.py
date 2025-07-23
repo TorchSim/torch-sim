@@ -28,7 +28,7 @@ def metatomic_calculator(device: torch.device):
     """Load a pretrained metatomic model for testing."""
     return ase_calculator.MetatomicCalculator(
         model=load_model(
-            "https://huggingface.co/lab-cosmo/pet-mad/resolve/main/models/pet-mad-latest.ckpt"
+            "https://huggingface.co/lab-cosmo/pet-mad/resolve/v1.1.0/models/pet-mad-v1.1.0.ckpt"
         ).export(),
         device=device,
     )
