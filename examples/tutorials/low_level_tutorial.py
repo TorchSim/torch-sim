@@ -166,6 +166,7 @@ parameters can usually be passed to the `init_fn` and parameters that vary over
 the course of the simulation can be passed to the `update_fn`.
 """
 
+# %%
 fire_init_fn, fire_update_fn = ts.unit_cell_fire(
     model=model,
     dt_max=0.1,
