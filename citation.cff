@@ -1,6 +1,6 @@
 cff-version: 1.2.0
-title: "torch-sim"
-message: "If you use this software, please cite it as below."
+title: TorchSim
+message: If you use this software, please cite it as below.
 authors:
   - family-names: Gangan
     given-names: Abhijeet S.
@@ -15,8 +15,8 @@ authors:
   - family-names: Falletta
     given-names: Stefano
 license: MIT
-license-url: "https://github.com/Radical-AI/torch-sim/blob/main/LICENSE"
-repository-code: "https://github.com/Radical-AI/torch-sim"
-type: "software"
+license-url: https://github.com/Radical-AI/torch-sim/blob/main/LICENSE
+repository-code: https://github.com/Radical-AI/torch-sim
+url: https://github.com/Radical-AI/torch-sim
+type: software
 date-released: 2025-04-02
-url: "https://github.com/Radical-AI/torch-sim"
