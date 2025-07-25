@@ -38,6 +38,7 @@ import numpy as np
 import tables
 import torch
 
+from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
 
@@ -203,7 +204,7 @@ class TrajectoryReporter:
         self,
         state: SimState,
         step: int,
-        model: torch.nn.Module | None = None,
+        model: ModelInterface | None = None,
     ) -> list[dict[str, torch.Tensor]]:
         """Report a state and step to the trajectory files.
 
@@ -216,7 +217,7 @@ class TrajectoryReporter:
                 len(filenames)
             step (int): Current simulation step, setting step to 0 will write
                 the state and all properties.
-            model (torch.nn.Module, optional): Model used for simulation.
+            model (ModelInterface, optional): Model used for simulation.
                 Defaults to None. Must be provided if any prop_calculators
                 are provided.
             write_to_file (bool, optional): Whether to write the state to the trajectory

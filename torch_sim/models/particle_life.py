@@ -83,7 +83,7 @@ def asymmetric_particle_pair_force_jit(
     return inner_forces + outer_forces
 
 
-class ParticleLifeModel(torch.nn.Module, ModelInterface):
+class ParticleLifeModel(ModelInterface):
     """Calculator for asymmetric particle interaction.
 
     This model implements an asymmetric interaction between particles based on

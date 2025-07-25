@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import torch
 
 from torch_sim import transforms
+from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
 
@@ -156,7 +157,7 @@ def position_step(state: MDState, dt: torch.Tensor) -> MDState:
     return state
 
 
-def velocity_verlet(state: MDState, dt: torch.Tensor, model: torch.nn.Module) -> MDState:
+def velocity_verlet(state: MDState, dt: torch.Tensor, model: ModelInterface) -> MDState:
     """Perform one complete velocity Verlet integration step.
 
     This function implements the velocity Verlet algorithm, which provides

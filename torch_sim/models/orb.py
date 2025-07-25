@@ -39,7 +39,7 @@ try:
 except ImportError as exc:
     warnings.warn(f"Orb import failed: {traceback.format_exc()}", stacklevel=2)
 
-    class OrbModel(torch.nn.Module, ModelInterface):
+    class OrbModel(ModelInterface):
         """ORB model wrapper for torch_sim.
 
         This class is a placeholder for the OrbModel class.
@@ -247,7 +247,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
     ).to(device=device, dtype=output_dtype)
 
 
-class OrbModel(torch.nn.Module, ModelInterface):
+class OrbModel(ModelInterface):
     """Computes atomistic energies, forces and stresses using an ORB model.
 
     This class wraps an ORB model to compute energies, forces, and stresses for

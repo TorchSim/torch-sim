@@ -21,7 +21,7 @@ try:
 except ImportError as exc:
     warnings.warn(f"MatterSim import failed: {traceback.format_exc()}", stacklevel=2)
 
-    class MatterSimModel(torch.nn.Module, ModelInterface):
+    class MatterSimModel(ModelInterface):
         """MatterSim model wrapper for torch_sim.
 
         This class is a placeholder for the MatterSimModel class.
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from torch_sim.typing import StateDict
 
 
-class MatterSimModel(torch.nn.Module, ModelInterface):
+class MatterSimModel(ModelInterface):
     """Computes atomistic energies, forces and stresses using an MatterSim model.
 
     This class wraps an MatterSim model to compute energies, forces, and stresses for

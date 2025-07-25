@@ -10,6 +10,7 @@ from tests.models.conftest import (
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
+from torch_sim.models.interface import ModelInterface
 
 
 try:
@@ -48,7 +49,7 @@ def pretrained_mattersim_model(device: torch.device, model_name: str):
 
 @pytest.fixture
 def mattersim_model(
-    pretrained_mattersim_model: torch.nn.Module, device: torch.device
+    pretrained_mattersim_model: ModelInterface, device: torch.device
 ) -> MatterSimModel:
     """Create an MatterSimModel wrapper for the pretrained model."""
     return MatterSimModel(
@@ -66,7 +67,7 @@ def mattersim_calculator(
 
 
 def test_mattersim_initialization(
-    pretrained_mattersim_model: torch.nn.Module, device: torch.device
+    pretrained_mattersim_model: ModelInterface, device: torch.device
 ) -> None:
     """Test that the MatterSim model initializes correctly."""
     model = MatterSimModel(

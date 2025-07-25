@@ -3,6 +3,7 @@ import torch
 from pymatgen.core import Structure
 
 import torch_sim as ts
+from torch_sim.models.interface import ModelInterface
 from torch_sim.monte_carlo import (
     SwapMCState,
     generate_swaps,
@@ -112,7 +113,7 @@ def test_validate_permutation(batched_diverse_state: ts.SimState):
 
 def test_monte_carlo(
     batched_diverse_state: ts.SimState,
-    lj_model: torch.nn.Module,
+    lj_model: ModelInterface,
 ):
     """Test the monte_carlo function that returns a step function and initial state."""
     # Call monte_carlo to get the initial state and step function

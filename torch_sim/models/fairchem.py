@@ -45,7 +45,7 @@ try:
 except ImportError as exc:
     warnings.warn(f"FairChem import failed: {traceback.format_exc()}", stacklevel=2)
 
-    class FairChemModel(torch.nn.Module, ModelInterface):
+    class FairChemModel(ModelInterface):
         """FairChem model wrapper for torch_sim.
 
         This class is a placeholder for the FairChemModel class.
@@ -70,7 +70,7 @@ _DTYPE_DICT = {
 }
 
 
-class FairChemModel(torch.nn.Module, ModelInterface):
+class FairChemModel(ModelInterface):
     """Computes atomistic energies, forces and stresses using a FairChem model.
 
     This class wraps a FairChem model to compute energies, forces, and stresses for

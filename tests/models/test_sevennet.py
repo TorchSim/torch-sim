@@ -6,6 +6,7 @@ from tests.models.conftest import (
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
+from torch_sim.models.interface import ModelInterface
 
 
 try:
@@ -50,7 +51,7 @@ def pretrained_sevenn_model(device: torch.device, model_name: str):
 
 @pytest.fixture
 def sevenn_model(
-    pretrained_sevenn_model: torch.nn.Module, device: torch.device, modal_name: str
+    pretrained_sevenn_model: ModelInterface, device: torch.device, modal_name: str
 ) -> SevenNetModel:
     """Create an SevenNetModel wrapper for the pretrained model."""
     return SevenNetModel(
@@ -69,7 +70,7 @@ def sevenn_calculator(
 
 
 def test_sevennet_initialization(
-    pretrained_sevenn_model: torch.nn.Module, device: torch.device
+    pretrained_sevenn_model: ModelInterface, device: torch.device
 ) -> None:
     """Test that the SevenNet model initializes correctly."""
     model = SevenNetModel(

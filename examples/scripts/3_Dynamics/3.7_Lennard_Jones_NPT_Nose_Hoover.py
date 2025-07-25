@@ -96,8 +96,8 @@ state = ts.SimState(
     positions=positions,
     masses=masses,
     cell=cell.unsqueeze(0),
-    pbc=True,
     atomic_numbers=atomic_numbers,
+    pbc=True,
 )
 # Run initial simulation and get results
 results = model(state)

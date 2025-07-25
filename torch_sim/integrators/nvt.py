@@ -16,13 +16,14 @@ from torch_sim.integrators.md import (
     position_step,
     velocity_verlet,
 )
+from torch_sim.models.interface import ModelInterface
 from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
 def nvt_langevin(  # noqa: C901
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     dt: torch.Tensor,
     kT: torch.Tensor,
@@ -275,7 +276,7 @@ class NVTNoseHooverState(MDState):
 
 def nvt_nose_hoover(
     *,
-    model: torch.nn.Module,
+    model: ModelInterface,
     dt: torch.Tensor,
     kT: torch.Tensor,
     chain_length: int = 3,

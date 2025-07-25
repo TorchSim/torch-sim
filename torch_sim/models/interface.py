@@ -27,8 +27,6 @@ Notes:
 """
 
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Self
 
 import torch
 
@@ -37,7 +35,7 @@ from torch_sim.state import SimState
 from torch_sim.typing import MemoryScaling, StateDict
 
 
-class ModelInterface(ABC):
+class ModelInterface(torch.nn.Module, ABC):
     """Abstract base class for all simulation models in torchsim.
 
     This interface provides a common structure for all energy and force models,
@@ -71,37 +69,10 @@ class ModelInterface(ABC):
         ```
     """
 
-    @abstractmethod
-    def __init__(
-        self,
-        model: str | Path | torch.nn.Module | None = None,
-        device: torch.device | None = None,
-        dtype: torch.dtype = torch.float64,
-        **kwargs,
-    ) -> Self:
-        """Initialize a model implementation.
-
-        Implementations must set device, dtype and compute capability flags
-        to indicate what operations the model supports. Models may optionally
-        load parameters from a file or existing module.
-
-        Args:
-            model (str | Path | torch.nn.Module | None): Model specification, which
-                can be:
-                - Path to a model checkpoint or model file
-                - Pre-configured torch.nn.Module
-                - None for default initialization
-                Defaults to None.
-            device (torch.device | None): Device where the model will run. If None,
-                a default device will be selected. Defaults to None.
-            dtype (torch.dtype): Data type for model calculations. Defaults to
-                torch.float64.
-            **kwargs: Additional model-specific parameters.
-
-        Notes:
-            All implementing classes must set self._device, self._dtype,
-            self._compute_stress and self._compute_forces in their __init__ method.
-        """
+    _device: torch.device
+    _dtype: torch.dtype
+    _compute_stress: bool
+    _compute_forces: bool
 
     @property
     def device(self) -> torch.device:

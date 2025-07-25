@@ -38,7 +38,7 @@ try:
 except ImportError as exc:
     warnings.warn(f"MACE import failed: {traceback.format_exc()}", stacklevel=2)
 
-    class MaceModel(torch.nn.Module, ModelInterface):
+    class MaceModel(ModelInterface):
         """MACE model wrapper for torch_sim.
 
         This class is a placeholder for the MaceModel class.
@@ -77,7 +77,7 @@ def to_one_hot(
     return oh.view(*shape)
 
 
-class MaceModel(torch.nn.Module, ModelInterface):
+class MaceModel(ModelInterface):
     """Computes energies for multiple systems using a MACE model.
 
     This class wraps a MACE model to compute energies, forces, and stresses for

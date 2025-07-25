@@ -9,6 +9,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.integrators import MDState
+from torch_sim.models.interface import ModelInterface
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 
@@ -748,7 +749,7 @@ def test_reporter_with_model(
     """Test TrajectoryReporter with a model argument in property calculators."""
 
     # Create a property calculator that uses the model
-    def energy_calculator(state: ts.SimState, model: torch.nn.Module) -> torch.Tensor:
+    def energy_calculator(state: ts.SimState, model: ModelInterface) -> torch.Tensor:
         output = model(state)
         # Calculate a property that depends on the model
         return output["energy"]

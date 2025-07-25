@@ -85,9 +85,10 @@ class SimState:
         self,
         positions: torch.Tensor,
         masses: torch.Tensor,
-        cell: torch.Tensor,
-        pbc: bool,
         atomic_numbers: torch.Tensor,
+        cell: torch.Tensor,
+        *,
+        pbc: bool,
         system_idx: torch.Tensor | None = None,
     ) -> None:
         """Initialize the SimState."""
@@ -135,7 +136,7 @@ class SimState:
             # TODO(curtis): I feel like this logic is not reliable.
             # I'll come up with something better later.
             _, counts = torch.unique_consecutive(system_idx, return_counts=True)
-            if not torch.all(counts == torch.bincount(self.system_idx)):
+            if not torch.all(counts == torch.bincount(system_idx)):
                 raise ValueError("System indices must be unique consecutive integers")
             self.system_idx = system_idx
 

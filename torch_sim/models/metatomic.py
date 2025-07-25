@@ -36,7 +36,7 @@ try:
 except ImportError as exc:
     warnings.warn(f"Metatomic import failed: {traceback.format_exc()}", stacklevel=2)
 
-    class MetatomicModel(torch.nn.Module, ModelInterface):
+    class MetatomicModel(ModelInterface):
         """Metatomic model wrapper for torch_sim.
 
         This class is a placeholder for the MetatomicModel class.
@@ -48,7 +48,7 @@ except ImportError as exc:
             raise err
 
 
-class MetatomicModel(torch.nn.Module, ModelInterface):
+class MetatomicModel(ModelInterface):
     """Computes energies for a list of systems using a metatomic model.
 
     This class wraps a metatomic model to compute energies, forces, and stresses for

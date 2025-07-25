@@ -24,6 +24,7 @@ from dataclasses import dataclass
 
 import torch
 
+from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 from torch_sim.typing import BravaisType
 
@@ -1105,7 +1106,7 @@ def get_elastic_tensor_from_coeffs(  # noqa: C901, PLR0915
 
 
 def calculate_elastic_tensor(
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     state: SimState,
     bravais_type: BravaisType = BravaisType.TRICLINIC,

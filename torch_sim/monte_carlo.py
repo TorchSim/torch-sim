@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 import torch
 
+from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
 
@@ -183,7 +184,7 @@ def metropolis_criterion(
 
 def swap_monte_carlo(
     *,
-    model: torch.nn.Module,
+    model: ModelInterface,
     kT: float,
     seed: int | None = None,
 ) -> tuple[

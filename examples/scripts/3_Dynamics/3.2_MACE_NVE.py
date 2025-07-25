@@ -60,11 +60,7 @@ model = MaceModel(
 )
 
 state = ts.SimState(
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    pbc=True,
-    atomic_numbers=atomic_numbers,
+    positions=positions, masses=masses, cell=cell, atomic_numbers=atomic_numbers, pbc=True
 )
 
 # Run initial inference

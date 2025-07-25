@@ -25,6 +25,7 @@ from typing import Any, Literal, get_args
 import torch
 
 import torch_sim.math as tsm
+from torch_sim.models.interface import ModelInterface
 from torch_sim.state import DeformGradMixin, SimState
 from torch_sim.typing import StateDict
 
@@ -57,7 +58,7 @@ class GDState(SimState):
 
 
 def gradient_descent(
-    model: torch.nn.Module, *, lr: torch.Tensor | float = 0.01
+    model: ModelInterface, *, lr: torch.Tensor | float = 0.01
 ) -> tuple[Callable[[StateDict | SimState], GDState], Callable[[GDState], GDState]]:
     """Initialize a batched gradient descent optimization.
 
@@ -196,7 +197,7 @@ class UnitCellGDState(GDState, DeformGradMixin):
 
 
 def unit_cell_gradient_descent(  # noqa: PLR0915, C901
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     positions_lr: float = 0.01,
     cell_lr: float = 0.1,
@@ -483,7 +484,7 @@ class FireState(SimState):
 
 
 def fire(
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     dt_max: float = 1.0,
     dt_start: float = 0.1,
@@ -692,7 +693,7 @@ class UnitCellFireState(SimState, DeformGradMixin):
 
 
 def unit_cell_fire(
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     dt_max: float = 1.0,
     dt_start: float = 0.1,
@@ -708,7 +709,7 @@ def unit_cell_fire(
     max_step: float = 0.2,
     md_flavor: MdFlavor = ase_fire_key,
 ) -> tuple[
-    UnitCellFireState,
+    Callable[[SimState | StateDict], UnitCellFireState],
     Callable[[UnitCellFireState], UnitCellFireState],
 ]:
     """Initialize a batched FIRE optimization with unit cell degrees of freedom.
@@ -976,7 +977,7 @@ class FrechetCellFIREState(SimState, DeformGradMixin):
 
 
 def frechet_cell_fire(
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     dt_max: float = 1.0,
     dt_start: float = 0.1,
@@ -992,7 +993,7 @@ def frechet_cell_fire(
     max_step: float = 0.2,
     md_flavor: MdFlavor = ase_fire_key,
 ) -> tuple[
-    FrechetCellFIREState,
+    Callable[[SimState | StateDict], FrechetCellFIREState],
     Callable[[FrechetCellFIREState], FrechetCellFIREState],
 ]:
     """Initialize a batched FIRE optimization with Frechet cell parameterization.
@@ -1204,7 +1205,7 @@ AnyFireCellState = UnitCellFireState | FrechetCellFIREState
 
 def _vv_fire_step(  # noqa: C901, PLR0915
     state: FireState | AnyFireCellState,
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     dt_max: torch.Tensor,
     n_min: torch.Tensor,
@@ -1420,7 +1421,7 @@ def _vv_fire_step(  # noqa: C901, PLR0915
 
 def _ase_fire_step(  # noqa: C901, PLR0915
     state: FireState | AnyFireCellState,
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     dt_max: torch.Tensor,
     n_min: torch.Tensor,

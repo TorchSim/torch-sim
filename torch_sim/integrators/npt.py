@@ -14,6 +14,7 @@ from torch_sim.integrators.md import (
     calculate_momenta,
     construct_nose_hoover_chain,
 )
+from torch_sim.models.interface import ModelInterface
 from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.state import SimState
 from torch_sim.typing import StateDict
@@ -140,7 +141,7 @@ def _compute_cell_force(
 
 
 def npt_langevin(  # noqa: C901, PLR0915
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     dt: torch.Tensor,
     kT: torch.Tensor,
@@ -898,7 +899,7 @@ class NPTNoseHooverState(MDState):
 
 def npt_nose_hoover(  # noqa: C901, PLR0915
     *,
-    model: torch.nn.Module,
+    model: ModelInterface,
     kT: torch.Tensor,
     external_pressure: torch.Tensor,
     dt: torch.Tensor,

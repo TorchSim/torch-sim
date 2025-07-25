@@ -10,12 +10,13 @@ from torch_sim.integrators.md import (
     momentum_step,
     position_step,
 )
+from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
 def nve(
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     dt: torch.Tensor,
     kT: torch.Tensor,

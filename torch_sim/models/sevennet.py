@@ -32,7 +32,7 @@ try:
 except ImportError as exc:
     warnings.warn(f"SevenNet import failed: {traceback.format_exc()}", stacklevel=2)
 
-    class SevenNetModel(torch.nn.Module, ModelInterface):
+    class SevenNetModel(ModelInterface):
         """SevenNet model wrapper for torch_sim.
 
         This class is a placeholder for the SevenNetModel class.
@@ -44,7 +44,7 @@ except ImportError as exc:
             raise err
 
 
-class SevenNetModel(torch.nn.Module, ModelInterface):
+class SevenNetModel(ModelInterface):
     """Computes atomistic energies, forces and stresses using an SevenNet model.
 
     This class wraps an SevenNet model to compute energies, forces, and stresses for

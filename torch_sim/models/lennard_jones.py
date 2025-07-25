@@ -119,7 +119,7 @@ def lennard_jones_pair_force(
     return torch.where(dr > 0, force, torch.zeros_like(force))
 
 
-class LennardJonesModel(torch.nn.Module, ModelInterface):
+class LennardJonesModel(ModelInterface):
     """Lennard-Jones potential energy and force calculator.
 
     Implements the Lennard-Jones 12-6 potential for molecular dynamics simulations.

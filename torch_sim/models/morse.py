@@ -112,7 +112,7 @@ def morse_pair_force(
     return torch.where(dr > 0, force, torch.zeros_like(force))
 
 
-class MorseModel(torch.nn.Module, ModelInterface):
+class MorseModel(ModelInterface):
     """Morse potential energy and force calculator.
 
     Implements the Morse potential for molecular dynamics simulations. This model
