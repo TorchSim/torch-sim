@@ -103,7 +103,7 @@ class MetatomicModel(torch.nn.Module, ModelInterface):
             )
 
         if model == "pet-mad":
-            path = "https://huggingface.co/lab-cosmo/pet-mad/resolve/main/models/pet-mad-latest.ckpt"
+            path = "https://huggingface.co/lab-cosmo/pet-mad/resolve/v1.1.0/models/pet-mad-v1.1.0.ckpt"
             self._model = load_model(path).export()
         elif model.endswith(".ckpt"):
             path = model
