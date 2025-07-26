@@ -390,24 +390,11 @@ class SimState:
         return _slice_state(self, system_indices)
 
 
-class MDSimState:
-    """SimState with additional velocity and mass attributes."""
-
-    velocities: torch.Tensor
-    masses: torch.Tensor
-
-
-class DeformGradMixin(MDSimState):
+class DeformGradMixin:
     """Mixin for states that support deformation gradients."""
 
-    @property
-    def momenta(self) -> torch.Tensor:
-        """Calculate momenta from velocities and masses.
-
-        Returns:
-            The momenta of the particles
-        """
-        return self.velocities * self.masses.unsqueeze(-1)
+    reference_cell: torch.Tensor
+    row_vector_cell: torch.Tensor
 
     @property
     def reference_row_vector_cell(self) -> torch.Tensor:

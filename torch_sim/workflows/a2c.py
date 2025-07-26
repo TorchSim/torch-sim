@@ -327,6 +327,7 @@ def random_packed_structure(
 
     if log is not None:
         return state, log
+
     return state
 
 
@@ -707,7 +708,7 @@ def get_unit_cell_relaxed_structure(
     state: ts.SimState,
     model: ModelInterface,
     max_iter: int = 200,
-) -> tuple[UnitCellFireState, dict]:
+) -> tuple[UnitCellFireState, dict[str, torch.Tensor], list[float], list[float]]:
     """Relax both atomic positions and cell parameters using FIRE algorithm.
 
     This function performs geometry optimization of both atomic positions and unit cell
@@ -751,8 +752,8 @@ def get_unit_cell_relaxed_structure(
     state = unit_cell_fire_init(state)
 
     def step_fn(
-        step: int, state: UnitCellFireState, logger: dict
-    ) -> tuple[UnitCellFireState, dict]:
+        step: int, state: UnitCellFireState, logger: dict[str, torch.Tensor]
+    ) -> tuple[UnitCellFireState, dict[str, torch.Tensor]]:
         logger["energy"][step] = state.energy
         logger["stress"][step] = state.stress
         state = unit_cell_fire_update(state)

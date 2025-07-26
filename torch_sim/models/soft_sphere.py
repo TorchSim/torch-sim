@@ -435,7 +435,7 @@ class SoftSphereModel(ModelInterface):
         return results
 
 
-class SoftSphereMultiModel(torch.nn.Module):
+class SoftSphereMultiModel(ModelInterface):
     """Calculator for systems with multiple particle types.
 
     Extends the basic soft sphere model to support multiple particle types with

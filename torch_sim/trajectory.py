@@ -97,9 +97,9 @@ class TrajectoryReporter:
         state_frequency: int = 100,
         *,
         prop_calculators: dict[int, dict[str, Callable]] | None = None,
-        state_kwargs: dict | None = None,
+        state_kwargs: dict[str, Any] | None = None,
         metadata: dict[str, str] | None = None,
-        trajectory_kwargs: dict | None = None,
+        trajectory_kwargs: dict[str, Any] | None = None,
     ) -> None:
         """Initialize a TrajectoryReporter.
 
