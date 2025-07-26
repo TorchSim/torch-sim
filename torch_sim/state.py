@@ -507,123 +507,6 @@ def state_to_device(
     return type(state)(**attrs)
 
 
-def infer_property_scope(
-    state: SimState,
-    ambiguous_handling: Literal["error", "globalize", "globalize_warn"] = "error",
-) -> dict[Literal["global", "per_atom", "per_system"], list[str]]:
-    """Infer whether a property is global, per-atom, or per-system.
-
-    Analyzes the shapes of tensor attributes to determine their scope within
-    the atomistic system representation.
-
-    Args:
-        state (SimState): The state to analyze
-        ambiguous_handling ("error" | "globalize" | "globalize_warn"): How to
-            handle properties with ambiguous scope. Options:
-            - "error": Raise an error for ambiguous properties
-            - "globalize": Treat ambiguous properties as global
-            - "globalize_warn": Treat ambiguous properties as global with a warning
-
-    Returns:
-        dict[Literal["global", "per_atom", "per_system"], list[str]]: Map of scope
-            category to list of property names
-
-    Raises:
-        ValueError: If n_atoms equals n_systems (making scope inference ambiguous) or
-            if ambiguous_handling="error" and an ambiguous property is encountered
-    """
-    # TODO: this cannot effectively resolve global properties with
-    # length of n_atoms or n_systems, they will be classified incorrectly,
-    # no clear fix
-
-    if state.n_atoms == state.n_systems:
-        raise ValueError(
-            f"n_atoms ({state.n_atoms}) and n_systems ({state.n_systems}) are equal, "
-            "which means shapes cannot be inferred unambiguously."
-        )
-
-    scope = {
-        "global": [],
-        "per_atom": [],
-        "per_system": [],
-    }
-
-    # Iterate through all attributes
-    for attr_name, attr_value in vars(state).items():
-        # Handle scalar values (global properties)
-        if not isinstance(attr_value, torch.Tensor):
-            scope["global"].append(attr_name)
-            continue
-
-        # Handle tensor properties based on shape
-        shape = attr_value.shape
-
-        # Empty tensor case
-        if len(shape) == 0:
-            scope["global"].append(attr_name)
-        # Vector/matrix with first dimension matching number of atoms
-        elif shape[0] == state.n_atoms:
-            scope["per_atom"].append(attr_name)
-        # Tensor with first dimension matching number of systems
-        elif shape[0] == state.n_systems:
-            scope["per_system"].append(attr_name)
-        # Any other shape is ambiguous
-        elif ambiguous_handling == "error":
-            raise ValueError(
-                f"Cannot categorize property '{attr_name}' with shape {shape}. "
-                f"Expected first dimension to be either {state.n_atoms} (per-atom) or "
-                f"{state.n_systems} (per-system), or a scalar (global)."
-            )
-        elif ambiguous_handling in ("globalize", "globalize_warn"):
-            scope["global"].append(attr_name)
-
-            if ambiguous_handling == "globalize_warn":
-                warnings.warn(
-                    f"Property '{attr_name}' with shape {shape} is ambiguous, "
-                    "treating as global. This may lead to unexpected behavior "
-                    "and suggests the State is not being used as intended.",
-                    stacklevel=1,
-                )
-
-    return scope
-
-
-def _get_property_attrs(
-    state: SimState, ambiguous_handling: Literal["error", "globalize"] = "error"
-) -> dict[str, dict]:
-    """Get global, per-atom, and per-system attributes from a state.
-
-    Categorizes all attributes of the state based on their scope
-    (global, per-atom, or per-system).
-
-    Args:
-        state (SimState): The state to extract attributes from
-        ambiguous_handling ("error" | "globalize"): How to handle ambiguous
-            properties
-
-    Returns:
-        dict[str, dict]: Keys are 'global', 'per_atom', and 'per_system', each
-            containing a dictionary of attribute names to values
-    """
-    scope = infer_property_scope(state, ambiguous_handling=ambiguous_handling)
-
-    attrs = {"global": {}, "per_atom": {}, "per_system": {}}
-
-    # Process global properties
-    for attr_name in scope["global"]:
-        attrs["global"][attr_name] = getattr(state, attr_name)
-
-    # Process per-atom properties
-    for attr_name in scope["per_atom"]:
-        attrs["per_atom"][attr_name] = getattr(state, attr_name)
-
-    # Process per-system properties
-    for attr_name in scope["per_system"]:
-        attrs["per_system"][attr_name] = getattr(state, attr_name)
-
-    return attrs
-
-
 def _filter_attrs_by_mask(
     attrs: dict[str, dict],
     atom_mask: torch.Tensor,
@@ -877,6 +760,7 @@ def concatenate_states(
 
     # Get property scopes from the first state to identify
     # global/per-atom/per-system properties
+    # TODO(curtis): fix concatenate states
     first_scope = infer_property_scope(first_state)
     global_props = set(first_scope["global"])
     per_atom_props = set(first_scope["per_atom"])

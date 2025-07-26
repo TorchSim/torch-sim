@@ -78,17 +78,7 @@ SimState attributes fall into three categories: atomwise, batchwise, and global.
 * Batchwise attributes are tensors with shape (n_systems, ...), this is just `cell` for
   the base SimState. Names are singular.
 * Global attributes have any other shape or type, just `pbc` here. Names are singular.
-
-You can use the `infer_property_scope` function to analyze a state's properties. This
-is mostly used internally but can be useful for debugging.
 """
-
-# %%
-from torch_sim.state import infer_property_scope
-
-scope = infer_property_scope(si_state)
-print(scope)
-
 
 # %% [markdown]
 """
@@ -256,12 +246,7 @@ md_state = MDState(
     energy=torch.zeros((si_state.n_systems,), device=si_state.device),  # Initial 0 energy
 )
 
-print("MDState properties:")
-scope = infer_property_scope(md_state)
-print("Global properties:", scope["global"])
-print("Per-atom properties:", scope["per_atom"])
-print("Per-system properties:", scope["per_system"])
-
+print(md_state)
 
 # %% [markdown]
 """

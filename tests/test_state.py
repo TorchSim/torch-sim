@@ -13,7 +13,6 @@ from torch_sim.state import (
     _pop_states,
     _slice_state,
     concatenate_states,
-    infer_property_scope,
     initialize_state,
 )
 
@@ -22,40 +21,6 @@ if typing.TYPE_CHECKING:
     from ase import Atoms
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure
-
-
-def test_infer_sim_state_property_scope(si_sim_state: ts.SimState) -> None:
-    """Test inference of property scope."""
-    scope = infer_property_scope(si_sim_state)
-    assert set(scope["global"]) == {"pbc"}
-    assert set(scope["per_atom"]) == {
-        "positions",
-        "masses",
-        "atomic_numbers",
-        "system_idx",
-    }
-    assert set(scope["per_system"]) == {"cell"}
-
-
-def test_infer_md_state_property_scope(si_sim_state: ts.SimState) -> None:
-    """Test inference of property scope."""
-    state = MDState(
-        **asdict(si_sim_state),
-        momenta=torch.randn_like(si_sim_state.positions),
-        forces=torch.randn_like(si_sim_state.positions),
-        energy=torch.zeros((1,)),
-    )
-    scope = infer_property_scope(state)
-    assert set(scope["global"]) == {"pbc"}
-    assert set(scope["per_atom"]) == {
-        "positions",
-        "masses",
-        "atomic_numbers",
-        "system_idx",
-        "forces",
-        "momenta",
-    }
-    assert set(scope["per_system"]) == {"cell", "energy"}
 
 
 def test_slice_substate(
