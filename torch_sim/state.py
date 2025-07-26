@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure
 
+DefaultFeatures = ["positions", "masses", "atomic_numbers", "cell", "pbc", "system_idx"]
+
 
 class SimState:
     """State representation for atomistic systems with batched operations support.
@@ -146,6 +148,18 @@ class SimState:
             raise ValueError(
                 f"Cell must have shape (n_systems, 3, 3), got {self.cell.shape}"
             )
+
+    @classmethod
+    def from_features(cls, node_features: dict[str, torch.Tensor], system_features: dict[str, torch.Tensor], global_features: dict[str, torch.Tensor]) -> Self:
+        # TODO(curtis): investigate if there are system features?
+        return cls(
+            positions=node_features["positions"],
+            masses=node_features["masses"],
+            atomic_numbers=node_features["atomic_numbers"],
+            cell=global_features["cell"],
+            pbc=global_features["pbc"],
+            system_idx=node_features["system_idx"],
+        )
 
     @property
     def positions(self) -> torch.Tensor:
@@ -558,7 +572,7 @@ def state_to_device(
 
 
 def _filter_attrs_by_mask(
-    state: SimStateT,
+    state: SimState,
     atom_mask: torch.Tensor,
     system_mask: torch.Tensor,
 ) -> dict:
@@ -606,7 +620,7 @@ def _filter_attrs_by_mask(
             filtered_attrs[attr_name] = attr_value[atom_mask]
 
     # Filter per-system attributes
-    for attr_name, attr_value in attrs["per_system"].items():
+    for attr_name, attr_value in state.system_features.items():
         filtered_attrs[attr_name] = attr_value[system_mask]
 
     return filtered_attrs
@@ -706,7 +720,7 @@ def _pop_states(
 
     # Create and split the pop state
     pop_state = type(state)(**pop_attrs)
-    pop_states = _split_state(pop_state, ambiguous_handling)
+    pop_states = _split_state(pop_state)
 
     return keep_state, pop_states
 
@@ -714,7 +728,6 @@ def _pop_states(
 def _slice_state(
     state: SimStateT,
     system_indices: list[int] | torch.Tensor,
-    ambiguous_handling: Literal["error", "globalize"] = "error",
 ) -> SimStateT:
     """Slice a substate from the SimState containing only the specified system indices.
 
@@ -725,10 +738,6 @@ def _slice_state(
         state (SimState): The state to slice
         system_indices (list[int] | torch.Tensor): System indices to include in the
             sliced state
-        ambiguous_handling ("error" | "globalize"): How to handle ambiguous
-            properties. If "error", an error is raised if a property has ambiguous
-            scope. If "globalize", properties with ambiguous scope are treated as
-            global.
 
     Returns:
         SimState: A new SimState object containing only the specified systems
@@ -744,15 +753,13 @@ def _slice_state(
     if len(system_indices) == 0:
         raise ValueError("system_indices cannot be empty")
 
-    attrs = _get_property_attrs(state, ambiguous_handling)
-
     # Create masks for the atoms and systems to include
     system_range = torch.arange(state.n_systems, device=state.device)
     system_mask = torch.isin(system_range, system_indices)
     atom_mask = torch.isin(state.system_idx, system_indices)
 
     # Filter attributes
-    filtered_attrs = _filter_attrs_by_mask(attrs, atom_mask, system_mask)
+    filtered_attrs = _filter_attrs_by_mask(state, atom_mask, system_mask)
 
     # Create the sliced state
     return type(state)(**filtered_attrs)
@@ -793,20 +800,12 @@ def concatenate_states(
     # Use the target device or default to the first state's device
     target_device = device or first_state.device
 
-    # Get property scopes from the first state to identify
-    # global/per-atom/per-system properties
-    # TODO(curtis): fix concatenate states
-    first_scope = infer_property_scope(first_state)
-    global_props = set(first_scope["global"])
-    per_atom_props = set(first_scope["per_atom"])
-    per_system_props = set(first_scope["per_system"])
-
     # Initialize result with global properties from first state
-    concatenated = {prop: getattr(first_state, prop) for prop in global_props}
+    concatenated = first_state.global_features.copy()
 
     # Pre-allocate lists for tensors to concatenate
-    per_atom_tensors = {prop: [] for prop in per_atom_props}
-    per_system_tensors = {prop: [] for prop in per_system_props}
+    per_atom_tensors = {prop: [] for prop in first_state.node_features.keys()}
+    per_system_tensors = {prop: [] for prop in first_state.system_features.keys()}
     new_system_indices = []
     system_offset = 0
 
@@ -816,14 +815,12 @@ def concatenate_states(
         if state.device != target_device:
             state = state_to_device(state, target_device)
 
-        # Collect per-atom properties
-        for prop in per_atom_props:
-            # if hasattr(state, prop):
+        # Collect per-node properties
+        for prop in first_state.node_features.keys():
             per_atom_tensors[prop].append(getattr(state, prop))
 
         # Collect per-system properties
-        for prop in per_system_props:
-            # if hasattr(state, prop):
+        for prop in first_state.system_features.keys():
             per_system_tensors[prop].append(getattr(state, prop))
 
         # Update system indices
@@ -834,11 +831,9 @@ def concatenate_states(
 
     # Concatenate collected tensors
     for prop, tensors in per_atom_tensors.items():
-        # if tensors:
         concatenated[prop] = torch.cat(tensors, dim=0)
 
     for prop, tensors in per_system_tensors.items():
-        # if tensors:
         concatenated[prop] = torch.cat(tensors, dim=0)
 
     # Concatenate system indices
