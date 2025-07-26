@@ -74,12 +74,9 @@ class SimState:
         >>> cloned_state = state.clone()
     """
 
-    positions: torch.Tensor
-    masses: torch.Tensor
-    cell: torch.Tensor
-    pbc: bool  # TODO: do all calculators support mixed pbc?
-    atomic_numbers: torch.Tensor
-    system_idx: torch.Tensor
+    node_features: dict[str, torch.Tensor]
+    system_features: dict[str, torch.Tensor]
+    global_features: dict[str, torch.Tensor]
 
     def __init__(
         self,
@@ -92,11 +89,16 @@ class SimState:
         system_idx: torch.Tensor | None = None,
     ) -> None:
         """Initialize the SimState."""
-        self.positions = positions
-        self.masses = masses
-        self.cell = cell
-        self.pbc = pbc
-        self.atomic_numbers = atomic_numbers
+        self.node_features = {
+            "positions": positions,
+            "masses": masses,
+            "atomic_numbers": atomic_numbers,
+        }
+        self.system_features = {}
+        self.global_features = {
+            "cell": cell,
+            "pbc": pbc,
+        }
 
         # Validate and process the state after initialization.
         # data validation and fill batch
@@ -144,6 +146,54 @@ class SimState:
             raise ValueError(
                 f"Cell must have shape (n_systems, 3, 3), got {self.cell.shape}"
             )
+
+    @property
+    def positions(self) -> torch.Tensor:
+        return self.node_features["positions"]
+
+    @positions.setter
+    def positions(self, positions: torch.Tensor) -> None:
+        self.node_features["positions"] = positions
+
+    @property
+    def masses(self) -> torch.Tensor:
+        return self.node_features["masses"]
+
+    @masses.setter
+    def masses(self, masses: torch.Tensor) -> None:
+        self.node_features["masses"] = masses
+
+    @property
+    def atomic_numbers(self) -> torch.Tensor:
+        return self.node_features["atomic_numbers"]
+
+    @atomic_numbers.setter
+    def atomic_numbers(self, atomic_numbers: torch.Tensor) -> None:
+        self.node_features["atomic_numbers"] = atomic_numbers
+
+    @property
+    def cell(self) -> torch.Tensor:
+        return self.global_features["cell"]
+
+    @cell.setter
+    def cell(self, cell: torch.Tensor) -> None:
+        self.global_features["cell"] = cell
+
+    @property
+    def pbc(self) -> bool:
+        return self.global_features["pbc"]
+
+    @pbc.setter
+    def pbc(self, pbc: bool) -> None:
+        self.global_features["pbc"] = pbc
+
+    @property
+    def system_idx(self) -> torch.Tensor:
+        return self.node_features["system_idx"]
+
+    @system_idx.setter
+    def system_idx(self, system_idx: torch.Tensor) -> None:
+        self.node_features["system_idx"] = system_idx
 
     @property
     def wrap_positions(self) -> torch.Tensor:
@@ -508,7 +558,7 @@ def state_to_device(
 
 
 def _filter_attrs_by_mask(
-    attrs: dict[str, dict],
+    state: SimStateT,
     atom_mask: torch.Tensor,
     system_mask: torch.Tensor,
 ) -> dict:
@@ -517,8 +567,7 @@ def _filter_attrs_by_mask(
     Selects subsets of attributes based on boolean masks for atoms and systems.
 
     Args:
-        attrs (dict[str, dict]): Keys are 'global', 'per_atom', and 'per_system', each
-            containing a dictionary of attribute names to values
+        state (SimState): The state to filter
         atom_mask (torch.Tensor): Boolean mask for atoms to include with shape
             (n_atoms,)
         system_mask (torch.Tensor): Boolean mask for systems to include with shape
@@ -530,10 +579,10 @@ def _filter_attrs_by_mask(
     filtered_attrs = {}
 
     # Copy global attributes directly
-    filtered_attrs.update(attrs["global"])
+    filtered_attrs.update(state.global_features)
 
     # Filter per-atom attributes
-    for attr_name, attr_value in attrs["per_atom"].items():
+    for attr_name, attr_value in state.node_features.items():
         if attr_name == "system_idx":
             # Get the old system indices for the selected atoms
             old_system_idxs = attr_value[atom_mask]
@@ -565,7 +614,6 @@ def _filter_attrs_by_mask(
 
 def _split_state(
     state: SimStateT,
-    ambiguous_handling: Literal["error", "globalize"] = "error",
 ) -> list[SimStateT]:
     """Split a SimState into a list of states, each containing a single system.
 
@@ -574,28 +622,22 @@ def _split_state(
 
     Args:
         state (SimState): The SimState to split
-        ambiguous_handling ("error" | "globalize"): How to handle ambiguous
-            properties. If "error", an error is raised if a property has ambiguous
-            scope. If "globalize", properties with ambiguous scope are treated as
-            global.
-
     Returns:
         list[SimState]: A list of SimState objects, each containing a single
             system
     """
-    attrs = _get_property_attrs(state, ambiguous_handling)
     system_sizes = torch.bincount(state.system_idx).tolist()
 
     # Split per-atom attributes by system
     split_per_atom = {}
-    for attr_name, attr_value in attrs["per_atom"].items():
+    for attr_name, attr_value in state.node_features.items():
         if attr_name == "system_idx":
             continue
         split_per_atom[attr_name] = torch.split(attr_value, system_sizes, dim=0)
 
     # Split per-system attributes into individual elements
     split_per_system = {}
-    for attr_name, attr_value in attrs["per_system"].items():
+    for attr_name, attr_value in state.system_features.items():
         split_per_system[attr_name] = torch.split(attr_value, 1, dim=0)
 
     # Create a state for each system
@@ -614,7 +656,7 @@ def _split_state(
                 for attr_name in split_per_system
             },
             # Add the global attributes
-            **attrs["global"],
+            **state.global_features,
         }
         states.append(type(state)(**system_attrs))
 
@@ -624,7 +666,6 @@ def _split_state(
 def _pop_states(
     state: SimState,
     pop_indices: list[int] | torch.Tensor,
-    ambiguous_handling: Literal["error", "globalize"] = "error",
 ) -> tuple[SimState, list[SimState]]:
     """Pop off the states with the specified indices.
 
@@ -633,10 +674,6 @@ def _pop_states(
     Args:
         state (SimState): The SimState to modify
         pop_indices (list[int] | torch.Tensor): The system indices to extract and remove
-        ambiguous_handling ("error" | "globalize"): How to handle ambiguous
-            properties. If "error", an error is raised if a property has ambiguous
-            scope. If "globalize", properties with ambiguous scope are treated as
-            global.
 
     Returns:
         tuple[SimState, list[SimState]]: A tuple containing:
@@ -652,8 +689,6 @@ def _pop_states(
     if isinstance(pop_indices, list):
         pop_indices = torch.tensor(pop_indices, device=state.device, dtype=torch.int64)
 
-    attrs = _get_property_attrs(state, ambiguous_handling)
-
     # Create masks for the atoms and systems to keep and pop
     system_range = torch.arange(state.n_systems, device=state.device)
     pop_system_mask = torch.isin(system_range, pop_indices)
@@ -663,8 +698,8 @@ def _pop_states(
     keep_atom_mask = ~pop_atom_mask
 
     # Filter attributes for keep and pop states
-    keep_attrs = _filter_attrs_by_mask(attrs, keep_atom_mask, keep_system_mask)
-    pop_attrs = _filter_attrs_by_mask(attrs, pop_atom_mask, pop_system_mask)
+    keep_attrs = _filter_attrs_by_mask(state, keep_atom_mask, keep_system_mask)
+    pop_attrs = _filter_attrs_by_mask(state, pop_atom_mask, pop_system_mask)
 
     # Create the keep state
     keep_state = type(state)(**keep_attrs)
