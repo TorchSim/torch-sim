@@ -7,7 +7,7 @@ operations and conversion to/from various atomistic formats.
 import copy
 import importlib
 import warnings
-from typing import TYPE_CHECKING, Literal, Self, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 import torch
 
@@ -76,9 +76,9 @@ class SimState:
         >>> cloned_state = state.clone()
     """
 
-    node_features: dict[str, torch.Tensor]
-    system_features: dict[str, torch.Tensor]
-    global_features: dict[str, torch.Tensor]
+    node_features: dict[str, Any]
+    system_features: dict[str, Any]
+    global_features: dict[str, Any]
 
     def __init__(
         self,
@@ -146,11 +146,12 @@ class SimState:
 
         if self.cell.shape[0] != self.n_systems:
             raise ValueError(
-                f"Cell must have shape (n_systems, 3, 3), got {self.cell.shape}"
+                f"Cell must have shape (n_systems, 3, 3): ({self.n_systems}, 3, 3)"
+                f"got {self.cell.shape}"
             )
 
     @classmethod
-    def from_features(cls, node_features: dict[str, torch.Tensor], system_features: dict[str, torch.Tensor], global_features: dict[str, torch.Tensor]) -> Self:
+    def from_features(cls, node_features: dict[str, Any], system_features: dict[str, Any], global_features: dict[str, Any]) -> Self:
         # TODO(curtis): investigate if there are system features?
         return cls(
             positions=node_features["positions"],

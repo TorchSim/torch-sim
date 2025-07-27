@@ -9,7 +9,6 @@ from torch_sim import transforms
 from torch_sim.state import SimState
 
 
-@dataclass
 class MDState(SimState):
     """State information for molecular dynamics simulations.
 
@@ -36,9 +35,54 @@ class MDState(SimState):
         dtype (torch.dtype): Data type of tensors
     """
 
-    momenta: torch.Tensor
-    energy: torch.Tensor
-    forces: torch.Tensor
+    def __init__(
+        self,
+        *,
+        momenta: torch.Tensor,
+        energy: torch.Tensor,
+        forces: torch.Tensor,
+        positions: torch.Tensor,
+        masses: torch.Tensor,
+        atomic_numbers: torch.Tensor,
+        cell: torch.Tensor,
+        pbc: bool,
+        system_idx: torch.Tensor | None = None,
+    ):
+        super().__init__(
+            positions=positions,
+            masses=masses,
+            atomic_numbers=atomic_numbers,
+            cell=cell,
+            pbc=pbc,
+            system_idx=system_idx,
+        )
+        self.node_features["momenta"] = momenta
+        self.node_features["energy"] = energy
+        self.node_features["forces"] = forces
+
+    @property
+    def momenta(self) -> torch.Tensor:
+        return self.node_features["momenta"]
+
+    @momenta.setter
+    def momenta(self, momenta: torch.Tensor) -> None:
+        self.node_features["momenta"] = momenta
+
+    @property
+    def energy(self) -> torch.Tensor:
+        return self.node_features["energy"]
+
+    @energy.setter
+    def energy(self, energy: torch.Tensor) -> None:
+        self.node_features["energy"] = energy
+
+    @property
+    def forces(self) -> torch.Tensor:
+        return self.node_features["forces"]
+
+    @forces.setter
+    def forces(self, forces: torch.Tensor) -> None:
+        self.node_features["forces"] = forces
 
     @property
     def velocities(self) -> torch.Tensor:
