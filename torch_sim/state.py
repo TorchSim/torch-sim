@@ -8,7 +8,7 @@ import copy
 import importlib
 import typing
 import warnings
-from dataclasses import InitVar, dataclass
+from dataclasses import InitVar, dataclass, field
 from typing import TYPE_CHECKING, Literal, Self
 
 import torch
@@ -82,7 +82,7 @@ class SimState:
     cell: torch.Tensor
     pbc: bool  # TODO: do all calculators support mixed pbc?
     atomic_numbers: torch.Tensor
-    system_idx: torch.Tensor
+    system_idx: torch.Tensor = field(init=False)
     system_idx_init: InitVar[torch.Tensor | None]
 
     def __post_init__(self, system_idx_init: torch.Tensor | None) -> None:
