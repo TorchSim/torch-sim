@@ -8,7 +8,7 @@ import copy
 import importlib
 import typing
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass
 from typing import TYPE_CHECKING, Literal, Self
 
 import torch
@@ -82,9 +82,10 @@ class SimState:
     cell: torch.Tensor
     pbc: bool  # TODO: do all calculators support mixed pbc?
     atomic_numbers: torch.Tensor
-    system_idx: torch.Tensor | None = field(default=None, kw_only=True)
+    system_idx: torch.Tensor
+    system_idx_init: InitVar[torch.Tensor | None]
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, system_idx_init: torch.Tensor | None) -> None:
         """Validate and process the state after initialization."""
         # data validation and fill system_idx
         # should make pbc a tensor here
@@ -108,11 +109,9 @@ class SimState:
                 f"masses {shapes[1]}, atomic_numbers {shapes[2]}"
             )
 
-        if self.cell.ndim != 3 and self.system_idx is None:
-            self.cell = self.cell.unsqueeze(0)
-
-        if self.cell.shape[-2:] != (3, 3):
-            raise ValueError("Cell must have shape (n_systems, 3, 3)")
+        if system_idx_init is not None and self.system_idx is None:
+            # we check if system_idx is none to prevent overriding system_idx^
+            self.system_idx = system_idx_init
 
         if self.system_idx is None:
             self.system_idx = torch.zeros(
@@ -125,6 +124,12 @@ class SimState:
             _, counts = torch.unique_consecutive(self.system_idx, return_counts=True)
             if not torch.all(counts == torch.bincount(self.system_idx)):
                 raise ValueError("System indices must be unique consecutive integers")
+
+        if self.cell.ndim != 3 and self.system_idx is None:
+            self.cell = self.cell.unsqueeze(0)
+
+        if self.cell.shape[-2:] != (3, 3):
+            raise ValueError("Cell must have shape (n_systems, 3, 3)")
 
         if self.cell.shape[0] != self.n_systems:
             raise ValueError(
