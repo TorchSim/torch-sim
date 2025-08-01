@@ -1,4 +1,4 @@
-import torch
+import torch  # noqa: D100, INP001
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
@@ -18,6 +18,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 state = ts.initialize_state(many_cu_atoms, device=device, dtype=torch.float64)
+print("state", state)
 
 mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(model=mace, device=device)

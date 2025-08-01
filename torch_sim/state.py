@@ -83,9 +83,9 @@ class SimState:
     pbc: bool  # TODO: do all calculators support mixed pbc?
     atomic_numbers: torch.Tensor
     system_idx: torch.Tensor = field(init=False)
-    system_idx_init: InitVar[torch.Tensor | None]
+    system_index: InitVar[torch.Tensor | None]
 
-    def __post_init__(self, system_idx_init: torch.Tensor | None) -> None:
+    def __post_init__(self, system_index: torch.Tensor | None) -> None:
         """Validate and process the state after initialization."""
         # data validation and fill system_idx
         # should make pbc a tensor here
@@ -109,15 +109,12 @@ class SimState:
                 f"masses {shapes[1]}, atomic_numbers {shapes[2]}"
             )
 
-        if system_idx_init is not None and self.system_idx is None:
-            # we check if system_idx is none to prevent overriding system_idx^
-            self.system_idx = system_idx_init
-
-        if self.system_idx is None:
+        if system_index is None:
             self.system_idx = torch.zeros(
                 self.n_atoms, device=self.device, dtype=torch.int64
             )
         else:
+            self.system_idx = system_index
             # assert that system indices are unique consecutive integers
             # TODO(curtis): I feel like this logic is not reliable.
             # I'll come up with something better later.
