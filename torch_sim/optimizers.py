@@ -670,11 +670,11 @@ class UnitCellFireState(SimState, DeformGradMixin):
     forces: torch.Tensor
     energy: torch.Tensor
     stress: torch.Tensor
-    velocities: torch.Tensor
+    velocities: torch.Tensor | None
 
     # Cell attributes
     cell_positions: torch.Tensor
-    cell_velocities: torch.Tensor
+    cell_velocities: torch.Tensor | None
     cell_forces: torch.Tensor
     cell_masses: torch.Tensor
 
