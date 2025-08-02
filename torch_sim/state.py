@@ -6,6 +6,7 @@ operations and conversion to/from various atomistic formats.
 
 import copy
 import importlib
+import typing
 import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Self, cast
@@ -399,6 +400,33 @@ class SimState:
         )
 
         return _slice_state(self, system_indices)
+
+    def __init_subclass__(cls, **kwargs) -> None:
+        """Enforce that all derived states cannot have tensor attributes that can also be
+        None. This is because torch.concatenate cannot concat between a tensor and a None.
+        See https://github.com/Radical-AI/torch-sim/pull/219 for more details.
+        """
+        # We need to use get_type_hints to correctly inspect the types
+        type_hints = typing.get_type_hints(cls)
+        for attr_name, attr_typehint in type_hints.items():
+            origin = typing.get_origin(attr_typehint)
+
+            is_union = origin is typing.Union
+            if not is_union and origin is not None:
+                # For Python 3.10+ `|` syntax, origin is types.UnionType
+                # We check by name to be robust against module reloading/patching issues
+                is_union = origin.__module__ == "types" and origin.__name__ == "UnionType"
+            if is_union:
+                args = typing.get_args(attr_typehint)
+                if torch.Tensor in args and type(None) in args:
+                    raise TypeError(
+                        f"Attribute '{attr_name}' in class '{cls.__name__}' is not "
+                        "allowed to be of type 'torch.Tensor | None' because torch.cat "
+                        "cannot concatenate between a tensor and a None. Please default "
+                        "the tensor with dummy values and track the 'None' case."
+                    )
+
+        super().__init_subclass__(**kwargs)
 
 
 class DeformGradMixin:
