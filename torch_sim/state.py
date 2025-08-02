@@ -377,32 +377,8 @@ class SimState:
         return _slice_state(self, system_indices)
 
     def __init_subclass__(cls, **kwargs) -> None:
-        """Enforce that all derived states cannot have tensor attributes that can also be
-        None. This is because torch.concatenate cannot concat between a tensor and a None.
-        See https://github.com/Radical-AI/torch-sim/pull/219 for more details.
-        """
-        # We need to use get_type_hints to correctly inspect the types
+        """Enforce that all subclasses have valid InitVar fields."""
         type_hints = typing.get_type_hints(cls)
-        for attr_name, attr_typehint in type_hints.items():
-            origin = typing.get_origin(attr_typehint)
-
-            is_union = origin is typing.Union
-            if not is_union and origin is not None:
-                # For Python 3.10+ `|` syntax, origin is types.UnionType
-                # We check by name to be robust against module reloading/patching issues
-                is_union = origin.__module__ == "types" and origin.__name__ == "UnionType"
-            if is_union:
-                args = typing.get_args(attr_typehint)
-                if torch.Tensor in args and type(None) in args:
-                    raise TypeError(
-                        f"Attribute '{attr_name}' in class '{cls.__name__}' is not "
-                        "allowed to be of type 'torch.Tensor | None'. "
-                        "Optional tensor attributes are disallowed in SimState "
-                        "subclasses to prevent concatenation errors.\n"
-                        "If this attribute will take on a default value in the "
-                        "post_init method, please use an InitVar for that attribute "
-                        "but with a prepended 'init_' to the name. (e.g. init_system_idx)"
-                    )
 
         # Validate InitVar fields
         for attr_name, attr_typehint in cls.__annotations__.items():
@@ -790,7 +766,9 @@ def construct_state(
     old_state: SimStateT,
     new_state_attrs: dict[str, typing.Any],
 ) -> SimStateT:
-    """Construct a new state from an old state and new state parameters."""
+    """Construct a new state of the same class as the old state with the specified
+    attrs.
+    """
     # 1) process the attrs so they are the init params
     processed_params = {}
     for param in inspect.signature(old_state.__class__).parameters:
