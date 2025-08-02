@@ -49,9 +49,11 @@ class SimState:
             used by ASE.
         pbc (bool): Boolean indicating whether to use periodic boundary conditions
         atomic_numbers (torch.Tensor): Atomic numbers with shape (n_atoms,)
-        system_idx (torch.Tensor, optional): Maps each atom index to its system index.
-            Has shape (n_atoms,), defaults to None, must be unique consecutive
-            integers starting from 0
+        system_idx (torch.Tensor): Maps each atom index to its system index.
+            Has shape (n_atoms,), must be unique consecutive integers starting from 0.
+            This attribute is initialized by the init_system_idx parameter in the
+            constructor. If init_system_idx is not provided, it is initialized to
+            zeros.
 
     Properties:
         wrap_positions (torch.Tensor): Positions wrapped according to periodic boundary
