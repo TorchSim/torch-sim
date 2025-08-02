@@ -475,7 +475,7 @@ class FireState(SimState):
     # Required attributes not in SimState
     forces: torch.Tensor
     energy: torch.Tensor
-    velocities: torch.Tensor | None
+    velocities: torch.Tensor
 
     # FIRE algorithm parameters
     dt: torch.Tensor
@@ -972,7 +972,7 @@ class FrechetCellFIREState(SimState, DeformGradMixin):
 
     # Cell attributes
     cell_positions: torch.Tensor
-    cell_velocities: torch.Tensor | None
+    cell_velocities: torch.Tensor
     cell_forces: torch.Tensor
     cell_masses: torch.Tensor
 

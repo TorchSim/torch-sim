@@ -635,3 +635,16 @@ def test_deprecated_batch_properties_equal_to_new_system_properties(
     state.batch = new_system_idx
     assert torch.allclose(state.system_idx, new_system_idx)
     assert torch.allclose(state.batch, new_system_idx)
+
+
+def test_derived_classes_trigger_init_subclass() -> None:
+    """Test that derived classes cannot have attributes that are "tensors | None"."""
+
+    with pytest.raises(TypeError) as excinfo:
+
+        class DerivedState(SimState):
+            invalid_attr: torch.Tensor | None = None
+
+    assert "is not allowed to be of type 'torch.Tensor | None' because torch.cat" in str(
+        excinfo.value
+    )
