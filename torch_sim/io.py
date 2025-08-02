@@ -241,7 +241,7 @@ def atoms_to_state(
         cell=cell,
         pbc=all(atoms_list[0].pbc),
         atomic_numbers=atomic_numbers,
-        init_system_idx=system_idx,
+        system_idx=system_idx,
     )
 
 

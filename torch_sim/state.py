@@ -9,7 +9,7 @@ import importlib
 import inspect
 import typing
 import warnings
-from dataclasses import InitVar, dataclass
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Self, TypeVar
 
 import torch
@@ -397,36 +397,12 @@ class SimState:
                         "allowed to be of type 'torch.Tensor | None'. "
                         "Optional tensor attributes are disallowed in SimState "
                         "subclasses to prevent concatenation errors.\n"
-                        "If this attribute will take on a default value in the "
-                        "post_init method, please use an InitVar for that attribute "
-                        "but with a prepended 'init_' to the name. (e.g. init_system_idx)"
+                        # TODO(curtis): fix this
+                        # "If this attribute will take on a default value in the "
+                        # "post_init method, please use an InitVar for that attribute "
+                        # "but with a prepended 'init_' to the name. (e.g. system_idx)"
                     )
 
-        # Validate InitVar fields
-        for attr_name, attr_typehint in cls.__annotations__.items():
-            # 1) validate InitVar fields
-            if type(attr_typehint) is InitVar:
-                # make sure its prefix is "init_"
-                if not attr_name.startswith("init_"):
-                    raise TypeError(
-                        f"Attribute '{attr_name}' in class '{cls.__name__}' is not "
-                        "allowed to be an InitVar. It must be prefixed with 'init_'"
-                    )
-                # make sure there is a corresponding non-InitVar field
-                non_init_attr_name = attr_name.removeprefix("init_")
-                if non_init_attr_name not in type_hints:
-                    raise TypeError(
-                        f"Attribute '{attr_name}' in class '{cls.__name__}' is not "
-                        "allowed to be an InitVar. It must have a corresponding "
-                        f"non-InitVar field {non_init_attr_name}"
-                    )
-
-            # 2) forbid non init vars to have a "init_" prefix
-            elif attr_name.startswith("init_"):
-                raise TypeError(
-                    f"Attribute '{attr_name}' in class '{cls.__name__}' is not "
-                    "allowed to have an 'init_' prefix as it's a non-InitVar field."
-                )
         super().__init_subclass__(**kwargs)
 
 
