@@ -144,7 +144,7 @@ class SimState:
             if not torch.all(counts == torch.bincount(self.system_idx)):
                 raise ValueError("System indices must be unique consecutive integers")
 
-        if self.cell.ndim != 3 and self.system_idx is None:
+        if self.cell.ndim != 3 and system_idx is None:
             self.cell = self.cell.unsqueeze(0)
 
         if self.cell.shape[-2:] != (3, 3):
