@@ -924,8 +924,7 @@ def concatenate_states(
     first_state = states[0]
 
     # Ensure all states are of the same class
-    state_class = type(first_state)
-    if not all(isinstance(state, state_class) for state in states):
+    if not all(isinstance(state, type(first_state)) for state in states):
         raise TypeError("All states must be of the same type")
 
     # Use the target device or default to the first state's device
