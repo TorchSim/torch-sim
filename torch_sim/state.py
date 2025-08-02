@@ -10,12 +10,12 @@ import inspect
 import typing
 import warnings
 from dataclasses import InitVar, dataclass, field
-from typing import TYPE_CHECKING, Literal, Self, TypeVar
+from typing import TYPE_CHECKING, Literal, Self
 
 import torch
 
 import torch_sim as ts
-from torch_sim.typing import StateLike
+from torch_sim.typing import SimStateVar, StateLike
 
 
 if TYPE_CHECKING:
@@ -278,7 +278,7 @@ class SimState:
             else:
                 attrs[attr_name] = copy.deepcopy(attr_value)
 
-        return construct_state(self, attrs)
+        return _construct_state(self, attrs)
 
     def to_atoms(self) -> list["Atoms"]:
         """Convert the SimState to a list of ASE Atoms objects.
@@ -527,7 +527,7 @@ def state_to_device(
         attrs["masses"] = attrs["masses"].to(dtype=dtype)
         attrs["cell"] = attrs["cell"].to(dtype=dtype)
         attrs["atomic_numbers"] = attrs["atomic_numbers"].to(dtype=torch.int)
-    return construct_state(state, attrs)
+    return _construct_state(state, attrs)
 
 
 def infer_property_scope(
@@ -756,20 +756,27 @@ def _split_state(
             # Add the global attributes
             **attrs["global"],
         }
-        states.append(construct_state(state, system_attrs))
+        states.append(_construct_state(state, system_attrs))
 
     return states
 
 
-SimStateT = TypeVar("SimStateT", bound=SimState)
-
-
-def construct_state(
-    old_state: SimStateT,
+def _construct_state(
+    old_state: SimStateVar,
     new_state_attrs: dict[str, typing.Any],
-) -> SimStateT:
+) -> SimStateVar:
     """Construct a new state of the same class as the old state with the specified
     attrs.
+
+    Args:
+        old_state (SimStateVar): We will construct a new state of the same class as this
+            one
+        new_state_attrs (dict[str, typing.Any]): The attributes to use to construct
+            the new state
+
+    Returns:
+        SimStateVar: A new state of the same class as the old state with the specified
+            attributes
     """
     # 1) process the attrs so they are the init params
     processed_params = {}
@@ -833,10 +840,10 @@ def _pop_states(
     pop_attrs = _filter_attrs_by_mask(attrs, pop_atom_mask, pop_system_mask)
 
     # Create the keep state
-    keep_state = construct_state(state, keep_attrs)
+    keep_state = _construct_state(state, keep_attrs)
 
     # Create and split the pop state
-    pop_state = construct_state(state, pop_attrs)
+    pop_state = _construct_state(state, pop_attrs)
     pop_states = _split_state(pop_state, ambiguous_handling)
 
     return keep_state, pop_states
@@ -886,7 +893,7 @@ def _slice_state(
     filtered_attrs = _filter_attrs_by_mask(attrs, atom_mask, system_mask)
 
     # Create the sliced state
-    return construct_state(state, filtered_attrs)
+    return _construct_state(state, filtered_attrs)
 
 
 def concatenate_states(
@@ -975,7 +982,7 @@ def concatenate_states(
     concatenated["system_idx"] = torch.cat(new_system_indices)
 
     # Create a new instance of the same class
-    return construct_state(first_state, concatenated)
+    return _construct_state(first_state, concatenated)
 
 
 def initialize_state(
