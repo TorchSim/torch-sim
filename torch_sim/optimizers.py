@@ -587,7 +587,7 @@ def fire(
             masses=state.masses.clone(),
             cell=state.cell.clone(),
             atomic_numbers=state.atomic_numbers.clone(),
-            system_index=state.system_idx.clone(),
+            init_system_idx=state.system_idx.clone(),
             pbc=state.pbc,
             velocities=torch.full(
                 state.positions.shape, torch.nan, device=device, dtype=dtype

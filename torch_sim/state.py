@@ -6,10 +6,11 @@ operations and conversion to/from various atomistic formats.
 
 import copy
 import importlib
+import inspect
 import typing
 import warnings
 from dataclasses import InitVar, dataclass, field
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, Literal, Self, TypeVar
 
 import torch
 
@@ -83,9 +84,9 @@ class SimState:
     pbc: bool  # TODO: do all calculators support mixed pbc?
     atomic_numbers: torch.Tensor
     system_idx: torch.Tensor = field(init=False)
-    system_index: InitVar[torch.Tensor | None]
+    init_system_idx: InitVar[torch.Tensor | None]
 
-    def __post_init__(self, system_index: torch.Tensor | None) -> None:
+    def __post_init__(self, init_system_idx: torch.Tensor | None) -> None:
         """Validate and process the state after initialization."""
         # data validation and fill system_idx
         # should make pbc a tensor here
@@ -109,12 +110,12 @@ class SimState:
                 f"masses {shapes[1]}, atomic_numbers {shapes[2]}"
             )
 
-        if system_index is None:
+        if init_system_idx is None:
             self.system_idx = torch.zeros(
                 self.n_atoms, device=self.device, dtype=torch.int64
             )
         else:
-            self.system_idx = system_index
+            self.system_idx = init_system_idx
             # assert that system indices are unique consecutive integers
             # TODO(curtis): I feel like this logic is not reliable.
             # I'll come up with something better later.
@@ -275,7 +276,7 @@ class SimState:
             else:
                 attrs[attr_name] = copy.deepcopy(attr_value)
 
-        return self.__class__(**attrs)
+        return construct_state(self, attrs)
 
     def to_atoms(self) -> list["Atoms"]:
         """Convert the SimState to a list of ASE Atoms objects.
@@ -382,8 +383,8 @@ class SimState:
         """
         # We need to use get_type_hints to correctly inspect the types
         type_hints = typing.get_type_hints(cls)
-        for attr_name, attr_type in type_hints.items():
-            origin = typing.get_origin(attr_type)
+        for attr_name, attr_typehint in type_hints.items():
+            origin = typing.get_origin(attr_typehint)
 
             is_union = origin is typing.Union
             if not is_union and origin is not None:
@@ -391,14 +392,43 @@ class SimState:
                 # We check by name to be robust against module reloading/patching issues
                 is_union = origin.__module__ == "types" and origin.__name__ == "UnionType"
             if is_union:
-                args = typing.get_args(attr_type)
+                args = typing.get_args(attr_typehint)
                 if torch.Tensor in args and type(None) in args:
                     raise TypeError(
                         f"Attribute '{attr_name}' in class '{cls.__name__}' is not "
                         "allowed to be of type 'torch.Tensor | None'. "
                         "Optional tensor attributes are disallowed in SimState "
-                        "subclasses to prevent concatenation errors."
+                        "subclasses to prevent concatenation errors.\n"
+                        "If this attribute will take on a default value in the "
+                        "post_init method, please use an InitVar for that attribute "
+                        "but with a prepended 'init_' to the name. (e.g. init_system_idx)"
                     )
+
+        # Validate InitVar fields
+        for attr_name, attr_typehint in cls.__annotations__.items():
+            # 1) validate InitVar fields
+            if type(attr_typehint) is InitVar:
+                # make sure its prefix is "init_"
+                if not attr_name.startswith("init_"):
+                    raise TypeError(
+                        f"Attribute '{attr_name}' in class '{cls.__name__}' is not "
+                        "allowed to be an InitVar. It must be prefixed with 'init_'"
+                    )
+                # make sure there is a corresponding non-InitVar field
+                non_init_attr_name = attr_name.removeprefix("init_")
+                if non_init_attr_name not in type_hints:
+                    raise TypeError(
+                        f"Attribute '{attr_name}' in class '{cls.__name__}' is not "
+                        "allowed to be an InitVar. It must have a corresponding "
+                        f"non-InitVar field {non_init_attr_name}"
+                    )
+
+            # 2) forbid non init vars to have a "init_" prefix
+            elif attr_name.startswith("init_"):
+                raise TypeError(
+                    f"Attribute '{attr_name}' in class '{cls.__name__}' is not "
+                    "allowed to have an 'init_' prefix as it's a non-InitVar field."
+                )
         super().__init_subclass__(**kwargs)
 
 
@@ -519,7 +549,7 @@ def state_to_device(
         attrs["masses"] = attrs["masses"].to(dtype=dtype)
         attrs["cell"] = attrs["cell"].to(dtype=dtype)
         attrs["atomic_numbers"] = attrs["atomic_numbers"].to(dtype=torch.int)
-    return type(state)(**attrs)
+    return construct_state(state, attrs)
 
 
 def infer_property_scope(
@@ -748,9 +778,33 @@ def _split_state(
             # Add the global attributes
             **attrs["global"],
         }
-        states.append(type(state)(**system_attrs))
+        states.append(construct_state(state, system_attrs))
 
     return states
+
+
+SimStateT = TypeVar("SimStateT", bound=SimState)
+
+
+def construct_state(
+    old_state: SimStateT,
+    new_state_attrs: dict[str, typing.Any],
+) -> SimStateT:
+    """Construct a new state from an old state and new state parameters."""
+    # 1) process the attrs so they are the init params
+    processed_params = {}
+    for param in inspect.signature(old_state.__class__).parameters:
+        if param.startswith("init_"):
+            # this is an InitVar field
+            # we need to rename the corresponding field in system_attrs to have
+            # an "init_" prefix
+            non_init_attr_name = param.removeprefix("init_")
+            processed_params[param] = new_state_attrs[non_init_attr_name]
+        else:
+            processed_params[param] = new_state_attrs[param]
+
+    # 2) construct the new state
+    return type(old_state)(**processed_params)
 
 
 def _pop_states(
@@ -799,10 +853,10 @@ def _pop_states(
     pop_attrs = _filter_attrs_by_mask(attrs, pop_atom_mask, pop_system_mask)
 
     # Create the keep state
-    keep_state = type(state)(**keep_attrs)
+    keep_state = construct_state(state, keep_attrs)
 
     # Create and split the pop state
-    pop_state = type(state)(**pop_attrs)
+    pop_state = construct_state(state, pop_attrs)
     pop_states = _split_state(pop_state, ambiguous_handling)
 
     return keep_state, pop_states
@@ -852,7 +906,7 @@ def _slice_state(
     filtered_attrs = _filter_attrs_by_mask(attrs, atom_mask, system_mask)
 
     # Create the sliced state
-    return type(state)(**filtered_attrs)
+    return construct_state(state, filtered_attrs)
 
 
 def concatenate_states(
@@ -941,7 +995,7 @@ def concatenate_states(
     concatenated["system_idx"] = torch.cat(new_system_indices)
 
     # Create a new instance of the same class
-    return state_class(**concatenated)
+    return construct_state(first_state, concatenated)
 
 
 def initialize_state(
