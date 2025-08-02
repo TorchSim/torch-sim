@@ -389,6 +389,7 @@ def nvt_nose_hoover(
             cell=state.cell,
             pbc=state.pbc,
             atomic_numbers=atomic_numbers,
+            system_idx=state.system_idx,
             chain=chain_fns.initialize(total_dof, KE, kT),
             _chain_fns=chain_fns,  # Store the chain functions
         )
