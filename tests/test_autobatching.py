@@ -448,10 +448,20 @@ def test_in_flight_auto_batcher_restore_order(
     #     batcher.restore_original_order([si_sim_state])
 
 
+@pytest.mark.parametrize(
+    "num_steps_per_batch",
+    [
+        5,  # At 5 steps, not every state will converge before the next batch.
+        #       This tests the merging of partially converged states with new states
+        #       which has been a bug in the past. See https://github.com/Radical-AI/torch-sim/pull/219
+        10,  # At 10 steps, all states will converge before the next batch
+    ],
+)
 def test_in_flight_with_fire(
     si_sim_state: ts.SimState,
     fe_supercell_sim_state: ts.SimState,
     lj_model: LennardJonesModel,
+    num_steps_per_batch: int,
 ) -> None:
     fire_init, fire_update = unit_cell_fire(lj_model)
 
@@ -489,62 +499,7 @@ def test_in_flight_with_fire(
         if state is None:
             break
 
-        # run 10 steps (so all states converge before the next batch)
-        for _ in range(10):
-            state = fire_update(state)
-        convergence_tensor = convergence_fn(state)
-
-    assert len(all_completed_states) == len(fire_states)
-
-
-def test_in_flight_with_fire_only_converge_some_states(
-    si_sim_state: ts.SimState,
-    fe_supercell_sim_state: ts.SimState,
-    lj_model: LennardJonesModel,
-) -> None:
-    """This test is the same as the test_in_flight_with_fire above
-    but we only converge a few states before we trigger the auto batcher.
-    This can catch bugs related to merging partially converged and fully converged
-    states. See https://github.com/Radical-AI/torch-sim/pull/219
-    """
-    fire_init, fire_update = unit_cell_fire(lj_model)
-
-    si_fire_state = fire_init(si_sim_state)
-    fe_fire_state = fire_init(fe_supercell_sim_state)
-
-    fire_states = [si_fire_state, fe_fire_state] * 5
-    fire_states = [state.clone() for state in fire_states]
-    for state in fire_states:
-        state.positions += torch.randn_like(state.positions) * 0.01
-
-    batcher = InFlightAutoBatcher(
-        model=lj_model,
-        memory_scales_with="n_atoms",
-        # max_metric=400_000,
-        max_memory_scaler=600,
-    )
-    batcher.load_states(fire_states)
-
-    def convergence_fn(state: ts.SimState) -> bool:
-        system_wise_max_force = torch.zeros(
-            state.n_systems, device=state.device, dtype=torch.float64
-        )
-        max_forces = state.forces.norm(dim=1)
-        system_wise_max_force = system_wise_max_force.scatter_reduce(
-            dim=0, index=state.system_idx, src=max_forces, reduce="amax"
-        )
-        return system_wise_max_force < 5e-1
-
-    all_completed_states, convergence_tensor = [], None
-    while True:
-        state, completed_states = batcher.next_batch(state, convergence_tensor)
-
-        all_completed_states.extend(completed_states)
-        if state is None:
-            break
-
-        # run 5 steps (so not every state can converge before the next batch)
-        for _ in range(5):
+        for _ in range(num_steps_per_batch):
             state = fire_update(state)
         convergence_tensor = convergence_fn(state)
 
