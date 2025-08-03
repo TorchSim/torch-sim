@@ -184,17 +184,17 @@ class MaceModel(torch.nn.Module, ModelInterface):
         # Store flag to track if atomic numbers were provided at init
         self.atomic_numbers_in_init = atomic_numbers is not None
 
-        # Set up batch information if atomic numbers are provided
+        # Set up system_idx information if atomic numbers are provided
         if atomic_numbers is not None:
             if system_idx is None:
-                # If batch is not provided, assume all atoms belong to same system
+                # If system_idx is not provided, assume all atoms belong to same system
                 system_idx = torch.zeros(
                     len(atomic_numbers), dtype=torch.long, device=self.device
                 )
 
-            self.setup_from_batch(atomic_numbers, system_idx)
+            self.setup_from_system_idx(atomic_numbers, system_idx)
 
-    def setup_from_batch(
+    def setup_from_system_idx(
         self, atomic_numbers: torch.Tensor, system_idx: torch.Tensor
     ) -> None:
         """Set up internal state from atomic numbers and system indices.
@@ -286,7 +286,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 )
             state.system_idx = self.system_idx
 
-        # Update batch information if new atomic numbers are provided
+        # Update system_idx information if new atomic numbers are provided
         if (
             state.atomic_numbers is not None
             and not self.atomic_numbers_in_init
@@ -295,7 +295,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
                 getattr(self, "atomic_numbers", torch.zeros(0, device=self.device)),
             )
         ):
-            self.setup_from_batch(state.atomic_numbers, state.system_idx)
+            self.setup_from_system_idx(state.atomic_numbers, state.system_idx)
 
         # Process each system's neighbor list separately
         edge_indices = []
@@ -305,16 +305,16 @@ class MaceModel(torch.nn.Module, ModelInterface):
 
         # TODO (AG): Currently doesn't work for batched neighbor lists
         for b in range(self.n_systems):
-            batch_mask = state.system_idx == b
+            system_mask = state.system_idx == b
             # Calculate neighbor list for this system
             edge_idx, shifts_idx = self.neighbor_list_fn(
-                positions=state.positions[batch_mask],
+                positions=state.positions[system_mask],
                 cell=state.row_vector_cell[b],
                 pbc=state.pbc,
                 cutoff=self.r_max,
             )
 
-            # Adjust indices for the batch
+            # Adjust indices for the system
             edge_idx = edge_idx + offset
             shifts = torch.mm(shifts_idx, state.row_vector_cell[b])
 
@@ -322,7 +322,7 @@ class MaceModel(torch.nn.Module, ModelInterface):
             unit_shifts_list.append(shifts_idx)
             shifts_list.append(shifts)
 
-            offset += len(state.positions[batch_mask])
+            offset += len(state.positions[system_mask])
 
         # Combine all neighbor lists
         edge_index = torch.cat(edge_indices, dim=1)

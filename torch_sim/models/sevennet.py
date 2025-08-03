@@ -182,13 +182,13 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
 
         data_list = []
         for b in range(state.system_idx.max().item() + 1):
-            batch_mask = state.system_idx == b
+            system_mask = state.system_idx == b
 
-            pos = state.positions[batch_mask]
+            pos = state.positions[system_mask]
             # SevenNet uses row vector cell convention for neighbor list
             row_vector_cell = state.row_vector_cell[b]
             pbc = state.pbc
-            atomic_numbers = state.atomic_numbers[batch_mask]
+            atomic_numbers = state.atomic_numbers[system_mask]
 
             edge_idx, shifts_idx = self.neighbor_list_fn(
                 positions=pos,

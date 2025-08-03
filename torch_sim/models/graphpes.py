@@ -68,9 +68,9 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
     graphs = []
 
     for i in range(state.n_systems):
-        batch_mask = state.system_idx == i
-        R = state.positions[batch_mask]
-        Z = state.atomic_numbers[batch_mask]
+        system_mask = state.system_idx == i
+        R = state.positions[system_mask]
+        Z = state.atomic_numbers[system_mask]
         cell = state.row_vector_cell[i]
         nl, shifts = vesin_nl_ts(
             R,
