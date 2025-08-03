@@ -538,8 +538,8 @@ def static(
     @dataclass
     class StaticState(type(state)):
         energy: torch.Tensor
-        forces: torch.Tensor | None
-        stress: torch.Tensor | None
+        forces: torch.Tensor
+        stress: torch.Tensor
 
     all_props: list[dict[str, torch.Tensor]] = []
     og_filenames = trajectory_reporter.filenames
