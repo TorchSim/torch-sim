@@ -141,7 +141,7 @@ def get_pressure(
     return 1 / dim * ((2 * kinetic_energy / volume) - torch.einsum("...ii", stress))
 
 
-def batchwise_max_force(state: SimState) -> torch.Tensor:
+def systemwise_max_force(state: SimState) -> torch.Tensor:
     """Compute the maximum force per system.
 
     Args:

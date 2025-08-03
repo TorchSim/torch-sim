@@ -22,7 +22,7 @@ from torch_sim.optimizers import (
     UnitCellFireState,
     UnitCellGDState,
 )
-from torch_sim.quantities import batchwise_max_force, calc_kinetic_energy, calc_kT
+from torch_sim.quantities import calc_kinetic_energy, calc_kT, systemwise_max_force
 from torch_sim.state import SimState, concatenate_states, initialize_state
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.typing import StateLike
@@ -297,7 +297,7 @@ def generate_force_convergence_fn(
 
     Returns:
         Convergence function that takes a state and last energy and
-        returns a batchwise boolean function
+        returns a systemwise boolean function
     """
 
     def convergence_fn(
@@ -310,7 +310,7 @@ def generate_force_convergence_fn(
             torch.Tensor: Boolean tensor of shape (n_systems,) indicating
                 convergence status for each system.
         """
-        force_conv = batchwise_max_force(state) < force_tol
+        force_conv = systemwise_max_force(state) < force_tol
 
         if include_cell_forces:
             if (cell_forces := getattr(state, "cell_forces", None)) is None:
@@ -333,7 +333,7 @@ def generate_energy_convergence_fn(energy_tol: float = 1e-3) -> Callable:
 
     Returns:
         Convergence function that takes a state and last energy and
-        returns a batchwise boolean function
+        returns a systemwise boolean function
     """
 
     def convergence_fn(
