@@ -149,7 +149,7 @@ def test_binning_auto_batcher(
     # Get batches until None is returned
     batches = list(batcher)
 
-    # Check we got the expected number of batches
+    # Check we got the expected number of systems
     assert len(batches) == len(batcher.batched_states)
 
     # Test restore_original_order

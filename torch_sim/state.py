@@ -7,6 +7,7 @@ operations and conversion to/from various atomistic formats.
 import copy
 import importlib
 import warnings
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Self, TypeVar, cast
 
 import torch
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     from pymatgen.core import Structure
 
 
+@dataclass(init=False)
 class SimState:
     """State representation for atomistic systems with batched operations support.
 
@@ -45,9 +47,8 @@ class SimState:
             used by ASE.
         pbc (bool): Boolean indicating whether to use periodic boundary conditions
         atomic_numbers (torch.Tensor): Atomic numbers with shape (n_atoms,)
-        system_idx (torch.Tensor, optional): Maps each atom index to its system index.
-            Has shape (n_atoms,), defaults to None, must be unique consecutive
-            integers starting from 0
+        system_idx (torch.Tensor): Maps each atom index to its system index.
+            Has shape (n_atoms,), must be unique consecutive integers starting from 0.
 
     Properties:
         wrap_positions (torch.Tensor): Positions wrapped according to periodic boundary
@@ -85,13 +86,23 @@ class SimState:
         self,
         positions: torch.Tensor,
         masses: torch.Tensor,
-        atomic_numbers: torch.Tensor,
         cell: torch.Tensor,
-        *,
-        pbc: bool,
+        pbc: bool,  # noqa: FBT001 # TODO(curtis): maybe make the constructor be keyword-only (it can be easy to confuse positions vs masses, etc.)
+        atomic_numbers: torch.Tensor,
         system_idx: torch.Tensor | None = None,
     ) -> None:
-        """Initialize the SimState."""
+        """Initialize the SimState and validate the arguments.
+
+        Args:
+            positions (torch.Tensor): Atomic positions with shape (n_atoms, 3)
+            masses (torch.Tensor): Atomic masses with shape (n_atoms,)
+            cell (torch.Tensor): Unit cell vectors with shape (n_systems, 3, 3).
+            pbc (bool): Boolean indicating whether to use periodic boundary conditions
+            atomic_numbers (torch.Tensor): Atomic numbers with shape (n_atoms,)
+            system_idx (torch.Tensor | None): Maps each atom index to its system index.
+                Has shape (n_atoms,), must be unique consecutive integers starting from 0.
+                If not provided, it is initialized to zeros.
+        """
         self.positions = positions
         self.masses = masses
         self.cell = cell
@@ -99,7 +110,7 @@ class SimState:
         self.atomic_numbers = atomic_numbers
 
         # Validate and process the state after initialization.
-        # data validation and fill batch
+        # data validation and fill system_idx
         # should make pbc a tensor here
         # if devices aren't all the same, raise an error, in a clean way
         devices = {
@@ -121,17 +132,12 @@ class SimState:
                 f"masses {shapes[1]}, atomic_numbers {shapes[2]}"
             )
 
-        if self.cell.ndim != 3 and system_idx is None:
-            self.cell = self.cell.unsqueeze(0)
-
-        if self.cell.shape[-2:] != (3, 3):
-            raise ValueError("Cell must have shape (n_systems, 3, 3)")
-
         if system_idx is None:
             self.system_idx = torch.zeros(
                 self.n_atoms, device=self.device, dtype=torch.int64
             )
         else:
+            self.system_idx = system_idx
             # assert that system indices are unique consecutive integers
             # TODO(curtis): I feel like this logic is not reliable.
             # I'll come up with something better later.
@@ -139,6 +145,12 @@ class SimState:
             if not torch.all(counts == torch.bincount(system_idx)):
                 raise ValueError("System indices must be unique consecutive integers")
             self.system_idx = system_idx
+
+        if self.cell.ndim != 3 and system_idx is None:
+            self.cell = self.cell.unsqueeze(0)
+
+        if self.cell.shape[-2:] != (3, 3):
+            raise ValueError("Cell must have shape (n_systems, 3, 3)")
 
         if self.cell.shape[0] != self.n_systems:
             raise ValueError(
