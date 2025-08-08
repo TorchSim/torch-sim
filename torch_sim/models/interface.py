@@ -169,10 +169,6 @@ class ModelInterface(torch.nn.Module, ABC):
             ```
         """
 
-    @abstractmethod
-    def __call__(*args, **kwargs) -> dict[str, torch.Tensor]:
-        """Where the input is fed into the model. This is to help typecheckers."""
-
 
 def validate_model_outputs(  # noqa: C901, PLR0915
     model: ModelInterface, device: torch.device, dtype: torch.dtype
