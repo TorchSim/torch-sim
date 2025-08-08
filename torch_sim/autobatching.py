@@ -952,6 +952,8 @@ class InFlightAutoBatcher:
                 scale_factor=self.memory_scaling_factor,
             )
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
+            newer_states = self._get_next_states()
+            states = [*states, *newer_states]
         return concatenate_states([first_state, *states])
 
     def next_batch(  # noqa: C901

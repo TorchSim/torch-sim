@@ -490,7 +490,7 @@ def test_in_flight_with_fire(
             break
 
         # run 10 steps, arbitrary number
-        for _ in range(5):
+        for _ in range(10):
             state = fire_update(state)
         convergence_tensor = convergence_fn(state)
 
