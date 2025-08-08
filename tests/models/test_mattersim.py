@@ -67,7 +67,7 @@ def mattersim_calculator(
 
 
 def test_mattersim_initialization(
-    pretrained_mattersim_model: ModelInterface, device: torch.device
+    pretrained_mattersim_model: Potential, device: torch.device
 ) -> None:
     """Test that the MatterSim model initializes correctly."""
     model = MatterSimModel(
