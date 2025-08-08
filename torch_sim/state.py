@@ -8,12 +8,12 @@ import copy
 import importlib
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Self, TypeVar, cast
+from typing import TYPE_CHECKING, Literal, Self, cast
 
 import torch
 
 import torch_sim as ts
-from torch_sim.typing import StateLike
+from torch_sim.typing import SimStateVar, StateLike
 
 
 if TYPE_CHECKING:
@@ -137,7 +137,6 @@ class SimState:
                 self.n_atoms, device=self.device, dtype=torch.int64
             )
         else:
-            self.system_idx = system_idx
             # assert that system indices are unique consecutive integers
             # TODO(curtis): I feel like this logic is not reliable.
             # I'll come up with something better later.
@@ -480,14 +479,11 @@ def _normalize_system_indices(
     raise TypeError(f"Unsupported index type: {type(system_indices)}")
 
 
-SimStateT = TypeVar("SimStateT", bound=SimState)
-
-
 def state_to_device(
-    state: SimStateT,
+    state: SimStateVar,
     device: torch.device | None = None,
     dtype: torch.dtype | None = None,
-) -> SimStateT:
+) -> SimStateVar:
     """Convert the SimState to a new device and dtype.
 
     Creates a new SimState with all tensors moved to the specified device and
@@ -693,9 +689,9 @@ def _filter_attrs_by_mask(
 
 
 def _split_state(
-    state: SimStateT,
+    state: SimStateVar,
     ambiguous_handling: Literal["error", "globalize"] = "error",
-) -> list[SimStateT]:
+) -> list[SimStateVar]:
     """Split a SimState into a list of states, each containing a single system.
 
     Divides a multi-system state into individual single-system states, preserving
@@ -806,10 +802,10 @@ def _pop_states(
 
 
 def _slice_state(
-    state: SimStateT,
+    state: SimStateVar,
     system_indices: list[int] | torch.Tensor,
     ambiguous_handling: Literal["error", "globalize"] = "error",
-) -> SimStateT:
+) -> SimStateVar:
     """Slice a substate from the SimState containing only the specified system indices.
 
     Creates a new SimState containing only the specified systems, preserving
