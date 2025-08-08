@@ -42,7 +42,7 @@ def calc_kT(  # noqa: N802
         torch.Tensor: Scalar temperature value
     """
     if not ((momenta is not None) ^ (velocities is not None)):
-        raise ValueError("Must pass either momenta or velocities, not both")
+        raise ValueError("Must pass either one of momenta or velocities")
 
     if momenta is None:
         # If velocity provided, calculate mv^2
@@ -119,7 +119,7 @@ def calc_kinetic_energy(
         If system_idx is provided: Tensor of kinetic energies per system
     """
     if not ((momenta is not None) ^ (velocities is not None)):
-        raise ValueError("Must pass either momenta or velocities, not both")
+        raise ValueError("Must pass either one of momenta or velocities")
 
     if momenta is None:  # Using velocities
         squared_term = (velocities**2) * masses.unsqueeze(-1)

@@ -10,7 +10,6 @@ from tests.models.conftest import (
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
-from torch_sim.models.interface import ModelInterface
 
 
 try:
