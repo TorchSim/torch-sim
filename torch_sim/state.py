@@ -109,6 +109,7 @@ class SimState:
         self.pbc = pbc
         self.atomic_numbers = atomic_numbers
 
+        # Validate and process the state after initialization.
         # data validation and fill system_idx
         # should make pbc a tensor here
         # if devices aren't all the same, raise an error, in a clean way
