@@ -49,7 +49,7 @@ def pretrained_mattersim_model(device: torch.device, model_name: str):
 
 @pytest.fixture
 def mattersim_model(
-    pretrained_mattersim_model: ModelInterface, device: torch.device
+    pretrained_mattersim_model: Potential, device: torch.device
 ) -> MatterSimModel:
     """Create an MatterSimModel wrapper for the pretrained model."""
     return MatterSimModel(

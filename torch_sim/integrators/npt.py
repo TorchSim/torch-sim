@@ -163,7 +163,7 @@ def npt_langevin(  # noqa: C901, PLR0915
     maintain constant temperature.
 
     Args:
-        model (torch.nn.Module): Neural network model that computes energies, forces,
+        model (ModelInterface): Neural network model that computes energies, forces,
             and stress. Must return a dict with 'energy', 'forces', and 'stress' keys.
         dt (torch.Tensor): Integration timestep, either scalar or shape [n_systems]
         kT (torch.Tensor): Target temperature in energy units, either scalar or
@@ -916,7 +916,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
     with Nose-Hoover chain thermostats for temperature and pressure control.
 
     Args:
-        model (torch.nn.Module): Model to compute forces and energies
+        model (ModelInterface): Model to compute forces and energies
         kT (torch.Tensor): Target temperature in energy units
         external_pressure (torch.Tensor): Target external pressure
         dt (torch.Tensor): Integration timestep
