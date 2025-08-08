@@ -148,11 +148,11 @@ print(f"Final temperature: {temp.item():.4f}")
 
 
 stress = model(state)["stress"]
-calc_kinetic_energy = calc_kinetic_energy(
+kinetic_energy = calc_kinetic_energy(
     masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
 )
 volume = torch.linalg.det(state.cell)
-pressure = get_pressure(stress, calc_kinetic_energy, volume)
+pressure = get_pressure(stress, kinetic_energy, volume)
 pressure = pressure.item() / Units.pressure
 print(f"Final {pressure=:.4f}")
 print(stress * UnitConversion.eV_per_Ang3_to_GPa)

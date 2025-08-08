@@ -132,7 +132,7 @@ prop_calculators = {
     10: {"potential_energy": lambda state: state.energy},
     20: {
         "kinetic_energy": lambda state: ts.calc_kinetic_energy(
-            state.momenta, state.masses
+            momenta=state.momenta, masses=state.masses
         )
     },
 }

@@ -594,11 +594,11 @@ class SoftSphereMultiModel(ModelInterface):
             with type 0).
         """
         super().__init__()
-        self.device = device or torch.device("cpu")
-        self.dtype = dtype
+        self._device = device or torch.device("cpu")
+        self._dtype = dtype
         self.pbc = pbc
-        self.compute_forces = compute_forces
-        self.compute_stress = compute_stress
+        self._compute_forces = compute_forces
+        self._compute_stress = compute_stress
         self.per_atom_energies = per_atom_energies
         self.per_atom_stresses = per_atom_stresses
         self.use_neighbor_list = use_neighbor_list

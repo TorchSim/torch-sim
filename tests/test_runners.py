@@ -23,7 +23,11 @@ def test_integrate_nve(
         filenames=traj_file,
         state_frequency=1,
         prop_calculators={
-            1: {"ke": lambda state: calc_kinetic_energy(state.momenta, state.masses)}
+            1: {
+                "ke": lambda state: calc_kinetic_energy(
+                    momenta=state.momenta, masses=state.masses
+                )
+            }
         },
     )
 
@@ -56,7 +60,11 @@ def test_integrate_single_nvt(
         filenames=traj_file,
         state_frequency=1,
         prop_calculators={
-            1: {"ke": lambda state: calc_kinetic_energy(state.momenta, state.masses)}
+            1: {
+                "ke": lambda state: calc_kinetic_energy(
+                    momenta=state.momenta, masses=state.masses
+                )
+            }
         },
     )
 
@@ -108,7 +116,11 @@ def test_integrate_double_nvt_with_reporter(
         filenames=trajectory_files,
         state_frequency=1,
         prop_calculators={
-            1: {"ke": lambda state: calc_kinetic_energy(state.momenta, state.masses)}
+            1: {
+                "ke": lambda state: calc_kinetic_energy(
+                    momenta=state.momenta, masses=state.masses
+                )
+            }
         },
     )
 
@@ -155,7 +167,11 @@ def test_integrate_many_nvt(
         filenames=trajectory_files,
         state_frequency=1,
         prop_calculators={
-            1: {"ke": lambda state: calc_kinetic_energy(state.momenta, state.masses)}
+            1: {
+                "ke": lambda state: calc_kinetic_energy(
+                    momenta=state.momenta, masses=state.masses
+                )
+            }
         },
     )
 
@@ -346,7 +362,11 @@ def test_batched_optimize_fire(
         filenames=trajectory_files,
         state_frequency=1,
         prop_calculators={
-            1: {"ke": lambda state: calc_kinetic_energy(state.momenta, state.masses)}
+            1: {
+                "ke": lambda state: calc_kinetic_energy(
+                    velocities=state.velocities, masses=state.masses
+                )
+            }
         },
     )
 

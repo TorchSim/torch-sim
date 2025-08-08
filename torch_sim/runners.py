@@ -45,8 +45,12 @@ def _configure_reporter(
         "potential_energy": lambda state: state.energy,
         "forces": lambda state: state.forces,
         "stress": lambda state: state.stress,
-        "kinetic_energy": lambda state: calc_kinetic_energy(state.momenta, state.masses),
-        "temperature": lambda state: calc_kT(state.momenta, state.masses),
+        "kinetic_energy": lambda state: calc_kinetic_energy(
+            velocities=state.velocities, masses=state.masses
+        ),
+        "temperature": lambda state: calc_kT(
+            velocities=state.velocities, masses=state.masses
+        ),
     }
 
     prop_calculators = {

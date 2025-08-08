@@ -109,7 +109,9 @@ def test_npt_langevin(ar_double_sim_state: ts.SimState, lj_model: LennardJonesMo
         state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
-        temp = calc_kT(state.momenta, state.masses, system_idx=state.system_idx)
+        temp = calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
 
@@ -172,7 +174,9 @@ def test_npt_langevin_multi_kt(
         state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
-        temp = calc_kT(state.momenta, state.masses, system_idx=state.system_idx)
+        temp = calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
 
@@ -213,7 +217,9 @@ def test_nvt_langevin(ar_double_sim_state: ts.SimState, lj_model: LennardJonesMo
         state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
-        temp = calc_kT(state.momenta, state.masses, system_idx=state.system_idx)
+        temp = calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
 
@@ -273,7 +279,9 @@ def test_nvt_langevin_multi_kt(
         state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
-        temp = calc_kT(state.momenta, state.masses, system_idx=state.system_idx)
+        temp = calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
 

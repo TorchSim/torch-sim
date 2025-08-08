@@ -1,5 +1,7 @@
 """Functions for computing physical quantities."""
 
+from typing import cast
+
 import torch
 
 from torch_sim.state import SimState
@@ -21,8 +23,9 @@ def count_dof(tensor: torch.Tensor) -> int:
 
 # @torch.jit.script
 def calc_kT(  # noqa: N802
-    momenta: torch.Tensor,
+    *,
     masses: torch.Tensor,
+    momenta: torch.Tensor | None = None,
     velocities: torch.Tensor | None = None,
     system_idx: torch.Tensor | None = None,
 ) -> torch.Tensor:
@@ -38,14 +41,12 @@ def calc_kT(  # noqa: N802
     Returns:
         torch.Tensor: Scalar temperature value
     """
-    if momenta is not None and velocities is not None:
+    if not ((momenta is not None) ^ (velocities is not None)):
         raise ValueError("Must pass either momenta or velocities, not both")
-
-    if momenta is None and velocities is None:
-        raise ValueError("Must pass either momenta or velocities")
 
     if momenta is None:
         # If velocity provided, calculate mv^2
+        velocities = cast("torch.Tensor", velocities)
         squared_term = (velocities**2) * masses.unsqueeze(-1)
     else:
         # If momentum provided, calculate v^2 = p^2/m^2
@@ -70,11 +71,12 @@ def calc_kT(  # noqa: N802
 
 
 def calc_temperature(
-    momenta: torch.Tensor,
+    *,
     masses: torch.Tensor,
+    momenta: torch.Tensor | None = None,
     velocities: torch.Tensor | None = None,
     system_idx: torch.Tensor | None = None,
-    units: object = MetalUnits.temperature,
+    units: MetalUnits = MetalUnits.temperature,
 ) -> torch.Tensor:
     """Calculate temperature from momenta/velocities and masses.
 
@@ -89,13 +91,17 @@ def calc_temperature(
     Returns:
         torch.Tensor: Temperature value in specified units
     """
-    return calc_kT(momenta, masses, velocities, system_idx) / units
+    kT = calc_kT(
+        masses=masses, momenta=momenta, velocities=velocities, system_idx=system_idx
+    )
+    return kT / units
 
 
 # @torch.jit.script
 def calc_kinetic_energy(
-    momenta: torch.Tensor,
+    *,
     masses: torch.Tensor,
+    momenta: torch.Tensor | None = None,
     velocities: torch.Tensor | None = None,
     system_idx: torch.Tensor | None = None,
 ) -> torch.Tensor:
@@ -112,10 +118,8 @@ def calc_kinetic_energy(
         If system_idx is None: Scalar tensor containing the total kinetic energy
         If system_idx is provided: Tensor of kinetic energies per system
     """
-    if momenta is not None and velocities is not None:
+    if not ((momenta is not None) ^ (velocities is not None)):
         raise ValueError("Must pass either momenta or velocities, not both")
-    if momenta is None and velocities is None:
-        raise ValueError("Must pass either momenta or velocities")
 
     if momenta is None:  # Using velocities
         squared_term = (velocities**2) * masses.unsqueeze(-1)

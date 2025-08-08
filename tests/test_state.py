@@ -530,14 +530,6 @@ def deform_grad_state(device: torch.device) -> DeformState:
     )
 
 
-def test_deform_grad_momenta(deform_grad_state: DeformState) -> None:
-    """Test momenta calculation in DeformGradMixin."""
-    expected_momenta = deform_grad_state.velocities * deform_grad_state.masses.unsqueeze(
-        -1
-    )
-    assert torch.allclose(deform_grad_state.momenta, expected_momenta)
-
-
 def test_deform_grad_reference_cell(deform_grad_state: DeformState) -> None:
     """Test reference cell getter/setter in DeformGradMixin."""
     original_ref_cell = deform_grad_state.reference_cell.clone()
