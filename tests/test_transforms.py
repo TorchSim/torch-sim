@@ -1183,9 +1183,9 @@ def test_compute_cell_shifts_basic() -> None:
     """Test compute_cell_shifts function."""
     cell = torch.eye(3).unsqueeze(0) * 2.0
     shifts_idx = torch.tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-    batch_mapping = torch.tensor([0, 0])
+    system_mapping = torch.tensor([0, 0])
 
-    cell_shifts = tst.compute_cell_shifts(cell, shifts_idx, batch_mapping)
+    cell_shifts = tst.compute_cell_shifts(cell, shifts_idx, system_mapping)
 
     expected = torch.tensor([[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]])
     torch.testing.assert_close(cell_shifts, expected)
@@ -1272,16 +1272,16 @@ def test_build_linked_cell_neighborhood_basic() -> None:
     cutoff = 1.5
     n_atoms = torch.tensor([2, 2])
 
-    mapping, batch_mapping, cell_shifts_idx = tst.build_linked_cell_neighborhood(
+    mapping, system_mapping, cell_shifts_idx = tst.build_linked_cell_neighborhood(
         positions, cell, pbc, cutoff, n_atoms, self_interaction=False
     )
 
     # Check that atoms in the same structure are neighbors
     assert mapping.shape[1] >= 2  # At least 2 neighbor pairs
 
-    # Verify batch_mapping has correct length
-    assert batch_mapping.shape[0] == mapping.shape[1]
+    # Verify system_mapping has correct length
+    assert system_mapping.shape[0] == mapping.shape[1]
 
     # Verify that there are neighbors from both batches
-    assert torch.any(batch_mapping == 0)
-    assert torch.any(batch_mapping == 1)
+    assert torch.any(system_mapping == 0)
+    assert torch.any(system_mapping == 1)

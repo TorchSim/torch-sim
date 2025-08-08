@@ -342,13 +342,13 @@ def test_torch_nl_implementations(
     )
 
     # Get the neighbor list from the implementation being tested
-    mapping, mapping_batch, shifts_idx = nl_implementation(
+    mapping, mapping_system, shifts_idx = nl_implementation(
         cutoff, pos, row_vector_cell, pbc, batch, self_interaction
     )
 
     # Calculate distances
     cell_shifts = transforms.compute_cell_shifts(
-        row_vector_cell, shifts_idx, mapping_batch
+        row_vector_cell, shifts_idx, mapping_system
     )
     dds = transforms.compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
     dds = np.sort(dds.numpy())
@@ -496,7 +496,7 @@ def test_strict_nl_edge_cases(
 
     # Test with no cell shifts
     mapping = torch.tensor([[0], [1]], device=device, dtype=torch.long)
-    batch_mapping = torch.tensor([0], device=device, dtype=torch.long)
+    system_mapping = torch.tensor([0], device=device, dtype=torch.long)
     shifts_idx = torch.zeros((1, 3), device=device, dtype=torch.long)
 
     new_mapping, new_batch, new_shifts = neighbors.strict_nl(
@@ -504,14 +504,14 @@ def test_strict_nl_edge_cases(
         positions=pos,
         cell=cell,
         mapping=mapping,
-        batch_mapping=batch_mapping,
+        system_mapping=system_mapping,
         shifts_idx=shifts_idx,
     )
     assert len(new_mapping[0]) > 0  # Should find neighbors
 
     # Test with different batch mappings
     mapping = torch.tensor([[0, 1], [1, 0]], device=device, dtype=torch.long)
-    batch_mapping = torch.tensor([0, 1], device=device, dtype=torch.long)
+    system_mapping = torch.tensor([0, 1], device=device, dtype=torch.long)
     shifts_idx = torch.zeros((2, 3), device=device, dtype=torch.long)
 
     new_mapping, new_batch, new_shifts = neighbors.strict_nl(
@@ -519,7 +519,7 @@ def test_strict_nl_edge_cases(
         positions=pos,
         cell=cell,
         mapping=mapping,
-        batch_mapping=batch_mapping,
+        system_mapping=system_mapping,
         shifts_idx=shifts_idx,
     )
     assert len(new_mapping[0]) > 0  # Should find neighbors
@@ -559,7 +559,7 @@ def test_neighbor_lists_time_and_memory(
             system_idx = torch.zeros(n_atoms, dtype=torch.long, device=device)
             # Fix pbc tensor shape
             pbc = torch.tensor([[True, True, True]], device=device)
-            mapping, mapping_batch, shifts_idx = nl_fn(
+            mapping, mapping_system, shifts_idx = nl_fn(
                 cutoff, pos, cell, pbc, system_idx, self_interaction=False
             )
         else:

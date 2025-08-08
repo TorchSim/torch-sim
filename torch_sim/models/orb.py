@@ -157,10 +157,10 @@ def state_to_atom_graphs(  # noqa: PLR0915
     # Process each system in a single loop
     offset = 0
     for i in range(n_systems):
-        batch_mask = state.system_idx == i
-        positions_per_system = positions[batch_mask]
-        atomic_numbers_per_system = atomic_numbers[batch_mask]
-        atomic_numbers_embedding_per_system = atomic_numbers_embedding[batch_mask]
+        system_mask = state.system_idx == i
+        positions_per_system = positions[system_mask]
+        atomic_numbers_per_system = atomic_numbers[system_mask]
+        atomic_numbers_embedding_per_system = atomic_numbers_embedding[system_mask]
         cell_per_system = row_vector_cell[i]
         pbc_per_system = pbc
 
@@ -223,7 +223,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
     # Concatenate all the edge data
     edge_index = torch.cat(all_edges, dim=1)
     unit_shifts = torch.cat(all_unit_shifts, dim=0)
-    batch_num_edges = torch.tensor(num_edges, dtype=torch.int64, device=device)
+    system_num_edges = torch.tensor(num_edges, dtype=torch.int64, device=device)
 
     senders, receivers = edge_index[0], edge_index[1]
 
@@ -232,7 +232,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
         senders=senders,
         receivers=receivers,
         n_node=n_node,
-        n_edge=batch_num_edges,
+        n_edge=system_num_edges,
         node_features=_map_concat(node_feats_list),
         edge_features=_map_concat(edge_feats_list),
         system_features=_map_concat(graph_feats_list),

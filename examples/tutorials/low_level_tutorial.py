@@ -107,7 +107,7 @@ print("Model memory_scales_with:", model.memory_scales_with)
 """
 `SimState` objects can be passed directly to the model and it will compute
 the properties of the systems in the batch. The properties will be returned
-either batchwise, like the energy, or atomwise, like the forces.
+either systemwise, like the energy, or atomwise, like the forces.
 
 Note that the energy here refers to the potential energy of the system.
 """
@@ -116,9 +116,9 @@ Note that the energy here refers to the potential energy of the system.
 model_outputs = model(state)
 print(f"Model outputs: {', '.join(list(model_outputs))}")
 
-print(f"Energy is a batchwise property with shape: {model_outputs['energy'].shape}")
+print(f"Energy is a systemwise property with shape: {model_outputs['energy'].shape}")
 print(f"Forces are an atomwise property with shape: {model_outputs['forces'].shape}")
-print(f"Stress is a batchwise property with shape: {model_outputs['stress'].shape}")
+print(f"Stress is a systemwise property with shape: {model_outputs['stress'].shape}")
 
 
 # %% [markdown]

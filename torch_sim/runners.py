@@ -22,7 +22,7 @@ from torch_sim.optimizers import (
     UnitCellFireState,
     UnitCellGDState,
 )
-from torch_sim.quantities import batchwise_max_force, calc_kinetic_energy, calc_kT
+from torch_sim.quantities import calc_kinetic_energy, calc_kT, systemwise_max_force
 from torch_sim.state import SimState, concatenate_states, initialize_state
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.typing import StateLike
@@ -174,14 +174,14 @@ def integrate(
         pbar_kwargs.setdefault("disable", None)
         tqdm_pbar = tqdm(total=state.n_systems, **pbar_kwargs)
 
-    for state, batch_indices in batch_iterator:
+    for state, system_indices in batch_iterator:
         state = init_fn(state)
 
         # set up trajectory reporters
         if autobatcher and trajectory_reporter:
-            # we must remake the trajectory reporter for each batch
+            # we must remake the trajectory reporter for each system
             trajectory_reporter.load_new_trajectories(
-                filenames=[og_filenames[i] for i in batch_indices]
+                filenames=[og_filenames[i] for i in system_indices]
             )
 
         # run the simulation
@@ -278,7 +278,7 @@ def _chunked_apply(
     autobatcher.load_states(states)
     initialized_states = []
 
-    initialized_states = [fn(batch) for batch in autobatcher]
+    initialized_states = [fn(system) for system in autobatcher]
 
     ordered_states = autobatcher.restore_original_order(initialized_states)
     return concatenate_states(ordered_states)
@@ -297,7 +297,7 @@ def generate_force_convergence_fn(
 
     Returns:
         Convergence function that takes a state and last energy and
-        returns a batchwise boolean function
+        returns a systemwise boolean function
     """
 
     def convergence_fn(
@@ -308,9 +308,9 @@ def generate_force_convergence_fn(
 
         Returns:
             torch.Tensor: Boolean tensor of shape (n_systems,) indicating
-                convergence status for each batch.
+                convergence status for each system.
         """
-        force_conv = batchwise_max_force(state) < force_tol
+        force_conv = systemwise_max_force(state) < force_tol
 
         if include_cell_forces:
             if (cell_forces := getattr(state, "cell_forces", None)) is None:
@@ -333,7 +333,7 @@ def generate_energy_convergence_fn(energy_tol: float = 1e-3) -> Callable:
 
     Returns:
         Convergence function that takes a state and last energy and
-        returns a batchwise boolean function
+        returns a systemwise boolean function
     """
 
     def convergence_fn(
@@ -344,7 +344,7 @@ def generate_energy_convergence_fn(energy_tol: float = 1e-3) -> Callable:
 
         Returns:
             torch.Tensor: Boolean tensor of shape (n_systems,) indicating
-                convergence status for each batch.
+                convergence status for each system.
         """
         return torch.abs(state.energy - last_energy) < energy_tol
 
@@ -437,13 +437,13 @@ def optimize(  # noqa: C901
         tqdm_pbar = tqdm(total=state.n_systems, **pbar_kwargs)
 
     while (result := autobatcher.next_batch(state, convergence_tensor))[0] is not None:
-        state, converged_states, batch_indices = result
+        state, converged_states, system_indices = result
         all_converged_states.extend(converged_states)
 
         # need to update the trajectory reporter if any states have converged
         if trajectory_reporter and (step == 1 or len(converged_states) > 0):
             trajectory_reporter.load_new_trajectories(
-                filenames=[og_filenames[i] for i in batch_indices]
+                filenames=[og_filenames[i] for i in system_indices]
             )
 
         for _step in range(steps_between_swaps):
@@ -487,8 +487,8 @@ def static(
     """Run single point calculations on a batch of systems.
 
     Unlike the other runners, this function does not return a state. Instead, it
-    returns a list of dictionaries, one for each batch in the input state. Each
-    dictionary contains the properties calculated for that batch. It will also
+    returns a list of dictionaries, one for each system in the input state. Each
+    dictionary contains the properties calculated for that system. It will also
     modify the state in place with the "energy", "forces", and "stress" properties
     if they are present in the model output.
 
@@ -547,12 +547,12 @@ def static(
         pbar_kwargs.setdefault("disable", None)
         tqdm_pbar = tqdm(total=state.n_systems, **pbar_kwargs)
 
-    for sub_state, batch_indices in batch_iterator:
+    for sub_state, system_indices in batch_iterator:
         # set up trajectory reporters
         if autobatcher and trajectory_reporter and og_filenames is not None:
-            # we must remake the trajectory reporter for each batch
+            # we must remake the trajectory reporter for each system
             trajectory_reporter.load_new_trajectories(
-                filenames=[og_filenames[idx] for idx in batch_indices]
+                filenames=[og_filenames[idx] for idx in system_indices]
             )
 
         model_outputs = model(sub_state)

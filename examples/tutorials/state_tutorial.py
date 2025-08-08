@@ -71,11 +71,11 @@ print(f"System indices shape: {si_state.system_idx.shape}")
 
 # %% [markdown]
 """
-SimState attributes fall into three categories: atomwise, batchwise, and global.
+SimState attributes fall into three categories: atomwise, systemwise, and global.
 
 * Atomwise attributes are tensors with shape (n_atoms, ...), these are `positions`,
-  `masses`, `atomic_numbers`, and `batch`. Names are plural.
-* Batchwise attributes are tensors with shape (n_systems, ...), this is just `cell` for
+  `masses`, `atomic_numbers`, and `system_idx`. Names are plural.
+* Systemwise attributes are tensors with shape (n_systems, ...), this is just `cell` for
   the base SimState. Names are singular.
 * Global attributes have any other shape or type, just `pbc` here. Names are singular.
 
@@ -112,7 +112,7 @@ print(
     f"Multi-state has {multi_state.n_atoms} total atoms across {multi_state.n_systems} systems"
 )
 
-# we can see how the shapes of batchwise, atomwise, and global properties change
+# we can see how the shapes of atomwise, systemwise, and global properties change
 print(f"Positions shape: {multi_state.positions.shape}")
 print(f"Cell shape: {multi_state.cell.shape}")
 print(f"PBC: {multi_state.pbc}")
@@ -142,7 +142,7 @@ if torch.cuda.is_available():
 
 SimState supports many convenience operations for manipulating batched states. Slicing
 is supported through fancy indexing, e.g. `state[[0, 1, 2]]` will return a new state
-containing only the first three batches. The other operations are available through the
+containing only the first three systems. The other operations are available through the
 `pop`, `split`, `clone`, and `to` methods.
 """
 
@@ -182,19 +182,19 @@ print(f"Which now is a list of {len(list_of_sliced_states)} states")
 # %% [markdown]
 """
 
-You can extract specific batches from a batched state using Python's slicing syntax.
+You can extract specific systems from a batched state using Python's slicing syntax.
 This is extremely useful for analyzing specific systems or for implementing complex
 workflows where different systems need separate processing:
 
 The slicing interface follows Python's standard indexing conventions, making it
 intuitive to use. Behind the scenes, TorchSim is creating a new SimState with only the
-selected batches, maintaining all the necessary properties and relationships.
+selected systems, maintaining all the necessary properties and relationships.
 
 Note the difference between these operations:
-- `split()` returns all batches as separate states but doesn't modify the original
-- `pop()` removes specified batches from the original state and returns them as
+- `split()` returns all systems as separate states but doesn't modify the original
+- `pop()` removes specified systems from the original state and returns them as
 separate states
-- `__getitem__` (slicing) creates a new state with specified batches without modifying
+- `__getitem__` (slicing) creates a new state with specified systems without modifying
 the original
 
 This flexibility allows you to structure your simulation workflows in the most
@@ -203,7 +203,7 @@ efficient way for your specific needs.
 ### Splitting and Popping Batches
 
 SimState provides methods to split a batched state into separate states or to remove
-specific batches:
+specific systems:
 """
 
 # %% [markdown]
