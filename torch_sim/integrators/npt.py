@@ -15,7 +15,6 @@ from torch_sim.integrators.md import (
     construct_nose_hoover_chain,
 )
 from torch_sim.models.interface import ModelInterface
-from torch_sim.optimizers import md_atom_attributes
 from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.state import SimState
 from torch_sim.typing import StateDict
@@ -68,7 +67,7 @@ class NPTLangevinState(SimState):
     cell_velocities: torch.Tensor
     cell_masses: torch.Tensor
 
-    _atom_attributes = md_atom_attributes
+    _atom_attributes = (*SimState._atom_attributes, "forces", "velocities")  # noqa: SLF001
     _system_attributes = (
         *SimState._system_attributes,  # noqa: SLF001
         "stress",
