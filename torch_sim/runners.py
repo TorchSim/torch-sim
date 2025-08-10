@@ -9,7 +9,7 @@ import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import chain
-from typing import Any
+from typing import Any, ClassVar
 
 import torch
 from tqdm import tqdm
@@ -541,8 +541,12 @@ def static(
         forces: torch.Tensor
         stress: torch.Tensor
 
-        _atom_attributes = (*state._atom_attributes, "forces")  # noqa: SLF001
-        _system_attributes = (*state._system_attributes, "energy", "stress")  # noqa: SLF001
+        _atom_attributes: ClassVar[set[str]] = (
+            state._atom_attributes | {"forces"}  # noqa: SLF001
+        )
+        _system_attributes: ClassVar[set[str]] = (
+            state._system_attributes | {"energy", "stress"}  # noqa: SLF001
+        )
 
     all_props: list[dict[str, torch.Tensor]] = []
     og_filenames = trajectory_reporter.filenames

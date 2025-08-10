@@ -8,6 +8,7 @@
 # ///
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 import torch
 from mace.calculators.foundations_models import mace_mp
@@ -76,7 +77,9 @@ class HybridSwapMCState(MDState):
     """
 
     last_permutation: torch.Tensor
-    _atom_attributes = (*MDState._atom_attributes, "last_permutation")  # noqa: SLF001
+    _atom_attributes: ClassVar[set[str]] = (
+        MDState._atom_attributes | {"last_permutation"}  # noqa: SLF001
+    )
 
 
 nvt_init, nvt_step = nvt_langevin(model=model, dt=0.002, kT=kT)

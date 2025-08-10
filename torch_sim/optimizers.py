@@ -20,7 +20,7 @@ Velocity Verlet-style FIRE: https://doi.org/10.1103/PhysRevLett.97.170201
 import functools
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal, get_args
+from typing import Any, ClassVar, Literal, get_args
 
 import torch
 
@@ -33,27 +33,28 @@ from torch_sim.typing import StateDict
 MdFlavor = Literal["vv_fire", "ase_fire"]
 vv_fire_key, ase_fire_key = get_args(MdFlavor)
 
-md_atom_attributes = (*SimState._atom_attributes, "forces", "velocities")  # noqa: SLF001
+md_atom_attributes = SimState._atom_attributes | {"forces", "velocities"}  # noqa: SLF001
 _fire_system_attributes = (
-    *SimState._system_attributes,  # noqa: SLF001
-    *DeformGradMixin._system_attributes,  # noqa: SLF001
-    "energy",
-    "stress",
-    "cell_positions",
-    "cell_velocities",
-    "cell_forces",
-    "cell_masses",
-    "cell_factor",
-    "pressure",
-    "dt",
-    "alpha",
-    "n_pos",
+    SimState._system_attributes  # noqa: SLF001
+    | DeformGradMixin._system_attributes  # noqa: SLF001
+    | {
+        "energy",
+        "stress",
+        "cell_positions",
+        "cell_velocities",
+        "cell_forces",
+        "cell_masses",
+        "cell_factor",
+        "pressure",
+        "dt",
+        "alpha",
+        "n_pos",
+    }
 )
-_fire_global_attributes = (
-    *SimState._global_attributes,  # noqa: SLF001
+_fire_global_attributes = SimState._global_attributes | {  # noqa: SLF001
     "hydrostatic_strain",
     "constant_volume",
-)
+}
 
 
 @dataclass
@@ -78,8 +79,8 @@ class GDState(SimState):
     forces: torch.Tensor
     energy: torch.Tensor
 
-    _atom_attributes = (*SimState._atom_attributes, "forces")  # noqa: SLF001
-    _system_attributes = (*SimState._system_attributes, "energy")  # noqa: SLF001
+    _atom_attributes = SimState._atom_attributes | {"forces"}  # noqa: SLF001
+    _system_attributes = SimState._system_attributes | {"energy"}  # noqa: SLF001
 
 
 def gradient_descent(
@@ -220,20 +221,20 @@ class UnitCellGDState(GDState, DeformGradMixin):
     cell_forces: torch.Tensor
     cell_masses: torch.Tensor
 
-    _system_attributes = (
-        *GDState._system_attributes,  # noqa: SLF001
-        *DeformGradMixin._system_attributes,  # noqa: SLF001
-        "cell_forces",
-        "pressure",
-        "stress",
-        "cell_positions",
-        "cell_factor",
-        "cell_masses",
+    _system_attributes: ClassVar[set[str]] = (
+        GDState._system_attributes  # noqa: SLF001
+        | DeformGradMixin._system_attributes  # noqa: SLF001
+        | {
+            "cell_forces",
+            "pressure",
+            "stress",
+            "cell_positions",
+            "cell_factor",
+            "cell_masses",
+        }
     )
-    _global_attributes = (
-        *GDState._global_attributes,  # noqa: SLF001
-        "hydrostatic_strain",
-        "constant_volume",
+    _global_attributes: ClassVar[set[str]] = (
+        GDState._global_attributes | {"hydrostatic_strain", "constant_volume"}  # noqa: SLF001
     )
 
 
@@ -523,8 +524,16 @@ class FireState(SimState):
     alpha: torch.Tensor
     n_pos: torch.Tensor
 
-    _atom_attributes = md_atom_attributes
-    _system_attributes = (*SimState._system_attributes, "energy", "dt", "alpha", "n_pos")  # noqa: SLF001
+    _atom_attributes: ClassVar[set[str]] = md_atom_attributes
+    _system_attributes: ClassVar[set[str]] = (
+        SimState._system_attributes  # noqa: SLF001
+        | {
+            "energy",
+            "dt",
+            "alpha",
+            "n_pos",
+        }
+    )
 
 
 def fire(
@@ -736,9 +745,9 @@ class UnitCellFireState(SimState, DeformGradMixin):
     alpha: torch.Tensor
     n_pos: torch.Tensor
 
-    _atom_attributes = md_atom_attributes
-    _system_attributes = _fire_system_attributes
-    _global_attributes = _fire_global_attributes
+    _atom_attributes: ClassVar[set[str]] = md_atom_attributes
+    _system_attributes: ClassVar[set[str]] = _fire_system_attributes
+    _global_attributes: ClassVar[set[str]] = _fire_global_attributes
 
 
 def unit_cell_fire(
@@ -1028,9 +1037,9 @@ class FrechetCellFIREState(SimState, DeformGradMixin):
     alpha: torch.Tensor
     n_pos: torch.Tensor
 
-    _atom_attributes = md_atom_attributes
-    _system_attributes = _fire_system_attributes
-    _global_attributes = _fire_global_attributes
+    _atom_attributes: ClassVar[set[str]] = md_atom_attributes
+    _system_attributes: ClassVar[set[str]] = _fire_system_attributes
+    _global_attributes: ClassVar[set[str]] = _fire_global_attributes
 
 
 def frechet_cell_fire(

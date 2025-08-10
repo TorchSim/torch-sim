@@ -11,7 +11,7 @@ import warnings
 from collections import defaultdict
 from collections.abc import Generator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Self, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, cast
 
 import torch
 
@@ -85,9 +85,14 @@ class SimState:
     atomic_numbers: torch.Tensor
     system_idx: torch.Tensor
 
-    _atom_attributes = ("positions", "masses", "atomic_numbers", "system_idx")
-    _system_attributes = ("cell",)
-    _global_attributes = ("pbc",)
+    _atom_attributes: ClassVar[set[str]] = {
+        "positions",
+        "masses",
+        "atomic_numbers",
+        "system_idx",
+    }
+    _system_attributes: ClassVar[set[str]] = {"cell"}
+    _global_attributes: ClassVar[set[str]] = {"pbc"}
 
     def __init__(
         self,
@@ -444,12 +449,14 @@ class SimState:
     @classmethod
     def _assert_all_attributes_have_defined_scope(cls) -> None:
         all_defined_attributes = (
-            cls._atom_attributes + cls._system_attributes + cls._global_attributes
+            cls._atom_attributes | cls._system_attributes | cls._global_attributes
         )
         # 1) assert that no attribute is defined twice in all_defined_attributes
-        duplicates = [
-            x for x in all_defined_attributes if all_defined_attributes.count(x) > 1
-        ]
+        duplicates = (
+            (cls._atom_attributes & cls._system_attributes)
+            | (cls._atom_attributes & cls._global_attributes)
+            | (cls._system_attributes & cls._global_attributes)
+        )
         if duplicates:
             raise TypeError(
                 f"Attributes {duplicates} are declared multiple times in {cls.__name__} "
@@ -492,7 +499,7 @@ class DeformGradMixin:
 
     reference_cell: torch.Tensor
 
-    _system_attributes = ("reference_cell",)
+    _system_attributes: ClassVar[set[str]] = {"reference_cell"}
 
     @property
     def reference_row_vector_cell(self) -> torch.Tensor:

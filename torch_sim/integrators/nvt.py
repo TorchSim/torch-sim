@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 import torch
 
@@ -266,10 +266,8 @@ class NVTNoseHooverState(MDState):
     chain: NoseHooverChain
     _chain_fns: NoseHooverChainFns
 
-    _global_attributes = (
-        *MDState._global_attributes,  # noqa: SLF001
-        "chain",
-        "_chain_fns",
+    _global_attributes: ClassVar[set[str]] = (
+        MDState._global_attributes | {"chain", "_chain_fns"}  # noqa: SLF001
     )
 
     @property

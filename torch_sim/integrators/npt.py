@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 import torch
 
@@ -67,16 +67,17 @@ class NPTLangevinState(SimState):
     cell_velocities: torch.Tensor
     cell_masses: torch.Tensor
 
-    _atom_attributes = (*SimState._atom_attributes, "forces", "velocities")  # noqa: SLF001
-    _system_attributes = (
-        *SimState._system_attributes,  # noqa: SLF001
+    _atom_attributes: ClassVar[set[str]] = (
+        SimState._atom_attributes | {"forces", "velocities"}  # noqa: SLF001
+    )
+    _system_attributes: ClassVar[set[str]] = SimState._system_attributes | {  # noqa: SLF001
         "stress",
         "cell_positions",
         "cell_velocities",
         "cell_masses",
         "reference_cell",
         "energy",
-    )
+    }
 
     @property
     def momenta(self) -> torch.Tensor:
@@ -878,19 +879,23 @@ class NPTNoseHooverState(MDState):
     barostat: NoseHooverChain
     barostat_fns: NoseHooverChainFns
 
-    _system_attributes = (
-        *MDState._system_attributes,  # noqa: SLF001
-        "reference_cell",
-        "cell_position",
-        "cell_momentum",
-        "cell_mass",
+    _system_attributes: ClassVar[set[str]] = (
+        MDState._system_attributes  # noqa: SLF001
+        | {
+            "reference_cell",
+            "cell_position",
+            "cell_momentum",
+            "cell_mass",
+        }
     )
-    _global_attributes = (
-        *MDState._global_attributes,  # noqa: SLF001
-        "thermostat",
-        "barostat",
-        "thermostat_fns",
-        "barostat_fns",
+    _global_attributes: ClassVar[set[str]] = (
+        MDState._global_attributes  # noqa: SLF001
+        | {
+            "thermostat",
+            "barostat",
+            "thermostat_fns",
+            "barostat_fns",
+        }
     )
 
     @property
