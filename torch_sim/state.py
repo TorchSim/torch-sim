@@ -885,12 +885,13 @@ def concatenate_states(
 
         # Collect per-atom properties
         for prop, val in get_attrs_for_scope(state, "per-atom"):
-            # if hasattr(state, prop):
+            if prop == "system_idx":
+                # skip system_idx, it will be handled below
+                continue
             per_atom_tensors[prop].append(val)
 
         # Collect per-system properties
         for prop, val in get_attrs_for_scope(state, "per-system"):
-            # if hasattr(state, prop):
             per_system_tensors[prop].append(val)
 
         # Update system indices
