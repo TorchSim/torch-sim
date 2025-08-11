@@ -8,7 +8,6 @@
 # ///
 
 from dataclasses import dataclass
-from typing import ClassVar
 
 import torch
 from mace.calculators.foundations_models import mace_mp
@@ -77,7 +76,7 @@ class HybridSwapMCState(MDState):
     """
 
     last_permutation: torch.Tensor
-    _atom_attributes: ClassVar[set[str]] = (
+    _atom_attributes = (
         MDState._atom_attributes | {"last_permutation"}  # noqa: SLF001
     )
 

@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import Any
 
 import torch
 
@@ -67,10 +67,10 @@ class NPTLangevinState(SimState):
     cell_velocities: torch.Tensor
     cell_masses: torch.Tensor
 
-    _atom_attributes: ClassVar[set[str]] = (
+    _atom_attributes = (
         SimState._atom_attributes | {"forces", "velocities"}  # noqa: SLF001
     )
-    _system_attributes: ClassVar[set[str]] = SimState._system_attributes | {  # noqa: SLF001
+    _system_attributes = SimState._system_attributes | {  # noqa: SLF001
         "stress",
         "cell_positions",
         "cell_velocities",
@@ -879,7 +879,7 @@ class NPTNoseHooverState(MDState):
     barostat: NoseHooverChain
     barostat_fns: NoseHooverChainFns
 
-    _system_attributes: ClassVar[set[str]] = (
+    _system_attributes = (
         MDState._system_attributes  # noqa: SLF001
         | {
             "reference_cell",
@@ -888,7 +888,7 @@ class NPTNoseHooverState(MDState):
             "cell_mass",
         }
     )
-    _global_attributes: ClassVar[set[str]] = (
+    _global_attributes = (
         MDState._global_attributes  # noqa: SLF001
         | {
             "thermostat",

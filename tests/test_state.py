@@ -66,7 +66,7 @@ def test_no_duplicate_attributes_in_scopes() -> None:
             duplicated_attribute: bool
 
             _system_attributes: typing.ClassVar[set[str]] = (
-                SimState._atom_attributes | {"duplicated_attribute"}  # noqa: SLF001
+                SimState._system_attributes | {"duplicated_attribute"}  # noqa: SLF001
             )
             _global_attributes: typing.ClassVar[set[str]] = (
                 SimState._global_attributes | {"duplicated_attribute"}  # noqa: SLF001

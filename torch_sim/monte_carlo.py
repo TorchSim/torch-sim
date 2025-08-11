@@ -12,7 +12,6 @@ must be called with `variable_masses=True`.
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import ClassVar
 
 import torch
 
@@ -37,12 +36,8 @@ class SwapMCState(SimState):
     energy: torch.Tensor
     last_permutation: torch.Tensor
 
-    _atom_attributes: ClassVar[set[str]] = (
-        SimState._atom_attributes | {"last_permutation"}  # noqa: SLF001
-    )
-    _system_attributes: ClassVar[set[str]] = (
-        SimState._system_attributes | {"energy"}  # noqa: SLF001
-    )
+    _atom_attributes = SimState._atom_attributes | {"last_permutation"}  # noqa: SLF001
+    _system_attributes = SimState._system_attributes | {"energy"}  # noqa: SLF001
 
 
 def generate_swaps(

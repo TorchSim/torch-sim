@@ -20,7 +20,7 @@ Velocity Verlet-style FIRE: https://doi.org/10.1103/PhysRevLett.97.170201
 import functools
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, ClassVar, Literal, get_args
+from typing import Any, Literal, get_args
 
 import torch
 
@@ -221,7 +221,7 @@ class UnitCellGDState(GDState, DeformGradMixin):
     cell_forces: torch.Tensor
     cell_masses: torch.Tensor
 
-    _system_attributes: ClassVar[set[str]] = (
+    _system_attributes = (
         GDState._system_attributes  # noqa: SLF001
         | DeformGradMixin._system_attributes  # noqa: SLF001
         | {
@@ -233,7 +233,7 @@ class UnitCellGDState(GDState, DeformGradMixin):
             "cell_masses",
         }
     )
-    _global_attributes: ClassVar[set[str]] = (
+    _global_attributes = (
         GDState._global_attributes | {"hydrostatic_strain", "constant_volume"}  # noqa: SLF001
     )
 
@@ -524,8 +524,8 @@ class FireState(SimState):
     alpha: torch.Tensor
     n_pos: torch.Tensor
 
-    _atom_attributes: ClassVar[set[str]] = md_atom_attributes
-    _system_attributes: ClassVar[set[str]] = (
+    _atom_attributes = md_atom_attributes
+    _system_attributes = (
         SimState._system_attributes  # noqa: SLF001
         | {
             "energy",
@@ -745,9 +745,9 @@ class UnitCellFireState(SimState, DeformGradMixin):
     alpha: torch.Tensor
     n_pos: torch.Tensor
 
-    _atom_attributes: ClassVar[set[str]] = md_atom_attributes
-    _system_attributes: ClassVar[set[str]] = _fire_system_attributes
-    _global_attributes: ClassVar[set[str]] = _fire_global_attributes
+    _atom_attributes = md_atom_attributes
+    _system_attributes = _fire_system_attributes
+    _global_attributes = _fire_global_attributes
 
 
 def unit_cell_fire(
@@ -1037,9 +1037,9 @@ class FrechetCellFIREState(SimState, DeformGradMixin):
     alpha: torch.Tensor
     n_pos: torch.Tensor
 
-    _atom_attributes: ClassVar[set[str]] = md_atom_attributes
-    _system_attributes: ClassVar[set[str]] = _fire_system_attributes
-    _global_attributes: ClassVar[set[str]] = _fire_global_attributes
+    _atom_attributes = md_atom_attributes
+    _system_attributes = _fire_system_attributes
+    _global_attributes = _fire_global_attributes
 
 
 def frechet_cell_fire(

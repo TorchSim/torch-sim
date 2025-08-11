@@ -477,13 +477,13 @@ class SimState:
                 vars(cls).get(attr_name), property
             )
             is_method = hasattr(cls, attr_name) and callable(getattr(cls, attr_name))
-            is_scope_list = attr_name in [
-                "_atom_attributes",
-                "_system_attributes",
-                "_global_attributes",
-            ]
+            is_class_variable = (
+                # Note: _atom_attributes, _system_attributes, and _global_attributes
+                # are all class variables
+                typing.get_origin(all_annotations.get(attr_name)) is typing.ClassVar
+            )
 
-            if is_special_attribute or is_property or is_method or is_scope_list:
+            if is_special_attribute or is_property or is_method or is_class_variable:
                 continue
 
             if attr_name not in all_defined_attributes:

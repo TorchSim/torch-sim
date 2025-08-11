@@ -9,7 +9,7 @@ import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import chain
-from typing import Any, ClassVar
+from typing import Any
 
 import torch
 from tqdm import tqdm
@@ -541,10 +541,10 @@ def static(
         forces: torch.Tensor
         stress: torch.Tensor
 
-        _atom_attributes: ClassVar[set[str]] = (
+        _atom_attributes = (
             state._atom_attributes | {"forces"}  # noqa: SLF001
         )
-        _system_attributes: ClassVar[set[str]] = (
+        _system_attributes = (
             state._system_attributes | {"energy", "stress"}  # noqa: SLF001
         )
 
