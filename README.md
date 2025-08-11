@@ -97,9 +97,10 @@ TorchSim achieves up to 100x speedup compared to ASE with popular MLIPs.
 This figure compares the time per atom of ASE and `torch_sim`. Time per atom is defined
 as the number of atoms / total time. While ASE can only run a single system of `n_atoms`
 (on the $x$ axis), `torch_sim` can run as many systems as will fit in memory. On an H100 80 GB card,
-the max atoms that could fit in memory was ~8,000 for [GemNet](https://github.com/FAIR-Chem/fairchem), ~10,000 for [MACE](https://github.com/ACEsuit/mace), and ~2,500
-for [SevenNet](https://github.com/MDIL-SNU/SevenNet). This metric describes model performance by capturing speed and memory
-usage simultaneously.
+the max atoms that could fit in memory was ~8,000 for [EGIP](https://github.com/FAIR-Chem/fairchem), 
+~10,000 for [MACE-MPA-0](https://github.com/ACEsuit/mace), ~22,000 for [Mattersim V1 1M](https://github.com/microsoft/mattersim), 
+~2,500 for [SevenNet](https://github.com/MDIL-SNU/SevenNet), and ~9000 for [PET-MAD](https://github.com/lab-cosmo/pet-mad). 
+This metric describes model performance by capturing speed and memory usage simultaneously.
 
 ## Installation
 
