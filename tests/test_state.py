@@ -48,7 +48,7 @@ def test_all_attributes_must_be_specified_in_scopes() -> None:
             attribute_specified_in_scopes: bool
             attribute_not_specified_in_scopes: bool
 
-            _atom_attributes: typing.ClassVar[set[str]] = (
+            _atom_attributes = (
                 SimState._atom_attributes | {"attribute_specified_in_scopes"}  # noqa: SLF001
             )
 
@@ -65,12 +65,8 @@ def test_no_duplicate_attributes_in_scopes() -> None:
         class ChildState(SimState):
             duplicated_attribute: bool
 
-            _system_attributes: typing.ClassVar[set[str]] = (
-                SimState._system_attributes | {"duplicated_attribute"}  # noqa: SLF001
-            )
-            _global_attributes: typing.ClassVar[set[str]] = (
-                SimState._global_attributes | {"duplicated_attribute"}  # noqa: SLF001
-            )
+            _system_attributes = SimState._system_attributes | {"duplicated_attribute"}  # noqa: SLF001
+            _global_attributes = SimState._global_attributes | {"duplicated_attribute"}  # noqa: SLF001
 
     assert "are declared multiple times" in str(excinfo.value)
     assert "duplicated_attribute" in str(excinfo.value)
@@ -515,7 +511,7 @@ def test_column_vector_cell(si_sim_state: ts.SimState) -> None:
 class DeformState(SimState, DeformGradMixin):
     """Test class that combines SimState with DeformGradMixin."""
 
-    _system_attributes: typing.ClassVar[set[str]] = (
+    _system_attributes = (
         SimState._system_attributes  # noqa: SLF001
         | DeformGradMixin._system_attributes  # noqa: SLF001
     )
