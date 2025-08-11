@@ -1321,7 +1321,7 @@ def _vv_fire_step(  # noqa: C901, PLR0915
             state.positions[nan_velocities]
         )
         if is_cell_optimization:
-            if not isinstance(state, AnyFireCellState):
+            if not isinstance(state, get_args(AnyFireCellState)):
                 raise ValueError(
                     f"Cell optimization requires one of {get_args(AnyFireCellState)}."
                 )
@@ -1543,7 +1543,7 @@ def _ase_fire_step(  # noqa: C901, PLR0915
         )
         forces = state.forces
         if is_cell_optimization:
-            if not isinstance(state, AnyFireCellState):
+            if not isinstance(state, get_args(AnyFireCellState)):
                 raise ValueError(
                     f"Cell optimization requires one of {get_args(AnyFireCellState)}."
                 )
