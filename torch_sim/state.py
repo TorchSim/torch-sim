@@ -501,6 +501,11 @@ class DeformGradMixin:
 
     _system_attributes: ClassVar[set[str]] = {"reference_cell"}
 
+    if TYPE_CHECKING:
+        # define this under a TYPE_CHECKING block to avoid it being included in the
+        # dataclass __init__ during runtime
+        row_vector_cell: torch.Tensor
+
     @property
     def reference_row_vector_cell(self) -> torch.Tensor:
         """Get the original unit cell in terms of row vectors."""
