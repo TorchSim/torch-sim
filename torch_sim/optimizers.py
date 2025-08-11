@@ -33,7 +33,7 @@ from torch_sim.typing import StateDict
 MdFlavor = Literal["vv_fire", "ase_fire"]
 vv_fire_key, ase_fire_key = get_args(MdFlavor)
 
-md_atom_attributes = SimState._atom_attributes | {"forces", "velocities"}  # noqa: SLF001
+_md_atom_attributes = SimState._atom_attributes | {"forces", "velocities"}  # noqa: SLF001
 _fire_system_attributes = (
     SimState._system_attributes  # noqa: SLF001
     | DeformGradMixin._system_attributes  # noqa: SLF001
@@ -524,7 +524,7 @@ class FireState(SimState):
     alpha: torch.Tensor
     n_pos: torch.Tensor
 
-    _atom_attributes = md_atom_attributes
+    _atom_attributes = _md_atom_attributes
     _system_attributes = (
         SimState._system_attributes  # noqa: SLF001
         | {
@@ -745,7 +745,7 @@ class UnitCellFireState(SimState, DeformGradMixin):
     alpha: torch.Tensor
     n_pos: torch.Tensor
 
-    _atom_attributes = md_atom_attributes
+    _atom_attributes = _md_atom_attributes
     _system_attributes = _fire_system_attributes
     _global_attributes = _fire_global_attributes
 
@@ -1037,7 +1037,7 @@ class FrechetCellFIREState(SimState, DeformGradMixin):
     alpha: torch.Tensor
     n_pos: torch.Tensor
 
-    _atom_attributes = md_atom_attributes
+    _atom_attributes = _md_atom_attributes
     _system_attributes = _fire_system_attributes
     _global_attributes = _fire_global_attributes
 
