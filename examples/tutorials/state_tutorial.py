@@ -82,9 +82,9 @@ SimState attributes fall into three categories: atomwise, systemwise, and global
 For TorchSim to know which attributes are atomwise, systemwise, and global, each attribute's
 name is explicitly defined in the `_atom_attributes`, `_system_attributes`, and `_global_attributes`:
 
-_atom_attributes = ("positions", "masses", "atomic_numbers", "system_idx")
-_system_attributes = ("cell",)
-_global_attributes = ("pbc",)
+_atom_attributes = {"positions", "masses", "atomic_numbers", "system_idx"}
+_system_attributes = {"cell"}
+_global_attributes = {"pbc"}
 
 You can use the `get_attrs_for_scope` generator function to analyze a state's properties. This
 is mostly used internally but can be useful for debugging.
