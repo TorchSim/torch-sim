@@ -385,6 +385,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
             cell=state.cell,
             pbc=state.pbc,
             reference_cell=state.cell.clone(),
+            row_vector_cell=state.row_vector_cell.clone(),
             cell_factor=cell_factor,
             hydrostatic_strain=hydrostatic_strain,
             constant_volume=constant_volume,
@@ -936,6 +937,7 @@ def unit_cell_fire(
             cell_masses=cell_masses,
             # Optimization attributes
             reference_cell=state.cell.clone(),
+            row_vector_cell=state.row_vector_cell.clone(),
             cell_factor=cell_factor,
             pressure=pressure,
             dt=dt_start,
@@ -1020,7 +1022,6 @@ class FrechetCellFIREState(SimState, DeformGradMixin):
     stress: torch.Tensor
 
     # Optimization-specific attributes
-    reference_cell: torch.Tensor
     cell_factor: torch.Tensor
     pressure: torch.Tensor
     hydrostatic_strain: bool
@@ -1243,6 +1244,7 @@ def frechet_cell_fire(
             cell_masses=cell_masses,
             # Optimization attributes
             reference_cell=state.cell.clone(),
+            row_vector_cell=state.row_vector_cell.clone(),
             cell_factor=cell_factor,
             pressure=pressure,
             dt=dt_start,
