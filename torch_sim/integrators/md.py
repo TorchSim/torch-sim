@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import torch
 
 from torch_sim import transforms
+from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
 
@@ -21,17 +22,17 @@ class MDState(SimState):
     Attributes:
         positions (torch.Tensor): Particle positions [n_particles, n_dim]
         momenta (torch.Tensor): Particle momenta [n_particles, n_dim]
-        energy (torch.Tensor): Total energy of the system [n_batches]
+        energy (torch.Tensor): Total energy of the system [n_systems]
         forces (torch.Tensor): Forces on particles [n_particles, n_dim]
         masses (torch.Tensor): Particle masses [n_particles]
-        cell (torch.Tensor): Simulation cell matrix [n_batches, n_dim, n_dim]
+        cell (torch.Tensor): Simulation cell matrix [n_systems, n_dim, n_dim]
         pbc (bool): Whether to use periodic boundary conditions
-        batch (torch.Tensor): Batch indices [n_particles]
+        system_idx (torch.Tensor): System indices [n_particles]
         atomic_numbers (torch.Tensor): Atomic numbers [n_particles]
 
     Properties:
         velocities (torch.Tensor): Particle velocities [n_particles, n_dim]
-        n_batches (int): Number of independent systems in the batch
+        n_systems (int): Number of independent systems in the batch
         device (torch.device): Device on which tensors are stored
         dtype (torch.dtype): Data type of tensors
     """
@@ -51,7 +52,7 @@ class MDState(SimState):
 def calculate_momenta(
     positions: torch.Tensor,
     masses: torch.Tensor,
-    batch: torch.Tensor,
+    system_idx: torch.Tensor,
     kT: torch.Tensor | float,
     seed: int | None = None,
 ) -> torch.Tensor:
@@ -64,8 +65,8 @@ def calculate_momenta(
     Args:
         positions (torch.Tensor): Particle positions [n_particles, n_dim]
         masses (torch.Tensor): Particle masses [n_particles]
-        batch (torch.Tensor): Batch indices [n_particles]
-        kT (torch.Tensor): Temperature in energy units [n_batches]
+        system_idx (torch.Tensor): System indices [n_particles]
+        kT (torch.Tensor): Temperature in energy units [n_systems]
         seed (int, optional): Random seed for reproducibility. Defaults to None.
 
     Returns:
@@ -79,32 +80,32 @@ def calculate_momenta(
         generator.manual_seed(seed)
 
     if isinstance(kT, torch.Tensor) and len(kT.shape) > 0:
-        # kT is a tensor with shape (n_batches,)
-        kT = kT[batch]
+        # kT is a tensor with shape (n_systems,)
+        kT = kT[system_idx]
 
     # Generate random momenta from normal distribution
     momenta = torch.randn(
         positions.shape, device=device, dtype=dtype, generator=generator
     ) * torch.sqrt(masses * kT).unsqueeze(-1)
 
-    batchwise_momenta = torch.zeros(
-        (batch[-1] + 1, momenta.shape[1]), device=device, dtype=dtype
+    systemwise_momenta = torch.zeros(
+        (system_idx[-1] + 1, momenta.shape[1]), device=device, dtype=dtype
     )
 
-    # create 3 copies of batch
-    batch_3 = batch.view(-1, 1).repeat(1, 3)
-    bincount = torch.bincount(batch)
+    # create 3 copies of system_idx
+    system_idx_3 = system_idx.view(-1, 1).repeat(1, 3)
+    bincount = torch.bincount(system_idx)
     mean_momenta = torch.scatter_reduce(
-        batchwise_momenta,
+        systemwise_momenta,
         dim=0,
-        index=batch_3,
+        index=system_idx_3,
         src=momenta,
         reduce="sum",
     ) / bincount.view(-1, 1)
 
     return torch.where(
         torch.repeat_interleave(bincount > 1, bincount).view(-1, 1),
-        momenta - mean_momenta[batch],
+        momenta - mean_momenta[system_idx],
         momenta,
     )
 
@@ -118,7 +119,7 @@ def momentum_step(state: MDState, dt: torch.Tensor) -> MDState:
 
     Args:
         state (MDState): Current system state containing forces and momenta
-        dt (torch.Tensor): Integration timestep, either scalar or with shape [n_batches]
+        dt (torch.Tensor): Integration timestep, either scalar or with shape [n_systems]
 
     Returns:
         MDState: Updated state with new momenta after force application
@@ -138,7 +139,7 @@ def position_step(state: MDState, dt: torch.Tensor) -> MDState:
 
     Args:
         state (MDState): Current system state containing positions and velocities
-        dt (torch.Tensor): Integration timestep, either scalar or with shape [n_batches]
+        dt (torch.Tensor): Integration timestep, either scalar or with shape [n_systems]
 
     Returns:
         MDState: Updated state with new positions after propagation
@@ -147,16 +148,16 @@ def position_step(state: MDState, dt: torch.Tensor) -> MDState:
     new_positions = state.positions + state.velocities * dt
 
     if state.pbc:
-        # Split positions and cells by batch
+        # Split positions and cells by system
         new_positions = transforms.pbc_wrap_batched(
-            new_positions, state.cell, state.batch
+            new_positions, state.cell, state.system_idx
         )
 
     state.positions = new_positions
     return state
 
 
-def velocity_verlet(state: MDState, dt: torch.Tensor, model: torch.nn.Module) -> MDState:
+def velocity_verlet(state: MDState, dt: torch.Tensor, model: ModelInterface) -> MDState:
     """Perform one complete velocity Verlet integration step.
 
     This function implements the velocity Verlet algorithm, which provides

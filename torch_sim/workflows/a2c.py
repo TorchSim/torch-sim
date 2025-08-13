@@ -19,6 +19,7 @@ from pymatgen.core.composition import Composition
 
 import torch_sim as ts
 from torch_sim import transforms
+from torch_sim.models.interface import ModelInterface
 from torch_sim.models.soft_sphere import SoftSphereModel, SoftSphereMultiModel
 from torch_sim.optimizers import FireState, UnitCellFireState, fire
 from torch_sim.optimizers import unit_cell_fire as batched_unit_cell_fire
@@ -228,7 +229,7 @@ def random_packed_structure(
     device: torch.device | None = None,
     dtype: torch.dtype = torch.float32,
     log: Any | None = None,
-) -> FireState:
+) -> FireState | tuple[FireState, list[np.ndarray]]:
     """Generates a random packed atomic structure and minimizes atomic overlaps.
 
     This function creates a random atomic structure within a given cell and optionally
@@ -326,6 +327,7 @@ def random_packed_structure(
 
     if log is not None:
         return state, log
+
     return state
 
 
@@ -575,6 +577,13 @@ def get_subcells_to_crystallize(
     # Convert species list to numpy array for easier composition handling
     species_array = np.array(species)
 
+    if restrict_to_compositions is not None and restrict_to_compositions:
+        restrict_to_compositions: set[str] = {
+            Composition(comp).reduced_formula for comp in restrict_to_compositions
+        }
+    else:
+        restrict_to_compositions: set[str] = set()
+
     # Generate allowed stoichiometries if max_coef is specified
     if max_coeff:
         if elements is None:
@@ -583,17 +592,9 @@ def get_subcells_to_crystallize(
         stoichs = list(itertools.product(range(max_coeff + 1), repeat=len(elements)))
         stoichs.pop(0)  # Remove the empty composition (0,0,...)
         # Convert stoichiometries to composition formulas
-        comps = []
         for stoich in stoichs:
             comp = dict(zip(elements, stoich, strict=True))
-            comps.append(Composition.from_dict(comp).reduced_formula)
-        restrict_to_compositions = set(comps)
-
-    # Ensure compositions are in reduced formula form if provided
-    if restrict_to_compositions:
-        restrict_to_compositions = [
-            Composition(comp).reduced_formula for comp in restrict_to_compositions
-        ]
+            restrict_to_compositions.add(Composition.from_dict(comp).reduced_formula)
 
     # Create orthorhombic grid for systematic subcell generation
     bins = int(1 / d_frac)
@@ -610,7 +611,7 @@ def get_subcells_to_crystallize(
         .T
     )
 
-    candidates = []
+    candidates: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = []
     # Iterate through all possible subcell boundary combinations
     for lb, ub in itertools.product(l_bound, u_bound):
         if torch.all(ub > lb):  # Ensure valid subcell dimensions
@@ -705,9 +706,9 @@ def get_target_temperature(
 
 def get_unit_cell_relaxed_structure(
     state: ts.SimState,
-    model: torch.nn.Module,
+    model: ModelInterface,
     max_iter: int = 200,
-) -> tuple[UnitCellFireState, dict]:
+) -> tuple[UnitCellFireState, dict[str, torch.Tensor], list[float], list[float]]:
     """Relax both atomic positions and cell parameters using FIRE algorithm.
 
     This function performs geometry optimization of both atomic positions and unit cell
@@ -730,9 +731,9 @@ def get_unit_cell_relaxed_structure(
     device, dtype = model.device, model.dtype
 
     logger = {
-        "energy": torch.zeros((max_iter, state.n_batches), device=device, dtype=dtype),
+        "energy": torch.zeros((max_iter, state.n_systems), device=device, dtype=dtype),
         "stress": torch.zeros(
-            (max_iter, state.n_batches, 3, 3), device=device, dtype=dtype
+            (max_iter, state.n_systems, 3, 3), device=device, dtype=dtype
         ),
     }
 
@@ -751,8 +752,8 @@ def get_unit_cell_relaxed_structure(
     state = unit_cell_fire_init(state)
 
     def step_fn(
-        step: int, state: UnitCellFireState, logger: dict
-    ) -> tuple[UnitCellFireState, dict]:
+        step: int, state: UnitCellFireState, logger: dict[str, torch.Tensor]
+    ) -> tuple[UnitCellFireState, dict[str, torch.Tensor]]:
         logger["energy"][step] = state.energy
         logger["stress"][step] = state.stress
         state = unit_cell_fire_update(state)
@@ -770,63 +771,5 @@ def get_unit_cell_relaxed_structure(
     print(
         f"Final energy: {[f'{e:.4f}' for e in final_energy]} eV, "
         f"Final pressure: {[f'{p:.4f}' for p in final_pressure]} eV/A^3"
-    )
-    return state, logger, final_energy, final_pressure
-
-
-def get_relaxed_structure(
-    state: ts.SimState,
-    model: torch.nn.Module,
-    max_iter: int = 200,
-) -> tuple[FireState, dict]:
-    """Relax atomic positions at fixed cell parameters using FIRE algorithm.
-
-    Does geometry optimization of atomic positions while keeping the unit cell fixed.
-    Uses the Fast Inertial Relaxation Engine (FIRE) algorithm to minimize forces on atoms.
-
-    Args:
-        state: State containing positions, cell and atomic numbers
-        model: Model to compute energies, forces, and stresses
-        max_iter: Maximum number of FIRE iterations. Defaults to 200.
-
-    Returns:
-        tuple containing:
-            - FIREState: Final state containing relaxed positions and other quantities
-            - dict: Logger with energy trajectory
-            - float: Final energy in eV
-            - float: Final pressure in eV/Å³
-    """
-    # Get device and dtype from model
-    device, dtype = model.device, model.dtype
-
-    logger = {"energy": torch.zeros((max_iter, 1), device=device, dtype=dtype)}
-
-    results = model(state)
-    Initial_energy = results["energy"]
-    print(f"Initial energy: {Initial_energy.item():.4f} eV")
-
-    state_init_fn, fire_update = fire(model=model)
-    state = state_init_fn(state)
-
-    def step_fn(idx: int, state: FireState, logger: dict) -> tuple[FireState, dict]:
-        logger["energy"][idx] = state.energy
-        state = fire_update(state)
-        return state, logger
-
-    for idx in range(max_iter):
-        state, logger = step_fn(idx, state, logger)
-
-    # Get final results
-    model.compute_stress = True
-    final_results = model(
-        positions=state.positions, cell=state.cell, atomic_numbers=state.atomic_numbers
-    )
-
-    final_energy = final_results["energy"].item()
-    final_stress = final_results["stress"]
-    final_pressure = (torch.trace(final_stress) / 3.0).item()
-    print(
-        f"Final energy: {final_energy:.4f} eV, "
-        f"Final pressure: {final_pressure:.4f} eV/A^3"
     )
     return state, logger, final_energy, final_pressure

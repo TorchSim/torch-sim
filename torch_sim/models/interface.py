@@ -27,8 +27,6 @@ Notes:
 """
 
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Self
 
 import torch
 
@@ -37,7 +35,7 @@ from torch_sim.state import SimState
 from torch_sim.typing import MemoryScaling, StateDict
 
 
-class ModelInterface(ABC):
+class ModelInterface(torch.nn.Module, ABC):
     """Abstract base class for all simulation models in torchsim.
 
     This interface provides a common structure for all energy and force models,
@@ -65,43 +63,16 @@ class ModelInterface(ABC):
         output = model(sim_state)
 
         # Access computed properties
-        energy = output["energy"]  # Shape: [n_batches]
+        energy = output["energy"]  # Shape: [n_systems]
         forces = output["forces"]  # Shape: [n_atoms, 3]
-        stress = output["stress"]  # Shape: [n_batches, 3, 3]
+        stress = output["stress"]  # Shape: [n_systems, 3, 3]
         ```
     """
 
-    @abstractmethod
-    def __init__(
-        self,
-        model: str | Path | torch.nn.Module | None = None,
-        device: torch.device | None = None,
-        dtype: torch.dtype = torch.float64,
-        **kwargs,
-    ) -> Self:
-        """Initialize a model implementation.
-
-        Implementations must set device, dtype and compute capability flags
-        to indicate what operations the model supports. Models may optionally
-        load parameters from a file or existing module.
-
-        Args:
-            model (str | Path | torch.nn.Module | None): Model specification, which
-                can be:
-                - Path to a model checkpoint or model file
-                - Pre-configured torch.nn.Module
-                - None for default initialization
-                Defaults to None.
-            device (torch.device | None): Device where the model will run. If None,
-                a default device will be selected. Defaults to None.
-            dtype (torch.dtype): Data type for model calculations. Defaults to
-                torch.float64.
-            **kwargs: Additional model-specific parameters.
-
-        Notes:
-            All implementing classes must set self._device, self._dtype,
-            self._compute_stress and self._compute_forces in their __init__ method.
-        """
+    _device: torch.device
+    _dtype: torch.dtype
+    _compute_stress: bool
+    _compute_forces: bool
 
     @property
     def device(self) -> torch.device:
@@ -174,16 +145,16 @@ class ModelInterface(ABC):
                 dictionary is dependent on the model but typically must contain the
                 following keys:
                 - "positions": Atomic positions with shape [n_atoms, 3]
-                - "cell": Unit cell vectors with shape [n_batches, 3, 3]
-                - "batch": Batch indices for each atom with shape [n_atoms]
+                - "cell": Unit cell vectors with shape [n_systems, 3, 3]
+                - "system_idx": System indices for each atom with shape [n_atoms]
                 - "atomic_numbers": Atomic numbers with shape [n_atoms] (optional)
             **kwargs: Additional model-specific parameters.
 
         Returns:
             dict[str, torch.Tensor]: Computed properties:
-                - "energy": Potential energy with shape [n_batches]
+                - "energy": Potential energy with shape [n_systems]
                 - "forces": Atomic forces with shape [n_atoms, 3]
-                - "stress": Stress tensor with shape [n_batches, 3, 3] (if
+                - "stress": Stress tensor with shape [n_systems, 3, 3] (if
                     compute_stress=True)
                 - May include additional model-specific outputs
 
@@ -256,7 +227,7 @@ def validate_model_outputs(  # noqa: C901, PLR0915
 
     og_positions = sim_state.positions.clone()
     og_cell = sim_state.cell.clone()
-    og_batch = sim_state.batch.clone()
+    og_system_idx = sim_state.system_idx.clone()
     og_atomic_numbers = sim_state.atomic_numbers.clone()
 
     model_output = model.forward(sim_state)
@@ -266,8 +237,8 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         raise ValueError(f"{og_positions=} != {sim_state.positions=}")
     if not torch.allclose(og_cell, sim_state.cell):
         raise ValueError(f"{og_cell=} != {sim_state.cell=}")
-    if not torch.allclose(og_batch, sim_state.batch):
-        raise ValueError(f"{og_batch=} != {sim_state.batch=}")
+    if not torch.allclose(og_system_idx, sim_state.system_idx):
+        raise ValueError(f"{og_system_idx=} != {sim_state.system_idx=}")
     if not torch.allclose(og_atomic_numbers, sim_state.atomic_numbers):
         raise ValueError(f"{og_atomic_numbers=} != {sim_state.atomic_numbers=}")
 

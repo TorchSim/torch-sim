@@ -9,6 +9,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.integrators import MDState
+from torch_sim.models.interface import ModelInterface
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 
@@ -32,7 +33,7 @@ def random_state() -> MDState:
         ),
         cell=torch.unsqueeze(torch.eye(3) * 10.0, 0),
         atomic_numbers=torch.ones(10, dtype=torch.int32),
-        batch=torch.zeros(10, dtype=torch.int32),
+        system_idx=torch.zeros(10, dtype=torch.int32),
         pbc=True,
     )
 
@@ -678,9 +679,9 @@ def test_multi_batch_reporter(
 
     # Check that each trajectory has the correct number of atoms
     # (should be half of the total in the double state)
-    atoms_per_batch = si_double_sim_state.positions.shape[0] // 2
-    assert traj0.get_array("positions").shape[1] == atoms_per_batch
-    assert traj1.get_array("positions").shape[1] == atoms_per_batch
+    atoms_per_system = si_double_sim_state.positions.shape[0] // 2
+    assert traj0.get_array("positions").shape[1] == atoms_per_system
+    assert traj1.get_array("positions").shape[1] == atoms_per_system
 
     # Check property data
     assert "ones" in traj0.array_registry
@@ -698,11 +699,11 @@ def test_property_model_consistency(
     """Test property models are consistent for single and multi-batch cases."""
     # Create reporters for single and multi-batch cases
     single_reporters = []
-    for batch_idx in range(2):
+    for system_idx in range(2):
         # Extract single batch states
-        single_state = si_double_sim_state[batch_idx]
+        single_state = si_double_sim_state[system_idx]
         reporter = TrajectoryReporter(
-            tmp_path / f"single_{batch_idx}.hdf5",
+            tmp_path / f"single_{system_idx}.hdf5",
             state_frequency=1,
             prop_calculators=prop_calculators,
         )
@@ -710,7 +711,7 @@ def test_property_model_consistency(
         reporter.report(single_state, 0)
         reporter.close()
         single_reporters.append(
-            TorchSimTrajectory(tmp_path / f"single_{batch_idx}.hdf5", mode="r")
+            TorchSimTrajectory(tmp_path / f"single_{system_idx}.hdf5", mode="r")
         )
 
     # Create multi-batch reporter
@@ -727,14 +728,14 @@ def test_property_model_consistency(
         TorchSimTrajectory(tmp_path / "multi_1.hdf5", mode="r"),
     ]
 
-    # Compare property values between single and multi-batch approaches
-    for batch_idx in range(2):
-        single_ke = single_reporters[batch_idx].get_array("ones")[0]
-        multi_ke = multi_trajectories[batch_idx].get_array("ones")[0]
+    # Compare property values between single and multi-system approaches
+    for system_idx in range(2):
+        single_ke = single_reporters[system_idx].get_array("ones")[0]
+        multi_ke = multi_trajectories[system_idx].get_array("ones")[0]
         assert torch.allclose(torch.tensor(single_ke), torch.tensor(multi_ke))
 
-        single_com = single_reporters[batch_idx].get_array("center_of_mass")[0]
-        multi_com = multi_trajectories[batch_idx].get_array("center_of_mass")[0]
+        single_com = single_reporters[system_idx].get_array("center_of_mass")[0]
+        multi_com = multi_trajectories[system_idx].get_array("center_of_mass")[0]
         assert torch.allclose(torch.tensor(single_com), torch.tensor(multi_com))
 
     # Close all trajectories
@@ -748,7 +749,7 @@ def test_reporter_with_model(
     """Test TrajectoryReporter with a model argument in property calculators."""
 
     # Create a property calculator that uses the model
-    def energy_calculator(state: ts.SimState, model: torch.nn.Module) -> torch.Tensor:
+    def energy_calculator(state: ts.SimState, model: ModelInterface) -> torch.Tensor:
         output = model(state)
         # Calculate a property that depends on the model
         return output["energy"]
@@ -767,12 +768,12 @@ def test_reporter_with_model(
     reporter.close()
 
     # Verify properties were returned
-    assert len(props) == 2  # One dict per batch
-    for batch_props in props:
-        assert set(batch_props) == {"energy"}
-        assert isinstance(batch_props["energy"], torch.Tensor)
-        assert batch_props["energy"].shape == (1,)
-        assert batch_props["energy"] == pytest.approx(49.4150)
+    assert len(props) == 2  # One dict per system
+    for system_props in props:
+        assert set(system_props) == {"energy"}
+        assert isinstance(system_props["energy"], torch.Tensor)
+        assert system_props["energy"].shape == (1,)
+        assert system_props["energy"] == pytest.approx(49.4150)
 
     # Verify property was calculated correctly
     trajectories = [
@@ -780,21 +781,21 @@ def test_reporter_with_model(
         TorchSimTrajectory(tmp_path / "model_1.hdf5", mode="r"),
     ]
 
-    for batch_idx, trajectory in enumerate(trajectories):
+    for system_idx, trajectory in enumerate(trajectories):
         # Get the property value from file
         file_energy = trajectory.get_array("energy")[0]
-        batch_props = props[batch_idx]
+        system_props = props[system_idx]
 
         # Calculate expected value
-        substate = si_double_sim_state[batch_idx]
+        substate = si_double_sim_state[system_idx]
         expected = lj_model(substate)["energy"]
 
         # Compare file contents with expected
         np.testing.assert_allclose(file_energy, expected)
         # Compare returned properties with expected
-        np.testing.assert_allclose(batch_props["energy"], expected)
+        np.testing.assert_allclose(system_props["energy"], expected)
         # Compare returned properties with file contents
-        np.testing.assert_allclose(batch_props["energy"], file_energy)
+        np.testing.assert_allclose(system_props["energy"], file_energy)
 
         trajectory.close()
 

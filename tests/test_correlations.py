@@ -31,12 +31,14 @@ class MockState:
         self.velocities = velocities
         self.device = device
         # Required for TrajectoryReporter
-        self.n_batches = 1
-        self.batch = torch.zeros(velocities.shape[0], device=device, dtype=torch.int64)
+        self.n_systems = 1
+        self.system_idx = torch.zeros(
+            velocities.shape[0], device=device, dtype=torch.int64
+        )
 
     def split(self) -> list["MockState"]:
-        """Split state into batches."""
-        # Just return self since 1 batch
+        """Split state into multiple systems."""
+        # Just return self since 1 system
         return [self]
 
 

@@ -14,6 +14,7 @@ from torch_sim.integrators.md import (
     calculate_momenta,
     construct_nose_hoover_chain,
 )
+from torch_sim.models.interface import ModelInterface
 from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.state import SimState
 from torch_sim.typing import StateDict
@@ -31,25 +32,25 @@ class NPTLangevinState(SimState):
     Attributes:
         positions (torch.Tensor): Particle positions [n_particles, n_dim]
         velocities (torch.Tensor): Particle velocities [n_particles, n_dim]
-        energy (torch.Tensor): Energy of the system [n_batches]
+        energy (torch.Tensor): Energy of the system [n_systems]
         forces (torch.Tensor): Forces on particles [n_particles, n_dim]
         masses (torch.Tensor): Particle masses [n_particles]
-        cell (torch.Tensor): Simulation cell matrix [n_batches, n_dim, n_dim]
+        cell (torch.Tensor): Simulation cell matrix [n_systems, n_dim, n_dim]
         pbc (bool): Whether to use periodic boundary conditions
-        batch (torch.Tensor): Batch indices [n_particles]
+        system_idx (torch.Tensor): System indices [n_particles]
         atomic_numbers (torch.Tensor): Atomic numbers [n_particles]
-        stress (torch.Tensor): Stress tensor [n_batches, n_dim, n_dim]
+        stress (torch.Tensor): Stress tensor [n_systems, n_dim, n_dim]
         reference_cell (torch.Tensor): Original cell vectors used as reference for
-            scaling [n_batches, n_dim, n_dim]
-        cell_positions (torch.Tensor): Cell positions [n_batches, n_dim, n_dim]
-        cell_velocities (torch.Tensor): Cell velocities [n_batches, n_dim, n_dim]
+            scaling [n_systems, n_dim, n_dim]
+        cell_positions (torch.Tensor): Cell positions [n_systems, n_dim, n_dim]
+        cell_velocities (torch.Tensor): Cell velocities [n_systems, n_dim, n_dim]
         cell_masses (torch.Tensor): Masses associated with the cell degrees of freedom
-            shape [n_batches]
+            shape [n_systems]
 
     Properties:
         momenta (torch.Tensor): Particle momenta calculated as velocities*masses
             with shape [n_particles, n_dimensions]
-        n_batches (int): Number of independent systems in the batch
+        n_systems (int): Number of independent systems in the batch
         device (torch.device): Device on which tensors are stored
         dtype (torch.dtype): Data type of tensors
     """
@@ -88,12 +89,12 @@ def _compute_cell_force(
     Args:
         state (NPTLangevinState): Current NPT state
         external_pressure (torch.Tensor): Target external pressure, either scalar or
-            tensor with shape [n_batches, n_dimensions, n_dimensions]
+            tensor with shape [n_systems, n_dimensions, n_dimensions]
         kT (torch.Tensor): Temperature in energy units, either scalar or
-            shape [n_batches]
+            shape [n_systems]
 
     Returns:
-        torch.Tensor: Force acting on the cell [n_batches, n_dim, n_dim]
+        torch.Tensor: Force acting on the cell [n_systems, n_dim, n_dim]
     """
     # Convert external_pressure to tensor if it's not already one
     if not isinstance(external_pressure, torch.Tensor):
@@ -106,10 +107,10 @@ def _compute_cell_force(
         kT = torch.tensor(kT, device=state.device, dtype=state.dtype)
 
     # Get current volumes for each batch
-    volumes = torch.linalg.det(state.cell)  # shape: (n_batches,)
+    volumes = torch.linalg.det(state.cell)  # shape: (n_systems,)
 
     # Reshape for broadcasting
-    volumes = volumes.view(-1, 1, 1)  # shape: (n_batches, 1, 1)
+    volumes = volumes.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
 
     # Create pressure tensor (diagonal with external pressure)
     if external_pressure.ndim == 0:
@@ -117,9 +118,9 @@ def _compute_cell_force(
         pressure_tensor = external_pressure * torch.eye(
             3, device=state.device, dtype=state.dtype
         )
-        pressure_tensor = pressure_tensor.unsqueeze(0).expand(state.n_batches, -1, -1)
+        pressure_tensor = pressure_tensor.unsqueeze(0).expand(state.n_systems, -1, -1)
     else:
-        # Already a tensor with shape compatible with n_batches
+        # Already a tensor with shape compatible with n_systems
         pressure_tensor = external_pressure
 
     # Calculate virials from stress and external pressure
@@ -129,18 +130,18 @@ def _compute_cell_force(
     # Add kinetic contribution (kT * Identity)
     batch_kT = kT
     if kT.ndim == 0:
-        batch_kT = kT.expand(state.n_batches)
+        batch_kT = kT.expand(state.n_systems)
 
     e_kin_per_atom = batch_kT.view(-1, 1, 1) * torch.eye(
         3, device=state.device, dtype=state.dtype
     ).unsqueeze(0)
 
-    # Correct implementation with scaling by n_atoms_per_batch
-    return virial + e_kin_per_atom * state.n_atoms_per_batch.view(-1, 1, 1)
+    # Correct implementation with scaling by n_atoms_per_system
+    return virial + e_kin_per_atom * state.n_atoms_per_system.view(-1, 1, 1)
 
 
 def npt_langevin(  # noqa: C901, PLR0915
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     dt: torch.Tensor,
     kT: torch.Tensor,
@@ -162,20 +163,20 @@ def npt_langevin(  # noqa: C901, PLR0915
     maintain constant temperature.
 
     Args:
-        model (torch.nn.Module): Neural network model that computes energies, forces,
+        model (ModelInterface): Neural network model that computes energies, forces,
             and stress. Must return a dict with 'energy', 'forces', and 'stress' keys.
-        dt (torch.Tensor): Integration timestep, either scalar or shape [n_batches]
+        dt (torch.Tensor): Integration timestep, either scalar or shape [n_systems]
         kT (torch.Tensor): Target temperature in energy units, either scalar or
-            with shape [n_batches]
+            with shape [n_systems]
         external_pressure (torch.Tensor): Target pressure to maintain, either scalar
-            or shape [n_batches, n_dim, n_dim] for anisotropic pressure
+            or shape [n_systems, n_dim, n_dim] for anisotropic pressure
         alpha (torch.Tensor, optional): Friction coefficient for particle Langevin
-            thermostat, either scalar or shape [n_batches]. Defaults to 1/(100*dt).
+            thermostat, either scalar or shape [n_systems]. Defaults to 1/(100*dt).
         cell_alpha (torch.Tensor, optional): Friction coefficient for cell Langevin
-            thermostat, either scalar or shape [n_batches]. Defaults to same as alpha.
+            thermostat, either scalar or shape [n_systems]. Defaults to same as alpha.
         b_tau (torch.Tensor, optional): Barostat time constant controlling how quickly
             the system responds to pressure differences, either scalar or shape
-            [n_batches]. Defaults to 1/(1000*dt).
+            [n_systems]. Defaults to 1/(1000*dt).
         seed (int, optional): Random seed for reproducibility. Defaults to None.
 
     Returns:
@@ -229,24 +230,24 @@ def npt_langevin(  # noqa: C901, PLR0915
         Args:
             state (NPTLangevinState): Current NPT state
             alpha (torch.Tensor): Friction coefficient, either scalar or
-                shape [n_batches]
+                shape [n_systems]
             kT (torch.Tensor): Temperature in energy units, either scalar or
-                shape [n_batches]
-            dt (torch.Tensor): Integration timestep, either scalar or shape [n_batches]
+                shape [n_systems]
+            dt (torch.Tensor): Integration timestep, either scalar or shape [n_systems]
 
         Returns:
             torch.Tensor: Random noise term for force calculation [n_particles, n_dim]
         """
-        # Generate batch-specific noise with correct shape
+        # Generate system-specific noise with correct shape
         noise = torch.randn_like(state.velocities)
 
-        # Calculate the thermal noise amplitude by batch
+        # Calculate the thermal noise amplitude by system
         batch_kT = kT
         if kT.ndim == 0:
-            batch_kT = kT.expand(state.n_batches)
+            batch_kT = kT.expand(state.n_systems)
 
-        # Map batch kT to atoms
-        atom_kT = batch_kT[state.batch]
+        # Map system kT to atoms
+        atom_kT = batch_kT[state.system_idx]
 
         # Calculate the prefactor for each atom
         # The standard deviation should be sqrt(2*alpha*kB*T*dt)
@@ -269,29 +270,29 @@ def npt_langevin(  # noqa: C901, PLR0915
         Args:
             state (NPTLangevinState): Current NPT state
             cell_alpha (torch.Tensor): Cell friction coefficient, either scalar or
-                with shape [n_batches]
+                with shape [n_systems]
             kT (torch.Tensor): System temperature in energy units, either scalar or
-                with shape [n_batches]
-            dt (torch.Tensor): Integration timestep, either scalar or shape [n_batches]
+                with shape [n_systems]
+            dt (torch.Tensor): Integration timestep, either scalar or shape [n_systems]
 
         Returns:
             torch.Tensor: Scaled random noise for cell dynamics with shape
-                [n_batches, n_dimensions, n_dimensions]
+                [n_systems, n_dimensions, n_dimensions]
         """
         # Generate standard normal distribution (zero mean, unit variance)
         noise = torch.randn_like(state.cell_positions, device=device, dtype=dtype)
 
         # Ensure cell_alpha and kT have batch dimension if they're scalars
         if cell_alpha.ndim == 0:
-            cell_alpha = cell_alpha.expand(state.n_batches)
+            cell_alpha = cell_alpha.expand(state.n_systems)
         if kT.ndim == 0:
-            kT = kT.expand(state.n_batches)
+            kT = kT.expand(state.n_systems)
 
         # Reshape for broadcasting
-        cell_alpha = cell_alpha.view(-1, 1, 1)  # shape: (n_batches, 1, 1)
-        kT = kT.view(-1, 1, 1)  # shape: (n_batches, 1, 1)
+        cell_alpha = cell_alpha.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
+        kT = kT.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
         if dt.ndim == 0:
-            dt = dt.expand(state.n_batches).view(-1, 1, 1)
+            dt = dt.expand(state.n_systems).view(-1, 1, 1)
         else:
             dt = dt.view(-1, 1, 1)
 
@@ -316,12 +317,12 @@ def npt_langevin(  # noqa: C901, PLR0915
         Args:
             state (NPTLangevinState): Current NPT state
             external_pressure (torch.Tensor): Target external pressure, either scalar or
-                tensor with shape [n_batches, n_dimensions, n_dimensions]
+                tensor with shape [n_systems, n_dimensions, n_dimensions]
             kT (torch.Tensor): Temperature in energy units, either scalar or
-                shape [n_batches]
+                shape [n_systems]
 
         Returns:
-            torch.Tensor: Force acting on the cell [n_batches, n_dim, n_dim]
+            torch.Tensor: Force acting on the cell [n_systems, n_dim, n_dim]
         """
         return _compute_cell_force(state, external_pressure, kT)
 
@@ -340,25 +341,25 @@ def npt_langevin(  # noqa: C901, PLR0915
 
         Args:
             state (NPTLangevinState): Current NPT state
-            dt (torch.Tensor): Integration timestep, either scalar or shape [n_batches]
+            dt (torch.Tensor): Integration timestep, either scalar or shape [n_systems]
             pressure_force (torch.Tensor): Pressure force for barostat
-                [n_batches, n_dim, n_dim]
+                [n_systems, n_dim, n_dim]
             kT (torch.Tensor): Target temperature in energy units, either scalar or
-                with shape [n_batches]
+                with shape [n_systems]
             cell_alpha (torch.Tensor): Cell friction coefficient, either scalar or
-                with shape [n_batches]
+                with shape [n_systems]
 
         Returns:
             NPTLangevinState: Updated state with new cell positions
         """
         # Calculate effective mass term
-        Q_2 = 2 * state.cell_masses.view(-1, 1, 1)  # shape: (n_batches, 1, 1)
+        Q_2 = 2 * state.cell_masses.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
 
         # Ensure parameters have batch dimension
         if dt.ndim == 0:
-            dt = dt.expand(state.n_batches)
+            dt = dt.expand(state.n_systems)
         if cell_alpha.ndim == 0:
-            cell_alpha = cell_alpha.expand(state.n_batches)
+            cell_alpha = cell_alpha.expand(state.n_systems)
 
         # Reshape for broadcasting
         dt_expanded = dt.view(-1, 1, 1)
@@ -403,34 +404,34 @@ def npt_langevin(  # noqa: C901, PLR0915
         Args:
             state (NPTLangevinState): Current NPT state
             F_p_n (torch.Tensor): Initial pressure force with shape
-                [n_batches, n_dimensions, n_dimensions]
-            dt (torch.Tensor): Integration timestep, either scalar or shape [n_batches]
+                [n_systems, n_dimensions, n_dimensions]
+            dt (torch.Tensor): Integration timestep, either scalar or shape [n_systems]
             pressure_force (torch.Tensor): Final pressure force
-                shape [n_batches, n_dim, n_dim]
+                shape [n_systems, n_dim, n_dim]
             cell_alpha (torch.Tensor): Cell friction coefficient, either scalar or
-                shape [n_batches]
+                shape [n_systems]
             kT (torch.Tensor): Temperature in energy units, either scalar or
-                shape [n_batches]
+                shape [n_systems]
 
         Returns:
             NPTLangevinState: Updated state with new cell velocities
         """
         # Ensure parameters have batch dimension
         if dt.ndim == 0:
-            dt = dt.expand(state.n_batches)
+            dt = dt.expand(state.n_systems)
         if cell_alpha.ndim == 0:
-            cell_alpha = cell_alpha.expand(state.n_batches)
+            cell_alpha = cell_alpha.expand(state.n_systems)
         if kT.ndim == 0:
-            kT = kT.expand(state.n_batches)
+            kT = kT.expand(state.n_systems)
 
         # Reshape for broadcasting - need to maintain 3x3 dimensions
-        dt_expanded = dt.view(-1, 1, 1)  # shape: (n_batches, 1, 1)
-        cell_alpha_expanded = cell_alpha.view(-1, 1, 1)  # shape: (n_batches, 1, 1)
+        dt_expanded = dt.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
+        cell_alpha_expanded = cell_alpha.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
 
-        # Calculate cell masses per batch - reshape to match 3x3 cell matrices
+        # Calculate cell masses per system - reshape to match 3x3 cell matrices
         cell_masses_expanded = state.cell_masses.view(
             -1, 1, 1
-        )  # shape: (n_batches, 1, 1)
+        )  # shape: (n_systems, 1, 1)
 
         # These factors come from the Langevin integration scheme
         a = (1 - (cell_alpha_expanded * dt_expanded) / cell_masses_expanded) / (
@@ -439,13 +440,13 @@ def npt_langevin(  # noqa: C901, PLR0915
         b = 1 / (1 + (cell_alpha_expanded * dt_expanded) / cell_masses_expanded)
 
         # Calculate the three terms for velocity update
-        # a will broadcast from (n_batches, 1, 1) to (n_batches, 3, 3)
+        # a will broadcast from (n_systems, 1, 1) to (n_systems, 3, 3)
         c_1 = a * state.cell_velocities  # Damped old velocity
 
         # Force contribution (average of initial and final forces)
         c_2 = dt_expanded * ((a * F_p_n) + pressure_force) / (2 * cell_masses_expanded)
 
-        # Generate batch-specific cell noise with correct shape (n_batches, 3, 3)
+        # Generate system-specific cell noise with correct shape (n_systems, 3, 3)
         cell_noise = torch.randn_like(state.cell_velocities)
 
         # Calculate thermal noise amplitude
@@ -463,7 +464,7 @@ def npt_langevin(  # noqa: C901, PLR0915
 
     def langevin_position_step(
         state: NPTLangevinState,
-        L_n: torch.Tensor,  # This should be shape (n_batches,)
+        L_n: torch.Tensor,  # This should be shape (n_systems,)
         dt: torch.Tensor,
         kT: torch.Tensor,
     ) -> NPTLangevinState:
@@ -476,42 +477,42 @@ def npt_langevin(  # noqa: C901, PLR0915
 
         Args:
             state (NPTLangevinState): Current NPT state
-            L_n (torch.Tensor): Previous cell length scale with shape [n_batches]
-            dt: Integration timestep, either scalar or with shape [n_batches]
+            L_n (torch.Tensor): Previous cell length scale with shape [n_systems]
+            dt: Integration timestep, either scalar or with shape [n_systems]
             kT (torch.Tensor): Target temperature in energy units, either scalar or
-                with shape [n_batches]
+                with shape [n_systems]
 
         Returns:
             NPTLangevinState: Updated state with new positions
         """
-        # Calculate effective mass term by batch
+        # Calculate effective mass term by system
         # Map masses to have batch dimension
         M_2 = 2 * state.masses.unsqueeze(-1)  # shape: (n_atoms, 1)
 
         # Calculate new cell length scale (cube root of volume for isotropic scaling)
         L_n_new = torch.pow(
-            state.cell_positions.reshape(state.n_batches, -1)[:, 0], 1 / 3
-        )  # shape: (n_batches,)
+            state.cell_positions.reshape(state.n_systems, -1)[:, 0], 1 / 3
+        )  # shape: (n_systems,)
 
-        # Map batch-specific L_n and L_n_new to atom-level using batch indices
-        # Make sure L_n is the right shape (n_batches,) before indexing
-        if L_n.ndim != 1 or L_n.shape[0] != state.n_batches:
+        # Map system-specific L_n and L_n_new to atom-level using system indices
+        # Make sure L_n is the right shape (n_systems,) before indexing
+        if L_n.ndim != 1 or L_n.shape[0] != state.n_systems:
             # If L_n has wrong shape, calculate it again to ensure correct shape
             L_n = torch.pow(
-                state.cell_positions.reshape(state.n_batches, -1)[:, 0], 1 / 3
+                state.cell_positions.reshape(state.n_systems, -1)[:, 0], 1 / 3
             )
 
-        # Map batch values to atoms using batch indices
-        L_n_atoms = L_n[state.batch]  # shape: (n_atoms,)
-        L_n_new_atoms = L_n_new[state.batch]  # shape: (n_atoms,)
+        # Map system-specific values to atoms using system indices
+        L_n_atoms = L_n[state.system_idx]  # shape: (n_atoms,)
+        L_n_new_atoms = L_n_new[state.system_idx]  # shape: (n_atoms,)
 
         # Calculate damping factor
         alpha_atoms = alpha
         if alpha.ndim > 0:
-            alpha_atoms = alpha[state.batch]
+            alpha_atoms = alpha[state.system_idx]
         dt_atoms = dt
         if dt.ndim > 0:
-            dt_atoms = dt[state.batch]
+            dt_atoms = dt[state.system_idx]
 
         b = 1 / (1 + ((alpha_atoms * dt_atoms) / M_2))
 
@@ -529,8 +530,8 @@ def npt_langevin(  # noqa: C901, PLR0915
         noise = torch.randn_like(state.velocities)
         batch_kT = kT
         if kT.ndim == 0:
-            batch_kT = kT.expand(state.n_batches)
-        atom_kT = batch_kT[state.batch]
+            batch_kT = kT.expand(state.n_systems)
+        atom_kT = batch_kT[state.system_idx]
 
         # Calculate noise prefactor according to fluctuation-dissipation theorem
         noise_prefactor = torch.sqrt(2 * alpha_atoms * atom_kT * dt_atoms)
@@ -549,7 +550,7 @@ def npt_langevin(  # noqa: C901, PLR0915
         # Apply periodic boundary conditions if needed
         if state.pbc:
             state.positions = ts.transforms.pbc_wrap_batched(
-                state.positions, state.cell, state.batch
+                state.positions, state.cell, state.system_idx
             )
 
         return state
@@ -569,9 +570,9 @@ def npt_langevin(  # noqa: C901, PLR0915
         Args:
             state (NPTLangevinState): Current NPT state
             forces: Forces on particles
-            dt: Integration timestep, either scalar or with shape [n_batches]
+            dt: Integration timestep, either scalar or with shape [n_systems]
             kT: Target temperature in energy units, either scalar or
-                with shape [n_batches]
+                with shape [n_systems]
 
         Returns:
             NPTLangevinState: Updated state with new velocities
@@ -582,10 +583,10 @@ def npt_langevin(  # noqa: C901, PLR0915
         # Map batch parameters to atom level
         alpha_atoms = alpha
         if alpha.ndim > 0:
-            alpha_atoms = alpha[state.batch]
+            alpha_atoms = alpha[state.system_idx]
         dt_atoms = dt
         if dt.ndim > 0:
-            dt_atoms = dt[state.batch]
+            dt_atoms = dt[state.system_idx]
 
         # Calculate damping factors for Langevin integration
         a = (1 - (alpha_atoms * dt_atoms) / M_2) / (1 + (alpha_atoms * dt_atoms) / M_2)
@@ -601,8 +602,8 @@ def npt_langevin(  # noqa: C901, PLR0915
         noise = torch.randn_like(state.velocities)
         batch_kT = kT
         if kT.ndim == 0:
-            batch_kT = kT.expand(state.n_batches)
-        atom_kT = batch_kT[state.batch]
+            batch_kT = kT.expand(state.n_systems)
+        atom_kT = batch_kT[state.system_idx]
 
         # Calculate noise prefactor according to fluctuation-dissipation theorem
         noise_prefactor = torch.sqrt(2 * alpha_atoms * atom_kT * dt_atoms)
@@ -647,7 +648,7 @@ def npt_langevin(  # noqa: C901, PLR0915
         momenta = getattr(
             state,
             "momenta",
-            calculate_momenta(state.positions, state.masses, state.batch, kT, seed),
+            calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
         )
 
         # Initialize cell parameters
@@ -656,20 +657,20 @@ def npt_langevin(  # noqa: C901, PLR0915
         # Calculate initial cell_positions (volume)
         cell_positions = (
             torch.linalg.det(state.cell).unsqueeze(-1).unsqueeze(-1)
-        )  # shape: (n_batches, 1, 1)
+        )  # shape: (n_systems, 1, 1)
 
         # Initialize cell velocities to zero
-        cell_velocities = torch.zeros((state.n_batches, 3, 3), device=device, dtype=dtype)
+        cell_velocities = torch.zeros((state.n_systems, 3, 3), device=device, dtype=dtype)
 
         # Calculate cell masses based on system size and temperature
         # This follows standard NPT barostat mass scaling
-        n_atoms_per_batch = torch.bincount(state.batch)
+        n_atoms_per_system = torch.bincount(state.system_idx)
         batch_kT = (
-            kT.expand(state.n_batches)
+            kT.expand(state.n_systems)
             if isinstance(kT, torch.Tensor) and kT.ndim == 0
             else kT
         )
-        cell_masses = (n_atoms_per_batch + 1) * batch_kT * b_tau * b_tau
+        cell_masses = (n_atoms_per_system + 1) * batch_kT * b_tau * b_tau
 
         # Create the initial state
         return NPTLangevinState(
@@ -681,7 +682,7 @@ def npt_langevin(  # noqa: C901, PLR0915
             masses=state.masses,
             cell=state.cell,
             pbc=state.pbc,
-            batch=state.batch,
+            system_idx=state.system_idx,
             atomic_numbers=state.atomic_numbers,
             reference_cell=reference_cell,
             cell_positions=cell_positions,
@@ -706,15 +707,15 @@ def npt_langevin(  # noqa: C901, PLR0915
 
         Args:
             state (NPTLangevinState): Current NPT state with particle and cell variables
-            dt (torch.Tensor): Integration timestep, either scalar or shape [n_batches]
+            dt (torch.Tensor): Integration timestep, either scalar or shape [n_systems]
             kT (torch.Tensor): Target temperature in energy units, either scalar or
-                shape [n_batches]
+                shape [n_systems]
             external_pressure (torch.Tensor): Target external pressure, either scalar or
-                tensor with shape [n_batches, n_dim, n_dim]
+                tensor with shape [n_systems, n_dim, n_dim]
             alpha (torch.Tensor): Position friction coefficient, either scalar or
-                shape [n_batches]
+                shape [n_systems]
             cell_alpha (torch.Tensor): Cell friction coefficient, either scalar or
-                shape [n_batches]
+                shape [n_systems]
 
         Returns:
             NPTLangevinState: Updated NPT state after one timestep with new positions,
@@ -731,12 +732,12 @@ def npt_langevin(  # noqa: C901, PLR0915
             dt = torch.tensor(dt, device=device, dtype=dtype)
 
         # Make sure parameters have batch dimension if they're scalars
-        batch_kT = kT.expand(state.n_batches) if kT.ndim == 0 else kT
+        batch_kT = kT.expand(state.n_systems) if kT.ndim == 0 else kT
 
         # Update barostat mass based on current temperature
         # This ensures proper coupling between system and barostat
-        n_atoms_per_batch = torch.bincount(state.batch)
-        state.cell_masses = (n_atoms_per_batch + 1) * batch_kT * b_tau * b_tau
+        n_atoms_per_system = torch.bincount(state.system_idx)
+        state.cell_masses = (n_atoms_per_system + 1) * batch_kT * b_tau * b_tau
 
         # Compute model output for current state
         model_output = model(state)
@@ -749,24 +750,24 @@ def npt_langevin(  # noqa: C901, PLR0915
             state=state, external_pressure=external_pressure, kT=kT
         )
         L_n = torch.pow(
-            state.cell_positions.reshape(state.n_batches, -1)[:, 0], 1 / 3
-        )  # shape: (n_batches,)
+            state.cell_positions.reshape(state.n_systems, -1)[:, 0], 1 / 3
+        )  # shape: (n_systems,)
 
         # Step 1: Update cell position
         state = cell_position_step(state=state, dt=dt, pressure_force=F_p_n, kT=kT)
 
         # Update cell (currently only isotropic fluctuations)
         dim = state.positions.shape[1]  # Usually 3 for 3D
-        # V_0 and V are shape: (n_batches,)
+        # V_0 and V are shape: (n_systems,)
         V_0 = torch.linalg.det(state.reference_cell)
-        V = state.cell_positions.reshape(state.n_batches, -1)[:, 0]
+        V = state.cell_positions.reshape(state.n_systems, -1)[:, 0]
 
         # Scale cell uniformly in all dimensions
-        scaling = (V / V_0) ** (1.0 / dim)  # shape: (n_batches,)
+        scaling = (V / V_0) ** (1.0 / dim)  # shape: (n_systems,)
 
         # Apply scaling to reference cell to get new cell
         new_cell = torch.zeros_like(state.cell)
-        for b in range(state.n_batches):
+        for b in range(state.n_systems):
             new_cell[b] = scaling[b] * state.reference_cell[b]
 
         state.cell = new_cell
@@ -822,14 +823,14 @@ class NPTNoseHooverState(MDState):
         forces (torch.Tensor): Forces on particles with shape [n_particles, n_dims]
         masses (torch.Tensor): Particle masses with shape [n_particles]
         reference_cell (torch.Tensor): Reference simulation cell matrix with shape
-            [n_batches, n_dimensions, n_dimensions]. Used to measure relative volume
+            [n_systems, n_dimensions, n_dimensions]. Used to measure relative volume
             changes.
-        cell_position (torch.Tensor): Logarithmic cell coordinate with shape [n_batches].
+        cell_position (torch.Tensor): Logarithmic cell coordinate with shape [n_systems].
             Represents (1/d)ln(V/V_0) where V is current volume and V_0 is reference
             volume.
         cell_momentum (torch.Tensor): Cell momentum (velocity) conjugate to cell_position
-            with shape [n_batches]. Controls volume changes.
-        cell_mass (torch.Tensor): Mass parameter for cell dynamics with shape [n_batches].
+            with shape [n_systems]. Controls volume changes.
+        cell_mass (torch.Tensor): Mass parameter for cell dynamics with shape [n_systems].
             Controls coupling between volume fluctuations and pressure.
         barostat (NoseHooverChain): Chain thermostat coupled to cell dynamics for
             pressure control
@@ -842,7 +843,7 @@ class NPTNoseHooverState(MDState):
         velocities (torch.Tensor): Particle velocities computed as momenta
             divided by masses. Shape: [n_particles, n_dimensions]
         current_cell (torch.Tensor): Current simulation cell matrix derived from
-            cell_position. Shape: [n_batches, n_dimensions, n_dimensions]
+            cell_position. Shape: [n_systems, n_dimensions, n_dimensions]
 
     Notes:
         - The cell parameterization ensures volume positivity
@@ -853,10 +854,10 @@ class NPTNoseHooverState(MDState):
     """
 
     # Cell variables - now with batch dimensions
-    reference_cell: torch.Tensor  # [n_batches, 3, 3]
-    cell_position: torch.Tensor  # [n_batches]
-    cell_momentum: torch.Tensor  # [n_batches]
-    cell_mass: torch.Tensor  # [n_batches]
+    reference_cell: torch.Tensor  # [n_systems, 3, 3]
+    cell_position: torch.Tensor  # [n_systems]
+    cell_momentum: torch.Tensor  # [n_systems]
+    cell_mass: torch.Tensor  # [n_systems]
 
     # Thermostat variables
     thermostat: NoseHooverChain
@@ -885,20 +886,20 @@ class NPTNoseHooverState(MDState):
 
         Returns:
             torch.Tensor: Current simulation cell matrix with shape
-                [n_batches, n_dimensions, n_dimensions]
+                [n_systems, n_dimensions, n_dimensions]
         """
         dim = self.positions.shape[1]
-        V_0 = torch.det(self.reference_cell)  # [n_batches]
-        V = V_0 * torch.exp(dim * self.cell_position)  # [n_batches]
-        scale = (V / V_0) ** (1.0 / dim)  # [n_batches]
-        # Expand scale to [n_batches, 1, 1] for broadcasting
+        V_0 = torch.det(self.reference_cell)  # [n_systems]
+        V = V_0 * torch.exp(dim * self.cell_position)  # [n_systems]
+        scale = (V / V_0) ** (1.0 / dim)  # [n_systems]
+        # Expand scale to [n_systems, 1, 1] for broadcasting
         scale = scale.unsqueeze(-1).unsqueeze(-1)
         return scale * self.reference_cell
 
 
 def npt_nose_hoover(  # noqa: C901, PLR0915
     *,
-    model: torch.nn.Module,
+    model: ModelInterface,
     kT: torch.Tensor,
     external_pressure: torch.Tensor,
     dt: torch.Tensor,
@@ -915,7 +916,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
     with Nose-Hoover chain thermostats for temperature and pressure control.
 
     Args:
-        model (torch.nn.Module): Model to compute forces and energies
+        model (ModelInterface): Model to compute forces and energies
         kT (torch.Tensor): Target temperature in energy units
         external_pressure (torch.Tensor): Target external pressure
         dt (torch.Tensor): Integration timestep
@@ -952,9 +953,9 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
 
         Returns:
             tuple:
-                - torch.Tensor: Current system volume with shape [n_batches]
-                - callable: Function that takes a volume tensor [n_batches] and returns
-                    the corresponding cell matrix [n_batches, n_dimensions, n_dimensions]
+                - torch.Tensor: Current system volume with shape [n_systems]
+                - callable: Function that takes a volume tensor [n_systems] and returns
+                    the corresponding cell matrix [n_systems, n_dimensions, n_dimensions]
 
         Notes:
             - Uses logarithmic cell coordinate parameterization
@@ -963,21 +964,21 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             - Supports batched operations
         """
         dim = state.positions.shape[1]
-        ref = state.reference_cell  # [n_batches, dim, dim]
-        V_0 = torch.det(ref)  # [n_batches] - Reference volume
-        V = V_0 * torch.exp(dim * state.cell_position)  # [n_batches] - Current volume
+        ref = state.reference_cell  # [n_systems, dim, dim]
+        V_0 = torch.det(ref)  # [n_systems] - Reference volume
+        V = V_0 * torch.exp(dim * state.cell_position)  # [n_systems] - Current volume
 
         def volume_to_cell(V: torch.Tensor) -> torch.Tensor:
             """Compute cell matrix for given volumes.
 
             Args:
-                V (torch.Tensor): Volumes with shape [n_batches]
+                V (torch.Tensor): Volumes with shape [n_systems]
 
             Returns:
-                torch.Tensor: Cell matrices with shape [n_batches, dim, dim]
+                torch.Tensor: Cell matrices with shape [n_systems, dim, dim]
             """
-            scale = (V / V_0) ** (1.0 / dim)  # [n_batches]
-            # Expand scale to [n_batches, 1, 1] for broadcasting
+            scale = (V / V_0) ** (1.0 / dim)  # [n_systems]
+            # Expand scale to [n_systems, 1, 1] for broadcasting
             scale = scale.unsqueeze(-1).unsqueeze(-1)
             return scale * ref
 
@@ -996,7 +997,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         Args:
             state (NPTNoseHooverState): Current state of the NPT system
             kT (torch.Tensor): Target temperature in energy units, either scalar or
-                shape [n_batches]
+                shape [n_systems]
 
         Returns:
             NPTNoseHooverState: Updated state with new cell mass
@@ -1014,11 +1015,11 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             kT = torch.tensor(kT, device=device, dtype=dtype)
 
         # Handle both scalar and batched kT
-        kT_batch = kT.expand(state.n_batches) if kT.ndim == 0 else kT
+        kT_system = kT.expand(state.n_systems) if kT.ndim == 0 else kT
 
-        # Calculate cell masses for each batch
-        n_atoms_per_batch = torch.bincount(state.batch, minlength=state.n_batches)
-        cell_mass = dim * (n_atoms_per_batch + 1) * kT_batch * state.barostat.tau**2
+        # Calculate cell masses for each system
+        n_atoms_per_system = torch.bincount(state.system_idx, minlength=state.n_systems)
+        cell_mass = dim * (n_atoms_per_system + 1) * kT_system * state.barostat.tau**2
 
         # Update state with new cell masses
         state.cell_mass = cell_mass.to(device=device, dtype=dtype)
@@ -1072,7 +1073,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         Args:
             state (NPTNoseHooverState): Current simulation state
             velocities (torch.Tensor): Particle velocities [n_particles, n_dimensions]
-            cell_velocity (torch.Tensor): Cell velocity with shape [n_batches]
+            cell_velocity (torch.Tensor): Cell velocity with shape [n_systems]
             dt (torch.Tensor): Integration timestep
 
         Returns:
@@ -1083,10 +1084,10 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             - Properly handles cell scaling through cell_velocity
             - Maintains time-reversibility of the integration scheme
             - Applies periodic boundary conditions if state.pbc is True
-            - Supports batched operations with proper atom-to-batch mapping
+            - Supports batched operations with proper atom-to-system mapping
         """
-        # Map batch-level cell velocities to atom level using batch indices
-        cell_velocity_atoms = cell_velocity[state.batch]  # [n_atoms]
+        # Map system-level cell velocities to atom level using system indices
+        cell_velocity_atoms = cell_velocity[state.system_idx]  # [n_atoms]
 
         # Compute cell velocity terms per atom
         x = cell_velocity_atoms * dt  # [n_atoms]
@@ -1110,7 +1111,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         # Apply periodic boundary conditions if needed
         if state.pbc:
             return ts.transforms.pbc_wrap_batched(
-                new_positions, state.current_cell, state.batch
+                new_positions, state.current_cell, state.system_idx
             )
         return new_positions
 
@@ -1137,7 +1138,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             alpha (torch.Tensor): Cell scaling parameter
             momenta (torch.Tensor): Current particle momenta [n_particles, n_dimensions]
             forces (torch.Tensor): Forces on particles [n_particles, n_dimensions]
-            cell_velocity (torch.Tensor): Cell velocity with shape [n_batches]
+            cell_velocity (torch.Tensor): Cell velocity with shape [n_systems]
             dt_2 (torch.Tensor): Half timestep (dt/2)
 
         Returns:
@@ -1148,10 +1149,10 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             - Properly handles cell velocity scaling effects
             - Maintains time-reversibility of the integration scheme
             - Part of the NPT integration algorithm
-            - Supports batched operations with proper atom-to-batch mapping
+            - Supports batched operations with proper atom-to-system mapping
         """
-        # Map batch-level cell velocities to atom level using batch indices
-        cell_velocity_atoms = cell_velocity[state.batch]  # [n_atoms]
+        # Map system-level cell velocities to atom level using system indices
+        cell_velocity_atoms = cell_velocity[state.system_idx]  # [n_atoms]
 
         # Compute scaling terms per atom
         x = alpha * cell_velocity_atoms * dt_2  # [n_atoms]
@@ -1178,7 +1179,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         masses: torch.Tensor,
         stress: torch.Tensor,
         external_pressure: torch.Tensor,
-        batch: torch.Tensor,
+        system_idx: torch.Tensor,
     ) -> torch.Tensor:
         """Compute the force on the cell degree of freedom in NPT dynamics.
 
@@ -1190,16 +1191,16 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
 
         Args:
             alpha (torch.Tensor): Cell scaling parameter
-            volume (torch.Tensor): Current system volume with shape [n_batches]
+            volume (torch.Tensor): Current system volume with shape [n_systems]
             positions (torch.Tensor): Particle positions [n_particles, n_dimensions]
             momenta (torch.Tensor): Particle momenta [n_particles, n_dimensions]
             masses (torch.Tensor): Particle masses [n_particles]
-            stress (torch.Tensor): Stress tensor [n_batches, n_dimensions, n_dimensions]
+            stress (torch.Tensor): Stress tensor [n_systems, n_dimensions, n_dimensions]
             external_pressure (torch.Tensor): Target external pressure
-            batch (torch.Tensor): Batch indices for atoms [n_particles]
+            system_idx (torch.Tensor): System indices for atoms [n_particles]
 
         Returns:
-            torch.Tensor: Force on the cell degree of freedom with shape [n_batches]
+            torch.Tensor: Force on the cell degree of freedom with shape [n_systems]
 
         Notes:
             - Force drives volume changes to maintain target pressure
@@ -1209,34 +1210,36 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             - Supports batched operations
         """
         N, dim = positions.shape
-        n_batches = len(volume)
+        n_systems = len(volume)
 
-        # Compute kinetic energy contribution per batch
-        # Split momenta and masses by batch
-        KE_per_batch = torch.zeros(
-            n_batches, device=positions.device, dtype=positions.dtype
+        # Compute kinetic energy contribution per system
+        # Split momenta and masses by system
+        KE_per_system = torch.zeros(
+            n_systems, device=positions.device, dtype=positions.dtype
         )
-        for b in range(n_batches):
-            batch_mask = batch == b
-            if batch_mask.any():
-                batch_momenta = momenta[batch_mask]
-                batch_masses = masses[batch_mask]
-                KE_per_batch[b] = calc_kinetic_energy(batch_momenta, batch_masses)
+        for b in range(n_systems):
+            system_mask = system_idx == b
+            if system_mask.any():
+                system_momenta = momenta[system_mask]
+                system_masses = masses[system_mask]
+                KE_per_system[b] = calc_kinetic_energy(
+                    masses=system_masses, momenta=system_momenta
+                )
 
-        # Get stress tensor and compute trace per batch
+        # Get stress tensor and compute trace per system
         # Handle stress tensor with batch dimension
         if stress.ndim == 3:
             internal_pressure = torch.diagonal(stress, dim1=-2, dim2=-1).sum(
                 dim=-1
-            )  # [n_batches]
+            )  # [n_systems]
         else:
-            # Single batch case - expand to batch dimension
-            internal_pressure = torch.trace(stress).unsqueeze(0).expand(n_batches)
+            # Single system case - expand to batch dimension
+            internal_pressure = torch.trace(stress).unsqueeze(0).expand(n_systems)
 
-        # Compute force on cell coordinate per batch
+        # Compute force on cell coordinate per system
         # F = alpha * KE - dU/dV - P*V*d
         return (
-            (alpha * KE_per_batch)
+            (alpha * KE_per_system)
             - (internal_pressure * volume)
             - (external_pressure * volume * dim)
         )
@@ -1270,9 +1273,9 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         momenta = state.momenta
         masses = state.masses
         forces = state.forces
-        cell_position = state.cell_position  # [n_batches]
-        cell_momentum = state.cell_momentum  # [n_batches]
-        cell_mass = state.cell_mass  # [n_batches]
+        cell_position = state.cell_position  # [n_systems]
+        cell_momentum = state.cell_momentum  # [n_systems]
+        cell_mass = state.cell_mass  # [n_systems]
 
         n_particles, dim = positions.shape
 
@@ -1285,8 +1288,8 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         model_output = model(state)
 
         # First half step: Update momenta
-        n_atoms_per_batch = torch.bincount(state.batch, minlength=state.n_batches)
-        alpha = 1 + 1 / n_atoms_per_batch  # [n_batches]
+        n_atoms_per_system = torch.bincount(state.system_idx, minlength=state.n_systems)
+        alpha = 1 + 1 / n_atoms_per_system  # [n_systems]
 
         cell_force_val = compute_cell_force(
             alpha=alpha,
@@ -1296,7 +1299,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             masses=masses,
             stress=model_output["stress"],
             external_pressure=external_pressure,
-            batch=state.batch,
+            system_idx=state.system_idx,
         )
 
         # Update cell momentum and particle momenta
@@ -1331,7 +1334,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             masses=masses,
             stress=model_output["stress"],
             external_pressure=external_pressure,
-            batch=state.batch,
+            system_idx=state.system_idx,
         )
         cell_momentum = cell_momentum + dt_2 * cell_force_val
 
@@ -1410,32 +1413,32 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             state = SimState(**state)
 
         n_particles, dim = state.positions.shape
-        n_batches = state.n_batches
+        n_systems = state.n_systems
         atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
-        # Initialize cell variables with proper batch dimensions
-        cell_position = torch.zeros(n_batches, device=device, dtype=dtype)
-        cell_momentum = torch.zeros(n_batches, device=device, dtype=dtype)
+        # Initialize cell variables with proper system dimensions
+        cell_position = torch.zeros(n_systems, device=device, dtype=dtype)
+        cell_momentum = torch.zeros(n_systems, device=device, dtype=dtype)
 
         # Convert kT to tensor if it's not already one
         if not isinstance(kT, torch.Tensor):
             kT = torch.tensor(kT, device=device, dtype=dtype)
 
         # Handle both scalar and batched kT
-        kT_batch = kT.expand(n_batches) if kT.ndim == 0 else kT
+        kT_system = kT.expand(n_systems) if kT.ndim == 0 else kT
 
-        # Calculate cell masses for each batch
-        n_atoms_per_batch = torch.bincount(state.batch, minlength=n_batches)
-        cell_mass = dim * (n_atoms_per_batch + 1) * kT_batch * b_tau**2
+        # Calculate cell masses for each system
+        n_atoms_per_system = torch.bincount(state.system_idx, minlength=n_systems)
+        cell_mass = dim * (n_atoms_per_system + 1) * kT_system * b_tau**2
         cell_mass = cell_mass.to(device=device, dtype=dtype)
 
-        # Calculate cell kinetic energy (using first batch for initialization)
-        KE_cell = calc_kinetic_energy(cell_momentum[:1], cell_mass[:1])
+        # Calculate cell kinetic energy (using first system for initialization)
+        KE_cell = calc_kinetic_energy(masses=cell_mass[:1], momenta=cell_momentum[:1])
 
-        # Ensure reference_cell has proper batch dimensions
+        # Ensure reference_cell has proper system dimensions
         if state.cell.ndim == 2:
             # Single cell matrix - expand to batch dimension
-            reference_cell = state.cell.unsqueeze(0).expand(n_batches, -1, -1).clone()
+            reference_cell = state.cell.unsqueeze(0).expand(n_systems, -1, -1).clone()
         else:
             # Already has batch dimension
             reference_cell = state.cell.clone()
@@ -1445,7 +1448,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             state.cell, int | float
         ):
             cell_matrix = torch.eye(dim, device=device, dtype=dtype) * state.cell
-            reference_cell = cell_matrix.unsqueeze(0).expand(n_batches, -1, -1).clone()
+            reference_cell = cell_matrix.unsqueeze(0).expand(n_systems, -1, -1).clone()
             state.cell = reference_cell
 
         # Get model output
@@ -1463,7 +1466,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             atomic_numbers=atomic_numbers,
             cell=state.cell,
             pbc=state.pbc,
-            batch=state.batch,
+            system_idx=state.system_idx,
             reference_cell=reference_cell,
             cell_position=cell_position,
             cell_momentum=cell_momentum,
@@ -1478,14 +1481,16 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         momenta = kwargs.get(
             "momenta",
             calculate_momenta(
-                npt_state.positions, npt_state.masses, npt_state.batch, kT, seed
+                npt_state.positions, npt_state.masses, npt_state.system_idx, kT, seed
             ),
         )
 
         # Initialize thermostat
         npt_state.momenta = momenta
         KE = calc_kinetic_energy(
-            npt_state.momenta, npt_state.masses, batch=npt_state.batch
+            momenta=npt_state.momenta,
+            masses=npt_state.masses,
+            system_idx=npt_state.system_idx,
         )
         npt_state.thermostat = thermostat_fns.initialize(
             npt_state.positions.numel(), KE, kT
@@ -1542,10 +1547,12 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         )
 
         # Update kinetic energies for thermostats
-        KE = calc_kinetic_energy(state.momenta, state.masses, batch=state.batch)
+        KE = calc_kinetic_energy(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
         state.thermostat.kinetic_energy = KE
 
-        KE_cell = calc_kinetic_energy(state.cell_momentum, state.cell_mass)
+        KE_cell = calc_kinetic_energy(masses=state.cell_mass, momenta=state.cell_momentum)
         state.barostat.kinetic_energy = KE_cell
 
         # Second half step of thermostat chains
@@ -1588,44 +1595,46 @@ def npt_nose_hoover_invariant(
 
     Returns:
         torch.Tensor: The conserved quantity (extended Hamiltonian) of the NPT system.
-            Returns a scalar for single batch or tensor with shape [n_batches] for
-            multiple batches.
+            Returns a scalar for a single system or tensor with shape [n_systems] for
+            multiple systems.
     """
     # Calculate volume and potential energy
-    volume = torch.det(state.current_cell)  # [n_batches]
-    e_pot = state.energy  # Should be scalar or [n_batches]
+    volume = torch.det(state.current_cell)  # [n_systems]
+    e_pot = state.energy  # Should be scalar or [n_systems]
 
-    # Calculate kinetic energy of particles per batch
-    e_kin_per_batch = calc_kinetic_energy(state.momenta, state.masses, batch=state.batch)
+    # Calculate kinetic energy of particles per system
+    e_kin_per_system = calc_kinetic_energy(
+        masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+    )
 
-    # Calculate degrees of freedom per batch
-    n_atoms_per_batch = torch.bincount(state.batch)
-    DOF_per_batch = (
-        n_atoms_per_batch * state.positions.shape[-1]
+    # Calculate degrees of freedom per system
+    n_atoms_per_system = torch.bincount(state.system_idx)
+    DOF_per_system = (
+        n_atoms_per_system * state.positions.shape[-1]
     )  # n_atoms * n_dimensions
 
     # Initialize total energy with PE + KE
     if isinstance(e_pot, torch.Tensor) and e_pot.ndim > 0:
-        e_tot = e_pot + e_kin_per_batch  # [n_batches]
+        e_tot = e_pot + e_kin_per_system  # [n_systems]
     else:
-        e_tot = e_pot + e_kin_per_batch  # [n_batches]
+        e_tot = e_pot + e_kin_per_system  # [n_systems]
 
     # Add thermostat chain contributions
-    # Note: These are global thermostat variables, so we add them to each batch
+    # Note: These are global thermostat variables, so we add them to each system
     # Start thermostat_energy as a tensor with the right shape
     thermostat_energy = torch.zeros_like(e_tot)
     thermostat_energy += (state.thermostat.momenta[0] ** 2) / (
         2 * state.thermostat.masses[0]
     )
 
-    # Ensure kT can broadcast properly with DOF_per_batch
+    # Ensure kT can broadcast properly with DOF_per_system
     if isinstance(kT, torch.Tensor) and kT.ndim == 0:
-        # Scalar kT - expand to match DOF_per_batch shape
-        kT_expanded = kT.expand_as(DOF_per_batch)
+        # Scalar kT - expand to match DOF_per_system shape
+        kT_expanded = kT.expand_as(DOF_per_system)
     else:
         kT_expanded = kT
 
-    thermostat_energy += DOF_per_batch * kT_expanded * state.thermostat.positions[0]
+    thermostat_energy += DOF_per_system * kT_expanded * state.thermostat.positions[0]
 
     # Add remaining thermostat terms
     for pos, momentum, mass in zip(
@@ -1660,11 +1669,11 @@ def npt_nose_hoover_invariant(
 
     e_tot = e_tot + barostat_energy
 
-    # Add PV term and cell kinetic energy (both are per batch)
+    # Add PV term and cell kinetic energy (both are per system)
     e_tot += external_pressure * volume
     e_tot += (state.cell_momentum**2) / (2 * state.cell_mass)
 
-    # Return scalar if single batch, otherwise return per-batch values
-    if state.n_batches == 1:
+    # Return scalar if single system, otherwise return per-system values
+    if state.n_systems == 1:
         return e_tot.squeeze()
     return e_tot

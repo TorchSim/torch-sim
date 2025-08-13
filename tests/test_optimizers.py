@@ -6,6 +6,7 @@ import pytest
 import torch
 
 import torch_sim as ts
+from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers import (
     FireState,
     FrechetCellFIREState,
@@ -23,7 +24,7 @@ from torch_sim.state import concatenate_states
 
 
 def test_gradient_descent_optimization(
-    ar_supercell_sim_state: ts.SimState, lj_model: torch.nn.Module
+    ar_supercell_sim_state: ts.SimState, lj_model: ModelInterface
 ) -> None:
     """Test that the Gradient Descent optimizer actually minimizes energy."""
     # Add some random displacement to positions
@@ -62,7 +63,7 @@ def test_gradient_descent_optimization(
 
 
 def test_unit_cell_gradient_descent_optimization(
-    ar_supercell_sim_state: ts.SimState, lj_model: torch.nn.Module
+    ar_supercell_sim_state: ts.SimState, lj_model: ModelInterface
 ) -> None:
     """Test that the Gradient Descent optimizer actually minimizes energy."""
     # Add some random displacement to positions
@@ -111,7 +112,7 @@ def test_unit_cell_gradient_descent_optimization(
 
 @pytest.mark.parametrize("md_flavor", get_args(MdFlavor))
 def test_fire_optimization(
-    ar_supercell_sim_state: ts.SimState, lj_model: torch.nn.Module, md_flavor: MdFlavor
+    ar_supercell_sim_state: ts.SimState, lj_model: ModelInterface, md_flavor: MdFlavor
 ) -> None:
     """Test that the FIRE optimizer actually minimizes energy."""
     # Add some random displacement to positions
@@ -128,7 +129,7 @@ def test_fire_optimization(
         cell=ar_supercell_sim_state.cell.clone(),
         pbc=ar_supercell_sim_state.pbc,
         atomic_numbers=ar_supercell_sim_state.atomic_numbers.clone(),
-        batch=ar_supercell_sim_state.batch.clone(),
+        system_idx=ar_supercell_sim_state.system_idx.clone(),
     )
 
     initial_state_positions = current_sim_state.positions.clone()
@@ -185,7 +186,7 @@ def test_simple_optimizer_init_with_dict(
     optimizer_fn: callable,
     expected_state_type: type,
     ar_supercell_sim_state: ts.SimState,
-    lj_model: torch.nn.Module,
+    lj_model: ModelInterface,
 ) -> None:
     """Test simple optimizer init_fn with a ts.SimState dictionary."""
     state_dict = {
@@ -201,7 +202,7 @@ def test_simple_optimizer_init_with_dict(
 
 @pytest.mark.parametrize("optimizer_func", [fire, unit_cell_fire, frechet_cell_fire])
 def test_optimizer_invalid_md_flavor(
-    optimizer_func: callable, lj_model: torch.nn.Module
+    optimizer_func: callable, lj_model: ModelInterface
 ) -> None:
     """Test optimizer with an invalid md_flavor raises ValueError."""
     with pytest.raises(ValueError, match="Unknown md_flavor"):
@@ -209,7 +210,7 @@ def test_optimizer_invalid_md_flavor(
 
 
 def test_fire_ase_negative_power_branch(
-    ar_supercell_sim_state: ts.SimState, lj_model: torch.nn.Module
+    ar_supercell_sim_state: ts.SimState, lj_model: ModelInterface
 ) -> None:
     """Test that the ASE FIRE P<0 branch behaves as expected."""
     f_dec = 0.5  # Default from fire optimizer
@@ -229,7 +230,7 @@ def test_fire_ase_negative_power_branch(
     state = init_fn(ar_supercell_sim_state)
 
     # Save parameters from initial state
-    initial_dt_batch = state.dt.clone()  # per-batch dt
+    initial_dt_batch = state.dt.clone()  # per-system dt
 
     # Manipulate state to ensure P < 0 for the update_fn step
     # Ensure forces are non-trivial
@@ -262,17 +263,17 @@ def test_fire_ase_negative_power_branch(
     # Assertions for velocity update in ASE P < 0 case:
     # v_after_mixing_is_0, then v_final = dt_new * F_at_power_calc
     expected_final_velocities = (
-        expected_dt_val * forces_at_power_calc[updated_state.batch == 0]
+        expected_dt_val * forces_at_power_calc[updated_state.system_idx == 0]
     )
     assert torch.allclose(
-        updated_state.velocities[updated_state.batch == 0],
+        updated_state.velocities[updated_state.system_idx == 0],
         expected_final_velocities,
         atol=1e-6,
     )
 
 
 def test_fire_vv_negative_power_branch(
-    ar_supercell_sim_state: ts.SimState, lj_model: torch.nn.Module
+    ar_supercell_sim_state: ts.SimState, lj_model: ModelInterface
 ) -> None:
     """Attempt to trigger and test the VV FIRE P<0 branch."""
     f_dec = 0.5
@@ -317,15 +318,15 @@ def test_fire_vv_negative_power_branch(
 
     # If P<0 branch was taken, velocities should be zeroed
     assert torch.allclose(
-        updated_state.velocities[updated_state.batch == 0],
-        torch.zeros_like(updated_state.velocities[updated_state.batch == 0]),
+        updated_state.velocities[updated_state.system_idx == 0],
+        torch.zeros_like(updated_state.velocities[updated_state.system_idx == 0]),
         atol=1e-7,
     )
 
 
 @pytest.mark.parametrize("md_flavor", get_args(MdFlavor))
 def test_unit_cell_fire_optimization(
-    ar_supercell_sim_state: ts.SimState, lj_model: torch.nn.Module, md_flavor: MdFlavor
+    ar_supercell_sim_state: ts.SimState, lj_model: ModelInterface, md_flavor: MdFlavor
 ) -> None:
     """Test that the Unit Cell FIRE optimizer actually minimizes energy."""
 
@@ -345,7 +346,7 @@ def test_unit_cell_fire_optimization(
         cell=current_cell,
         pbc=ar_supercell_sim_state.pbc,
         atomic_numbers=ar_supercell_sim_state.atomic_numbers.clone(),
-        batch=ar_supercell_sim_state.batch.clone(),
+        system_idx=ar_supercell_sim_state.system_idx.clone(),
     )
 
     initial_state_positions = current_sim_state.positions.clone()
@@ -414,7 +415,7 @@ def test_cell_optimizer_init_with_dict_and_cell_factor(
     expected_state_type: type,
     cell_factor_val: float,
     ar_supercell_sim_state: ts.SimState,
-    lj_model: torch.nn.Module,
+    lj_model: ModelInterface,
 ) -> None:
     """Test cell optimizer init_fn with dict state and explicit cell_factor."""
     state_dict = {
@@ -429,7 +430,7 @@ def test_cell_optimizer_init_with_dict_and_cell_factor(
     assert opt_state.forces is not None
     assert opt_state.stress is not None
     expected_cf_tensor = torch.full(
-        (opt_state.n_batches, 1, 1),
+        (opt_state.n_systems, 1, 1),
         float(cell_factor_val),  # Ensure float for comparison if int is passed
         device=lj_model.device,
         dtype=lj_model.dtype,
@@ -448,15 +449,15 @@ def test_cell_optimizer_init_cell_factor_none(
     optimizer_fn: callable,
     expected_state_type: type,
     ar_supercell_sim_state: ts.SimState,
-    lj_model: torch.nn.Module,
+    lj_model: ModelInterface,
 ) -> None:
     """Test cell optimizer init_fn with cell_factor=None."""
     init_fn, _ = optimizer_fn(model=lj_model, cell_factor=None)
-    # Ensure n_batches > 0 for cell_factor calculation from counts
-    assert ar_supercell_sim_state.n_batches > 0
+    # Ensure n_systems > 0 for cell_factor calculation from counts
+    assert ar_supercell_sim_state.n_systems > 0
     opt_state = init_fn(ar_supercell_sim_state)  # Uses ts.SimState directly
     assert isinstance(opt_state, expected_state_type)
-    _, counts = torch.unique(ar_supercell_sim_state.batch, return_counts=True)
+    _, counts = torch.unique(ar_supercell_sim_state.system_idx, return_counts=True)
     expected_cf_tensor = counts.to(dtype=lj_model.dtype).view(-1, 1, 1)
     assert torch.allclose(opt_state.cell_factor, expected_cf_tensor)
     assert opt_state.energy is not None
@@ -467,7 +468,7 @@ def test_cell_optimizer_init_cell_factor_none(
 @pytest.mark.filterwarnings("ignore:WARNING: Non-positive volume detected")
 def test_unit_cell_fire_ase_non_positive_volume_warning(
     ar_supercell_sim_state: ts.SimState,
-    lj_model: torch.nn.Module,
+    lj_model: ModelInterface,
     capsys: pytest.CaptureFixture,
 ) -> None:
     """Attempt to trigger non-positive volume warning in unit_cell_fire ASE."""
@@ -503,7 +504,7 @@ def test_unit_cell_fire_ase_non_positive_volume_warning(
 
 @pytest.mark.parametrize("md_flavor", get_args(MdFlavor))
 def test_frechet_cell_fire_optimization(
-    ar_supercell_sim_state: ts.SimState, lj_model: torch.nn.Module, md_flavor: MdFlavor
+    ar_supercell_sim_state: ts.SimState, lj_model: ModelInterface, md_flavor: MdFlavor
 ) -> None:
     """Test that the Frechet Cell FIRE optimizer actually minimizes energy for different
     md_flavors."""
@@ -525,7 +526,7 @@ def test_frechet_cell_fire_optimization(
         cell=current_cell,
         pbc=ar_supercell_sim_state.pbc,
         atomic_numbers=ar_supercell_sim_state.atomic_numbers.clone(),
-        batch=ar_supercell_sim_state.batch.clone(),
+        system_idx=ar_supercell_sim_state.system_idx.clone(),
     )
 
     initial_state_positions = current_sim_state.positions.clone()
@@ -592,7 +593,7 @@ def test_frechet_cell_fire_optimization(
 def test_optimizer_batch_consistency(
     optimizer_func: callable,
     ar_supercell_sim_state: ts.SimState,
-    lj_model: torch.nn.Module,
+    lj_model: ModelInterface,
 ) -> None:
     """Test batched optimizer is consistent with individual optimizations."""
     generator = torch.Generator(device=ar_supercell_sim_state.device)
@@ -707,7 +708,7 @@ def test_optimizer_batch_consistency(
 
 
 def test_unit_cell_fire_multi_batch(
-    ar_supercell_sim_state: ts.SimState, lj_model: torch.nn.Module
+    ar_supercell_sim_state: ts.SimState, lj_model: ModelInterface
 ) -> None:
     """Test FIRE optimization with multiple batches."""
     # Create a multi-batch system by duplicating ar_fcc_state
@@ -783,7 +784,7 @@ def test_unit_cell_fire_multi_batch(
 
 
 def test_fire_fixed_cell_unit_cell_consistency(  # noqa: C901
-    ar_supercell_sim_state: ts.SimState, lj_model: torch.nn.Module
+    ar_supercell_sim_state: ts.SimState, lj_model: ModelInterface
 ) -> None:
     """Test batched Frechet Fixed cell FIRE optimization is
     consistent with FIRE (position only) optimizations."""
@@ -874,6 +875,6 @@ def test_fire_fixed_cell_unit_cell_consistency(  # noqa: C901
     # position only optimizations
     for step, energy_unit_cell in enumerate(individual_energies_unit_cell):
         assert abs(energy_unit_cell - individual_energies_fire[step]) < 1e-4, (
-            f"Energy for batch {step} doesn't match position only optimization: "
-            f"batch={energy_unit_cell}, individual={individual_energies_fire[step]}"
+            f"Energy for system {step} doesn't match position only optimization: "
+            f"system={energy_unit_cell}, individual={individual_energies_fire[step]}"
         )

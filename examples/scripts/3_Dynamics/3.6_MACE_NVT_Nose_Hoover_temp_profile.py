@@ -163,7 +163,7 @@ for step in range(n_steps):
 
     # Calculate current temperature and save data
     temp = (
-        calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+        calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
         / Units.temperature
     )
     actual_temps[step] = temp

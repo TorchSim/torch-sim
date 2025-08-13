@@ -3,6 +3,7 @@ import torch
 from pymatgen.core import Structure
 
 import torch_sim as ts
+from torch_sim.models.interface import ModelInterface
 from torch_sim.monte_carlo import (
     SwapMCState,
     generate_swaps,
@@ -50,7 +51,7 @@ def test_generate_permutation(
 ):
     swaps = generate_swaps(batched_diverse_state, generator=generator)
     permutation = swaps_to_permutation(swaps, batched_diverse_state.n_atoms)
-    validate_permutation(permutation, batched_diverse_state.batch)
+    validate_permutation(permutation, batched_diverse_state.system_idx)
 
 
 def test_generate_swaps(batched_diverse_state: ts.SimState, generator: torch.Generator):
@@ -64,9 +65,9 @@ def test_generate_swaps(batched_diverse_state: ts.SimState, generator: torch.Gen
     assert torch.all(swaps >= 0)
     assert torch.all(swaps < batched_diverse_state.n_atoms)
 
-    # Check swaps are within same batch
-    batch = batched_diverse_state.batch
-    assert torch.all(batch[swaps[:, 0]] == batch[swaps[:, 1]])
+    # Check swaps are within same system
+    system_idx = batched_diverse_state.system_idx
+    assert torch.all(system_idx[swaps[:, 0]] == system_idx[swaps[:, 1]])
 
 
 def test_swaps_to_permutation(
@@ -95,7 +96,9 @@ def test_validate_permutation(batched_diverse_state: ts.SimState):
     # Valid permutation
     swaps = generate_swaps(batched_diverse_state)
     permutation = swaps_to_permutation(swaps, batched_diverse_state.n_atoms)
-    validate_permutation(permutation, batched_diverse_state.batch)  # Should not raise
+    validate_permutation(
+        permutation, batched_diverse_state.system_idx
+    )  # Should not raise
 
     # Invalid permutation (swap between batches)
     invalid_perm = permutation.clone()
@@ -105,12 +108,12 @@ def test_validate_permutation(batched_diverse_state: ts.SimState):
         invalid_perm[batched_diverse_state.n_atoms - 1] = 0
 
         with pytest.raises(ValueError, match="Swaps must be between"):
-            validate_permutation(invalid_perm, batched_diverse_state.batch)
+            validate_permutation(invalid_perm, batched_diverse_state.system_idx)
 
 
 def test_monte_carlo(
     batched_diverse_state: ts.SimState,
-    lj_model: torch.nn.Module,
+    lj_model: ModelInterface,
 ):
     """Test the monte_carlo function that returns a step function and initial state."""
     # Call monte_carlo to get the initial state and step function
@@ -147,17 +150,17 @@ def test_monte_carlo(
     # Verify the state has changed after multiple steps
     assert not torch.allclose(current_state.positions, initial_positions)
 
-    # Verify batch assignments remain unchanged
-    assert torch.all(current_state.batch == batched_diverse_state.batch)
+    # Verify system_idx assignments remain unchanged
+    assert torch.all(current_state.system_idx == batched_diverse_state.system_idx)
 
-    # Verify atomic numbers distribution remains the same per batch
-    for batch_idx in torch.unique(current_state.batch):
-        batch_mask_orig = batched_diverse_state.batch == batch_idx
-        batch_mask_result = current_state.batch == batch_idx
+    # Verify atomic numbers distribution remains the same per system
+    for idx in torch.unique(current_state.system_idx):
+        system_mask_orig = batched_diverse_state.system_idx == idx
+        system_mask_result = current_state.system_idx == idx
 
         orig_counts = torch.bincount(
-            batched_diverse_state.atomic_numbers[batch_mask_orig]
+            batched_diverse_state.atomic_numbers[system_mask_orig]
         )
-        result_counts = torch.bincount(current_state.atomic_numbers[batch_mask_result])
+        result_counts = torch.bincount(current_state.atomic_numbers[system_mask_result])
 
         assert torch.all(orig_counts == result_counts)

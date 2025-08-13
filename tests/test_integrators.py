@@ -20,66 +20,66 @@ def test_calculate_momenta_basic(device: torch.device):
     seed = 42
     dtype = torch.float64
 
-    # Create test inputs for 3 batches with 2 atoms each
+    # Create test inputs for 3 systems with 2 atoms each
     n_atoms = 8
     positions = torch.randn(n_atoms, 3, dtype=dtype, device=device)
     masses = torch.rand(n_atoms, dtype=dtype, device=device) + 0.5
-    batch = torch.tensor(
+    system_idx = torch.tensor(
         [0, 0, 1, 1, 2, 2, 3, 3], device=device
-    )  # 3 batches with 2 atoms each
+    )  # 3 systems with 2 atoms each
     kT = torch.tensor([0.1, 0.2, 0.3, 0.4], dtype=dtype, device=device)
 
     # Run the function
-    momenta = calculate_momenta(positions, masses, batch, kT, seed=seed)
+    momenta = calculate_momenta(positions, masses, system_idx, kT, seed=seed)
 
     # Basic checks
     assert momenta.shape == positions.shape
     assert momenta.dtype == dtype
     assert momenta.device == device
 
-    # Check that each batch has zero center of mass momentum
+    # Check that each system has zero center of mass momentum
     for b in range(4):
-        batch_mask = batch == b
-        batch_momenta = momenta[batch_mask]
-        com_momentum = torch.mean(batch_momenta, dim=0)
+        system_mask = system_idx == b
+        system_momenta = momenta[system_mask]
+        com_momentum = torch.mean(system_momenta, dim=0)
         assert torch.allclose(
             com_momentum, torch.zeros(3, dtype=dtype, device=device), atol=1e-10
         )
 
 
 def test_calculate_momenta_single_atoms(device: torch.device):
-    """Test that calculate_momenta preserves momentum for batches with single atoms."""
+    """Test that calculate_momenta preserves momentum for systems with single atoms."""
     seed = 42
     dtype = torch.float64
 
-    # Create test inputs with some batches having single atoms
+    # Create test inputs with some systems having single atoms
     positions = torch.randn(5, 3, dtype=dtype, device=device)
     masses = torch.rand(5, dtype=dtype, device=device) + 0.5
-    batch = torch.tensor(
+    system_idx = torch.tensor(
         [0, 1, 1, 2, 3], device=device
-    )  # Batches 0, 2, and 3 have single atoms
+    )  # systems 0, 2, and 3 have single atoms
     kT = torch.tensor([0.1, 0.2, 0.3, 0.4], dtype=dtype, device=device)
 
     # Generate momenta and save the raw values before COM correction
     generator = torch.Generator(device=device).manual_seed(seed)
     raw_momenta = torch.randn(
         positions.shape, device=device, dtype=dtype, generator=generator
-    ) * torch.sqrt(masses * kT[batch]).unsqueeze(-1)
+    ) * torch.sqrt(masses * kT[system_idx]).unsqueeze(-1)
 
     # Run the function
-    momenta = calculate_momenta(positions, masses, batch, kT, seed=seed)
+    momenta = calculate_momenta(positions, masses, system_idx, kT, seed=seed)
 
-    # Check that single-atom batches have unchanged momenta
-    for b in [0, 2, 3]:  # Single atom batches
-        batch_mask = batch == b
+    # Check that single-atom systems have unchanged momenta
+    for b in [0, 2, 3]:  # Single atom systems
+        system_mask = system_idx == b
         # The momentum should be exactly the same as the raw value for single atoms
-        assert torch.allclose(momenta[batch_mask], raw_momenta[batch_mask])
+        assert torch.allclose(momenta[system_mask], raw_momenta[system_mask])
 
-    # Check that multi-atom batches have zero COM
-    for b in [1]:  # Multi-atom batches
-        batch_mask = batch == b
-        batch_momenta = momenta[batch_mask]
-        com_momentum = torch.mean(batch_momenta, dim=0)
+    # Check that multi-atom systems have zero COM
+    for b in [1]:  # Multi-atom systems
+        system_mask = system_idx == b
+        system_momenta = momenta[system_mask]
+        com_momentum = torch.mean(system_momenta, dim=0)
         assert torch.allclose(
             com_momentum, torch.zeros(3, dtype=dtype, device=device), atol=1e-10
         )
@@ -109,7 +109,9 @@ def test_npt_langevin(ar_double_sim_state: ts.SimState, lj_model: LennardJonesMo
         state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
-        temp = calc_kT(state.momenta, state.masses, batch=state.batch)
+        temp = calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
 
@@ -172,7 +174,9 @@ def test_npt_langevin_multi_kt(
         state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
-        temp = calc_kT(state.momenta, state.masses, batch=state.batch)
+        temp = calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
 
@@ -213,7 +217,9 @@ def test_nvt_langevin(ar_double_sim_state: ts.SimState, lj_model: LennardJonesMo
         state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
-        temp = calc_kT(state.momenta, state.masses, batch=state.batch)
+        temp = calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
 
@@ -273,7 +279,9 @@ def test_nvt_langevin_multi_kt(
         state = update_fn(state=state)
 
         # Calculate instantaneous temperature from kinetic energy
-        temp = calc_kT(state.momenta, state.masses, batch=state.batch)
+        temp = calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
 
@@ -372,13 +380,13 @@ def test_compare_single_vs_batched_integrators(
         torch.testing.assert_close(single_state.energy, final_state.energy)
 
 
-def test_compute_cell_force_atoms_per_batch():
-    """Test that compute_cell_force correctly scales by number of atoms per batch.
+def test_compute_cell_force_atoms_per_system():
+    """Test that compute_cell_force correctly scales by number of atoms per system.
 
     Covers fix in https://github.com/Radical-AI/torch-sim/pull/153."""
     from torch_sim.integrators.npt import _compute_cell_force
 
-    # Setup minimal state with two batches having 8:1 atom ratio
+    # Setup minimal state with two systems having 8:1 atom ratio
     s1, s2 = torch.zeros(8, dtype=torch.long), torch.ones(64, dtype=torch.long)
 
     state = NPTLangevinState(
@@ -389,7 +397,7 @@ def test_compute_cell_force_atoms_per_batch():
         masses=torch.ones(72),
         cell=torch.eye(3).repeat(2, 1, 1),
         pbc=True,
-        batch=torch.cat([s1, s2]),
+        system_idx=torch.cat([s1, s2]),
         atomic_numbers=torch.ones(72, dtype=torch.long),
         stress=torch.zeros((2, 3, 3)),
         reference_cell=torch.eye(3).repeat(2, 1, 1),

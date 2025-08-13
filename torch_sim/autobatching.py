@@ -234,7 +234,7 @@ def measure_model_memory_forward(state: SimState, model: ModelInterface) -> floa
 
     print(  # noqa: T201
         "Model Memory Estimation: Running forward pass on state with "
-        f"{state.n_atoms} atoms and {state.n_batches} batches.",
+        f"{state.n_atoms} atoms and {state.n_systems} systems.",
     )
     # Clear GPU memory
     torch.cuda.synchronize()
@@ -268,7 +268,7 @@ def determine_max_batch_size(
             Defaults to 500,000.
         start_size (int): Initial batch size to test. Defaults to 1.
         scale_factor (float): Factor to multiply batch size by in each iteration.
-            Defaults to 1.3.
+            Defaults to 1.6.
 
     Returns:
         int: Maximum number of batches that fit in GPU memory.
@@ -289,12 +289,12 @@ def determine_max_batch_size(
     """
     # Create a geometric sequence of batch sizes
     sizes = [start_size]
-    while (next_size := round(sizes[-1] * scale_factor)) < max_atoms:
+    while (next_size := max(round(sizes[-1] * scale_factor), sizes[-1] + 1)) < max_atoms:
         sizes.append(next_size)
 
     for i in range(len(sizes)):
-        n_batches = sizes[i]
-        concat_state = concatenate_states([state] * n_batches)
+        n_systems = sizes[i]
+        concat_state = concatenate_states([state] * n_systems)
 
         try:
             measure_model_memory_forward(concat_state, model)
@@ -343,7 +343,7 @@ def calculate_memory_scaler(
         # Calculate memory scaling factor based on atom count and density
         metric = calculate_memory_scaler(state, memory_scales_with="n_atoms_x_density")
     """
-    if state.n_batches > 1:
+    if state.n_systems > 1:
         return sum(calculate_memory_scaler(s, memory_scales_with) for s in state.split())
     if memory_scales_with == "n_atoms":
         return state.n_atoms
@@ -405,8 +405,8 @@ def estimate_max_memory_scaler(
     print(  # noqa: T201
         "Model Memory Estimation: Estimating memory from worst case of "
         f"largest and smallest system. Largest system has {max_state.n_atoms} atoms "
-        f"and {max_state.n_batches} batches, and smallest system has "
-        f"{min_state.n_atoms} atoms and {min_state.n_batches} batches.",
+        f"and {max_state.n_systems} batches, and smallest system has "
+        f"{min_state.n_atoms} atoms and {min_state.n_systems} batches.",
     )
     min_state_max_batches = determine_max_batch_size(min_state, model, **kwargs)
     max_state_max_batches = determine_max_batch_size(max_state, model, **kwargs)
@@ -428,7 +428,7 @@ class BinningAutoBatcher:
     Attributes:
         model (ModelInterface): Model used for memory estimation and processing.
         memory_scales_with (str): Metric type used for memory estimation.
-        max_memory_scaler (float): Maximum memory metric allowed per batch.
+        max_memory_scaler (float): Maximum memory metric allowed per system.
         max_atoms_to_try (int): Maximum number of atoms to try when estimating memory.
         return_indices (bool): Whether to return original indices with batches.
         state_slices (list[SimState]): Individual states to be batched.
@@ -477,7 +477,7 @@ class BinningAutoBatcher:
                 - "n_atoms": Uses only atom count
                 - "n_atoms_x_density": Uses atom count multiplied by number density
                 Defaults to "n_atoms_x_density".
-            max_memory_scaler (float | None): Maximum metric value allowed per batch. If
+            max_memory_scaler (float | None): Maximum metric value allowed per system. If
                 None, will be automatically estimated. Defaults to None.
             return_indices (bool): Whether to return original indices along with batches.
                 Defaults to False.
@@ -716,7 +716,7 @@ class InFlightAutoBatcher:
     Attributes:
         model (ModelInterface): Model used for memory estimation and processing.
         memory_scales_with (str): Metric type used for memory estimation.
-        max_memory_scaler (float): Maximum memory metric allowed per batch.
+        max_memory_scaler (float): Maximum memory metric allowed per system.
         max_atoms_to_try (int): Maximum number of atoms to try when estimating memory.
         return_indices (bool): Whether to return original indices with batches.
         max_iterations (int | None): Maximum number of iterations per state.
@@ -776,7 +776,7 @@ class InFlightAutoBatcher:
                 - "n_atoms": Uses only atom count
                 - "n_atoms_x_density": Uses atom count multiplied by number density
                 Defaults to "n_atoms_x_density".
-            max_memory_scaler (float | None): Maximum metric value allowed per batch.
+            max_memory_scaler (float | None): Maximum metric value allowed per system.
                 If None, will be automatically estimated. Defaults to None.
             return_indices (bool): Whether to return original indices along with batches.
                 Defaults to False.
@@ -933,13 +933,13 @@ class InFlightAutoBatcher:
         # if max_metric is not set, estimate it
         has_max_metric = bool(self.max_memory_scaler)
         if not has_max_metric:
-            n_batches = determine_max_batch_size(
+            n_systems = determine_max_batch_size(
                 first_state,
                 self.model,
                 max_atoms=self.max_atoms_to_try,
                 scale_factor=self.memory_scaling_factor,
             )
-            self.max_memory_scaler = n_batches * first_metric * 0.8
+            self.max_memory_scaler = n_systems * first_metric * 0.8
 
         states = self._get_next_states()
 
@@ -952,6 +952,8 @@ class InFlightAutoBatcher:
                 scale_factor=self.memory_scaling_factor,
             )
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
+            newer_states = self._get_next_states()
+            states = [*states, *newer_states]
         return concatenate_states([first_state, *states])
 
     def next_batch(  # noqa: C901
@@ -971,7 +973,7 @@ class InFlightAutoBatcher:
                 for the first call. Contains shape information specific to the SimState
                 instance.
             convergence_tensor (torch.Tensor | None): Boolean tensor with shape
-                [n_batches] indicating which states have converged (True) or not
+                [n_systems] indicating which states have converged (True) or not
                 (False). Should be None only for the first call.
 
         Returns:
@@ -1019,14 +1021,14 @@ class InFlightAutoBatcher:
 
         # assert statements helpful for debugging, should be moved to validate fn
         # the first two are most important
-        if len(convergence_tensor) != updated_state.n_batches:
-            raise ValueError(f"{len(convergence_tensor)=} != {updated_state.n_batches=}")
+        if len(convergence_tensor) != updated_state.n_systems:
+            raise ValueError(f"{len(convergence_tensor)=} != {updated_state.n_systems=}")
         if len(self.current_idx) != len(self.current_scalers):
             raise ValueError(f"{len(self.current_idx)=} != {len(self.current_scalers)=}")
         if len(convergence_tensor.shape) != 1:
             raise ValueError(f"{len(convergence_tensor.shape)=} != 1")
-        if updated_state.n_batches <= 0:
-            raise ValueError(f"{updated_state.n_batches=} <= 0")
+        if updated_state.n_systems <= 0:
+            raise ValueError(f"{updated_state.n_systems=} <= 0")
 
         # Increment attempt counters and check for max attempts in a single loop
         for cur_idx, abs_idx in enumerate(self.current_idx):
@@ -1057,7 +1059,7 @@ class InFlightAutoBatcher:
             )
 
         # concatenate remaining state with next states
-        if updated_state.n_batches > 0:
+        if updated_state.n_systems > 0:
             next_states = [updated_state, *next_states]
         next_batch = concatenate_states(next_states)
 

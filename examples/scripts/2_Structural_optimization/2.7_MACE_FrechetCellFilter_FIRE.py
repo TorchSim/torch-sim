@@ -80,7 +80,7 @@ results = model(state)
 # Initialize unit cell gradient descent optimizer
 fire_init, fire_update = ts.optimizers.frechet_cell_fire(
     model=model,
-    cell_factor=None,  # Will default to atoms per batch
+    cell_factor=None,  # Will default to atoms per system
     hydrostatic_strain=False,
     constant_volume=False,
     scalar_pressure=0.0,

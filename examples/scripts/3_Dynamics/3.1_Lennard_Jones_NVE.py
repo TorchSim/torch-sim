@@ -78,11 +78,7 @@ atomic_numbers = torch.full((positions.shape[0],), 18, device=device, dtype=torc
 masses = torch.full((positions.shape[0],), 39.948, device=device, dtype=dtype)
 
 state = ts.SimState(
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    pbc=True,
-    atomic_numbers=atomic_numbers,
+    positions=positions, masses=masses, cell=cell, atomic_numbers=atomic_numbers, pbc=True
 )
 # Initialize the Lennard-Jones model
 # Parameters:

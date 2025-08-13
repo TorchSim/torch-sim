@@ -36,7 +36,7 @@ except ImportError as exc:
     warnings.warn(f"GraphPES import failed: {traceback.format_exc()}", stacklevel=2)
     PropertyKey = str
 
-    class GraphPESWrapper(torch.nn.Module, ModelInterface):  # type: ignore[reportRedeclaration]
+    class GraphPESWrapper(ModelInterface):  # type: ignore[reportRedeclaration]
         """GraphPESModel wrapper for torch_sim.
 
         This class is a placeholder for the GraphPESWrapper class.
@@ -67,10 +67,10 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
     """
     graphs = []
 
-    for i in range(state.n_batches):
-        batch_mask = state.batch == i
-        R = state.positions[batch_mask]
-        Z = state.atomic_numbers[batch_mask]
+    for i in range(state.n_systems):
+        system_mask = state.system_idx == i
+        R = state.positions[system_mask]
+        Z = state.atomic_numbers[system_mask]
         cell = state.row_vector_cell[i]
         nl, shifts = vesin_nl_ts(
             R,
@@ -99,7 +99,7 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
     return to_batch(graphs)
 
 
-class GraphPESWrapper(torch.nn.Module, ModelInterface):
+class GraphPESWrapper(ModelInterface):
     """Wrapper for GraphPESModel in TorchSim.
 
     This class provides a TorchSim wrapper around GraphPESModel instances,

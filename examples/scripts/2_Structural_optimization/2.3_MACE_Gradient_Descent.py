@@ -93,12 +93,12 @@ atomic_numbers = torch.tensor(atomic_numbers_numpy, device=device, dtype=torch.i
 masses_numpy = np.concatenate([atoms.get_masses() for atoms in atoms_list])
 masses = torch.tensor(masses_numpy, device=device, dtype=dtype)
 
-# Create batch indices tensor for scatter operations
-atoms_per_batch = torch.tensor(
+# Create system indices tensor for scatter operations
+atoms_per_system = torch.tensor(
     [len(atoms) for atoms in atoms_list], device=device, dtype=torch.int
 )
-batch_indices = torch.repeat_interleave(
-    torch.arange(len(atoms_per_batch), device=device), atoms_per_batch
+system_indices = torch.repeat_interleave(
+    torch.arange(len(atoms_per_system), device=device), atoms_per_system
 )
 """
 
@@ -106,7 +106,7 @@ state = ts.io.atoms_to_state(atoms_list, device=device, dtype=dtype)
 
 print(f"Positions shape: {state.positions.shape}")
 print(f"Cell shape: {state.cell.shape}")
-print(f"Batch indices shape: {state.batch.shape}")
+print(f"System indices shape: {state.system_idx.shape}")
 
 # Run initial inference
 results = batched_model(state)

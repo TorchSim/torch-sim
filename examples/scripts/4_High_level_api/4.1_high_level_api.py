@@ -54,7 +54,9 @@ trajectory_file = "lj_trajectory.h5md"
 prop_calculators = {
     10: {"potential_energy": lambda state: state.energy},
     20: {
-        "kinetic_energy": lambda state: calc_kinetic_energy(state.momenta, state.masses)
+        "kinetic_energy": lambda state: calc_kinetic_energy(
+            momenta=state.momenta, masses=state.masses
+        )
     },
 }
 

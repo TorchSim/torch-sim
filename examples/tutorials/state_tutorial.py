@@ -31,7 +31,7 @@ an atomistic system:
 * Unit cell parameters
 * Periodic boundary conditions
 * Atomic numbers (elements)
-* Batch indices (for processing multiple systems simultaneously)
+* System indices (for processing multiple systems simultaneously)
 
 """
 
@@ -58,7 +58,7 @@ si_atoms = bulk("Si", "diamond", a=5.43, cubic=True)
 # Convert to SimState
 si_state = ts.initialize_state(si_atoms, device=torch.device("cpu"), dtype=torch.float64)
 
-print(f"State has {si_state.n_atoms} atoms and {si_state.n_batches} batches")
+print(f"State has {si_state.n_atoms} atoms and {si_state.n_systems} systems")
 
 # here we print all the attributes of the SimState
 print(f"Positions shape: {si_state.positions.shape}")
@@ -66,16 +66,16 @@ print(f"Cell shape: {si_state.cell.shape}")
 print(f"Atomic numbers shape: {si_state.atomic_numbers.shape}")
 print(f"Masses shape: {si_state.masses.shape}")
 print(f"PBC: {si_state.pbc}")
-print(f"Batch indices shape: {si_state.batch.shape}")
+print(f"System indices shape: {si_state.system_idx.shape}")
 
 
 # %% [markdown]
 """
-SimState attributes fall into three categories: atomwise, batchwise, and global.
+SimState attributes fall into three categories: atomwise, systemwise, and global.
 
 * Atomwise attributes are tensors with shape (n_atoms, ...), these are `positions`,
-  `masses`, `atomic_numbers`, and `batch`. Names are plural.
-* Batchwise attributes are tensors with shape (n_batches, ...), this is just `cell` for
+  `masses`, `atomic_numbers`, and `system_idx`. Names are plural.
+* Systemwise attributes are tensors with shape (n_systems, ...), this is just `cell` for
   the base SimState. Names are singular.
 * Global attributes have any other shape or type, just `pbc` here. Names are singular.
 
@@ -109,14 +109,14 @@ multi_state = ts.initialize_state(
 )
 
 print(
-    f"Multi-state has {multi_state.n_atoms} total atoms across {multi_state.n_batches} batches"
+    f"Multi-state has {multi_state.n_atoms} total atoms across {multi_state.n_systems} systems"
 )
 
-# we can see how the shapes of batchwise, atomwise, and global properties change
+# we can see how the shapes of atomwise, systemwise, and global properties change
 print(f"Positions shape: {multi_state.positions.shape}")
 print(f"Cell shape: {multi_state.cell.shape}")
 print(f"PBC: {multi_state.pbc}")
-print(f"Batch indices shape: {multi_state.batch.shape}")
+print(f"System indices shape: {multi_state.system_idx.shape}")
 
 
 # %% [markdown]
@@ -142,24 +142,24 @@ if torch.cuda.is_available():
 
 SimState supports many convenience operations for manipulating batched states. Slicing
 is supported through fancy indexing, e.g. `state[[0, 1, 2]]` will return a new state
-containing only the first three batches. The other operations are available through the
+containing only the first three systems. The other operations are available through the
 `pop`, `split`, `clone`, and `to` methods.
 """
 
 # %% we can copy the state with the clone method
 multi_state_copy = multi_state.clone()
-print(f"This state has {multi_state_copy.n_batches} batches")
+print(f"This state has {multi_state_copy.n_systems} systems")
 
 # we can pop states off while modifying the original state
 popped_states = multi_state_copy.pop([0, 2])
 print(
     f"We popped {len(popped_states)} states, leaving us with "
-    f"{multi_state_copy.n_batches} batch in the original state"
+    f"{multi_state_copy.n_systems} systems in the original state"
 )
 
 # we can put them back together with concatenate
 multi_state_full = ts.concatenate_states([*popped_states, multi_state_copy])
-print(f"Again we have {multi_state_full.n_batches} batches in the full state")
+print(f"Again we have {multi_state_full.n_systems} systems in the full state")
 
 # or if we don't want to modify the original state, we can instead index into it
 # negative indexing
@@ -182,19 +182,19 @@ print(f"Which now is a list of {len(list_of_sliced_states)} states")
 # %% [markdown]
 """
 
-You can extract specific batches from a batched state using Python's slicing syntax.
+You can extract specific systems from a batched state using Python's slicing syntax.
 This is extremely useful for analyzing specific systems or for implementing complex
 workflows where different systems need separate processing:
 
 The slicing interface follows Python's standard indexing conventions, making it
 intuitive to use. Behind the scenes, TorchSim is creating a new SimState with only the
-selected batches, maintaining all the necessary properties and relationships.
+selected systems, maintaining all the necessary properties and relationships.
 
 Note the difference between these operations:
-- `split()` returns all batches as separate states but doesn't modify the original
-- `pop()` removes specified batches from the original state and returns them as
+- `split()` returns all systems as separate states but doesn't modify the original
+- `pop()` removes specified systems from the original state and returns them as
 separate states
-- `__getitem__` (slicing) creates a new state with specified batches without modifying
+- `__getitem__` (slicing) creates a new state with specified systems without modifying
 the original
 
 This flexibility allows you to structure your simulation workflows in the most
@@ -203,7 +203,7 @@ efficient way for your specific needs.
 ### Splitting and Popping Batches
 
 SimState provides methods to split a batched state into separate states or to remove
-specific batches:
+specific systems:
 """
 
 # %% [markdown]
@@ -253,14 +253,14 @@ md_state = MDState(
     **asdict(si_state),  # Copy all SimState properties
     momenta=torch.zeros_like(si_state.positions),  # Initial 0 momenta
     forces=torch.zeros_like(si_state.positions),  # Initial 0 forces
-    energy=torch.zeros((si_state.n_batches,), device=si_state.device),  # Initial 0 energy
+    energy=torch.zeros((si_state.n_systems,), device=si_state.device),  # Initial 0 energy
 )
 
 print("MDState properties:")
 scope = infer_property_scope(md_state)
 print("Global properties:", scope["global"])
 print("Per-atom properties:", scope["per_atom"])
-print("Per-batch properties:", scope["per_batch"])
+print("Per-system properties:", scope["per_system"])
 
 
 # %% [markdown]

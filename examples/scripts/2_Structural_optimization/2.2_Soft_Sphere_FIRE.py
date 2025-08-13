@@ -80,8 +80,8 @@ state = ts.state.SimState(
     positions=positions,
     masses=masses,
     cell=cell.unsqueeze(0),
-    pbc=True,
     atomic_numbers=atomic_numbers,
+    pbc=True,
 )
 
 # Initialize the Soft Sphere model

@@ -642,7 +642,7 @@ def strict_nl(
     positions: torch.Tensor,
     cell: torch.Tensor,
     mapping: torch.Tensor,
-    batch_mapping: torch.Tensor,
+    system_mapping: torch.Tensor,
     shifts_idx: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Apply a strict cutoff to the neighbor list defined in the mapping.
@@ -663,7 +663,7 @@ def strict_nl(
         mapping (torch.Tensor):
             A tensor of shape (2, n_pairs) that specifies pairs of indices in `positions`
             for which to compute distances.
-        batch_mapping (torch.Tensor):
+        system_mapping (torch.Tensor):
             A tensor that maps the shifts to the corresponding cells, used in conjunction
             with `shifts_idx` to compute the correct periodic shifts.
         shifts_idx (torch.Tensor):
@@ -675,8 +675,8 @@ def strict_nl(
             A tuple containing:
                 - mapping (torch.Tensor): A filtered tensor of shape (2, n_filtered_pairs)
                   with pairs of indices that are within the cutoff distance.
-                - mapping_batch (torch.Tensor): A tensor of shape (n_filtered_pairs,)
-                  that maps the filtered pairs to their corresponding batches.
+                - mapping_system (torch.Tensor): A tensor of shape (n_filtered_pairs,)
+                  that maps the filtered pairs to their corresponding systems.
                 - shifts_idx (torch.Tensor): A tensor of shape (n_filtered_pairs, 3)
                   containing the periodic shift indices for the filtered pairs.
 
@@ -689,7 +689,7 @@ def strict_nl(
     References:
         - https://github.com/felixmusil/torch_nl
     """
-    cell_shifts = transforms.compute_cell_shifts(cell, shifts_idx, batch_mapping)
+    cell_shifts = transforms.compute_cell_shifts(cell, shifts_idx, system_mapping)
     if cell_shifts is None:
         d2 = (positions[mapping[0]] - positions[mapping[1]]).square().sum(dim=1)
     else:
@@ -701,9 +701,9 @@ def strict_nl(
 
     mask = d2 < cutoff * cutoff
     mapping = mapping[:, mask]
-    mapping_batch = batch_mapping[mask]
+    mapping_system = system_mapping[mask]
     shifts_idx = shifts_idx[mask]
-    return mapping, mapping_batch, shifts_idx
+    return mapping, mapping_system, shifts_idx
 
 
 @torch.jit.script
@@ -712,7 +712,7 @@ def torch_nl_n2(
     positions: torch.Tensor,
     cell: torch.Tensor,
     pbc: torch.Tensor,
-    batch: torch.Tensor,
+    system_idx: torch.Tensor,
     self_interaction: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute the neighbor list for a set of atomic structures using a
@@ -729,7 +729,7 @@ def torch_nl_n2(
         pbc (torch.Tensor [n_structure, 3] bool):
             A tensor indicating the periodic boundary conditions to apply.
             Partial PBC are not supported yet.
-        batch (torch.Tensor [n_atom,] torch.long):
+        system_idx (torch.Tensor [n_atom,] torch.long):
             A tensor containing the index of the structure to which each atom belongs.
         self_interaction (bool, optional):
             A flag to indicate whether to keep the center atoms as their own neighbors.
@@ -741,7 +741,7 @@ def torch_nl_n2(
                 A tensor containing the indices of the neighbor list for the given
                 positions array. `mapping[0]` corresponds to the central atom indices,
                 and `mapping[1]` corresponds to the neighbor atom indices.
-            batch_mapping (torch.Tensor [n_neighbors]):
+            system_mapping (torch.Tensor [n_neighbors]):
                 A tensor mapping the neighbor atoms to their respective structures.
             shifts_idx (torch.Tensor [n_neighbors, 3]):
                 A tensor containing the cell shift indices used to reconstruct the
@@ -750,14 +750,14 @@ def torch_nl_n2(
     References:
         - https://github.com/felixmusil/torch_nl
     """
-    n_atoms = torch.bincount(batch)
-    mapping, batch_mapping, shifts_idx = transforms.build_naive_neighborhood(
+    n_atoms = torch.bincount(system_idx)
+    mapping, system_mapping, shifts_idx = transforms.build_naive_neighborhood(
         positions, cell, pbc, cutoff, n_atoms, self_interaction
     )
-    mapping, mapping_batch, shifts_idx = strict_nl(
-        cutoff, positions, cell, mapping, batch_mapping, shifts_idx
+    mapping, mapping_system, shifts_idx = strict_nl(
+        cutoff, positions, cell, mapping, system_mapping, shifts_idx
     )
-    return mapping, mapping_batch, shifts_idx
+    return mapping, mapping_system, shifts_idx
 
 
 @torch.jit.script
@@ -766,7 +766,7 @@ def torch_nl_linked_cell(
     positions: torch.Tensor,
     cell: torch.Tensor,
     pbc: torch.Tensor,
-    batch: torch.Tensor,
+    system_idx: torch.Tensor,
     self_interaction: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute the neighbor list for a set of atomic structures using the linked
@@ -784,7 +784,7 @@ def torch_nl_linked_cell(
         pbc (torch.Tensor [n_structure, 3] bool):
             A tensor indicating the periodic boundary conditions to apply.
             Partial PBC are not supported yet.
-        batch (torch.Tensor [n_atom,] torch.long):
+        system_idx (torch.Tensor [n_atom,] torch.long):
             A tensor containing the index of the structure to which each atom belongs.
         self_interaction (bool, optional):
             A flag to indicate whether to keep the center atoms as their own neighbors.
@@ -797,7 +797,7 @@ def torch_nl_linked_cell(
                     A tensor containing the indices of the neighbor list for the given
                     positions array. `mapping[0]` corresponds to the central atom
                     indices, and `mapping[1]` corresponds to the neighbor atom indices.
-                - batch_mapping (torch.Tensor [n_neighbors]):
+                - system_mapping (torch.Tensor [n_neighbors]):
                     A tensor mapping the neighbor atoms to their respective structures.
                 - shifts_idx (torch.Tensor [n_neighbors, 3]):
                     A tensor containing the cell shift indices used to reconstruct the
@@ -806,12 +806,12 @@ def torch_nl_linked_cell(
     References:
         - https://github.com/felixmusil/torch_nl
     """
-    n_atoms = torch.bincount(batch)
-    mapping, batch_mapping, shifts_idx = transforms.build_linked_cell_neighborhood(
+    n_atoms = torch.bincount(system_idx)
+    mapping, system_mapping, shifts_idx = transforms.build_linked_cell_neighborhood(
         positions, cell, pbc, cutoff, n_atoms, self_interaction
     )
 
-    mapping, mapping_batch, shifts_idx = strict_nl(
-        cutoff, positions, cell, mapping, batch_mapping, shifts_idx
+    mapping, mapping_system, shifts_idx = strict_nl(
+        cutoff, positions, cell, mapping, system_mapping, shifts_idx
     )
-    return mapping, mapping_batch, shifts_idx
+    return mapping, mapping_system, shifts_idx

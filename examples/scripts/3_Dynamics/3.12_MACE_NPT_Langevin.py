@@ -68,7 +68,9 @@ state = nvt_init(state=state, seed=1)
 for step in range(N_steps_nvt):
     if step % 10 == 0:
         temp = (
-            calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+            calc_kT(
+                masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+            )
             / Units.temperature
         )
         invariant = float(nvt_nose_hoover_invariant(state, kT=kT))
@@ -83,7 +85,9 @@ state = npt_init(state=state, seed=1)
 for step in range(N_steps_npt):
     if step % 10 == 0:
         temp = (
-            calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+            calc_kT(
+                masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+            )
             / Units.temperature
         )
         stress = model(state)["stress"]
@@ -92,7 +96,9 @@ for step in range(N_steps_npt):
             get_pressure(
                 stress,
                 calc_kinetic_energy(
-                    masses=state.masses, momenta=state.momenta, batch=state.batch
+                    masses=state.masses,
+                    momenta=state.momenta,
+                    system_idx=state.system_idx,
                 ),
                 volume,
             ).item()
@@ -107,7 +113,7 @@ for step in range(N_steps_npt):
     state = npt_update(state, kT=kT, external_pressure=target_pressure)
 
 final_temp = (
-    calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+    calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
     / Units.temperature
 )
 print(f"Final temperature: {final_temp.item():.4f} K")
@@ -117,7 +123,7 @@ final_pressure = (
     get_pressure(
         final_stress,
         calc_kinetic_energy(
-            masses=state.masses, momenta=state.momenta, batch=state.batch
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
         ),
         final_volume,
     ).item()

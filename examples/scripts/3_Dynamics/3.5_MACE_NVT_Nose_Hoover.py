@@ -68,7 +68,9 @@ state = nvt_init(state=state, kT=kT, seed=1)
 for step in range(N_steps):
     if step % 10 == 0:
         temp = (
-            calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+            calc_kT(
+                masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+            )
             / Units.temperature
         )
         invariant = float(nvt_nose_hoover_invariant(state, kT=kT))
@@ -76,7 +78,7 @@ for step in range(N_steps):
     state = nvt_update(state=state, kT=kT)
 
 final_temp = (
-    calc_kT(masses=state.masses, momenta=state.momenta, batch=state.batch)
+    calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
     / Units.temperature
 )
 print(f"Final temperature: {final_temp.item():.4f}")

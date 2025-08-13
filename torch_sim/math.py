@@ -1000,7 +1000,7 @@ def batched_vdot(
         batch_indices: Tensor of shape [N_total_entities] indicating batch membership.
 
     Returns:
-        Tensor: shape [n_batches] where each element is the sum(x_i * y_i)
+        Tensor: shape [n_systems] where each element is the sum(x_i * y_i)
     for entities belonging to that batch,
         summed over all components D and all entities in the batch.
     """

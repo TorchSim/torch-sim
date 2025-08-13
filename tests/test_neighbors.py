@@ -37,7 +37,7 @@ def ase_to_torch_batch(
             - pos: Tensor of atomic positions.
             - cell: Tensor of unit cell vectors.
             - pbc: Tensor indicating periodic boundary conditions.
-            - batch: Tensor indicating the batch index for each atom.
+            - system_idx: Tensor indicating the system index for each atom.
             - n_atoms: Tensor containing the number of atoms in each structure.
     """
     n_atoms = torch.tensor([len(atoms) for atoms in atoms_list], dtype=torch.long)
@@ -49,17 +49,17 @@ def ase_to_torch_batch(
     pbc = torch.cat([torch.from_numpy(atoms.get_pbc()) for atoms in atoms_list])
 
     stride = torch.cat((torch.tensor([0]), n_atoms.cumsum(0)))
-    batch = torch.zeros(pos.shape[0], dtype=torch.long)
+    system_idx = torch.zeros(pos.shape[0], dtype=torch.long)
     for ii, (st, end) in enumerate(
         zip(stride[:-1], stride[1:], strict=True)  # noqa: RUF007
     ):
-        batch[st:end] = ii
+        system_idx[st:end] = ii
     n_atoms = torch.Tensor(n_atoms[1:]).to(dtype=torch.long)
     return (
         pos.to(dtype=dtype, device=device),
         cell.to(dtype=dtype, device=device),
         pbc.to(device=device),
-        batch.to(device=device),
+        system_idx.to(device=device),
         n_atoms.to(device=device),
     )
 
@@ -342,13 +342,13 @@ def test_torch_nl_implementations(
     )
 
     # Get the neighbor list from the implementation being tested
-    mapping, mapping_batch, shifts_idx = nl_implementation(
+    mapping, mapping_system, shifts_idx = nl_implementation(
         cutoff, pos, row_vector_cell, pbc, batch, self_interaction
     )
 
     # Calculate distances
     cell_shifts = transforms.compute_cell_shifts(
-        row_vector_cell, shifts_idx, mapping_batch
+        row_vector_cell, shifts_idx, mapping_system
     )
     dds = transforms.compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
     dds = np.sort(dds.numpy())
@@ -496,7 +496,7 @@ def test_strict_nl_edge_cases(
 
     # Test with no cell shifts
     mapping = torch.tensor([[0], [1]], device=device, dtype=torch.long)
-    batch_mapping = torch.tensor([0], device=device, dtype=torch.long)
+    system_mapping = torch.tensor([0], device=device, dtype=torch.long)
     shifts_idx = torch.zeros((1, 3), device=device, dtype=torch.long)
 
     new_mapping, new_batch, new_shifts = neighbors.strict_nl(
@@ -504,14 +504,14 @@ def test_strict_nl_edge_cases(
         positions=pos,
         cell=cell,
         mapping=mapping,
-        batch_mapping=batch_mapping,
+        system_mapping=system_mapping,
         shifts_idx=shifts_idx,
     )
     assert len(new_mapping[0]) > 0  # Should find neighbors
 
     # Test with different batch mappings
     mapping = torch.tensor([[0, 1], [1, 0]], device=device, dtype=torch.long)
-    batch_mapping = torch.tensor([0, 1], device=device, dtype=torch.long)
+    system_mapping = torch.tensor([0, 1], device=device, dtype=torch.long)
     shifts_idx = torch.zeros((2, 3), device=device, dtype=torch.long)
 
     new_mapping, new_batch, new_shifts = neighbors.strict_nl(
@@ -519,7 +519,7 @@ def test_strict_nl_edge_cases(
         positions=pos,
         cell=cell,
         mapping=mapping,
-        batch_mapping=batch_mapping,
+        system_mapping=system_mapping,
         shifts_idx=shifts_idx,
     )
     assert len(new_mapping[0]) > 0  # Should find neighbors
@@ -556,11 +556,11 @@ def test_neighbor_lists_time_and_memory(
         start_time = time.perf_counter()
 
         if nl_fn in [neighbors.torch_nl_n2, neighbors.torch_nl_linked_cell]:
-            batch = torch.zeros(n_atoms, dtype=torch.long, device=device)
+            system_idx = torch.zeros(n_atoms, dtype=torch.long, device=device)
             # Fix pbc tensor shape
             pbc = torch.tensor([[True, True, True]], device=device)
-            mapping, mapping_batch, shifts_idx = nl_fn(
-                cutoff, pos, cell, pbc, batch, self_interaction=False
+            mapping, mapping_system, shifts_idx = nl_fn(
+                cutoff, pos, cell, pbc, system_idx, self_interaction=False
             )
         else:
             mapping, shifts = nl_fn(positions=pos, cell=cell, pbc=True, cutoff=cutoff)

@@ -25,6 +25,7 @@ from typing import Any, Literal, get_args
 import torch
 
 import torch_sim.math as tsm
+from torch_sim.models.interface import ModelInterface
 from torch_sim.state import DeformGradMixin, SimState
 from torch_sim.typing import StateDict
 
@@ -44,12 +45,12 @@ class GDState(SimState):
     Attributes:
         positions (torch.Tensor): Atomic positions with shape [n_atoms, 3]
         masses (torch.Tensor): Atomic masses with shape [n_atoms]
-        cell (torch.Tensor): Unit cell vectors with shape [n_batches, 3, 3]
+        cell (torch.Tensor): Unit cell vectors with shape [n_systems, 3, 3]
         pbc (bool): Whether to use periodic boundary conditions
         atomic_numbers (torch.Tensor): Atomic numbers with shape [n_atoms]
-        batch (torch.Tensor): Batch indices with shape [n_atoms]
+        system_idx (torch.Tensor): System indices with shape [n_atoms]
         forces (torch.Tensor): Forces acting on atoms with shape [n_atoms, 3]
-        energy (torch.Tensor): Potential energy with shape [n_batches]
+        energy (torch.Tensor): Potential energy with shape [n_systems]
     """
 
     forces: torch.Tensor
@@ -57,7 +58,7 @@ class GDState(SimState):
 
 
 def gradient_descent(
-    model: torch.nn.Module, *, lr: torch.Tensor | float = 0.01
+    model: ModelInterface, *, lr: torch.Tensor | float = 0.01
 ) -> tuple[Callable[[StateDict | SimState], GDState], Callable[[GDState], GDState]]:
     """Initialize a batched gradient descent optimization.
 
@@ -68,8 +69,8 @@ def gradient_descent(
     Args:
         model (torch.nn.Module): Model that computes energies and forces
         lr (torch.Tensor | float): Learning rate(s) for optimization. Can be a single
-            float applied to all batches or a tensor with shape [n_batches] for
-            batch-specific rates
+            float applied to all systems or a tensor with shape [n_systems] for
+            system-specific rates
 
     Returns:
         tuple: A pair of functions:
@@ -113,7 +114,7 @@ def gradient_descent(
             cell=state.cell,
             pbc=state.pbc,
             atomic_numbers=atomic_numbers,
-            batch=state.batch,
+            system_idx=state.system_idx,
         )
 
     def gd_step(state: GDState, lr: torch.Tensor = lr) -> GDState:
@@ -129,9 +130,9 @@ def gradient_descent(
         """
         # Get per-atom learning rates by mapping batch learning rates to atoms
         if isinstance(lr, float):
-            lr = torch.full((state.n_batches,), lr, device=device, dtype=dtype)
+            lr = torch.full((state.n_systems,), lr, device=device, dtype=dtype)
 
-        atom_lr = lr[state.batch].unsqueeze(-1)  # shape: (total_atoms, 1)
+        atom_lr = lr[state.system_idx].unsqueeze(-1)  # shape: (total_atoms, 1)
 
         # Update positions using forces and per-atom learning rates
         state.positions = state.positions + atom_lr * state.forces
@@ -160,25 +161,25 @@ class UnitCellGDState(GDState, DeformGradMixin):
         # Inherited from GDState
         positions (torch.Tensor): Atomic positions with shape [n_atoms, 3]
         masses (torch.Tensor): Atomic masses with shape [n_atoms]
-        cell (torch.Tensor): Unit cell vectors with shape [n_batches, 3, 3]
+        cell (torch.Tensor): Unit cell vectors with shape [n_systems, 3, 3]
         pbc (bool): Whether to use periodic boundary conditions
         atomic_numbers (torch.Tensor): Atomic numbers with shape [n_atoms]
-        batch (torch.Tensor): Batch indices with shape [n_atoms]
+        system_idx (torch.Tensor): System indices with shape [n_atoms]
         forces (torch.Tensor): Forces acting on atoms with shape [n_atoms, 3]
-        energy (torch.Tensor): Potential energy with shape [n_batches]
+        energy (torch.Tensor): Potential energy with shape [n_systems]
 
         # Additional attributes for cell optimization
-        stress (torch.Tensor): Stress tensor with shape [n_batches, 3, 3]
+        stress (torch.Tensor): Stress tensor with shape [n_systems, 3, 3]
         reference_cell (torch.Tensor): Reference unit cells with shape
-            [n_batches, 3, 3]
+            [n_systems, 3, 3]
         cell_factor (torch.Tensor): Scaling factor for cell optimization with shape
-            [n_batches, 1, 1]
+            [n_systems, 1, 1]
         hydrostatic_strain (bool): Whether to only allow hydrostatic deformation
         constant_volume (bool): Whether to maintain constant volume
-        pressure (torch.Tensor): Applied pressure tensor with shape [n_batches, 3, 3]
-        cell_positions (torch.Tensor): Cell positions with shape [n_batches, 3, 3]
-        cell_forces (torch.Tensor): Cell forces with shape [n_batches, 3, 3]
-        cell_masses (torch.Tensor): Cell masses with shape [n_batches, 3]
+        pressure (torch.Tensor): Applied pressure tensor with shape [n_systems, 3, 3]
+        cell_positions (torch.Tensor): Cell positions with shape [n_systems, 3, 3]
+        cell_forces (torch.Tensor): Cell forces with shape [n_systems, 3, 3]
+        cell_masses (torch.Tensor): Cell masses with shape [n_systems, 3]
     """
 
     # Required attributes not in BatchedGDState
@@ -196,7 +197,7 @@ class UnitCellGDState(GDState, DeformGradMixin):
 
 
 def unit_cell_gradient_descent(  # noqa: PLR0915, C901
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     positions_lr: float = 0.01,
     cell_lr: float = 0.1,
@@ -224,7 +225,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
             is 0.01.
         cell_lr (float): Learning rate for unit cell optimization. Default is 0.1.
         cell_factor (float | torch.Tensor | None): Scaling factor for cell
-            optimization. If None, defaults to number of atoms per batch
+            optimization. If None, defaults to number of atoms per system
         hydrostatic_strain (bool): Whether to only allow hydrostatic deformation
             (isotropic scaling). Default is False.
         constant_volume (bool): Whether to maintain constant volume during optimization
@@ -270,25 +271,25 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         if not isinstance(state, SimState):
             state = SimState(**state)
 
-        n_batches = state.n_batches
+        n_systems = state.n_systems
 
         # Setup cell_factor
         if cell_factor is None:
-            # Count atoms per batch
-            _, counts = torch.unique(state.batch, return_counts=True)
+            # Count atoms per system
+            _, counts = torch.unique(state.system_idx, return_counts=True)
             cell_factor = counts.to(dtype=dtype)
 
         if isinstance(cell_factor, int | float):
-            # Use same factor for all batches
+            # Use same factor for all systems
             cell_factor = torch.full(
-                (state.n_batches,), cell_factor, device=device, dtype=dtype
+                (state.n_systems,), cell_factor, device=device, dtype=dtype
             )
 
-        # Reshape to (n_batches, 1, 1) for broadcasting
-        cell_factor = cell_factor.view(n_batches, 1, 1)
+        # Reshape to (n_systems, 1, 1) for broadcasting
+        cell_factor = cell_factor.view(n_systems, 1, 1)
 
         scalar_pressure = torch.full(
-            (state.n_batches, 1, 1), scalar_pressure, device=device, dtype=dtype
+            (state.n_systems, 1, 1), scalar_pressure, device=device, dtype=dtype
         )
         # Setup pressure tensor
         pressure = scalar_pressure * torch.eye(3, device=device)
@@ -297,11 +298,11 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         model_output = model(state)
         energy = model_output["energy"]
         forces = model_output["forces"]
-        stress = model_output["stress"]  # Already shape: (n_batches, 3, 3)
+        stress = model_output["stress"]  # Already shape: (n_systems, 3, 3)
 
         # Create cell masses
         cell_masses = torch.ones(
-            (state.n_batches, 3), device=device, dtype=dtype
+            (state.n_systems, 3), device=device, dtype=dtype
         )  # One mass per cell DOF
 
         # Get current deformation gradient
@@ -311,27 +312,27 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
 
         # Calculate cell positions
         cell_factor_expanded = cell_factor.expand(
-            state.n_batches, 3, 1
-        )  # shape: (n_batches, 3, 1)
+            state.n_systems, 3, 1
+        )  # shape: (n_systems, 3, 1)
         cell_positions = (
-            cur_deform_grad.reshape(state.n_batches, 3, 3) * cell_factor_expanded
-        )  # shape: (n_batches, 3, 3)
+            cur_deform_grad.reshape(state.n_systems, 3, 3) * cell_factor_expanded
+        )  # shape: (n_systems, 3, 3)
 
         # Calculate virial
-        volumes = torch.linalg.det(state.cell).view(n_batches, 1, 1)
+        volumes = torch.linalg.det(state.cell).view(n_systems, 1, 1)
         virial = -volumes * (stress + pressure)
 
         if hydrostatic_strain:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
             virial = diag_mean.unsqueeze(-1) * torch.eye(3, device=device).unsqueeze(
                 0
-            ).expand(state.n_batches, -1, -1)
+            ).expand(state.n_systems, -1, -1)
 
         if constant_volume:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
             virial = virial - diag_mean.unsqueeze(-1) * torch.eye(
                 3, device=device
-            ).unsqueeze(0).expand(state.n_batches, -1, -1)
+            ).unsqueeze(0).expand(state.n_systems, -1, -1)
 
         return UnitCellGDState(
             positions=state.positions,
@@ -347,7 +348,7 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
             constant_volume=constant_volume,
             pressure=pressure,
             atomic_numbers=state.atomic_numbers,
-            batch=state.batch,
+            system_idx=state.system_idx,
             cell_positions=cell_positions,
             cell_forces=virial / cell_factor,
             cell_masses=cell_masses,
@@ -371,29 +372,29 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
             Updated UnitCellGDState after one optimization step
         """
         # Get dimensions
-        n_batches = state.n_batches
+        n_systems = state.n_systems
 
-        # Get per-atom learning rates by mapping batch learning rates to atoms
+        # Get per-atom learning rates by mapping system learning rates to atoms
         if isinstance(positions_lr, float):
             positions_lr = torch.full(
-                (state.n_batches,), positions_lr, device=device, dtype=dtype
+                (state.n_systems,), positions_lr, device=device, dtype=dtype
             )
 
         if isinstance(cell_lr, float):
-            cell_lr = torch.full((state.n_batches,), cell_lr, device=device, dtype=dtype)
+            cell_lr = torch.full((state.n_systems,), cell_lr, device=device, dtype=dtype)
 
         # Get current deformation gradient
         cur_deform_grad = state.deform_grad()
 
         # Calculate cell positions from deformation gradient
-        cell_factor_expanded = state.cell_factor.expand(n_batches, 3, 1)
+        cell_factor_expanded = state.cell_factor.expand(n_systems, 3, 1)
         cell_positions = (
-            cur_deform_grad.reshape(n_batches, 3, 3) * cell_factor_expanded
-        )  # shape: (n_batches, 3, 3)
+            cur_deform_grad.reshape(n_systems, 3, 3) * cell_factor_expanded
+        )  # shape: (n_systems, 3, 3)
 
         # Get per-atom and per-cell learning rates
-        atom_wise_lr = positions_lr[state.batch].unsqueeze(-1)
-        cell_wise_lr = cell_lr.view(n_batches, 1, 1)  # shape: (n_batches, 1, 1)
+        atom_wise_lr = positions_lr[state.system_idx].unsqueeze(-1)
+        cell_wise_lr = cell_lr.view(n_systems, 1, 1)  # shape: (n_systems, 1, 1)
 
         # Update atomic and cell positions
         atomic_positions_new = state.positions + atom_wise_lr * state.forces
@@ -415,18 +416,18 @@ def unit_cell_gradient_descent(  # noqa: PLR0915, C901
         state.stress = model_output["stress"]
 
         # Calculate virial for cell forces
-        volumes = torch.linalg.det(new_row_vector_cell).view(n_batches, 1, 1)
+        volumes = torch.linalg.det(new_row_vector_cell).view(n_systems, 1, 1)
         virial = -volumes * (state.stress + state.pressure)
         if state.hydrostatic_strain:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
             virial = diag_mean.unsqueeze(-1) * torch.eye(3, device=device).unsqueeze(
                 0
-            ).expand(n_batches, -1, -1)
+            ).expand(n_systems, -1, -1)
         if state.constant_volume:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
             virial = virial - diag_mean.unsqueeze(-1) * torch.eye(
                 3, device=device
-            ).unsqueeze(0).expand(n_batches, -1, -1)
+            ).unsqueeze(0).expand(n_systems, -1, -1)
 
         # Update cell forces
         state.cell_positions = cell_positions_new
@@ -450,21 +451,21 @@ class FireState(SimState):
         # Inherited from SimState
         positions (torch.Tensor): Atomic positions with shape [n_atoms, 3]
         masses (torch.Tensor): Atomic masses with shape [n_atoms]
-        cell (torch.Tensor): Unit cell vectors with shape [n_batches, 3, 3]
+        cell (torch.Tensor): Unit cell vectors with shape [n_systems, 3, 3]
         pbc (bool): Whether to use periodic boundary conditions
         atomic_numbers (torch.Tensor): Atomic numbers with shape [n_atoms]
-        batch (torch.Tensor): Batch indices with shape [n_atoms]
+        system_idx (torch.Tensor): System indices with shape [n_atoms]
 
         # Atomic quantities
         forces (torch.Tensor): Forces on atoms with shape [n_atoms, 3]
         velocities (torch.Tensor): Atomic velocities with shape [n_atoms, 3]
-        energy (torch.Tensor): Energy per batch with shape [n_batches]
+        energy (torch.Tensor): Energy per system with shape [n_systems]
 
         # FIRE optimization parameters
-        dt (torch.Tensor): Current timestep per batch with shape [n_batches]
-        alpha (torch.Tensor): Current mixing parameter per batch with shape [n_batches]
-        n_pos (torch.Tensor): Number of positive power steps per batch with shape
-            [n_batches]
+        dt (torch.Tensor): Current timestep per system with shape [n_systems]
+        alpha (torch.Tensor): Current mixing parameter per system with shape [n_systems]
+        n_pos (torch.Tensor): Number of positive power steps per system with shape
+            [n_systems]
 
     Properties:
         momenta (torch.Tensor): Atomwise momenta of the system with shape [n_atoms, 3],
@@ -474,7 +475,7 @@ class FireState(SimState):
     # Required attributes not in SimState
     forces: torch.Tensor
     energy: torch.Tensor
-    velocities: torch.Tensor | None
+    velocities: torch.Tensor
 
     # FIRE algorithm parameters
     dt: torch.Tensor
@@ -483,7 +484,7 @@ class FireState(SimState):
 
 
 def fire(
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     dt_max: float = 1.0,
     dt_start: float = 0.1,
@@ -558,8 +559,8 @@ def fire(
 
         Args:
             state: Input state as SimState object or state parameter dict
-            dt_start: Initial timestep per batch
-            alpha_start: Initial mixing parameter per batch
+            dt_start: Initial timestep per system
+            alpha_start: Initial mixing parameter per system
 
         Returns:
             FireState with initialized optimization tensors
@@ -568,18 +569,18 @@ def fire(
             state = SimState(**state)
 
         # Get dimensions
-        n_batches = state.n_batches
+        n_systems = state.n_systems
 
         # Get initial forces and energy from model
         model_output = model(state)
 
-        energy = model_output["energy"]  # [n_batches]
+        energy = model_output["energy"]  # [n_systems]
         forces = model_output["forces"]  # [n_total_atoms, 3]
 
         # Setup parameters
-        dt_start = torch.full((n_batches,), dt_start, device=device, dtype=dtype)
-        alpha_start = torch.full((n_batches,), alpha_start, device=device, dtype=dtype)
-        n_pos = torch.zeros((n_batches,), device=device, dtype=torch.int32)
+        dt_start = torch.full((n_systems,), dt_start, device=device, dtype=dtype)
+        alpha_start = torch.full((n_systems,), alpha_start, device=device, dtype=dtype)
+        n_pos = torch.zeros((n_systems,), device=device, dtype=torch.int32)
 
         return FireState(  # Create initial state
             # Copy SimState attributes
@@ -587,9 +588,11 @@ def fire(
             masses=state.masses.clone(),
             cell=state.cell.clone(),
             atomic_numbers=state.atomic_numbers.clone(),
-            batch=state.batch.clone(),
+            system_idx=state.system_idx.clone(),
             pbc=state.pbc,
-            velocities=None,
+            velocities=torch.full(
+                state.positions.shape, torch.nan, device=device, dtype=dtype
+            ),
             forces=forces,
             energy=energy,
             # Optimization attributes
@@ -630,36 +633,36 @@ class UnitCellFireState(SimState, DeformGradMixin):
         # Inherited from SimState
         positions (torch.Tensor): Atomic positions with shape [n_atoms, 3]
         masses (torch.Tensor): Atomic masses with shape [n_atoms]
-        cell (torch.Tensor): Unit cell vectors with shape [n_batches, 3, 3]
+        cell (torch.Tensor): Unit cell vectors with shape [n_systems, 3, 3]
         pbc (bool): Whether to use periodic boundary conditions
         atomic_numbers (torch.Tensor): Atomic numbers with shape [n_atoms]
-        batch (torch.Tensor): Batch indices with shape [n_atoms]
+        system_idx (torch.Tensor): System indices with shape [n_atoms]
 
         # Atomic quantities
         forces (torch.Tensor): Forces on atoms with shape [n_atoms, 3]
         velocities (torch.Tensor): Atomic velocities with shape [n_atoms, 3]
-        energy (torch.Tensor): Energy per batch with shape [n_batches]
-        stress (torch.Tensor): Stress tensor with shape [n_batches, 3, 3]
+        energy (torch.Tensor): Energy per system with shape [n_systems]
+        stress (torch.Tensor): Stress tensor with shape [n_systems, 3, 3]
 
         # Cell quantities
-        cell_positions (torch.Tensor): Cell positions with shape [n_batches, 3, 3]
-        cell_velocities (torch.Tensor): Cell velocities with shape [n_batches, 3, 3]
-        cell_forces (torch.Tensor): Cell forces with shape [n_batches, 3, 3]
-        cell_masses (torch.Tensor): Cell masses with shape [n_batches, 3]
+        cell_positions (torch.Tensor): Cell positions with shape [n_systems, 3, 3]
+        cell_velocities (torch.Tensor): Cell velocities with shape [n_systems, 3, 3]
+        cell_forces (torch.Tensor): Cell forces with shape [n_systems, 3, 3]
+        cell_masses (torch.Tensor): Cell masses with shape [n_systems, 3]
 
         # Cell optimization parameters
-        reference_cell (torch.Tensor): Original unit cells with shape [n_batches, 3, 3]
+        reference_cell (torch.Tensor): Original unit cells with shape [n_systems, 3, 3]
         cell_factor (torch.Tensor): Cell optimization scaling factor with shape
-            [n_batches, 1, 1]
-        pressure (torch.Tensor): Applied pressure tensor with shape [n_batches, 3, 3]
+            [n_systems, 1, 1]
+        pressure (torch.Tensor): Applied pressure tensor with shape [n_systems, 3, 3]
         hydrostatic_strain (bool): Whether to only allow hydrostatic deformation
         constant_volume (bool): Whether to maintain constant volume
 
         # FIRE optimization parameters
-        dt (torch.Tensor): Current timestep per batch with shape [n_batches]
-        alpha (torch.Tensor): Current mixing parameter per batch with shape [n_batches]
-        n_pos (torch.Tensor): Number of positive power steps per batch with shape
-            [n_batches]
+        dt (torch.Tensor): Current timestep per system with shape [n_systems]
+        alpha (torch.Tensor): Current mixing parameter per system with shape [n_systems]
+        n_pos (torch.Tensor): Number of positive power steps per system with shape
+            [n_systems]
 
     Properties:
         momenta (torch.Tensor): Atomwise momenta of the system with shape [n_atoms, 3],
@@ -692,7 +695,7 @@ class UnitCellFireState(SimState, DeformGradMixin):
 
 
 def unit_cell_fire(
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     dt_max: float = 1.0,
     dt_start: float = 0.1,
@@ -708,7 +711,7 @@ def unit_cell_fire(
     max_step: float = 0.2,
     md_flavor: MdFlavor = ase_fire_key,
 ) -> tuple[
-    UnitCellFireState,
+    Callable[[SimState | StateDict], UnitCellFireState],
     Callable[[UnitCellFireState], UnitCellFireState],
 ]:
     """Initialize a batched FIRE optimization with unit cell degrees of freedom.
@@ -728,7 +731,7 @@ def unit_cell_fire(
         alpha_start (float): Initial velocity mixing parameter
         f_alpha (float): Factor for mixing parameter decrease
         cell_factor (float | None): Scaling factor for cell optimization.
-            If None, defaults to number of atoms per batch
+            If None, defaults to number of atoms per system
         hydrostatic_strain (bool): Whether to only allow hydrostatic deformation
             (isotropic scaling)
         constant_volume (bool): Whether to maintain constant volume during optimization
@@ -782,11 +785,11 @@ def unit_cell_fire(
 
         Args:
             state: Input state as SimState object or state parameter dict
-            cell_factor: Cell optimization scaling factor. If None, uses atoms per batch.
-                Single value or tensor of shape [n_batches].
+            cell_factor: Cell optimization scaling factor. If None, uses atoms per system.
+                Single value or tensor of shape [n_systems].
             scalar_pressure: Applied pressure in energy units
-            dt_start: Initial timestep per batch
-            alpha_start: Initial mixing parameter per batch
+            dt_start: Initial timestep per system
+            alpha_start: Initial mixing parameter per system
 
         Returns:
             UnitCellFireState with initialized optimization tensors
@@ -795,64 +798,64 @@ def unit_cell_fire(
             state = SimState(**state)
 
         # Get dimensions
-        n_batches = state.n_batches
+        n_systems = state.n_systems
 
         # Setup cell_factor
         if cell_factor is None:
-            # Count atoms per batch
-            _, counts = torch.unique(state.batch, return_counts=True)
+            # Count atoms per system
+            _, counts = torch.unique(state.system_idx, return_counts=True)
             cell_factor = counts.to(dtype=dtype)
 
         if isinstance(cell_factor, int | float):
-            # Use same factor for all batches
+            # Use same factor for all systems
             cell_factor = torch.full(
-                (state.n_batches,), cell_factor, device=device, dtype=dtype
+                (state.n_systems,), cell_factor, device=device, dtype=dtype
             )
 
-        # Reshape to (n_batches, 1, 1) for broadcasting
-        cell_factor = cell_factor.view(n_batches, 1, 1)
+        # Reshape to (n_systems, 1, 1) for broadcasting
+        cell_factor = cell_factor.view(n_systems, 1, 1)
 
         # Setup pressure tensor
         pressure = scalar_pressure * torch.eye(3, device=device, dtype=dtype)
-        pressure = pressure.unsqueeze(0).expand(n_batches, -1, -1)
+        pressure = pressure.unsqueeze(0).expand(n_systems, -1, -1)
 
         # Get initial forces and energy from model
         model_output = model(state)
 
-        energy = model_output["energy"]  # [n_batches]
+        energy = model_output["energy"]  # [n_systems]
         forces = model_output["forces"]  # [n_total_atoms, 3]
-        stress = model_output["stress"]  # [n_batches, 3, 3]
+        stress = model_output["stress"]  # [n_systems, 3, 3]
 
-        volumes = torch.linalg.det(state.cell).view(n_batches, 1, 1)
+        volumes = torch.linalg.det(state.cell).view(n_systems, 1, 1)
         virial = -volumes * (stress + pressure)  # P is P_ext * I
 
         if hydrostatic_strain:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
             virial = diag_mean.unsqueeze(-1) * torch.eye(3, device=device).unsqueeze(
                 0
-            ).expand(n_batches, -1, -1)
+            ).expand(n_systems, -1, -1)
 
         if constant_volume:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
             virial = virial - diag_mean.unsqueeze(-1) * torch.eye(
                 3, device=device
-            ).unsqueeze(0).expand(n_batches, -1, -1)
+            ).unsqueeze(0).expand(n_systems, -1, -1)
 
         cell_forces = virial / cell_factor
 
-        # Sum masses per batch using segment_reduce
+        # Sum masses per system using segment_reduce
         # TODO (AG): check this
-        batch_counts = torch.bincount(state.batch)
+        system_counts = torch.bincount(state.system_idx)
 
         cell_masses = torch.segment_reduce(
-            state.masses, reduce="sum", lengths=batch_counts
-        )  # shape: (n_batches,)
-        cell_masses = cell_masses.unsqueeze(-1).expand(-1, 3)  # shape: (n_batches, 3)
+            state.masses, reduce="sum", lengths=system_counts
+        )  # shape: (n_systems,)
+        cell_masses = cell_masses.unsqueeze(-1).expand(-1, 3)  # shape: (n_systems, 3)
 
         # Setup parameters
-        dt_start = torch.full((n_batches,), dt_start, device=device, dtype=dtype)
-        alpha_start = torch.full((n_batches,), alpha_start, device=device, dtype=dtype)
-        n_pos = torch.zeros((n_batches,), device=device, dtype=torch.int32)
+        dt_start = torch.full((n_systems,), dt_start, device=device, dtype=dtype)
+        alpha_start = torch.full((n_systems,), alpha_start, device=device, dtype=dtype)
+        n_pos = torch.zeros((n_systems,), device=device, dtype=torch.int32)
 
         return UnitCellFireState(  # Create initial state
             # Copy SimState attributes
@@ -860,15 +863,19 @@ def unit_cell_fire(
             masses=state.masses.clone(),
             cell=state.cell.clone(),
             atomic_numbers=state.atomic_numbers.clone(),
-            batch=state.batch.clone(),
+            system_idx=state.system_idx.clone(),
             pbc=state.pbc,
-            velocities=None,
+            velocities=torch.full(
+                state.positions.shape, torch.nan, device=device, dtype=dtype
+            ),
             forces=forces,
             energy=energy,
             stress=stress,
             # Cell attributes
-            cell_positions=torch.zeros(n_batches, 3, 3, device=device, dtype=dtype),
-            cell_velocities=None,
+            cell_positions=torch.zeros(n_systems, 3, 3, device=device, dtype=dtype),
+            cell_velocities=torch.full(
+                cell_forces.shape, torch.nan, device=device, dtype=dtype
+            ),
             cell_forces=cell_forces,
             cell_masses=cell_masses,
             # Optimization attributes
@@ -913,37 +920,37 @@ class FrechetCellFIREState(SimState, DeformGradMixin):
         # Inherited from SimState
         positions (torch.Tensor): Atomic positions with shape [n_atoms, 3]
         masses (torch.Tensor): Atomic masses with shape [n_atoms]
-        cell (torch.Tensor): Unit cell vectors with shape [n_batches, 3, 3]
+        cell (torch.Tensor): Unit cell vectors with shape [n_systems, 3, 3]
         pbc (bool): Whether to use periodic boundary conditions
         atomic_numbers (torch.Tensor): Atomic numbers with shape [n_atoms]
-        batch (torch.Tensor): Batch indices with shape [n_atoms]
+        system_idx (torch.Tensor): System indices with shape [n_atoms]
 
         # Additional atomic quantities
         forces (torch.Tensor): Forces on atoms with shape [n_atoms, 3]
-        energy (torch.Tensor): Energy per batch with shape [n_batches]
+        energy (torch.Tensor): Energy per system with shape [n_systems]
         velocities (torch.Tensor): Atomic velocities with shape [n_atoms, 3]
-        stress (torch.Tensor): Stress tensor with shape [n_batches, 3, 3]
+        stress (torch.Tensor): Stress tensor with shape [n_systems, 3, 3]
 
         # Optimization-specific attributes
-        reference_cell (torch.Tensor): Original unit cell with shape [n_batches, 3, 3]
+        reference_cell (torch.Tensor): Original unit cell with shape [n_systems, 3, 3]
         cell_factor (torch.Tensor): Scaling factor for cell optimization with shape
-            [n_batches, 1, 1]
-        pressure (torch.Tensor): Applied pressure tensor with shape [n_batches, 3, 3]
+            [n_systems, 1, 1]
+        pressure (torch.Tensor): Applied pressure tensor with shape [n_systems, 3, 3]
         hydrostatic_strain (bool): Whether to only allow hydrostatic deformation
         constant_volume (bool): Whether to maintain constant volume
 
         # Cell attributes using log parameterization
         cell_positions (torch.Tensor): Cell positions using log parameterization with
-            shape [n_batches, 3, 3]
-        cell_velocities (torch.Tensor): Cell velocities with shape [n_batches, 3, 3]
-        cell_forces (torch.Tensor): Cell forces with shape [n_batches, 3, 3]
-        cell_masses (torch.Tensor): Cell masses with shape [n_batches, 3]
+            shape [n_systems, 3, 3]
+        cell_velocities (torch.Tensor): Cell velocities with shape [n_systems, 3, 3]
+        cell_forces (torch.Tensor): Cell forces with shape [n_systems, 3, 3]
+        cell_masses (torch.Tensor): Cell masses with shape [n_systems, 3]
 
         # FIRE algorithm parameters
-        dt (torch.Tensor): Current timestep per batch with shape [n_batches]
-        alpha (torch.Tensor): Current mixing parameter per batch with shape [n_batches]
-        n_pos (torch.Tensor): Number of positive power steps per batch with shape
-            [n_batches]
+        dt (torch.Tensor): Current timestep per system with shape [n_systems]
+        alpha (torch.Tensor): Current mixing parameter per system with shape [n_systems]
+        n_pos (torch.Tensor): Number of positive power steps per system with shape
+            [n_systems]
 
     Properties:
         momenta (torch.Tensor): Atomwise momenta of the system with shape [n_atoms, 3],
@@ -965,7 +972,7 @@ class FrechetCellFIREState(SimState, DeformGradMixin):
 
     # Cell attributes
     cell_positions: torch.Tensor
-    cell_velocities: torch.Tensor | None
+    cell_velocities: torch.Tensor
     cell_forces: torch.Tensor
     cell_masses: torch.Tensor
 
@@ -976,7 +983,7 @@ class FrechetCellFIREState(SimState, DeformGradMixin):
 
 
 def frechet_cell_fire(
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     dt_max: float = 1.0,
     dt_start: float = 0.1,
@@ -992,7 +999,7 @@ def frechet_cell_fire(
     max_step: float = 0.2,
     md_flavor: MdFlavor = ase_fire_key,
 ) -> tuple[
-    FrechetCellFIREState,
+    Callable[[SimState | StateDict], FrechetCellFIREState],
     Callable[[FrechetCellFIREState], FrechetCellFIREState],
 ]:
     """Initialize a batched FIRE optimization with Frechet cell parameterization.
@@ -1013,7 +1020,7 @@ def frechet_cell_fire(
         alpha_start (float): Initial velocity mixing parameter
         f_alpha (float): Factor for mixing parameter decrease
         cell_factor (float | None): Scaling factor for cell optimization.
-            If None, defaults to number of atoms per batch
+            If None, defaults to number of atoms per system
         hydrostatic_strain (bool): Whether to only allow hydrostatic deformation
             (isotropic scaling)
         constant_volume (bool): Whether to maintain constant volume during optimization
@@ -1067,11 +1074,11 @@ def frechet_cell_fire(
 
         Args:
             state: Input state as SimState object or state parameter dict
-            cell_factor: Cell optimization scaling factor. If None, uses atoms per batch.
-                         Single value or tensor of shape [n_batches].
+            cell_factor: Cell optimization scaling factor. If None, uses atoms per system.
+                         Single value or tensor of shape [n_systems].
             scalar_pressure: Applied pressure in energy units
-            dt_start: Initial timestep per batch
-            alpha_start: Initial mixing parameter per batch
+            dt_start: Initial timestep per system
+            alpha_start: Initial mixing parameter per system
 
         Returns:
             FrechetCellFIREState with initialized optimization tensors
@@ -1080,78 +1087,78 @@ def frechet_cell_fire(
             state = SimState(**state)
 
         # Get dimensions
-        n_batches = state.n_batches
+        n_systems = state.n_systems
 
         # Setup cell_factor
         if cell_factor is None:
-            # Count atoms per batch
-            _, counts = torch.unique(state.batch, return_counts=True)
+            # Count atoms per system
+            _, counts = torch.unique(state.system_idx, return_counts=True)
             cell_factor = counts.to(dtype=dtype)
 
         if isinstance(cell_factor, int | float):
-            # Use same factor for all batches
+            # Use same factor for all systems
             cell_factor = torch.full(
-                (state.n_batches,), cell_factor, device=device, dtype=dtype
+                (state.n_systems,), cell_factor, device=device, dtype=dtype
             )
 
-        # Reshape to (n_batches, 1, 1) for broadcasting
-        cell_factor = cell_factor.view(n_batches, 1, 1)
+        # Reshape to (n_systems, 1, 1) for broadcasting
+        cell_factor = cell_factor.view(n_systems, 1, 1)
 
         # Setup pressure tensor
         pressure = scalar_pressure * torch.eye(3, device=device, dtype=dtype)
-        pressure = pressure.unsqueeze(0).expand(n_batches, -1, -1)
+        pressure = pressure.unsqueeze(0).expand(n_systems, -1, -1)
 
         # Get initial forces and energy from model
         model_output = model(state)
 
-        energy = model_output["energy"]  # [n_batches]
+        energy = model_output["energy"]  # [n_systems]
         forces = model_output["forces"]  # [n_total_atoms, 3]
-        stress = model_output["stress"]  # [n_batches, 3, 3]
+        stress = model_output["stress"]  # [n_systems, 3, 3]
 
         # Calculate initial cell positions using matrix logarithm
         # Calculate current deformation gradient (identity matrix at start)
         cur_deform_grad = DeformGradMixin._deform_grad(  # noqa: SLF001
             state.row_vector_cell, state.row_vector_cell
-        )  # shape: (n_batches, 3, 3)
+        )  # shape: (n_systems, 3, 3)
 
         # For identity matrix, logm gives zero matrix
         # Initialize cell positions to zeros
-        cell_positions = torch.zeros((n_batches, 3, 3), device=device, dtype=dtype)
+        cell_positions = torch.zeros((n_systems, 3, 3), device=device, dtype=dtype)
 
         # Calculate virial for cell forces
-        volumes = torch.linalg.det(state.cell).view(n_batches, 1, 1)
+        volumes = torch.linalg.det(state.cell).view(n_systems, 1, 1)
         virial = -volumes * (stress + pressure)  # P is P_ext * I
 
         if hydrostatic_strain:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
             virial = diag_mean.unsqueeze(-1) * torch.eye(3, device=device).unsqueeze(
                 0
-            ).expand(n_batches, -1, -1)
+            ).expand(n_systems, -1, -1)
 
         if constant_volume:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
             virial = virial - diag_mean.unsqueeze(-1) * torch.eye(
                 3, device=device
-            ).unsqueeze(0).expand(n_batches, -1, -1)
+            ).unsqueeze(0).expand(n_systems, -1, -1)
 
         # Calculate UCF-style cell gradient
         ucf_cell_grad = torch.zeros_like(virial)
-        for b in range(n_batches):
+        for b in range(n_systems):
             ucf_cell_grad[b] = virial[b] @ torch.linalg.inv(cur_deform_grad[b].T)
         # Calculate cell forces using Frechet derivative approach (all zeros for identity)
         cell_forces = ucf_cell_grad / cell_factor
 
-        # Sum masses per batch
-        batch_counts = torch.bincount(state.batch)
+        # Sum masses per system
+        system_counts = torch.bincount(state.system_idx)
         cell_masses = torch.segment_reduce(
-            state.masses, reduce="sum", lengths=batch_counts
-        )  # shape: (n_batches,)
-        cell_masses = cell_masses.unsqueeze(-1).expand(-1, 3)  # shape: (n_batches, 3)
+            state.masses, reduce="sum", lengths=system_counts
+        )  # shape: (n_systems,)
+        cell_masses = cell_masses.unsqueeze(-1).expand(-1, 3)  # shape: (n_systems, 3)
 
         # Setup parameters
-        dt_start = torch.full((n_batches,), dt_start, device=device, dtype=dtype)
-        alpha_start = torch.full((n_batches,), alpha_start, device=device, dtype=dtype)
-        n_pos = torch.zeros((n_batches,), device=device, dtype=torch.int32)
+        dt_start = torch.full((n_systems,), dt_start, device=device, dtype=dtype)
+        alpha_start = torch.full((n_systems,), alpha_start, device=device, dtype=dtype)
+        n_pos = torch.zeros((n_systems,), device=device, dtype=torch.int32)
 
         return FrechetCellFIREState(  # Create initial state
             # Copy SimState attributes
@@ -1159,15 +1166,19 @@ def frechet_cell_fire(
             masses=state.masses,
             cell=state.cell,
             atomic_numbers=state.atomic_numbers,
-            batch=state.batch,
+            system_idx=state.system_idx,
             pbc=state.pbc,
-            velocities=None,
+            velocities=torch.full(
+                state.positions.shape, torch.nan, device=device, dtype=dtype
+            ),
             forces=forces,
             energy=energy,
             stress=stress,
             # Cell attributes
             cell_positions=cell_positions,
-            cell_velocities=None,
+            cell_velocities=torch.full(
+                cell_forces.shape, torch.nan, device=device, dtype=dtype
+            ),
             cell_forces=cell_forces,
             cell_masses=cell_masses,
             # Optimization attributes
@@ -1204,7 +1215,7 @@ AnyFireCellState = UnitCellFireState | FrechetCellFIREState
 
 def _vv_fire_step(  # noqa: C901, PLR0915
     state: FireState | AnyFireCellState,
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     dt_max: torch.Tensor,
     n_min: torch.Tensor,
@@ -1239,27 +1250,31 @@ def _vv_fire_step(  # noqa: C901, PLR0915
     Returns:
         Updated state after performing one VV-FIRE step.
     """
-    n_batches = state.n_batches
+    n_systems = state.n_systems
     device = state.positions.device
     dtype = state.positions.dtype
     deform_grad_new: torch.Tensor | None = None
 
-    if state.velocities is None:
-        state.velocities = torch.zeros_like(state.positions)
+    nan_velocities = state.velocities.isnan().any(dim=1)
+    if nan_velocities.any():
+        state.velocities[nan_velocities] = torch.zeros_like(
+            state.positions[nan_velocities]
+        )
         if is_cell_optimization:
             if not isinstance(state, AnyFireCellState):
                 raise ValueError(
                     f"Cell optimization requires one of {get_args(AnyFireCellState)}."
                 )
-            state.cell_velocities = torch.zeros(
-                (n_batches, 3, 3), device=device, dtype=dtype
+            nan_cell_velocities = state.cell_velocities.isnan().any(dim=(1, 2))
+            state.cell_velocities[nan_cell_velocities] = torch.zeros_like(
+                state.cell_positions[nan_cell_velocities]
             )
 
-    alpha_start_batch = torch.full(
-        (n_batches,), alpha_start.item(), device=device, dtype=dtype
+    alpha_start_system = torch.full(
+        (n_systems,), alpha_start.item(), device=device, dtype=dtype
     )
 
-    atom_wise_dt = state.dt[state.batch].unsqueeze(-1)
+    atom_wise_dt = state.dt[state.system_idx].unsqueeze(-1)
     state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
 
     if is_cell_optimization:
@@ -1271,13 +1286,13 @@ def _vv_fire_step(  # noqa: C901, PLR0915
     state.positions = state.positions + atom_wise_dt * state.velocities
 
     if is_cell_optimization:
-        cell_factor_reshaped = state.cell_factor.view(n_batches, 1, 1)
+        cell_factor_reshaped = state.cell_factor.view(n_systems, 1, 1)
         if is_frechet:
             if not isinstance(state, expected_cls := FrechetCellFIREState):
                 raise ValueError(f"{type(state)=} must be a {expected_cls.__name__}")
             cur_deform_grad = state.deform_grad()
             deform_grad_log = torch.zeros_like(cur_deform_grad)
-            for b in range(n_batches):
+            for b in range(n_systems):
                 deform_grad_log[b] = tsm.matrix_log_33(cur_deform_grad[b])
 
             cell_positions_log_scaled = deform_grad_log * cell_factor_reshaped
@@ -1295,9 +1310,9 @@ def _vv_fire_step(  # noqa: C901, PLR0915
             if not isinstance(state, expected_cls := UnitCellFireState):
                 raise ValueError(f"{type(state)=} must be a {expected_cls.__name__}")
             cur_deform_grad = state.deform_grad()
-            cell_factor_expanded = state.cell_factor.expand(n_batches, 3, 1)
+            cell_factor_expanded = state.cell_factor.expand(n_systems, 3, 1)
             current_cell_positions_scaled = (
-                cur_deform_grad.view(n_batches, 3, 3) * cell_factor_expanded
+                cur_deform_grad.view(n_systems, 3, 3) * cell_factor_expanded
             )
 
             cell_positions_scaled_new = (
@@ -1316,19 +1331,19 @@ def _vv_fire_step(  # noqa: C901, PLR0915
 
     if is_cell_optimization:
         state.stress = results["stress"]
-        volumes = torch.linalg.det(state.cell).view(n_batches, 1, 1)
+        volumes = torch.linalg.det(state.cell).view(n_systems, 1, 1)
         virial = -volumes * (state.stress + state.pressure)
 
         if state.hydrostatic_strain:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
             virial = diag_mean.unsqueeze(-1) * torch.eye(
                 3, device=device, dtype=dtype
-            ).unsqueeze(0).expand(n_batches, -1, -1)
+            ).unsqueeze(0).expand(n_systems, -1, -1)
         if state.constant_volume:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
             virial = virial - diag_mean.unsqueeze(-1) * torch.eye(
                 3, device=device, dtype=dtype
-            ).unsqueeze(0).expand(n_batches, -1, -1)
+            ).unsqueeze(0).expand(n_systems, -1, -1)
 
         if is_frechet:
             if not isinstance(state, expected_cls := FrechetCellFIREState):
@@ -1341,7 +1356,7 @@ def _vv_fire_step(  # noqa: C901, PLR0915
                 directions[idx, mu, nu] = 1.0
 
             new_cell_forces = torch.zeros_like(ucf_cell_grad)
-            for b in range(n_batches):
+            for b in range(n_systems):
                 expm_derivs = torch.stack(
                     [
                         tsm.expm_frechet(
@@ -1366,49 +1381,51 @@ def _vv_fire_step(  # noqa: C901, PLR0915
             0.5 * cell_wise_dt * state.cell_forces / state.cell_masses.unsqueeze(-1)
         )
 
-    batch_power = tsm.batched_vdot(state.forces, state.velocities, state.batch)
+    system_power = tsm.batched_vdot(state.forces, state.velocities, state.system_idx)
 
     if is_cell_optimization:
-        batch_power += (state.cell_forces * state.cell_velocities).sum(dim=(1, 2))
+        system_power += (state.cell_forces * state.cell_velocities).sum(dim=(1, 2))
 
     # 2. Update dt, alpha, n_pos
-    pos_mask_batch = batch_power > 0.0
-    neg_mask_batch = ~pos_mask_batch
+    pos_mask_system = system_power > 0.0
+    neg_mask_system = ~pos_mask_system
 
-    state.n_pos[pos_mask_batch] += 1
-    inc_mask = (state.n_pos > n_min) & pos_mask_batch
+    state.n_pos[pos_mask_system] += 1
+    inc_mask = (state.n_pos > n_min) & pos_mask_system
     state.dt[inc_mask] = torch.minimum(state.dt[inc_mask] * f_inc, dt_max)
     state.alpha[inc_mask] *= f_alpha
 
-    state.dt[neg_mask_batch] *= f_dec
-    state.alpha[neg_mask_batch] = alpha_start_batch[neg_mask_batch]
-    state.n_pos[neg_mask_batch] = 0
+    state.dt[neg_mask_system] *= f_dec
+    state.alpha[neg_mask_system] = alpha_start_system[neg_mask_system]
+    state.n_pos[neg_mask_system] = 0
 
-    v_scaling_batch = tsm.batched_vdot(state.velocities, state.velocities, state.batch)
-    f_scaling_batch = tsm.batched_vdot(state.forces, state.forces, state.batch)
+    v_scaling_system = tsm.batched_vdot(
+        state.velocities, state.velocities, state.system_idx
+    )
+    f_scaling_system = tsm.batched_vdot(state.forces, state.forces, state.system_idx)
 
     if is_cell_optimization:
-        v_scaling_batch += state.cell_velocities.pow(2).sum(dim=(1, 2))
-        f_scaling_batch += state.cell_forces.pow(2).sum(dim=(1, 2))
+        v_scaling_system += state.cell_velocities.pow(2).sum(dim=(1, 2))
+        f_scaling_system += state.cell_forces.pow(2).sum(dim=(1, 2))
 
-        v_scaling_cell = torch.sqrt(v_scaling_batch.view(n_batches, 1, 1))
-        f_scaling_cell = torch.sqrt(f_scaling_batch.view(n_batches, 1, 1))
+        v_scaling_cell = torch.sqrt(v_scaling_system.view(n_systems, 1, 1))
+        f_scaling_cell = torch.sqrt(f_scaling_system.view(n_systems, 1, 1))
         v_mixing_cell = state.cell_forces / (f_scaling_cell + eps) * v_scaling_cell
 
-        alpha_cell_bc = state.alpha.view(n_batches, 1, 1)
+        alpha_cell_bc = state.alpha.view(n_systems, 1, 1)
         state.cell_velocities = torch.where(
-            pos_mask_batch.view(n_batches, 1, 1),
+            pos_mask_system.view(n_systems, 1, 1),
             (1.0 - alpha_cell_bc) * state.cell_velocities + alpha_cell_bc * v_mixing_cell,
             torch.zeros_like(state.cell_velocities),
         )
 
-    v_scaling_atom = torch.sqrt(v_scaling_batch[state.batch].unsqueeze(-1))
-    f_scaling_atom = torch.sqrt(f_scaling_batch[state.batch].unsqueeze(-1))
+    v_scaling_atom = torch.sqrt(v_scaling_system[state.system_idx].unsqueeze(-1))
+    f_scaling_atom = torch.sqrt(f_scaling_system[state.system_idx].unsqueeze(-1))
     v_mixing_atom = state.forces * (v_scaling_atom / (f_scaling_atom + eps))
 
-    alpha_atom = state.alpha[state.batch].unsqueeze(-1)  # per-atom alpha
+    alpha_atom = state.alpha[state.system_idx].unsqueeze(-1)  # per-atom alpha
     state.velocities = torch.where(
-        pos_mask_batch[state.batch].unsqueeze(-1),
+        pos_mask_system[state.system_idx].unsqueeze(-1),
         (1.0 - alpha_atom) * state.velocities + alpha_atom * v_mixing_atom,
         torch.zeros_like(state.velocities),
     )
@@ -1418,7 +1435,7 @@ def _vv_fire_step(  # noqa: C901, PLR0915
 
 def _ase_fire_step(  # noqa: C901, PLR0915
     state: FireState | AnyFireCellState,
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     dt_max: torch.Tensor,
     n_min: torch.Tensor,
@@ -1455,105 +1472,109 @@ def _ase_fire_step(  # noqa: C901, PLR0915
         Updated state after performing one ASE-FIRE step.
     """
     device, dtype = state.positions.device, state.positions.dtype
-    n_batches = state.n_batches
+    n_systems = state.n_systems
 
     cur_deform_grad = None  # Initialize cur_deform_grad to prevent UnboundLocalError
 
-    if state.velocities is None:
-        state.velocities = torch.zeros_like(state.positions)
+    nan_velocities = state.velocities.isnan().any(dim=1)
+    if nan_velocities.any():
+        state.velocities[nan_velocities] = torch.zeros_like(
+            state.positions[nan_velocities]
+        )
         forces = state.forces
         if is_cell_optimization:
             if not isinstance(state, AnyFireCellState):
                 raise ValueError(
                     f"Cell optimization requires one of {get_args(AnyFireCellState)}."
                 )
-            state.cell_velocities = torch.zeros(
-                (n_batches, 3, 3), device=device, dtype=dtype
+            nan_cell_velocities = state.cell_velocities.isnan().any(dim=(1, 2))
+            state.cell_velocities[nan_cell_velocities] = torch.zeros_like(
+                state.cell_positions[nan_cell_velocities]
             )
             cur_deform_grad = state.deform_grad()
     else:
-        alpha_start_batch = torch.full(
-            (n_batches,), alpha_start.item(), device=device, dtype=dtype
+        alpha_start_system = torch.full(
+            (n_systems,), alpha_start.item(), device=device, dtype=dtype
         )
 
         if is_cell_optimization:
             cur_deform_grad = state.deform_grad()
             forces = torch.bmm(
-                state.forces.unsqueeze(1), cur_deform_grad[state.batch]
+                state.forces.unsqueeze(1), cur_deform_grad[state.system_idx]
             ).squeeze(1)
         else:
             forces = state.forces
 
-        # 1. Current power (F·v) per batch (atoms + cell)
-        batch_power = tsm.batched_vdot(forces, state.velocities, state.batch)
+        # 1. Current power (F·v) per system (atoms + cell)
+        system_power = tsm.batched_vdot(forces, state.velocities, state.system_idx)
 
         if is_cell_optimization:
-            batch_power += (state.cell_forces * state.cell_velocities).sum(dim=(1, 2))
+            system_power += (state.cell_forces * state.cell_velocities).sum(dim=(1, 2))
 
         # 2. Update dt, alpha, n_pos
-        pos_mask_batch = batch_power > 0.0
-        neg_mask_batch = ~pos_mask_batch
+        pos_mask_system = system_power > 0.0
+        neg_mask_system = ~pos_mask_system
 
-        inc_mask = (state.n_pos > n_min) & pos_mask_batch
+        inc_mask = (state.n_pos > n_min) & pos_mask_system
         state.dt[inc_mask] = torch.minimum(state.dt[inc_mask] * f_inc, dt_max)
         state.alpha[inc_mask] *= f_alpha
-        state.n_pos[pos_mask_batch] += 1
+        state.n_pos[pos_mask_system] += 1
 
-        state.dt[neg_mask_batch] *= f_dec
-        state.alpha[neg_mask_batch] = alpha_start_batch[neg_mask_batch]
-        state.n_pos[neg_mask_batch] = 0
+        state.dt[neg_mask_system] *= f_dec
+        state.alpha[neg_mask_system] = alpha_start_system[neg_mask_system]
+        state.n_pos[neg_mask_system] = 0
 
         # 3. Velocity mixing BEFORE acceleration (ASE ordering)
-        v_scaling_batch = tsm.batched_vdot(
-            state.velocities, state.velocities, state.batch
+        v_scaling_system = tsm.batched_vdot(
+            state.velocities, state.velocities, state.system_idx
         )
-        f_scaling_batch = tsm.batched_vdot(forces, forces, state.batch)
+        f_scaling_system = tsm.batched_vdot(forces, forces, state.system_idx)
 
         if is_cell_optimization:
-            v_scaling_batch += state.cell_velocities.pow(2).sum(dim=(1, 2))
-            f_scaling_batch += state.cell_forces.pow(2).sum(dim=(1, 2))
+            v_scaling_system += state.cell_velocities.pow(2).sum(dim=(1, 2))
+            f_scaling_system += state.cell_forces.pow(2).sum(dim=(1, 2))
 
-            v_scaling_cell = torch.sqrt(v_scaling_batch.view(n_batches, 1, 1))
-            f_scaling_cell = torch.sqrt(f_scaling_batch.view(n_batches, 1, 1))
+            v_scaling_cell = torch.sqrt(v_scaling_system.view(n_systems, 1, 1))
+            f_scaling_cell = torch.sqrt(f_scaling_system.view(n_systems, 1, 1))
             v_mixing_cell = state.cell_forces / (f_scaling_cell + eps) * v_scaling_cell
 
-            alpha_cell_bc = state.alpha.view(n_batches, 1, 1)
+            alpha_cell_bc = state.alpha.view(n_systems, 1, 1)
             state.cell_velocities = torch.where(
-                pos_mask_batch.view(n_batches, 1, 1),
+                pos_mask_system.view(n_systems, 1, 1),
                 (1.0 - alpha_cell_bc) * state.cell_velocities
                 + alpha_cell_bc * v_mixing_cell,
                 torch.zeros_like(state.cell_velocities),
             )
 
-        v_scaling_atom = torch.sqrt(v_scaling_batch[state.batch].unsqueeze(-1))
-        f_scaling_atom = torch.sqrt(f_scaling_batch[state.batch].unsqueeze(-1))
+        v_scaling_atom = torch.sqrt(v_scaling_system[state.system_idx].unsqueeze(-1))
+        f_scaling_atom = torch.sqrt(f_scaling_system[state.system_idx].unsqueeze(-1))
         v_mixing_atom = forces * (v_scaling_atom / (f_scaling_atom + eps))
 
-        alpha_atom = state.alpha[state.batch].unsqueeze(-1)  # per-atom alpha
+        alpha_atom = state.alpha[state.system_idx].unsqueeze(-1)  # per-atom alpha
         state.velocities = torch.where(
-            pos_mask_batch[state.batch].unsqueeze(-1),
+            pos_mask_system[state.system_idx].unsqueeze(-1),
             (1.0 - alpha_atom) * state.velocities + alpha_atom * v_mixing_atom,
             torch.zeros_like(state.velocities),
         )
 
     # 4. Acceleration (single forward-Euler, no mass for ASE FIRE)
-    state.velocities += forces * state.dt[state.batch].unsqueeze(-1)
-    dr_atom = state.velocities * state.dt[state.batch].unsqueeze(-1)
-    dr_scaling_batch = tsm.batched_vdot(dr_atom, dr_atom, state.batch)
+    state.velocities += forces * state.dt[state.system_idx].unsqueeze(-1)
+    dr_atom = state.velocities * state.dt[state.system_idx].unsqueeze(-1)
+    dr_scaling_system = tsm.batched_vdot(dr_atom, dr_atom, state.system_idx)
 
     if is_cell_optimization:
-        state.cell_velocities += state.cell_forces * state.dt.view(n_batches, 1, 1)
-        dr_cell = state.cell_velocities * state.dt.view(n_batches, 1, 1)
+        state.cell_velocities += state.cell_forces * state.dt.view(n_systems, 1, 1)
+        dr_cell = state.cell_velocities * state.dt.view(n_systems, 1, 1)
 
-        dr_scaling_batch += dr_cell.pow(2).sum(dim=(1, 2))
-        dr_scaling_cell = torch.sqrt(dr_scaling_batch).view(n_batches, 1, 1)
+        dr_scaling_system += dr_cell.pow(2).sum(dim=(1, 2))
+        dr_scaling_cell = torch.sqrt(dr_scaling_system).view(n_systems, 1, 1)
         dr_cell = torch.where(
             dr_scaling_cell > max_step,
             max_step * dr_cell / (dr_scaling_cell + eps),
             dr_cell,
         )
 
-    dr_scaling_atom = torch.sqrt(dr_scaling_batch)[state.batch].unsqueeze(-1)
+    dr_scaling_atom = torch.sqrt(dr_scaling_system)[state.system_idx].unsqueeze(-1)
 
     dr_atom = torch.where(
         dr_scaling_atom > max_step, max_step * dr_atom / (dr_scaling_atom + eps), dr_atom
@@ -1562,7 +1583,7 @@ def _ase_fire_step(  # noqa: C901, PLR0915
     if is_cell_optimization:
         state.positions = (
             torch.linalg.solve(
-                cur_deform_grad[state.batch], state.positions.unsqueeze(-1)
+                cur_deform_grad[state.system_idx], state.positions.unsqueeze(-1)
             ).squeeze(-1)
             + dr_atom
         )
@@ -1580,7 +1601,7 @@ def _ase_fire_step(  # noqa: C901, PLR0915
             if not isinstance(state, expected_cls := UnitCellFireState):
                 raise ValueError(f"{type(state)=} must be a {expected_cls.__name__}")
             F_current = state.deform_grad()
-            cell_factor_exp_mult = state.cell_factor.expand(n_batches, 3, 1)
+            cell_factor_exp_mult = state.cell_factor.expand(n_systems, 3, 1)
             current_F_scaled = F_current * cell_factor_exp_mult
 
             F_new_scaled = current_F_scaled + dr_cell
@@ -1590,7 +1611,7 @@ def _ase_fire_step(  # noqa: C901, PLR0915
             state.row_vector_cell = new_row_vector_cell
 
         state.positions = torch.bmm(
-            state.positions.unsqueeze(1), F_new[state.batch].mT
+            state.positions.unsqueeze(1), F_new[state.system_idx].mT
         ).squeeze(1)
     else:
         state.positions = state.positions + dr_atom
@@ -1602,7 +1623,7 @@ def _ase_fire_step(  # noqa: C901, PLR0915
 
     if is_cell_optimization:
         state.stress = results["stress"]
-        volumes = torch.linalg.det(state.cell).view(n_batches, 1, 1)
+        volumes = torch.linalg.det(state.cell).view(n_systems, 1, 1)
         if torch.any(volumes <= 0):
             bad_indices = torch.where(volumes <= 0)[0].tolist()
             print(  # noqa: T201
@@ -1616,13 +1637,13 @@ def _ase_fire_step(  # noqa: C901, PLR0915
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
             virial = diag_mean.unsqueeze(-1) * torch.eye(
                 3, device=device, dtype=dtype
-            ).unsqueeze(0).expand(n_batches, -1, -1)
+            ).unsqueeze(0).expand(n_systems, -1, -1)
 
         if state.constant_volume:
             diag_mean = torch.diagonal(virial, dim1=1, dim2=2).mean(dim=1, keepdim=True)
             virial = virial - diag_mean.unsqueeze(-1) * torch.eye(
                 3, device=device, dtype=dtype
-            ).unsqueeze(0).expand(n_batches, -1, -1)
+            ).unsqueeze(0).expand(n_systems, -1, -1)
 
         if is_frechet:
             if not isinstance(state, expected_cls := FrechetCellFIREState):
@@ -1645,7 +1666,7 @@ def _ase_fire_step(  # noqa: C901, PLR0915
                 directions[idx, mu, nu] = 1.0
 
             new_cell_forces_log_space = torch.zeros_like(state.cell_forces)
-            for b_idx in range(n_batches):
+            for b_idx in range(n_systems):
                 expm_derivs = torch.stack(
                     [
                         tsm.expm_frechet(logm_F_new[b_idx], direction, compute_expm=False)

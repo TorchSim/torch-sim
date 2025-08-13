@@ -28,7 +28,7 @@ try:
 except ImportError as exc:
     warnings.warn(f"FairChem import failed: {traceback.format_exc()}", stacklevel=2)
 
-    class FairChemModel(torch.nn.Module, ModelInterface):
+    class FairChemModel(ModelInterface):
         """FairChem model wrapper for torch_sim.
 
         This class is a placeholder for the FairChemModel class.
@@ -47,7 +47,7 @@ if typing.TYPE_CHECKING:
     from torch_sim.typing import StateDict
 
 
-class FairChemModel(torch.nn.Module, ModelInterface):
+class FairChemModel(ModelInterface):
     """FairChem model wrapper for computing atomistic properties.
 
     Wraps FairChem models to compute energies, forces, and stresses. Can be
@@ -171,8 +171,8 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         if state.device != self._device:
             state = state.to(self._device)
 
-        if state.batch is None:
-            state.batch = torch.zeros(state.positions.shape[0], dtype=torch.int)
+        if state.system_idx is None:
+            state.system_idx = torch.zeros(state.positions.shape[0], dtype=torch.int)
 
         # Convert SimState to AtomicData objects for efficient batch processing
         from ase import Atoms

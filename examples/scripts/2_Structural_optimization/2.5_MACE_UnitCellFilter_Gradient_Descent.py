@@ -85,7 +85,7 @@ cell_lr = 0.1
 # Initialize unit cell gradient descent optimizer
 gd_init, gd_update = unit_cell_gradient_descent(
     model=model,
-    cell_factor=None,  # Will default to atoms per batch
+    cell_factor=None,  # Will default to atoms per system
     hydrostatic_strain=False,
     constant_volume=False,
     scalar_pressure=0.0,

@@ -32,7 +32,7 @@ try:
 except ImportError as exc:
     warnings.warn(f"SevenNet import failed: {traceback.format_exc()}", stacklevel=2)
 
-    class SevenNetModel(torch.nn.Module, ModelInterface):
+    class SevenNetModel(ModelInterface):
         """SevenNet model wrapper for torch_sim.
 
         This class is a placeholder for the SevenNetModel class.
@@ -44,7 +44,7 @@ except ImportError as exc:
             raise err
 
 
-class SevenNetModel(torch.nn.Module, ModelInterface):
+class SevenNetModel(ModelInterface):
     """Computes atomistic energies, forces and stresses using an SevenNet model.
 
     This class wraps an SevenNet model to compute energies, forces, and stresses for
@@ -181,14 +181,14 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
         state = state.clone()
 
         data_list = []
-        for b in range(state.batch.max().item() + 1):
-            batch_mask = state.batch == b
+        for b in range(state.system_idx.max().item() + 1):
+            system_mask = state.system_idx == b
 
-            pos = state.positions[batch_mask]
+            pos = state.positions[system_mask]
             # SevenNet uses row vector cell convention for neighbor list
             row_vector_cell = state.row_vector_cell[b]
             pbc = state.pbc
-            atomic_numbers = state.atomic_numbers[batch_mask]
+            atomic_numbers = state.atomic_numbers[system_mask]
 
             edge_idx, shifts_idx = self.neighbor_list_fn(
                 positions=pos,
@@ -245,7 +245,7 @@ class SevenNetModel(torch.nn.Module, ModelInterface):
             results["energy"] = energy.detach()
         else:
             results["energy"] = torch.zeros(
-                state.batch.max().item() + 1, device=self.device
+                state.system_idx.max().item() + 1, device=self.device
             )
 
         forces = output[key.PRED_FORCE]

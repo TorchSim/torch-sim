@@ -36,7 +36,7 @@ try:
 except ImportError as exc:
     warnings.warn(f"Metatomic import failed: {traceback.format_exc()}", stacklevel=2)
 
-    class MetatomicModel(torch.nn.Module, ModelInterface):
+    class MetatomicModel(ModelInterface):
         """Metatomic model wrapper for torch_sim.
 
         This class is a placeholder for the MetatomicModel class.
@@ -48,7 +48,7 @@ except ImportError as exc:
             raise err
 
 
-class MetatomicModel(torch.nn.Module, ModelInterface):
+class MetatomicModel(ModelInterface):
     """Computes energies for a list of systems using a metatomic model.
 
     This class wraps a metatomic model to compute energies, forces, and stresses for
@@ -74,7 +74,7 @@ class MetatomicModel(torch.nn.Module, ModelInterface):
 
         Sets up a metatomic model for energy, force, and stress calculations within
         the TorchSim framework. The model can be initialized with atomic numbers
-        and batch indices, or these can be provided during the forward pass.
+        and system indices, or these can be provided during the forward pass.
 
         Args:
             model (str | Path | None): Path to the metatomic model file or a
@@ -103,7 +103,7 @@ class MetatomicModel(torch.nn.Module, ModelInterface):
             )
 
         if model == "pet-mad":
-            path = "https://huggingface.co/lab-cosmo/pet-mad/resolve/main/models/pet-mad-latest.ckpt"
+            path = "https://huggingface.co/lab-cosmo/pet-mad/resolve/v1.1.0/models/pet-mad-v1.1.0.ckpt"
             self._model = load_model(path).export()
         elif model.endswith(".ckpt"):
             path = model
@@ -200,7 +200,7 @@ class MetatomicModel(torch.nn.Module, ModelInterface):
         systems: list[System] = []
         strains = []
         for b in range(len(cell)):
-            system_mask = state.batch == b
+            system_mask = state.system_idx == b
             system_positions = positions[system_mask]
             system_cell = cell[b]
             system_pbc = torch.tensor(

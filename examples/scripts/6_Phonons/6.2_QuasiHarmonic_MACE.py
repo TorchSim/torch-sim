@@ -6,7 +6,8 @@ different volumes and FC2 calculations with MACE.
 # dependencies = [
 #     "mace-torch>=0.3.12",
 #     "phonopy>=2.35",
-#     "pymatviz[export-figs]>=0.15.1",
+#     "pymatviz==0.16",
+#     "plotly!=6.2.0", # TODO remove pin pending https://github.com/plotly/plotly.py/issues/5253#issuecomment-3016615635
 # ]
 # ///
 
@@ -23,12 +24,13 @@ from phonopy.api_qha import PhonopyQHA
 from phonopy.structure.atoms import PhonopyAtoms
 
 import torch_sim as ts
+from torch_sim.models.interface import ModelInterface
 from torch_sim.models.mace import MaceModel, MaceUrls
 
 
 def get_relaxed_structure(
     struct: Atoms,
-    model: torch.nn.Module | None,
+    model: ModelInterface,
     Nrelax: int = 300,
     fmax: float = 1e-3,
     *,
@@ -79,7 +81,7 @@ def get_relaxed_structure(
 def get_qha_structures(
     state: ts.state.SimState,
     length_factors: np.ndarray,
-    model: torch.nn.Module | None,
+    model: ModelInterface,
     Nmax: int = 300,
     fmax: float = 1e-3,
     *,
@@ -128,7 +130,7 @@ def get_qha_structures(
 
 def get_qha_phonons(
     scaled_structures: list[PhonopyAtoms],
-    model: torch.nn.Module | None,
+    model: ModelInterface,
     supercell_matrix: np.ndarray | None,
     displ: float = 0.05,
     *,
