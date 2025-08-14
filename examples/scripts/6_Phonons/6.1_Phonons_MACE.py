@@ -4,10 +4,10 @@
 # dependencies = [
 #     "mace-torch>=0.3.12",
 #     "phonopy>=2.35",
-#     "pymatviz==0.16",
+#     "pymatviz>=0.17.1",
+#     "plotly>=6.3.0",
 #     "seekpath",
 #     "ase",
-#     "plotly!=6.2.0", # TODO remove pin pending https://github.com/plotly/plotly.py/issues/5253#issuecomment-3016615635
 # ]
 # ///
 
