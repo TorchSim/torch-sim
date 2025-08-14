@@ -76,6 +76,9 @@ class HybridSwapMCState(MDState):
     """
 
     last_permutation: torch.Tensor
+    _atom_attributes = (
+        MDState._atom_attributes | {"last_permutation"}  # noqa: SLF001
+    )
 
 
 nvt_init, nvt_step = nvt_langevin(model=model, dt=0.002, kT=kT)

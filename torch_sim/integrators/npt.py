@@ -67,6 +67,18 @@ class NPTLangevinState(SimState):
     cell_velocities: torch.Tensor
     cell_masses: torch.Tensor
 
+    _atom_attributes = (
+        SimState._atom_attributes | {"forces", "velocities"}  # noqa: SLF001
+    )
+    _system_attributes = SimState._system_attributes | {  # noqa: SLF001
+        "stress",
+        "cell_positions",
+        "cell_velocities",
+        "cell_masses",
+        "reference_cell",
+        "energy",
+    }
+
     @property
     def momenta(self) -> torch.Tensor:
         """Calculate momenta from velocities and masses."""
@@ -866,6 +878,25 @@ class NPTNoseHooverState(MDState):
     # Barostat variables
     barostat: NoseHooverChain
     barostat_fns: NoseHooverChainFns
+
+    _system_attributes = (
+        MDState._system_attributes  # noqa: SLF001
+        | {
+            "reference_cell",
+            "cell_position",
+            "cell_momentum",
+            "cell_mass",
+        }
+    )
+    _global_attributes = (
+        MDState._global_attributes  # noqa: SLF001
+        | {
+            "thermostat",
+            "barostat",
+            "thermostat_fns",
+            "barostat_fns",
+        }
+    )
 
     @property
     def velocities(self) -> torch.Tensor:

@@ -13,7 +13,7 @@ from torch_sim.state import (
     _pop_states,
     _slice_state,
     concatenate_states,
-    infer_property_scope,
+    get_attrs_for_scope,
     initialize_state,
 )
 
@@ -24,38 +24,52 @@ if typing.TYPE_CHECKING:
     from pymatgen.core import Structure
 
 
-def test_infer_sim_state_property_scope(si_sim_state: ts.SimState) -> None:
-    """Test inference of property scope."""
-    scope = infer_property_scope(si_sim_state)
-    assert set(scope["global"]) == {"pbc"}
-    assert set(scope["per_atom"]) == {
+def test_get_attrs_for_scope(si_sim_state: ts.SimState) -> None:
+    """Test getting attributes for a scope."""
+    per_atom_attrs = dict(get_attrs_for_scope(si_sim_state, "per-atom"))
+    assert set(per_atom_attrs.keys()) == {
         "positions",
         "masses",
         "atomic_numbers",
         "system_idx",
     }
-    assert set(scope["per_system"]) == {"cell"}
+    per_system_attrs = dict(get_attrs_for_scope(si_sim_state, "per-system"))
+    assert set(per_system_attrs.keys()) == {"cell"}
+    global_attrs = dict(get_attrs_for_scope(si_sim_state, "global"))
+    assert set(global_attrs.keys()) == {"pbc"}
 
 
-def test_infer_md_state_property_scope(si_sim_state: ts.SimState) -> None:
-    """Test inference of property scope."""
-    state = MDState(
-        **asdict(si_sim_state),
-        momenta=torch.randn_like(si_sim_state.positions),
-        forces=torch.randn_like(si_sim_state.positions),
-        energy=torch.zeros((1,)),
-    )
-    scope = infer_property_scope(state)
-    assert set(scope["global"]) == {"pbc"}
-    assert set(scope["per_atom"]) == {
-        "positions",
-        "masses",
-        "atomic_numbers",
-        "system_idx",
-        "forces",
-        "momenta",
-    }
-    assert set(scope["per_system"]) == {"cell", "energy"}
+def test_all_attributes_must_be_specified_in_scopes() -> None:
+    """Test that an error is raised when we forget to specify the scope
+    for an attribute in a child SimState class."""
+    with pytest.raises(TypeError) as excinfo:
+
+        class ChildState(SimState):
+            attribute_specified_in_scopes: bool
+            attribute_not_specified_in_scopes: bool
+
+            _atom_attributes = (
+                SimState._atom_attributes | {"attribute_specified_in_scopes"}  # noqa: SLF001
+            )
+
+    assert "attribute_not_specified_in_scopes" in str(excinfo.value)
+    assert "attribute_specified_in_scopes" not in str(excinfo.value)
+
+
+def test_no_duplicate_attributes_in_scopes() -> None:
+    """Test that no attributes are specified in multiple scopes."""
+
+    # Capture the exception information using "as excinfo"
+    with pytest.raises(TypeError) as excinfo:
+
+        class ChildState(SimState):
+            duplicated_attribute: bool
+
+            _system_attributes = SimState._system_attributes | {"duplicated_attribute"}  # noqa: SLF001
+            _global_attributes = SimState._global_attributes | {"duplicated_attribute"}  # noqa: SLF001
+
+    assert "are declared multiple times" in str(excinfo.value)
+    assert "duplicated_attribute" in str(excinfo.value)
 
 
 def test_slice_substate(
@@ -496,6 +510,11 @@ def test_column_vector_cell(si_sim_state: ts.SimState) -> None:
 
 class DeformState(SimState, DeformGradMixin):
     """Test class that combines SimState with DeformGradMixin."""
+
+    _system_attributes = (
+        SimState._system_attributes  # noqa: SLF001
+        | DeformGradMixin._system_attributes  # noqa: SLF001
+    )
 
     def __init__(
         self,

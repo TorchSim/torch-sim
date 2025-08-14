@@ -41,6 +41,13 @@ class MDState(SimState):
     energy: torch.Tensor
     forces: torch.Tensor
 
+    _atom_attributes = (
+        SimState._atom_attributes | {"momenta", "forces"}  # noqa: SLF001
+    )
+    _system_attributes = (
+        SimState._system_attributes | {"energy"}  # noqa: SLF001
+    )
+
     @property
     def velocities(self) -> torch.Tensor:
         """Velocities calculated from momenta and masses with shape

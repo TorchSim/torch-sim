@@ -79,16 +79,28 @@ SimState attributes fall into three categories: atomwise, systemwise, and global
   the base SimState. Names are singular.
 * Global attributes have any other shape or type, just `pbc` here. Names are singular.
 
-You can use the `infer_property_scope` function to analyze a state's properties. This
+For TorchSim to know which attributes are atomwise, systemwise, and global, each attribute's
+name is explicitly defined in the `_atom_attributes`, `_system_attributes`, and `_global_attributes`:
+
+_atom_attributes = {"positions", "masses", "atomic_numbers", "system_idx"}
+_system_attributes = {"cell"}
+_global_attributes = {"pbc"}
+
+You can use the `get_attrs_for_scope` generator function to analyze a state's properties. This
 is mostly used internally but can be useful for debugging.
 """
 
 # %%
-from torch_sim.state import infer_property_scope
+from torch_sim.state import get_attrs_for_scope
 
-scope = infer_property_scope(si_state)
-print(scope)
+# loop through each attribute:
+for attr_name, attr_value in get_attrs_for_scope(si_state, "per-atom"):
+    print(f"per-atom attribute: {attr_name}")
+    print(f"value: {attr_value}")
 
+# or access the attributes via a dict:
+print("Per-system attributes:", dict(get_attrs_for_scope(si_state, "per-system")))  # noqa: E501
+print("Global attributes:", dict(get_attrs_for_scope(si_state, "global")))
 
 # %% [markdown]
 """
@@ -257,10 +269,9 @@ md_state = MDState(
 )
 
 print("MDState properties:")
-scope = infer_property_scope(md_state)
-print("Global properties:", scope["global"])
-print("Per-atom properties:", scope["per_atom"])
-print("Per-system properties:", scope["per_system"])
+print("Per-atom attributes:", dict(get_attrs_for_scope(si_state, "per-atom")))
+print("Per-system attributes:", dict(get_attrs_for_scope(si_state, "per-system")))
+print("Global attributes:", dict(get_attrs_for_scope(si_state, "global")))
 
 
 # %% [markdown]

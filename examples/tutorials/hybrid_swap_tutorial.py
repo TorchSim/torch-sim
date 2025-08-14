@@ -34,9 +34,11 @@ for this example, but any TorchSim compatible model would work.
 """
 
 # %%
+from typing import ClassVar
 import torch
 import torch_sim as ts
 from mace.calculators.foundations_models import mace_mp
+from torch_sim.integrators.md import MDState
 from torch_sim.models.mace import MaceModel
 
 # Initialize the mace model
@@ -104,6 +106,9 @@ class HybridSwapMCState(ts.integrators.MDState):
     """
 
     last_permutation: torch.Tensor
+    _atom_attributes = (
+        MDState._atom_attributes | {"last_permutation"}  # noqa: SLF001
+    )
 
 
 # %% [markdown]

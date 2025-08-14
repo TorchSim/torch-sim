@@ -36,6 +36,9 @@ class SwapMCState(SimState):
     energy: torch.Tensor
     last_permutation: torch.Tensor
 
+    _atom_attributes = SimState._atom_attributes | {"last_permutation"}  # noqa: SLF001
+    _system_attributes = SimState._system_attributes | {"energy"}  # noqa: SLF001
+
 
 def generate_swaps(
     state: SimState, generator: torch.Generator | None = None
