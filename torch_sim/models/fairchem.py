@@ -47,7 +47,7 @@ if typing.TYPE_CHECKING:
     from torch_sim.typing import StateDict
 
 
-class FairChemModel(torch.nn.Module, ModelInterface):
+class FairChemModel(ModelInterface):
     """FairChem model wrapper for computing atomistic properties.
 
     Wraps FairChem models to compute energies, forces, and stresses. Can be
@@ -171,13 +171,13 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         if state.device != self._device:
             state = state.to(self._device)
 
-        if state.batch is None:
-            state.batch = torch.zeros(state.positions.shape[0], dtype=torch.int)
+        if state.system_idx is None:
+            state.system_idx = torch.zeros(state.positions.shape[0], dtype=torch.int)
 
         # Convert SimState to AtomicData objects for efficient batch processing
         from ase import Atoms
 
-        natoms = torch.bincount(state.batch)
+        natoms = torch.bincount(state.system_idx)
         atomic_data_list = []
 
         for i, (n, c) in enumerate(
