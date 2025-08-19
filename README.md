@@ -134,4 +134,4 @@ TorchSim is released under an [MIT license](LICENSE).
 
 ## Citation
 
-If you use TorchSim in your research, please cite it on [arxiv](https://arxiv.org/abs/2508.06628).
++If you use TorchSim in your research, please cite the [arXiv preprint](https://arxiv.org/abs/2508.06628).
