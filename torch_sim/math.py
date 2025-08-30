@@ -43,8 +43,6 @@ def expm_frechet(
         method: str, optional. Choice of algorithm. Should be one of
             - `SPS` (default)
             - `blockEnlarge`
-        compute_expm: bool, optional. Whether to compute also `expm_A` in addition to
-            `expm_frechet_AE`. Default is True.
         check_finite: bool, optional. Whether to check that the input matrix contains
             only finite numbers. Disabling may give a performance gain, but may result
             in problems (crashes, non-termination) if the inputs do contain
