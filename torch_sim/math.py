@@ -48,12 +48,13 @@ def expm_frechet(
             in problems (crashes, non-termination) if the inputs do contain
             infinities or NaNs.
 
-    Returns: ndarray. Frechet derivative of the matrix exponential of A in the direction E.
+    Returns:
+        ndarray. Frechet derivative of the matrix exponential of A in the direction E.
     """
-    return expm_frechet_with_expm_A(A, E, method, check_finite)[1]
+    return expm_frechet_with_matrix_exp(A, E, method, check_finite)[1]
 
 
-def expm_frechet_with_expm_A(
+def expm_frechet_with_matrix_exp(
     A: torch.Tensor,
     E: torch.Tensor,
     method: str | None = None,
