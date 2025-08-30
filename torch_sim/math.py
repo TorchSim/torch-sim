@@ -897,8 +897,7 @@ def _matrix_log_33(  # noqa: C901
         lambda_val, mu, nu = torch.sort(eigenvalues).values  # Sort for consistency
         return _matrix_log_case3(T, lambda_val, mu, nu, num_tol)
 
-    else:
-        raise ValueError(f"Unknown eigenvalue {case=}")
+    raise ValueError(f"Unknown eigenvalue {case=}")
 
 
 def matrix_log_scipy(matrix: torch.Tensor) -> torch.Tensor:
