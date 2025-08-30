@@ -29,11 +29,10 @@ def torch_divmod(a: torch.Tensor, b: torch.Tensor) -> tuple[torch.Tensor, torch.
 """Below code is taken from https://github.com/abhijeetgangan/torch_matfunc"""
 
 
-def expm_frechet(  # noqa: C901
+def expm_frechet(
     A: torch.Tensor,
     E: torch.Tensor,
     method: str | None = None,
-    compute_expm: bool = True,
     check_finite: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Frechet derivative of the matrix exponential of A in the direction E.
@@ -52,13 +51,9 @@ def expm_frechet(  # noqa: C901
             infinities or NaNs.
 
     Returns:
-        If compute_expm is True:
-            expm_A: ndarray. Matrix exponential of A.
-            expm_frechet_AE: ndarray. Frechet derivative of the matrix exponential of A
-                in the direction E.
-        Otherwise:
-            expm_frechet_AE: ndarray. Frechet derivative of the matrix exponential of A
-                in the direction E.
+        expm_A: ndarray. Matrix exponential of A.
+        expm_frechet_AE: ndarray. Frechet derivative of the matrix exponential of A
+            in the direction E.
     """
     if check_finite:
         if not torch.isfinite(A).all():
@@ -83,9 +78,7 @@ def expm_frechet(  # noqa: C901
     else:
         raise ValueError(f"Unknown implementation {method}")
 
-    if compute_expm:
-        return expm_A, expm_frechet_AE
-    return expm_frechet_AE
+    return expm_A, expm_frechet_AE
 
 
 def expm_frechet_block_enlarge(
@@ -418,7 +411,7 @@ def expm_frechet_kronform(
     for i in range(n):
         for j in range(n):
             E = torch.outer(ident[i], ident[j])
-            F = expm_frechet(A, E, method=method, compute_expm=False, check_finite=False)
+            _, F = expm_frechet(A, E, method=method, check_finite=False)
             cols.append(vec(F))
 
     return torch.stack(cols, dim=1)
@@ -490,9 +483,10 @@ class expm(Function):  # noqa: N801
         (A,) = ctx.saved_tensors
 
         # Compute the Frechet derivative in the direction of grad_output
-        return expm_frechet(
-            A, grad_output, method="SPS", compute_expm=False, check_finite=False
+        _, expm_frechet_AE = expm_frechet(
+            A, grad_output, method="SPS", check_finite=False
         )
+        return expm_frechet_AE
 
 
 def _is_valid_matrix(T: torch.Tensor, n: int = 3) -> bool:
