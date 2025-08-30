@@ -586,14 +586,14 @@ def _determine_eigenvalue_case(  # noqa: C901
     raise ValueError("Could not determine eigenvalue structure")
 
 
-def _matrix_log_case1a(T: torch.Tensor, lambda_val: complex) -> torch.Tensor:
+def _matrix_log_case1a(T: torch.Tensor, lambda_val: torch.Tensor) -> torch.Tensor:
     """Compute log(T) when q(T) = (T - λI).
 
     This is the case where T is a scalar multiple of the identity matrix.
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: The eigenvalue of T
+        lambda_val: The eigenvalue of T (a complex or real tensor)
 
     Returns:
         The logarithm of T, which is log(λ)·I
@@ -604,7 +604,7 @@ def _matrix_log_case1a(T: torch.Tensor, lambda_val: complex) -> torch.Tensor:
 
 
 def _matrix_log_case1b(
-    T: torch.Tensor, lambda_val: complex, num_tol: float = 1e-16
+    T: torch.Tensor, lambda_val: torch.Tensor, num_tol: float = 1e-16
 ) -> torch.Tensor:
     """Compute log(T) when q(T) = (T - λI)².
 
@@ -612,7 +612,7 @@ def _matrix_log_case1b(
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: The eigenvalue of T
+        lambda_val: The eigenvalue of T (a complex or real tensor)
         num_tol: Numerical tolerance for stability checks, default=1e-16
 
     Returns:
@@ -627,11 +627,11 @@ def _matrix_log_case1b(
         scaled_T_minus_lambdaI = T_minus_lambdaI / lambda_val
         return torch.log(lambda_val) * Identity + scaled_T_minus_lambdaI
     # Alternative computation for small lambda
-    return torch.log(lambda_val) * Identity + T_minus_lambdaI / max(lambda_val, num_tol)
+    return torch.log(lambda_val) * Identity + T_minus_lambdaI / max(lambda_val, num_tol) # type: ignore[call-overload]
 
 
 def _matrix_log_case1c(
-    T: torch.Tensor, lambda_val: complex, num_tol: float = 1e-16
+    T: torch.Tensor, lambda_val: torch.Tensor, num_tol: float = 1e-16
 ) -> torch.Tensor:
     """Compute log(T) when q(T) = (T - λI)³.
 
@@ -639,7 +639,7 @@ def _matrix_log_case1c(
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: The eigenvalue of T
+        lambda_val: The eigenvalue of T (a complex or real tensor)
         num_tol: Numerical tolerance for stability checks, default=1e-16
 
     Returns:
@@ -656,14 +656,14 @@ def _matrix_log_case1c(
     lambda_squared = lambda_val * lambda_val
 
     term1 = torch.log(lambda_val) * Identity
-    term2 = T_minus_lambdaI / max(lambda_val, num_tol)
-    term3 = T_minus_lambdaI_squared / max(2 * lambda_squared, num_tol)
+    term2 = T_minus_lambdaI / max(lambda_val, num_tol) # type: ignore[call-overload]
+    term3 = T_minus_lambdaI_squared / max(2 * lambda_squared, num_tol) # type: ignore[call-overload]
 
     return term1 + term2 - term3
 
 
 def _matrix_log_case2a(
-    T: torch.Tensor, lambda_val: complex, mu: complex, num_tol: float = 1e-16
+    T: torch.Tensor, lambda_val: torch.Tensor, mu: torch.Tensor, num_tol: float = 1e-16
 ) -> torch.Tensor:
     """Compute log(T) when q(T) = (T - λI)(T - μI) with λ≠μ.
 
@@ -672,8 +672,8 @@ def _matrix_log_case2a(
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: The repeated eigenvalue of T
-        mu: The non-repeated eigenvalue of T
+        lambda_val: The repeated eigenvalue of T (a complex or real tensor)
+        mu: The non-repeated eigenvalue of T (a complex or real tensor)
         num_tol: Numerical tolerance for stability checks, default=1e-16
 
     Returns:
@@ -701,7 +701,7 @@ def _matrix_log_case2a(
 
 
 def _matrix_log_case2b(
-    T: torch.Tensor, lambda_val: complex, mu: complex, num_tol: float = 1e-16
+    T: torch.Tensor, lambda_val: torch.Tensor, mu: torch.Tensor, num_tol: float = 1e-16
 ) -> torch.Tensor:
     """Compute log(T) when q(T) = (T - μI)(T - λI)² with λ≠μ.
 
@@ -712,8 +712,8 @@ def _matrix_log_case2b(
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: The repeated eigenvalue of T
-        mu: The non-repeated eigenvalue of T
+        lambda_val: The repeated eigenvalue of T (a complex or real tensor)
+        mu: The non-repeated eigenvalue of T (a complex or real tensor)
         num_tol: Numerical tolerance for stability checks, default=1e-16
 
     Returns:
@@ -753,7 +753,7 @@ def _matrix_log_case2b(
 
 
 def _matrix_log_case3(
-    T: torch.Tensor, lambda_val: complex, mu: complex, nu: complex, num_tol: float = 1e-16
+    T: torch.Tensor, lambda_val: torch.Tensor, mu: torch.Tensor, nu: torch.Tensor, num_tol: float = 1e-16
 ) -> torch.Tensor:
     """Compute log(T) when q(T) = (T - λI)(T - μI)(T - νI) with λ≠μ≠ν≠λ.
     This is the case with three distinct eigenvalues.
@@ -764,9 +764,9 @@ def _matrix_log_case3(
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: First eigenvalue of T
-        mu: Second eigenvalue of T
-        nu: Third eigenvalue of T
+        lambda_val: First eigenvalue of T (a complex or real tensor)
+        mu: Second eigenvalue of T (a complex or real tensor)
+        nu: Third eigenvalue of T (a complex or real tensor)
         num_tol: Numerical tolerance for stability checks, default=1e-6
 
     Returns:
@@ -780,7 +780,7 @@ def _matrix_log_case3(
 
     # Check if eigenvalues are distinct enough for numerical stability
     if (
-        min(torch.abs(lambda_val - mu), torch.abs(lambda_val - nu), torch.abs(mu - nu))
+        min(torch.abs(lambda_val - mu), torch.abs(lambda_val - nu), torch.abs(mu - nu)) # type: ignore[call-overload]
         < num_tol
     ):
         raise ValueError("Eigenvalues are too close, computation may be unstable")
@@ -995,7 +995,7 @@ def batched_vdot(
     if batch_indices.min() < 0:
         raise ValueError("batch_indices must be non-negative")
 
-    output = torch.zeros(batch_indices.max() + 1, dtype=x.dtype, device=x.device)
+    output = torch.zeros(batch_indices.max() + 1, dtype=x.dtype, device=x.device) # type: ignore[call-overload]
     output.scatter_add_(dim=0, index=batch_indices, src=(x * y).sum(dim=1))
 
     return output

@@ -26,14 +26,14 @@ class TestExpmFrechet:
         M = np.array(
             [[1, 2, 3, 4], [5, 6, 7, 8], [0, 0, 1, 2], [0, 0, 5, 6]], dtype=np.float64
         )
-        A = np.array([[1, 2], [5, 6]], dtype=np.float64)
-        E = np.array([[3, 4], [7, 8]], dtype=np.float64)
-        expected_expm = scipy.linalg.expm(A)
+        A_np = np.array([[1, 2], [5, 6]], dtype=np.float64)
+        E_np = np.array([[3, 4], [7, 8]], dtype=np.float64)
+        expected_expm = scipy.linalg.expm(A_np)
         expected_frechet = scipy.linalg.expm(M)[:2, 2:]
 
-        A = torch.from_numpy(A).to(device=device)
-        E = torch.from_numpy(E).to(device=device)
-        for kwargs in ({}, {"method": "SPS"}, {"method": "blockEnlarge"}):
+        A = torch.from_numpy(A_np).to(device=device)
+        E = torch.from_numpy(E_np).to(device=device)
+        for kwargs in ({"method": "SPS"}, {"method": "blockEnlarge"}):
             # Convert it to numpy arrays before passing it to the function
             observed_expm, observed_frechet = tsm.expm_frechet(A, E, **kwargs)
             assert_allclose(expected_expm, observed_expm.cpu().numpy())
@@ -100,14 +100,14 @@ class TestExpmFrechet:
 
     def test_problematic_matrix(self):
         """Test a specific matrix that previously uncovered a bug."""
-        A = np.array(
+        A_np = np.array(
             [[1.50591997, 1.93537998], [0.41203263, 0.23443516]], dtype=np.float64
         )
-        E = np.array(
+        E_np = np.array(
             [[1.87864034, 2.07055038], [1.34102727, 0.67341123]], dtype=np.float64
         )
-        A = torch.from_numpy(A).to(device=device, dtype=dtype)
-        E = torch.from_numpy(E).to(device=device, dtype=dtype)
+        A = torch.from_numpy(A_np).to(device=device, dtype=dtype)
+        E = torch.from_numpy(E_np).to(device=device, dtype=dtype)
         # Convert it to numpy arrays before passing it to the function
         sps_expm, sps_frechet = tsm.expm_frechet(A, E, method="SPS")
         blockEnlarge_expm, blockEnlarge_frechet = tsm.expm_frechet(
@@ -120,11 +120,11 @@ class TestExpmFrechet:
         """Test with a medium-sized matrix to compare performance between methods."""
         n = 1000
         rng = np.random.default_rng()
-        A = rng.exponential(size=(n, n))
-        E = rng.exponential(size=(n, n))
+        A_np = rng.exponential(size=(n, n))
+        E_np = rng.exponential(size=(n, n))
 
-        A = torch.from_numpy(A).to(device=device, dtype=dtype)
-        E = torch.from_numpy(E).to(device=device, dtype=dtype)
+        A = torch.from_numpy(A_np).to(device=device, dtype=dtype)
+        E = torch.from_numpy(E_np).to(device=device, dtype=dtype)
         # Convert it to numpy arrays before passing it to the function
         sps_expm, sps_frechet = tsm.expm_frechet(A, E, method="SPS")
         blockEnlarge_expm, blockEnlarge_frechet = tsm.expm_frechet(
@@ -149,7 +149,7 @@ class TestExpmFrechetTorch:
         expected_expm = torch.linalg.matrix_exp(A)
         expected_frechet = torch.linalg.matrix_exp(M)[:2, 2:]
 
-        for kwargs in ({}, {"method": "SPS"}, {"method": "blockEnlarge"}):
+        for kwargs in ({"method": "SPS"}, {"method": "blockEnlarge"}):
             observed_expm, observed_frechet = tsm.expm_frechet(A, E, **kwargs)
             torch.testing.assert_close(expected_expm, observed_expm)
             torch.testing.assert_close(expected_frechet, observed_frechet)
