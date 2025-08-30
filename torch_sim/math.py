@@ -28,8 +28,31 @@ def torch_divmod(a: torch.Tensor, b: torch.Tensor) -> tuple[torch.Tensor, torch.
 
 """Below code is taken from https://github.com/abhijeetgangan/torch_matfunc"""
 
-
 def expm_frechet(
+    A: torch.Tensor,
+    E: torch.Tensor,
+    method: str | None = None,
+    check_finite: bool = True,
+) -> torch.Tensor:
+    """Frechet derivative of the matrix exponential of A in the direction E.
+
+    Args:
+        A: (N, N) array_like. Matrix of which to take the matrix exponential.
+        E: (N, N) array_like. Matrix direction in which to take the Frechet derivative.
+        method: str, optional. Choice of algorithm. Should be one of
+            - `SPS` (default)
+            - `blockEnlarge`
+        check_finite: bool, optional. Whether to check that the input matrix contains
+            only finite numbers. Disabling may give a performance gain, but may result
+            in problems (crashes, non-termination) if the inputs do contain
+            infinities or NaNs.
+
+    Returns: ndarray. Frechet derivative of the matrix exponential of A in the direction E.
+    """
+    return expm_frechet_with_expm_A(A, E, method, check_finite)[1]
+
+
+def expm_frechet_with_expm_A(
     A: torch.Tensor,
     E: torch.Tensor,
     method: str | None = None,
@@ -409,7 +432,7 @@ def expm_frechet_kronform(
     for i in range(n):
         for j in range(n):
             E = torch.outer(ident[i], ident[j])
-            _, F = expm_frechet(A, E, method=method, check_finite=False)
+            F = expm_frechet(A, E, method=method, check_finite=False)
             cols.append(vec(F))
 
     return torch.stack(cols, dim=1)
@@ -481,10 +504,9 @@ class expm(Function):  # noqa: N801
         (A,) = ctx.saved_tensors
 
         # Compute the Frechet derivative in the direction of grad_output
-        _, expm_frechet_AE = expm_frechet(
+        return expm_frechet(
             A, grad_output, method="SPS", check_finite=False
         )
-        return expm_frechet_AE
 
 
 def _is_valid_matrix(T: torch.Tensor, n: int = 3) -> bool:
@@ -699,7 +721,7 @@ def _matrix_log_case2a(
 
 
 def _matrix_log_case2b(
-    T: torch.Tensor, lambda_val: torch.Tensor, mu: torch.Tensor, num_tol: float = 1e-16
+    T: torch.Tensor, lambda_val: torch.Tensor, mu: complex, num_tol: float = 1e-16
 ) -> torch.Tensor:
     """Compute log(T) when q(T) = (T - μI)(T - λI)² with λ≠μ.
 
@@ -711,7 +733,7 @@ def _matrix_log_case2b(
     Args:
         T: The matrix whose logarithm is to be computed
         lambda_val: The repeated eigenvalue of T (a complex or real tensor)
-        mu: The non-repeated eigenvalue of T (a complex or real tensor)
+        mu: The non-repeated eigenvalue of T
         num_tol: Numerical tolerance for stability checks, default=1e-16
 
     Returns:
@@ -762,9 +784,9 @@ def _matrix_log_case3(
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: First eigenvalue of T (a complex or real tensor)
-        mu: Second eigenvalue of T (a complex or real tensor)
-        nu: Third eigenvalue of T (a complex or real tensor)
+        lambda_val: First eigenvalue of T
+        mu: Second eigenvalue of T
+        nu: Third eigenvalue of T
         num_tol: Numerical tolerance for stability checks, default=1e-6
 
     Returns:
@@ -778,7 +800,7 @@ def _matrix_log_case3(
 
     # Check if eigenvalues are distinct enough for numerical stability
     if (
-        min(torch.abs(lambda_val - mu), torch.abs(lambda_val - nu), torch.abs(mu - nu)) # type: ignore[call-overload]
+        min(torch.abs(lambda_val - mu), torch.abs(lambda_val - nu), torch.abs(mu - nu))
         < num_tol
     ):
         raise ValueError("Eigenvalues are too close, computation may be unstable")
@@ -993,7 +1015,7 @@ def batched_vdot(
     if batch_indices.min() < 0:
         raise ValueError("batch_indices must be non-negative")
 
-    output = torch.zeros(batch_indices.max() + 1, dtype=x.dtype, device=x.device) # type: ignore[call-overload]
+    output = torch.zeros(batch_indices.max() + 1, dtype=x.dtype, device=x.device)
     output.scatter_add_(dim=0, index=batch_indices, src=(x * y).sum(dim=1))
 
     return output

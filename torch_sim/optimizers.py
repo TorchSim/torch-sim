@@ -1418,9 +1418,7 @@ def _vv_fire_step(  # noqa: C901, PLR0915
             for b in range(n_systems):
                 expm_derivs = torch.stack(
                     [
-                        tsm.expm_frechet(
-                            deform_grad_log_new[b], direction, compute_expm=False
-                        )
+                        tsm.expm_frechet(deform_grad_log_new[b], direction)
                         for direction in directions
                     ]
                 )
@@ -1728,7 +1726,7 @@ def _ase_fire_step(  # noqa: C901, PLR0915
             for b_idx in range(n_systems):
                 expm_derivs = torch.stack(
                     [
-                        tsm.expm_frechet(logm_F_new[b_idx], direction, compute_expm=False)
+                        tsm.expm_frechet(logm_F_new[b_idx], direction)
                         for direction in directions
                     ]
                 )
