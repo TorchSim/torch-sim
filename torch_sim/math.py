@@ -66,12 +66,6 @@ def expm_frechet(  # noqa: C901
         if not torch.isfinite(E).all():
             raise ValueError("Matrix E contains non-finite values")
 
-    # Convert inputs to torch tensors if they aren't already
-    if not isinstance(A, torch.Tensor):
-        A = torch.tensor(A, dtype=torch.float64)
-    if not isinstance(E, torch.Tensor):
-        E = torch.tensor(E, dtype=torch.float64)
-
     if A.dim() != 2 or A.shape[0] != A.shape[1]:
         raise ValueError("expected A to be a square matrix")
     if E.dim() != 2 or E.shape[0] != E.shape[1]:
@@ -123,7 +117,7 @@ def expm_frechet_block_enlarge(
 # Maximal values ell_m of ||2**-s A|| such that the backward error bound
 # does not exceed 2**-53.
 ell_table_61: Final = (
-    None,
+    0,
     # 1
     2.11e-8,
     3.56e-4,
@@ -414,10 +408,6 @@ def expm_frechet_kronform(
     if check_finite and not torch.isfinite(A).all():
         raise ValueError("Matrix A contains non-finite values")
 
-    # Convert input to torch tensor if it isn't already
-    if not isinstance(A, torch.Tensor):
-        A = torch.tensor(A, dtype=torch.float64)
-
     if A.dim() != 2 or A.shape[0] != A.shape[1]:
         raise ValueError("expected a square matrix")
 
@@ -449,10 +439,6 @@ def expm_cond(A: torch.Tensor, check_finite: bool = True) -> torch.Tensor:
     """
     if check_finite and not torch.isfinite(A).all():
         raise ValueError("Matrix A contains non-finite values")
-
-    # Convert input to torch tensor if it isn't already
-    if not isinstance(A, torch.Tensor):
-        A = torch.tensor(A, dtype=torch.float64)
 
     if A.dim() != 2 or A.shape[0] != A.shape[1]:
         raise ValueError("expected a square matrix")
