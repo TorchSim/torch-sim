@@ -28,6 +28,7 @@ def torch_divmod(a: torch.Tensor, b: torch.Tensor) -> tuple[torch.Tensor, torch.
 
 """Below code is taken from https://github.com/abhijeetgangan/torch_matfunc"""
 
+
 def expm_frechet(
     A: torch.Tensor,
     E: torch.Tensor,
@@ -504,9 +505,7 @@ class expm(Function):  # noqa: N801
         (A,) = ctx.saved_tensors
 
         # Compute the Frechet derivative in the direction of grad_output
-        return expm_frechet(
-            A, grad_output, method="SPS", check_finite=False
-        )
+        return expm_frechet(A, grad_output, method="SPS", check_finite=False)
 
 
 def _is_valid_matrix(T: torch.Tensor, n: int = 3) -> bool:
@@ -647,7 +646,7 @@ def _matrix_log_case1b(
         scaled_T_minus_lambdaI = T_minus_lambdaI / lambda_val
         return torch.log(lambda_val) * Identity + scaled_T_minus_lambdaI
     # Alternative computation for small lambda
-    return torch.log(lambda_val) * Identity + T_minus_lambdaI / max(lambda_val, num_tol) # type: ignore[call-overload]
+    return torch.log(lambda_val) * Identity + T_minus_lambdaI / max(lambda_val, num_tol)  # type: ignore[call-overload]
 
 
 def _matrix_log_case1c(
@@ -676,8 +675,8 @@ def _matrix_log_case1c(
     lambda_squared = lambda_val * lambda_val
 
     term1 = torch.log(lambda_val) * Identity
-    term2 = T_minus_lambdaI / max(lambda_val, num_tol) # type: ignore[call-overload]
-    term3 = T_minus_lambdaI_squared / max(2 * lambda_squared, num_tol) # type: ignore[call-overload]
+    term2 = T_minus_lambdaI / max(lambda_val, num_tol)  # type: ignore[call-overload]
+    term3 = T_minus_lambdaI_squared / max(2 * lambda_squared, num_tol)  # type: ignore[call-overload]
 
     return term1 + term2 - term3
 
@@ -773,7 +772,11 @@ def _matrix_log_case2b(
 
 
 def _matrix_log_case3(
-    T: torch.Tensor, lambda_val: torch.Tensor, mu: torch.Tensor, nu: torch.Tensor, num_tol: float = 1e-16
+    T: torch.Tensor,
+    lambda_val: torch.Tensor,
+    mu: torch.Tensor,
+    nu: torch.Tensor,
+    num_tol: float = 1e-16,
 ) -> torch.Tensor:
     """Compute log(T) when q(T) = (T - λI)(T - μI)(T - νI) with λ≠μ≠ν≠λ.
     This is the case with three distinct eigenvalues.
