@@ -613,7 +613,7 @@ def _matrix_log_case1a(T: torch.Tensor, lambda_val: torch.Tensor) -> torch.Tenso
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: The eigenvalue of T (is complex)
+        lambda_val: The eigenvalue of T (a complex number)
 
     Returns:
         The logarithm of T, which is log(λ)·I
@@ -632,7 +632,7 @@ def _matrix_log_case1b(
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: The eigenvalue of T (is complex)
+        lambda_val: The eigenvalue of T (a complex number)
         num_tol: Numerical tolerance for stability checks, default=1e-16
 
     Returns:
@@ -659,7 +659,7 @@ def _matrix_log_case1c(
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: The eigenvalue of T (is complex)
+        lambda_val: The eigenvalue of T (a complex number)
         num_tol: Numerical tolerance for stability checks, default=1e-16
 
     Returns:
@@ -692,8 +692,8 @@ def _matrix_log_case2a(
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: The repeated eigenvalue of T (is complex)
-        mu: The non-repeated eigenvalue of T (is complex)
+        lambda_val: The repeated eigenvalue of T (a complex number)
+        mu: The non-repeated eigenvalue of T (a complex number)
         num_tol: Numerical tolerance for stability checks, default=1e-16
 
     Returns:
@@ -732,8 +732,8 @@ def _matrix_log_case2b(
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: The repeated eigenvalue of T (is complex)
-        mu: The non-repeated eigenvalue of T (is complex)
+        lambda_val: The repeated eigenvalue of T (a complex number)
+        mu: The non-repeated eigenvalue of T (a complex number)
         num_tol: Numerical tolerance for stability checks, default=1e-16
 
     Returns:
