@@ -1019,7 +1019,7 @@ def batched_vdot(
     if batch_indices.min() < 0:
         raise ValueError("batch_indices must be non-negative")
 
-    output = torch.zeros(batch_indices.max() + 1, dtype=x.dtype, device=x.device)  # type: ignore
+    output = torch.zeros(batch_indices.max() + 1, dtype=x.dtype, device=x.device)  # type: ignore[call-overload]
     output.scatter_add_(dim=0, index=batch_indices, src=(x * y).sum(dim=1))
 
     return output
