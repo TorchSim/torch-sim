@@ -804,7 +804,7 @@ def _matrix_log_case3(
 
     # Check if eigenvalues are distinct enough for numerical stability
     if (
-        min(torch.abs(lambda_val - mu), torch.abs(lambda_val - nu), torch.abs(mu - nu))  # type: ignore
+        min(torch.abs(lambda_val - mu), torch.abs(lambda_val - nu), torch.abs(mu - nu))  # type: ignore[call-overload]
         < num_tol
     ):
         raise ValueError("Eigenvalues are too close, computation may be unstable")
