@@ -721,7 +721,7 @@ def _matrix_log_case2a(
 
 
 def _matrix_log_case2b(
-    T: torch.Tensor, lambda_val: torch.Tensor, mu: complex, num_tol: float = 1e-16
+    T: torch.Tensor, lambda_val: torch.Tensor, mu: torch.Tensor, num_tol: float = 1e-16
 ) -> torch.Tensor:
     """Compute log(T) when q(T) = (T - μI)(T - λI)² with λ≠μ.
 
