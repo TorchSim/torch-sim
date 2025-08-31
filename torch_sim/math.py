@@ -804,7 +804,7 @@ def _matrix_log_case3(
 
     # Check if eigenvalues are distinct enough for numerical stability
     if (
-        min(torch.abs(lambda_val - mu), torch.abs(lambda_val - nu), torch.abs(mu - nu)) < num_tol # type: ignore
+        min(torch.abs(lambda_val - mu), torch.abs(lambda_val - nu), torch.abs(mu - nu))  # type: ignore
         < num_tol
     ):
         raise ValueError("Eigenvalues are too close, computation may be unstable")
@@ -1019,7 +1019,7 @@ def batched_vdot(
     if batch_indices.min() < 0:
         raise ValueError("batch_indices must be non-negative")
 
-    output = torch.zeros(batch_indices.max() + 1, dtype=x.dtype, device=x.device) # type: ignore
+    output = torch.zeros(batch_indices.max() + 1, dtype=x.dtype, device=x.device)  # type: ignore
     output.scatter_add_(dim=0, index=batch_indices, src=(x * y).sum(dim=1))
 
     return output
