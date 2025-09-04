@@ -1,9 +1,10 @@
 """Mathematical operations and utilities."""
 
-# ruff: noqa: FBT001, FBT002, RUF002, RUF003, RET503
+# ruff: noqa: FBT001, FBT002, RUF002, RUF003
 
 from typing import Any, Final
 
+import numpy as np
 import torch
 from torch.autograd import Function
 
@@ -30,54 +31,64 @@ def torch_divmod(a: torch.Tensor, b: torch.Tensor) -> tuple[torch.Tensor, torch.
 
 
 def expm_frechet(
-    A: torch.Tensor,
-    E: torch.Tensor,
+    A: torch.Tensor | np.ndarray,
+    E: torch.Tensor | np.ndarray,
     method: str | None = None,
     check_finite: bool = True,
 ) -> torch.Tensor:
     """Frechet derivative of the matrix exponential of A in the direction E.
 
     Args:
-        A: (N, N) array_like. Matrix of which to take the matrix exponential.
-        E: (N, N) array_like. Matrix direction in which to take the Frechet derivative.
+        A: (N, N) tensor.Tensor or np.ndarray.
+            Matrix of which to take the matrix exponential.
+        E: (N, N) tensor.Tensor or np.ndarray.
+            Matrix direction in which to take the Frechet derivative.
         method: str, optional. Choice of algorithm. Should be one of
             - `SPS` (default)
             - `blockEnlarge`
         check_finite: bool, optional. Whether to check that the input matrix contains
             only finite numbers. Disabling may give a performance gain, but may result
             in problems (crashes, non-termination) if the inputs do contain
-            infinities or NaNs.
+            infinities or NaNs. Defaults to True.
 
-    Returns:
-        ndarray. Frechet derivative of the matrix exponential of A in the direction E.
+    Returns: torch.Tensor. Frechet derivative of the matrix exponential of A
+        in the direction E
     """
     return expm_frechet_with_matrix_exp(A, E, method, check_finite)[1]
 
 
-def expm_frechet_with_matrix_exp(
-    A: torch.Tensor,
-    E: torch.Tensor,
+def expm_frechet_with_matrix_exp(  # noqa: C901
+    A: torch.Tensor | np.ndarray,
+    E: torch.Tensor | np.ndarray,
     method: str | None = None,
     check_finite: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Frechet derivative of the matrix exponential of A in the direction E.
 
     Args:
-        A: (N, N) array_like. Matrix of which to take the matrix exponential.
-        E: (N, N) array_like. Matrix direction in which to take the Frechet derivative.
+        A: (N, N) tensor.Tensor or np.ndarray.
+            Matrix of which to take the matrix exponential.
+        E: (N, N) tensor.Tensor or np.ndarray.
+            Matrix direction in which to take the Frechet derivative.
         method: str, optional. Choice of algorithm. Should be one of
             - `SPS` (default)
             - `blockEnlarge`
         check_finite: bool, optional. Whether to check that the input matrix contains
             only finite numbers. Disabling may give a performance gain, but may result
             in problems (crashes, non-termination) if the inputs do contain
-            infinities or NaNs.
+            infinities or NaNs. Defaults to True.
 
     Returns:
-        expm_A: ndarray. Matrix exponential of A.
-        expm_frechet_AE: ndarray. Frechet derivative of the matrix exponential of A
+        expm_A: torch.Tensor. Matrix exponential of A.
+        expm_frechet_AE: torch.Tensor. Frechet derivative of the matrix exponential of A
             in the direction E.
     """
+    # Convert inputs to torch tensors if they aren't already
+    if not isinstance(A, torch.Tensor):
+        A = torch.tensor(A, dtype=torch.float64)
+    if not isinstance(E, torch.Tensor):
+        E = torch.tensor(E, dtype=torch.float64)
+
     if check_finite:
         if not torch.isfinite(A).all():
             raise ValueError("Matrix A contains non-finite values")
@@ -115,8 +126,8 @@ def expm_frechet_block_enlarge(
 
     Returns:
         expm_A: Matrix exponential of A
-        expm_frechet_AE: torch.Tensor
-            Frechet derivative of the matrix exponential of A in the direction E
+        expm_frechet_AE: Frechet derivative of the matrix exponential of A
+            in the direction E.
     """
     n = A.shape[0]
     # Create block matrix M = [[A, E], [0, A]]
@@ -406,21 +417,27 @@ def vec(M: torch.Tensor) -> torch.Tensor:
 
 
 def expm_frechet_kronform(
-    A: torch.Tensor, method: str | None = None, check_finite: bool = True
+    A: torch.Tensor | np.ndarray, method: str | None = None, check_finite: bool = True
 ) -> torch.Tensor:
     """Construct the Kronecker form of the Frechet derivative of expm.
 
     Args:
-        A: Square matrix tensor with shape (N, N)
+        A: torch.Tensor or np.ndarray.
+            Square matrix tensor with shape (N, N)
         method: Optional extra keyword to be passed to expm_frechet
         check_finite: Whether to check that the input matrix contains only finite numbers.
             Disabling may give a performance gain, but may result in problems
             (crashes, non-termination) if the inputs do contain infinities or NaNs.
+            Defaults to True.
 
     Returns:
         torch.Tensor: Kronecker form of the Frechet derivative of the matrix exponential
             with shape (N*N, N*N)
     """
+    # Convert input to torch tensor if it isn't already
+    if not isinstance(A, torch.Tensor):
+        A = torch.tensor(A, dtype=torch.float64)
+
     if check_finite and not torch.isfinite(A).all():
         raise ValueError("Matrix A contains non-finite values")
 
@@ -440,19 +457,23 @@ def expm_frechet_kronform(
     return torch.stack(cols, dim=1)
 
 
-def expm_cond(A: torch.Tensor, check_finite: bool = True) -> torch.Tensor:
+def expm_cond(A: torch.Tensor | np.ndarray, check_finite: bool = True) -> torch.Tensor:
     """Relative condition number of the matrix exponential in the Frobenius norm.
 
     Args:
-        A: Square input matrix with shape (N, N)
+        A: torch.Tensor or np.ndarray. Square input matrix with shape (N, N)
         check_finite: Whether to check that the input matrix contains only finite numbers.
             Disabling may give a performance gain, but may result in problems
             (crashes, non-termination) if the inputs do contain infinities or NaNs.
+            Defaults to True.
 
     Returns:
-        kappa: The relative condition number of the matrix exponential
+        kappa: torch.Tensor. The relative condition number of the matrix exponential
             in the Frobenius norm
     """
+    # Convert input to torch tensor if it isn't already
+    if not isinstance(A, torch.Tensor):
+        A = torch.tensor(A, dtype=torch.float64)
     if check_finite and not torch.isfinite(A).all():
         raise ValueError("Matrix A contains non-finite values")
 
