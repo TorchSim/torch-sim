@@ -5,7 +5,7 @@ boundary conditions in molecular simulations, including matrix inversions and
 general PBC wrapping.
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from functools import wraps
 
 import torch
@@ -349,7 +349,7 @@ def wrap_positions(
     cell: torch.Tensor,
     *,
     pbc: bool | list[bool] | torch.Tensor = True,
-    center: tuple[float, float, float] = (0.5, 0.5, 0.5),
+    center: tuple[float, float, float] | float = (0.5, 0.5, 0.5),
     pretty_translation: bool = False,
     eps: float = 1e-7,
 ) -> torch.Tensor:
@@ -375,8 +375,9 @@ def wrap_positions(
 
     # Convert center to tensor
     if not hasattr(center, "__len__"):
-        center = (center,) * 3
-    center = torch.tensor(center, dtype=positions.dtype, device=device)
+        center_pos = torch.tensor((center,) * 3, dtype=positions.dtype, device=device)
+    else:
+        center_pos = torch.tensor(center, dtype=positions.dtype, device=device)
 
     # Handle PBC input
     if isinstance(pbc, bool):
@@ -385,7 +386,7 @@ def wrap_positions(
         pbc = torch.tensor(pbc, dtype=torch.bool, device=device)
 
     # Calculate shift based on center
-    shift = center - 0.5 - eps
+    shift = center_pos - 0.5 - eps
     shift[~pbc] = 0.0
 
     # Convert positions to fractional coordinates
@@ -393,7 +394,7 @@ def wrap_positions(
 
     if pretty_translation:
         fractional = translate_pretty(fractional, pbc)
-        shift = center - 0.5
+        shift = center_pos - 0.5
         shift[~pbc] = 0.0
         fractional += shift
     else:
@@ -488,7 +489,7 @@ def get_cell_shift_idx(num_repeats: torch.Tensor, dtype: _dtype) -> torch.Tensor
             num_repeats[ii] + 1,
             device=num_repeats.device,
             dtype=dtype,
-        )
+        )  # type: ignore[call-overload]
         _, indices = torch.sort(torch.abs(r1))
         reps.append(r1[indices])
     return torch.cartesian_prod(reps[0], reps[1], reps[2])
@@ -497,7 +498,7 @@ def get_cell_shift_idx(num_repeats: torch.Tensor, dtype: _dtype) -> torch.Tensor
 def compute_distances_with_cell_shifts(
     pos: torch.Tensor,
     mapping: torch.Tensor,
-    cell_shifts: torch.Tensor,
+    cell_shifts: torch.Tensor | None,
 ) -> torch.Tensor:
     """Compute distances between pairs of positions, optionally
         including cell shifts.
@@ -513,7 +514,7 @@ def compute_distances_with_cell_shifts(
         mapping (torch.Tensor): A tensor of shape (2, n_pairs) that
             specifies pairs of indices in `pos` for which to compute
             distances.
-        cell_shifts (Optional[torch.Tensor]): A tensor of shape (n_pairs, 3)
+        cell_shifts (torch.Tensor | None): A tensor of shape (n_pairs, 3)
             representing the shifts to apply to the distances for
             periodic boundary conditions. If None, no shifts are applied.
 
@@ -535,15 +536,15 @@ def compute_distances_with_cell_shifts(
 
 
 def compute_cell_shifts(
-    cell: torch.Tensor, shifts_idx: torch.Tensor, system_mapping: torch.Tensor
-) -> torch.Tensor:
+    cell: torch.Tensor | None, shifts_idx: torch.Tensor, system_mapping: torch.Tensor
+) -> torch.Tensor | None:
     """Compute the cell shifts based on the provided indices and cell matrix.
 
     This function calculates the shifts to apply to positions based on the specified
     indices and the unit cell matrix. If the cell is None, it returns None.
 
     Args:
-        cell (torch.Tensor): A tensor of shape (n_cells, 3, 3)
+        cell (torch.Tensor | None): A tensor of shape (n_cells, 3, 3)
             representing the unit cell matrices.
         shifts_idx (torch.Tensor): A tensor of shape (n_shifts, 3)
             representing the indices for shifts.
@@ -561,6 +562,30 @@ def compute_cell_shifts(
             "jn,jnm->jm", shifts_idx, cell.view(-1, 3, 3)[system_mapping]
         )
     return cell_shifts
+
+
+def compute_cell_shifts_strict(
+    cell: torch.Tensor, shifts_idx: torch.Tensor, system_mapping: torch.Tensor
+) -> torch.Tensor:
+    """Compute the cell shifts based on the provided indices and cell matrix.
+
+    This function calculates the shifts to apply to positions based on the specified
+    indices and the unit cell matrix. It is the same as compute_cell_shifts, but
+    cell cannot be None.
+
+    Args:
+        cell (torch.Tensor): A tensor of shape (n_cells, 3, 3)
+            representing the unit cell matrices.
+        shifts_idx (torch.Tensor): A tensor of shape (n_shifts, 3)
+            representing the indices for shifts.
+        system_mapping (torch.Tensor): A tensor of shape (n_systems,)
+            that maps the shifts to the corresponding cells.
+
+    Returns:
+        torch.Tensor: A tensor of shape (n_systems, 3) containing
+            the computed cell shifts.
+    """
+    return torch.einsum("jn,jnm->jm", shifts_idx, cell.view(-1, 3, 3)[system_mapping])
 
 
 def get_fully_connected_mapping(
@@ -848,7 +873,7 @@ def linked_cell(  # noqa: PLR0915
         shifts_idx, n_atom, dim=0, output_size=n_atom * n_cell_image
     )
     batch_image = torch.zeros((shifts_idx.shape[0]), dtype=torch.long)
-    cell_shifts = compute_cell_shifts(cell.view(-1, 3, 3), shifts_idx, batch_image)
+    cell_shifts = compute_cell_shifts_strict(cell.view(-1, 3, 3), shifts_idx, batch_image)
 
     i_ids = torch.arange(n_atom, device=device, dtype=torch.long)
     i_ids = i_ids.repeat(n_cell_image)
@@ -1101,7 +1126,7 @@ def multiplicative_isotropic_cutoff(
 
 def high_precision_sum(
     x: torch.Tensor,
-    dim: int | Iterable[int] | None = None,
+    dim: int | list[int] | tuple[int, ...] | None = None,
     *,
     keepdim: bool = False,
 ) -> torch.Tensor:
@@ -1138,7 +1163,7 @@ def high_precision_sum(
 
 def safe_mask(
     mask: torch.Tensor,
-    fn: torch.jit.ScriptFunction,
+    fn: Callable[..., torch.Tensor],
     operand: torch.Tensor,
     placeholder: float = 0.0,
 ) -> torch.Tensor:
@@ -1150,7 +1175,7 @@ def safe_mask(
 
     Args:
         mask: Boolean tensor indicating which elements to process (True) or mask (False)
-        fn: TorchScript function to apply to the masked elements
+        fn: callable function to apply to the masked elements
         operand: Input tensor to apply the function to
         placeholder: Value to use for masked-out positions (default: 0.0)
 

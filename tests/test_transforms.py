@@ -456,7 +456,7 @@ def test_pbc_wrap_batched_preserves_relative_positions(
         system_idx_mask = state.system_idx == b
 
         # Calculate pairwise distances before wrapping
-        atoms_in_batch = torch.sum(system_idx_mask).item()
+        atoms_in_batch = int(torch.sum(system_idx_mask).item())
         for n_atoms in range(atoms_in_batch - 1):
             for j in range(n_atoms + 1, atoms_in_batch):
                 # Get the indices of atoms i and j in this batch
@@ -698,7 +698,7 @@ def test_multiplicative_isotropic_cutoff_basic() -> None:
         return torch.ones_like(dr)
 
     cutoff_fn = tst.multiplicative_isotropic_cutoff(
-        constant_fn, r_onset=1.0, r_cutoff=2.0
+        constant_fn, r_onset=torch.tensor(1.0), r_cutoff=torch.tensor(2.0)
     )
 
     # Test points in different regions
@@ -716,8 +716,8 @@ def test_multiplicative_isotropic_cutoff_continuity() -> None:
     def linear_fn(dr: torch.Tensor) -> torch.Tensor:
         return dr
 
-    r_onset = 1.0
-    r_cutoff = 2.0
+    r_onset = torch.tensor(1.0)
+    r_cutoff = torch.tensor(2.0)
     cutoff_fn = tst.multiplicative_isotropic_cutoff(linear_fn, r_onset, r_cutoff)
 
     # Test near onset
@@ -741,8 +741,8 @@ def test_multiplicative_isotropic_cutoff_derivative_continuity() -> None:
     def quadratic_fn(dr: torch.Tensor) -> torch.Tensor:
         return dr**2
 
-    r_onset = 1.0
-    r_cutoff = 2.0
+    r_onset = torch.tensor(1.0)
+    r_cutoff = torch.tensor(2.0)
     cutoff_fn = tst.multiplicative_isotropic_cutoff(quadratic_fn, r_onset, r_cutoff)
 
     # Test derivative near onset and cutoff using finite differences
@@ -764,7 +764,7 @@ def test_multiplicative_isotropic_cutoff_with_parameters() -> None:
         return scale * dr
 
     cutoff_fn = tst.multiplicative_isotropic_cutoff(
-        parameterized_fn, r_onset=1.0, r_cutoff=2.0
+        parameterized_fn, r_onset=torch.tensor(1.0), r_cutoff=torch.tensor(2.0)
     )
 
     dr = torch.tensor([0.5, 1.5, 2.5])
@@ -782,7 +782,7 @@ def test_multiplicative_isotropic_cutoff_batch() -> None:
         return torch.ones_like(dr)
 
     cutoff_fn = tst.multiplicative_isotropic_cutoff(
-        constant_fn, r_onset=1.0, r_cutoff=2.0
+        constant_fn, r_onset=torch.tensor(1.0), r_cutoff=torch.tensor(2.0)
     )
 
     # Test with 2D input
@@ -800,7 +800,9 @@ def test_multiplicative_isotropic_cutoff_gradient() -> None:
     def linear_fn(dr: torch.Tensor) -> torch.Tensor:
         return dr
 
-    cutoff_fn = tst.multiplicative_isotropic_cutoff(linear_fn, r_onset=1.0, r_cutoff=2.0)
+    cutoff_fn = tst.multiplicative_isotropic_cutoff(
+        linear_fn, r_onset=torch.tensor(1.0), r_cutoff=torch.tensor(2.0)
+    )
 
     dr = torch.tensor([1.5], requires_grad=True)
     result = cutoff_fn(dr)
