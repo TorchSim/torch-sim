@@ -567,23 +567,8 @@ def compute_cell_shifts(
 def compute_cell_shifts_strict(
     cell: torch.Tensor, shifts_idx: torch.Tensor, system_mapping: torch.Tensor
 ) -> torch.Tensor:
-    """Compute the cell shifts based on the provided indices and cell matrix.
-
-    This function calculates the shifts to apply to positions based on the specified
-    indices and the unit cell matrix. It is the same as compute_cell_shifts, but
-    cell cannot be None.
-
-    Args:
-        cell (torch.Tensor): A tensor of shape (n_cells, 3, 3)
-            representing the unit cell matrices.
-        shifts_idx (torch.Tensor): A tensor of shape (n_shifts, 3)
-            representing the indices for shifts.
-        system_mapping (torch.Tensor): A tensor of shape (n_systems,)
-            that maps the shifts to the corresponding cells.
-
-    Returns:
-        torch.Tensor: A tensor of shape (n_systems, 3) containing
-            the computed cell shifts.
+    """Same thing as compute_cell_shifts, but cell cannot be None.
+    Having a non-optional cell makes torchjit not complain.
     """
     return torch.einsum("jn,jnm->jm", shifts_idx, cell.view(-1, 3, 3)[system_mapping])
 
