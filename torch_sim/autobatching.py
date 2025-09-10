@@ -22,7 +22,7 @@ Notes:
 
 from collections.abc import Callable, Iterator
 from itertools import chain
-from typing import Any, get_args
+from typing import Any, get_args, overload
 
 import torch
 
@@ -569,6 +569,14 @@ class BinningAutoBatcher:
         self.current_state_bin = 0
 
         return self.max_memory_scaler
+
+    @overload
+    def next_batch(self, *, return_indices: bool = False) -> SimState | None: ...
+
+    @overload
+    def next_batch(
+        self, *, return_indices: bool = True
+    ) -> tuple[SimState, list[int]] | None: ...
 
     def next_batch(
         self, *, return_indices: bool = False
