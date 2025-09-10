@@ -1,9 +1,10 @@
 """Mathematical operations and utilities."""
 
-# ruff: noqa: FBT001, FBT002, RUF002, RUF003, RET503
+# ruff: noqa: FBT001, FBT002, RUF002, RUF003
 
 from typing import Any, Final
 
+import numpy as np
 import torch
 from torch.autograd import Function
 
@@ -29,48 +30,70 @@ def torch_divmod(a: torch.Tensor, b: torch.Tensor) -> tuple[torch.Tensor, torch.
 """Below code is taken from https://github.com/abhijeetgangan/torch_matfunc"""
 
 
-def expm_frechet(  # noqa: C901
-    A: torch.Tensor,
-    E: torch.Tensor,
+def expm_frechet(
+    A: torch.Tensor | np.ndarray,
+    E: torch.Tensor | np.ndarray,
     method: str | None = None,
-    compute_expm: bool = True,
+    check_finite: bool = True,
+) -> torch.Tensor:
+    """Frechet derivative of the matrix exponential of A in the direction E.
+
+    Args:
+        A: (N, N) tensor.Tensor or np.ndarray.
+            Matrix of which to take the matrix exponential.
+        E: (N, N) tensor.Tensor or np.ndarray.
+            Matrix direction in which to take the Frechet derivative.
+        method: str, optional. Choice of algorithm. Should be one of
+            - `SPS` (default)
+            - `blockEnlarge`
+        check_finite: bool, optional. Whether to check that the input matrix contains
+            only finite numbers. Disabling may give a performance gain, but may result
+            in problems (crashes, non-termination) if the inputs do contain
+            infinities or NaNs. Defaults to True.
+
+    Returns: torch.Tensor. Frechet derivative of the matrix exponential of A
+        in the direction E
+    """
+    return expm_frechet_with_matrix_exp(A, E, method, check_finite)[1]
+
+
+def expm_frechet_with_matrix_exp(  # noqa: C901
+    A: torch.Tensor | np.ndarray,
+    E: torch.Tensor | np.ndarray,
+    method: str | None = None,
     check_finite: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Frechet derivative of the matrix exponential of A in the direction E.
 
     Args:
-        A: (N, N) array_like. Matrix of which to take the matrix exponential.
-        E: (N, N) array_like. Matrix direction in which to take the Frechet derivative.
+        A: (N, N) tensor.Tensor or np.ndarray.
+            Matrix of which to take the matrix exponential.
+        E: (N, N) tensor.Tensor or np.ndarray.
+            Matrix direction in which to take the Frechet derivative.
         method: str, optional. Choice of algorithm. Should be one of
             - `SPS` (default)
             - `blockEnlarge`
-        compute_expm: bool, optional. Whether to compute also `expm_A` in addition to
-            `expm_frechet_AE`. Default is True.
         check_finite: bool, optional. Whether to check that the input matrix contains
             only finite numbers. Disabling may give a performance gain, but may result
             in problems (crashes, non-termination) if the inputs do contain
-            infinities or NaNs.
+            infinities or NaNs. Defaults to True.
 
     Returns:
-        If compute_expm is True:
-            expm_A: ndarray. Matrix exponential of A.
-            expm_frechet_AE: ndarray. Frechet derivative of the matrix exponential of A
-                in the direction E.
-        Otherwise:
-            expm_frechet_AE: ndarray. Frechet derivative of the matrix exponential of A
-                in the direction E.
+        expm_A: torch.Tensor. Matrix exponential of A.
+        expm_frechet_AE: torch.Tensor. Frechet derivative of the matrix exponential of A
+            in the direction E.
     """
-    if check_finite:
-        if not torch.isfinite(A).all():
-            raise ValueError("Matrix A contains non-finite values")
-        if not torch.isfinite(E).all():
-            raise ValueError("Matrix E contains non-finite values")
-
     # Convert inputs to torch tensors if they aren't already
     if not isinstance(A, torch.Tensor):
         A = torch.tensor(A, dtype=torch.float64)
     if not isinstance(E, torch.Tensor):
         E = torch.tensor(E, dtype=torch.float64)
+
+    if check_finite:
+        if not torch.isfinite(A).all():
+            raise ValueError("Matrix A contains non-finite values")
+        if not torch.isfinite(E).all():
+            raise ValueError("Matrix E contains non-finite values")
 
     if A.dim() != 2 or A.shape[0] != A.shape[1]:
         raise ValueError("expected A to be a square matrix")
@@ -89,9 +112,7 @@ def expm_frechet(  # noqa: C901
     else:
         raise ValueError(f"Unknown implementation {method}")
 
-    if compute_expm:
-        return expm_A, expm_frechet_AE
-    return expm_frechet_AE
+    return expm_A, expm_frechet_AE
 
 
 def expm_frechet_block_enlarge(
@@ -105,8 +126,8 @@ def expm_frechet_block_enlarge(
 
     Returns:
         expm_A: Matrix exponential of A
-        expm_frechet_AE: torch.Tensor
-            Frechet derivative of the matrix exponential of A in the direction E
+        expm_frechet_AE: Frechet derivative of the matrix exponential of A
+            in the direction E.
     """
     n = A.shape[0]
     # Create block matrix M = [[A, E], [0, A]]
@@ -123,7 +144,7 @@ def expm_frechet_block_enlarge(
 # Maximal values ell_m of ||2**-s A|| such that the backward error bound
 # does not exceed 2**-53.
 ell_table_61: Final = (
-    None,
+    0,
     # 1
     2.11e-8,
     3.56e-4,
@@ -396,27 +417,29 @@ def vec(M: torch.Tensor) -> torch.Tensor:
 
 
 def expm_frechet_kronform(
-    A: torch.Tensor, method: str | None = None, check_finite: bool = True
+    A: torch.Tensor | np.ndarray, method: str | None = None, check_finite: bool = True
 ) -> torch.Tensor:
     """Construct the Kronecker form of the Frechet derivative of expm.
 
     Args:
-        A: Square matrix tensor with shape (N, N)
+        A: torch.Tensor or np.ndarray.
+            Square matrix tensor with shape (N, N)
         method: Optional extra keyword to be passed to expm_frechet
         check_finite: Whether to check that the input matrix contains only finite numbers.
             Disabling may give a performance gain, but may result in problems
             (crashes, non-termination) if the inputs do contain infinities or NaNs.
+            Defaults to True.
 
     Returns:
         torch.Tensor: Kronecker form of the Frechet derivative of the matrix exponential
             with shape (N*N, N*N)
     """
-    if check_finite and not torch.isfinite(A).all():
-        raise ValueError("Matrix A contains non-finite values")
-
     # Convert input to torch tensor if it isn't already
     if not isinstance(A, torch.Tensor):
         A = torch.tensor(A, dtype=torch.float64)
+
+    if check_finite and not torch.isfinite(A).all():
+        raise ValueError("Matrix A contains non-finite values")
 
     if A.dim() != 2 or A.shape[0] != A.shape[1]:
         raise ValueError("expected a square matrix")
@@ -428,31 +451,31 @@ def expm_frechet_kronform(
     for i in range(n):
         for j in range(n):
             E = torch.outer(ident[i], ident[j])
-            F = expm_frechet(A, E, method=method, compute_expm=False, check_finite=False)
+            F = expm_frechet(A, E, method=method, check_finite=False)
             cols.append(vec(F))
 
     return torch.stack(cols, dim=1)
 
 
-def expm_cond(A: torch.Tensor, check_finite: bool = True) -> torch.Tensor:
+def expm_cond(A: torch.Tensor | np.ndarray, check_finite: bool = True) -> torch.Tensor:
     """Relative condition number of the matrix exponential in the Frobenius norm.
 
     Args:
-        A: Square input matrix with shape (N, N)
+        A: torch.Tensor or np.ndarray. Square input matrix with shape (N, N)
         check_finite: Whether to check that the input matrix contains only finite numbers.
             Disabling may give a performance gain, but may result in problems
             (crashes, non-termination) if the inputs do contain infinities or NaNs.
+            Defaults to True.
 
     Returns:
-        kappa: The relative condition number of the matrix exponential
+        kappa: torch.Tensor. The relative condition number of the matrix exponential
             in the Frobenius norm
     """
-    if check_finite and not torch.isfinite(A).all():
-        raise ValueError("Matrix A contains non-finite values")
-
     # Convert input to torch tensor if it isn't already
     if not isinstance(A, torch.Tensor):
         A = torch.tensor(A, dtype=torch.float64)
+    if check_finite and not torch.isfinite(A).all():
+        raise ValueError("Matrix A contains non-finite values")
 
     if A.dim() != 2 or A.shape[0] != A.shape[1]:
         raise ValueError("expected a square matrix")
@@ -504,9 +527,7 @@ class expm(Function):  # noqa: N801
         (A,) = ctx.saved_tensors
 
         # Compute the Frechet derivative in the direction of grad_output
-        return expm_frechet(
-            A, grad_output, method="SPS", compute_expm=False, check_finite=False
-        )
+        return expm_frechet(A, grad_output, method="SPS", check_finite=False)
 
 
 def _is_valid_matrix(T: torch.Tensor, n: int = 3) -> bool:
@@ -606,14 +627,14 @@ def _determine_eigenvalue_case(  # noqa: C901
     raise ValueError("Could not determine eigenvalue structure")
 
 
-def _matrix_log_case1a(T: torch.Tensor, lambda_val: complex) -> torch.Tensor:
+def _matrix_log_case1a(T: torch.Tensor, lambda_val: torch.Tensor) -> torch.Tensor:
     """Compute log(T) when q(T) = (T - λI).
 
     This is the case where T is a scalar multiple of the identity matrix.
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: The eigenvalue of T
+        lambda_val: The eigenvalue of T (a complex number)
 
     Returns:
         The logarithm of T, which is log(λ)·I
@@ -624,7 +645,7 @@ def _matrix_log_case1a(T: torch.Tensor, lambda_val: complex) -> torch.Tensor:
 
 
 def _matrix_log_case1b(
-    T: torch.Tensor, lambda_val: complex, num_tol: float = 1e-16
+    T: torch.Tensor, lambda_val: torch.Tensor, num_tol: float = 1e-16
 ) -> torch.Tensor:
     """Compute log(T) when q(T) = (T - λI)².
 
@@ -632,7 +653,7 @@ def _matrix_log_case1b(
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: The eigenvalue of T
+        lambda_val: The eigenvalue of T (a complex number)
         num_tol: Numerical tolerance for stability checks, default=1e-16
 
     Returns:
@@ -647,11 +668,11 @@ def _matrix_log_case1b(
         scaled_T_minus_lambdaI = T_minus_lambdaI / lambda_val
         return torch.log(lambda_val) * Identity + scaled_T_minus_lambdaI
     # Alternative computation for small lambda
-    return torch.log(lambda_val) * Identity + T_minus_lambdaI / max(lambda_val, num_tol)
+    return torch.log(lambda_val) * Identity + T_minus_lambdaI / max(lambda_val, num_tol)  # type: ignore[call-overload]
 
 
 def _matrix_log_case1c(
-    T: torch.Tensor, lambda_val: complex, num_tol: float = 1e-16
+    T: torch.Tensor, lambda_val: torch.Tensor, num_tol: float = 1e-16
 ) -> torch.Tensor:
     """Compute log(T) when q(T) = (T - λI)³.
 
@@ -659,7 +680,7 @@ def _matrix_log_case1c(
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: The eigenvalue of T
+        lambda_val: The eigenvalue of T (a complex number)
         num_tol: Numerical tolerance for stability checks, default=1e-16
 
     Returns:
@@ -676,14 +697,14 @@ def _matrix_log_case1c(
     lambda_squared = lambda_val * lambda_val
 
     term1 = torch.log(lambda_val) * Identity
-    term2 = T_minus_lambdaI / max(lambda_val, num_tol)
-    term3 = T_minus_lambdaI_squared / max(2 * lambda_squared, num_tol)
+    term2 = T_minus_lambdaI / max(lambda_val, num_tol)  # type: ignore[call-overload]
+    term3 = T_minus_lambdaI_squared / max(2 * lambda_squared, num_tol)  # type: ignore[call-overload]
 
     return term1 + term2 - term3
 
 
 def _matrix_log_case2a(
-    T: torch.Tensor, lambda_val: complex, mu: complex, num_tol: float = 1e-16
+    T: torch.Tensor, lambda_val: torch.Tensor, mu: torch.Tensor, num_tol: float = 1e-16
 ) -> torch.Tensor:
     """Compute log(T) when q(T) = (T - λI)(T - μI) with λ≠μ.
 
@@ -692,8 +713,8 @@ def _matrix_log_case2a(
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: The repeated eigenvalue of T
-        mu: The non-repeated eigenvalue of T
+        lambda_val: The repeated eigenvalue of T (a complex number)
+        mu: The non-repeated eigenvalue of T (a complex number)
         num_tol: Numerical tolerance for stability checks, default=1e-16
 
     Returns:
@@ -721,7 +742,7 @@ def _matrix_log_case2a(
 
 
 def _matrix_log_case2b(
-    T: torch.Tensor, lambda_val: complex, mu: complex, num_tol: float = 1e-16
+    T: torch.Tensor, lambda_val: torch.Tensor, mu: torch.Tensor, num_tol: float = 1e-16
 ) -> torch.Tensor:
     """Compute log(T) when q(T) = (T - μI)(T - λI)² with λ≠μ.
 
@@ -732,8 +753,8 @@ def _matrix_log_case2b(
 
     Args:
         T: The matrix whose logarithm is to be computed
-        lambda_val: The repeated eigenvalue of T
-        mu: The non-repeated eigenvalue of T
+        lambda_val: The repeated eigenvalue of T (a complex number)
+        mu: The non-repeated eigenvalue of T (a complex number)
         num_tol: Numerical tolerance for stability checks, default=1e-16
 
     Returns:
@@ -773,7 +794,11 @@ def _matrix_log_case2b(
 
 
 def _matrix_log_case3(
-    T: torch.Tensor, lambda_val: complex, mu: complex, nu: complex, num_tol: float = 1e-16
+    T: torch.Tensor,
+    lambda_val: torch.Tensor,
+    mu: torch.Tensor,
+    nu: torch.Tensor,
+    num_tol: float = 1e-16,
 ) -> torch.Tensor:
     """Compute log(T) when q(T) = (T - λI)(T - μI)(T - νI) with λ≠μ≠ν≠λ.
     This is the case with three distinct eigenvalues.
@@ -800,7 +825,7 @@ def _matrix_log_case3(
 
     # Check if eigenvalues are distinct enough for numerical stability
     if (
-        min(torch.abs(lambda_val - mu), torch.abs(lambda_val - nu), torch.abs(mu - nu))
+        min(torch.abs(lambda_val - mu), torch.abs(lambda_val - nu), torch.abs(mu - nu))  # type: ignore[call-overload]
         < num_tol
     ):
         raise ValueError("Eigenvalues are too close, computation may be unstable")
@@ -917,8 +942,7 @@ def _matrix_log_33(  # noqa: C901
         lambda_val, mu, nu = torch.sort(eigenvalues).values  # Sort for consistency
         return _matrix_log_case3(T, lambda_val, mu, nu, num_tol)
 
-    else:
-        raise ValueError(f"Unknown eigenvalue {case=}")
+    raise ValueError(f"Unknown eigenvalue {case=}")
 
 
 def matrix_log_scipy(matrix: torch.Tensor) -> torch.Tensor:
@@ -1016,7 +1040,7 @@ def batched_vdot(
     if batch_indices.min() < 0:
         raise ValueError("batch_indices must be non-negative")
 
-    output = torch.zeros(batch_indices.max() + 1, dtype=x.dtype, device=x.device)
+    output = torch.zeros(batch_indices.max() + 1, dtype=x.dtype, device=x.device)  # type: ignore[call-overload]
     output.scatter_add_(dim=0, index=batch_indices, src=(x * y).sum(dim=1))
 
     return output
