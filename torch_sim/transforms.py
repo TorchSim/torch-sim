@@ -374,7 +374,7 @@ def wrap_positions(
     device = positions.device
 
     # Convert center to tensor
-    if not hasattr(center, "__len__"):
+    if isinstance(center, float):
         center_pos = torch.tensor((center,) * 3, dtype=positions.dtype, device=device)
     else:
         center_pos = torch.tensor(center, dtype=positions.dtype, device=device)
@@ -556,12 +556,8 @@ def compute_cell_shifts(
             the computed cell shifts.
     """
     if cell is None:
-        cell_shifts = None
-    else:
-        cell_shifts = torch.einsum(
-            "jn,jnm->jm", shifts_idx, cell.view(-1, 3, 3)[system_mapping]
-        )
-    return cell_shifts
+        return None
+    return compute_cell_shifts_strict(cell, shifts_idx, system_mapping)
 
 
 def compute_cell_shifts_strict(
