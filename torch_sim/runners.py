@@ -108,7 +108,7 @@ def _configure_batches_iterator(
     return batches
 
 
-def integrate(
+def integrate(  # noqa: C901
     system: StateLike,
     model: ModelInterface,
     *,
@@ -146,14 +146,19 @@ def integrate(
     """
     unit_system = UnitSystem.metal
     # create a list of temperatures
-    temps = temperature if hasattr(temperature, "__iter__") else [temperature] * n_steps
+    if hasattr(temperature, "__iter__"):
+        temps = torch.tensor(temperature, dtype=model.dtype, device=model.device)
+    else:
+        temps = torch.tensor(
+            [temperature] * n_steps, dtype=model.dtype, device=model.device
+        )
     if len(temps) != n_steps:
         raise ValueError(f"{len(temps)=:,}. It must equal n_steps = {n_steps=:,}")
 
     # initialize the state
     state: SimState = initialize_state(system, model.device, model.dtype)
     dtype, device = state.dtype, state.device
-    kTs = torch.tensor(temps, dtype=dtype, device=device) * unit_system.temperature
+    kTs = temps * unit_system.temperature
     init_fn, update_fn = integrator(
         model=model,
         kT=kTs[0],
