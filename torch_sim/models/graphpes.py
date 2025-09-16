@@ -23,7 +23,11 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.neighbors import (
+    DEFAULT_NEIGHBOR_LIST,
+    NeighborListInterface,
+    compute_neighbor_list,
+)
 from torch_sim.typing import StateDict
 
 
@@ -55,7 +59,11 @@ except ImportError as exc:
         pass
 
 
-def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGraph:
+def state_to_atomic_graph(
+    state: ts.SimState,
+    cutoff: torch.Tensor,
+    neighbor_list: NeighborListInterface | None = None,
+) -> AtomicGraph:
     """Convert a SimState object into an AtomicGraph object.
 
     Args:
@@ -72,15 +80,14 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
         R = state.positions[system_mask]
         Z = state.atomic_numbers[system_mask]
         cell = state.row_vector_cell[i]
-        nl, shifts = vesin_nl_ts(
-            R,
-            cell,
-            state.pbc,
-            # graph-pes models internally trim the neighbour list to the
-            # model's cutoff value. To ensure no strange edge effects whereby
-            # edges that are exactly `cutoff` long are included/excluded,
-            # we bump this up slightly here
-            cutoff + 1e-5,
+        nl, shifts = compute_neighbor_list(
+            neighbor_list or DEFAULT_NEIGHBOR_LIST,
+            positions=R,
+            cell=cell,
+            pbc=state.pbc,
+            # graph-pes models internally trim the neighbour list to the model's
+            # cutoff value. To avoid edge effects at exactly `cutoff`, add epsilon
+            cutoff=float((cutoff + 1e-5).item()) if isinstance(cutoff, torch.Tensor) else cutoff + 1e-5,
         )
 
         graphs.append(
@@ -138,6 +145,7 @@ class GraphPESWrapper(ModelInterface):
         *,
         compute_forces: bool = True,
         compute_stress: bool = True,
+        neighbor_list: NeighborListInterface | None = None,
     ) -> None:
         """Initialize the GraphPESWrapper.
 
@@ -164,6 +172,7 @@ class GraphPESWrapper(ModelInterface):
 
         self._compute_forces = compute_forces
         self._compute_stress = compute_stress
+        self._neighbor_list = neighbor_list or DEFAULT_NEIGHBOR_LIST
 
         self._properties: list[PropertyKey] = ["energy"]
         if self.compute_forces:
@@ -187,5 +196,7 @@ class GraphPESWrapper(ModelInterface):
         if not isinstance(state, ts.SimState):
             state = ts.SimState(**state)  # type: ignore[arg-type]
 
-        atomic_graph = state_to_atomic_graph(state, self._gp_model.cutoff)
+        atomic_graph = state_to_atomic_graph(
+            state, self._gp_model.cutoff, self._neighbor_list
+        )
         return self._gp_model.predict(atomic_graph, self._properties)  # type: ignore[return-value]

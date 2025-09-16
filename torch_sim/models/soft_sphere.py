@@ -43,11 +43,16 @@ Example::
 """
 
 import torch
+from typing import Callable
 
 import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
-from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.neighbors import (
+    DEFAULT_NEIGHBOR_LIST,
+    compute_neighbor_list,
+    NeighborListInterface,
+)
 from torch_sim.typing import StateDict
 
 
@@ -194,6 +199,7 @@ class SoftSphereModel(ModelInterface):
         per_atom_stresses: bool = False,
         use_neighbor_list: bool = True,
         cutoff: float | None = None,
+        neighbor_list: NeighborListInterface | Callable | None = None,
     ) -> None:
         """Initialize the soft sphere model.
 
@@ -243,6 +249,7 @@ class SoftSphereModel(ModelInterface):
         self.per_atom_energies = per_atom_energies
         self.per_atom_stresses = per_atom_stresses
         self.use_neighbor_list = use_neighbor_list
+        self.neighbor_list = neighbor_list or DEFAULT_NEIGHBOR_LIST
 
         # Convert interaction parameters to tensors with proper dtype/device
         self.sigma = torch.tensor(sigma, dtype=dtype, device=self.device)
@@ -289,8 +296,9 @@ class SoftSphereModel(ModelInterface):
         pbc = state.pbc
 
         if self.use_neighbor_list:
-            # Get neighbor list using vesin_nl_ts
-            mapping, shifts = vesin_nl_ts(
+            # Get neighbor list using configured implementation (default: Vesin)
+            mapping, shifts = compute_neighbor_list(
+                self.neighbor_list,
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
@@ -515,6 +523,7 @@ class SoftSphereMultiModel(ModelInterface):
         per_atom_stresses: bool = False,
         use_neighbor_list: bool = True,
         cutoff: float | None = None,
+        neighbor_list: NeighborListInterface | Callable | None = None,
     ) -> None:
         """Initialize a soft sphere model for multi-component systems.
 
@@ -602,6 +611,8 @@ class SoftSphereMultiModel(ModelInterface):
         self.per_atom_energies = per_atom_energies
         self.per_atom_stresses = per_atom_stresses
         self.use_neighbor_list = use_neighbor_list
+        # Allow user-supplied neighbor list implementation
+        self.neighbor_list = neighbor_list or DEFAULT_NEIGHBOR_LIST
 
         # Store species list and determine number of unique species
         self.species = species
@@ -708,12 +719,13 @@ class SoftSphereMultiModel(ModelInterface):
         # Compute neighbor list or full distance matrix
         if self.use_neighbor_list:
             # Get neighbor list for efficient computation
-            mapping, shifts = vesin_nl_ts(
+            mapping, shifts = compute_neighbor_list(
+                self.neighbor_list,
                 positions=positions,
                 cell=cell,
                 pbc=self.pbc,
                 cutoff=self.cutoff,
-                sorti=False,
+                sort_id=False,
             )
             # Get displacements between neighbor pairs
             dr_vec, distances = transforms.get_pair_displacements(

@@ -26,11 +26,16 @@ Notes:
 """
 
 import torch
+from typing import Callable
 
 import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
-from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.neighbors import (
+    DEFAULT_NEIGHBOR_LIST,
+    compute_neighbor_list,
+    NeighborListInterface,
+)
 from torch_sim.typing import StateDict
 
 
@@ -165,6 +170,7 @@ class MorseModel(ModelInterface):
         per_atom_stresses: bool = False,
         use_neighbor_list: bool = True,
         cutoff: float | None = None,
+        neighbor_list: NeighborListInterface | Callable | None = None,
     ) -> None:
         """Initialize the Morse potential calculator.
 
@@ -219,6 +225,7 @@ class MorseModel(ModelInterface):
         self._per_atom_energies = per_atom_energies
         self._per_atom_stresses = per_atom_stresses
         self.use_neighbor_list = use_neighbor_list
+        self.neighbor_list = neighbor_list or DEFAULT_NEIGHBOR_LIST
         # Convert parameters to tensors
         self.sigma = torch.tensor(sigma, dtype=self.dtype, device=self.device)
         self.cutoff = torch.tensor(
@@ -265,7 +272,8 @@ class MorseModel(ModelInterface):
         pbc = state.pbc
 
         if self.use_neighbor_list:
-            mapping, shifts = vesin_nl_ts(
+            mapping, shifts = compute_neighbor_list(
+                self.neighbor_list,
                 positions=positions,
                 cell=cell,
                 pbc=pbc,

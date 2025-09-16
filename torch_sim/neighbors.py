@@ -1,4 +1,9 @@
-"""Utilities for neighbor list calculations."""
+"""Utilities for neighbor list calculations.
+
+This module provides multiple neighbor-list backends (Vesin, Torch) and exposes
+an interface to allow users to inject their preferred implementation. By default
+TorchSim uses the Vesin-based neighbor list.
+"""
 
 import torch
 from vesin import NeighborList as VesinNeighborList
@@ -6,6 +11,81 @@ from vesin.torch import NeighborList as VesinNeighborList_ts
 
 import torch_sim.math as tsm
 from torch_sim import transforms
+from typing import Callable, Protocol, runtime_checkable
+
+
+@runtime_checkable
+class NeighborListInterface(Protocol):
+    """Protocol for neighbor list implementations.
+
+    Implementations should compute neighbor pairs and periodic shift vectors
+    for a single (unbatched) atomic structure.
+    """
+
+    def compute(
+        self,
+        *,
+        positions: torch.Tensor,
+        cell: torch.Tensor,
+        pbc: bool | torch.Tensor,
+        cutoff: float | torch.Tensor,
+        sort_id: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return ``(mapping, shifts)`` tensors.
+
+        - ``mapping``: ``torch.long`` tensor of shape ``[2, n_edges]``
+        - ``shifts``: ``torch.dtype`` tensor of shape ``[n_edges, 3]`` matching
+          the dtype of ``positions``
+        """
+        ...
+
+
+class VesinNeighborListAdapter:
+    """Default neighbor list adapter using Vesin (TorchScript backend).
+
+    This adapter delegates to ``vesin_nl_ts`` to compute the neighbor list.
+    """
+
+    def compute(
+        self,
+        *,
+        positions: torch.Tensor,
+        cell: torch.Tensor,
+        pbc: bool | torch.Tensor,
+        cutoff: float | torch.Tensor,
+        sort_id: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        return vesin_nl_ts(
+            positions=positions,
+            cell=cell,
+            pbc=bool(pbc) if isinstance(pbc, torch.Tensor) else pbc,
+            cutoff=cutoff if isinstance(cutoff, torch.Tensor) else torch.tensor(cutoff, device=positions.device, dtype=positions.dtype),
+            sort_id=sort_id,
+        )
+
+
+def compute_neighbor_list(
+    neighbor_list: NeighborListInterface | Callable[..., tuple[torch.Tensor, torch.Tensor]],
+    *,
+    positions: torch.Tensor,
+    cell: torch.Tensor,
+    pbc: bool | torch.Tensor,
+    cutoff: float | torch.Tensor,
+    sort_id: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Helper to call either an object with ``compute`` or a plain function."""
+    if hasattr(neighbor_list, "compute") and callable(getattr(neighbor_list, "compute")):
+        return getattr(neighbor_list, "compute")(
+            positions=positions, cell=cell, pbc=pbc, cutoff=cutoff, sort_id=sort_id
+        )
+    # Fallback to callable interface
+    return neighbor_list(  # type: ignore[misc,call-arg]
+        positions=positions, cell=cell, pbc=pbc, cutoff=cutoff, sort_id=sort_id
+    )
+
+
+# Default neighbor list used throughout TorchSim
+DEFAULT_NEIGHBOR_LIST: NeighborListInterface = VesinNeighborListAdapter()
 
 
 @torch.jit.script
