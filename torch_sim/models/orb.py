@@ -387,7 +387,7 @@ class OrbModel(ModelInterface):
             state = state.to(self._device)
 
         half_supercell = (
-            torch.max(torch.det(state.cell)) > 1000
+            torch.min(torch.det(state.cell)) > 1000
             if self._half_supercell is None
             else self._half_supercell
         )
