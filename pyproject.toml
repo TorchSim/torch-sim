@@ -33,7 +33,7 @@ dependencies = [
     "torch>=2",
     "tqdm>=4.67",
     "vesin-torch>=0.3.8",
-    "vesin>=0.3.7",
+    "vesin>=0.3.8",
 ]
 
 [project.optional-dependencies]
