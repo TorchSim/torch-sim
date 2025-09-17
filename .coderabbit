@@ -1,2 +1,5 @@
 reviews:
-  auto_review: false
+  high_level_summary: false
+  auto_review:
+    enabled: false
+    drafts: false
