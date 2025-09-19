@@ -912,6 +912,162 @@ def test_minimum_image_displacement(
 
 
 @pytest.mark.parametrize(
+    ("dr", "cell", "system_idx", "pbc", "expected"),
+    [
+        # Single system case - should match minimum_image_displacement results
+        (
+            [[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]],
+            torch.stack([torch.eye(3) * 3.0]),
+            torch.tensor([0, 0]),
+            False,
+            [[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]],
+        ),
+        (
+            [[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]],
+            torch.stack([torch.eye(3) * 3.0]),
+            torch.tensor([0, 0]),
+            True,
+            [[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]],
+        ),
+        (
+            [[2.2, 0.0, 0.0], [0.0, 2.2, 0.0], [0.0, 0.0, 2.2]],
+            torch.stack([torch.eye(3) * 2.0]),
+            torch.tensor([0, 0, 0]),
+            True,
+            [[0.2, 0.0, 0.0], [0.0, 0.2, 0.0], [0.0, 0.0, 0.2]],
+        ),
+        # Multi-system case - different cells for different systems
+        (
+            [[2.2, 0.0, 0.0], [0.0, 3.2, 0.0]],  # Different displacements
+            torch.stack([torch.eye(3) * 2.0, torch.eye(3) * 3.0]),  # Different cells
+            torch.tensor([0, 1]),  # Different systems
+            True,
+            # Both wrapped with their respective cells
+            [[0.2, 0.0, 0.0], [0.0, 0.2, 0.0]],
+        ),
+        # Multi-system with mixed cases
+        (
+            [[1.5, 0.0, 0.0], [3.2, 0.0, 0.0], [0.0, 2.5, 0.0]],
+            torch.stack([torch.eye(3) * 3.0, torch.eye(3) * 4.0]),
+            torch.tensor([0, 1, 1]),  # First atom in system 0, others in system 1
+            True,
+            # Different wrapping per system
+            [[1.5, 0.0, 0.0], [-0.8, 0.0, 0.0], [0.0, -1.5, 0.0]],
+        ),
+        # No PBC case with multiple systems
+        (
+            [[1.5, 1.5, 1.5], [2.2, 0.0, 0.0]],
+            torch.stack([torch.eye(3) * 3.0, torch.eye(3) * 2.0]),
+            torch.tensor([0, 1]),
+            False,
+            [[1.5, 1.5, 1.5], [2.2, 0.0, 0.0]],  # No wrapping when pbc=False
+        ),
+    ],
+)
+def test_minimum_image_displacement_batched(
+    *,
+    dr: list[list[float]],
+    cell: torch.Tensor,
+    system_idx: torch.Tensor,
+    pbc: bool,
+    expected: list[list[float]],
+) -> None:
+    """Test minimum_image_displacement_batched with various inputs.
+
+    Tests function with single and multiple systems, with and without PBC.
+    Reuses test cases from minimum_image_displacement to ensure consistency.
+    """
+    result = tst.minimum_image_displacement_batched(
+        dr=torch.tensor(dr), cell=cell, system_idx=system_idx, pbc=pbc
+    )
+    torch.testing.assert_close(result, torch.tensor(expected))
+
+
+def test_minimum_image_displacement_batched_consistency() -> None:
+    """Test that batched version matches single system calls for single systems."""
+    # Test parameters from the single system test
+    dr = torch.tensor([[2.2, 0.0, 0.0], [0.0, 2.2, 0.0], [0.0, 0.0, 2.2]])
+    cell_single = torch.eye(3) * 2.0
+    cell_batched = torch.stack([cell_single])
+    system_idx = torch.tensor([0, 0, 0])
+
+    # Single system result
+    result_single = tst.minimum_image_displacement(dr=dr, cell=cell_single, pbc=True)
+
+    # Batched result with single system
+    result_batched = tst.minimum_image_displacement_batched(
+        dr=dr, cell=cell_batched, system_idx=system_idx, pbc=True
+    )
+
+    torch.testing.assert_close(result_single, result_batched)
+
+
+def test_minimum_image_displacement_batched_triclinic() -> None:
+    """Test minimum_image_displacement_batched with triclinic cells."""
+    # Define different triclinic cells for different systems
+    cell1 = torch.tensor([[2.0, 0.5, 0.0], [0.0, 2.0, 0.0], [0.0, 0.3, 2.0]])
+    cell2 = torch.tensor([[3.0, 0.0, 0.5], [0.3, 3.0, 0.0], [0.0, 0.0, 3.0]])
+
+    cell_batched = torch.stack([cell1, cell2])
+
+    # Create displacement vectors that need wrapping
+    dr = torch.tensor(
+        [
+            [2.5, 2.5, 2.5],  # System 0
+            [3.5, 3.5, 3.5],  # System 1
+        ]
+    )
+    system_idx = torch.tensor([0, 1])
+
+    result = tst.minimum_image_displacement_batched(
+        dr=dr, cell=cell_batched, system_idx=system_idx, pbc=True
+    )
+
+    # Verify results by computing expected values manually
+    # For system 0 with cell1
+    expected_0 = tst.minimum_image_displacement(dr=dr[0:1], cell=cell1, pbc=True)
+    # For system 1 with cell2
+    expected_1 = tst.minimum_image_displacement(dr=dr[1:2], cell=cell2, pbc=True)
+
+    torch.testing.assert_close(result[0:1], expected_0)
+    torch.testing.assert_close(result[1:2], expected_1)
+
+
+def test_minimum_image_displacement_batched_invalid_inputs() -> None:
+    """Test error handling for invalid inputs in batched minimum image displacement."""
+    dr = torch.ones(4, 3)
+    cell = torch.stack([torch.eye(3)] * 2)
+    system_idx = torch.tensor([0, 0, 1, 1])
+
+    # Test integer tensors
+    with pytest.raises(TypeError):
+        tst.minimum_image_displacement_batched(
+            dr=torch.ones(4, 3, dtype=torch.int64),
+            cell=cell,
+            system_idx=system_idx,
+            pbc=True,
+        )
+
+    # Test dimension mismatch - displacement vectors
+    with pytest.raises(ValueError):
+        tst.minimum_image_displacement_batched(
+            dr=torch.ones(4, 2),  # Wrong dimension (2 instead of 3)
+            cell=cell,
+            system_idx=system_idx,
+            pbc=True,
+        )
+
+    # Test mismatch between system indices and cell
+    with pytest.raises(ValueError):
+        tst.minimum_image_displacement_batched(
+            dr=dr,
+            cell=torch.stack([torch.eye(3)] * 3),  # 3 cells but only 2 systems
+            system_idx=system_idx,
+            pbc=True,
+        )
+
+
+@pytest.mark.parametrize(
     ("positions", "cell", "pbc", "pairs", "shifts", "expected_dr", "expected_distance"),
     [
         (  # No PBC case with specific pair
