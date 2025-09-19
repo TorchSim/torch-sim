@@ -68,7 +68,7 @@ docs = [
 ]
 
 [project.urls]
-Repo = "https://github.com/radical-ai/torch-sim"
+Repo = "https://github.com/TorchSim/torch-sim"
 
 [build-system]
 requires = ["uv_build>=0.7.12"]

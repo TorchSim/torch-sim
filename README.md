@@ -1,6 +1,6 @@
 # TorchSim
 
-[![CI](https://github.com/radical-ai/torch-sim/actions/workflows/test.yml/badge.svg)](https://github.com/radical-ai/torch-sim/actions/workflows/test.yml)
+[![CI](https://github.com/TorchSim/torch-sim/actions/workflows/test.yml/badge.svg)](https://github.com/TorchSim/torch-sim/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/radical-ai/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/radical-ai/torch-sim)
 [![This project supports Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg?logo=python&logoColor=white)](https://python.org/downloads)
 [![PyPI](https://img.shields.io/pypi/v/torch_sim_atomistic?logo=pypi&logoColor=white)](https://pypi.org/project/torch_sim_atomistic)
@@ -113,7 +113,7 @@ pip install torch-sim-atomistic
 ### Installing from source
 
 ```sh
-git clone https://github.com/radical-ai/torch-sim
+git clone https://github.com/TorchSim/torch-sim
 cd torch-sim
 pip install .
 ```
