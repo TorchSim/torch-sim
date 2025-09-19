@@ -1172,3 +1172,45 @@ def safe_mask(
     """
     masked = torch.where(mask, operand, torch.zeros_like(operand))
     return torch.where(mask, fn(masked), torch.full_like(operand, placeholder))
+
+
+def unwrap_positions(pos: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
+    """Unwrap wrapped positions into continuous coordinates.
+
+    Parameters
+    ----------
+    pos : (T, N, 3) tensor
+        Wrapped cartesian positions
+    box : (3,3) or (T,3,3) tensor
+        Box matrix (orthorhombic: diagonal; triclinic: full 3x3).
+        If constant, pass shape (3,3). If time-dependent, pass (T,3,3).
+
+    Returns:
+    -------
+    unwrapped_pos : (T, N, 3) tensor
+        Unwrapped cartesian positions
+    """
+    if box.ndim == 2:  # constant box
+        inv_box = torch.inverse(box)  # (3,3)
+        frac = torch.matmul(pos, inv_box.T)  # (T,N,3)
+        dfrac = frac[1:] - frac[:-1]  # (T-1,N,3)
+        dfrac_corrected = dfrac - torch.round(dfrac)
+        dcart = torch.matmul(dfrac_corrected, box.T)  # (T-1,N,3)
+
+    elif box.ndim == 3:  # time-dependent box
+        inv_box = torch.inverse(box)  # (T,3,3)
+        # fractional coords: (T,N,3) = (T,3,3) @ (T,N,3)
+        frac = torch.einsum("tij,tnj->tni", inv_box, pos)
+        dfrac = frac[1:] - frac[:-1]  # (T-1,N,3)
+        dfrac_corrected = dfrac - torch.round(dfrac)
+        dcart = torch.einsum("tij,tnj->tni", box[:-1], dfrac_corrected)
+
+    else:
+        raise ValueError("box must be shape (3,3) or (T,3,3)")
+
+    # cumulative reconstruction
+    unwrapped = torch.empty_like(pos)
+    unwrapped[0] = pos[0]
+    unwrapped[1:] = torch.cumsum(dcart, dim=0) + unwrapped[0]
+
+    return unwrapped
