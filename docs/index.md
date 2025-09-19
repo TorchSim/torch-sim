@@ -4,7 +4,6 @@
 :hidden:
 user/introduction
 user/overview
-user/models
 tutorials/index
 ```
 
@@ -19,7 +18,6 @@ reference/index
 :hidden:
 dev/dev_install
 dev/add_model
-dev/batching
 ```
 
 ```{toctree}
