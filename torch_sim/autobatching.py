@@ -591,7 +591,7 @@ class BinningAutoBatcher:
                   where indices are the original positions of the states, or None if no
                   more batches.
 
-        Example:
+        Examples:
             Get batches one by one:
 
             .. code-block:: python
@@ -991,7 +991,7 @@ class InFlightAutoBatcher:
             AssertionError: If convergence_tensor doesn't match the expected shape or
                 if other validation checks fail.
 
-        Example:
+        Examples:
             Process states with convergence checking:
 
             .. code-block:: python
