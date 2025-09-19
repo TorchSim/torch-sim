@@ -163,7 +163,8 @@ class FairChemModel(ModelInterface):
         if model_name is not None:
             if model is not None:
                 raise RuntimeError(
-                    "model_name and checkpoint_path were both specified, please use only one at a time"
+                    "model_name and checkpoint_path were both specified, "
+                    "please use only one at a time"
                 )
             if local_cache is None:
                 raise NotImplementedError(
@@ -183,11 +184,13 @@ class FairChemModel(ModelInterface):
                 config, duplicates_warning, duplicates_error = load_config(config_yml)
                 if len(duplicates_warning) > 0:
                     print(
-                        f"Overwritten config parameters from included configs (non-included parameters take precedence): {duplicates_warning}"
+                        "Overwritten config parameters from included configs "
+                        f"(non-included parameters take precedence): {duplicates_warning}"
                     )
                 if len(duplicates_error) > 0:
                     raise ValueError(
-                        f"Conflicting (duplicate) parameters in simultaneously included configs: {duplicates_error}"
+                        "Conflicting (duplicate) parameters in simultaneously "
+                        f"included configs: {duplicates_error}"
                     )
             else:
                 config = config_yml
@@ -280,7 +283,8 @@ class FairChemModel(ModelInterface):
         seed = seed if seed is not None else self.trainer.config["cmd"]["seed"]
         if seed is None:
             print(
-                "No seed has been set in model checkpoint or OCPCalculator! Results may not be reproducible on re-run"
+                "No seed has been set in model checkpoint or OCPCalculator! Results may "
+                "not be reproducible on re-run"
             )
         else:
             self.trainer.set_seed(seed)
@@ -360,7 +364,8 @@ class FairChemModel(ModelInterface):
 
         if self.pbc != state.pbc:
             raise ValueError(
-                "PBC mismatch between model and state. For FairChemModel PBC needs to be defined in the model class."
+                "PBC mismatch between model and state. "
+                "For FairChemModel PBC needs to be defined in the model class."
             )
 
         natoms = torch.bincount(state.system_idx)
