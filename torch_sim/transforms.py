@@ -1248,6 +1248,7 @@ def unwrap_positions(pos: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
     unwrapped_pos : (T, N, 3) tensor
         Unwrapped cartesian positions
     """
+    box = box.squeeze()
     if box.ndim == 2:  # constant box
         inv_box = torch.inverse(box)  # (3,3)
         frac = torch.matmul(pos, inv_box.T)  # (T,N,3)
