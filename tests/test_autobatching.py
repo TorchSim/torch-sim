@@ -453,7 +453,7 @@ def test_in_flight_auto_batcher_restore_order(
     [
         5,  # At 5 steps, not every state will converge before the next batch.
         #       This tests the merging of partially converged states with new states
-        #       which has been a bug in the past. See https://github.com/Radical-AI/torch-sim/pull/219
+        #       which has been a bug in the past. See https://github.com/TorchSim/torch-sim/pull/219
         10,  # At 10 steps, all states will converge before the next batch
     ],
 )

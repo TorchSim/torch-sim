@@ -15,8 +15,8 @@ Review Articles:
   Physical Review B, 90(22), 224104
 
 Online Resources:
-- Materials Project Documentation
-  https://docs.materialsproject.org/methodology/elasticity/
+
+- Materials Project Documentation: https://docs.materialsproject.org/methodology/elasticity/
 """
 
 from collections.abc import Callable
@@ -551,13 +551,13 @@ def triclinic_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Returns:
         torch.Tensor: Matrix of shape (6, 21) where columns correspond to
-                     all possible elastic constants in order:
-                     [C11, C12, C13, C14, C15, C16,
-                          C22, C23, C24, C25, C26,
-                              C33, C34, C35, C36,
-                                  C44, C45, C46,
-                                      C55, C56,
-                                          C66]
+            all possible elastic constants in order:
+            [C11, C12, C13, C14, C15, C16,
+                 C22, C23, C24, C25, C26,
+                     C33, C34, C35, C36,
+                         C44, C45, C46,
+                             C55, C56,
+                                 C66]
     """
     if not isinstance(strains, torch.Tensor):
         strains = torch.tensor(strains)
