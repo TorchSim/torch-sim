@@ -599,18 +599,20 @@ class BinningAutoBatcher:
                   where indices are the original positions of the states, or None if no
                   more batches.
 
-        Example::
+        Examples:
+            Get batches one by one:
 
-            # Get batches one by one
-            all_converged_state, convergence = [], None
-            while (result := batcher.next_batch(state, convergence))[0] is not None:
-                state, converged_states = result
-                all_converged_states.extend(converged_states)
+            .. code-block:: python
 
-                evolve_batch(state)
-                convergence = convergence_criterion(state)
-            else:
-                all_converged_states.extend(result[1])
+                all_converged_state, convergence = [], None
+                while (result := batcher.next_batch(state, convergence))[0] is not None:
+                    state, converged_states = result
+                    all_converged_states.extend(converged_states)
+
+                    evolve_batch(state)
+                    convergence = convergence_criterion(state)
+                else:
+                    all_converged_states.extend(result[1])
 
         """
         # TODO: need to think about how this intersects with reporting too
@@ -997,17 +999,20 @@ class InFlightAutoBatcher:
             AssertionError: If convergence_tensor doesn't match the expected shape or
                 if other validation checks fail.
 
-        Example::
+        Examples:
+            Process states with convergence checking:
 
-            # Initial call
-            batch, completed = batcher.next_batch(None, None)
+            .. code-block:: python
 
-            # Process batch and check for convergence
-            batch = process_batch(batch)
-            convergence = check_convergence(batch)
+                # Initial call
+                batch, completed = batcher.next_batch(None, None)
 
-            # Get next batch with converged states removed and new states added
-            batch, completed = batcher.next_batch(batch, convergence)
+                # Process batch and check for convergence
+                batch = process_batch(batch)
+                convergence = check_convergence(batch)
+
+                # Get next batch with converged states removed and new states added
+                batch, completed = batcher.next_batch(batch, convergence)
 
         Notes:
             When max_iterations is set, states that exceed this limit will be

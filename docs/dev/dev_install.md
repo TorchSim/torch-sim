@@ -12,10 +12,10 @@ pip install torch-sim-atomistic
 
 ## Install from source
 
-To install torch-sim from source, clone the repository from [github](https://github.com/Radical-AI/torch-sim)
+To install torch-sim from source, clone the repository from [github](https://github.com/TorchSim/torch-sim)
 
 ```bash
-git clone https://github.com/Radical-AI/torch-sim
+git clone https://github.com/TorchSim/torch-sim
 cd torch-sim
 pip install . -e
 ```

@@ -1,4 +1,5 @@
 import time
+from collections.abc import Callable
 
 import numpy as np
 import psutil
@@ -104,7 +105,7 @@ CaCrP2O7_mvc_11955_symmetrized = {
 
 
 @pytest.fixture
-def periodic_atoms_set():
+def periodic_atoms_set() -> list[Atoms]:
     return [
         bulk("Si", "diamond", a=6, cubic=True),
         bulk("Si", "diamond", a=6),
@@ -123,7 +124,7 @@ def periodic_atoms_set():
 
 
 @pytest.fixture
-def molecule_atoms_set() -> list:
+def molecule_atoms_set() -> list[Atoms]:
     return [
         *map(molecule, ("CH3CH2NH2", "H2O", "methylenecyclopropane", "OCHCHO", "C3H9C")),
     ]
@@ -131,11 +132,13 @@ def molecule_atoms_set() -> list:
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
 @pytest.mark.parametrize("use_jit", [True, False])
-@pytest.mark.parametrize("atoms_list", ["periodic_atoms_set", "molecule_atoms_set"])
+@pytest.mark.parametrize(
+    "atoms_list_fixture", ["periodic_atoms_set", "molecule_atoms_set"]
+)
 def test_primitive_neighbor_list(
     *,
     cutoff: float,
-    atoms_list: str,
+    atoms_list_fixture: str,
     device: torch.device,
     dtype: torch.dtype,
     use_jit: bool,
@@ -150,7 +153,7 @@ def test_primitive_neighbor_list(
         dtype: Torch dtype to use
         use_jit: Whether to use the jitted version or disable JIT
     """
-    atoms_list = request.getfixturevalue(atoms_list)
+    atoms_list = request.getfixturevalue(atoms_list_fixture)
 
     # Create a non-jitted version of the function if requested
     if use_jit:
@@ -209,7 +212,7 @@ def test_primitive_neighbor_list(
         dds_prim = transforms.compute_distances_with_cell_shifts(
             pos, mapping, cell_shifts_prim
         )
-        dds_prim = np.sort(dds_prim.numpy())
+        dds_prim_sorted = np.sort(dds_prim.numpy())
 
         # Get the neighbor list from ase
         idx_i_ref, idx_j_ref, shifts_ref, dist_ref = neighbor_list(
@@ -235,20 +238,22 @@ def test_primitive_neighbor_list(
         )
 
         # Sort the distances
-        dds_ref = np.sort(dds_ref.numpy())
-        dist_ref = np.sort(dist_ref)
+        dds_ref_sorted = np.sort(dds_ref.numpy())
+        dist_ref_sorted = np.sort(dist_ref)
 
         # Check that the distances are the same with ase and torchsim logic
-        np.testing.assert_allclose(dds_ref, dist_ref)
+        np.testing.assert_allclose(dds_ref_sorted, dist_ref_sorted)
 
         # Check that the primitive_neighbor_list distances match ASE's
         np.testing.assert_allclose(
-            dds_prim, dist_ref, err_msg=f"Failed with use_jit={use_jit}"
+            dds_prim_sorted, dist_ref_sorted, err_msg=f"Failed with use_jit={use_jit}"
         )
 
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
-@pytest.mark.parametrize("atoms_list", ["periodic_atoms_set", "molecule_atoms_set"])
+@pytest.mark.parametrize(
+    "atoms_list_fixture", ["periodic_atoms_set", "molecule_atoms_set"]
+)
 @pytest.mark.parametrize(
     "nl_implementation",
     [neighbors.standard_nl, neighbors.vesin_nl, neighbors.vesin_nl_ts],
@@ -256,8 +261,8 @@ def test_primitive_neighbor_list(
 def test_neighbor_list_implementations(
     *,
     cutoff: float,
-    atoms_list: str,
-    nl_implementation: callable,
+    atoms_list_fixture: str,
+    nl_implementation: Callable,
     device: torch.device,
     dtype: torch.dtype,
     request: pytest.FixtureRequest,
@@ -265,7 +270,7 @@ def test_neighbor_list_implementations(
     """Check that different neighbor list implementations give the same results as ASE
     by comparing the resulting sorted list of distances between neighbors.
     """
-    atoms_list = request.getfixturevalue(atoms_list)
+    atoms_list = request.getfixturevalue(atoms_list_fixture)
 
     for atoms in atoms_list:
         # Convert to torch tensors
@@ -284,7 +289,7 @@ def test_neighbor_list_implementations(
         # Calculate distances with cell shifts
         cell_shifts = torch.mm(shifts, row_vector_cell)
         dds = transforms.compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
-        dds = np.sort(dds.numpy())
+        dds_sorted = np.sort(dds.numpy())
 
         # Get the reference neighbor list from ASE
         idx_i, idx_j, shifts_ref, dist = neighbor_list(
@@ -306,13 +311,13 @@ def test_neighbor_list_implementations(
         dds_ref = transforms.compute_distances_with_cell_shifts(
             pos, mapping_ref, cell_shifts_ref
         )
-        dds_ref = np.sort(dds_ref.numpy())
-        dist_ref = np.sort(dist)
+        dds_ref_sorted = np.sort(dds_ref.numpy())
+        dist_ref_sorted = np.sort(dist)
 
         # Verify results
-        np.testing.assert_allclose(dds_ref, dist_ref)
-        np.testing.assert_allclose(dds, dds_ref)
-        np.testing.assert_allclose(dds, dist_ref)
+        np.testing.assert_allclose(dds_ref_sorted, dist_ref_sorted)
+        np.testing.assert_allclose(dds_sorted, dds_ref_sorted)
+        np.testing.assert_allclose(dds_sorted, dist_ref_sorted)
 
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
@@ -325,7 +330,7 @@ def test_torch_nl_implementations(
     *,
     cutoff: float,
     self_interaction: bool,
-    nl_implementation: callable,
+    nl_implementation: Callable,
     device: torch.device,
     dtype: torch.dtype,
     molecule_atoms_set: list[Atoms],
@@ -351,7 +356,7 @@ def test_torch_nl_implementations(
         row_vector_cell, shifts_idx, mapping_system
     )
     dds = transforms.compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
-    dds = np.sort(dds.numpy())
+    dds_sorted = np.sort(dds.numpy())
 
     # Get reference results from ASE
     dd_ref = []
@@ -364,10 +369,10 @@ def test_torch_nl_implementations(
             max_nbins=1e6,
         )
         dd_ref.extend(dist)
-    dd_ref = np.sort(dd_ref)
+    dd_ref_sorted = np.sort(dd_ref)
 
     # Verify results
-    np.testing.assert_allclose(dd_ref, dds)
+    np.testing.assert_allclose(dd_ref_sorted, dds_sorted)
 
 
 def test_primitive_neighbor_list_edge_cases(
@@ -560,7 +565,13 @@ def test_neighbor_lists_time_and_memory(
             # Fix pbc tensor shape
             pbc = torch.tensor([[True, True, True]], device=device)
             mapping, mapping_system, shifts_idx = nl_fn(
-                cutoff, pos, cell, pbc, system_idx, self_interaction=False
+                cutoff=cutoff,
+                positions=pos,
+                cell=cell,
+                # TODO: standardize all pbc so we either use tensors/booleans/tuples.
+                pbc=pbc,  # type: ignore[arg-type]
+                system_idx=system_idx,
+                self_interaction=False,  # type: ignore[call-arg, misc]
             )
         else:
             mapping, shifts = nl_fn(positions=pos, cell=cell, pbc=True, cutoff=cutoff)

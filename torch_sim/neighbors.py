@@ -174,7 +174,7 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
                 bin_index_ic[:, c], n_bins_c[c]
             )
         else:
-            bin_index_ic[:, c] = torch.clip(bin_index_ic[:, c], 0, n_bins_c[c] - 1)
+            bin_index_ic[:, c] = torch.clip(bin_index_ic[:, c], 0, n_bins_c[c] - 1)  # type: ignore[call-overload]
 
     # Convert Cartesian bin index to unique scalar bin index.
     bin_index_i = bin_index_ic[:, 0] + n_bins_c[0] * (
@@ -193,8 +193,8 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     # homogeneous, i.e. has the same size *max_n_atoms_per_bin* for all bins.
     # The list is padded with -1 values.
     atoms_in_bin_ba = -torch.ones(
-        n_bins, max_n_atoms_per_bin.item(), dtype=torch.long, device=device
-    )
+        n_bins, max_n_atoms_per_bin, dtype=torch.long, device=device
+    )  # type: ignore[call-overload]
     for bin_cnt in range(int(max_n_atoms_per_bin.item())):
         # Create a mask array that identifies the first atom of each bin.
         mask = torch.cat(
@@ -227,8 +227,8 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     #     (max_n_atoms_per_bin, max_n_atoms_per_bin), dtype=int
     # ).reshape(2, -1)
     atom_pairs_pn = torch.cartesian_prod(
-        torch.arange(max_n_atoms_per_bin, device=device),
-        torch.arange(max_n_atoms_per_bin, device=device),
+        torch.arange(max_n_atoms_per_bin, device=device),  # type: ignore[call-overload]
+        torch.arange(max_n_atoms_per_bin, device=device),  # type: ignore[call-overload]
     )
     atom_pairs_pn = atom_pairs_pn.T.reshape(2, -1)
 
@@ -244,9 +244,9 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     # that each bin contains exactly max_n_atoms_per_bin atoms. We then throw
     # out pairs involving pad atoms with atom index -1 below.
     binz_xyz, biny_xyz, binx_xyz = torch.meshgrid(
-        torch.arange(n_bins_c[2], device=device),
-        torch.arange(n_bins_c[1], device=device),
-        torch.arange(n_bins_c[0], device=device),
+        torch.arange(n_bins_c[2], device=device),  # type: ignore[call-overload]
+        torch.arange(n_bins_c[1], device=device),  # type: ignore[call-overload]
+        torch.arange(n_bins_c[0], device=device),  # type: ignore[call-overload]
         indexing="ij",
     )
     # The memory layout of binx_xyz, biny_xyz, binz_xyz is such that computing
@@ -363,10 +363,10 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
             cell_shift_vector_n = cell_shift_vector_n[m]
 
     # Sort neighbor list.
-    bin_cnt = torch.argsort(first_at_neigh_tuple_n)
-    first_at_neigh_tuple_n = first_at_neigh_tuple_n[bin_cnt]
-    second_at_neigh_tuple_n = second_at_neigh_tuple_n[bin_cnt]
-    cell_shift_vector_n = cell_shift_vector_n[bin_cnt]
+    bin_cnt_sort_idx = torch.argsort(first_at_neigh_tuple_n)
+    first_at_neigh_tuple_n = first_at_neigh_tuple_n[bin_cnt_sort_idx]
+    second_at_neigh_tuple_n = second_at_neigh_tuple_n[bin_cnt_sort_idx]
+    cell_shift_vector_n = cell_shift_vector_n[bin_cnt_sort_idx]
 
     # Compute distance vectors.
     # TODO: Use .T?
@@ -640,7 +640,7 @@ def vesin_nl(
 def strict_nl(
     cutoff: float,
     positions: torch.Tensor,
-    cell: torch.Tensor,
+    cell: torch.Tensor | None,
     mapping: torch.Tensor,
     system_mapping: torch.Tensor,
     shifts_idx: torch.Tensor,
@@ -658,8 +658,8 @@ def strict_nl(
             is used to filter the neighbor pairs based on their distances.
         positions (torch.Tensor): A tensor of shape (n_atoms, 3) representing
             the positions of the atoms.
-        cell (torch.Tensor): Unit cell vectors according to the row vector convention,
-            i.e. `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
+        cell (torch.Tensor | None): Unit cell vectors according to the row vector
+            convention. i.e. `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
         mapping (torch.Tensor):
             A tensor of shape (2, n_pairs) that specifies pairs of indices in `positions`
             for which to compute distances.
@@ -689,10 +689,12 @@ def strict_nl(
     References:
         - https://github.com/felixmusil/torch_nl
     """
-    cell_shifts = transforms.compute_cell_shifts(cell, shifts_idx, system_mapping)
-    if cell_shifts is None:
+    if cell is None:
         d2 = (positions[mapping[0]] - positions[mapping[1]]).square().sum(dim=1)
     else:
+        cell_shifts = transforms.compute_cell_shifts_strict(
+            cell, shifts_idx, system_mapping
+        )
         d2 = (
             (positions[mapping[0]] - positions[mapping[1]] - cell_shifts)
             .square()

@@ -335,7 +335,7 @@ def test_compare_single_vs_batched_integrators(
 ) -> None:
     """Test NVE single vs batched for a tilted cell to verify PBC wrapping.
 
-    NOTE: added triclinic cell after https://github.com/Radical-AI/torch-sim/issues/171.
+    NOTE: added triclinic cell after https://github.com/TorchSim/torch-sim/issues/171.
     Although the addition doesn't fail if we do not add the changes suggested in issue.
     """
     sim_state = request.getfixturevalue(sim_state_fixture_name)
@@ -383,7 +383,7 @@ def test_compare_single_vs_batched_integrators(
 def test_compute_cell_force_atoms_per_system():
     """Test that compute_cell_force correctly scales by number of atoms per system.
 
-    Covers fix in https://github.com/Radical-AI/torch-sim/pull/153."""
+    Covers fix in https://github.com/TorchSim/torch-sim/pull/153."""
     from torch_sim.integrators.npt import _compute_cell_force
 
     # Setup minimal state with two systems having 8:1 atom ratio
