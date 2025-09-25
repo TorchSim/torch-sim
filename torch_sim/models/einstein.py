@@ -229,8 +229,13 @@ class EinsteinModel(ModelInterface):
         # Reduced Planck constant in eV*s
         hbar = units.BaseConstant.h_planck / (2 * units.pi * units.UnitConversion.eV_to_J)
 
-        frequencies_tensor = torch.as_tensor(self.frequencies)
-
+        frequencies_tensor = (
+            torch.as_tensor(self.frequencies).clone()
+            * torch.as_tensor(
+                units.UnitConversion.eV_to_J / units.BaseConstant.amu
+            ).sqrt()
+            / units.UnitConversion.Ang_to_met
+        )  # Convert to rad/s
         free_energy_per_atom = (
             -3 * kB * T * torch.log(kB * T / (hbar * frequencies_tensor))
         )
