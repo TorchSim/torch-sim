@@ -100,16 +100,6 @@ plt.show()
 
 
 # %%
-@dataclass
-class BaseState:
-    """Simple simulation state"""
-
-    positions: torch.Tensor
-    cell: torch.Tensor
-    pbc: bool
-    species: torch.Tensor
-
-
 class SoftSphereMultiModel(ModelInterface):
     """Soft sphere potential"""
 
@@ -127,8 +117,8 @@ class SoftSphereMultiModel(ModelInterface):
     ) -> None:
         """Initialize a soft sphere model for multi-component systems."""
         super().__init__()
-        self.device = device or torch.device("cpu")
-        self.dtype = dtype
+        self._device = device or torch.device("cpu")
+        self._dtype = dtype
         self.pbc = pbc
 
         # Store species list and determine number of unique species
@@ -183,14 +173,14 @@ class SoftSphereMultiModel(ModelInterface):
         )
 
     def forward(
-        self, custom_state: BaseState, species: torch.Tensor | None = None
+        self, custom_state: ts.SimState, species: torch.Tensor | None = None
     ) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single unbatched system with multiple
         species."""
         # Convert inputs to proper device/dtype and handle species
         positions = custom_state.positions.requires_grad_(True)
         cell = custom_state.cell
-        species = custom_state.species
+        species = custom_state.atomic_numbers
 
         if species is not None:
             species = species.to(device=self.device, dtype=torch.long)
@@ -307,7 +297,14 @@ def simulation(
     R = torch.rand(N, 2) * box_size
 
     # Minimize to the nearest minimum.
-    custom_state = BaseState(positions=R, cell=cell, species=species, pbc=True)
+    custom_state = ts.SimState(
+        atomic_numbers=species,
+        masses=torch.ones(N),
+        system_idx=torch.arange(N),
+        positions=R,
+        cell=cell,
+        pbc=True,
+    )
     state = ts.gradient_descent_init(model, state=custom_state)
 
     for _ in range(simulation_steps):
@@ -393,7 +390,14 @@ def short_simulation(
     model = SoftSphereMultiModel(sigma_matrix=sigma, species=species)
 
     # Minimize to the nearest minimum.
-    custom_state = BaseState(positions=R, cell=cell, species=species, pbc=True)
+    custom_state = ts.SimState(
+        atomic_numbers=species,
+        masses=torch.ones(N),
+        system_idx=torch.arange(N),
+        positions=R,
+        cell=cell,
+        pbc=True,
+    )
     state = ts.gradient_descent_init(model, state=custom_state)
 
     for i in range(short_simulation_steps):

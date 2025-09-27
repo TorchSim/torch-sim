@@ -26,6 +26,7 @@ def metatomic_calculator():
             "https://huggingface.co/lab-cosmo/pet-mad/resolve/v1.1.0/models/pet-mad-v1.1.0.ckpt"
         ).export(),
         device=DEVICE,
+        dtype=torch.float32,
     )
 
 

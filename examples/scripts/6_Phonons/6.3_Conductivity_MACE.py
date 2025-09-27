@@ -13,6 +13,7 @@ import os
 import time
 from typing import TYPE_CHECKING, Literal, cast
 
+import IPython
 import numpy as np
 import plotly.graph_objects as go
 import torch
@@ -101,11 +102,11 @@ final_state = ts.optimize(
     system=struct,
     model=model,
     optimizer=ts.OptimFlavor.fire,
+    cell_filter=ts.CellFilter.frechet,
     max_steps=max_steps,
     convergence_fn=converge_max_force,
     trajectory_reporter=reporter,
-    constant_volume=True,
-    hydrostatic_strain=True,
+    init_kwargs=dict(constant_volume=True, hydrostatic_strain=True),
 )
 print_relax_info(trajectory_file, device)
 
@@ -199,4 +200,5 @@ fig.update_layout(
     height=600,
     plot_bgcolor="white",
 )
-fig.show()
+if IPython.get_ipython() is not None:
+    fig.show()

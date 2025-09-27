@@ -381,6 +381,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     max_steps: int = 10_000,
     steps_between_swaps: int = 5,
     pbar: bool | dict[str, Any] = False,
+    init_kwargs: dict[str, Any] | None = None,
     **optimizer_kwargs: Any,
 ) -> T:
     """Optimize a system using a model and optimizer.
@@ -410,7 +411,9 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         pbar (bool | dict[str, Any], optional): Show a progress bar.
             Only works with an autobatcher in interactive shell. If a dict is given,
             it's passed to `tqdm` as kwargs.
-        optimizer_kwargs: Additional keyword arguments for optimizer init function
+        init_kwargs (dict[str, Any], optional): Additional keyword arguments for optimizer
+            init function.
+        **optimizer_kwargs: Additional keyword arguments for optimizer step function
 
     Returns:
         T: Optimized system state
@@ -448,7 +451,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             init_fn,
             initial_state,
             model,
-            init_kwargs=dict(cell_filter=cell_filter),
+            init_kwargs=dict(cell_filter=cell_filter, **init_kwargs),
             max_memory_scaler=autobatcher.max_memory_scaler,
             memory_scales_with=autobatcher.memory_scales_with,
         )

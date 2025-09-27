@@ -488,7 +488,9 @@ def test_integrate_with_default_autobatcher(
     def mock_estimate(*args, **kwargs) -> float:  # noqa: ARG001
         return 10_000.0
 
-    monkeypatch.setattr("ts.autobatching.estimate_max_memory_scaler", mock_estimate)
+    monkeypatch.setattr(
+        "torch_sim.autobatching.estimate_max_memory_scaler", mock_estimate
+    )
 
     states = [ar_supercell_sim_state, fe_supercell_sim_state, ar_supercell_sim_state]
     triple_state = ts.initialize_state(states, lj_model.device, lj_model.dtype)
@@ -520,7 +522,7 @@ def test_optimize_with_default_autobatcher(
     def mock_estimate(*args, **kwargs) -> float:  # noqa: ARG001
         return 200
 
-    monkeypatch.setattr("ts.autobatching.determine_max_batch_size", mock_estimate)
+    monkeypatch.setattr("torch_sim.autobatching.determine_max_batch_size", mock_estimate)
 
     states = [ar_supercell_sim_state, fe_supercell_sim_state, ar_supercell_sim_state]
     triple_state = ts.initialize_state(

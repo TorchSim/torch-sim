@@ -535,7 +535,7 @@ class HeatFluxAutoCorrelation:
                     velocities=None,
                     energies=self.model(s)["energies"],
                     stresses=full_3x3_to_voigt_6_stress(self.model(s)["stresses"]),
-                    batch=s.batch,
+                    batch=s.system_idx,
                     is_centroid_stress=False,
                     is_virial_only=False,
                 )

@@ -175,7 +175,7 @@ def test_binning_auto_batcher_auto_metric(
     """Test BinningAutoBatcher with different states."""
     # monkeypatch determine max memory scaler
     monkeypatch.setattr(
-        "ts.autobatching.determine_max_batch_size",
+        "torch_sim.autobatching.determine_max_batch_size",
         lambda *args, **kwargs: 50,  # noqa: ARG005
     )
 
@@ -356,7 +356,9 @@ def test_determine_max_batch_size_fibonacci(
     def mock_measure(*_args: Any, **_kwargs: Any) -> float:
         return 0.1  # Return a small constant memory usage
 
-    monkeypatch.setattr("ts.autobatching.measure_model_memory_forward", mock_measure)
+    monkeypatch.setattr(
+        "torch_sim.autobatching.measure_model_memory_forward", mock_measure
+    )
 
     # Test with a small max_atoms value to limit the sequence
     max_size = determine_max_batch_size(si_sim_state, lj_model, max_atoms=10)
@@ -375,7 +377,9 @@ def test_determine_max_batch_size_small_scale_factor_no_infinite_loop(
     scale_factor: float,
 ) -> None:
     """Test determine_max_batch_size doesn't infinite loop with small scale factors."""
-    monkeypatch.setattr("ts.autobatching.measure_model_memory_forward", lambda *_: 0.1)
+    monkeypatch.setattr(
+        "torch_sim.autobatching.measure_model_memory_forward", lambda *_: 0.1
+    )
 
     max_size = determine_max_batch_size(
         si_sim_state, lj_model, max_atoms=20, scale_factor=scale_factor
