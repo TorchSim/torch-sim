@@ -451,7 +451,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             init_fn,
             initial_state,
             model,
-            init_kwargs=dict(cell_filter=cell_filter, **init_kwargs),
+            init_kwargs=dict(cell_filter=cell_filter, **init_kwargs or {}),
             max_memory_scaler=autobatcher.max_memory_scaler,
             memory_scales_with=autobatcher.memory_scales_with,
         )
