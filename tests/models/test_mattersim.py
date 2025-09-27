@@ -3,8 +3,8 @@
 import ase.spacegroup
 import ase.units
 import pytest
-import torch
 
+from tests.conftest import DEVICE
 from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
@@ -21,59 +21,36 @@ except ImportError:
     pytest.skip("mattersim not installed", allow_module_level=True)
 
 
-@pytest.fixture
-def dtype() -> torch.dtype:
-    """Fixture to provide the default dtype for testing."""
-    return torch.float32
+model_name = "mattersim-v1.0.0-1m.pth"
 
 
 @pytest.fixture
-def model_name() -> str:
-    """Fixture to provide the model name for testing. Load smaller 1M model
-    for testing purposes.
-    """
-    return "mattersim-v1.0.0-1m.pth"
-
-
-@pytest.fixture
-def pretrained_mattersim_model(device: torch.device, model_name: str):
+def pretrained_mattersim_model():
     """Load a pretrained MatterSim model for testing."""
     return Potential.from_checkpoint(
         load_path=model_name,
         model_name="m3gnet",
-        device=device,
+        device=DEVICE,
         load_training_state=False,
     )
 
 
 @pytest.fixture
-def mattersim_model(
-    pretrained_mattersim_model: Potential, device: torch.device
-) -> MatterSimModel:
+def mattersim_model(pretrained_mattersim_model: Potential) -> MatterSimModel:
     """Create an MatterSimModel wrapper for the pretrained model."""
-    return MatterSimModel(
-        model=pretrained_mattersim_model,
-        device=device,
-    )
+    return MatterSimModel(model=pretrained_mattersim_model, device=DEVICE)
 
 
 @pytest.fixture
-def mattersim_calculator(
-    pretrained_mattersim_model: Potential, device: torch.device
-) -> MatterSimCalculator:
+def mattersim_calculator(pretrained_mattersim_model: Potential) -> MatterSimCalculator:
     """Create an MatterSimCalculator for the pretrained model."""
-    return MatterSimCalculator(pretrained_mattersim_model, device=device)
+    return MatterSimCalculator(pretrained_mattersim_model, device=DEVICE)
 
 
-def test_mattersim_initialization(
-    pretrained_mattersim_model: Potential, device: torch.device
-) -> None:
+def test_mattersim_initialization(pretrained_mattersim_model: Potential) -> None:
     """Test that the MatterSim model initializes correctly."""
-    model = MatterSimModel(
-        model=pretrained_mattersim_model,
-        device=device,
-    )
-    assert model._device == device  # noqa: SLF001
+    model = MatterSimModel(model=pretrained_mattersim_model, device=DEVICE)
+    assert model.device == DEVICE
     assert model.stress_weight == ase.units.GPa
 
 

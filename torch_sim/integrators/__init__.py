@@ -6,13 +6,12 @@ Each integrator handles batched simulations efficiently using PyTorch tensors an
 supports periodic boundary conditions.
 
 Examples:
-    >>> from torch_sim.integrators import nve
-    >>> nve_init, nve_update = nve(
-    ...     model, dt=1e-3 * units.time, kT=300.0 * units.temperature
-    ... )
-    >>> state = nve_init(initial_state)
+    >>> import torch_sim as ts
+    >>> state = ts.nvt_langevin_init(model, initial_state, kT=300.0 * units.temperature)
     >>> for _ in range(1000):
-    ...     state = nve_update(state)
+    ...     state = ts.nvt_langevin_update(
+    ...         model, state, dt=1e-3 * units.time, kT=300.0 * units.temperature
+    ...     )
 
 Notes:
     All integrators support batched operations for efficient parallel simulation
@@ -20,8 +19,50 @@ Notes:
 """
 
 # ruff: noqa: F401
+from collections.abc import Callable
+from enum import StrEnum
+from typing import Any, Final
+
+import torch_sim as ts
 
 from .md import MDState, calculate_momenta, momentum_step, position_step, velocity_verlet
-from .npt import NPTLangevinState, npt_langevin
-from .nve import nve
-from .nvt import nvt_langevin
+from .npt import (
+    NPTLangevinState,
+    NPTNoseHooverState,
+    npt_langevin_init,
+    npt_langevin_update,
+    npt_nose_hoover_init,
+    npt_nose_hoover_invariant,
+    npt_nose_hoover_update,
+)
+from .nve import nve_init, nve_update
+from .nvt import (
+    NVTNoseHooverState,
+    nvt_langevin_init,
+    nvt_langevin_update,
+    nvt_nose_hoover_init,
+    nvt_nose_hoover_invariant,
+    nvt_nose_hoover_update,
+)
+
+
+class MdFlavor(StrEnum):
+    """Flavor of molecular dynamics simulation."""
+
+    nve = "nve"
+    nvt_langevin = "nvt_langevin"
+    nvt_nose_hoover = "nvt_nose_hoover"
+    npt_langevin = "npt_langevin"
+    npt_nose_hoover = "npt_nose_hoover"
+
+
+# Integrator registry - maps integrator names to (init_fn, step_fn) pairs
+INTEGRATOR_REGISTRY: Final[
+    dict[MdFlavor, tuple[Callable[..., Any], Callable[..., Any]]]
+] = {
+    MdFlavor.nve: (nve_init, nve_update),
+    MdFlavor.nvt_langevin: (nvt_langevin_init, nvt_langevin_update),
+    MdFlavor.nvt_nose_hoover: (nvt_nose_hoover_init, nvt_nose_hoover_update),
+    MdFlavor.npt_langevin: (npt_langevin_init, npt_langevin_update),
+    MdFlavor.npt_nose_hoover: (npt_nose_hoover_init, npt_nose_hoover_update),
+}

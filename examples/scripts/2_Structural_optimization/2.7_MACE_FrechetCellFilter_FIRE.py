@@ -1,11 +1,8 @@
 """Batched MACE frechet cell filter with FIRE optimizer."""
 
 # /// script
-# dependencies = [
-#     "mace-torch>=0.3.12",
-# ]
+# dependencies = ["mace-torch>=0.3.12"]
 # ///
-
 import os
 
 import numpy as np
@@ -19,20 +16,19 @@ from torch_sim.units import UnitConversion
 
 
 # Set device and data type
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
 
 # Option 1: Load the raw model from the downloaded model
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
-    default_dtype=dtype,
-    device=device,
+    default_dtype=str(dtype).lstrip("torch."),
+    device=str(device),
 )
 
 # Option 2: Load from local file (comment out Option 1 to use this)
-# MODEL_PATH = "../../../checkpoints/MACE/mace-mpa-0-medium.model"
-# loaded_model = torch.load(MODEL_PATH, map_location=device)
+# loaded_model = torch.load("path/to/model.pt", map_location=device)
 
 # Number of steps to run
 SMOKE_TEST = os.getenv("CI") is not None
@@ -77,16 +73,16 @@ state = ts.io.atoms_to_state(atoms_list, device=device, dtype=dtype)
 # Run initial inference
 results = model(state)
 
-# Initialize unit cell gradient descent optimizer
-fire_init, fire_update = ts.optimizers.frechet_cell_fire(
+# Initialize FIRE optimizer with Frechet cell filter
+state = ts.fire_init(
     model=model,
+    state=state,
+    cell_filter=ts.CellFilter.frechet,
     cell_factor=None,  # Will default to atoms per system
     hydrostatic_strain=False,
     constant_volume=False,
     scalar_pressure=0.0,
 )
-
-state = fire_init(state)
 
 # Run optimization for a few steps
 print("\nRunning batched frechet cell filter with FIRE:")
@@ -101,7 +97,7 @@ for step in range(N_steps):
             f"P1={P1:.4f} GPa, P2={P2:.4f} GPa, P3={P3:.4f} GPa"
         )
 
-    state = fire_update(state)
+    state = ts.fire_step(model=model, state=state)
 
 print(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
 print(f"Final energies: {[energy.item() for energy in state.energy]} eV")

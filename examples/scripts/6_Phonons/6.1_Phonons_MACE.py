@@ -10,7 +10,6 @@
 #     "ase",
 # ]
 # ///
-
 import numpy as np
 import pymatviz as pmv
 import seekpath
@@ -87,22 +86,22 @@ def get_labels_qpts(ph: Phonopy, n_points: int = 101) -> tuple[list[str], list[b
 
 
 # Set device and data type
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
 
 # Load the raw model
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
-    default_dtype=dtype,
-    device=device,
+    default_dtype=str(dtype).lstrip("torch."),
+    device=str(device),
 )
 
 # Structure and input parameters
 struct = bulk("Si", "diamond", a=5.431, cubic=True)  # ASE structure
 supercell_matrix = 2 * np.eye(3)  # supercell matrix for phonon calculation
 mesh = [20, 20, 20]  # Phonon mesh
-Nrelax = 300  # number of relaxation steps
+max_steps = 300  # number of relaxation steps
 displ = 0.01  # atomic displacement for phonons (in Angstrom)
 
 # Relax atomic positions
@@ -117,10 +116,11 @@ model = MaceModel(
 final_state = ts.optimize(
     system=struct,
     model=model,
-    optimizer=ts.optimizers.frechet_cell_fire,
+    optimizer=ts.OptimFlavor.fire,
+    cell_filter=ts.CellFilter.frechet,
+    max_steps=max_steps,
     constant_volume=True,
     hydrostatic_strain=True,
-    max_steps=Nrelax,
 )
 
 # Define atoms and Phonopy object
@@ -130,6 +130,8 @@ ph = Phonopy(atoms, supercell_matrix)
 # Generate FC2 displacements
 ph.generate_displacements(distance=displ)
 supercells = ph.supercells_with_displacements
+if supercells is None:
+    raise ValueError("supercells cannot be None")
 
 # Convert PhonopyAtoms to state
 state = ts.io.phonopy_to_state(supercells, device, dtype)
@@ -160,7 +162,7 @@ ase_atoms = Atoms(
     pbc=True,
 )
 q_pts, connections = get_qpts_and_connections(ase_atoms)
-ph.run_band_structure(q_pts, connections)
+ph.run_band_structure(q_pts, path_connections=connections)
 
 # Define axis style for plots
 axis_style = dict(

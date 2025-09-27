@@ -9,20 +9,24 @@ FC2 and FC3 calculations with MACE.
 #     "pymatgen>=2025.2.18",
 # ]
 # ///
-
 import os
 import time
+from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
 import plotly.graph_objects as go
 import torch
-import tqdm
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 from phono3py import Phono3py
+from tqdm import tqdm
 
 import torch_sim as ts
 from torch_sim.models.mace import MaceModel, MaceUrls
+
+
+if TYPE_CHECKING:
+    from phonopy.structure.atoms import PhonopyAtoms
 
 
 def print_relax_info(trajectory_file: str, device: torch.device) -> None:
@@ -47,15 +51,15 @@ def print_relax_info(trajectory_file: str, device: torch.device) -> None:
 
 
 start_time = time.perf_counter()
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float64
 
 # Load the raw model from URL
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
-    default_dtype=dtype,
-    device=device,
+    default_dtype=str(dtype).lstrip("torch."),
+    device=str(device),
 )
 model = MaceModel(
     model=loaded_model,
@@ -72,10 +76,10 @@ mesh = [8, 8, 8]  # Phonon mesh
 # supercell matrix for phonon calculation (use larger cell for better accuracy)
 supercell_matrix = [1, 1, 1]
 supercell_matrix_fc2 = [2, 2, 2]  # supercell matrix for FC2 calculation
-Nrelax = 300  # number of relaxation steps
+max_steps = 300  # number of relaxation steps
 fmax = 1e-3  # force convergence
 displ = 0.05  # atomic displacement for phonons (in Angstrom)
-conductivity_type = "wigner"  # "wigner", "kubo"
+conductivity_type: Literal["wigner", "kubo"] = "wigner"
 temperatures = np.arange(
     0, 1600, 10
 )  # temperature range for thermal conductivity calculation
@@ -96,12 +100,12 @@ reporter = ts.TrajectoryReporter(
 final_state = ts.optimize(
     system=struct,
     model=model,
-    optimizer=ts.optimizers.frechet_cell_fire,
-    constant_volume=True,
-    hydrostatic_strain=True,
-    max_steps=Nrelax,
+    optimizer=ts.OptimFlavor.fire,
+    max_steps=max_steps,
     convergence_fn=converge_max_force,
     trajectory_reporter=reporter,
+    constant_volume=True,
+    hydrostatic_strain=True,
 )
 print_relax_info(trajectory_file, device)
 
@@ -117,12 +121,12 @@ ph3 = Phono3py(
 # Calculate FC2
 ph3.generate_fc2_displacements(distance=displ)
 supercells_fc2 = ph3.phonon_supercells_with_displacements
-state = ts.io.phonopy_to_state(supercells_fc2, device, dtype)
+state = ts.io.phonopy_to_state(supercells_fc2, device=device, dtype=dtype)
 results = model(state)
 n_atoms_per_supercell = [len(sc) for sc in supercells_fc2]
 force_sets = []
 start_idx = 0
-for n_atoms in tqdm.tqdm(n_atoms_per_supercell, desc="FC2"):
+for n_atoms in tqdm(n_atoms_per_supercell, desc="FC2"):
     end_idx = start_idx + n_atoms
     force_sets.append(results["forces"][start_idx:end_idx].detach().cpu().numpy())
     start_idx = end_idx
@@ -131,13 +135,13 @@ ph3.produce_fc2(symmetrize_fc2=True)
 
 # Calculate FC3
 ph3.generate_displacements(distance=displ)
-supercells_fc3 = ph3.supercells_with_displacements
-state = ts.io.phonopy_to_state(supercells_fc3, device, dtype)
+supercells_fc3 = cast("list[PhonopyAtoms]", ph3.supercells_with_displacements)
+state = ts.io.phonopy_to_state(supercells_fc3, device=device, dtype=dtype)
 results = model(state)
 n_atoms_per_supercell = [len(sc) for sc in supercells_fc3]
 force_sets = []
 start_idx = 0
-for n_atoms in tqdm.tqdm(n_atoms_per_supercell, desc="FC3"):
+for n_atoms in tqdm(n_atoms_per_supercell, desc="FC3"):
     end_idx = start_idx + n_atoms
     force_sets.append(results["forces"][start_idx:end_idx].detach().cpu().numpy())
     start_idx = end_idx

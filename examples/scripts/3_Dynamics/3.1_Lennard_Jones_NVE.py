@@ -1,25 +1,20 @@
 """NVE simulation with Lennard-Jones potential."""
 
 # /// script
-# dependencies = [
-#     "scipy>=1.15",
-# ]
+# dependencies = ["scipy>=1.15"]
 # ///
-
 import itertools
 import os
 
 import torch
 
 import torch_sim as ts
-from torch_sim.integrators import nve
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.units import MetalUnits as Units
 
 
 # Set up the device and data type
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
 
 # Number of steps to run
@@ -69,7 +64,9 @@ positions = positions * a_len
 
 # Create the cell tensor
 cell = torch.tensor(
-    [[4 * a_len, 0, 0], [0, 4 * a_len, 0], [0, 0, 4 * a_len]], device=device, dtype=dtype
+    [[4 * a_len, 0, 0], [0, 4 * a_len, 0], [0, 0, 4 * a_len]],
+    device=device,
+    dtype=dtype,
 )
 
 # Create the atomic numbers tensor (Argon = 18)
@@ -102,27 +99,25 @@ results = model(state)
 # Set up NVE simulation
 # kT: initial temperature in metal units (K)
 # dt: timestep in metal units (ps)
-kT = 80 * Units.temperature
-dt = 0.001 * Units.time
+kT = torch.tensor(80 * Units.temperature, device=device, dtype=dtype)
+dt = torch.tensor(0.001 * Units.time, device=device, dtype=dtype)
 
 # Initialize NVE integrator
-nve_init, nve_update = nve(model=model, dt=dt, kT=kT)
-
-state = nve_init(state=state)
+state = ts.nve_init(model=model, state=state, kT=kT, seed=1)
 
 # Run NVE simulation for 1000 steps
 for step in range(N_steps):
     if step % 100 == 0:
         # Calculate total energy (potential + kinetic)
-        total_energy = state.energy + calc_kinetic_energy(
+        total_energy = state.energy + ts.calc_kinetic_energy(
             masses=state.masses, momenta=state.momenta
         )
         print(f"{step=}: Total energy: {total_energy.item():.4f}")
 
     # Update state using NVE integrator
-    state = nve_update(state=state, dt=dt)
+    state = ts.nve_update(model=model, state=state, dt=dt)
 
-final_total_energy = state.energy + calc_kinetic_energy(
+final_total_energy = state.energy + ts.calc_kinetic_energy(
     masses=state.masses, momenta=state.momenta
 )
 print(f"Final total energy: {final_total_energy.item():.4f}")

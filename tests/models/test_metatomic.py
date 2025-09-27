@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+from tests.conftest import DEVICE
 from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
@@ -18,38 +19,32 @@ except ImportError:
 
 
 @pytest.fixture
-def dtype() -> torch.dtype:
-    """Fixture to provide the default dtype for testing."""
-    return torch.float32
-
-
-@pytest.fixture
-def metatomic_calculator(device: torch.device):
+def metatomic_calculator():
     """Load a pretrained metatomic model for testing."""
     return ase_calculator.MetatomicCalculator(
         model=load_model(
             "https://huggingface.co/lab-cosmo/pet-mad/resolve/v1.1.0/models/pet-mad-v1.1.0.ckpt"
         ).export(),
-        device=device,
+        device=DEVICE,
     )
 
 
 @pytest.fixture
-def metatomic_model(device: torch.device) -> MetatomicModel:
+def metatomic_model() -> MetatomicModel:
     """Create an MetatomicModel wrapper for the pretrained model."""
     return MetatomicModel(
         model="pet-mad",
-        device=device,
+        device=DEVICE,
     )
 
 
-def test_metatomic_initialization(device: torch.device) -> None:
+def test_metatomic_initialization() -> None:
     """Test that the metatomic model initializes correctly."""
     model = MetatomicModel(
         model="pet-mad",
-        device=device,
+        device=DEVICE,
     )
-    assert model.device == device
+    assert model.device == DEVICE
     assert model.dtype == torch.float32
 
 

@@ -1,11 +1,8 @@
 """NPT simulation with MACE and Nose-Hoover thermostat."""
 
 # /// script
-# dependencies = [
-#     "mace-torch>=0.3.12",
-# ]
+# dependencies = ["mace-torch>=0.3.12"]
 # ///
-
 import os
 
 import torch
@@ -13,27 +10,24 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
-from torch_sim.integrators.npt import npt_nose_hoover, npt_nose_hoover_invariant
 from torch_sim.models.mace import MaceModel, MaceUrls
-from torch_sim.quantities import calc_kinetic_energy, calc_kT, get_pressure
 from torch_sim.units import MetalUnits as Units
 
 
 # Set device and data type
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
 
 # Option 1: Load the raw model from the downloaded model
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
-    default_dtype=dtype,
-    device=device,
+    default_dtype=str(dtype).lstrip("torch."),
+    device=str(device),
 )
 
 # Option 2: Load from local file (comment out Option 1 to use this)
-# MODEL_PATH = "../../../checkpoints/MACE/mace-mpa-0-medium.model"
-# loaded_model = torch.load(MODEL_PATH, map_location=device)
+# loaded_model = torch.load("path/to/model.pt", map_location=device)
 
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
@@ -59,67 +53,75 @@ dt = 0.001 * Units.time  # Time step (1 ps)
 kT = (
     torch.tensor(300, device=device, dtype=dtype) * Units.temperature
 )  # Initial temperature (300 K)
-target_pressure = 0.0 * Units.pressure  # Target pressure (0 bar)
+target_pressure = torch.tensor(
+    0.0 * Units.pressure, device=device, dtype=dtype
+)  # Target pressure (0 bar)
 
-npt_init, npt_update = npt_nose_hoover(
-    model=model, kT=kT, dt=dt, external_pressure=target_pressure
-)
-state = npt_init(state=state, seed=1)
+state = ts.npt_nose_hoover_init(model=model, state=state, kT=kT, dt=torch.tensor(dt))
 
 for step in range(N_steps_nvt):
     if step % 10 == 0:
         temp = (
-            calc_kT(
+            ts.calc_kT(
                 masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
             )
             / Units.temperature
         )
         invariant = float(
-            npt_nose_hoover_invariant(state, kT=kT, external_pressure=target_pressure)
+            ts.npt_nose_hoover_invariant(state, kT=kT, external_pressure=target_pressure)
         )
         print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}, ")
-    state = npt_update(state, kT=kT)
+    state = ts.npt_nose_hoover_update(
+        model=model,
+        state=state,
+        dt=torch.tensor(dt),
+        kT=kT,
+        external_pressure=target_pressure,
+    )
 
-npt_init, npt_update = npt_nose_hoover(
-    model=model, kT=kT, dt=dt, external_pressure=target_pressure
-)
-state = npt_init(state=state, seed=1)
+state = ts.npt_nose_hoover_init(model=model, state=state, kT=kT, dt=torch.tensor(dt))
 
 for step in range(N_steps_npt):
     if step % 10 == 0:
         temp = (
-            calc_kT(
+            ts.calc_kT(
                 masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
             )
             / Units.temperature
         )
         invariant = float(
-            npt_nose_hoover_invariant(state, kT=kT, external_pressure=target_pressure)
+            ts.npt_nose_hoover_invariant(state, kT=kT, external_pressure=target_pressure)
         )
         stress = model(state)["stress"]
         volume = torch.det(state.current_cell)
-        e_kin = calc_kinetic_energy(
+        e_kin = ts.calc_kinetic_energy(
             masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
         )
-        pressure = float(get_pressure(stress, e_kin, volume))
+        pressure = float(ts.get_pressure(stress, e_kin, volume))
         xx, yy, zz = torch.diag(state.current_cell[0])
         print(
             f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}, "
             f"{pressure=:.4f}, "
             f"cell xx yy zz: {xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}"
         )
-    state = npt_update(state, kT=kT, external_pressure=target_pressure)
+    state = ts.npt_nose_hoover_update(
+        model=model,
+        state=state,
+        dt=torch.tensor(dt),
+        kT=kT,
+        external_pressure=target_pressure,
+    )
 
 final_temp = (
-    calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
+    ts.calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
     / Units.temperature
 )
 print(f"Final temperature: {final_temp.item():.4f}")
 final_stress = model(state)["stress"]
 final_volume = torch.det(state.current_cell)
-final_pressure = get_pressure(
+final_pressure = ts.get_pressure(
     final_stress,
-    calc_kinetic_energy(
+    ts.calc_kinetic_energy(
         masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
     ),
     final_volume,

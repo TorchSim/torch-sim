@@ -1,12 +1,8 @@
 """Batched neighbor list."""
 
 # /// script
-# dependencies = [
-#     "ase>=3.24",
-#     "scipy>=1.15",
-# ]
+# dependencies = ["ase>=3.26", "scipy>=1.15"]
 # ///
-
 import torch
 from ase.build import bulk
 
@@ -16,7 +12,7 @@ from torch_sim.neighbors import torch_nl_linked_cell, torch_nl_n2
 
 
 atoms_list = [bulk("Si", "diamond", a=5.43), bulk("Ge", "diamond", a=5.65)]
-state = ts.io.atoms_to_state(atoms_list, device="cpu", dtype=torch.float32)
+state = ts.io.atoms_to_state(atoms_list, device=torch.device("cpu"), dtype=torch.float32)
 pos, cell, pbc = state.positions, state.cell, state.pbc
 system_idx, n_atoms = state.system_idx, state.n_atoms
 cutoff = 4.0

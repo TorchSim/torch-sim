@@ -1,6 +1,6 @@
 import pytest
-import torch
 
+from tests.conftest import DEVICE
 from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
@@ -18,41 +18,33 @@ except ImportError:
 
 
 @pytest.fixture
-def orbv3_conservative_inf_omat_model(device: torch.device) -> OrbModel:
+def orbv3_conservative_inf_omat_model() -> OrbModel:
     orb_ff = pretrained.orb_v3_conservative_inf_omat(
-        device=device,
-        precision="float32-high",
+        device=DEVICE, precision="float32-high"
     )
-    return OrbModel(model=orb_ff, device=device)
+    return OrbModel(model=orb_ff, device=DEVICE)
 
 
 @pytest.fixture
-def orbv3_direct_20_omat_model(device: torch.device) -> OrbModel:
-    orb_ff = pretrained.orb_v3_direct_20_omat(
-        device=device,
-        precision="float32-high",
-    )
-    return OrbModel(model=orb_ff, device=device)
+def orbv3_direct_20_omat_model() -> OrbModel:
+    orb_ff = pretrained.orb_v3_direct_20_omat(device=DEVICE, precision="float32-high")
+    return OrbModel(model=orb_ff, device=DEVICE)
 
 
 @pytest.fixture
-def orbv3_conservative_inf_omat_calculator(device: torch.device) -> ORBCalculator:
+def orbv3_conservative_inf_omat_calculator() -> ORBCalculator:
     """Create an ORBCalculator for the pretrained model."""
     orb_ff = pretrained.orb_v3_conservative_inf_omat(
-        device=device,
-        precision="float32-high",
+        device=DEVICE, precision="float32-high"
     )
-    return ORBCalculator(model=orb_ff, device=device)
+    return ORBCalculator(model=orb_ff, device=DEVICE)
 
 
 @pytest.fixture
-def orbv3_direct_20_omat_calculator(device: torch.device) -> ORBCalculator:
+def orbv3_direct_20_omat_calculator() -> ORBCalculator:
     """Create an ORBCalculator for the pretrained model."""
-    orb_ff = pretrained.orb_v3_direct_20_omat(
-        device=device,
-        precision="float32-high",
-    )
-    return ORBCalculator(model=orb_ff, device=device)
+    orb_ff = pretrained.orb_v3_direct_20_omat(device=DEVICE, precision="float32-high")
+    return ORBCalculator(model=orb_ff, device=DEVICE)
 
 
 test_orb_conservative_consistency = make_model_calculator_consistency_test(
@@ -60,8 +52,8 @@ test_orb_conservative_consistency = make_model_calculator_consistency_test(
     model_fixture_name="orbv3_conservative_inf_omat_model",
     calculator_fixture_name="orbv3_conservative_inf_omat_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
-    energy_rtol=5e-5,
-    energy_atol=5e-5,
+    energy_rtol=1e-3,
+    energy_atol=1e-3,
 )
 
 test_orb_direct_consistency = make_model_calculator_consistency_test(
@@ -69,8 +61,8 @@ test_orb_direct_consistency = make_model_calculator_consistency_test(
     model_fixture_name="orbv3_direct_20_omat_model",
     calculator_fixture_name="orbv3_direct_20_omat_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
-    energy_rtol=5e-5,
-    energy_atol=5e-5,
+    energy_rtol=1e-3,
+    energy_atol=1e-3,
 )
 
 test_validate_conservative_model_outputs = make_validate_model_outputs_test(

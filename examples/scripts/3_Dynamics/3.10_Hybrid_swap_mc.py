@@ -1,12 +1,8 @@
 """Hybrid swap Monte Carlo simulation."""
 
 # /// script
-# dependencies = [
-#     "mace-torch>=0.3.12",
-#     "pymatgen>=2025.2.18",
-# ]
+# dependencies = ["mace-torch>=0.3.12", "pymatgen>=2025.2.18"]
 # ///
-
 from dataclasses import dataclass
 
 import torch
@@ -14,14 +10,14 @@ from mace.calculators.foundations_models import mace_mp
 from pymatgen.core import Structure
 
 import torch_sim as ts
-from torch_sim.integrators import MDState, nvt_langevin
+from torch_sim.integrators.md import MDState
 from torch_sim.models.mace import MaceModel, MaceUrls
-from torch_sim.monte_carlo import swap_monte_carlo
 from torch_sim.units import MetalUnits as Units
 
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-dtype = torch.float64
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+dtype = torch.float32
+
 
 kT = 1000 * Units.temperature
 
@@ -29,13 +25,12 @@ kT = 1000 * Units.temperature
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
-    default_dtype=dtype,
-    device=device,
+    default_dtype=str(dtype).lstrip("torch."),
+    device=str(device),
 )
 
 # Option 2: Load from local file (comment out Option 1 to use this)
-# MODEL_PATH = "../../../checkpoints/MACE/mace-mpa-0-medium.model"
-# loaded_model = torch.load(MODEL_PATH, map_location=device)
+# loaded_model = torch.load("path/to/model.pt", map_location=device)
 
 model = MaceModel(
     model=loaded_model,
@@ -67,7 +62,7 @@ state = ts.io.structures_to_state([structure], device=device, dtype=dtype)
 
 # %%
 @dataclass
-class HybridSwapMCState(MDState):
+class HybridSwapMCState(ts.SwapMCState, MDState):
     """State for Monte Carlo simulations.
 
     Attributes:
@@ -77,19 +72,17 @@ class HybridSwapMCState(MDState):
 
     last_permutation: torch.Tensor
     _atom_attributes = (
-        MDState._atom_attributes | {"last_permutation"}  # noqa: SLF001
+        ts.SwapMCState._atom_attributes | {"last_permutation"}  # noqa: SLF001
     )
 
 
-nvt_init, nvt_step = nvt_langevin(model=model, dt=0.002, kT=kT)
-md_state = nvt_init(state, seed=42)
+md_state = ts.nvt_langevin_init(model=model, state=state, kT=torch.tensor(kT), seed=42)
 
-swap_init, swap_step = swap_monte_carlo(model=model, kT=kT, seed=42)
-swap_state = swap_init(md_state)
+swap_state = ts.swap_mc_init(model=model, state=md_state)
 hybrid_state = HybridSwapMCState(
     **vars(md_state),
-    last_permutation=torch.zeros(
-        md_state.n_systems, device=md_state.device, dtype=torch.bool
+    last_permutation=torch.arange(
+        md_state.n_atoms, device=md_state.device, dtype=torch.long
     ),
 )
 
@@ -97,8 +90,13 @@ generator = torch.Generator(device=device)
 generator.manual_seed(42)
 
 n_steps = 100
+dt = torch.tensor(0.002)
 for step in range(n_steps):
     if step % 10 == 0:
-        hybrid_state = swap_step(hybrid_state, kT=torch.tensor(kT), generator=generator)
+        hybrid_state = ts.swap_mc_step(
+            model=model, state=hybrid_state, kT=kT, seed=42 + step
+        )
     else:
-        hybrid_state = nvt_step(hybrid_state, dt=torch.tensor(0.002), kT=torch.tensor(kT))
+        hybrid_state = ts.nvt_langevin_update(
+            model=model, state=hybrid_state, dt=dt, kT=torch.tensor(kT)
+        )

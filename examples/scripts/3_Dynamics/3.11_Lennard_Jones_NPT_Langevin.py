@@ -1,26 +1,21 @@
 """Lennard-Jones simulation in NPT ensemble using Langevin thermostat."""
 
 # /// script
-# dependencies = [
-#     "scipy>=1.15",
-# ]
+# dependencies = ["scipy>=1.15"]
 # ///
-
 import itertools
 import os
 
 import torch
 
 import torch_sim as ts
-from torch_sim.integrators import npt_langevin
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.quantities import calc_kinetic_energy, calc_kT, get_pressure
 from torch_sim.units import MetalUnits as Units
 from torch_sim.units import UnitConversion
 
 
 # Set up the device and data type
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
 
 # Set random seed and deterministic behavior for reproducibility
@@ -103,30 +98,28 @@ state = ts.SimState(
 # Run initial simulation and get results
 results = model(state)
 
-dt = 0.001 * Units.time  # Time step (1 ps)
-kT = 200 * Units.temperature  # Temperature (200 K)
+dt = torch.tensor(0.001 * Units.time, device=device, dtype=dtype)  # Time step (1 ps)
+kT = torch.tensor(
+    200 * Units.temperature, device=device, dtype=dtype
+)  # Temperature (200 K)
 target_pressure = (
     torch.tensor(10_000, device=device, dtype=dtype) * Units.pressure
 )  # Target pressure (10 kbar)
 
-npt_init, npt_update = npt_langevin(
-    model=model, dt=dt, kT=kT, external_pressure=target_pressure
-)
-
-state = npt_init(state=state, seed=1)
+state = ts.npt_langevin_init(model=model, state=state, dt=dt, kT=kT, seed=1)
 
 # Run the simulation
 for step in range(N_steps):
     if step % 50 == 0:
         temp = (
-            calc_kT(
+            ts.calc_kT(
                 masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
             )
             / Units.temperature
         )
-        pressure = get_pressure(
+        pressure = ts.get_pressure(
             model(state)["stress"],
-            calc_kinetic_energy(
+            ts.calc_kinetic_energy(
                 masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
             ),
             torch.linalg.det(state.cell),
@@ -138,21 +131,30 @@ for step in range(N_steps):
             f"{pressure=:.4f}, "
             f"cell xx yy zz: {xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}"
         )
-    state = npt_update(state, kT=kT, external_pressure=target_pressure)
+    state = ts.npt_langevin_update(
+        model=model,
+        state=state,
+        dt=dt,
+        kT=kT,
+        external_pressure=target_pressure,
+        alpha=1.0 / (100 * dt),
+        cell_alpha=1.0 / (100 * dt),
+        b_tau=1 / (1000 * dt),
+    )
 
 temp = (
-    calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
+    ts.calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
     / Units.temperature
 )
 print(f"Final temperature: {temp.item():.4f}")
 
 
 stress = model(state)["stress"]
-kinetic_energy = calc_kinetic_energy(
+kinetic_energy = ts.calc_kinetic_energy(
     masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
 )
 volume = torch.linalg.det(state.cell)
-pressure = get_pressure(stress, kinetic_energy, volume)
+pressure = ts.get_pressure(stress, kinetic_energy, volume)
 pressure = pressure.item() / Units.pressure
 print(f"Final {pressure=:.4f}")
 print(stress * UnitConversion.eV_per_Ang3_to_GPa)

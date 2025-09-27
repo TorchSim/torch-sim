@@ -1,4 +1,4 @@
-"""Demo of the amorphous-to-crystalline (A2C) algorithm for a-Si, ported to torchsim from
+"""Demo of the amorphous-to-crystalline (A2C) algorithm for a-Si, ported to TorchSim from
 jax-md https://github.com/jax-md/jax-md/blob/main/jax_md/a2c/a2c_workflow.py.
 """
 
@@ -9,7 +9,6 @@ jax-md https://github.com/jax-md/jax-md/blob/main/jax_md/a2c/a2c_workflow.py.
 #     "pymatgen>=2025.2.18",
 # ]
 # ///
-
 import os
 import time
 from collections import defaultdict
@@ -24,11 +23,7 @@ from pymatgen.core import Composition, Element, Structure
 from tqdm import tqdm
 
 import torch_sim as ts
-from torch_sim.integrators.nvt import (
-    NVTNoseHooverState,
-    nvt_nose_hoover,
-    nvt_nose_hoover_invariant,
-)
+from torch_sim.integrators.nvt import NVTNoseHooverState
 from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.units import MetalUnits as Units
 from torch_sim.workflows import a2c
@@ -36,7 +31,7 @@ from torch_sim.workflows import a2c
 
 """
 # Example of how to use random_packed_structure_multi
-from torch_sim.utils.a2c import random_packed_structure_multi
+from torch_sim.workflows.a2c import random_packed_structure_multi
 
 comp = Composition("Fe80B20")
 cell = torch.tensor(
@@ -54,15 +49,22 @@ structure_multi = random_packed_structure_multi(
 
 SMOKE_TEST = os.getenv("CI") is not None
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
 
-raw_model = mace_mp(model=MaceUrls.mace_mpa_medium, return_raw_model=True)
+raw_model = mace_mp(
+    model=MaceUrls.mace_mpa_medium,
+    return_raw_model=True,
+    default_dtype=str(dtype).lstrip("torch."),
+    device=str(device),
+)
 
 # Define system and model
 comp = Composition("Si64")
 cell = torch.tensor(
-    [[11.1, 0.0, 0.0], [0.0, 11.1, 0.0], [0.0, 0.0, 11.1]], dtype=dtype, device=device
+    [[11.1, 0.0, 0.0], [0.0, 11.1, 0.0], [0.0, 0.0, 11.1]],
+    dtype=dtype,
+    device=device,
 )
 atomic_numbers = [Element(el).Z for el in comp.get_el_amt_dict()] * int(comp.num_atoms)
 
@@ -81,7 +83,7 @@ model = MaceModel(
     enable_cueq=False,
 )
 # Workflow starts here
-structure = a2c.random_packed_structure(
+structure, _log = a2c.random_packed_structure(
     composition=comp,
     cell=cell,
     auto_diameter=True,
@@ -89,7 +91,6 @@ structure = a2c.random_packed_structure(
     dtype=dtype,
     max_iter=100,
 )
-
 # Relax structure in batches of 6
 batch_size = 1 if SMOKE_TEST else 6
 max_optim_steps = (
@@ -102,16 +103,10 @@ cool_steps = 25 if SMOKE_TEST else 2500  # MD steps for quenching equilibration
 final_steps = 25 if SMOKE_TEST else 2500  # MD steps for amorphous phase equilibration
 T_high = 2000  # Melt temperature
 T_low = 300  # Quench to this temperature
-dt = 0.002 * Units.time  # time step = 2fs
+dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # time step = 2fs
 tau = 40 * dt  # oscillation period in Nose-Hoover thermostat
 simulation_steps = equi_steps + cool_steps + final_steps
 
-
-nvt_nose_hoover_init, nvt_nose_hoover_update = nvt_nose_hoover(
-    model=model,
-    kT=T_high * Units.temperature,
-    dt=dt,
-)
 
 state_dict = {
     "positions": structure.positions,
@@ -120,7 +115,13 @@ state_dict = {
     "pbc": True,
     "atomic_numbers": atomic_numbers,
 }
-state = nvt_nose_hoover_init(state_dict)
+state = ts.nvt_nose_hoover_init(
+    model=model,
+    state=state_dict,
+    kT=torch.tensor(T_high * Units.temperature, device=device, dtype=dtype),
+    dt=dt,
+    seed=1,
+)
 
 logger = {
     "T": torch.zeros((simulation_steps, 1), device=device, dtype=dtype),
@@ -137,10 +138,16 @@ def step_fn(
         ts.quantities.calc_kT(masses=state.masses, momenta=state.momenta)
         / Units.temperature
     )
-    logger["H"][step] = nvt_nose_hoover_invariant(
-        state, kT=current_temp * Units.temperature
+    logger["H"][step] = ts.nvt_nose_hoover_invariant(
+        state,
+        kT=torch.tensor(current_temp * Units.temperature, device=device, dtype=dtype),
     ).item()
-    state = nvt_nose_hoover_update(state, kT=current_temp * Units.temperature)
+    state = ts.nvt_nose_hoover_update(
+        model=model,
+        state=state,
+        dt=dt,
+        kT=torch.tensor(current_temp * Units.temperature, device=device, dtype=dtype),
+    )
     return state, logger
 
 
@@ -209,43 +216,43 @@ model = MaceModel(
     enable_cueq=False,
 )
 
-pymatgen_relaxed_struct_list = []
+pymatgen_relaxed_struct_list: list[tuple[Structure, float, float]] = []
 # Process structures in batches of 4
-for i in tqdm(range(0, len(pymatgen_struct_list), batch_size)):
-    batch_structs = pymatgen_struct_list[i : i + batch_size]
+for batch_idx in tqdm(range(0, len(pymatgen_struct_list), batch_size)):
+    batch_structs = pymatgen_struct_list[batch_idx : batch_idx + batch_size]
     # Combine structures into a single batched state
     batch_state = ts.io.structures_to_state(batch_structs, device=device, dtype=dtype)
 
     final_state, logger, final_energy, final_pressure = (
-        a2c.get_unit_cell_relaxed_structure(
+        a2c.get_frechet_cell_relaxed_structure(
             state=batch_state,
             model=model,
             max_iter=max_optim_steps,
         )
     )
 
-    final_struct_list = ts.io.state_to_structures(final_state)
+    final_structs = ts.io.state_to_structures(final_state)
 
     # NOTE: Possible OOM, so we don't store the logger
     # relaxed_structures.append((pymatgen_struct, logger, final_energy, final_pressure))
-    for i, final_struct in enumerate(final_struct_list):
+    for sys_idx, final_struct in enumerate(final_structs):
         pymatgen_relaxed_struct_list.append(
-            (final_struct, final_energy[i], final_pressure[i])
+            (final_struct, final_energy[sys_idx], final_pressure[sys_idx])
         )
 
 lowest_e_struct = sorted(
     pymatgen_relaxed_struct_list, key=lambda x: x[-2] / x[0].num_sites
 )[0]
 spg = SpacegroupAnalyzer(lowest_e_struct[0])
-print("Space group of predicted crystallization product:", spg.get_space_group_symbol())
+print(f"Space group of predicted crystallization product: {spg.get_space_group_symbol()}")
 
 spg_counter = defaultdict(int)
 for struct in pymatgen_relaxed_struct_list:
     sym_data = MoyoDataset(MoyoAdapter.from_py_obj(struct[0]))
     sp = (sym_data.number, SpaceGroupType(sym_data.number).arithmetic_symbol)
-spg_counter[sp] += 1
+    spg_counter[sp] += 1
 
-print("All space groups encountered:", dict(spg_counter))
+print(f"All space groups encountered: {dict(spg_counter)}")
 si_diamond = Structure(
     lattice=[
         [0.0, 2.732954, 2.732954],
@@ -257,7 +264,7 @@ si_diamond = Structure(
     coords_are_cartesian=False,
 )
 struct_match = StructureMatcher().fit(lowest_e_struct[0], si_diamond)
-print("Prediction matches diamond-cubic Si?", struct_match)
+print(f"Prediction matches diamond-cubic Si? {struct_match}")
 
 end_time = time.perf_counter()
 print(f"Total time taken to run the workflow: {end_time - start_time:.2f} seconds")

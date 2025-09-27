@@ -3,6 +3,7 @@ import torch
 from ase.atoms import Atoms
 
 import torch_sim as ts
+from tests.conftest import DEVICE
 from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
@@ -20,32 +21,25 @@ except (ImportError, ValueError):
     pytest.skip("MACE not installed", allow_module_level=True)
 
 
-mace_model = mace_mp(model=MaceUrls.mace_mp_small, return_raw_model=True)
-mace_off_model = mace_off(model=MaceUrls.mace_off_small, return_raw_model=True)
-
-
-@pytest.fixture
-def dtype() -> torch.dtype:
-    """Fixture to provide the default dtype for testing."""
-    return torch.float32
+raw_mace_mp = mace_mp(model=MaceUrls.mace_mp_small, return_raw_model=True)
+raw_mace_off = mace_off(model=MaceUrls.mace_off_small, return_raw_model=True)
+DTYPE = torch.float32
 
 
 @pytest.fixture
 def ase_mace_calculator() -> MACECalculator:
+    dtype = str(DTYPE).lstrip("torch.")
     return mace_mp(
-        model=MaceUrls.mace_mp_small,
-        device="cpu",
-        default_dtype="float32",
-        dispersion=False,
+        model=MaceUrls.mace_mp_small, device="cpu", default_dtype=dtype, dispersion=False
     )
 
 
 @pytest.fixture
-def torchsim_mace_model(device: torch.device, dtype: torch.dtype) -> MaceModel:
+def ts_mace_model() -> MaceModel:
     return MaceModel(
-        model=mace_model,
-        device=device,
-        dtype=dtype,
+        model=raw_mace_mp,
+        device=DEVICE,
+        dtype=DTYPE,
         compute_forces=True,
         compute_stress=True,
     )
@@ -53,36 +47,32 @@ def torchsim_mace_model(device: torch.device, dtype: torch.dtype) -> MaceModel:
 
 test_mace_consistency = make_model_calculator_consistency_test(
     test_name="mace",
-    model_fixture_name="torchsim_mace_model",
+    model_fixture_name="ts_mace_model",
     calculator_fixture_name="ase_mace_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
+    dtype=DTYPE,
 )
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_mace_dtype_working(
-    si_atoms: Atoms, dtype: torch.dtype, device: torch.device
-) -> None:
+def test_mace_dtype_working(si_atoms: Atoms, dtype: torch.dtype) -> None:
     model = MaceModel(
-        model=mace_model,
-        device=device,
+        model=raw_mace_mp,
+        device=DEVICE,
         dtype=dtype,
         compute_forces=True,
     )
 
-    state = ts.io.atoms_to_state([si_atoms], device, dtype)
-
+    state = ts.io.atoms_to_state([si_atoms], DEVICE, dtype)
     model.forward(state)
 
 
 @pytest.fixture
-def benzene_system(
-    benzene_atoms: Atoms, device: torch.device, dtype: torch.dtype
-) -> dict:
+def benzene_system(benzene_atoms: Atoms) -> dict:
     atomic_numbers = benzene_atoms.get_atomic_numbers()
 
-    positions = torch.tensor(benzene_atoms.positions, device=device, dtype=dtype)
-    cell = torch.tensor(benzene_atoms.cell.array, device=device, dtype=dtype)
+    positions = torch.tensor(benzene_atoms.positions, device=DEVICE, dtype=DTYPE)
+    cell = torch.tensor(benzene_atoms.cell.array, device=DEVICE, dtype=DTYPE)
 
     return {
         "positions": positions,
@@ -96,46 +86,35 @@ def benzene_system(
 def ase_mace_off_calculator() -> MACECalculator:
     return mace_off(
         model=MaceUrls.mace_off_small,
-        device="cpu",
-        default_dtype="float32",
+        device=str(DEVICE),
+        default_dtype=str(DTYPE).lstrip("torch."),
         dispersion=False,
     )
 
 
 @pytest.fixture
-def torchsim_mace_off_model(device: torch.device, dtype: torch.dtype) -> MaceModel:
-    return MaceModel(
-        model=mace_off_model,
-        device=device,
-        dtype=dtype,
-        compute_forces=True,
-    )
+def ts_mace_off_model() -> MaceModel:
+    return MaceModel(model=raw_mace_off, device=DEVICE, dtype=DTYPE, compute_forces=True)
 
 
 test_mace_off_consistency = make_model_calculator_consistency_test(
     test_name="mace_off",
-    model_fixture_name="torchsim_mace_off_model",
+    model_fixture_name="ts_mace_off_model",
     calculator_fixture_name="ase_mace_off_calculator",
-    sim_state_names=["benzene_sim_state"],
+    sim_state_names=("benzene_sim_state",),
+    dtype=DTYPE,
 )
 
 test_mace_off_model_outputs = make_validate_model_outputs_test(
-    model_fixture_name="torchsim_mace_model"
+    model_fixture_name="ts_mace_model", dtype=DTYPE
 )
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_mace_off_dtype_working(
-    benzene_atoms: Atoms, dtype: torch.dtype, device: torch.device
-) -> None:
-    model = MaceModel(
-        model=mace_off_model,
-        device=device,
-        dtype=dtype,
-        compute_forces=True,
-    )
+def test_mace_off_dtype_working(benzene_atoms: Atoms, dtype: torch.dtype) -> None:
+    model = MaceModel(model=raw_mace_off, device=DEVICE, dtype=dtype, compute_forces=True)
 
-    state = ts.io.atoms_to_state([benzene_atoms], device, dtype)
+    state = ts.io.atoms_to_state([benzene_atoms], DEVICE, dtype)
 
     model.forward(state)
 

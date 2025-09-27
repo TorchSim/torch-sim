@@ -3,15 +3,12 @@ Comparing the ASE and VV FIRE optimizers.
 """
 
 # /// script
-# dependencies = [
-#     "mace-torch>=0.3.12",
-#     "plotly>=6.0.0",
-# ]
+# dependencies = ["mace-torch>=0.3.12", "plotly>=6.0.0"]
 # ///
-
 import os
 import time
-from typing import Literal
+from functools import partial
+from typing import Literal, TypedDict
 
 import numpy as np
 import plotly.graph_objects as go
@@ -25,13 +22,13 @@ from mace.calculators.foundations_models import mace_mp as mace_mp_calculator_fo
 
 import torch_sim as ts
 from torch_sim.models.mace import MaceModel, MaceUrls
-from torch_sim.optimizers import GDState, fire, frechet_cell_fire
+from torch_sim.optimizers import OptimState
 from torch_sim.state import SimState
 
 
 # Set device, data type and unit conversion
 SMOKE_TEST = os.getenv("CI") is not None
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
 unit_conv = ts.units.UnitConversion
 
@@ -39,8 +36,8 @@ unit_conv = ts.units.UnitConversion
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
-    default_dtype=dtype,
-    device=device,
+    default_dtype=str(dtype).lstrip("torch."),
+    device=str(device),
 )
 
 # Number of steps to run
@@ -127,20 +124,20 @@ initial_energies = model(state)["energy"]
 
 def run_optimization_ts(  # noqa: PLR0915
     *,
-    initial_state: SimState,
+    initial_state: SimState | OptimState,
     ts_md_flavor: Literal["vv_fire", "ase_fire"],
     ts_use_frechet: bool,
     force_tol: float,
     max_iterations_ts: int,
-) -> tuple[torch.Tensor, SimState | None]:
-    """Runs Torch-Sim optimization and returns convergence steps and final state."""
+) -> tuple[torch.Tensor, OptimState | None]:
+    """Runs torch-sim optimization and returns convergence steps and final state."""
     print(
-        f"\n--- Running Torch-Sim optimization: flavor={ts_md_flavor}, "
+        f"\n--- Running torch-sim optimization: flavor={ts_md_flavor}, "
         f"frechet_cell_opt={ts_use_frechet}, force_tol={force_tol} ---"
     )
     start_time = time.perf_counter()
 
-    print("Initial cell parameters (Torch-Sim):")
+    print("Initial cell parameters (torch-sim):")
     for k_idx in range(initial_state.n_systems):
         cell_tensor_k = initial_state.cell[k_idx].cpu().numpy()
         ase_cell_k = Cell(cell_tensor_k)
@@ -151,20 +148,18 @@ def run_optimization_ts(  # noqa: PLR0915
         )
 
     if ts_use_frechet:
-        init_fn_opt, update_fn_opt = frechet_cell_fire(
-            model=model, md_flavor=ts_md_flavor
-        )
+        init_fn_opt = partial(ts.fire_init, cell_filter=ts.CellFilter.frechet)
+        step_fn_opt = ts.fire_step
     else:
-        init_fn_opt, update_fn_opt = fire(model=model, md_flavor=ts_md_flavor)
+        init_fn_opt, step_fn_opt = ts.fire_init, ts.fire_step
 
-    opt_state = init_fn_opt(initial_state.clone())
+    opt_state = init_fn_opt(model=model, state=initial_state.clone())
 
     batcher = ts.InFlightAutoBatcher(
         model=model,
         memory_scales_with="n_atoms",
         max_memory_scaler=1000,
         max_iterations=max_iterations_ts,
-        return_indices=True,
     )
     batcher.load_states(opt_state)
 
@@ -184,8 +179,9 @@ def run_optimization_ts(  # noqa: PLR0915
     last_active_state = opt_state
 
     while True:
-        result = batcher.next_batch(last_active_state, convergence_tensor_for_batcher)
-        opt_state, converged_states_from_batcher, current_indices_list = result
+        opt_state, converged_states_from_batcher = batcher.next_batch(
+            last_active_state, convergence_tensor_for_batcher
+        )
         all_converged_states.extend(converged_states_from_batcher)
 
         if opt_state is None:
@@ -194,12 +190,12 @@ def run_optimization_ts(  # noqa: PLR0915
 
         last_active_state = opt_state
         current_indices = torch.tensor(
-            current_indices_list, dtype=torch.long, device=device
+            batcher.current_idx, dtype=torch.long, device=device
         )
 
         steps_this_round = 1
         for _ in range(steps_this_round):
-            opt_state = update_fn_opt(opt_state)
+            opt_state = step_fn_opt(model=model, state=opt_state)
         global_step += steps_this_round
 
         convergence_tensor_for_batcher = convergence_fn(opt_state, None)
@@ -229,7 +225,7 @@ def run_optimization_ts(  # noqa: PLR0915
     final_state_concatenated = ts.concatenate_states(final_states_list)
 
     if final_state_concatenated is not None and hasattr(final_state_concatenated, "cell"):
-        print("Final cell parameters (Torch-Sim):")
+        print("Final cell parameters (torch-sim):")
         for k_idx in range(final_state_concatenated.n_systems):
             cell_tensor_k = final_state_concatenated.cell[k_idx].cpu().numpy()
             ase_cell_k = Cell(cell_tensor_k)
@@ -240,13 +236,13 @@ def run_optimization_ts(  # noqa: PLR0915
             )
     else:
         print(
-            "Final cell parameters (Torch-Sim): Not available (final_state_concatenated "
+            "Final cell parameters (torch-sim): Not available (final_state_concatenated "
             "is None or has no cell)."
         )
 
     end_time = time.perf_counter()
     print(
-        f"Finished Torch-Sim ({ts_md_flavor}, frechet={ts_use_frechet}) in "
+        f"Finished torch-sim ({ts_md_flavor}, frechet={ts_use_frechet}) in "
         f"{end_time - start_time:.2f} seconds."
     )
     return convergence_steps, final_state_concatenated
@@ -258,7 +254,7 @@ def run_optimization_ase(  # noqa: C901, PLR0915
     ase_use_frechet_filter: bool,
     force_tol: float,
     max_steps_ase: int,
-) -> tuple[torch.Tensor, GDState | None]:
+) -> tuple[torch.Tensor, OptimState | None]:
     """Runs ASE optimization and returns convergence steps and final state."""
     print(
         f"\n--- Running ASE optimization: frechet_filter={ase_use_frechet_filter}, "
@@ -271,14 +267,14 @@ def run_optimization_ase(  # noqa: C901, PLR0915
     final_ase_atoms_list = []
     convergence_steps_list = []
 
-    for i, single_sim_state in enumerate(individual_initial_states):
-        print(f"Optimizing structure {i + 1}/{num_structures} with ASE...")
+    for sys_idx, single_sim_state in enumerate(individual_initial_states):
+        print(f"Optimizing structure {sys_idx + 1}/{num_structures} with ASE...")
         ase_atoms_orig = ts.io.state_to_atoms(single_sim_state)[0]
 
         initial_cell_ase = ase_atoms_orig.get_cell()
         initial_params_str = ", ".join([f"{p:.2f}" for p in initial_cell_ase.cellpar()])
         print(
-            f"  Initial cell (ASE Structure {i + 1}): "
+            f"  Initial cell (ASE Structure {sys_idx + 1}): "
             f"Volume={initial_cell_ase.volume:.2f} Å³, "
             f"Params=[{initial_params_str}]"
         )
@@ -292,7 +288,7 @@ def run_optimization_ase(  # noqa: C901, PLR0915
 
         optim_target_atoms = ase_atoms_orig
         if ase_use_frechet_filter:
-            print(f"Applying FrechetCellFilter to structure {i + 1}")
+            print(f"Applying FrechetCellFilter to structure {sys_idx + 1}")
             optim_target_atoms = FrechetCellFilter(ase_atoms_orig)
 
         dyn = ASEFIRE(optim_target_atoms, trajectory=None, logfile=None)
@@ -301,40 +297,38 @@ def run_optimization_ase(  # noqa: C901, PLR0915
             dyn.run(fmax=force_tol, steps=max_steps_ase)
             if dyn.converged():
                 convergence_steps_list.append(dyn.nsteps)
-                print(f"ASE structure {i + 1} converged in {dyn.nsteps} steps.")
+                print(f"ASE structure {sys_idx + 1} converged in {dyn.nsteps} steps.")
             else:
                 print(
-                    f"ASE optimization for structure {i + 1} did not converge within "
-                    f"{max_steps_ase} steps. Steps taken: {dyn.nsteps}."
+                    f"ASE optimization for structure {sys_idx + 1} did not converge "
+                    f"within {max_steps_ase} steps. Steps taken: {dyn.nsteps}."
                 )
                 convergence_steps_list.append(-1)
-        except Exception as e:  # noqa: BLE001
-            print(f"ASE optimization failed for structure {i + 1}: {e}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"ASE optimization failed for structure {sys_idx + 1}: {exc}")
             convergence_steps_list.append(-1)
 
-        final_ats_for_print = (
-            optim_target_atoms.atoms if ase_use_frechet_filter else ase_atoms_orig
-        )
+        final_ats_for_print = getattr(optim_target_atoms, "atoms", ase_atoms_orig)
         final_cell_ase = final_ats_for_print.get_cell()
         final_params_str = ", ".join([f"{p:.2f}" for p in final_cell_ase.cellpar()])
         print(
-            f"  Final cell (ASE Structure {i + 1}): "
+            f"  Final cell (ASE Structure {sys_idx + 1}): "
             f"Volume={final_cell_ase.volume:.2f} Å³, "
             f"Params=[{final_params_str}]"
         )
 
         final_ase_atoms_list.append(final_ats_for_print)
 
-    all_positions = []
-    all_masses = []
-    all_atomic_numbers = []
-    all_cells = []
-    all_systems_for_gd = []
-    final_energies_ase = []
-    final_forces_ase_tensors = []
+    all_positions: list[torch.Tensor] = []
+    all_masses: list[torch.Tensor] = []
+    all_atomic_numbers: list[torch.Tensor] = []
+    all_cells: list[torch.Tensor] = []
+    all_systems_for_gd: list[torch.Tensor] = []
+    final_energies_ase: list[float] = []
+    final_forces_ase_tensors: list[torch.Tensor] = []
 
     current_atom_offset = 0
-    for system_idx, ats_final in enumerate(final_ase_atoms_list):
+    for sys_idx, ats_final in enumerate(final_ase_atoms_list):
         all_positions.append(
             torch.tensor(ats_final.get_positions(), device=device, dtype=dtype)
         )
@@ -351,17 +345,15 @@ def run_optimization_ase(  # noqa: C901, PLR0915
 
         num_atoms_in_current = len(ats_final)
         all_systems_for_gd.append(
-            torch.full(
-                (num_atoms_in_current,), system_idx, device=device, dtype=torch.long
-            )
+            torch.full((num_atoms_in_current,), sys_idx, device=device, dtype=torch.long)
         )
         current_atom_offset += num_atoms_in_current
 
         try:
             if ats_final.calc is None:
                 print(
-                    "Re-attaching ASE calculator for final energy/forces for "
-                    f"structure {system_idx}."
+                    "Re-attaching ASE calculator for final energy/forces for structure "
+                    f"{sys_idx}."
                 )
                 temp_calc = mace_mp_calculator_for_ase(
                     model=MaceUrls.mace_mpa_medium,
@@ -373,10 +365,8 @@ def run_optimization_ase(  # noqa: C901, PLR0915
             final_forces_ase_tensors.append(
                 torch.tensor(ats_final.get_forces(), device=device, dtype=dtype)
             )
-        except Exception as e:  # noqa: BLE001
-            print(
-                f"Couldn't get final energy/forces for an ASE structure {system_idx}: {e}"
-            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"Couldn't get final energy/forces for ASE structure {sys_idx}: {exc}")
             final_energies_ase.append(float("nan"))
             if all_positions and len(all_positions[-1]) > 0:
                 final_forces_ase_tensors.append(torch.zeros_like(all_positions[-1]))
@@ -386,7 +376,7 @@ def run_optimization_ase(  # noqa: C901, PLR0915
                 )
 
     if not all_positions:  # If all optimizations failed early
-        print("Warning: No successful ASE structures to form GDState.")
+        print("Warning: No successful ASE structures to form OptimState.")
         return torch.tensor(convergence_steps_list, dtype=torch.long, device=device), None
 
     # Concatenate all parts
@@ -403,11 +393,11 @@ def run_optimization_ase(  # noqa: C901, PLR0915
     if torch.isnan(concatenated_energies).any():
         print(
             "Warning: NaN values found in final ASE energies. "
-            "GDState energy tensor will contain NaNs."
+            "OptimState energy tensor will contain NaNs."
         )
 
-    # Create GDState instance
-    final_state_as_gd = GDState(
+    # Create OptimState instance
+    final_state_as_gd = OptimState(
         positions=concatenated_positions,
         masses=concatenated_masses,
         cell=concatenated_cells,
@@ -437,25 +427,25 @@ force_tol = 0.05
 configs_to_run = [
     {
         "name": "torch-sim VV-FIRE (PosOnly)",
-        "type": "torch_sim",
+        "type": "torch-sim",
         "ts_md_flavor": "vv_fire",
         "ts_use_frechet": False,
     },
     {
         "name": "torch-sim ASE-FIRE (PosOnly)",
-        "type": "torch_sim",
+        "type": "torch-sim",
         "ts_md_flavor": "ase_fire",
         "ts_use_frechet": False,
     },
     {
         "name": "torch-sim VV-FIRE (Frechet Cell)",
-        "type": "torch_sim",
+        "type": "torch-sim",
         "ts_md_flavor": "vv_fire",
         "ts_use_frechet": True,
     },
     {
         "name": "torch-sim ASE-FIRE (Frechet Cell)",
-        "type": "torch_sim",
+        "type": "torch-sim",
         "ts_md_flavor": "ase_fire",
         "ts_use_frechet": True,
     },
@@ -471,7 +461,15 @@ configs_to_run = [
     },
 ]
 
-all_results = {}
+
+class ResultData(TypedDict):
+    """Result data for a single optimization run."""
+
+    steps: torch.Tensor
+    final_state: OptimState | None
+
+
+all_results: dict[str, ResultData] = {}
 
 for config_run in configs_to_run:
     print(f"\n\nStarting configuration: {config_run['name']}")
@@ -481,11 +479,11 @@ for config_run in configs_to_run:
     ase_use_frechet_filter_val = config_run.get("ase_use_frechet_filter", False)
 
     steps: torch.Tensor | None = None
-    final_state_opt: SimState | GDState | None = None
+    final_state_opt: OptimState | None = None
 
-    if optimizer_type_val == "torch_sim":
+    if optimizer_type_val == "torch-sim":
         if ts_md_flavor_val is None:
-            raise ValueError(f"{ts_md_flavor_val=} must be provided for torch_sim")
+            raise ValueError(f"{ts_md_flavor_val=} must be provided for torch-sim")
         steps, final_state_opt = run_optimization_ts(
             initial_state=state.clone(),
             ts_md_flavor=ts_md_flavor_val,
@@ -557,7 +555,7 @@ for name1, name2 in comparison_pairs:
 
         mean_displacements = []
         for s1, s2 in zip(state1_list, state2_list, strict=True):
-            if s1.n_atoms == 0 or s2.n_atoms == 0:
+            if 0 in {s1.n_atoms, s2.n_atoms}:
                 mean_displacements.append(float("nan"))
                 continue
             pos1_centered = s1.positions - s1.positions.mean(dim=0, keepdim=True)
@@ -736,11 +734,11 @@ for name, result_data in all_results.items():
                 "Setting energy diff to NaN."
             )
             avg_energy_diffs_fig2.append(np.nan)
-    elif not processed_current_name and name not in [
+    elif not processed_current_name and name not in (
         n
         for n, v in zip(plot_names_fig2, avg_energy_diffs_fig2, strict=False)
         if not np.isnan(v)
-    ]:
+    ):
         print(f"Plot2: Fallback for {name}, setting energy diff to NaN.")
         avg_energy_diffs_fig2.append(np.nan)
 
@@ -898,7 +896,7 @@ for idx, name in enumerate(legend_labels_fig3):
     fig3_plotly.add_bar(name=name, x=structure_names, y=disp_data_fig3[:, idx])
 
 
-title = "Mean Displacement of Torch-Sim Methods to ASE Counterparts (per Structure)"
+title = "Mean Displacement of torch-sim Methods to ASE Counterparts (per Structure)"
 fig3_plotly.update_layout(
     barmode="group",
     title=dict(text=title, x=0.5, y=1),

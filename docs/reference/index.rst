@@ -5,7 +5,7 @@ API reference
 
 Overview of the TorchSim API.
 
-.. currentmodule:: torch_sim
+.. currentmodule:: torch-sim
 
 .. autosummary::
     :recursive:

@@ -1,12 +1,8 @@
 """Bulk and Shear modulus with MACE."""
 
 # /// script
-# dependencies = [
-#     "ase>=3.24",
-#     "mace-torch>=0.3.12",
-# ]
+# dependencies = ["ase>=3.26", "mace-torch>=0.3.12"]
 # ///
-
 import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
@@ -18,13 +14,14 @@ from torch_sim.models.mace import MaceModel, MaceUrls
 
 # Calculator
 unit_conv = ts.units.UnitConversion
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float64
+
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     enable_cueq=False,
-    device=device,
-    default_dtype="float64",
+    device=str(device),
+    default_dtype=str(dtype).lstrip("torch."),
     return_raw_model=True,
 )
 
@@ -43,10 +40,10 @@ model = MaceModel(
 fmax = 1e-3
 
 # Relax positions and cell
-fire_init, fire_update = ts.optimizers.frechet_cell_fire(model=model, scalar_pressure=0.0)
-
 state = ts.io.atoms_to_state(atoms=struct, device=device, dtype=dtype)
-state = fire_init(state=state)
+state = ts.fire_init(
+    model=model, state=state, scalar_pressure=0.0, cell_filter=ts.CellFilter.frechet
+)
 
 for step in range(300):
     pressure = -torch.trace(state.stress.squeeze()) / 3 * unit_conv.eV_per_Ang3_to_GPa
@@ -58,7 +55,7 @@ for step in range(300):
     )
     if current_fmax < fmax and abs(pressure) < 1e-2:
         break
-    state = fire_update(state=state)
+    state = ts.fire_step(model=model, state=state)
 
 # Get bravais type
 bravais_type = get_bravais_type(state)

@@ -5,7 +5,7 @@ energies, forces, and stresses for atomistic systems, including batched computat
 for multiple systems simultaneously.
 
 The MetatomicModel class adapts metatomic models to the ModelInterface protocol,
-allowing them to be used within the broader torch_sim simulation framework.
+allowing them to be used within the broader torch-sim simulation framework.
 
 Notes:
     This module depends on the metatomic-torch package.
@@ -37,7 +37,7 @@ except ImportError as exc:
     warnings.warn(f"Metatomic import failed: {traceback.format_exc()}", stacklevel=2)
 
     class MetatomicModel(ModelInterface):
-        """Metatomic model wrapper for torch_sim.
+        """Metatomic model wrapper for torch-sim.
 
         This class is a placeholder for the MetatomicModel class.
         It raises an ImportError if metatomic is not installed.
@@ -105,10 +105,10 @@ class MetatomicModel(ModelInterface):
         if model == "pet-mad":
             path = "https://huggingface.co/lab-cosmo/pet-mad/resolve/v1.1.0/models/pet-mad-v1.1.0.ckpt"
             self._model = load_model(path).export()
-        elif model.endswith(".ckpt"):
+        elif str(model).endswith(".ckpt"):
             path = model
             self._model = load_model(path).export()
-        elif model.endswith(".pt"):
+        elif str(model).endswith(".pt"):
             path = model
             self._model = load_atomistic_model(path, extensions_path)
         else:
@@ -117,7 +117,7 @@ class MetatomicModel(ModelInterface):
         if "energy" not in self._model.capabilities().outputs:
             raise ValueError(
                 "This model does not support energy predictions. "
-                "The model must have an `energy` output to be used in torch-sim."
+                "The model must have an `energy` output to be used in TorchSim."
             )
 
         self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -139,19 +139,10 @@ class MetatomicModel(ModelInterface):
         self._requested_neighbor_lists = self._model.requested_neighbor_lists()
         self._evaluation_options = ModelEvaluationOptions(
             length_unit="angstrom",
-            outputs={
-                "energy": ModelOutput(
-                    quantity="energy",
-                    unit="eV",
-                    per_atom=False,
-                )
-            },
+            outputs={"energy": ModelOutput(quantity="energy", unit="eV", per_atom=False)},
         )
 
-    def forward(  # noqa: C901, PLR0915
-        self,
-        state: ts.SimState | StateDict,
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:  # noqa: C901, PLR0915
         """Compute energies, forces, and stresses for the given atomic systems.
 
         Processes the provided state information and computes energies, forces, and
@@ -170,17 +161,19 @@ class MetatomicModel(ModelInterface):
                 - 'stress': System stresses with shape [n_systems, 3, 3] if
                     compute_stress=True
         """
-        # Extract required data from input
-        if isinstance(state, dict):
-            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        sim_state = (
+            state
+            if isinstance(state, ts.SimState)
+            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        )
 
         # Input validation is already done inside the forward method of the
         # AtomisticModel class, so we don't need to do it again here.
 
-        atomic_numbers = state.atomic_numbers
-        cell = state.row_vector_cell
-        positions = state.positions
-        pbc = state.pbc
+        atomic_nums = sim_state.atomic_numbers
+        cell = sim_state.row_vector_cell
+        positions = sim_state.positions
+        pbc = sim_state.pbc
 
         # Check dtype (metatomic models require a specific input dtype)
         if positions.dtype != self._dtype:
@@ -199,14 +192,14 @@ class MetatomicModel(ModelInterface):
         # Process each system separately
         systems: list[System] = []
         strains = []
-        for b in range(len(cell)):
-            system_mask = state.system_idx == b
+        for sys_idx in range(len(cell)):
+            system_mask = sim_state.system_idx == sys_idx
             system_positions = positions[system_mask]
-            system_cell = cell[b]
+            system_cell = cell[sys_idx]
             system_pbc = torch.tensor(
                 [pbc, pbc, pbc], device=self._device, dtype=torch.bool
             )
-            system_atomic_numbers = atomic_numbers[system_mask]
+            system_atomic_numbers = atomic_nums[system_mask]
 
             # Create a System object for this system
             if self._compute_forces:
@@ -245,7 +238,7 @@ class MetatomicModel(ModelInterface):
             check_consistency=self._check_consistency,
         )
 
-        results = {}
+        results: dict[str, torch.Tensor] = {}
         results["energy"] = model_outputs["energy"].block().values.detach().squeeze(-1)
 
         # Compute forces and/or stresses if requested

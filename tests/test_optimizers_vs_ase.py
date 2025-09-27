@@ -7,18 +7,45 @@ from ase.optimize import FIRE
 from pymatgen.analysis.structure_matcher import StructureMatcher
 
 import torch_sim as ts
-from torch_sim.io import atoms_to_state, state_to_atoms, state_to_structures
-from torch_sim.models.mace import MaceModel
-from torch_sim.optimizers import frechet_cell_fire, unit_cell_fire
+from tests.conftest import DTYPE
+from torch_sim.models.mace import MaceModel, MaceUrls
 
 
 if TYPE_CHECKING:
     from mace.calculators import MACECalculator
 
 
+@pytest.fixture
+def ts_mace_mpa() -> MaceModel:
+    """Provides a MACE MP model instance for the optimizer tests."""
+    from mace.calculators.foundations_models import mace_mp
+
+    # Use float64 for potentially higher precision needed in optimization
+    dtype = getattr(torch, dtype_str := "float64")
+    raw_mace = mace_mp(
+        model=MaceUrls.mace_mp_small, return_raw_model=True, default_dtype=dtype_str
+    )
+    return MaceModel(
+        model=raw_mace,
+        device=torch.device("cpu"),
+        dtype=dtype,
+        compute_forces=True,
+        compute_stress=True,
+    )
+
+
+@pytest.fixture
+def ase_mace_mpa() -> "MACECalculator":
+    """Provides an ASE MACECalculator instance using mace_mp."""
+    from mace.calculators.foundations_models import mace_mp
+
+    # Ensure dtype matches the one used in the torch-sim fixture (float64)
+    return mace_mp(model=MaceUrls.mace_mp_small, default_dtype="float64")
+
+
 def _compare_ase_and_ts_states(
-    ts_current_system_state: ts.state.SimState,
-    filtered_ase_atoms_for_run: Any,
+    state: ts.FireState,
+    filtered_ase_atoms: FrechetCellFilter | UnitCellFilter,
     tolerances: dict[str, float],
     current_test_id: str,
 ) -> None:
@@ -28,29 +55,23 @@ def _compare_ase_and_ts_states(
         angle_tol=tolerances["angle_tol"],
         scale=False,
     )
+    tensor_kwargs = {"device": state.device, "dtype": state.dtype}
 
-    tensor_kwargs = {
-        "device": ts_current_system_state.device,
-        "dtype": ts_current_system_state.dtype,
-    }
-
-    final_custom_energy = ts_current_system_state.energy.item()
-    final_custom_forces_max = (
-        torch.norm(ts_current_system_state.forces, dim=-1).max().item()
-    )
+    final_custom_energy = state.energy.item()
+    final_custom_forces_max = torch.norm(state.forces, dim=-1).max().item()
 
     # Convert torch-sim state to pymatgen Structure
-    ts_structure = state_to_structures(ts_current_system_state)[0]
+    ts_structure = ts.io.state_to_structures(state)[0]
 
     # Convert ASE atoms to pymatgen Structure
-    final_ase_atoms = filtered_ase_atoms_for_run.atoms
+    final_ase_atoms = filtered_ase_atoms.atoms
     final_ase_energy = final_ase_atoms.get_potential_energy()
     ase_forces_raw = final_ase_atoms.get_forces()
     final_ase_forces_max = torch.norm(
         torch.tensor(ase_forces_raw, **tensor_kwargs), dim=-1
     ).max()
-    ts_state = atoms_to_state(final_ase_atoms, **tensor_kwargs)
-    ase_structure = state_to_structures(ts_state)[0]
+    ts_state = ts.io.atoms_to_state(final_ase_atoms, **tensor_kwargs)
+    ase_structure = ts.io.state_to_structures(ts_state)[0]
 
     # Compare energies
     energy_diff = abs(final_custom_energy - final_ase_energy)
@@ -76,56 +97,44 @@ def _compare_ase_and_ts_states(
 
 
 def _run_and_compare_optimizers(
-    initial_sim_state_fixture: ts.state.SimState,
-    torchsim_mace_mpa: MaceModel,
+    initial_sim_state_fixture: ts.SimState,
+    ts_mace_mpa: MaceModel,
     ase_mace_mpa: "MACECalculator",
-    torch_sim_optimizer_type: str,
-    ase_filter_class: Any,
+    fire_type: ts.OptimFlavor,
+    ase_filter_cls: FrechetCellFilter | UnitCellFilter,
     checkpoints: list[int],
     force_tol: float,
     tolerances: dict[str, float],
     test_id_prefix: str,
+    **optim_kwargs: Any,
 ) -> None:
     """Run and compare optimizations between torch-sim and ASE."""
     pytest.importorskip("mace")
-    dtype = torch.float64
-    device = torchsim_mace_mpa.device
+    device = ts_mace_mpa.device
 
-    ts_current_system_state = initial_sim_state_fixture.clone()
+    state = initial_sim_state_fixture.clone()
 
-    optimizer_builders = {
-        "frechet": frechet_cell_fire,
-        "unit_cell": unit_cell_fire,
-    }
-    if torch_sim_optimizer_type not in optimizer_builders:
-        raise ValueError(f"Unknown torch_sim_optimizer_type: {torch_sim_optimizer_type}")
-    ts_optimizer_builder = optimizer_builders[torch_sim_optimizer_type]
-
-    optimizer_callable_for_ts_optimize = lambda model, **_kwargs: ts_optimizer_builder(  # noqa: E731
-        model, md_flavor="ase_fire"
-    )
-
-    ase_atoms_for_run = state_to_atoms(
-        initial_sim_state_fixture.clone().to(dtype=dtype, device=device)
+    ase_atoms = ts.io.state_to_atoms(
+        initial_sim_state_fixture.clone().to(dtype=DTYPE, device=device)
     )[0]
-    ase_atoms_for_run.calc = ase_mace_mpa
-    filtered_ase_atoms_for_run = ase_filter_class(ase_atoms_for_run)
-    ase_optimizer = FIRE(filtered_ase_atoms_for_run, logfile=None)
+    ase_atoms.calc = ase_mace_mpa
+    filtered_ase_atoms = ase_filter_cls(ase_atoms)  # type: ignore[call-non-callable]
+    ase_optimizer = FIRE(filtered_ase_atoms, logfile=None)
 
     last_checkpoint_step_count = 0
     convergence_fn = ts.generate_force_convergence_fn(
         force_tol=force_tol, include_cell_forces=True
     )
 
-    results = torchsim_mace_mpa(ts_current_system_state)
-    ts_initial_system_state = ts_current_system_state.clone()
+    results = ts_mace_mpa(state)
+    ts_initial_system_state = state.clone()
     ts_initial_system_state.forces = results["forces"]
     ts_initial_system_state.energy = results["energy"]
-    ase_atoms_for_run.calc.calculate(ase_atoms_for_run)
+    ase_mace_mpa.calculate(ase_atoms)
 
     _compare_ase_and_ts_states(
         ts_initial_system_state,
-        filtered_ase_atoms_for_run,
+        filtered_ase_atoms,
         tolerances,
         f"{test_id_prefix} (Initial)",
     )
@@ -135,25 +144,22 @@ def _run_and_compare_optimizers(
 
         if steps_for_current_segment > 0:
             updated_ts_state = ts.optimize(
-                system=ts_current_system_state,
-                model=torchsim_mace_mpa,
-                optimizer=optimizer_callable_for_ts_optimize,
+                system=state,
+                model=ts_mace_mpa,
+                optimizer=fire_type,
                 max_steps=steps_for_current_segment,
                 convergence_fn=convergence_fn,
                 steps_between_swaps=1,
+                md_flavor="ase_fire",  # optimizer kwargs
+                **optim_kwargs,
             )
-            ts_current_system_state = updated_ts_state.clone()
+            state = updated_ts_state.clone()
 
             ase_optimizer.run(fmax=force_tol, steps=steps_for_current_segment)
 
         current_test_id = f"{test_id_prefix} (Step {checkpoint_step})"
 
-        _compare_ase_and_ts_states(
-            ts_current_system_state,
-            filtered_ase_atoms_for_run,
-            tolerances,
-            current_test_id,
-        )
+        _compare_ase_and_ts_states(state, filtered_ase_atoms, tolerances, current_test_id)
 
         last_checkpoint_step_count = checkpoint_step
 
@@ -161,8 +167,9 @@ def _run_and_compare_optimizers(
 @pytest.mark.parametrize(
     (
         "sim_state_fixture_name",
-        "torch_sim_optimizer_type",
-        "ase_filter_class",
+        "fire_type",
+        "cell_filter",
+        "ase_filter_cls",
         "checkpoints",
         "force_tol",
         "tolerances",
@@ -171,7 +178,8 @@ def _run_and_compare_optimizers(
     [
         (
             "rattled_sio2_sim_state",
-            "frechet",
+            ts.OptimFlavor.fire,
+            ts.CellFilter.frechet,
             FrechetCellFilter,
             [1, 33, 66, 100],
             0.02,
@@ -186,7 +194,8 @@ def _run_and_compare_optimizers(
         ),
         (
             "osn2_sim_state",
-            "frechet",
+            ts.OptimFlavor.fire,
+            ts.CellFilter.frechet,
             FrechetCellFilter,
             [1, 16, 33, 50],
             0.02,
@@ -201,7 +210,8 @@ def _run_and_compare_optimizers(
         ),
         (
             "distorted_fcc_al_conventional_sim_state",
-            "frechet",
+            ts.OptimFlavor.fire,
+            ts.CellFilter.frechet,
             FrechetCellFilter,
             [1, 33, 66, 100],
             0.01,
@@ -216,7 +226,8 @@ def _run_and_compare_optimizers(
         ),
         (
             "distorted_fcc_al_conventional_sim_state",
-            "unit_cell",
+            ts.OptimFlavor.fire,
+            ts.CellFilter.unit,
             UnitCellFilter,
             [1, 33, 66, 100],
             0.01,
@@ -231,7 +242,8 @@ def _run_and_compare_optimizers(
         ),
         (
             "rattled_sio2_sim_state",
-            "unit_cell",
+            ts.OptimFlavor.fire,
+            ts.CellFilter.unit,
             UnitCellFilter,
             [1, 33, 66, 100],
             0.02,
@@ -246,7 +258,8 @@ def _run_and_compare_optimizers(
         ),
         (
             "osn2_sim_state",
-            "unit_cell",
+            ts.OptimFlavor.fire,
+            ts.CellFilter.unit,
             UnitCellFilter,
             [1, 16, 33, 50],
             0.02,
@@ -263,13 +276,14 @@ def _run_and_compare_optimizers(
 )
 def test_optimizer_vs_ase_parametrized(
     sim_state_fixture_name: str,
-    torch_sim_optimizer_type: str,
-    ase_filter_class: Any,
+    fire_type: ts.OptimFlavor,
+    cell_filter: ts.CellFilter,
+    ase_filter_cls: FrechetCellFilter | UnitCellFilter,
     checkpoints: list[int],
     force_tol: float,
     tolerances: dict[str, float],
     test_id_prefix: str,
-    torchsim_mace_mpa: MaceModel,
+    ts_mace_mpa: MaceModel,
     ase_mace_mpa: "MACECalculator",
     request: pytest.FixtureRequest,
 ) -> None:
@@ -279,10 +293,11 @@ def test_optimizer_vs_ase_parametrized(
 
     _run_and_compare_optimizers(
         initial_sim_state_fixture=initial_sim_state_fixture,
-        torchsim_mace_mpa=torchsim_mace_mpa,
+        ts_mace_mpa=ts_mace_mpa,
         ase_mace_mpa=ase_mace_mpa,
-        torch_sim_optimizer_type=torch_sim_optimizer_type,
-        ase_filter_class=ase_filter_class,
+        fire_type=fire_type,
+        cell_filter=cell_filter,
+        ase_filter_cls=ase_filter_cls,
         checkpoints=checkpoints,
         force_tol=force_tol,
         tolerances=tolerances,

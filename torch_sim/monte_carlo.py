@@ -5,12 +5,17 @@ particularly focused on swap Monte Carlo for atomic systems. It includes
 implementations of the Metropolis criterion, swap generation, and utility
 functions for handling permutations in batched systems.
 
-The `swap_monte_carlo` function can be used with `integrate` but if
-a trajectory is being reported, the `TorchSimTrajectory.write_state` method
-must be called with `variable_masses=True`.
+The `swap_mc_init` and `swap_mc_step` functions can be used
+with `integrate` but if a trajectory is being reported, the
+`TorchSimTrajectory.write_state` method must be called with `variable_masses=True`.
+
+Examples:
+    >>> import torch_sim as ts
+    >>> mc_state = ts.swap_mc_init(model, initial_state, seed=42)
+    >>> for _ in range(1000):
+    ...     mc_state = ts.swap_mc_step(model, mc_state, kT=0.1 * units.energy)
 """
 
-from collections.abc import Callable
 from dataclasses import dataclass
 
 import torch
@@ -86,20 +91,20 @@ def generate_swaps(
     # Process each system - we need this loop because of ragged systems
     system_starts = system_lengths.cumsum(dim=0) - system_lengths[0]
 
-    for b in range(n_systems):
+    for sys_idx in range(n_systems):
         # Get global index of selected atom
-        first_idx = first_index[b, 0].item() + system_starts[b].item()
+        first_idx = first_index[sys_idx, 0].item() + system_starts[sys_idx].item()
         first_type = atomic_numbers[first_idx]
 
         # Get indices of atoms in this system
-        system_start = system_starts[b].item()
-        system_end = system_start + system_lengths[b].item()
+        system_start = system_starts[sys_idx].item()
+        system_end = system_start + system_lengths[sys_idx].item()
 
         # Create mask for same-type atoms
         same_type = atomic_numbers[system_start:system_end] == first_type
 
         # Zero out weights for same-type atoms (accounting for padding)
-        weights[b, : len(same_type)][same_type] = 0.0
+        weights[sys_idx, : len(same_type)][same_type] = 0.0
 
     second_index = torch.multinomial(weights, 1, replacement=False, generator=generator)
     zeroed_swaps = torch.concatenate([first_index, second_index], dim=1)
@@ -123,26 +128,14 @@ def swaps_to_permutation(swaps: torch.Tensor, n_atoms: int) -> torch.Tensor:
             contains the index of the atom that should be moved to position i
     """
     permutation = torch.arange(n_atoms, device=swaps.device)
-    permutation[swaps[:, 0]] = swaps[:, 1]
-    permutation[swaps[:, 1]] = swaps[:, 0]
+
+    for swap in swaps:
+        idx1, idx2 = swap
+        temp = permutation[idx1].clone()
+        permutation[idx1] = permutation[idx2]
+        permutation[idx2] = temp
+
     return permutation
-
-
-def validate_permutation(permutation: torch.Tensor, system_idx: torch.Tensor) -> None:
-    """Validate that permutations only swap atoms within the same system.
-
-    Confirms that no swaps are attempted between atoms in different systems,
-    which would lead to physically invalid configurations.
-
-    Args:
-        permutation (torch.Tensor): Permutation tensor of shape [n_atoms]
-        system_idx (torch.Tensor): system_idx for each atom of shape [n_atoms]
-
-    Raises:
-        ValueError: If any swaps are between atoms in different systems
-    """
-    if not torch.all(system_idx == system_idx[permutation]):
-        raise ValueError("Swaps must be between atoms in the same system")
 
 
 def metropolis_criterion(
@@ -174,7 +167,7 @@ def metropolis_criterion(
     delta_e = energy_new - energy_old
 
     # Calculate acceptance probability: min(1, exp(-ΔE/kT))
-    p_acceptance = torch.exp(-delta_e / kT)
+    p_acceptance = torch.clamp(torch.exp(-delta_e / kT), max=1.0)
 
     # Generate random numbers between 0 and 1 using the generator
     random_values = torch.rand(
@@ -185,108 +178,97 @@ def metropolis_criterion(
     return random_values < p_acceptance
 
 
-def swap_monte_carlo(
-    *,
+def swap_mc_init(
     model: ModelInterface,
-    kT: float,
-    seed: int | None = None,
-) -> tuple[
-    Callable[[SimState], SwapMCState],
-    Callable[[SwapMCState, float, torch.Generator | None], SwapMCState],
-]:
-    """Initialize a swap Monte Carlo simulation for atomic structure optimization.
+    state: SimState,
+) -> SwapMCState:
+    """Initialize a swap Monte Carlo state from input data.
 
-    Creates and returns functions for initializing the Monte Carlo state and performing
-    Monte Carlo steps. The simulation uses the Metropolis criterion to accept or reject
-    proposed swaps based on energy differences.
+    Creates an initial state for swap Monte Carlo simulations by computing initial
+    energy and setting up the permutation tracking. The simulation uses the Metropolis
+    criterion to accept or reject proposed swaps based on energy differences.
 
     Make sure that if the trajectory is being reported, the
     `TorchSimTrajectory.write_state` method is called with `variable_masses=True`.
 
     Args:
-        model (torch.nn.Module): Energy model that takes a SimState and returns a dict
-            containing 'energy' as a key
-        kT (float): Temperature of the system in energy units
-        seed (int | None, optional): Seed for the random number generator.
-            Defaults to None.
+        model: Energy model that takes a SimState and returns a dict containing
+            'energy' as a key
+        state: The simulation state to initialize from
 
     Returns:
-        tuple: A tuple containing:
-            - init_function (Callable): Function to initialize a SwapMCState from a
-              SimState
-            - step_function (Callable): Function to perform a single Monte Carlo step
+        SwapMCState: Initialized state for swap Monte Carlo simulation containing
+            positions, energy, and permutation tracking
 
     Examples:
-        >>> init_fn, step_fn = swap_monte_carlo(model=energy_model, kT=0.1, seed=42)
-        >>> mc_state = init_fn(initial_state)
+        >>> mc_state = swap_monte_carlo_init(model=energy_model, state=initial_state)
         >>> for _ in range(100):
-        >>>     mc_state = step_fn(mc_state)
+        >>>     mc_state = swap_monte_carlo_step(model, mc_state, kT=0.1)
     """
+    model_output = model(state)
+
+    return SwapMCState(
+        positions=state.positions,
+        masses=state.masses,
+        cell=state.cell,
+        pbc=state.pbc,
+        atomic_numbers=state.atomic_numbers,
+        system_idx=state.system_idx,
+        energy=model_output["energy"],
+        last_permutation=torch.arange(state.n_atoms, device=state.device),
+    )
+
+
+def swap_mc_step(
+    model: ModelInterface,
+    state: SwapMCState,
+    *,
+    kT: float,
+    seed: int | None = None,
+) -> SwapMCState:
+    """Perform a single swap Monte Carlo step.
+
+    Proposes atom swaps, evaluates the energy change, and uses the Metropolis
+    criterion to determine whether to accept the move. Rejected moves are reversed.
+
+    Args:
+        model: Energy model that takes a SimState and returns a dict containing
+            'energy' as a key
+        state: The current Monte Carlo state
+        kT: Temperature parameter in energy units
+        seed: Seed for the random number generator. Defaults to None.
+
+    Returns:
+        SwapMCState: Updated Monte Carlo state after applying the step
+
+    Notes:
+        The function handles batched systems and ensures that swaps only occur
+        within the same system.
+    """
+    generator = None
     if seed is not None:
         generator = torch.Generator(device=model.device)
         generator.manual_seed(seed)
-    else:
-        generator = None
 
-    def init_swap_mc_state(state: SimState) -> SwapMCState:
-        model_output = model(state)
+    swaps = generate_swaps(state, generator=generator)
 
-        return SwapMCState(
-            positions=state.positions,
-            masses=state.masses,
-            cell=state.cell,
-            pbc=state.pbc,
-            atomic_numbers=state.atomic_numbers,
-            system_idx=state.system_idx,
-            energy=model_output["energy"],
-            last_permutation=torch.arange(state.n_atoms, device=state.device),
-        )
+    permutation = swaps_to_permutation(swaps, state.n_atoms)
 
-    def swap_monte_carlo_step(
-        state: SwapMCState,
-        kT: float = kT,
-        generator: torch.Generator | None = generator,
-    ) -> SwapMCState:
-        """Perform a single swap Monte Carlo step.
+    if not torch.all(state.system_idx == state.system_idx[permutation]):
+        raise ValueError("Swaps must be between atoms in the same system")
 
-        Proposes atom swaps, evaluates the energy change, and uses the Metropolis
-        criterion to determine whether to accept the move. Rejected moves are reversed.
+    energies_old = state.energy.clone()
+    state.positions = state.positions[permutation].clone()
 
-        Args:
-            state (SwapMCState): The current Monte Carlo state
-            kT (float, optional): Temperature parameter in energy units. Defaults to the
-                value specified in the outer function.
-            generator (torch.Generator | None, optional): Random number generator.
-                Defaults to None.
+    model_output = model(state)
+    energies_new = model_output["energy"]
 
-        Returns:
-            SwapMCState: Updated Monte Carlo state after applying the step
+    accepted = metropolis_criterion(energies_new, energies_old, kT, generator=generator)
+    rejected_swaps = swaps[~accepted]
+    reverse_rejected_swaps = swaps_to_permutation(rejected_swaps, state.n_atoms)
+    state.positions = state.positions[reverse_rejected_swaps]
 
-        Notes:
-            The function handles batched systems and ensures that swaps only occur
-            within the same system.
-        """
-        swaps = generate_swaps(state, generator=generator)
+    state.energy = torch.where(accepted, energies_new, energies_old)
+    state.last_permutation = permutation[reverse_rejected_swaps].clone()
 
-        permutation = swaps_to_permutation(swaps, state.n_atoms)
-        validate_permutation(permutation, state.system_idx)
-
-        energies_old = state.energy.clone()
-        state.positions = state.positions[permutation].clone()
-
-        model_output = model(state)
-        energies_new = model_output["energy"]
-
-        accepted = metropolis_criterion(
-            energies_new, energies_old, kT, generator=generator
-        )
-        rejected_swaps = swaps[~accepted]
-        reverse_rejected_swaps = swaps_to_permutation(rejected_swaps, state.n_atoms)
-        state.positions = state.positions[reverse_rejected_swaps]
-
-        state.energy = torch.where(accepted, energies_new, energies_old)
-        state.last_permutation = permutation[reverse_rejected_swaps].clone()
-
-        return state
-
-    return init_swap_mc_state, swap_monte_carlo_step
+    return state

@@ -1,12 +1,7 @@
-# %% [markdown]
-# <details>
-#   <summary>Dependencies</summary>
+# %%
 # /// script
-# dependencies = [
-#     "mace-torch>=0.3.12",
-# ]
+# dependencies = ["mace-torch>=0.3.12"]
 # ///
-# </details>
 
 
 # %% [markdown]
@@ -27,7 +22,9 @@ optimizers.
 """
 ## Setting up the system
 
-TorchSim's state aka `SimState` is a class that contains the information of the
+TorchSim's state aka `SimState` is a
+import torch_sim as ts
+class that contains the information of the
 system like positions, cell, etc. of the system(s). All the models in the TorchSim
 package take in a `SimState` as an input and return the properties of the system(s).
 
@@ -44,7 +41,7 @@ si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 fe_bcc = bulk("Fe", "bcc", a=2.8665, cubic=True).repeat((3, 3, 3))
 atoms_list = [si_dc, fe_bcc]
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
 
 state = ts.initialize_state(atoms_list, device=device, dtype=dtype)
@@ -71,7 +68,7 @@ from torch_sim.models.mace import MaceModel, MaceUrls
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
-    default_dtype=dtype,
+    default_dtype=str(dtype).lstrip("torch."),
     device=device,
 )
 
@@ -94,13 +91,11 @@ enforced by the `ModelInterface` class that all models must implement.
 """
 
 # %%
-print("Model device:", model.device)
-print("Model dtype:", model.dtype)
-print("Model compute_forces:", model.compute_forces)
-print("Model compute_stress:", model.compute_stress)
-
-# see the autobatching tutorial for more details
-print("Model memory_scales_with:", model.memory_scales_with)
+print(f"{model.device=}")
+print(f"{model.dtype=}")
+print(f"{model.compute_forces=}")
+print(f"{model.compute_stress=}")
+print(f"{model.memory_scales_with=}")  # see the autobatching tutorial for more details
 
 
 # %% [markdown]
@@ -115,7 +110,6 @@ Note that the energy here refers to the potential energy of the system.
 # %%
 model_outputs = model(state)
 print(f"Model outputs: {', '.join(list(model_outputs))}")
-
 print(f"Energy is a systemwise property with shape: {model_outputs['energy'].shape}")
 print(f"Forces are an atomwise property with shape: {model_outputs['forces'].shape}")
 print(f"Stress is a systemwise property with shape: {model_outputs['stress'].shape}")
@@ -126,17 +120,16 @@ print(f"Stress is a systemwise property with shape: {model_outputs['stress'].sha
 ## Optimizers and Integrators
 
 All optimizers and integrators share a similar interface. They accept a model and
-return two functions: `init_fn` and `update_fn`. The `init_fn` function returns the
-initialized optimizer-specific state, while the `update_fn` function updates the
+return two functions: `init_fn` and step_fn`. The `init_fn` function returns the
+initialized optimizer-specific state, while the step_fn` function updates the
 simulation state.
 
 ### Unit Cell Fire
 
-We will walk through the `unit_cell_fire` optimizer as an example.
+We will walk through the fire optimizer with unit cell filter as an example.
 """
 
 # %%
-fire_init_fn, fire_update_fn = ts.unit_cell_fire(model=model)
 
 
 # %% [markdown]
@@ -148,34 +141,31 @@ high-level API.
 """
 
 # %%
-state = fire_init_fn(state=state)
+state = ts.fire_init(model=model, state=state, cell_filter=ts.CellFilter.unit)
 
 # add a little noise so we have something to relax
 state.positions = state.positions + torch.randn_like(state.positions) * 0.05
 
 for step in range(20):
-    state = fire_update_fn(state=state)
+    state = ts.fire_step(model=model, state=state)
     print(f"{step=}: Total energy: {state.energy} eV")
 
 
 # %% [markdown]
 """
-In general, you can set the optimizer-specific arguments in the `optimize` function
-(e.g. `unit_cell_fire`) and they will be baked into the returned functions. Fixed
+You can set the optimizer-specific arguments in the `optimize` function
+optimizer=ts.OptimFlavor.fire, cell_filter=ts.CellFilter.unit. Fixed
 parameters can usually be passed to the `init_fn` and parameters that vary over
-the course of the simulation can be passed to the `update_fn`.
+the course of the simulation can be passed to the step_fn`.
 """
 
 # %%
-fire_init_fn, fire_update_fn = ts.unit_cell_fire(
-    model=model,
-    dt_max=0.1,
-    dt_start=0.02,
+state = ts.fire_init(
+    model=model, state=state, dt_start=0.02, cell_filter=ts.CellFilter.unit
 )
-state = fire_init_fn(state=state)
 
 for step in range(5):
-    state = fire_update_fn(state=state)
+    state = ts.fire_step(model=model, state=state, dt_max=0.1)
 
 
 # %% [markdown]
@@ -199,17 +189,11 @@ gamma = 10 / MetalUnits.time  # Langevin friction coefficient (ps^-1)
 
 # %% [markdown]
 """
-
-Like the `unit_cell_fire` optimizer, the `nvt_langevin` integrator accepts
-a model and configuration kwargs and returns an `init_fn` and `update_fn`.
+Like the `fire` optimizer with unit cell filter, the `nvt_langevin` integrator accepts
+a model, state and config kwargs.
 """
 
-# %%
-nvt_langevin_init_fn, nvt_langevin_update_fn = ts.nvt_langevin(
-    model=model, dt=dt, kT=kT, gamma=gamma
-)
-
-# we'll also reinialize the state to clean up the previous state
+# %% we'll also reinitialize the state to clean up the previous state
 state = ts.initialize_state(atoms_list, device=device, dtype=dtype)
 
 
@@ -222,11 +206,14 @@ simulation is so short.
 """
 
 # %%
-state = nvt_langevin_init_fn(state=state)
+state = ts.nvt_langevin_init(model=model, state=state, kT=kT)
 
 initial_kT = kT
 for step in range(30):
-    state = nvt_langevin_update_fn(state=state, kT=initial_kT * (1 + step / 30))
+    current_kT = initial_kT * (1 + step / 30)
+    state = ts.nvt_langevin_update(
+        model=model, state=state, dt=dt, kT=current_kT, gamma=gamma
+    )
     if step % 5 == 0:
         temp_E_units = ts.calc_kT(
             masses=state.masses, momenta=state.momenta, system_idx=state.system_idx

@@ -1,11 +1,8 @@
 """Structural optimization with soft sphere potential using FIRE optimizer."""
 
 # /// script
-# dependencies = [
-#     "scipy>=1.15",
-# ]
+# dependencies = ["scipy>=1.15"]
 # ///
-
 import itertools
 import os
 
@@ -13,11 +10,10 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.soft_sphere import SoftSphereModel
-from torch_sim.optimizers import fire
 
 
 # Set up the device and data type
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float64
 
 # Set up the random number generator
@@ -76,7 +72,7 @@ atomic_numbers = torch.full((positions.shape[0],), 29, device=device, dtype=torc
 masses = torch.full((positions.shape[0],), 63.546, device=device, dtype=dtype)
 
 # Create state with batch dimension
-state = ts.state.SimState(
+state = ts.SimState(
     positions=positions,
     masses=masses,
     cell=cell.unsqueeze(0),
@@ -98,19 +94,14 @@ model = SoftSphereModel(
 results = model(state)
 
 # Initialize FIRE optimizer
-fire_init, fire_update = fire(
-    model=model,
-    dt_start=0.005,
-    dt_max=0.01,
-)
+state = ts.fire_init(model=model, state=state, dt_start=0.005)
 
-state = fire_init(state=state)
 
 # Run optimization for N_steps
 for step in range(N_steps):
     if step % 100 == 0:
         print(f"{step=}: Total energy: {state.energy[0].item()} eV")
-    state = fire_update(state)
+    state = ts.fire_step(model, state, dt_max=0.01)
 
 # Print max force after optimization
 print(f"Initial energy: {results['energy'][0].item()} eV")

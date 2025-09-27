@@ -1,11 +1,8 @@
 """NVT simulation with MACE and Nose-Hoover thermostat."""
 
 # /// script
-# dependencies = [
-#     "mace-torch>=0.3.12",
-# ]
+# dependencies = ["mace-torch>=0.3.12"]
 # ///
-
 import os
 
 import torch
@@ -13,27 +10,24 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
-from torch_sim.integrators.nvt import nvt_nose_hoover, nvt_nose_hoover_invariant
 from torch_sim.models.mace import MaceModel, MaceUrls
-from torch_sim.quantities import calc_kT
 from torch_sim.units import MetalUnits as Units
 
 
 # Set device and data type
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
 
 # Option 1: Load the raw model from the downloaded model
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
-    default_dtype=dtype,
-    device=device,
+    default_dtype=str(dtype).lstrip("torch."),
+    device=str(device),
 )
 
 # Option 2: Load from local file (comment out Option 1 to use this)
-# MODEL_PATH = "../../../checkpoints/MACE/mace-mpa-0-medium.model"
-# loaded_model = torch.load(MODEL_PATH, map_location=device)
+# loaded_model = torch.load("path/to/model.pt", map_location=device)
 
 # Number of steps to run
 SMOKE_TEST = os.getenv("CI") is not None
@@ -56,29 +50,28 @@ state = ts.io.atoms_to_state(si_dc, device=device, dtype=dtype)
 # Run initial inference
 results = model(state)
 
-dt = 0.002 * Units.time  # Timestep (ps)
+dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # Timestep (ps)
 kT = (
     torch.tensor(1000, device=device, dtype=dtype) * Units.temperature
 )  # Initial temperature (K)
 
 
-nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
-state = nvt_init(state=state, kT=kT, seed=1)
+state = ts.nvt_nose_hoover_init(model=model, state=state, kT=kT, dt=dt)
 
 for step in range(N_steps):
     if step % 10 == 0:
         temp = (
-            calc_kT(
+            ts.calc_kT(
                 masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
             )
             / Units.temperature
         )
-        invariant = float(nvt_nose_hoover_invariant(state, kT=kT))
+        invariant = float(ts.nvt_nose_hoover_invariant(state, kT=kT))
         print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}")
-    state = nvt_update(state=state, kT=kT)
+    state = ts.nvt_nose_hoover_update(model=model, state=state, dt=dt, kT=kT)
 
 final_temp = (
-    calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
+    ts.calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
     / Units.temperature
 )
 print(f"Final temperature: {final_temp.item():.4f}")

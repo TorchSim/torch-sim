@@ -3,12 +3,8 @@ criteria, and logging.
 """
 
 # /// script
-# dependencies = [
-#     "mace-torch>=0.3.12",
-#     "pymatgen>=2025.2.18",
-# ]
+# dependencies = ["mace-torch>=0.3.12", "pymatgen>=2025.2.18"]
 # ///
-
 import os
 
 import numpy as np
@@ -18,11 +14,8 @@ from mace.calculators.foundations_models import mace_mp
 from pymatgen.core import Structure
 
 import torch_sim as ts
-from torch_sim.integrators import nvt_langevin
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.models.mace import MaceModel
-from torch_sim.optimizers import unit_cell_fire
-from torch_sim.quantities import calc_kinetic_energy
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 from torch_sim.units import MetalUnits
 
@@ -41,20 +34,19 @@ si_atoms = bulk("Si", "fcc", a=5.43, cubic=True)
 final_state = ts.integrate(
     system=si_atoms,
     model=lj_model,
-    integrator=nvt_langevin,
+    integrator=ts.MdFlavor.nvt_langevin,
     n_steps=100 if SMOKE_TEST else 1000,
     temperature=2000,
     timestep=0.002,
 )
 final_atoms = ts.io.state_to_atoms(final_state)
 
-
-trajectory_file = "lj_trajectory.h5md"
+trajectory_file = "tmp/lj_trajectory.h5md"
 # report potential energy every 10 steps and kinetic energy every 20 steps
 prop_calculators = {
     10: {"potential_energy": lambda state: state.energy},
     20: {
-        "kinetic_energy": lambda state: calc_kinetic_energy(
+        "kinetic_energy": lambda state: ts.calc_kinetic_energy(
             momenta=state.momenta, masses=state.masses
         )
     },
@@ -70,7 +62,7 @@ reporter = TrajectoryReporter(
 final_state = ts.integrate(
     system=si_atoms,
     model=lj_model,
-    integrator=nvt_langevin,
+    integrator=ts.MdFlavor.nvt_langevin,
     n_steps=100 if SMOKE_TEST else 1000,
     temperature=2000,
     timestep=0.002,
@@ -89,7 +81,7 @@ with TorchSimTrajectory(trajectory_file) as traj:
 ### basic mace example
 
 # cuda if available
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 mace = mace_mp(model="small", return_raw_model=True)
@@ -110,7 +102,7 @@ reporter = TrajectoryReporter(
 final_state = ts.integrate(
     system=si_atoms,
     model=mace_model,
-    integrator=nvt_langevin,
+    integrator=ts.MdFlavor.nvt_langevin,
     n_steps=100 if SMOKE_TEST else 1000,
     temperature=2000,
     timestep=0.002,
@@ -128,7 +120,7 @@ si_atoms_supercell = si_atoms.repeat([2, 2, 2])
 final_state = ts.integrate(
     system=[si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell],
     model=mace_model,
-    integrator=nvt_langevin,
+    integrator=ts.MdFlavor.nvt_langevin,
     n_steps=100 if SMOKE_TEST else 1000,
     temperature=2000,
     timestep=0.002,
@@ -139,9 +131,9 @@ final_fe_atoms_supercell = final_atoms[3]
 
 ### basic mace example with batching and reporting
 
-systems = [si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell]
+systems = (si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell)
 
-filenames = [f"batch_traj_{i}.h5md" for i in range(len(systems))]
+filenames = [f"tmp/batch_traj_{i}.h5md" for i in range(len(systems))]
 batch_reporter = TrajectoryReporter(
     filenames,
     state_frequency=100,
@@ -150,7 +142,7 @@ batch_reporter = TrajectoryReporter(
 final_state = ts.integrate(
     system=systems,
     model=mace_model,
-    integrator=nvt_langevin,
+    integrator=ts.MdFlavor.nvt_langevin,
     n_steps=100 if SMOKE_TEST else 1000,
     temperature=2000,
     timestep=0.002,
@@ -164,17 +156,13 @@ for filename in filenames:
         final_energies_per_atom.append(final_energy / len(traj.get_atoms(-1)))
 
 
-systems = [si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell]
-
 final_state = ts.optimize(
     system=systems,
     model=mace_model,
-    optimizer=unit_cell_fire,
+    optimizer=ts.OptimFlavor.fire,
+    cell_filter=ts.CellFilter.unit,
     max_steps=10 if SMOKE_TEST else 1000,
 )
-
-
-systems = [si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell]
 
 rng = np.random.default_rng()
 for system in systems:
@@ -183,7 +171,8 @@ for system in systems:
 final_state = ts.optimize(
     system=systems,
     model=mace_model,
-    optimizer=unit_cell_fire,
+    optimizer=ts.OptimFlavor.fire,
+    cell_filter=ts.CellFilter.unit,
     convergence_fn=lambda state, last_energy: last_energy - state.energy
     < 1e-6 * MetalUnits.energy,
     max_steps=10 if SMOKE_TEST else 1000,
@@ -206,7 +195,7 @@ structure = Structure(lattice, species, coords)
 final_state = ts.integrate(
     system=structure,
     model=lj_model,
-    integrator=nvt_langevin,
+    integrator=ts.MdFlavor.nvt_langevin,
     n_steps=100 if SMOKE_TEST else 1000,
     temperature=2000,
     timestep=0.002,
