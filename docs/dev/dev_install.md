@@ -20,19 +20,19 @@ cd torch-sim
 pip install . -e
 ```
 
-### Installing pre-commit
+### Installing prek
 
 If you're planning on contributing to the torch-sim source, you should also install
 the developer requirements with:
 
 ```bash
 pip install -e .
-pre-commit install
-pre-commit run --all-files
+prek install
+prek run --all-files
 ```
 
-The `pre-commit` command will ensure that changes to the source code match the
-TorchSim style guidelines by running code linters such as `black` and `ruff` automatically with each commit.
+The `prek` command will ensure that changes to the source code match the
+TorchSim style guidelines by running the `ruff` code linters and the `ty` type checker automatically with each commit.
 
 ## Running unit tests
 
