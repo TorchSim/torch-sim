@@ -7,8 +7,8 @@ authors = [
     { name = "Janosh Riebesell", email = "janosh.riebesell@gmail.com" },
     { name = "Orion Cohen", email = "orioncohen@berkeley.edu" },
 ]
-readme = "readme.md"
-license = { file = "license" }
+readme = "README.md"
+license = { file = "LICENSE" }
 keywords = [
     "chemistry",
     "interatomic-potentials",

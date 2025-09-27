@@ -18,8 +18,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-14]
         version:
-          - { python: "3.11", resolution: highest }
-          - { python: "3.12", resolution: lowest-direct }
+          - { python: '3.12', resolution: highest }
+          - { python: '3.13', resolution: lowest-direct }
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -64,18 +64,18 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-14]
         version:
-          - { python: "3.11", resolution: highest }
-          - { python: "3.12", resolution: lowest-direct }
+          - { python: '3.12', resolution: highest }
+          - { python: '3.13', resolution: lowest-direct }
         model:
-          - { name: fairchem, test_path: "tests/models/test_fairchem.py" }
-          - { name: graphpes, test_path: "tests/models/test_graphpes.py" }
-          - { name: mace, test_path: "tests/models/test_mace.py" }
-          - { name: mace, test_path: "tests/test_elastic.py" }
-          - { name: mace, test_path: "tests/test_optimizers_vs_ase.py" }
-          - { name: mattersim, test_path: "tests/models/test_mattersim.py" }
-          - { name: metatomic, test_path: "tests/models/test_metatomic.py" }
-          - { name: orb, test_path: "tests/models/test_orb.py" }
-          - { name: sevenn, test_path: "tests/models/test_sevennet.py" }
+          - { name: fairchem, test_path: tests/models/test_fairchem.py }
+          - { name: graphpes, test_path: tests/models/test_graphpes.py }
+          - { name: mace, test_path: tests/models/test_mace.py }
+          - { name: mace, test_path: tests/test_elastic.py }
+          - { name: mace, test_path: tests/test_optimizers_vs_ase.py }
+          - { name: mattersim, test_path: tests/models/test_mattersim.py }
+          - { name: metatomic, test_path: tests/models/test_metatomic.py }
+          - { name: orb, test_path: tests/models/test_orb.py }
+          - { name: sevenn, test_path: tests/models/test_sevennet.py }
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -162,7 +162,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: '3.12'
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
