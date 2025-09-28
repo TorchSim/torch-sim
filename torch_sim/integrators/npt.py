@@ -1392,6 +1392,11 @@ def npt_nose_hoover_init(
     # Calculate cell kinetic energy (using first system for initialization)
     KE_cell = ts.calc_kinetic_energy(masses=cell_mass[:1], momenta=cell_momentum[:1])
 
+    # Compute total DOF for thermostat initialization and a zero KE placeholder
+    dof_per_system = torch.bincount(state.system_idx, minlength=n_systems) * dim
+    total_dof = int(dof_per_system.sum().item())
+    KE_zero = torch.tensor(0.0, device=device, dtype=dtype)
+
     # Ensure reference_cell has proper system dimensions
     if state.cell.ndim == 2:
         # Single cell matrix - expand to batch dimension
@@ -1429,7 +1434,7 @@ def npt_nose_hoover_init(
         cell_momentum=cell_momentum,
         cell_mass=cell_mass,
         barostat=barostat_fns.initialize(1, KE_cell, kT),
-        thermostat=thermostat_fns.initialize(),
+        thermostat=thermostat_fns.initialize(total_dof, KE_zero, kT),
         barostat_fns=barostat_fns,
         thermostat_fns=thermostat_fns,
     )
@@ -1444,12 +1449,6 @@ def npt_nose_hoover_init(
 
     # Initialize thermostat
     npt_state.momenta = momenta
-    KE = ts.calc_kinetic_energy(
-        momenta=npt_state.momenta,
-        masses=npt_state.masses,
-        system_idx=npt_state.system_idx,
-    )
-    npt_state.thermostat = thermostat_fns.initialize(npt_state.positions.numel(), KE, kT)
 
     return npt_state
 

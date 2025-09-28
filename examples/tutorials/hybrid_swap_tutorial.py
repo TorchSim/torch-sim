@@ -151,7 +151,7 @@ This creates a simulation that can both:
 
 # Create a persistent PRNG for reproducibility across the whole run
 rng = torch.Generator(device=mace_model.device)
-rng.manual_seed(seed=42)
+rng.manual_seed(42)
 
 # %% Run the hybrid simulation
 n_steps = 100

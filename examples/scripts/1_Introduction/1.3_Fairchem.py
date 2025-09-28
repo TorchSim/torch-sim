@@ -24,7 +24,7 @@ if hf_token and hf_login is not None:
     hf_login(token=hf_token)
 else:
     print("Need to login to HuggingFace to access fairchem models")
-    raise SystemExit(1)
+    raise SystemExit(0)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32

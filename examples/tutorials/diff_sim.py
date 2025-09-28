@@ -277,7 +277,7 @@ N_2 = N // 2
 species = torch.tensor([0] * (N_2) + [1] * (N_2), dtype=torch.int32)
 simulation_steps = 1000
 packing_fraction = 0.98
-markersize = 260
+marker_size = 260
 
 
 # %%
@@ -319,13 +319,13 @@ def simulation(
 plt.subplot(1, 2, 1)
 
 box_size, raft_energy, bubble_positions = simulation(torch.tensor(1.0))
-draw_system(bubble_positions, box_size.numpy(), markersize)
+draw_system(bubble_positions, box_size.numpy(), marker_size)
 
 plt.subplot(1, 2, 2)
 
 box_size, raft_energy, bubble_positions = simulation(torch.tensor(0.8))
-draw_system(bubble_positions[:N_2], box_size.numpy(), 0.8 * markersize)
-draw_system(bubble_positions[N_2:], box_size.numpy(), markersize)
+draw_system(bubble_positions[:N_2], box_size.numpy(), 0.8 * marker_size)
+draw_system(bubble_positions[N_2:], box_size.numpy(), marker_size)
 # %% [markdown]
 """## Forward simulation for different diameters and seeds."""
 
@@ -335,13 +335,15 @@ seeds = torch.arange(1, 6)
 box_size_tensor = torch.zeros(len(diameters), len(seeds))
 raft_energy_tensor = torch.zeros(len(diameters), len(seeds))
 bubble_positions_tensor = torch.zeros(len(diameters), len(seeds), N, 2)
-for i, d in enumerate(diameters):
-    for j, s in enumerate(seeds):
-        box_size, raft_energy, bubble_positions = simulation(d, s)
-        box_size_tensor[i, j] = box_size
-        raft_energy_tensor[i, j] = raft_energy.detach()
-        bubble_positions_tensor[i, j] = bubble_positions
-    print(f"Finished simulation for diameter {d}, final energy: {raft_energy.detach()}")
+for ii, diam in enumerate(diameters):
+    for jj, seed in enumerate(seeds):
+        box_size, raft_energy, bubble_positions = simulation(diam, seed)
+        box_size_tensor[ii, jj] = box_size
+        raft_energy_tensor[ii, jj] = raft_energy.detach()
+        bubble_positions_tensor[ii, jj] = bubble_positions
+    print(
+        f"Finished simulation for diameter {diam}, final energy: {raft_energy.detach()}"
+    )
 # %%
 U_mean = torch.mean(raft_energy_tensor, dim=1)
 U_std = torch.std(raft_energy_tensor, dim=1)
@@ -353,21 +355,21 @@ plt.xlabel(r"$D$", fontsize=20)
 plt.ylabel(r"$U$", fontsize=20)
 plt.show()
 # %%
-ms = 185
-for i, d in enumerate(diameters):
-    plt.subplot(2, 5, i + 1)
-    c = min(1, max(0, (U_mean[i].detach().numpy() - 0.4) * 4))
+marker_size = 185
+for ii, diam in enumerate(diameters):
+    plt.subplot(2, 5, ii + 1)
+    c = min(1, max(0, (U_mean[ii].detach().numpy() - 0.4) * 4))
     color = [c, 0, 1 - c]
     draw_system(
-        bubble_positions_tensor[i, 0, :N_2].detach().numpy(),
-        box_size_tensor[i, 0].detach().numpy(),
-        d * ms,
+        bubble_positions_tensor[ii, 0, :N_2].detach().numpy(),
+        box_size_tensor[ii, 0].detach().numpy(),
+        diam * marker_size,
         color=color,
     )
     draw_system(
-        bubble_positions_tensor[i, 0, N_2:].detach().numpy(),
-        box_size_tensor[i, 0].detach().numpy(),
-        ms,
+        bubble_positions_tensor[ii, 0, N_2:].detach().numpy(),
+        box_size_tensor[ii, 0].detach().numpy(),
+        marker_size,
         color=color,
     )
 
@@ -409,9 +411,7 @@ def short_simulation(
         )
     ]
     grad = torch.autograd.grad(
-        outputs=[
-            model(state)["energy"],
-        ],
+        outputs=[model(state)["energy"]],
         inputs=[diameter],
         grad_outputs=grad_outputs,
         create_graph=True,
@@ -424,9 +424,9 @@ def short_simulation(
 
 # %%
 dU_dD = torch.zeros(len(diameters), len(seeds))
-for i, d in enumerate(diameters):
-    for j, s in enumerate(seeds):
-        _, dU_dD[i, j] = short_simulation(d, bubble_positions_tensor[i, j])
+for ii, diam in enumerate(diameters):
+    for jj, seed in enumerate(seeds):
+        _, dU_dD[ii, jj] = short_simulation(diam, bubble_positions_tensor[ii, jj])
 
 # %%
 plt.subplot(2, 1, 1)
