@@ -10,7 +10,7 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
-from torch_sim.integrators import nvt_langevin_init, nvt_langevin_update
+from torch_sim.integrators import nvt_langevin_init, nvt_langevin_step
 from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.units import MetalUnits as Units
 
@@ -75,7 +75,7 @@ for step in range(N_steps):
             / Units.temperature
         )
         print(f"{step=}: Temperature: {temp.item():.4f}")
-    state = nvt_langevin_update(model=model, state=state, dt=dt, kT=kT, gamma=gamma)
+    state = nvt_langevin_step(model=model, state=state, dt=dt, kT=kT, gamma=gamma)
 
 final_temp = (
     ts.calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)

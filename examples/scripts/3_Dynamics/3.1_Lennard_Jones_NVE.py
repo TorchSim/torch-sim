@@ -115,7 +115,7 @@ for step in range(N_steps):
         print(f"{step=}: Total energy: {total_energy.item():.4f}")
 
     # Update state using NVE integrator
-    state = ts.nve_update(model=model, state=state, dt=dt)
+    state = ts.nve_step(model=model, state=state, dt=dt)
 
 final_total_energy = state.energy + ts.calc_kinetic_energy(
     masses=state.masses, momenta=state.momenta

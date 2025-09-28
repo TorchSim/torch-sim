@@ -132,7 +132,7 @@ def nvt_langevin_init(
     )
 
 
-def nvt_langevin_update(
+def nvt_langevin_step(
     model: ModelInterface,
     state: MDState,
     *,
@@ -330,7 +330,7 @@ def nvt_nose_hoover_init(
     )
 
 
-def nvt_nose_hoover_update(
+def nvt_nose_hoover_step(
     model: ModelInterface,
     state: NVTNoseHooverState,
     *,

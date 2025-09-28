@@ -97,6 +97,6 @@ for step in range(n_steps):
             model=model, state=hybrid_state, kT=kT, seed=42 + step
         )
     else:
-        hybrid_state = ts.nvt_langevin_update(
+        hybrid_state = ts.nvt_langevin_step(
             model=model, state=hybrid_state, dt=dt, kT=torch.tensor(kT)
         )

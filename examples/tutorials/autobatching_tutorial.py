@@ -195,7 +195,7 @@ finished_states = []
 for batch, _indices in batcher:
     # Run 5 steps of NVT dynamics
     for _ in range(5):
-        batch = ts.nvt_langevin_update(mace_model, batch, dt=0.001, kT=0.01)
+        batch = ts.nvt_langevin_step(mace_model, batch, dt=0.001, kT=0.01)
 
     finished_states.append(batch)
 

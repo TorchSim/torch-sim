@@ -69,7 +69,7 @@ for step in range(N_steps_nvt):
         )
         invariant = float(ts.nvt_nose_hoover_invariant(state, kT=kT))
         print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}, ")
-    state = ts.nvt_nose_hoover_update(model=model, state=state, dt=dt, kT=kT)
+    state = ts.nvt_nose_hoover_step(model=model, state=state, dt=dt, kT=kT)
 
 state = ts.npt_langevin_init(model=model, state=state, kT=kT, dt=dt, seed=1)
 
@@ -101,7 +101,7 @@ for step in range(N_steps_npt):
             f"pressure: {pressure:.4f}, "
             f"cell xx yy zz: {xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}"
         )
-    state = ts.npt_langevin_update(
+    state = ts.npt_langevin_step(
         model=model,
         state=state,
         dt=dt,

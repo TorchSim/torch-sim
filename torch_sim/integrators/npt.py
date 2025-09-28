@@ -642,7 +642,7 @@ def npt_langevin_init(
     )
 
 
-def npt_langevin_update(
+def npt_langevin_step(
     model: ModelInterface,
     state: NPTLangevinState,
     *,
@@ -1454,7 +1454,7 @@ def npt_nose_hoover_init(
     return npt_state
 
 
-def npt_nose_hoover_update(
+def npt_nose_hoover_step(
     model: ModelInterface,
     state: NPTNoseHooverState,
     *,

@@ -27,21 +27,21 @@ from torch_sim.integrators import (
     MdFlavor,
     NVTNoseHooverState,
     nve_init,
-    nve_update,
+    nve_step,
     nvt_langevin_init,
-    nvt_langevin_update,
+    nvt_langevin_step,
     nvt_nose_hoover_init,
     nvt_nose_hoover_invariant,
-    nvt_nose_hoover_update,
+    nvt_nose_hoover_step,
 )
 from torch_sim.integrators.npt import (
     NPTLangevinState,
     NPTNoseHooverState,
     npt_langevin_init,
-    npt_langevin_update,
+    npt_langevin_step,
     npt_nose_hoover_init,
     npt_nose_hoover_invariant,
-    npt_nose_hoover_update,
+    npt_nose_hoover_step,
 )
 from torch_sim.monte_carlo import SwapMCState, swap_mc_init, swap_mc_step
 from torch_sim.optimizers import (

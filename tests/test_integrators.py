@@ -97,7 +97,7 @@ def test_npt_langevin(
     energies = []
     temperatures = []
     for _step in range(n_steps):
-        state = ts.npt_langevin_update(
+        state = ts.npt_langevin_step(
             model=lj_model,
             state=state,
             dt=dt,
@@ -168,7 +168,7 @@ def test_npt_langevin_multi_kt(
     energies = []
     temperatures = []
     for _step in range(n_steps):
-        state = ts.npt_langevin_update(
+        state = ts.npt_langevin_step(
             model=lj_model,
             state=state,
             dt=dt,
@@ -214,7 +214,7 @@ def test_nvt_langevin(ar_double_sim_state: ts.SimState, lj_model: LennardJonesMo
     energies = []
     temperatures = []
     for _step in range(n_steps):
-        state = ts.nvt_langevin_update(model=lj_model, state=state, dt=dt, kT=kT)
+        state = ts.nvt_langevin_step(model=lj_model, state=state, dt=dt, kT=kT)
 
         # Calculate instantaneous temperature from kinetic energy
         temp = ts.calc_kT(
@@ -270,7 +270,7 @@ def test_nvt_langevin_multi_kt(
     energies = []
     temperatures = []
     for _step in range(n_steps):
-        state = ts.nvt_langevin_update(model=lj_model, state=state, dt=dt, kT=kT)
+        state = ts.nvt_langevin_step(model=lj_model, state=state, dt=dt, kT=kT)
 
         # Calculate instantaneous temperature from kinetic energy
         temp = ts.calc_kT(
@@ -306,7 +306,7 @@ def test_nve(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
     # Run dynamics for several steps
     energies = []
     for _step in range(n_steps):
-        state = ts.nve_update(model=lj_model, state=state, dt=dt)
+        state = ts.nve_step(model=lj_model, state=state, dt=dt)
 
         energies.append(state.energy)
 
@@ -352,7 +352,7 @@ def test_compare_single_vs_batched_integrators(
         state.momenta = torch.zeros_like(state.momenta)  # Start from rest
 
         for _step in range(n_steps):
-            state = ts.nve_update(model=lj_model, state=state, dt=dt)
+            state = ts.nve_step(model=lj_model, state=state, dt=dt)
 
         final_states[state_name] = state
 

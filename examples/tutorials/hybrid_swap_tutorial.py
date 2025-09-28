@@ -161,7 +161,7 @@ for step in range(n_steps):
             model=mace_model, state=hybrid_state, kT=kT, rng=rng
         )
     else:  # Perform MD step
-        hybrid_state = ts.nvt_langevin_update(
+        hybrid_state = ts.nvt_langevin_step(
             model=mace_model, state=hybrid_state, dt=0.002, kT=kT
         )
 

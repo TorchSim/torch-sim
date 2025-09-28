@@ -209,7 +209,7 @@ state = ts.nvt_langevin_init(model=model, state=state, kT=kT)
 initial_kT = kT
 for step in range(30):
     current_kT = initial_kT * (1 + step / 30)
-    state = ts.nvt_langevin_update(
+    state = ts.nvt_langevin_step(
         model=model, state=state, dt=dt, kT=current_kT, gamma=gamma
     )
     if step % 5 == 0:

@@ -142,7 +142,7 @@ def step_fn(
         state,
         kT=torch.tensor(current_temp * Units.temperature, device=device, dtype=dtype),
     ).item()
-    state = ts.nvt_nose_hoover_update(
+    state = ts.nvt_nose_hoover_step(
         model=model,
         state=state,
         dt=dt,

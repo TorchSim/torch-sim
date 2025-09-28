@@ -11,7 +11,7 @@ from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
-from torch_sim.integrators import nve_init, nve_update
+from torch_sim.integrators import nve_init, nve_step
 from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.units import MetalUnits as Units
 
@@ -69,7 +69,7 @@ for step in range(N_steps):
     )
     if step % 10 == 0:
         print(f"Step {step}: Total energy: {total_energy.item():.4f} eV")
-    state = nve_update(model=model, state=state, dt=dt)
+    state = nve_step(model=model, state=state, dt=dt)
 end_time = time.perf_counter()
 
 # Report simulation results

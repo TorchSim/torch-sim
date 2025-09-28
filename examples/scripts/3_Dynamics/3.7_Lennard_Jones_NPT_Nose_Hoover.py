@@ -140,7 +140,7 @@ for step in range(N_steps):
             f"{invariant=:.4f}, {pressure=:.4f}, "
             f"cell xx yy zz: {xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}"
         )
-    state = ts.npt_nose_hoover_update(
+    state = ts.npt_nose_hoover_step(
         model=model, state=state, dt=dt, kT=kT, external_pressure=target_pressure
     )
 

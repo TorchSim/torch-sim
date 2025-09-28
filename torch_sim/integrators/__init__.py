@@ -9,7 +9,7 @@ Examples:
     >>> import torch_sim as ts
     >>> state = ts.nvt_langevin_init(model, initial_state, kT=300.0 * units.temperature)
     >>> for _ in range(1000):
-    ...     state = ts.nvt_langevin_update(
+    ...     state = ts.nvt_langevin_step(
     ...         model, state, dt=1e-3 * units.time, kT=300.0 * units.temperature
     ...     )
 
@@ -30,19 +30,19 @@ from .npt import (
     NPTLangevinState,
     NPTNoseHooverState,
     npt_langevin_init,
-    npt_langevin_update,
+    npt_langevin_step,
     npt_nose_hoover_init,
     npt_nose_hoover_invariant,
-    npt_nose_hoover_update,
+    npt_nose_hoover_step,
 )
-from .nve import nve_init, nve_update
+from .nve import nve_init, nve_step
 from .nvt import (
     NVTNoseHooverState,
     nvt_langevin_init,
-    nvt_langevin_update,
+    nvt_langevin_step,
     nvt_nose_hoover_init,
     nvt_nose_hoover_invariant,
-    nvt_nose_hoover_update,
+    nvt_nose_hoover_step,
 )
 
 
@@ -60,9 +60,9 @@ class MdFlavor(StrEnum):
 INTEGRATOR_REGISTRY: Final[
     dict[MdFlavor, tuple[Callable[..., Any], Callable[..., Any]]]
 ] = {
-    MdFlavor.nve: (nve_init, nve_update),
-    MdFlavor.nvt_langevin: (nvt_langevin_init, nvt_langevin_update),
-    MdFlavor.nvt_nose_hoover: (nvt_nose_hoover_init, nvt_nose_hoover_update),
-    MdFlavor.npt_langevin: (npt_langevin_init, npt_langevin_update),
-    MdFlavor.npt_nose_hoover: (npt_nose_hoover_init, npt_nose_hoover_update),
+    MdFlavor.nve: (nve_init, nve_step),
+    MdFlavor.nvt_langevin: (nvt_langevin_init, nvt_langevin_step),
+    MdFlavor.nvt_nose_hoover: (nvt_nose_hoover_init, nvt_nose_hoover_step),
+    MdFlavor.npt_langevin: (npt_langevin_init, npt_langevin_step),
+    MdFlavor.npt_nose_hoover: (npt_nose_hoover_init, npt_nose_hoover_step),
 }

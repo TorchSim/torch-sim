@@ -71,7 +71,7 @@ for step in range(N_steps_nvt):
             ts.npt_nose_hoover_invariant(state, kT=kT, external_pressure=target_pressure)
         )
         print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}, ")
-    state = ts.npt_nose_hoover_update(
+    state = ts.npt_nose_hoover_step(
         model=model,
         state=state,
         dt=torch.tensor(dt),
@@ -104,7 +104,7 @@ for step in range(N_steps_npt):
             f"{pressure=:.4f}, "
             f"cell xx yy zz: {xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}"
         )
-    state = ts.npt_nose_hoover_update(
+    state = ts.npt_nose_hoover_step(
         model=model,
         state=state,
         dt=torch.tensor(dt),

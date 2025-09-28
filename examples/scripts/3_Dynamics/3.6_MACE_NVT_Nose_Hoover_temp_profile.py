@@ -174,7 +174,7 @@ for step in range(n_steps):
     print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}")
 
     # Update simulation state
-    state = ts.nvt_nose_hoover_update(
+    state = ts.nvt_nose_hoover_step(
         model=model, state=state, dt=dt, kT=current_kT * Units.temperature
     )
 

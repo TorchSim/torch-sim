@@ -78,7 +78,7 @@ for step in range(N_steps):
     )
     if step % 10 == 0:
         print(f"Step {step}: Total energy: {total_energy.item():.4f} eV")
-    state = ts.nve_update(model=model, state=state, dt=dt)
+    state = ts.nve_step(model=model, state=state, dt=dt)
 end_time = time.perf_counter()
 
 # Report simulation results

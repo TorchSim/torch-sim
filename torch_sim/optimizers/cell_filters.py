@@ -199,7 +199,7 @@ class CellFilter(StrEnum):
 
 
 # Filter type definitions for convenience
-def unit_cell_update[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) -> None:
+def unit_cell_step[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) -> None:
     """Update cell using unit cell approach."""
     if isinstance(cell_lr, (int, float)):
         cell_lr = torch.full(
@@ -228,7 +228,7 @@ def unit_cell_update[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) -
     state.cell_positions = cell_positions_new
 
 
-def frechet_cell_update[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) -> None:
+def frechet_cell_step[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) -> None:
     """Update cell using frechet approach."""
     if isinstance(cell_lr, (int, float)):
         cell_lr = torch.full(
@@ -315,8 +315,8 @@ def compute_cell_forces[T: AnyCellState](
 CellFilterFuncs = tuple[Callable[..., None], Callable[..., None]]  # (init_fn, update_fn)
 
 CELL_FILTER_REGISTRY: dict[CellFilter, CellFilterFuncs] = {
-    CellFilter.unit: (unit_cell_filter_init, unit_cell_update),
-    CellFilter.frechet: (frechet_cell_filter_init, frechet_cell_update),
+    CellFilter.unit: (unit_cell_filter_init, unit_cell_step),
+    CellFilter.frechet: (frechet_cell_filter_init, frechet_cell_step),
 }
 
 

@@ -70,7 +70,7 @@ def nve_init(
     )
 
 
-def nve_update(
+def nve_step(
     model: ModelInterface, state: MDState, *, dt: torch.Tensor, **_kwargs: Any
 ) -> MDState:
     """Perform one complete NVE (microcanonical) integration step.

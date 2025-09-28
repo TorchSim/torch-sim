@@ -116,6 +116,6 @@ batcher.load_states(nvt_states)
 finished_states: list[ts.SimState] = []
 for batch, _indices in batcher:
     for _ in range(100):
-        batch = ts.nvt_langevin_update(model=mace_model, state=batch)
+        batch = ts.nvt_langevin_step(model=mace_model, state=batch)
 
     finished_states.extend(batch.split())
