@@ -21,22 +21,16 @@ except ImportError:
 @pytest.fixture
 def metatomic_calculator():
     """Load a pretrained metatomic model for testing."""
+    model_url = "https://huggingface.co/lab-cosmo/pet-mad/resolve/v1.1.0/models/pet-mad-v1.1.0.ckpt"
     return ase_calculator.MetatomicCalculator(
-        model=load_model(
-            "https://huggingface.co/lab-cosmo/pet-mad/resolve/v1.1.0/models/pet-mad-v1.1.0.ckpt"
-        ).export(),
-        device=DEVICE,
-        dtype=torch.float32,
+        model=load_model(model_url).export(), device=DEVICE
     )
 
 
 @pytest.fixture
 def metatomic_model() -> MetatomicModel:
     """Create an MetatomicModel wrapper for the pretrained model."""
-    return MetatomicModel(
-        model="pet-mad",
-        device=DEVICE,
-    )
+    return MetatomicModel(model="pet-mad", device=DEVICE)
 
 
 def test_metatomic_initialization() -> None:

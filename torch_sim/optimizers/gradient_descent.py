@@ -119,8 +119,8 @@ def gradient_descent_step(
     model_output = model(state)
     state.forces = model_output["forces"]
     state.energy = model_output["energy"]
-    if stress := model_output.get("stress"):
-        state.stress = stress
+    if "stress" in model_output:
+        state.stress = model_output["stress"]
 
     # Update cell forces
     if isinstance(state, CellOptimState):

@@ -149,12 +149,16 @@ This creates a simulation that can both:
 - Make larger compositional changes through swap moves
 """
 
+# Create a persistent PRNG for reproducibility across the whole run
+rng = torch.Generator(device=mace_model.device)
+rng.manual_seed(seed=42)
+
 # %% Run the hybrid simulation
 n_steps = 100
 for step in range(n_steps):
     if step % 10 == 0:  # Attempt swap Monte Carlo move
         hybrid_state = ts.swap_mc_step(
-            model=mace_model, state=hybrid_state, kT=kT, seed=42 + step
+            model=mace_model, state=hybrid_state, kT=kT, rng=rng
         )
     else:  # Perform MD step
         hybrid_state = ts.nvt_langevin_update(

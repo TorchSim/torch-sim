@@ -142,7 +142,7 @@ def metropolis_criterion(
     energy_new: torch.Tensor,
     energy_old: torch.Tensor,
     kT: float,
-    generator: torch.Generator | None = None,
+    rng: torch.Generator | None = None,
 ) -> torch.Tensor:
     """Apply the Metropolis acceptance criterion for Monte Carlo moves.
 
@@ -153,7 +153,7 @@ def metropolis_criterion(
         energy_new (torch.Tensor): New energy after proposed move of shape [batch_size]
         energy_old (torch.Tensor): Old energy before proposed move of shape [batch_size]
         kT (float): Temperature of the system in energy units
-        generator (torch.Generator | None, optional): Random number generator for
+        rng (torch.Generator | None, optional): Random number generator for
             reproducibility. Defaults to None.
 
     Returns:
@@ -171,7 +171,7 @@ def metropolis_criterion(
 
     # Generate random numbers between 0 and 1 using the generator
     random_values = torch.rand(
-        p_acceptance.shape, generator=generator, device=p_acceptance.device
+        p_acceptance.shape, generator=rng, device=p_acceptance.device
     )
 
     # Accept if random value < acceptance probability
@@ -225,6 +225,7 @@ def swap_mc_step(
     *,
     kT: float,
     seed: int | None = None,
+    rng: torch.Generator | None = None,
 ) -> SwapMCState:
     """Perform a single swap Monte Carlo step.
 
@@ -236,7 +237,11 @@ def swap_mc_step(
             'energy' as a key
         state: The current Monte Carlo state
         kT: Temperature parameter in energy units
-        seed: Seed for the random number generator. Defaults to None.
+        seed: (Deprecated) Seed for the random number generator. If provided and
+            `generator` is None, a temporary generator seeded with this value will
+            be used.
+        rng: Optional torch.Generator to drive all randomness for this step.
+            Prefer passing a persistent generator across steps for reproducibility.
 
     Returns:
         SwapMCState: Updated Monte Carlo state after applying the step
@@ -245,12 +250,13 @@ def swap_mc_step(
         The function handles batched systems and ensures that swaps only occur
         within the same system.
     """
-    generator = None
-    if seed is not None:
-        generator = torch.Generator(device=model.device)
-        generator.manual_seed(seed)
+    # Prefer explicit generator if provided; otherwise build one from seed
+    _rng = rng
+    if _rng is None and seed is not None:
+        _rng = torch.Generator(device=model.device)
+        _rng.manual_seed(seed)
 
-    swaps = generate_swaps(state, generator=generator)
+    swaps = generate_swaps(state, generator=_rng)
 
     permutation = swaps_to_permutation(swaps, state.n_atoms)
 
@@ -263,7 +269,7 @@ def swap_mc_step(
     model_output = model(state)
     energies_new = model_output["energy"]
 
-    accepted = metropolis_criterion(energies_new, energies_old, kT, generator=generator)
+    accepted = metropolis_criterion(energies_new, energies_old, kT, generator=_rng)
     rejected_swaps = swaps[~accepted]
     reverse_rejected_swaps = swaps_to_permutation(rejected_swaps, state.n_atoms)
     state.positions = state.positions[reverse_rejected_swaps]
