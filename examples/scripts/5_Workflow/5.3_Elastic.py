@@ -21,7 +21,7 @@ loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     enable_cueq=False,
     device=str(device),
-    default_dtype=str(dtype).lstrip("torch."),
+    default_dtype=str(dtype).removeprefix("torch."),
     return_raw_model=True,
 )
 

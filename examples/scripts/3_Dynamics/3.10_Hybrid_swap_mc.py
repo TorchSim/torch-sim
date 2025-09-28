@@ -17,15 +17,13 @@ from torch_sim.units import MetalUnits as Units
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
-
-
 kT = 1000 * Units.temperature
 
 # Option 1: Load the raw model from the downloaded model
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
-    default_dtype=str(dtype).lstrip("torch."),
+    default_dtype=str(dtype).removeprefix("torch."),
     device=str(device),
 )
 
@@ -40,7 +38,6 @@ model = MaceModel(
     dtype=dtype,
     enable_cueq=False,
 )
-
 
 # %%
 lattice = [[5.43, 0, 0], [0, 5.43, 0], [0, 0, 5.43]]

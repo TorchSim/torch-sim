@@ -66,7 +66,7 @@ from torch_sim.models.mace import MaceModel, MaceUrls
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
-    default_dtype=str(dtype).lstrip("torch."),
+    default_dtype=str(dtype).removeprefix("torch."),
     device=device,
 )
 

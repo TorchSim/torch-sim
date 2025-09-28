@@ -28,16 +28,16 @@ from torch_sim.state import SimState
 
 # Set device, data type and unit conversion
 SMOKE_TEST = os.getenv("CI") is not None
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-dtype = torch.float32
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DTYPE = torch.float32
 unit_conv = ts.units.UnitConversion
 
 # Option 1: Load the raw model from the downloaded model
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
-    default_dtype=str(dtype).lstrip("torch."),
-    device=str(device),
+    default_dtype=str(DTYPE).removeprefix("torch."),
+    device=str(DEVICE),
 )
 
 # Number of steps to run
@@ -109,15 +109,15 @@ print(f"Total number of structures: {len(atoms_list)}")
 # Create batched model
 model = MaceModel(
     model=loaded_model,
-    device=device,
+    device=DEVICE,
     compute_forces=True,
     compute_stress=True,
-    dtype=dtype,
+    dtype=DTYPE,
     enable_cueq=False,
 )
 
 # Convert atoms to state
-state = ts.io.atoms_to_state(atoms_list, device=device, dtype=dtype)
+state = ts.io.atoms_to_state(atoms_list, device=DEVICE, dtype=DTYPE)
 # Run initial inference
 initial_energies = model(state)["energy"]
 
@@ -165,13 +165,13 @@ def run_optimization_ts(  # noqa: PLR0915
 
     total_structures = opt_state.n_systems
     convergence_steps = torch.full(
-        (total_structures,), -1, dtype=torch.long, device=device
+        (total_structures,), -1, dtype=torch.long, device=DEVICE
     )
     convergence_fn = ts.generate_force_convergence_fn(
         force_tol=force_tol, include_cell_forces=ts_use_frechet
     )
     converged_tensor_global = torch.zeros(
-        total_structures, dtype=torch.bool, device=device
+        total_structures, dtype=torch.bool, device=DEVICE
     )
     global_step = 0
     all_converged_states = []
@@ -190,7 +190,7 @@ def run_optimization_ts(  # noqa: PLR0915
 
         last_active_state = opt_state
         current_indices = torch.tensor(
-            batcher.current_idx, dtype=torch.long, device=device
+            batcher.current_idx, dtype=torch.long, device=DEVICE
         )
 
         steps_this_round = 1
@@ -281,8 +281,8 @@ def run_optimization_ase(  # noqa: C901, PLR0915
 
         ase_calc_instance = mace_mp_calculator_for_ase(
             model=MaceUrls.mace_mpa_medium,
-            device=device,
-            default_dtype=str(dtype).split(".")[-1],
+            device=DEVICE,
+            default_dtype=str(DTYPE).removeprefix("torch."),
         )
         ase_atoms_orig.calc = ase_calc_instance
 
@@ -330,22 +330,22 @@ def run_optimization_ase(  # noqa: C901, PLR0915
     current_atom_offset = 0
     for sys_idx, ats_final in enumerate(final_ase_atoms_list):
         all_positions.append(
-            torch.tensor(ats_final.get_positions(), device=device, dtype=dtype)
+            torch.tensor(ats_final.get_positions(), device=DEVICE, dtype=DTYPE)
         )
         all_masses.append(
-            torch.tensor(ats_final.get_masses(), device=device, dtype=dtype)
+            torch.tensor(ats_final.get_masses(), device=DEVICE, dtype=DTYPE)
         )
         all_atomic_numbers.append(
-            torch.tensor(ats_final.get_atomic_numbers(), device=device, dtype=torch.long)
+            torch.tensor(ats_final.get_atomic_numbers(), device=DEVICE, dtype=torch.long)
         )
         # ASE cell is row-vector, SimState expects column-vector
         all_cells.append(
-            torch.tensor(ats_final.get_cell().array.T, device=device, dtype=dtype)
+            torch.tensor(ats_final.get_cell().array.T, device=DEVICE, dtype=DTYPE)
         )
 
         num_atoms_in_current = len(ats_final)
         all_systems_for_gd.append(
-            torch.full((num_atoms_in_current,), sys_idx, device=device, dtype=torch.long)
+            torch.full((num_atoms_in_current,), sys_idx, device=DEVICE, dtype=torch.long)
         )
         current_atom_offset += num_atoms_in_current
 
@@ -357,13 +357,13 @@ def run_optimization_ase(  # noqa: C901, PLR0915
                 )
                 temp_calc = mace_mp_calculator_for_ase(
                     model=MaceUrls.mace_mpa_medium,
-                    device=device,
-                    default_dtype=str(dtype).split(".")[-1],
+                    device=DEVICE,
+                    default_dtype=str(DTYPE).removeprefix("torch."),
                 )
                 ats_final.calc = temp_calc
             final_energies_ase.append(ats_final.get_potential_energy())
             final_forces_ase_tensors.append(
-                torch.tensor(ats_final.get_forces(), device=device, dtype=dtype)
+                torch.tensor(ats_final.get_forces(), device=DEVICE, dtype=DTYPE)
             )
         except Exception as exc:  # noqa: BLE001
             print(f"Couldn't get final energy/forces for ASE structure {sys_idx}: {exc}")
@@ -372,12 +372,12 @@ def run_optimization_ase(  # noqa: C901, PLR0915
                 final_forces_ase_tensors.append(torch.zeros_like(all_positions[-1]))
             else:
                 final_forces_ase_tensors.append(
-                    torch.empty((0, 3), device=device, dtype=dtype)
+                    torch.empty((0, 3), device=DEVICE, dtype=DTYPE)
                 )
 
     if not all_positions:  # If all optimizations failed early
         print("Warning: No successful ASE structures to form OptimState.")
-        return torch.tensor(convergence_steps_list, dtype=torch.long, device=device), None
+        return torch.tensor(convergence_steps_list, dtype=torch.long, device=DEVICE), None
 
     # Concatenate all parts
     concatenated_positions = torch.cat(all_positions, dim=0)
@@ -386,7 +386,7 @@ def run_optimization_ase(  # noqa: C901, PLR0915
     concatenated_cells = torch.stack(all_cells, dim=0)  # Cells are (n_systems, 3, 3)
     concatenated_system_indices = torch.cat(all_systems_for_gd, dim=0)
 
-    concatenated_energies = torch.tensor(final_energies_ase, device=device, dtype=dtype)
+    concatenated_energies = torch.tensor(final_energies_ase, device=DEVICE, dtype=DTYPE)
     concatenated_forces = torch.cat(final_forces_ase_tensors, dim=0)
 
     # Check for NaN energies which might cause issues
@@ -409,7 +409,7 @@ def run_optimization_ase(  # noqa: C901, PLR0915
     )
 
     convergence_steps = torch.tensor(
-        convergence_steps_list, dtype=torch.long, device=device
+        convergence_steps_list, dtype=torch.long, device=DEVICE
     )
 
     end_time = time.perf_counter()

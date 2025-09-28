@@ -28,7 +28,7 @@ DTYPE = torch.float32
 
 @pytest.fixture
 def ase_mace_calculator() -> MACECalculator:
-    dtype = str(DTYPE).lstrip("torch.")
+    dtype = str(DTYPE).removeprefix("torch.")
     return mace_mp(
         model=MaceUrls.mace_mp_small, device="cpu", default_dtype=dtype, dispersion=False
     )
@@ -87,7 +87,7 @@ def ase_mace_off_calculator() -> MACECalculator:
     return mace_off(
         model=MaceUrls.mace_off_small,
         device=str(DEVICE),
-        default_dtype=str(DTYPE).lstrip("torch."),
+        default_dtype=str(DTYPE).removeprefix("torch."),
         dispersion=False,
     )
 
