@@ -12,7 +12,6 @@ from pymatgen.core import Structure
 
 import torch_sim as ts
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.models.mace import MaceModel
 
 
 DEVICE = torch.device("cpu")
@@ -310,7 +309,7 @@ def mixed_double_sim_state(
 
 
 @pytest.fixture
-def osn2_sim_state(ts_mace_mpa: MaceModel) -> ts.SimState:
+def osn2_sim_state() -> ts.SimState:
     """Provides an initial SimState for rhombohedral OsN2."""
     # For pymatgen Structure initialization
     from pymatgen.core import Lattice, Structure
@@ -320,13 +319,11 @@ def osn2_sim_state(ts_mace_mpa: MaceModel) -> ts.SimState:
     species = ["Os", "N"]
     frac_coords = [[0.75, 0.7501, -0.25], [0, 0, 0]]  # Slightly perturbed
     structure = Structure(lattice, species, frac_coords, coords_are_cartesian=False)
-    return ts.initialize_state(
-        structure, dtype=ts_mace_mpa.dtype, device=ts_mace_mpa.device
-    )
+    return ts.initialize_state(structure, dtype=DTYPE, device=DEVICE)
 
 
 @pytest.fixture
-def distorted_fcc_al_conventional_sim_state(ts_mace_mpa: MaceModel) -> ts.SimState:
+def distorted_fcc_al_conventional_sim_state() -> ts.SimState:
     """Initial SimState for a slightly distorted FCC Al conventional cell (4 atoms)."""
     # Create a standard 4-atom conventional FCC Al cell
     atoms_fcc = bulk("Al", crystalstructure="fcc", a=4.05, cubic=True)
@@ -344,7 +341,5 @@ def distorted_fcc_al_conventional_sim_state(ts_mace_mpa: MaceModel) -> ts.SimSta
     positions += np_rng.normal(scale=0.01, size=positions.shape)
     atoms_fcc.set_positions(positions)
 
-    dtype = ts_mace_mpa.dtype
-    device = ts_mace_mpa.device
     # Convert the ASE Atoms object to SimState (will be a single batch with 4 atoms)
-    return ts.io.atoms_to_state(atoms_fcc, device=device, dtype=dtype)
+    return ts.io.atoms_to_state(atoms_fcc, device=DEVICE, dtype=DTYPE)

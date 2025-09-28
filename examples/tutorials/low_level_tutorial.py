@@ -22,9 +22,7 @@ optimizers.
 """
 ## Setting up the system
 
-TorchSim's state aka `SimState` is a
-import torch_sim as ts
-class that contains the information of the
+TorchSim's state aka `SimState` is a class that contains the information of the
 system like positions, cell, etc. of the system(s). All the models in the TorchSim
 package take in a `SimState` as an input and return the properties of the system(s).
 
