@@ -69,7 +69,10 @@ class HybridSwapMCState(ts.SwapMCState, MDState):
 
     last_permutation: torch.Tensor
     _atom_attributes = (
-        ts.SwapMCState._atom_attributes | {"last_permutation"}  # noqa: SLF001
+        ts.SwapMCState._atom_attributes | MDState._atom_attributes | {"last_permutation"}  # noqa: SLF001
+    )
+    _system_attributes = (
+        ts.SwapMCState._system_attributes | MDState._system_attributes  # noqa: SLF001
     )
 
 
@@ -83,16 +86,14 @@ hybrid_state = HybridSwapMCState(
     ),
 )
 
-generator = torch.Generator(device=device)
-generator.manual_seed(42)
+rng = torch.Generator(device=device)
+rng.manual_seed(42)
 
 n_steps = 100
 dt = torch.tensor(0.002)
 for step in range(n_steps):
     if step % 10 == 0:
-        hybrid_state = ts.swap_mc_step(
-            model=model, state=hybrid_state, kT=kT, seed=42 + step
-        )
+        hybrid_state = ts.swap_mc_step(model=model, state=hybrid_state, kT=kT, rng=rng)
     else:
         hybrid_state = ts.nvt_langevin_step(
             model=model, state=hybrid_state, dt=dt, kT=torch.tensor(kT)

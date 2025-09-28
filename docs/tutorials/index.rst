@@ -7,7 +7,7 @@ For a high-level overview of the tutorials see :doc:`../user/overview`. Runnable
 versions of the tutorials can also be found in the `torch-sim /examples/tutorials
 <https://github.com/torchsim/torch-sim/tree/main/examples/tutorials>`_ directory.
 
-.. currentmodule:: torch-sim
+.. currentmodule:: torch_sim
 
 .. toctree::
     :titlesonly:

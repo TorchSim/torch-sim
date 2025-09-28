@@ -89,6 +89,20 @@ relaxed_state = ts.optimize(
 print(relaxed_state.energy)
 ```
 
+## Speedup
+
+TorchSim achieves up to 100x speedup compared to ASE with popular MLIPs.
+
+<img src="/docs/_static/speedup_plot.svg" alt="Speedup comparison" width="100%">
+
+This figure compares the time per atom of ASE and `torch_sim`. Time per atom is defined
+as the number of atoms / total time. While ASE can only run a single system of `n_atoms`
+(on the $x$ axis), `torch_sim` can run as many systems as will fit in memory. On an H100 80 GB card,
+the max atoms that could fit in memory was ~8,000 for [EGIP](https://github.com/FAIR-Chem/fairchem),
+~10,000 for [MACE-MPA-0](https://github.com/ACEsuit/mace), ~22,000 for [Mattersim V1 1M](https://github.com/microsoft/mattersim),
+~2,500 for [SevenNet](https://github.com/MDIL-SNU/SevenNet), and ~9000 for [PET-MAD](https://github.com/lab-cosmo/pet-mad).
+This metric describes model performance by capturing speed and memory usage simultaneously.
+
 ## Installation
 
 ### PyPI Installation
@@ -100,7 +114,7 @@ pip install torch-sim-atomistic
 ### Installing from source
 
 ```sh
-git clone https://github.com/torchsim/torch-sim
+git clone https://github.com/TorchSim/torch-sim
 cd torch-sim
 pip install .
 ```
@@ -113,11 +127,11 @@ To understand how TorchSim works, start with the [comprehensive tutorials](https
 
 TorchSim's package structure is summarized in the [API reference](https://torchsim.github.io/torch-sim/reference/index.html) documentation and drawn as a treemap below.
 
-![TorchSim package treemap](https://github.com/user-attachments/assets/56f894ad-b995-4108-a6de-a48714276d89)
+![TorchSim package treemap](https://github.com/user-attachments/assets/1ccb3a15-233d-4bc0-b11c-35a676a2bcf3)
 
 ## License
 
-TorchSim is released under an [MIT license](license).
+TorchSim is released under an [MIT license](LICENSE).
 
 ## Citation
 
