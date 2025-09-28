@@ -53,4 +53,6 @@ test_metatomic_consistency = make_model_calculator_consistency_test(
 
 test_metatomic_model_outputs = make_validate_model_outputs_test(
     model_fixture_name="metatomic_model",
+    dtype=torch.float32,
+    device=DEVICE,
 )

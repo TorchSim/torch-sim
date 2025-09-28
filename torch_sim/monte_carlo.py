@@ -45,9 +45,7 @@ class SwapMCState(SimState):
     _system_attributes = SimState._system_attributes | {"energy"}  # noqa: SLF001
 
 
-def generate_swaps(
-    state: SimState, generator: torch.Generator | None = None
-) -> torch.Tensor:
+def generate_swaps(state: SimState, rng: torch.Generator | None = None) -> torch.Tensor:
     """Generate atom swaps for a given batched system.
 
     Generates proposed swaps between atoms of different types within the same system.
@@ -56,7 +54,7 @@ def generate_swaps(
 
     Args:
         state (SimState): The simulation state
-        generator (torch.Generator | None, optional): Random number generator for
+        rng (torch.Generator | None, optional): Random number generator for
             reproducibility. Defaults to None.
 
     Returns:
@@ -86,7 +84,7 @@ def generate_swaps(
     system_lengths_expanded = system_lengths.unsqueeze(1).expand(n_systems, max_length)
     weights = (range_tensor < system_lengths_expanded).float()
 
-    first_index = torch.multinomial(weights, 1, replacement=False, generator=generator)
+    first_index = torch.multinomial(weights, 1, replacement=False, generator=rng)
 
     # Process each system - we need this loop because of ragged systems
     system_starts = system_lengths.cumsum(dim=0) - system_lengths[0]
@@ -106,7 +104,7 @@ def generate_swaps(
         # Zero out weights for same-type atoms (accounting for padding)
         weights[sys_idx, : len(same_type)][same_type] = 0.0
 
-    second_index = torch.multinomial(weights, 1, replacement=False, generator=generator)
+    second_index = torch.multinomial(weights, 1, replacement=False, generator=rng)
     zeroed_swaps = torch.concatenate([first_index, second_index], dim=1)
 
     return zeroed_swaps + (system_lengths.cumsum(dim=0) - system_lengths[0]).unsqueeze(1)
@@ -256,7 +254,7 @@ def swap_mc_step(
         _rng = torch.Generator(device=model.device)
         _rng.manual_seed(seed)
 
-    swaps = generate_swaps(state, generator=_rng)
+    swaps = generate_swaps(state, rng=_rng)
 
     permutation = swaps_to_permutation(swaps, state.n_atoms)
 
@@ -269,7 +267,7 @@ def swap_mc_step(
     model_output = model(state)
     energies_new = model_output["energy"]
 
-    accepted = metropolis_criterion(energies_new, energies_old, kT, generator=_rng)
+    accepted = metropolis_criterion(energies_new, energies_old, kT, rng=_rng)
     rejected_swaps = swaps[~accepted]
     reverse_rejected_swaps = swaps_to_permutation(rejected_swaps, state.n_atoms)
     state.positions = state.positions[reverse_rejected_swaps]
