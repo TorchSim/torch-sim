@@ -10,10 +10,10 @@ FC2 and FC3 calculations with MACE.
 # ]
 # ///
 import os
+import sys
 import time
 from typing import TYPE_CHECKING, Literal, cast
 
-import IPython
 import numpy as np
 import plotly.graph_objects as go
 import torch
@@ -200,5 +200,5 @@ fig.update_layout(
     height=600,
     plot_bgcolor="white",
 )
-if IPython.get_ipython() is not None:
+if "IPython" in sys.modules:
     fig.show()

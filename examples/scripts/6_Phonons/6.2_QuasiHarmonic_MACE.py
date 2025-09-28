@@ -68,8 +68,7 @@ def get_relaxed_structure(
         convergence_fn=converge_max_force,
         trajectory_reporter=reporter,
         autobatcher=use_autobatcher,
-        constant_volume=True,
-        hydrostatic_strain=True,
+        init_kwargs=dict(constant_volume=True, hydrostatic_strain=True),
     )
 
     os.remove(trajectory_file)
@@ -121,8 +120,7 @@ def get_qha_structures(
         max_steps=Nmax,
         convergence_fn=ts.runners.generate_force_convergence_fn(force_tol=fmax),
         autobatcher=use_autobatcher,
-        constant_volume=True,
-        hydrostatic_strain=True,
+        init_kwargs=dict(constant_volume=True, hydrostatic_strain=True),
     )
 
     return scaled_state.to_phonopy()
