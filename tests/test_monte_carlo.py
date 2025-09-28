@@ -37,11 +37,11 @@ def batched_diverse_state() -> ts.SimState:
 @pytest.mark.parametrize("use_generator", [True, False])
 def test_generate_swaps(batched_diverse_state: ts.SimState, *, use_generator: bool):
     """Test swap generation with and without generator."""
-    generator = torch.Generator(device=DEVICE) if use_generator else None
-    if generator:
-        generator.manual_seed(42)
+    rng = torch.Generator(device=DEVICE) if use_generator else None
+    if rng:
+        rng.manual_seed(42)
 
-    swaps = generate_swaps(batched_diverse_state, generator=generator)
+    swaps = generate_swaps(batched_diverse_state, rng=rng)
 
     # Basic validation
     assert isinstance(swaps, torch.Tensor)
@@ -59,9 +59,9 @@ def test_generate_swaps(batched_diverse_state: ts.SimState, *, use_generator: bo
         assert atomic_numbers[swap[0]] != atomic_numbers[swap[1]]
 
     # Test reproducibility with generator
-    if use_generator and generator is not None:
-        generator.manual_seed(42)
-        swaps2 = generate_swaps(batched_diverse_state, generator=generator)
+    if use_generator and rng is not None:
+        rng.manual_seed(42)
+        swaps2 = generate_swaps(batched_diverse_state, rng=rng)
         assert torch.equal(swaps, swaps2)
 
 
@@ -69,15 +69,14 @@ def test_generate_swaps(batched_diverse_state: ts.SimState, *, use_generator: bo
 def test_swaps_to_permutation(batched_diverse_state: ts.SimState, *, n_swaps: int):
     """Test permutation generation with different numbers of swaps."""
     n_atoms = batched_diverse_state.n_atoms
-    generator = torch.Generator(device=DEVICE)
-    generator.manual_seed(42)
+    rng = torch.Generator(device=DEVICE)
+    rng.manual_seed(42)
 
     if n_swaps == 0:
         combined_swaps = torch.empty((0, 2), dtype=torch.long, device=DEVICE)
     else:
         all_swaps = [
-            generate_swaps(batched_diverse_state, generator=generator)
-            for _ in range(n_swaps)
+            generate_swaps(batched_diverse_state, rng=rng) for _ in range(n_swaps)
         ]
         combined_swaps = torch.cat(all_swaps, dim=0)
 
@@ -122,12 +121,10 @@ def test_metropolis_criterion(
         assert abs(actual_rate - expected_rate) < 0.1
     else:
         # Statistical test
-        generator = torch.Generator(device=DEVICE)
-        generator.manual_seed(42)
+        rng = torch.Generator(device=DEVICE)
+        rng.manual_seed(42)
         total_accepted = sum(
-            metropolis_criterion(
-                energy_new_tensor, energy_old_tensor, kT, generator=generator
-            )
+            metropolis_criterion(energy_new_tensor, energy_old_tensor, kT, rng=rng)
             .sum()
             .item()
             for _ in range(1000)
@@ -141,14 +138,14 @@ def test_metropolis_criterion_randomness():
     energy_old = torch.tensor([10.0, 20.0], device=DEVICE)
     energy_new = torch.tensor([11.0, 21.0], device=DEVICE)  # ~37% acceptance
 
-    gen1 = torch.Generator(device=DEVICE)
-    gen1.manual_seed(42)
-    gen2 = torch.Generator(device=DEVICE)
-    gen2.manual_seed(43)
+    rng1 = torch.Generator(device=DEVICE)
+    rng1.manual_seed(42)
+    rng2 = torch.Generator(device=DEVICE)
+    rng2.manual_seed(43)
 
-    accepted1 = metropolis_criterion(energy_new, energy_old, kT=1.0, generator=gen1)
-    accepted2 = metropolis_criterion(energy_new, energy_old, kT=1.0, generator=gen2)
-    accepted3 = metropolis_criterion(energy_new, energy_old, kT=1.0, generator=None)
+    accepted1 = metropolis_criterion(energy_new, energy_old, kT=1.0, rng=rng1)
+    accepted2 = metropolis_criterion(energy_new, energy_old, kT=1.0, rng=rng2)
+    accepted3 = metropolis_criterion(energy_new, energy_old, kT=1.0, rng=None)
 
     different_results = not torch.equal(accepted1, accepted2) or not torch.equal(
         accepted1, accepted3
@@ -166,6 +163,8 @@ def test_monte_carlo_integration(
 ):
     """Test the complete Monte Carlo workflow."""
     # Initialize
+    rng = torch.Generator(device=DEVICE)
+    rng.manual_seed(42)
     mc_state = swap_mc_init(model=lj_model, state=batched_diverse_state)
     assert isinstance(mc_state, SwapMCState)
     assert mc_state.energy.shape == (batched_diverse_state.n_systems,)
@@ -174,8 +173,8 @@ def test_monte_carlo_integration(
     assert torch.equal(mc_state.last_permutation, expected_identity)
 
     # Run steps
-    for step in range(n_steps):
-        mc_state = swap_mc_step(model=lj_model, state=mc_state, kT=kT, seed=42 + step)
+    for _step in range(n_steps):
+        mc_state = swap_mc_step(model=lj_model, state=mc_state, kT=kT, rng=rng)
         assert isinstance(mc_state, SwapMCState)
 
     # Verify conservation properties

@@ -49,6 +49,8 @@ test_metatomic_consistency = make_model_calculator_consistency_test(
     calculator_fixture_name="metatomic_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
     energy_atol=5e-5,
+    dtype=torch.float32,
+    device=DEVICE,
 )
 
 test_metatomic_model_outputs = make_validate_model_outputs_test(
