@@ -579,7 +579,7 @@ def fire(
     Notes:
         - md_flavor="vv_fire" follows the original paper closely, including
           integration with Velocity Verlet steps. See https://doi.org/10.1103/PhysRevLett.97.170201
-          and https://github.com/Radical-AI/torch-sim/issues/90#issuecomment-2826179997
+          and https://github.com/TorchSim/torch-sim/issues/90#issuecomment-2826179997
           for details.
         - md_flavor="ase_fire" mimics the implementation in ASE, which differs slightly
           in the update steps and does not explicitly use atomic masses in the
@@ -803,7 +803,7 @@ def unit_cell_fire(
     Notes:
         - md_flavor="vv_fire" follows the original paper closely, including
           integration with Velocity Verlet steps. See https://doi.org/10.1103/PhysRevLett.97.170201
-          and https://github.com/Radical-AI/torch-sim/issues/90#issuecomment-2826179997
+          and https://github.com/TorchSim/torch-sim/issues/90#issuecomment-2826179997
           for details.
         - md_flavor="ase_fire" mimics the implementation in ASE, which differs slightly
           in the update steps and does not explicitly use atomic masses in the
@@ -1095,7 +1095,7 @@ def frechet_cell_fire(
     Notes:
         - md_flavor="vv_fire" follows the original paper closely, including
           integration with Velocity Verlet steps. See https://doi.org/10.1103/PhysRevLett.97.170201
-          and https://github.com/Radical-AI/torch-sim/issues/90#issuecomment-2826179997
+          and https://github.com/TorchSim/torch-sim/issues/90#issuecomment-2826179997
           for details.
         - md_flavor="ase_fire" mimics the implementation in ASE, which differs slightly
           in the update steps and does not explicitly use atomic masses in the

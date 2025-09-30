@@ -261,17 +261,21 @@ def test_state_round_trip(
         assert torch.allclose(sim_state.masses, round_trip_state.masses)
 
 
-def test_state_to_atoms_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_state_to_atoms_importerror(
+    monkeypatch: pytest.MonkeyPatch, si_sim_state: ts.SimState
+) -> None:
     monkeypatch.setitem(sys.modules, "ase", None)
     monkeypatch.setitem(sys.modules, "ase.data", None)
 
     with pytest.raises(
         ImportError, match="ASE is required for state_to_atoms conversion"
     ):
-        ts.io.state_to_atoms(None)
+        ts.io.state_to_atoms(si_sim_state)
 
 
-def test_state_to_phonopy_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_state_to_phonopy_importerror(
+    monkeypatch: pytest.MonkeyPatch, si_sim_state: ts.SimState
+) -> None:
     monkeypatch.setitem(sys.modules, "phonopy", None)
     monkeypatch.setitem(sys.modules, "phonopy.structure", None)
     monkeypatch.setitem(sys.modules, "phonopy.structure.atoms", None)
@@ -279,10 +283,12 @@ def test_state_to_phonopy_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(
         ImportError, match="Phonopy is required for state_to_phonopy conversion"
     ):
-        ts.io.state_to_phonopy(None)
+        ts.io.state_to_phonopy(si_sim_state)
 
 
-def test_state_to_structures_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_state_to_structures_importerror(
+    monkeypatch: pytest.MonkeyPatch, si_sim_state: ts.SimState
+) -> None:
     monkeypatch.setitem(sys.modules, "pymatgen", None)
     monkeypatch.setitem(sys.modules, "pymatgen.core", None)
     monkeypatch.setitem(sys.modules, "pymatgen.core.structure", None)
@@ -290,20 +296,24 @@ def test_state_to_structures_importerror(monkeypatch: pytest.MonkeyPatch) -> Non
     with pytest.raises(
         ImportError, match="Pymatgen is required for state_to_structures conversion"
     ):
-        ts.io.state_to_structures(None)
+        ts.io.state_to_structures(si_sim_state)
 
 
-def test_atoms_to_state_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_atoms_to_state_importerror(
+    monkeypatch: pytest.MonkeyPatch, si_atoms: Atoms
+) -> None:
     monkeypatch.setitem(sys.modules, "ase", None)
     monkeypatch.setitem(sys.modules, "ase.data", None)
 
     with pytest.raises(
         ImportError, match="ASE is required for atoms_to_state conversion"
     ):
-        ts.io.atoms_to_state(None, None, None)
+        ts.io.atoms_to_state(si_atoms, torch.device("cpu"), torch.float64)
 
 
-def test_phonopy_to_state_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_phonopy_to_state_importerror(
+    monkeypatch: pytest.MonkeyPatch, si_phonopy_atoms: PhonopyAtoms
+) -> None:
     monkeypatch.setitem(sys.modules, "phonopy", None)
     monkeypatch.setitem(sys.modules, "phonopy.structure", None)
     monkeypatch.setitem(sys.modules, "phonopy.structure.atoms", None)
@@ -311,10 +321,12 @@ def test_phonopy_to_state_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(
         ImportError, match="Phonopy is required for phonopy_to_state conversion"
     ):
-        ts.io.phonopy_to_state(None, None, None)
+        ts.io.phonopy_to_state(si_phonopy_atoms, torch.device("cpu"), torch.float64)
 
 
-def test_structures_to_state_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_structures_to_state_importerror(
+    monkeypatch: pytest.MonkeyPatch, si_structure: Structure
+) -> None:
     monkeypatch.setitem(sys.modules, "pymatgen", None)
     monkeypatch.setitem(sys.modules, "pymatgen.core", None)
     monkeypatch.setitem(sys.modules, "pymatgen.core.structure", None)
@@ -322,4 +334,4 @@ def test_structures_to_state_importerror(monkeypatch: pytest.MonkeyPatch) -> Non
     with pytest.raises(
         ImportError, match="Pymatgen is required for structures_to_state conversion"
     ):
-        ts.io.structures_to_state(None, None, None)
+        ts.io.structures_to_state(si_structure, torch.device("cpu"), torch.float64)

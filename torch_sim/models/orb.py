@@ -387,7 +387,7 @@ class OrbModel(ModelInterface):
             state = state.to(self._device)
 
         half_supercell = (
-            torch.max(torch.det(state.cell)) > 1000
+            torch.min(torch.det(state.cell)) > 1000
             if self._half_supercell is None
             else self._half_supercell
         )
@@ -416,7 +416,7 @@ class OrbModel(ModelInterface):
             if not model_has_direct_heads and prop == "stress":
                 continue
             _property = "energy" if prop == "free_energy" else prop
-            results[prop] = predictions[_property].squeeze()
+            results[prop] = predictions[_property]
 
         if self.conservative:
             results["forces"] = results[self.model.grad_forces_name]
