@@ -2,10 +2,11 @@
 
 import torch
 
+import torch_sim as ts
+from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState
-from torch_sim.transforms import get_pair_displacements
+from torch_sim.typing import StateDict
 
 
 DEFAULT_BETA = torch.tensor(0.3)
@@ -29,7 +30,7 @@ def asymmetric_particle_pair_force(
             shape [n, m].
 
     Returns:
-        Tensor of energies with shape [n, m].
+        torch.Tensor: Energies with shape [n, m].
     """
     inner_mask = dr < beta
     outer_mask = (dr < sigma) & (dr > beta)
@@ -64,7 +65,7 @@ def asymmetric_particle_pair_force_jit(
             shape [n, m].
 
     Returns:
-        Tensor of energies with shape [n, m].
+        torch.Tensor: Energies with shape [n, m].
     """
     inner_mask = dr < beta
     outer_mask = (dr < sigma) & (dr > beta)
@@ -82,7 +83,7 @@ def asymmetric_particle_pair_force_jit(
     return inner_forces + outer_forces
 
 
-class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
+class ParticleLifeModel(ModelInterface):
     """Calculator for asymmetric particle interaction.
 
     This model implements an asymmetric interaction between particles based on
@@ -124,19 +125,23 @@ class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
         )
         self.epsilon = torch.tensor(epsilon, dtype=self.dtype, device=self.device)
 
-    def forward(self, state: SimState) -> dict[str, torch.Tensor]:
-        """Compute energies and forces.
+    def unbatched_forward(self, state: ts.SimState) -> dict[str, torch.Tensor]:
+        """Compute energies and forces for a single unbatched system.
+
+        Internal implementation that processes a single, non-batched simulation state.
+        This method handles the core computations of pair interactions, neighbor lists,
+        and property calculations.
 
         Args:
-            state: Either a SimState object or a dictionary containing positions,
-                cell, pbc
+            state: Single, non-batched simulation state containing atomic positions,
+                cell vectors, and other system information.
 
         Returns:
             A dictionary containing the energy, forces, and stresses
         """
         # Extract required data from input
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         positions = state.positions
         cell = state.row_vector_cell
@@ -155,7 +160,7 @@ class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
                 sort_id=False,
             )
             # Get displacements using neighbor list
-            dr_vec, distances = get_pair_displacements(
+            dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
@@ -164,7 +169,7 @@ class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
             )
         else:
             # Get all pairwise displacements
-            dr_vec, distances = get_pair_displacements(
+            dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
@@ -202,5 +207,55 @@ class UnbatchedParticleLifeModel(torch.nn.Module, ModelInterface):
         forces.index_add_(0, mapping[0], -force_vectors)
         forces.index_add_(0, mapping[1], force_vectors)
         results["forces"] = forces
+
+        return results
+
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
+        """Compute particle life energies and forces for a system.
+
+        Main entry point for particle life calculations that handles batched states by
+        dispatching each batch to the unbatched implementation and combining results.
+
+        Args:
+            state: Input state containing atomic positions, cell vectors, and other
+                system information. Can be a SimState object or a dictionary with the
+                same keys.
+
+        Returns:
+            dict[str, torch.Tensor]: Computed properties:
+                - "energy": Potential energy with shape [n_systems]
+                - "forces": Atomic forces with shape [n_atoms, 3] (if
+                    compute_forces=True)
+                - "stress": Stress tensor with shape [n_systems, 3, 3] (if
+                    compute_stress=True)
+                - "energies": Per-atom energies with shape [n_atoms] (if
+                    per_atom_energies=True)
+                - "stresses": Per-atom stresses with shape [n_atoms, 3, 3] (if
+                    per_atom_stresses=True)
+
+        Raises:
+            ValueError: If batch cannot be inferred for multi-cell systems.
+        """
+        if isinstance(state, dict):
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+
+        if state.system_idx is None and state.cell.shape[0] > 1:
+            raise ValueError(
+                "system_idx can only be inferred if there is only one system."
+            )
+
+        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_systems)]
+        properties = outputs[0]
+
+        # we always return tensors
+        # per atom properties are returned as (atoms, ...) tensors
+        # global properties are returned as shape (..., n) tensors
+        results = {}
+        for key in ("stress", "energy"):
+            if key in properties:
+                results[key] = torch.stack([out[key] for out in outputs])
+        for key in ("forces", "energies", "stresses"):
+            if key in properties:
+                results[key] = torch.cat([out[key] for out in outputs], dim=0)
 
         return results

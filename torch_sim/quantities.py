@@ -1,5 +1,7 @@
 """Functions for computing physical quantities."""
 
+from typing import cast
+
 import torch
 
 from torch_sim.state import SimState
@@ -21,61 +23,60 @@ def count_dof(tensor: torch.Tensor) -> int:
 
 # @torch.jit.script
 def calc_kT(  # noqa: N802
-    momenta: torch.Tensor,
+    *,
     masses: torch.Tensor,
+    momenta: torch.Tensor | None = None,
     velocities: torch.Tensor | None = None,
-    batch: torch.Tensor | None = None,
+    system_idx: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Calculate temperature from momenta/velocities and masses.
-    Temperature returned in energy units.
+    """Calculate temperature in energy units from momenta/velocities and masses.
 
     Args:
         momenta (torch.Tensor): Particle momenta, shape (n_particles, n_dim)
         masses (torch.Tensor): Particle masses, shape (n_particles,)
         velocities (torch.Tensor | None): Particle velocities, shape (n_particles, n_dim)
-        batch (torch.Tensor | None): Optional tensor indicating batch membership of
+        system_idx (torch.Tensor | None): Optional tensor indicating system membership of
         each particle
 
     Returns:
-        Scalar temperature value
+        torch.Tensor: Scalar temperature value
     """
-    if momenta is not None and velocities is not None:
-        raise ValueError("Must pass either momenta or velocities, not both")
+    if not ((momenta is not None) ^ (velocities is not None)):
+        raise ValueError("Must pass either one of momenta or velocities")
 
-    if momenta is None and velocities is None:
-        raise ValueError("Must pass either momenta or velocities")
-
-    if momenta is not None:
+    if momenta is None:
+        # If velocity provided, calculate mv^2
+        velocities = cast("torch.Tensor", velocities)
+        squared_term = (velocities**2) * masses.unsqueeze(-1)
+    else:
         # If momentum provided, calculate v^2 = p^2/m^2
         squared_term = (momenta**2) / masses.unsqueeze(-1)
-    else:
-        # If velocity provided, calculate mv^2
-        squared_term = (velocities**2) * masses.unsqueeze(-1)
 
-    if batch is None:
+    if system_idx is None:
         # Count total degrees of freedom
         dof = count_dof(squared_term)
         return torch.sum(squared_term) / dof
-    # Sum squared terms for each batch
+    # Sum squared terms for each system
     flattened_squared = torch.sum(squared_term, dim=-1)
 
-    # Count degrees of freedom per batch
-    batch_sizes = torch.bincount(batch)
-    dof_per_batch = batch_sizes * squared_term.shape[-1]  # multiply by n_dimensions
+    # Count degrees of freedom per system
+    system_sizes = torch.bincount(system_idx)
+    dof_per_system = system_sizes * squared_term.shape[-1]  # multiply by n_dimensions
 
-    # Calculate temperature per batch
-    batch_sums = torch.segment_reduce(
-        flattened_squared, reduce="sum", lengths=batch_sizes
+    # Calculate temperature per system
+    system_sums = torch.segment_reduce(
+        flattened_squared, reduce="sum", lengths=system_sizes
     )
-    return batch_sums / dof_per_batch
+    return system_sums / dof_per_system
 
 
 def calc_temperature(
-    momenta: torch.Tensor,
+    *,
     masses: torch.Tensor,
+    momenta: torch.Tensor | None = None,
     velocities: torch.Tensor | None = None,
-    batch: torch.Tensor | None = None,
-    units: object = MetalUnits.temperature,
+    system_idx: torch.Tensor | None = None,
+    units: MetalUnits = MetalUnits.temperature,
 ) -> torch.Tensor:
     """Calculate temperature from momenta/velocities and masses.
 
@@ -83,22 +84,26 @@ def calc_temperature(
         momenta (torch.Tensor): Particle momenta, shape (n_particles, n_dim)
         masses (torch.Tensor): Particle masses, shape (n_particles,)
         velocities (torch.Tensor | None): Particle velocities, shape (n_particles, n_dim)
-        batch (torch.Tensor | None): Optional tensor indicating batch membership of
+        system_idx (torch.Tensor | None): Optional tensor indicating system membership of
         each particle
         units (object): Units to return the temperature in
 
     Returns:
-        Temperature value in specified units
+        torch.Tensor: Temperature value in specified units
     """
-    return calc_kT(momenta, masses, velocities, batch) / units
+    kT = calc_kT(
+        masses=masses, momenta=momenta, velocities=velocities, system_idx=system_idx
+    )
+    return kT / units
 
 
 # @torch.jit.script
 def calc_kinetic_energy(
-    momenta: torch.Tensor,
+    *,
     masses: torch.Tensor,
+    momenta: torch.Tensor | None = None,
     velocities: torch.Tensor | None = None,
-    batch: torch.Tensor | None = None,
+    system_idx: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Computes the kinetic energy of a system.
 
@@ -106,30 +111,26 @@ def calc_kinetic_energy(
         momenta (torch.Tensor): Particle momenta, shape (n_particles, n_dim)
         masses (torch.Tensor): Particle masses, shape (n_particles,)
         velocities (torch.Tensor | None): Particle velocities, shape (n_particles, n_dim)
-        batch (torch.Tensor | None): Optional tensor indicating batch membership of
+        system_idx (torch.Tensor | None): Optional tensor indicating system membership of
         each particle
 
     Returns:
-        If batch is None: Scalar tensor containing the total kinetic energy
-        If batch is provided: Tensor of kinetic energies per batch
+        If system_idx is None: Scalar tensor containing the total kinetic energy
+        If system_idx is provided: Tensor of kinetic energies per system
     """
-    if momenta is not None and velocities is not None:
-        raise ValueError("Must pass either momenta or velocities, not both")
-    if momenta is None and velocities is None:
-        raise ValueError("Must pass either momenta or velocities")
+    if not ((momenta is not None) ^ (velocities is not None)):
+        raise ValueError("Must pass either one of momenta or velocities")
 
-    if momenta is None:
-        # Using velocities
+    if momenta is None:  # Using velocities
         squared_term = (velocities**2) * masses.unsqueeze(-1)
-    else:
-        # Using momentum
+    else:  # Using momenta
         squared_term = (momenta**2) / masses.unsqueeze(-1)
 
-    if batch is None:
+    if system_idx is None:
         return 0.5 * torch.sum(squared_term)
     flattened_squared = torch.sum(squared_term, dim=-1)
     return 0.5 * torch.segment_reduce(
-        flattened_squared, reduce="sum", lengths=torch.bincount(batch)
+        flattened_squared, reduce="sum", lengths=torch.bincount(system_idx)
     )
 
 
@@ -259,22 +260,30 @@ def calc_heat_flux(
     return conv_sum + virial_sum
 
 
-def batchwise_max_force(state: SimState) -> torch.Tensor:
-    """Compute the maximum force per batch.
+def get_pressure(
+    stress: torch.Tensor, kinetic_energy: torch.Tensor, volume: torch.Tensor, dim: int = 3
+) -> torch.Tensor:
+    """Compute the pressure from the stress tensor.
+
+    The stress tensor is defined as 1/volume * dU/de_ij
+    So the pressure is -1/volume * trace(dU/de_ij)
+    """
+    return 1 / dim * ((2 * kinetic_energy / volume) - torch.einsum("...ii", stress))
+
+
+def systemwise_max_force(state: SimState) -> torch.Tensor:
+    """Compute the maximum force per system.
 
     Args:
-        state (SimState): SimState to compute the maximum force per batch for
+        state (SimState): State to compute the maximum force per system for.
 
     Returns:
-        Tensor of maximum forces per batch
+        torch.Tensor: Maximum forces per system
     """
-    batch_wise_max_force = torch.zeros(
-        state.n_batches, device=state.device, dtype=state.dtype
+    system_wise_max_force = torch.zeros(
+        state.n_systems, device=state.device, dtype=state.dtype
     )
     max_forces = state.forces.norm(dim=1)
-    return batch_wise_max_force.scatter_reduce(
-        dim=0,
-        index=state.batch,
-        src=max_forces,
-        reduce="amax",
+    return system_wise_max_force.scatter_reduce(
+        dim=0, index=state.system_idx, src=max_forces, reduce="amax"
     )

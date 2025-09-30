@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 import torch
 
+from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
 
@@ -35,13 +36,16 @@ class SwapMCState(SimState):
     energy: torch.Tensor
     last_permutation: torch.Tensor
 
+    _atom_attributes = SimState._atom_attributes | {"last_permutation"}  # noqa: SLF001
+    _system_attributes = SimState._system_attributes | {"energy"}  # noqa: SLF001
+
 
 def generate_swaps(
     state: SimState, generator: torch.Generator | None = None
 ) -> torch.Tensor:
     """Generate atom swaps for a given batched system.
 
-    Generates proposed swaps between atoms of different types within the same batch.
+    Generates proposed swaps between atoms of different types within the same system.
     The function ensures that swaps only occur between atoms with different atomic
     numbers.
 
@@ -51,48 +55,48 @@ def generate_swaps(
             reproducibility. Defaults to None.
 
     Returns:
-        torch.Tensor: A tensor of proposed swaps with shape [n_batches, 2],
+        torch.Tensor: A tensor of proposed swaps with shape [n_systems, 2],
             where each row contains indices of atoms to be swapped
     """
-    batch = state.batch
+    system = state.system_idx
     atomic_numbers = state.atomic_numbers
 
-    batch_lengths = batch.bincount()
+    system_lengths = system.bincount()
 
-    # change batch_lengths to batch
-    batch = torch.repeat_interleave(
-        torch.arange(len(batch_lengths), device=batch.device), batch_lengths
+    # change system_lengths to system
+    system = torch.repeat_interleave(
+        torch.arange(len(system_lengths), device=system.device), system_lengths
     )
 
     # Create ragged weights tensor without loops
-    max_length = torch.max(batch_lengths).item()
-    n_batches = len(batch_lengths)
+    max_length = torch.max(system_lengths).item()
+    n_systems = len(system_lengths)
 
-    # Create a range tensor for each batch
-    range_tensor = torch.arange(max_length, device=batch.device).expand(
-        n_batches, max_length
+    # Create a range tensor for each system
+    range_tensor = torch.arange(max_length, device=system.device).expand(
+        n_systems, max_length
     )
 
-    # Create a mask where values are less than the batch length
-    batch_lengths_expanded = batch_lengths.unsqueeze(1).expand(n_batches, max_length)
-    weights = (range_tensor < batch_lengths_expanded).float()
+    # Create a mask where values are less than the max system length
+    system_lengths_expanded = system_lengths.unsqueeze(1).expand(n_systems, max_length)
+    weights = (range_tensor < system_lengths_expanded).float()
 
     first_index = torch.multinomial(weights, 1, replacement=False, generator=generator)
 
-    # Process each batch - we need this loop because of ragged batches
-    batch_starts = batch_lengths.cumsum(dim=0) - batch_lengths[0]
+    # Process each system - we need this loop because of ragged systems
+    system_starts = system_lengths.cumsum(dim=0) - system_lengths[0]
 
-    for b in range(n_batches):
+    for b in range(n_systems):
         # Get global index of selected atom
-        first_idx = first_index[b, 0].item() + batch_starts[b].item()
+        first_idx = first_index[b, 0].item() + system_starts[b].item()
         first_type = atomic_numbers[first_idx]
 
-        # Get indices of atoms in this batch
-        batch_start = batch_starts[b].item()
-        batch_end = batch_start + batch_lengths[b].item()
+        # Get indices of atoms in this system
+        system_start = system_starts[b].item()
+        system_end = system_start + system_lengths[b].item()
 
         # Create mask for same-type atoms
-        same_type = atomic_numbers[batch_start:batch_end] == first_type
+        same_type = atomic_numbers[system_start:system_end] == first_type
 
         # Zero out weights for same-type atoms (accounting for padding)
         weights[b, : len(same_type)][same_type] = 0.0
@@ -100,7 +104,7 @@ def generate_swaps(
     second_index = torch.multinomial(weights, 1, replacement=False, generator=generator)
     zeroed_swaps = torch.concatenate([first_index, second_index], dim=1)
 
-    return zeroed_swaps + (batch_lengths.cumsum(dim=0) - batch_lengths[0]).unsqueeze(1)
+    return zeroed_swaps + (system_lengths.cumsum(dim=0) - system_lengths[0]).unsqueeze(1)
 
 
 def swaps_to_permutation(swaps: torch.Tensor, n_atoms: int) -> torch.Tensor:
@@ -124,21 +128,21 @@ def swaps_to_permutation(swaps: torch.Tensor, n_atoms: int) -> torch.Tensor:
     return permutation
 
 
-def validate_permutation(permutation: torch.Tensor, batch: torch.Tensor) -> None:
-    """Validate that permutations only swap atoms within the same batch.
+def validate_permutation(permutation: torch.Tensor, system_idx: torch.Tensor) -> None:
+    """Validate that permutations only swap atoms within the same system.
 
-    Confirms that no swaps are attempted between atoms in different batches,
+    Confirms that no swaps are attempted between atoms in different systems,
     which would lead to physically invalid configurations.
 
     Args:
         permutation (torch.Tensor): Permutation tensor of shape [n_atoms]
-        batch (torch.Tensor): Batch assignments for each atom of shape [n_atoms]
+        system_idx (torch.Tensor): system_idx for each atom of shape [n_atoms]
 
     Raises:
-        ValueError: If any swaps are between atoms in different batches
+        ValueError: If any swaps are between atoms in different systems
     """
-    if not torch.all(batch == batch[permutation]):
-        raise ValueError("Swaps must be between atoms in the same batch")
+    if not torch.all(system_idx == system_idx[permutation]):
+        raise ValueError("Swaps must be between atoms in the same system")
 
 
 def metropolis_criterion(
@@ -183,7 +187,7 @@ def metropolis_criterion(
 
 def swap_monte_carlo(
     *,
-    model: torch.nn.Module,
+    model: ModelInterface,
     kT: float,
     seed: int | None = None,
 ) -> tuple[
@@ -233,7 +237,7 @@ def swap_monte_carlo(
             cell=state.cell,
             pbc=state.pbc,
             atomic_numbers=state.atomic_numbers,
-            batch=state.batch,
+            system_idx=state.system_idx,
             energy=model_output["energy"],
             last_permutation=torch.arange(state.n_atoms, device=state.device),
         )
@@ -260,12 +264,12 @@ def swap_monte_carlo(
 
         Notes:
             The function handles batched systems and ensures that swaps only occur
-            within the same batch.
+            within the same system.
         """
         swaps = generate_swaps(state, generator=generator)
 
         permutation = swaps_to_permutation(swaps, state.n_atoms)
-        validate_permutation(permutation, state.batch)
+        validate_permutation(permutation, state.system_idx)
 
         energies_old = state.energy.clone()
         state.positions = state.positions[permutation].clone()

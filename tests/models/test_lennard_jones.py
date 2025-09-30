@@ -4,11 +4,10 @@ import pytest
 import torch
 from ase.build import bulk
 
-from torch_sim.io import atoms_to_state
+import torch_sim as ts
 from torch_sim.models.interface import validate_model_outputs
-from torch_sim.state import SimState
-from torch_sim.unbatched.models.lennard_jones import (
-    UnbatchedLennardJonesModel,
+from torch_sim.models.lennard_jones import (
+    LennardJonesModel,
     lennard_jones_pair,
     lennard_jones_pair_force,
 )
@@ -137,16 +136,16 @@ def test_lennard_jones_force_energy_consistency() -> None:
 #       is not used in the neighbor list calculation. So to get correct results,
 #       we need a system that is large enough (2*cutoff).
 @pytest.fixture
-def ar_supercell_sim_state_large(device: torch.device) -> SimState:
+def ar_supercell_sim_state_large(device: torch.device) -> ts.SimState:
     """Create a face-centered cubic (FCC) Argon structure."""
     # Create FCC Ar using ASE, with 4x4x4 supercell
     ar_atoms = bulk("Ar", "fcc", a=5.26, cubic=True).repeat([4, 4, 4])
-    return atoms_to_state(ar_atoms, device, torch.float64)
+    return ts.io.atoms_to_state(ar_atoms, device, torch.float64)
 
 
 @pytest.fixture
 def models(
-    ar_supercell_sim_state_large: SimState,
+    ar_supercell_sim_state_large: ts.SimState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create both neighbor list and direct models with Argon parameters."""
     calc_params = {
@@ -160,10 +159,8 @@ def models(
     }
 
     cutoff = 2.5 * 3.405  # Standard LJ cutoff * sigma
-    model_nl = UnbatchedLennardJonesModel(
-        use_neighbor_list=True, cutoff=cutoff, **calc_params
-    )
-    model_direct = UnbatchedLennardJonesModel(
+    model_nl = LennardJonesModel(use_neighbor_list=True, cutoff=cutoff, **calc_params)
+    model_direct = LennardJonesModel(
         use_neighbor_list=False, cutoff=cutoff, **calc_params
     )
 
@@ -234,7 +231,7 @@ def test_stress_tensor_symmetry(
 
 
 def test_validate_model_outputs(
-    lj_model: UnbatchedLennardJonesModel,
+    lj_model: LennardJonesModel,
     device: torch.device,
 ) -> None:
     """Test that the model outputs are valid."""

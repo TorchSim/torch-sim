@@ -24,12 +24,12 @@ from pymatgen.core import Composition, Element, Structure
 from tqdm import tqdm
 
 import torch_sim as ts
-from torch_sim.unbatched.models.mace import UnbatchedMaceModel
-from torch_sim.unbatched.unbatched_integrators import (
+from torch_sim.integrators.nvt import (
     NVTNoseHooverState,
     nvt_nose_hoover,
     nvt_nose_hoover_invariant,
 )
+from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.units import MetalUnits as Units
 from torch_sim.workflows import a2c
 
@@ -52,11 +52,12 @@ structure_multi = random_packed_structure_multi(
 )
 """
 
+SMOKE_TEST = os.getenv("CI") is not None
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
-raw_model = mace_mp(model=mace_checkpoint_url, return_raw_model=True)
+raw_model = mace_mp(model=MaceUrls.mace_mpa_medium, return_raw_model=True)
 
 # Define system and model
 comp = Composition("Si64")
@@ -71,7 +72,7 @@ atomic_masses = [Element(el).atomic_mass for el in comp.get_el_amt_dict()] * int
 )
 species = [Element.from_Z(Z).symbol for Z in atomic_numbers]
 
-model = UnbatchedMaceModel(
+model = MaceModel(
     model=raw_model,
     device=device,
     compute_forces=True,
@@ -90,17 +91,15 @@ structure = a2c.random_packed_structure(
 )
 
 # Relax structure in batches of 6
-batch_size = 1 if os.getenv("CI") else 6
+batch_size = 1 if SMOKE_TEST else 6
 max_optim_steps = (
-    1 if os.getenv("CI") else 100
+    1 if SMOKE_TEST else 100
 )  # Number of optimization steps for unit cell relaxation
 
 # MD parameters
-equi_steps = 25 if os.getenv("CI") else 2500  # MD steps for melt equilibration
-cool_steps = 25 if os.getenv("CI") else 2500  # MD steps for quenching equilibration
-final_steps = (
-    25 if os.getenv("CI") else 2500
-)  # MD steps for amorphous phase equilibration
+equi_steps = 25 if SMOKE_TEST else 2500  # MD steps for melt equilibration
+cool_steps = 25 if SMOKE_TEST else 2500  # MD steps for quenching equilibration
+final_steps = 25 if SMOKE_TEST else 2500  # MD steps for amorphous phase equilibration
 T_high = 2000  # Melt temperature
 T_low = 300  # Quench to this temperature
 dt = 0.002 * Units.time  # time step = 2fs
@@ -165,7 +164,7 @@ fractional_positions = ts.transforms.get_fractional_coordinates(
 subcells = a2c.get_subcells_to_crystallize(
     fractional_positions=fractional_positions,
     species=species,
-    d_frac=0.2 if os.getenv("CI") else 0.1,
+    d_frac=0.2 if SMOKE_TEST else 0.1,
     n_min=2,
     n_max=8,
 )
@@ -201,7 +200,7 @@ pymatgen_struct_list = [
 
 start_time = time.perf_counter()
 # Create a batched model
-model = ts.models.MaceModel(
+model = MaceModel(
     model=raw_model,
     device=device,
     compute_forces=True,
@@ -218,7 +217,7 @@ for i in tqdm(range(0, len(pymatgen_struct_list), batch_size)):
     batch_state = ts.io.structures_to_state(batch_structs, device=device, dtype=dtype)
 
     final_state, logger, final_energy, final_pressure = (
-        a2c.get_unit_cell_relaxed_structure_batched(
+        a2c.get_unit_cell_relaxed_structure(
             state=batch_state,
             model=model,
             max_iter=max_optim_steps,

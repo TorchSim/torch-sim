@@ -92,11 +92,7 @@ class CircularBuffer:
 
     @property
     def is_full(self) -> bool:
-        """Check if the buffer is full.
-
-        Returns:
-            True if buffer contains size elements, False otherwise
-        """
+        """Check if the buffer is full."""
         return self.count == self.size
 
 
@@ -279,7 +275,7 @@ class CorrelationCalculator:
             self.correlations[name] = acf
 
         # Cross-correlations
-        names = list(self.buffers.keys())
+        names = list(self.buffers)
         for i, name1 in enumerate(names):
             for name2 in names[i + 1 :]:
                 data1 = self.buffers[name1].get_array()
@@ -475,9 +471,5 @@ class VelocityAutoCorrelation:
 
     @property
     def vacf(self) -> torch.Tensor | None:
-        """Get current VACF result.
-
-        Returns:
-            Current VACF if available
-        """
+        """Current VACF result."""
         return self._avg

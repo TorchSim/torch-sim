@@ -3,7 +3,7 @@
 #   <summary>Dependencies</summary>
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.11",
+#     "mace-torch>=0.3.12",
 #     "pymatgen>=2025.2.18",
 #     "ase>=3.23.1",
 # ]
@@ -205,7 +205,8 @@ Let's see an example:
 """
 
 # %%
-from torch_sim.models import LennardJonesModel
+from torch_sim.models.lennard_jones import LennardJonesModel
+from torch_sim.models.interface import ModelInterface
 
 
 # Define some property calculators
@@ -214,7 +215,7 @@ def calculate_com(state: ts.state.SimState) -> torch.Tensor:
     return torch.mean(state.positions * state.masses.unsqueeze(1), dim=0)
 
 
-def calculate_energy(state: ts.state.SimState, model: torch.nn.Module) -> torch.Tensor:
+def calculate_energy(state: ts.state.SimState, model: ModelInterface) -> torch.Tensor:
     """Calculate energy - needs both state and model"""
     return model(state)["energy"]
 

@@ -3,8 +3,9 @@
 #   <summary>Dependencies</summary>
 # /// script
 # dependencies = [
-#     "metatrain[pet] >=2025.4",
-#     "metatensor-torch >=0.7,<0.8"
+#     "metatrain[pet]==2025.7",
+#     "metatomic-torch>=0.1.1,<0.2",
+#     "vesin-torch>=0.3.7",
 # ]
 # ///
 # </details>
@@ -12,10 +13,10 @@
 
 # %% [markdown]
 """
-# Using the PET-MAD model with metatensor
+# Using the PET-MAD model with TorchSim
 
 This tutorial explains how to use the PET-MAD model (https://arxiv.org/abs/2503.14118)
-via TorchSim's metatensor interface.
+via TorchSim's metatomic interface.
 
 ## Loading the model
 
@@ -26,9 +27,9 @@ device is chosen automatically.)
 """
 
 # %%
-from torch_sim.models import MetatensorModel
+from torch_sim.models.metatomic import MetatomicModel
 
-model = MetatensorModel("pet-mad")
+model = MetatomicModel("pet-mad")
 
 # %% [markdown]
 """
@@ -68,6 +69,6 @@ final_state = ts.integrate(
 
 Of course, in reality, you would want to run the simulation for much longer, probably
 save trajectories, and much more. However, this is all you need to get started with
-metatensor and PET-MAD. For more details on how to use TorchSim, you can refer to the
+metatomic and PET-MAD. For more details on how to use TorchSim, you can refer to the
 other tutorials in this section.
 """

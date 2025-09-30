@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from ase.stress import full_3x3_to_voigt_6_stress as ase_full_3x3_to_voigt_6_stress
 from ase.stress import voigt_6_to_full_3x3_stress as ase_voigt_6_to_full_3x3_stress
 
 from torch_sim.elastic import full_3x3_to_voigt_6_stress, voigt_6_to_full_3x3_stress
@@ -26,12 +27,21 @@ def test_full_to_voigt_basic():
 
 
 def test_roundtrip_conversion():
-    # Test that converting from Voigt to full and back gives original tensor
-    voigt_original = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-    full = voigt_6_to_full_3x3_stress(voigt_original)
-    voigt_result = full_3x3_to_voigt_6_stress(full)
+    test_cases = [
+        [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],  # simple case
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # zeros
+        [-1.0, 2.0, -3.0, 4.0, -5.0, 6.0],  # mixed signs
+        [1e-3, 1e-3, 1e-3, 1e-3, 1e-3, 1e-3],  # small values
+        [1e3, 1e3, 1e3, 1e3, 1e3, 1e3],  # large values
+    ]
 
-    assert torch.allclose(voigt_original, voigt_result)
+    # Test that converting from Voigt to full and back gives original tensor
+    for voigt in test_cases:
+        voigt_original = torch.tensor(voigt)
+        full = voigt_6_to_full_3x3_stress(voigt_original)
+        voigt_result = full_3x3_to_voigt_6_stress(full)
+
+        assert torch.allclose(voigt_original, voigt_result)
 
 
 def test_batch_conversion():
@@ -52,7 +62,7 @@ def test_symmetry():
     voigt = torch.rand(6)
     full = voigt_6_to_full_3x3_stress(voigt)
 
-    assert torch.allclose(full, full.transpose(-2, -1))
+    assert torch.allclose(full, full.mT)
 
 
 def test_device_dtype_preservation():
@@ -114,6 +124,34 @@ def test_against_ase_implementation():
         # Compare results
         assert np.allclose(torch_result_np, ase_result), (
             f"Mismatch for input {voigt}:\nTorch:\n{torch_result_np}\nASE:\n{ase_result}"
+        )
+
+
+def test_against_ase_implementation_3x3_to_voigt():
+    # Test various inputs against ASE implementation
+    test_cases = [
+        [[1.0, 6.0, 5.0], [6.0, 2.0, 4.0], [5.0, 4.0, 3.0]],  # simple case
+        [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],  # zeros
+        [[-1.0, 6.0, -5.0], [6.0, 2.0, -4.0], [-5.0, -4.0, -3.0]],  # mixed signs
+        [[1e-3, 1e-3, 1e-3], [1e-3, 1e-3, 1e-3], [1e-3, 1e-3, 1e-3]],  # small values
+        [[1e3, 1e3, 1e3], [1e3, 1e3, 1e3], [1e3, 1e3, 1e3]],  # large values
+    ]
+
+    for stress in test_cases:
+        # Convert to appropriate types
+        stress_torch = torch.tensor(stress, dtype=torch.float64)
+        stress_numpy = np.array(stress, dtype=np.float64)
+
+        # Get results from both implementations
+        torch_result = full_3x3_to_voigt_6_stress(stress_torch)
+        ase_result = ase_full_3x3_to_voigt_6_stress(stress_numpy)
+
+        # Convert torch result to numpy for comparison
+        torch_result_np = torch_result.numpy()
+
+        # Compare results
+        assert np.allclose(torch_result_np, ase_result), (
+            f"Mismatch for input {stress}:\nTorch:\n{torch_result_np}\nASE:\n{ase_result}"
         )
 
 

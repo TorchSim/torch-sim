@@ -2,7 +2,7 @@
 
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.11",
+#     "mace-torch>=0.3.12",
 # ]
 # ///
 
@@ -12,14 +12,11 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
-from torch_sim.quantities import calc_kinetic_energy, calc_kT
-from torch_sim.state import SimState
-from torch_sim.unbatched.models.mace import UnbatchedMaceModel
-from torch_sim.unbatched.unbatched_integrators import (
-    npt_langevin,
-    nvt_nose_hoover,
-    nvt_nose_hoover_invariant,
-)
+import torch_sim as ts
+from torch_sim.integrators.npt import npt_langevin
+from torch_sim.integrators.nvt import nvt_nose_hoover, nvt_nose_hoover_invariant
+from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.quantities import calc_kinetic_energy, calc_kT, get_pressure
 from torch_sim.units import MetalUnits as Units
 
 
@@ -28,9 +25,8 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
 # Option 1: Load the raw model from the downloaded model
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
-    model=mace_checkpoint_url,
+    model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
     default_dtype=dtype,
     device=device,
@@ -43,18 +39,8 @@ loaded_model = mace_mp(
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 
-# Prepare input tensors
-positions = torch.tensor(si_dc.positions, device=device, dtype=dtype)
-cell = torch.tensor(si_dc.cell.array, device=device, dtype=dtype)
-atomic_numbers = torch.tensor(si_dc.get_atomic_numbers(), device=device, dtype=torch.int)
-masses = torch.tensor(si_dc.get_masses(), device=device, dtype=dtype)
-
-# Print shapes for verification
-print(f"Positions: {positions.shape}")
-print(f"Cell: {cell.shape}")
-
-# Initialize the unbatched MACE model
-model = UnbatchedMaceModel(
+# Initialize the MACE model
+model = MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,
@@ -62,30 +48,33 @@ model = UnbatchedMaceModel(
     dtype=dtype,
     enable_cueq=False,
 )
-state = SimState(
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    pbc=True,
-    atomic_numbers=atomic_numbers,
-)
+state = ts.io.atoms_to_state(si_dc, device=device, dtype=dtype)
+
 # Run initial inference
 results = model(state)
 
-N_steps_nvt = 20 if os.getenv("CI") else 2_000
-N_steps_npt = 20 if os.getenv("CI") else 2_000
+SMOKE_TEST = os.getenv("CI") is not None
+N_steps_nvt = 20 if SMOKE_TEST else 2_000
+N_steps_npt = 20 if SMOKE_TEST else 2_000
 dt = 0.001 * Units.time  # Time step (1 ps)
-kT = 300 * Units.temperature  # Initial temperature (300 K)
-target_pressure = 10000 * Units.pressure  # Target pressure (0 bar)
+kT = (
+    torch.tensor(300, device=device, dtype=dtype) * Units.temperature
+)  # Initial temperature (300 K)
+target_pressure = 10_000 * Units.pressure  # Target pressure (0 bar)
 
 nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
 state = nvt_init(state=state, seed=1)
 
 for step in range(N_steps_nvt):
     if step % 10 == 0:
-        temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
-        invariant = nvt_nose_hoover_invariant(state, kT=kT).item()
-        print(f"{step=}: Temperature: {temp:.4f}: invariant: {invariant:.4f}, ")
+        temp = (
+            calc_kT(
+                masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+            )
+            / Units.temperature
+        )
+        invariant = float(nvt_nose_hoover_invariant(state, kT=kT))
+        print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}, ")
     state = nvt_update(state, kT=kT)
 
 npt_init, npt_update = npt_langevin(
@@ -93,47 +82,49 @@ npt_init, npt_update = npt_langevin(
 )
 state = npt_init(state=state, seed=1)
 
-
-def get_pressure(
-    stress: torch.Tensor, kinetic_energy: torch.Tensor, volume: torch.Tensor, dim: int = 3
-) -> torch.Tensor:
-    """Compute the pressure from the stress tensor.
-
-    The stress tensor is defined as 1/volume * dU/de_ij
-    So the pressure is -1/volume * trace(dU/de_ij)
-    """
-    return 1 / dim * ((2 * kinetic_energy / volume) - torch.trace(stress))
-
-
 for step in range(N_steps_npt):
     if step % 10 == 0:
-        temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
+        temp = (
+            calc_kT(
+                masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+            )
+            / Units.temperature
+        )
         stress = model(state)["stress"]
         volume = torch.det(state.cell)
         pressure = (
             get_pressure(
                 stress,
-                calc_kinetic_energy(masses=state.masses, momenta=state.momenta),
+                calc_kinetic_energy(
+                    masses=state.masses,
+                    momenta=state.momenta,
+                    system_idx=state.system_idx,
+                ),
                 volume,
             ).item()
             / Units.pressure
         )
-        xx, yy, zz = torch.diag(state.cell)
+        xx, yy, zz = torch.diag(state.cell[0])
         print(
-            f"{step=}: Temperature: {temp:.4f}, "
+            f"{step=}: Temperature: {temp.item():.4f}, "
             f"pressure: {pressure:.4f}, "
             f"cell xx yy zz: {xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}"
         )
     state = npt_update(state, kT=kT, external_pressure=target_pressure)
 
-final_temp = calc_kT(masses=state.masses, momenta=state.momenta) / Units.temperature
-print(f"Final temperature: {final_temp:.4f} K")
+final_temp = (
+    calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
+    / Units.temperature
+)
+print(f"Final temperature: {final_temp.item():.4f} K")
 final_stress = model(state)["stress"]
 final_volume = torch.det(state.cell)
 final_pressure = (
     get_pressure(
         final_stress,
-        calc_kinetic_energy(masses=state.masses, momenta=state.momenta),
+        calc_kinetic_energy(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        ),
         final_volume,
     ).item()
     / Units.pressure

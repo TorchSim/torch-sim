@@ -11,10 +11,10 @@ import os
 
 import torch
 
+import torch_sim as ts
+from torch_sim.integrators import nve
+from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.quantities import calc_kinetic_energy
-from torch_sim.state import SimState
-from torch_sim.unbatched.models.lennard_jones import UnbatchedLennardJonesModel
-from torch_sim.unbatched.unbatched_integrators import nve
 from torch_sim.units import MetalUnits as Units
 
 
@@ -23,7 +23,8 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
 # Number of steps to run
-N_steps = 100 if os.getenv("CI") else 2_000
+SMOKE_TEST = os.getenv("CI") is not None
+N_steps = 100 if SMOKE_TEST else 2_000
 
 # Set random seed and deterministic behavior for reproducibility
 torch.manual_seed(42)
@@ -76,19 +77,15 @@ atomic_numbers = torch.full((positions.shape[0],), 18, device=device, dtype=torc
 # Create the masses tensor (Argon = 39.948 amu)
 masses = torch.full((positions.shape[0],), 39.948, device=device, dtype=dtype)
 
-state = SimState(
-    positions=positions,
-    masses=masses,
-    cell=cell,
-    pbc=True,
-    atomic_numbers=atomic_numbers,
+state = ts.SimState(
+    positions=positions, masses=masses, cell=cell, atomic_numbers=atomic_numbers, pbc=True
 )
 # Initialize the Lennard-Jones model
 # Parameters:
 #  - sigma: distance at which potential is zero (3.405 Å for Ar)
 #  - epsilon: depth of potential well (0.0104 eV for Ar)
 #  - cutoff: distance beyond which interactions are ignored (typically 2.5*sigma)
-model = UnbatchedLennardJonesModel(
+model = LennardJonesModel(
     use_neighbor_list=False,
     sigma=3.405,
     epsilon=0.0104,

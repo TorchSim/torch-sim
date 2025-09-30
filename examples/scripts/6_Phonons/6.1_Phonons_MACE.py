@@ -2,9 +2,10 @@
 
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.11",
+#     "mace-torch>=0.3.12",
 #     "phonopy>=2.35",
-#     "pymatviz[export-figs]>=0.15.1",
+#     "pymatviz>=0.17.1",
+#     "plotly>=6.3.0",
 #     "seekpath",
 #     "ase",
 # ]
@@ -24,6 +25,7 @@ from phonopy.phonon.band_structure import (
 )
 
 import torch_sim as ts
+from torch_sim.models.mace import MaceModel, MaceUrls
 
 
 def get_qpts_and_connections(
@@ -89,9 +91,8 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
 
 # Load the raw model
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
-    model=mace_checkpoint_url,
+    model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
     default_dtype=dtype,
     device=device,
@@ -105,7 +106,7 @@ Nrelax = 300  # number of relaxation steps
 displ = 0.01  # atomic displacement for phonons (in Angstrom)
 
 # Relax atomic positions
-model = ts.models.MaceModel(
+model = MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,
@@ -123,7 +124,7 @@ final_state = ts.optimize(
 )
 
 # Define atoms and Phonopy object
-atoms = ts.state.state_to_phonopy(final_state)[0]
+atoms = ts.io.state_to_phonopy(final_state)[0]
 ph = Phonopy(atoms, supercell_matrix)
 
 # Generate FC2 displacements
@@ -158,8 +159,8 @@ ase_atoms = Atoms(
     cell=atoms.cell,
     pbc=True,
 )
-qpts, connections = get_qpts_and_connections(ase_atoms)
-ph.run_band_structure(qpts, connections)
+q_pts, connections = get_qpts_and_connections(ase_atoms)
+ph.run_band_structure(q_pts, connections)
 
 # Define axis style for plots
 axis_style = dict(

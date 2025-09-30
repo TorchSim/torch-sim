@@ -8,14 +8,13 @@
 # ]
 # ///
 
+# ruff: noqa: RUF001
+
 import numpy as np
 import torch
 from plotly.subplots import make_subplots
 
-from torch_sim.unbatched.models.soft_sphere import (
-    soft_sphere_pair,
-    soft_sphere_pair_force,
-)
+from torch_sim.models.soft_sphere import soft_sphere_pair, soft_sphere_pair_force
 
 
 sigma = 1.0
@@ -65,10 +64,7 @@ fig.add_scatter(
 )
 
 # Add figure titles and labels
-fig.update_layout(
-    title="Soft Sphere Potential",
-    xaxis_title="Distance (r/σ)",
-)
+fig.update_layout(title="Soft Sphere Potential", xaxis_title="Distance (r/σ)")
 
 # Update y-axes labels
 fig.update_yaxes(title_text="Energy (ε)", secondary_y=False)

@@ -7,6 +7,8 @@ This module provides functions for:
 - Converting between different structural representations
 """
 
+# ruff: noqa: T201
+
 import itertools
 from collections.abc import Sequence
 from typing import Any
@@ -15,19 +17,12 @@ import numpy as np
 import torch
 from pymatgen.core.composition import Composition
 
+import torch_sim as ts
+from torch_sim import transforms
+from torch_sim.models.interface import ModelInterface
+from torch_sim.models.soft_sphere import SoftSphereModel, SoftSphereMultiModel
+from torch_sim.optimizers import FireState, UnitCellFireState, fire
 from torch_sim.optimizers import unit_cell_fire as batched_unit_cell_fire
-from torch_sim.state import SimState
-from torch_sim.transforms import get_pair_displacements
-from torch_sim.unbatched.models.soft_sphere import (
-    UnbatchedSoftSphereModel,
-    UnbatchedSoftSphereMultiModel,
-)
-from torch_sim.unbatched.unbatched_optimizers import (
-    FIREState,
-    UnitCellFIREState,
-    fire,
-    unit_cell_fire,
-)
 
 
 def min_distance(
@@ -60,7 +55,7 @@ def min_distance(
     """
     # Calculate all pairwise distances between atoms, considering periodic boundaries
     # Returns both displacement vectors and scalar distances, but we only need distances
-    _, distances = get_pair_displacements(
+    _, distances = transforms.get_pair_displacements(
         positions=positions,
         cell=cell,
         pbc=True,  # Use periodic boundary conditions
@@ -234,7 +229,7 @@ def random_packed_structure(
     device: torch.device | None = None,
     dtype: torch.dtype = torch.float32,
     log: Any | None = None,
-) -> FIREState:
+) -> FireState | tuple[FireState, list[np.ndarray]]:
     """Generates a random packed atomic structure and minimizes atomic overlaps.
 
     This function creates a random atomic structure within a given cell and optionally
@@ -295,7 +290,7 @@ def random_packed_structure(
         positions_cart = torch.matmul(positions, cell)
 
         # Initialize soft sphere potential calculator
-        model = UnbatchedSoftSphereModel(
+        model = SoftSphereModel(
             sigma=diameter,
             device=device,
             dtype=dtype,
@@ -307,7 +302,7 @@ def random_packed_structure(
         atomic_numbers = torch.ones_like(positions_cart, device=device, dtype=torch.int)
 
         # Set up FIRE optimizer with unit masses
-        state = SimState(
+        state = ts.SimState(
             positions=positions_cart,
             masses=torch.ones(N_atoms, device=device, dtype=dtype),
             atomic_numbers=atomic_numbers,
@@ -332,6 +327,7 @@ def random_packed_structure(
 
     if log is not None:
         return state, log
+
     return state
 
 
@@ -346,7 +342,7 @@ def random_packed_structure_multi(
     distance_tolerance: float = 0.0001,
     device: torch.device | None = None,
     dtype: torch.dtype = torch.float32,
-) -> FIREState:
+) -> FireState:
     """Generates a random packed atomic structure with multiple species
     and minimizes overlaps.
 
@@ -390,14 +386,13 @@ def random_packed_structure_multi(
     # Extract element information from composition into a robust dictionary format
     element_dict = composition.as_dict()
     element_symbols = list(element_dict)  # Get unique elements
-    element_counts = [
-        int(element_dict[el]) for el in element_symbols
-    ]  # Get counts directly
+    element_counts = [int(element_dict[el]) for el in element_symbols]
 
     # Create species indices tensor mapping each atom to its species type
     # e.g. for Fe80B20: [0,0,...,0,1,1,...,1] where 0=Fe, 1=B
     species_idx = torch.tensor(
-        [i for i, count in enumerate(element_counts) for _ in range(count)], device=device
+        [i for i, count in enumerate(element_counts) for _ in range(count)],
+        device=device,
     )
 
     # Calculate total atoms and number of unique species
@@ -424,7 +419,7 @@ def random_packed_structure_multi(
         positions_cart = torch.matmul(positions, cell)
 
         # Initialize multi-species soft sphere potential calculator
-        model = UnbatchedSoftSphereMultiModel(
+        model = SoftSphereMultiModel(
             species=species_idx,
             sigma_matrix=diameter_matrix,
             device=device,
@@ -436,7 +431,7 @@ def random_packed_structure_multi(
         # Dummy atomic numbers
         atomic_numbers = torch.ones_like(positions_cart, device=device, dtype=torch.int)
 
-        state_dict = SimState(
+        state_dict = ts.SimState(
             positions=positions_cart,
             masses=torch.ones(N_atoms, device=device, dtype=dtype),
             atomic_numbers=atomic_numbers,
@@ -450,10 +445,8 @@ def random_packed_structure_multi(
         # Run FIRE optimization until convergence or max iterations
         for _step in range(max_iter):
             # Check if minimum distance criterion is met (95% of smallest target diameter)
-            if (
-                min_distance(state.positions, cell, distance_tolerance)
-                > diameter_matrix.min() * 0.95
-            ):
+            min_dist = min_distance(state.positions, cell, distance_tolerance)
+            if min_dist > diameter_matrix.min() * 0.95:
                 break
             state = fire_update(state)
         print(f"Final energy: {state.energy.item():.4f}")
@@ -584,6 +577,13 @@ def get_subcells_to_crystallize(
     # Convert species list to numpy array for easier composition handling
     species_array = np.array(species)
 
+    if restrict_to_compositions is not None and restrict_to_compositions:
+        restrict_to_compositions: set[str] = {
+            Composition(comp).reduced_formula for comp in restrict_to_compositions
+        }
+    else:
+        restrict_to_compositions: set[str] = set()
+
     # Generate allowed stoichiometries if max_coef is specified
     if max_coeff:
         if elements is None:
@@ -592,17 +592,9 @@ def get_subcells_to_crystallize(
         stoichs = list(itertools.product(range(max_coeff + 1), repeat=len(elements)))
         stoichs.pop(0)  # Remove the empty composition (0,0,...)
         # Convert stoichiometries to composition formulas
-        comps = []
         for stoich in stoichs:
             comp = dict(zip(elements, stoich, strict=True))
-            comps.append(Composition.from_dict(comp).reduced_formula)
-        restrict_to_compositions = set(comps)
-
-    # Ensure compositions are in reduced formula form if provided
-    if restrict_to_compositions:
-        restrict_to_compositions = [
-            Composition(comp).reduced_formula for comp in restrict_to_compositions
-        ]
+            restrict_to_compositions.add(Composition.from_dict(comp).reduced_formula)
 
     # Create orthorhombic grid for systematic subcell generation
     bins = int(1 / d_frac)
@@ -619,7 +611,7 @@ def get_subcells_to_crystallize(
         .T
     )
 
-    candidates = []
+    candidates: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = []
     # Iterate through all possible subcell boundary combinations
     for lb, ub in itertools.product(l_bound, u_bound):
         if torch.all(ub > lb):  # Ensure valid subcell dimensions
@@ -666,24 +658,22 @@ def subcells_to_structures(
             - species: atomic species symbols
     """
     list_subcells = []
-    for ids, l, h in candidates:  # noqa: E741
+    for ids, lower_bound, upper_bound in candidates:
         # Get positions of atoms in this subcell
         pos = fractional_positions[ids]
 
         # Shift positions to start from origin
-        new_frac_pos = pos - l
+        new_frac_pos = pos - lower_bound
 
         # Scale positions to [0,1] range
-        new_frac_pos = new_frac_pos / (h - l)
+        new_frac_pos = new_frac_pos / (upper_bound - lower_bound)
 
         # Calculate new cell parameters
-        new_cell = cell * (h - l).unsqueeze(0)
+        new_cell = cell * (upper_bound - lower_bound).unsqueeze(0)
 
-        # Convert tensor indices to list/numpy array before indexing species list
-        species_indices = ids.cpu().numpy()  # Convert to numpy array
-        subcell_species = [
-            species[int(i)] for i in species_indices
-        ]  # Get species for these atoms
+        # Get species for these atoms and convert tensor indices to list/numpy array
+        # before indexing species list
+        subcell_species = [species[int(i)] for i in ids.cpu().numpy()]
 
         list_subcells.append((new_frac_pos, new_cell, subcell_species))
 
@@ -715,10 +705,10 @@ def get_target_temperature(
 
 
 def get_unit_cell_relaxed_structure(
-    state: SimState,
-    model: torch.nn.Module,
+    state: ts.SimState,
+    model: ModelInterface,
     max_iter: int = 200,
-) -> tuple[UnitCellFIREState, dict]:
+) -> tuple[UnitCellFireState, dict[str, torch.Tensor], list[float], list[float]]:
     """Relax both atomic positions and cell parameters using FIRE algorithm.
 
     This function performs geometry optimization of both atomic positions and unit cell
@@ -738,86 +728,12 @@ def get_unit_cell_relaxed_structure(
             - float: Final pressure in eV/Å³
     """
     # Get device and dtype from model
-    device = model.device
-    dtype = model.dtype
+    device, dtype = model.device, model.dtype
 
     logger = {
-        "energy": torch.zeros((max_iter, 1), device=device, dtype=dtype),
-        "stress": torch.zeros((max_iter, 3, 3), device=device, dtype=dtype),
-    }
-
-    results = model(state)
-    init_energy = results["energy"].item()
-    init_stress = results["stress"]
-    init_pressure = (torch.trace(init_stress) / 3.0).item()
-    print(
-        f"Initial energy: {init_energy:.4f} eV, "
-        f"Initial pressure: {init_pressure:.4f} eV/A^3"
-    )
-
-    unit_cell_fire_init, unit_cell_fire_update = unit_cell_fire(
-        model=model,
-    )
-    state = unit_cell_fire_init(state)
-
-    def step_fn(
-        step: int, state: UnitCellFIREState, logger: dict
-    ) -> tuple[UnitCellFIREState, dict]:
-        logger["energy"][step] = state.energy
-        logger["stress"][step] = state.stress
-        state = unit_cell_fire_update(state)
-        return state, logger
-
-    for step in range(max_iter):
-        state, logger = step_fn(step, state, logger)
-        # energy, stress = logger["energy"][step].item(), logger["stress"][step]
-        # pressure = -torch.trace(stress) / 3.0
-        # print(f"Step {step}: Energy = {energy} eV: Pressure = {pressure} eV/A^3")
-
-    # Get final results
-    final_results = model(state)
-
-    final_energy = final_results["energy"].item()
-    final_stress = final_results["stress"]
-    final_pressure = (torch.trace(final_stress) / 3.0).item()
-    print(
-        f"Final energy: {final_energy:.4f} eV, "
-        f"Final pressure: {final_pressure:.4f} eV/A^3"
-    )
-    return state, logger, final_energy, final_pressure
-
-
-def get_unit_cell_relaxed_structure_batched(
-    state: SimState,
-    model: torch.nn.Module,
-    max_iter: int = 200,
-) -> tuple[UnitCellFIREState, dict]:
-    """Relax both atomic positions and cell parameters using FIRE algorithm.
-
-    This function performs geometry optimization of both atomic positions and unit cell
-    parameters simultaneously. Uses the Fast Inertial Relaxation Engine (FIRE) algorithm
-    to minimize forces on atoms and stresses on the cell.
-
-    Args:
-        state: State containing positions, cell and atomic numbers
-        model: Model to compute energies, forces, and stresses
-        max_iter: Maximum number of FIRE iterations. Defaults to 200.
-
-    Returns:
-        tuple containing:
-            - UnitCellFIREState: Final state containing relaxed positions, cell and more
-            - dict: Logger with energy and stress trajectories
-            - float: Final energy in eV
-            - float: Final pressure in eV/Å³
-    """
-    # Get device and dtype from model
-    device = model.device
-    dtype = model.dtype
-
-    logger = {
-        "energy": torch.zeros((max_iter, state.n_batches), device=device, dtype=dtype),
+        "energy": torch.zeros((max_iter, state.n_systems), device=device, dtype=dtype),
         "stress": torch.zeros(
-            (max_iter, state.n_batches, 3, 3), device=device, dtype=dtype
+            (max_iter, state.n_systems, 3, 3), device=device, dtype=dtype
         ),
     }
 
@@ -836,8 +752,8 @@ def get_unit_cell_relaxed_structure_batched(
     state = unit_cell_fire_init(state)
 
     def step_fn(
-        step: int, state: UnitCellFIREState, logger: dict
-    ) -> tuple[UnitCellFIREState, dict]:
+        step: int, state: UnitCellFireState, logger: dict[str, torch.Tensor]
+    ) -> tuple[UnitCellFireState, dict[str, torch.Tensor]]:
         logger["energy"][step] = state.energy
         logger["stress"][step] = state.stress
         state = unit_cell_fire_update(state)
@@ -845,9 +761,6 @@ def get_unit_cell_relaxed_structure_batched(
 
     for step in range(max_iter):
         state, logger = step_fn(step, state, logger)
-        # energy, stress = logger["energy"][step].item(), logger["stress"][step]
-        # pressure = -torch.trace(stress) / 3.0
-        # print(f"Step {step}: Energy = {energy} eV: Pressure = {pressure} eV/A^3")
 
     # Get final results
     final_results = model(state)
@@ -858,65 +771,5 @@ def get_unit_cell_relaxed_structure_batched(
     print(
         f"Final energy: {[f'{e:.4f}' for e in final_energy]} eV, "
         f"Final pressure: {[f'{p:.4f}' for p in final_pressure]} eV/A^3"
-    )
-    return state, logger, final_energy, final_pressure
-
-
-def get_relaxed_structure(
-    state: SimState,
-    model: torch.nn.Module,
-    max_iter: int = 200,
-) -> tuple[FIREState, dict]:
-    """Relax atomic positions at fixed cell parameters using FIRE algorithm.
-
-    Does geometry optimization of atomic positions while keeping the unit cell fixed.
-    Uses the Fast Inertial Relaxation Engine (FIRE) algorithm to minimize forces on atoms.
-
-    Args:
-        state: State containing positions, cell and atomic numbers
-        model: Model to compute energies, forces, and stresses
-        max_iter: Maximum number of FIRE iterations. Defaults to 200.
-
-    Returns:
-        tuple containing:
-            - FIREState: Final state containing relaxed positions and other quantities
-            - dict: Logger with energy trajectory
-            - float: Final energy in eV
-            - float: Final pressure in eV/Å³
-    """
-    # Get device and dtype from model
-    device = model.device
-    dtype = model.dtype
-
-    logger = {"energy": torch.zeros((max_iter, 1), device=device, dtype=dtype)}
-
-    results = model(state)
-    Initial_energy = results["energy"]
-    print(f"Initial energy: {Initial_energy.item():.4f} eV")
-
-    state_init_fn, fire_update = fire(model=model)
-    state = state_init_fn(state)
-
-    def step_fn(idx: int, state: FIREState, logger: dict) -> tuple[FIREState, dict]:
-        logger["energy"][idx] = state.energy
-        state = fire_update(state)
-        return state, logger
-
-    for idx in range(max_iter):
-        state, logger = step_fn(idx, state, logger)
-        # print(f"Step {i}: Energy = {logger['energy'][i].item()} eV")
-
-    # Get final results
-    model.compute_stress = True
-    final_results = model(
-        positions=state.positions, cell=state.cell, atomic_numbers=state.atomic_numbers
-    )
-
-    final_energy = final_results["energy"].item()
-    final_stress = final_results["stress"]
-    final_pressure = (torch.trace(final_stress) / 3.0).item()
-    print(
-        f"Final energy: {final_energy:.4f} eV, "
-        f"Final pressure: {final_pressure:.4f} eV/A^3"
     )
     return state, logger, final_energy, final_pressure

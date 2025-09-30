@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import traceback
+import warnings
+from typing import TYPE_CHECKING, Any
 
 import torch
 
+import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, StateDict, state_to_atoms
 from torch_sim.units import MetalUnits
 
 
@@ -16,25 +18,28 @@ try:
     from mattersim.forcefield.potential import batch_to_dict
     from torch_geometric.loader.dataloader import Collater
 
-except ImportError:
+except ImportError as exc:
+    warnings.warn(f"MatterSim import failed: {traceback.format_exc()}", stacklevel=2)
 
-    class MatterSimModel(torch.nn.Module, ModelInterface):
+    class MatterSimModel(ModelInterface):
         """MatterSim model wrapper for torch_sim.
 
         This class is a placeholder for the MatterSimModel class.
         It raises an ImportError if sevenn is not installed.
         """
 
-        def __init__(self, *args, **kwargs) -> None:  # noqa: ARG002
-            """Dummy constructor to raise ImportError."""
-            raise ImportError("sevenn must be installed to use this model.")
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
+            """Dummy init for type checking."""
+            raise err
 
 
 if TYPE_CHECKING:
     from mattersim.forcefield import Potential
 
+    from torch_sim.typing import StateDict
 
-class MatterSimModel(torch.nn.Module, ModelInterface):
+
+class MatterSimModel(ModelInterface):
     """Computes atomistic energies, forces and stresses using an MatterSim model.
 
     This class wraps an MatterSim model to compute energies, forces, and stresses for
@@ -43,7 +48,7 @@ class MatterSimModel(torch.nn.Module, ModelInterface):
     predictions.
 
     Examples:
-        >>> model = MatterSimModel(model=loaded_matersim_model)
+        >>> model = MatterSimModel(model=loaded_mattersim_model)
         >>> results = model(state)
     """
 
@@ -76,7 +81,7 @@ class MatterSimModel(torch.nn.Module, ModelInterface):
             self._device = torch.device(self._device)
 
         self._dtype = dtype or torch.float32
-        self._memory_scales_with = "n_atoms"  # scale memory with n_atoms due to triplets
+        self._memory_scales_with = "n_atoms_x_density"  # should be density^2 bc triplets
         self._compute_stress = True
         self._compute_forces = True
 
@@ -105,7 +110,7 @@ class MatterSimModel(torch.nn.Module, ModelInterface):
             "stress",
         ]
 
-    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by the model,
@@ -117,7 +122,7 @@ class MatterSimModel(torch.nn.Module, ModelInterface):
                 it will be converted to a SimState.
 
         Returns:
-            dict: Dictionary of model predictions, which may include:
+            dict: Model predictions, which may include:
                 - energy (torch.Tensor): Energy with shape [batch_size]
                 - forces (torch.Tensor): Forces with shape [n_atoms, 3]
                 - stress (torch.Tensor): Stress tensor with shape [batch_size, 3, 3],
@@ -128,16 +133,17 @@ class MatterSimModel(torch.nn.Module, ModelInterface):
             All output tensors are detached from the computation graph.
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         if state.device != self._device:
             state = state.to(self._device)
 
-        atoms_list = state_to_atoms(state)
+        atoms_list = ts.io.state_to_atoms(state)
         data_list = [self.convertor.convert(atoms) for atoms in atoms_list]
         batched_data = Collater([], follow_batch=None, exclude_keys=None)(data_list)
+        batched_data.to(self._device)
         output = self.model.forward(
-            batch_to_dict(batched_data, device=self.device),
+            batch_to_dict(batched_data),
             include_forces=self.compute_forces,
             include_stresses=self.compute_stress,
         )

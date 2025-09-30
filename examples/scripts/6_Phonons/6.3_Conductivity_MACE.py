@@ -4,7 +4,7 @@ FC2 and FC3 calculations with MACE.
 
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.11",
+#     "mace-torch>=0.3.12",
 #     "phono3py>=3.12",
 #     "pymatgen>=2025.2.18",
 # ]
@@ -22,6 +22,7 @@ from mace.calculators.foundations_models import mace_mp
 from phono3py import Phono3py
 
 import torch_sim as ts
+from torch_sim.models.mace import MaceModel, MaceUrls
 
 
 def print_relax_info(trajectory_file: str, device: torch.device) -> None:
@@ -50,11 +51,13 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float64
 
 # Load the raw model from URL
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
-    model=mace_checkpoint_url, return_raw_model=True, default_dtype=dtype, device=device
+    model=MaceUrls.mace_mpa_medium,
+    return_raw_model=True,
+    default_dtype=dtype,
+    device=device,
 )
-model = ts.models.MaceModel(
+model = MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,
@@ -66,11 +69,8 @@ model = ts.models.MaceModel(
 # Structure and input parameters
 struct = bulk("Si", "diamond", a=5.431, cubic=True)  # ASE structure
 mesh = [8, 8, 8]  # Phonon mesh
-supercell_matrix = [
-    1,
-    1,
-    1,
-]  # supercell matrix for phonon calculation (use larger supercell for better accuracy)
+# supercell matrix for phonon calculation (use larger cell for better accuracy)
+supercell_matrix = [1, 1, 1]
 supercell_matrix_fc2 = [2, 2, 2]  # supercell matrix for FC2 calculation
 Nrelax = 300  # number of relaxation steps
 fmax = 1e-3  # force convergence

@@ -4,7 +4,6 @@
 :hidden:
 user/introduction
 user/overview
-user/models
 tutorials/index
 ```
 
@@ -19,7 +18,6 @@ reference/index
 :hidden:
 dev/dev_install
 dev/add_model
-dev/batching
 ```
 
 ```{toctree}
@@ -35,8 +33,8 @@ about/license
 **Date**: {sub-ref}`today`
 
 **Useful links**:
-[Source Repository](https://github.com/Radical-AI/torch-sim) |
-[Issues & Ideas](https://github.com/Radical-AI/torch-sim/issues)
+[Source Repository](https://github.com/TorchSim/torch-sim) |
+[Issues & Ideas](https://github.com/TorchSim/torch-sim/issues)
 
 TorchSim is a next-generation open-source atomistic simulation engine for the MLIP era.
 

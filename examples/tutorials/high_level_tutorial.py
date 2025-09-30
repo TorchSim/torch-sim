@@ -3,7 +3,7 @@
 #   <summary>Dependencies</summary>
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.11",
+#     "mace-torch>=0.3.12",
 #     "pymatgen>=2025.2.18",
 #     "ase>=3.23.1",
 # ]
@@ -132,7 +132,7 @@ prop_calculators = {
     10: {"potential_energy": lambda state: state.energy},
     20: {
         "kinetic_energy": lambda state: ts.calc_kinetic_energy(
-            state.momenta, state.masses
+            momenta=state.momenta, masses=state.masses
         )
     },
 }
@@ -375,7 +375,7 @@ The `optimize` function allows us to specify custom convergence criteria. The in
 convergence function are `state` and `last_energy`. The `state` is a `SimState` object
 that contains the current state of the system and the `last_energy` is the energy of the
 previous step. The convergence function should return a boolean tensor of length
-`n_batches`.
+`n_systems`.
 
 This is how we'd manually define the default `convergence_fn`:
 """

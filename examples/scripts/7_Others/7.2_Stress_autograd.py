@@ -17,15 +17,12 @@ import timeit
 
 import torch
 
-from torch_sim.unbatched.models.lennard_jones import (
-    lennard_jones_pair,
-    lennard_jones_pair_force,
-)
+from torch_sim.models.lennard_jones import lennard_jones_pair, lennard_jones_pair_force
 
 
 torch.set_default_tensor_type(torch.DoubleTensor)
 # Set simulation parameters
-n_steps = 10000
+n_steps = 10_000
 kT = 0.722  # Temperature in energy units
 sigma = 1.0  # Length parameter
 epsilon = 1.0  # Energy parameter

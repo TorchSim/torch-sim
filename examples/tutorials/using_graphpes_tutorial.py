@@ -5,6 +5,7 @@
 # dependencies = [
 #     "graph-pes>=0.0.30",
 #     "torch==2.5",
+#     "vesin-torch>=0.3.7",
 # ]
 # ///
 # </details>
@@ -15,7 +16,7 @@
 # Integrating TorchSim with `graph-pes`
 
 This brief tutorial demonstrates how to use models trained with the
-[graph-pes](https://github.com/mir-group/graph-pes) package to drive
+[graph-pes](https://github.com/jla-gardner/graph-pes) package to drive
 MD simulations and geometry optimizations in TorchSim.
 
 ## Step 1: loading a model
@@ -49,7 +50,7 @@ If you intend to drive simulations that require stresses, you will need to speci
 """
 
 # %%
-from torch_sim.models import GraphPESWrapper
+from torch_sim.models.graphpes import GraphPESWrapper
 
 # wrap the model for use with TorchSim
 ts_model = GraphPESWrapper(model, compute_stress=False)

@@ -15,14 +15,17 @@ Notes:
 
 from __future__ import annotations
 
+import traceback
 import typing
+import warnings
 from pathlib import Path
+from typing import Any
 
 import torch
 
+import torch_sim as ts
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, StateDict
 
 
 try:
@@ -30,27 +33,22 @@ try:
     from orb_models.forcefield import featurization_utilities as feat_util
     from orb_models.forcefield.atomic_system import SystemConfig
     from orb_models.forcefield.base import AtomGraphs, _map_concat
+    from orb_models.forcefield.featurization_utilities import EdgeCreationMethod
     from orb_models.forcefield.graph_regressor import GraphRegressor
 
-    try:
-        from orb_models.forcefield.featurization_utilities import EdgeCreationMethod
-    except ImportError as exp:
-        raise ImportError(
-            "Orb model version is too old, interface requires >v0.4.2. If release is "
-            "not yet available, install from github."
-        ) from exp
-except ImportError:
+except ImportError as exc:
+    warnings.warn(f"Orb import failed: {traceback.format_exc()}", stacklevel=2)
 
-    class OrbModel(torch.nn.Module, ModelInterface):
+    class OrbModel(ModelInterface):
         """ORB model wrapper for torch_sim.
 
         This class is a placeholder for the OrbModel class.
         It raises an ImportError if orb_models is not installed.
         """
 
-        def __init__(self, *args, **kwargs) -> None:  # noqa: ARG002
-            """Dummy constructor to raise ImportError."""
-            raise ImportError("orb_models must be installed to use this model.")
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
+            """Dummy init for type checking."""
+            raise err
 
 
 if typing.TYPE_CHECKING:
@@ -60,9 +58,11 @@ if typing.TYPE_CHECKING:
     from orb_models.forcefield.featurization_utilities import EdgeCreationMethod
     from orb_models.forcefield.graph_regressor import GraphRegressor
 
+    from torch_sim.typing import StateDict
+
 
 def state_to_atom_graphs(  # noqa: PLR0915
-    state: SimState,
+    state: ts.SimState,
     *,
     wrap: bool = True,
     edge_method: EdgeCreationMethod | None = None,
@@ -102,10 +102,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
         system_config = SystemConfig(radius=6.0, max_num_neighbors=20)
 
     # Handle batch information if present
-    if state.batch is not None:
-        n_node = torch.bincount(state.batch)
-    else:
-        n_node = torch.tensor([len(state.positions)])
+    n_node = torch.bincount(state.system_idx)
 
     # Set default dtype if not provided
     output_dtype = torch.get_default_dtype() if output_dtype is None else output_dtype
@@ -146,45 +143,46 @@ def state_to_atom_graphs(  # noqa: PLR0915
     if wrap and (torch.any(row_vector_cell != 0) and torch.any(pbc)):
         positions = feat_util.batch_map_to_pbc_cell(positions, row_vector_cell, n_node)
 
-    # Compute edges of the graph
-    edge_index, edge_vectors, unit_shifts, batch_num_edges = (
-        feat_util.batch_compute_pbc_radius_graph(
-            positions=positions,
-            cells=row_vector_cell,
-            pbc=pbc.unsqueeze(0).repeat(len(n_node), 1),
+    n_systems = state.system_idx.max().item() + 1
+
+    # Prepare lists to collect data from each system
+    all_edges = []
+    all_vectors = []
+    all_unit_shifts = []
+    num_edges = []
+    node_feats_list = []
+    edge_feats_list = []
+    graph_feats_list = []
+
+    # Process each system in a single loop
+    offset = 0
+    for i in range(n_systems):
+        system_mask = state.system_idx == i
+        positions_per_system = positions[system_mask]
+        atomic_numbers_per_system = atomic_numbers[system_mask]
+        atomic_numbers_embedding_per_system = atomic_numbers_embedding[system_mask]
+        cell_per_system = row_vector_cell[i]
+        pbc_per_system = pbc
+
+        # Compute edges directly for this system
+        edges, vectors, unit_shifts = feat_util.compute_pbc_radius_graph(
+            positions=positions_per_system,
+            cell=cell_per_system,
+            pbc=pbc_per_system,
             radius=system_config.radius,
-            n_node=n_node,
-            max_number_neighbors=torch.tensor([max_num_neighbors] * len(n_node)),
+            max_number_neighbors=max_num_neighbors,
             edge_method=edge_method,
             half_supercell=half_supercell,
             device=device,
         )
-    )
-    senders, receivers = edge_index[0], edge_index[1]
 
-    n_systems = state.batch.max().item() + 1
-    node_feats_list = []
-    edge_feats_list = []
-    graph_feats_list = []
-    system_edges = torch.repeat_interleave(
-        torch.arange(n_systems, device=state.device), batch_num_edges
-    )
-    for i in range(n_systems):
-        batch_mask = state.batch == i
-        system_edge_mask = system_edges == i
-        try:
-            positions_per_system = positions[batch_mask]
-            atomic_numbers_per_system = atomic_numbers[batch_mask]
-            atomic_numbers_embedding_per_system = atomic_numbers_embedding[batch_mask]
-            edge_vectors_per_system = edge_vectors[system_edge_mask]
-            unit_shifts_per_system = unit_shifts[system_edge_mask]
-        except Exception:  # noqa: BLE001
-            import pdb  # noqa: T100
+        # Adjust indices for the global batch
+        all_edges.append(edges + offset)
+        all_vectors.append(vectors)
+        all_unit_shifts.append(unit_shifts)
+        num_edges.append(len(edges[0]))
 
-            pdb.set_trace()  # noqa: T100
-
-        cell_per_system = row_vector_cell[i]
-        pbc_per_system = pbc
+        # Calculate lattice parameters
         lattice_per_system = torch.from_numpy(
             cell_to_cellpar(cell_per_system.squeeze(0).cpu().numpy())
         )
@@ -200,8 +198,8 @@ def state_to_atom_graphs(  # noqa: PLR0915
         }
 
         edge_feats = {
-            "vectors": edge_vectors_per_system,
-            "unit_shifts": unit_shifts_per_system,
+            "vectors": vectors,
+            "unit_shifts": unit_shifts,
         }
 
         graph_feats = {
@@ -219,12 +217,22 @@ def state_to_atom_graphs(  # noqa: PLR0915
         edge_feats_list.append(edge_feats)
         graph_feats_list.append(graph_feats)
 
+        # Update offset for next system
+        offset += len(positions_per_system)
+
+    # Concatenate all the edge data
+    edge_index = torch.cat(all_edges, dim=1)
+    unit_shifts = torch.cat(all_unit_shifts, dim=0)
+    system_num_edges = torch.tensor(num_edges, dtype=torch.int64, device=device)
+
+    senders, receivers = edge_index[0], edge_index[1]
+
     # Create and return AtomGraphs object
     return AtomGraphs(
         senders=senders,
         receivers=receivers,
         n_node=n_node,
-        n_edge=batch_num_edges,
+        n_edge=system_num_edges,
         node_features=_map_concat(node_feats_list),
         edge_features=_map_concat(edge_feats_list),
         system_features=_map_concat(graph_feats_list),
@@ -239,7 +247,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
     ).to(device=device, dtype=output_dtype)
 
 
-class OrbModel(torch.nn.Module, ModelInterface):
+class OrbModel(ModelInterface):
     """Computes atomistic energies, forces and stresses using an ORB model.
 
     This class wraps an ORB model to compute energies, forces, and stresses for
@@ -350,7 +358,7 @@ class OrbModel(torch.nn.Module, ModelInterface):
         if self.conservative:
             self.implemented_properties.extend(["forces", "stress"])
 
-    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by the model,
@@ -362,7 +370,7 @@ class OrbModel(torch.nn.Module, ModelInterface):
                 it will be converted to a SimState.
 
         Returns:
-            dict: Dictionary of model predictions, which may include:
+            dict: Model predictions, which may include:
                 - energy (torch.Tensor): Energy with shape [batch_size]
                 - forces (torch.Tensor): Forces with shape [n_atoms, 3]
                 - stress (torch.Tensor): Stress tensor with shape [batch_size, 3, 3],
@@ -373,13 +381,13 @@ class OrbModel(torch.nn.Module, ModelInterface):
             All output tensors are detached from the computation graph.
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         if state.device != self._device:
             state = state.to(self._device)
 
         half_supercell = (
-            torch.max(torch.det(state.cell)) > 1000
+            torch.min(torch.det(state.cell)) > 1000
             if self._half_supercell is None
             else self._half_supercell
         )
@@ -408,13 +416,17 @@ class OrbModel(torch.nn.Module, ModelInterface):
             if not model_has_direct_heads and prop == "stress":
                 continue
             _property = "energy" if prop == "free_energy" else prop
-            results[prop] = predictions[_property].squeeze()
+            results[prop] = predictions[_property]
 
         if self.conservative:
             results["forces"] = results[self.model.grad_forces_name]
             results["stress"] = results[self.model.grad_stress_name]
 
         if "stress" in results and results["stress"].shape[-1] == 6:
-            results["stress"] = voigt_6_to_full_3x3_stress(results["stress"])
+            # NOTE: atleast_2d needed because orb internally gets rid of the batch
+            # dimension of the stress if it is 1.
+            results["stress"] = voigt_6_to_full_3x3_stress(
+                torch.atleast_2d(results["stress"])
+            )
 
         return results

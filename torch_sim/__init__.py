@@ -8,7 +8,6 @@ from datetime import datetime
 from torch_sim import (
     autobatching,
     elastic,
-    integrators,
     io,
     math,
     models,
@@ -33,9 +32,9 @@ from torch_sim.optimizers import (
     unit_cell_fire,
     unit_cell_gradient_descent,
 )
-from torch_sim.properties.correlations import CorrelationCalculator
 
-# quantities
+# quantities/properties
+from torch_sim.properties.correlations import CorrelationCalculator
 from torch_sim.quantities import calc_kinetic_energy, calc_kT
 
 # high level runners and support
@@ -48,13 +47,10 @@ from torch_sim.runners import (
 )
 
 # state and state manipulation
-from torch_sim.state import concatenate_states, initialize_state
+from torch_sim.state import SimState, concatenate_states, initialize_state
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 
 
 PKG_DIR = os.path.dirname(__file__)
 ROOT = os.path.dirname(PKG_DIR)
-
 SCRIPTS_DIR = f"{ROOT}/examples"
-
-today = f"{datetime.now().astimezone():%Y-%m-%d}"

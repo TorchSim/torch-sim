@@ -14,16 +14,21 @@ Notes:
     pretrained model checkpoints.
 """
 
+# ruff: noqa: T201
+
 from __future__ import annotations
 
 import copy
+import traceback
 import typing
+import warnings
 from types import MappingProxyType
+from typing import Any
 
 import torch
 
+import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, StateDict
 
 
 try:
@@ -37,23 +42,26 @@ try:
     from fairchem.core.models.model_registry import model_name_to_local_file
     from torch_geometric.data import Batch, Data
 
-except ImportError:
+except ImportError as exc:
+    warnings.warn(f"FairChem import failed: {traceback.format_exc()}", stacklevel=2)
 
-    class FairChemModel(torch.nn.Module, ModelInterface):
+    class FairChemModel(ModelInterface):
         """FairChem model wrapper for torch_sim.
 
         This class is a placeholder for the FairChemModel class.
         It raises an ImportError if FairChem is not installed.
         """
 
-        def __init__(self, *_args: typing.Any, **_kwargs: typing.Any) -> None:
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
             """Dummy init for type checking."""
-            raise ImportError("FairChem must be installed to use this model.")
+            raise err
 
 
 if typing.TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
+
+    from torch_sim.typing import StateDict
 
 _DTYPE_DICT = {
     torch.float16: "float16",
@@ -62,7 +70,7 @@ _DTYPE_DICT = {
 }
 
 
-class FairChemModel(torch.nn.Module, ModelInterface):
+class FairChemModel(ModelInterface):
     """Computes atomistic energies, forces and stresses using a FairChem model.
 
     This class wraps a FairChem model to compute energies, forces, and stresses for
@@ -167,7 +175,8 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             )
 
         # Either the config path or the checkpoint path needs to be provided
-        assert config_yml or model is not None
+        if not config_yml and model is None:
+            raise ValueError("Either config_yml or model must be provided")
 
         checkpoint = None
         if config_yml is not None:
@@ -312,7 +321,7 @@ class FairChemModel(torch.nn.Module, ModelInterface):
         except NotImplementedError:
             print("Unable to load checkpoint!")
 
-    def forward(self, state: SimState | StateDict) -> dict:
+    def forward(self, state: ts.SimState | StateDict) -> dict:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by the model,
@@ -335,13 +344,13 @@ class FairChemModel(torch.nn.Module, ModelInterface):
             All output tensors are detached from the computation graph.
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         if state.device != self._device:
             state = state.to(self._device)
 
-        if state.batch is None:
-            state.batch = torch.zeros(state.positions.shape[0], dtype=torch.int)
+        if state.system_idx is None:
+            state.system_idx = torch.zeros(state.positions.shape[0], dtype=torch.int)
 
         if self.pbc != state.pbc:
             raise ValueError(
@@ -349,8 +358,8 @@ class FairChemModel(torch.nn.Module, ModelInterface):
                 "For FairChemModel PBC needs to be defined in the model class."
             )
 
-        natoms = torch.bincount(state.batch)
-        fixed = torch.zeros((state.batch.size(0), natoms.sum()), dtype=torch.int)
+        natoms = torch.bincount(state.system_idx)
+        fixed = torch.zeros((state.system_idx.size(0), natoms.sum()), dtype=torch.int)
         data_list = []
         for i, (n, c) in enumerate(
             zip(natoms, torch.cumsum(natoms, dim=0), strict=False)

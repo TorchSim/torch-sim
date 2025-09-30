@@ -4,12 +4,8 @@ import torch
 from vesin import NeighborList as VesinNeighborList
 from vesin.torch import NeighborList as VesinNeighborList_ts
 
-from torch_sim.math import torch_divmod
-from torch_sim.transforms import (
-    build_linked_cell_neighborhood,
-    build_naive_neighborhood,
-    compute_cell_shifts,
-)
+import torch_sim.math as tsm
+from torch_sim import transforms
 
 
 @torch.jit.script
@@ -83,19 +79,18 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     """
     # Naming conventions: Suffixes indicate the dimension of an array. The
     # following convention is used here:
-    #     c: Cartesian index, can have values 0, 1, 2
-    #     i: Global atom index, can have values 0..len(a)-1
-    #     xyz: Bin index, three values identifying x-, y- and z-component of a
-    #          spatial bin that is used to make neighbor search O(n)
-    #     b: Linearized version of the 'xyz' bin index
-    #     a: Bin-local atom index, i.e. index identifying an atom *within* a
-    #        bin
-    #     p: Pair index, can have value 0 or 1
-    #     n: (Linear) neighbor index
+    # c: Cartesian index, can have values 0, 1, 2
+    # i: Global atom index, can have values 0..len(a)-1
+    # xyz: Bin index, three values identifying x-, y- and z-component of a
+    #         spatial bin that is used to make neighbor search O(n)
+    # b: Linearized version of the 'xyz' bin index
+    # a: Bin-local atom index, i.e. index identifying an atom *within* a
+    #     bin
+    # p: Pair index, can have value 0 or 1
+    # n: (Linear) neighbor index
 
-    # Return empty neighbor list if no atoms are passed here
     if len(positions) == 0:
-        raise AssertionError("No atoms provided")
+        raise RuntimeError("No atoms provided")
 
     # Compute reciprocal lattice vectors.
     recip_cell = torch.linalg.pinv(cell).T
@@ -113,7 +108,8 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
             1 / l3 if l3 > 0 else pytorch_scalar_1,
         ]
     )
-    assert face_dist_c.shape == (3,)
+    if face_dist_c.shape != (3,):
+        raise ValueError(f"face_dist_c.shape={face_dist_c.shape} != (3,)")
 
     # we don't handle other fancier cutoffs
     max_cutoff: torch.Tensor = cutoff
@@ -174,11 +170,11 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     for c in range(3):
         if pbc[c]:
             # (Note: torch.divmod does not exist in older numpy versions)
-            cell_shift_ic[:, c], bin_index_ic[:, c] = torch_divmod(
+            cell_shift_ic[:, c], bin_index_ic[:, c] = tsm.torch_divmod(
                 bin_index_ic[:, c], n_bins_c[c]
             )
         else:
-            bin_index_ic[:, c] = torch.clip(bin_index_ic[:, c], 0, n_bins_c[c] - 1)
+            bin_index_ic[:, c] = torch.clip(bin_index_ic[:, c], 0, n_bins_c[c] - 1)  # type: ignore[call-overload]
 
     # Convert Cartesian bin index to unique scalar bin index.
     bin_index_i = bin_index_ic[:, 0] + n_bins_c[0] * (
@@ -197,8 +193,8 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     # homogeneous, i.e. has the same size *max_n_atoms_per_bin* for all bins.
     # The list is padded with -1 values.
     atoms_in_bin_ba = -torch.ones(
-        n_bins, max_n_atoms_per_bin.item(), dtype=torch.long, device=device
-    )
+        n_bins, max_n_atoms_per_bin, dtype=torch.long, device=device
+    )  # type: ignore[call-overload]
     for bin_cnt in range(int(max_n_atoms_per_bin.item())):
         # Create a mask array that identifies the first atom of each bin.
         mask = torch.cat(
@@ -218,8 +214,10 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
         bin_index_i = bin_index_i[mask]
 
     # Make sure that all atoms have been sorted into bins.
-    assert len(atom_i) == 0
-    assert len(bin_index_i) == 0
+    if len(atom_i) != 0:
+        raise ValueError(f"len(atom_i)={len(atom_i)} != 0")
+    if len(bin_index_i) != 0:
+        raise ValueError(f"len(bin_index_i)={len(bin_index_i)} != 0")
 
     # Now we construct neighbor pairs by pairing up all atoms within a bin or
     # between bin and neighboring bin. atom_pairs_pn is a helper buffer that
@@ -229,8 +227,8 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     #     (max_n_atoms_per_bin, max_n_atoms_per_bin), dtype=int
     # ).reshape(2, -1)
     atom_pairs_pn = torch.cartesian_prod(
-        torch.arange(max_n_atoms_per_bin, device=device),
-        torch.arange(max_n_atoms_per_bin, device=device),
+        torch.arange(max_n_atoms_per_bin, device=device),  # type: ignore[call-overload]
+        torch.arange(max_n_atoms_per_bin, device=device),  # type: ignore[call-overload]
     )
     atom_pairs_pn = atom_pairs_pn.T.reshape(2, -1)
 
@@ -246,9 +244,9 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     # that each bin contains exactly max_n_atoms_per_bin atoms. We then throw
     # out pairs involving pad atoms with atom index -1 below.
     binz_xyz, biny_xyz, binx_xyz = torch.meshgrid(
-        torch.arange(n_bins_c[2], device=device),
-        torch.arange(n_bins_c[1], device=device),
-        torch.arange(n_bins_c[0], device=device),
+        torch.arange(n_bins_c[2], device=device),  # type: ignore[call-overload]
+        torch.arange(n_bins_c[1], device=device),  # type: ignore[call-overload]
+        torch.arange(n_bins_c[0], device=device),  # type: ignore[call-overload]
         indexing="ij",
     )
     # The memory layout of binx_xyz, biny_xyz, binz_xyz is such that computing
@@ -264,9 +262,9 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
         for dy in range(-int(neigh_search_y.item()), int(neigh_search_y.item()) + 1):
             for dx in range(-int(neigh_search_x.item()), int(neigh_search_x.item()) + 1):
                 # Bin index of neighboring bin and shift vector.
-                shiftx_xyz, neighbinx_xyz = torch_divmod(binx_xyz + dx, n_bins_c[0])
-                shifty_xyz, neighbiny_xyz = torch_divmod(biny_xyz + dy, n_bins_c[1])
-                shiftz_xyz, neighbinz_xyz = torch_divmod(binz_xyz + dz, n_bins_c[2])
+                shiftx_xyz, neighbinx_xyz = tsm.torch_divmod(binx_xyz + dx, n_bins_c[0])
+                shifty_xyz, neighbiny_xyz = tsm.torch_divmod(biny_xyz + dy, n_bins_c[1])
+                shiftz_xyz, neighbinz_xyz = tsm.torch_divmod(binz_xyz + dz, n_bins_c[2])
                 neighbin_b = (
                     neighbinx_xyz
                     + n_bins_c[0] * (neighbiny_xyz + n_bins_c[1] * neighbinz_xyz)
@@ -365,10 +363,10 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
             cell_shift_vector_n = cell_shift_vector_n[m]
 
     # Sort neighbor list.
-    bin_cnt = torch.argsort(first_at_neigh_tuple_n)
-    first_at_neigh_tuple_n = first_at_neigh_tuple_n[bin_cnt]
-    second_at_neigh_tuple_n = second_at_neigh_tuple_n[bin_cnt]
-    cell_shift_vector_n = cell_shift_vector_n[bin_cnt]
+    bin_cnt_sort_idx = torch.argsort(first_at_neigh_tuple_n)
+    first_at_neigh_tuple_n = first_at_neigh_tuple_n[bin_cnt_sort_idx]
+    second_at_neigh_tuple_n = second_at_neigh_tuple_n[bin_cnt_sort_idx]
+    cell_shift_vector_n = cell_shift_vector_n[bin_cnt_sort_idx]
 
     # Compute distance vectors.
     # TODO: Use .T?
@@ -642,9 +640,9 @@ def vesin_nl(
 def strict_nl(
     cutoff: float,
     positions: torch.Tensor,
-    cell: torch.Tensor,
+    cell: torch.Tensor | None,
     mapping: torch.Tensor,
-    batch_mapping: torch.Tensor,
+    system_mapping: torch.Tensor,
     shifts_idx: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Apply a strict cutoff to the neighbor list defined in the mapping.
@@ -660,12 +658,12 @@ def strict_nl(
             is used to filter the neighbor pairs based on their distances.
         positions (torch.Tensor): A tensor of shape (n_atoms, 3) representing
             the positions of the atoms.
-        cell (torch.Tensor): Unit cell vectors according to the row vector convention,
-            i.e. `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
+        cell (torch.Tensor | None): Unit cell vectors according to the row vector
+            convention. i.e. `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
         mapping (torch.Tensor):
             A tensor of shape (2, n_pairs) that specifies pairs of indices in `positions`
             for which to compute distances.
-        batch_mapping (torch.Tensor):
+        system_mapping (torch.Tensor):
             A tensor that maps the shifts to the corresponding cells, used in conjunction
             with `shifts_idx` to compute the correct periodic shifts.
         shifts_idx (torch.Tensor):
@@ -677,8 +675,8 @@ def strict_nl(
             A tuple containing:
                 - mapping (torch.Tensor): A filtered tensor of shape (2, n_filtered_pairs)
                   with pairs of indices that are within the cutoff distance.
-                - mapping_batch (torch.Tensor): A tensor of shape (n_filtered_pairs,)
-                  that maps the filtered pairs to their corresponding batches.
+                - mapping_system (torch.Tensor): A tensor of shape (n_filtered_pairs,)
+                  that maps the filtered pairs to their corresponding systems.
                 - shifts_idx (torch.Tensor): A tensor of shape (n_filtered_pairs, 3)
                   containing the periodic shift indices for the filtered pairs.
 
@@ -691,10 +689,12 @@ def strict_nl(
     References:
         - https://github.com/felixmusil/torch_nl
     """
-    cell_shifts = compute_cell_shifts(cell, shifts_idx, batch_mapping)
-    if cell_shifts is None:
+    if cell is None:
         d2 = (positions[mapping[0]] - positions[mapping[1]]).square().sum(dim=1)
     else:
+        cell_shifts = transforms.compute_cell_shifts_strict(
+            cell, shifts_idx, system_mapping
+        )
         d2 = (
             (positions[mapping[0]] - positions[mapping[1]] - cell_shifts)
             .square()
@@ -703,9 +703,9 @@ def strict_nl(
 
     mask = d2 < cutoff * cutoff
     mapping = mapping[:, mask]
-    mapping_batch = batch_mapping[mask]
+    mapping_system = system_mapping[mask]
     shifts_idx = shifts_idx[mask]
-    return mapping, mapping_batch, shifts_idx
+    return mapping, mapping_system, shifts_idx
 
 
 @torch.jit.script
@@ -714,7 +714,7 @@ def torch_nl_n2(
     positions: torch.Tensor,
     cell: torch.Tensor,
     pbc: torch.Tensor,
-    batch: torch.Tensor,
+    system_idx: torch.Tensor,
     self_interaction: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute the neighbor list for a set of atomic structures using a
@@ -731,19 +731,19 @@ def torch_nl_n2(
         pbc (torch.Tensor [n_structure, 3] bool):
             A tensor indicating the periodic boundary conditions to apply.
             Partial PBC are not supported yet.
-        batch (torch.Tensor [n_atom,] torch.long):
+        system_idx (torch.Tensor [n_atom,] torch.long):
             A tensor containing the index of the structure to which each atom belongs.
         self_interaction (bool, optional):
             A flag to indicate whether to keep the center atoms as their own neighbors.
             Default is False.
 
     Returns:
-        Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
             mapping (torch.Tensor [2, n_neighbors]):
                 A tensor containing the indices of the neighbor list for the given
                 positions array. `mapping[0]` corresponds to the central atom indices,
                 and `mapping[1]` corresponds to the neighbor atom indices.
-            batch_mapping (torch.Tensor [n_neighbors]):
+            system_mapping (torch.Tensor [n_neighbors]):
                 A tensor mapping the neighbor atoms to their respective structures.
             shifts_idx (torch.Tensor [n_neighbors, 3]):
                 A tensor containing the cell shift indices used to reconstruct the
@@ -752,14 +752,14 @@ def torch_nl_n2(
     References:
         - https://github.com/felixmusil/torch_nl
     """
-    n_atoms = torch.bincount(batch)
-    mapping, batch_mapping, shifts_idx = build_naive_neighborhood(
+    n_atoms = torch.bincount(system_idx)
+    mapping, system_mapping, shifts_idx = transforms.build_naive_neighborhood(
         positions, cell, pbc, cutoff, n_atoms, self_interaction
     )
-    mapping, mapping_batch, shifts_idx = strict_nl(
-        cutoff, positions, cell, mapping, batch_mapping, shifts_idx
+    mapping, mapping_system, shifts_idx = strict_nl(
+        cutoff, positions, cell, mapping, system_mapping, shifts_idx
     )
-    return mapping, mapping_batch, shifts_idx
+    return mapping, mapping_system, shifts_idx
 
 
 @torch.jit.script
@@ -768,7 +768,7 @@ def torch_nl_linked_cell(
     positions: torch.Tensor,
     cell: torch.Tensor,
     pbc: torch.Tensor,
-    batch: torch.Tensor,
+    system_idx: torch.Tensor,
     self_interaction: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute the neighbor list for a set of atomic structures using the linked
@@ -786,20 +786,20 @@ def torch_nl_linked_cell(
         pbc (torch.Tensor [n_structure, 3] bool):
             A tensor indicating the periodic boundary conditions to apply.
             Partial PBC are not supported yet.
-        batch (torch.Tensor [n_atom,] torch.long):
+        system_idx (torch.Tensor [n_atom,] torch.long):
             A tensor containing the index of the structure to which each atom belongs.
         self_interaction (bool, optional):
             A flag to indicate whether to keep the center atoms as their own neighbors.
             Default is False.
 
     Returns:
-        Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
             A tuple containing:
                 - mapping (torch.Tensor [2, n_neighbors]):
                     A tensor containing the indices of the neighbor list for the given
                     positions array. `mapping[0]` corresponds to the central atom
                     indices, and `mapping[1]` corresponds to the neighbor atom indices.
-                - batch_mapping (torch.Tensor [n_neighbors]):
+                - system_mapping (torch.Tensor [n_neighbors]):
                     A tensor mapping the neighbor atoms to their respective structures.
                 - shifts_idx (torch.Tensor [n_neighbors, 3]):
                     A tensor containing the cell shift indices used to reconstruct the
@@ -808,12 +808,12 @@ def torch_nl_linked_cell(
     References:
         - https://github.com/felixmusil/torch_nl
     """
-    n_atoms = torch.bincount(batch)
-    mapping, batch_mapping, shifts_idx = build_linked_cell_neighborhood(
+    n_atoms = torch.bincount(system_idx)
+    mapping, system_mapping, shifts_idx = transforms.build_linked_cell_neighborhood(
         positions, cell, pbc, cutoff, n_atoms, self_interaction
     )
 
-    mapping, mapping_batch, shifts_idx = strict_nl(
-        cutoff, positions, cell, mapping, batch_mapping, shifts_idx
+    mapping, mapping_system, shifts_idx = strict_nl(
+        cutoff, positions, cell, mapping, system_mapping, shifts_idx
     )
-    return mapping, mapping_batch, shifts_idx
+    return mapping, mapping_system, shifts_idx

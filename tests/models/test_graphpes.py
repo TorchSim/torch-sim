@@ -2,12 +2,12 @@ import pytest
 import torch
 from ase.build import bulk, molecule
 
+import torch_sim as ts
 from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
-from torch_sim.io import atoms_to_state
 from torch_sim.models.graphpes import GraphPESWrapper
 
 
@@ -43,8 +43,8 @@ def test_graphpes_isolated(device: torch.device):
         compute_forces=True,
         compute_stress=False,
     )
-    ts_output = ts_model(atoms_to_state([water_atoms], device, torch.float32))
-    assert set(ts_output.keys()) == {"energy", "forces"}
+    ts_output = ts_model(ts.io.atoms_to_state([water_atoms], device, torch.float32))
+    assert set(ts_output) == {"energy", "forces"}
     assert ts_output["energy"].shape == (1,)
 
     assert gp_energy.item() == pytest.approx(ts_output["energy"].item(), abs=1e-5)
@@ -68,8 +68,8 @@ def test_graphpes_periodic(device: torch.device):
         compute_forces=True,
         compute_stress=True,
     )
-    ts_output = ts_model(atoms_to_state([bulk_atoms], device, torch.float32))
-    assert set(ts_output.keys()) == {"energy", "forces", "stress"}
+    ts_output = ts_model(ts.io.atoms_to_state([bulk_atoms], device, torch.float32))
+    assert set(ts_output) == {"energy", "forces", "stress"}
     assert ts_output["energy"].shape == (1,)
     assert ts_output["forces"].shape == (len(bulk_atoms), 3)
     assert ts_output["stress"].shape == (1, 3, 3)
@@ -99,9 +99,9 @@ def test_batching(device: torch.device):
         compute_forces=True,
         compute_stress=True,
     )
-    ts_output = ts_model(atoms_to_state(systems, device, torch.float32))
+    ts_output = ts_model(ts.io.atoms_to_state(systems, device, torch.float32))
 
-    assert set(ts_output.keys()) == {"energy", "forces", "stress"}
+    assert set(ts_output) == {"energy", "forces", "stress"}
     assert ts_output["energy"].shape == (2,)
     assert ts_output["forces"].shape == (sum(len(s) for s in systems), 3)
     assert ts_output["stress"].shape == (2, 3, 3)
@@ -116,7 +116,7 @@ def test_graphpes_dtype(device: torch.device, dtype: torch.dtype):
     model = SchNet()
 
     ts_wrapper = GraphPESWrapper(model, device=device, dtype=dtype, compute_stress=False)
-    ts_output = ts_wrapper(atoms_to_state([water], device, dtype))
+    ts_output = ts_wrapper(ts.io.atoms_to_state([water], device, dtype))
     assert ts_output["energy"].dtype == dtype
     assert ts_output["forces"].dtype == dtype
 
@@ -144,8 +144,6 @@ test_graphpes_nequip_consistency = make_model_calculator_consistency_test(
     model_fixture_name="ts_nequip_model",
     calculator_fixture_name="ase_nequip_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
-    rtol=8e-5,
-    atol=8e-5,
 )
 
 test_graphpes_nequip_model_outputs = make_validate_model_outputs_test(
@@ -173,16 +171,6 @@ test_graphpes_mace_consistency = make_model_calculator_consistency_test(
     model_fixture_name="ts_mace_model",
     calculator_fixture_name="ase_mace_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
-    # graph-pes passes data directly to the underlying mace-torch model
-    # from test_mace.py, it seems that these mace-torch models can be
-    # surprisingly variable in the CI (these tests pass locally on
-    # MacBooks with no need for high tolerances)
-    # While investigating, I found that mace-torch model predictions are
-    # mildly sensitive to the order of items in the neighbourlist - this
-    # could be the cause of the discrepancies between the ASE calculator
-    # and the TorchSim wrapper, both here and in test_mace.py
-    rtol=6e-4,
-    atol=1e-5,
 )
 
 test_graphpes_mace_model_outputs = make_validate_model_outputs_test(

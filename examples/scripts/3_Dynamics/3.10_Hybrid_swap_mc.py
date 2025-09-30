@@ -2,7 +2,7 @@
 
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.11",
+#     "mace-torch>=0.3.12",
 #     "pymatgen>=2025.2.18",
 # ]
 # ///
@@ -13,22 +13,21 @@ import torch
 from mace.calculators.foundations_models import mace_mp
 from pymatgen.core import Structure
 
+import torch_sim as ts
 from torch_sim.integrators import MDState, nvt_langevin
-from torch_sim.io import structures_to_state
-from torch_sim.models.mace import MaceModel
+from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.monte_carlo import swap_monte_carlo
-from torch_sim.units import MetalUnits
+from torch_sim.units import MetalUnits as Units
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float64
 
-kT = 1000 * MetalUnits.temperature
+kT = 1000 * Units.temperature
 
 # Option 1: Load the raw model from the downloaded model
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
-    model=mace_checkpoint_url,
+    model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
     default_dtype=dtype,
     device=device,
@@ -41,6 +40,8 @@ loaded_model = mace_mp(
 model = MaceModel(
     model=loaded_model,
     device=device,
+    compute_forces=True,
+    compute_stress=False,
     dtype=dtype,
     enable_cueq=False,
 )
@@ -61,7 +62,7 @@ coords = [
 ]
 structure = Structure(lattice, species, coords)
 
-state = structures_to_state([structure], device=device, dtype=dtype)
+state = ts.io.structures_to_state([structure], device=device, dtype=dtype)
 
 
 # %%
@@ -75,6 +76,9 @@ class HybridSwapMCState(MDState):
     """
 
     last_permutation: torch.Tensor
+    _atom_attributes = (
+        MDState._atom_attributes | {"last_permutation"}  # noqa: SLF001
+    )
 
 
 nvt_init, nvt_step = nvt_langevin(model=model, dt=0.002, kT=kT)
@@ -85,7 +89,7 @@ swap_state = swap_init(md_state)
 hybrid_state = HybridSwapMCState(
     **vars(md_state),
     last_permutation=torch.zeros(
-        md_state.n_batches, device=md_state.device, dtype=torch.bool
+        md_state.n_systems, device=md_state.device, dtype=torch.bool
     ),
 )
 

@@ -15,17 +15,18 @@ Review Articles:
   Physical Review B, 90(22), 224104
 
 Online Resources:
-- Materials Project Documentation
-  https://docs.materialsproject.org/methodology/elasticity/
+
+- Materials Project Documentation: https://docs.materialsproject.org/methodology/elasticity/
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
 
 import torch
 
+from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
+from torch_sim.typing import BravaisType
 
 
 @dataclass
@@ -45,26 +46,6 @@ class DeformationRule:
 
     axes: list[int]
     symmetry_handler: Callable
-
-
-class BravaisType(Enum):
-    """Enumeration of the seven Bravais lattice types in 3D crystals.
-
-    These lattice types represent the distinct crystal systems classified
-    by their symmetry properties, from highest symmetry (cubic) to lowest
-    symmetry (triclinic).
-
-    Each type has specific constraints on lattice parameters and angles,
-    which determine the number of independent elastic constants.
-    """
-
-    CUBIC = "cubic"
-    HEXAGONAL = "hexagonal"
-    TRIGONAL = "trigonal"
-    TETRAGONAL = "tetragonal"
-    ORTHORHOMBIC = "orthorhombic"
-    MONOCLINIC = "monoclinic"
-    TRICLINIC = "triclinic"
 
 
 def get_bravais_type(  # noqa: PLR0911
@@ -170,14 +151,13 @@ def regular_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Args:
         strains: Tensor of shape (6,) containing strain components
-                [εxx, εyy, εzz, εyz, εxz, εxy]
-                where:
-                - εxx, εyy, εzz are normal strains
-                - εyz, εxz, εxy are shear strains
+            [εxx, εyy, εzz, εyz, εxz, εxy] where:
+            - εxx, εyy, εzz are normal strains
+            - εyz, εxz, εxy are shear strains
 
     Returns:
         torch.Tensor: Matrix of shape (6, 3) where columns correspond to
-                     coefficients for C11, C12, and C44 respectively
+            coefficients for C11, C12, and C44 respectively
 
     Notes:
         The resulting matrix M has the form:
@@ -234,14 +214,13 @@ def tetragonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Args:
         strains: Tensor of shape (6,) containing strain components
-                [εxx, εyy, εzz, εyz, εxz, εxy]
-                where:
-                - εxx, εyy, εzz are normal strains
-                - εyz, εxz, εxy are shear strains
+            [εxx, εyy, εzz, εyz, εxz, εxy] where:
+            - εxx, εyy, εzz are normal strains
+            - εyz, εxz, εxy are shear strains
 
     Returns:
         torch.Tensor: Matrix of shape (6, 7) where columns correspond to
-                     coefficients for C11, C12, C13, C16, C33, C44, C66
+            coefficients for C11, C12, C13, C16, C33, C44, C66
 
     Notes:
         The resulting matrix M has the form:
@@ -300,11 +279,11 @@ def orthorhombic_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Args:
         strains: Tensor of shape (6,) containing strain components
-                [εxx, εyy, εzz, εyz, εxz, εxy]
+            [εxx, εyy, εzz, εyz, εxz, εxy]
 
     Returns:
         torch.Tensor: Matrix of shape (6, 9) where columns correspond to
-                     coefficients for C11, C12, C13, C22, C23, C33, C44, C55, C66
+            coefficients for C11, C12, C13, C22, C23, C33, C44, C55, C66
 
     Notes:
         The resulting matrix M has the form:
@@ -363,11 +342,11 @@ def trigonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Args:
         strains: Tensor of shape (6,) containing strain components
-                [εxx, εyy, εzz, εyz, εxz, εxy]
+            [εxx, εyy, εzz, εyz, εxz, εxy]
 
     Returns:
         torch.Tensor: Matrix of shape (6, 7) where columns correspond to
-                     coefficients for C11, C12, C13, C14, C15, C33, C44
+            coefficients for C11, C12, C13, C14, C15, C33, C44
 
     Notes:
         The resulting matrix M has the form:
@@ -436,11 +415,11 @@ def hexagonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Args:
         strains: Tensor of shape (6,) containing strain components
-                [εxx, εyy, εzz, εyz, εxz, εxy]
+            [εxx, εyy, εzz, εyz, εxz, εxy]
 
     Returns:
         torch.Tensor: Matrix of shape (6, 5) where columns correspond to
-                     coefficients for C11, C33, C12, C13, C44
+            coefficients for C11, C33, C12, C13, C44
 
     Notes:
         The resulting matrix M has the form:
@@ -497,12 +476,12 @@ def monoclinic_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Args:
         strains: Tensor of shape (6,) containing strain components
-                [εxx, εyy, εzz, εyz, εxz, εxy]
+            [εxx, εyy, εzz, εyz, εxz, εxy]
 
     Returns:
         torch.Tensor: Matrix of shape (6, 13) where columns correspond to
-                     coefficients for the 13 independent constants in order:
-                     [C11, C12, C13, C15, C22, C23, C25, C33, C35, C44, C46, C55, C66]
+            coefficients for the 13 independent constants in order:
+            [C11, C12, C13, C15, C22, C23, C25, C33, C35, C44, C46, C55, C66]
 
     Notes:
         For monoclinic symmetry with unique axis b (y), the matrix has the form:
@@ -572,13 +551,13 @@ def triclinic_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Returns:
         torch.Tensor: Matrix of shape (6, 21) where columns correspond to
-                     all possible elastic constants in order:
-                     [C11, C12, C13, C14, C15, C16,
-                          C22, C23, C24, C25, C26,
-                              C33, C34, C35, C36,
-                                  C44, C45, C46,
-                                      C55, C56,
-                                          C66]
+            all possible elastic constants in order:
+            [C11, C12, C13, C14, C15, C16,
+                 C22, C23, C24, C25, C26,
+                     C33, C34, C35, C36,
+                         C44, C45, C46,
+                             C55, C56,
+                                 C66]
     """
     if not isinstance(strains, torch.Tensor):
         strains = torch.tensor(strains)
@@ -693,7 +672,7 @@ def get_cart_deformed_cell(state: SimState, axis: int = 0, size: float = 1.0) ->
 
     return SimState(
         positions=new_positions,
-        cell=row_vector_cell.transpose(-2, -1).unsqueeze(0),
+        cell=row_vector_cell.mT.unsqueeze(0),
         masses=state.masses,
         pbc=state.pbc,
         atomic_numbers=state.atomic_numbers,
@@ -834,7 +813,7 @@ def get_strain(
     u = torch.matmul(reference_inverse, cell_difference)
 
     # Compute symmetric strain tensor: ε = (u + u^T)/2
-    strain = (u + u.transpose(-2, -1)) / 2
+    strain = (u + u.mT) / 2
 
     # Convert to Voigt notation
     return torch.tensor(
@@ -894,7 +873,7 @@ def full_3x3_to_voigt_6_stress(stress: torch.Tensor) -> torch.Tensor:
     dtype = stress.dtype
 
     # Ensure the tensor is symmetric
-    stress = (stress + stress.transpose(-2, -1)) / 2
+    stress = (stress + stress.mT) / 2
 
     # Create the Voigt vector while preserving batch dimensions
     return torch.stack(
@@ -931,9 +910,9 @@ def get_elastic_coeffs(
         bravais_type: Crystal system (BravaisType enum)
 
     Returns:
-        Tuple containing:
+        tuple containing:
         - torch.Tensor: Cij elastic constants
-        - Tuple containing:
+        - tuple containing:
             - torch.Tensor: Bij Birch coefficients
             - torch.Tensor: Residuals from least squares fit
             - int: Rank of solution
@@ -1127,7 +1106,7 @@ def get_elastic_tensor_from_coeffs(  # noqa: C901, PLR0915
 
 
 def calculate_elastic_tensor(
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     state: SimState,
     bravais_type: BravaisType = BravaisType.TRICLINIC,

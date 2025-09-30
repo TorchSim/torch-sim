@@ -3,7 +3,7 @@
 # /// script
 # dependencies = [
 #     "ase>=3.24",
-#     "mace-torch>=0.3.11",
+#     "mace-torch>=0.3.12",
 # ]
 # ///
 
@@ -13,15 +13,15 @@ from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
 from torch_sim.elastic import get_bravais_type
+from torch_sim.models.mace import MaceModel, MaceUrls
 
 
 # Calculator
 unit_conv = ts.units.UnitConversion
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float64
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
-    model=mace_checkpoint_url,
+    model=MaceUrls.mace_mpa_medium,
     enable_cueq=False,
     device=device,
     default_dtype="float64",
@@ -31,7 +31,7 @@ loaded_model = mace_mp(
 # ASE structure
 struct = bulk("Cu", "fcc", a=3.58, cubic=True).repeat((2, 2, 2))
 
-model = ts.models.MaceModel(
+model = MaceModel(
     model=loaded_model,
     device=device,
     compute_forces=True,

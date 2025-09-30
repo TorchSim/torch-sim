@@ -3,7 +3,7 @@
 #   <summary>Dependencies</summary>
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.11",
+#     "mace-torch>=0.3.12",
 # ]
 # ///
 # </details>
@@ -65,12 +65,11 @@ Then we can initialize the MaceModel class with the raw model.
 
 # %%
 from mace.calculators.foundations_models import mace_mp
-from torch_sim.models import MaceModel
+from torch_sim.models.mace import MaceModel, MaceUrls
 
 # load mace_mp using the mace package
-mace_checkpoint_url = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
-    model=mace_checkpoint_url,
+    model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
     default_dtype=dtype,
     device=device,
@@ -108,18 +107,18 @@ print("Model memory_scales_with:", model.memory_scales_with)
 """
 `SimState` objects can be passed directly to the model and it will compute
 the properties of the systems in the batch. The properties will be returned
-either batchwise, like the energy, or atomwise, like the forces.
+either systemwise, like the energy, or atomwise, like the forces.
 
 Note that the energy here refers to the potential energy of the system.
 """
 
 # %%
 model_outputs = model(state)
-print(f"Model outputs: {', '.join(list(model_outputs.keys()))}")
+print(f"Model outputs: {', '.join(list(model_outputs))}")
 
-print(f"Energy is a batchwise property with shape: {model_outputs['energy'].shape}")
+print(f"Energy is a systemwise property with shape: {model_outputs['energy'].shape}")
 print(f"Forces are an atomwise property with shape: {model_outputs['forces'].shape}")
-print(f"Stress is a batchwise property with shape: {model_outputs['stress'].shape}")
+print(f"Stress is a systemwise property with shape: {model_outputs['stress'].shape}")
 
 
 # %% [markdown]
@@ -167,6 +166,7 @@ parameters can usually be passed to the `init_fn` and parameters that vary over
 the course of the simulation can be passed to the `update_fn`.
 """
 
+# %%
 fire_init_fn, fire_update_fn = ts.unit_cell_fire(
     model=model,
     dt_max=0.1,
@@ -229,7 +229,7 @@ for step in range(30):
     state = nvt_langevin_update_fn(state=state, kT=initial_kT * (1 + step / 30))
     if step % 5 == 0:
         temp_E_units = ts.calc_kT(
-            masses=state.masses, momenta=state.momenta, batch=state.batch
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
         )
         temp = temp_E_units / MetalUnits.temperature
         print(f"{step=}: Temperature: {temp}")

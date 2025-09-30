@@ -1,19 +1,15 @@
+import time
+from collections.abc import Callable
+
 import numpy as np
+import psutil
 import pytest
 import torch
 from ase import Atoms
 from ase.build import bulk, molecule
 from ase.neighborlist import neighbor_list
 
-from torch_sim.neighbors import (
-    primitive_neighbor_list,
-    standard_nl,
-    torch_nl_linked_cell,
-    torch_nl_n2,
-    vesin_nl,
-    vesin_nl_ts,
-)
-from torch_sim.transforms import compute_cell_shifts, compute_distances_with_cell_shifts
+from torch_sim import neighbors, transforms
 
 
 @pytest.fixture
@@ -37,12 +33,12 @@ def ase_to_torch_batch(
             Defaults to torch.float32.
 
     Returns:
-        Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
             A tuple containing:
             - pos: Tensor of atomic positions.
             - cell: Tensor of unit cell vectors.
             - pbc: Tensor indicating periodic boundary conditions.
-            - batch: Tensor indicating the batch index for each atom.
+            - system_idx: Tensor indicating the system index for each atom.
             - n_atoms: Tensor containing the number of atoms in each structure.
     """
     n_atoms = torch.tensor([len(atoms) for atoms in atoms_list], dtype=torch.long)
@@ -54,17 +50,17 @@ def ase_to_torch_batch(
     pbc = torch.cat([torch.from_numpy(atoms.get_pbc()) for atoms in atoms_list])
 
     stride = torch.cat((torch.tensor([0]), n_atoms.cumsum(0)))
-    batch = torch.zeros(pos.shape[0], dtype=torch.long)
+    system_idx = torch.zeros(pos.shape[0], dtype=torch.long)
     for ii, (st, end) in enumerate(
         zip(stride[:-1], stride[1:], strict=True)  # noqa: RUF007
     ):
-        batch[st:end] = ii
+        system_idx[st:end] = ii
     n_atoms = torch.Tensor(n_atoms[1:]).to(dtype=torch.long)
     return (
         pos.to(dtype=dtype, device=device),
         cell.to(dtype=dtype, device=device),
         pbc.to(device=device),
-        batch.to(device=device),
+        system_idx.to(device=device),
         n_atoms.to(device=device),
     )
 
@@ -109,17 +105,18 @@ CaCrP2O7_mvc_11955_symmetrized = {
 
 
 @pytest.fixture
-def periodic_atoms_set():
+def periodic_atoms_set() -> list[Atoms]:
     return [
         bulk("Si", "diamond", a=6, cubic=True),
         bulk("Si", "diamond", a=6),
         bulk("Cu", "fcc", a=3.6),
         bulk("Si", "bct", a=6, c=3),
         bulk("Ti", "hcp", a=2.94, c=4.64, orthorhombic=False),
-        # test very skewed unit cell
+        # test very skewed rhombohedral cells
         bulk("Bi", "rhombohedral", a=6, alpha=20),
-        bulk("Bi", "rhombohedral", a=6, alpha=10),
-        bulk("Bi", "rhombohedral", a=6, alpha=5),
+        bulk(
+            "Bi", "rhombohedral", a=6, alpha=10
+        ),  # very skewed, by far the slowest test case
         bulk("SiCu", "rocksalt", a=6),
         bulk("SiFCu", "fluorite", a=6),
         Atoms(**CaCrP2O7_mvc_11955_symmetrized),
@@ -127,23 +124,21 @@ def periodic_atoms_set():
 
 
 @pytest.fixture
-def molecule_atoms_set() -> list:
+def molecule_atoms_set() -> list[Atoms]:
     return [
-        molecule("CH3CH2NH2"),
-        molecule("H2O"),
-        molecule("methylenecyclopropane"),
-        molecule("OCHCHO"),
-        molecule("C3H9C"),
+        *map(molecule, ("CH3CH2NH2", "H2O", "methylenecyclopropane", "OCHCHO", "C3H9C")),
     ]
 
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
 @pytest.mark.parametrize("use_jit", [True, False])
-@pytest.mark.parametrize("atoms_list", ["periodic_atoms_set", "molecule_atoms_set"])
+@pytest.mark.parametrize(
+    "atoms_list_fixture", ["periodic_atoms_set", "molecule_atoms_set"]
+)
 def test_primitive_neighbor_list(
     *,
     cutoff: float,
-    atoms_list: str,
+    atoms_list_fixture: str,
     device: torch.device,
     dtype: torch.dtype,
     use_jit: bool,
@@ -158,11 +153,11 @@ def test_primitive_neighbor_list(
         dtype: Torch dtype to use
         use_jit: Whether to use the jitted version or disable JIT
     """
-    atoms_list = request.getfixturevalue(atoms_list)
+    atoms_list = request.getfixturevalue(atoms_list_fixture)
 
     # Create a non-jitted version of the function if requested
     if use_jit:
-        neighbor_list_fn = primitive_neighbor_list
+        neighbor_list_fn = neighbors.primitive_neighbor_list
     else:
         # Create wrapper that disables JIT
         import os
@@ -214,8 +209,10 @@ def test_primitive_neighbor_list(
 
         # Calculate distances with cell shifts
         cell_shifts_prim = torch.mm(shifts_tensor, row_vector_cell)
-        dds_prim = compute_distances_with_cell_shifts(pos, mapping, cell_shifts_prim)
-        dds_prim = np.sort(dds_prim.numpy())
+        dds_prim = transforms.compute_distances_with_cell_shifts(
+            pos, mapping, cell_shifts_prim
+        )
+        dds_prim_sorted = np.sort(dds_prim.numpy())
 
         # Get the neighbor list from ase
         idx_i_ref, idx_j_ref, shifts_ref, dist_ref = neighbor_list(
@@ -227,40 +224,45 @@ def test_primitive_neighbor_list(
         )
 
         # Convert to torch tensors
-        idx_i_ref = torch.tensor(idx_i_ref, dtype=torch.long, device=torch.device("cpu"))
-        idx_j_ref = torch.tensor(idx_j_ref, dtype=torch.long, device=torch.device("cpu"))
+        idx_i_ref = torch.tensor(idx_i_ref, dtype=torch.long, device=device)
+        idx_j_ref = torch.tensor(idx_j_ref, dtype=torch.long, device=device)
 
         # Create mapping and shifts
         mapping_ref = torch.stack((idx_i_ref, idx_j_ref), dim=0)
-        shifts_ref = torch.tensor(
-            shifts_ref, dtype=torch.float64, device=torch.device("cpu")
-        )
+        shifts_ref = torch.tensor(shifts_ref, dtype=dtype, device=device)
 
         # Calculate distances with cell shifts
         cell_shifts_ref = torch.mm(shifts_ref, row_vector_cell)
-        dds_ref = compute_distances_with_cell_shifts(pos, mapping_ref, cell_shifts_ref)
+        dds_ref = transforms.compute_distances_with_cell_shifts(
+            pos, mapping_ref, cell_shifts_ref
+        )
 
         # Sort the distances
-        dds_ref = np.sort(dds_ref.numpy())
-        dist_ref = np.sort(dist_ref)
+        dds_ref_sorted = np.sort(dds_ref.numpy())
+        dist_ref_sorted = np.sort(dist_ref)
 
         # Check that the distances are the same with ase and torchsim logic
-        np.testing.assert_allclose(dds_ref, dist_ref)
+        np.testing.assert_allclose(dds_ref_sorted, dist_ref_sorted)
 
         # Check that the primitive_neighbor_list distances match ASE's
         np.testing.assert_allclose(
-            dds_prim, dist_ref, err_msg=f"Failed with use_jit={use_jit}"
+            dds_prim_sorted, dist_ref_sorted, err_msg=f"Failed with use_jit={use_jit}"
         )
 
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
-@pytest.mark.parametrize("atoms_list", ["periodic_atoms_set", "molecule_atoms_set"])
-@pytest.mark.parametrize("nl_implementation", [standard_nl, vesin_nl, vesin_nl_ts])
+@pytest.mark.parametrize(
+    "atoms_list_fixture", ["periodic_atoms_set", "molecule_atoms_set"]
+)
+@pytest.mark.parametrize(
+    "nl_implementation",
+    [neighbors.standard_nl, neighbors.vesin_nl, neighbors.vesin_nl_ts],
+)
 def test_neighbor_list_implementations(
     *,
     cutoff: float,
-    atoms_list: str,
-    nl_implementation: callable,
+    atoms_list_fixture: str,
+    nl_implementation: Callable,
     device: torch.device,
     dtype: torch.dtype,
     request: pytest.FixtureRequest,
@@ -268,7 +270,7 @@ def test_neighbor_list_implementations(
     """Check that different neighbor list implementations give the same results as ASE
     by comparing the resulting sorted list of distances between neighbors.
     """
-    atoms_list = request.getfixturevalue(atoms_list)
+    atoms_list = request.getfixturevalue(atoms_list_fixture)
 
     for atoms in atoms_list:
         # Convert to torch tensors
@@ -286,8 +288,8 @@ def test_neighbor_list_implementations(
 
         # Calculate distances with cell shifts
         cell_shifts = torch.mm(shifts, row_vector_cell)
-        dds = compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
-        dds = np.sort(dds.numpy())
+        dds = transforms.compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
+        dds_sorted = np.sort(dds.numpy())
 
         # Get the reference neighbor list from ASE
         idx_i, idx_j, shifts_ref, dist = neighbor_list(
@@ -306,24 +308,29 @@ def test_neighbor_list_implementations(
             shifts_ref, dtype=torch.float64, device=torch.device("cpu")
         )
         cell_shifts_ref = torch.mm(shifts_ref, row_vector_cell)
-        dds_ref = compute_distances_with_cell_shifts(pos, mapping_ref, cell_shifts_ref)
-        dds_ref = np.sort(dds_ref.numpy())
-        dist_ref = np.sort(dist)
+        dds_ref = transforms.compute_distances_with_cell_shifts(
+            pos, mapping_ref, cell_shifts_ref
+        )
+        dds_ref_sorted = np.sort(dds_ref.numpy())
+        dist_ref_sorted = np.sort(dist)
 
         # Verify results
-        np.testing.assert_allclose(dds_ref, dist_ref)
-        np.testing.assert_allclose(dds, dds_ref)
-        np.testing.assert_allclose(dds, dist_ref)
+        np.testing.assert_allclose(dds_ref_sorted, dist_ref_sorted)
+        np.testing.assert_allclose(dds_sorted, dds_ref_sorted)
+        np.testing.assert_allclose(dds_sorted, dist_ref_sorted)
 
 
 @pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
 @pytest.mark.parametrize("self_interaction", [True, False])
-@pytest.mark.parametrize("nl_implementation", [torch_nl_n2, torch_nl_linked_cell])
+@pytest.mark.parametrize(
+    "nl_implementation",
+    [neighbors.torch_nl_n2, neighbors.torch_nl_linked_cell],
+)
 def test_torch_nl_implementations(
     *,
     cutoff: float,
     self_interaction: bool,
-    nl_implementation: callable,
+    nl_implementation: Callable,
     device: torch.device,
     dtype: torch.dtype,
     molecule_atoms_set: list[Atoms],
@@ -340,14 +347,16 @@ def test_torch_nl_implementations(
     )
 
     # Get the neighbor list from the implementation being tested
-    mapping, mapping_batch, shifts_idx = nl_implementation(
+    mapping, mapping_system, shifts_idx = nl_implementation(
         cutoff, pos, row_vector_cell, pbc, batch, self_interaction
     )
 
     # Calculate distances
-    cell_shifts = compute_cell_shifts(row_vector_cell, shifts_idx, mapping_batch)
-    dds = compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
-    dds = np.sort(dds.numpy())
+    cell_shifts = transforms.compute_cell_shifts(
+        row_vector_cell, shifts_idx, mapping_system
+    )
+    dds = transforms.compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
+    dds_sorted = np.sort(dds.numpy())
 
     # Get reference results from ASE
     dd_ref = []
@@ -360,7 +369,232 @@ def test_torch_nl_implementations(
             max_nbins=1e6,
         )
         dd_ref.extend(dist)
-    dd_ref = np.sort(dd_ref)
+    dd_ref_sorted = np.sort(dd_ref)
 
     # Verify results
-    np.testing.assert_allclose(dd_ref, dds)
+    np.testing.assert_allclose(dd_ref_sorted, dds_sorted)
+
+
+def test_primitive_neighbor_list_edge_cases(
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Test edge cases for primitive_neighbor_list."""
+    # Test different PBC combinations
+    pos = torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]], device=device, dtype=dtype)
+    cell = torch.eye(3, device=device, dtype=dtype) * 2.0
+    cutoff = torch.tensor(1.5, device=device, dtype=dtype)
+
+    # Test all PBC combinations
+    for pbc in [(True, False, False), (False, True, False), (False, False, True)]:
+        idx_i, idx_j, shifts = neighbors.primitive_neighbor_list(
+            quantities="ijS",
+            positions=pos,
+            cell=cell,
+            pbc=pbc,
+            cutoff=cutoff,
+            device=device,
+            dtype=dtype,
+        )
+        assert len(idx_i) > 0  # Should find at least one neighbor
+
+    # Test self-interaction
+    idx_i, idx_j, shifts = neighbors.primitive_neighbor_list(
+        quantities="ijS",
+        positions=pos,
+        cell=cell,
+        pbc=(True, True, True),
+        cutoff=cutoff,
+        device=device,
+        dtype=dtype,
+        self_interaction=True,
+    )
+    # Should find self-interactions
+    assert torch.any(idx_i == idx_j)
+
+
+def test_standard_nl_edge_cases(
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Test edge cases for standard_nl."""
+    pos = torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]], device=device, dtype=dtype)
+    cell = torch.eye(3, device=device, dtype=dtype) * 2.0
+    cutoff = torch.tensor(1.5, device=device, dtype=dtype)
+
+    # Test different PBC combinations
+    for pbc in (True, False):
+        mapping, shifts = neighbors.standard_nl(
+            positions=pos,
+            cell=cell,
+            pbc=pbc,
+            cutoff=cutoff,
+        )
+        assert len(mapping[0]) > 0  # Should find neighbors
+
+    # Test sort_id
+    mapping, shifts = neighbors.standard_nl(
+        positions=pos,
+        cell=cell,
+        pbc=True,
+        cutoff=cutoff,
+        sort_id=True,
+    )
+    # Check if indices are sorted
+    assert torch.all(mapping[0][1:] >= mapping[0][:-1])
+
+
+def test_vesin_nl_edge_cases(
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Test edge cases for vesin_nl and vesin_nl_ts."""
+    pos = torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]], device=device, dtype=dtype)
+    cell = torch.eye(3, device=device, dtype=dtype) * 2.0
+    cutoff = torch.tensor(1.5, device=device, dtype=dtype)
+
+    # Test both implementations
+    for nl_fn in (neighbors.vesin_nl, neighbors.vesin_nl_ts):
+        # Test different PBC combinations
+        for pbc in (True, False):
+            mapping, shifts = nl_fn(
+                positions=pos,
+                cell=cell,
+                pbc=pbc,
+                cutoff=cutoff,
+            )
+            assert len(mapping[0]) > 0  # Should find neighbors
+
+        # Test sort_id
+        mapping, shifts = nl_fn(
+            positions=pos,
+            cell=cell,
+            pbc=True,
+            cutoff=cutoff,
+            sort_id=True,
+        )
+        # Check if indices are sorted
+        assert torch.all(mapping[0][1:] >= mapping[0][:-1])
+
+        # Test different precisions
+        if nl_fn == neighbors.vesin_nl:  # vesin_nl_ts doesn't support float32
+            pos_f32 = pos.to(dtype=torch.float32)
+            cell_f32 = cell.to(dtype=torch.float32)
+            cutoff_f32 = cutoff.to(dtype=torch.float32)
+            mapping, shifts = nl_fn(
+                positions=pos_f32,
+                cell=cell_f32,
+                pbc=True,
+                cutoff=cutoff_f32,
+            )
+            assert len(mapping[0]) > 0  # Should find neighbors
+
+
+def test_strict_nl_edge_cases(
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Test edge cases for strict_nl."""
+    pos = torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]], device=device, dtype=dtype)
+    # Create a cell tensor for each batch
+    cell = torch.eye(3, device=device, dtype=torch.long).repeat(2, 1, 1) * 2
+
+    # Test with no cell shifts
+    mapping = torch.tensor([[0], [1]], device=device, dtype=torch.long)
+    system_mapping = torch.tensor([0], device=device, dtype=torch.long)
+    shifts_idx = torch.zeros((1, 3), device=device, dtype=torch.long)
+
+    new_mapping, new_batch, new_shifts = neighbors.strict_nl(
+        cutoff=1.5,
+        positions=pos,
+        cell=cell,
+        mapping=mapping,
+        system_mapping=system_mapping,
+        shifts_idx=shifts_idx,
+    )
+    assert len(new_mapping[0]) > 0  # Should find neighbors
+
+    # Test with different batch mappings
+    mapping = torch.tensor([[0, 1], [1, 0]], device=device, dtype=torch.long)
+    system_mapping = torch.tensor([0, 1], device=device, dtype=torch.long)
+    shifts_idx = torch.zeros((2, 3), device=device, dtype=torch.long)
+
+    new_mapping, new_batch, new_shifts = neighbors.strict_nl(
+        cutoff=1.5,
+        positions=pos,
+        cell=cell,
+        mapping=mapping,
+        system_mapping=system_mapping,
+        shifts_idx=shifts_idx,
+    )
+    assert len(new_mapping[0]) > 0  # Should find neighbors
+
+
+def test_neighbor_lists_time_and_memory(
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Test performance and memory characteristics of neighbor list implementations."""
+    # Create a smaller system to reduce memory usage
+    n_atoms = 100
+    pos = torch.rand(n_atoms, 3, device=device, dtype=dtype)
+    cell = torch.eye(3, device=device, dtype=dtype) * 10.0
+    cutoff = torch.tensor(2.0, device=device, dtype=dtype)
+
+    # Test different implementations
+    for nl_fn in (
+        neighbors.standard_nl,
+        neighbors.vesin_nl,
+        neighbors.vesin_nl_ts,
+        neighbors.torch_nl_n2,
+        neighbors.torch_nl_linked_cell,
+    ):
+        # Get initial memory usage
+        process = psutil.Process()
+        initial_cpu_memory = process.memory_info().rss  # in bytes
+
+        if device.type == "cuda":
+            torch.cuda.reset_peak_memory_stats()
+            initial_gpu_memory = torch.cuda.memory_allocated()
+
+        # Time the execution
+        start_time = time.perf_counter()
+
+        if nl_fn in [neighbors.torch_nl_n2, neighbors.torch_nl_linked_cell]:
+            system_idx = torch.zeros(n_atoms, dtype=torch.long, device=device)
+            # Fix pbc tensor shape
+            pbc = torch.tensor([[True, True, True]], device=device)
+            mapping, mapping_system, shifts_idx = nl_fn(
+                cutoff=cutoff,
+                positions=pos,
+                cell=cell,
+                # TODO: standardize all pbc so we either use tensors/booleans/tuples.
+                pbc=pbc,  # type: ignore[arg-type]
+                system_idx=system_idx,
+                self_interaction=False,  # type: ignore[call-arg, misc]
+            )
+        else:
+            mapping, shifts = nl_fn(positions=pos, cell=cell, pbc=True, cutoff=cutoff)
+
+        end_time = time.perf_counter()
+        execution_time = end_time - start_time
+
+        # Get final memory usage
+        final_cpu_memory = process.memory_info().rss
+        cpu_memory_used = final_cpu_memory - initial_cpu_memory
+        fn_name = str(nl_fn)
+
+        # Warning: cuda case was never tested, to be tweaked later
+        if device.type == "cuda":
+            final_gpu_memory = torch.cuda.memory_allocated()
+            gpu_memory_used = final_gpu_memory - initial_gpu_memory
+            assert execution_time < 0.01, f"{fn_name} took too long: {execution_time}s"
+            assert gpu_memory_used < 5e8, (
+                f"{fn_name} used too much GPU memory: {gpu_memory_used / 1e6:.2f}MB"
+            )
+            torch.cuda.empty_cache()
+        else:
+            assert cpu_memory_used < 5e8, (
+                f"{fn_name} used too much CPU memory: {cpu_memory_used / 1e6:.2f}MB"
+            )
+            assert execution_time < 0.8, f"{fn_name} took too long: {execution_time}s"

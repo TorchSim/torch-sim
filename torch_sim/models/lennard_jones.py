@@ -26,22 +26,100 @@ Example::
 
 import torch
 
+import torch_sim as ts
+from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState, StateDict
-from torch_sim.transforms import get_pair_displacements
-from torch_sim.unbatched.models.lennard_jones import (
-    lennard_jones_pair,
-    lennard_jones_pair_force,
-)
+from torch_sim.typing import StateDict
 
 
-# Default parameter values defined at module level
 DEFAULT_SIGMA = torch.tensor(1.0)
 DEFAULT_EPSILON = torch.tensor(1.0)
 
 
-class LennardJonesModel(torch.nn.Module, ModelInterface):
+def lennard_jones_pair(
+    dr: torch.Tensor,
+    sigma: torch.Tensor = DEFAULT_SIGMA,
+    epsilon: torch.Tensor = DEFAULT_EPSILON,
+) -> torch.Tensor:
+    """Calculate pairwise Lennard-Jones interaction energies between particles.
+
+    Implements the standard 12-6 Lennard-Jones potential that combines short-range
+    repulsion with longer-range attraction. The potential has a minimum at r=sigma.
+
+    The functional form is:
+    V(r) = 4*epsilon*[(sigma/r)^12 - (sigma/r)^6]
+
+    Args:
+        dr: Pairwise distances between particles. Shape: [n, m].
+        sigma: Distance at which potential reaches its minimum. Either a scalar float
+            or tensor of shape [n, m] for particle-specific interaction distances.
+        epsilon: Depth of the potential well (energy scale). Either a scalar float
+            or tensor of shape [n, m] for pair-specific interaction strengths.
+
+    Returns:
+        torch.Tensor: Pairwise Lennard-Jones interaction energies between particles.
+            Shape: [n, m]. Each element [i,j] represents the interaction energy between
+            particles i and j.
+    """
+    # Calculate inverse dr and its powers
+    idr = sigma / dr
+    idr2 = idr * idr
+    idr6 = idr2 * idr2 * idr2
+    idr12 = idr6 * idr6
+
+    # Calculate potential energy
+    energy = 4.0 * epsilon * (idr12 - idr6)
+
+    # Handle potential numerical instabilities and infinities
+    return torch.where(dr > 0, energy, torch.zeros_like(energy))
+    # return torch.nan_to_num(energy, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def lennard_jones_pair_force(
+    dr: torch.Tensor,
+    sigma: torch.Tensor = DEFAULT_SIGMA,
+    epsilon: torch.Tensor = DEFAULT_EPSILON,
+) -> torch.Tensor:
+    """Calculate pairwise Lennard-Jones forces between particles.
+
+    Implements the force derived from the 12-6 Lennard-Jones potential. The force
+    is repulsive at short range and attractive at long range, with a zero-crossing
+    at r=sigma.
+
+    The functional form is:
+    F(r) = 24*epsilon/r * [(2*sigma^12/r^12) - (sigma^6/r^6)]
+
+    This is the negative gradient of the Lennard-Jones potential energy.
+
+    Args:
+        dr: Pairwise distances between particles. Shape: [n, m].
+        sigma: Distance at which force changes from repulsive to attractive.
+            Either a scalar float or tensor of shape [n, m] for particle-specific
+            interaction distances.
+        epsilon: Energy scale of the interaction. Either a scalar float or tensor
+            of shape [n, m] for pair-specific interaction strengths.
+
+    Returns:
+        torch.Tensor: Pairwise Lennard-Jones forces between particles. Shape: [n, m].
+            Each element [i,j] represents the force magnitude between particles i and j.
+            Positive values indicate repulsion, negative values indicate attraction.
+    """
+    # Calculate inverse dr and its powers
+    idr = sigma / dr
+    idr2 = idr * idr
+    idr6 = idr2 * idr2 * idr2
+    idr12 = idr6 * idr6
+
+    # Calculate force (negative gradient of potential)
+    # F = -24*epsilon/r * ((sigma/r)^6 - 2*(sigma/r)^12)
+    force = 24.0 * epsilon / dr * (2.0 * idr12 - idr6)
+
+    # Handle potential numerical instabilities and infinities
+    return torch.where(dr > 0, force, torch.zeros_like(force))
+
+
+class LennardJonesModel(ModelInterface):
     """Lennard-Jones potential energy and force calculator.
 
     Implements the Lennard-Jones 12-6 potential for molecular dynamics simulations.
@@ -144,7 +222,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
 
     def unbatched_forward(
         self,
-        state: SimState,
+        state: ts.SimState,
     ) -> dict[str, torch.Tensor]:
         """Compute Lennard-Jones properties for a single unbatched system.
 
@@ -157,7 +235,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
                 positions, cell vectors, and other system information.
 
         Returns:
-            dict[str, torch.Tensor]: Dictionary of computed properties:
+            dict[str, torch.Tensor]: Computed properties:
                 - "energy": Total potential energy (scalar)
                 - "forces": Atomic forces with shape [n_atoms, 3] (if
                     compute_forces=True)
@@ -174,8 +252,8 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
 
             The implementation applies cutoff distance to both approaches for consistency.
         """
-        if not isinstance(state, SimState):
-            state = SimState(**state)
+        if not isinstance(state, ts.SimState):
+            state = ts.SimState(**state)
 
         positions = state.positions
         cell = state.row_vector_cell
@@ -192,7 +270,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
                 sort_id=False,
             )
             # Get displacements using neighbor list
-            dr_vec, distances = get_pair_displacements(
+            dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
@@ -201,7 +279,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
             )
         else:
             # Get all pairwise displacements
-            dr_vec, distances = get_pair_displacements(
+            dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
@@ -275,11 +353,11 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
 
         return results
 
-    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute Lennard-Jones energies, forces, and stresses for a system.
 
         Main entry point for Lennard-Jones calculations that handles batched states by
-        dispatching each batch to the unbatched implementation and combining results.
+        dispatching each system to the unbatched implementation and combining results.
 
         Args:
             state (SimState | StateDict): Input state containing atomic positions,
@@ -287,11 +365,11 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
                 or a dictionary with the same keys.
 
         Returns:
-            dict[str, torch.Tensor]: Dictionary of computed properties:
-                - "energy": Potential energy with shape [n_batches]
+            dict[str, torch.Tensor]: Computed properties:
+                - "energy": Potential energy with shape [n_systems]
                 - "forces": Atomic forces with shape [n_atoms, 3] (if
                     compute_forces=True)
-                - "stress": Stress tensor with shape [n_batches, 3, 3] (if
+                - "stress": Stress tensor with shape [n_systems, 3, 3] (if
                     compute_stress=True)
                 - "energies": Per-atom energies with shape [n_atoms] (if
                     per_atom_energies=True)
@@ -299,7 +377,7 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
                     per_atom_stresses=True)
 
         Raises:
-            ValueError: If batch cannot be inferred for multi-cell systems.
+            ValueError: If system cannot be inferred for multi-cell systems.
 
         Example::
 
@@ -307,19 +385,19 @@ class LennardJonesModel(torch.nn.Module, ModelInterface):
             model = LennardJonesModel(compute_stress=True)
             results = model(sim_state)
 
-            energy = results["energy"]  # Shape: [n_batches]
+            energy = results["energy"]  # Shape: [n_systems]
             forces = results["forces"]  # Shape: [n_atoms, 3]
-            stress = results["stress"]  # Shape: [n_batches, 3, 3]
+            stress = results["stress"]  # Shape: [n_systems, 3, 3]
             energies = results["energies"]  # Shape: [n_atoms]
             stresses = results["stresses"]  # Shape: [n_atoms, 3, 3]
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
-        if state.batch is None and state.cell.shape[0] > 1:
-            raise ValueError("Batch can only be inferred for batch size 1.")
+        if state.system_idx is None and state.cell.shape[0] > 1:
+            raise ValueError("System can only be inferred for batch size 1.")
 
-        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_batches)]
+        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_systems)]
         properties = outputs[0]
 
         # we always return tensors

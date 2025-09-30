@@ -3,7 +3,7 @@
 #   <summary>Dependencies</summary>
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.11",
+#     "mace-torch>=0.3.12",
 #     "pymatgen>=2025.2.18",
 # ]
 # ///
@@ -34,9 +34,11 @@ for this example, but any TorchSim compatible model would work.
 """
 
 # %%
+from typing import ClassVar
 import torch
 import torch_sim as ts
 from mace.calculators.foundations_models import mace_mp
+from torch_sim.integrators.md import MDState
 from torch_sim.models.mace import MaceModel
 
 # Initialize the mace model
@@ -104,6 +106,9 @@ class HybridSwapMCState(ts.integrators.MDState):
     """
 
     last_permutation: torch.Tensor
+    _atom_attributes = (
+        MDState._atom_attributes | {"last_permutation"}  # noqa: SLF001
+    )
 
 
 # %% [markdown]
@@ -133,7 +138,7 @@ swap_state = swap_init(md_state)
 hybrid_state = HybridSwapMCState(
     **vars(md_state),
     last_permutation=torch.zeros(
-        md_state.n_batches, device=md_state.device, dtype=torch.bool
+        md_state.n_systems, device=md_state.device, dtype=torch.bool
     ),
 )
 

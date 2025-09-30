@@ -8,7 +8,6 @@ with known correlation properties.
 
 import math
 from collections.abc import Callable
-from typing import Any
 
 import pytest
 import torch
@@ -32,12 +31,14 @@ class MockState:
         self.velocities = velocities
         self.device = device
         # Required for TrajectoryReporter
-        self.n_batches = 1
-        self.batch = torch.zeros(velocities.shape[0], device=device, dtype=torch.int64)
+        self.n_systems = 1
+        self.system_idx = torch.zeros(
+            velocities.shape[0], device=device, dtype=torch.int64
+        )
 
     def split(self) -> list["MockState"]:
-        """Split state into batches."""
-        # Just return self since 1 batch
+        """Split state into multiple systems."""
+        # Just return self since 1 system
         return [self]
 
 
@@ -63,7 +64,7 @@ def corr_calc(device: torch.device) -> CorrelationCalculator:
     """Fixture for creating a CorrelationCalculator instance."""
     window_size = 5
 
-    def velocity_getter(state: Any) -> torch.Tensor:
+    def velocity_getter(state: MockState) -> torch.Tensor:
         return state.velocities
 
     properties = {"velocity": velocity_getter}

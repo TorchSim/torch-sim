@@ -3,14 +3,14 @@
 import pytest
 import torch
 
+import torch_sim as ts
 import torch_sim.models.soft_sphere as ss
 from torch_sim.models.interface import validate_model_outputs
-from torch_sim.state import SimState, concatenate_states
 
 
 @pytest.fixture
 def models(
-    fe_supercell_sim_state: SimState,
+    fe_supercell_sim_state: ts.SimState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create both neighbor list and direct calculators."""
     calc_params = {
@@ -30,7 +30,7 @@ def models(
 
 @pytest.fixture
 def models_with_per_atom(
-    fe_supercell_sim_state: SimState,
+    fe_supercell_sim_state: ts.SimState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create calculators with per-atom properties enabled."""
     calc_params = {
@@ -62,10 +62,10 @@ def small_system() -> tuple[torch.Tensor, torch.Tensor]:
 
 
 @pytest.fixture
-def small_sim_state(small_system: tuple[torch.Tensor, torch.Tensor]) -> SimState:
+def small_sim_state(small_system: tuple[torch.Tensor, torch.Tensor]) -> ts.SimState:
     """Create a small SimState for testing."""
     positions, cell = small_system
-    return SimState(
+    return ts.SimState(
         positions=positions,
         cell=cell,
         pbc=torch.tensor([True, True, True]),
@@ -75,9 +75,9 @@ def small_sim_state(small_system: tuple[torch.Tensor, torch.Tensor]) -> SimState
 
 
 @pytest.fixture
-def small_batched_sim_state(small_sim_state: SimState) -> SimState:
+def small_batched_sim_state(small_sim_state: ts.SimState) -> ts.SimState:
     """Create a batched state from the small system."""
-    return concatenate_states(
+    return ts.concatenate_states(
         [small_sim_state, small_sim_state], device=small_sim_state.device
     )
 
@@ -198,10 +198,7 @@ def test_model_initialization_custom_params(
     param_name: str, param_value: float, expected_dtype: torch.dtype
 ) -> None:
     """Test initialization with custom parameters."""
-    params = {
-        param_name: param_value,
-        "dtype": expected_dtype,
-    }
+    params = {param_name: param_value, "dtype": expected_dtype}
     model = ss.SoftSphereModel(**params)
 
     param_tensor = getattr(model, param_name)
@@ -330,8 +327,8 @@ def test_matrix_symmetry_validation(matrix_name: str, matrix: torch.Tensor) -> N
     # Replace one matrix with the non-symmetric version
     params[matrix_name] = matrix
 
-    # Should raise AssertionError due to asymmetric matrix
-    with pytest.raises(AssertionError):
+    # Should raise ValueError due to asymmetric matrix
+    with pytest.raises(ValueError, match="is not symmetric"):
         ss.SoftSphereMultiModel(**params)
 
 

@@ -31,23 +31,13 @@ def model_path_oc20(tmp_path_factory: pytest.TempPathFactory) -> str:
 @pytest.fixture
 def eqv2_oc20_model_pbc(model_path_oc20: str, device: torch.device) -> FairChemModel:
     cpu = device.type == "cpu"
-    return FairChemModel(
-        model=model_path_oc20,
-        cpu=cpu,
-        seed=0,
-        pbc=True,
-    )
+    return FairChemModel(model=model_path_oc20, cpu=cpu, seed=0, pbc=True)
 
 
 @pytest.fixture
 def eqv2_oc20_model_non_pbc(model_path_oc20: str, device: torch.device) -> FairChemModel:
     cpu = device.type == "cpu"
-    return FairChemModel(
-        model=model_path_oc20,
-        cpu=cpu,
-        seed=0,
-        pbc=False,
-    )
+    return FairChemModel(model=model_path_oc20, cpu=cpu, seed=0, pbc=False)
 
 
 if get_token():
@@ -63,12 +53,7 @@ if get_token():
         model_path_omat24: str, device: torch.device
     ) -> FairChemModel:
         cpu = device.type == "cpu"
-        return FairChemModel(
-            model=model_path_omat24,
-            cpu=cpu,
-            seed=0,
-            pbc=True,
-        )
+        return FairChemModel(model=model_path_omat24, cpu=cpu, seed=0, pbc=True)
 
 
 @pytest.fixture
@@ -81,8 +66,12 @@ test_fairchem_ocp_consistency_pbc = make_model_calculator_consistency_test(
     model_fixture_name="eqv2_oc20_model_pbc",
     calculator_fixture_name="ocp_calculator",
     sim_state_names=consistency_test_simstate_fixtures[:-1],
-    rtol=5e-4,  # NOTE: EqV2 doesn't pass at the 1e-5 level used for other models
-    atol=5e-4,
+    energy_rtol=5e-4,  # NOTE: EqV2 doesn't pass at the 1e-5 level used for other models
+    energy_atol=5e-4,
+    force_rtol=5e-4,
+    force_atol=5e-4,
+    stress_rtol=5e-4,
+    stress_atol=5e-4,
 )
 
 test_fairchem_non_pbc_benzene = make_model_calculator_consistency_test(
@@ -90,19 +79,19 @@ test_fairchem_non_pbc_benzene = make_model_calculator_consistency_test(
     model_fixture_name="eqv2_oc20_model_non_pbc",
     calculator_fixture_name="ocp_calculator",
     sim_state_names=["benzene_sim_state"],
-    rtol=5e-4,  # NOTE: EqV2 doesn't pass at the 1e-5 level used for other models
-    atol=5e-4,
+    energy_rtol=5e-4,  # NOTE: EqV2 doesn't pass at the 1e-5 level used for other models
+    energy_atol=5e-4,
+    force_rtol=5e-4,
+    force_atol=5e-4,
+    stress_rtol=5e-4,
+    stress_atol=5e-4,
 )
 
 
 # Skip this test due to issues with how the older models
-# handled supercells (see related issue here: https://github.com/FAIR-Chem/fairchem/issues/428)
+# handled supercells (see related issue here: https://github.com/facebookresearch/fairchem/issues/428)
 
 test_fairchem_ocp_model_outputs = pytest.mark.skipif(
     os.environ.get("HF_TOKEN") is None,
     reason="Issues in graph construction of older models",
-)(
-    make_validate_model_outputs_test(
-        model_fixture_name="eqv2_omat24_model_pbc",
-    )
-)
+)(make_validate_model_outputs_test(model_fixture_name="eqv2_omat24_model_pbc"))

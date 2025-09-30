@@ -27,14 +27,92 @@ Notes:
 
 import torch
 
+import torch_sim as ts
+from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import vesin_nl_ts
-from torch_sim.state import SimState, StateDict
-from torch_sim.transforms import get_pair_displacements
-from torch_sim.unbatched.models.morse import morse_pair, morse_pair_force
+from torch_sim.typing import StateDict
 
 
-class MorseModel(torch.nn.Module, ModelInterface):
+DEFAULT_SIGMA = torch.tensor(1.0)
+DEFAULT_EPSILON = torch.tensor(5.0)
+DEFAULT_ALPHA = torch.tensor(5.0)
+
+
+def morse_pair(
+    dr: torch.Tensor,
+    sigma: torch.Tensor = DEFAULT_SIGMA,
+    epsilon: torch.Tensor = DEFAULT_EPSILON,
+    alpha: torch.Tensor = DEFAULT_ALPHA,
+) -> torch.Tensor:
+    """Calculate pairwise Morse potential energies between particles.
+
+    Implements the Morse potential that combines short-range repulsion with
+    longer-range attraction. The potential has a minimum at r=sigma and approaches
+    -epsilon as r→∞.
+
+    The functional form is:
+    V(r) = epsilon * (1 - exp(-alpha*(r-sigma)))^2 - epsilon
+
+    Args:
+        dr: Pairwise distances between particles. Shape: [n, m].
+        sigma: Distance at which potential reaches its minimum. Either a scalar float
+            or tensor of shape [n, m] for particle-specific equilibrium distances.
+        epsilon: Depth of the potential well (energy scale). Either a scalar float
+            or tensor of shape [n, m] for pair-specific interaction strengths.
+        alpha: Controls the width of the potential well. Larger values give a narrower
+            well. Either a scalar float or tensor of shape [n, m].
+
+    Returns:
+        torch.Tensor: Pairwise Morse interaction energies between particles.
+            Shape: [n, m]. Each element [i,j] represents the interaction energy between
+            particles i and j.
+    """
+    # Calculate potential energy
+    energy = epsilon * (1.0 - torch.exp(-alpha * (dr - sigma))).pow(2) - epsilon
+
+    # Handle potential numerical instabilities
+    return torch.where(dr > 0, energy, torch.zeros_like(energy))
+    # return torch.nan_to_num(energy, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def morse_pair_force(
+    dr: torch.Tensor,
+    sigma: torch.Tensor = DEFAULT_SIGMA,
+    epsilon: torch.Tensor = DEFAULT_EPSILON,
+    alpha: torch.Tensor = DEFAULT_ALPHA,
+) -> torch.Tensor:
+    """Calculate pairwise Morse forces between particles.
+
+    Implements the force derived from the Morse potential. The force changes
+    from repulsive to attractive at r=sigma.
+
+    The functional form is:
+    F(r) = 2*alpha*epsilon * exp(-alpha*(r-sigma)) * (1 - exp(-alpha*(r-sigma)))
+
+    This is the negative gradient of the Morse potential energy.
+
+    Args:
+        dr: Pairwise distances between particles. Shape: [n, m].
+        sigma: Distance at which force changes from repulsive to attractive.
+            Either a scalar float or tensor of shape [n, m].
+        epsilon: Energy scale of the interaction. Either a scalar float or tensor
+            of shape [n, m].
+        alpha: Controls the force range and stiffness. Either a scalar float or
+            tensor of shape [n, m].
+
+    Returns:
+        torch.Tensor: Pairwise Morse forces between particles. Shape: [n, m].
+            Positive values indicate repulsion, negative values indicate attraction.
+    """
+    exp_term = torch.exp(-alpha * (dr - sigma))
+    force = -2.0 * alpha * epsilon * exp_term * (1.0 - exp_term)
+
+    # Handle potential numerical instabilities
+    return torch.where(dr > 0, force, torch.zeros_like(force))
+
+
+class MorseModel(ModelInterface):
     """Morse potential energy and force calculator.
 
     Implements the Morse potential for molecular dynamics simulations. This model
@@ -149,7 +227,9 @@ class MorseModel(torch.nn.Module, ModelInterface):
         self.epsilon = torch.tensor(epsilon, dtype=self.dtype, device=self.device)
         self.alpha = torch.tensor(alpha, dtype=self.dtype, device=self.device)
 
-    def unbatched_forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def unbatched_forward(
+        self, state: ts.SimState | StateDict
+    ) -> dict[str, torch.Tensor]:
         """Compute Morse potential properties for a single unbatched system.
 
         Internal implementation that processes a single, non-batched simulation state.
@@ -162,7 +242,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
                 and other system information.
 
         Returns:
-            dict[str, torch.Tensor]: Dictionary of computed properties:
+            dict[str, torch.Tensor]: Computed properties:
                 - "energy": Total potential energy (scalar)
                 - "forces": Atomic forces with shape [n_atoms, 3] (if
                     compute_forces=True)
@@ -177,7 +257,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
             In both cases, interactions are truncated at the cutoff distance.
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
         positions = state.positions
         cell = state.row_vector_cell
@@ -192,7 +272,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
                 cutoff=self.cutoff,
                 sort_id=False,
             )
-            dr_vec, distances = get_pair_displacements(
+            dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
@@ -200,7 +280,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
                 shifts=shifts,
             )
         else:
-            dr_vec, distances = get_pair_displacements(
+            dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
@@ -263,7 +343,7 @@ class MorseModel(torch.nn.Module, ModelInterface):
 
         return results
 
-    def forward(self, state: SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Compute Morse potential energies, forces, and stresses for a system.
 
         Main entry point for Morse potential calculations that handles batched states
@@ -275,11 +355,11 @@ class MorseModel(torch.nn.Module, ModelInterface):
                 or a dictionary with the same keys.
 
         Returns:
-            dict[str, torch.Tensor]: Dictionary of computed properties:
-                - "energy": Potential energy with shape [n_batches]
+            dict[str, torch.Tensor]: Computed properties:
+                - "energy": Potential energy with shape [n_systems]
                 - "forces": Atomic forces with shape [n_atoms, 3]
                     (if compute_forces=True)
-                - "stress": Stress tensor with shape [n_batches, 3, 3]
+                - "stress": Stress tensor with shape [n_systems, 3, 3]
                     (if compute_stress=True)
                 - May include additional outputs based on configuration
 
@@ -292,17 +372,19 @@ class MorseModel(torch.nn.Module, ModelInterface):
             model = MorseModel(compute_forces=True)
             results = model(sim_state)
 
-            energy = results["energy"]  # Shape: [n_batches]
+            energy = results["energy"]  # Shape: [n_systems]
             forces = results["forces"]  # Shape: [n_atoms, 3]
             ```
         """
         if isinstance(state, dict):
-            state = SimState(**state, masses=torch.ones_like(state["positions"]))
+            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
-        if state.batch is None and state.cell.shape[0] > 1:
-            raise ValueError("Batch can only be inferred for batch size 1.")
+        if state.system_idx is None and state.cell.shape[0] > 1:
+            raise ValueError(
+                "system_idx can only be inferred if there is only one system."
+            )
 
-        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_batches)]
+        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_systems)]
         properties = outputs[0]
 
         # we always return tensors

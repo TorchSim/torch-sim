@@ -3,7 +3,7 @@
 #   <summary>Dependencies</summary>
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.11",
+#     "mace-torch>=0.3.12",
 # ]
 # ///
 # </details>
@@ -97,7 +97,7 @@ hardware, assuming you choose the right scaling metric.
 # %%
 from torch_sim.autobatching import estimate_max_memory_scaler
 from mace.calculators.foundations_models import mace_mp
-from torch_sim.models import MaceModel
+from torch_sim.models.mace import MaceModel
 
 # Initialize your model
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -249,7 +249,7 @@ batcher.load_states(fire_state)
 fire_state.positions = (
     fire_state.positions + torch.randn_like(fire_state.positions) * 0.05
 )
-total_states = fire_state.n_batches
+total_states = fire_state.n_systems
 
 # Define a convergence function that checks the force on each atom is less than 5e-1
 convergence_fn = ts.generate_force_convergence_fn(5e-1)
@@ -279,11 +279,11 @@ final_states = batcher.restore_original_order(all_converged_states)
 assert len(final_states) == total_states
 
 # Note that the fire_state has been modified in place
-assert fire_state.n_batches == 0
+assert fire_state.n_systems == 0
 
 
 # %%
-fire_state.n_batches
+fire_state.n_systems
 
 
 # %% [markdown]
