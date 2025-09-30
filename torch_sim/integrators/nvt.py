@@ -6,7 +6,7 @@ from typing import Any
 
 import torch
 
-from torch_sim.integrators.md_batched import (
+from torch_sim.integrators.md import (
     MDState,
     NoseHooverChain,
     NoseHooverChainFns,
