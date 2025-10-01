@@ -259,7 +259,7 @@ def test_data_type_conversions(test_file: Path) -> None:
 
     rng = np.random.default_rng(seed=0)
     # Test data with different types
-    test_data = {
+    test_data: dict[str, np.ndarray | torch.Tensor] = {
         # NumPy arrays
         "np_float64": rng.random((10, 3)).astype(np.float64),
         "np_float32": rng.random((10, 3)).astype(np.float32),
@@ -372,7 +372,7 @@ def test_scalar_dtype_handling(test_file: Path) -> None:
         test_file, coerce_to_float32=True, coerce_to_int32=True, mode="w"
     )
 
-    scalar_data = {
+    scalar_data: dict[str, np.ndarray | np.generic | torch.Tensor] = {
         "float64_scalar": np.float64(1.0),
         "float32_scalar": np.float32(1.0),
         "int64_scalar": np.int64(1),
