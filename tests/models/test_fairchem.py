@@ -12,6 +12,7 @@ try:
     from ase.build import bulk, fcc100, molecule
     from huggingface_hub.utils._auth import get_token
 
+    import torch_sim as ts
     from torch_sim.models.fairchem import FairChemModel
 
 except ImportError:

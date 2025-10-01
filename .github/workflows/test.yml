@@ -90,14 +90,14 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
 
-      - name: Login to @janosh's HuggingFace account to access fairchem models
+      - name: Install fairchem and dependencies
         if: ${{ matrix.model.name == 'fairchem' }}
         env:
           HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
         run: |
-          uv pip install huggingface_hub --system
           if [ -n "$HF_TOKEN" ]; then
-            hf auth login --token "$HF_TOKEN"
+            uv pip install huggingface_hub --system
+            huggingface-cli login --token "$HF_TOKEN"
           else
             echo "HF_TOKEN is not set. Skipping login."
           fi
@@ -148,4 +148,11 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Run example
-        run: uv run --with . ${{ matrix.example }}
+        env:
+          HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
+        run: |
+          if [[ "${{ matrix.example }}" == *"fairchem"* ]]; then
+            uv pip install "huggingface_hub[cli]" --system
+            huggingface-cli login --token "$HF_TOKEN"
+          fi
+          uv run --with . ${{ matrix.example }}
