@@ -146,8 +146,24 @@ conflicts = [
         { extra = "sevenn" },
     ],
     [
+        { extra = "graphpes" },
+        { extra = "fairchem" },
+    ],
+    [
+        { extra = "graphpes" },
+        { extra = "nequip" },
+    ],
+    [
+        { extra = "fairchem" },
+        { extra = "mace" },
+    ],
+    [
         { extra = "mace" },
         { extra = "mattersim" },
+    ],
+    [
+        { extra = "mace" },
+        { extra = "nequip" },
     ],
     [
         { extra = "mace" },
@@ -156,7 +172,7 @@ conflicts = [
 ]
 
 [dependency-groups]
-dev = ["prek>=4.3.0", "ty>=0.0.1a20"]
+dev = ["prek>=0.2.0", "ty>=0.0.1a20"]
 
 [tool.ty.rules]
 # TODO: Unable to work with **kwargs: https://github.com/astral-sh/ty/issues/247
