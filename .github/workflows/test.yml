@@ -8,7 +8,7 @@ on:
   workflow_call:
 
 concurrency:
-  group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -37,20 +37,11 @@ jobs:
       - name: Install torch_sim
         run: |
           uv pip install "torch>2" --index-url https://download.pytorch.org/whl/cpu --system
-          uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
+          uv pip install -e ".[test]" --resolution=${{ matrix.version.resolution }} --system
 
       - name: Run core tests
         run: |
-          pytest --cov=torch_sim --cov-report=xml \
-            --ignore=tests/test_elastic.py \
-            --ignore=tests/models/test_fairchem.py \
-            --ignore=tests/models/test_graphpes.py \
-            --ignore=tests/models/test_mace.py \
-            --ignore=tests/models/test_orb.py \
-            --ignore=tests/models/test_sevennet.py \
-            --ignore=tests/models/test_mattersim.py \
-            --ignore=tests/models/test_metatomic.py \
-            --ignore=tests/test_optimizers_vs_ase.py \
+          pytest --cov=torch_sim --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -68,6 +59,7 @@ jobs:
           - { python: "3.12", resolution: lowest-direct }
         model:
           - { name: fairchem, test_path: "tests/models/test_fairchem.py" }
+          - { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
           - { name: graphpes, test_path: "tests/models/test_graphpes.py" }
           - { name: mace, test_path: "tests/models/test_mace.py" }
           - { name: mace, test_path: "tests/test_elastic.py" }
@@ -82,6 +74,14 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
+      - name: Check out fairchem repository
+        if: ${{ matrix.model.name == 'fairchem-legacy' }}
+        uses: actions/checkout@v4
+        with:
+          repository: FAIR-Chem/fairchem
+          path: fairchem-repo
+          ref: fairchem_core-1.10.0
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -90,29 +90,32 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
 
-      - name: Install fairchem and dependencies
-        if: ${{ matrix.model.name == 'fairchem' }}
-        env:
-          HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
+      - name: Install legacy fairchem repository and dependencies
+        if: ${{ matrix.model.name == 'fairchem-legacy' }}
         run: |
-          uv pip install "torch>=2.6" --index-url https://download.pytorch.org/whl/cpu --system
-          uv pip install "fairchem-core>=2.2.0" --system
-          uv pip install "huggingface_hub[cli]" --system
-          uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
+          if [ -f fairchem-repo/packages/requirements.txt ]; then
+            uv pip install -r fairchem-repo/packages/requirements.txt --system
+          fi
+          if [ -f fairchem-repo/packages/requirements-optional.txt ]; then
+            uv pip install -r fairchem-repo/packages/requirements-optional.txt --system
+          fi
+          uv pip install -e fairchem-repo/packages/fairchem-core[dev] --system
+          uv pip install -e ".[test]" --resolution=${{ matrix.version.resolution }} --system
 
       - name: Install torch_sim with model dependencies
-        if: ${{ matrix.model.name != 'fairchem' }}
+        if: ${{ matrix.model.name != 'fairchem-legacy' }}
         run: |
-          uv pip install -e .[test,${{ matrix.model.name }}] --resolution=${{ matrix.version.resolution }} --system
+          uv pip install -e ".[test,${{ matrix.model.name }}]" --resolution=${{ matrix.version.resolution }} --system
 
       - name: Run ${{ matrix.model.test_path }} tests
         env:
           HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
         run: |
-          if [ "${{ matrix.model.name }}" == "fairchem" ]; then
+          if [[ "${{ matrix.model.name }}" == *"fairchem"* ]]; then
+            uv pip install "huggingface_hub[cli]" --system
             huggingface-cli login --token "$HF_TOKEN"
           fi
-          pytest --cov=torch_sim --cov-report=xml ${{ matrix.model.test_path }}
+          pytest -vv -ra -rs --cov=torch_sim --cov-report=xml ${{ matrix.model.test_path }}
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5

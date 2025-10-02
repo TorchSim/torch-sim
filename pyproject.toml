@@ -51,6 +51,7 @@ metatomic = ["metatomic-torch>=0.1.1,<0.2", "metatrain[pet]==2025.7"]
 orb = ["orb-models>=0.5.2"]
 sevenn = ["sevenn>=0.11.0"]
 graphpes = ["graph-pes>=0.0.34", "mace-torch>=0.3.12"]
+fairchem = ["fairchem-core>=2.2.0"]
 docs = [
     "autodoc_pydantic==2.2.0",
     "furo==2024.8.6",
@@ -142,6 +143,14 @@ testpaths = ["tests"]
 # make these dependencies mutually exclusive since they use incompatible e3nn versions
 # see https://docs.astral.sh/uv/concepts/projects/config/#conflicting-dependencies for more details
 conflicts = [
+    [
+        { extra = "fairchem" },
+        { extra = "graphpes" },
+    ],
+    [
+        { extra = "fairchem" },
+        { extra = "mace" },
+    ],
     [
         { extra = "graphpes" },
         { extra = "mattersim" },
