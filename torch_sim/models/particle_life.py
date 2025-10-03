@@ -139,7 +139,6 @@ class ParticleLifeModel(ModelInterface):
         Returns:
             A dictionary containing the energy, forces, and stresses
         """
-        # Extract required data from input
         if isinstance(state, dict):
             state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
@@ -194,7 +193,7 @@ class ParticleLifeModel(ModelInterface):
 
         # Calculate forces and apply cutoff
         pair_forces = asymmetric_particle_pair_force_jit(
-            distances, sigma=self.sigma, epsilon=self.epsilon
+            dr=distances, A=self.epsilon, sigma=self.sigma, beta=self.beta
         )
         pair_forces = torch.where(mask, pair_forces, torch.zeros_like(pair_forces))
 
@@ -236,21 +235,26 @@ class ParticleLifeModel(ModelInterface):
         Raises:
             ValueError: If batch cannot be inferred for multi-cell systems.
         """
-        if isinstance(state, dict):
-            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        sim_state = (
+            state
+            if isinstance(state, ts.SimState)
+            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        )
 
-        if state.system_idx is None and state.cell.shape[0] > 1:
+        if sim_state.system_idx is None and sim_state.cell.shape[0] > 1:
             raise ValueError(
                 "system_idx can only be inferred if there is only one system."
             )
 
-        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_systems)]
+        outputs = [
+            self.unbatched_forward(sim_state[idx]) for idx in range(sim_state.n_systems)
+        ]
         properties = outputs[0]
 
         # we always return tensors
         # per atom properties are returned as (atoms, ...) tensors
         # global properties are returned as shape (..., n) tensors
-        results = {}
+        results: dict[str, torch.Tensor] = {}
         for key in ("stress", "energy"):
             if key in properties:
                 results[key] = torch.stack([out[key] for out in outputs])

@@ -66,6 +66,7 @@ jobs:
           - { name: mace, test_path: "tests/test_optimizers_vs_ase.py" }
           - { name: mattersim, test_path: "tests/models/test_mattersim.py" }
           - { name: metatomic, test_path: "tests/models/test_metatomic.py" }
+          - { name: nequip, test_path: "tests/models/test_nequip_framework.py" }
           - { name: orb, test_path: "tests/models/test_orb.py" }
           - { name: sevenn, test_path: "tests/models/test_sevennet.py" }
     runs-on: ${{ matrix.os }}
@@ -152,7 +153,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: "3.12"
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6

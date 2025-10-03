@@ -1,3 +1,4 @@
+import traceback
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -8,12 +9,50 @@ from pymatgen.analysis.structure_matcher import StructureMatcher
 
 import torch_sim as ts
 from torch_sim.io import atoms_to_state, state_to_atoms, state_to_structures
-from torch_sim.models.mace import MaceModel
+from torch_sim.models.mace import MaceModel, MaceUrls
 from torch_sim.optimizers import frechet_cell_fire, unit_cell_fire
 
 
 if TYPE_CHECKING:
     from mace.calculators import MACECalculator
+
+
+@pytest.fixture
+def ts_mace_mpa() -> MaceModel:
+    """Provides a MACE MP model instance for the optimizer tests."""
+    try:
+        from mace.calculators.foundations_models import mace_mp
+    except ImportError:
+        pytest.skip(
+            f"MACE not installed: {traceback.format_exc()}", allow_module_level=True
+        )
+
+    # Use float64 for potentially higher precision needed in optimization
+    dtype = getattr(torch, dtype_str := "float64")
+    raw_mace = mace_mp(
+        model=MaceUrls.mace_mp_small, return_raw_model=True, default_dtype=dtype_str
+    )
+    return MaceModel(
+        model=raw_mace,
+        device=torch.device("cpu"),
+        dtype=dtype,
+        compute_forces=True,
+        compute_stress=True,
+    )
+
+
+@pytest.fixture
+def ase_mace_mpa() -> "MACECalculator":
+    """Provides an ASE MACECalculator instance using mace_mp."""
+    try:
+        from mace.calculators.foundations_models import mace_mp
+    except ImportError:
+        pytest.skip(
+            f"MACE not installed: {traceback.format_exc()}", allow_module_level=True
+        )
+
+    # Ensure dtype matches the one used in the torch-sim fixture (float64)
+    return mace_mp(model=MaceUrls.mace_mp_small, default_dtype="float64")
 
 
 def _compare_ase_and_ts_states(
@@ -77,7 +116,7 @@ def _compare_ase_and_ts_states(
 
 def _run_and_compare_optimizers(
     initial_sim_state_fixture: ts.state.SimState,
-    torchsim_mace_mpa: MaceModel,
+    ts_mace_mpa: MaceModel,
     ase_mace_mpa: "MACECalculator",
     torch_sim_optimizer_type: str,
     ase_filter_class: Any,
@@ -89,7 +128,7 @@ def _run_and_compare_optimizers(
     """Run and compare optimizations between torch-sim and ASE."""
     pytest.importorskip("mace")
     dtype = torch.float64
-    device = torchsim_mace_mpa.device
+    device = ts_mace_mpa.device
 
     ts_current_system_state = initial_sim_state_fixture.clone()
 
@@ -117,7 +156,7 @@ def _run_and_compare_optimizers(
         force_tol=force_tol, include_cell_forces=True
     )
 
-    results = torchsim_mace_mpa(ts_current_system_state)
+    results = ts_mace_mpa(ts_current_system_state)
     ts_initial_system_state = ts_current_system_state.clone()
     ts_initial_system_state.forces = results["forces"]
     ts_initial_system_state.energy = results["energy"]
@@ -136,7 +175,7 @@ def _run_and_compare_optimizers(
         if steps_for_current_segment > 0:
             updated_ts_state = ts.optimize(
                 system=ts_current_system_state,
-                model=torchsim_mace_mpa,
+                model=ts_mace_mpa,
                 optimizer=optimizer_callable_for_ts_optimize,
                 max_steps=steps_for_current_segment,
                 convergence_fn=convergence_fn,
@@ -269,7 +308,7 @@ def test_optimizer_vs_ase_parametrized(
     force_tol: float,
     tolerances: dict[str, float],
     test_id_prefix: str,
-    torchsim_mace_mpa: MaceModel,
+    ts_mace_mpa: MaceModel,
     ase_mace_mpa: "MACECalculator",
     request: pytest.FixtureRequest,
 ) -> None:
@@ -279,7 +318,7 @@ def test_optimizer_vs_ase_parametrized(
 
     _run_and_compare_optimizers(
         initial_sim_state_fixture=initial_sim_state_fixture,
-        torchsim_mace_mpa=torchsim_mace_mpa,
+        ts_mace_mpa=ts_mace_mpa,
         ase_mace_mpa=ase_mace_mpa,
         torch_sim_optimizer_type=torch_sim_optimizer_type,
         ase_filter_class=ase_filter_class,
