@@ -8,21 +8,19 @@ This module provides functions for:
 """
 
 # ruff: noqa: T201
-
 import itertools
 from collections.abc import Sequence
-from typing import Any
 
 import numpy as np
 import torch
-from pymatgen.core.composition import Composition
+from pymatgen.core import Composition
 
 import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.models.soft_sphere import SoftSphereModel, SoftSphereMultiModel
-from torch_sim.optimizers import FireState, UnitCellFireState, fire
-from torch_sim.optimizers import unit_cell_fire as batched_unit_cell_fire
+from torch_sim.optimizers import FireState
+from torch_sim.quantities import get_pressure
 
 
 def min_distance(
@@ -95,7 +93,7 @@ def get_diameter(composition: Composition) -> float:
             For single elements, it is twice the appropriate atomic radius.
 
     Examples:
-        >>> from pymatgen.core.composition import Composition
+        >>> from pymatgen.core import Composition
         >>> # Multi-element example: Fe2O3
         >>> comp = Composition("Fe2O3")
         >>> diameter = get_diameter(comp)  # Returns minimum Fe-O or O-O separation
@@ -168,7 +166,7 @@ def get_diameter_matrix(
             at [i,j] represents the minimum separation between elements i and j.
 
     Examples:
-        >>> from pymatgen.core.composition import Composition
+        >>> from pymatgen.core import Composition
         >>> comp = Composition("Fe2O3")
         >>> diameters = get_diameter_matrix(comp)
         >>> print(diameters)  # Shows Fe-Fe, Fe-O, and O-O separations
@@ -228,8 +226,7 @@ def random_packed_structure(
     distance_tolerance: float = 0.0001,
     device: torch.device | None = None,
     dtype: torch.dtype = torch.float32,
-    log: Any | None = None,
-) -> FireState | tuple[FireState, list[np.ndarray]]:
+) -> tuple[FireState, list[np.ndarray]]:
     """Generates a random packed atomic structure and minimizes atomic overlaps.
 
     This function creates a random atomic structure within a given cell and optionally
@@ -256,7 +253,7 @@ def random_packed_structure(
 
     Returns:
         FIREState: The optimized structure state containing positions, forces,
-            energies and other optimization parameters.
+            energies and a list of positions at each iteration.
 
     Notes:
         - If both diameter and auto_diameter are None, no overlap minimization
@@ -274,6 +271,7 @@ def random_packed_structure(
     if seed is not None:
         generator.manual_seed(seed)
 
+    log = []
     # Generate initial random positions in fractional coordinates
     N_atoms = sum(element_counts)
     positions = torch.rand((N_atoms, 3), device=device, dtype=dtype, generator=generator)
@@ -309,8 +307,7 @@ def random_packed_structure(
             cell=cell,
             pbc=True,
         )
-        fire_init, fire_update = fire(model=model)
-        state = fire_init(state)
+        state = ts.fire_init(model, state)
         print(f"Initial energy: {state.energy.item():.4f}")
         # Run FIRE optimization until convergence or max iterations
         for _step in range(max_iter):
@@ -318,17 +315,13 @@ def random_packed_structure(
             if min_distance(state.positions, cell, distance_tolerance) > diameter * 0.95:
                 break
 
-            if log is not None:
-                log.append(state.positions.cpu().numpy())
+            log.append(state.positions.cpu().numpy())
 
-            state = fire_update(state)
+            state = ts.fire_step(model, state)
 
         print(f"Final energy: {state.energy.item():.4f}")
 
-    if log is not None:
-        return state, log
-
-    return state
+    return state, log
 
 
 def random_packed_structure_multi(
@@ -391,7 +384,7 @@ def random_packed_structure_multi(
     # Create species indices tensor mapping each atom to its species type
     # e.g. for Fe80B20: [0,0,...,0,1,1,...,1] where 0=Fe, 1=B
     species_idx = torch.tensor(
-        [i for i, count in enumerate(element_counts) for _ in range(count)],
+        [idx for idx, count in enumerate(element_counts) for _ in range(count)],
         device=device,
     )
 
@@ -439,8 +432,7 @@ def random_packed_structure_multi(
             pbc=True,
         )
         # Set up FIRE optimizer with unit masses for all atoms
-        fire_init, fire_update = fire(model=model)
-        state = fire_init(state_dict)
+        state = ts.fire_init(model, state_dict)
         print(f"Initial energy: {state.energy.item():.4f}")
         # Run FIRE optimization until convergence or max iterations
         for _step in range(max_iter):
@@ -448,7 +440,7 @@ def random_packed_structure_multi(
             min_dist = min_distance(state.positions, cell, distance_tolerance)
             if min_dist > diameter_matrix.min() * 0.95:
                 break
-            state = fire_update(state)
+            state = ts.fire_step(model, state)
         print(f"Final energy: {state.energy.item():.4f}")
 
     return state
@@ -460,7 +452,7 @@ def valid_subcell(
     initial_energy: float,
     final_energy: float,
     e_tol: float = 0.001,
-    fe_lower_limit: float = -5.0,
+    e_form_lower_limit: float = -5.0,
     fe_upper_limit: float = 0.0,
     fusion_distance: float = 1.5,
     distance_tolerance: float = 0.0001,
@@ -482,8 +474,8 @@ def valid_subcell(
         final_energy: Total energy of the structure after relaxation, in eV.
         e_tol: Energy tolerance for comparing initial and final energies, in eV.
             Used to check if optimization reduced the energy. Defaults to 0.001 eV.
-        fe_lower_limit: Lower limit for formation energy, in eV/atom. Values below this
-            are considered unphysical. Defaults to -5.0 eV/atom.
+        e_form_lower_limit: Lower limit for formation energy, in eV/atom. Values below
+            this are considered unphysical. Defaults to -5.0 eV/atom.
         fe_upper_limit: Upper limit for formation energy, in eV/atom. Values above this
             indicate poor convergence. Defaults to 0.0 eV/atom.
         fusion_distance: Minimum allowed distance between any pair of atoms, in Å.
@@ -501,7 +493,7 @@ def valid_subcell(
         - Atomic fusion (distances < ~1.5 Å) indicates an unphysical structure
     """
     # Check if formation energy is unphysically negative
-    if final_energy < fe_lower_limit:
+    if final_energy < e_form_lower_limit:
         return False
 
     # Check if optimization properly reduced the energy
@@ -708,7 +700,8 @@ def get_unit_cell_relaxed_structure(
     state: ts.SimState,
     model: ModelInterface,
     max_iter: int = 200,
-) -> tuple[UnitCellFireState, dict[str, torch.Tensor], list[float], list[float]]:
+    verbose: bool = True,  # noqa: FBT001, FBT002
+) -> tuple[ts.FireState, dict[str, torch.Tensor], list[float], list[float]]:
     """Relax both atomic positions and cell parameters using FIRE algorithm.
 
     This function performs geometry optimization of both atomic positions and unit cell
@@ -719,6 +712,7 @@ def get_unit_cell_relaxed_structure(
         state: State containing positions, cell and atomic numbers
         model: Model to compute energies, forces, and stresses
         max_iter: Maximum number of FIRE iterations. Defaults to 200.
+        verbose: Whether to print initial and final energy and pressure. Defaults to True.
 
     Returns:
         tuple containing:
@@ -740,23 +734,21 @@ def get_unit_cell_relaxed_structure(
     results = model(state)
     init_energy = [e.item() for e in results["energy"]]
     init_stress = results["stress"]
-    init_pressure = [(torch.trace(stress) / 3.0).item() for stress in init_stress]
-    print(
-        f"Initial energy: {[f'{e:.4f}' for e in init_energy]} eV, "
-        f"Initial pressure: {[f'{p:.4f}' for p in init_pressure]} eV/A^3"
-    )
+    init_pressure = [p.item() for p in get_pressure(init_stress, 0.0, state.volume)]
+    if verbose:
+        print(
+            f"Initial energy: {[f'{e:.4f}' for e in init_energy]} eV, "
+            f"Initial pressure: {[f'{p:.4f}' for p in init_pressure]} eV/A^3"
+        )
 
-    unit_cell_fire_init, unit_cell_fire_update = batched_unit_cell_fire(
-        model=model,
-    )
-    state = unit_cell_fire_init(state)
+    state = ts.fire_init(model=model, state=state, cell_filter=ts.CellFilter.unit)
 
     def step_fn(
-        step: int, state: UnitCellFireState, logger: dict[str, torch.Tensor]
-    ) -> tuple[UnitCellFireState, dict[str, torch.Tensor]]:
+        step: int, state: ts.FireState, logger: dict[str, torch.Tensor]
+    ) -> tuple[ts.FireState, dict[str, torch.Tensor]]:
         logger["energy"][step] = state.energy
         logger["stress"][step] = state.stress
-        state = unit_cell_fire_update(state)
+        state = ts.fire_step(model=model, state=state)
         return state, logger
 
     for step in range(max_iter):
@@ -767,9 +759,148 @@ def get_unit_cell_relaxed_structure(
 
     final_energy = [e.item() for e in final_results["energy"]]
     final_stress = final_results["stress"]
-    final_pressure = [(torch.trace(stress) / 3.0).item() for stress in final_stress]
-    print(
-        f"Final energy: {[f'{e:.4f}' for e in final_energy]} eV, "
-        f"Final pressure: {[f'{p:.4f}' for p in final_pressure]} eV/A^3"
+    final_pressure = [p.item() for p in get_pressure(final_stress, 0.0, state.volume)]
+    if verbose:
+        print(
+            f"Final energy: {[f'{e:.4f}' for e in final_energy]} eV, "
+            f"Final pressure: {[f'{p:.4f}' for p in final_pressure]} eV/A^3"
+        )
+    return state, logger, final_energy, final_pressure
+
+
+def get_frechet_cell_relaxed_structure(
+    state: ts.SimState,
+    model: ModelInterface,
+    max_iter: int = 200,
+    verbose: bool = True,  # noqa: FBT001, FBT002
+) -> tuple[ts.FireState, dict[str, torch.Tensor], list[float], list[float]]:
+    """Relax both atomic positions and cell parameters using FIRE algorithm.
+
+    This function performs geometry optimization of both atomic positions and unit cell
+    parameters simultaneously. Uses the Fast Inertial Relaxation Engine (FIRE) algorithm
+    to minimize forces on atoms and stresses on the cell.
+
+    Args:
+        state: State containing positions, cell and atomic numbers
+        model: Model to compute energies, forces, and stresses
+        max_iter: Maximum number of FIRE iterations. Defaults to 200.
+        verbose: Whether to print initial and final energy and pressure. Defaults to True.
+
+    Returns:
+        tuple containing:
+            - ts.FireState: Final state containing relaxed positions,
+                cell and more
+            - dict: Logger with energy and stress trajectories
+            - float: Final energy in eV
+            - float: Final pressure in eV/Å³
+    """
+    # Get device and dtype from model
+    device, dtype = model.device, model.dtype
+
+    logger = {
+        "energy": torch.zeros((max_iter, state.n_systems), device=device, dtype=dtype),
+        "stress": torch.zeros(
+            (max_iter, state.n_systems, 3, 3), device=device, dtype=dtype
+        ),
+    }
+
+    results = model(state)
+    init_energy = [e.item() for e in results["energy"]]
+    init_stress = results["stress"]
+    init_pressure = [p.item() for p in get_pressure(init_stress, 0.0, state.volume)]
+    if verbose:
+        print(
+            f"Initial energy: {[f'{e:.4f}' for e in init_energy]} eV, "
+            f"Initial pressure: {[f'{p:.4f}' for p in init_pressure]} eV/A^3"
+        )
+
+    state = ts.fire_init(model=model, state=state, cell_filter=ts.CellFilter.frechet)
+
+    def step_fn(
+        step: int, state: ts.FireState, logger: dict[str, torch.Tensor]
+    ) -> tuple[ts.FireState, dict]:
+        logger["energy"][step] = state.energy
+        logger["stress"][step] = state.stress
+        state = ts.fire_step(model=model, state=state)
+        return state, logger
+
+    for step in range(max_iter):
+        state, logger = step_fn(step, state, logger)
+
+    # Get final results
+    final_results = model(state)
+
+    final_energy = [e.item() for e in final_results["energy"]]
+    final_stress = final_results["stress"]
+    final_pressure = [p.item() for p in get_pressure(final_stress, 0.0, state.volume)]
+    if verbose:
+        print(
+            f"Final energy: {[f'{e:.4f}' for e in final_energy]} eV, "
+            f"Final pressure: {[f'{p:.4f}' for p in final_pressure]} eV/A^3"
+        )
+    return state, logger, final_energy, final_pressure
+
+
+def get_relaxed_structure(
+    state: ts.SimState,
+    model: ModelInterface,
+    max_iter: int = 200,
+    verbose: bool = True,  # noqa: FBT001, FBT002
+) -> tuple[FireState, dict[str, torch.Tensor], list[float], list[float]]:
+    """Relax atomic positions at fixed cell parameters using FIRE algorithm.
+
+    Does geometry optimization of atomic positions while keeping the unit cell fixed.
+    Uses the Fast Inertial Relaxation Engine (FIRE) algorithm to minimize forces on atoms.
+
+    Args:
+        state: State containing positions, cell and atomic numbers
+        model: Model to compute energies, forces, and stresses
+        max_iter: Maximum number of FIRE iterations. Defaults to 200.
+        verbose: Whether to print initial and final energy and pressure. Defaults to True.
+
+    Returns:
+        tuple containing:
+            - FIREState: Final state containing relaxed positions and other quantities
+            - dict: Logger with energy trajectory
+            - float: Final energy in eV
+            - float: Final pressure in eV/Å³
+    """
+    # Get device and dtype from model
+    device, dtype = model.device, model.dtype
+
+    logger = {"energy": torch.zeros((max_iter, 1), device=device, dtype=dtype)}
+
+    results = model(state)
+    init_energy = [e.item() for e in results["energy"]]
+    if verbose:
+        print(f"Initial energy: {[f'{e:.4f}' for e in init_energy]} eV")
+
+    state = ts.fire_init(model=model, state=state)
+
+    def step_fn(
+        idx: int, state: FireState, logger: dict[str, torch.Tensor]
+    ) -> tuple[FireState, dict[str, torch.Tensor]]:
+        logger["energy"][idx] = state.energy
+        state = ts.fire_step(model=model, state=state)
+        return state, logger
+
+    for idx in range(max_iter):
+        state, logger = step_fn(idx, state, logger)
+
+    # Get final results with stress computation enabled
+    final_results = model(
+        positions=state.positions,
+        cell=state.cell,
+        atomic_numbers=state.atomic_numbers,
+        compute_stress=True,
     )
+
+    final_energy = [e.item() for e in final_results["energy"]]
+    final_stress = final_results["stress"]
+    final_pressure = [p.item() for p in get_pressure(final_stress, 0.0, state.volume)]
+    if verbose:
+        print(
+            f"Final energy: {[f'{e:.4f}' for e in final_energy]} eV, "
+            f"Final pressure: {[f'{p:.4f}' for p in final_pressure]} eV/A^3"
+        )
     return state, logger, final_energy, final_pressure

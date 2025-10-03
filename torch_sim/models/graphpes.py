@@ -1,12 +1,12 @@
-"""An interface for using arbitrary GraphPESModels in torch_sim.
+"""An interface for using arbitrary GraphPESModels in ts.
 
 This module provides a TorchSim wrapper of the GraphPES models for computing
 energies, forces, and stresses of atomistic systems. It serves as a wrapper around
-the graph_pes library, integrating it with the torch_sim framework to enable seamless
+the graph_pes library, integrating it with the torch-sim framework to enable seamless
 simulation of atomistic systems with machine learning potentials.
 
 The GraphPESWrapper class adapts GraphPESModels to the ModelInterface protocol,
-allowing them to be used within the broader torch_sim simulation framework.
+allowing them to be used within the broader torch-sim simulation framework.
 
 Notes:
     This implementation requires graph_pes to be installed and accessible.
@@ -14,7 +14,6 @@ Notes:
 """
 
 import traceback
-import typing
 import warnings
 from pathlib import Path
 from typing import Any
@@ -37,7 +36,7 @@ except ImportError as exc:
     PropertyKey = str
 
     class GraphPESWrapper(ModelInterface):  # type: ignore[reportRedeclaration]
-        """GraphPESModel wrapper for torch_sim.
+        """GraphPESModel wrapper for torch-sim.
 
         This class is a placeholder for the GraphPESWrapper class.
         It raises an ImportError if graph_pes is not installed.
@@ -67,34 +66,28 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
     """
     graphs = []
 
-    for i in range(state.n_systems):
-        system_mask = state.system_idx == i
+    for sys_idx in range(state.n_systems):
+        system_mask = state.system_idx == sys_idx
         R = state.positions[system_mask]
         Z = state.atomic_numbers[system_mask]
-        cell = state.row_vector_cell[i]
-        nl, shifts = vesin_nl_ts(
-            R,
-            cell,
-            state.pbc,
-            # graph-pes models internally trim the neighbour list to the
-            # model's cutoff value. To ensure no strange edge effects whereby
-            # edges that are exactly `cutoff` long are included/excluded,
-            # we bump this up slightly here
-            cutoff + 1e-5,
-        )
+        cell = state.row_vector_cell[sys_idx]
+        # graph-pes models internally trim the neighbor list to the
+        # model's cutoff value. To ensure no strange edge effects whereby
+        # edges that are exactly `cutoff` long are included/excluded,
+        # we bump cutoff + 1e-5 up slightly
+        nl, shifts = vesin_nl_ts(R, cell, state.pbc, cutoff + 1e-5)
 
-        graphs.append(
-            AtomicGraph(
-                Z=Z.long(),
-                R=R,
-                cell=cell,
-                neighbour_list=nl.long(),
-                neighbour_cell_offsets=shifts,
-                properties={},
-                cutoff=cutoff.item(),
-                other={},
-            )
+        atomic_graph = AtomicGraph(
+            Z=Z.long(),
+            R=R,
+            cell=cell,
+            neighbour_list=nl.long(),
+            neighbour_cell_offsets=shifts,
+            properties={},
+            cutoff=cutoff.item(),
+            other={},
         )
+        graphs.append(atomic_graph)
 
     return to_batch(graphs)
 
@@ -103,7 +96,7 @@ class GraphPESWrapper(ModelInterface):
     """Wrapper for GraphPESModel in TorchSim.
 
     This class provides a TorchSim wrapper around GraphPESModel instances,
-    allowing them to be used within the broader torch_sim simulation framework.
+    allowing them to be used within the broader torch-sim simulation framework.
 
     The graph-pes package allows for the training of existing model architectures,
     including SchNet, PaiNN, MACE, NequIP, TensorNet, EDDP and more.
@@ -154,12 +147,7 @@ class GraphPESWrapper(ModelInterface):
         )
         self._dtype = dtype
 
-        _model = typing.cast(
-            "GraphPESModel",
-            (
-                model if isinstance(model, GraphPESModel) else load_model(model)  # type: ignore[arg-type]
-            ),
-        )
+        _model = model if isinstance(model, GraphPESModel) else load_model(model)
         self._gp_model = _model.to(device=self.device, dtype=self.dtype)
 
         self._compute_forces = compute_forces

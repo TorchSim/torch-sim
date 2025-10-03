@@ -33,14 +33,14 @@ from torch_sim.neighbors import vesin_nl_ts
 from torch_sim.typing import StateDict
 
 
-DEFAULT_SIGMA = torch.tensor(1.0)
-DEFAULT_EPSILON = torch.tensor(1.0)
+DEFAULT_SIGMA = 1.0
+DEFAULT_EPSILON = 1.0
 
 
 def lennard_jones_pair(
     dr: torch.Tensor,
-    sigma: torch.Tensor = DEFAULT_SIGMA,
-    epsilon: torch.Tensor = DEFAULT_EPSILON,
+    sigma: float | torch.Tensor = DEFAULT_SIGMA,
+    epsilon: float | torch.Tensor = DEFAULT_EPSILON,
 ) -> torch.Tensor:
     """Calculate pairwise Lennard-Jones interaction energies between particles.
 
@@ -78,8 +78,8 @@ def lennard_jones_pair(
 
 def lennard_jones_pair_force(
     dr: torch.Tensor,
-    sigma: torch.Tensor = DEFAULT_SIGMA,
-    epsilon: torch.Tensor = DEFAULT_EPSILON,
+    sigma: float | torch.Tensor = DEFAULT_SIGMA,
+    epsilon: float | torch.Tensor = DEFAULT_EPSILON,
 ) -> torch.Tensor:
     """Calculate pairwise Lennard-Jones forces between particles.
 
@@ -271,18 +271,12 @@ class LennardJonesModel(ModelInterface):
             )
             # Get displacements using neighbor list
             dr_vec, distances = transforms.get_pair_displacements(
-                positions=positions,
-                cell=cell,
-                pbc=pbc,
-                pairs=mapping,
-                shifts=shifts,
+                positions=positions, cell=cell, pbc=pbc, pairs=mapping, shifts=shifts
             )
         else:
             # Get all pairwise displacements
             dr_vec, distances = transforms.get_pair_displacements(
-                positions=positions,
-                cell=cell,
-                pbc=pbc,
+                positions=positions, cell=cell, pbc=pbc
             )
             # Mask out self-interactions
             mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)
@@ -391,19 +385,24 @@ class LennardJonesModel(ModelInterface):
             energies = results["energies"]  # Shape: [n_atoms]
             stresses = results["stresses"]  # Shape: [n_atoms, 3, 3]
         """
-        if isinstance(state, dict):
-            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        sim_state = (
+            state
+            if isinstance(state, ts.SimState)
+            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        )
 
-        if state.system_idx is None and state.cell.shape[0] > 1:
+        if sim_state.system_idx is None and sim_state.cell.shape[0] > 1:
             raise ValueError("System can only be inferred for batch size 1.")
 
-        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_systems)]
+        outputs = [
+            self.unbatched_forward(sim_state[idx]) for idx in range(sim_state.n_systems)
+        ]
         properties = outputs[0]
 
         # we always return tensors
         # per atom properties are returned as (atoms, ...) tensors
         # global properties are returned as shape (..., n) tensors
-        results = {}
+        results: dict[str, torch.Tensor] = {}
         for key in ("stress", "energy"):
             if key in properties:
                 results[key] = torch.stack([out[key] for out in outputs])

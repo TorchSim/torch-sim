@@ -1,14 +1,11 @@
-# %% [markdown]
-# <details>
-#   <summary>Dependencies</summary>
+# %%
 # /// script
 # dependencies = [
 #     "mace-torch>=0.3.12",
 #     "pymatgen>=2025.2.18",
-#     "ase>=3.23.1",
+#     "ase>=3.26",
 # ]
 # ///
-# </details>
 
 
 # %% [markdown]
@@ -45,7 +42,7 @@ The TorchSimTrajectory does not aim to be a new trajectory standard, but rather
 a simple interface for storing and retrieving trajectory data from HDF5 files.
 Through the power of HDF5, the TorchSimTrajectory supports:
 * Saving arbitrary arrays from the user in a natural way
-* First class support for `torch_sim.state.SimState` objects
+* First class support for `ts.SimState` objects
 * Binary encoding + compression for minimal file sizes
 * Easy interoperability with ASE and pymatgen
 
@@ -99,16 +96,16 @@ from ase.build import bulk
 
 # Create a bulk Si diamond structure
 state = ts.initialize_state(
-    bulk("Si", "diamond", a=5.43), device="cpu", dtype=torch.float64
+    bulk("Si", "diamond", a=5.43), device=torch.device("cpu"), dtype=torch.float64
 )
 
 # Open a new trajectory file in a context manager
 with ts.TorchSimTrajectory("random_state.h5", mode="w") as traj:
     # Write the state with additional options
-    for i in range(5):
+    for step in range(5):
         traj.write_state(
             state,
-            steps=i + 1,
+            steps=step + 1,
             save_velocities=False,  # our basic state doesn't have velocities
             save_forces=False,  # our basic state doesn't have forces
             variable_cell=False,  # True for an NPT simulation, where the cell changes
@@ -210,12 +207,12 @@ from torch_sim.models.interface import ModelInterface
 
 
 # Define some property calculators
-def calculate_com(state: ts.state.SimState) -> torch.Tensor:
+def calculate_com(state: ts.SimState) -> torch.Tensor:
     """Calculate center of mass - only needs state"""
     return torch.mean(state.positions * state.masses.unsqueeze(1), dim=0)
 
 
-def calculate_energy(state: ts.state.SimState, model: ModelInterface) -> torch.Tensor:
+def calculate_energy(state: ts.SimState, model: ModelInterface) -> torch.Tensor:
     """Calculate energy - needs both state and model"""
     return model(state)["energy"]
 

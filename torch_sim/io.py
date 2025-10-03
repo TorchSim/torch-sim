@@ -52,14 +52,14 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
     positions = state.positions.detach().cpu().numpy()
     cell = state.cell.detach().cpu().numpy()  # Shape: (n_systems, 3, 3)
     atomic_numbers = state.atomic_numbers.detach().cpu().numpy()
-    system_idx = state.system_idx.detach().cpu().numpy()
+    system_indices = state.system_idx.detach().cpu().numpy()
 
     atoms_list = []
-    for idx in np.unique(system_idx):
-        mask = system_idx == idx
+    for sys_idx in np.unique(system_indices):
+        mask = system_indices == sys_idx
         system_positions = positions[mask]
         system_numbers = atomic_numbers[mask]
-        system_cell = cell[idx].T  # Transpose for ASE convention
+        system_cell = cell[sys_idx].T  # Transpose for ASE convention
 
         # Convert atomic numbers to chemical symbols
         symbols = [chemical_symbols[z] for z in system_numbers]
@@ -89,8 +89,7 @@ def state_to_structures(state: "ts.SimState") -> list["Structure"]:
         - Assumes periodic boundary conditions
     """
     try:
-        from pymatgen.core import Lattice, Structure
-        from pymatgen.core.periodic_table import Element
+        from pymatgen.core import Element, Lattice, Structure
     except ImportError:
         raise ImportError(
             "Pymatgen is required for state_to_structures conversion"
@@ -100,18 +99,18 @@ def state_to_structures(state: "ts.SimState") -> list["Structure"]:
     positions = state.positions.detach().cpu().numpy()
     cell = state.cell.detach().cpu().numpy()  # Shape: (n_systems, 3, 3)
     atomic_numbers = state.atomic_numbers.detach().cpu().numpy()
-    system_idx = state.system_idx.detach().cpu().numpy()
+    system_indices = state.system_idx.detach().cpu().numpy()
 
     # Get unique system indices and counts
-    unique_systems = np.unique(system_idx)
-    structures = []
+    uniq_systems = np.unique(system_indices)
+    structures: list[Structure] = []
 
-    for unique_system_idx in unique_systems:
+    for uniq_sys_idx in uniq_systems:
         # Get mask for current system
-        mask = system_idx == unique_system_idx
+        mask = system_indices == uniq_sys_idx
         system_positions = positions[mask]
         system_numbers = atomic_numbers[mask]
-        system_cell = cell[unique_system_idx].T  # Transpose for conventional form
+        system_cell = cell[uniq_sys_idx].T  # Transpose for conventional form
 
         # Create species list from atomic numbers
         species = [Element.from_Z(z) for z in system_numbers]
@@ -154,33 +153,27 @@ def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
     positions = state.positions.detach().cpu().numpy()
     cell = state.cell.detach().cpu().numpy()  # Shape: (n_systems, 3, 3)
     atomic_numbers = state.atomic_numbers.detach().cpu().numpy()
-    system_idx = state.system_idx.detach().cpu().numpy()
+    system_indices = state.system_idx.detach().cpu().numpy()
 
-    phonopy_atoms_list = []
-    for idx in np.unique(system_idx):
-        mask = system_idx == idx
+    phonopy_atoms_list: list[PhonopyAtoms] = []
+    for sys_idx in np.unique(system_indices):
+        mask = system_indices == sys_idx
         system_positions = positions[mask]
         system_numbers = atomic_numbers[mask]
-        system_cell = cell[idx].T  # Transpose for Phonopy convention
+        system_cell = cell[sys_idx].T  # Transpose for Phonopy convention
 
         # Convert atomic numbers to chemical symbols
         symbols = [chemical_symbols[z] for z in system_numbers]
-        phonopy_atoms_list.append(
-            PhonopyAtoms(
-                symbols=symbols,
-                positions=system_positions,
-                cell=system_cell,
-                pbc=state.pbc,
-            )
+        phonopy_atoms = PhonopyAtoms(
+            symbols=symbols, positions=system_positions, cell=system_cell, pbc=state.pbc
         )
+        phonopy_atoms_list.append(phonopy_atoms)
 
     return phonopy_atoms_list
 
 
 def atoms_to_state(
-    atoms: "Atoms | list[Atoms]",
-    device: torch.device,
-    dtype: torch.dtype,
+    atoms: "Atoms | list[Atoms]", device: torch.device, dtype: torch.dtype
 ) -> "ts.SimState":
     """Convert an ASE Atoms object or list of Atoms objects to a SimState.
 
@@ -211,28 +204,28 @@ def atoms_to_state(
 
     # Stack all properties in one go
     positions = torch.tensor(
-        np.concatenate([a.positions for a in atoms_list]), dtype=dtype, device=device
+        np.concatenate([at.positions for at in atoms_list]), dtype=dtype, device=device
     )
     masses = torch.tensor(
-        np.concatenate([a.get_masses() for a in atoms_list]), dtype=dtype, device=device
+        np.concatenate([at.get_masses() for at in atoms_list]), dtype=dtype, device=device
     )
     atomic_numbers = torch.tensor(
-        np.concatenate([a.get_atomic_numbers() for a in atoms_list]),
+        np.concatenate([at.get_atomic_numbers() for at in atoms_list]),
         dtype=torch.int,
         device=device,
     )
-    cell = torch.tensor(  # Transpose cell from ASE convention to torchsim convention
-        np.stack([a.cell.array.T for a in atoms_list]), dtype=dtype, device=device
+    cell = torch.tensor(  # Transpose cell from ASE convention to TorchSim convention
+        np.stack([at.cell.array.T for at in atoms_list]), dtype=dtype, device=device
     )
 
     # Create system indices using repeat_interleave
-    atoms_per_system = torch.tensor([len(a) for a in atoms_list], device=device)
+    atoms_per_system = torch.tensor([len(at) for at in atoms_list], device=device)
     system_idx = torch.repeat_interleave(
         torch.arange(len(atoms_list), device=device), atoms_per_system
     )
 
     # Verify consistent pbc
-    if not all(all(a.pbc) == all(atoms_list[0].pbc) for a in atoms_list):
+    if not all(all(at.pbc) == all(atoms_list[0].pbc) for at in atoms_list):
         raise ValueError("All systems must have the same periodic boundary conditions")
 
     return ts.SimState(
@@ -246,9 +239,7 @@ def atoms_to_state(
 
 
 def structures_to_state(
-    structure: "Structure | list[Structure]",
-    device: torch.device,
-    dtype: torch.dtype,
+    structure: "Structure | list[Structure]", device: torch.device, dtype: torch.dtype
 ) -> "ts.SimState":
     """Create a SimState from pymatgen Structure(s).
 
@@ -349,15 +340,12 @@ def phonopy_to_state(
     )
 
     # Stack all properties in one go
+    kwargs = {"dtype": dtype, "device": device}
     positions = torch.tensor(
-        np.concatenate([a.positions for a in phonopy_atoms_list]),
-        dtype=dtype,
-        device=device,
+        np.concatenate([at.positions for at in phonopy_atoms_list]), **kwargs
     )
     masses = torch.tensor(
-        np.concatenate([a.masses for a in phonopy_atoms_list]),
-        dtype=dtype,
-        device=device,
+        np.concatenate([at.masses for at in phonopy_atoms_list]), **kwargs
     )
     atomic_numbers = torch.tensor(
         np.concatenate([a.numbers for a in phonopy_atoms_list]),
@@ -365,11 +353,11 @@ def phonopy_to_state(
         device=device,
     )
     cell = torch.tensor(
-        np.stack([a.cell.T for a in phonopy_atoms_list]), dtype=dtype, device=device
+        np.stack([at.cell.T for at in phonopy_atoms_list]), dtype=dtype, device=device
     )
 
     # Create system indices using repeat_interleave
-    atoms_per_system = torch.tensor([len(a) for a in phonopy_atoms_list], device=device)
+    atoms_per_system = torch.tensor([len(at) for at in phonopy_atoms_list], device=device)
     system_idx = torch.repeat_interleave(
         torch.arange(len(phonopy_atoms_list), device=device), atoms_per_system
     )
@@ -377,7 +365,7 @@ def phonopy_to_state(
     """
     NOTE: PhonopyAtoms does not have pbc attribute for Supercells assume True
     Verify consistent pbc
-    if not all(all(a.pbc) == all(phonopy_atoms_list[0].pbc) for a in phonopy_atoms_list):
+    if not all(all(at.pbc) == all(phonopy_atoms_lst[0].pbc) for at in phonopy_atoms_lst):
         raise ValueError("All systems must have the same periodic boundary conditions")
     """
 

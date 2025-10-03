@@ -9,7 +9,6 @@ temperature profile.
 #     "kaleido",
 # ]
 # ///
-
 import os
 
 import numpy as np
@@ -19,9 +18,7 @@ from mace.calculators.foundations_models import mace_mp
 from plotly.subplots import make_subplots
 
 import torch_sim as ts
-from torch_sim.integrators.nvt import nvt_nose_hoover, nvt_nose_hoover_invariant
 from torch_sim.models.mace import MaceModel, MaceUrls
-from torch_sim.quantities import calc_kT
 from torch_sim.units import MetalUnits as Units
 
 
@@ -73,7 +70,7 @@ def get_kT(
 
 
 # Set device and data type
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
 
 # Model configuration
@@ -81,8 +78,8 @@ dtype = torch.float32
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
-    default_dtype=dtype,
-    device=device,
+    default_dtype=str(dtype).removeprefix("torch."),
+    device=str(device),
 )
 
 # Option 2: Load from local file
@@ -136,11 +133,10 @@ state = ts.io.atoms_to_state(fcc_lattice, device=device, dtype=dtype)
 results = model(state)
 
 # Set up simulation parameters
-dt = 0.002 * Units.time
+dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)
 kT = torch.tensor(init_temp, device=device, dtype=dtype) * Units.temperature
 
-nvt_init, nvt_update = nvt_nose_hoover(model=model, kT=kT, dt=dt)
-state = nvt_init(state, kT=kT, seed=1)
+state = ts.nvt_nose_hoover_init(model=model, state=state, kT=kT, dt=dt, seed=1)
 
 # Run simulation with temperature profile
 actual_temps = np.zeros(n_steps)
@@ -163,18 +159,24 @@ for step in range(n_steps):
 
     # Calculate current temperature and save data
     temp = (
-        calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
+        ts.calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
         / Units.temperature
     )
     actual_temps[step] = temp
     expected_temps[step] = current_kT
 
     # Calculate invariant and progress report
-    invariant = float(nvt_nose_hoover_invariant(state, kT=current_kT * Units.temperature))
+    invariant = float(
+        ts.nvt_nose_hoover_invariant(state, kT=current_kT * Units.temperature)
+    )
     print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}")
 
     # Update simulation state
-    state = nvt_update(state, kT=current_kT * Units.temperature)
+    state = ts.nvt_nose_hoover_step(
+        model=model, state=state, dt=dt, kT=current_kT * Units.temperature
+    )
 
 # Visualize temperature profile
 fig = make_subplots()

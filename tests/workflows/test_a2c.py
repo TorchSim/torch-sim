@@ -1,12 +1,10 @@
-from typing import cast
-
 import pytest
 import torch
-from pymatgen.core.composition import Composition
+from pymatgen.core import Composition
 
 import torch_sim as ts
+from tests.conftest import DEVICE, DTYPE
 from torch_sim.models.soft_sphere import SoftSphereModel
-from torch_sim.optimizers import FireState, UnitCellFireState
 from torch_sim.workflows import a2c
 
 
@@ -14,18 +12,26 @@ from torch_sim.workflows import a2c
     ("positions", "cell", "expected_min_dist"),
     [
         (
-            torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
-            torch.eye(3) * 10.0,
+            torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], device=DEVICE, dtype=DTYPE),
+            torch.eye(3, device=DEVICE, dtype=DTYPE) * 10.0,
             1.0,
         ),
         (
-            torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]]),
-            torch.eye(3) * 5.0,
+            torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]], device=DEVICE, dtype=DTYPE),
+            torch.eye(3, device=DEVICE, dtype=DTYPE) * 5.0,
             0.866025,  # sqrt(3)/2
         ),
         (
-            torch.tensor([[0.0, 0.0, 0.0], [2.9, 0.0, 0.0], [0.0, 0.0, 2.9]]),
-            torch.tensor([[3.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 3.0]]),
+            torch.tensor(
+                [[0.0, 0.0, 0.0], [2.9, 0.0, 0.0], [0.0, 0.0, 2.9]],
+                device=DEVICE,
+                dtype=DTYPE,
+            ),
+            torch.tensor(
+                [[3.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 3.0]],
+                device=DEVICE,
+                dtype=DTYPE,
+            ),
             0.1,  # Due to PBC, atoms at 2.9 are closer via boundary
         ),
     ],
@@ -35,7 +41,9 @@ def test_min_distance(
 ) -> None:
     """Test calculation of minimum distance between atoms."""
     min_dist = a2c.min_distance(positions, cell)
-    assert torch.isclose(min_dist, torch.tensor(expected_min_dist), atol=1e-5)
+    assert torch.isclose(
+        min_dist, torch.tensor(expected_min_dist, device=DEVICE, dtype=DTYPE), atol=1e-5
+    )
 
 
 @pytest.mark.parametrize(
@@ -70,39 +78,38 @@ def test_get_diameter_parametrized(
     ],
 )
 def test_get_diameter_matrix_parametrized(
-    composition_str: str, expected_size: int, dtype: torch.dtype, device: torch.device
+    composition_str: str, expected_size: int, dtype: torch.dtype
 ) -> None:
     """Test diameter matrix calculation with different compositions."""
     comp = Composition(composition_str)
-    matrix = a2c.get_diameter_matrix(comp, device=device, dtype=dtype)
+    matrix = a2c.get_diameter_matrix(comp, device=DEVICE, dtype=dtype)
 
     # Check matrix properties
     assert matrix.shape == (expected_size, expected_size)
     assert matrix.dtype == dtype
-    assert matrix.device == device
+    assert matrix.device == DEVICE
     assert torch.all(matrix > 0)
     assert torch.allclose(matrix, matrix.T)  # Symmetry
 
 
-def test_random_packed_structure_basic(device: torch.device) -> None:
+def test_random_packed_structure_basic() -> None:
     """Test basic functionality of random_packed_structure."""
-    comp = Composition("Cu4")
-    cell = torch.eye(3, device=device) * 5.0
+    comp: Composition = Composition("Cu4")
+    cell: torch.Tensor = torch.eye(3, device=DEVICE, dtype=DTYPE) * 5.0
 
     # Test with minimal optimization to ensure state is created
-    state = a2c.random_packed_structure(
+    state, _log = a2c.random_packed_structure(
         composition=comp,
         cell=cell,
         seed=42,
-        # Use a diameter to ensure the state is created
-        diameter=2.5,
+        diameter=2.5,  # Use a diameter to ensure the state is created
         max_iter=1,
-        device=device,
+        device=DEVICE,
+        dtype=DTYPE,
     )
-
     # Check state properties
     assert state.positions.shape == (4, 3)
-    assert state.positions.device == device
+    assert state.positions.device == DEVICE
     assert torch.all(state.positions >= 0)
     assert torch.all(state.positions <= cell[0, 0])
 
@@ -116,49 +123,40 @@ def test_random_packed_structure_optimization(
     cell_size: float,
     diameter: float,
     max_iter: int,
-    device: torch.device,
 ) -> None:
     """Test random_packed_structure with optimization."""
     comp = Composition(composition_str)
-    cell = torch.eye(3, device=device) * cell_size
+    cell = torch.eye(3, device=DEVICE, dtype=DTYPE) * cell_size
 
-    log = []
-    result = a2c.random_packed_structure(
+    state, log = a2c.random_packed_structure(
         composition=comp,
         cell=cell,
         seed=42,
         diameter=diameter,
         max_iter=max_iter,
-        device=device,
-        log=log,
+        device=DEVICE,
+        dtype=DTYPE,
     )
-
-    # Handle the case where a tuple is returned when log is provided
-    if isinstance(result, tuple):
-        state, _ = result
-    else:
-        state = result
 
     # Check that optimization happened
     assert len(log) > 0
     assert state.energy is not None
 
 
-def test_random_packed_structure_auto_diameter(device: torch.device) -> None:
+def test_random_packed_structure_auto_diameter() -> None:
     """Test random_packed_structure with auto_diameter option."""
     comp = Composition("Cu4")
-    cell = torch.eye(3, device=device) * 6.0
+    cell = torch.eye(3, device=DEVICE, dtype=DTYPE) * 6.0
 
-    state = a2c.random_packed_structure(
+    state, _log = a2c.random_packed_structure(
         composition=comp,
         cell=cell,
         seed=42,
         auto_diameter=True,
         max_iter=3,
-        device=device,
+        device=DEVICE,
+        dtype=DTYPE,
     )
-    state = cast("FireState", state)
-
     # Just check that it ran without errors
     assert state.positions is not None
     assert state.energy is not None
@@ -171,30 +169,30 @@ def test_random_packed_structure_auto_diameter(device: torch.device) -> None:
         "initial_energy",
         "final_energy",
         "e_tol",
-        "fe_lower_limit",
+        "e_form_lower_limit",
         "fe_upper_limit",
         "fusion_distance",
         "expected",
     ),
     [
         (
-            torch.tensor([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]),
-            torch.eye(3) * 5.0,
+            torch.tensor([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]], device=DEVICE, dtype=DTYPE),
+            torch.eye(3, device=DEVICE) * 5.0,
             *(0.0, -1.0, 0.001, -5.0, 0.0, 1.5, False),
         ),
         (  # Invalid - no energy decrease
-            torch.tensor([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]),
-            torch.eye(3) * 5.0,
+            torch.tensor([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]], device=DEVICE, dtype=DTYPE),
+            torch.eye(3, device=DEVICE) * 5.0,
             *(-1.0, -1.0, 0.001, -5.0, 0.0, 1.5, False),
         ),
         (  # Invalid - energy too low
-            torch.tensor([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]),
-            torch.eye(3) * 5.0,
+            torch.tensor([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]], device=DEVICE, dtype=DTYPE),
+            torch.eye(3, device=DEVICE) * 5.0,
             *(0.0, -10.0, 0.001, -5.0, 0.0, 1.5, False),
         ),
         (  # Invalid - atoms too close
-            torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
-            torch.eye(3) * 5.0,
+            torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], device=DEVICE, dtype=DTYPE),
+            torch.eye(3, device=DEVICE) * 5.0,
             *(0.0, -1.0, 0.001, -5.0, 0.0, 1.5, False),
         ),
     ],
@@ -206,7 +204,7 @@ def test_valid_subcell(
     initial_energy: float,
     final_energy: float,
     e_tol: float,
-    fe_lower_limit: float,
+    e_form_lower_limit: float,
     fe_upper_limit: float,
     fusion_distance: float,
     expected: bool,
@@ -219,7 +217,7 @@ def test_valid_subcell(
         initial_energy=initial_energy,
         final_energy=final_energy,
         e_tol=e_tol,
-        fe_lower_limit=fe_lower_limit,
+        e_form_lower_limit=e_form_lower_limit,
         fe_upper_limit=fe_upper_limit,
         fusion_distance=fusion_distance,
     )
@@ -242,7 +240,6 @@ def test_get_subcells_to_crystallize_parametrized(
     n_min: int,
     n_max: int,
     should_find_candidates: bool,
-    device: torch.device,
 ) -> None:
     """Test subcell candidate extraction with different parameters."""
     frac_positions = torch.tensor(
@@ -253,7 +250,8 @@ def test_get_subcells_to_crystallize_parametrized(
             [0.6, 0.6, 0.6],
             [0.8, 0.8, 0.8],
         ],
-        device=device,
+        device=DEVICE,
+        dtype=DTYPE,
     )
     species = ["Cu", "Cu", "O", "O", "O"]
 
@@ -278,7 +276,6 @@ def test_get_subcells_with_max_coeff(
     max_coeff: int,
     elements: list[str],
     expected_min_candidates: int,
-    device: torch.device,
 ) -> None:
     """Test subcell extraction with max_coeff parameter."""
     frac_positions = torch.tensor(
@@ -289,7 +286,7 @@ def test_get_subcells_with_max_coeff(
             [0.6, 0.6, 0.6],
             [0.8, 0.8, 0.8],
         ],
-        device=device,
+        device=DEVICE,
     )
     species = ["Cu", "Cu", "O", "O", "O"]
 
@@ -332,7 +329,7 @@ def test_get_target_temperature_parametrized(
 
 
 def create_test_model(
-    *, device: torch.device, compute_stress: bool = True
+    *, device: torch.device, compute_stress: bool = True, dtype: torch.dtype = DTYPE
 ) -> SoftSphereModel:
     """Create a simple soft sphere model for testing."""
     return SoftSphereModel(
@@ -342,33 +339,33 @@ def create_test_model(
         device=device,
         compute_forces=True,
         compute_stress=compute_stress,
+        dtype=dtype,
     )
 
 
 def create_test_state(positions: torch.Tensor, cell: torch.Tensor) -> ts.SimState:
     """Create a simple simulation state for testing."""
     n_atoms = positions.shape[0]
-    device = positions.device
     return ts.SimState(
         positions=positions,
         cell=cell,
         pbc=True,
-        masses=torch.ones(n_atoms, device=device),
-        atomic_numbers=torch.ones(n_atoms, device=device, dtype=torch.long),
+        masses=torch.ones(n_atoms, device=positions.device, dtype=positions.dtype),
+        atomic_numbers=torch.ones(n_atoms, device=positions.device, dtype=torch.long),
     )
 
 
 @pytest.mark.parametrize("max_iter", [1, 2, 3])
-def test_get_unit_cell_relaxed_structure(max_iter: int, device: torch.device) -> None:
+def test_get_unit_cell_relaxed_structure(max_iter: int) -> None:
     """Test unit cell relaxation with FIRE algorithm."""
     # Create a simple test system
     positions = torch.tensor(
-        [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [0.0, 1.5, 0.0]], device=device
+        [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [0.0, 1.5, 0.0]], device=DEVICE, dtype=DTYPE
     )
-    cell = torch.eye(3, device=device) * 5.0
+    cell = torch.eye(3, device=DEVICE, dtype=DTYPE) * 5.0
 
     # Create model and state
-    model = create_test_model(device=device)
+    model = create_test_model(device=DEVICE)
     state = create_test_state(positions, cell)
 
     # Run relaxation with minimal steps
@@ -377,7 +374,34 @@ def test_get_unit_cell_relaxed_structure(max_iter: int, device: torch.device) ->
     )
 
     # Basic checks
-    assert isinstance(relaxed_state, UnitCellFireState)
+    assert isinstance(relaxed_state, ts.FireState)
+    assert logger["energy"].shape[0] == max_iter
+    assert isinstance(final_energy[0], float)
+    assert isinstance(final_pressure[0], float)
+
+
+@pytest.mark.parametrize("max_iter", [1, 2, 3])
+def test_get_frechet_cell_relaxed_structure(max_iter: int) -> None:
+    """Test unit cell relaxation with FIRE algorithm."""
+    # Create a simple test system
+    positions = torch.tensor(
+        [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [0.0, 1.5, 0.0]], device=DEVICE, dtype=DTYPE
+    )
+    cell = torch.eye(3, device=DEVICE, dtype=DTYPE) * 5.0
+
+    # Create model and state
+    model = create_test_model(device=DEVICE)
+    state = create_test_state(positions, cell)
+
+    # Run relaxation with minimal steps
+    relaxed_state, logger, final_energy, final_pressure = (
+        a2c.get_frechet_cell_relaxed_structure(
+            state=state, model=model, max_iter=max_iter
+        )
+    )
+
+    # Basic checks
+    assert isinstance(relaxed_state, ts.FireState)
     assert logger["energy"].shape[0] == max_iter
     assert isinstance(final_energy[0], float)
     assert isinstance(final_pressure[0], float)
@@ -389,12 +413,12 @@ def test_get_unit_cell_relaxed_structure(max_iter: int, device: torch.device) ->
     ids=["Equal number of positions and species", "Larger system"],
 )
 def test_subcells_to_structures_parametrized(
-    n_positions: int, n_species: int, cell_size: float, device: torch.device
+    n_positions: int, n_species: int, cell_size: float
 ) -> None:
     """Test subcell extraction and conversion with various parameters."""
     # Create test data with varying sizes
-    frac_positions = torch.rand((n_positions, 3), device=device)
-    cell = torch.eye(3, device=device) * cell_size
+    frac_positions = torch.rand((n_positions, 3), device=DEVICE)
+    cell = torch.eye(3, device=DEVICE, dtype=DTYPE) * cell_size
 
     # Create alternating Cu/O species list
     species = ["Cu" if idx % 2 == 0 else "O" for idx in range(n_species)]
@@ -408,13 +432,13 @@ def test_subcells_to_structures_parametrized(
 
     # Check output format
     assert len(structures) == len(candidates)
-    for pos, subcell, spec in structures:
+    for pos, subcell, species in structures:
         assert isinstance(pos, torch.Tensor)
         assert isinstance(subcell, torch.Tensor)
-        assert isinstance(spec, list)
+        assert isinstance(species, list)
         assert pos.shape[1] == 3  # 3D positions
         assert subcell.shape == (3, 3)  # 3x3 cell matrix
-        assert all(isinstance(s, str) for s in spec)  # Species strings
+        assert all(isinstance(s, str) for s in species)  # Species strings
 
         # Ensure positions are in [0,1] range (fractional coordinates)
         assert torch.all(pos >= 0.0)
@@ -423,20 +447,19 @@ def test_subcells_to_structures_parametrized(
 
 def test_subcells_to_structures_ensures_proper_scaling() -> None:
     """Test that subcells_to_structures properly scales the positions and cell."""
-    device = torch.device("cpu")
 
     # Create test data with a known grid of points
     frac_positions = torch.tensor(
-        [[0.1, 0.1, 0.1], [0.2, 0.2, 0.2], [0.3, 0.3, 0.3]], device=device
+        [[0.1, 0.1, 0.1], [0.2, 0.2, 0.2], [0.3, 0.3, 0.3]], device=DEVICE, dtype=DTYPE
     )
 
-    cell = torch.eye(3, device=device) * 10.0
+    cell = torch.eye(3, device=DEVICE, dtype=DTYPE) * 10.0
     species = ["Cu", "Cu", "O"]
 
     # Create a candidate with known bounds
-    ids = torch.tensor([0, 1])  # First two atoms
-    lower = torch.tensor([0.0, 0.0, 0.0])
-    upper = torch.tensor([0.25, 0.25, 0.25])
+    ids = torch.tensor([0, 1], device=DEVICE, dtype=torch.long)  # First two atoms
+    lower = torch.tensor([0.0, 0.0, 0.0], device=DEVICE, dtype=DTYPE)
+    upper = torch.tensor([0.25, 0.25, 0.25], device=DEVICE, dtype=DTYPE)
     candidates = [(ids, lower, upper)]
 
     # Convert to structures
@@ -447,14 +470,14 @@ def test_subcells_to_structures_ensures_proper_scaling() -> None:
 
     # Check that positions are rescaled to [0,1] range
     assert torch.allclose(
-        subcell_pos[0], torch.tensor([0.4, 0.4, 0.4])
+        subcell_pos[0], torch.tensor([0.4, 0.4, 0.4], device=DEVICE, dtype=DTYPE)
     )  # (0.1-0.0)/0.25 = 0.4
     assert torch.allclose(
-        subcell_pos[1], torch.tensor([0.8, 0.8, 0.8])
+        subcell_pos[1], torch.tensor([0.8, 0.8, 0.8], device=DEVICE, dtype=DTYPE)
     )  # (0.2-0.0)/0.25 = 0.8
 
     # Check that cell is scaled properly
-    expected_cell = torch.eye(3) * 2.5  # 10.0 * 0.25 = 2.5
+    expected_cell = torch.eye(3, device=DEVICE, dtype=DTYPE) * 2.5  # 10.0 * 0.25 = 2.5
     assert torch.allclose(subcell, expected_cell)
 
     # Check species are correct
@@ -463,7 +486,7 @@ def test_subcells_to_structures_ensures_proper_scaling() -> None:
 
 @pytest.mark.parametrize("restrict_to_compositions", [["CuO"], ["Cu2O", "CuO2"]])
 def test_get_subcells_with_composition_restrictions(
-    restrict_to_compositions: list[str], device: torch.device
+    restrict_to_compositions: list[str],
 ) -> None:
     """Test subcell extraction with composition restrictions."""
     frac_positions = torch.tensor(
@@ -475,7 +498,8 @@ def test_get_subcells_with_composition_restrictions(
             [0.6, 0.6, 0.6],
             [0.8, 0.8, 0.8],
         ],
-        device=device,
+        device=DEVICE,
+        dtype=DTYPE,
     )
     species = ["Cu", "Cu", "Cu", "O", "O", "O"]
 
@@ -499,8 +523,7 @@ def test_get_subcells_with_composition_restrictions(
 
 def test_get_subcells_to_crystallize_invalid_inputs() -> None:
     """Test invalid inputs for subcell extraction."""
-    device = torch.device("cpu")
-    frac_positions = torch.tensor([[0.1, 0.1, 0.1]], device=device)
+    frac_positions = torch.tensor([[0.1, 0.1, 0.1]], device=DEVICE, dtype=DTYPE)
     species = ["Cu"]
 
     # Test with max_coeff but no elements

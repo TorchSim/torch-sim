@@ -1,9 +1,9 @@
 # TorchSim
 
-[![CI](https://github.com/TorchSim/torch-sim/actions/workflows/test.yml/badge.svg)](https://github.com/TorchSim/torch-sim/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/radical-ai/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/radical-ai/torch-sim)
-[![This project supports Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg?logo=python&logoColor=white)](https://python.org/downloads)
-[![PyPI](https://img.shields.io/pypi/v/torch_sim_atomistic?logo=pypi&logoColor=white)](https://pypi.org/project/torch_sim_atomistic)
+[![CI](https://github.com/torchsim/torch-sim/actions/workflows/test.yml/badge.svg)](https://github.com/torchsim/torch-sim/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/torchsim/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/torchsim/torch-sim)
+[![This project supports Python 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg?logo=python&logoColor=white)](https://python.org/downloads)
+[![PyPI](https://img.shields.io/pypi/v/torch-sim-atomistic?logo=pypi&logoColor=white)](https://pypi.org/project/torch-sim-atomistic)
 [![Zenodo](https://img.shields.io/badge/Zenodo-15127004-blue?logo=Zenodo&logoColor=white)][zenodo]
 
 [zenodo]: https://zenodo.org/records/15127004
@@ -81,7 +81,8 @@ To then relax those structures with FIRE is just a few more lines.
 relaxed_state = ts.optimize(
     system=final_state,
     model=mace_model,
-    optimizer=ts.frechet_cell_fire,
+    optimizer=ts.OptimFlavor.fire,
+    cell_filter=ts.CellFilter.frechet,
     autobatcher=True,
 )
 

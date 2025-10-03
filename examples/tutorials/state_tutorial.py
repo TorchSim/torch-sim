@@ -1,15 +1,12 @@
-# %% [markdown]
-# <details>
-#   <summary>Dependencies</summary>
+# %%
 # /// script
 # dependencies = [
 #     "mace-torch>=0.3.12",
-#     "pymatgen>=2024.11.3",
-#     "ase>=3.24",
+#     "pymatgen>=2025.6.14",
+#     "ase>=3.26",
 #     "phonopy>=2.37.0",
 # ]
 # ///
-# </details>
 
 
 # %% [markdown]
@@ -32,7 +29,6 @@ an atomistic system:
 * Periodic boundary conditions
 * Atomic numbers (elements)
 * System indices (for processing multiple systems simultaneously)
-
 """
 
 # %% [markdown]
@@ -44,7 +40,6 @@ an atomistic system:
 New SimStates can be either created manually or from existing atomistic objects. Here
 we'll start by creating an ase atoms object and converting it to a SimState. The `initialize_state` function
 can take in pymatgen Structure, PhonopyAtoms, or other SimStates and convert them into a single SimState.
-
 """
 
 # %%
@@ -95,12 +90,11 @@ from torch_sim.state import get_attrs_for_scope
 
 # loop through each attribute:
 for attr_name, attr_value in get_attrs_for_scope(si_state, "per-atom"):
-    print(f"per-atom attribute: {attr_name}")
-    print(f"value: {attr_value}")
+    print(f"per-atom attribute: {attr_name} = {attr_value}")
 
 # or access the attributes via a dict:
-print("Per-system attributes:", dict(get_attrs_for_scope(si_state, "per-system")))  # noqa: E501
-print("Global attributes:", dict(get_attrs_for_scope(si_state, "global")))
+print(f"Per-system attributes: {dict(get_attrs_for_scope(si_state, 'per-system'))}")  # noqa: E501
+print(f"Global attributes: {dict(get_attrs_for_scope(si_state, 'global'))}")
 
 # %% [markdown]
 """
@@ -247,7 +241,7 @@ print(f"First PhonopyAtoms object has chemical symbols: {phonopy_atoms[0].symbol
 
 ## Extending SimState: The MDState
 
-MDState is defined in the `torch_sim.integrators` module. It is a subclass of SimState
+MDState is defined in the `ts.integrators` module. It is a subclass of SimState
 for molecular dynamics simulations. It includes additional properties like momenta,
 forces, and energy. Here, we instantiate an MDState from a SimState by zeroing out the
 additional properties.
@@ -269,9 +263,9 @@ md_state = MDState(
 )
 
 print("MDState properties:")
-print("Per-atom attributes:", dict(get_attrs_for_scope(si_state, "per-atom")))
-print("Per-system attributes:", dict(get_attrs_for_scope(si_state, "per-system")))
-print("Global attributes:", dict(get_attrs_for_scope(si_state, "global")))
+print(f"Per-atom attributes: {dict(get_attrs_for_scope(si_state, 'per-atom'))}")
+print(f"Per-system attributes: {dict(get_attrs_for_scope(si_state, 'per-system'))}")
+print(f"Global attributes: {dict(get_attrs_for_scope(si_state, 'global'))}")
 
 
 # %% [markdown]

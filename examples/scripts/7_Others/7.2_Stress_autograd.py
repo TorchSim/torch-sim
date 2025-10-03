@@ -8,11 +8,8 @@ The stress is calculated using three different methods:
 """
 
 # /// script
-# dependencies = [
-#     "scipy>=1.15",
-# ]
+# dependencies = ["scipy>=1.15"]
 # ///
-
 import timeit
 
 import torch
@@ -23,9 +20,9 @@ from torch_sim.models.lennard_jones import lennard_jones_pair, lennard_jones_pai
 torch.set_default_tensor_type(torch.DoubleTensor)
 # Set simulation parameters
 n_steps = 10_000
-kT = 0.722  # Temperature in energy units
-sigma = 1.0  # Length parameter
-epsilon = 1.0  # Energy parameter
+kT = torch.tensor(0.722)  # Temperature in energy units
+sigma = torch.tensor(1.0)  # Length parameter
+epsilon = torch.tensor(1.0)  # Energy parameter
 
 # Grid initialization
 Nx = 10
@@ -93,7 +90,7 @@ def force_fn(R: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
     return force_components.sum(dim=0)
 
 
-def stress_fn(R: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
+def stress_fn(R: torch.Tensor, box: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Calculate stress using a brute force method."""
     # Create displacement vectors for all pairs
     ri = R.unsqueeze(0)

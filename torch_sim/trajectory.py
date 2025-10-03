@@ -207,14 +207,16 @@ class TrajectoryReporter:
                 if len(sig.parameters) == 1:
                     # we partially evaluate the function to create a new function with
                     # an optional second argument, this can be set to state later on
-                    new_fn = partial(lambda state, _=None, fn=None: fn(state), fn=prop_fn)
+                    new_fn = partial(
+                        lambda state, _=None, fn=None: (
+                            None if fn is None else fn(state)
+                        ),
+                        fn=prop_fn,
+                    )
                     self.prop_calculators[frequency][name] = new_fn
 
     def report(
-        self,
-        state: SimState,
-        step: int,
-        model: ModelInterface | None = None,
+        self, state: SimState, step: int, model: ModelInterface | None = None
     ) -> list[dict[str, torch.Tensor]]:
         """Report a state and step to the trajectory files.
 
@@ -387,7 +389,9 @@ class TorchSimTrajectory:
             compression = None
 
         # TODO FIX THIS
-        if handles := tables.file._open_files.get_handlers_by_name(str(filename)):
+        if hasattr(tables, "file") and (
+            handles := tables.file._open_files.get_handlers_by_name(str(filename))
+        ):
             list(handles)[-1].close()
 
         # create parent directory if it doesn't exist
@@ -397,7 +401,7 @@ class TorchSimTrajectory:
         self.array_registry: dict[str, tuple[tuple[int, ...], np.dtype]] = {}
 
         # check if the header has already been written
-        if "header" not in [node._v_name for node in self._file.list_nodes("/")]:
+        if "header" not in (node._v_name for node in self._file.list_nodes("/")):
             self._initialize_header(metadata)
 
         self._initialize_registry()
@@ -1012,4 +1016,4 @@ class TorchSimTrajectory:
             traj.write(atoms)
 
         traj.close()
-        return Trajectory(filename)  # Reopen in read mode
+        return Trajectory(filename, mode="r")  # Reopen in read mode

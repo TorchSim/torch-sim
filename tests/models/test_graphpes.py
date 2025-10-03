@@ -5,6 +5,7 @@ import torch
 from ase.build import bulk, molecule
 
 import torch_sim as ts
+from tests.conftest import DEVICE
 from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
@@ -22,15 +23,11 @@ except ImportError:
         f"graph-pes not installed: {traceback.format_exc()}", allow_module_level=True
     )
 
-
-@pytest.fixture
-def dtype() -> torch.dtype:
-    """Fixture to provide the default dtype for testing."""
-    return torch.float32
+DTYPE = torch.float32
 
 
-def test_graphpes_isolated(device: torch.device):
-    # test that the raw model and torch_sim wrapper give the same results
+def test_graphpes_isolated():
+    # test that the raw model and torch-sim wrapper give the same results
     # for an isolated, unbatched structure
 
     water_atoms = molecule("H2O")
@@ -42,20 +39,20 @@ def test_graphpes_isolated(device: torch.device):
 
     ts_model = GraphPESWrapper(
         gp_model,
-        device=device,
-        dtype=torch.float32,
+        device=DEVICE,
+        dtype=DTYPE,
         compute_forces=True,
         compute_stress=False,
     )
-    ts_output = ts_model(ts.io.atoms_to_state([water_atoms], device, torch.float32))
+    ts_output = ts_model(ts.io.atoms_to_state([water_atoms], DEVICE, DTYPE))
     assert set(ts_output) == {"energy", "forces"}
     assert ts_output["energy"].shape == (1,)
 
     assert gp_energy.item() == pytest.approx(ts_output["energy"].item(), abs=1e-5)
 
 
-def test_graphpes_periodic(device: torch.device):
-    # test that the raw model and torch_sim wrapper give the same results
+def test_graphpes_periodic():
+    # test that the raw model and torch-sim wrapper give the same results
     # for a periodic, unbatched structure
 
     bulk_atoms = bulk("Al", "hcp", a=4.05)
@@ -67,12 +64,12 @@ def test_graphpes_periodic(device: torch.device):
 
     ts_model = GraphPESWrapper(
         gp_model,
-        device=device,
-        dtype=torch.float32,
+        device=DEVICE,
+        dtype=DTYPE,
         compute_forces=True,
         compute_stress=True,
     )
-    ts_output = ts_model(ts.io.atoms_to_state([bulk_atoms], device, torch.float32))
+    ts_output = ts_model(ts.io.atoms_to_state([bulk_atoms], DEVICE, DTYPE))
     assert set(ts_output) == {"energy", "forces", "stress"}
     assert ts_output["energy"].shape == (1,)
     assert ts_output["forces"].shape == (len(bulk_atoms), 3)
@@ -81,9 +78,9 @@ def test_graphpes_periodic(device: torch.device):
     torch.testing.assert_close(ts_output["forces"].to("cpu"), gp_forces)
 
 
-def test_batching(device: torch.device):
-    # test that the raw model and torch_sim wrapper give the same results
-    # when batching is done via torch_sim's atoms_to_state function
+def test_batching():
+    # test that the raw model and torch-sim wrapper give the same results
+    # when batching is done via torch-sim's atoms_to_state function
 
     water = molecule("H2O")
     methane = molecule("CH4")
@@ -98,12 +95,12 @@ def test_batching(device: torch.device):
 
     ts_model = GraphPESWrapper(
         gp_model,
-        device=device,
-        dtype=torch.float32,
+        device=DEVICE,
+        dtype=DTYPE,
         compute_forces=True,
         compute_stress=True,
     )
-    ts_output = ts_model(ts.io.atoms_to_state(systems, device, torch.float32))
+    ts_output = ts_model(ts.io.atoms_to_state(systems, DEVICE, DTYPE))
 
     assert set(ts_output) == {"energy", "forces", "stress"}
     assert ts_output["energy"].shape == (2,)
@@ -114,13 +111,13 @@ def test_batching(device: torch.device):
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_graphpes_dtype(device: torch.device, dtype: torch.dtype):
+def test_graphpes_dtype(dtype: torch.dtype):
     water = molecule("H2O")
 
     model = SchNet()
 
-    ts_wrapper = GraphPESWrapper(model, device=device, dtype=dtype, compute_stress=False)
-    ts_output = ts_wrapper(ts.io.atoms_to_state([water], device, dtype))
+    ts_wrapper = GraphPESWrapper(model, device=DEVICE, dtype=dtype, compute_stress=False)
+    ts_output = ts_wrapper(ts.io.atoms_to_state([water], DEVICE, dtype))
     assert ts_output["energy"].dtype == dtype
     assert ts_output["forces"].dtype == dtype
 
@@ -129,18 +126,15 @@ _nequip_model = ZEmbeddingNequIP()
 
 
 @pytest.fixture
-def ts_nequip_model(device: torch.device, dtype: torch.dtype):
+def ts_nequip_model():
     return GraphPESWrapper(
-        _nequip_model,
-        device=device,
-        dtype=dtype,
-        compute_stress=False,
+        _nequip_model, device=DEVICE, dtype=DTYPE, compute_stress=False
     )
 
 
 @pytest.fixture
-def ase_nequip_calculator(device: torch.device, dtype: torch.dtype):
-    return _nequip_model.to(device, dtype).ase_calculator(skin=0.0)
+def ase_nequip_calculator():
+    return _nequip_model.to(DEVICE, DTYPE).ase_calculator(skin=0.0)
 
 
 test_graphpes_nequip_consistency = make_model_calculator_consistency_test(
@@ -148,26 +142,34 @@ test_graphpes_nequip_consistency = make_model_calculator_consistency_test(
     model_fixture_name="ts_nequip_model",
     calculator_fixture_name="ase_nequip_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
+    device=DEVICE,
+    dtype=DTYPE,
+    energy_rtol=1e-3,
+    energy_atol=1e-3,
+    force_rtol=1e-3,
+    force_atol=1e-3,
+    stress_rtol=1e-3,
+    stress_atol=1e-3,
 )
 
 test_graphpes_nequip_model_outputs = make_validate_model_outputs_test(
-    model_fixture_name="ts_nequip_model",
+    model_fixture_name="ts_nequip_model", device=DEVICE, dtype=DTYPE
 )
 
 
 @pytest.fixture
-def ts_mace_model(device: torch.device, dtype: torch.dtype):
+def ts_mace_model():
     return GraphPESWrapper(
         mace_mp("medium-mpa-0"),
-        device=device,
-        dtype=dtype,
+        device=DEVICE,
+        dtype=DTYPE,
         compute_stress=False,
     )
 
 
 @pytest.fixture
-def ase_mace_calculator(device: torch.device, dtype: torch.dtype):
-    return mace_mp("medium-mpa-0").to(device, dtype).ase_calculator(skin=0.0)
+def ase_mace_calculator():
+    return mace_mp("medium-mpa-0").to(DEVICE, DTYPE).ase_calculator(skin=0.0)
 
 
 test_graphpes_mace_consistency = make_model_calculator_consistency_test(
@@ -175,10 +177,14 @@ test_graphpes_mace_consistency = make_model_calculator_consistency_test(
     model_fixture_name="ts_mace_model",
     calculator_fixture_name="ase_mace_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
+    device=DEVICE,
+    dtype=DTYPE,
 )
 
 test_graphpes_mace_model_outputs = make_validate_model_outputs_test(
     model_fixture_name="ts_mace_model",
+    device=DEVICE,
+    dtype=DTYPE,
 )
 
 
@@ -186,18 +192,13 @@ _lj_model = LennardJones(sigma=0.5)
 
 
 @pytest.fixture
-def ts_lj_model(device: torch.device, dtype: torch.dtype):
-    return GraphPESWrapper(
-        _lj_model,
-        device=device,
-        dtype=dtype,
-        compute_stress=False,
-    )
+def ts_lj_model():
+    return GraphPESWrapper(_lj_model, device=DEVICE, dtype=DTYPE, compute_stress=False)
 
 
 @pytest.fixture
-def ase_lj_calculator(device: torch.device, dtype: torch.dtype):
-    return _lj_model.to(device, dtype).ase_calculator(skin=0.0)
+def ase_lj_calculator():
+    return _lj_model.to(DEVICE, DTYPE).ase_calculator(skin=0.0)
 
 
 test_graphpes_lj_consistency = make_model_calculator_consistency_test(
@@ -205,4 +206,6 @@ test_graphpes_lj_consistency = make_model_calculator_consistency_test(
     model_fixture_name="ts_lj_model",
     calculator_fixture_name="ase_lj_calculator",
     sim_state_names=consistency_test_simstate_fixtures,
+    device=DEVICE,
+    dtype=DTYPE,
 )

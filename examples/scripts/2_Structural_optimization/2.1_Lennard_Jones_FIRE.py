@@ -1,11 +1,8 @@
 """Lennard-Jones FIRE optimization."""
 
 # /// script
-# dependencies = [
-#     "scipy>=1.15",
-# ]
+# dependencies = ["scipy>=1.15"]
 # ///
-
 import itertools
 import os
 
@@ -13,11 +10,10 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.optimizers import fire
 
 
 # Set up the device and data type
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
 
 # Set up the random number generator
@@ -85,7 +81,7 @@ model = LennardJonesModel(
 )
 
 # Create state with batch dimension
-state = ts.state.SimState(
+state = ts.SimState(
     positions=positions,
     masses=masses,
     cell=cell.unsqueeze(0),
@@ -97,19 +93,14 @@ state = ts.state.SimState(
 results = model(state)
 
 # Initialize FIRE optimizer
-fire_init, fire_update = fire(
-    model=model,
-    dt_start=0.005,
-    dt_max=0.01,
-)
+state = ts.fire_init(model=model, state=state, dt_start=0.005)
 
-state = fire_init(state=state)
 
 # Run optimization for N_steps
 for step in range(N_steps):
     if step % 100 == 0:
         print(f"{step=}: Potential energy: {state.energy[0].item()} eV")
-    state = fire_update(state)
+    state = ts.fire_step(model, state, dt_max=0.01)
 
 # Print max force after optimization
 print(f"Initial energy: {results['energy'][0].item()} eV")

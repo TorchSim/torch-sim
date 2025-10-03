@@ -1,9 +1,9 @@
-import traceback
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 import pytest
 import torch
+import torch.distributions.weibull
 from ase import Atoms
 from ase.build import bulk, molecule
 from ase.spacegroup import crystal
@@ -11,76 +11,25 @@ from phonopy.structure.atoms import PhonopyAtoms
 from pymatgen.core import Structure
 
 import torch_sim as ts
-from torch_sim.io import atoms_to_state
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.models.mace import MaceModel, MaceUrls
-from torch_sim.state import concatenate_states
 
 
-if TYPE_CHECKING:
-    from mace.calculators import MACECalculator
-
-
-@pytest.fixture
-def device() -> torch.device:
-    return torch.device("cpu")
+DEVICE = torch.device("cpu")
+DTYPE = torch.float64
 
 
 @pytest.fixture
-def dtype() -> torch.dtype:
-    return torch.float64
-
-
-@pytest.fixture
-def lj_model(device: torch.device, dtype: torch.dtype) -> LennardJonesModel:
+def lj_model() -> LennardJonesModel:
     """Create a Lennard-Jones model with reasonable parameters for Ar."""
     return LennardJonesModel(
         use_neighbor_list=True,
         sigma=3.405,
         epsilon=0.0104,
-        device=device,
-        dtype=dtype,
+        device=DEVICE,
+        dtype=DTYPE,
         compute_forces=True,
         compute_stress=True,
         cutoff=2.5 * 3.405,
-    )
-
-
-@pytest.fixture
-def ase_mace_mpa() -> "MACECalculator":
-    """Provides an ASE MACECalculator instance using mace_mp."""
-    try:
-        from mace.calculators.foundations_models import mace_mp
-    except (ImportError, ModuleNotFoundError):
-        pytest.skip(
-            f"MACE not installed: {traceback.format_exc()}", allow_module_level=True
-        )
-
-    # Ensure dtype matches the one used in the torchsim fixture (float64)
-    return mace_mp(model=MaceUrls.mace_mp_small, default_dtype="float64")
-
-
-@pytest.fixture
-def torchsim_mace_mpa() -> MaceModel:
-    """Provides a MACE MP model instance for the optimizer tests."""
-    try:
-        from mace.calculators.foundations_models import mace_mp
-    except (ImportError, ModuleNotFoundError):
-        pytest.skip(
-            f"MACE not installed: {traceback.format_exc()}", allow_module_level=True
-        )
-
-    # Use float64 for potentially higher precision needed in optimization
-    dtype = getattr(torch, dtype_str := "float64")
-    raw_mace = mace_mp(
-        model=MaceUrls.mace_mp_small, return_raw_model=True, default_dtype=dtype_str
-    )
-    return MaceModel(
-        model=raw_mace,
-        device="cpu",
-        dtype=dtype,
-        compute_forces=True,
-        compute_stress=True,
     )
 
 
@@ -150,41 +99,41 @@ def si_phonopy_atoms() -> Any:
 
 
 @pytest.fixture
-def si_sim_state(si_atoms: Any, device: torch.device, dtype: torch.dtype) -> Any:
+def si_sim_state(si_atoms: Any) -> Any:
     """Create a basic state from si_structure."""
-    return ts.io.atoms_to_state(si_atoms, device, dtype)
+    return ts.io.atoms_to_state(si_atoms, DEVICE, DTYPE)
 
 
 @pytest.fixture
-def cu_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
+def cu_sim_state() -> ts.SimState:
     """Create crystalline copper using ASE."""
     atoms = bulk("Cu", "fcc", a=3.58, cubic=True)
-    return ts.io.atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, DEVICE, DTYPE)
 
 
 @pytest.fixture
-def mg_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
+def mg_sim_state() -> ts.SimState:
     """Create crystalline magnesium using ASE."""
     atoms = bulk("Mg", "hcp", a=3.17, c=5.14)
-    return ts.io.atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, DEVICE, DTYPE)
 
 
 @pytest.fixture
-def sb_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
+def sb_sim_state() -> ts.SimState:
     """Create crystalline antimony using ASE."""
     atoms = bulk("Sb", "rhombohedral", a=4.58, alpha=60)
-    return ts.io.atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, DEVICE, DTYPE)
 
 
 @pytest.fixture
-def ti_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
+def ti_sim_state() -> ts.SimState:
     """Create crystalline titanium using ASE."""
     atoms = bulk("Ti", "hcp", a=2.94, c=4.64)
-    return ts.io.atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, DEVICE, DTYPE)
 
 
 @pytest.fixture
-def tio2_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
+def tio2_sim_state() -> ts.SimState:
     """Create crystalline TiO2 using ASE."""
     a, c = 4.60, 2.96
     basis = [("Ti", 0.5, 0.5, 0), ("O", 0.695679, 0.695679, 0.5)]
@@ -194,11 +143,11 @@ def tio2_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
         spacegroup=136,  # P4_2/mnm
         cellpar=[a, a, c, 90, 90, 90],
     )
-    return ts.io.atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, DEVICE, DTYPE)
 
 
 @pytest.fixture
-def ga_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
+def ga_sim_state() -> ts.SimState:
     """Create crystalline Ga using ASE."""
     a, b, c = 4.43, 7.60, 4.56
     basis = [("Ga", 0, 0.344304, 0.415401)]
@@ -208,11 +157,11 @@ def ga_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
         spacegroup=64,  # Cmce
         cellpar=[a, b, c, 90, 90, 90],
     )
-    return ts.io.atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, DEVICE, DTYPE)
 
 
 @pytest.fixture
-def niti_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
+def niti_sim_state() -> ts.SimState:
     """Create crystalline NiTi using ASE."""
     a, b, c = 2.89, 3.97, 4.83
     alpha, beta, gamma = 90.00, 105.23, 90.00
@@ -226,11 +175,11 @@ def niti_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
         spacegroup=11,
         cellpar=[a, b, c, alpha, beta, gamma],
     )
-    return ts.io.atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, DEVICE, DTYPE)
 
 
 @pytest.fixture
-def sio2_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
+def sio2_sim_state() -> ts.SimState:
     """Create an alpha-quartz SiO2 system for testing."""
     atoms = crystal(
         symbols=["O", "Si"],
@@ -238,15 +187,11 @@ def sio2_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
         spacegroup=152,
         cellpar=[4.9019, 4.9019, 5.3988, 90, 90, 120],
     )
-    return ts.io.atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, DEVICE, DTYPE)
 
 
 @pytest.fixture
-def rattled_sio2_sim_state(
-    sio2_sim_state: ts.SimState,
-    device: torch.device,
-    dtype: torch.dtype,
-) -> ts.SimState:
+def rattled_sio2_sim_state(sio2_sim_state: ts.SimState) -> ts.SimState:
     """Create a rattled SiO2 system for testing."""
     sim_state = sio2_sim_state.clone()
 
@@ -256,9 +201,9 @@ def rattled_sio2_sim_state(
         # Temporarily set a fixed seed
         torch.manual_seed(3)
         weibull = torch.distributions.weibull.Weibull(scale=0.1, concentration=1)
-        rnd = torch.randn_like(sim_state.positions, device=device, dtype=dtype)
-        rnd = rnd / torch.norm(rnd, dim=-1, keepdim=True).to(device=device)
-        shifts = weibull.sample(rnd.shape).to(device=device) * rnd
+        rnd = torch.randn_like(sim_state.positions, device=DEVICE, dtype=DTYPE)
+        rnd = rnd / torch.norm(rnd, dim=-1, keepdim=True).to(device=DEVICE)
+        shifts = weibull.sample(rnd.shape).to(device=DEVICE) * rnd
         sim_state.positions = sim_state.positions + shifts
     finally:
         # Restore the original RNG state
@@ -268,7 +213,29 @@ def rattled_sio2_sim_state(
 
 
 @pytest.fixture
-def casio3_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
+def rattled_si_sim_state(si_sim_state: ts.SimState) -> ts.SimState:
+    """Create a rattled Si system for testing."""
+    sim_state = si_sim_state.clone()
+
+    # Store the current RNG state
+    rng_state = torch.random.get_rng_state()
+    try:
+        # Temporarily set a fixed seed
+        torch.manual_seed(3)
+        weibull = torch.distributions.weibull.Weibull(scale=0.1, concentration=1)
+        rnd = torch.randn_like(sim_state.positions, device=DEVICE, dtype=DTYPE)
+        rnd = rnd / torch.norm(rnd, dim=-1, keepdim=True).to(device=DEVICE)
+        shifts = weibull.sample(rnd.shape).to(device=DEVICE) * rnd
+        sim_state.positions = sim_state.positions + shifts
+    finally:
+        # Restore the original RNG state
+        torch.random.set_rng_state(rng_state)
+
+    return sim_state
+
+
+@pytest.fixture
+def casio3_sim_state() -> ts.SimState:
     a, b, c = 7.9258, 7.3202, 7.0653
     alpha, beta, gamma = 90.055, 95.217, 103.426
     basis = [
@@ -294,46 +261,40 @@ def casio3_sim_state(device: torch.device, dtype: torch.dtype) -> ts.SimState:
         spacegroup=2,
         cellpar=[a, b, c, alpha, beta, gamma],
     )
-    return ts.io.atoms_to_state(atoms, device, dtype)
+    return ts.io.atoms_to_state(atoms, DEVICE, DTYPE)
 
 
 @pytest.fixture
-def benzene_sim_state(
-    benzene_atoms: Any, device: torch.device, dtype: torch.dtype
-) -> Any:
+def benzene_sim_state(benzene_atoms: Any) -> Any:
     """Create a basic state from benzene_atoms."""
-    return ts.io.atoms_to_state(benzene_atoms, device, dtype)
+    return ts.io.atoms_to_state(benzene_atoms, DEVICE, DTYPE)
 
 
 @pytest.fixture
-def fe_supercell_sim_state(
-    fe_atoms: Atoms, device: torch.device, dtype: torch.dtype
-) -> Any:
+def fe_supercell_sim_state(fe_atoms: Atoms) -> Any:
     """Create a face-centered cubic (FCC) iron structure with 4x4x4 supercell."""
-    return ts.io.atoms_to_state(fe_atoms.repeat([4, 4, 4]), device, dtype)
+    return ts.io.atoms_to_state(fe_atoms.repeat([4, 4, 4]), DEVICE, DTYPE)
 
 
 @pytest.fixture
-def ar_supercell_sim_state(
-    ar_atoms: Atoms, device: torch.device, dtype: torch.dtype
-) -> ts.SimState:
+def ar_supercell_sim_state(ar_atoms: Atoms) -> ts.SimState:
     """Create a face-centered cubic (FCC) Argon structure with 2x2x2 supercell."""
-    return ts.io.atoms_to_state(ar_atoms.repeat([2, 2, 2]), device, dtype)
+    return ts.io.atoms_to_state(ar_atoms.repeat([2, 2, 2]), DEVICE, DTYPE)
 
 
 @pytest.fixture
 def ar_double_sim_state(ar_supercell_sim_state: ts.SimState) -> ts.SimState:
     """Create a batched state from ar_fcc_sim_state."""
-    return concatenate_states(
+    return ts.concatenate_states(
         [ar_supercell_sim_state, ar_supercell_sim_state],
         device=ar_supercell_sim_state.device,
     )
 
 
 @pytest.fixture
-def si_double_sim_state(si_atoms: Atoms, device: torch.device, dtype: torch.dtype) -> Any:
+def si_double_sim_state(si_atoms: Atoms) -> Any:
     """Create a basic state from si_structure."""
-    return ts.io.atoms_to_state([si_atoms, si_atoms], device, dtype)
+    return ts.io.atoms_to_state([si_atoms, si_atoms], DEVICE, DTYPE)
 
 
 @pytest.fixture
@@ -341,14 +302,14 @@ def mixed_double_sim_state(
     ar_supercell_sim_state: ts.SimState, si_sim_state: ts.SimState
 ) -> ts.SimState:
     """Create a batched state from ar_fcc_sim_state."""
-    return concatenate_states(
+    return ts.concatenate_states(
         [ar_supercell_sim_state, si_sim_state],
         device=ar_supercell_sim_state.device,
     )
 
 
 @pytest.fixture
-def osn2_sim_state(torchsim_mace_mpa: MaceModel) -> ts.state.SimState:
+def osn2_sim_state() -> ts.SimState:
     """Provides an initial SimState for rhombohedral OsN2."""
     # For pymatgen Structure initialization
     from pymatgen.core import Lattice, Structure
@@ -358,15 +319,11 @@ def osn2_sim_state(torchsim_mace_mpa: MaceModel) -> ts.state.SimState:
     species = ["Os", "N"]
     frac_coords = [[0.75, 0.7501, -0.25], [0, 0, 0]]  # Slightly perturbed
     structure = Structure(lattice, species, frac_coords, coords_are_cartesian=False)
-    return ts.initialize_state(
-        structure, dtype=torchsim_mace_mpa.dtype, device=torchsim_mace_mpa.device
-    )
+    return ts.initialize_state(structure, dtype=DTYPE, device=DEVICE)
 
 
 @pytest.fixture
-def distorted_fcc_al_conventional_sim_state(
-    torchsim_mace_mpa: MaceModel,
-) -> ts.state.SimState:
+def distorted_fcc_al_conventional_sim_state() -> ts.SimState:
     """Initial SimState for a slightly distorted FCC Al conventional cell (4 atoms)."""
     # Create a standard 4-atom conventional FCC Al cell
     atoms_fcc = bulk("Al", crystalstructure="fcc", a=4.05, cubic=True)
@@ -384,7 +341,5 @@ def distorted_fcc_al_conventional_sim_state(
     positions += np_rng.normal(scale=0.01, size=positions.shape)
     atoms_fcc.set_positions(positions)
 
-    dtype = torchsim_mace_mpa.dtype
-    device = torchsim_mace_mpa.device
     # Convert the ASE Atoms object to SimState (will be a single batch with 4 atoms)
-    return atoms_to_state(atoms_fcc, device=device, dtype=dtype)
+    return ts.io.atoms_to_state(atoms_fcc, device=DEVICE, dtype=DTYPE)

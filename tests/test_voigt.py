@@ -52,9 +52,9 @@ def test_batch_conversion():
     assert result.shape == (2, 3, 3)
 
     # Test each batch independently
-    for i in range(2):
-        single_result = voigt_6_to_full_3x3_stress(batch_voigt[i])
-        assert torch.allclose(result[i], single_result)
+    for batch_idx in range(2):
+        single_result = voigt_6_to_full_3x3_stress(batch_voigt[batch_idx])
+        assert torch.allclose(result[batch_idx], single_result)
 
 
 def test_symmetry():

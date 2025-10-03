@@ -1,7 +1,7 @@
-"""Types used across torch-sim."""
+"""Types used across TorchSim."""
 
-from enum import Enum
-from typing import TYPE_CHECKING, Literal, TypeVar, Union
+from enum import StrEnum
+from typing import TYPE_CHECKING, Literal, Union
 
 import torch
 
@@ -17,10 +17,9 @@ if TYPE_CHECKING:
 MemoryScaling = Literal["n_atoms_x_density", "n_atoms"]
 StateKey = Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "system_idx"]
 StateDict = dict[StateKey, torch.Tensor]
-SimStateVar = TypeVar("SimStateVar", bound="SimState")
 
 
-class BravaisType(Enum):
+class BravaisType(StrEnum):
     """Enumeration of the seven Bravais lattice types in 3D crystals.
 
     These lattice types represent the distinct crystal systems classified
@@ -31,13 +30,13 @@ class BravaisType(Enum):
     which determine the number of independent elastic constants.
     """
 
-    CUBIC = "cubic"
-    HEXAGONAL = "hexagonal"
-    TRIGONAL = "trigonal"
-    TETRAGONAL = "tetragonal"
-    ORTHORHOMBIC = "orthorhombic"
-    MONOCLINIC = "monoclinic"
-    TRICLINIC = "triclinic"
+    cubic = "cubic"
+    hexagonal = "hexagonal"
+    trigonal = "trigonal"
+    tetragonal = "tetragonal"
+    orthorhombic = "orthorhombic"
+    monoclinic = "monoclinic"
+    triclinic = "triclinic"
 
 
 StateLike = Union[
@@ -47,6 +46,5 @@ StateLike = Union[
     list["Atoms"],
     list["Structure"],
     list["PhonopyAtoms"],
-    SimStateVar,
-    list[SimStateVar],
+    "SimState",
 ]

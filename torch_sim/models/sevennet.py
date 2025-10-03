@@ -33,7 +33,7 @@ except ImportError as exc:
     warnings.warn(f"SevenNet import failed: {traceback.format_exc()}", stacklevel=2)
 
     class SevenNetModel(ModelInterface):
-        """SevenNet model wrapper for torch_sim.
+        """SevenNet model wrapper for torch-sim.
 
         This class is a placeholder for the SevenNetModel class.
         It raises an ImportError if sevenn is not installed.
@@ -143,11 +143,7 @@ class SevenNetModel(ModelInterface):
         if self.dtype is not None:
             self.model = self.model.to(dtype=self.dtype)
 
-        self.implemented_properties = [
-            "energy",
-            "forces",
-            "stress",
-        ]
+        self.implemented_properties = ["energy", "forces", "stress"]
 
     def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
@@ -171,24 +167,27 @@ class SevenNetModel(ModelInterface):
             The state is automatically transferred to the model's device if needed.
             All output tensors are detached from the computation graph.
         """
-        if isinstance(state, dict):
-            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        sim_state = (
+            state
+            if isinstance(state, ts.SimState)
+            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        )
 
-        if state.device != self._device:
-            state = state.to(self._device)
+        if sim_state.device != self._device:
+            sim_state = sim_state.to(self._device)
 
         # TODO: is this clone necessary?
-        state = state.clone()
+        sim_state = sim_state.clone()
 
         data_list = []
-        for b in range(state.system_idx.max().item() + 1):
-            system_mask = state.system_idx == b
+        for sys_idx in range(sim_state.system_idx.max().item() + 1):
+            system_mask = sim_state.system_idx == sys_idx
 
-            pos = state.positions[system_mask]
+            pos = sim_state.positions[system_mask]
             # SevenNet uses row vector cell convention for neighbor list
-            row_vector_cell = state.row_vector_cell[b]
-            pbc = state.pbc
-            atomic_numbers = state.atomic_numbers[system_mask]
+            row_vector_cell = sim_state.row_vector_cell[sys_idx]
+            pbc = sim_state.pbc
+            atomic_nums = sim_state.atomic_numbers[system_mask]
 
             edge_idx, shifts_idx = self.neighbor_list_fn(
                 positions=pos,
@@ -203,17 +202,15 @@ class SevenNetModel(ModelInterface):
             # vol = vol if vol > 0.0 else torch.tensor(np.finfo(float).eps)
 
             data = {
-                key.NODE_FEATURE: atomic_numbers,
-                key.ATOMIC_NUMBERS: atomic_numbers.to(
-                    dtype=torch.int64, device=self.device
-                ),
+                key.NODE_FEATURE: atomic_nums,
+                key.ATOMIC_NUMBERS: atomic_nums.to(dtype=torch.int64, device=self.device),
                 key.POS: pos,
                 key.EDGE_IDX: edge_idx,
                 key.EDGE_VEC: edge_vec,
                 key.CELL: row_vector_cell,
                 key.CELL_SHIFT: shifts_idx,
                 key.CELL_VOLUME: vol,
-                key.NUM_ATOMS: torch.tensor(len(atomic_numbers), device=self.device),
+                key.NUM_ATOMS: torch.tensor(len(atomic_nums), device=self.device),
                 key.DATA_MODALITY: self.modal,
             }
             data[key.INFO] = {}
@@ -239,13 +236,13 @@ class SevenNetModel(ModelInterface):
 
         output = self.model(batched_data)
 
-        results = {}
+        results: dict[str, torch.Tensor] = {}
         energy = output[key.PRED_TOTAL_ENERGY]
         if energy is not None:
             results["energy"] = energy.detach()
         else:
             results["energy"] = torch.zeros(
-                state.system_idx.max().item() + 1, device=self.device
+                sim_state.system_idx.max().item() + 1, device=self.device
             )
 
         forces = output[key.PRED_FORCE]
