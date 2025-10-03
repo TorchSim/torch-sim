@@ -1,3 +1,4 @@
+import traceback
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -18,7 +19,12 @@ if TYPE_CHECKING:
 @pytest.fixture
 def ts_mace_mpa() -> MaceModel:
     """Provides a MACE MP model instance for the optimizer tests."""
-    from mace.calculators.foundations_models import mace_mp
+    try:
+        from mace.calculators.foundations_models import mace_mp
+    except ImportError:
+        pytest.skip(
+            f"MACE not installed: {traceback.format_exc()}", allow_module_level=True
+        )
 
     # Use float64 for potentially higher precision needed in optimization
     dtype = getattr(torch, dtype_str := "float64")
@@ -37,7 +43,12 @@ def ts_mace_mpa() -> MaceModel:
 @pytest.fixture
 def ase_mace_mpa() -> "MACECalculator":
     """Provides an ASE MACECalculator instance using mace_mp."""
-    from mace.calculators.foundations_models import mace_mp
+    try:
+        from mace.calculators.foundations_models import mace_mp
+    except ImportError:
+        pytest.skip(
+            f"MACE not installed: {traceback.format_exc()}", allow_module_level=True
+        )
 
     # Ensure dtype matches the one used in the torch-sim fixture (float64)
     return mace_mp(model=MaceUrls.mace_mp_small, default_dtype="float64")
