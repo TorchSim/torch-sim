@@ -1,3 +1,4 @@
+import traceback
 import urllib.request
 from enum import StrEnum
 from pathlib import Path
@@ -15,8 +16,10 @@ try:
         NequIPFrameworkModel,
         from_compiled_model,
     )
-except ImportError:
-    pytest.skip("nequip not installed", allow_module_level=True)
+except (ImportError, ModuleNotFoundError):
+    pytest.skip(
+        f"nequip not installed: {traceback.format_exc()}", allow_module_level=True
+    )
 
 
 class NequIPUrls(StrEnum):

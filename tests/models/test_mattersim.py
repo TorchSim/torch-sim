@@ -1,5 +1,7 @@
 # codespell-ignore: convertor
 
+import traceback
+
 import ase.spacegroup
 import ase.units
 import pytest
@@ -18,7 +20,9 @@ try:
     from torch_sim.models.mattersim import MatterSimModel
 
 except ImportError:
-    pytest.skip("mattersim not installed", allow_module_level=True)
+    pytest.skip(
+        f"mattersim not installed: {traceback.format_exc()}", allow_module_level=True
+    )
 
 
 model_name = "mattersim-v1.0.0-1m.pth"

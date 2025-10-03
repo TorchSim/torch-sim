@@ -1,3 +1,5 @@
+import traceback
+
 import pytest
 import torch
 
@@ -20,7 +22,7 @@ try:
 
     from torch_sim.models.mace import MaceModel
 except ImportError:
-    pytest.skip("MACE not installed", allow_module_level=True)
+    pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)
 
 
 def test_get_strain_zero_deformation(cu_sim_state: ts.SimState) -> None:

@@ -1,3 +1,5 @@
+import traceback
+
 import pytest
 import torch
 
@@ -16,7 +18,9 @@ try:
     from torch_sim.models.fairchem import FairChemModel
 
 except ImportError:
-    pytest.skip("FairChem not installed", allow_module_level=True)
+    pytest.skip(
+        f"FairChem not installed: {traceback.format_exc()}", allow_module_level=True
+    )
 
 
 @pytest.fixture

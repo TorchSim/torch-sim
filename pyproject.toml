@@ -138,6 +138,14 @@ testpaths = ["tests"]
 # see https://docs.astral.sh/uv/concepts/projects/config/#conflicting-dependencies for more details
 conflicts = [
     [
+        { extra = "fairchem" },
+        { extra = "graphpes" },
+    ],
+    [
+        { extra = "fairchem" },
+        { extra = "mace" },
+    ],
+    [
         { extra = "graphpes" },
         { extra = "mattersim" },
     ],

@@ -1,3 +1,5 @@
+import traceback
+
 import pytest
 import torch
 from ase.build import bulk, molecule
@@ -17,7 +19,9 @@ try:
     from graph_pes.interfaces import mace_mp
     from graph_pes.models import LennardJones, SchNet, TensorNet, ZEmbeddingNequIP
 except ImportError:
-    pytest.skip("graph-pes not installed", allow_module_level=True)
+    pytest.skip(
+        f"graph-pes not installed: {traceback.format_exc()}", allow_module_level=True
+    )
 
 DTYPE = torch.float32
 

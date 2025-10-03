@@ -35,7 +35,7 @@ from torch_sim.typing import StateDict
 try:
     from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
     from mace.tools import atomic_numbers_to_indices, utils
-except ImportError as exc:
+except (ImportError, ModuleNotFoundError) as exc:
     warnings.warn(f"MACE import failed: {traceback.format_exc()}", stacklevel=2)
 
     class MaceModel(ModelInterface):
