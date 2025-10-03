@@ -24,4 +24,4 @@ Notes:
 from .md import MDState, calculate_momenta, momentum_step, position_step, velocity_verlet
 from .npt import NPTLangevinState, npt_langevin
 from .nve import nve
-from .nvt import nvt_langevin
+from .nvt import nvt_langevin, nvt_nose_hoover, nvt_nose_hoover_invariant
