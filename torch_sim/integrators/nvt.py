@@ -382,10 +382,6 @@ def nvt_nose_hoover(
             n_atoms_per_system * state.positions.shape[-1]
         )  # n_atoms * n_dimensions
 
-        # For now, sum the per-system DOF as chain expects a single int
-        # This is a limitation that should be addressed in the chain implementation
-        # total_dof = int(dof_per_system.sum().item())
-
         # Initialize state
         state = NVTNoseHooverState(
             positions=state.positions,
@@ -430,7 +426,7 @@ def nvt_nose_hoover(
         chain = state.chain
 
         # Update chain masses based on target temperature
-        # chain = chain_fns.update_mass(chain, kT)
+        chain = chain_fns.update_mass(chain, kT)
 
         # First half-step of chain evolution
         momenta, chain = chain_fns.half_step(state.momenta, chain, kT, state.system_idx)
