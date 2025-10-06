@@ -88,8 +88,6 @@ test_validate_conservative_model_single_output = (
     )
 )
 
-test_validate_direct_model_single_output = (
-    make_validate_single_system_model_outputs_test(
-        model_fixture_name="orbv3_direct_20_omat_model",
-    )
+test_validate_direct_model_single_output = make_validate_single_system_model_outputs_test(
+    model_fixture_name="orbv3_direct_20_omat_model",
 )

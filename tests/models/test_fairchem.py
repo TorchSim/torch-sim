@@ -7,7 +7,7 @@ from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
-    make_validate_single_system_model_outputs_test
+    make_validate_single_system_model_outputs_test,
 )
 
 
@@ -100,4 +100,8 @@ test_fairchem_ocp_model_outputs = pytest.mark.skipif(
 test_fairchem_ocp_model_single_output = pytest.mark.skipif(
     os.environ.get("HF_TOKEN") is None,
     reason="Issues in graph construction of older models",
-)(make_validate_single_system_model_outputs_test(model_fixture_name="eqv2_omat24_model_pbc"))
+)(
+    make_validate_single_system_model_outputs_test(
+        model_fixture_name="eqv2_omat24_model_pbc"
+    )
+)
