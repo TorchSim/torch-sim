@@ -9,6 +9,7 @@ from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
+    make_validate_single_system_model_outputs_test,
 )
 
 
@@ -86,4 +87,8 @@ test_mattersim_consistency = make_model_calculator_consistency_test(
 
 test_mattersim_model_outputs = make_validate_model_outputs_test(
     model_fixture_name="mattersim_model",
+)
+
+test_mace_off_model_single_output = make_validate_single_system_model_outputs_test(
+    model_fixture_name="mattersim_model"
 )
