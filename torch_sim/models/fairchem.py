@@ -70,10 +70,10 @@ class FairChemModel(ModelInterface):
 
     def __init__(
         self,
-        model: str | Path | None,
+        model_name: str,
         neighbor_list_fn: Callable | None = None,
         *,  # force remaining arguments to be keyword-only
-        model_name: str | None = None,
+        model_cache_dir: str | Path | None = None,
         cpu: bool = False,
         dtype: torch.dtype | None = None,
         compute_stress: bool = False,
@@ -82,10 +82,10 @@ class FairChemModel(ModelInterface):
         """Initialize the FairChem model.
 
         Args:
-            model (str | Path | None): Path to model checkpoint file
+            model_name (str): Name of pretrained model to load
             neighbor_list_fn (Callable | None): Function to compute neighbor lists
                 (not currently supported)
-            model_name (str | None): Name of pretrained model to load
+            model_cache_dir (str | Path | None): Path where to save the model
             cpu (bool): Whether to use CPU instead of GPU for computation
             dtype (torch.dtype | None): Data type to use for computation
             compute_stress (bool): Whether to compute stress tensor
@@ -111,16 +111,8 @@ class FairChemModel(ModelInterface):
                 "Custom neighbor list is not supported for FairChemModel."
             )
 
-        if model_name is not None:
-            if model is not None:
-                raise RuntimeError(
-                    "model_name and checkpoint_path were both specified, "
-                    "please use only one at a time"
-                )
-            model = model_name
-
-        if model is None:
-            raise ValueError("Either model or model_name must be provided")
+        if model_name is None:
+            raise ValueError("Valid fairchem model name needs to be specified")
 
         # Convert task_name to UMATask if it's a string (only for UMA models)
         if isinstance(task_name, str):
@@ -132,8 +124,14 @@ class FairChemModel(ModelInterface):
         self.task_name = task_name
 
         # Create efficient batch predictor for fast inference
-        self.predictor = pretrained_mlip.get_predict_unit(str(model), device=device_str)
-
+        if model_cache_dir:
+            if model_cache_dir.exists():
+                self.predictor = pretrained_mlip.get_predict_unit(str(model_name), device=device_str, cache_dir=model_cache_dir)
+            else:
+                raise ValueError("Specified cache dir does not exist!")
+        else:
+            self.predictor = pretrained_mlip.get_predict_unit(str(model_name), device=device_str)
+            
         # Determine implemented properties
         # This is a simplified approach - in practice you might want to
         # inspect the model configuration more carefully
