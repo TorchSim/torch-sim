@@ -10,6 +10,8 @@ from torch_sim.integrators import (
     nvt_langevin,
     nvt_nose_hoover,
     nvt_nose_hoover_invariant,
+    npt_nose_hoover,
+    npt_nose_hoover_invariant,
 )
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.quantities import calc_kT
@@ -476,6 +478,187 @@ def test_nvt_nose_hoover_multi_kt(
         # Allow for some drift but should be relatively stable
         # Less than 10% relative variation
         assert invariant_std / invariant_traj.mean() < 0.1
+
+
+def test_npt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
+    dtype = torch.float64
+    n_steps = 100
+    dt = torch.tensor(0.001, dtype=dtype)
+    kT = torch.tensor(300, dtype=dtype) * MetalUnits.temperature
+    external_pressure = torch.tensor(0.0, dtype=dtype) * MetalUnits.pressure
+
+    # Initialize integrator
+    init_fn, update_fn = npt_nose_hoover(
+        model=lj_model,
+        dt=dt,
+        kT=kT,
+        external_pressure=external_pressure,
+    )
+
+    # Run dynamics for several steps
+    state = init_fn(state=ar_double_sim_state, seed=42)
+    energies = []
+    temperatures = []
+    invariants = []
+    for _step in range(n_steps):
+        state = update_fn(state=state)
+
+        # Calculate instantaneous temperature from kinetic energy
+        temp = calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
+        energies.append(state.energy)
+        temperatures.append(temp / MetalUnits.temperature)
+        invariants.append(npt_nose_hoover_invariant(state, kT, external_pressure))
+
+    # Convert temperatures list to tensor
+    temperatures_tensor = torch.stack(temperatures)
+    temperatures_list = [t.tolist() for t in temperatures_tensor.T]
+
+    energies_tensor = torch.stack(energies)
+    energies_list = [t.tolist() for t in energies_tensor.T]
+
+    invariants_tensor = torch.stack(invariants)
+
+    # Basic sanity checks
+    assert len(energies_list[0]) == n_steps
+    assert len(temperatures_list[0]) == n_steps
+
+    # Check temperature is roughly maintained for each trajectory
+    mean_temps = torch.mean(temperatures_tensor, dim=0)  # Mean temp for each trajectory
+    for mean_temp in mean_temps:
+        assert (
+            abs(mean_temp - kT.item() / MetalUnits.temperature) < 100.0
+        )  # Allow for thermal fluctuations
+
+    # Check energy is stable for each trajectory (NPT allows energy fluctuations)
+    for traj in energies_list:
+        energy_std = torch.tensor(traj).std()
+        assert energy_std < 2.0  # Allow more fluctuation than NVT due to volume changes
+
+    # Check invariant conservation (should be roughly constant)
+    for traj_idx in range(invariants_tensor.shape[1]):
+        invariant_traj = invariants_tensor[:, traj_idx]
+        invariant_std = invariant_traj.std()
+        # Allow for some drift but should be relatively stable
+        # Less than 15% relative variation (more lenient than NVT)
+        assert invariant_std / invariant_traj.mean() < 0.15
+
+    # Check positions and momenta have correct shapes
+    n_atoms = 8
+
+    # Verify the two systems remain distinct
+    pos_diff = torch.norm(
+        state.positions[:n_atoms].mean(0) - state.positions[n_atoms:].mean(0)
+    )
+    assert pos_diff > 0.0001  # Systems should remain separated
+
+
+def test_npt_nose_hoover_multi_equivalent_to_single(
+    mixed_double_sim_state: ts.SimState, lj_model: LennardJonesModel
+):
+    """Test that nvt_nose_hoover with multiple identical kT values behaves like
+    running different single kT, assuming same initial state
+    (most importantly same momenta)."""
+    dtype = torch.float64
+    n_steps = 100
+    dt = torch.tensor(0.001, dtype=dtype)
+    kT = torch.tensor(300, dtype=dtype) * MetalUnits.temperature
+    external_pressure = torch.tensor(0.0, dtype=dtype) * MetalUnits.pressure
+
+    # Initialize integrator
+    init_fn, update_fn = npt_nose_hoover(
+        model=lj_model,
+        dt=dt,
+        kT=kT,
+        external_pressure=external_pressure,
+    )
+    final_temperatures = []
+    initial_momenta = []
+    # Run dynamics for several steps
+    for i in range(mixed_double_sim_state.n_systems):
+        state = init_fn(state=mixed_double_sim_state[i], seed=42)
+        initial_momenta.append(state.momenta.clone())
+        for _step in range(n_steps):
+            state = update_fn(state=state)
+
+            # Calculate instantaneous temperature from kinetic energy
+        temp = calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
+        final_temperatures.append(temp / MetalUnits.temperature)
+
+    initial_momenta_tensor = torch.concat(initial_momenta)
+    final_temperatures = torch.concat(final_temperatures)
+    state = init_fn(state=mixed_double_sim_state, seed=42, momenta=initial_momenta_tensor)
+    for _step in range(n_steps):
+        state = update_fn(state=state)
+
+        # Calculate instantaneous temperature from kinetic energy
+    temp = calc_kT(
+        masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+    )
+
+    assert torch.allclose(final_temperatures, temp / MetalUnits.temperature)
+
+
+def test_npt_nose_hoover_multi_kt(
+    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
+):
+    dtype = torch.float64
+    n_steps = 200
+    dt = torch.tensor(0.001, dtype=dtype)
+    kT = torch.tensor([300, 10_000], dtype=dtype) * MetalUnits.temperature
+    external_pressure = torch.tensor(0.0, dtype=dtype) * MetalUnits.pressure
+
+    # Initialize integrator
+    init_fn, update_fn = npt_nose_hoover(
+        model=lj_model,
+        dt=dt,
+        kT=kT,
+        external_pressure=external_pressure,
+    )
+
+    # Run dynamics for several steps
+    state = init_fn(state=ar_double_sim_state, seed=42)
+    energies = []
+    temperatures = []
+    invariants = []
+    for _step in range(n_steps):
+        state = update_fn(state=state)
+
+        # Calculate instantaneous temperature from kinetic energy
+        temp = calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
+        energies.append(state.energy)
+        temperatures.append(temp / MetalUnits.temperature)
+        invariants.append(npt_nose_hoover_invariant(state, kT, external_pressure))
+
+    # Convert temperatures list to tensor
+    temperatures_tensor = torch.stack(temperatures)
+    temperatures_list = [t.tolist() for t in temperatures_tensor.T]
+
+    energies_tensor = torch.stack(energies)
+    energies_list = [t.tolist() for t in energies_tensor.T]
+
+    invariants_tensor = torch.stack(invariants)
+
+    # Basic sanity checks
+    assert len(energies_list[0]) == n_steps
+    assert len(temperatures_list[0]) == n_steps
+
+    # Check temperature is roughly maintained for each trajectory
+    mean_temps = torch.mean(temperatures_tensor, dim=0)  # Mean temp for each trajectory
+    assert torch.allclose(mean_temps, kT / MetalUnits.temperature, rtol=0.5)
+
+    # Check invariant conservation for each system
+    for traj_idx in range(invariants_tensor.shape[1]):
+        invariant_traj = invariants_tensor[:, traj_idx]
+        invariant_std = invariant_traj.std()
+        # Allow for some drift but should be relatively stable
+        # Less than 15% relative variation (more lenient than NVT)
+        assert invariant_std / invariant_traj.mean() < 0.15
 
 
 def test_nve(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):

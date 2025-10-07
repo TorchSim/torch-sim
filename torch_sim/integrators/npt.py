@@ -1166,7 +1166,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
 
         Args:
             state (NPTNoseHooverState): Current simulation state for batch mapping
-            alpha (torch.Tensor): Cell scaling parameter
+            alpha (torch.Tensor): Cell scaling parameter with shape [n_systems]
             momenta (torch.Tensor): Current particle momenta [n_particles, n_dimensions]
             forces (torch.Tensor): Forces on particles [n_particles, n_dimensions]
             cell_velocity (torch.Tensor): Cell velocity with shape [n_systems]
@@ -1182,11 +1182,12 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             - Part of the NPT integration algorithm
             - Supports batched operations with proper atom-to-system mapping
         """
-        # Map system-level cell velocities to atom level using system indices
+        # Map system-level values to atom level using system indices
+        alpha_atoms = alpha[state.system_idx]  # [n_atoms]
         cell_velocity_atoms = cell_velocity[state.system_idx]  # [n_atoms]
 
         # Compute scaling terms per atom
-        x = alpha * cell_velocity_atoms * dt_2  # [n_atoms]
+        x = alpha_atoms * cell_velocity_atoms * dt_2  # [n_atoms]
         x_2 = x / 2  # [n_atoms]
 
         # Compute sinh(x/2)/(x/2) using stable Taylor series
@@ -1334,11 +1335,15 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         )
 
         # Update cell momentum and particle momenta
-        cell_momentum = cell_momentum + dt_2 * cell_force_val
-        momenta = exp_iL2(state, alpha, momenta, forces, cell_momentum / cell_mass, dt_2)
+        # cell_force_val has shape [n_systems], need to expand to [n_systems, 1]
+        cell_momentum = cell_momentum + dt_2 * cell_force_val.unsqueeze(-1)
+
+        # For cell velocity calculation, squeeze to [n_systems]
+        cell_velocity = cell_momentum.squeeze(-1) / cell_mass
+        momenta = exp_iL2(state, alpha, momenta, forces, cell_velocity, dt_2)
 
         # Full step: Update positions
-        cell_position = cell_position + cell_momentum / cell_mass * dt
+        cell_position = cell_position + (cell_momentum.squeeze(-1) / cell_mass) * dt
 
         # Update state with new cell_position before calling functions that depend on it
         state.cell_position = cell_position
@@ -1348,14 +1353,15 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         cell = volume_to_cell(volume)
 
         # Update particle positions and forces
-        positions = exp_iL1(state, state.velocities, cell_momentum / cell_mass, dt)
+        positions = exp_iL1(state, state.velocities, cell_momentum.squeeze(-1) / cell_mass, dt)
         state.positions = positions
         state.cell = cell
         model_output = model(state)
 
         # Second half step: Update momenta
         momenta = exp_iL2(
-            state, alpha, momenta, model_output["forces"], cell_momentum / cell_mass, dt_2
+            state, alpha, momenta, model_output["forces"], 
+            cell_momentum.squeeze(-1) / cell_mass, dt_2
         )
         cell_force_val = compute_cell_force(
             alpha=alpha,
@@ -1367,7 +1373,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             external_pressure=external_pressure,
             system_idx=state.system_idx,
         )
-        cell_momentum = cell_momentum + dt_2 * cell_force_val
+        cell_momentum = cell_momentum + dt_2 * cell_force_val.unsqueeze(-1)
 
         # Return updated state
         state.positions = positions
@@ -1449,7 +1455,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
 
         # Initialize cell variables with proper system dimensions
         cell_position = torch.zeros(n_systems, device=device, dtype=dtype)
-        cell_momentum = torch.zeros(n_systems, device=device, dtype=dtype)
+        cell_momentum = torch.zeros(n_systems, 1, device=device, dtype=dtype)  # [n_systems, 1] for compatibility with half_step
 
         # Convert kT to tensor if it's not already one
         if not isinstance(kT, torch.Tensor):
@@ -1463,8 +1469,9 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         cell_mass = dim * (n_atoms_per_system + 1) * kT_system * b_tau**2
         cell_mass = cell_mass.to(device=device, dtype=dtype)
 
-        # Calculate cell kinetic energy (using first system for initialization)
-        KE_cell = calc_kinetic_energy(masses=cell_mass[:1], momenta=cell_momentum[:1])
+        # Calculate cell kinetic energy (per system for proper batching)
+        # For cell variables, each system has 1 DOF, so KE = p^2/(2m) for each system
+        KE_cell = (cell_momentum.squeeze(-1)**2) / (2 * cell_mass)  # [n_systems]
 
         # Ensure reference_cell has proper system dimensions
         if state.cell.ndim == 2:
@@ -1487,10 +1494,29 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         forces = model_output["forces"]
         energy = model_output["energy"]
 
-        # Create initial state
-        npt_state = NPTNoseHooverState(
+        # Initialize momenta first to calculate kinetic energies
+        momenta = kwargs.get(
+            "momenta",
+            calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
+        )
+
+        # Calculate thermostat degrees of freedom and kinetic energy per system
+        thermostat_dof = n_atoms_per_system * dim  # n_atoms * n_dimensions per system
+        KE_thermostat = calc_kinetic_energy(
+            masses=state.masses, momenta=momenta, system_idx=state.system_idx
+        )
+
+        # Initialize thermostat (batched per system with DOF = n_atoms * 3)
+        thermostat = thermostat_fns.initialize(thermostat_dof, KE_thermostat, kT)
+
+        # Initialize barostat (batched per system with DOF = 1)
+        barostat_dof = torch.ones(n_systems, device=device, dtype=dtype)
+        barostat = barostat_fns.initialize(barostat_dof, KE_cell, kT)
+
+        # Create and return initial state
+        return NPTNoseHooverState(
             positions=state.positions,
-            momenta=None,
+            momenta=momenta,
             energy=energy,
             forces=forces,
             masses=state.masses,
@@ -1502,32 +1528,11 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
             cell_position=cell_position,
             cell_momentum=cell_momentum,
             cell_mass=cell_mass,
-            barostat=barostat_fns.initialize(1, KE_cell, kT),
-            thermostat=None,
+            barostat=barostat,
+            thermostat=thermostat,
             barostat_fns=barostat_fns,
             thermostat_fns=thermostat_fns,
         )
-
-        # Initialize momenta
-        momenta = kwargs.get(
-            "momenta",
-            calculate_momenta(
-                npt_state.positions, npt_state.masses, npt_state.system_idx, kT, seed
-            ),
-        )
-
-        # Initialize thermostat
-        npt_state.momenta = momenta
-        KE = calc_kinetic_energy(
-            momenta=npt_state.momenta,
-            masses=npt_state.masses,
-            system_idx=npt_state.system_idx,
-        )
-        npt_state.thermostat = thermostat_fns.initialize(
-            npt_state.positions.numel(), KE, kT
-        )
-
-        return npt_state
 
     def npt_nose_hoover_update(
         state: NPTNoseHooverState,
@@ -1563,11 +1568,13 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         state = update_cell_mass(state, kT)
 
         # First half step of thermostat chains
+        # For cell momenta, create system index mapping each cell momentum to its system
+        cell_system_idx = torch.arange(state.n_systems, device=state.device)
         state.cell_momentum, state.barostat = state.barostat_fns.half_step(
-            state.cell_momentum, state.barostat, kT
+            state.cell_momentum, state.barostat, kT, cell_system_idx
         )
         state.momenta, state.thermostat = state.thermostat_fns.half_step(
-            state.momenta, state.thermostat, kT
+            state.momenta, state.thermostat, kT, state.system_idx
         )
 
         # Perform inner NPT step
@@ -1583,19 +1590,51 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         )
         state.thermostat.kinetic_energy = KE
 
-        KE_cell = calc_kinetic_energy(masses=state.cell_mass, momenta=state.cell_momentum)
+        KE_cell = (state.cell_momentum.squeeze(-1)**2) / (2 * state.cell_mass)  # [n_systems]
         state.barostat.kinetic_energy = KE_cell
 
         # Second half step of thermostat chains
         state.momenta, state.thermostat = state.thermostat_fns.half_step(
-            state.momenta, state.thermostat, kT
+            state.momenta, state.thermostat, kT, state.system_idx
         )
+        cell_system_idx = torch.arange(state.n_systems, device=state.device)
         state.cell_momentum, state.barostat = state.barostat_fns.half_step(
-            state.cell_momentum, state.barostat, kT
+            state.cell_momentum, state.barostat, kT, cell_system_idx
         )
         return state
 
     return npt_nose_hoover_init, npt_nose_hoover_update
+
+
+def _compute_chain_energy(
+    chain: NoseHooverChain, kT: torch.Tensor, e_tot: torch.Tensor, dof: torch.Tensor
+) -> torch.Tensor:
+    """Compute energy contribution from a Nose-Hoover chain.
+
+    Args:
+        chain: The Nose-Hoover chain state
+        kT: Target temperature
+        e_tot: Current total energy for broadcasting
+        dof: Degrees of freedom (only used for first chain element)
+
+    Returns:
+        Total chain energy contribution
+    """
+    chain_energy = torch.zeros_like(e_tot)
+
+    # First chain element with DOF weighting
+    ke_0 = chain.momenta[:, 0] ** 2 / (2 * chain.masses[:, 0])
+    pe_0 = dof * kT * chain.positions[:, 0]
+
+    chain_energy += ke_0 + pe_0
+
+    # Remaining chain elements
+    for i in range(1, chain.positions.shape[1]):
+        ke = chain.momenta[:, i] ** 2 / (2 * chain.masses[:, i])
+        pe = kT * chain.positions[:, i]
+        chain_energy += ke + pe
+
+    return chain_energy
 
 
 def npt_nose_hoover_invariant(
@@ -1612,15 +1651,15 @@ def npt_nose_hoover_invariant(
     The conserved quantity includes:
     - Potential energy of the system
     - Kinetic energy of the particles
-    - Energy contributions from thermostat chains
-    - Energy contributions from barostat chains
+    - Energy contributions from thermostat chains (per system)
+    - Energy contributions from barostat chains (per system)
     - PV work term
     - Cell kinetic energy
 
     Args:
         state: Current state of the NPT simulation system.
             Must contain position, momentum, cell, cell_momentum, cell_mass, thermostat,
-            and barostat.
+            and barostat with proper batching for multiple systems.
         external_pressure: Target external pressure of the system.
         kT: Target thermal energy (Boltzmann constant x temperature).
 
@@ -1639,72 +1678,26 @@ def npt_nose_hoover_invariant(
     )
 
     # Calculate degrees of freedom per system
-    n_atoms_per_system = torch.bincount(state.system_idx)
-    DOF_per_system = (
-        n_atoms_per_system * state.positions.shape[-1]
-    )  # n_atoms * n_dimensions
+    n_atoms_per_system = torch.bincount(state.system_idx, minlength=state.n_systems)
+    dof_per_system = n_atoms_per_system * state.positions.shape[-1]  # n_atoms * n_dim
 
     # Initialize total energy with PE + KE
-    if isinstance(e_pot, torch.Tensor) and e_pot.ndim > 0:
-        e_tot = e_pot + e_kin_per_system  # [n_systems]
-    else:
-        e_tot = e_pot + e_kin_per_system  # [n_systems]
+    e_tot = e_pot + e_kin_per_system
 
-    # Add thermostat chain contributions
-    # Note: These are global thermostat variables, so we add them to each system
-    # Start thermostat_energy as a tensor with the right shape
-    thermostat_energy = torch.zeros_like(e_tot)
-    thermostat_energy += (state.thermostat.momenta[0] ** 2) / (
-        2 * state.thermostat.masses[0]
-    )
+    # Add thermostat chain contributions (batched per system, DOF = n_atoms * 3)
+    e_tot += _compute_chain_energy(state.thermostat, kT, e_tot, dof_per_system)
 
-    # Ensure kT can broadcast properly with DOF_per_system
-    if isinstance(kT, torch.Tensor) and kT.ndim == 0:
-        # Scalar kT - expand to match DOF_per_system shape
-        kT_expanded = kT.expand_as(DOF_per_system)
-    else:
-        kT_expanded = kT
-
-    thermostat_energy += DOF_per_system * kT_expanded * state.thermostat.positions[0]
-
-    # Add remaining thermostat terms
-    for pos, momentum, mass in zip(
-        state.thermostat.positions[1:],
-        state.thermostat.momenta[1:],
-        state.thermostat.masses[1:],
-        strict=True,
-    ):
-        if isinstance(kT, torch.Tensor) and kT.ndim == 0:
-            # Scalar kT case
-            thermostat_energy += (momentum**2) / (2 * mass) + kT * pos
-        else:
-            # Batched kT case
-            thermostat_energy += (momentum**2) / (2 * mass) + kT_expanded * pos
-
-    e_tot = e_tot + thermostat_energy
-
-    # Add barostat chain contributions
-    barostat_energy = torch.zeros_like(e_tot)
-    for pos, momentum, mass in zip(
-        state.barostat.positions,
-        state.barostat.momenta,
-        state.barostat.masses,
-        strict=True,
-    ):
-        if isinstance(kT, torch.Tensor) and kT.ndim == 0:
-            # Scalar kT case
-            barostat_energy += (momentum**2) / (2 * mass) + kT * pos
-        else:
-            # Batched kT case
-            barostat_energy += (momentum**2) / (2 * mass) + kT_expanded * pos
-
-    e_tot = e_tot + barostat_energy
+    # Add barostat chain contributions (batched per system, DOF = 1)
+    barostat_dof = torch.ones_like(dof_per_system)  # 1 DOF per system for barostat
+    e_tot += _compute_chain_energy(state.barostat, kT, e_tot, barostat_dof)
 
     # Add PV term and cell kinetic energy (both are per system)
     e_tot += external_pressure * volume
-    e_tot += (state.cell_momentum**2) / (2 * state.cell_mass)
 
-    # Return scalar if single system, otherwise return per-system values
-    if state.n_systems == 1:
-        return e_tot.squeeze()
+    # Ensure cell_momentum has the right shape [n_systems]
+    cell_momentum = state.cell_momentum
+    cell_momentum = cell_momentum.squeeze()
+
+    e_tot += (cell_momentum**2) / (2 * state.cell_mass)
+
     return e_tot

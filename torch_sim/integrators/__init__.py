@@ -22,6 +22,6 @@ Notes:
 # ruff: noqa: F401
 
 from .md import MDState, calculate_momenta, momentum_step, position_step, velocity_verlet
-from .npt import NPTLangevinState, npt_langevin
+from .npt import NPTLangevinState, npt_langevin, npt_nose_hoover, npt_nose_hoover_invariant
 from .nve import nve
 from .nvt import nvt_langevin, nvt_nose_hoover, nvt_nose_hoover_invariant
