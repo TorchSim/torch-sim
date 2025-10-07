@@ -225,88 +225,15 @@ def make_validate_model_outputs_test(
         #     atol=10e-3,
         # )
 
+        # Test single system output
+        assert fe_model_output["energy"].shape == (1,)
+        # forces should be shape (n_atoms, 3) for n_atoms in the system
+        if force_computed:
+            assert fe_model_output["forces"].shape == (12, 3)
+        # stress should be shape (1, 3, 3) for 1 system
+        if stress_computed:
+            assert fe_model_output["stress"].shape == (1, 3, 3)
+
     # Rename the function to include the test name
     test_model_output_validation.__name__ = f"test_{model_fixture_name}_output_validation"
     return test_model_output_validation
-
-
-def make_validate_single_system_model_outputs_test(
-    model_fixture_name: str,
-):
-    """Factory function to create single system model output validation tests.
-
-    Args:
-        model_fixture_name: Name of the model fixture to validate
-    """
-
-    def test_single_system_model_output_validation(
-        request: pytest.FixtureRequest,
-        device: torch.device,
-        dtype: torch.dtype,
-    ) -> None:
-        """Test that a model follows the ModelInterface contract for single systems."""
-        # Get the model fixture dynamically
-        model: ModelInterface = request.getfixturevalue(model_fixture_name)
-
-        from ase.build import bulk
-
-        assert model.dtype is not None
-        assert model.device is not None
-        assert model.compute_stress is not None
-        assert model.compute_forces is not None
-
-        try:
-            if not model.compute_stress:
-                model.compute_stress = True
-            stress_computed = True
-        except NotImplementedError:
-            stress_computed = False
-
-        try:
-            if not model.compute_forces:
-                model.compute_forces = True
-            force_computed = True
-        except NotImplementedError:
-            force_computed = False
-
-        # Use only a single Si system
-        si_atoms = bulk("Si", "diamond", a=5.43, cubic=True)
-        sim_state = ts.io.atoms_to_state([si_atoms], device, dtype)
-
-        og_positions = sim_state.positions.clone()
-        og_cell = sim_state.cell.clone()
-        og_batch = sim_state.system_idx.clone()
-        og_atomic_numbers = sim_state.atomic_numbers.clone()
-
-        model_output = model.forward(sim_state)
-
-        # assert model did not mutate the input
-        assert torch.allclose(og_positions, sim_state.positions)
-        assert torch.allclose(og_cell, sim_state.cell)
-        assert torch.allclose(og_batch, sim_state.system_idx)
-        assert torch.allclose(og_atomic_numbers, sim_state.atomic_numbers)
-
-        # assert model output has the correct keys
-        assert "energy" in model_output
-        assert "forces" in model_output if force_computed else True
-        assert "stress" in model_output if stress_computed else True
-
-        # assert model output shapes are correct for single system
-        # energy should be shape (1,) for 1 system
-        assert model_output["energy"].shape == (1,)
-        # forces should be shape (n_atoms, 3) for n_atoms in the system
-        if force_computed:
-            assert model_output["forces"].shape == (sim_state.n_atoms, 3)
-        # stress should be shape (1, 3, 3) for 1 system
-        if stress_computed:
-            assert model_output["stress"].shape == (1, 3, 3)
-
-        # Verify that energy is a scalar for this single system
-        energy_scalar = model_output["energy"][0]
-        assert energy_scalar.shape == ()  # Should be a scalar tensor
-
-    # Rename the function to include the test name
-    test_single_system_model_output_validation.__name__ = (
-        f"test_{model_fixture_name}_single_system_output_validation"
-    )
-    return test_single_system_model_output_validation

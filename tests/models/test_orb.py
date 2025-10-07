@@ -5,7 +5,6 @@ from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
-    make_validate_single_system_model_outputs_test,
 )
 
 
@@ -79,15 +78,5 @@ test_validate_conservative_model_outputs = make_validate_model_outputs_test(
 )
 
 test_validate_direct_model_outputs = make_validate_model_outputs_test(
-    model_fixture_name="orbv3_direct_20_omat_model",
-)
-
-test_validate_conservative_model_single_output = (
-    make_validate_single_system_model_outputs_test(
-        model_fixture_name="orbv3_conservative_inf_omat_model",
-    )
-)
-
-test_validate_direct_model_single_output = make_validate_single_system_model_outputs_test(
     model_fixture_name="orbv3_direct_20_omat_model",
 )
