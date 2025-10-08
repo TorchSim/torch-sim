@@ -1,14 +1,6 @@
 # Contributing to TorchSim
 
-TorchSim is an experimental library and we would appreciate any feedback from the community.
-
-## Contributor License Agreement (CLA)
-
-Before contributing, you'll need to sign our Contributor License Agreement (CLA). This is a one-time requirement that covers all Radical AI open source projects. The CLA allows you to maintain ownership of your contributions while granting Radical AI the necessary rights to use them.
-
-[Radical AI CLA](https://www.radical-ai.com/oss)
-
-Our CLA-bot will automatically verify your signature on pull requests. For questions about the CLA, contact cla@radical-ai.com.
+TorchSim welcomes contributions and feedback from the community.
 
 ## Code Reviews
 

@@ -1,3 +1,5 @@
+import traceback
+
 import pytest
 import torch
 
@@ -14,7 +16,9 @@ try:
 
     from torch_sim.models.metatomic import MetatomicModel
 except ImportError:
-    pytest.skip("metatomic not installed", allow_module_level=True)
+    pytest.skip(
+        f"metatomic not installed: {traceback.format_exc()}", allow_module_level=True
+    )
 
 
 @pytest.fixture

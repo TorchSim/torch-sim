@@ -1,3 +1,5 @@
+import traceback
+
 import pytest
 import torch
 from ase.atoms import Atoms
@@ -17,7 +19,7 @@ try:
 
     from torch_sim.models.mace import MaceModel
 except (ImportError, ValueError):
-    pytest.skip("MACE not installed", allow_module_level=True)
+    pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)
 
 
 mace_model = mace_mp(model=MaceUrls.mace_mp_small, return_raw_model=True)
