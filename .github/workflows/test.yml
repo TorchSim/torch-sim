@@ -92,7 +92,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Install legacy fairchem repository and dependencies
-        if: ${{ matrix.model.name == 'fairchem-legacy' }}
+        if: ${{ matrix.model.name == 'fairchem-legacy' && matrix.version.python != '3.13' }}
         run: |
           if [ -f fairchem-repo/packages/requirements.txt ]; then
             uv pip install -r fairchem-repo/packages/requirements.txt --system
