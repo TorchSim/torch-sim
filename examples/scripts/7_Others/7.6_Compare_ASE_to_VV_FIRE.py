@@ -281,7 +281,7 @@ def run_optimization_ase(  # noqa: C901, PLR0915
 
         ase_calc_instance = mace_mp_calculator_for_ase(
             model=MaceUrls.mace_mpa_medium,
-            device=DEVICE,
+            device=str(DEVICE),
             default_dtype=str(DTYPE).removeprefix("torch."),
         )
         ase_atoms_orig.calc = ase_calc_instance
@@ -357,7 +357,7 @@ def run_optimization_ase(  # noqa: C901, PLR0915
                 )
                 temp_calc = mace_mp_calculator_for_ase(
                     model=MaceUrls.mace_mpa_medium,
-                    device=DEVICE,
+                    device=str(DEVICE),
                     default_dtype=str(DTYPE).removeprefix("torch."),
                 )
                 ats_final.calc = temp_calc
