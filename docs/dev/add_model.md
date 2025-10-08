@@ -5,7 +5,7 @@
 We welcome the addition of new models to `torch_sim`. We want
 easy batched simulations to be available to the whole community
 of MLIP developers and users.
-See https://github.com/Radical-AI/torch-sim/discussions/120 for
+See https://github.com/TorchSim/torch-sim/discussions/120 for
 our current posture on adding models to TorchSim.
 
 1. Open a PR or an issue to get feedback. We are happy to take a look,

@@ -713,7 +713,7 @@ class SoftSphereMultiModel(ModelInterface):
                 cell=cell,
                 pbc=self.pbc,
                 cutoff=self.cutoff,
-                sorti=False,
+                sort_id=False,
             )
             # Get displacements between neighbor pairs
             dr_vec, distances = transforms.get_pair_displacements(

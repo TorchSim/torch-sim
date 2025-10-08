@@ -85,7 +85,7 @@ class NPTLangevinState(SimState):
         return self.velocities * self.masses.unsqueeze(-1)
 
 
-# Extracted out from npt_langevin body to test fix in https://github.com/Radical-AI/torch-sim/pull/153
+# Extracted out from npt_langevin body to test fix in https://github.com/TorchSim/torch-sim/pull/153
 def _compute_cell_force(
     state: NPTLangevinState,
     external_pressure: torch.Tensor,
