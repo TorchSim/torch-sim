@@ -70,7 +70,7 @@ class FairChemModel(ModelInterface):
 
     def __init__(
         self,
-        model_name: str,
+        model: str,
         neighbor_list_fn: Callable | None = None,
         *,  # force remaining arguments to be keyword-only
         model_cache_dir: str | Path | None = None,
@@ -111,8 +111,8 @@ class FairChemModel(ModelInterface):
                 "Custom neighbor list is not supported for FairChemModel."
             )
 
-        if model_name is None:
-            raise ValueError("Valid fairchem model name needs to be specified")
+        if model is None:
+            raise ValueError("Valid fairchem model name or path needs to be specified")
 
         # Convert task_name to UMATask if it's a string (only for UMA models)
         if isinstance(task_name, str):
@@ -124,13 +124,22 @@ class FairChemModel(ModelInterface):
         self.task_name = task_name
 
         # Create efficient batch predictor for fast inference
-        if model_cache_dir:
-            if model_cache_dir.exists():
-                self.predictor = pretrained_mlip.get_predict_unit(str(model_name), device=device_str, cache_dir=model_cache_dir)
+        if model in pretrained_mlip.available_models:
+            if model_cache_dir and model_cache_dir.exists():
+                self.predictor = pretrained_mlip.get_predict_unit(
+                    model,
+                    device=device_str,
+                    cache_dir=model_cache_dir
+                )
             else:
-                raise ValueError("Specified cache dir does not exist!")
+                self.predictor = pretrained_mlip.get_predict_unit(model, device=device_str)
+        elif os.path.isfile(model):
+            self.predictor = pretrained_mlip.load_predict_unit(
+                model,
+                device=device_str
+            )
         else:
-            self.predictor = pretrained_mlip.get_predict_unit(str(model_name), device=device_str)
+            raise ValueError(f"Invalid model name or checkpoint path: {model}. Available pretrained models are: {pretrained_mlip.available_models}")
             
         # Determine implemented properties
         # This is a simplified approach - in practice you might want to
