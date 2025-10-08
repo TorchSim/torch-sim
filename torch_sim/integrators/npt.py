@@ -1353,15 +1353,21 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         cell = volume_to_cell(volume)
 
         # Update particle positions and forces
-        positions = exp_iL1(state, state.velocities, cell_momentum.squeeze(-1) / cell_mass, dt)
+        positions = exp_iL1(
+            state, state.velocities, cell_momentum.squeeze(-1) / cell_mass, dt
+        )
         state.positions = positions
         state.cell = cell
         model_output = model(state)
 
         # Second half step: Update momenta
         momenta = exp_iL2(
-            state, alpha, momenta, model_output["forces"], 
-            cell_momentum.squeeze(-1) / cell_mass, dt_2
+            state,
+            alpha,
+            momenta,
+            model_output["forces"],
+            cell_momentum.squeeze(-1) / cell_mass,
+            dt_2,
         )
         cell_force_val = compute_cell_force(
             alpha=alpha,
@@ -1455,7 +1461,9 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
 
         # Initialize cell variables with proper system dimensions
         cell_position = torch.zeros(n_systems, device=device, dtype=dtype)
-        cell_momentum = torch.zeros(n_systems, 1, device=device, dtype=dtype)  # [n_systems, 1] for compatibility with half_step
+        cell_momentum = torch.zeros(
+            n_systems, 1, device=device, dtype=dtype
+        )  # [n_systems, 1] for compatibility with half_step
 
         # Convert kT to tensor if it's not already one
         if not isinstance(kT, torch.Tensor):
@@ -1471,7 +1479,7 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
 
         # Calculate cell kinetic energy (per system for proper batching)
         # For cell variables, each system has 1 DOF, so KE = p^2/(2m) for each system
-        KE_cell = (cell_momentum.squeeze(-1)**2) / (2 * cell_mass)  # [n_systems]
+        KE_cell = (cell_momentum.squeeze(-1) ** 2) / (2 * cell_mass)  # [n_systems]
 
         # Ensure reference_cell has proper system dimensions
         if state.cell.ndim == 2:
@@ -1590,7 +1598,9 @@ def npt_nose_hoover(  # noqa: C901, PLR0915
         )
         state.thermostat.kinetic_energy = KE
 
-        KE_cell = (state.cell_momentum.squeeze(-1)**2) / (2 * state.cell_mass)  # [n_systems]
+        KE_cell = (state.cell_momentum.squeeze(-1) ** 2) / (
+            2 * state.cell_mass
+        )  # [n_systems]
         state.barostat.kinetic_energy = KE_cell
 
         # Second half step of thermostat chains

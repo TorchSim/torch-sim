@@ -122,7 +122,7 @@ def make_model_calculator_consistency_test(
     return test_model_calculator_consistency
 
 
-def make_validate_model_outputs_test(
+def make_validate_model_outputs_test(  # noqa: PLR0915
     model_fixture_name: str,
 ):
     """Factory function to create model output validation tests.
@@ -132,7 +132,7 @@ def make_validate_model_outputs_test(
         model_fixture_name: Name of the model fixture to validate
     """
 
-    def test_model_output_validation(
+    def test_model_output_validation(  # noqa: PLR0915
         request: pytest.FixtureRequest,
         device: torch.device,
         dtype: torch.dtype,
