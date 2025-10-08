@@ -39,7 +39,6 @@ extensions = (
     "sphinx.ext.autosummary",
     "myst_parser",
     "sphinxcontrib.autodoc_pydantic",
-    "numpydoc",
     "nbsphinx",
     "sphinx_design",
     "sphinx_copybutton",
@@ -77,10 +76,13 @@ autodoc_typehints = "description"
 # autoclass_content = "both"
 # autodoc_member_order = "bysource"
 
-# better napoleon support
+# napoleon support for NumPy and Google style docstrings
+napoleon_google_docstring = True
+napoleon_numpy_docstring = True
 napoleon_use_param = True
 napoleon_use_rtype = True
 napoleon_use_ivar = True
+napoleon_preprocess_types = True
 
 # The suffix(es) of source filenames.
 source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
@@ -119,13 +121,6 @@ python_use_unqualified_type_names = True
 # don't overwrite summary but generate them if they don't exist
 autosummary_generate = True
 autosummary_generate_overwrite = True
-
-# numpydoc options
-numpydoc_class_members_toctree = False
-numpydoc_show_class_members = False
-numpydoc_show_inherited_class_members = False
-numpydoc_attributes_as_param_list = False
-numpydoc_xref_param_type = True
 
 # sphinx-panels shouldn't add bootstrap css as the pydata-sphinx-theme already loads it
 panels_add_bootstrap_css = False
