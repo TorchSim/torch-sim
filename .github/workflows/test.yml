@@ -69,8 +69,12 @@ jobs:
           - { name: nequip, test_path: "tests/models/test_nequip_framework.py" }
           - { name: orb, test_path: "tests/models/test_orb.py" }
           - { name: sevenn, test_path: "tests/models/test_sevennet.py" }
+        exclude:
+          - version: { python: '3.13', resolution: lowest-direct }
+            model: { name: orb, test_path: "tests/models/test_orb.py" }
+          - version: { python: '3.13', resolution: lowest-direct }
+            model: { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
     runs-on: ${{ matrix.os }}
-    # if: ${{ !((matrix.model.name == 'fairchem-legacy' && matrix.version.python == '3.13') || (matrix.model.name == 'orb' && matrix.version.python == '3.13')) }}
 
     steps:
       - name: Check out repo
