@@ -369,8 +369,6 @@ def test_determine_max_batch_size_fibonacci(
 
     # Test with a small max_atoms value to limit the sequence
     max_size = determine_max_batch_size(si_sim_state, lj_model, max_atoms=16)
-    print(si_sim_state.n_atoms)
-    print(max_size)
     # The Fibonacci sequence up to 10 is [1, 2, 3, 5, 8, 13]
     # Since we're not triggering OOM errors with our mock, it should
     # return the largest value that fits within max_atoms (simstate has 8 atoms, so 2 batches)
