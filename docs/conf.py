@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.abspath("../../"))
 # -- Project information -----------------------------------------------------
 
 project = "torch-sim-atomistic"
-copyright = "2025, Project TorchSim"  # noqa: A001
+copyright = "2025, Radical AI"  # noqa: A001
 author = "Abhijeet Gangan, Orion Cohen, Janosh Riebesell"
 
 # The short X.Y version
