@@ -406,6 +406,7 @@ def run_optimization_ase(  # noqa: C901, PLR0915
         system_idx=concatenated_system_indices,
         energy=concatenated_energies,
         forces=concatenated_forces,
+        stress=None,
     )
 
     convergence_steps = torch.tensor(
