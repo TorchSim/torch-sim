@@ -70,7 +70,7 @@ jobs:
           - { name: orb, test_path: "tests/models/test_orb.py" }
           - { name: sevenn, test_path: "tests/models/test_sevennet.py" }
     runs-on: ${{ matrix.os }}
-    if: ${{ !(contains(matrix.model.name, 'fairchem') && matrix.version.python != '3.12') || !(contains(matrix.model.name, 'orb') && matrix.version.python != '3.12') }}
+    if: ${{ !((matrix.model.name == 'fairchem-legacy' && matrix.version.python == '3.13') || (matrix.model.name == 'orb' && matrix.version.python == '3.13')) }}
 
     steps:
       - name: Check out repo
