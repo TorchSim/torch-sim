@@ -1,3 +1,5 @@
+import traceback
+
 import pytest
 import torch
 
@@ -16,7 +18,9 @@ try:
     from torch_sim.models.sevennet import SevenNetModel
 
 except ImportError:
-    pytest.skip("sevenn not installed", allow_module_level=True)
+    pytest.skip(
+        f"sevenn not installed: {traceback.format_exc()}", allow_module_level=True
+    )
 
 
 @pytest.fixture

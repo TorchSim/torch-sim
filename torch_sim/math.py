@@ -79,9 +79,10 @@ def expm_frechet_with_matrix_exp(  # noqa: C901
             infinities or NaNs. Defaults to True.
 
     Returns:
-        expm_A: torch.Tensor. Matrix exponential of A.
-        expm_frechet_AE: torch.Tensor. Frechet derivative of the matrix exponential of A
-            in the direction E.
+        tuple[torch.Tensor, torch.Tensor]: A tuple containing:
+            - expm_A: Matrix exponential of A
+            - expm_frechet_AE: Frechet derivative of the matrix exponential of A
+              in the direction E
     """
     # Convert inputs to torch tensors if they aren't already
     if not isinstance(A, torch.Tensor):
@@ -125,9 +126,10 @@ def expm_frechet_block_enlarge(
         E: Direction matrix
 
     Returns:
-        expm_A: Matrix exponential of A
-        expm_frechet_AE: Frechet derivative of the matrix exponential of A
-            in the direction E.
+        tuple[torch.Tensor, torch.Tensor]: A tuple containing:
+            - expm_A: Matrix exponential of A
+            - expm_frechet_AE: Frechet derivative of the matrix exponential of A
+              in the direction E.
     """
     n = A.shape[0]
     # Create block matrix M = [[A, E], [0, A]]

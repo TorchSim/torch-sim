@@ -415,7 +415,7 @@ class SimState:
     def __init_subclass__(cls, **kwargs) -> None:
         """Enforce that all derived states cannot have tensor attributes that can also be
         None. This is because torch.concatenate cannot concat between a tensor and a None.
-        See https://github.com/Radical-AI/torch-sim/pull/219 for more details.
+        See https://github.com/TorchSim/torch-sim/pull/219 for more details.
 
         Also enforce all of child classes's attributes are specified in _atom_attributes,
         _system_attributes, or _global_attributes.
