@@ -426,6 +426,7 @@ def optimize(  # noqa: C901
             model,
             max_memory_scaler=autobatcher.max_memory_scaler,
             memory_scales_with=autobatcher.memory_scales_with,
+            max_atoms_to_try=autobatcher.max_atoms_to_try,
         )
     autobatcher.load_states(state)
     trajectory_reporter = _configure_reporter(

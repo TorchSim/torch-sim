@@ -289,7 +289,7 @@ def determine_max_batch_size(
     """
     # Create a geometric sequence of batch sizes
     sizes = [start_size]
-    while (next_size := max(round(sizes[-1] * scale_factor), sizes[-1] + 1)) < max_atoms:
+    while (next_size := max(round(sizes[-1] * scale_factor), sizes[-1] + 1))*state.n_atoms <= max_atoms:
         sizes.append(next_size)
 
     for i in range(len(sizes)):
