@@ -70,6 +70,7 @@ jobs:
           - { name: orb, test_path: "tests/models/test_orb.py" }
           - { name: sevenn, test_path: "tests/models/test_sevennet.py" }
     runs-on: ${{ matrix.os }}
+    if: ${{ !(contains(matrix.model.name, 'fairchem') && matrix.version.python != '3.12') || !(contains(matrix.model.name, 'orb') && matrix.version.python != '3.12') }}
 
     steps:
       - name: Check out repo
@@ -92,7 +93,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Install legacy fairchem repository and dependencies
-        if: ${{ matrix.model.name == 'fairchem-legacy' && matrix.version.python != '3.13' }}
+        if: ${{ matrix.model.name == 'fairchem-legacy' }}
         run: |
           if [ -f fairchem-repo/packages/requirements.txt ]; then
             uv pip install -r fairchem-repo/packages/requirements.txt --system
@@ -102,6 +103,7 @@ jobs:
           fi
           uv pip install -e fairchem-repo/packages/fairchem-core[dev] --system
           uv pip install -e ".[test]" --resolution=${{ matrix.version.resolution }} --system
+
 
       - name: Install torch_sim with model dependencies
         if: ${{ matrix.model.name != 'fairchem-legacy' }}
