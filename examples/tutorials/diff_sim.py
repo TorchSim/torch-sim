@@ -1,15 +1,16 @@
-# %%
+# %% [markdown]
+# <details>
+#   <summary>Dependencies</summary>
 # /// script
-# dependencies = ["matplotlib"]
+# dependencies = [
+#     "matplotlib",
+# ]
 # ///
+# </details>
 
 # %%
-import torch_sim as ts
-from typing import cast
-from numpy.typing import NDArray
 import torch
 import matplotlib.pyplot as plt
-from torch_sim.models.interface import ModelInterface
 from torch_sim.models.soft_sphere import (
     soft_sphere_pair,
     DEFAULT_SIGMA,
@@ -22,7 +23,6 @@ from dataclasses import dataclass
 from torch._functorch import config
 
 config.donated_buffer = False
-
 # %% [markdown]
 """
 # Differentiable Simulation
@@ -34,6 +34,15 @@ and perform meta-optimization to find the optimal diameter.
 
 
 # %%
+def finalize_plot(shape: tuple[int, int] = (1, 1)):
+    """Finalize the plot by setting the size and layout."""
+    plt.gcf().set_size_inches(
+        shape[0] * 1.5 * plt.gcf().get_size_inches()[1],
+        shape[1] * 1.5 * plt.gcf().get_size_inches()[1],
+    )
+    plt.tight_layout()
+
+
 def draw_system(
     R: torch.Tensor, box_size: float, marker_size: float, color: list[float] | None = None
 ):
@@ -96,11 +105,23 @@ plt.ylabel(r"$U(r)$", fontsize=20)
 plt.show()
 
 # %% [markdown]
-"""## Define the simple TorchSim model for the soft sphere potential."""
+"""
+## Define the simple TorchSim model for the soft sphere potential.
+"""
 
 
 # %%
-class SoftSphereMultiModel(ModelInterface):
+@dataclass
+class BaseState:
+    """Simple simulation state"""
+
+    positions: torch.Tensor
+    cell: torch.Tensor
+    pbc: bool
+    species: torch.Tensor
+
+
+class SoftSphereMultiModel(torch.nn.Module):
     """Soft sphere potential"""
 
     def __init__(
@@ -117,8 +138,8 @@ class SoftSphereMultiModel(ModelInterface):
     ) -> None:
         """Initialize a soft sphere model for multi-component systems."""
         super().__init__()
-        self._device = device or torch.device("cpu")
-        self._dtype = dtype
+        self.device = device or torch.device("cpu")
+        self.dtype = dtype
         self.pbc = pbc
 
         # Store species list and determine number of unique species
@@ -173,14 +194,16 @@ class SoftSphereMultiModel(ModelInterface):
         )
 
     def forward(
-        self, custom_state: ts.SimState, species: torch.Tensor | None = None
+        self,
+        custom_state: BaseState,
+        species: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single unbatched system with multiple
         species."""
         # Convert inputs to proper device/dtype and handle species
         positions = custom_state.positions.requires_grad_(True)
         cell = custom_state.cell
-        species = custom_state.atomic_numbers
+        species = custom_state.species
 
         if species is not None:
             species = species.to(device=self.device, dtype=torch.long)
@@ -223,9 +246,15 @@ class SoftSphereMultiModel(ModelInterface):
         # Initialize results with total energy (divide by 2 to avoid double counting)
         potential_energy = pair_energies.sum() / 2
 
-        grad_outputs: list[torch.Tensor | None] = [torch.ones_like(potential_energy)]
+        grad_outputs: list[torch.Tensor | None] = [
+            torch.ones_like(
+                potential_energy,
+            )
+        ]
         grad = torch.autograd.grad(
-            outputs=[potential_energy],
+            outputs=[
+                potential_energy,
+            ],
             inputs=[positions],
             grad_outputs=grad_outputs,
             create_graph=False,
@@ -247,8 +276,62 @@ We will use a simple gradient descent to optimize the positions of the particles
 """
 
 
+# %%
+@dataclass
+class GDState(BaseState):
+    """Simple simulation state"""
+
+    forces: torch.Tensor
+    energy: torch.Tensor
+
+
+def gradient_descent(
+    model: torch.nn.Module, *, lr: torch.Tensor | float = 0.01
+) -> tuple[Callable[[dict[str, torch.Tensor]], GDState], Callable[[GDState], GDState]]:
+    """Initialize a gradient descent optimization."""
+
+    def gd_init(
+        state: dict[str, torch.Tensor],
+    ) -> GDState:
+        """Initialize the gradient descent optimization state."""
+
+        # Get initial forces and energy from model
+        model_output = model(state)
+        energy = model_output["energy"]
+        forces = model_output["forces"]
+
+        return GDState(
+            positions=state.positions,
+            forces=forces,
+            energy=energy,
+            cell=state.cell,
+            pbc=state.pbc,
+            species=state.species,
+        )
+
+    def gd_step(state: GDState, lr: torch.Tensor = lr) -> GDState:
+        """Perform one gradient descent optimization step to update the
+        atomic positions. The cell is not optimized."""
+
+        # Update positions using forces and per-atom learning rates
+        state.positions = state.positions + lr * state.forces
+
+        # Get updated forces and energy from model
+        model_output = model(state)
+
+        # Update state with new forces and energy
+        state.forces = model_output["forces"]
+        state.energy = model_output["energy"]
+
+        return state
+
+    return gd_init, gd_step
+
+
 # %% [markdown]
-"""## Setup the simulation environment."""
+"""
+## Setup the simulation environment.
+"""
 
 
 # %%
@@ -261,7 +344,7 @@ def box_size_at_number_density(
 def box_size_at_packing_fraction(
     diameter: torch.Tensor, packing_fraction: float
 ) -> torch.Tensor:
-    bubble_volume = N_2 * torch.pi * (torch.square(diameter) + 1) / 4
+    bubble_volume = N_2 * torch.pi * (diameter**2 + 1) / 4
     return torch.sqrt(bubble_volume / packing_fraction)
 
 
@@ -277,7 +360,7 @@ N_2 = N // 2
 species = torch.tensor([0] * (N_2) + [1] * (N_2), dtype=torch.int32)
 simulation_steps = 1000
 packing_fraction = 0.98
-marker_size = 260
+markersize = 260
 
 
 # %%
@@ -290,63 +373,59 @@ def simulation(
     # Create the energy function.
     sigma = species_sigma(diameter)
     model = SoftSphereMultiModel(sigma_matrix=sigma, species=species)
-    model = cast(SoftSphereMultiModel, torch.compile(model))
+    model = torch.compile(model)
     # Randomly initialize the system.
     # Fix seed for reproducible random positions
     torch.manual_seed(seed)
     R = torch.rand(N, 2) * box_size
 
     # Minimize to the nearest minimum.
-    custom_state = ts.SimState(
-        atomic_numbers=species,
-        masses=torch.ones(N),
-        system_idx=torch.arange(N),
-        positions=R,
-        cell=cell,
-        pbc=True,
-    )
-    state = ts.gradient_descent_init(model, state=custom_state)
+    init_fn, apply_fn = gradient_descent(model, lr=0.1)
 
+    custom_state = BaseState(positions=R, cell=cell, species=species, pbc=True)
+    state = init_fn(custom_state)
     for _ in range(simulation_steps):
-        state = ts.gradient_descent_step(model, state, pos_lr=0.1)
+        state = apply_fn(state)
     return box_size, model(state)["energy"], state.positions
 
 
 # %% [markdown]
-"""## Packing at different diameters."""
-
+"""
+## Packing at different diameters.
+"""
 # %%
 plt.subplot(1, 2, 1)
 
 box_size, raft_energy, bubble_positions = simulation(torch.tensor(1.0))
-draw_system(bubble_positions, box_size.numpy(), marker_size)
+draw_system(bubble_positions, box_size, markersize)
+finalize_plot((0.5, 0.5))
 
 plt.subplot(1, 2, 2)
 
 box_size, raft_energy, bubble_positions = simulation(torch.tensor(0.8))
-draw_system(bubble_positions[:N_2], box_size.numpy(), 0.8 * marker_size)
-draw_system(bubble_positions[N_2:], box_size.numpy(), marker_size)
+draw_system(bubble_positions[:N_2], box_size, 0.8 * markersize)
+draw_system(bubble_positions[N_2:], box_size, markersize)
+finalize_plot((2.0, 1))
 # %% [markdown]
-"""## Forward simulation for different diameters and seeds."""
-
+"""
+## Forward simulation for different diameters and seeds.
+"""
 # %%
 diameters = torch.linspace(0.4, 1.0, 10)
 seeds = torch.arange(1, 6)
 box_size_tensor = torch.zeros(len(diameters), len(seeds))
 raft_energy_tensor = torch.zeros(len(diameters), len(seeds))
 bubble_positions_tensor = torch.zeros(len(diameters), len(seeds), N, 2)
-for ii, diam in enumerate(diameters):
-    for jj, seed in enumerate(seeds):
-        box_size, raft_energy, bubble_positions = simulation(diam, seed)
-        box_size_tensor[ii, jj] = box_size
-        raft_energy_tensor[ii, jj] = raft_energy.detach()
-        bubble_positions_tensor[ii, jj] = bubble_positions
-    print(
-        f"Finished simulation for diameter {diam}, final energy: {raft_energy.detach()}"
-    )
+for i, d in enumerate(diameters):
+    for j, s in enumerate(seeds):
+        box_size, raft_energy, bubble_positions = simulation(d, s)
+        box_size_tensor[i, j] = box_size
+        raft_energy_tensor[i, j] = raft_energy.detach()
+        bubble_positions_tensor[i, j] = bubble_positions
+    print(f"Finished simulation for diameter {d}, final energy: {raft_energy.detach()}")
 # %%
-U_mean = torch.mean(raft_energy_tensor, dim=1)
-U_std = torch.std(raft_energy_tensor, dim=1)
+U_mean = torch.mean(raft_energy_tensor, axis=1)
+U_std = torch.std(raft_energy_tensor, axis=1)
 plt.plot(diameters.detach().numpy(), U_mean, linewidth=3)
 plt.fill_between(diameters.detach().numpy(), U_mean + U_std, U_mean - U_std, alpha=0.4)
 
@@ -355,29 +434,32 @@ plt.xlabel(r"$D$", fontsize=20)
 plt.ylabel(r"$U$", fontsize=20)
 plt.show()
 # %%
-marker_size = 185
-for ii, diam in enumerate(diameters):
-    plt.subplot(2, 5, ii + 1)
-    c = min(1, max(0, (U_mean[ii].detach().numpy() - 0.4) * 4))
+ms = 185
+for i, d in enumerate(diameters):
+    plt.subplot(2, 5, i + 1)
+    c = min(1, max(0, (U_mean[i].detach().numpy() - 0.4) * 4))
     color = [c, 0, 1 - c]
     draw_system(
-        bubble_positions_tensor[ii, 0, :N_2].detach().numpy(),
-        box_size_tensor[ii, 0].detach().numpy(),
-        diam * marker_size,
+        bubble_positions_tensor[i, 0, :N_2].detach().numpy(),
+        box_size_tensor[i, 0].detach().numpy(),
+        d * ms,
         color=color,
     )
     draw_system(
-        bubble_positions_tensor[ii, 0, N_2:].detach().numpy(),
-        box_size_tensor[ii, 0].detach().numpy(),
-        marker_size,
+        bubble_positions_tensor[i, 0, N_2:].detach().numpy(),
+        box_size_tensor[i, 0].detach().numpy(),
+        ms,
         color=color,
     )
 
+finalize_plot((2.5, 1))
 
 # %% [markdown]
-"""## Meta-optimization with differentiable simulation."""
-
+"""
+## Meta-optimization with differentiable simulation.
+"""
 # %%
+
 short_simulation_steps = 10
 
 
@@ -392,18 +474,12 @@ def short_simulation(
     model = SoftSphereMultiModel(sigma_matrix=sigma, species=species)
 
     # Minimize to the nearest minimum.
-    custom_state = ts.SimState(
-        atomic_numbers=species,
-        masses=torch.ones(N),
-        system_idx=torch.arange(N),
-        positions=R,
-        cell=cell,
-        pbc=True,
-    )
-    state = ts.gradient_descent_init(model, state=custom_state)
+    init_fn, apply_fn = gradient_descent(model, lr=0.1)
 
+    custom_state = BaseState(positions=R, cell=cell, species=species, pbc=True)
+    state = init_fn(custom_state)
     for i in range(short_simulation_steps):
-        state = ts.gradient_descent_step(model, state, pos_lr=0.1)
+        state = apply_fn(state)
 
     grad_outputs: list[torch.Tensor | None] = [
         torch.ones_like(
@@ -411,7 +487,9 @@ def short_simulation(
         )
     ]
     grad = torch.autograd.grad(
-        outputs=[model(state)["energy"]],
+        outputs=[
+            model(state)["energy"],
+        ],
         inputs=[diameter],
         grad_outputs=grad_outputs,
         create_graph=True,
@@ -424,15 +502,15 @@ def short_simulation(
 
 # %%
 dU_dD = torch.zeros(len(diameters), len(seeds))
-for ii, diam in enumerate(diameters):
-    for jj, seed in enumerate(seeds):
-        _, dU_dD[ii, jj] = short_simulation(diam, bubble_positions_tensor[ii, jj])
+for i, d in enumerate(diameters):
+    for j, s in enumerate(seeds):
+        _, dU_dD[i, j] = short_simulation(d, bubble_positions_tensor[i, j])
 
 # %%
 plt.subplot(2, 1, 1)
 dU_dD = dU_dD.detach()
-dU_mean = torch.mean(dU_dD, dim=1)
-dU_std = torch.std(dU_dD, dim=1)
+dU_mean = torch.mean(dU_dD, axis=1)
+dU_std = torch.std(dU_dD, axis=1)
 plt.plot(diameters.detach().numpy(), dU_mean, linewidth=3)
 plt.fill_between(
     diameters.detach().numpy(), dU_mean + dU_std, dU_mean - dU_std, alpha=0.4
@@ -450,3 +528,5 @@ plt.fill_between(diameters.detach().numpy(), U_mean + U_std, U_mean - U_std, alp
 plt.xlim([0.4, 1.0])
 plt.xlabel(r"$D$", fontsize=20)
 plt.ylabel(r"$U$", fontsize=20)
+
+finalize_plot((1.25, 1))
