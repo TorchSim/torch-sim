@@ -10,6 +10,9 @@ try:
     from collections.abc import Callable
 
     from ase.build import bulk, fcc100, molecule
+    from fairchem.core.calculate.pretrained_mlip import (
+        pretrained_checkpoint_path_from_name,
+    )
     from huggingface_hub.utils._auth import get_token
 
     import torch_sim as ts
@@ -220,6 +223,28 @@ def test_empty_batch_error() -> None:
     model = FairChemModel(model=None, model_name="uma-s-1", task_name="omat", cpu=True)
     with pytest.raises((ValueError, RuntimeError, IndexError)):
         model(ts.io.atoms_to_state([], device="cpu", dtype=torch.float32))
+
+
+@pytest.mark.skipif(
+    get_token() is None, reason="Requires HuggingFace authentication for UMA model access"
+)
+def test_load_from_checkpoint_path(device: torch.device, dtype: torch.dtype) -> None:
+    """Test loading model from a saved checkpoint file path."""
+    checkpoint_path = pretrained_checkpoint_path_from_name("uma-s-1")
+    loaded_model = FairChemModel(
+        model=str(checkpoint_path), task_name="omat", cpu=device.type == "cpu"
+    )
+
+    # Verify the loaded model works
+    system = bulk("Si", "diamond", a=5.43)
+    state = ts.io.atoms_to_state([system], device=device, dtype=dtype)
+    results = loaded_model(state)
+
+    assert "energy" in results
+    assert "forces" in results
+    assert results["energy"].shape == (1,)
+    assert torch.isfinite(results["energy"]).all()
+    assert torch.isfinite(results["forces"]).all()
 
 
 test_fairchem_uma_model_outputs = pytest.mark.skipif(

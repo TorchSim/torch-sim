@@ -8,6 +8,7 @@ Requires fairchem-core to be installed.
 
 from __future__ import annotations
 
+import os
 import traceback
 import typing
 import warnings
@@ -70,9 +71,10 @@ class FairChemModel(ModelInterface):
 
     def __init__(
         self,
-        model: str,
+        model: str | Path | None,
         neighbor_list_fn: Callable | None = None,
         *,  # force remaining arguments to be keyword-only
+        model_name: str | None = None,
         model_cache_dir: str | Path | None = None,
         cpu: bool = False,
         dtype: torch.dtype | None = None,
@@ -82,9 +84,10 @@ class FairChemModel(ModelInterface):
         """Initialize the FairChem model.
 
         Args:
-            model_name (str): Name of pretrained model to load
+            model (str | Path): Path to model checkpoint file
             neighbor_list_fn (Callable | None): Function to compute neighbor lists
                 (not currently supported)
+            model_name (str | None): Name of pretrained model to load
             model_cache_dir (str | Path | None): Path where to save the model
             cpu (bool): Whether to use CPU instead of GPU for computation
             dtype (torch.dtype | None): Data type to use for computation
@@ -111,8 +114,16 @@ class FairChemModel(ModelInterface):
                 "Custom neighbor list is not supported for FairChemModel."
             )
 
+        if model_name is not None:
+            if model is not None:
+                raise RuntimeError(
+                    "model_name and checkpoint_path were both specified, "
+                    "please use only one at a time"
+                )
+            model = model_name
+
         if model is None:
-            raise ValueError("Valid fairchem model name or path needs to be specified")
+            raise ValueError("Either model or model_name must be provided")
 
         # Convert task_name to UMATask if it's a string (only for UMA models)
         if isinstance(task_name, str):
@@ -127,20 +138,20 @@ class FairChemModel(ModelInterface):
         if model in pretrained_mlip.available_models:
             if model_cache_dir and model_cache_dir.exists():
                 self.predictor = pretrained_mlip.get_predict_unit(
-                    model,
-                    device=device_str,
-                    cache_dir=model_cache_dir
+                    model, device=device_str, cache_dir=model_cache_dir
                 )
             else:
-                self.predictor = pretrained_mlip.get_predict_unit(model, device=device_str)
+                self.predictor = pretrained_mlip.get_predict_unit(
+                    model, device=device_str
+                )
         elif os.path.isfile(model):
-            self.predictor = pretrained_mlip.load_predict_unit(
-                model,
-                device=device_str
-            )
+            self.predictor = pretrained_mlip.load_predict_unit(model, device=device_str)
         else:
-            raise ValueError(f"Invalid model name or checkpoint path: {model}. Available pretrained models are: {pretrained_mlip.available_models}")
-            
+            raise ValueError(
+                f"Invalid model name or checkpoint path: {model}. "
+                f"Available pretrained models are: {pretrained_mlip.available_models}"
+            )
+
         # Determine implemented properties
         # This is a simplified approach - in practice you might want to
         # inspect the model configuration more carefully
