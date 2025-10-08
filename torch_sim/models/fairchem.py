@@ -84,7 +84,7 @@ class FairChemModel(ModelInterface):
         """Initialize the FairChem model.
 
         Args:
-            model (str | Path): Path to model checkpoint file
+            model (str | Path | None): Path to model checkpoint file
             neighbor_list_fn (Callable | None): Function to compute neighbor lists
                 (not currently supported)
             model_name (str | None): Name of pretrained model to load
