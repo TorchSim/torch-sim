@@ -152,7 +152,7 @@ for step in range(20):
 # %% [markdown]
 """
 You can set the optimizer-specific arguments in the `optimize` function
-optimizer=ts.OptimFlavor.fire, cell_filter=ts.CellFilter.unit. Fixed
+optimizer=ts.Optimizer.fire, cell_filter=ts.CellFilter.unit. Fixed
 parameters can usually be passed to the `init_fn` and parameters that vary over
 the course of the simulation can be passed to the step_fn`.
 """

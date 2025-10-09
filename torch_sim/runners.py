@@ -120,7 +120,7 @@ def integrate[T: SimState](  # noqa: C901
     Args:
         system (StateLike): Input system to simulate
         model (ModelInterface): Neural network model module
-        integrator (MdFlavor | tuple): Either a key from MdFlavor or a tuple of
+        integrator (Integrator | tuple): Either a key from Integrator or a tuple of
             (init_func, step_func) functions.
         n_steps (int): Number of integration steps
         temperature (float | ArrayLike): Temperature or array of temperatures for each
@@ -164,7 +164,7 @@ def integrate[T: SimState](  # noqa: C901
         init_func, step_func = integrator
     else:
         raise ValueError(
-            f"integrator must be key from MdFlavor or a tuple of "
+            f"integrator must be key from Integrator or a tuple of "
             f"(init_func, step_func), got {type(integrator)}"
         )
 
@@ -387,7 +387,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         system (StateLike): Input system to optimize (ASE Atoms, Pymatgen Structure, or
             SimState)
         model (ModelInterface): Neural network model module
-        optimizer (OptimFlavor | tuple): Optimization algorithm function
+        optimizer (Optimizer | tuple): Optimization algorithm function
         convergence_fn (Callable | None): Condition for convergence, should return a
             boolean tensor of length n_systems
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
@@ -430,7 +430,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     else:
         optimizer_type = type(optimizer).__name__
         raise TypeError(
-            f"Invalid {optimizer_type=}, must be key from OptimFlavor or a tuple of "
+            f"Invalid {optimizer_type=}, must be key from Optimizer or a tuple of "
             f"(init_func, step_func), got {optimizer_type}"
         )
 

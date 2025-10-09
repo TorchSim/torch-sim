@@ -81,7 +81,7 @@ To then relax those structures with FIRE is just a few more lines.
 relaxed_state = ts.optimize(
     system=final_state,
     model=mace_model,
-    optimizer=ts.OptimFlavor.fire,
+    optimizer=ts.Optimizer.fire,
     autobatcher=True,
     init_kwargs=dict(cell_filter=ts.CellFilter.frechet),
 )
