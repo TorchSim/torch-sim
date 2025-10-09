@@ -191,7 +191,7 @@ def integrate[T: SimState](  # noqa: C901
     # Handle both BinningAutoBatcher and list of tuples
     for state, system_indices in batch_iterator:
         # Pass correct parameters based on integrator type
-        state = init_func(model=model, state=state, kT=kTs[0], dt=dt, **integrator_kwargs)
+        state = init_func(state=state, model=model, kT=kTs[0], dt=dt, **integrator_kwargs)
 
         # set up trajectory reporters
         if autobatcher and trajectory_reporter is not None and og_filenames is not None:
@@ -202,7 +202,9 @@ def integrate[T: SimState](  # noqa: C901
 
         # run the simulation
         for step in range(1, n_steps + 1):
-            state = step_func(model, state, dt=dt, kT=kTs[step - 1], **integrator_kwargs)
+            state = step_func(
+                state=state, model=model, dt=dt, kT=kTs[step - 1], **integrator_kwargs
+            )
 
             if trajectory_reporter:
                 trajectory_reporter.report(state, step, model=model)
@@ -490,7 +492,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             if hasattr(state, "energy"):
                 last_energy = state.energy
 
-            state = step_fn(model=model, state=state, **optimizer_kwargs)
+            state = step_fn(state=state, model=model, **optimizer_kwargs)
 
             if trajectory_reporter:
                 trajectory_reporter.report(state, step, model=model)
