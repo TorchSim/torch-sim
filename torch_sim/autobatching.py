@@ -355,8 +355,8 @@ def calculate_memory_scaler(
 
 
 def estimate_max_memory_scaler(
-    model: ModelInterface,
     state_list: list[SimState],
+    model: ModelInterface,
     metric_values: list[float] | torch.Tensor,
     **kwargs: Any,
 ) -> float:
@@ -533,8 +533,8 @@ class BinningAutoBatcher[T: SimState]:
         ]
         if not self.max_memory_scaler:
             self.max_memory_scaler = estimate_max_memory_scaler(
-                self.model,
                 self.state_slices,
+                self.model,
                 self.memory_scalers,
                 max_atoms=self.max_atoms_to_try,
                 scale_factor=self.memory_scaling_factor,
@@ -914,8 +914,8 @@ class InFlightAutoBatcher[T: SimState]:
 
         if not has_max_metric:
             self.max_memory_scaler = estimate_max_memory_scaler(
-                self.model,
                 [first_state, *states],
+                self.model,
                 self.current_scalers,
                 max_atoms=self.max_atoms_to_try,
                 scale_factor=self.memory_scaling_factor,

@@ -101,7 +101,7 @@ memory_metric_values = [
 ]
 
 max_memory_metric = estimate_max_memory_scaler(
-    mace_model, state_list, metric_values=memory_metric_values
+    state_list, mace_model, metric_values=memory_metric_values
 )
 print(f"Max memory metric: {max_memory_metric}")
 

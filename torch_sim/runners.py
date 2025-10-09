@@ -66,8 +66,8 @@ def _configure_reporter(
 
 
 def _configure_batches_iterator(
-    model: ModelInterface,
     state: SimState,
+    model: ModelInterface,
     *,
     autobatcher: BinningAutoBatcher | bool,
 ) -> BinningAutoBatcher | list[tuple[SimState, list[int]]]:
@@ -170,7 +170,7 @@ def integrate[T: SimState](  # noqa: C901
 
     # batch_iterator will be a list if autobatcher is False
     batch_iterator = _configure_batches_iterator(
-        model, initial_state, autobatcher=autobatcher
+        initial_state, model, autobatcher=autobatcher
     )
     if trajectory_reporter is not None:
         trajectory_reporter = _configure_reporter(
@@ -223,8 +223,8 @@ def integrate[T: SimState](  # noqa: C901
 
 
 def _configure_in_flight_autobatcher(
-    model: ModelInterface,
     state: SimState,
+    model: ModelInterface,
     *,
     autobatcher: InFlightAutoBatcher | bool,
     max_attempts: int,  # TODO: change name to max_iterations
@@ -434,7 +434,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
 
     max_attempts = max_steps // steps_between_swaps
     autobatcher = _configure_in_flight_autobatcher(
-        model, initial_state, autobatcher=autobatcher, max_attempts=max_attempts
+        initial_state, model, autobatcher=autobatcher, max_attempts=max_attempts
     )
 
     if isinstance(initial_state, OptimState):
@@ -553,7 +553,7 @@ def static(
     """
     state: SimState = ts.initialize_state(system, model.device, model.dtype)
 
-    batch_iterator = _configure_batches_iterator(model, state, autobatcher=autobatcher)
+    batch_iterator = _configure_batches_iterator(state, model, autobatcher=autobatcher)
     properties = ["potential_energy"]
     if model.compute_forces:
         properties.append("forces")
