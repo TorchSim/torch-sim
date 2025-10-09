@@ -162,7 +162,7 @@ def _run_and_compare_optimizers(
                 max_steps=steps_for_current_segment,
                 convergence_fn=convergence_fn,
                 steps_between_swaps=1,
-                md_flavor="ase_fire",  # optimizer kwargs
+                fire_flavor="ase_fire",  # optimizer kwargs
                 init_kwargs=dict(cell_filter=cell_filter),
                 **optim_kwargs,
             )

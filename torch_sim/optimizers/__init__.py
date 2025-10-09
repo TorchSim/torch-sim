@@ -19,8 +19,8 @@ from torch_sim.optimizers.gradient_descent import (
 from torch_sim.optimizers.state import FireState, OptimState  # noqa: F401
 
 
-MdFlavor = Literal["vv_fire", "ase_fire"]
-vv_fire_key, ase_fire_key = get_args(MdFlavor)
+FireFlavor = Literal["vv_fire", "ase_fire"]
+vv_fire_key, ase_fire_key = get_args(FireFlavor)
 
 
 class OptimFlavor(StrEnum):

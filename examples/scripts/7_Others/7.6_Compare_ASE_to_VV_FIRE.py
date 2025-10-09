@@ -125,14 +125,14 @@ initial_energies = model(state)["energy"]
 def run_optimization_ts(  # noqa: PLR0915
     *,
     initial_state: SimState | OptimState,
-    ts_md_flavor: Literal["vv_fire", "ase_fire"],
+    ts_fire_flavor: Literal["vv_fire", "ase_fire"],
     ts_use_frechet: bool,
     force_tol: float,
     max_iterations_ts: int,
 ) -> tuple[torch.Tensor, OptimState | None]:
     """Runs torch-sim optimization and returns convergence steps and final state."""
     print(
-        f"\n--- Running torch-sim optimization: flavor={ts_md_flavor}, "
+        f"\n--- Running torch-sim optimization: flavor={ts_fire_flavor}, "
         f"frechet_cell_opt={ts_use_frechet}, force_tol={force_tol} ---"
     )
     start_time = time.perf_counter()
@@ -242,7 +242,7 @@ def run_optimization_ts(  # noqa: PLR0915
 
     end_time = time.perf_counter()
     print(
-        f"Finished torch-sim ({ts_md_flavor}, frechet={ts_use_frechet}) in "
+        f"Finished torch-sim ({ts_fire_flavor}, frechet={ts_use_frechet}) in "
         f"{end_time - start_time:.2f} seconds."
     )
     return convergence_steps, final_state_concatenated
@@ -377,7 +377,10 @@ def run_optimization_ase(  # noqa: C901, PLR0915
 
     if not all_positions:  # If all optimizations failed early
         print("Warning: No successful ASE structures to form OptimState.")
-        return torch.tensor(convergence_steps_list, dtype=torch.long, device=DEVICE), None
+        return (
+            torch.tensor(convergence_steps_list, dtype=torch.long, device=DEVICE),
+            None,
+        )
 
     # Concatenate all parts
     concatenated_positions = torch.cat(all_positions, dim=0)
@@ -429,25 +432,25 @@ configs_to_run = [
     {
         "name": "torch-sim VV-FIRE (PosOnly)",
         "type": "torch-sim",
-        "ts_md_flavor": "vv_fire",
+        "ts_fire_flavor": "vv_fire",
         "ts_use_frechet": False,
     },
     {
         "name": "torch-sim ASE-FIRE (PosOnly)",
         "type": "torch-sim",
-        "ts_md_flavor": "ase_fire",
+        "ts_fire_flavor": "ase_fire",
         "ts_use_frechet": False,
     },
     {
         "name": "torch-sim VV-FIRE (Frechet Cell)",
         "type": "torch-sim",
-        "ts_md_flavor": "vv_fire",
+        "ts_fire_flavor": "vv_fire",
         "ts_use_frechet": True,
     },
     {
         "name": "torch-sim ASE-FIRE (Frechet Cell)",
         "type": "torch-sim",
-        "ts_md_flavor": "ase_fire",
+        "ts_fire_flavor": "ase_fire",
         "ts_use_frechet": True,
     },
     {
@@ -475,7 +478,7 @@ all_results: dict[str, ResultData] = {}
 for config_run in configs_to_run:
     print(f"\n\nStarting configuration: {config_run['name']}")
     optimizer_type_val = config_run["type"]
-    ts_md_flavor_val = config_run.get("ts_md_flavor")
+    ts_fire_flavor_val = config_run.get("ts_fire_flavor")
     ts_use_frechet_val = config_run.get("ts_use_frechet", False)
     ase_use_frechet_filter_val = config_run.get("ase_use_frechet_filter", False)
 
@@ -483,11 +486,11 @@ for config_run in configs_to_run:
     final_state_opt: OptimState | None = None
 
     if optimizer_type_val == "torch-sim":
-        if ts_md_flavor_val is None:
-            raise ValueError(f"{ts_md_flavor_val=} must be provided for torch-sim")
+        if ts_fire_flavor_val is None:
+            raise ValueError(f"{ts_fire_flavor_val=} must be provided for torch-sim")
         steps, final_state_opt = run_optimization_ts(
             initial_state=state.clone(),
-            ts_md_flavor=ts_md_flavor_val,
+            ts_fire_flavor=ts_fire_flavor_val,
             ts_use_frechet=ts_use_frechet_val,
             force_tol=force_tol,
             max_iterations_ts=max_iterations,
@@ -641,10 +644,12 @@ for i in range(num_methods_fig1):
         x=structure_names,
         y=steps_data_fig1[:, i],
         text=[
-            "NC"
-            if all_results[plot_methods_fig1[i]]["steps"].cpu().numpy()[bar_idx] == -1
-            and not np.isnan(steps_data_fig1[bar_idx, i])
-            else ""
+            (
+                "NC"
+                if all_results[plot_methods_fig1[i]]["steps"].cpu().numpy()[bar_idx] == -1
+                and not np.isnan(steps_data_fig1[bar_idx, i])
+                else ""
+            )
             for bar_idx in range(num_structures_plot)
         ],
         textposition="inside",
@@ -827,7 +832,11 @@ comparison_pairs_plot3_defs = [
         baseline_ase_pos_only,
         "TS ASE PosOnly vs ASE Native",
     ),
-    ("torch-sim VV-FIRE (PosOnly)", baseline_ase_pos_only, "TS VV PosOnly vs ASE Native"),
+    (
+        "torch-sim VV-FIRE (PosOnly)",
+        baseline_ase_pos_only,
+        "TS VV PosOnly vs ASE Native",
+    ),
     (
         "torch-sim ASE-FIRE (Frechet Cell)",
         baseline_ase_frechet,
