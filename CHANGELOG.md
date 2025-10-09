@@ -1,4 +1,6 @@
 <!-- markdownlint-disable -->
+# Changelog
+
 ## v0.3.0
 
 Thank you to everyone who contributed to this release! @t-reents, @curtischong, and @CompRhys did great work squashing an issue with `SimState` concatenation. @curtischong continued his crusade to type and improve the TorchSim API. @orionarcher, @kianpu34593, and @janosh all made contributions that continue to improve package quality and usability. 🚀
