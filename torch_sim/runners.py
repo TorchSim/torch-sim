@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 import torch_sim as ts
 from torch_sim.autobatching import BinningAutoBatcher, InFlightAutoBatcher
-from torch_sim.integrators import INTEGRATOR_REGISTRY, MdFlavor
+from torch_sim.integrators import INTEGRATOR_REGISTRY, Integrator
 from torch_sim.integrators.md import MDState
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers import OPTIM_REGISTRY, FireState, OptimFlavor, OptimState
@@ -106,7 +106,7 @@ def integrate[T: SimState](  # noqa: C901
     system: StateLike,
     model: ModelInterface,
     *,
-    integrator: MdFlavor | tuple[Callable[..., T], Callable[..., T]],
+    integrator: Integrator | tuple[Callable[..., T], Callable[..., T]],
     n_steps: int,
     temperature: float | list | torch.Tensor,
     timestep: float,
@@ -154,7 +154,7 @@ def integrate[T: SimState](  # noqa: C901
     dt = torch.tensor(timestep * unit_system.time, dtype=dtype, device=device)
 
     # Handle both string names and direct function tuples
-    if isinstance(integrator, MdFlavor):
+    if isinstance(integrator, Integrator):
         init_func, step_func = INTEGRATOR_REGISTRY[integrator]
     elif (
         isinstance(integrator, tuple)

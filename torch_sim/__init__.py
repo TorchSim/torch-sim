@@ -24,7 +24,7 @@ from torch_sim import (
 from torch_sim.autobatching import BinningAutoBatcher, InFlightAutoBatcher
 from torch_sim.integrators import (
     INTEGRATOR_REGISTRY,
-    MdFlavor,
+    Integrator,
     NVTNoseHooverState,
     nve_init,
     nve_step,

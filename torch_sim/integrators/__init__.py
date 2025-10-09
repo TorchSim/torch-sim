@@ -46,7 +46,7 @@ from .nvt import (
 )
 
 
-class MdFlavor(StrEnum):
+class Integrator(StrEnum):
     """Flavor of molecular dynamics simulation."""
 
     nve = "nve"
@@ -58,11 +58,11 @@ class MdFlavor(StrEnum):
 
 # Integrator registry - maps integrator names to (init_fn, step_fn) pairs
 INTEGRATOR_REGISTRY: Final[
-    dict[MdFlavor, tuple[Callable[..., Any], Callable[..., Any]]]
+    dict[Integrator, tuple[Callable[..., Any], Callable[..., Any]]]
 ] = {
-    MdFlavor.nve: (nve_init, nve_step),
-    MdFlavor.nvt_langevin: (nvt_langevin_init, nvt_langevin_step),
-    MdFlavor.nvt_nose_hoover: (nvt_nose_hoover_init, nvt_nose_hoover_step),
-    MdFlavor.npt_langevin: (npt_langevin_init, npt_langevin_step),
-    MdFlavor.npt_nose_hoover: (npt_nose_hoover_init, npt_nose_hoover_step),
+    Integrator.nve: (nve_init, nve_step),
+    Integrator.nvt_langevin: (nvt_langevin_init, nvt_langevin_step),
+    Integrator.nvt_nose_hoover: (nvt_nose_hoover_init, nvt_nose_hoover_step),
+    Integrator.npt_langevin: (npt_langevin_init, npt_langevin_step),
+    Integrator.npt_nose_hoover: (npt_nose_hoover_init, npt_nose_hoover_step),
 }
