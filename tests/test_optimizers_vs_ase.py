@@ -112,6 +112,7 @@ def _run_and_compare_optimizers(
     ts_mace_mpa: MaceModel,
     ase_mace_mpa: "MACECalculator",
     fire_type: ts.OptimFlavor,
+    cell_filter: ts.CellFilter,
     ase_filter_cls: FrechetCellFilter | UnitCellFilter,
     checkpoints: list[int],
     force_tol: float,
@@ -162,6 +163,7 @@ def _run_and_compare_optimizers(
                 convergence_fn=convergence_fn,
                 steps_between_swaps=1,
                 md_flavor="ase_fire",  # optimizer kwargs
+                init_kwargs=dict(cell_filter=cell_filter),
                 **optim_kwargs,
             )
             state = updated_ts_state.clone()
