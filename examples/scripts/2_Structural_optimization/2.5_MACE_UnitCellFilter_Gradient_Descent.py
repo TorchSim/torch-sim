@@ -78,8 +78,8 @@ pos_lr, cell_lr = 0.01, 0.1
 
 
 state = ts.gradient_descent_init(
-    model=model,
     state=state,
+    model=model,
     cell_filter=ts.CellFilter.unit,
     cell_factor=None,  # Will default to atoms per system
     hydrostatic_strain=False,
@@ -102,7 +102,7 @@ for step in range(N_steps):
         )
 
     state = ts.gradient_descent_step(
-        model=model, state=state, pos_lr=pos_lr, cell_lr=cell_lr
+        state=state, model=model, pos_lr=pos_lr, cell_lr=cell_lr
     )
 
 print(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")

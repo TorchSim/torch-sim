@@ -307,7 +307,7 @@ def random_packed_structure(
             cell=cell,
             pbc=True,
         )
-        state = ts.fire_init(model, state)
+        state = ts.fire_init(state, model)
         print(f"Initial energy: {state.energy.item():.4f}")
         # Run FIRE optimization until convergence or max iterations
         for _step in range(max_iter):
@@ -317,7 +317,7 @@ def random_packed_structure(
 
             log.append(state.positions.cpu().numpy())
 
-            state = ts.fire_step(model, state)
+            state = ts.fire_step(state, model)
 
         print(f"Final energy: {state.energy.item():.4f}")
 
@@ -432,7 +432,7 @@ def random_packed_structure_multi(
             pbc=True,
         )
         # Set up FIRE optimizer with unit masses for all atoms
-        state = ts.fire_init(model, state_dict)
+        state = ts.fire_init(state_dict, model)
         print(f"Initial energy: {state.energy.item():.4f}")
         # Run FIRE optimization until convergence or max iterations
         for _step in range(max_iter):
@@ -440,7 +440,7 @@ def random_packed_structure_multi(
             min_dist = min_distance(state.positions, cell, distance_tolerance)
             if min_dist > diameter_matrix.min() * 0.95:
                 break
-            state = ts.fire_step(model, state)
+            state = ts.fire_step(state, model)
         print(f"Final energy: {state.energy.item():.4f}")
 
     return state
@@ -741,14 +741,14 @@ def get_unit_cell_relaxed_structure(
             f"Initial pressure: {[f'{p:.4f}' for p in init_pressure]} eV/A^3"
         )
 
-    state = ts.fire_init(model=model, state=state, cell_filter=ts.CellFilter.unit)
+    state = ts.fire_init(state=state, model=model, cell_filter=ts.CellFilter.unit)
 
     def step_fn(
         step: int, state: ts.FireState, logger: dict[str, torch.Tensor]
     ) -> tuple[ts.FireState, dict[str, torch.Tensor]]:
         logger["energy"][step] = state.energy
         logger["stress"][step] = state.stress
-        state = ts.fire_step(model=model, state=state)
+        state = ts.fire_step(state=state, model=model)
         return state, logger
 
     for step in range(max_iter):
@@ -814,14 +814,14 @@ def get_frechet_cell_relaxed_structure(
             f"Initial pressure: {[f'{p:.4f}' for p in init_pressure]} eV/A^3"
         )
 
-    state = ts.fire_init(model=model, state=state, cell_filter=ts.CellFilter.frechet)
+    state = ts.fire_init(state=state, model=model, cell_filter=ts.CellFilter.frechet)
 
     def step_fn(
         step: int, state: ts.FireState, logger: dict[str, torch.Tensor]
     ) -> tuple[ts.FireState, dict]:
         logger["energy"][step] = state.energy
         logger["stress"][step] = state.stress
-        state = ts.fire_step(model=model, state=state)
+        state = ts.fire_step(state=state, model=model)
         return state, logger
 
     for step in range(max_iter):
@@ -875,13 +875,13 @@ def get_relaxed_structure(
     if verbose:
         print(f"Initial energy: {[f'{e:.4f}' for e in init_energy]} eV")
 
-    state = ts.fire_init(model=model, state=state)
+    state = ts.fire_init(state=state, model=model)
 
     def step_fn(
         idx: int, state: FireState, logger: dict[str, torch.Tensor]
     ) -> tuple[FireState, dict[str, torch.Tensor]]:
         logger["energy"][idx] = state.energy
-        state = ts.fire_step(model=model, state=state)
+        state = ts.fire_step(state=state, model=model)
         return state, logger
 
     for idx in range(max_iter):

@@ -456,9 +456,9 @@ def test_in_flight_with_fire(
     lj_model: LennardJonesModel,
     num_steps_per_batch: int,
 ) -> None:
-    si_fire_state = ts.fire_init(lj_model, si_sim_state, cell_filter=ts.CellFilter.unit)
+    si_fire_state = ts.fire_init(si_sim_state, lj_model, cell_filter=ts.CellFilter.unit)
     fe_fire_state = ts.fire_init(
-        lj_model, fe_supercell_sim_state, cell_filter=ts.CellFilter.unit
+        fe_supercell_sim_state, lj_model, cell_filter=ts.CellFilter.unit
     )
 
     fire_states = [si_fire_state, fe_fire_state] * 5
@@ -493,7 +493,7 @@ def test_in_flight_with_fire(
             break
 
         for _ in range(num_steps_per_batch):
-            state = ts.fire_step(lj_model, state)
+            state = ts.fire_step(state=state, model=lj_model)
         convergence_tensor = convergence_fn(state)
 
     assert len(all_completed_states) == len(fire_states)
@@ -504,9 +504,9 @@ def test_binning_auto_batcher_with_fire(
     fe_supercell_sim_state: ts.SimState,
     lj_model: LennardJonesModel,
 ) -> None:
-    si_fire_state = ts.fire_init(lj_model, si_sim_state, cell_filter=ts.CellFilter.unit)
+    si_fire_state = ts.fire_init(si_sim_state, lj_model, cell_filter=ts.CellFilter.unit)
     fe_fire_state = ts.fire_init(
-        lj_model, fe_supercell_sim_state, cell_filter=ts.CellFilter.unit
+        fe_supercell_sim_state, lj_model, cell_filter=ts.CellFilter.unit
     )
 
     fire_states = [si_fire_state, fe_fire_state] * 5
@@ -528,7 +528,7 @@ def test_binning_auto_batcher_with_fire(
     for batch, _ in batcher:
         n_systems += 1
         for _ in range(5):
-            batch = ts.fire_step(lj_model, batch)
+            batch = ts.fire_step(state=batch, model=lj_model)
 
         finished_states.extend(batch.split())
 

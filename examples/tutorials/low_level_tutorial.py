@@ -139,13 +139,13 @@ high-level API.
 """
 
 # %%
-state = ts.fire_init(model=model, state=state, cell_filter=ts.CellFilter.unit)
+state = ts.fire_init(state=state, model=model, cell_filter=ts.CellFilter.unit)
 
 # add a little noise so we have something to relax
 state.positions = state.positions + torch.randn_like(state.positions) * 0.05
 
 for step in range(20):
-    state = ts.fire_step(model=model, state=state)
+    state = ts.fire_step(state=state, model=model)
     print(f"{step=}: Total energy: {state.energy} eV")
 
 
@@ -159,11 +159,11 @@ the course of the simulation can be passed to the step_fn`.
 
 # %%
 state = ts.fire_init(
-    model=model, state=state, dt_start=0.02, cell_filter=ts.CellFilter.unit
+    state=state, model=model, dt_start=0.02, cell_filter=ts.CellFilter.unit
 )
 
 for step in range(5):
-    state = ts.fire_step(model=model, state=state, dt_max=0.1)
+    state = ts.fire_step(state=state, model=model, dt_max=0.1)
 
 
 # %% [markdown]

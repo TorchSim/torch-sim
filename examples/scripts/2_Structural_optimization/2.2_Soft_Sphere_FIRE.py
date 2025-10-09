@@ -94,14 +94,14 @@ model = SoftSphereModel(
 results = model(state)
 
 # Initialize FIRE optimizer
-state = ts.fire_init(model=model, state=state, dt_start=0.005)
+state = ts.fire_init(state=state, model=model, dt_start=0.005)
 
 
 # Run optimization for N_steps
 for step in range(N_steps):
     if step % 100 == 0:
         print(f"{step=}: Total energy: {state.energy[0].item()} eV")
-    state = ts.fire_step(model, state, dt_max=0.01)
+    state = ts.fire_step(state=state, model=model, dt_max=0.01)
 
 # Print max force after optimization
 print(f"Initial energy: {results['energy'][0].item()} eV")

@@ -17,8 +17,8 @@ if TYPE_CHECKING:
 
 
 def gradient_descent_init(
-    model: "ModelInterface",
     state: SimState | StateDict,
+    model: "ModelInterface",
     *,
     cell_filter: "CellFilter | CellFilterFuncs | None" = None,
     **filter_kwargs: Any,
@@ -70,7 +70,7 @@ def gradient_descent_init(
         cell_state = CellOptimState(**common_args)
 
         # Initialize cell-specific attributes
-        init_fn(model, cell_state, **filter_kwargs)
+        init_fn(cell_state, model, **filter_kwargs)
 
         return cell_state
     # Create regular OptimState without cell optimization
@@ -78,8 +78,8 @@ def gradient_descent_init(
 
 
 def gradient_descent_step(
-    model: "ModelInterface",
     state: "OptimState | CellOptimState",
+    model: "ModelInterface",
     *,
     pos_lr: float | torch.Tensor = 0.01,
     cell_lr: float | torch.Tensor = 0.1,

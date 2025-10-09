@@ -109,7 +109,7 @@ results = batched_model(state)
 learning_rate = 0.01
 
 # Initialize batched gradient descent optimizer
-state = ts.gradient_descent_init(model=batched_model, state=state)
+state = ts.gradient_descent_init(state=state, model=batched_model)
 
 # Run batched optimization for a few steps
 print("\nRunning batched gradient descent:")
@@ -117,7 +117,7 @@ for step in range(N_steps):
     if step % 10 == 0:
         print(f"Step {step}, Energy: {[res.item() for res in state.energy]} eV")
     state = ts.gradient_descent_step(
-        model=batched_model, state=state, pos_lr=learning_rate
+        state=state, model=batched_model, pos_lr=learning_rate
     )
 
 print(f"Initial energies: {[res.item() for res in results['energy']]} eV")

@@ -221,7 +221,7 @@ the state have converged.
 
 # %%
 fire_state = ts.fire_init(
-    model=mace_model, state=state, cell_filter=ts.CellFilter.frechet
+    state=state, model=mace_model, cell_filter=ts.CellFilter.frechet
 )
 
 # Initialize the batcher
@@ -252,7 +252,7 @@ while (result := batcher.next_batch(fire_state, convergence_tensor))[0] is not N
 
     # optimize the batch, we stagger the steps to avoid state processing overhead
     for _ in range(10):
-        fire_state = ts.fire_step(model=mace_model, state=fire_state)
+        fire_state = ts.fire_step(state=fire_state, model=mace_model)
 
     # Check which states have converged
     convergence_tensor = convergence_fn(fire_state, None)

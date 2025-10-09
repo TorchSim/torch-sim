@@ -88,8 +88,8 @@ def deform_grad(reference_cell: torch.Tensor, current_cell: torch.Tensor) -> tor
 
 
 def unit_cell_filter_init[T: AnyCellState](
-    model: ModelInterface,
     state: T,
+    model: ModelInterface,
     *,
     cell_factor: float | torch.Tensor | None = None,
     hydrostatic_strain: bool = False,
@@ -137,8 +137,8 @@ def unit_cell_filter_init[T: AnyCellState](
 
 
 def frechet_cell_filter_init[T: AnyCellState](
-    model: ModelInterface,
     state: T,
+    model: ModelInterface,
     *,
     cell_factor: float | torch.Tensor | None = None,
     hydrostatic_strain: bool = False,

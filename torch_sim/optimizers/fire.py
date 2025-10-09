@@ -22,8 +22,8 @@ if TYPE_CHECKING:
 
 
 def fire_init(
-    model: "ModelInterface",
     state: SimState | StateDict,
+    model: "ModelInterface",
     *,
     dt_start: float = 0.1,
     alpha_start: float = 0.1,
@@ -99,7 +99,7 @@ def fire_init(
         cell_state = CellFireState(**common_args)
 
         # Initialize cell-specific attributes
-        init_fn(model, cell_state, **filter_kwargs)
+        init_fn(cell_state, model, **filter_kwargs)
 
         # Initialize cell velocities after cell_forces is set
         cell_state.cell_velocities = torch.full(
@@ -112,8 +112,8 @@ def fire_init(
 
 
 def fire_step(
-    model: "ModelInterface",
     state: "FireState | CellFireState",
+    model: "ModelInterface",
     *,
     dt_max: float = 1.0,
     n_min: int = 5,
@@ -405,7 +405,9 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
 
     dr_scaling_atom = torch.sqrt(dr_scaling_system)[state.system_idx].unsqueeze(-1)
     dr_atom = torch.where(
-        dr_scaling_atom > max_step, max_step * dr_atom / (dr_scaling_atom + eps), dr_atom
+        dr_scaling_atom > max_step,
+        max_step * dr_atom / (dr_scaling_atom + eps),
+        dr_atom,
     )
 
     # Position updates

@@ -42,7 +42,7 @@ fmax = 1e-3
 # Relax positions and cell
 state = ts.io.atoms_to_state(atoms=struct, device=device, dtype=dtype)
 state = ts.fire_init(
-    model=model, state=state, scalar_pressure=0.0, cell_filter=ts.CellFilter.frechet
+    state=state, model=model, scalar_pressure=0.0, cell_filter=ts.CellFilter.frechet
 )
 
 for step in range(300):
@@ -55,7 +55,7 @@ for step in range(300):
     )
     if current_fmax < fmax and abs(pressure) < 1e-2:
         break
-    state = ts.fire_step(model=model, state=state)
+    state = ts.fire_step(state=state, model=model)
 
 # Get bravais type
 bravais_type = get_bravais_type(state)

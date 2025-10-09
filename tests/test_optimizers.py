@@ -28,13 +28,13 @@ def test_gradient_descent_optimization(
 
     # Initialize Gradient Descent optimizer
     state = ts.gradient_descent_init(
-        model=lj_model, state=ar_supercell_sim_state, lr=0.01
+        state=ar_supercell_sim_state, model=lj_model, lr=0.01
     )
 
     # Run optimization for a few steps
     energies = [1000, state.energy.item()]
     while abs(energies[-2] - energies[-1]) > 1e-6:
-        state = ts.gradient_descent_step(model=lj_model, state=state, pos_lr=0.01)
+        state = ts.gradient_descent_step(state=state, model=lj_model, pos_lr=0.01)
         energies.append(state.energy.item())
 
     energies = energies[1:]
@@ -67,14 +67,14 @@ def test_unit_cell_gradient_descent_optimization(
 
     # Initialize Gradient Descent optimizer with unit cell filter
     state = ts.gradient_descent_init(
-        model=lj_model, state=ar_supercell_sim_state, cell_filter=ts.CellFilter.unit
+        state=ar_supercell_sim_state, model=lj_model, cell_filter=ts.CellFilter.unit
     )
 
     # Run optimization for a few steps
     energies = [1000, state.energy.item()]
     while abs(energies[-2] - energies[-1]) > 1e-6:
         state = ts.gradient_descent_step(
-            model=lj_model, state=state, pos_lr=0.01, cell_lr=0.1
+            state=state, model=lj_model, pos_lr=0.01, cell_lr=0.1
         )
         energies.append(state.energy.item())
 
@@ -123,14 +123,14 @@ def test_fire_optimization(
     initial_state_positions = current_sim_state.positions.clone()
 
     # Initialize FIRE optimizer
-    state = ts.fire_init(lj_model, current_sim_state, md_flavor=md_flavor, dt_start=0.1)
+    state = ts.fire_init(current_sim_state, lj_model, md_flavor=md_flavor, dt_start=0.1)
 
     # Run optimization for a few steps
     energies = [1000, state.energy.item()]
     max_steps = 1000  # Add max step to prevent infinite loop
     steps_taken = 0
     while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
-        state = ts.fire_step(lj_model, state, dt_max=0.3)
+        state = ts.fire_step(state=state, model=lj_model, dt_max=0.3)
         energies.append(state.energy.item())
         steps_taken += 1
 
@@ -209,8 +209,8 @@ def test_fire_ase_negative_power_branch(
     dt_start_val = 0.1
 
     state = ts.fire_init(
-        model=lj_model,
         state=ar_supercell_sim_state,
+        model=lj_model,
         md_flavor="ase_fire",
         alpha_start=alpha_start,
         dt_start=dt_start_val,
@@ -232,8 +232,8 @@ def test_fire_ase_negative_power_branch(
     # Deepcopy state as step_fn modifies it in-place
     state_to_update = copy.deepcopy(state)
     updated_state = ts.fire_step(
-        lj_model,
-        state_to_update,
+        state=state_to_update,
+        model=lj_model,
         f_dec=f_dec,
         dt_max=1.0,
         max_step=10.0,  # Large max_step to not interfere with velocity check
@@ -276,8 +276,8 @@ def test_fire_vv_negative_power_branch(
     dt_max_val = 2.0
 
     state = ts.fire_init(
-        model=lj_model,
         state=ar_supercell_sim_state,
+        model=lj_model,
         md_flavor="vv_fire",
         alpha_start=alpha_start,
         dt_start=dt_start_val,
@@ -288,8 +288,8 @@ def test_fire_vv_negative_power_branch(
 
     state_to_update = copy.deepcopy(state)
     updated_state = ts.fire_step(
-        lj_model,
-        state_to_update,
+        state=state_to_update,
+        model=lj_model,
         f_dec=f_dec,
         dt_max=dt_max_val,
         n_min=0,  # Allow dt to change immediately
@@ -350,8 +350,8 @@ def test_unit_cell_fire_optimization(
 
     # Initialize FIRE optimizer with unit cell filter
     state = ts.fire_init(
-        model=lj_model,
         state=current_sim_state,
+        model=lj_model,
         dt_start=0.1,
         md_flavor=md_flavor,
         cell_filter=ts.CellFilter.unit,
@@ -363,7 +363,7 @@ def test_unit_cell_fire_optimization(
     steps_taken = 0
 
     while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
-        state = ts.fire_step(lj_model, state, dt_max=0.3)
+        state = ts.fire_step(state=state, model=lj_model, dt_max=0.3)
         energies.append(state.energy.item())
         steps_taken += 1
 
@@ -509,8 +509,8 @@ def test_unit_cell_fire_ase_non_positive_volume_warning(
         perturbed_state.cell[0] *= 2.0
 
     state = ts.fire_init(
-        model=lj_model,
         state=perturbed_state,
+        model=lj_model,
         md_flavor="ase_fire",
         dt_start=1.0,
         alpha_start=0.99,  # Aggressive alpha
@@ -520,8 +520,8 @@ def test_unit_cell_fire_ase_non_positive_volume_warning(
     # Run a few steps hoping to trigger the warning
     for _ in range(5):
         state = ts.fire_step(
-            lj_model,
-            state,
+            state=state,
+            model=lj_model,
             dt_max=5.0,  # Large dt
             max_step=2.0,  # Large max_step
             f_dec=0.99,  # Slow down dt decrease
@@ -563,8 +563,8 @@ def test_frechet_cell_fire_optimization(
     initial_state_cell = current_sim_state.cell.clone()
 
     state = ts.fire_init(
-        model=lj_model,
         state=current_sim_state,
+        model=lj_model,
         dt_start=0.1,
         md_flavor=md_flavor,
         cell_filter=ts.CellFilter.frechet,
@@ -576,7 +576,7 @@ def test_frechet_cell_fire_optimization(
     steps_taken = 0
 
     while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
-        state = ts.fire_step(model=lj_model, state=state, dt_max=0.3)
+        state = ts.fire_step(state=state, model=lj_model, dt_max=0.3)
         energies.append(state.energy.item())
         steps_taken += 1
 
@@ -770,7 +770,7 @@ def test_unit_cell_fire_multi_batch(
 
     # Initialize FIRE optimizer with unit cell filter
     state = ts.fire_init(
-        model=lj_model, state=multi_state, dt_start=0.1, cell_filter=ts.CellFilter.unit
+        state=multi_state, model=lj_model, dt_start=0.1, cell_filter=ts.CellFilter.unit
     )
     initial_state = copy.deepcopy(state)
 
@@ -780,7 +780,7 @@ def test_unit_cell_fire_multi_batch(
     step = 0
     while not torch.allclose(current_energy, prev_energy, atol=1e-9):
         prev_energy = current_energy
-        state = ts.fire_step(model=lj_model, state=state, dt_max=0.3)
+        state = ts.fire_step(state=state, model=lj_model, dt_max=0.3)
         current_energy = state.energy
 
         step += 1
@@ -841,8 +841,8 @@ def test_fire_fixed_cell_unit_cell_consistency(  # noqa: C901
 
     for state in (ar_supercell_sim_state_1, ar_supercell_sim_state_2):
         state_opt = ts.fire_init(
-            lj_model,
             state,
+            lj_model,
             dt_start=0.1,
             cell_filter=ts.CellFilter.unit,
             hydrostatic_strain=True,
@@ -856,7 +856,7 @@ def test_fire_fixed_cell_unit_cell_consistency(  # noqa: C901
         step = 0
         while energy_converged(current_energy, prev_energy):
             prev_energy = current_energy
-            state_opt = ts.fire_step(lj_model, state_opt, dt_max=0.3)
+            state_opt = ts.fire_step(state=state_opt, model=lj_model, dt_max=0.3)
             current_energy = state_opt.energy
             step += 1
             if step > 1000:
@@ -874,7 +874,7 @@ def test_fire_fixed_cell_unit_cell_consistency(  # noqa: C901
         return not torch.allclose(current_energy, prev_energy, atol=1e-6)
 
     for state in (ar_supercell_sim_state_1, ar_supercell_sim_state_2):
-        state_opt = ts.fire_init(model=lj_model, state=state, dt_start=0.1)
+        state_opt = ts.fire_init(state=state, model=lj_model, dt_start=0.1)
 
         # Run optimization until convergence
         current_energy = state_opt.energy
@@ -883,7 +883,7 @@ def test_fire_fixed_cell_unit_cell_consistency(  # noqa: C901
         step = 0
         while energy_converged(current_energy, prev_energy):
             prev_energy = current_energy
-            state_opt = ts.fire_step(model=lj_model, state=state_opt, dt_max=0.3)
+            state_opt = ts.fire_step(state=state_opt, model=lj_model, dt_max=0.3)
             current_energy = state_opt.energy
             step += 1
             if step > 1000:

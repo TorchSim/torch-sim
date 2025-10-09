@@ -42,13 +42,13 @@ mace_model = MaceModel(
 si_state = ts.io.atoms_to_state(si_atoms, device=device, dtype=torch.float64)
 fe_state = ts.io.atoms_to_state(fe_atoms, device=device, dtype=torch.float64)
 
-state = ts.fire_init(model=mace_model, state=si_state, cell_filter=ts.CellFilter.unit)
+state = ts.fire_init(state=si_state, model=mace_model, cell_filter=ts.CellFilter.unit)
 
 si_fire_state = ts.fire_init(
-    model=mace_model, state=si_state, cell_filter=ts.CellFilter.unit
+    state=si_state, model=mace_model, cell_filter=ts.CellFilter.unit
 )
 fe_fire_state = ts.fire_init(
-    model=mace_model, state=fe_state, cell_filter=ts.CellFilter.unit
+    state=fe_state, model=mace_model, cell_filter=ts.CellFilter.unit
 )
 
 fire_states = [si_fire_state, fe_fire_state] * (2 if SMOKE_TEST else 20)
@@ -77,7 +77,7 @@ while (result := batcher.next_batch(state, convergence_tensor))[0] is not None:
     print(f"Total number of completed states {len(all_completed_states)}")
 
     for _step in range(10):
-        state = ts.fire_step(model=mace_model, state=state)
+        state = ts.fire_step(state=state, model=mace_model)
     convergence_tensor = converge_max_force(state, last_energy=None)
 all_completed_states.extend(result[1])
 print(f"Total number of completed states {len(all_completed_states)}")

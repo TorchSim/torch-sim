@@ -61,8 +61,8 @@ else:
 
 # Initialize first batch
 fire_states = ts.fire_init(
-    model=mace_model,
     state=ts.io.atoms_to_state(atoms=ase_atoms_list, device=device, dtype=dtype),
+    model=mace_model,
     cell_filter=ts.CellFilter.frechet,
 )
 
@@ -86,7 +86,7 @@ while (result := batcher.next_batch(state, convergence_tensor))[0] is not None:
     print(f"Total number of completed states {len(all_completed_states)}")
 
     for _step in range(10):
-        state = ts.fire_step(model=mace_model, state=state)
+        state = ts.fire_step(state=state, model=mace_model)
     convergence_tensor = converge_max_force(state, last_energy=None)
 all_completed_states.extend(result[1])
 print(f"Total number of completed states {len(all_completed_states)}")

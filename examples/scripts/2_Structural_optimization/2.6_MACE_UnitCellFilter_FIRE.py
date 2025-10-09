@@ -75,8 +75,8 @@ results = model(state)
 
 # Initialize FIRE optimizer with unit cell filter
 state = ts.fire_init(
-    model=model,
     state=state,
+    model=model,
     cell_filter=ts.CellFilter.unit,
     cell_factor=None,  # Will default to atoms per system
     hydrostatic_strain=False,
@@ -97,7 +97,7 @@ for step in range(N_steps):
             f"P1={P1:.4f} GPa, P2={P2:.4f} GPa, P3={P3:.4f} GPa"
         )
 
-    state = ts.fire_step(model=model, state=state)
+    state = ts.fire_step(state=state, model=model)
 
 print(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
 print(f"Final energies: {[energy.item() for energy in state.energy]} eV")

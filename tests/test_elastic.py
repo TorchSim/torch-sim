@@ -308,8 +308,8 @@ def test_elastic_tensor_symmetries(
 
     # Relax positions and cell
     state = ts.fire_init(
-        model=model,
         state=state,
+        model=model,
         scalar_pressure=0.0,
         cell_filter=ts.CellFilter.frechet,
     )
@@ -322,7 +322,7 @@ def test_elastic_tensor_symmetries(
         current_fmax = torch.max(torch.abs(state.forces.squeeze()))
         if current_fmax < fmax and abs(pressure) < 1e-2:
             break
-        state = ts.fire_step(model=model, state=state)
+        state = ts.fire_step(state=state, model=model)
 
     # Verify the Bravais type of the relaxed structure
     actual_bravais_type = get_bravais_type(state)
@@ -359,8 +359,8 @@ def test_copper_elastic_properties(
 
     # Relax positions and cell
     state = ts.fire_init(
-        model=mace_model,
         state=cu_sim_state,
+        model=mace_model,
         scalar_pressure=0.0,
         cell_filter=ts.CellFilter.frechet,
     )
@@ -372,7 +372,7 @@ def test_copper_elastic_properties(
         current_fmax = torch.max(torch.abs(state.forces.squeeze()))
         if current_fmax < fmax and abs(pressure) < 1e-2:
             break
-        state = ts.fire_step(model=mace_model, state=state)
+        state = ts.fire_step(state=state, model=mace_model)
 
     # Calculate elastic tensor
     bravais_type = get_bravais_type(state)

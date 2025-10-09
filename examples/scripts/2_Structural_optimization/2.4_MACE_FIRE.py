@@ -73,7 +73,7 @@ state = ts.io.atoms_to_state(atoms_list, device=device, dtype=dtype)
 results = model(state)
 
 # Initialize unit cell gradient descent optimizer
-state = ts.fire_init(model=model, state=state, dt_start=0.005)
+state = ts.fire_init(state=state, model=model, dt_start=0.005)
 
 
 # Run optimization for a few steps
@@ -82,7 +82,7 @@ for step in range(N_steps):
     if step % 20 == 0:
         print(f"Step {step}, Energy: {[energy.item() for energy in state.energy]}")
 
-    state = ts.fire_step(model, state, dt_max=0.01)
+    state = ts.fire_step(state=state, model=model, dt_max=0.01)
 
 print(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
 print(f"Final energies: {[energy.item() for energy in state.energy]} eV")
