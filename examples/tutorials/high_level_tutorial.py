@@ -357,7 +357,7 @@ final_state = ts.optimize(
     system=systems,
     model=mace_model,
     optimizer=ts.OptimFlavor.fire,
-    cell_filter=ts.CellFilter.unit,
+    init_kwargs=dict(cell_filter=ts.CellFilter.unit),
 )
 
 final_atoms = final_state.to_atoms()
@@ -405,8 +405,8 @@ final_state = ts.optimize(
     system=systems,
     model=mace_model,
     optimizer=ts.OptimFlavor.fire,
-    cell_filter=ts.CellFilter.unit,
     convergence_fn=force_convergence_fn,  # Custom convergence function
+    init_kwargs=dict(cell_filter=ts.CellFilter.unit),
 )
 
 final_atoms = final_state.to_atoms()

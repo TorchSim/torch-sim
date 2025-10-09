@@ -102,11 +102,12 @@ final_state = ts.optimize(
     system=struct,
     model=model,
     optimizer=ts.OptimFlavor.fire,
-    cell_filter=ts.CellFilter.frechet,
     max_steps=max_steps,
     convergence_fn=converge_max_force,
     trajectory_reporter=reporter,
-    init_kwargs=dict(constant_volume=True, hydrostatic_strain=True),
+    init_kwargs=dict(
+        cell_filter=ts.CellFilter.frechet, constant_volume=True, hydrostatic_strain=True
+    ),
 )
 print_relax_info(trajectory_file, device)
 

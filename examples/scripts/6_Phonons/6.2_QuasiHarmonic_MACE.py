@@ -63,12 +63,15 @@ def get_relaxed_structure(
         system=struct,
         model=model,
         optimizer=ts.OptimFlavor.fire,
-        cell_filter=ts.CellFilter.frechet,
         max_steps=max_steps,
         convergence_fn=converge_max_force,
         trajectory_reporter=reporter,
         autobatcher=use_autobatcher,
-        init_kwargs=dict(constant_volume=True, hydrostatic_strain=True),
+        init_kwargs=dict(
+            cell_filter=ts.CellFilter.frechet,
+            constant_volume=True,
+            hydrostatic_strain=True,
+        ),
     )
 
     os.remove(trajectory_file)
@@ -116,11 +119,14 @@ def get_qha_structures(
         system=scaled_structs,
         model=model,
         optimizer=ts.OptimFlavor.fire,
-        cell_filter=ts.CellFilter.frechet,
         max_steps=Nmax,
         convergence_fn=ts.runners.generate_force_convergence_fn(force_tol=fmax),
         autobatcher=use_autobatcher,
-        init_kwargs=dict(constant_volume=True, hydrostatic_strain=True),
+        init_kwargs=dict(
+            cell_filter=ts.CellFilter.frechet,
+            constant_volume=True,
+            hydrostatic_strain=True,
+        ),
     )
 
     return scaled_state.to_phonopy()

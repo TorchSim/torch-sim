@@ -160,8 +160,8 @@ final_state = ts.optimize(
     system=systems,
     model=mace_model,
     optimizer=ts.OptimFlavor.fire,
-    cell_filter=ts.CellFilter.unit,
     max_steps=10 if SMOKE_TEST else 1000,
+    init_kwargs=dict(cell_filter=ts.CellFilter.unit),
 )
 
 rng = np.random.default_rng()
@@ -172,10 +172,10 @@ final_state = ts.optimize(
     system=systems,
     model=mace_model,
     optimizer=ts.OptimFlavor.fire,
-    cell_filter=ts.CellFilter.unit,
     convergence_fn=lambda state, last_energy: last_energy - state.energy
     < 1e-6 * MetalUnits.energy,
     max_steps=10 if SMOKE_TEST else 1000,
+    init_kwargs=dict(cell_filter=ts.CellFilter.unit),
 )
 
 

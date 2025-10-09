@@ -117,9 +117,10 @@ final_state = ts.optimize(
     system=struct,
     model=model,
     optimizer=ts.OptimFlavor.fire,
-    cell_filter=ts.CellFilter.frechet,
     max_steps=max_steps,
-    init_kwargs=dict(constant_volume=True, hydrostatic_strain=True),
+    init_kwargs=dict(
+        cell_filter=ts.CellFilter.frechet, constant_volume=True, hydrostatic_strain=True
+    ),
 )
 
 # Define atoms and Phonopy object
