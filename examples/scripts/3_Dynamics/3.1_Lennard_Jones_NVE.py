@@ -103,7 +103,7 @@ kT = torch.tensor(80 * Units.temperature, device=device, dtype=dtype)
 dt = torch.tensor(0.001 * Units.time, device=device, dtype=dtype)
 
 # Initialize NVE integrator
-state = ts.nve_init(model=model, state=state, kT=kT, seed=1)
+state = ts.nve_init(state=state, model=model, kT=kT, seed=1)
 
 # Run NVE simulation for 1000 steps
 for step in range(N_steps):
@@ -115,7 +115,7 @@ for step in range(N_steps):
         print(f"{step=}: Total energy: {total_energy.item():.4f}")
 
     # Update state using NVE integrator
-    state = ts.nve_step(model=model, state=state, dt=dt)
+    state = ts.nve_step(state=state, model=model, dt=dt)
 
 final_total_energy = state.energy + ts.calc_kinetic_energy(
     masses=state.masses, momenta=state.momenta

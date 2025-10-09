@@ -66,9 +66,10 @@ class NPTLangevinState(SimState):
     cell_velocities: torch.Tensor
     cell_masses: torch.Tensor
 
-    _atom_attributes = (
-        SimState._atom_attributes | {"forces", "velocities"}  # noqa: SLF001
-    )
+    _atom_attributes = SimState._atom_attributes | {  # noqa: SLF001
+        "forces",
+        "velocities",
+    }
     _system_attributes = SimState._system_attributes | {  # noqa: SLF001
         "stress",
         "cell_positions",
@@ -126,7 +127,10 @@ def _npt_langevin_beta(
 
 
 def _npt_langevin_cell_beta(
-    state: NPTLangevinState, cell_alpha: torch.Tensor, kT: torch.Tensor, dt: torch.Tensor
+    state: NPTLangevinState,
+    cell_alpha: torch.Tensor,
+    kT: torch.Tensor,
+    dt: torch.Tensor,
 ) -> torch.Tensor:
     """Generate random noise for cell fluctuations in NPT dynamics.
 
@@ -525,8 +529,8 @@ def _compute_cell_force(
 
 
 def npt_langevin_init(
-    model: ModelInterface,
     state: SimState | StateDict,
+    model: ModelInterface,
     *,
     kT: torch.Tensor,
     dt: torch.Tensor,
@@ -643,8 +647,8 @@ def npt_langevin_init(
 
 
 def npt_langevin_step(
-    model: ModelInterface,
     state: NPTLangevinState,
+    model: ModelInterface,
     *,
     dt: torch.Tensor,
     kT: torch.Tensor,
@@ -814,24 +818,18 @@ class NPTNoseHooverState(MDState):
     barostat: NoseHooverChain
     barostat_fns: NoseHooverChainFns
 
-    _system_attributes = (
-        MDState._system_attributes  # noqa: SLF001
-        | {
-            "reference_cell",
-            "cell_position",
-            "cell_momentum",
-            "cell_mass",
-        }
-    )
-    _global_attributes = (
-        MDState._global_attributes  # noqa: SLF001
-        | {
-            "thermostat",
-            "barostat",
-            "thermostat_fns",
-            "barostat_fns",
-        }
-    )
+    _system_attributes = MDState._system_attributes | {  # noqa: SLF001
+        "reference_cell",
+        "cell_position",
+        "cell_momentum",
+        "cell_mass",
+    }
+    _global_attributes = MDState._global_attributes | {  # noqa: SLF001
+        "thermostat",
+        "barostat",
+        "thermostat_fns",
+        "barostat_fns",
+    }
 
     @property
     def velocities(self) -> torch.Tensor:
@@ -910,7 +908,10 @@ def _npt_nose_hoover_cell_info(
 
 
 def _npt_nose_hoover_update_cell_mass(
-    state: NPTNoseHooverState, kT: torch.Tensor, device: torch.device, dtype: torch.dtype
+    state: NPTNoseHooverState,
+    kT: torch.Tensor,
+    device: torch.device,
+    dtype: torch.dtype,
 ) -> NPTNoseHooverState:
     """Update the cell mass parameter in an NPT simulation.
 
@@ -1183,8 +1184,8 @@ def _npt_nose_hoover_compute_cell_force(
 
 
 def _npt_nose_hoover_inner_step(
-    model: ModelInterface,
     state: NPTNoseHooverState,
+    model: ModelInterface,
     dt: torch.Tensor,
     external_pressure: torch.Tensor,
 ) -> NPTNoseHooverState:
@@ -1292,8 +1293,8 @@ def _npt_nose_hoover_inner_step(
 
 
 def npt_nose_hoover_init(
-    model: ModelInterface,
     state: SimState | StateDict,
+    model: ModelInterface,
     *,
     kT: torch.Tensor,
     dt: torch.Tensor,
@@ -1454,8 +1455,8 @@ def npt_nose_hoover_init(
 
 
 def npt_nose_hoover_step(
-    model: ModelInterface,
     state: NPTNoseHooverState,
+    model: ModelInterface,
     *,
     dt: torch.Tensor,
     kT: torch.Tensor,
@@ -1500,7 +1501,7 @@ def npt_nose_hoover_step(
     )
 
     # Perform inner NPT step
-    state = _npt_nose_hoover_inner_step(model, state, dt, external_pressure)
+    state = _npt_nose_hoover_inner_step(state, model, dt, external_pressure)
 
     # Update kinetic energies for thermostats
     KE = ts.calc_kinetic_energy(

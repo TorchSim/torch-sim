@@ -90,7 +90,7 @@ def test_npt_langevin(
 
     # Initialize integrator using new direct API
     state = ts.npt_langevin_init(
-        model=lj_model, state=ar_double_sim_state, dt=dt, kT=kT, alpha=alpha, seed=42
+        state=ar_double_sim_state, model=lj_model, dt=dt, kT=kT, alpha=alpha, seed=42
     )
 
     # Run dynamics for several steps
@@ -98,8 +98,8 @@ def test_npt_langevin(
     temperatures = []
     for _step in range(n_steps):
         state = ts.npt_langevin_step(
-            model=lj_model,
             state=state,
+            model=lj_model,
             dt=dt,
             kT=kT,
             external_pressure=external_pressure,
@@ -161,7 +161,7 @@ def test_npt_langevin_multi_kt(
 
     # Initialize integrator using new direct API
     state = ts.npt_langevin_init(
-        model=lj_model, state=ar_double_sim_state, dt=dt, kT=kT, alpha=alpha, seed=42
+        state=ar_double_sim_state, model=lj_model, dt=dt, kT=kT, alpha=alpha, seed=42
     )
 
     # Run dynamics for several steps
@@ -169,8 +169,8 @@ def test_npt_langevin_multi_kt(
     temperatures = []
     for _step in range(n_steps):
         state = ts.npt_langevin_step(
-            model=lj_model,
             state=state,
+            model=lj_model,
             dt=dt,
             kT=kT,
             external_pressure=external_pressure,
@@ -301,12 +301,12 @@ def test_nve(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
     kT = torch.tensor(100.0, dtype=DTYPE) * MetalUnits.temperature
 
     # Initialize integrator
-    state = ts.nve_init(model=lj_model, state=ar_double_sim_state, kT=kT, seed=42)
+    state = ts.nve_init(state=ar_double_sim_state, model=lj_model, kT=kT, seed=42)
 
     # Run dynamics for several steps
     energies = []
     for _step in range(n_steps):
-        state = ts.nve_step(model=lj_model, state=state, dt=dt)
+        state = ts.nve_step(state=state, model=lj_model, dt=dt)
 
         energies.append(state.energy)
 
@@ -346,13 +346,13 @@ def test_compare_single_vs_batched_integrators(
 
         # Initialize momenta (even if zero) and get forces
         state = ts.nve_init(
-            model=lj_model, state=state, kT=kT, seed=42
+            state=state, model=lj_model, kT=kT, seed=42
         )  # kT is ignored if momenta are set below
         # Ensure momenta start at zero AFTER init which might randomize them based on kT
         state.momenta = torch.zeros_like(state.momenta)  # Start from rest
 
         for _step in range(n_steps):
-            state = ts.nve_step(model=lj_model, state=state, dt=dt)
+            state = ts.nve_step(state=state, model=lj_model, dt=dt)
 
         final_states[state_name] = state
 

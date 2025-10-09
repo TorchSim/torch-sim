@@ -67,7 +67,7 @@ dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # Timestep (p
 
 
 # Initialize NVE integrator
-state = ts.nve_init(model=model, state=state, kT=kT, seed=1)
+state = ts.nve_init(state=state, model=model, kT=kT, seed=1)
 
 # Run MD simulation
 print("\nStarting NVE molecular dynamics simulation...")
@@ -78,7 +78,7 @@ for step in range(N_steps):
     )
     if step % 10 == 0:
         print(f"Step {step}: Total energy: {total_energy.item():.4f} eV")
-    state = ts.nve_step(model=model, state=state, dt=dt)
+    state = ts.nve_step(state=state, model=model, dt=dt)
 end_time = time.perf_counter()
 
 # Report simulation results

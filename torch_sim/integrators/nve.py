@@ -16,8 +16,8 @@ from torch_sim.typing import StateDict
 
 
 def nve_init(
-    model: ModelInterface,
     state: SimState | StateDict,
+    model: ModelInterface,
     *,
     kT: torch.Tensor,
     seed: int | None = None,
@@ -71,7 +71,7 @@ def nve_init(
 
 
 def nve_step(
-    model: ModelInterface, state: MDState, *, dt: torch.Tensor, **_kwargs: Any
+    state: MDState, model: ModelInterface, *, dt: torch.Tensor, **_kwargs: Any
 ) -> MDState:
     """Perform one complete NVE (microcanonical) integration step.
 

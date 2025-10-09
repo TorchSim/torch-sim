@@ -57,7 +57,7 @@ target_pressure = torch.tensor(
     0.0 * Units.pressure, device=device, dtype=dtype
 )  # Target pressure (0 bar)
 
-state = ts.npt_nose_hoover_init(model=model, state=state, kT=kT, dt=torch.tensor(dt))
+state = ts.npt_nose_hoover_init(state=state, model=model, kT=kT, dt=torch.tensor(dt))
 
 for step in range(N_steps_nvt):
     if step % 10 == 0:
@@ -72,14 +72,14 @@ for step in range(N_steps_nvt):
         )
         print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}, ")
     state = ts.npt_nose_hoover_step(
-        model=model,
         state=state,
+        model=model,
         dt=torch.tensor(dt),
         kT=kT,
         external_pressure=target_pressure,
     )
 
-state = ts.npt_nose_hoover_init(model=model, state=state, kT=kT, dt=torch.tensor(dt))
+state = ts.npt_nose_hoover_init(state=state, model=model, kT=kT, dt=torch.tensor(dt))
 
 for step in range(N_steps_npt):
     if step % 10 == 0:
@@ -105,8 +105,8 @@ for step in range(N_steps_npt):
             f"cell xx yy zz: {xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}"
         )
     state = ts.npt_nose_hoover_step(
-        model=model,
         state=state,
+        model=model,
         dt=torch.tensor(dt),
         kT=kT,
         external_pressure=target_pressure,

@@ -106,7 +106,7 @@ target_pressure = (
     torch.tensor(10_000, device=device, dtype=dtype) * Units.pressure
 )  # Target pressure (10 kbar)
 
-state = ts.npt_langevin_init(model=model, state=state, dt=dt, kT=kT, seed=1)
+state = ts.npt_langevin_init(state=state, model=model, dt=dt, kT=kT, seed=1)
 
 # Run the simulation
 for step in range(N_steps):
@@ -132,8 +132,8 @@ for step in range(N_steps):
             f"cell xx yy zz: {xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}"
         )
     state = ts.npt_langevin_step(
-        model=model,
         state=state,
+        model=model,
         dt=dt,
         kT=kT,
         external_pressure=target_pressure,
