@@ -23,16 +23,14 @@ FireFlavor = Literal["vv_fire", "ase_fire"]
 vv_fire_key, ase_fire_key = get_args(FireFlavor)
 
 
-class OptimFlavor(StrEnum):
+class Optimizer(StrEnum):
     """Enumeration of the optimization flavors."""
 
     gradient_descent = "gradient_descent"
     fire = "fire"
 
 
-OPTIM_REGISTRY: Final[
-    dict[OptimFlavor, tuple[Callable[..., Any], Callable[..., Any]]]
-] = {
-    OptimFlavor.gradient_descent: (gradient_descent_init, gradient_descent_step),
-    OptimFlavor.fire: (fire_init, fire_step),
+OPTIM_REGISTRY: Final[dict[Optimizer, tuple[Callable[..., Any], Callable[..., Any]]]] = {
+    Optimizer.gradient_descent: (gradient_descent_init, gradient_descent_step),
+    Optimizer.fire: (fire_init, fire_step),
 }

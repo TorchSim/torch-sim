@@ -159,7 +159,7 @@ for filename in filenames:
 final_state = ts.optimize(
     system=systems,
     model=mace_model,
-    optimizer=ts.OptimFlavor.fire,
+    optimizer=ts.Optimizer.fire,
     max_steps=10 if SMOKE_TEST else 1000,
     init_kwargs=dict(cell_filter=ts.CellFilter.unit),
 )
@@ -171,7 +171,7 @@ for system in systems:
 final_state = ts.optimize(
     system=systems,
     model=mace_model,
-    optimizer=ts.OptimFlavor.fire,
+    optimizer=ts.Optimizer.fire,
     convergence_fn=lambda state, last_energy: last_energy - state.energy
     < 1e-6 * MetalUnits.energy,
     max_steps=10 if SMOKE_TEST else 1000,

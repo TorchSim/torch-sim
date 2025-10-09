@@ -164,12 +164,12 @@ def test_fire_optimization(
 @pytest.mark.parametrize(
     ("optimizer_fn", "expected_state_type"),
     [
-        (ts.OptimFlavor.fire, FireState),
-        (ts.OptimFlavor.gradient_descent, OptimState),
+        (ts.Optimizer.fire, FireState),
+        (ts.Optimizer.gradient_descent, OptimState),
     ],
 )
 def test_simple_optimizer_init_with_dict(
-    optimizer_fn: ts.OptimFlavor,
+    optimizer_fn: ts.Optimizer,
     expected_state_type: FireState | OptimState,
     ar_supercell_sim_state: SimState,
     lj_model: ModelInterface,
@@ -402,18 +402,18 @@ def test_unit_cell_fire_optimization(
 @pytest.mark.parametrize(
     ("optimizer_fn", "cell_filter", "expected_state_type", "cell_factor_val"),
     [
-        (ts.OptimFlavor.fire, ts.CellFilter.unit, ts.CellFireState, 100),
+        (ts.Optimizer.fire, ts.CellFilter.unit, ts.CellFireState, 100),
         (
-            ts.OptimFlavor.gradient_descent,
+            ts.Optimizer.gradient_descent,
             ts.CellFilter.unit,
             ts.CellOptimState,
             50.0,
         ),
-        (ts.OptimFlavor.fire, ts.CellFilter.frechet, ts.CellFireState, 75.0),
+        (ts.Optimizer.fire, ts.CellFilter.frechet, ts.CellFireState, 75.0),
     ],
 )
 def test_cell_optimizer_init_with_dict_and_cell_factor(
-    optimizer_fn: ts.OptimFlavor,
+    optimizer_fn: ts.Optimizer,
     expected_state_type: OptimState,
     cell_filter: ts.CellFilter,
     cell_factor_val: float,
@@ -450,22 +450,22 @@ def test_cell_optimizer_init_with_dict_and_cell_factor(
 @pytest.mark.parametrize(
     ("optimizer_fn", "cell_filter", "expected_state_type"),
     [
-        (ts.OptimFlavor.fire, ts.CellFilter.unit, ts.CellFireState),
-        (ts.OptimFlavor.fire, ts.CellFilter.frechet, ts.CellFireState),
+        (ts.Optimizer.fire, ts.CellFilter.unit, ts.CellFireState),
+        (ts.Optimizer.fire, ts.CellFilter.frechet, ts.CellFireState),
         (
-            ts.OptimFlavor.gradient_descent,
+            ts.Optimizer.gradient_descent,
             ts.CellFilter.unit,
             ts.CellOptimState,
         ),
         (
-            ts.OptimFlavor.gradient_descent,
+            ts.Optimizer.gradient_descent,
             ts.CellFilter.frechet,
             ts.CellOptimState,
         ),
     ],
 )
 def test_cell_optimizer_init_cell_factor_none(
-    optimizer_fn: ts.OptimFlavor,
+    optimizer_fn: ts.Optimizer,
     cell_filter: ts.CellFilter,
     expected_state_type: OptimState,
     ar_supercell_sim_state: SimState,
@@ -662,7 +662,7 @@ def test_optimizer_batch_consistency(
         return not torch.allclose(e_current, e_prev, atol=1e-6)
 
     for state_for_indiv_opt in [state1_orig.clone(), state2_orig.clone()]:
-        init_fn_indiv, step_fn_indiv = ts.OPTIM_REGISTRY[ts.OptimFlavor.fire]
+        init_fn_indiv, step_fn_indiv = ts.OPTIM_REGISTRY[ts.Optimizer.fire]
         opt_state_indiv = init_fn_indiv(
             model=lj_model,
             state=state_for_indiv_opt,
@@ -696,7 +696,7 @@ def test_optimizer_batch_consistency(
         device=ar_supercell_sim_state.device,
     )
 
-    init_fn_batch, step_fn_batch = ts.OPTIM_REGISTRY[ts.OptimFlavor.fire]
+    init_fn_batch, step_fn_batch = ts.OPTIM_REGISTRY[ts.Optimizer.fire]
     batch_opt_state = init_fn_batch(
         model=lj_model, state=multi_state_initial, cell_filter=filter_func
     )

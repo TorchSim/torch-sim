@@ -302,7 +302,7 @@ def test_optimize_fire(
     final_state = ts.optimize(
         system=ar_supercell_sim_state,
         model=lj_model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         trajectory_reporter=reporter,
         init_kwargs={"cell_filter": ts.CellFilter.unit},
@@ -337,7 +337,7 @@ def test_default_converged_fn(
     final_state = ts.optimize(
         system=ar_supercell_sim_state,
         model=lj_model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         trajectory_reporter=reporter,
         init_kwargs={"cell_filter": ts.CellFilter.unit},
     )
@@ -374,7 +374,7 @@ def test_batched_optimize_fire(
     final_state = ts.optimize(
         system=ar_double_sim_state,
         model=lj_model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-5),
         trajectory_reporter=reporter,
         max_steps=500,
@@ -402,7 +402,7 @@ def test_optimize_with_autobatcher(
     final_states = ts.optimize(
         system=triple_state,
         model=lj_model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         autobatcher=autobatcher,
         init_kwargs={"cell_filter": ts.CellFilter.unit},
@@ -447,7 +447,7 @@ def test_optimize_with_autobatcher_and_reporting(
     final_states = ts.optimize(
         system=triple_state,
         model=lj_model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         trajectory_reporter=reporter,
         autobatcher=autobatcher,
@@ -535,7 +535,7 @@ def test_optimize_with_default_autobatcher(
     final_states = ts.optimize(
         system=triple_state,
         model=lj_model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         autobatcher=True,
         init_kwargs={"cell_filter": ts.CellFilter.unit},
@@ -810,7 +810,7 @@ def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:
     relaxed_state = ts.optimize(
         system=final_state,
         model=lj_model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         # autobatcher=True,  # disabled for CPU-based LJ model in test
         init_kwargs={"cell_filter": ts.CellFilter.frechet},
     )

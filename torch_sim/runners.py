@@ -19,7 +19,7 @@ from torch_sim.autobatching import BinningAutoBatcher, InFlightAutoBatcher
 from torch_sim.integrators import INTEGRATOR_REGISTRY, Integrator
 from torch_sim.integrators.md import MDState
 from torch_sim.models.interface import ModelInterface
-from torch_sim.optimizers import OPTIM_REGISTRY, FireState, OptimFlavor, OptimState
+from torch_sim.optimizers import OPTIM_REGISTRY, FireState, Optimizer, OptimState
 from torch_sim.state import SimState
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.typing import StateLike
@@ -371,7 +371,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     system: StateLike,
     model: ModelInterface,
     *,
-    optimizer: OptimFlavor | tuple[Callable[..., T], Callable[..., T]],
+    optimizer: Optimizer | tuple[Callable[..., T], Callable[..., T]],
     convergence_fn: Callable[[T, torch.Tensor | None], torch.Tensor] | None = None,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: InFlightAutoBatcher | bool = False,
@@ -419,7 +419,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         convergence_fn = generate_energy_convergence_fn(energy_tol=1e-3)
 
     initial_state = ts.initialize_state(system, model.device, model.dtype)
-    if isinstance(optimizer, OptimFlavor):
+    if isinstance(optimizer, Optimizer):
         init_fn, step_fn = OPTIM_REGISTRY[optimizer]
     elif (
         isinstance(optimizer, tuple)

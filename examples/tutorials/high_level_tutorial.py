@@ -356,7 +356,7 @@ Let's use the `optimize` function with the FIRE algorithm to relax our structure
 final_state = ts.optimize(
     system=systems,
     model=mace_model,
-    optimizer=ts.OptimFlavor.fire,
+    optimizer=ts.Optimizer.fire,
     init_kwargs=dict(cell_filter=ts.CellFilter.unit),
 )
 
@@ -404,7 +404,7 @@ force_convergence_fn = ts.generate_force_convergence_fn(force_tol=1e-3)
 final_state = ts.optimize(
     system=systems,
     model=mace_model,
-    optimizer=ts.OptimFlavor.fire,
+    optimizer=ts.Optimizer.fire,
     convergence_fn=force_convergence_fn,  # Custom convergence function
     init_kwargs=dict(cell_filter=ts.CellFilter.unit),
 )
