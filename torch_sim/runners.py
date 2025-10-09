@@ -9,7 +9,7 @@ import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import chain
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import torch
 from tqdm import tqdm
@@ -24,10 +24,6 @@ from torch_sim.state import SimState
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.typing import StateLike
 from torch_sim.units import UnitSystem
-
-
-if TYPE_CHECKING:
-    from torch_sim.optimizers.cell_filters import CellFilter, CellFilterFuncs
 
 
 def _configure_reporter(
@@ -374,7 +370,6 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     model: ModelInterface,
     *,
     optimizer: OptimFlavor | tuple[Callable[..., T], Callable[..., T]],
-    cell_filter: "CellFilter | CellFilterFuncs | None" = None,
     convergence_fn: Callable[[T, torch.Tensor | None], torch.Tensor] | None = None,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: InFlightAutoBatcher | bool = False,
@@ -393,8 +388,6 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         optimizer (OptimFlavor | tuple): Optimization algorithm function
         convergence_fn (Callable | None): Condition for convergence, should return a
             boolean tensor of length n_systems
-        cell_filter (CellFilter | CellFilterFuncs | None): Optional cell filter to use.
-            If None, the system will not optimize the cell.
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
             tracking optimization trajectory. If a dict, will be passed to the
             TrajectoryReporter constructor.
@@ -451,7 +444,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             init_fn,
             initial_state,
             model,
-            init_kwargs=dict(cell_filter=cell_filter, **init_kwargs or {}),
+            init_kwargs=dict(**init_kwargs or {}),
             max_memory_scaler=autobatcher.max_memory_scaler,
             memory_scales_with=autobatcher.memory_scales_with,
         )
@@ -582,12 +575,11 @@ def static(
         forces: torch.Tensor
         stress: torch.Tensor
 
-        _atom_attributes = (
-            state._atom_attributes | {"forces"}  # noqa: SLF001
-        )
-        _system_attributes = (
-            state._system_attributes | {"energy", "stress"}  # noqa: SLF001
-        )
+        _atom_attributes = state._atom_attributes | {"forces"}  # noqa: SLF001
+        _system_attributes = state._system_attributes | {  # noqa: SLF001
+            "energy",
+            "stress",
+        }
 
     all_props: list[dict[str, torch.Tensor]] = []
     og_filenames = trajectory_reporter.filenames
@@ -613,12 +605,16 @@ def static(
         sub_state = StaticState(
             **vars(sub_state),
             energy=model_outputs["energy"],
-            forces=model_outputs["forces"]
-            if model.compute_forces
-            else torch.full_like(sub_state.positions, fill_value=float("nan")),
-            stress=model_outputs["stress"]
-            if model.compute_stress
-            else torch.full_like(sub_state.cell, fill_value=float("nan")),
+            forces=(
+                model_outputs["forces"]
+                if model.compute_forces
+                else torch.full_like(sub_state.positions, fill_value=float("nan"))
+            ),
+            stress=(
+                model_outputs["stress"]
+                if model.compute_stress
+                else torch.full_like(sub_state.cell, fill_value=float("nan"))
+            ),
         )
 
         props = trajectory_reporter.report(sub_state, 0, model=model)

@@ -303,9 +303,9 @@ def test_optimize_fire(
         system=ar_supercell_sim_state,
         model=lj_model,
         optimizer=ts.OptimFlavor.fire,
-        cell_filter=ts.CellFilter.unit,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         trajectory_reporter=reporter,
+        init_kwargs={"cell_filter": ts.CellFilter.unit},
     )
 
     with TorchSimTrajectory(trajectory_files[0]) as traj:
@@ -337,8 +337,8 @@ def test_default_converged_fn(
         system=ar_supercell_sim_state,
         model=lj_model,
         optimizer=ts.OptimFlavor.fire,
-        cell_filter=ts.CellFilter.unit,
         trajectory_reporter=reporter,
+        init_kwargs={"cell_filter": ts.CellFilter.unit},
     )
 
     with TorchSimTrajectory(traj_file) as traj:
@@ -374,10 +374,10 @@ def test_batched_optimize_fire(
         system=ar_double_sim_state,
         model=lj_model,
         optimizer=ts.OptimFlavor.fire,
-        cell_filter=ts.CellFilter.unit,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-5),
         trajectory_reporter=reporter,
         max_steps=500,
+        init_kwargs={"cell_filter": ts.CellFilter.unit},
     )
 
     assert torch.all(final_state.forces < 1e-4)
@@ -402,9 +402,9 @@ def test_optimize_with_autobatcher(
         system=triple_state,
         model=lj_model,
         optimizer=ts.OptimFlavor.fire,
-        cell_filter=ts.CellFilter.unit,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         autobatcher=autobatcher,
+        init_kwargs={"cell_filter": ts.CellFilter.unit},
     )
 
     assert isinstance(final_states, SimState)
@@ -447,10 +447,10 @@ def test_optimize_with_autobatcher_and_reporting(
         system=triple_state,
         model=lj_model,
         optimizer=ts.OptimFlavor.fire,
-        cell_filter=ts.CellFilter.unit,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         trajectory_reporter=reporter,
         autobatcher=autobatcher,
+        init_kwargs={"cell_filter": ts.CellFilter.unit},
     )
 
     assert all(traj_file.is_file() for traj_file in trajectory_files)
@@ -535,9 +535,9 @@ def test_optimize_with_default_autobatcher(
         system=triple_state,
         model=lj_model,
         optimizer=ts.OptimFlavor.fire,
-        cell_filter=ts.CellFilter.unit,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         autobatcher=True,
+        init_kwargs={"cell_filter": ts.CellFilter.unit},
     )
 
     assert isinstance(final_states, SimState)
@@ -810,8 +810,8 @@ def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:
         system=final_state,
         model=lj_model,
         optimizer=ts.OptimFlavor.fire,
-        cell_filter=ts.CellFilter.frechet,
         # autobatcher=True,  # disabled for CPU-based LJ model in test
+        init_kwargs={"cell_filter": ts.CellFilter.frechet},
     )
 
     assert relaxed_state.energy.shape == (final_state.n_systems,)
