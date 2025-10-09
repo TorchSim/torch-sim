@@ -59,7 +59,7 @@ lj_model = LennardJonesModel(
 
 dt = torch.tensor(timestep * Units.time, device=device, dtype=dtype)
 kT = torch.tensor(temperature * Units.temperature, device=device, dtype=dtype)
-state = ts.nvt_langevin_init(model=lj_model, state=state, kT=kT)
+state = ts.nvt_langevin_init(state=state, model=lj_model, kT=kT)
 
 # Short equilibration run
 # Shape: (num_steps, batch, dim)
@@ -82,7 +82,7 @@ for step in range(num_steps_equilibration):
     if step % 1000 == 0:
         print(f"Step {step} | {state.energy.item():.4f} eV")
 
-state = ts.nvt_langevin_init(model=lj_model, state=state, kT=kT)
+state = ts.nvt_langevin_init(state=state, model=lj_model, kT=kT)
 
 hfacf_calc = HeatFluxAutoCorrelation(
     model=lj_model,

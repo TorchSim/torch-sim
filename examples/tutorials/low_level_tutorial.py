@@ -204,7 +204,7 @@ simulation is so short.
 """
 
 # %%
-state = ts.nvt_langevin_init(model=model, state=state, kT=kT)
+state = ts.nvt_langevin_init(state=state, model=model, kT=kT)
 
 initial_kT = kT
 for step in range(30):

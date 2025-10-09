@@ -177,7 +177,7 @@ Here's a real example using FIRE optimization from the test suite:
 """
 
 # %% Initialize nvt langevin integrator
-nvt_state = ts.nvt_langevin_init(mace_model, state, kT=0.01)
+nvt_state = ts.nvt_langevin_init(state, mace_model, kT=0.01)
 
 # Initialize the batcher
 batcher = ts.BinningAutoBatcher(

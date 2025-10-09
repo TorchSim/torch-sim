@@ -122,7 +122,7 @@ from torch_sim.units import MetalUnits
 kT = 1000 * MetalUnits.temperature
 
 # Initialize NVT Langevin dynamics state
-md_state = ts.nvt_langevin_init(model=mace_model, state=state, kT=kT, seed=42)
+md_state = ts.nvt_langevin_init(state=state, model=mace_model, kT=kT, seed=42)
 
 # Initialize swap Monte Carlo state
 swap_state = ts.swap_mc_init(state=md_state, model=mace_model)

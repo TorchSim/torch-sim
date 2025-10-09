@@ -209,7 +209,7 @@ def test_nvt_langevin(ar_double_sim_state: ts.SimState, lj_model: LennardJonesMo
 
     # Initialize integrator
     state = ts.nvt_langevin_init(
-        model=lj_model, state=ar_double_sim_state, kT=kT, seed=42
+        state=ar_double_sim_state, model=lj_model, kT=kT, seed=42
     )
     energies = []
     temperatures = []
@@ -265,7 +265,7 @@ def test_nvt_langevin_multi_kt(
 
     # Initialize integrator
     state = ts.nvt_langevin_init(
-        model=lj_model, state=ar_double_sim_state, kT=kT, seed=42
+        state=ar_double_sim_state, model=lj_model, kT=kT, seed=42
     )
     energies = []
     temperatures = []

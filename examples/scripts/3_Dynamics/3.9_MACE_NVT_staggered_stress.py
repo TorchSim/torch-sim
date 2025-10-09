@@ -54,7 +54,7 @@ kT = (
     torch.tensor(1000, device=device, dtype=dtype) * Units.temperature
 )  # Initial temperature (K)
 
-state = ts.nvt_langevin_init(model=model, state=state, kT=kT)
+state = ts.nvt_langevin_init(state=state, model=model, kT=kT)
 
 stress = torch.zeros(N_steps // 10, 3, 3, device=device, dtype=dtype)
 for step in range(N_steps):

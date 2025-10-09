@@ -85,14 +85,14 @@ print(f"Total number of completed states {len(all_completed_states)}")
 
 # %% run binning autobatcher
 si_nvt_state = ts.nvt_langevin_init(
-    model=mace_model,
     state=si_state,
+    model=mace_model,
     dt=torch.tensor(0.001),
     kT=torch.tensor(300 * MetalUnits.temperature),
 )
 fe_nvt_state = ts.nvt_langevin_init(
-    model=mace_model,
     state=fe_state,
+    model=mace_model,
     dt=torch.tensor(0.001),
     kT=torch.tensor(300 * MetalUnits.temperature),
 )

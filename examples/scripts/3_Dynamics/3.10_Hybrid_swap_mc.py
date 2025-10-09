@@ -76,7 +76,7 @@ class HybridSwapMCState(ts.SwapMCState, MDState):
     )
 
 
-md_state = ts.nvt_langevin_init(model=model, state=state, kT=torch.tensor(kT), seed=42)
+md_state = ts.nvt_langevin_init(state=state, model=model, kT=torch.tensor(kT), seed=42)
 
 swap_state = ts.swap_mc_init(state=md_state, model=model)
 hybrid_state = HybridSwapMCState(

@@ -77,8 +77,8 @@ def _ou_step(
 
 
 def nvt_langevin_init(
-    model: ModelInterface,
     state: SimState | StateDict,
+    model: ModelInterface,
     *,
     kT: float | torch.Tensor,
     seed: int | None = None,
