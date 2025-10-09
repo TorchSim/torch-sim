@@ -748,7 +748,11 @@ def get_elementary_deformations(
         else:  # Shear strain
             # Generate symmetric strains around zero
             strains = torch.linspace(
-                -max_strain_shear, max_strain_shear, n_deform, device=device, dtype=dtype
+                -max_strain_shear,
+                max_strain_shear,
+                n_deform,
+                device=device,
+                dtype=dtype,
             )
 
         # Skip zero strain
@@ -1102,9 +1106,9 @@ def get_elastic_tensor_from_coeffs(  # noqa: C901, PLR0915
 
 
 def calculate_elastic_tensor(
+    state: OptimState,
     model: ModelInterface,
     *,
-    state: OptimState,
     bravais_type: BravaisType = BravaisType.triclinic,
     max_strain_normal: float = 0.01,
     max_strain_shear: float = 0.06,

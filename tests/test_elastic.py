@@ -333,11 +333,15 @@ def test_elastic_tensor_symmetries(
 
     # Calculate elastic tensors
     C_symmetric = (
-        calculate_elastic_tensor(model, state=state, bravais_type=expected_bravais_type)
+        calculate_elastic_tensor(
+            state=state, model=model, bravais_type=expected_bravais_type
+        )
         * UnitConversion.eV_per_Ang3_to_GPa
     )
     C_triclinic = (
-        calculate_elastic_tensor(model, state=state, bravais_type=BravaisType.triclinic)
+        calculate_elastic_tensor(
+            state=state, model=model, bravais_type=BravaisType.triclinic
+        )
         * UnitConversion.eV_per_Ang3_to_GPa
     )
 
@@ -373,7 +377,7 @@ def test_copper_elastic_properties(
     # Calculate elastic tensor
     bravais_type = get_bravais_type(state)
     elastic_tensor = calculate_elastic_tensor(
-        mace_model, state=state, bravais_type=bravais_type
+        state=state, model=mace_model, bravais_type=bravais_type
     )
 
     # Convert to GPa

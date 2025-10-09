@@ -125,7 +125,7 @@ kT = 1000 * MetalUnits.temperature
 md_state = ts.nvt_langevin_init(model=mace_model, state=state, kT=kT, seed=42)
 
 # Initialize swap Monte Carlo state
-swap_state = ts.swap_mc_init(model=mace_model, state=md_state)
+swap_state = ts.swap_mc_init(state=md_state, model=mace_model)
 
 # Create hybrid state combining both
 hybrid_state = HybridSwapMCState(
@@ -159,7 +159,7 @@ n_steps = 100
 for step in range(n_steps):
     if step % 10 == 0:  # Attempt swap Monte Carlo move
         hybrid_state = ts.swap_mc_step(
-            model=mace_model, state=hybrid_state, kT=kT, rng=rng
+            state=hybrid_state, model=mace_model, kT=kT, rng=rng
         )
     else:  # Perform MD step
         hybrid_state = ts.nvt_langevin_step(

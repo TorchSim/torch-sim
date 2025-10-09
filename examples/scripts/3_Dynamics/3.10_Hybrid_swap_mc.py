@@ -78,7 +78,7 @@ class HybridSwapMCState(ts.SwapMCState, MDState):
 
 md_state = ts.nvt_langevin_init(model=model, state=state, kT=torch.tensor(kT), seed=42)
 
-swap_state = ts.swap_mc_init(model=model, state=md_state)
+swap_state = ts.swap_mc_init(state=md_state, model=model)
 hybrid_state = HybridSwapMCState(
     **vars(md_state),
     last_permutation=torch.arange(
@@ -93,7 +93,7 @@ n_steps = 100
 dt = torch.tensor(0.002)
 for step in range(n_steps):
     if step % 10 == 0:
-        hybrid_state = ts.swap_mc_step(model=model, state=hybrid_state, kT=kT, rng=rng)
+        hybrid_state = ts.swap_mc_step(state=hybrid_state, model=model, kT=kT, rng=rng)
     else:
         hybrid_state = ts.nvt_langevin_step(
             model=model, state=hybrid_state, dt=dt, kT=torch.tensor(kT)

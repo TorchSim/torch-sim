@@ -165,7 +165,7 @@ def test_monte_carlo_integration(
     # Initialize
     rng = torch.Generator(device=DEVICE)
     rng.manual_seed(42)
-    mc_state = swap_mc_init(model=lj_model, state=batched_diverse_state)
+    mc_state = swap_mc_init(state=batched_diverse_state, model=lj_model)
     assert isinstance(mc_state, SwapMCState)
     assert mc_state.energy.shape == (batched_diverse_state.n_systems,)
     assert mc_state.last_permutation.shape == (batched_diverse_state.n_atoms,)
@@ -174,7 +174,7 @@ def test_monte_carlo_integration(
 
     # Run steps
     for _step in range(n_steps):
-        mc_state = swap_mc_step(model=lj_model, state=mc_state, kT=kT, rng=rng)
+        mc_state = swap_mc_step(state=mc_state, model=lj_model, kT=kT, rng=rng)
         assert isinstance(mc_state, SwapMCState)
 
     # Verify conservation properties

@@ -177,8 +177,8 @@ def metropolis_criterion(
 
 
 def swap_mc_init(
-    model: ModelInterface,
     state: SimState,
+    model: ModelInterface,
 ) -> SwapMCState:
     """Initialize a swap Monte Carlo state from input data.
 
@@ -218,8 +218,8 @@ def swap_mc_init(
 
 
 def swap_mc_step(
-    model: ModelInterface,
     state: SwapMCState,
+    model: ModelInterface,
     *,
     kT: float,
     seed: int | None = None,

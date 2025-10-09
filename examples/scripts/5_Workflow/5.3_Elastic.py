@@ -62,7 +62,7 @@ bravais_type = get_bravais_type(state)
 
 # Calculate elastic tensor
 elastic_tensor = ts.elastic.calculate_elastic_tensor(
-    model, state=state, bravais_type=bravais_type
+    state=state, model=model, bravais_type=bravais_type
 )
 
 # Convert to GPa
