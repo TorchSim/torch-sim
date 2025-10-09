@@ -8,6 +8,7 @@ Requires fairchem-core to be installed.
 
 from __future__ import annotations
 
+import os
 import traceback
 import typing
 import warnings
@@ -74,6 +75,7 @@ class FairChemModel(ModelInterface):
         neighbor_list_fn: Callable | None = None,
         *,  # force remaining arguments to be keyword-only
         model_name: str | None = None,
+        model_cache_dir: str | Path | None = None,
         cpu: bool = False,
         dtype: torch.dtype | None = None,
         compute_stress: bool = False,
@@ -86,6 +88,7 @@ class FairChemModel(ModelInterface):
             neighbor_list_fn (Callable | None): Function to compute neighbor lists
                 (not currently supported)
             model_name (str | None): Name of pretrained model to load
+            model_cache_dir (str | Path | None): Path where to save the model
             cpu (bool): Whether to use CPU instead of GPU for computation
             dtype (torch.dtype | None): Data type to use for computation
             compute_stress (bool): Whether to compute stress tensor
@@ -132,7 +135,22 @@ class FairChemModel(ModelInterface):
         self.task_name = task_name
 
         # Create efficient batch predictor for fast inference
-        self.predictor = pretrained_mlip.get_predict_unit(str(model), device=device_str)
+        if model in pretrained_mlip.available_models:
+            if model_cache_dir and model_cache_dir.exists():
+                self.predictor = pretrained_mlip.get_predict_unit(
+                    model, device=device_str, cache_dir=model_cache_dir
+                )
+            else:
+                self.predictor = pretrained_mlip.get_predict_unit(
+                    model, device=device_str
+                )
+        elif os.path.isfile(model):
+            self.predictor = pretrained_mlip.load_predict_unit(model, device=device_str)
+        else:
+            raise ValueError(
+                f"Invalid model name or checkpoint path: {model}. "
+                f"Available pretrained models are: {pretrained_mlip.available_models}"
+            )
 
         # Determine implemented properties
         # This is a simplified approach - in practice you might want to
