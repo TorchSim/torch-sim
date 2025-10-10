@@ -123,7 +123,7 @@ def make_model_calculator_consistency_test(
     return test_model_calculator_consistency
 
 
-def make_validate_model_outputs_test(
+def make_validate_model_outputs_test(  # noqa: PLR0915
     model_fixture_name: str,
     device: torch.device = DEVICE,
     dtype: torch.dtype = torch.float64,
@@ -135,7 +135,7 @@ def make_validate_model_outputs_test(
         model_fixture_name: Name of the model fixture to validate
     """
 
-    def test_model_output_validation(request: pytest.FixtureRequest) -> None:
+    def test_model_output_validation(request: pytest.FixtureRequest) -> None:  # noqa: PLR0915
         """Test that a model implementation follows the ModelInterface contract."""
         # Get the model fixture dynamically
         model: ModelInterface = request.getfixturevalue(model_fixture_name)
@@ -223,6 +223,15 @@ def make_validate_model_outputs_test(
         #     model_output["stress"][1],
         #     atol=10e-3,
         # )
+
+        # Test single system output
+        assert fe_model_output["energy"].shape == (1,)
+        # forces should be shape (n_atoms, 3) for n_atoms in the system
+        if force_computed:
+            assert fe_model_output["forces"].shape == (12, 3)
+        # stress should be shape (1, 3, 3) for 1 system
+        if stress_computed:
+            assert fe_model_output["stress"].shape == (1, 3, 3)
 
     # Rename the function to include the test name
     test_model_output_validation.__name__ = f"test_{model_fixture_name}_output_validation"
