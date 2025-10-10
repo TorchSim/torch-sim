@@ -1,11 +1,8 @@
 """Batched MACE gradient descent example."""
 
 # /// script
-# dependencies = [
-#     "mace-torch>=0.3.12",
-# ]
+# dependencies = ["mace-torch>=0.3.12"]
 # ///
-
 import os
 
 import numpy as np
@@ -15,24 +12,21 @@ from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
 from torch_sim.models.mace import MaceModel, MaceUrls
-from torch_sim.optimizers import gradient_descent
 
 
 # Set device and data type
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
-
 # Option 1: Load the raw model from the downloaded model
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
-    default_dtype=dtype,
-    device=device,
+    default_dtype=str(dtype).removeprefix("torch."),
+    device=str(device),
 )
 
 # Option 2: Load from local file (comment out Option 1 to use this)
-# MODEL_PATH = "../../../checkpoints/MACE/mace-mpa-0-medium.model"
-# loaded_model = torch.load(MODEL_PATH, map_location=device)
+# loaded_model = torch.load("path/to/model.pt", map_location=device)
 
 # Number of steps to run
 SMOKE_TEST = os.getenv("CI") is not None
@@ -115,18 +109,16 @@ results = batched_model(state)
 learning_rate = 0.01
 
 # Initialize batched gradient descent optimizer
-gd_init, gd_update = gradient_descent(
-    model=batched_model,
-    lr=learning_rate,
-)
+state = ts.gradient_descent_init(state=state, model=batched_model)
 
-state = gd_init(state)
 # Run batched optimization for a few steps
 print("\nRunning batched gradient descent:")
 for step in range(N_steps):
     if step % 10 == 0:
         print(f"Step {step}, Energy: {[res.item() for res in state.energy]} eV")
-    state = gd_update(state)
+    state = ts.gradient_descent_step(
+        state=state, model=batched_model, pos_lr=learning_rate
+    )
 
 print(f"Initial energies: {[res.item() for res in results['energy']]} eV")
 print(f"Final energies: {[res.item() for res in state.energy]} eV")

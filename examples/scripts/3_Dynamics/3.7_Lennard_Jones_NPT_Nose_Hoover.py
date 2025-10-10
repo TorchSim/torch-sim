@@ -1,25 +1,20 @@
 """Lennard-Jones simulation in NPT ensemble using Nose-Hoover chain."""
 
 # /// script
-# dependencies = [
-#     "scipy>=1.15",
-# ]
+# dependencies = ["scipy>=1.15"]
 # ///
-
 import itertools
 import os
 
 import torch
 
 import torch_sim as ts
-from torch_sim.integrators.npt import npt_nose_hoover, npt_nose_hoover_invariant
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.quantities import calc_kinetic_energy, calc_kT, get_pressure
 from torch_sim.units import MetalUnits as Units
 
 
 # Set up the device and data type
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
 
 # Set random seed and deterministic behavior for reproducibility
@@ -102,39 +97,40 @@ state = ts.SimState(
 # Run initial simulation and get results
 results = model(state)
 
-dt = 0.001 * Units.time  # Time step (1 ps)
-kT = 200 * Units.temperature  # Temperature (200 K)
+dt = torch.tensor(0.001 * Units.time, device=device, dtype=dtype)  # Time step (1 ps)
+kT = torch.tensor(
+    200 * Units.temperature, device=device, dtype=dtype
+)  # Temperature (200 K)
 target_pressure = (
     torch.tensor(10, device=device, dtype=dtype) * Units.pressure
 )  # Target pressure (10 kbar)
 
-npt_init, npt_update = npt_nose_hoover(
+state = ts.npt_nose_hoover_init(
+    state=state,
     model=model,
     dt=dt,
     kT=kT,
-    external_pressure=target_pressure,
     chain_length=3,  # Chain length
     chain_steps=1,
     sy_steps=1,
 )
-state = npt_init(state=state, seed=1)
 
 # Run the simulation
 for step in range(N_steps):
     if step % 50 == 0:
         temp = (
-            calc_kT(
+            ts.calc_kT(
                 masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
             )
             / Units.temperature
         )
         invariant = float(
-            npt_nose_hoover_invariant(state, kT=kT, external_pressure=target_pressure)
+            ts.npt_nose_hoover_invariant(state, kT=kT, external_pressure=target_pressure)
         )
-        e_kin = calc_kinetic_energy(
+        e_kin = ts.calc_kinetic_energy(
             masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
         )
-        pressure = get_pressure(
+        pressure = ts.get_pressure(
             model(state)["stress"], e_kin, torch.det(state.current_cell)
         )
         pressure = float(pressure) / Units.pressure
@@ -144,17 +140,19 @@ for step in range(N_steps):
             f"{invariant=:.4f}, {pressure=:.4f}, "
             f"cell xx yy zz: {xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}"
         )
-    state = npt_update(state, kT=kT, external_pressure=target_pressure)
+    state = ts.npt_nose_hoover_step(
+        state=state, model=model, dt=dt, kT=kT, external_pressure=target_pressure
+    )
 
 temp = (
-    calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
+    ts.calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
     / Units.temperature
 )
 print(f"Final temperature: {temp.item():.4f}")
 
-pressure = get_pressure(
+pressure = ts.get_pressure(
     model(state)["stress"],
-    calc_kinetic_energy(
+    ts.calc_kinetic_energy(
         masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
     ),
     torch.det(state.current_cell),

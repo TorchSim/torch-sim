@@ -1,12 +1,11 @@
 [project]
-name = "torch_sim_atomistic"
-version = "0.3.0"
+name = "torch-sim-atomistic"
+version = "0.4.0"
 description = "A pytorch toolkit for calculating material properties using MLIPs"
 authors = [
     { name = "Abhijeet Gangan", email = "abhijeetgangan@g.ucla.edu" },
-    { name = "Janosh Riebesell", email = "jriebesell@radical-ai.com" },
-    { name = "Orion Cohen", email = "orion@radical-ai.com" },
-    { name = "Radical AI", email = "info@radical.ai" },
+    { name = "Janosh Riebesell", email = "janosh.riebesell@gmail.com" },
+    { name = "Orion Cohen", email = "orioncohen@berkeley.edu" },
 ]
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -19,39 +18,42 @@ keywords = [
 classifiers = [
     "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Scientific/Engineering :: Physics",
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "h5py>=3.12.1",
-    "numpy>=1.26",
+    "numpy>=2",
     "tables>=3.10.2",
     "torch>=2",
     "tqdm>=4.67",
-    "vesin[torch]>=0.3.7",
+    "vesin-torch>=0.3.7",
+    "vesin>=0.3.7",
 ]
 
 [project.optional-dependencies]
 test = [
-    "ase>=3.24",
+    "ase>=3.26",
     "phonopy>=2.37.0",
     "psutil>=7.0.0",
-    "pymatgen>=2024.11.3",
+    "pymatgen>=2025.6.14",
     "pytest-cov>=6",
     "pytest>=8",
 ]
-io = ["ase>=3.24", "phonopy>=2.37.0", "pymatgen>=2024.11.3"]
+io = ["ase>=3.26", "phonopy>=2.37.0", "pymatgen>=2025.6.14"]
 mace = ["mace-torch>=0.3.12"]
 mattersim = ["mattersim>=0.1.2"]
-metatomic = ["metatomic-torch>=0.1.1,<0.2", "metatrain[pet]==2025.7"]
+metatomic = ["metatomic-torch>=0.1.1", "metatrain[pet]>=2025.7"]
 orb = ["orb-models>=0.5.2"]
 sevenn = ["sevenn>=0.11.0"]
-graphpes = ["graph-pes>=0.0.34", "mace-torch>=0.3.12"]
-fairchem = ["fairchem-core>=2.2.0"]
+graphpes = ["graph-pes>=0.0.34,<=0.2.0", "mace-torch>=0.3.12"]
+nequip = ["nequip>=0.12.0"]
+fairchem = ["fairchem-core>=2.7"]
 docs = [
     "autodoc_pydantic==2.2.0",
     "furo==2024.8.6",
@@ -61,14 +63,14 @@ docs = [
     "jupytext==1.16.7",
     "myst_parser==4.0.0",
     "nbsphinx>=0.9.7",
-    "numpydoc==1.6.0",
+    "numpydoc==1.8.0",
     "sphinx-copybutton==0.5.2",
-    "sphinx==7.2.6",
+    "sphinx==8.1.3",
     "sphinx_design==0.6.1",
 ]
 
 [project.urls]
-Repo = "https://github.com/TorchSim/torch-sim"
+Repo = "https://github.com/torchsim/torch-sim"
 
 [build-system]
 requires = ["uv_build>=0.7.12"]
@@ -79,7 +81,7 @@ module-name = "torch_sim"
 module-root = ""
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 90
 output-format = "concise"
 
@@ -98,6 +100,7 @@ ignore = [
     "FIX002",  # Line contains TODO, consider resolving the issue
     "N803",    # Variable name should be lowercase
     "N806",    # Uppercase letters in variable names
+    "PLC0415", # import` should be at the top-level of a file
     "PLR0912", # too many branches
     "PLR0913", # too many function arguments
     "PLR2004", # Magic value used in comparison, consider replacing {value} with a constant variable
@@ -121,15 +124,6 @@ pep8-naming.ignore-names = ["get_kT", "kT"]
 
 [tool.ruff.format]
 docstring-code-format = true
-
-[tool.mypy]
-warn_unused_configs = true
-ignore_missing_imports = true
-check_untyped_defs = true
-explicit_package_bases = true
-warn_unreachable = true
-warn_redundant_casts = true
-warn_unused_ignores = true
 
 [tool.codespell]
 check-filenames = true
@@ -160,11 +154,41 @@ conflicts = [
         { extra = "sevenn" },
     ],
     [
+        { extra = "graphpes" },
+        { extra = "fairchem" },
+    ],
+    [
+        { extra = "graphpes" },
+        { extra = "nequip" },
+    ],
+    [
+        { extra = "fairchem" },
+        { extra = "mace" },
+    ],
+    [
         { extra = "mace" },
         { extra = "mattersim" },
+    ],
+    [
+        { extra = "mace" },
+        { extra = "nequip" },
     ],
     [
         { extra = "mace" },
         { extra = "sevenn" },
     ],
 ]
+
+[dependency-groups]
+dev = ["prek>=0.2.0", "ty>=0.0.1a20"]
+
+[tool.ty.rules]
+# TODO: Unable to work with **kwargs: https://github.com/astral-sh/ty/issues/247
+missing-argument = "ignore"
+
+[[tool.ty.overrides]]
+include = ["tests/models/**/*.py", "torch_sim/models/**/*.py"]
+
+# TODO would be nice to only ignore unresolved model imports but fail on all other packages
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"

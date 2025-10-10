@@ -7,22 +7,19 @@
 #     "scipy>=1.15",
 # ]
 # ///
-
 # ruff: noqa: RUF001
-
-import numpy as np
 import torch
 from plotly.subplots import make_subplots
 
 from torch_sim.models.soft_sphere import soft_sphere_pair, soft_sphere_pair_force
 
 
-sigma = 1.0
-epsilon = 1.0
-alpha = 2
+sigma = torch.tensor(1.0)
+epsilon = torch.tensor(1.0)
+alpha = torch.tensor(2)
 
 # Generate distance values from 0.1*sigma to 2*sigma
-dr = np.linspace(0.1 * sigma, 2 * sigma, 1000)
+dr = torch.linspace(0.1 * sigma, 2 * sigma, 1000)
 dr_tensor = torch.sqrt(torch.tensor(dr))
 
 # Calculate potential energy

@@ -1,12 +1,8 @@
 """Example script demonstrating batched MACE model optimization with hot-swapping."""
 
 # /// script
-# dependencies = [
-#     "mace-torch>=0.3.10",
-#     "matbench-discovery>=1.3.1",
-# ]
+# dependencies = ["mace-torch>=0.3.10", "matbench-discovery>=1.3.1"]
 # ///
-
 import os
 import time
 
@@ -21,7 +17,7 @@ from torch_sim.models.mace import MaceModel, MaceUrls
 # --- Setup and Configuration ---
 # Device and data type configuration
 SMOKE_TEST = os.getenv("CI") is not None
-device = torch.device("cpu") if SMOKE_TEST else torch.device("cuda")
+device = torch.device("cpu" if SMOKE_TEST else "cuda")
 dtype = torch.float32
 print(f"job will run on {device=}")
 
@@ -64,9 +60,10 @@ else:
 # Statistics tracking
 
 # Initialize first batch
-fire_init, fire_update = ts.optimizers.frechet_cell_fire(model=mace_model)
-fire_states = fire_init(
-    ts.io.atoms_to_state(atoms=ase_atoms_list, device=device, dtype=dtype)
+fire_states = ts.fire_init(
+    state=ts.io.atoms_to_state(atoms=ase_atoms_list, device=device, dtype=dtype),
+    model=mace_model,
+    cell_filter=ts.CellFilter.frechet,
 )
 
 batcher = ts.autobatching.InFlightAutoBatcher(
@@ -86,13 +83,13 @@ while (result := batcher.next_batch(state, convergence_tensor))[0] is not None:
     print(f"Starting new batch of {state.n_systems} states.")
 
     all_completed_states.extend(completed_states)
-    print("Total number of completed states", len(all_completed_states))
+    print(f"Total number of completed states {len(all_completed_states)}")
 
     for _step in range(10):
-        state = fire_update(state)
+        state = ts.fire_step(state=state, model=mace_model)
     convergence_tensor = converge_max_force(state, last_energy=None)
 all_completed_states.extend(result[1])
-print("Total number of completed states", len(all_completed_states))
+print(f"Total number of completed states {len(all_completed_states)}")
 
 # --- Final Statistics ---
 end_time = time.perf_counter()

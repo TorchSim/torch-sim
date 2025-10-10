@@ -2,8 +2,8 @@ import os
 import traceback
 
 import pytest
-import torch
 
+from tests.conftest import DEVICE
 from tests.models.conftest import (
     consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
@@ -32,16 +32,16 @@ def model_path_oc20(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 
 @pytest.fixture
-def eqv2_oc20_model_pbc(model_path_oc20: str, device: torch.device) -> FairChemV1Model:
-    cpu = device.type == "cpu"
+def eqv2_oc20_model_pbc(model_path_oc20: str) -> FairChemV1Model:
+    cpu = DEVICE.type == "cpu"
     return FairChemV1Model(model=model_path_oc20, cpu=cpu, seed=0, pbc=True)
 
 
 @pytest.fixture
 def eqv2_oc20_model_non_pbc(
-    model_path_oc20: str, device: torch.device
+    model_path_oc20: str,
 ) -> FairChemV1Model:
-    cpu = device.type == "cpu"
+    cpu = DEVICE.type == "cpu"
     return FairChemV1Model(model=model_path_oc20, cpu=cpu, seed=0, pbc=False)
 
 
@@ -55,9 +55,9 @@ if get_token():
 
     @pytest.fixture
     def eqv2_omat24_model_pbc(
-        model_path_omat24: str, device: torch.device
+        model_path_omat24: str,
     ) -> FairChemV1Model:
-        cpu = device.type == "cpu"
+        cpu = DEVICE.type == "cpu"
         return FairChemV1Model(model=model_path_omat24, cpu=cpu, seed=0, pbc=True)
 
 

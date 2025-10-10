@@ -1,9 +1,9 @@
 # TorchSim
 
-[![CI](https://github.com/TorchSim/torch-sim/actions/workflows/test.yml/badge.svg)](https://github.com/TorchSim/torch-sim/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/radical-ai/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/radical-ai/torch-sim)
-[![This project supports Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg?logo=python&logoColor=white)](https://python.org/downloads)
-[![PyPI](https://img.shields.io/pypi/v/torch_sim_atomistic?logo=pypi&logoColor=white)](https://pypi.org/project/torch_sim_atomistic)
+[![CI](https://github.com/torchsim/torch-sim/actions/workflows/test.yml/badge.svg)](https://github.com/torchsim/torch-sim/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/torchsim/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/torchsim/torch-sim)
+[![This project supports Python 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg?logo=python&logoColor=white)](https://python.org/downloads)
+[![PyPI](https://img.shields.io/pypi/v/torch-sim-atomistic?logo=pypi&logoColor=white)](https://pypi.org/project/torch-sim-atomistic)
 [![Zenodo](https://img.shields.io/badge/Zenodo-15127004-blue?logo=Zenodo&logoColor=white)][zenodo]
 
 [zenodo]: https://zenodo.org/records/15127004
@@ -81,8 +81,9 @@ To then relax those structures with FIRE is just a few more lines.
 relaxed_state = ts.optimize(
     system=final_state,
     model=mace_model,
-    optimizer=ts.frechet_cell_fire,
+    optimizer=ts.Optimizer.fire,
     autobatcher=True,
+    init_kwargs=dict(cell_filter=ts.CellFilter.frechet),
 )
 
 print(relaxed_state.energy)
@@ -128,10 +129,14 @@ TorchSim's package structure is summarized in the [API reference](https://torchs
 
 ![TorchSim package treemap](https://github.com/user-attachments/assets/1ccb3a15-233d-4bc0-b11c-35a676a2bcf3)
 
+## Contributing
+
+If you are interested in contributing, please join our [slack](https://join.slack.com/t/torchsim/shared_invite/zt-3fkiju9ip-XhUH7TYp_ejJT6QqEPKMJQ) and check out the [contributing.md](CONTRIBUTING.md).
+
 ## License
 
 TorchSim is released under an [MIT license](LICENSE).
 
 ## Citation
 
-+If you use TorchSim in your research, please cite the [arXiv preprint](https://arxiv.org/abs/2508.06628).
+If you use TorchSim in your research, please cite the [arXiv preprint](https://arxiv.org/abs/2508.06628).

@@ -1,13 +1,10 @@
-"""Draw a treemap of the torch_sim package structure.
+"""Draw a treemap of the torch-sim package structure.
 
 Run with `uv run docs/_static/draw_pkg_treemap.py`
 """
 
 # /// script
-# dependencies = [
-#     "pymatviz>=0.17.1",
-#     "plotly>=6.3.0",
-# ]
+# dependencies = ["pymatviz>=0.17.1", "plotly>=6.3.0"]
 # ///
 
 import os

@@ -2,12 +2,11 @@
 
 # /// script
 # dependencies = [
-#     "ase>=3.24",
+#     "ase>=3.26",
 #     "matplotlib",
 #     "numpy",
 # ]
 # ///
-
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -72,9 +71,8 @@ def plot_results(*, time: np.ndarray, vacf: np.ndarray, window_count: int) -> No
 
 def main() -> None:
     """Run velocity autocorrelation simulation using Lennard-Jones model."""
-    state, lj_model, dt, kT, device, dtype, timestep = prepare_system()
-    nve_init, nve_update = ts.integrators.nve(model=lj_model, dt=dt, kT=kT)
-    state = nve_init(state)  # type: ignore[call-arg]
+    state, lj_model, dt, kT, device, _dtype, timestep = prepare_system()
+    state = ts.nve_init(state=state, model=lj_model, kT=kT)
 
     window_size = 150  # Length of correlation: dt * correlation_dt * window_size
     vacf_calc = VelocityAutoCorrelation(
@@ -95,7 +93,7 @@ def main() -> None:
 
     num_steps = 15000  # NOTE: short run
     for step in range(num_steps):
-        state = nve_update(state)  # type: ignore[call-arg]
+        state = ts.nve_step(state=state, model=lj_model, dt=dt)  # type: ignore[call-arg]
         reporter.report(state, step)
 
     reporter.close()

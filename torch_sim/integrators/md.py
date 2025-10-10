@@ -60,7 +60,7 @@ def calculate_momenta(
     positions: torch.Tensor,
     masses: torch.Tensor,
     system_idx: torch.Tensor,
-    kT: torch.Tensor | float,
+    kT: float | torch.Tensor,
     seed: int | None = None,
 ) -> torch.Tensor:
     """Initialize particle momenta based on temperature.
@@ -96,7 +96,7 @@ def calculate_momenta(
     ) * torch.sqrt(masses * kT).unsqueeze(-1)
 
     systemwise_momenta = torch.zeros(
-        (system_idx[-1] + 1, momenta.shape[1]), device=device, dtype=dtype
+        size=(int(system_idx[-1]) + 1, momenta.shape[1]), device=device, dtype=dtype
     )
 
     # create 3 copies of system_idx
@@ -117,7 +117,7 @@ def calculate_momenta(
     )
 
 
-def momentum_step(state: MDState, dt: torch.Tensor) -> MDState:
+def momentum_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
     """Update particle momenta using current forces.
 
     This function performs the momentum update step of velocity Verlet integration
@@ -137,7 +137,7 @@ def momentum_step(state: MDState, dt: torch.Tensor) -> MDState:
     return state
 
 
-def position_step(state: MDState, dt: torch.Tensor) -> MDState:
+def position_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
     """Update particle positions using current velocities.
 
     This function performs the position update step of velocity Verlet integration
@@ -164,7 +164,7 @@ def position_step(state: MDState, dt: torch.Tensor) -> MDState:
     return state
 
 
-def velocity_verlet(state: MDState, dt: torch.Tensor, model: ModelInterface) -> MDState:
+def velocity_verlet[T: MDState](state: T, dt: torch.Tensor, model: ModelInterface) -> T:
     """Perform one complete velocity Verlet integration step.
 
     This function implements the velocity Verlet algorithm, which provides
@@ -343,7 +343,7 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
 
         Q = (
             kT_batched.unsqueeze(-1)
-            * tau_batched.unsqueeze(-1) ** 2
+            * torch.square(tau_batched).unsqueeze(-1) ** 2
             * torch.ones((n_systems, chain_length), dtype=dtype, device=device)
         )
         Q[:, 0] *= degrees_of_freedom
@@ -391,11 +391,11 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
             kT_batched = torch.full_like(KE, kT)
 
         # Update chain momenta backwards
-        G = p_xi[:, M - 1] ** 2 / Q[:, M - 1] - kT_batched
+        G = torch.square(p_xi[:, M - 1]) / Q[:, M - 1] - kT_batched
         p_xi[:, M] += delta_4 * G
 
         for m in range(M - 1, 0, -1):
-            G = p_xi[:, m - 1] ** 2 / Q[:, m - 1] - kT_batched
+            G = torch.square(p_xi[:, m - 1]) / Q[:, m - 1] - kT_batched
             scale = torch.exp(-delta_8 * p_xi[:, m + 1] / Q[:, m + 1])
             p_xi[:, m] = scale * (scale * p_xi[:, m] + delta_4 * G)
 
@@ -406,7 +406,7 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
 
         # Rescale system momenta
         scale = torch.exp(-delta_2 * p_xi[:, 0] / Q[:, 0])
-        KE = KE * scale**2
+        KE = KE * torch.square(scale)
 
         # Apply scale to momenta - need to map from system to atom indices
         atom_scale = scale[system_idx].unsqueeze(-1)
@@ -420,7 +420,7 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
         for m in range(M):
             scale = torch.exp(-delta_8 * p_xi[:, m + 1] / Q[:, m + 1])
             p_xi[:, m] = scale * (scale * p_xi[:, m] + delta_4 * G)
-            G = p_xi[:, m] ** 2 / Q[:, m] - kT_batched
+            G = torch.square(p_xi[:, m]) / Q[:, m] - kT_batched
         p_xi[:, M] += delta_4 * G
 
         return P, NoseHooverChain(xi, p_xi, Q, _tau, KE, DOF), kT_batched
@@ -455,21 +455,23 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
 
         return P, state
 
-    def update_chain_mass_fn(state: NoseHooverChain, kT: torch.Tensor) -> NoseHooverChain:
+    def update_chain_mass_fn(
+        chain_state: NoseHooverChain, kT: torch.Tensor
+    ) -> NoseHooverChain:
         """Update chain masses to maintain target oscillation period.
 
         Args:
-            state: Current chain state
+            chain_state: Current chain state
             kT: Target temperature
 
         Returns:
             Updated chain state with new masses
         """
-        device = state.positions.device
-        dtype = state.positions.dtype
+        device = chain_state.positions.device
+        dtype = chain_state.positions.dtype
 
         # Get number of systems
-        n_systems = state.kinetic_energy.shape[0]
+        n_systems = chain_state.kinetic_energy.shape[0]
 
         # Ensure kT has proper batch dimension
         if isinstance(kT, torch.Tensor):
@@ -479,18 +481,18 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
 
         Q = (
             kT_batched.unsqueeze(-1)
-            * state.tau.unsqueeze(-1) ** 2
+            * torch.square(chain_state.tau).unsqueeze(-1)
             * torch.ones((n_systems, chain_length), dtype=dtype, device=device)
         )
-        Q[:, 0] *= state.degrees_of_freedom
+        Q[:, 0] *= chain_state.degrees_of_freedom
 
         return NoseHooverChain(
-            state.positions,
-            state.momenta,
+            chain_state.positions,
+            chain_state.momenta,
             Q,
-            state.tau,
-            state.kinetic_energy,
-            state.degrees_of_freedom,
+            chain_state.tau,
+            chain_state.kinetic_energy,
+            chain_state.degrees_of_freedom,
         )
 
     return NoseHooverChainFns(init_fn, half_step_chain_fn, update_chain_mass_fn)

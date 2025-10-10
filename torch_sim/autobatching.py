@@ -11,7 +11,7 @@ Example:
         batcher = BinningAutoBatcher(model, memory_scales_with="n_atoms")
         batcher.load_states(states)
         final_states = []
-        for batch in batcher:
+        for batch, _indices in batcher:
             final_states.append(evolve_batch(batch))
         final_states = batcher.restore_original_order(final_states)
 
@@ -20,33 +20,34 @@ Notes:
     model architectures and GPU configurations.
 """
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from itertools import chain
-from typing import Any, get_args, overload
+from typing import Any, get_args
 
 import torch
 
+import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, concatenate_states
+from torch_sim.state import SimState
 from torch_sim.typing import MemoryScaling
 
 
-def to_constant_volume_bins(  # noqa: C901, PLR0915
-    items: dict[int, float] | list[float] | list[tuple],
+def to_constant_volume_bins[T: dict[int, float] | list[float] | list[tuple[T, ...]]](  # noqa: C901, PLR0915
+    items: T,
     max_volume: float,
     *,
     weight_pos: int | None = None,
-    key: Callable | None = None,
+    key: Callable[[T], float] | None = None,
     lower_bound: float | None = None,
     upper_bound: float | None = None,
-) -> list[dict[int, float]] | list[list[float]] | list[list[tuple]]:
+) -> list[T]:
     """Distribute items into bins of fixed maximum volume.
 
     Groups items into the minimum number of bins possible while ensuring each bin's
     total weight does not exceed max_volume. Items are sorted by weight in descending
     order before binning to improve packing efficiency.
 
-    Upstreamed from binpacking by @benmaier. https://pypi.org/project/binpacking/.
+    Ported here from binpacking by @benmaier. https://pypi.org/project/binpacking.
 
     Args:
         items (dict[int, float] | list[float] | list[tuple]): Items to distribute,
@@ -83,36 +84,33 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
     def _argmax_bins(lst: list[float]) -> int:
         return max(range(len(lst)), key=lst.__getitem__)
 
-    def _revargsort_bins(lst: list[float]) -> list[int]:
+    def _rev_argsort_bins(lst: list[float]) -> list[int]:
         return sorted(range(len(lst)), key=lambda i: -lst[i])
-
-    is_dict = isinstance(items, dict)
 
     if not hasattr(items, "__len__"):
         raise TypeError("d must be iterable")
 
-    if not is_dict and hasattr(items[0], "__len__"):
+    if not isinstance(items, dict) and hasattr(items[0], "__len__"):
         if weight_pos is not None:
             key = lambda x: x[weight_pos]  # noqa: E731
         if key is None:
             raise ValueError("Must provide weight_pos or key for tuple list")
 
-    if not is_dict and key:
+    if not isinstance(items, dict) and key:
         new_dict = dict(enumerate(items))
-        items = {i: key(val) for i, val in enumerate(items)}
-        is_dict = True
+        items = {idx: key(val) for idx, val in enumerate(items)}  # type: ignore[invalid-assignment]
         is_tuple_list = True
     else:
         is_tuple_list = False
 
-    if is_dict:
+    if isinstance(items, dict):
         # get keys and values (weights)
         keys_vals = items.items()
         keys = [k for k, v in keys_vals]
         vals = [v for k, v in keys_vals]
 
         # sort weights decreasingly
-        n_dcs = _revargsort_bins(vals)
+        n_dcs = _rev_argsort_bins(vals)
 
         weights = _get_bins(vals, n_dcs)
         keys = _get_bins(keys, n_dcs)
@@ -140,7 +138,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
 
     weights = _get_bins(weights, valid_ndcs)
 
-    if is_dict:
+    if isinstance(items, dict):
         keys = _get_bins(keys, valid_ndcs)
 
     # prepare array containing the current weight of the bins
@@ -148,7 +146,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
 
     # iterate through the weight list, starting with heaviest
     for item, weight in enumerate(weights):
-        if is_dict:
+        if isinstance(items, dict):
             key = keys[item]
 
         # find candidate bins where the weight might fit
@@ -170,7 +168,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
             # open a new bin
             b = len(weight_sum)
             weight_sum.append(0.0)
-            if is_dict:
+            if isinstance(items, dict):
                 bins.append({})
             else:
                 bins.append([])
@@ -180,7 +178,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
             b = 0
 
         # put it in
-        if is_dict:
+        if isinstance(items, dict):
             bins[b][key] = weight
         else:
             bins[b].append(weight)
@@ -192,10 +190,10 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
     if not is_tuple_list:
         return bins
     new_bins = []
-    for b in range(len(bins)):
+    for bin_idx in range(len(bins)):
         new_bins.append([])
-        for _key in bins[b]:
-            new_bins[b].append(new_dict[_key])
+        for _key in bins[bin_idx]:
+            new_bins[bin_idx].append(new_dict[_key])
     return new_bins
 
 
@@ -292,16 +290,16 @@ def determine_max_batch_size(
     while (next_size := max(round(sizes[-1] * scale_factor), sizes[-1] + 1)) < max_atoms:
         sizes.append(next_size)
 
-    for i in range(len(sizes)):
-        n_systems = sizes[i]
-        concat_state = concatenate_states([state] * n_systems)
+    for sys_idx in range(len(sizes)):
+        n_systems = sizes[sys_idx]
+        concat_state = ts.concatenate_states([state] * n_systems)
 
         try:
             measure_model_memory_forward(concat_state, model)
         except RuntimeError as exc:
             if "CUDA out of memory" in str(exc):
                 # Return the last successful size, with a safety margin
-                return sizes[max(0, i - 2)]
+                return sizes[max(0, sys_idx - 2)]
             raise
 
     return sizes[-1]
@@ -357,9 +355,9 @@ def calculate_memory_scaler(
 
 
 def estimate_max_memory_scaler(
-    model: ModelInterface,
     state_list: list[SimState],
-    metric_values: list[float],
+    model: ModelInterface,
+    metric_values: list[float] | torch.Tensor,
     **kwargs: Any,
 ) -> float:
     """Estimate maximum memory scaling metric that fits in GPU memory.
@@ -411,10 +409,13 @@ def estimate_max_memory_scaler(
     min_state_max_batches = determine_max_batch_size(min_state, model, **kwargs)
     max_state_max_batches = determine_max_batch_size(max_state, model, **kwargs)
 
-    return min(min_state_max_batches * min_metric, max_state_max_batches * max_metric)
+    return min(
+        min_state_max_batches * min_metric.item(),
+        max_state_max_batches * max_metric.item(),
+    )
 
 
-class BinningAutoBatcher:
+class BinningAutoBatcher[T: SimState]:
     """Batcher that groups states into bins of similar computational cost.
 
     Divides a collection of states into batches that can be processed efficiently
@@ -430,7 +431,6 @@ class BinningAutoBatcher:
         memory_scales_with (str): Metric type used for memory estimation.
         max_memory_scaler (float): Maximum memory metric allowed per system.
         max_atoms_to_try (int): Maximum number of atoms to try when estimating memory.
-        return_indices (bool): Whether to return original indices with batches.
         state_slices (list[SimState]): Individual states to be batched.
         memory_scalers (list[float]): Memory scaling metrics for each state.
         index_to_scaler (dict): Mapping from state index to its scaling metric.
@@ -449,7 +449,7 @@ class BinningAutoBatcher:
         # Load states and process them in batches
         batcher.load_states(states)
         final_states = []
-        for batch in batcher:
+        for batch, _indices in batcher:
             final_states.append(evolve_batch(batch))
 
         # Restore original order
@@ -462,7 +462,6 @@ class BinningAutoBatcher:
         *,
         memory_scales_with: MemoryScaling = "n_atoms_x_density",
         max_memory_scaler: float | None = None,
-        return_indices: bool = False,
         max_atoms_to_try: int = 500_000,
         memory_scaling_factor: float = 1.6,
         max_memory_padding: float = 1.0,
@@ -479,29 +478,23 @@ class BinningAutoBatcher:
                 Defaults to "n_atoms_x_density".
             max_memory_scaler (float | None): Maximum metric value allowed per system. If
                 None, will be automatically estimated. Defaults to None.
-            return_indices (bool): Whether to return original indices along with batches.
-                Defaults to False.
             max_atoms_to_try (int): Maximum number of atoms to try when estimating
                 max_memory_scaler. Defaults to 500,000.
             memory_scaling_factor (float): Factor to multiply batch size by in each
                 iteration. Larger values will get a batch size more quickly, smaller
                 values will get a more accurate limit. Must be greater than 1. Defaults
                 to 1.6.
-            max_memory_padding (float): Multiply the autodetermined max_memory_scaler
+            max_memory_padding (float): Multiply the auto-determined max_memory_scaler
                 by this value to account for fluctuations in max memory. Defaults to 1.0.
         """
         self.max_memory_scaler = max_memory_scaler
         self.max_atoms_to_try = max_atoms_to_try
         self.memory_scales_with = memory_scales_with
-        self.return_indices = return_indices
         self.model = model
         self.memory_scaling_factor = memory_scaling_factor
         self.max_memory_padding = max_memory_padding
 
-    def load_states(
-        self,
-        states: list[SimState] | SimState,
-    ) -> float:
+    def load_states(self, states: T | Sequence[T]) -> float:
         """Load new states into the batcher.
 
         Processes the input states, computes memory scaling metrics for each,
@@ -509,7 +502,7 @@ class BinningAutoBatcher:
         to maximize GPU utilization.
 
         Args:
-            states (list[SimState] | SimState): Collection of states to batch. Either a
+            states (SimState | list[SimState]): Collection of states to batch. Either a
                 list of individual SimState objects or a single batched SimState that
                 will be split into individual states. Each SimState has shape
                 information specific to its instance.
@@ -540,8 +533,8 @@ class BinningAutoBatcher:
         ]
         if not self.max_memory_scaler:
             self.max_memory_scaler = estimate_max_memory_scaler(
-                self.model,
                 self.state_slices,
+                self.model,
                 self.memory_scalers,
                 max_atoms=self.max_atoms_to_try,
                 scale_factor=self.memory_scaling_factor,
@@ -565,105 +558,79 @@ class BinningAutoBatcher:
         )
         self.batched_states = []
         for index_bin in self.index_bins:
-            self.batched_states.append([self.state_slices[i] for i in index_bin])
+            self.batched_states.append([self.state_slices[idx] for idx in index_bin])
         self.current_state_bin = 0
 
         return self.max_memory_scaler
 
-    @overload
-    def next_batch(self, *, return_indices: bool = False) -> SimState | None: ...
-
-    @overload
-    def next_batch(
-        self, *, return_indices: bool = True
-    ) -> tuple[SimState, list[int]] | None: ...
-
-    def next_batch(
-        self, *, return_indices: bool = False
-    ) -> SimState | tuple[SimState, list[int]] | None:
+    def next_batch(self) -> tuple[T | None, list[int]]:
         """Get the next batch of states.
 
         Returns batches sequentially until all states have been processed. Each batch
         contains states grouped together to maximize GPU utilization without exceeding
         memory constraints.
 
-        Args:
-            return_indices (bool): Whether to return original indices along with the
-                batch. Overrides the value set during initialization. Defaults to False.
-
         Returns:
-            SimState | tuple[SimState, list[int]] | None:
-                - If return_indices is False: A concatenated SimState containing the next
-                  batch of states, or None if no more batches.
-                - If return_indices is True: Tuple of (concatenated SimState, indices),
-                  where indices are the original positions of the states, or None if no
-                  more batches.
+            tuple[T | None, list[int]]: A tuple containing:
+                - A concatenated SimState containing the next batch of states,
+                  or None if no more batches
+                - List of indices of states in the current batch
 
-        Examples:
-            Get batches one by one:
+        Example::
 
-            .. code-block:: python
-
-                all_converged_state, convergence = [], None
-                while (result := batcher.next_batch(state, convergence))[0] is not None:
-                    state, converged_states = result
-                    all_converged_states.extend(converged_states)
-
-                    evolve_batch(state)
-                    convergence = convergence_criterion(state)
-                else:
-                    all_converged_states.extend(result[1])
+            # Get batches one by one
+            for batch, indices in batcher:
+                process_batch(batch)
 
         """
         # TODO: need to think about how this intersects with reporting too
         # TODO: definitely a clever treatment to be done with iterators here
         if self.current_state_bin < len(self.batched_states):
             state_bin = self.batched_states[self.current_state_bin]
-            state = concatenate_states(state_bin)
+            state = ts.concatenate_states(state_bin)
+            indices = (
+                self.index_bins[self.current_state_bin]
+                if self.current_state_bin < len(self.index_bins)
+                else []
+            )
             self.current_state_bin += 1
-            if return_indices:
-                return state, self.index_bins[self.current_state_bin - 1]
-            return state
-        return None
+            return state, indices
+        return None, []
 
-    def __iter__(self) -> Iterator[SimState | tuple[SimState, list[int]]]:
+    def __iter__(self) -> Iterator[tuple[T, list[int]]]:
         """Return self as an iterator.
 
         Allows using the batcher in a for loop to iterate through all batches.
         Resets the current state bin index to start iteration from the beginning.
 
         Returns:
-            Iterator[SimState | tuple[SimState, list[int]]]: Self as an iterator.
+            Iterator[tuple[T, list[int]]]: Self as an iterator.
 
         Example::
 
             # Iterate through all batches
-            for batch in batcher:
+            for batch, indices in batcher:
                 process_batch(batch)
-
         """
         return self
 
-    def __next__(self) -> SimState | tuple[SimState, list[int]]:
+    def __next__(self) -> tuple[T, list[int]]:
         """Get the next batch for iteration.
 
         Implements the iterator protocol to allow using the batcher in a for loop.
-        Automatically includes indices if return_indices was set to True during
-        initialization.
 
         Returns:
-            SimState | tuple[SimState, list[int]]: The next batch of states,
-                potentially with indices.
+            tuple[T, list[int]]: The next batch of states and their indices.
 
         Raises:
             StopIteration: When there are no more batches.
         """
-        next_batch = self.next_batch(return_indices=self.return_indices)
+        next_batch, indices = self.next_batch()
         if next_batch is None:
             raise StopIteration
-        return next_batch
+        return next_batch, indices
 
-    def restore_original_order(self, batched_states: list[SimState]) -> list[SimState]:
+    def restore_original_order(self, batched_states: Sequence[T]) -> list[T]:
         """Reorder processed states back to their original sequence.
 
         Takes states that were processed in batches and restores them to the
@@ -671,7 +638,7 @@ class BinningAutoBatcher:
         processing to ensure results correspond to the input states.
 
         Args:
-            batched_states (list[SimState]): State batches to reorder. These can be
+            batched_states (Sequence[SimState]): State batches to reorder. These can be
                 either concatenated batch states that will be split, or already
                 split individual states.
 
@@ -687,7 +654,7 @@ class BinningAutoBatcher:
 
             # Process batches and restore original order
             results = []
-            for batch in batcher:
+            for batch, _indices in batcher:
                 results.append(process_batch(batch))
             ordered_results = batcher.restore_original_order(results)
 
@@ -709,7 +676,7 @@ class BinningAutoBatcher:
         return [state for _, state in sorted(indexed_states, key=lambda x: x[0])]
 
 
-class InFlightAutoBatcher:
+class InFlightAutoBatcher[T: SimState]:
     """Batcher that dynamically swaps states based on convergence.
 
     Optimizes GPU utilization by removing converged states from the batch and
@@ -728,7 +695,6 @@ class InFlightAutoBatcher:
         memory_scales_with (str): Metric type used for memory estimation.
         max_memory_scaler (float): Maximum memory metric allowed per system.
         max_atoms_to_try (int): Maximum number of atoms to try when estimating memory.
-        return_indices (bool): Whether to return original indices with batches.
         max_iterations (int | None): Maximum number of iterations per state.
         state_slices (list[SimState]): Individual states to be batched.
         memory_scalers (list[float]): Memory scaling metrics for each state.
@@ -772,7 +738,6 @@ class InFlightAutoBatcher:
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         memory_scaling_factor: float = 1.6,
-        return_indices: bool = False,
         max_iterations: int | None = None,
         max_memory_padding: float = 1.0,
     ) -> None:
@@ -788,8 +753,6 @@ class InFlightAutoBatcher:
                 Defaults to "n_atoms_x_density".
             max_memory_scaler (float | None): Maximum metric value allowed per system.
                 If None, will be automatically estimated. Defaults to None.
-            return_indices (bool): Whether to return original indices along with batches.
-                Defaults to False.
             max_atoms_to_try (int): Maximum number of atoms to try when estimating
                 max_memory_scaler. Defaults to 500,000.
             memory_scaling_factor (float): Factor to multiply batch size by in each
@@ -799,7 +762,7 @@ class InFlightAutoBatcher:
             max_iterations (int | None): Maximum number of iterations to process a state
                 before considering it complete, regardless of convergence. Used to prevent
                 infinite loops. Defaults to None (no limit).
-            max_memory_padding (float): Multiply the autodetermined max_memory_scaler
+            max_memory_padding (float): Multiply the auto-determined max_memory_scaler
                 by this value to account for fluctuations in max memory. Defaults to 1.0.
         """
         self.model = model
@@ -807,14 +770,10 @@ class InFlightAutoBatcher:
         self.max_memory_scaler = max_memory_scaler or None
         self.max_atoms_to_try = max_atoms_to_try
         self.memory_scaling_factor = memory_scaling_factor
-        self.return_indices = return_indices
         self.max_attempts = max_iterations  # TODO: change to max_iterations
         self.max_memory_padding = max_memory_padding
 
-    def load_states(
-        self,
-        states: list[SimState] | Iterator[SimState] | SimState,
-    ) -> None:
+    def load_states(self, states: Sequence[T] | Iterator[T] | T) -> None:
         """Load new states into the batcher.
 
         Processes the input states, computes memory scaling metrics for each,
@@ -849,7 +808,7 @@ class InFlightAutoBatcher:
         """
         if isinstance(states, SimState):
             states = states.split()
-        if isinstance(states, list):
+        if isinstance(states, list | tuple):
             states = iter(states)
 
         self.states_iterator = states
@@ -865,7 +824,7 @@ class InFlightAutoBatcher:
         self._first_batch = self._get_first_batch()
         return self.max_memory_scaler
 
-    def _get_next_states(self) -> list[SimState]:
+    def _get_next_states(self) -> list[T]:
         """Add states from the iterator until max_memory_scaler is reached.
 
         Pulls states from the iterator and adds them to the current batch until
@@ -874,9 +833,9 @@ class InFlightAutoBatcher:
         Returns:
             list[SimState]: new states added to the batch.
         """
-        new_metrics = []
-        new_idx = []
-        new_states = []
+        new_metrics: list[float] = []
+        new_idx: list[int] = []
+        new_states: list[T] = []
         for state in self.states_iterator:
             metric = calculate_memory_scaler(state, self.memory_scales_with)
             if metric > self.max_memory_scaler:
@@ -922,14 +881,14 @@ class InFlightAutoBatcher:
             self.current_scalers.pop(idx)
             self.completed_idx_og_order.append(og_idx)
 
-    def _get_first_batch(self) -> SimState:
+    def _get_first_batch(self) -> T:
         """Create and return the first batch of states.
 
         Initializes the batcher by estimating memory requirements if needed
         and creating the first batch of states to process.
 
         Returns:
-            Tuple of (first batch, empty list of completed states).
+            T: first batch of states.
         """
         # we need to sample a state and use it to estimate the max metric
         # for the first batch
@@ -955,8 +914,8 @@ class InFlightAutoBatcher:
 
         if not has_max_metric:
             self.max_memory_scaler = estimate_max_memory_scaler(
-                self.model,
                 [first_state, *states],
+                self.model,
                 self.current_scalers,
                 max_atoms=self.max_atoms_to_try,
                 scale_factor=self.memory_scaling_factor,
@@ -964,14 +923,11 @@ class InFlightAutoBatcher:
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
             newer_states = self._get_next_states()
             states = [*states, *newer_states]
-        return concatenate_states([first_state, *states])
+        return ts.concatenate_states([first_state, *states])
 
     def next_batch(  # noqa: C901
-        self, updated_state: SimState | None, convergence_tensor: torch.Tensor | None
-    ) -> (
-        tuple[SimState | None, list[SimState]]
-        | tuple[SimState | None, list[SimState], list[int]]
-    ):
+        self, updated_state: T | None, convergence_tensor: torch.Tensor | None
+    ) -> tuple[T, list[T]]:
         """Get the next batch of states based on convergence.
 
         Removes converged states from the batch, adds new states if possible,
@@ -987,32 +943,25 @@ class InFlightAutoBatcher:
                 (False). Should be None only for the first call.
 
         Returns:
-            tuple[SimState | None, list[SimState]] | tuple[SimState | None,
-                list[SimState], list[int]]:
-                - If return_indices is False: Tuple of (next_batch, completed_states)
-                  where next_batch is a SimState or None if all states are processed,
-                  and completed_states is a list of SimState objects.
-                - If return_indices is True: Tuple of (next_batch, completed_states,
-                  indices) where indices are the current batch's positions.
+            tuple[SimState | None, list[SimState]]: (next_batch, completed_states)
+                where next_batch is a SimState or None if all states are processed,
+                and completed_states is a list of SimState objects.
 
         Raises:
             AssertionError: If convergence_tensor doesn't match the expected shape or
                 if other validation checks fail.
 
-        Examples:
-            Process states with convergence checking:
+        Example::
 
-            .. code-block:: python
+            # Initial call
+            batch, completed = batcher.next_batch(None, None)
 
-                # Initial call
-                batch, completed = batcher.next_batch(None, None)
+            # Process batch and check for convergence
+            batch = process_batch(batch)
+            convergence = check_convergence(batch)
 
-                # Process batch and check for convergence
-                batch = process_batch(batch)
-                convergence = check_convergence(batch)
-
-                # Get next batch with converged states removed and new states added
-                batch, completed = batcher.next_batch(batch, convergence)
+            # Get next batch with converged states removed and new states added
+            batch, completed = batcher.next_batch(batch, convergence)
 
         Notes:
             When max_iterations is set, states that exceed this limit will be
@@ -1020,8 +969,6 @@ class InFlightAutoBatcher:
         """
         if not self.first_batch_returned:
             self.first_batch_returned = True
-            if self.return_indices:
-                return self._first_batch, [], self.current_idx
             return self._first_batch, []
 
         if (
@@ -1034,6 +981,10 @@ class InFlightAutoBatcher:
 
         # assert statements helpful for debugging, should be moved to validate fn
         # the first two are most important
+        if updated_state is None:
+            raise ValueError("updated_state cannot be None")
+        if convergence_tensor is None:
+            raise ValueError("convergence_tensor cannot be None")
         if len(convergence_tensor) != updated_state.n_systems:
             raise ValueError(f"{len(convergence_tensor)=} != {updated_state.n_systems=}")
         if len(self.current_idx) != len(self.current_scalers):
@@ -1065,23 +1016,16 @@ class InFlightAutoBatcher:
 
         # there are no states left to run, return the completed states
         if not self.current_idx:
-            return (
-                (None, completed_states, [])
-                if self.return_indices
-                else (None, completed_states)
-            )
+            return None, completed_states  # type: ignore[invalid-return-type]
 
         # concatenate remaining state with next states
         if updated_state.n_systems > 0:
             next_states = [updated_state, *next_states]
-        next_batch = concatenate_states(next_states)
-
-        if self.return_indices:
-            return next_batch, completed_states, self.current_idx
+        next_batch = ts.concatenate_states(next_states)
 
         return next_batch, completed_states
 
-    def restore_original_order(self, completed_states: list[SimState]) -> list[SimState]:
+    def restore_original_order(self, completed_states: Sequence[T]) -> list[T]:
         """Reorder completed states back to their original sequence.
 
         Takes states that were completed in arbitrary order and restores them
@@ -1089,7 +1033,7 @@ class InFlightAutoBatcher:
         the hot-swapping strategy to ensure results correspond to input states.
 
         Args:
-            completed_states (list[SimState]): Completed states to reorder. Each
+            completed_states (Sequence[SimState]): Completed states to reorder. Each
                 SimState contains simulation data with shape specific to its instance.
 
         Returns:
@@ -1120,7 +1064,6 @@ class InFlightAutoBatcher:
             or you will only get the subset of states that have completed so far.
         """
         # TODO: should act on full states, not state slices
-
         if len(completed_states) != len(self.completed_idx_og_order):
             raise ValueError(
                 f"Number of completed states ({len(completed_states)}) does not match "
