@@ -1,9 +1,8 @@
 """Lennard-Jones simple single system example."""
 
+
 # /// script
-# dependencies = [
-#     "scipy>=1.15",
-# ]
+# dependencies = ["scipy>=1.15"]
 # ///
 
 import itertools
@@ -14,7 +13,7 @@ from torch_sim.models.lennard_jones import LennardJonesModel
 
 
 # Set up the device and data type
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
 
 # Create face-centered cubic (FCC) Argon
@@ -75,10 +74,7 @@ model = LennardJonesModel(
 
 # Batched state
 state = dict(
-    positions=positions,
-    cell=cell.unsqueeze(0),
-    atomic_numbers=atomic_numbers,
-    pbc=True,
+    positions=positions, cell=cell.unsqueeze(0), atomic_numbers=atomic_numbers, pbc=True
 )
 
 # Run the simulation and get results

@@ -1,9 +1,8 @@
 """Minimal MACE batched example."""
 
+
 # /// script
-# dependencies = [
-#     "mace-torch>=0.3.12",
-# ]
+# dependencies = ["mace-torch>=0.3.12"]
 # ///
 
 import numpy as np
@@ -15,20 +14,18 @@ from torch_sim.models.mace import MaceModel, MaceUrls
 
 
 # Set device and data type
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
-
 # Option 1: Load the raw model from the downloaded model
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
-    default_dtype=dtype,
-    device=device,
+    default_dtype=str(dtype).removeprefix("torch."),
+    device=str(device),
 )
 
 # Option 2: Load the compiled model from the local file
-# MODEL_PATH = "../../../checkpoints/MACE/mace-mpa-0-medium.model"
-# loaded_model = torch.load(MODEL_PATH, map_location=device)
+# loaded_model = torch.load("path/to/model.pt", map_location=device)
 
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))

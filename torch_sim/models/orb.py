@@ -2,11 +2,11 @@
 
 This module provides a TorchSim wrapper of the ORB models for computing
 energies, forces, and stresses of atomistic systems. It serves as a wrapper around
-the ORB models library, integrating it with the torch_sim framework to enable seamless
+the ORB models library, integrating it with the torch-sim framework to enable seamless
 simulation of atomistic systems with machine learning potentials.
 
 The OrbModel class adapts ORB models to the ModelInterface protocol,
-allowing them to be used within the broader torch_sim simulation framework.
+allowing them to be used within the broader torch-sim simulation framework.
 
 Notes:
     This implementation requires orb_models to be installed and accessible.
@@ -40,7 +40,7 @@ except ImportError as exc:
     warnings.warn(f"Orb import failed: {traceback.format_exc()}", stacklevel=2)
 
     class OrbModel(ModelInterface):
-        """ORB model wrapper for torch_sim.
+        """ORB model wrapper for torch-sim.
 
         This class is a placeholder for the OrbModel class.
         It raises an ImportError if orb_models is not installed.
@@ -69,7 +69,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
     system_config: SystemConfig | None = None,
     max_num_neighbors: int | None = None,
     system_id: int | None = None,  # noqa: ARG001
-    half_supercell: bool = False,
+    half_supercell: bool | torch.Tensor = False,
     device: torch.device | None = None,
     output_dtype: torch.dtype | None = None,
     graph_construction_dtype: torch.dtype | None = None,
@@ -146,22 +146,22 @@ def state_to_atom_graphs(  # noqa: PLR0915
     n_systems = state.system_idx.max().item() + 1
 
     # Prepare lists to collect data from each system
-    all_edges = []
-    all_vectors = []
-    all_unit_shifts = []
-    num_edges = []
-    node_feats_list = []
-    edge_feats_list = []
-    graph_feats_list = []
+    all_edges: list[torch.Tensor] = []
+    all_vectors: list[torch.Tensor] = []
+    all_unit_shifts: list[torch.Tensor] = []
+    num_edges: list[torch.Tensor] = []
+    node_feats_list: list[dict[str, torch.Tensor]] = []
+    edge_feats_list: list[dict[str, torch.Tensor]] = []
+    graph_feats_list: list[dict[str, torch.Tensor]] = []
 
     # Process each system in a single loop
     offset = 0
-    for i in range(n_systems):
-        system_mask = state.system_idx == i
+    for sys_idx in range(n_systems):
+        system_mask = state.system_idx == sys_idx
         positions_per_system = positions[system_mask]
         atomic_numbers_per_system = atomic_numbers[system_mask]
         atomic_numbers_embedding_per_system = atomic_numbers_embedding[system_mask]
-        cell_per_system = row_vector_cell[i]
+        cell_per_system = row_vector_cell[sys_idx]
         pbc_per_system = pbc
 
         # Compute edges directly for this system
@@ -172,7 +172,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
             radius=system_config.radius,
             max_number_neighbors=max_num_neighbors,
             edge_method=edge_method,
-            half_supercell=half_supercell,
+            half_supercell=bool(half_supercell),
             device=device,
         )
 
@@ -323,18 +323,22 @@ class OrbModel(ModelInterface):
         self._compute_stress = compute_stress
         self._compute_forces = compute_forces
 
+        # Load model if path is provided
+        if isinstance(model, str | Path):
+            loaded_model = torch.load(model, map_location=self._device)
+        elif isinstance(model, torch.nn.Module):
+            loaded_model = model
+        else:
+            raise TypeError("Model must be a path or torch.nn.Module")
+
         # Set up system configuration
-        self.system_config = system_config or model.system_config
+        self.system_config = system_config or loaded_model.system_config
         self._max_num_neighbors = max_num_neighbors
         self._edge_method = edge_method
         self._half_supercell = half_supercell
         self.conservative = conservative
 
-        # Load model if path is provided
-        if isinstance(model, str | Path):
-            model = torch.load(model, map_location=self._device)
-
-        self.model = model.to(self._device)
+        self.model = loaded_model.to(self._device)
         self.model = self.model.eval()
 
         if self.dtype is not None:
@@ -380,21 +384,24 @@ class OrbModel(ModelInterface):
             The state is automatically transferred to the model's device if needed.
             All output tensors are detached from the computation graph.
         """
-        if isinstance(state, dict):
-            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        sim_state = (
+            state
+            if isinstance(state, ts.SimState)
+            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        )
 
-        if state.device != self._device:
-            state = state.to(self._device)
+        if sim_state.device != self._device:
+            sim_state = sim_state.to(self._device)
 
         half_supercell = (
-            torch.min(torch.det(state.cell)) > 1000
+            torch.min(sim_state.volume) > 1000
             if self._half_supercell is None
             else self._half_supercell
         )
 
         # Convert state to atom graphs
         batch = state_to_atom_graphs(
-            state,
+            sim_state,
             system_config=self.system_config,
             max_num_neighbors=self._max_num_neighbors,
             edge_method=self._edge_method,
@@ -405,7 +412,7 @@ class OrbModel(ModelInterface):
         # Run forward pass
         predictions = self.model.predict(batch)
 
-        results = {}
+        results: dict[str, torch.Tensor] = {}
         model_has_direct_heads = (
             "forces" in self.model.heads and "stress" in self.model.heads
         )

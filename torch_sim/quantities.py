@@ -1,9 +1,15 @@
 """Functions for computing physical quantities."""
 
+from typing import TYPE_CHECKING
+
 import torch
 
-from torch_sim.state import SimState
 from torch_sim.units import MetalUnits
+
+
+if TYPE_CHECKING:
+    from torch_sim.integrators.md import MDState
+    from torch_sim.optimizers import OptimState
 
 
 # @torch.jit.script
@@ -262,7 +268,7 @@ def calc_heat_flux(
     return conv_sum + virial_sum
 
 
-def systemwise_max_force(state: SimState) -> torch.Tensor:
+def system_wise_max_force[T: MDState | OptimState](state: T) -> torch.Tensor:
     """Compute the maximum force per system.
 
     Args:

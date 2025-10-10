@@ -1,11 +1,10 @@
-# ruff: noqa: E501
 """Minimal FairChem example demonstrating batching."""
 
 # /// script
-# dependencies = [
-#     "fairchem-core>=2.2.0",
-# ]
+# dependencies = ["fairchem-core>=2.2.0", "huggingface_hub"]
 # ///
+
+import os
 
 import torch
 from ase.build import bulk
@@ -14,7 +13,20 @@ import torch_sim as ts
 from torch_sim.models.fairchem import FairChemModel
 
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+# Optional Hugging Face login if HF_TOKEN is available (for private model access)
+try:
+    from huggingface_hub import login as hf_login  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional dependency
+    hf_login = None  # type: ignore[assignment]
+
+hf_token = os.environ.get("HF_TOKEN")
+if hf_token and hf_login is not None:
+    hf_login(token=hf_token)
+else:
+    print("Need to login to HuggingFace to access fairchem models")
+    raise SystemExit(0)
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
 
 # UMA = Unified Machine Learning for Atomistic simulations
@@ -36,16 +48,16 @@ results = model(state)
 
 print(results["energy"].shape)
 print(results["forces"].shape)
-if stress := results.get("stress"):
-    print(stress.shape)
+if "stress" in results:
+    print(results["stress"].shape)
 
 print(f"Energy: {results['energy']}")
 print(f"Forces: {results['forces']}")
-if stress := results.get("stress"):
-    print(f"{stress=}")
+if "stress" in results:
+    print(f"{results['stress']=}")
 
 # Check if the energy, forces, and stress are the same for the Si system across the batch
 print(torch.max(torch.abs(results["energy"][0] - results["energy"][1])))
 print(torch.max(torch.abs(results["forces"][0] - results["forces"][1])))
-if stress := results.get("stress"):
-    print(torch.max(torch.abs(stress[0] - stress[1])))
+if "stress" in results:
+    print(torch.max(torch.abs(results["stress"][0] - results["stress"][1])))
