@@ -62,6 +62,7 @@ myst_enable_extensions = [
 ]
 
 autodoc_mock_imports = [
+    "chgnet",
     "fairchem",
     "mace",
     "mattersim",

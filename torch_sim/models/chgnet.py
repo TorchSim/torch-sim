@@ -124,6 +124,8 @@ class CHGNetModel(ModelInterface):
                 - 'forces': Atomic forces with shape [n_atoms, 3] if compute_forces=True
                 - 'stress': System stresses with shape [n_systems, 3, 3] if
                     compute_stress=True
+                - 'magnetic_moments': Magnetic moments with shape [n_atoms, 3] if
+                    available in CHGNet output
 
         Raises:
             ValueError: If atomic numbers are not provided in the state.
@@ -194,5 +196,15 @@ class CHGNetModel(ModelInterface):
                 ]
             )
             results["stress"] = stresses
+
+        # Process magnetic moments (if available)
+        if "m" in chgnet_results[0]:
+            magnetic_moments_list = [
+                torch.tensor(result["m"], device=self.device, dtype=self.dtype)
+                for result in chgnet_results
+            ]
+            # Concatenate along atom dimension, similar to forces
+            magnetic_moments = torch.cat(magnetic_moments_list, dim=0)
+            results["magnetic_moments"] = magnetic_moments
 
         return results
