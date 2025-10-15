@@ -54,6 +54,7 @@ sevenn = ["sevenn>=0.11.0"]
 graphpes = ["graph-pes>=0.0.34,<=0.2.0", "mace-torch>=0.3.12"]
 nequip = ["nequip>=0.12.0"]
 fairchem = ["fairchem-core>=2.7"]
+chgnet = ["chgnet>=0.4.2"]
 docs = [
     "autodoc_pydantic==2.2.0",
     "furo==2024.8.6",
