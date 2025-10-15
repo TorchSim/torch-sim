@@ -103,7 +103,7 @@ class CHGNetModel(ModelInterface):
 
         # Move model to device
         self.model = self.model.to(self._device)
-        if hasattr(self.model, 'eval'):
+        if hasattr(self.model, "eval"):
             self.model = self.model.eval()
 
     def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
@@ -159,35 +159,40 @@ class CHGNetModel(ModelInterface):
         # Process energy (CHGNet returns energy per atom, multiply by number of atoms)
         energies = []
         for i, result in enumerate(chgnet_results):
-            chgnet_energy_per_atom = result['e'].item() if hasattr(result['e'], 'item') else result['e']
-            
+            chgnet_energy_per_atom = (
+                result["e"].item() if hasattr(result["e"], "item") else result["e"]
+            )
+
             # Get number of atoms in this structure
             structure = structures[i]
             total_atoms = len(structure)
-            
+
             # Multiply by number of atoms to get total energy
             total_energy = chgnet_energy_per_atom * total_atoms
-            
-            energies.append(torch.tensor(total_energy, device=self.device, dtype=self.dtype))
-        
+
+            energies.append(
+                torch.tensor(total_energy, device=self.device, dtype=self.dtype)
+            )
+
         results["energy"] = torch.stack(energies)
 
-        # Process forces 
+        # Process forces
         if self.compute_forces:
-            forces_list = []
-            for result in chgnet_results:
-                forces_list.append(
-                    torch.tensor(result['f'], device=self.device, dtype=self.dtype)
-                )
+            forces_list = [
+                torch.tensor(result["f"], device=self.device, dtype=self.dtype)
+                for result in chgnet_results
+            ]
             forces = torch.cat(forces_list, dim=0)
             results["forces"] = forces
 
-        # Process stress 
+        # Process stress
         if self.compute_stress:
-            stresses = torch.stack([
-                torch.tensor(result['s'], device=self.device, dtype=self.dtype)
-                for result in chgnet_results
-            ])
+            stresses = torch.stack(
+                [
+                    torch.tensor(result["s"], device=self.device, dtype=self.dtype)
+                    for result in chgnet_results
+                ]
+            )
             results["stress"] = stresses
 
         return results
