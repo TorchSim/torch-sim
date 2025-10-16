@@ -184,7 +184,7 @@ def velocity_verlet[T: MDState](state: T, dt: torch.Tensor, model: ModelInterfac
         Updated state after one complete velocity Verlet step
 
     Notes:
-        - Time-reversible and symplectic integrator
+        - Time-reversible and symplectic integrator of second order accuracy
         - Conserves energy in the absence of numerical errors
         - Handles periodic boundary conditions if enabled in state
     """
