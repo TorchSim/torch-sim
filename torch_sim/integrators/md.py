@@ -401,7 +401,7 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
 
         # Update system coupling
         G = 2.0 * KE - DOF * kT_batched
-        scale = torch.exp(-delta_8 * p_xi[:, 1] / Q[:, 1])
+        scale = torch.exp(-delta_8 * p_xi[:, 1] / Q[:, 1]) if M > 0 else 1.0
         p_xi[:, 0] = scale * (scale * p_xi[:, 0] + delta_4 * G)
 
         # Rescale system momenta
