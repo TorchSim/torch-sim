@@ -391,8 +391,9 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
             kT_batched = torch.full_like(KE, kT)
 
         # Update chain momenta backwards
-        G = torch.square(p_xi[:, M - 1]) / Q[:, M - 1] - kT_batched
-        p_xi[:, M] += delta_4 * G
+        if M > 0:
+            G = torch.square(p_xi[:, M - 1]) / Q[:, M - 1] - kT_batched
+            p_xi[:, M] += delta_4 * G
 
         for m in range(M - 1, 0, -1):
             G = torch.square(p_xi[:, m - 1]) / Q[:, m - 1] - kT_batched
