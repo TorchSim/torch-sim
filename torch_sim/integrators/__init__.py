@@ -47,7 +47,26 @@ from .nvt import (
 
 
 class Integrator(StrEnum):
-    """Flavor of molecular dynamics simulation."""
+    """Enumeration of available molecular dynamics (MD) integrators.
+
+    Each member represents a different simulation ensemble or thermostat/barostat
+    scheme. These values are used as keys in :data:`INTEGRATOR_REGISTRY`
+    to select the corresponding initialization and stepping functions.
+
+    Available options:
+        - ``nve``: Constant energy (microcanonical) ensemble.
+        - ``nvt_langevin``: Langevin thermostat for constant temperature.
+        - ``nvt_nose_hoover``: Nosé-Hoover thermostat for constant temperature.
+        - ``npt_langevin``: Langevin barostat for constant temperature and pressure.
+        - ``npt_nose_hoover``: Nosé-Hoover barostat for constant temperature
+                and constant pressure.
+
+    Example:
+        >>> integrator = Integrator.nvt_langevin
+        >>> print(integrator.value)
+        'nvt_langevin'
+
+    """
 
     nve = "nve"
     nvt_langevin = "nvt_langevin"
@@ -56,7 +75,29 @@ class Integrator(StrEnum):
     npt_nose_hoover = "npt_nose_hoover"
 
 
-# Integrator registry - maps integrator names to (init_fn, step_fn) pairs
+#: Integrator registry - maps integrator names to (init_fn, step_fn) pairs.
+#:
+#: This dictionary associates each :class:`Integrator` enum value with a pair
+#: of callables:
+#:
+#: - **init_fn**: A function used to initialize the integrator state.
+#: - **step_fn**: A function that advances the state by one simulation step.
+#:
+#: Example:
+#:
+#:     >>> init_fn, step_fn = INTEGRATOR_REGISTRY[Integrator.nvt_langevin]
+#:     >>> state = init_fn(...)
+#:     >>> new_state = step_fn(state, ...)
+#:
+#: The available integrators are:
+#:
+#: - ``Integrator.nve``: Velocity Verlet (microcanonical)
+#: - ``Integrator.nvt_langevin``: Langevin thermostat
+#: - ``Integrator.nvt_nose_hoover``: Nosé-Hoover thermostat
+#: - ``Integrator.npt_langevin``: Langevin barostat
+#: - ``Integrator.npt_nose_hoover``: Nosé-Hoover barostat
+#:
+#: :type: dict[Integrator, tuple[Callable[..., Any], Callable[..., Any]]]
 INTEGRATOR_REGISTRY: Final[
     dict[Integrator, tuple[Callable[..., Any], Callable[..., Any]]]
 ] = {
