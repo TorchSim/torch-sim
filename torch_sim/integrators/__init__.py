@@ -5,6 +5,23 @@ supporting NVE (microcanonical), NVT (canonical), and NPT (isothermal-isobaric) 
 Each integrator handles batched simulations efficiently using PyTorch tensors and
 supports periodic boundary conditions.
 
+NVE:
+    - Velocity Verlet integrator for constant energy simulations :func:`nve.nve_step`
+NVT:
+    - Langevin thermostat integrator :func:`nvt.nvt_langevin_step`
+        using BAOAB scheme [1]
+    - Nosé-Hoover thermostat integrator :func:`nvt.nvt_nose_hoover_step` from [2]
+NPT:
+    - Langevin barostat integrator :func:`npt.npt_langevin_step`
+    - Nosé-Hoover barostat integrator :func:`npt.npt_nose_hoover_step` from [2]
+
+References:
+    [1] Leimkuhler B, Matthews C.2016 Efficient molecular dynamics using geodesic
+        integration and solvent-solute splitting. Proc. R. Soc. A 472: 20160138
+    [2] Martyna, G. J., Tuckerman, M. E., Tobias, D. J., & Klein, M. L. (1996).
+        Explicit reversible integrators for extended systems dynamics.
+        Molecular Physics, 87(5), 1117-1157.
+
 Examples:
     >>> import torch_sim as ts
     >>> state = ts.nvt_langevin_init(model, initial_state, kT=300.0 * units.temperature)
@@ -16,6 +33,8 @@ Examples:
 Notes:
     All integrators support batched operations for efficient parallel simulation
     of multiple systems.
+
+
 """
 
 # ruff: noqa: F401
