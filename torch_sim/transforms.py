@@ -1157,3 +1157,67 @@ def safe_mask(
     """
     masked = torch.where(mask, operand, torch.zeros_like(operand))
     return torch.where(mask, fn(masked), torch.full_like(operand, placeholder))
+
+
+def unwrap_positions(
+    pos: torch.Tensor, box: torch.Tensor, system_idx: torch.Tensor
+) -> torch.Tensor:
+    """Vectorized unwrapping for multiple systems without explicit loops.
+
+    Parameters
+    ----------
+    pos : (T, N_tot, 3)
+        Wrapped cartesian positions for all systems concatenated.
+    box : (n_systems, 3, 3) or (T, n_systems, 3, 3)
+        Box matrices, constant or time-dependent.
+    system_idx : (N_tot,)
+        For each atom, which system it belongs to (0..n_systems-1).
+
+    Returns:
+    -------
+    unwrapped_pos : (T, N_tot, 3)
+        Unwrapped cartesian positions.
+    """
+    # -- Constant boxes per system
+    if box.ndim == 3:
+        inv_box = torch.inverse(box)  # (n_systems, 3, 3)
+
+        # Map each atom to its system's box
+        inv_box_atoms = inv_box[system_idx]  # (N, 3, 3)
+        box_atoms = box[system_idx]  # (N, 3, 3)
+
+        # Compute fractional coordinates
+        frac = torch.einsum("tni,nij->tnj", pos, inv_box_atoms)
+
+        # Fractional displacements and unwrap
+        dfrac = frac[1:] - frac[:-1]
+        dfrac -= torch.round(dfrac)
+
+        # Back to Cartesian
+        dcart = torch.einsum("tni,nij->tnj", dfrac, box_atoms)
+
+    # -- Time-dependent boxes per system
+    elif box.ndim == 4:
+        inv_box = torch.inverse(box)  # (T, n_systems, 3, 3)
+
+        # Gather each atom's box per frame efficiently
+        inv_box_atoms = inv_box[:, system_idx]  # (T, N, 3, 3)
+        box_atoms = box[:, system_idx]  # (T, N, 3, 3)
+
+        # Compute fractional coordinates per frame
+        frac = torch.einsum("tni,tnij->tnj", pos, inv_box_atoms)
+
+        dfrac = frac[1:] - frac[:-1]
+        dfrac -= torch.round(dfrac)
+
+        dcart = torch.einsum("tni,tnij->tnj", dfrac, box_atoms[:-1])
+
+    else:
+        raise ValueError("box must have shape (n_systems,3,3) or (T,n_systems,3,3)")
+
+    # Cumulative reconstruction
+    unwrapped = torch.empty_like(pos)
+    unwrapped[0] = pos[0]
+    unwrapped[1:] = torch.cumsum(dcart, dim=0) + unwrapped[0]
+
+    return unwrapped

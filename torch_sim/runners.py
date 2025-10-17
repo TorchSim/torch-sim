@@ -571,7 +571,7 @@ def static(
         properties=properties,
     )
 
-    @dataclass
+    @dataclass(kw_only=True)
     class StaticState(SimState):
         energy: torch.Tensor
         forces: torch.Tensor

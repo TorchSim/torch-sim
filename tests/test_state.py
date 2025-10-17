@@ -30,7 +30,7 @@ def test_get_attrs_for_scope(si_sim_state: SimState) -> None:
     per_system_attrs = dict(get_attrs_for_scope(si_sim_state, "per-system"))
     assert set(per_system_attrs) == {"cell"}
     global_attrs = dict(get_attrs_for_scope(si_sim_state, "global"))
-    assert set(global_attrs) == {"pbc"}
+    assert set(global_attrs) == {"pbc", "constraints"}
 
 
 def test_all_attributes_must_be_specified_in_scopes() -> None:

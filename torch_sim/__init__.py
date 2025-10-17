@@ -7,6 +7,7 @@ from datetime import datetime
 import torch_sim as ts
 from torch_sim import (
     autobatching,
+    constraints,
     elastic,
     io,
     math,

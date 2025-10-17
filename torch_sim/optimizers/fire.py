@@ -80,6 +80,7 @@ def fire_init(
         "cell": state.cell.clone(),
         "atomic_numbers": state.atomic_numbers.clone(),
         "system_idx": state.system_idx.clone(),
+        "constraints": state.constraints,
         "pbc": state.pbc,
         # Optimization state
         "forces": forces,

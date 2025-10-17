@@ -9,7 +9,7 @@ import importlib
 import typing
 from collections import defaultdict
 from collections.abc import Generator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 
 import torch
@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from ase import Atoms
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure
+from torch_sim.constraints import FixConstraint
 
 
 @dataclass(init=False)
@@ -51,6 +52,8 @@ class SimState:
         atomic_numbers (torch.Tensor): Atomic numbers with shape (n_atoms,)
         system_idx (torch.Tensor): Maps each atom index to its system index.
             Has shape (n_atoms,), must be unique consecutive integers starting from 0.
+        constraints (list["FixConstraint"] | None): List of constraints applied to the
+            system. Constraints affect degrees of freedom and modify positions.
 
     Properties:
         wrap_positions (torch.Tensor): Positions wrapped according to periodic boundary
@@ -83,6 +86,7 @@ class SimState:
     pbc: bool  # TODO: do all calculators support mixed pbc?
     atomic_numbers: torch.Tensor
     system_idx: torch.Tensor
+    constraints: list[FixConstraint] | None = field(default_factory=lambda: None)
 
     _atom_attributes: ClassVar[set[str]] = {
         "positions",
@@ -91,7 +95,7 @@ class SimState:
         "system_idx",
     }
     _system_attributes: ClassVar[set[str]] = {"cell"}
-    _global_attributes: ClassVar[set[str]] = {"pbc"}
+    _global_attributes: ClassVar[set[str]] = {"pbc", "constraints"}
 
     def __init__(
         self,
@@ -101,6 +105,7 @@ class SimState:
         pbc: bool,  # noqa: FBT001
         atomic_numbers: torch.Tensor,
         system_idx: torch.Tensor | None = None,
+        constraints: list["FixConstraint"] | None = None,
     ) -> None:
         """Initialize the SimState and validate the arguments.
 
@@ -113,12 +118,15 @@ class SimState:
             system_idx (torch.Tensor | None): Maps each atom index to its system index.
                 Has shape (n_atoms,), must be unique consecutive integers starting from 0.
                 If not provided, it is initialized to zeros.
+            constraints (list["FixConstraint"] | None): List of constraints applied to the
+                system. If None, no constraints are applied.
         """
         self.positions = positions
         self.masses = masses
         self.cell = cell
         self.pbc = pbc
         self.atomic_numbers = atomic_numbers
+        self.constraints = constraints
 
         # Validate and process the state after initialization.
         # data validation and fill system_idx
@@ -233,6 +241,38 @@ class SimState:
             value: The unit cell as a row vector
         """
         self.cell = value.mT
+
+    def set_positions(self, new_positions: torch.Tensor) -> None:
+        """Set the positions and apply constraints if they exist.
+
+        Args:
+            new_positions: New positions tensor with shape (n_atoms, 3)
+        """
+        # Apply constraints if they exist
+        if self.constraints is not None:
+            for constraint in self.constraints:
+                constraint.adjust_positions(self, new_positions)
+        self.positions = new_positions
+
+    def calc_dof(self) -> torch.Tensor:
+        """Calculate degrees of freedom accounting for constraints.
+
+        Returns:
+            torch.Tensor: Number of degrees of freedom per system, with shape
+                (n_systems,). Each system starts with 3 * n_atoms_per_system degrees
+                of freedom, minus any degrees removed by constraints.
+        """
+        # Start with unconstrained DOF: 3 degrees per atom
+        dof_per_system = 3 * self.n_atoms_per_system
+
+        # Subtract DOF removed by constraints
+        if self.constraints is not None:
+            for constraint in self.constraints:
+                removed_dof = constraint.get_removed_dof(self)
+                dof_per_system -= removed_dof
+
+        # Ensure non-negative DOF
+        return torch.clamp(dof_per_system, min=0)
 
     def clone(self) -> Self:
         """Create a deep copy of the SimState.

@@ -10,7 +10,7 @@ from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MDState(SimState):
     """State information for molecular dynamics simulations.
 
@@ -54,6 +54,13 @@ class MDState(SimState):
         [n_particles, n_dimensions].
         """
         return self.momenta / self.masses.unsqueeze(-1)
+
+    def set_momenta(self, new_momenta: torch.Tensor) -> None:
+        """Set new momenta, applying any constraints as needed."""
+        if self.constraints is not None:
+            for constraint in self.constraints:
+                constraint.adjust_momenta(self, new_momenta)
+        self.momenta = new_momenta
 
 
 def calculate_momenta(
@@ -133,7 +140,7 @@ def momentum_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
 
     """
     new_momenta = state.momenta + state.forces * dt
-    state.momenta = new_momenta
+    state.set_momenta(new_momenta)
     return state
 
 
@@ -153,14 +160,14 @@ def position_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
 
     """
     new_positions = state.positions + state.velocities * dt
+    state.set_positions(new_positions)
 
     if state.pbc:
         # Split positions and cells by system
         new_positions = transforms.pbc_wrap_batched(
-            new_positions, state.cell, state.system_idx
+            state.positions, state.cell, state.system_idx
         )
-
-    state.positions = new_positions
+        state.positions = new_positions  # no constraints applied
     return state
 
 
