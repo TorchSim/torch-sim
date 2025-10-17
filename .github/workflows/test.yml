@@ -96,6 +96,10 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
 
+      - name: Install HDF5 on macOS
+        if: runner.os == 'macOS'
+        run: brew install hdf5
+
       - name: Install legacy fairchem repository and dependencies
         if: ${{ matrix.model.name == 'fairchem-legacy' }}
         run: |
