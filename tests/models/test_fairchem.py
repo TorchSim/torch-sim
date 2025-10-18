@@ -3,6 +3,8 @@ import traceback
 import pytest
 import torch
 
+import torch_sim as ts
+from tests.conftest import DEVICE, DTYPE
 from tests.models.conftest import make_validate_model_outputs_test
 
 
@@ -10,6 +12,9 @@ try:
     from collections.abc import Callable
 
     from ase.build import bulk, fcc100, molecule
+    from fairchem.core.calculate.pretrained_mlip import (
+        pretrained_checkpoint_path_from_name,
+    )
     from huggingface_hub.utils._auth import get_token
 
     import torch_sim as ts
@@ -22,13 +27,10 @@ except ImportError:
 
 
 @pytest.fixture
-def eqv2_uma_model_pbc(device: torch.device) -> FairChemModel:
+def eqv2_uma_model_pbc() -> FairChemModel:
     """UMA model for periodic boundary condition systems."""
-    cpu = device.type == "cpu"
+    cpu = DEVICE.type == "cpu"
     return FairChemModel(model=None, model_name="uma-s-1", task_name="omat", cpu=cpu)
-
-
-# Removed calculator consistency tests since we're using predictor interface only
 
 
 @pytest.mark.skipif(
@@ -38,7 +40,8 @@ def eqv2_uma_model_pbc(device: torch.device) -> FairChemModel:
 def test_task_initialization(task_name: str) -> None:
     """Test that different UMA task names work correctly."""
     model = FairChemModel(model=None, model_name="uma-s-1", task_name=task_name, cpu=True)
-    assert model.task_name.value == task_name
+    assert model.task_name
+    assert str(model.task_name.value) == task_name
     assert hasattr(model, "predictor")
 
 
@@ -63,21 +66,19 @@ def test_task_initialization(task_name: str) -> None:
         ),
     ],
 )
-def test_homogeneous_batching(
-    task_name: str, systems_func: Callable, device: torch.device, dtype: torch.dtype
-) -> None:
+def test_homogeneous_batching(task_name: str, systems_func: Callable) -> None:
     """Test batching multiple systems with the same task."""
     systems = systems_func()
 
     # Add molecular properties for molecules
     if task_name == "omol":
         for mol in systems:
-            mol.info.update({"charge": 0, "spin": 1})
+            mol.info |= {"charge": 0, "spin": 1}
 
     model = FairChemModel(
-        model=None, model_name="uma-s-1", task_name=task_name, cpu=device.type == "cpu"
+        model=None, model_name="uma-s-1", task_name=task_name, cpu=DEVICE.type == "cpu"
     )
-    state = ts.io.atoms_to_state(systems, device=device, dtype=dtype)
+    state = ts.io.atoms_to_state(systems, device=DEVICE, dtype=DTYPE)
     results = model(state)
 
     # Check batch dimensions
@@ -87,14 +88,14 @@ def test_homogeneous_batching(
 
     # Check that different systems have different energies
     energies = results["energy"]
-    unique_energies = torch.unique(energies, dim=0)
-    assert len(unique_energies) > 1, "Different systems should have different energies"
+    uniq_energies = torch.unique(energies, dim=0)
+    assert len(uniq_energies) > 1, "Different systems should have different energies"
 
 
 @pytest.mark.skipif(
     get_token() is None, reason="Requires HuggingFace authentication for UMA model access"
 )
-def test_heterogeneous_tasks(device: torch.device, dtype: torch.dtype) -> None:
+def test_heterogeneous_tasks() -> None:
     """Test different task types work with appropriate systems."""
     # Test molecule, material, and catalysis systems separately
     test_cases = [
@@ -105,19 +106,17 @@ def test_heterogeneous_tasks(device: torch.device, dtype: torch.dtype) -> None:
 
     for task_name, systems in test_cases:
         if task_name == "omol":
-            systems[0].info.update({"charge": 0, "spin": 1})
+            systems[0].info |= {"charge": 0, "spin": 1}
 
         model = FairChemModel(
             model=None,
             model_name="uma-s-1",
             task_name=task_name,
-            cpu=device.type == "cpu",
+            cpu=DEVICE.type == "cpu",
         )
-        state = ts.io.atoms_to_state(systems, device=device, dtype=dtype)
+        state = ts.io.atoms_to_state(systems, device=DEVICE, dtype=DTYPE)
         results = model(state)
 
-        assert "energy" in results
-        assert "forces" in results
         assert results["energy"].shape[0] == 1
         assert results["forces"].dim() == 2
         assert results["forces"].shape[1] == 3
@@ -142,22 +141,20 @@ def test_heterogeneous_tasks(device: torch.device, dtype: torch.dtype) -> None:
         (
             lambda: [
                 bulk(element, "fcc", a=4.0)
-                for element in ["Al", "Cu", "Ni", "Pd", "Pt"] * 3
+                for element in ("Al", "Cu", "Ni", "Pd", "Pt") * 3
             ],
             15,
         ),  # Large batch
     ],
 )
-def test_batch_size_variations(
-    systems_func: Callable, expected_count: int, device: torch.device, dtype: torch.dtype
-) -> None:
+def test_batch_size_variations(systems_func: Callable, expected_count: int) -> None:
     """Test batching with different numbers and sizes of systems."""
     systems = systems_func()
 
     model = FairChemModel(
-        model=None, model_name="uma-s-1", task_name="omat", cpu=device.type == "cpu"
+        model=None, model_name="uma-s-1", task_name="omat", cpu=DEVICE.type == "cpu"
     )
-    state = ts.io.atoms_to_state(systems, device=device, dtype=dtype)
+    state = ts.io.atoms_to_state(systems, device=DEVICE, dtype=DTYPE)
     results = model(state)
 
     assert results["energy"].shape == (expected_count,)
@@ -171,9 +168,7 @@ def test_batch_size_variations(
     get_token() is None, reason="Requires HuggingFace authentication for UMA model access"
 )
 @pytest.mark.parametrize("compute_stress", [True, False])
-def test_stress_computation(
-    *, compute_stress: bool, device: torch.device, dtype: torch.dtype
-) -> None:
+def test_stress_computation(*, compute_stress: bool) -> None:
     """Test stress tensor computation."""
     systems = [bulk("Si", "diamond", a=5.43), bulk("Al", "fcc", a=4.05)]
 
@@ -181,10 +176,10 @@ def test_stress_computation(
         model=None,
         model_name="uma-s-1",
         task_name="omat",
-        cpu=device.type == "cpu",
+        cpu=DEVICE.type == "cpu",
         compute_stress=compute_stress,
     )
-    state = ts.io.atoms_to_state(systems, device=device, dtype=dtype)
+    state = ts.io.atoms_to_state(systems, device=DEVICE, dtype=DTYPE)
     results = model(state)
 
     if compute_stress:
@@ -198,18 +193,17 @@ def test_stress_computation(
 @pytest.mark.skipif(
     get_token() is None, reason="Requires HuggingFace authentication for UMA model access"
 )
-def test_device_consistency(dtype: torch.dtype) -> None:
+def test_device_consistency() -> None:
     """Test device consistency between model and data."""
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    cpu = device.type == "cpu"
+    cpu = DEVICE.type == "cpu"
 
     model = FairChemModel(model=None, model_name="uma-s-1", task_name="omat", cpu=cpu)
     system = bulk("Si", "diamond", a=5.43)
-    state = ts.io.atoms_to_state([system], device=device, dtype=dtype)
+    state = ts.io.atoms_to_state([system], device=DEVICE, dtype=DTYPE)
 
     results = model(state)
-    assert results["energy"].device == device
-    assert results["forces"].device == device
+    assert results["energy"].device == DEVICE
+    assert results["forces"].device == DEVICE
 
 
 @pytest.mark.skipif(
@@ -219,10 +213,36 @@ def test_empty_batch_error() -> None:
     """Test that empty batches raise appropriate errors."""
     model = FairChemModel(model=None, model_name="uma-s-1", task_name="omat", cpu=True)
     with pytest.raises((ValueError, RuntimeError, IndexError)):
-        model(ts.io.atoms_to_state([], device="cpu", dtype=torch.float32))
+        model(ts.io.atoms_to_state([], device=torch.device("cpu"), dtype=torch.float32))
+
+
+@pytest.mark.skipif(
+    get_token() is None, reason="Requires HuggingFace authentication for UMA model access"
+)
+def test_load_from_checkpoint_path(device: torch.device, dtype: torch.dtype) -> None:
+    """Test loading model from a saved checkpoint file path."""
+    checkpoint_path = pretrained_checkpoint_path_from_name("uma-s-1")
+    loaded_model = FairChemModel(
+        model=str(checkpoint_path), task_name="omat", cpu=device.type == "cpu"
+    )
+
+    # Verify the loaded model works
+    system = bulk("Si", "diamond", a=5.43)
+    state = ts.io.atoms_to_state([system], device=device, dtype=dtype)
+    results = loaded_model(state)
+
+    assert "energy" in results
+    assert "forces" in results
+    assert results["energy"].shape == (1,)
+    assert torch.isfinite(results["energy"]).all()
+    assert torch.isfinite(results["forces"]).all()
 
 
 test_fairchem_uma_model_outputs = pytest.mark.skipif(
     get_token() is None,
     reason="Requires HuggingFace authentication for UMA model access",
-)(make_validate_model_outputs_test(model_fixture_name="eqv2_uma_model_pbc"))
+)(
+    make_validate_model_outputs_test(
+        model_fixture_name="eqv2_uma_model_pbc", device=DEVICE, dtype=DTYPE
+    )
+)

@@ -16,6 +16,7 @@ Overview of the TorchSim API.
     properties.correlations
     elastic
     io
+    integrators
     math
     models
     monte_carlo

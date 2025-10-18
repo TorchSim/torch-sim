@@ -39,7 +39,7 @@ except (ImportError, ModuleNotFoundError) as exc:
     warnings.warn(f"MACE import failed: {traceback.format_exc()}", stacklevel=2)
 
     class MaceModel(ModelInterface):
-        """MACE model wrapper for torch_sim.
+        """MACE model wrapper for torch-sim.
 
         This class is a placeholder for the MaceModel class.
         It raises an ImportError if MACE is not installed.
@@ -68,7 +68,7 @@ def to_one_hot(
         torch.Tensor: A tensor of shape (N x num_classes) containing the
             one-hot encodings.
     """
-    shape = indices.shape[:-1] + (num_classes,)
+    shape = (*indices.shape[:-1], num_classes)
     oh = torch.zeros(shape, device=indices.device, dtype=dtype).view(shape)
 
     # scatter_ is the in-place version of scatter
@@ -217,8 +217,8 @@ class MaceModel(ModelInterface):
         # Create ptr tensor for system boundaries
         self.n_atoms_per_system = []
         ptr = [0]
-        for i in range(self.n_systems):
-            system_mask = system_idx == i
+        for sys_idx in range(self.n_systems):
+            system_mask = system_idx == sys_idx
             n_atoms = system_mask.sum().item()
             self.n_atoms_per_system.append(n_atoms)
             ptr.append(ptr[-1] + n_atoms)
@@ -229,7 +229,9 @@ class MaceModel(ModelInterface):
         # Create one-hot encodings for all atoms
         self.node_attrs = to_one_hot(
             torch.tensor(
-                atomic_numbers_to_indices(atomic_numbers.cpu(), z_table=self.z_table),
+                atomic_numbers_to_indices(
+                    atomic_numbers.cpu().numpy(), z_table=self.z_table
+                ),
                 dtype=torch.long,
                 device=self.device,
             ).unsqueeze(-1),
@@ -237,10 +239,7 @@ class MaceModel(ModelInterface):
             dtype=self.dtype,
         )
 
-    def forward(  # noqa: C901
-        self,
-        state: ts.SimState | StateDict,
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:  # noqa: C901
         """Compute energies, forces, and stresses for the given atomic systems.
 
         Processes the provided state information and computes energies, forces, and
@@ -264,38 +263,40 @@ class MaceModel(ModelInterface):
                 or in the forward pass, or if provided in both places.
             ValueError: If system indices are not provided when needed.
         """
-        # Extract required data from input
-        if isinstance(state, dict):
-            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        sim_state = (
+            state
+            if isinstance(state, ts.SimState)
+            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        )
 
         # Handle input validation for atomic numbers
-        if state.atomic_numbers is None and not self.atomic_numbers_in_init:
+        if sim_state.atomic_numbers is None and not self.atomic_numbers_in_init:
             raise ValueError(
                 "Atomic numbers must be provided in either the constructor or forward."
             )
-        if state.atomic_numbers is not None and self.atomic_numbers_in_init:
+        if sim_state.atomic_numbers is not None and self.atomic_numbers_in_init:
             raise ValueError(
                 "Atomic numbers cannot be provided in both the constructor and forward."
             )
 
         # Use system_idx from init if not provided
-        if state.system_idx is None:
+        if sim_state.system_idx is None:
             if not hasattr(self, "system_idx"):
                 raise ValueError(
                     "System indices must be provided if not set during initialization"
                 )
-            state.system_idx = self.system_idx
+            sim_state.system_idx = self.system_idx
 
         # Update system_idx information if new atomic numbers are provided
         if (
-            state.atomic_numbers is not None
+            sim_state.atomic_numbers is not None
             and not self.atomic_numbers_in_init
             and not torch.equal(
-                state.atomic_numbers,
+                sim_state.atomic_numbers,
                 getattr(self, "atomic_numbers", torch.zeros(0, device=self.device)),
             )
         ):
-            self.setup_from_system_idx(state.atomic_numbers, state.system_idx)
+            self.setup_from_system_idx(sim_state.atomic_numbers, sim_state.system_idx)
 
         # Process each system's neighbor list separately
         edge_indices = []
@@ -304,25 +305,25 @@ class MaceModel(ModelInterface):
         offset = 0
 
         # TODO (AG): Currently doesn't work for batched neighbor lists
-        for b in range(self.n_systems):
-            system_mask = state.system_idx == b
+        for sys_idx in range(self.n_systems):
+            system_mask = sim_state.system_idx == sys_idx
             # Calculate neighbor list for this system
             edge_idx, shifts_idx = self.neighbor_list_fn(
-                positions=state.positions[system_mask],
-                cell=state.row_vector_cell[b],
-                pbc=state.pbc,
+                positions=sim_state.positions[system_mask],
+                cell=sim_state.row_vector_cell[sys_idx],
+                pbc=sim_state.pbc,
                 cutoff=self.r_max,
             )
 
             # Adjust indices for the system
             edge_idx = edge_idx + offset
-            shifts = torch.mm(shifts_idx, state.row_vector_cell[b])
+            shifts = torch.mm(shifts_idx, sim_state.row_vector_cell[sys_idx])
 
             edge_indices.append(edge_idx)
             unit_shifts_list.append(shifts_idx)
             shifts_list.append(shifts)
 
-            offset += len(state.positions[system_mask])
+            offset += len(sim_state.positions[system_mask])
 
         # Combine all neighbor lists
         edge_index = torch.cat(edge_indices, dim=1)
@@ -334,10 +335,10 @@ class MaceModel(ModelInterface):
             dict(
                 ptr=self.ptr,
                 node_attrs=self.node_attrs,
-                batch=state.system_idx,
-                pbc=state.pbc,
-                cell=state.row_vector_cell,
-                positions=state.positions,
+                batch=sim_state.system_idx,
+                pbc=sim_state.pbc,
+                cell=sim_state.row_vector_cell,
+                positions=sim_state.positions,
                 edge_index=edge_index,
                 unit_shifts=unit_shifts,
                 shifts=shifts,
@@ -346,7 +347,7 @@ class MaceModel(ModelInterface):
             compute_stress=self.compute_stress,
         )
 
-        results = {}
+        results: dict[str, torch.Tensor] = {}
 
         # Process energy
         energy = out["energy"]

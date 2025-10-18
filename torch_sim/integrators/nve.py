@@ -1,6 +1,6 @@
 """Implementations of NVE integrators."""
 
-from collections.abc import Callable
+from typing import Any
 
 import torch
 
@@ -15,128 +15,94 @@ from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
-def nve(
+def nve_init(
+    state: SimState | StateDict,
     model: ModelInterface,
     *,
-    dt: torch.Tensor,
     kT: torch.Tensor,
     seed: int | None = None,
-) -> tuple[
-    Callable[[SimState | StateDict, torch.Tensor], MDState],
-    Callable[[MDState, torch.Tensor], MDState],
-]:
-    """Initialize and return an NVE (microcanonical) integrator.
+    **_kwargs: Any,
+) -> MDState:
+    """Initialize an NVE state from input data.
 
-    This function sets up integration in the NVE ensemble, where particle number (N),
-    volume (V), and total energy (E) are conserved. It returns both an initialization
-    function and an update function for time evolution.
-
-    The initialization function samples initial momenta from a Maxwell-Boltzmann
-    distribution at the specified temperature, while the update function
-    implements the velocity Verlet algorithm for energy-conserving dynamics.
+    Creates an initial state for NVE molecular dynamics by computing initial
+    energies and forces, and sampling momenta from a Maxwell-Boltzmann distribution
+    at the specified temperature.
 
     Args:
-        model (torch.nn.Module): Neural network model that computes energies and forces.
+        model: Neural network model that computes energies and forces.
             Must return a dict with 'energy' and 'forces' keys.
-        dt (torch.Tensor): Integration timestep, either scalar or with shape [n_systems]
-        kT (torch.Tensor): Temperature in energy units for initializing momenta,
-            either scalar or with shape [n_systems]
-        seed (int, optional): Random seed for reproducibility. Defaults to None.
+        state: Either a SimState object or a dictionary containing positions,
+            masses, cell, pbc, and other required state variables
+        kT: Temperature in energy units for initializing momenta,
+            scalar or with shape [n_systems]
+        seed: Random seed for reproducibility
 
     Returns:
-        tuple:
-            - callable: Function to initialize the MDState from input data and kT
-              with signature: init_fn(state, kT=kT, seed=seed) -> MDState
-            - callable: Update function that evolves system by one timestep
-              with signature: update_fn(state, dt=dt) -> MDState
+        MDState: Initialized state for NVE integration containing positions,
+            momenta, forces, energy, and other required attributes
 
     Notes:
-        - Uses velocity Verlet algorithm for time-reversible integration
-        - Conserves total energy in the absence of numerical errors
         - Initial velocities sampled from Maxwell-Boltzmann distribution
         - Time integration error scales as O(dt²)
     """
+    if not isinstance(state, SimState):
+        state = SimState(**state)
 
-    def nve_init(
-        state: SimState | StateDict,
-        kT: torch.Tensor = kT,
-        seed: int | None = seed,
-    ) -> MDState:
-        """Initialize an NVE state from input data.
+    model_output = model(state)
 
-        Creates an initial state for NVE molecular dynamics by computing initial
-        energies and forces, and sampling momenta from a Maxwell-Boltzmann distribution
-        at the specified temperature.
+    momenta = getattr(
+        state,
+        "momenta",
+        calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
+    )
 
-        Args:
-            state (SimState | StateDict): Either a SimState object or a dictionary
-                containing positions, masses, cell, pbc, and other required state
-                variables
-            kT (torch.Tensor): Temperature in energy units for initializing momenta,
-                scalar or with shape [n_systems]
-            seed (int, optional): Random seed for reproducibility
+    return MDState(
+        positions=state.positions,
+        momenta=momenta,
+        energy=model_output["energy"],
+        forces=model_output["forces"],
+        masses=state.masses,
+        cell=state.cell,
+        pbc=state.pbc,
+        system_idx=state.system_idx,
+        atomic_numbers=state.atomic_numbers,
+    )
 
-        Returns:
-            MDState: Initialized state for NVE integration containing positions,
-                momenta, forces, energy, and other required attributes
-        """
-        # Extract required data from input
-        if not isinstance(state, SimState):
-            state = SimState(**state)
 
-        model_output = model(state)
+def nve_step(
+    state: MDState, model: ModelInterface, *, dt: torch.Tensor, **_kwargs: Any
+) -> MDState:
+    """Perform one complete NVE (microcanonical) integration step.
 
-        momenta = getattr(
-            state,
-            "momenta",
-            calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
-        )
+    This function implements the velocity Verlet algorithm for NVE dynamics,
+    which provides energy-conserving time evolution. The integration sequence is:
+    1. Half momentum update using current forces
+    2. Full position update using updated momenta
+    3. Force update at new positions
+    4. Half momentum update using new forces
 
-        initial_state = MDState(
-            positions=state.positions,
-            momenta=momenta,
-            energy=model_output["energy"],
-            forces=model_output["forces"],
-            masses=state.masses,
-            cell=state.cell,
-            pbc=state.pbc,
-            system_idx=state.system_idx,
-            atomic_numbers=state.atomic_numbers,
-        )
-        return initial_state  # noqa: RET504
+    Args:
+        model: Neural network model that computes energies and forces.
+            Must return a dict with 'energy' and 'forces' keys.
+        state: Current system state containing positions, momenta, forces
+        dt: Integration timestep, either scalar or shape [n_systems]
 
-    def nve_update(state: MDState, dt: torch.Tensor = dt, **_) -> MDState:
-        """Perform one complete NVE (microcanonical) integration step.
+    Returns:
+        MDState: Updated state after one complete NVE step with new positions,
+            momenta, forces, and energy
 
-        This function implements the velocity Verlet algorithm for NVE dynamics,
-        which provides energy-conserving time evolution. The integration sequence is:
-        1. Half momentum update using current forces
-        2. Full position update using updated momenta
-        3. Force update at new positions
-        4. Half momentum update using new forces
+    Notes:
+        - Uses velocity Verlet algorithm for time reversible integration
+        - Conserves energy in the absence of numerical errors
+        - Handles periodic boundary conditions if enabled in state
+        - Symplectic integrator preserving phase space volume
+    """
+    state = momentum_step(state, dt / 2)
+    state = position_step(state, dt)
 
-        Args:
-            state (MDState): Current system state containing positions, momenta, forces
-            dt (torch.Tensor): Integration timestep, either scalar or shape [n_systems]
-            **_: Additional unused keyword arguments (for compatibility)
+    model_output = model(state)
+    state.energy = model_output["energy"]
+    state.forces = model_output["forces"]
 
-        Returns:
-            MDState: Updated state after one complete NVE step with new positions,
-                momenta, forces, and energy
-
-        Notes:
-            - Uses velocity Verlet algorithm for time reversible integration
-            - Conserves energy in the absence of numerical errors
-            - Handles periodic boundary conditions if enabled in state
-            - Symplectic integrator preserving phase space volume
-        """
-        state = momentum_step(state, dt / 2)
-        state = position_step(state, dt)
-
-        model_output = model(state)
-        state.energy = model_output["energy"]
-        state.forces = model_output["forces"]
-
-        return momentum_step(state, dt / 2)
-
-    return nve_init, nve_update
+    return momentum_step(state, dt / 2)

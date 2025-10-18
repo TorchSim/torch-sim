@@ -1,4 +1,4 @@
-"""FairChem model wrapper for torch_sim.
+"""FairChem model wrapper for torch-sim.
 
 Provides a TorchSim-compatible interface to FairChem models for computing
 energies, forces, and stresses of atomistic systems.
@@ -8,6 +8,7 @@ Requires fairchem-core to be installed.
 
 from __future__ import annotations
 
+import os
 import traceback
 import typing
 import warnings
@@ -29,7 +30,7 @@ except ImportError as exc:
     warnings.warn(f"FairChem import failed: {traceback.format_exc()}", stacklevel=2)
 
     class FairChemModel(ModelInterface):
-        """FairChem model wrapper for torch_sim.
+        """FairChem model wrapper for torch-sim.
 
         This class is a placeholder for the FairChemModel class.
         It raises an ImportError if FairChem is not installed.
@@ -74,6 +75,7 @@ class FairChemModel(ModelInterface):
         neighbor_list_fn: Callable | None = None,
         *,  # force remaining arguments to be keyword-only
         model_name: str | None = None,
+        model_cache_dir: str | Path | None = None,
         cpu: bool = False,
         dtype: torch.dtype | None = None,
         compute_stress: bool = False,
@@ -86,6 +88,7 @@ class FairChemModel(ModelInterface):
             neighbor_list_fn (Callable | None): Function to compute neighbor lists
                 (not currently supported)
             model_name (str | None): Name of pretrained model to load
+            model_cache_dir (str | Path | None): Path where to save the model
             cpu (bool): Whether to use CPU instead of GPU for computation
             dtype (torch.dtype | None): Data type to use for computation
             compute_stress (bool): Whether to compute stress tensor
@@ -132,7 +135,22 @@ class FairChemModel(ModelInterface):
         self.task_name = task_name
 
         # Create efficient batch predictor for fast inference
-        self.predictor = pretrained_mlip.get_predict_unit(str(model), device=device_str)
+        if model in pretrained_mlip.available_models:
+            if model_cache_dir and model_cache_dir.exists():
+                self.predictor = pretrained_mlip.get_predict_unit(
+                    model, device=device_str, cache_dir=model_cache_dir
+                )
+            else:
+                self.predictor = pretrained_mlip.get_predict_unit(
+                    model, device=device_str
+                )
+        elif os.path.isfile(model):
+            self.predictor = pretrained_mlip.load_predict_unit(model, device=device_str)
+        else:
+            raise ValueError(
+                f"Invalid model name or checkpoint path: {model}. "
+                f"Available pretrained models are: {pretrained_mlip.available_models}"
+            )
 
         # Determine implemented properties
         # This is a simplified approach - in practice you might want to
@@ -165,39 +183,43 @@ class FairChemModel(ModelInterface):
                 - forces (torch.Tensor): Forces with shape [n_atoms, 3]
                 - stress (torch.Tensor): Stress tensor with shape [batch_size, 3, 3]
         """
-        if isinstance(state, dict):
-            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        sim_state = (
+            state
+            if isinstance(state, ts.SimState)
+            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        )
 
-        if state.device != self._device:
-            state = state.to(self._device)
+        if sim_state.device != self._device:
+            sim_state = sim_state.to(self._device)
 
-        if state.system_idx is None:
-            state.system_idx = torch.zeros(state.positions.shape[0], dtype=torch.int)
+        # Ensure system_idx has integer dtype (SimState guarantees presence)
+        if sim_state.system_idx.dtype != torch.int64:
+            sim_state.system_idx = sim_state.system_idx.to(dtype=torch.int64)
 
         # Convert SimState to AtomicData objects for efficient batch processing
         from ase import Atoms
 
-        natoms = torch.bincount(state.system_idx)
+        n_atoms = torch.bincount(sim_state.system_idx)
         atomic_data_list = []
 
-        for i, (n, c) in enumerate(
-            zip(natoms, torch.cumsum(natoms, dim=0), strict=False)
+        for idx, (n, c) in enumerate(
+            zip(n_atoms, torch.cumsum(n_atoms, dim=0), strict=False)
         ):
             # Extract system data
-            positions = state.positions[c - n : c].cpu().numpy()
-            atomic_numbers = state.atomic_numbers[c - n : c].cpu().numpy()
+            positions = sim_state.positions[c - n : c].cpu().numpy()
+            atomic_nums = sim_state.atomic_numbers[c - n : c].cpu().numpy()
             cell = (
-                state.row_vector_cell[i].cpu().numpy()
-                if state.row_vector_cell is not None
+                sim_state.row_vector_cell[idx].cpu().numpy()
+                if sim_state.row_vector_cell is not None
                 else None
             )
 
             # Create ASE Atoms object first
             atoms = Atoms(
-                numbers=atomic_numbers,
+                numbers=atomic_nums,
                 positions=positions,
                 cell=cell,
-                pbc=state.pbc if cell is not None else False,
+                pbc=sim_state.pbc if cell is not None else False,
             )
 
             # Convert ASE Atoms to AtomicData (task_name only applies to UMA models)
@@ -214,8 +236,8 @@ class FairChemModel(ModelInterface):
         # Run efficient batch prediction
         predictions = self.predictor.predict(batch)
 
-        # Convert predictions to torch_sim format
-        results = {}
+        # Convert predictions to torch-sim format
+        results: dict[str, torch.Tensor] = {}
         results["energy"] = predictions["energy"].to(dtype=self._dtype)
         results["forces"] = predictions["forces"].to(dtype=self._dtype)
 

@@ -1,13 +1,7 @@
-# %% [markdown]
-# <details>
-#   <summary>Dependencies</summary>
+# %%
 # /// script
-# dependencies = [
-#     "mace-torch>=0.3.12",
-#     "pymatgen>=2025.2.18",
-# ]
+# dependencies = ["mace-torch>=0.3.12", "pymatgen>=2025.2.18"]
 # ///
-# </details>
 
 
 # %% [markdown]
@@ -34,15 +28,16 @@ for this example, but any TorchSim compatible model would work.
 """
 
 # %%
-from typing import ClassVar
+from typing import ClassVar, cast
 import torch
 import torch_sim as ts
 from mace.calculators.foundations_models import mace_mp
 from torch_sim.integrators.md import MDState
 from torch_sim.models.mace import MaceModel
+from torch_sim.monte_carlo import SwapMCState
 
 # Initialize the mace model
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(model=mace, device=device)
 
@@ -95,7 +90,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class HybridSwapMCState(ts.integrators.MDState):
+class HybridSwapMCState(SwapMCState, MDState):
     """State for hybrid MD-Monte Carlo simulations.
 
     This state class extends the standard MDState with:
@@ -127,18 +122,16 @@ from torch_sim.units import MetalUnits
 kT = 1000 * MetalUnits.temperature
 
 # Initialize NVT Langevin dynamics state
-nvt_init, nvt_step = ts.nvt_langevin(model=mace_model, dt=0.002, kT=kT, seed=42)
-md_state = nvt_init(state)
+md_state = ts.nvt_langevin_init(state=state, model=mace_model, kT=kT, seed=42)
 
 # Initialize swap Monte Carlo state
-swap_init, swap_step = ts.swap_monte_carlo(model=mace_model, kT=kT, seed=42)
-swap_state = swap_init(md_state)
+swap_state = ts.swap_mc_init(state=md_state, model=mace_model)
 
 # Create hybrid state combining both
 hybrid_state = HybridSwapMCState(
     **vars(md_state),
-    last_permutation=torch.zeros(
-        md_state.n_systems, device=md_state.device, dtype=torch.bool
+    last_permutation=torch.arange(
+        md_state.n_atoms, device=md_state.device, dtype=torch.long
     ),
 )
 
@@ -156,15 +149,22 @@ This creates a simulation that can both:
 - Make larger compositional changes through swap moves
 """
 
-# %% Run the hybrid simulation
+# %%
+# Create a persistent PRNG for reproducibility across the whole run
+rng = torch.Generator(device=mace_model.device)
+rng.manual_seed(42)
+
+# Run the hybrid simulation
 n_steps = 100
 for step in range(n_steps):
-    if step % 10 == 0:
-        # Attempt swap Monte Carlo move
-        hybrid_state = swap_step(hybrid_state, kT=torch.tensor(kT))
-    else:
-        # Perform MD step
-        hybrid_state = nvt_step(hybrid_state, dt=torch.tensor(0.002), kT=torch.tensor(kT))
+    if step % 10 == 0:  # Attempt swap Monte Carlo move
+        hybrid_state = ts.swap_mc_step(
+            state=hybrid_state, model=mace_model, kT=kT, rng=rng
+        )
+    else:  # Perform MD step
+        hybrid_state = ts.nvt_langevin_step(
+            model=mace_model, state=hybrid_state, dt=0.002, kT=kT
+        )
 
     if step % 20 == 0:
         print(f"Step {step}: Energy = {hybrid_state.energy.item():.3f} eV")
@@ -172,13 +172,10 @@ for step in range(n_steps):
 
 # %% [markdown]
 """
-## Concluding Remarks
-
 This tutorial demonstrated how to combine different TorchSim components to create
 new simulation methods. Key takeaways:
 
 1. TorchSim's components (integrators, MC movers, etc.) are designed to be modular
 2. Custom state objects can combine features from different simulation types
 3. Complex simulation workflows can be built by mixing and matching components
-
 """

@@ -12,7 +12,6 @@ from torch_sim.autobatching import (
     to_constant_volume_bins,
 )
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.optimizers import unit_cell_fire
 
 
 def test_exact_fit():
@@ -24,8 +23,9 @@ def test_exact_fit():
 def test_weight_pos():
     values = [[1, "x"], [2, "y"], [1, "z"]]
     bins = to_constant_volume_bins(values, 2, weight_pos=0)
-    for bin_ in bins:
-        for item in bin_:
+    for vol_bin in bins:
+        for item in vol_bin:
+            assert isinstance(item, list)
             assert isinstance(item[0], int)
             assert isinstance(item[1], str)
 
@@ -34,8 +34,9 @@ def test_key_func():
     values = [{"x": "a", "y": 1}, {"x": "b", "y": 5}, {"x": "b", "y": 3}]
     bins = to_constant_volume_bins(values, 2, key=lambda x: x["y"])
 
-    for bin_ in bins:
-        for item in bin_:
+    for vol_bin in bins:
+        for item in vol_bin:
+            assert isinstance(item, dict)
             assert "x" in item
             assert "y" in item
 
@@ -147,7 +148,7 @@ def test_binning_auto_batcher(
     assert batcher.memory_scalers[1] == fe_supercell_sim_state.n_atoms
 
     # Get batches until None is returned
-    batches = list(batcher)
+    batches = [batch for batch, _ in batcher]
 
     # Check we got the expected number of systems
     assert len(batches) == len(batcher.batched_states)
@@ -172,7 +173,7 @@ def test_binning_auto_batcher_auto_metric(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test BinningAutoBatcher with different states."""
-    # monkeypath determine max memory scaler
+    # monkeypatch determine max memory scaler
     monkeypatch.setattr(
         "torch_sim.autobatching.determine_max_batch_size",
         lambda *args, **kwargs: 50,  # noqa: ARG005
@@ -194,7 +195,7 @@ def test_binning_auto_batcher_auto_metric(
     assert batcher.memory_scalers[1] == fe_supercell_sim_state.n_atoms
 
     # Get batches until None is returned
-    batches = list(batcher)
+    batches = [batch for batch, _ in batcher]
 
     # Check we got the expected number of batches
     assert len(batches) == len(batcher.batched_states)
@@ -217,18 +218,17 @@ def test_binning_auto_batcher_with_indices(
     fe_supercell_sim_state: ts.SimState,
     lj_model: LennardJonesModel,
 ) -> None:
-    """Test BinningAutoBatcher with return_indices=True."""
+    """Test BinningAutoBatcher with indices tracking."""
     states = [si_sim_state, fe_supercell_sim_state]
 
     batcher = BinningAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260.0,
-        return_indices=True,
     )
     batcher.load_states(states)
 
-    # Get batches with indices
+    # Get batches and track indices manually
     batches_with_indices = []
     for batch, indices in batcher:
         batches_with_indices.append((batch, indices))
@@ -237,8 +237,8 @@ def test_binning_auto_batcher_with_indices(
     assert len(batches_with_indices) == len(batcher.batched_states)
 
     # Check that the indices match the expected bin indices
-    for i, (_, indices) in enumerate(batches_with_indices):
-        assert indices == batcher.index_bins[i]
+    for idx, (_, indices) in enumerate(batches_with_indices):
+        assert indices == batcher.index_bins[idx]
 
 
 def test_binning_auto_batcher_restore_order_with_split_states(
@@ -258,14 +258,9 @@ def test_binning_auto_batcher_restore_order_with_split_states(
     )
     batcher.load_states(states)
 
-    # Get batches until None is returned
+    # loop through all batches to test we're restore order correctly
     batches = []
-    while True:
-        batch = batcher.next_batch()
-        if batch is None:
-            break
-        # Split each batch into individual states to simulate processing
-        # split_batch = split_state(batch)
+    for batch, _indices in batcher:
         batches.append(batch)
 
     # Test restore_original_order with split states
@@ -318,23 +313,21 @@ def test_in_flight_auto_batcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260,  # Set a small value to force multiple batches
-        return_indices=True,
     )
     batcher.load_states(states)
 
     # Get the first batch
-    first_batch, [], _ = batcher.next_batch(states, None)
+    first_batch, [] = batcher.next_batch(states, None)
     assert isinstance(first_batch, ts.SimState)
 
     # Create a convergence tensor where the first state has converged
     convergence = torch.tensor([True])
 
     # Get the next batch
-    next_batch, popped_batch, idx = batcher.next_batch(first_batch, convergence)
+    next_batch, popped_batch = batcher.next_batch(first_batch, convergence)
     assert isinstance(next_batch, ts.SimState)
     assert isinstance(popped_batch, list)
     assert isinstance(popped_batch[0], ts.SimState)
-    assert idx == [1]
 
     # Check that the converged state was removed
     assert len(batcher.current_scalers) == 1
@@ -345,7 +338,7 @@ def test_in_flight_auto_batcher(
     convergence = torch.tensor([True])
 
     # Get the next batch, which should be None since all states have converged
-    final_batch, popped_batch, _ = batcher.next_batch(next_batch, convergence)
+    final_batch, popped_batch = batcher.next_batch(next_batch, convergence)
     assert final_batch is None
 
     # Check that all states are marked as completed
@@ -451,8 +444,8 @@ def test_in_flight_auto_batcher_restore_order(
     "num_steps_per_batch",
     [
         5,  # At 5 steps, not every state will converge before the next batch.
-        #       This tests the merging of partially converged states with new states
-        #       which has been a bug in the past. See https://github.com/TorchSim/torch-sim/pull/219
+        # This tests the merging of partially converged states with new states
+        # which has been a bug in the past.
         10,  # At 10 steps, all states will converge before the next batch
     ],
 )
@@ -462,10 +455,10 @@ def test_in_flight_with_fire(
     lj_model: LennardJonesModel,
     num_steps_per_batch: int,
 ) -> None:
-    fire_init, fire_update = unit_cell_fire(lj_model)
-
-    si_fire_state = fire_init(si_sim_state)
-    fe_fire_state = fire_init(fe_supercell_sim_state)
+    si_fire_state = ts.fire_init(si_sim_state, lj_model, cell_filter=ts.CellFilter.unit)
+    fe_fire_state = ts.fire_init(
+        fe_supercell_sim_state, lj_model, cell_filter=ts.CellFilter.unit
+    )
 
     fire_states = [si_fire_state, fe_fire_state] * 5
     fire_states = [state.clone() for state in fire_states]
@@ -480,7 +473,7 @@ def test_in_flight_with_fire(
     )
     batcher.load_states(fire_states)
 
-    def convergence_fn(state: ts.SimState) -> bool:
+    def convergence_fn(state: ts.FireState) -> torch.Tensor:
         system_wise_max_force = torch.zeros(
             state.n_systems, device=state.device, dtype=torch.float64
         )
@@ -499,7 +492,7 @@ def test_in_flight_with_fire(
             break
 
         for _ in range(num_steps_per_batch):
-            state = fire_update(state)
+            state = ts.fire_step(state=state, model=lj_model)
         convergence_tensor = convergence_fn(state)
 
     assert len(all_completed_states) == len(fire_states)
@@ -510,10 +503,10 @@ def test_binning_auto_batcher_with_fire(
     fe_supercell_sim_state: ts.SimState,
     lj_model: LennardJonesModel,
 ) -> None:
-    fire_init, fire_update = unit_cell_fire(lj_model)
-
-    si_fire_state = fire_init(si_sim_state)
-    fe_fire_state = fire_init(fe_supercell_sim_state)
+    si_fire_state = ts.fire_init(si_sim_state, lj_model, cell_filter=ts.CellFilter.unit)
+    fe_fire_state = ts.fire_init(
+        fe_supercell_sim_state, lj_model, cell_filter=ts.CellFilter.unit
+    )
 
     fire_states = [si_fire_state, fe_fire_state] * 5
     fire_states = [state.clone() for state in fire_states]
@@ -531,10 +524,10 @@ def test_binning_auto_batcher_with_fire(
 
     finished_states = []
     n_systems = 0
-    for batch in batcher:
+    for batch, _ in batcher:
         n_systems += 1
         for _ in range(5):
-            batch = fire_update(batch)
+            batch = ts.fire_step(state=batch, model=lj_model)
 
         finished_states.extend(batch.split())
 
@@ -567,6 +560,7 @@ def test_in_flight_max_iterations(
 
     # Get the first batch
     state, [] = batcher.next_batch(None, None)
+    assert state is not None
 
     # Create a convergence tensor that never converges
     convergence_tensor = torch.zeros(state.n_systems, dtype=torch.bool)
@@ -594,5 +588,5 @@ def test_in_flight_max_iterations(
     assert iteration_count == 3
 
     # Verify swap_attempts tracking
-    for i in range(len(states)):
-        assert batcher.swap_attempts[i] == max_attempts
+    for idx in range(len(states)):
+        assert batcher.swap_attempts[idx] == max_attempts

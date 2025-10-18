@@ -3,8 +3,9 @@
 import pytest
 import torch
 from numpy.testing import assert_allclose
-from torch._tensor import Tensor
+from torch import Tensor
 
+from tests.conftest import DEVICE, DTYPE
 from torch_sim.quantities import (
     calc_heat_flux,
     calc_kinetic_energy,
@@ -12,10 +13,6 @@ from torch_sim.quantities import (
     calc_temperature,
 )
 from torch_sim.units import MetalUnits
-
-
-DTYPE = torch.float64
-DEVICE = torch.device("cpu")
 
 
 class TestHeatFlux:

@@ -18,8 +18,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-14]
         version:
-          - { python: "3.11", resolution: highest }
-          - { python: "3.12", resolution: lowest-direct }
+          - { python: '3.12', resolution: highest }
+          - { python: '3.13', resolution: lowest-direct }
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -55,8 +55,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-14]
         version:
-          - { python: "3.11", resolution: highest }
-          - { python: "3.12", resolution: lowest-direct }
+          - { python: '3.12', resolution: highest }
+          - { python: '3.13', resolution: lowest-direct }
         model:
           - { name: fairchem, test_path: "tests/models/test_fairchem.py" }
           - { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
@@ -66,8 +66,14 @@ jobs:
           - { name: mace, test_path: "tests/test_optimizers_vs_ase.py" }
           - { name: mattersim, test_path: "tests/models/test_mattersim.py" }
           - { name: metatomic, test_path: "tests/models/test_metatomic.py" }
+          - { name: nequip, test_path: "tests/models/test_nequip_framework.py" }
           - { name: orb, test_path: "tests/models/test_orb.py" }
           - { name: sevenn, test_path: "tests/models/test_sevennet.py" }
+        exclude:
+          - version: { python: '3.13', resolution: lowest-direct }
+            model: { name: orb, test_path: "tests/models/test_orb.py" }
+          - version: { python: '3.13', resolution: lowest-direct }
+            model: { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -90,6 +96,10 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
 
+      - name: Install HDF5 on macOS
+        if: runner.os == 'macOS'
+        run: brew install hdf5
+
       - name: Install legacy fairchem repository and dependencies
         if: ${{ matrix.model.name == 'fairchem-legacy' }}
         run: |
@@ -101,6 +111,7 @@ jobs:
           fi
           uv pip install -e fairchem-repo/packages/fairchem-core[dev] --system
           uv pip install -e ".[test]" --resolution=${{ matrix.version.resolution }} --system
+
 
       - name: Install torch_sim with model dependencies
         if: ${{ matrix.model.name != 'fairchem-legacy' }}
@@ -152,7 +163,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: '3.12'
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
