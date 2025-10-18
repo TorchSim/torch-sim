@@ -219,16 +219,16 @@ def test_empty_batch_error() -> None:
 @pytest.mark.skipif(
     get_token() is None, reason="Requires HuggingFace authentication for UMA model access"
 )
-def test_load_from_checkpoint_path(device: torch.device, dtype: torch.dtype) -> None:
+def test_load_from_checkpoint_path() -> None:
     """Test loading model from a saved checkpoint file path."""
     checkpoint_path = pretrained_checkpoint_path_from_name("uma-s-1")
     loaded_model = FairChemModel(
-        model=str(checkpoint_path), task_name="omat", cpu=device.type == "cpu"
+        model=str(checkpoint_path), task_name="omat", cpu=DEVICE == "cpu"
     )
 
     # Verify the loaded model works
     system = bulk("Si", "diamond", a=5.43)
-    state = ts.io.atoms_to_state([system], device=device, dtype=dtype)
+    state = ts.io.atoms_to_state([system], device=DEVICE, dtype=DTYPE)
     results = loaded_model(state)
 
     assert "energy" in results
