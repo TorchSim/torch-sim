@@ -119,6 +119,7 @@ jobs:
           uv pip install -e ".[test,${{ matrix.model.name }}]" --resolution=${{ matrix.version.resolution }} --system
 
       - name: Run ${{ matrix.model.test_path }} tests
+        if: ${{ !contains(matrix.model.name, 'fairchem') || github.event.pull_request.head.repo.fork == false }}
         env:
           HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
         run: |
@@ -169,6 +170,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Run example
+        if: ${{ !contains(matrix.example, 'fairchem') || github.event.pull_request.head.repo.fork == false }}
         env:
           HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
         run: |
