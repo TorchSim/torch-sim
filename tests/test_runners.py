@@ -34,7 +34,7 @@ def test_integrate_nve(
     final_state = ts.integrate(
         system=ar_supercell_sim_state,
         model=lj_model,
-        integrator=ts.MdFlavor.nve,
+        integrator=ts.Integrator.nve,
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
@@ -71,7 +71,7 @@ def test_integrate_single_nvt(
     final_state = ts.integrate(
         system=ar_supercell_sim_state,
         model=lj_model,
-        integrator=ts.MdFlavor.nvt_langevin,
+        integrator=ts.Integrator.nvt_langevin,
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
@@ -95,7 +95,7 @@ def test_integrate_double_nvt(
     final_state = ts.integrate(
         system=ar_double_sim_state,
         model=lj_model,
-        integrator=ts.MdFlavor.nvt_langevin,
+        integrator=ts.Integrator.nvt_langevin,
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
@@ -126,7 +126,7 @@ def test_integrate_double_nvt_with_reporter(
     final_state = ts.integrate(
         system=ar_double_sim_state,
         model=lj_model,
-        integrator=ts.MdFlavor.nvt_langevin,
+        integrator=ts.Integrator.nvt_langevin,
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
@@ -176,7 +176,7 @@ def test_integrate_many_nvt(
     final_state = ts.integrate(
         system=triple_state,
         model=lj_model,
-        integrator=ts.MdFlavor.nve,
+        integrator=ts.Integrator.nve,
         n_steps=10,
         temperature=300.0,  # K
         timestep=0.001,  # ps
@@ -213,7 +213,7 @@ def test_integrate_with_autobatcher(
     final_states = ts.integrate(
         system=triple_state,
         model=lj_model,
-        integrator=ts.MdFlavor.nve,
+        integrator=ts.Integrator.nve,
         n_steps=10,
         temperature=300.0,
         timestep=0.001,
@@ -255,7 +255,7 @@ def test_integrate_with_autobatcher_and_reporting(
     final_states = ts.integrate(
         system=triple_state,
         model=lj_model,
-        integrator=ts.MdFlavor.nve,
+        integrator=ts.Integrator.nve,
         n_steps=10,
         temperature=300.0,
         timestep=0.001,
@@ -302,7 +302,7 @@ def test_optimize_fire(
     final_state = ts.optimize(
         system=ar_supercell_sim_state,
         model=lj_model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         trajectory_reporter=reporter,
         init_kwargs={"cell_filter": ts.CellFilter.unit},
@@ -328,7 +328,8 @@ def test_default_converged_fn(
 
     traj_file = tmp_path / "opt.h5md"
     reporter = TrajectoryReporter(
-        filenames=traj_file, prop_calculators={1: {"energy": lambda state: state.energy}}
+        filenames=traj_file,
+        prop_calculators={1: {"energy": lambda state: state.energy}},
     )
 
     original_state = ar_supercell_sim_state.clone()
@@ -336,7 +337,7 @@ def test_default_converged_fn(
     final_state = ts.optimize(
         system=ar_supercell_sim_state,
         model=lj_model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         trajectory_reporter=reporter,
         init_kwargs={"cell_filter": ts.CellFilter.unit},
     )
@@ -373,7 +374,7 @@ def test_batched_optimize_fire(
     final_state = ts.optimize(
         system=ar_double_sim_state,
         model=lj_model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-5),
         trajectory_reporter=reporter,
         max_steps=500,
@@ -401,7 +402,7 @@ def test_optimize_with_autobatcher(
     final_states = ts.optimize(
         system=triple_state,
         model=lj_model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         autobatcher=autobatcher,
         init_kwargs={"cell_filter": ts.CellFilter.unit},
@@ -446,7 +447,7 @@ def test_optimize_with_autobatcher_and_reporting(
     final_states = ts.optimize(
         system=triple_state,
         model=lj_model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         trajectory_reporter=reporter,
         autobatcher=autobatcher,
@@ -498,7 +499,7 @@ def test_integrate_with_default_autobatcher(
     final_states = ts.integrate(
         system=triple_state,
         model=lj_model,
-        integrator=ts.MdFlavor.nve,
+        integrator=ts.Integrator.nve,
         n_steps=10,
         temperature=300.0,
         timestep=0.001,
@@ -534,7 +535,7 @@ def test_optimize_with_default_autobatcher(
     final_states = ts.optimize(
         system=triple_state,
         model=lj_model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         autobatcher=True,
         init_kwargs={"cell_filter": ts.CellFilter.unit},
@@ -793,7 +794,7 @@ def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:
         n_steps=50,
         timestep=0.002,
         temperature=1000,
-        integrator=ts.MdFlavor.nvt_langevin,
+        integrator=ts.Integrator.nvt_langevin,
         trajectory_reporter=dict(filenames=trajectory_files, state_frequency=10),
     )
 
@@ -809,7 +810,7 @@ def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:
     relaxed_state = ts.optimize(
         system=final_state,
         model=lj_model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         # autobatcher=True,  # disabled for CPU-based LJ model in test
         init_kwargs={"cell_filter": ts.CellFilter.frechet},
     )

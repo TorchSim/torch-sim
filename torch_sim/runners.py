@@ -16,10 +16,10 @@ from tqdm import tqdm
 
 import torch_sim as ts
 from torch_sim.autobatching import BinningAutoBatcher, InFlightAutoBatcher
-from torch_sim.integrators import INTEGRATOR_REGISTRY, MdFlavor
+from torch_sim.integrators import INTEGRATOR_REGISTRY, Integrator
 from torch_sim.integrators.md import MDState
 from torch_sim.models.interface import ModelInterface
-from torch_sim.optimizers import OPTIM_REGISTRY, FireState, OptimFlavor, OptimState
+from torch_sim.optimizers import OPTIM_REGISTRY, FireState, Optimizer, OptimState
 from torch_sim.state import SimState
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.typing import StateLike
@@ -106,7 +106,7 @@ def integrate[T: SimState](  # noqa: C901
     system: StateLike,
     model: ModelInterface,
     *,
-    integrator: MdFlavor | tuple[Callable[..., T], Callable[..., T]],
+    integrator: Integrator | tuple[Callable[..., T], Callable[..., T]],
     n_steps: int,
     temperature: float | list | torch.Tensor,
     timestep: float,
@@ -120,7 +120,7 @@ def integrate[T: SimState](  # noqa: C901
     Args:
         system (StateLike): Input system to simulate
         model (ModelInterface): Neural network model module
-        integrator (MdFlavor | tuple): Either a key from MdFlavor or a tuple of
+        integrator (Integrator | tuple): Either a key from Integrator or a tuple of
             (init_func, step_func) functions.
         n_steps (int): Number of integration steps
         temperature (float | ArrayLike): Temperature or array of temperatures for each
@@ -154,7 +154,7 @@ def integrate[T: SimState](  # noqa: C901
     dt = torch.tensor(timestep * unit_system.time, dtype=dtype, device=device)
 
     # Handle both string names and direct function tuples
-    if isinstance(integrator, MdFlavor):
+    if isinstance(integrator, Integrator):
         init_func, step_func = INTEGRATOR_REGISTRY[integrator]
     elif (
         isinstance(integrator, tuple)
@@ -164,7 +164,7 @@ def integrate[T: SimState](  # noqa: C901
         init_func, step_func = integrator
     else:
         raise ValueError(
-            f"integrator must be key from MdFlavor or a tuple of "
+            f"integrator must be key from Integrator or a tuple of "
             f"(init_func, step_func), got {type(integrator)}"
         )
 
@@ -371,7 +371,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     system: StateLike,
     model: ModelInterface,
     *,
-    optimizer: OptimFlavor | tuple[Callable[..., T], Callable[..., T]],
+    optimizer: Optimizer | tuple[Callable[..., T], Callable[..., T]],
     convergence_fn: Callable[[T, torch.Tensor | None], torch.Tensor] | None = None,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: InFlightAutoBatcher | bool = False,
@@ -387,7 +387,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         system (StateLike): Input system to optimize (ASE Atoms, Pymatgen Structure, or
             SimState)
         model (ModelInterface): Neural network model module
-        optimizer (OptimFlavor | tuple): Optimization algorithm function
+        optimizer (Optimizer | tuple): Optimization algorithm function
         convergence_fn (Callable | None): Condition for convergence, should return a
             boolean tensor of length n_systems
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
@@ -419,7 +419,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         convergence_fn = generate_energy_convergence_fn(energy_tol=1e-3)
 
     initial_state = ts.initialize_state(system, model.device, model.dtype)
-    if isinstance(optimizer, OptimFlavor):
+    if isinstance(optimizer, Optimizer):
         init_fn, step_fn = OPTIM_REGISTRY[optimizer]
     elif (
         isinstance(optimizer, tuple)
@@ -430,7 +430,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     else:
         optimizer_type = type(optimizer).__name__
         raise TypeError(
-            f"Invalid {optimizer_type=}, must be key from OptimFlavor or a tuple of "
+            f"Invalid {optimizer_type=}, must be key from Optimizer or a tuple of "
             f"(init_func, step_func), got {optimizer_type}"
         )
 

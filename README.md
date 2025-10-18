@@ -58,7 +58,7 @@ final_state = ts.integrate(
     n_steps=50,
     timestep=0.002,
     temperature=1000,
-    integrator=ts.integrators.nvt_langevin,
+    integrator=ts.Integrator.nvt_langevin,
     trajectory_reporter=dict(filenames=trajectory_files, state_frequency=10),
 )
 final_atoms_list = final_state.to_atoms()
@@ -81,7 +81,7 @@ To then relax those structures with FIRE is just a few more lines.
 relaxed_state = ts.optimize(
     system=final_state,
     model=mace_model,
-    optimizer=ts.OptimFlavor.fire,
+    optimizer=ts.Optimizer.fire,
     autobatcher=True,
     init_kwargs=dict(cell_filter=ts.CellFilter.frechet),
 )
@@ -129,10 +129,14 @@ TorchSim's package structure is summarized in the [API reference](https://torchs
 
 ![TorchSim package treemap](https://github.com/user-attachments/assets/1ccb3a15-233d-4bc0-b11c-35a676a2bcf3)
 
+## Contributing
+
+If you are interested in contributing, please join our [slack](https://join.slack.com/t/torchsim/shared_invite/zt-3fkiju9ip-XhUH7TYp_ejJT6QqEPKMJQ) and check out the [contributing.md](CONTRIBUTING.md).
+
 ## License
 
 TorchSim is released under an [MIT license](LICENSE).
 
 ## Citation
 
-+If you use TorchSim in your research, please cite the [arXiv preprint](https://arxiv.org/abs/2508.06628).
+If you use TorchSim in your research, please cite the [arXiv preprint](https://arxiv.org/abs/2508.06628).

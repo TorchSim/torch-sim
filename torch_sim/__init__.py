@@ -24,7 +24,7 @@ from torch_sim import (
 from torch_sim.autobatching import BinningAutoBatcher, InFlightAutoBatcher
 from torch_sim.integrators import (
     INTEGRATOR_REGISTRY,
-    MdFlavor,
+    Integrator,
     NVTNoseHooverState,
     nve_init,
     nve_step,
@@ -47,7 +47,7 @@ from torch_sim.monte_carlo import SwapMCState, swap_mc_init, swap_mc_step
 from torch_sim.optimizers import (
     OPTIM_REGISTRY,
     FireState,
-    OptimFlavor,
+    Optimizer,
     OptimState,
     fire_init,
     fire_step,

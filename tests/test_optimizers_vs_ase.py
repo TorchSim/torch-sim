@@ -111,7 +111,7 @@ def _run_and_compare_optimizers(
     initial_sim_state_fixture: ts.SimState,
     ts_mace_mpa: MaceModel,
     ase_mace_mpa: "MACECalculator",
-    fire_type: ts.OptimFlavor,
+    fire_type: ts.Optimizer,
     cell_filter: ts.CellFilter,
     ase_filter_cls: FrechetCellFilter | UnitCellFilter,
     checkpoints: list[int],
@@ -162,7 +162,7 @@ def _run_and_compare_optimizers(
                 max_steps=steps_for_current_segment,
                 convergence_fn=convergence_fn,
                 steps_between_swaps=1,
-                md_flavor="ase_fire",  # optimizer kwargs
+                fire_flavor="ase_fire",  # optimizer kwargs
                 init_kwargs=dict(cell_filter=cell_filter),
                 **optim_kwargs,
             )
@@ -191,7 +191,7 @@ def _run_and_compare_optimizers(
     [
         (
             "rattled_sio2_sim_state",
-            ts.OptimFlavor.fire,
+            ts.Optimizer.fire,
             ts.CellFilter.frechet,
             FrechetCellFilter,
             [1, 33, 66, 100],
@@ -207,7 +207,7 @@ def _run_and_compare_optimizers(
         ),
         (
             "osn2_sim_state",
-            ts.OptimFlavor.fire,
+            ts.Optimizer.fire,
             ts.CellFilter.frechet,
             FrechetCellFilter,
             [1, 16, 33, 50],
@@ -223,7 +223,7 @@ def _run_and_compare_optimizers(
         ),
         (
             "distorted_fcc_al_conventional_sim_state",
-            ts.OptimFlavor.fire,
+            ts.Optimizer.fire,
             ts.CellFilter.frechet,
             FrechetCellFilter,
             [1, 33, 66, 100],
@@ -239,7 +239,7 @@ def _run_and_compare_optimizers(
         ),
         (
             "distorted_fcc_al_conventional_sim_state",
-            ts.OptimFlavor.fire,
+            ts.Optimizer.fire,
             ts.CellFilter.unit,
             UnitCellFilter,
             [1, 33, 66, 100],
@@ -255,7 +255,7 @@ def _run_and_compare_optimizers(
         ),
         (
             "rattled_sio2_sim_state",
-            ts.OptimFlavor.fire,
+            ts.Optimizer.fire,
             ts.CellFilter.unit,
             UnitCellFilter,
             [1, 33, 66, 100],
@@ -271,7 +271,7 @@ def _run_and_compare_optimizers(
         ),
         (
             "osn2_sim_state",
-            ts.OptimFlavor.fire,
+            ts.Optimizer.fire,
             ts.CellFilter.unit,
             UnitCellFilter,
             [1, 16, 33, 50],
@@ -289,7 +289,7 @@ def _run_and_compare_optimizers(
 )
 def test_optimizer_vs_ase_parametrized(
     sim_state_fixture_name: str,
-    fire_type: ts.OptimFlavor,
+    fire_type: ts.Optimizer,
     cell_filter: ts.CellFilter,
     ase_filter_cls: FrechetCellFilter | UnitCellFilter,
     checkpoints: list[int],

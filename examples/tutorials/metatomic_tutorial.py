@@ -45,7 +45,7 @@ atoms = bulk("Si", "diamond", a=5.43, cubic=True)
 equilibrated_state = ts.integrate(
     system=atoms,
     model=model,
-    integrator=ts.MdFlavor.nvt_langevin,
+    integrator=ts.Integrator.nvt_langevin,
     n_steps=100,
     temperature=300,  # K
     timestep=0.001,  # ps
@@ -54,7 +54,7 @@ equilibrated_state = ts.integrate(
 final_state = ts.integrate(
     system=equilibrated_state,
     model=model,
-    integrator=ts.MdFlavor.nve,
+    integrator=ts.Integrator.nve,
     n_steps=100,
     temperature=300,  # K
     timestep=0.001,  # ps

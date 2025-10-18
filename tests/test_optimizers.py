@@ -9,7 +9,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.optimizers import FireState, MdFlavor, OptimState
+from torch_sim.optimizers import FireFlavor, FireState, OptimState
 from torch_sim.state import SimState
 
 
@@ -98,9 +98,9 @@ def test_unit_cell_gradient_descent_optimization(
     assert not torch.allclose(state.cell, initial_state.cell)
 
 
-@pytest.mark.parametrize("md_flavor", get_args(MdFlavor))
+@pytest.mark.parametrize("fire_flavor", get_args(FireFlavor))
 def test_fire_optimization(
-    ar_supercell_sim_state: SimState, lj_model: ModelInterface, md_flavor: MdFlavor
+    ar_supercell_sim_state: SimState, lj_model: ModelInterface, fire_flavor: FireFlavor
 ) -> None:
     """Test that the FIRE optimizer actually minimizes energy."""
     # Add some random displacement to positions
@@ -123,7 +123,9 @@ def test_fire_optimization(
     initial_state_positions = current_sim_state.positions.clone()
 
     # Initialize FIRE optimizer
-    state = ts.fire_init(current_sim_state, lj_model, md_flavor=md_flavor, dt_start=0.1)
+    state = ts.fire_init(
+        current_sim_state, lj_model, fire_flavor=fire_flavor, dt_start=0.1
+    )
 
     # Run optimization for a few steps
     energies = [1000, state.energy.item()]
@@ -135,14 +137,14 @@ def test_fire_optimization(
         steps_taken += 1
 
     assert steps_taken < max_steps, (
-        f"FIRE optimization for {md_flavor=} did not converge in {max_steps=}"
+        f"FIRE optimization for {fire_flavor=} did not converge in {max_steps=}"
     )
 
     energies = energies[1:]
 
     # Check that energy decreased
     assert energies[-1] < energies[0], (
-        f"FIRE optimization for {md_flavor=} should reduce energy "
+        f"FIRE optimization for {fire_flavor=} should reduce energy "
         f"(initial: {energies[0]}, final: {energies[-1]})"
     )
 
@@ -151,23 +153,23 @@ def test_fire_optimization(
     # bumped up the tolerance to 0.3 to account for the fact that ase_fire is more lenient
     # in beginning steps
     assert max_force < 0.3, (
-        f"{md_flavor=} forces should be small after optimization, got {max_force=}"
+        f"{fire_flavor=} forces should be small after optimization, got {max_force=}"
     )
 
     assert not torch.allclose(state.positions, initial_state_positions), (
-        f"{md_flavor=} positions should have changed after optimization."
+        f"{fire_flavor=} positions should have changed after optimization."
     )
 
 
 @pytest.mark.parametrize(
     ("optimizer_fn", "expected_state_type"),
     [
-        (ts.OptimFlavor.fire, FireState),
-        (ts.OptimFlavor.gradient_descent, OptimState),
+        (ts.Optimizer.fire, FireState),
+        (ts.Optimizer.gradient_descent, OptimState),
     ],
 )
 def test_simple_optimizer_init_with_dict(
-    optimizer_fn: ts.OptimFlavor,
+    optimizer_fn: ts.Optimizer,
     expected_state_type: FireState | OptimState,
     ar_supercell_sim_state: SimState,
     lj_model: ModelInterface,
@@ -188,15 +190,15 @@ def test_simple_optimizer_init_with_dict(
     "optim_func",
     [ts.fire_init, partial(ts.fire_init, cell_filter=ts.CellFilter.unit)],
 )
-def test_optimizer_invalid_md_flavor(
+def test_optimizer_invalid_fire_flavor(
     optim_func: Callable[..., Any],
     lj_model: ModelInterface,
     ar_supercell_sim_state: SimState,
 ) -> None:
-    """Test optimizer with an invalid md_flavor raises ValueError."""
-    with pytest.raises(ValueError, match="Unknown md_flavor"):
+    """Test optimizer with an invalid fire_flavor raises ValueError."""
+    with pytest.raises(ValueError, match="Unknown fire_flavor"):
         optim_func(
-            model=lj_model, state=ar_supercell_sim_state, md_flavor="invalid_flavor"
+            model=lj_model, state=ar_supercell_sim_state, fire_flavor="invalid_flavor"
         )
 
 
@@ -211,7 +213,7 @@ def test_fire_ase_negative_power_branch(
     state = ts.fire_init(
         state=ar_supercell_sim_state,
         model=lj_model,
-        md_flavor="ase_fire",
+        fire_flavor="ase_fire",
         alpha_start=alpha_start,
         dt_start=dt_start_val,
     )
@@ -278,7 +280,7 @@ def test_fire_vv_negative_power_branch(
     state = ts.fire_init(
         state=ar_supercell_sim_state,
         model=lj_model,
-        md_flavor="vv_fire",
+        fire_flavor="vv_fire",
         alpha_start=alpha_start,
         dt_start=dt_start_val,
     )
@@ -320,9 +322,9 @@ def test_fire_vv_negative_power_branch(
     )
 
 
-@pytest.mark.parametrize("md_flavor", get_args(MdFlavor))
+@pytest.mark.parametrize("fire_flavor", get_args(FireFlavor))
 def test_unit_cell_fire_optimization(
-    ar_supercell_sim_state: SimState, lj_model: ModelInterface, md_flavor: MdFlavor
+    ar_supercell_sim_state: SimState, lj_model: ModelInterface, fire_flavor: FireFlavor
 ) -> None:
     """Test that the Unit Cell FIRE optimizer actually minimizes energy."""
 
@@ -353,7 +355,7 @@ def test_unit_cell_fire_optimization(
         state=current_sim_state,
         model=lj_model,
         dt_start=0.1,
-        md_flavor=md_flavor,
+        fire_flavor=fire_flavor,
         cell_filter=ts.CellFilter.unit,
     )
 
@@ -368,14 +370,14 @@ def test_unit_cell_fire_optimization(
         steps_taken += 1
 
     assert steps_taken < max_steps, (
-        f"Unit Cell FIRE {md_flavor=} optimization did not converge in {max_steps=}"
+        f"Unit Cell FIRE {fire_flavor=} optimization did not converge in {max_steps=}"
     )
 
     energies = energies[1:]
 
     # Check that energy decreased
     assert energies[-1] < energies[0], (
-        f"Unit Cell FIRE {md_flavor=} optimization should reduce energy "
+        f"Unit Cell FIRE {fire_flavor=} optimization should reduce energy "
         f"(initial: {energies[0]}, final: {energies[-1]})"
     )
 
@@ -386,32 +388,32 @@ def test_unit_cell_fire_optimization(
         f"Pressure should be small after optimization, got {pressure=}"
     )
     assert max_force < 0.3, (
-        f"{md_flavor=} forces should be small after optimization, got {max_force}"
+        f"{fire_flavor=} forces should be small after optimization, got {max_force}"
     )
 
     assert not torch.allclose(state.positions, initial_state_positions), (
-        f"{md_flavor=} positions should have changed after optimization."
+        f"{fire_flavor=} positions should have changed after optimization."
     )
     assert not torch.allclose(state.cell, initial_state_cell), (
-        f"{md_flavor=} cell should have changed after optimization."
+        f"{fire_flavor=} cell should have changed after optimization."
     )
 
 
 @pytest.mark.parametrize(
     ("optimizer_fn", "cell_filter", "expected_state_type", "cell_factor_val"),
     [
-        (ts.OptimFlavor.fire, ts.CellFilter.unit, ts.CellFireState, 100),
+        (ts.Optimizer.fire, ts.CellFilter.unit, ts.CellFireState, 100),
         (
-            ts.OptimFlavor.gradient_descent,
+            ts.Optimizer.gradient_descent,
             ts.CellFilter.unit,
             ts.CellOptimState,
             50.0,
         ),
-        (ts.OptimFlavor.fire, ts.CellFilter.frechet, ts.CellFireState, 75.0),
+        (ts.Optimizer.fire, ts.CellFilter.frechet, ts.CellFireState, 75.0),
     ],
 )
 def test_cell_optimizer_init_with_dict_and_cell_factor(
-    optimizer_fn: ts.OptimFlavor,
+    optimizer_fn: ts.Optimizer,
     expected_state_type: OptimState,
     cell_filter: ts.CellFilter,
     cell_factor_val: float,
@@ -448,22 +450,22 @@ def test_cell_optimizer_init_with_dict_and_cell_factor(
 @pytest.mark.parametrize(
     ("optimizer_fn", "cell_filter", "expected_state_type"),
     [
-        (ts.OptimFlavor.fire, ts.CellFilter.unit, ts.CellFireState),
-        (ts.OptimFlavor.fire, ts.CellFilter.frechet, ts.CellFireState),
+        (ts.Optimizer.fire, ts.CellFilter.unit, ts.CellFireState),
+        (ts.Optimizer.fire, ts.CellFilter.frechet, ts.CellFireState),
         (
-            ts.OptimFlavor.gradient_descent,
+            ts.Optimizer.gradient_descent,
             ts.CellFilter.unit,
             ts.CellOptimState,
         ),
         (
-            ts.OptimFlavor.gradient_descent,
+            ts.Optimizer.gradient_descent,
             ts.CellFilter.frechet,
             ts.CellOptimState,
         ),
     ],
 )
 def test_cell_optimizer_init_cell_factor_none(
-    optimizer_fn: ts.OptimFlavor,
+    optimizer_fn: ts.Optimizer,
     cell_filter: ts.CellFilter,
     expected_state_type: OptimState,
     ar_supercell_sim_state: SimState,
@@ -511,7 +513,7 @@ def test_unit_cell_fire_ase_non_positive_volume_warning(
     state = ts.fire_init(
         state=perturbed_state,
         model=lj_model,
-        md_flavor="ase_fire",
+        fire_flavor="ase_fire",
         dt_start=1.0,
         alpha_start=0.99,  # Aggressive alpha
         cell_filter=ts.CellFilter.unit,
@@ -532,12 +534,12 @@ def test_unit_cell_fire_ase_non_positive_volume_warning(
     assert state is not None  # Ensure optimizer ran
 
 
-@pytest.mark.parametrize("md_flavor", get_args(MdFlavor))
+@pytest.mark.parametrize("fire_flavor", get_args(FireFlavor))
 def test_frechet_cell_fire_optimization(
-    ar_supercell_sim_state: SimState, lj_model: ModelInterface, md_flavor: MdFlavor
+    ar_supercell_sim_state: SimState, lj_model: ModelInterface, fire_flavor: FireFlavor
 ) -> None:
     """Test that the Frechet Cell FIRE optimizer actually minimizes energy for different
-    md_flavors."""
+    fire_flavors."""
 
     # Add random displacement to positions and cell
     # Create a fresh copy for each test run to avoid interference
@@ -566,7 +568,7 @@ def test_frechet_cell_fire_optimization(
         state=current_sim_state,
         model=lj_model,
         dt_start=0.1,
-        md_flavor=md_flavor,
+        fire_flavor=fire_flavor,
         cell_filter=ts.CellFilter.frechet,
     )
 
@@ -581,14 +583,14 @@ def test_frechet_cell_fire_optimization(
         steps_taken += 1
 
     assert steps_taken < max_steps, (
-        f"Frechet FIRE {md_flavor=} optimization did not converge in {max_steps=}"
+        f"Frechet FIRE {fire_flavor=} optimization did not converge in {max_steps=}"
     )
 
     energies = energies[1:]
 
     # Check that energy decreased
     assert energies[-1] < energies[0], (
-        f"Frechet FIRE {md_flavor=} optimization should reduce energy "
+        f"Frechet FIRE {fire_flavor=} optimization should reduce energy "
         f"(initial: {energies[0]}, final: {energies[-1]})"
     )
 
@@ -601,19 +603,19 @@ def test_frechet_cell_fire_optimization(
     pressure_tol, force_tol = 0.01, 0.2
 
     assert torch.abs(pressure) < pressure_tol, (
-        f"{md_flavor=} pressure should be below {pressure_tol=} after Frechet "
+        f"{fire_flavor=} pressure should be below {pressure_tol=} after Frechet "
         f"optimization, got {pressure.item()}"
     )
     assert max_force < force_tol, (
-        f"{md_flavor=} forces should be below {force_tol=} after Frechet optimization, "
+        f"{fire_flavor=} forces should be below {force_tol=} after Frechet optimization, "
         f"got {max_force}"
     )
 
     assert not torch.allclose(state.positions, initial_state_positions, atol=1e-5), (
-        f"{md_flavor=} positions should have changed after Frechet optimization."
+        f"{fire_flavor=} positions should have changed after Frechet optimization."
     )
     assert not torch.allclose(state.cell, initial_state_cell, atol=1e-5), (
-        f"{md_flavor=} cell should have changed after Frechet optimization."
+        f"{fire_flavor=} cell should have changed after Frechet optimization."
     )
 
 
@@ -660,7 +662,7 @@ def test_optimizer_batch_consistency(
         return not torch.allclose(e_current, e_prev, atol=1e-6)
 
     for state_for_indiv_opt in [state1_orig.clone(), state2_orig.clone()]:
-        init_fn_indiv, step_fn_indiv = ts.OPTIM_REGISTRY[ts.OptimFlavor.fire]
+        init_fn_indiv, step_fn_indiv = ts.OPTIM_REGISTRY[ts.Optimizer.fire]
         opt_state_indiv = init_fn_indiv(
             model=lj_model,
             state=state_for_indiv_opt,
@@ -694,7 +696,7 @@ def test_optimizer_batch_consistency(
         device=ar_supercell_sim_state.device,
     )
 
-    init_fn_batch, step_fn_batch = ts.OPTIM_REGISTRY[ts.OptimFlavor.fire]
+    init_fn_batch, step_fn_batch = ts.OPTIM_REGISTRY[ts.Optimizer.fire]
     batch_opt_state = init_fn_batch(
         model=lj_model, state=multi_state_initial, cell_filter=filter_func
     )

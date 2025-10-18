@@ -62,7 +62,7 @@ def get_relaxed_structure(
     final_state = ts.optimize(
         system=struct,
         model=model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         max_steps=max_steps,
         convergence_fn=converge_max_force,
         trajectory_reporter=reporter,
@@ -118,7 +118,7 @@ def get_qha_structures(
     scaled_state = ts.optimize(
         system=scaled_structs,
         model=model,
-        optimizer=ts.OptimFlavor.fire,
+        optimizer=ts.Optimizer.fire,
         max_steps=Nmax,
         convergence_fn=ts.runners.generate_force_convergence_fn(force_tol=fmax),
         autobatcher=use_autobatcher,

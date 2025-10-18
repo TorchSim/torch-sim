@@ -1,15 +1,10 @@
 """Optimizer state classes."""
 
 from dataclasses import dataclass
-from typing import Literal, get_args
 
 import torch
 
 from torch_sim.state import SimState
-
-
-MdFlavor = Literal["vv_fire", "ase_fire"]
-vv_fire_key, ase_fire_key = get_args(MdFlavor)
 
 
 @dataclass(kw_only=True)

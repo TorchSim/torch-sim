@@ -116,7 +116,7 @@ model = MaceModel(
 final_state = ts.optimize(
     system=struct,
     model=model,
-    optimizer=ts.OptimFlavor.fire,
+    optimizer=ts.Optimizer.fire,
     max_steps=max_steps,
     init_kwargs=dict(
         cell_filter=ts.CellFilter.frechet, constant_volume=True, hydrostatic_strain=True

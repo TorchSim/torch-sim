@@ -13,7 +13,7 @@ from torch_sim.typing import StateDict
 
 if TYPE_CHECKING:
     from torch_sim.models.interface import ModelInterface
-    from torch_sim.optimizers import FireState, MdFlavor
+    from torch_sim.optimizers import FireFlavor, FireState
     from torch_sim.optimizers.cell_filters import (
         CellFilter,
         CellFilterFuncs,
@@ -27,7 +27,7 @@ def fire_init(
     *,
     dt_start: float = 0.1,
     alpha_start: float = 0.1,
-    md_flavor: "MdFlavor" = "ase_fire",
+    fire_flavor: "FireFlavor" = "ase_fire",
     cell_filter: "CellFilter | CellFilterFuncs | None" = None,
     **filter_kwargs: Any,
 ) -> "FireState | CellFireState":
@@ -41,7 +41,7 @@ def fire_init(
         state: Input state as SimState object or state parameter dict
         dt_start: Initial timestep per system
         alpha_start: Initial mixing parameter per system
-        md_flavor: Optimization flavor ("vv_fire" or "ase_fire")
+        fire_flavor: Optimization flavor ("vv_fire" or "ase_fire")
         cell_filter: Filter for cell optimization (None for position-only optimization)
         **filter_kwargs: Additional arguments passed to cell filter initialization
 
@@ -49,15 +49,15 @@ def fire_init(
         FireState with initialized optimization tensors
 
     Notes:
-        - md_flavor="vv_fire" follows the original paper closely
-        - md_flavor="ase_fire" mimics the ASE implementation
+        - fire_flavor="vv_fire" follows the original paper closely
+        - fire_flavor="ase_fire" mimics the ASE implementation
         - Use cell_filter=UNIT_CELL_FILTER or FRECHET_CELL_FILTER for cell optimization
     """
     # Import here to avoid circular imports
-    from torch_sim.optimizers import CellFireState, FireState, MdFlavor
+    from torch_sim.optimizers import CellFireState, FireFlavor, FireState
 
-    if md_flavor not in get_args(MdFlavor):
-        raise ValueError(f"Unknown {md_flavor=}, must be one of {get_args(MdFlavor)}")
+    if fire_flavor not in get_args(FireFlavor):
+        raise ValueError(f"Unknown {fire_flavor=}, must be one of {get_args(FireFlavor)}")
 
     tensor_args = dict(device=model.device, dtype=model.dtype)
 
@@ -122,7 +122,7 @@ def fire_step(
     alpha_start: float = 0.1,
     f_alpha: float = 0.99,
     max_step: float = 0.2,
-    md_flavor: "MdFlavor" = "ase_fire",
+    fire_flavor: "FireFlavor" = "ase_fire",
 ) -> "FireState | CellFireState":
     """Perform one FIRE optimization step.
 
@@ -136,16 +136,16 @@ def fire_step(
         alpha_start: Initial velocity mixing parameter
         f_alpha: Factor for mixing parameter decrease
         max_step: Maximum distance an atom can move per iteration
-        md_flavor: Optimization flavor ("vv_fire" or "ase_fire")
+        fire_flavor: Optimization flavor ("vv_fire" or "ase_fire")
 
     Returns:
         Updated FireState after one optimization step
     """
     # Import here to avoid circular imports
-    from torch_sim.optimizers import MdFlavor, ase_fire_key, vv_fire_key
+    from torch_sim.optimizers import FireFlavor, ase_fire_key, vv_fire_key
 
-    if md_flavor not in get_args(MdFlavor):
-        raise ValueError(f"Unknown {md_flavor=}, must be one of {get_args(MdFlavor)}")
+    if fire_flavor not in get_args(FireFlavor):
+        raise ValueError(f"Unknown {fire_flavor=}, must be one of {get_args(FireFlavor)}")
 
     device, dtype = model.device, model.dtype
     eps = 1e-8 if dtype == torch.float32 else 1e-16
@@ -166,10 +166,10 @@ def fire_step(
         f_alpha=f_alpha,
         eps=eps,
     )
-    if md_flavor == ase_fire_key:
+    if fire_flavor == ase_fire_key:
         step_func_kwargs["max_step"] = max_step
 
-    step_func = {vv_fire_key: _vv_fire_step, ase_fire_key: _ase_fire_step}[md_flavor]
+    step_func = {vv_fire_key: _vv_fire_step, ase_fire_key: _ase_fire_step}[fire_flavor]
     return step_func(state, **step_func_kwargs)
 
 
