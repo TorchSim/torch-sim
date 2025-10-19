@@ -619,3 +619,75 @@ def test_derived_classes_trigger_init_subclass() -> None:
     assert "is not allowed to be of type 'torch.Tensor | None' because torch.cat" in str(
         exc_info.value
     )
+
+
+def test_state_to_device_no_side_effects(si_sim_state: SimState) -> None:
+    """Test that SimState.to() doesn't modify the original state."""
+    # Store original values
+    original_positions = si_sim_state.positions.clone()
+    original_dtype = si_sim_state.dtype
+    original_device = si_sim_state.device
+    
+    # Convert to different dtype
+    new_state = si_sim_state.to(dtype=torch.float64)
+    
+    # Verify original state is unchanged
+    assert torch.allclose(si_sim_state.positions, original_positions), "Original state was modified!"
+    assert si_sim_state.dtype == original_dtype, "Original state dtype was changed!"
+    assert si_sim_state.device == original_device, "Original state device was changed!"
+    assert si_sim_state is not new_state, "New state is not a different object!"
+    assert new_state.dtype == torch.float64, "New state doesn't have correct dtype!"
+    
+    # Test device conversion
+    if torch.cuda.is_available():
+        new_state_gpu = si_sim_state.to(device=torch.device("cuda"))
+        assert si_sim_state.device == original_device, "Original state device was changed!"
+        assert new_state_gpu.device.type == "cuda", "New state doesn't have correct device!"
+        assert si_sim_state is not new_state_gpu, "New state is not a different object!"
+
+
+def test_concatenate_states_no_side_effects(si_sim_state: SimState) -> None:
+    """Test that concatenate_states doesn't modify input states."""
+    # Create two copies of the state
+    state1 = si_sim_state.clone()
+    state2 = si_sim_state.clone()
+    
+    # Store original values
+    original_positions1 = state1.positions.clone()
+    original_positions2 = state2.positions.clone()
+    original_dtype1 = state1.dtype
+    original_dtype2 = state2.dtype
+    
+    # Concatenate states
+    concatenated = ts.concatenate_states([state1, state2])
+    
+    # Verify input states are unchanged
+    assert torch.allclose(state1.positions, original_positions1), "First input state was modified!"
+    assert torch.allclose(state2.positions, original_positions2), "Second input state was modified!"
+    assert state1.dtype == original_dtype1, "First input state dtype was changed!"
+    assert state2.dtype == original_dtype2, "Second input state dtype was changed!"
+    
+    # Verify concatenated state is correct
+    assert concatenated.n_systems == 2, "Concatenated state has wrong number of systems!"
+    assert concatenated.positions.shape[0] == state1.positions.shape[0] + state2.positions.shape[0], "Concatenated state has wrong number of atoms!"
+
+
+def test_initialize_state_no_side_effects(si_sim_state: SimState) -> None:
+    """Test that initialize_state doesn't modify input state."""
+    # Store original values
+    original_positions = si_sim_state.positions.clone()
+    original_dtype = si_sim_state.dtype
+    original_device = si_sim_state.device
+    
+    # Initialize from existing state
+    new_state = ts.initialize_state(si_sim_state, torch.device("cpu"), torch.float64)
+    
+    # Verify original state is unchanged
+    assert torch.allclose(si_sim_state.positions, original_positions), "Original state was modified!"
+    assert si_sim_state.dtype == original_dtype, "Original state dtype was changed!"
+    assert si_sim_state.device == original_device, "Original state device was changed!"
+    assert si_sim_state is not new_state, "New state is not a different object!"
+    
+    # Verify new state has correct properties
+    assert new_state.device.type == "cpu", "New state doesn't have correct device!"
+    assert new_state.dtype == torch.float64, "New state doesn't have correct dtype!"
