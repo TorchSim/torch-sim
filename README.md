@@ -58,7 +58,7 @@ final_state = ts.integrate(
     n_steps=50,
     timestep=0.002,
     temperature=1000,
-    integrator=ts.integrators.nvt_langevin,
+    integrator=ts.Integrator.nvt_langevin,
     trajectory_reporter=dict(filenames=trajectory_files, state_frequency=10),
 )
 final_atoms_list = final_state.to_atoms()

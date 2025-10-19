@@ -229,7 +229,9 @@ class MaceModel(ModelInterface):
         # Create one-hot encodings for all atoms
         self.node_attrs = to_one_hot(
             torch.tensor(
-                atomic_numbers_to_indices(atomic_numbers.numpy(), z_table=self.z_table),
+                atomic_numbers_to_indices(
+                    atomic_numbers.cpu().numpy(), z_table=self.z_table
+                ),
                 dtype=torch.long,
                 device=self.device,
             ).unsqueeze(-1),
