@@ -15,6 +15,7 @@ from torch_sim.integrators.md import (
     construct_nose_hoover_chain,
 )
 from torch_sim.models.interface import ModelInterface
+from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
@@ -528,7 +529,7 @@ def _compute_cell_force(
 
 
 def npt_langevin_init(
-    state: MDState | StateDict,
+    state: SimState | StateDict,
     model: ModelInterface,
     *,
     kT: torch.Tensor,
@@ -592,8 +593,8 @@ def npt_langevin_init(
     if isinstance(b_tau, float):
         b_tau = torch.tensor(b_tau, device=device, dtype=dtype)
 
-    if not isinstance(state, MDState):
-        state = MDState(**state)
+    if not isinstance(state, SimState):
+        state = SimState(**state)
 
     # Get model output to initialize forces and stress
     model_output = model(state)
@@ -1292,7 +1293,7 @@ def _npt_nose_hoover_inner_step(
 
 
 def npt_nose_hoover_init(
-    state: MDState | StateDict,
+    state: SimState | StateDict,
     model: ModelInterface,
     *,
     kT: torch.Tensor,
@@ -1366,8 +1367,8 @@ def npt_nose_hoover_init(
         dt, chain_length, chain_steps, sy_steps, t_tau
     )
 
-    if not isinstance(state, MDState):
-        state = MDState(**state)
+    if not isinstance(state, SimState):
+        state = SimState(**state)
 
     _n_particles, dim = state.positions.shape
     n_systems = state.n_systems
