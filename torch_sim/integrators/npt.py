@@ -15,12 +15,11 @@ from torch_sim.integrators.md import (
     construct_nose_hoover_chain,
 )
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
 @dataclass
-class NPTLangevinState(SimState):
+class NPTLangevinState(MDState):
     """State information for an NPT system with Langevin dynamics.
 
     This class represents the complete state of a molecular system being integrated
@@ -66,11 +65,11 @@ class NPTLangevinState(SimState):
     cell_velocities: torch.Tensor
     cell_masses: torch.Tensor
 
-    _atom_attributes = SimState._atom_attributes | {  # noqa: SLF001
+    _atom_attributes = MDState._atom_attributes | {  # noqa: SLF001
         "forces",
         "velocities",
     }
-    _system_attributes = SimState._system_attributes | {  # noqa: SLF001
+    _system_attributes = MDState._system_attributes | {  # noqa: SLF001
         "stress",
         "cell_positions",
         "cell_velocities",
@@ -529,7 +528,7 @@ def _compute_cell_force(
 
 
 def npt_langevin_init(
-    state: SimState | StateDict,
+    state: MDState | StateDict,
     model: ModelInterface,
     *,
     kT: torch.Tensor,
@@ -550,7 +549,7 @@ def npt_langevin_init(
     Args:
         model (ModelInterface): Neural network model that computes energies, forces,
             and stress. Must return a dict with 'energy', 'forces', and 'stress' keys.
-        state (SimState | StateDict): Either a SimState object or a dictionary
+        state (MDState | StateDict): Either a MDState object or a dictionary
             containing positions, masses, cell, pbc
         kT (torch.Tensor): Target temperature in energy units, either scalar or
             with shape [n_systems]
@@ -593,8 +592,8 @@ def npt_langevin_init(
     if isinstance(b_tau, float):
         b_tau = torch.tensor(b_tau, device=device, dtype=dtype)
 
-    if not isinstance(state, SimState):
-        state = SimState(**state)
+    if not isinstance(state, MDState):
+        state = MDState(**state)
 
     # Get model output to initialize forces and stress
     model_output = model(state)
@@ -1293,7 +1292,7 @@ def _npt_nose_hoover_inner_step(
 
 
 def npt_nose_hoover_init(
-    state: SimState | StateDict,
+    state: MDState | StateDict,
     model: ModelInterface,
     *,
     kT: torch.Tensor,
@@ -1315,7 +1314,7 @@ def npt_nose_hoover_init(
 
     Args:
         model (ModelInterface): Model to compute forces and energies
-        state: Initial system state as SimState or dict containing positions, masses,
+        state: Initial system state as MDState or dict containing positions, masses,
             cell, and PBC information
         kT: Target temperature in energy units
         external_pressure: Target external pressure
@@ -1367,8 +1366,8 @@ def npt_nose_hoover_init(
         dt, chain_length, chain_steps, sy_steps, t_tau
     )
 
-    if not isinstance(state, SimState):
-        state = SimState(**state)
+    if not isinstance(state, MDState):
+        state = MDState(**state)
 
     _n_particles, dim = state.positions.shape
     n_systems = state.n_systems
