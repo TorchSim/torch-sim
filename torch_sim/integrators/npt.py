@@ -427,8 +427,7 @@ def _npt_langevin_velocity_step(
     b = 1 / (1 + (alpha_atoms * dt_atoms) / M_2)
 
     # Velocity contribution with damping
-    velocities = state.momenta / state.masses.unsqueeze(-1)
-    c_1 = a * velocities
+    c_1 = a * state.velocities
 
     # Force contribution (average of initial and final forces)
     c_2 = dt_atoms.unsqueeze(-1) * ((a * forces) + state.forces) / M_2
