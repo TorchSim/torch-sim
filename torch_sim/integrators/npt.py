@@ -57,7 +57,6 @@ class NPTLangevinState(MDState):
     # System state variables
     energy: torch.Tensor
     forces: torch.Tensor
-    velocities: torch.Tensor
     stress: torch.Tensor
 
     # Cell variables
@@ -68,7 +67,6 @@ class NPTLangevinState(MDState):
 
     _atom_attributes = MDState._atom_attributes | {  # noqa: SLF001
         "forces",
-        "velocities",
     }
     _system_attributes = MDState._system_attributes | {  # noqa: SLF001
         "stress",
@@ -78,11 +76,6 @@ class NPTLangevinState(MDState):
         "reference_cell",
         "energy",
     }
-
-    @property
-    def momenta(self) -> torch.Tensor:
-        """Calculate momenta from velocities and masses."""
-        return self.velocities * self.masses.unsqueeze(-1)
 
 
 def _npt_langevin_beta(
@@ -109,7 +102,7 @@ def _npt_langevin_beta(
         torch.Tensor: Random noise term for force calculation [n_particles, n_dim]
     """
     # Generate system-specific noise with correct shape
-    noise = torch.randn_like(state.velocities)
+    noise = torch.randn_like(state.momenta)
 
     # Calculate the thermal noise amplitude by system
     batch_kT = kT
@@ -370,7 +363,7 @@ def _npt_langevin_position_step(
     )
 
     # Generate atom-specific noise
-    noise = torch.randn_like(state.velocities)
+    noise = torch.randn_like(state.momenta)
     batch_kT = kT
     if kT.ndim == 0:
         batch_kT = kT.expand(state.n_systems)
@@ -381,9 +374,8 @@ def _npt_langevin_position_step(
     noise_term = noise_prefactor.unsqueeze(-1) * noise
 
     # Velocity and force contributions with random noise
-    c_3 = (
-        state.velocities + dt_atoms.unsqueeze(-1) * state.forces / M_2 + noise_term / M_2
-    )
+    velocities = state.momenta / state.masses.unsqueeze(-1)
+    c_3 = velocities + dt_atoms.unsqueeze(-1) * state.forces / M_2 + noise_term / M_2
 
     # Update positions with all contributions
     state.positions = c_1 + c_2 * c_3
@@ -438,13 +430,14 @@ def _npt_langevin_velocity_step(
     b = 1 / (1 + (alpha_atoms * dt_atoms) / M_2)
 
     # Velocity contribution with damping
-    c_1 = a * state.velocities
+    velocities = state.momenta / state.masses.unsqueeze(-1)
+    c_1 = a * velocities
 
     # Force contribution (average of initial and final forces)
     c_2 = dt_atoms.unsqueeze(-1) * ((a * forces) + state.forces) / M_2
 
     # Generate atom-specific noise
-    noise = torch.randn_like(state.velocities)
+    noise = torch.randn_like(state.momenta)
     batch_kT = kT
     if kT.ndim == 0:
         batch_kT = kT.expand(state.n_systems)
@@ -457,8 +450,9 @@ def _npt_langevin_velocity_step(
     # Random noise contribution
     c_3 = b * noise_term / state.masses.unsqueeze(-1)
 
-    # Update velocities with all contributions
-    state.velocities = c_1 + c_2 + c_3
+    # Update momenta (velocities * masses) with all contributions
+    new_velocities = c_1 + c_2 + c_3
+    state.momenta = new_velocities * state.masses.unsqueeze(-1)
     return state
 
 
@@ -630,7 +624,7 @@ def npt_langevin_init(
     # Create the initial state
     return NPTLangevinState(
         positions=state.positions,
-        velocities=momenta / state.masses.unsqueeze(-1),
+        momenta=momenta,
         energy=model_output["energy"],
         forces=model_output["forces"],
         stress=model_output["stress"],
@@ -1259,7 +1253,7 @@ def _npt_nose_hoover_inner_step(
 
     # Update particle positions and forces
     positions = _npt_nose_hoover_exp_iL1(
-        state, state.velocities, cell_momentum / cell_mass, dt
+        state, state.momenta / state.masses.unsqueeze(-1), cell_momentum / cell_mass, dt
     )
     state.positions = positions
     state.cell = cell
