@@ -19,7 +19,7 @@ from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
 
-@dataclass
+@dataclass(kw_only=True)
 class NPTLangevinState(MDState):
     """State information for an NPT system with Langevin dynamics.
 
@@ -755,7 +755,7 @@ def npt_langevin_step(
     return _npt_langevin_velocity_step(state, forces, dt, kT, alpha)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class NPTNoseHooverState(MDState):
     """State information for an NPT system with Nose-Hoover chain thermostats.
 
