@@ -65,16 +65,12 @@ class NPTLangevinState(MDState):
     cell_velocities: torch.Tensor
     cell_masses: torch.Tensor
 
-    _atom_attributes = MDState._atom_attributes | {  # noqa: SLF001
-        "forces",
-    }
     _system_attributes = MDState._system_attributes | {  # noqa: SLF001
         "stress",
         "cell_positions",
         "cell_velocities",
         "cell_masses",
         "reference_cell",
-        "energy",
     }
 
 
@@ -374,8 +370,9 @@ def _npt_langevin_position_step(
     noise_term = noise_prefactor.unsqueeze(-1) * noise
 
     # Velocity and force contributions with random noise
-    velocities = state.momenta / state.masses.unsqueeze(-1)
-    c_3 = velocities + dt_atoms.unsqueeze(-1) * state.forces / M_2 + noise_term / M_2
+    c_3 = (
+        state.velocities + dt_atoms.unsqueeze(-1) * state.forces / M_2 + noise_term / M_2
+    )
 
     # Update positions with all contributions
     state.positions = c_1 + c_2 * c_3
