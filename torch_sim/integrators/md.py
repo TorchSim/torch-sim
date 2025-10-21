@@ -21,14 +21,14 @@ class MDState(SimState):
 
     Attributes:
         positions (torch.Tensor): Particle positions [n_particles, n_dim]
-        momenta (torch.Tensor): Particle momenta [n_particles, n_dim]
-        energy (torch.Tensor): Total energy of the system [n_systems]
-        forces (torch.Tensor): Forces on particles [n_particles, n_dim]
         masses (torch.Tensor): Particle masses [n_particles]
         cell (torch.Tensor): Simulation cell matrix [n_systems, n_dim, n_dim]
         pbc (bool): Whether to use periodic boundary conditions
         system_idx (torch.Tensor): System indices [n_particles]
         atomic_numbers (torch.Tensor): Atomic numbers [n_particles]
+        momenta (torch.Tensor): Particle momenta [n_particles, n_dim]
+        energy (torch.Tensor): Total energy of the system [n_systems]
+        forces (torch.Tensor): Forces on particles [n_particles, n_dim]
 
     Properties:
         velocities (torch.Tensor): Particle velocities [n_particles, n_dim]
@@ -184,7 +184,7 @@ def velocity_verlet[T: MDState](state: T, dt: torch.Tensor, model: ModelInterfac
         Updated state after one complete velocity Verlet step
 
     Notes:
-        - Time-reversible and symplectic integrator
+        - Time-reversible and symplectic integrator of second order accuracy
         - Conserves energy in the absence of numerical errors
         - Handles periodic boundary conditions if enabled in state
     """
@@ -240,7 +240,25 @@ class NoseHooverChainFns:
     update_mass: Callable
 
 
-# Suzuki-Yoshida weights for multi-timestep integration
+#: Suzuki-Yoshida composition weights for higher-order symplectic integrators.
+#:
+#: These coefficients are used to construct high-order operator-splitting
+#: schemes (Suzuki-Yoshida compositions) in molecular dynamics and Hamiltonian
+#: simulations.
+#:
+#: The coefficients define how lower-order symplectic integrators (e.g., leapfrog)
+#: can be recursively composed to achieve higher-order accuracy while preserving
+#: symplectic structure.
+#:
+#: References:
+#:     - M. Suzuki, *General Decomposition Theory of Ordered Exponentials*,
+#:       Proc. Japan Acad. 69, 161 (1993).
+#:     - H. Yoshida, *Construction of higher order symplectic integrators*,
+#:       Phys. Lett. A 150, 262-268 (1990).
+#:     - M. Tuckerman, *Statistical Mechanics: Theory and Molecular Simulation*,
+#:       Oxford University Press (2010). Section 4.11
+#:
+#: :type: dict[int, torch.Tensor]
 SUZUKI_YOSHIDA_WEIGHTS = {
     1: torch.tensor([1.0]),
     3: torch.tensor([0.828981543588751, -0.657963087177502, 0.828981543588751]),
