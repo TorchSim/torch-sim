@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from torch_sim.state import SimState
 
 
-class FixConstraint(ABC):
+class Constraint(ABC):
     """Base class for all constraints in torch-sim.
 
     This is the abstract base class that all constraints must inherit from.
@@ -77,7 +77,7 @@ class FixConstraint(ABC):
             forces: Forces to be adjusted
         """
 
-    def copy(self) -> FixConstraint:
+    def copy(self) -> Constraint:
         """Create a copy of this constraint.
 
         Returns:
@@ -94,7 +94,7 @@ class FixConstraint(ABC):
         return {"name": self.__class__.__name__, "kwargs": self.__dict__.copy()}
 
 
-class IndexedConstraint(FixConstraint):
+class IndexedConstraint(Constraint):
     """Base class for constraints that act on specific atom indices.
 
     This class provides common functionality for constraints that operate
@@ -225,7 +225,7 @@ class FixAtoms(IndexedConstraint):
         return {"name": "FixAtoms", "kwargs": {"indices": self.index.tolist()}}
 
 
-class FixCom(FixConstraint):
+class FixCom(Constraint):
     """Constraint that fixes the center of mass of all atoms per system.
 
     This constraint prevents the center of mass from moving by:
@@ -338,7 +338,7 @@ class FixCom(FixConstraint):
 
 
 def count_degrees_of_freedom(
-    state: SimState, constraints: list[FixConstraint] | None = None
+    state: SimState, constraints: list[Constraint] | None = None
 ) -> int:
     """Count the total degrees of freedom in a system with constraints.
 
@@ -365,7 +365,7 @@ def count_degrees_of_freedom(
 
 
 # WIP
-def warn_if_overlapping_constraints(constraints: list[FixConstraint]) -> None:
+def warn_if_overlapping_constraints(constraints: list[Constraint]) -> None:
     """Issue warnings if constraints might overlap in problematic ways.
 
     This function checks for potential issues like multiple constraints
