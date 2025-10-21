@@ -208,12 +208,12 @@ class NVTNoseHooverState(MDState):
 
     Attributes:
         positions: Particle positions with shape [n_particles, n_dimensions]
-        momenta: Particle momenta with shape [n_particles, n_dimensions]
-        energy: Energy of the system
-        forces: Forces on particles with shape [n_particles, n_dimensions]
         masses: Particle masses with shape [n_particles]
         cell: Simulation cell matrix with shape [n_dimensions, n_dimensions]
         pbc: Whether to use periodic boundary conditions
+        momenta: Particle momenta with shape [n_particles, n_dimensions]
+        energy: Energy of the system
+        forces: Forces on particles with shape [n_particles, n_dimensions]
         chain: State variables for the Nose-Hoover chain thermostat
 
     Properties:
