@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import warnings
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import torch
 
@@ -76,22 +76,6 @@ class Constraint(ABC):
             state: Current simulation state
             forces: Forces to be adjusted
         """
-
-    def copy(self) -> Constraint:
-        """Create a copy of this constraint.
-
-        Returns:
-            A new instance of this constraint with the same parameters
-        """
-        return type(self)(**self.__dict__)
-
-    def todict(self) -> dict[str, Any]:
-        """Convert constraint to dictionary representation.
-
-        Returns:
-            Dictionary representation of the constraint
-        """
-        return {"name": self.__class__.__name__, "kwargs": self.__dict__.copy()}
 
 
 class IndexedConstraint(Constraint):
@@ -216,14 +200,6 @@ class FixAtoms(IndexedConstraint):
             indices_str = f"{self.index[:5].tolist()}...{self.index[-5:].tolist()}"
         return f"FixAtoms(indices={indices_str})"
 
-    def todict(self) -> dict[str, Any]:
-        """Convert to dictionary representation.
-
-        Returns:
-            Dictionary representation of the constraint
-        """
-        return {"name": "FixAtoms", "kwargs": {"indices": self.index.tolist()}}
-
 
 class FixCom(Constraint):
     """Constraint that fixes the center of mass of all atoms per system.
@@ -327,14 +303,6 @@ class FixCom(Constraint):
     def __repr__(self) -> str:
         """String representation of the constraint."""
         return "FixCom()"
-
-    def todict(self) -> dict[str, Any]:
-        """Convert to dictionary representation.
-
-        Returns:
-            Dictionary representation of the constraint
-        """
-        return {"name": "FixCom", "kwargs": {}}
 
 
 def count_degrees_of_freedom(
