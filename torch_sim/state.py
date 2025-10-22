@@ -573,9 +573,7 @@ def _state_to_device[T: SimState](
     if dtype is None:
         dtype = state.dtype
 
-    # Use copy.copy to create a shallow copy of the attributes dict
-    # This avoids modifying the input state's internal dictionary
-    attrs = copy.copy(vars(state))
+    attrs = vars(state)
     for attr_name, attr_value in attrs.items():
         if isinstance(attr_value, torch.Tensor):
             attrs[attr_name] = attr_value.to(device=device)
