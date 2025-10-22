@@ -85,7 +85,10 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
             neighbour_cell_offsets=shifts,
             properties={},
             cutoff=cutoff.item(),
-            other={},
+            other={
+                "total_charge": torch.tensor(0.0).to(state.device),
+                "total_spin": torch.tensor(0.0).to(state.device),
+            },
         )
         graphs.append(atomic_graph)
 
