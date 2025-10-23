@@ -361,12 +361,11 @@ def test_determine_max_batch_size_fibonacci(
     )
 
     # Test with a small max_atoms value to limit the sequence
-    max_size = determine_max_batch_size(si_sim_state, lj_model, max_atoms=10)
-
+    max_size = determine_max_batch_size(si_sim_state, lj_model, max_atoms=16)
     # The Fibonacci sequence up to 10 is [1, 2, 3, 5, 8, 13]
-    # Since we're not triggering OOM errors with our mock, it should
-    # return the largest value < max_atoms
-    assert max_size == 8
+    # Since we're not triggering OOM errors with our mock, it should return the
+    # largest value that fits within max_atoms (simstate has 8 atoms, so 2 batches)
+    assert max_size == 2
 
 
 @pytest.mark.parametrize("scale_factor", [1.1, 1.4])
@@ -388,7 +387,9 @@ def test_determine_max_batch_size_small_scale_factor_no_infinite_loop(
 
     # Verify sequence is strictly increasing (prevents infinite loop)
     sizes = [1]
-    while (next_size := max(round(sizes[-1] * scale_factor), sizes[-1] + 1)) < 20:
+    while (
+        next_size := max(round(sizes[-1] * scale_factor), sizes[-1] + 1)
+    ) * si_sim_state.n_atoms <= 20:
         sizes.append(next_size)
 
     assert all(sizes[idx] > sizes[idx - 1] for idx in range(1, len(sizes)))
