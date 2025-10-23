@@ -61,6 +61,7 @@ def gradient_descent_init(
         "pbc": state.pbc,
         "atomic_numbers": state.atomic_numbers,
         "system_idx": state.system_idx,
+        "constraints": state.constraints,
     }
 
     if cell_filter is not None:  # Create cell optimization state
@@ -107,7 +108,8 @@ def gradient_descent_step(
     atom_lr = pos_lr[state.system_idx].unsqueeze(-1)
 
     # Update atomic positions
-    state.positions = state.positions + atom_lr * state.forces
+    # state.positions = state.positions + atom_lr * state.forces
+    state.set_positions(state.positions + atom_lr * state.forces)
 
     # Update cell if using cell optimization
     if isinstance(state, CellOptimState):
@@ -117,7 +119,7 @@ def gradient_descent_step(
 
     # Get updated forces, energy, and stress
     model_output = model(state)
-    state.forces = model_output["forces"]
+    state.set_forces(model_output["forces"])
     state.energy = model_output["energy"]
     if "stress" in model_output:
         state.stress = model_output["stress"]

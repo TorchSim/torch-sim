@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 import torch
 
-from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
@@ -162,12 +161,12 @@ def position_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
     new_positions = state.positions + state.velocities * dt
     state.set_positions(new_positions)
 
-    if state.pbc:
-        # Split positions and cells by system
-        new_positions = transforms.pbc_wrap_batched(
-            state.positions, state.cell, state.system_idx
-        )
-        state.positions = new_positions  # no constraints applied
+    # if state.pbc:
+    #     # Split positions and cells by system
+    #     new_positions = transforms.pbc_wrap_batched(
+    #         state.positions, state.cell, state.system_idx
+    #     )
+    #     state.positions = new_positions  # no constraints applied
     return state
 
 

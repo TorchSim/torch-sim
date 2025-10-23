@@ -1221,3 +1221,30 @@ def unwrap_positions(
     unwrapped[1:] = torch.cumsum(dcart, dim=0) + unwrapped[0]
 
     return unwrapped
+
+
+def get_centers_of_mass(
+    positions: torch.Tensor,
+    masses: torch.Tensor,
+    system_idx: torch.Tensor,
+    n_systems: int,
+) -> torch.Tensor:
+    """Compute the centers of mass for each structure in the simulation state.s.
+
+    Args:
+        positions (torch.Tensor): Atomic positions of shape (N, 3).
+        masses (torch.Tensor): Atomic masses of shape (N,).
+        system_idx (torch.Tensor): System indices for each atom of shape (N,).
+        n_systems (int): Total number of systems.
+
+    Returns:
+        torch.Tensor: A tensor of shape (n_structures, 3) containing
+            the center of mass coordinates for each structure.
+    """
+    coms = torch.zeros((n_systems, 3), dtype=positions.dtype).scatter_add_(
+        0,
+        system_idx.unsqueeze(-1).expand(-1, 3),
+        masses.unsqueeze(-1) * positions,
+    )
+    coms /= masses.unsqueeze(-1).sum(dim=0)
+    return coms

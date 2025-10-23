@@ -78,7 +78,7 @@ class Constraint(ABC):
         """
 
 
-class IndexedConstraint(Constraint):
+class AtomIndexedConstraint(Constraint):
     """Base class for constraints that act on specific atom indices.
 
     This class provides common functionality for constraints that operate
@@ -97,7 +97,7 @@ class IndexedConstraint(Constraint):
         """
         if indices is None:
             # Empty constraint
-            self.index = torch.empty(0, dtype=torch.long)
+            self.indices = torch.empty(0, dtype=torch.long)
             return
 
         # Convert to tensor if needed
@@ -130,7 +130,7 @@ class IndexedConstraint(Constraint):
                 "forgot the mask= keyword."
             )
 
-        self.index = indices.long()
+        self.indices = indices.long()
 
     def get_indices(self) -> torch.Tensor:
         """Get the constrained atom indices.
@@ -138,10 +138,45 @@ class IndexedConstraint(Constraint):
         Returns:
             Tensor of atom indices affected by this constraint
         """
-        return self.index.clone()
+        return self.indices.clone()
 
 
-class FixAtoms(IndexedConstraint):
+class SystemConstraint(Constraint):
+    """Base class for constraints that act on specific system indices.
+
+    This class provides common functionality for constraints that operate
+    on a subset of systems, identified by their indices.
+    """
+
+    def __init__(self, system_idx: torch.Tensor | list[int] | None = None) -> None:
+        """Initialize indexed constraint.
+
+        Args:
+            system_idx: Indices of systems to constrain. Can be a tensor or
+                        list of integers.
+
+        Raises:
+            ValueError: If both indices and mask are provided, or if indices have
+                        wrong shape/type
+        """
+        if system_idx is None:
+            # Empty constraint
+            self.system_idx = slice(None)  # All systems
+            return
+
+        # Convert to tensor if needed
+        system_idx = torch.as_tensor(system_idx)
+
+        # Ensure we have the right shape and type
+        system_idx = torch.atleast_1d(system_idx)
+        if system_idx.ndim > 1:
+            raise ValueError(
+                "system_idx has wrong number of dimensions. "
+                f"Got {system_idx.ndim}, expected ndim <= 1"
+            )
+
+
+class FixAtoms(AtomIndexedConstraint):
     """Constraint that fixes specified atoms in place.
 
     This constraint prevents the specified atoms from moving by:
@@ -170,7 +205,7 @@ class FixAtoms(IndexedConstraint):
             Number of degrees of freedom removed (3 * number of fixed atoms)
         """
         fixed_atoms_system_idx = torch.bincount(
-            state.system_idx[self.index], minlength=state.n_systems
+            state.system_idx[self.indices], minlength=state.n_systems
         )
         return 3 * fixed_atoms_system_idx
 
@@ -181,7 +216,7 @@ class FixAtoms(IndexedConstraint):
             state: Current simulation state
             new_positions: Proposed positions to be adjusted in-place
         """
-        new_positions[self.index] = state.positions[self.index]
+        new_positions[self.indices] = state.positions[self.indices]
 
     def adjust_forces(self, state: SimState, forces: torch.Tensor) -> None:  # noqa: ARG002
         """Set forces on fixed atoms to zero.
@@ -190,18 +225,18 @@ class FixAtoms(IndexedConstraint):
             state: Current simulation state
             forces: Forces to be adjusted in-place
         """
-        forces[self.index] = 0.0
+        forces[self.indices] = 0.0
 
     def __repr__(self) -> str:
         """String representation of the constraint."""
-        if len(self.index) <= 10:
-            indices_str = self.index.tolist()
+        if len(self.indices) <= 10:
+            indices_str = self.indices.tolist()
         else:
-            indices_str = f"{self.index[:5].tolist()}...{self.index[-5:].tolist()}"
+            indices_str = f"{self.indices[:5].tolist()}...{self.indices[-5:].tolist()}"
         return f"FixAtoms(indices={indices_str})"
 
 
-class FixCom(Constraint):
+class FixCom(SystemConstraint):
     """Constraint that fixes the center of mass of all atoms per system.
 
     This constraint prevents the center of mass from moving by:
@@ -224,11 +259,10 @@ class FixCom(Constraint):
         Returns:
             Always returns 3 (center of mass translation degrees of freedom)
         """
-        # if self.index.numel() == 0:
-        #     return 3 * torch.ones(state.n_systems, dtype=torch.long)
-        # removed_dof = torch.zeros(state.n_systems, dtype=torch.long)
-        # removed_dof[self.index] = 1
-        # return 3 * removed_dof
+        if self.system_idx != slice(None):
+            affected_systems = torch.zeros(state.n_systems, dtype=torch.long)
+            affected_systems[self.system_idx] = 1
+            return 3 * affected_systems
         return 3 * torch.ones(state.n_systems, dtype=torch.long)
 
     def adjust_positions(self, state: SimState, new_positions: torch.Tensor) -> None:
@@ -239,23 +273,35 @@ class FixCom(Constraint):
             new_positions: Proposed positions to be adjusted in-place
         """
         dtype = state.positions.dtype
-        system_mass = torch.zeros(state.n_systems, dtype=dtype).scatter_add_(
-            0, state.system_idx, state.masses
+        n_systems = (
+            state.n_systems if self.system_idx == slice(None) else len(self.system_idx)
         )
-        self.coms = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
-            0,
-            state.system_idx.unsqueeze(-1).expand(-1, 3),
-            state.masses.unsqueeze(-1) * state.positions,
+        index_to_consider = (
+            torch.isin(state.system_idx, self.system_idx)
+            if self.system_idx != slice(None)
+            else torch.ones(state.n_atoms, dtype=torch.bool)
         )
-        self.coms /= system_mass.unsqueeze(-1)
+        system_mass = torch.zeros(n_systems, dtype=dtype).scatter_add_(
+            0, state.system_idx[index_to_consider], state.masses[index_to_consider]
+        )
+        if not hasattr(self, "coms"):
+            self.coms = torch.zeros((n_systems, 3), dtype=dtype).scatter_add_(
+                0,
+                state.system_idx[index_to_consider].unsqueeze(-1).expand(-1, 3),
+                state.masses[index_to_consider].unsqueeze(-1)
+                * state.positions[index_to_consider],
+            )
+            self.coms /= system_mass.unsqueeze(-1)
 
-        new_com = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
+        new_com = torch.zeros((n_systems, 3), dtype=dtype).scatter_add_(
             0,
-            state.system_idx.unsqueeze(-1).expand(-1, 3),
-            state.masses.unsqueeze(-1) * state.positions,
+            state.system_idx[index_to_consider].unsqueeze(-1).expand(-1, 3),
+            state.masses[index_to_consider].unsqueeze(-1)
+            * new_positions[index_to_consider],
         )
         new_com /= system_mass.unsqueeze(-1)
-        displacement = -new_com + self.coms
+        displacement = torch.zeros(state.n_systems, 3, dtype=dtype)
+        displacement[self.system_idx] = -new_com + self.coms
         new_positions += displacement[state.system_idx]
 
     def adjust_momenta(self, state: SimState, momenta: torch.Tensor) -> None:
@@ -267,16 +313,26 @@ class FixCom(Constraint):
         """
         # Compute center of mass momenta
         dtype = momenta.dtype
-        com_momenta = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
-            0,
-            state.system_idx.unsqueeze(-1).expand(-1, 3),
-            momenta,
+        n_systems = (
+            state.n_systems if self.system_idx == slice(None) else len(self.system_idx)
         )
-        system_mass = torch.zeros(state.n_systems, dtype=dtype).scatter_add_(
-            0, state.system_idx, state.masses
+        index_to_consider = (
+            torch.isin(state.system_idx, self.system_idx)
+            if self.system_idx != slice(None)
+            else torch.ones(state.n_atoms, dtype=torch.bool)
+        )
+        com_momenta = torch.zeros((n_systems, 3), dtype=dtype).scatter_add_(
+            0,
+            state.system_idx[index_to_consider].unsqueeze(-1).expand(-1, 3),
+            momenta[index_to_consider],
+        )
+        system_mass = torch.zeros(n_systems, dtype=dtype).scatter_add_(
+            0, state.system_idx[index_to_consider], state.masses[index_to_consider]
         )
         velocity_com = com_momenta / system_mass.unsqueeze(-1)
-        momenta -= velocity_com[state.system_idx] * state.masses.unsqueeze(-1)
+        velocity_change = torch.zeros(state.n_systems, 3, dtype=dtype)
+        velocity_change[self.system_idx] = velocity_com
+        momenta -= velocity_change[state.system_idx] * state.masses.unsqueeze(-1)
 
     def adjust_forces(self, state: SimState, forces: torch.Tensor) -> None:
         """Remove net force to prevent center of mass acceleration.
@@ -288,17 +344,29 @@ class FixCom(Constraint):
             state: Current simulation state
             forces: Forces to be adjusted in-place
         """
-        dtype = state.forces.dtype
-        system_square_mass = torch.zeros(state.n_systems, dtype=dtype).scatter_add_(
-            0, state.system_idx, torch.square(state.masses)
+        dtype = state.positions.dtype
+        n_systems = (
+            state.n_systems if self.system_idx == slice(None) else len(self.system_idx)
         )
-        lmd = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
+        index_to_consider = (
+            torch.isin(state.system_idx, self.system_idx)
+            if self.system_idx != slice(None)
+            else torch.ones(state.n_atoms, dtype=torch.bool)
+        )
+        system_square_mass = torch.zeros(n_systems, dtype=dtype).scatter_add_(
             0,
-            state.system_idx.unsqueeze(-1).expand(-1, 3),
-            forces * state.masses.unsqueeze(-1),
+            state.system_idx[index_to_consider],
+            torch.square(state.masses[index_to_consider]),
+        )
+        lmd = torch.zeros((n_systems, 3), dtype=dtype).scatter_add_(
+            0,
+            state.system_idx[index_to_consider].unsqueeze(-1).expand(-1, 3),
+            forces[index_to_consider] * state.masses[index_to_consider].unsqueeze(-1),
         )
         lmd /= system_square_mass.unsqueeze(-1)
-        forces -= lmd[state.system_idx] * state.masses.unsqueeze(-1)
+        forces_change = torch.zeros(state.n_systems, 3, dtype=dtype)
+        forces_change[self.system_idx] = lmd
+        forces -= forces_change[state.system_idx] * state.masses.unsqueeze(-1)
 
     def __repr__(self) -> str:
         """String representation of the constraint."""
@@ -346,7 +414,7 @@ def warn_if_overlapping_constraints(constraints: list[Constraint]) -> None:
     has_com_constraint = False
 
     for constraint in constraints:
-        if isinstance(constraint, IndexedConstraint):
+        if isinstance(constraint, AtomIndexedConstraint):
             indexed_constraints.append(constraint)
         elif isinstance(constraint, FixCom):
             has_com_constraint = True

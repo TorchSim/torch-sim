@@ -643,6 +643,7 @@ def npt_langevin_init(
         cell_positions=cell_positions,
         cell_velocities=cell_velocities,
         cell_masses=cell_masses,
+        constraints=state.constraints,
     )
 
 
