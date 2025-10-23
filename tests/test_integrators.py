@@ -381,7 +381,7 @@ def test_compute_cell_force_atoms_per_system():
 
     state = ts.NPTLangevinState(
         positions=torch.zeros((72, 3)),
-        velocities=torch.zeros((72, 3)),
+        momenta=torch.zeros((72, 3)),
         energy=torch.zeros(2),
         forces=torch.zeros((72, 3)),
         masses=torch.ones(72),

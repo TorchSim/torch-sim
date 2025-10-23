@@ -12,7 +12,7 @@ NVT:
         using BAOAB scheme [1]
     - Nosé-Hoover thermostat integrator :func:`nvt.nvt_nose_hoover_step` from [2]
 NPT:
-    - Langevin barostat integrator :func:`npt.npt_langevin_step`
+    - Langevin barostat integrator :func:`npt.npt_langevin_step` [3, 4]
     - Nosé-Hoover barostat integrator :func:`npt.npt_nose_hoover_step` from [2]
 
 References:
@@ -21,6 +21,11 @@ References:
     [2] Martyna, G. J., Tuckerman, M. E., Tobias, D. J., & Klein, M. L. (1996).
         Explicit reversible integrators for extended systems dynamics.
         Molecular Physics, 87(5), 1117-1157.
+    [3] Grønbech-Jensen, N., & Farago, O. (2014).
+        Constant pressure and temperature discrete-time Langevin molecular dynamics.
+        The Journal of chemical physics, 141(19).
+    [4] LAMMPS: https://docs.lammps.org/fix_press_langevin.html
+
 
 Examples:
     >>> import torch_sim as ts
