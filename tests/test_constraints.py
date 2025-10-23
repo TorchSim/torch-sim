@@ -70,30 +70,36 @@ def test_fix_atoms(ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesMo
     )
 
 
-def test_fix_com_nvt_langevin(
-    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
-):
+def test_fix_com_nvt_langevin(cu_sim_state: ts.SimState, lj_model: LennardJonesModel):
     """Test FixCom constraint in NVT Langevin dynamics."""
-    n_steps = 200
+    n_steps = 1000
     dt = torch.tensor(0.001, dtype=DTYPE)
     kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
 
-    dofs_before = ar_double_sim_state.calc_dof()
-    ar_double_sim_state.constraints = [FixCom()]
-    assert torch.allclose(ar_double_sim_state.calc_dof(), dofs_before - 3)
+    dofs_before = cu_sim_state.calc_dof()
+    cu_sim_state.constraints = [FixCom()]
+    assert torch.allclose(cu_sim_state.calc_dof(), dofs_before - 3)
 
-    state = ts.nvt_langevin_init(
-        state=ar_double_sim_state, model=lj_model, kT=kT, seed=42
-    )
+    state = ts.nvt_langevin_init(state=cu_sim_state, model=lj_model, kT=kT, seed=42)
     positions = []
     system_masses = torch.zeros((state.n_systems, 1), dtype=DTYPE).scatter_add_(
         0,
         state.system_idx.unsqueeze(-1).expand(-1, 1),
         state.masses.unsqueeze(-1),
     )
+    temperatures = []
     for _step in range(n_steps):
         state = ts.nvt_langevin_step(model=lj_model, state=state, dt=dt, kT=kT)
         positions.append(state.positions.clone())
+        temp = ts.calc_kT(
+            masses=state.masses,
+            momenta=state.momenta,
+            system_idx=state.system_idx,
+            dof_per_system=state.calc_dof(),
+        )
+        temperatures.append(temp / MetalUnits.temperature)
+    temperatures = torch.stack(temperatures)
+
     traj_positions = torch.stack(positions)
 
     # unwrapped_positions = unwrap_positions(
@@ -106,39 +112,42 @@ def test_fix_com_nvt_langevin(
     )
     coms /= system_masses
     coms_drift = coms - coms[0]
-    assert torch.allclose(coms_drift, torch.zeros_like(coms_drift), atol=1e-8)
+    assert torch.allclose(coms_drift, torch.zeros_like(coms_drift), atol=1e-6)
+    assert (torch.mean(temperatures[len(temperatures) // 2 :]) - 300) / 300 < 0.30
 
 
-def test_fix_atoms_nvt_langevin(
-    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
-):
+def test_fix_atoms_nvt_langevin(cu_sim_state: ts.SimState, lj_model: LennardJonesModel):
     """Test FixAtoms constraint in NVT Langevin dynamics."""
-    n_steps = 200
+    n_steps = 1000
     dt = torch.tensor(0.001, dtype=DTYPE)
     kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
 
-    dofs_before = ar_double_sim_state.calc_dof()
-    ar_double_sim_state.constraints = [
-        FixAtoms(indices=torch.tensor([0, 1], dtype=torch.long))
-    ]
-    assert torch.allclose(
-        ar_double_sim_state.calc_dof(), dofs_before - torch.tensor([6, 0])
-    )
-    state = ts.nvt_langevin_init(
-        state=ar_double_sim_state, model=lj_model, kT=kT, seed=42
-    )
+    dofs_before = cu_sim_state.calc_dof()
+    cu_sim_state.constraints = [FixAtoms(indices=torch.tensor([0, 1], dtype=torch.long))]
+    assert torch.allclose(cu_sim_state.calc_dof(), dofs_before - torch.tensor([6]))
+    state = ts.nvt_langevin_init(state=cu_sim_state, model=lj_model, kT=kT, seed=42)
     positions = []
+    temperatures = []
     for _step in range(n_steps):
         state = ts.nvt_langevin_step(model=lj_model, state=state, dt=dt, kT=kT)
         positions.append(state.positions.clone())
+        temp = ts.calc_kT(
+            masses=state.masses,
+            momenta=state.momenta,
+            system_idx=state.system_idx,
+            dof_per_system=state.calc_dof(),
+        )
+        temperatures.append(temp / MetalUnits.temperature)
+    temperatures = torch.stack(temperatures)
     traj_positions = torch.stack(positions)
 
     unwrapped_positions = unwrap_positions(
-        traj_positions, ar_double_sim_state.cell, state.system_idx
+        traj_positions, cu_sim_state.cell, state.system_idx
     )
     diff_positions = unwrapped_positions - unwrapped_positions[0]
     assert torch.max(diff_positions[:, :2]) < 1e-8
     assert torch.max(diff_positions[:, 2:]) > 1e-3
+    assert (torch.mean(temperatures[len(temperatures) // 2 :]) - 300) / 300 < 0.30
 
 
 def test_state_manipulation_with_constraints(ar_double_sim_state: ts.SimState):

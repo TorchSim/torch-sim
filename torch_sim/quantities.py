@@ -19,6 +19,7 @@ def calc_kT(  # noqa: N802
     momenta: torch.Tensor | None = None,
     velocities: torch.Tensor | None = None,
     system_idx: torch.Tensor | None = None,
+    dof_per_system: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Calculate temperature in energy units from momenta/velocities and masses.
 
@@ -28,6 +29,8 @@ def calc_kT(  # noqa: N802
         velocities (torch.Tensor | None): Particle velocities, shape (n_particles, n_dim)
         system_idx (torch.Tensor | None): Optional tensor indicating system membership of
         each particle
+        dof_per_system (torch.Tensor | None): Optional tensor indicating
+        degrees of freedom per system
 
     Returns:
         torch.Tensor: Scalar temperature value
@@ -53,7 +56,8 @@ def calc_kT(  # noqa: N802
 
     # Count degrees of freedom per system
     system_sizes = torch.bincount(system_idx)
-    dof_per_system = system_sizes * squared_term.shape[-1]  # multiply by n_dimensions
+    if dof_per_system is None:
+        dof_per_system = system_sizes * squared_term.shape[-1]  # multiply by n_dimensions
 
     # Calculate temperature per system
     system_sums = torch.segment_reduce(
