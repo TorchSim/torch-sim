@@ -367,7 +367,7 @@ class SimState:
         Returns:
             SimState: A new SimState with tensors on the specified device and dtype
         """
-        return state_to_device(self, device, dtype)
+        return _state_to_device(self, device, dtype)
 
     def __getitem__(self, system_indices: int | list[int] | slice | torch.Tensor) -> Self:
         """Enable standard Python indexing syntax for slicing batches.
@@ -552,7 +552,7 @@ def _normalize_system_indices(
     raise TypeError(f"Unsupported index type: {type(system_indices)}")
 
 
-def state_to_device[T: SimState](
+def _state_to_device[T: SimState](
     state: T, device: torch.device | None = None, dtype: torch.dtype | None = None
 ) -> T:
     """Convert the SimState to a new device and dtype.
@@ -856,7 +856,7 @@ def concatenate_states[T: SimState](  # noqa: C901
     for state in states:
         # Move state to target device if needed
         if state.device != target_device:
-            state = state_to_device(state, target_device)
+            state = state.to(target_device)
 
         # Collect per-atom properties
         for prop, val in get_attrs_for_scope(state, "per-atom"):
@@ -919,7 +919,7 @@ def initialize_state(
     # TODO: create a way to pass velocities from pmg and ase
 
     if isinstance(system, SimState):
-        return state_to_device(system, device, dtype)
+        return system.clone().to(device, dtype)
 
     if isinstance(system, list | tuple) and all(isinstance(s, SimState) for s in system):
         if not all(state.n_systems == 1 for state in system):
