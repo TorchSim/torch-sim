@@ -58,6 +58,7 @@ jobs:
           - { python: '3.12', resolution: highest }
           - { python: '3.13', resolution: lowest-direct }
         model:
+          - { name: chgnet, test_path: "tests/models/test_chgnet.py" }
           - { name: fairchem, test_path: "tests/models/test_fairchem.py" }
           - { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
           - { name: graphpes, test_path: "tests/models/test_graphpes.py" }
