@@ -62,138 +62,6 @@ def test_inverse_box_single_element() -> None:
     assert torch.allclose(ft.inverse_box(x), torch.tensor(0.5))
 
 
-def test_pbc_wrap_general_orthorhombic() -> None:
-    """Test periodic boundary wrapping with orthorhombic cell.
-
-    Tests wrapping of positions in a simple cubic/orthorhombic cell where
-    the lattice vectors are aligned with coordinate axes. This is the simplest
-    case where the lattice matrix is diagonal.
-    """
-    # Simple cubic cell with length 2.0
-    lattice = torch.eye(3) * 2.0
-
-    # Test positions outside box in various directions
-    positions = torch.tensor(
-        [
-            [2.5, 0.5, 0.5],  # Beyond +x face
-            [-0.5, 0.5, 0.5],  # Beyond -x face
-            [0.5, 2.5, 0.5],  # Beyond +y face
-            [0.5, 0.5, -2.5],  # Beyond -z face
-        ]
-    )
-
-    expected = torch.tensor(
-        [
-            [0.5, 0.5, 0.5],  # Wrapped to +x face
-            [1.5, 0.5, 0.5],  # Wrapped to -x face
-            [0.5, 0.5, 0.5],  # Wrapped to +y face
-            [0.5, 0.5, 1.5],  # Wrapped to -z face
-        ]
-    )
-
-    wrapped = ft.pbc_wrap_general(positions, lattice)
-    assert torch.allclose(wrapped, expected)
-
-
-@pytest.mark.parametrize(
-    ("cell", "shift"),
-    [
-        # Cubic cell, integer shift [1, 1, 1]
-        (torch.eye(3, dtype=torch.float64) * 2.0, [1, 1, 1]),
-        # Triclinic cell, integer shift [1, 1, 1]
-        (([[2.0, 0.0, 0.0], [0.5, 2.0, 0.0], [0.0, 0.3, 2.0]]), [1, 1, 1]),
-        # Triclinic cell, integer shift [-1, 2, 0]
-        (([[2.0, 0.5, 0.0], [0.0, 2.0, 0.0], [0.0, 0.3, 2.0]]), [-1, 2, 0]),
-        # triclinic, all negative shift
-        (([[2.0, 0.5, 0.0], [0.0, 2.0, 0.0], [0.0, 0.3, 2.0]]), [-2, -1, -3]),
-        # cubic, large mixed shift
-        (torch.eye(3, dtype=torch.float64) * 2.0, [5, 0, -10]),
-        # highly tilted cell
-        (([[1.3, 0.9, 0.8], [0.0, 1.0, 0.9], [0.0, 0.0, 1.0]]), [1, -2, 3]),
-        # Left-handed cell
-        (([[2.0, 0.0, 0.0], [0.0, -2.0, 0.0], [0.0, 0.0, 2.0]]), [1, 1, 1]),
-    ],
-)
-def test_pbc_wrap_general_param(cell: torch.Tensor, shift: torch.Tensor) -> None:
-    """Test periodic boundary wrapping for various cells and integer shifts."""
-    cell = torch.as_tensor(cell, dtype=torch.float64)
-    shift = torch.as_tensor(shift, dtype=torch.float64)
-    base_frac = torch.tensor([[0.25, 0.5, 0.75]], dtype=torch.float64)
-    base_cart = base_frac @ cell.T
-    shifted_cart = base_cart + (shift @ cell.T)
-    wrapped = ft.pbc_wrap_general(shifted_cart, cell)
-    torch.testing.assert_close(wrapped, base_cart, rtol=1e-6, atol=1e-6)
-
-
-def test_pbc_wrap_general_edge_case() -> None:
-    """Test periodic boundary wrapping at cell boundaries.
-
-    Verifies correct handling of positions exactly on cell boundaries,
-    which should be wrapped to zero rather than one to maintain consistency.
-    """
-    lattice = torch.eye(2) * 2.0
-    positions = torch.tensor(
-        [
-            [2.0, 1.0],  # On +x boundary
-            [1.0, 2.0],  # On +y boundary
-            [2.0, 2.0],  # On corner
-        ]
-    )
-
-    expected = torch.tensor([[0.0, 1.0], [1.0, 0.0], [0.0, 0.0]])
-
-    wrapped = ft.pbc_wrap_general(positions, lattice)
-    assert torch.allclose(wrapped, expected)
-
-
-def test_pbc_wrap_general_invalid_inputs() -> None:
-    """Test error handling for invalid inputs.
-
-    Verifies that appropriate errors are raised for:
-    - Non-floating point tensors
-    - Non-square lattice matrix
-    - Mismatched dimensions between positions and lattice
-    """
-    # Test integer tensors
-    with pytest.raises(TypeError):
-        ft.pbc_wrap_general(torch.ones(3, dtype=torch.int64), torch.eye(3))
-
-    # Test non-square lattice
-    with pytest.raises(ValueError):
-        ft.pbc_wrap_general(torch.ones(3), torch.ones(3, 2))
-
-    # Test dimension mismatch
-    with pytest.raises(ValueError):
-        ft.pbc_wrap_general(torch.ones(4), torch.eye(3))
-
-
-def test_pbc_wrap_general_batch() -> None:
-    """Test periodic boundary wrapping with batched positions.
-
-    Verifies that the function correctly handles batched position inputs
-    while using a single lattice definition.
-    """
-    lattice = torch.eye(3) * 2.0
-
-    # Batch of positions with shape (2, 4, 3)
-    positions = torch.tensor(
-        [
-            [[2.5, 0.5, 0.5], [0.5, 2.5, 0.5], [0.5, 0.5, 2.5], [2.5, 2.5, 2.5]],
-            [[3.5, 1.5, 1.5], [-0.5, 1.5, 1.5], [1.5, -0.5, 1.5], [1.5, 1.5, -0.5]],
-        ]
-    )
-
-    expected = torch.tensor(
-        [
-            [[0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]],
-            [[1.5, 1.5, 1.5], [1.5, 1.5, 1.5], [1.5, 1.5, 1.5], [1.5, 1.5, 1.5]],
-        ]
-    )
-
-    wrapped = ft.pbc_wrap_general(positions, lattice)
-    assert torch.allclose(wrapped, expected)
-
-
 @pytest.mark.parametrize(
     "pbc", [[True, True, True], [True, True, False], [False, False, False], True, False]
 )
@@ -318,15 +186,12 @@ def test_pbc_wrap_batched_triclinic() -> None:
     )
     batch = torch.tensor([0, 1], device=DEVICE)
 
-    # Stack the cells for batched processing
-    cell = torch.stack([cell1, cell2])
-
     # Apply wrapping
     wrapped = ft.pbc_wrap_batched(positions, cell=cell, system_idx=batch)
 
-    # Calculate expected result for first atom (using original algorithm for verification)
-    expected1 = ft.pbc_wrap_general(positions[0:1], cell1)
-    expected2 = ft.pbc_wrap_general(positions[1:2], cell2)
+    # Calculate expected results by wrapping each system independently
+    expected1 = ft.wrap_positions(positions[0:1], cell1)
+    expected2 = ft.wrap_positions(positions[1:2], cell2)
 
     # Verify results match the expected values
     assert torch.allclose(wrapped[0:1], expected1, atol=1e-6)

@@ -110,49 +110,6 @@ def inverse_box(box: torch.Tensor) -> torch.Tensor:
     raise ValueError(f"Box must be either: a scalar, a vector, or a matrix. Found {box}.")
 
 
-def pbc_wrap_general(
-    positions: torch.Tensor, lattice_vectors: torch.Tensor
-) -> torch.Tensor:
-    """Apply periodic boundary conditions using lattice
-        vector transformation method.
-
-    This implementation follows the general matrix-based approach for
-    periodic boundary conditions in arbitrary triclinic cells:
-    1. Transform positions to fractional coordinates using B = A^(-1)
-    2. Wrap fractional coordinates to [0,1) using modulo
-    3. Transform back to real space using A
-
-    Args:
-        positions (torch.Tensor): Tensor of shape (..., d)
-            containing particle positions in real space.
-        lattice_vectors (torch.Tensor): Tensor of shape (d, d) containing
-            lattice vectors as columns (A matrix in the equations).
-
-    Returns:
-        torch.Tensor: Wrapped positions in real space with same shape as input positions.
-    """
-    # Validate inputs
-    if not torch.is_floating_point(positions) or not torch.is_floating_point(
-        lattice_vectors
-    ):
-        raise TypeError("Positions and lattice vectors must be floating point tensors.")
-
-    if lattice_vectors.ndim != 2 or lattice_vectors.shape[0] != lattice_vectors.shape[1]:
-        raise ValueError("Lattice vectors must be a square matrix.")
-
-    if positions.shape[-1] != lattice_vectors.shape[0]:
-        raise ValueError("Position dimensionality must match lattice vectors.")
-
-    # Transform to fractional coordinates: f = Br
-    frac_coords = positions @ torch.linalg.inv(lattice_vectors).T
-
-    # Wrap to reference cell [0,1) using modulo
-    wrapped_frac = frac_coords % 1.0
-
-    # Transform back to real space: r_row_wrapped = wrapped_f_row @ M_row
-    return wrapped_frac @ lattice_vectors.T
-
-
 def pbc_wrap_batched(
     positions: torch.Tensor, cell: torch.Tensor, system_idx: torch.Tensor
 ) -> torch.Tensor:
