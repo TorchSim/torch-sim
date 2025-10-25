@@ -29,7 +29,6 @@ from torch_sim.models.interface import ModelInterface
 
 
 try:
-    from ase.geometry import cell_to_cellpar
     from orb_models.forcefield import featurization_utilities as feat_util
     from orb_models.forcefield.atomic_system import SystemConfig
     from orb_models.forcefield.base import AtomGraphs, _map_concat
@@ -57,6 +56,39 @@ if typing.TYPE_CHECKING:
     from orb_models.forcefield.featurization_utilities import EdgeCreationMethod
 
     from torch_sim.typing import StateDict
+
+
+def cell_to_cellpar(
+    cell: torch.Tensor,
+    radians: bool = False,  # noqa: FBT001, FBT002
+) -> torch.Tensor:
+    """Returns the cell parameters [a, b, c, alpha, beta, gamma].
+    torch version of ase's cell_to_cellpar.
+
+    Args:
+        cell:  lattice vector in column vector convention.
+        radians: If True, return angles in radians. Otherwise, return degrees (default).
+
+    Returns:
+        Tensor with [a, b, c, alpha, beta, gamma].
+    """
+    lengths = torch.linalg.norm(cell, dim=1).squeeze()
+    angles = []
+    for i in range(3):
+        j = i - 1
+        k = i - 2
+        ll = lengths[j] * lengths[k]
+        if ll.item() > 1e-16:
+            cell_j = cell[:, j].squeeze()
+            cell_k = cell[:, k].squeeze()
+            x = torch.dot(cell_j, cell_k) / ll
+            angle = 180.0 / torch.pi * torch.arccos(x)
+        else:
+            angle = 90.0
+        angles.append(angle)
+    if radians:
+        angles = [angle * torch.pi / 180 for angle in angles]
+    return torch.concat((torch.tensor(lengths), torch.tensor(angles)))
 
 
 def state_to_atom_graphs(  # noqa: PLR0915
@@ -181,9 +213,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
         num_edges.append(len(edges[0]))
 
         # Calculate lattice parameters
-        lattice_per_system = torch.from_numpy(
-            cell_to_cellpar(cell_per_system.squeeze(0).cpu().numpy())
-        )
+        lattice_per_system = cell_to_cellpar(cell_per_system.squeeze(0))
 
         # Create features dictionaries
         node_feats = {
