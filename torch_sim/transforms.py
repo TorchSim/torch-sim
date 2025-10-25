@@ -131,7 +131,14 @@ def pbc_wrap_general(positions: torch.Tensor, cell: torch.Tensor) -> torch.Tenso
     Returns:
         torch.Tensor: Wrapped positions in real space with same shape as input positions.
     """
-    return wrap_positions(positions, cell.T)
+    return wrap_positions(
+        positions,
+        cell.T,
+        pbc=True,
+        center=(0.0, 0.0, 0.0),
+        pretty_translation=False,
+        eps=0.0,
+    )
 
 
 def pbc_wrap_batched(
