@@ -112,7 +112,9 @@ def inverse_box(box: torch.Tensor) -> torch.Tensor:
 
 
 @deprecated("Use wrap_positions instead")
-def pbc_wrap_general(positions: torch.Tensor, cell: torch.Tensor) -> torch.Tensor:
+def pbc_wrap_general(
+    positions: torch.Tensor, lattice_vectors: torch.Tensor
+) -> torch.Tensor:
     """Apply periodic boundary conditions using lattice
         vector transformation method.
 
@@ -131,14 +133,26 @@ def pbc_wrap_general(positions: torch.Tensor, cell: torch.Tensor) -> torch.Tenso
     Returns:
         torch.Tensor: Wrapped positions in real space with same shape as input positions.
     """
-    return wrap_positions(
-        positions,
-        cell.T,
-        pbc=True,
-        center=(0.0, 0.0, 0.0),
-        pretty_translation=False,
-        eps=0.0,
-    )
+    # Validate inputs
+    if not torch.is_floating_point(positions) or not torch.is_floating_point(
+        lattice_vectors
+    ):
+        raise TypeError("Positions and lattice vectors must be floating point tensors.")
+
+    if lattice_vectors.ndim != 2 or lattice_vectors.shape[0] != lattice_vectors.shape[1]:
+        raise ValueError("Lattice vectors must be a square matrix.")
+
+    if positions.shape[-1] != lattice_vectors.shape[0]:
+        raise ValueError("Position dimensionality must match lattice vectors.")
+
+    # Transform to fractional coordinates: f = Br
+    frac_coords = positions @ torch.linalg.inv(lattice_vectors).T
+
+    # Wrap to reference cell [0,1) using modulo
+    wrapped_frac = frac_coords % 1.0
+
+    # Transform back to real space: r_row_wrapped = wrapped_f_row @ M_row
+    return wrapped_frac @ lattice_vectors.T
 
 
 def pbc_wrap_batched(
