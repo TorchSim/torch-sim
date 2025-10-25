@@ -1,6 +1,8 @@
 import traceback
 
+import numpy as np
 import pytest
+from ase.geometry.cell import cell_to_cellpar as ase_c2p
 
 from tests.conftest import DEVICE
 from tests.models.conftest import (
@@ -8,6 +10,8 @@ from tests.models.conftest import (
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
+from torch_sim import SimState
+from torch_sim.models.orb import cell_to_cellpar
 
 
 try:
@@ -74,3 +78,14 @@ test_validate_conservative_model_outputs = make_validate_model_outputs_test(
 test_validate_direct_model_outputs = make_validate_model_outputs_test(
     model_fixture_name="orbv3_direct_20_omat_model",
 )
+
+
+def test_cell_to_cellpar(si_sim_state: SimState) -> None:
+    assert np.allclose(
+        ase_c2p(si_sim_state.row_vector_cell.squeeze()),
+        cell_to_cellpar(si_sim_state.column_vector_cell).cpu().numpy(),
+    )
+    assert np.allclose(
+        ase_c2p(si_sim_state.row_vector_cell.squeeze(), radians=True),
+        cell_to_cellpar(si_sim_state.column_vector_cell, radians=True).cpu().numpy(),
+    )
