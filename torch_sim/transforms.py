@@ -7,6 +7,7 @@ general PBC wrapping.
 
 from collections.abc import Callable, Iterable
 from functools import wraps
+from typing_extensions import deprecated
 
 import torch
 from torch.types import _dtype
@@ -108,6 +109,29 @@ def inverse_box(box: torch.Tensor) -> torch.Tensor:
     if box.ndim == 2:
         return torch.linalg.inv(box)
     raise ValueError(f"Box must be either: a scalar, a vector, or a matrix. Found {box}.")
+
+
+@deprecated("Use wrap_positions instead")
+def pbc_wrap_general(positions: torch.Tensor, cell: torch.Tensor) -> torch.Tensor:
+    """Apply periodic boundary conditions using lattice
+        vector transformation method.
+
+    This implementation follows the general matrix-based approach for
+    periodic boundary conditions in arbitrary triclinic cells:
+    1. Transform positions to fractional coordinates using B = A^(-1)
+    2. Wrap fractional coordinates to [0,1) using modulo
+    3. Transform back to real space using A
+
+    Args:
+        positions (torch.Tensor): Tensor of shape (..., d)
+            containing particle positions in real space.
+        lattice_vectors (torch.Tensor): Tensor of shape (d, d) containing
+            lattice vectors as columns (A matrix in the equations).
+
+    Returns:
+        torch.Tensor: Wrapped positions in real space with same shape as input positions.
+    """
+    return wrap_positions(positions, cell.T)
 
 
 def pbc_wrap_batched(
