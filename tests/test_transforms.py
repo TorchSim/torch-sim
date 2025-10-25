@@ -190,8 +190,8 @@ def test_pbc_wrap_batched_triclinic() -> None:
     wrapped = ft.pbc_wrap_batched(positions, cell=cell, system_idx=batch)
 
     # Calculate expected results by wrapping each system independently
-    expected1 = ft.wrap_positions(positions[0:1], cell1)
-    expected2 = ft.wrap_positions(positions[1:2], cell2)
+    expected1 = ft.wrap_positions(positions[0:1], cell1.T)
+    expected2 = ft.wrap_positions(positions[1:2], cell2.T)
 
     # Verify results match the expected values
     assert torch.allclose(wrapped[0:1], expected1, atol=1e-6)
