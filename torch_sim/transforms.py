@@ -7,10 +7,10 @@ general PBC wrapping.
 
 from collections.abc import Callable, Iterable
 from functools import wraps
-from typing_extensions import deprecated
 
 import torch
 from torch.types import _dtype
+from typing_extensions import deprecated
 
 
 def get_fractional_coordinates(
