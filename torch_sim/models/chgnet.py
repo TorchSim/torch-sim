@@ -127,22 +127,13 @@ class CHGNetModel(ModelInterface):
                 - 'magnetic_moments': Magnetic moments with shape [n_atoms, 3] if
                     available in CHGNet output
 
-        Raises:
-            ValueError: If atomic numbers are not provided in the state.
         """
         # Handle state dict
-        if isinstance(state, dict) and state.get("atomic_numbers") is None:
-            raise ValueError("Atomic numbers must be provided in the state for CHGNet.")
-
         sim_state = (
             state
             if isinstance(state, ts.SimState)
             else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
         )
-
-        # Validate that atomic numbers
-        if sim_state.atomic_numbers is None:
-            raise ValueError("Atomic numbers must be provided in the state for CHGNet.")
 
         # Convert SimState to list of pymatgen Structures
         structures = sim_state.to_structures()
@@ -195,7 +186,10 @@ class CHGNetModel(ModelInterface):
                     for result in chgnet_results
                 ]
             )
-            results["stress"] = stresses
+            # Convert from GPa to eV/A^3 to match ASE calculator convention
+            # stress_weight converts GPa to eV/A^3 (approximately 1/160.21)
+            stress_weight = 0.006241509125883258
+            results["stress"] = stresses * stress_weight
 
         # Process magnetic moments (if available)
         if "m" in chgnet_results[0]:
