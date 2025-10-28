@@ -591,4 +591,4 @@ def test_in_flight_max_iterations(
 
     # Verify swap_attempts tracking
     for idx in range(len(states)):
-        assert batcher.swap_attempts[idx] == max_attempts
+        assert batcher.iteration_count[idx] == max_attempts
