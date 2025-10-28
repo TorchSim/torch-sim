@@ -229,7 +229,7 @@ def _configure_in_flight_autobatcher(
     model: ModelInterface,
     *,
     autobatcher: InFlightAutoBatcher | bool,
-    max_attempts: int,  # TODO: change name to max_iterations
+    max_iterations: int,  # TODO: change name to max_iterations
 ) -> InFlightAutoBatcher:
     """Configure the hot swapping autobatcher for the optimize function.
 
@@ -238,14 +238,15 @@ def _configure_in_flight_autobatcher(
         state (SimState): The state to use for the autobatcher
         autobatcher (InFlightAutoBatcher | bool): The autobatcher to use for the
             autobatcher
-        max_attempts (int): The maximum number of attempts for the autobatcher
+        max_iterations (int): The maximum number of iterations for each state in
+            the autobatcher.
 
     Returns:
         A hot swapping autobatcher
     """
     # load and properly configure the autobatcher
     if isinstance(autobatcher, InFlightAutoBatcher):
-        autobatcher.max_iterations = max_attempts
+        autobatcher.max_iterations = max_iterations
     elif isinstance(autobatcher, bool):
         if autobatcher:
             memory_scales_with = model.memory_scales_with
@@ -257,7 +258,7 @@ def _configure_in_flight_autobatcher(
             model=model,
             max_memory_scaler=max_memory_scaler,
             memory_scales_with=memory_scales_with,
-            max_iterations=max_attempts,
+            max_iterations=max_iterations,
             max_memory_padding=0.9,
         )
     else:
@@ -398,7 +399,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             infinite memory and will not batch, but will still remove converged
             structures from the batch. If True, the system will estimate the memory
             available and batch accordingly. If a InFlightAutoBatcher, the system
-            will use the provided autobatcher, but will reset the max_attempts to
+            will use the provided autobatcher, but will reset the max_iterations to
             max_steps // steps_between_swaps.
         max_steps (int): Maximum number of total optimization steps
         steps_between_swaps: Number of steps to take before checking convergence
@@ -434,9 +435,9 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             f"(init_func, step_func), got {optimizer_type}"
         )
 
-    max_attempts = max_steps // steps_between_swaps
+    max_iterations = max_steps // steps_between_swaps
     autobatcher = _configure_in_flight_autobatcher(
-        initial_state, model, autobatcher=autobatcher, max_attempts=max_attempts
+        initial_state, model, autobatcher=autobatcher, max_iterations=max_iterations
     )
 
     if isinstance(initial_state, OptimState):

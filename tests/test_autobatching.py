@@ -550,13 +550,13 @@ def test_in_flight_max_iterations(
     # Create states that won't naturally converge
     states = [si_sim_state.clone(), fe_supercell_sim_state.clone()]
 
-    # Set max_attempts to a small value to ensure quick termination
-    max_attempts = 3
+    # Set max_iterations to a small value to ensure quick termination
+    max_iterations = 3
     batcher = InFlightAutoBatcher(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=800.0,
-        max_iterations=max_attempts,
+        max_iterations=max_iterations,
     )
     batcher.load_states(states)
 
@@ -580,15 +580,15 @@ def test_in_flight_max_iterations(
         if state is not None:
             convergence_tensor = torch.zeros(state.n_systems, dtype=torch.bool)
 
-        if iteration_count > max_attempts + 4:
+        if iteration_count > max_iterations + 4:
             raise ValueError("Should have terminated by now")
 
     # Verify all states were processed
     assert len(all_completed_states) == len(states)
 
-    # Verify we didn't exceed max_attempts + 1 iterations (first call doesn't count)
+    # Verify we didn't exceed max_iterations + 1 iterations (first call doesn't count)
     assert iteration_count == 3
 
-    # Verify swap_attempts tracking
+    # Verify iteration_count tracking
     for idx in range(len(states)):
-        assert batcher.iteration_count[idx] == max_attempts
+        assert batcher.iteration_count[idx] == max_iterations
