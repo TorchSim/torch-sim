@@ -245,7 +245,7 @@ def _configure_in_flight_autobatcher(
     """
     # load and properly configure the autobatcher
     if isinstance(autobatcher, InFlightAutoBatcher):
-        autobatcher.max_attempts = max_attempts
+        autobatcher.max_iterations = max_attempts
     elif isinstance(autobatcher, bool):
         if autobatcher:
             memory_scales_with = model.memory_scales_with
@@ -373,10 +373,10 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     *,
     optimizer: Optimizer | tuple[Callable[..., T], Callable[..., T]],
     convergence_fn: Callable[[T, torch.Tensor | None], torch.Tensor] | None = None,
-    trajectory_reporter: TrajectoryReporter | dict | None = None,
-    autobatcher: InFlightAutoBatcher | bool = False,
     max_steps: int = 10_000,
     steps_between_swaps: int = 5,
+    trajectory_reporter: TrajectoryReporter | dict | None = None,
+    autobatcher: InFlightAutoBatcher | bool = False,
     pbar: bool | dict[str, Any] = False,
     init_kwargs: dict[str, Any] | None = None,
     **optimizer_kwargs: Any,
