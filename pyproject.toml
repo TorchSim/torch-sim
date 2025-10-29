@@ -28,7 +28,7 @@ classifiers = [
 requires-python = ">=3.12"
 dependencies = [
     "h5py>=3.12.1",
-    "numpy>=2",
+    "numpy>=1.26,<3",
     "tables>=3.10.2",
     "torch>=2",
     "tqdm>=4.67",
