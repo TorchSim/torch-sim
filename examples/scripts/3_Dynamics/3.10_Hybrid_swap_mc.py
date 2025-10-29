@@ -67,9 +67,8 @@ class HybridSwapMCState(ts.SwapMCState, MDState):
         last_swap: Last swap attempted
     """
 
-    last_permutation: torch.Tensor
     _atom_attributes = (
-        ts.SwapMCState._atom_attributes | MDState._atom_attributes | {"last_permutation"}  # noqa: SLF001
+        ts.SwapMCState._atom_attributes | MDState._atom_attributes  # noqa: SLF001
     )
     _system_attributes = (
         ts.SwapMCState._system_attributes | MDState._system_attributes  # noqa: SLF001

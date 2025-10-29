@@ -129,6 +129,7 @@ def nvt_langevin_init(
         pbc=state.pbc,
         system_idx=state.system_idx,
         atomic_numbers=state.atomic_numbers,
+        constraints=state.constraints,
     )
 
 
@@ -196,7 +197,7 @@ def nvt_langevin_step(
     return momentum_step(state, dt / 2)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class NVTNoseHooverState(MDState):
     """State information for an NVT system with a Nose-Hoover chain thermostat.
 
@@ -323,6 +324,7 @@ def nvt_nose_hoover_init(
         system_idx=state.system_idx,
         chain=chain_fns.initialize(dof_per_system, KE, kT),
         _chain_fns=chain_fns,  # Store the chain functions
+        constraints=state.constraints,
     )
 
 
