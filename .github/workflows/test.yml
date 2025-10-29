@@ -81,7 +81,11 @@ jobs:
         exclude:
           - version: { python: '3.13', resolution: lowest-direct }
             model: { name: orb, test_path: "tests/models/test_orb.py" }
+          - version: { python: '3.13', resolution: highest }
+            model: { name: orb, test_path: "tests/models/test_orb.py" }
           - version: { python: '3.13', resolution: lowest-direct }
+            model: { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
+          - version: { python: '3.13', resolution: highest }
             model: { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
     runs-on: ${{ matrix.os }}
 
