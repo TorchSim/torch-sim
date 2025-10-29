@@ -39,7 +39,12 @@ jobs:
       - name: Install torch_sim
         run: |
           uv pip install "torch>2" --index-url https://download.pytorch.org/whl/cpu --system
-          uv pip install -e ".[test]" --resolution=${{ matrix.version.resolution }} --system
+          # always use numpy>=2 with Python 3.13
+          if [ "${{ matrix.version.python }}" = "3.13" ]; then
+            uv pip install -e ".[test]" "numpy>=2" --resolution=${{ matrix.version.resolution }} --system
+          else
+            uv pip install -e ".[test]" --resolution=${{ matrix.version.resolution }} --system
+          fi
 
       - name: Run core tests
         run: |
@@ -120,7 +125,12 @@ jobs:
       - name: Install torch_sim with model dependencies
         if: ${{ matrix.model.name != 'fairchem-legacy' }}
         run: |
-          uv pip install -e ".[test,${{ matrix.model.name }}]" --resolution=${{ matrix.version.resolution }} --system
+          # always use numpy>=2 with Python 3.13
+          if [ "${{ matrix.version.python }}" = "3.13" ]; then
+            uv pip install -e ".[test,${{ matrix.model.name }}]" "numpy>=2" --resolution=${{ matrix.version.resolution }} --system
+          else
+            uv pip install -e ".[test,${{ matrix.model.name }}]" --resolution=${{ matrix.version.resolution }} --system
+          fi
 
       - name: Run ${{ matrix.model.test_path }} tests
         if: ${{ !contains(matrix.model.name, 'fairchem') || github.event.pull_request.head.repo.fork == false }}
