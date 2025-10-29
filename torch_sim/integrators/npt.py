@@ -149,9 +149,6 @@ def _npt_langevin_cell_beta(
     # Generate standard normal distribution (zero mean, unit variance)
     noise = torch.randn_like(state.cell_positions, device=state.device, dtype=state.dtype)
 
-    # Ensure cell_alpha and kT have batch dimension if they're scalars
-    if state.cell_alpha.ndim == 0:
-        state.cell_alpha = state.cell_alpha.expand(state.n_systems)
     if kT.ndim == 0:
         kT = kT.expand(state.n_systems)
 
@@ -198,8 +195,6 @@ def _npt_langevin_cell_position_step(
     # Ensure parameters have batch dimension
     if dt.ndim == 0:
         dt = dt.expand(state.n_systems)
-    if state.cell_alpha.ndim == 0:
-        state.cell_alpha = state.cell_alpha.expand(state.n_systems)
 
     # Reshape for broadcasting
     dt_expanded = dt.view(-1, 1, 1)
@@ -215,12 +210,7 @@ def _npt_langevin_cell_position_step(
     c_2 = cell_b * dt_expanded * dt_expanded * pressure_force / Q_2
 
     # Random noise contribution (thermal fluctuations)
-    c_3 = (
-        cell_b
-        * dt_expanded
-        * _npt_langevin_cell_beta(state, state.cell_alpha, kT, dt)
-        / Q_2
-    )
+    c_3 = cell_b * dt_expanded * _npt_langevin_cell_beta(state, kT, dt) / Q_2
 
     # Update cell positions with all contributions
     state.cell_positions = state.cell_positions + c_1 + c_2 + c_3
@@ -259,8 +249,6 @@ def _npt_langevin_cell_velocity_step(
     # Ensure parameters have batch dimension
     if dt.ndim == 0:
         dt = dt.expand(state.n_systems)
-    if state.cell_alpha.ndim == 0:
-        state.cell_alpha = state.cell_alpha.expand(state.n_systems)
     if kT.ndim == 0:
         kT = kT.expand(state.n_systems)
 
@@ -524,15 +512,15 @@ def _compute_cell_force(
     return virial + e_kin_per_atom * state.n_atoms_per_system.view(-1, 1, 1)
 
 
-def npt_langevin_init(
+def npt_langevin_init(  # noqa: C901
     state: SimState | StateDict,
     model: ModelInterface,
     *,
-    kT: torch.Tensor,
-    dt: torch.Tensor,
-    alpha: torch.Tensor | None = None,
-    cell_alpha: torch.Tensor | None = None,
-    b_tau: torch.Tensor | None = None,
+    kT: float | torch.Tensor,
+    dt: float | torch.Tensor,
+    alpha: float | torch.Tensor | None = None,
+    cell_alpha: float | torch.Tensor | None = None,
+    b_tau: float | torch.Tensor | None = None,
     seed: int | None = None,
     **_kwargs: Any,
 ) -> NPTLangevinState:
@@ -588,6 +576,13 @@ def npt_langevin_init(
         kT = torch.tensor(kT, device=device, dtype=dtype)
     if isinstance(b_tau, float):
         b_tau = torch.tensor(b_tau, device=device, dtype=dtype)
+
+    if alpha.ndim == 0:
+        alpha = alpha.expand(state.n_systems)
+    if cell_alpha.ndim == 0:
+        cell_alpha = cell_alpha.expand(state.n_systems)
+    if b_tau.ndim == 0:
+        b_tau = b_tau.expand(state.n_systems)
 
     if not isinstance(state, SimState):
         state = SimState(**state)
