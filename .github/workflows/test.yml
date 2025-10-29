@@ -19,6 +19,8 @@ jobs:
         os: [ubuntu-latest, macos-14]
         version:
           - { python: '3.12', resolution: highest }
+          - { python: '3.12', resolution: lowest-direct }
+          - { python: '3.13', resolution: highest }
           - { python: '3.13', resolution: lowest-direct }
     runs-on: ${{ matrix.os }}
 
@@ -56,6 +58,8 @@ jobs:
         os: [ubuntu-latest, macos-14]
         version:
           - { python: '3.12', resolution: highest }
+          - { python: '3.12', resolution: lowest-direct }
+          - { python: '3.13', resolution: highest }
           - { python: '3.13', resolution: lowest-direct }
         model:
           - { name: fairchem, test_path: "tests/models/test_fairchem.py" }
