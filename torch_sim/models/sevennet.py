@@ -5,6 +5,7 @@ from __future__ import annotations
 import traceback
 import warnings
 from typing import TYPE_CHECKING, Any
+from pathlib import Path
 
 import torch
 
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
 try:
     import sevenn._keys as key
     import torch
+    from sevenn.util import load_checkpoint
     from sevenn.atom_graph_data import AtomGraphData
     from sevenn.calculator import torch_script_type
     from torch_geometric.loader.dataloader import Collater
@@ -59,7 +61,7 @@ class SevenNetModel(ModelInterface):
 
     def __init__(
         self,
-        model: AtomGraphSequential,
+        model: AtomGraphSequential | str | Path,
         *,  # force remaining arguments to be keyword-only
         modal: str | None = None,
         neighbor_list_fn: Callable = vesin_nl_ts,
@@ -72,7 +74,9 @@ class SevenNetModel(ModelInterface):
         Sets up the model parameters for subsequent use in energy and force calculations.
 
         Args:
-            model (AtomGraphSequential): The SevenNet model to wrap.
+            model (str | Path | AtomGraphSequential): The SevenNet model to wrap.
+                Accepts either 1) a path to a checkpoint file, 2) a model instance,
+                or 3) a pretrained model name.
             modal (str | None): modal (fidelity) if given model is multi-modal model.
                 for 7net-mf-ompa, it should be one of 'mpa' (MPtrj + sAlex) or 'omat24'
                 (OMat24).
@@ -102,6 +106,10 @@ class SevenNetModel(ModelInterface):
                 UserWarning,
                 stacklevel=2,
             )
+
+        if isinstance(model, (str, Path)):
+            cp = load_checkpoint(model)
+            model = cp.build_model()
 
         if not model.type_map:
             raise ValueError("type_map is missing")
