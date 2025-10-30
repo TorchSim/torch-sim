@@ -8,8 +8,8 @@ supports periodic boundary conditions.
 NVE:
     - Velocity Verlet integrator for constant energy simulations :func:`nve.nve_step`
 NVT:
-    - Canonical Sampling velocity rescaling (CSVR) thermostat integrator
-        :func:`nvt.nvt_csvr_step` [1]
+    - Velocity Rescaling thermostat integrator
+        :func:`nvt.nvt_vrescale_step` [1]
     - Langevin thermostat integrator :func:`nvt.nvt_langevin_step`
         using BAOAB scheme [2]
     - Nosé-Hoover thermostat integrator :func:`nvt.nvt_nose_hoover_step` from [3]
@@ -66,8 +66,8 @@ from .npt import (
 from .nve import nve_init, nve_step
 from .nvt import (
     NVTNoseHooverState,
-    nvt_csvr_init,
-    nvt_csvr_step,
+    nvt_vrescale_init,
+    nvt_vrescale_step,
     nvt_langevin_init,
     nvt_langevin_step,
     nvt_nose_hoover_init,
@@ -85,7 +85,7 @@ class Integrator(StrEnum):
 
     Available options:
         - ``nve``: Constant energy (microcanonical) ensemble.
-        - ``nvt_csvr``: CSVR thermostat for constant temperature.
+        - ``nvt_vrescale``: Velocity rescaling thermostat for constant temperature.
         - ``nvt_langevin``: Langevin thermostat for constant temperature.
         - ``nvt_nose_hoover``: Nosé-Hoover thermostat for constant temperature.
         - ``npt_langevin``: Langevin barostat for constant temperature and pressure.
@@ -100,7 +100,7 @@ class Integrator(StrEnum):
     """
 
     nve = "nve"
-    nvt_csvr = "nvt_csvr"
+    nvt_vrescale = "nvt_vrescale"
     nvt_langevin = "nvt_langevin"
     nvt_nose_hoover = "nvt_nose_hoover"
     npt_langevin = "npt_langevin"
@@ -124,7 +124,7 @@ class Integrator(StrEnum):
 #: The available integrators are:
 #:
 #: - ``Integrator.nve``: Velocity Verlet (microcanonical)
-#: - ``Integrator.nvt_csvr``: Canonical Sampling velocity rescaling (CSVR) thermostat
+#: - ``Integrator.nvt_vrescale``: V-Rescale thermostat
 #: - ``Integrator.nvt_langevin``: Langevin thermostat
 #: - ``Integrator.nvt_nose_hoover``: Nosé-Hoover thermostat
 #: - ``Integrator.npt_langevin``: Langevin barostat
@@ -135,7 +135,7 @@ INTEGRATOR_REGISTRY: Final[
     dict[Integrator, tuple[Callable[..., Any], Callable[..., Any]]]
 ] = {
     Integrator.nve: (nve_init, nve_step),
-    Integrator.nvt_csvr: (nvt_csvr_init, nvt_csvr_step),
+    Integrator.nvt_vrescale: (nvt_vrescale_init, nvt_vrescale_step),
     Integrator.nvt_langevin: (nvt_langevin_init, nvt_langevin_step),
     Integrator.nvt_nose_hoover: (nvt_nose_hoover_init, nvt_nose_hoover_step),
     Integrator.npt_langevin: (npt_langevin_init, npt_langevin_step),

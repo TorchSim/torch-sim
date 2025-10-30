@@ -460,7 +460,7 @@ def nvt_nose_hoover_invariant(
     return e_tot
 
 
-def _csvr_update(
+def _vrescale_update(
     state: MDState,
     tau: float | torch.Tensor,
     kT: float | torch.Tensor,
@@ -525,7 +525,7 @@ def _csvr_update(
     return state
 
 
-def nvt_csvr_init(
+def nvt_vrescale_init(
     state: SimState | StateDict,
     model: ModelInterface,
     *,
@@ -533,7 +533,7 @@ def nvt_csvr_init(
     seed: int | None = None,
     **_kwargs: Any,
 ) -> MDState:
-    """Initialize an NVT state from input data for CSVR dynamics.
+    """Initialize an NVT state from input data for velocity rescaling dynamics.
 
     Creates an initial state for NVT molecular dynamics using the canonical
     sampling through velocity rescaling (CSVR) thermostat. This thermostat
@@ -555,7 +555,7 @@ def nvt_csvr_init(
 
     Notes:
         The initial momenta are sampled from a Maxwell-Boltzmann distribution
-        at the specified temperature. The CSVR thermostat provides proper
+        at the specified temperature. The V-Rescale thermostat provides proper
         canonical sampling through stochastic velocity rescaling.
     """
     if not isinstance(state, SimState):
@@ -582,7 +582,7 @@ def nvt_csvr_init(
     )
 
 
-def nvt_csvr_step(
+def nvt_vrescale_step(
     model: ModelInterface,
     state: MDState,
     *,
@@ -590,10 +590,10 @@ def nvt_csvr_step(
     kT: float | torch.Tensor,
     tau: float | torch.Tensor | None = None,
 ) -> MDState:
-    """Perform one complete CSVR dynamics integration step.
+    """Perform one complete V-Rescale dynamics integration step.
 
-    This function implements the canonical sampling through velocity rescaling (CSVR)
-    thermostat combined with velocity Verlet integration. The CSVR thermostat samples
+    This function implements the canonical sampling through velocity rescaling (V-Rescale)
+    thermostat combined with velocity Verlet integration. The V-Rescale thermostat samples
     the canonical distribution by rescaling velocities with a properly chosen random
     factor that ensures correct canonical sampling.
 
@@ -609,13 +609,13 @@ def nvt_csvr_step(
         seed: Random seed for reproducibility
 
     Returns:
-        MDState: Updated state after one complete CSVR step with new positions,
+        MDState: Updated state after one complete V-Rescale step with new positions,
             momenta, forces, and energy
 
     Notes:
-        - Uses CSVR thermostat for proper canonical ensemble sampling
-        - Unlike Berendsen thermostat, CSVR samples the true canonical distribution
-        - Integration sequence: CSVR rescaling + Velocity Verlet step
+        - Uses V-Rescale thermostat for proper canonical ensemble sampling
+        - Unlike Berendsen thermostat, V-Rescale samples the true canonical distribution
+        - Integration sequence: V-Rescale rescaling + Velocity Verlet step
         - The rescaling factor follows the distribution derived in Bussi et al.
 
     References:
@@ -634,8 +634,8 @@ def nvt_csvr_step(
     if isinstance(kT, float):
         kT = torch.tensor(kT, device=device, dtype=dtype)
 
-    # Apply CSVR rescaling
-    state = _csvr_update(state, tau, kT, dt)
+    # Apply V-Rescale rescaling
+    state = _vrescale_update(state, tau, kT, dt)
 
     # Perform velocity Verlet step
     return velocity_verlet(state=state, dt=dt, model=model)

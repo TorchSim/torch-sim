@@ -477,17 +477,17 @@ def test_nvt_nose_hoover_multi_kt(
         assert invariant_std / invariant_traj.mean() < 0.1
 
 
-def test_nvt_csvr(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
+def test_nvt_vrescale(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
     n_steps = 100
     dt = torch.tensor(0.001, dtype=DTYPE)
     kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
 
     # Initialize integrator
-    state = ts.nvt_csvr_init(state=ar_double_sim_state, model=lj_model, kT=kT, seed=42)
+    state = ts.nvt_vrescale_init(state=ar_double_sim_state, model=lj_model, kT=kT, seed=42)
     energies = []
     temperatures = []
     for _step in range(n_steps):
-        state = ts.nvt_csvr_step(model=lj_model, state=state, dt=dt, kT=kT)
+        state = ts.nvt_vrescale_step(model=lj_model, state=state, dt=dt, kT=kT)
 
         # Calculate instantaneous temperature from kinetic energy
         temp = ts.calc_kT(
