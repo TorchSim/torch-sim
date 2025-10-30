@@ -55,8 +55,6 @@ class NPTLangevinState(MDState):
     """
 
     # System state variables
-    energy: torch.Tensor
-    forces: torch.Tensor
     stress: torch.Tensor
 
     # Cell variables
