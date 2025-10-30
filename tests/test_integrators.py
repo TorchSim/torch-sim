@@ -477,6 +477,58 @@ def test_nvt_nose_hoover_multi_kt(
         assert invariant_std / invariant_traj.mean() < 0.1
 
 
+def test_nvt_csvr(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
+    n_steps = 100
+    dt = torch.tensor(0.001, dtype=DTYPE)
+    kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
+
+    # Initialize integrator
+    state = ts.nvt_csvr_init(state=ar_double_sim_state, model=lj_model, kT=kT, seed=42)
+    energies = []
+    temperatures = []
+    for _step in range(n_steps):
+        state = ts.nvt_csvr_step(model=lj_model, state=state, dt=dt, kT=kT)
+
+        # Calculate instantaneous temperature from kinetic energy
+        temp = ts.calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
+        energies.append(state.energy)
+        temperatures.append(temp / MetalUnits.temperature)
+
+    # Convert temperatures list to tensor
+    temperatures_tensor = torch.stack(temperatures)
+    temperatures_list = [t.tolist() for t in temperatures_tensor.T]
+
+    energies_tensor = torch.stack(energies)
+    energies_list = [t.tolist() for t in energies_tensor.T]
+
+    # Basic sanity checks
+    assert len(energies_list[0]) == n_steps
+    assert len(temperatures_list[0]) == n_steps
+
+    # Check temperature is roughly maintained for each trajectory
+    mean_temps = torch.mean(temperatures_tensor, dim=0)  # Mean temp for each trajectory
+    for mean_temp in mean_temps:
+        assert (
+            abs(mean_temp - kT.item() / MetalUnits.temperature) < 100.0
+        )  # Allow for thermal fluctuations
+
+    # Check energy is stable for each trajectory
+    for traj in energies_list:
+        energy_std = torch.tensor(traj).std()
+        assert energy_std < 1.0  # Adjust threshold as needed
+
+    # Check positions and momenta have correct shapes
+    n_atoms = 8
+
+    # Verify the two systems remain distinct
+    pos_diff = torch.norm(
+        state.positions[:n_atoms].mean(0) - state.positions[n_atoms:].mean(0)
+    )
+    assert pos_diff > 0.0001  # Systems should remain separated
+
+
 def test_npt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
     dtype = torch.float64
     n_steps = 100

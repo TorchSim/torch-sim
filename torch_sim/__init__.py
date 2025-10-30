@@ -29,6 +29,8 @@ from torch_sim.integrators import (
     NVTNoseHooverState,
     nve_init,
     nve_step,
+    nvt_csvr_init,
+    nvt_csvr_step,
     nvt_langevin_init,
     nvt_langevin_step,
     nvt_nose_hoover_init,
