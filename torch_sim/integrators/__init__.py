@@ -14,8 +14,9 @@ NVT:
         using BAOAB scheme [2]
     - Nosé-Hoover thermostat integrator :func:`nvt.nvt_nose_hoover_step` from [3]
 NPT:
-    - Langevin barostat integrator :func:`npt.npt_langevin_step` [3, 4]
-    - Nosé-Hoover barostat integrator :func:`npt.npt_nose_hoover_step` from [2]
+    - Langevin barostat integrator :func:`npt.npt_langevin_step` [4, 5]
+    - Nosé-Hoover barostat integrator :func:`npt.npt_nose_hoover_step` from [3]
+    - C-Rescale barostat integrator :func:`npt.npt_crescale_step` from [6, 7, 8]
 
 References:
     [1] Bussi G, Donadio D, Parrinello M. "Canonical sampling through velocity rescaling."
@@ -29,6 +30,14 @@ References:
         Constant pressure and temperature discrete-time Langevin molecular dynamics.
         The Journal of chemical physics, 141(19).
     [5] LAMMPS: https://docs.lammps.org/fix_press_langevin.html
+    [6] Bernetti, Mattia, and Giovanni Bussi.
+        "Pressure control using stochastic cell rescaling."
+        The Journal of Chemical Physics 153.11 (2020).
+    [7] Del Tatto, Vittorio, et al. "Molecular dynamics of solids at
+        constant pressure and stress using anisotropic stochastic cell rescaling."
+        Applied Sciences 12.3 (2022): 1139.
+    [8] Bussi Anisotropic C-Rescale SimpleMD implementation:
+        https://github.com/bussilab/crescale/blob/master/simplemd_anisotropic/simplemd.cpp
 
 
 Examples:
@@ -57,6 +66,8 @@ from .md import MDState, calculate_momenta, momentum_step, position_step, veloci
 from .npt import (
     NPTLangevinState,
     NPTNoseHooverState,
+    npt_crescale_init,
+    npt_crescale_step,
     npt_langevin_init,
     npt_langevin_step,
     npt_nose_hoover_init,
@@ -66,13 +77,13 @@ from .npt import (
 from .nve import nve_init, nve_step
 from .nvt import (
     NVTNoseHooverState,
-    nvt_vrescale_init,
-    nvt_vrescale_step,
     nvt_langevin_init,
     nvt_langevin_step,
     nvt_nose_hoover_init,
     nvt_nose_hoover_invariant,
     nvt_nose_hoover_step,
+    nvt_vrescale_init,
+    nvt_vrescale_step,
 )
 
 
@@ -105,6 +116,7 @@ class Integrator(StrEnum):
     nvt_nose_hoover = "nvt_nose_hoover"
     npt_langevin = "npt_langevin"
     npt_nose_hoover = "npt_nose_hoover"
+    npt_crescale = "npt_crescale"
 
 
 #: Integrator registry - maps integrator names to (init_fn, step_fn) pairs.
@@ -129,6 +141,7 @@ class Integrator(StrEnum):
 #: - ``Integrator.nvt_nose_hoover``: Nosé-Hoover thermostat
 #: - ``Integrator.npt_langevin``: Langevin barostat
 #: - ``Integrator.npt_nose_hoover``: Nosé-Hoover barostat
+#: - ``Integrator.npt_crescale``: C-Rescale barostat
 #:
 #: :type: dict[Integrator, tuple[Callable[..., Any], Callable[..., Any]]]
 INTEGRATOR_REGISTRY: Final[
@@ -140,4 +153,5 @@ INTEGRATOR_REGISTRY: Final[
     Integrator.nvt_nose_hoover: (nvt_nose_hoover_init, nvt_nose_hoover_step),
     Integrator.npt_langevin: (npt_langevin_init, npt_langevin_step),
     Integrator.npt_nose_hoover: (npt_nose_hoover_init, npt_nose_hoover_step),
+    Integrator.npt_crescale: (npt_crescale_init, npt_crescale_step),
 }

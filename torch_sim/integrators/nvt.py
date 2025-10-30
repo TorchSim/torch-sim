@@ -460,6 +460,7 @@ def nvt_nose_hoover_invariant(
     return e_tot
 
 
+### Number of DOF?######################################################################################
 def _vrescale_update(
     state: MDState,
     tau: float | torch.Tensor,
