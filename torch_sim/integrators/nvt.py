@@ -460,7 +460,34 @@ def nvt_nose_hoover_invariant(
     return e_tot
 
 
-### Number of DOF?######################################################################################
+class NVTVRescaleState(MDState):
+    """State information for an NVT system with a V-Rescale thermostat.
+
+    This class represents the complete state of a molecular system being integrated
+    in the NVT (constant particle number, volume, temperature) ensemble using a
+    Velocity Rescaling thermostat. The thermostat maintains constant temperature
+    through stochastic velocity rescaling.
+
+    Attributes:
+        positions: Particle positions with shape [n_particles, n_dimensions]
+        masses: Particle masses with shape [n_particles]
+        cell: Simulation cell matrix with shape [n_dimensions, n_dimensions]
+        pbc: Whether to use periodic boundary conditions
+        momenta: Particle momenta with shape [n_particles, n_dimensions]
+        energy: Energy of the system
+        forces: Forces on particles with shape [n_particles, n_dimensions]
+
+    Notes:
+        - The V-Rescale thermostat provides proper canonical sampling
+        - Stochastic velocity rescaling ensures correct temperature distribution
+        - Time-reversible when integrated with appropriate algorithms
+    """
+
+    def calc_dof(self) -> torch.Tensor:
+        """Calculate the degrees of freedom per system."""
+        return super().calc_dof() - 3  # Subtract 3 for center of mass motion
+
+
 def _vrescale_update(
     state: MDState,
     tau: float | torch.Tensor,
@@ -494,8 +521,7 @@ def _vrescale_update(
     )
 
     # Calculate degrees of freedom per system
-    n_atoms_per_system = torch.bincount(state.system_idx)
-    dof = n_atoms_per_system * state.positions.shape[-1]
+    dof = state.calc_dof()
 
     # Ensure kT and tau have proper batch dimensions
     n_systems = current_kT.shape[0]
@@ -533,7 +559,7 @@ def nvt_vrescale_init(
     kT: float | torch.Tensor,
     seed: int | None = None,
     **_kwargs: Any,
-) -> MDState:
+) -> NVTVRescaleState:
     """Initialize an NVT state from input data for velocity rescaling dynamics.
 
     Creates an initial state for NVT molecular dynamics using the canonical
@@ -570,7 +596,7 @@ def nvt_vrescale_init(
         calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
     )
 
-    return MDState(
+    return NVTVRescaleState(
         positions=state.positions,
         momenta=momenta,
         energy=model_output["energy"],
@@ -585,12 +611,12 @@ def nvt_vrescale_init(
 
 def nvt_vrescale_step(
     model: ModelInterface,
-    state: MDState,
+    state: NVTVRescaleState,
     *,
     dt: float | torch.Tensor,
     kT: float | torch.Tensor,
     tau: float | torch.Tensor | None = None,
-) -> MDState:
+) -> NVTVRescaleState:
     """Perform one complete V-Rescale dynamics integration step.
 
     This function implements the canonical sampling through velocity rescaling (V-Rescale)

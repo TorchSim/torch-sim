@@ -1623,6 +1623,14 @@ class NPTCRescaleState(MDState):
         "tau_p",
     }
 
+    def calc_dof(self) -> torch.Tensor:
+        """Calculate degrees of freedom for each system in the batch.
+
+        Returns:
+            torch.Tensor: Degrees of freedom for each system, shape [n_systems]
+        """
+        return super().calc_dof() - 3  # Subtract 3 for center of mass motion
+
 
 def rotate_gram_schmidt(box: torch.Tensor) -> torch.Tensor:
     """Convert a batch of 3x3 box matrices into upper-triangular form.
@@ -1647,12 +1655,14 @@ def rotate_gram_schmidt(box: torch.Tensor) -> torch.Tensor:
 
     # Project b onto a
     out[:, 0, 1] = torch.sum(a * b, dim=1) / out[:, 0, 0]
-    out[:, 1, 1] = torch.sqrt(torch.sum(b * b, dim=1) - out[:, 0, 1]**2)
+    out[:, 1, 1] = torch.sqrt(torch.sum(b * b, dim=1) - out[:, 0, 1] ** 2)
 
     # Project c onto a and b
     out[:, 0, 2] = torch.sum(a * c, dim=1) / out[:, 0, 0]
     out[:, 1, 2] = (torch.sum(b * c, dim=1) - out[:, 0, 2] * out[:, 0, 1]) / out[:, 1, 1]
-    out[:, 2, 2] = torch.sqrt(torch.sum(c * c, dim=1) - out[:, 0, 2]**2 - out[:, 1, 2]**2)
+    out[:, 2, 2] = torch.sqrt(
+        torch.sum(c * c, dim=1) - out[:, 0, 2] ** 2 - out[:, 1, 2] ** 2
+    )
 
     # Upper-triangular form → zero lower elements
     out[:, 1, 0] = 0.0
@@ -1660,6 +1670,7 @@ def rotate_gram_schmidt(box: torch.Tensor) -> torch.Tensor:
     out[:, 2, 1] = 0.0
 
     return out
+
 
 def batch_matrix_vector(
     matrices: torch.Tensor,
@@ -1753,9 +1764,8 @@ def npt_crescale_step(
         torch.sqrt(2 * state.isothermal_compressibility * kT * dt / (3 * state.tau_p))
         / new_sqrt_volume
     )
-    a_tilde = (
-        -(state.isothermal_compressibility / (3 * state.tau_p))[:, None, None]
-        * (P_int - trace_P_int[:, None, None] / 3)
+    a_tilde = -(state.isothermal_compressibility / (3 * state.tau_p))[:, None, None] * (
+        P_int - trace_P_int[:, None, None] / 3
     )
     deformation_matrix = torch.matrix_exp(
         a_tilde * dt
@@ -1780,10 +1790,11 @@ def npt_crescale_step(
     vscaling = torch.inverse(rscaling).transpose(-2, -1)
 
     # Update positions and momenta (barostat + half momentum step)
-    state.positions = (batch_matrix_vector(rscaling[state.system_idx], state.positions)
-    + batch_matrix_vector((vscaling + rscaling)[state.system_idx], state.momenta)
-    * dt / (2 * state.masses.unsqueeze(-1))
-    )
+    state.positions = batch_matrix_vector(
+        rscaling[state.system_idx], state.positions
+    ) + batch_matrix_vector(
+        (vscaling + rscaling)[state.system_idx], state.momenta
+    ) * dt / (2 * state.masses.unsqueeze(-1))
     state.momenta = batch_matrix_vector(vscaling[state.system_idx], state.momenta)
     state.cell = rscaling @ state.cell
 
