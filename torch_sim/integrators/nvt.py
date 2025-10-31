@@ -240,6 +240,11 @@ class NVTNoseHooverState(MDState):
         """
         return self.momenta / self.masses.unsqueeze(-1)
 
+    def calc_dof(self) -> torch.Tensor:
+        """Calculate degrees of freedom per system."""
+        dof = super().calc_dof()
+        return dof - 3  # Subtract 3 degrees of freedom for center of mass motion
+
 
 def nvt_nose_hoover_init(
     model: ModelInterface,

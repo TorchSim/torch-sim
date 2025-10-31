@@ -850,6 +850,11 @@ class NPTNoseHooverState(MDState):
         scale = scale.unsqueeze(-1).unsqueeze(-1)
         return scale * self.reference_cell
 
+    def calc_dof(self) -> torch.Tensor:
+        """Calculate degrees of freedom per system."""
+        dof = super().calc_dof()
+        return dof - 3  # Subtract 3 degrees of freedom for center of mass motion
+
 
 def _npt_nose_hoover_cell_info(
     state: NPTNoseHooverState,
