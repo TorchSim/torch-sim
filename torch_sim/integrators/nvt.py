@@ -240,6 +240,11 @@ class NVTNoseHooverState(MDState):
         """
         return self.momenta / self.masses.unsqueeze(-1)
 
+    def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
+        """Calculate degrees of freedom per system."""
+        dof = super().get_number_of_degrees_of_freedom()
+        return dof - 3  # Subtract 3 degrees of freedom for center of mass motion
+
 
 def nvt_nose_hoover_init(
     model: ModelInterface,
@@ -337,7 +342,9 @@ def nvt_nose_hoover_step(
 
     This function performs one integration step for an NVT system using a Nose-Hoover
     chain thermostat. The integration scheme is time-reversible and conserves an
-    extended energy quantity.
+    extended energy quantity. If the center of mass motion is removed initially,
+    it remains removed throughout the simulation, so the degrees of freedom decreases
+    by 3.
 
     Args:
         model: Neural network model that computes energies and forces

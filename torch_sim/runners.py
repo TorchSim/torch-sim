@@ -43,9 +43,7 @@ def _configure_reporter(
         "kinetic_energy": lambda state: ts.calc_kinetic_energy(
             velocities=state.velocities, masses=state.masses
         ),
-        "temperature": lambda state: ts.calc_kT(
-            velocities=state.velocities, masses=state.masses
-        ),
+        "temperature": lambda state: state.calc_temperature(),
     }
 
     prop_calculators = {

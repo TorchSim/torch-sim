@@ -850,6 +850,11 @@ class NPTNoseHooverState(MDState):
         scale = scale.unsqueeze(-1).unsqueeze(-1)
         return scale * self.reference_cell
 
+    def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
+        """Calculate degrees of freedom per system."""
+        dof = super().get_number_of_degrees_of_freedom()
+        return dof - 3  # Subtract 3 degrees of freedom for center of mass motion
+
 
 def _npt_nose_hoover_cell_info(
     state: NPTNoseHooverState,
@@ -1448,6 +1453,8 @@ def npt_nose_hoover_step(
     external_pressure: torch.Tensor,
 ) -> NPTNoseHooverState:
     """Perform a complete NPT integration step with Nose-Hoover chain thermostats.
+    If the center of mass motion is removed initially, it remains removed throughout
+    the simulation, so the degrees of freedom decreases by 3.
 
     This function performs a full NPT integration step including:
     1. Mass parameter updates for thermostats and cell
