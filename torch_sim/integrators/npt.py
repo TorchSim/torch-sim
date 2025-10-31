@@ -341,17 +341,13 @@ def _npt_langevin_position_step(
     if dt.ndim > 0:
         dt_atoms = dt[state.system_idx]
 
-    b = 1 / (1 + ((alpha_atoms * dt_atoms) / M_2))
+    b = 1 / (1 + ((alpha_atoms * dt_atoms) / 2 * state.masses))
 
     # Scale positions due to cell volume change
     c_1 = (L_n_new_atoms / L_n_atoms).unsqueeze(-1) * state.positions
 
     # Time step factor with average length scale
-    c_2 = (
-        (2 * L_n_new_atoms / (L_n_new_atoms + L_n_atoms)).unsqueeze(-1)
-        * b
-        * dt_atoms.unsqueeze(-1)
-    )
+    c_2 = (2 * L_n_new_atoms / (L_n_new_atoms + L_n_atoms)) * b * dt_atoms
 
     # Generate atom-specific noise
     noise = torch.randn_like(state.momenta)
@@ -370,7 +366,7 @@ def _npt_langevin_position_step(
     )
 
     # Update positions with all contributions
-    state.positions = c_1 + c_2 * c_3
+    state.positions = c_1 + c_2.unsqueeze(-1) * c_3
 
     # Apply periodic boundary conditions if needed
     if state.pbc:
@@ -406,7 +402,7 @@ def _npt_langevin_velocity_step(
         NPTLangevinState: Updated state with new velocities
     """
     # Calculate denominator for update equations
-    M_2 = 2 * state.masses.unsqueeze(-1)  # shape: (n_atoms, 1)
+    M_2 = 2 * state.masses  # shape: (n_atoms, 1)
 
     # Map batch parameters to atom level
     alpha_atoms = state.alpha
@@ -418,13 +414,14 @@ def _npt_langevin_velocity_step(
 
     # Calculate damping factors for Langevin integration
     a = (1 - (alpha_atoms * dt_atoms) / M_2) / (1 + (alpha_atoms * dt_atoms) / M_2)
-    b = 1 / (1 + (alpha_atoms * dt_atoms) / M_2)
+    a = a.unsqueeze(-1)
+    b = 1 / (1 + (alpha_atoms * dt_atoms) / M_2).unsqueeze(-1)
 
     # Velocity contribution with damping
     c_1 = a * state.velocities
 
     # Force contribution (average of initial and final forces)
-    c_2 = dt_atoms.unsqueeze(-1) * ((a * forces) + state.forces) / M_2
+    c_2 = dt_atoms.unsqueeze(-1) * ((a * forces) + state.forces) / M_2.unsqueeze(-1)
 
     # Generate atom-specific noise
     noise = torch.randn_like(state.momenta)

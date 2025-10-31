@@ -165,7 +165,14 @@ def test_npt_langevin_multi_kt(
 
     # Initialize integrator using new direct API
     state = ts.npt_langevin_init(
-        state=ar_double_sim_state, model=lj_model, dt=dt, kT=kT, alpha=alpha, seed=42
+        state=ar_double_sim_state,
+        model=lj_model,
+        dt=dt,
+        kT=kT,
+        alpha=alpha,
+        cell_alpha=cell_alpha,
+        b_tau=b_tau,
+        seed=42,
     )
 
     # Run dynamics for several steps
@@ -178,9 +185,6 @@ def test_npt_langevin_multi_kt(
             dt=dt,
             kT=kT,
             external_pressure=external_pressure,
-            alpha=alpha,
-            cell_alpha=cell_alpha,
-            b_tau=b_tau,
         )
 
         # Calculate instantaneous temperature from kinetic energy
@@ -795,6 +799,9 @@ def test_compute_cell_force_atoms_per_system():
         cell_positions=torch.ones((2, 3, 3)),
         cell_velocities=torch.zeros((2, 3, 3)),
         cell_masses=torch.ones(2),
+        alpha=torch.ones(2),
+        cell_alpha=torch.ones(2),
+        b_tau=torch.ones(2),
     )
 
     # Get forces and compare ratio
