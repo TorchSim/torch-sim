@@ -240,9 +240,9 @@ class NVTNoseHooverState(MDState):
         """
         return self.momenta / self.masses.unsqueeze(-1)
 
-    def calc_dof(self) -> torch.Tensor:
+    def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
         """Calculate degrees of freedom per system."""
-        dof = super().calc_dof()
+        dof = super().get_number_of_degrees_of_freedom()
         return dof - 3  # Subtract 3 degrees of freedom for center of mass motion
 
 

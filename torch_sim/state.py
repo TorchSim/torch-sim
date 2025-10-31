@@ -234,7 +234,7 @@ class SimState:
         """
         self.cell = value.mT
 
-    def calc_dof(self) -> torch.Tensor:
+    def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
         """Calculate degrees of freedom accounting for constraints.
 
         Returns:

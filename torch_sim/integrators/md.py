@@ -72,7 +72,7 @@ class MDState(SimState):
             masses=self.masses,
             momenta=self.momenta,
             system_idx=self.system_idx,
-            dof_per_system=self.calc_dof(),
+            dof_per_system=self.get_number_of_degrees_of_freedom(),
             units=units,
         )
 
