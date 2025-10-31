@@ -555,11 +555,11 @@ def npt_langevin_init(
     device, dtype = model.device, model.dtype
 
     # Convert all parameters to tensors with correct device and dtype
-    alpha = torch.astensor(alpha, device=device, dtype=dtype)
-    cell_alpha = torch.astensor(cell_alpha, device=device, dtype=dtype)
-    b_tau = torch.astensor(b_tau, device=device, dtype=dtype)
-    kT = torch.astensor(kT, device=device, dtype=dtype)
-    dt = torch.astensor(dt, device=device, dtype=dtype)
+    alpha = torch.as_tensor(alpha, device=device, dtype=dtype)
+    cell_alpha = torch.as_tensor(cell_alpha, device=device, dtype=dtype)
+    b_tau = torch.as_tensor(b_tau, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
 
     # Set default values if not provided
     if alpha is None:
