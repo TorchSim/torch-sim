@@ -342,7 +342,9 @@ def nvt_nose_hoover_step(
 
     This function performs one integration step for an NVT system using a Nose-Hoover
     chain thermostat. The integration scheme is time-reversible and conserves an
-    extended energy quantity.
+    extended energy quantity. If the center of mass motion is removed initially,
+    it remains removed throughout the simulation, so the degrees of freedom decreases
+    by 3.
 
     Args:
         model: Neural network model that computes energies and forces

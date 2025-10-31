@@ -1453,6 +1453,8 @@ def npt_nose_hoover_step(
     external_pressure: torch.Tensor,
 ) -> NPTNoseHooverState:
     """Perform a complete NPT integration step with Nose-Hoover chain thermostats.
+    If the center of mass motion is removed initially, it remains removed throughout
+    the simulation, so the degrees of freedom decreases by 3.
 
     This function performs a full NPT integration step including:
     1. Mass parameter updates for thermostats and cell
