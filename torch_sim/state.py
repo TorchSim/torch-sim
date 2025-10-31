@@ -459,9 +459,7 @@ class SimState:
 
         for attr_name in attributes_to_check:
             is_special_attribute = attr_name.startswith("__")
-            is_private_attribute = attr_name.startswith("_") and not attr_name.startswith(
-                "__"
-            )
+            is_private_attribute = attr_name.startswith("_") and not is_special_attribute
             is_property = attr_name in class_namespace and isinstance(
                 class_namespace.get(attr_name), property
             )
