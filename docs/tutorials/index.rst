@@ -20,3 +20,4 @@ versions of the tutorials can also be found in the `torch-sim /examples/tutorial
     hybrid_swap_tutorial
     using_graphpes_tutorial
     metatomic_tutorial
+    structured_optimisation
