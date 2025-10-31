@@ -7,7 +7,9 @@ import torch
 
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
+from torch_sim.quantities import calc_temperature
 from torch_sim.state import SimState
+from torch_sim.units import MetalUnits
 
 
 @dataclass
@@ -54,6 +56,25 @@ class MDState(SimState):
         [n_particles, n_dimensions].
         """
         return self.momenta / self.masses.unsqueeze(-1)
+
+    def calc_temperature(
+        self, units: MetalUnits = MetalUnits.temperature
+    ) -> torch.Tensor:
+        """Calculate temperature from momenta, masses, and system indices.
+
+        Args:
+            units (MetalUnits): Units to return the temperature in
+
+        Returns:
+            torch.Tensor: Calculated temperature
+        """
+        return calc_temperature(
+            masses=self.masses,
+            momenta=self.momenta,
+            system_idx=self.system_idx,
+            dof_per_system=self.calc_dof(),
+            units=units,
+        )
 
 
 def calculate_momenta(

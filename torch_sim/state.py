@@ -234,6 +234,17 @@ class SimState:
         """
         self.cell = value.mT
 
+    def calc_dof(self) -> torch.Tensor:
+        """Calculate degrees of freedom accounting for constraints.
+
+        Returns:
+            torch.Tensor: Number of degrees of freedom per system, with shape
+                (n_systems,). Each system starts with 3 * n_atoms_per_system degrees
+                of freedom, minus any degrees removed by constraints.
+        """
+        # Start with unconstrained DOF: 3 degrees per atom
+        return 3 * self.n_atoms_per_system
+
     def clone(self) -> Self:
         """Create a deep copy of the SimState.
 
