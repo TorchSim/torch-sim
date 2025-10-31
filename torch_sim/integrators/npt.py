@@ -684,7 +684,7 @@ def npt_langevin_step(
     # Update barostat mass based on current temperature
     # This ensures proper coupling between system and barostat
     n_atoms_per_system = torch.bincount(state.system_idx)
-    state.cell_masses = (n_atoms_per_system + 1) * batch_kT * state.b_tau * state.b_tau
+    state.cell_masses = (n_atoms_per_system + 1) * batch_kT * torch.square(state.b_tau)
 
     # Compute model output for current state
     model_output = model(state)
