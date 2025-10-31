@@ -334,14 +334,12 @@ def _npt_langevin_position_step(
     L_n_new_atoms = L_n_new[state.system_idx]  # shape: (n_atoms,)
 
     # Calculate damping factor
-    alpha_atoms = state.alpha
-    if state.alpha.ndim > 0:
-        alpha_atoms = state.alpha[state.system_idx]
+    alpha_atoms = state.alpha[state.system_idx]
     dt_atoms = dt
     if dt.ndim > 0:
         dt_atoms = dt[state.system_idx]
 
-    b = 1 / (1 + ((alpha_atoms * dt_atoms) / 2 * state.masses))
+    b = 1 / (1 + ((alpha_atoms * dt_atoms) / (2 * state.masses)))
 
     # Scale positions due to cell volume change
     c_1 = (L_n_new_atoms / L_n_atoms).unsqueeze(-1) * state.positions
@@ -405,9 +403,7 @@ def _npt_langevin_velocity_step(
     M_2 = 2 * state.masses  # shape: (n_atoms, 1)
 
     # Map batch parameters to atom level
-    alpha_atoms = state.alpha
-    if state.alpha.ndim > 0:
-        alpha_atoms = state.alpha[state.system_idx]
+    alpha_atoms = state.alpha[state.system_idx]
     dt_atoms = dt
     if dt.ndim > 0:
         dt_atoms = dt[state.system_idx]
