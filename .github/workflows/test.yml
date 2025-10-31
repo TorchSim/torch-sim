@@ -19,6 +19,8 @@ jobs:
         os: [ubuntu-latest, macos-14]
         version:
           - { python: '3.12', resolution: highest }
+          - { python: '3.12', resolution: lowest-direct }
+          - { python: '3.13', resolution: highest }
           - { python: '3.13', resolution: lowest-direct }
     runs-on: ${{ matrix.os }}
 
@@ -37,7 +39,12 @@ jobs:
       - name: Install torch_sim
         run: |
           uv pip install "torch>2" --index-url https://download.pytorch.org/whl/cpu --system
-          uv pip install -e ".[test]" --resolution=${{ matrix.version.resolution }} --system
+          # always use numpy>=2 with Python 3.13
+          if [ "${{ matrix.version.python }}" = "3.13" ]; then
+            uv pip install -e ".[test]" "numpy>=2" --resolution=${{ matrix.version.resolution }} --system
+          else
+            uv pip install -e ".[test]" --resolution=${{ matrix.version.resolution }} --system
+          fi
 
       - name: Run core tests
         run: |
@@ -56,6 +63,8 @@ jobs:
         os: [ubuntu-latest, macos-14]
         version:
           - { python: '3.12', resolution: highest }
+          - { python: '3.12', resolution: lowest-direct }
+          - { python: '3.13', resolution: highest }
           - { python: '3.13', resolution: lowest-direct }
         model:
           - { name: fairchem, test_path: "tests/models/test_fairchem.py" }
@@ -72,7 +81,11 @@ jobs:
         exclude:
           - version: { python: '3.13', resolution: lowest-direct }
             model: { name: orb, test_path: "tests/models/test_orb.py" }
+          - version: { python: '3.13', resolution: highest }
+            model: { name: orb, test_path: "tests/models/test_orb.py" }
           - version: { python: '3.13', resolution: lowest-direct }
+            model: { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
+          - version: { python: '3.13', resolution: highest }
             model: { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
     runs-on: ${{ matrix.os }}
 
@@ -116,7 +129,12 @@ jobs:
       - name: Install torch_sim with model dependencies
         if: ${{ matrix.model.name != 'fairchem-legacy' }}
         run: |
-          uv pip install -e ".[test,${{ matrix.model.name }}]" --resolution=${{ matrix.version.resolution }} --system
+          # always use numpy>=2 with Python 3.13
+          if [ "${{ matrix.version.python }}" = "3.13" ]; then
+            uv pip install -e ".[test,${{ matrix.model.name }}]" "numpy>=2" --resolution=${{ matrix.version.resolution }} --system
+          else
+            uv pip install -e ".[test,${{ matrix.model.name }}]" --resolution=${{ matrix.version.resolution }} --system
+          fi
 
       - name: Run ${{ matrix.model.test_path }} tests
         if: ${{ !contains(matrix.model.name, 'fairchem') || github.event.pull_request.head.repo.fork == false }}
@@ -125,7 +143,7 @@ jobs:
         run: |
           if [[ "${{ matrix.model.name }}" == *"fairchem"* ]]; then
             uv pip install "huggingface_hub[cli]" --system
-            huggingface-cli login --token "$HF_TOKEN"
+            hf auth login --token "$HF_TOKEN"
           fi
           pytest -vv -ra -rs --cov=torch_sim --cov-report=xml ${{ matrix.model.test_path }}
 
@@ -176,6 +194,6 @@ jobs:
         run: |
           if [[ "${{ matrix.example }}" == *"fairchem"* ]]; then
             uv pip install "huggingface_hub[cli]" --system
-            huggingface-cli login --token "$HF_TOKEN"
+            hf auth login --token "$HF_TOKEN"
           fi
           uv run --with . ${{ matrix.example }}
