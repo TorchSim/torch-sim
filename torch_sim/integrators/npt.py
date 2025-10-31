@@ -509,7 +509,7 @@ def _compute_cell_force(
     return virial + e_kin_per_atom * state.n_atoms_per_system.view(-1, 1, 1)
 
 
-def npt_langevin_init(  # noqa: C901
+def npt_langevin_init(
     state: SimState | StateDict,
     model: ModelInterface,
     *,
@@ -554,6 +554,13 @@ def npt_langevin_init(  # noqa: C901
     """
     device, dtype = model.device, model.dtype
 
+    # Convert all parameters to tensors with correct device and dtype
+    alpha = torch.astensor(alpha, device=device, dtype=dtype)
+    cell_alpha = torch.astensor(cell_alpha, device=device, dtype=dtype)
+    b_tau = torch.astensor(b_tau, device=device, dtype=dtype)
+    kT = torch.astensor(kT, device=device, dtype=dtype)
+    dt = torch.astensor(dt, device=device, dtype=dtype)
+
     # Set default values if not provided
     if alpha is None:
         alpha = 1.0 / (100 * dt)  # Default friction based on timestep
@@ -561,18 +568,6 @@ def npt_langevin_init(  # noqa: C901
         cell_alpha = alpha  # Use same friction for cell by default
     if b_tau is None:
         b_tau = 1 / (1000 * dt)  # Default barostat time constant
-
-    # Convert all parameters to tensors with correct device and dtype
-    if isinstance(alpha, float):
-        alpha = torch.tensor(alpha, device=device, dtype=dtype)
-    if isinstance(cell_alpha, float):
-        cell_alpha = torch.tensor(cell_alpha, device=device, dtype=dtype)
-    if isinstance(dt, float):
-        dt = torch.tensor(dt, device=device, dtype=dtype)
-    if isinstance(kT, float):
-        kT = torch.tensor(kT, device=device, dtype=dtype)
-    if isinstance(b_tau, float):
-        b_tau = torch.tensor(b_tau, device=device, dtype=dtype)
 
     if alpha.ndim == 0:
         alpha = alpha.expand(state.n_systems)
