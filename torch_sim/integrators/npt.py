@@ -1604,24 +1604,6 @@ def npt_nose_hoover_invariant(
     return e_tot
 
 
-###################
-# Implement full anisotropic NPT with cell rescaling barostat
-# Choices:
-# - Time reversible integrator
-# - Instantenous kinetic energy (not not the average)
-#     - According to the authors should be better for constraints
-# Inspiration from Bussi SimpleMD repo
-# https://github.com/bussilab/crescale/blob/master/simplemd_anisotropic/simplemd.cpp#L681C6-L688C16
-# thermostat
-# //   update velocities
-# //   barostat
-# //   update positions
-# //   (eventually recompute neighbour list)
-# //   compute forces
-# //   update velocities
-# //   thermostat
-
-
 @dataclass(kw_only=True)
 class NPTCRescaleState(MDState):
     """State for NPT ensemble with cell rescaling barostat.
@@ -1642,85 +1624,42 @@ class NPTCRescaleState(MDState):
     }
 
 
-def _compute_instantaneous_internal_pressure(
-    state: NPTLangevinState,
-    volumes: torch.Tensor,
-) -> torch.Tensor:
-    """Compute forces on the cell for NPT dynamics.
-
-    This function calculates the forces acting on the simulation cell
-    based on the difference between internal stress and external pressure,
-    plus a kinetic contribution. These forces drive the volume changes
-    needed to maintain constant pressure.
-
-    Args:
-        state (NPTLangevinState): Current NPT state
-        volumes (torch.Tensor): Current system volumes [n_systems]
-        kT (torch.Tensor): Temperature in energy units, either scalar or
-            shape [n_systems]
-
-    Returns:
-        torch.Tensor: Force acting on the cell [n_systems, n_dim, n_dim]
-    """
-    # Reshape for broadcasting
-    volumes = volumes.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
-
-    # Calculate virials: 2/V * (K_{tensor} - Virial_{tensor})
-    twice_kinetic_energy_tensor = torch.einsum(
-        "bi,bj,b->bij", state.momenta, state.momenta, 1 / state.masses
-    )
-    twice_kinetic_energy_tensor = torch.scatter_add(
-        torch.zeros(
-            state.n_systems,
-            3,
-            3,
-            device=state.positions.device,
-            dtype=state.positions.dtype,
-        ),
-        0,
-        state.system_idx.unsqueeze(-1)
-        .unsqueeze(-1)
-        .expand_as(twice_kinetic_energy_tensor),
-        twice_kinetic_energy_tensor,
-    )
-    return twice_kinetic_energy_tensor / volumes - state.stress
-
-
 def rotate_gram_schmidt(box: torch.Tensor) -> torch.Tensor:
-    """Convert a batch of 3x3 box matrices into lower-triangular form.
-    Correspond to a Gram-Schmidt orthogonalization of the box vectors.
+    """Convert a batch of 3x3 box matrices into upper-triangular form.
 
     Args:
         box (torch.Tensor): shape [n_systems, 3, 3]
 
     Returns:
-        torch.Tensor: shape [n_systems, 3, 3] lower-triangular boxes
+        torch.Tensor: shape [n_systems, 3, 3] upper-triangular boxes
     """
-    box_buffer = box.clone()
+    out = box.clone()
 
-    # Row vectors (a, b, c)
-    a = box_buffer[:, 0, :]
-    b = box_buffer[:, 1, :]
-    c = box_buffer[:, 2, :]
+    # Columns (a, b, c) correspond to box vectors in column form
+    a = out[:, :, 0]
+    b = out[:, :, 1]
+    c = out[:, :, 2]
 
-    # --- Compute the lower-triangular entries ---
+    # --- Compute upper-triangular entries ---
 
-    # a-axis
-    box[:, 0, 0] = torch.norm(a, dim=1)
+    # First vector (x-axis)
+    out[:, 0, 0] = torch.norm(a, dim=1)
 
-    # b projections
-    box[:, 1, 0] = torch.sum(a * b, dim=1) / box[:, 0, 0]
-    box[:, 1, 1] = torch.sqrt(torch.sum(b * b, dim=1) - box[:, 1, 0] ** 2)
+    # Project b onto a
+    out[:, 0, 1] = torch.sum(a * b, dim=1) / out[:, 0, 0]
+    out[:, 1, 1] = torch.sqrt(torch.sum(b * b, dim=1) - out[:, 0, 1]**2)
 
-    # c projections
-    box[:, 2, 0] = torch.sum(a * c, dim=1) / box[:, 0, 0]
-    box[:, 2, 1] = (torch.sum(b * c, dim=1) - box[:, 2, 0] * box[:, 1, 0]) / box[:, 1, 1]
-    box[:, 2, 2] = torch.sqrt(
-        torch.sum(c * c, dim=1) - box[:, 2, 0] ** 2 - box[:, 2, 1] ** 2
-    )
+    # Project c onto a and b
+    out[:, 0, 2] = torch.sum(a * c, dim=1) / out[:, 0, 0]
+    out[:, 1, 2] = (torch.sum(b * c, dim=1) - out[:, 0, 2] * out[:, 0, 1]) / out[:, 1, 1]
+    out[:, 2, 2] = torch.sqrt(torch.sum(c * c, dim=1) - out[:, 0, 2]**2 - out[:, 1, 2]**2)
 
-    # Upper-triangular entries are 0 by initialization
-    return box
+    # Upper-triangular form → zero lower elements
+    out[:, 1, 0] = 0.0
+    out[:, 2, 0] = 0.0
+    out[:, 2, 1] = 0.0
+
+    return out
 
 def batch_matrix_vector(
     matrices: torch.Tensor,
@@ -1760,11 +1699,15 @@ def npt_crescale_step(
     4. Update positions (from barostat + half momenta)
     5. Update forces with new positions and cell
     6. Compute forces
-    7. Update momenta with forces
-    8. Thermostat (velocity scaling)
+    7. Half Update momenta with forces
+    8. Half Thermostat (velocity scaling)
 
-    Only allow isotropic external stress. Can run isotropic or anisotropic
+    Only allow isotropic external stress. Can only run anisotropic
     cell rescaling.
+
+    Inspired from: https://github.com/bussilab/crescale/blob/master/simplemd_anisotropic/simplemd.cpp
+    - Time reversible integrator
+    - Instantaneous kinetic energy (not not the average from equipartition)
 
     Args:
         model (ModelInterface): Model to compute forces and energies
@@ -1788,7 +1731,13 @@ def npt_crescale_step(
     # Barostat step
     ## Step 1: propagate sqrt(volume) for dt/2
     volume = torch.det(state.cell)  # shape: (n_systems,)
-    P_int = _compute_instantaneous_internal_pressure(state, volume)
+    P_int = ts.quantities.compute_instantaneous_pressure_tensor(
+        momenta=state.momenta,
+        masses=state.masses,
+        system_idx=state.system_idx,
+        stress=state.stress,
+        volumes=volume,
+    )
     sqrt_vol = torch.sqrt(volume)
     trace_P_int = torch.einsum("bii->b", P_int)
     prefactor_random = torch.sqrt(
@@ -1799,11 +1748,11 @@ def npt_crescale_step(
         external_pressure - trace_P_int / 3 - kT / (2 * volume)
     ) * dt / 2 + prefactor_random * torch.randn_like(sqrt_vol)
     new_sqrt_volume = sqrt_vol + change_sqrt_vol
+    ## Step 2: compute deformation matrix
     prefactor_random_matrix = (
         torch.sqrt(2 * state.isothermal_compressibility * kT * dt / (3 * state.tau_p))
         / new_sqrt_volume
     )
-    # prefactor_random_matrix = prefactor_random_matrix
     a_tilde = (
         -(state.isothermal_compressibility / (3 * state.tau_p))[:, None, None]
         * (P_int - trace_P_int[:, None, None] / 3)
@@ -1821,6 +1770,7 @@ def npt_crescale_step(
     )
     deformation_matrix = rotate_gram_schmidt(deformation_matrix)
 
+    ## Step 3: propagate sqrt(volume) for dt/2
     new_sqrt_volume += -prefactor * (
         external_pressure - trace_P_int / 3 - kT / (2 * volume)
     ) * dt / 2 + prefactor_random * torch.randn_like(sqrt_vol)
@@ -1828,9 +1778,8 @@ def npt_crescale_step(
         -1, 1, 1
     )
     vscaling = torch.inverse(rscaling).transpose(-2, -1)
-    # print(rscaling[0, 0, 0], rscaling[0, 1, 1], rscaling[0, 2, 2])
 
-    # Update positions
+    # Update positions and momenta (barostat + half momentum step)
     state.positions = (batch_matrix_vector(rscaling[state.system_idx], state.positions)
     + batch_matrix_vector((vscaling + rscaling)[state.system_idx], state.momenta)
     * dt / (2 * state.masses.unsqueeze(-1))
