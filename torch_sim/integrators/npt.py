@@ -550,13 +550,6 @@ def npt_langevin_init(
     """
     device, dtype = model.device, model.dtype
 
-    # Convert all parameters to tensors with correct device and dtype
-    alpha = torch.as_tensor(alpha, device=device, dtype=dtype)
-    cell_alpha = torch.as_tensor(cell_alpha, device=device, dtype=dtype)
-    b_tau = torch.as_tensor(b_tau, device=device, dtype=dtype)
-    kT = torch.as_tensor(kT, device=device, dtype=dtype)
-    dt = torch.as_tensor(dt, device=device, dtype=dtype)
-
     # Set default values if not provided
     if alpha is None:
         alpha = 1.0 / (100 * dt)  # Default friction based on timestep
@@ -564,6 +557,13 @@ def npt_langevin_init(
         cell_alpha = alpha  # Use same friction for cell by default
     if b_tau is None:
         b_tau = 1 / (1000 * dt)  # Default barostat time constant
+
+    # Convert all parameters to tensors with correct device and dtype
+    alpha = torch.as_tensor(alpha, device=device, dtype=dtype)
+    cell_alpha = torch.as_tensor(cell_alpha, device=device, dtype=dtype)
+    b_tau = torch.as_tensor(b_tau, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
 
     if alpha.ndim == 0:
         alpha = alpha.expand(state.n_systems)
