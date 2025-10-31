@@ -141,6 +141,7 @@ def get_pressure(
     """
     return 1 / dim * ((2 * kinetic_energy / volume) - torch.einsum("...ii", stress))
 
+
 def compute_instantaneous_pressure_tensor(
     *,
     momenta: torch.Tensor,
@@ -180,9 +181,7 @@ def compute_instantaneous_pressure_tensor(
             dtype=momenta.dtype,
         ),
         0,
-        system_idx.unsqueeze(-1)
-        .unsqueeze(-1)
-        .expand_as(twice_kinetic_energy_tensor),
+        system_idx.unsqueeze(-1).unsqueeze(-1).expand_as(twice_kinetic_energy_tensor),
         twice_kinetic_energy_tensor,
     )
     return twice_kinetic_energy_tensor / volumes - stress
