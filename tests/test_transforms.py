@@ -318,15 +318,12 @@ def test_pbc_wrap_batched_triclinic() -> None:
     )
     batch = torch.tensor([0, 1], device=DEVICE)
 
-    # Stack the cells for batched processing
-    cell = torch.stack([cell1, cell2])
-
     # Apply wrapping
     wrapped = ft.pbc_wrap_batched(positions, cell=cell, system_idx=batch)
 
-    # Calculate expected result for first atom (using original algorithm for verification)
-    expected1 = ft.pbc_wrap_general(positions[0:1], cell1)
-    expected2 = ft.pbc_wrap_general(positions[1:2], cell2)
+    # Calculate expected results by wrapping each system independently
+    expected1 = ft.wrap_positions(positions[0:1], cell1.T)
+    expected2 = ft.wrap_positions(positions[1:2], cell2.T)
 
     # Verify results match the expected values
     assert torch.allclose(wrapped[0:1], expected1, atol=1e-6)

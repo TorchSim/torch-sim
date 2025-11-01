@@ -310,10 +310,6 @@ def nvt_nose_hoover_init(
         n_atoms_per_system * state.positions.shape[-1]
     )  # n_atoms * n_dimensions
 
-    # For now, sum the per-system DOF as chain expects a single int
-    # This is a limitation that should be addressed in the chain implementation
-    total_dof = int(dof_per_system.sum().item())
-
     # Initialize state
     return NVTNoseHooverState(
         positions=state.positions,
@@ -325,7 +321,7 @@ def nvt_nose_hoover_init(
         pbc=state.pbc,
         atomic_numbers=atomic_numbers,
         system_idx=state.system_idx,
-        chain=chain_fns.initialize(total_dof, KE, kT),
+        chain=chain_fns.initialize(dof_per_system, KE, kT),
         _chain_fns=chain_fns,  # Store the chain functions
     )
 
@@ -368,7 +364,7 @@ def nvt_nose_hoover_step(
     chain = chain_fns.update_mass(chain, kT)
 
     # First half-step of chain evolution
-    momenta, chain = chain_fns.half_step(state.momenta, chain, kT)
+    momenta, chain = chain_fns.half_step(state.momenta, chain, kT, state.system_idx)
     state.momenta = momenta
 
     # Full velocity Verlet step
@@ -381,7 +377,7 @@ def nvt_nose_hoover_step(
     chain.kinetic_energy = KE
 
     # Second half-step of chain evolution
-    momenta, chain = chain_fns.half_step(state.momenta, chain, kT)
+    momenta, chain = chain_fns.half_step(state.momenta, chain, kT, state.system_idx)
     state.momenta = momenta
     state.chain = chain
 
@@ -433,8 +429,8 @@ def nvt_nose_hoover_invariant(
     # Add first thermostat term
     c = state.chain
     # Ensure chain momenta and masses broadcast correctly with batch dimensions
-    chain_ke_0 = torch.square(c.momenta[0]) / (2 * c.masses[0])
-    chain_pe_0 = dof * kT * c.positions[0]
+    chain_ke_0 = torch.square(c.momenta[:, 0]) / (2 * c.masses[:, 0])
+    chain_pe_0 = dof * kT * c.positions[:, 0]
 
     # If chain variables are scalars but we have batches, broadcast them
     if chain_ke_0.numel() == 1 and e_tot.numel() > 1:
@@ -445,9 +441,11 @@ def nvt_nose_hoover_invariant(
     e_tot = e_tot + chain_ke_0 + chain_pe_0
 
     # Add remaining chain terms
-    for pos, momentum, mass in zip(
-        c.positions[1:], c.momenta[1:], c.masses[1:], strict=True
-    ):
+    for i in range(1, c.positions.shape[1]):
+        pos = c.positions[:, i]
+        momentum = c.momenta[:, i]
+        mass = c.masses[:, i]
+
         chain_ke = momentum**2 / (2 * mass)
         chain_pe = kT * pos
 

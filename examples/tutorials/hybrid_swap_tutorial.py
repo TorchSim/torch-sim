@@ -129,7 +129,7 @@ swap_state = ts.swap_mc_init(state=md_state, model=mace_model)
 
 # Create hybrid state combining both
 hybrid_state = HybridSwapMCState(
-    **vars(md_state),
+    **md_state.attributes,
     last_permutation=torch.arange(
         md_state.n_atoms, device=md_state.device, dtype=torch.long
     ),

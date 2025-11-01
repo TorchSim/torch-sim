@@ -207,6 +207,16 @@ class SimState:
         return torch.det(self.cell)
 
     @property
+    def attributes(self) -> dict[str, torch.Tensor]:
+        """Get all public attributes of the state."""
+        return {
+            attr: getattr(self, attr)
+            for attr in self._atom_attributes
+            | self._system_attributes
+            | self._global_attributes
+        }
+
+    @property
     def column_vector_cell(self) -> torch.Tensor:
         """Unit cell following the column vector convention."""
         return self.cell
@@ -244,7 +254,7 @@ class SimState:
             SimState: A new SimState object with the same properties as the original
         """
         attrs = {}
-        for attr_name, attr_value in vars(self).items():
+        for attr_name, attr_value in self.attributes.items():
             if isinstance(attr_value, torch.Tensor):
                 attrs[attr_name] = attr_value.clone()
             else:
@@ -278,7 +288,7 @@ class SimState:
         """
         # Copy all attributes from the source state
         attrs = {}
-        for attr_name, attr_value in vars(state).items():
+        for attr_name, attr_value in state.attributes.items():
             if isinstance(attr_value, torch.Tensor):
                 attrs[attr_name] = attr_value.clone()
             else:
@@ -348,7 +358,7 @@ class SimState:
         modified_state, popped_states = _pop_states(self, system_indices)
 
         # Update all attributes of self with the modified state's attributes
-        for attr_name, attr_value in vars(modified_state).items():
+        for attr_name, attr_value in modified_state.attributes.items():
             setattr(self, attr_name, attr_value)
 
         return popped_states
@@ -367,7 +377,7 @@ class SimState:
         Returns:
             SimState: A new SimState with tensors on the specified device and dtype
         """
-        return state_to_device(self, device, dtype)
+        return _state_to_device(self, device, dtype)
 
     def __getitem__(self, system_indices: int | list[int] | slice | torch.Tensor) -> Self:
         """Enable standard Python indexing syntax for slicing batches.
@@ -443,12 +453,15 @@ class SimState:
             if hasattr(parent_cls, "__annotations__"):
                 all_annotations.update(parent_cls.__annotations__)
 
-        attributes_to_check = set(vars(cls)) | set(all_annotations)
+        # Get class namespace attributes (methods, properties, class vars with values)
+        class_namespace = vars(cls)
+        attributes_to_check = set(class_namespace.keys()) | set(all_annotations.keys())
 
         for attr_name in attributes_to_check:
             is_special_attribute = attr_name.startswith("__")
-            is_property = attr_name in vars(cls) and isinstance(
-                vars(cls).get(attr_name), property
+            is_private_attribute = attr_name.startswith("_") and not is_special_attribute
+            is_property = attr_name in class_namespace and isinstance(
+                class_namespace.get(attr_name), property
             )
             is_method = hasattr(cls, attr_name) and callable(getattr(cls, attr_name))
             is_class_variable = (
@@ -457,7 +470,13 @@ class SimState:
                 typing.get_origin(all_annotations.get(attr_name)) is typing.ClassVar
             )
 
-            if is_special_attribute or is_property or is_method or is_class_variable:
+            if (
+                is_special_attribute
+                or is_private_attribute
+                or is_property
+                or is_method
+                or is_class_variable
+            ):
                 continue
 
             if attr_name not in all_defined_attributes:
@@ -552,7 +571,7 @@ def _normalize_system_indices(
     raise TypeError(f"Unsupported index type: {type(system_indices)}")
 
 
-def state_to_device[T: SimState](
+def _state_to_device[T: SimState](
     state: T, device: torch.device | None = None, dtype: torch.dtype | None = None
 ) -> T:
     """Convert the SimState to a new device and dtype.
@@ -573,7 +592,7 @@ def state_to_device[T: SimState](
     if dtype is None:
         dtype = state.dtype
 
-    attrs = vars(state)
+    attrs = state.attributes
     for attr_name, attr_value in attrs.items():
         if isinstance(attr_value, torch.Tensor):
             attrs[attr_name] = attr_value.to(device=device)
@@ -856,7 +875,7 @@ def concatenate_states[T: SimState](  # noqa: C901
     for state in states:
         # Move state to target device if needed
         if state.device != target_device:
-            state = state_to_device(state, target_device)
+            state = state.to(target_device)
 
         # Collect per-atom properties
         for prop, val in get_attrs_for_scope(state, "per-atom"):
@@ -919,7 +938,7 @@ def initialize_state(
     # TODO: create a way to pass velocities from pmg and ase
 
     if isinstance(system, SimState):
-        return state_to_device(system, device, dtype)
+        return system.clone().to(device, dtype)
 
     if isinstance(system, list | tuple) and all(isinstance(s, SimState) for s in system):
         if not all(state.n_systems == 1 for state in system):
