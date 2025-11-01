@@ -1,4 +1,6 @@
 # ruff: noqa: PT011
+import itertools
+
 import numpy as np
 import pytest
 import torch
@@ -195,7 +197,7 @@ def test_pbc_wrap_general_batch() -> None:
 
 
 @pytest.mark.parametrize(
-    "pbc", [[True, True, True], [True, True, False], [False, False, False], True, False]
+    "pbc", [*list(itertools.product([False, True], repeat=3)), True, False]
 )
 @pytest.mark.parametrize("pretty_translation", [True, False])
 def test_wrap_positions_matches_ase(

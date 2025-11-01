@@ -10,7 +10,7 @@ from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
 
-@dataclass
+@dataclass(init=False)
 class MDState(SimState):
     """State information for molecular dynamics simulations.
 
@@ -47,6 +47,24 @@ class MDState(SimState):
     _system_attributes = (
         SimState._system_attributes | {"energy"}  # noqa: SLF001
     )
+
+    def __init__(
+        self,
+        positions: torch.Tensor,
+        masses: torch.Tensor,
+        cell: torch.Tensor,
+        pbc: torch.Tensor,
+        atomic_numbers: torch.Tensor,
+        system_idx: torch.Tensor,
+        momenta: torch.Tensor,
+        energy: torch.Tensor,
+        forces: torch.Tensor,
+    ) -> None:
+        """Ensure SimState initialization logic runs for MDState."""
+        super().__init__(positions, masses, cell, pbc, atomic_numbers, system_idx)
+        self.momenta = momenta
+        self.energy = energy
+        self.forces = forces
 
     @property
     def velocities(self) -> torch.Tensor:
@@ -154,10 +172,14 @@ def position_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
     """
     new_positions = state.positions + state.velocities * dt
 
-    if state.pbc:
+    # TODO(curtis): we should only wrap along pbc axes
+    if state.pbc.any():
         # Split positions and cells by system
         new_positions = transforms.pbc_wrap_batched(
-            new_positions, state.cell, state.system_idx
+            new_positions,
+            state.cell,
+            state.system_idx,
+            state.pbc,
         )
 
     state.positions = new_positions

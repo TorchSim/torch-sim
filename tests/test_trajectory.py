@@ -93,7 +93,7 @@ def test_write_state_single(
     assert trajectory.get_array("positions").shape == (1, 10, 3)
     assert trajectory.get_array("atomic_numbers").shape == (1, 10)
     assert trajectory.get_array("cell").shape == (1, 3, 3)
-    assert trajectory.get_array("pbc").shape == (1,)
+    assert trajectory.get_array("pbc").shape == (1, 3)
 
 
 def test_write_state_multiple(
@@ -106,7 +106,7 @@ def test_write_state_multiple(
     assert trajectory.get_array("positions").shape == (2, 10, 3)
     assert trajectory.get_array("atomic_numbers").shape == (1, 10)
     assert trajectory.get_array("cell").shape == (2, 3, 3)
-    assert trajectory.get_array("pbc").shape == (1,)
+    assert trajectory.get_array("pbc").shape == (1, 3)
 
 
 def test_optional_arrays(trajectory: TorchSimTrajectory, random_state: MDState) -> None:
@@ -439,7 +439,7 @@ def test_get_atoms(trajectory: TorchSimTrajectory, random_state: MDState) -> Non
     np.testing.assert_allclose(
         atoms.get_atomic_numbers(), random_state.atomic_numbers.numpy()
     )
-    assert atoms.pbc.all() == random_state.pbc
+    np.testing.assert_array_equal(atoms.pbc, random_state.pbc.detach().cpu().numpy())
 
 
 def test_get_state(trajectory: TorchSimTrajectory, random_state: MDState) -> None:
@@ -478,7 +478,7 @@ def test_get_state(trajectory: TorchSimTrajectory, random_state: MDState) -> Non
         np.testing.assert_allclose(state.positions, random_state.positions)
         np.testing.assert_allclose(state.cell, random_state.cell)
         np.testing.assert_allclose(state.atomic_numbers, random_state.atomic_numbers)
-        assert state.pbc == random_state.pbc
+        assert torch.equal(state.pbc, random_state.pbc)
 
 
 def test_write_ase_trajectory(
@@ -509,7 +509,7 @@ def test_write_ase_trajectory(
         np.testing.assert_allclose(
             atoms.get_atomic_numbers(), random_state.atomic_numbers.numpy()
         )
-        assert atoms.pbc.all() == random_state.pbc
+        np.testing.assert_array_equal(atoms.pbc, random_state.pbc.numpy()[0])
 
     # Clean up
     ase_traj.close()
