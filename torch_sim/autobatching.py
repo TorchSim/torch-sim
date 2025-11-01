@@ -32,7 +32,9 @@ from torch_sim.state import SimState
 from torch_sim.typing import MemoryScaling
 
 
-def to_constant_volume_bins[T: dict[int, float] | list[float] | list[tuple[T, ...]]](  # noqa: C901, PLR0915
+def to_constant_volume_bins[  # noqa: C901, PLR0915
+    T: dict[int, float] | list[float] | list[tuple[T, ...]]
+](
     items: T,
     max_volume: float,
     *,
@@ -704,7 +706,7 @@ class InFlightAutoBatcher[T: SimState]:
         completed_idx (list[int]): Indices of states that have been processed.
         completed_idx_og_order (list[int]): Original indices of completed states.
         current_scalers (list[float]): Memory metrics for states in current batch.
-        swap_attempts (dict[int, int]): Count of iterations for each state.
+        iteration_count (dict[int, int]): Number of iterations for each state.
 
     Example::
 
@@ -772,7 +774,7 @@ class InFlightAutoBatcher[T: SimState]:
         self.max_memory_scaler = max_memory_scaler or None
         self.max_atoms_to_try = max_atoms_to_try
         self.memory_scaling_factor = memory_scaling_factor
-        self.max_attempts = max_iterations  # TODO: change to max_iterations
+        self.max_iterations = max_iterations
         self.max_memory_padding = max_memory_padding
 
     def load_states(self, states: Sequence[T] | Iterator[T] | T) -> None:
@@ -818,7 +820,7 @@ class InFlightAutoBatcher[T: SimState]:
         self.current_scalers = []
         self.current_idx = []
         self.iterator_idx = 0
-        self.swap_attempts = []  # Track attempts for each state
+        self.iteration_count = []  # Track attempts for each state
 
         self.completed_idx_og_order = []
 
@@ -857,7 +859,7 @@ class InFlightAutoBatcher[T: SimState]:
             new_idx.append(self.iterator_idx)
             new_states.append(state)
             # Initialize attempt counter for new state
-            self.swap_attempts.append(0)
+            self.iteration_count.append(0)
             self.iterator_idx += 1
 
         self.current_scalers.extend(new_metrics)
@@ -898,7 +900,7 @@ class InFlightAutoBatcher[T: SimState]:
         first_metric = calculate_memory_scaler(first_state, self.memory_scales_with)
         self.current_scalers += [first_metric]
         self.current_idx += [0]
-        self.swap_attempts.append(0)  # Initialize attempt counter for first state
+        self.iteration_count.append(0)  # Initialize attempt counter for first state
         self.iterator_idx += 1
 
         # if max_metric is not set, estimate it
@@ -998,9 +1000,9 @@ class InFlightAutoBatcher[T: SimState]:
 
         # Increment attempt counters and check for max attempts in a single loop
         for cur_idx, abs_idx in enumerate(self.current_idx):
-            self.swap_attempts[abs_idx] += 1
-            if self.max_attempts is not None and (
-                self.swap_attempts[abs_idx] >= self.max_attempts
+            self.iteration_count[abs_idx] += 1
+            if self.max_iterations is not None and (
+                self.iteration_count[abs_idx] >= self.max_iterations
             ):
                 # Force convergence for states that have reached max attempts
                 convergence_tensor[cur_idx] = torch.tensor(True)  # noqa: FBT003

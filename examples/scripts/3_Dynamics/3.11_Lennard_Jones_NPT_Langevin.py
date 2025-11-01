@@ -65,7 +65,9 @@ positions = positions * a_len
 
 # Create the cell tensor
 cell = torch.tensor(
-    [[4 * a_len, 0, 0], [0, 4 * a_len, 0], [0, 0, 4 * a_len]], device=device, dtype=dtype
+    [[4 * a_len, 0, 0], [0, 4 * a_len, 0], [0, 0, 4 * a_len]],
+    device=device,
+    dtype=dtype,
 )
 
 # Create the atomic numbers tensor (Argon = 18)
@@ -106,7 +108,16 @@ target_pressure = (
     torch.tensor(10_000, device=device, dtype=dtype) * Units.pressure
 )  # Target pressure (10 kbar)
 
-state = ts.npt_langevin_init(state=state, model=model, dt=dt, kT=kT, seed=1)
+state = ts.npt_langevin_init(
+    state=state,
+    model=model,
+    dt=dt,
+    kT=kT,
+    seed=1,
+    alpha=1.0 / (100 * dt),
+    cell_alpha=1.0 / (100 * dt),
+    b_tau=1 / (1000 * dt),
+)
 
 # Run the simulation
 for step in range(N_steps):
@@ -137,9 +148,6 @@ for step in range(N_steps):
         dt=dt,
         kT=kT,
         external_pressure=target_pressure,
-        alpha=1.0 / (100 * dt),
-        cell_alpha=1.0 / (100 * dt),
-        b_tau=1 / (1000 * dt),
     )
 
 temp = (
