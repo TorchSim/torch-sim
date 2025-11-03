@@ -1715,18 +1715,27 @@ def _crescale_anisotropic_barostat_step(
         / new_sqrt_volume
     )
     a_tilde = -(state.isothermal_compressibility / (3 * state.tau_p))[:, None, None] * (
-        P_int - trace_P_int[:, None, None] / 3
+        P_int
+        - trace_P_int[:, None, None]
+        / 3
+        * torch.eye(
+            3, device=state.positions.device, dtype=state.positions.dtype
+        ).expand_as(P_int)
     )
+    random_matrix = torch.randn(
+        state.n_systems,
+        3,
+        3,
+        device=state.positions.device,
+        dtype=state.positions.dtype,
+    )
+    random_matrix_tilde = random_matrix - torch.einsum("bii->b", random_matrix)[
+        :, None, None
+    ] / 3 * torch.eye(
+        3, device=state.positions.device, dtype=state.positions.dtype
+    ).expand_as(random_matrix)
     deformation_matrix = torch.matrix_exp(
-        a_tilde * dt
-        + prefactor_random_matrix[:, None, None]
-        * torch.randn(
-            state.n_systems,
-            3,
-            3,
-            device=state.positions.device,
-            dtype=state.positions.dtype,
-        )
+        a_tilde * dt + prefactor_random_matrix[:, None, None] * random_matrix_tilde
     )
     deformation_matrix = rotate_gram_schmidt(deformation_matrix)
 
@@ -1746,6 +1755,118 @@ def _crescale_anisotropic_barostat_step(
         (vscaling + rscaling)[state.system_idx], state.momenta
     ) * dt / (2 * state.masses.unsqueeze(-1))
     state.momenta = batch_matrix_vector(vscaling[state.system_idx], state.momenta)
+    state.cell = rscaling @ state.cell
+    return state
+
+
+def compute_average_pressure_tensor(
+    *,
+    degrees_of_freedom: torch.Tensor,
+    kT: torch.Tensor,
+    stress: torch.Tensor,
+    volumes: torch.Tensor,
+) -> torch.Tensor:
+    """Compute forces on the cell for NPT dynamics.
+
+    This function calculates the instantaneous internal pressure tensor.
+
+    Args:
+        degrees_of_freedom (torch.Tensor): Degrees of freedom of
+            the system, shape (n_systems,)
+        kT (torch.Tensor): Thermal energy (k_B * T), shape (n_system
+        stress (torch.Tensor): Stress tensor of the system, shape (n_systems, 3, 3)
+        volumes (torch.Tensor): Volumes of the systems, shape (n_systems,)
+
+    Returns:
+        torch.Tensor: Instanteneous internal pressure tesnor [n_systems, 3, 3]
+    """
+    # Reshape for broadcasting
+    volumes = volumes.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
+
+    # Calculate virials: 2/V * (N_{atoms}k_B T / 2 - Virial_{tensor})
+    n_systems = stress.shape[0]
+    average_kinetic_energy_tensor = (
+        degrees_of_freedom
+        * kT
+        / volumes
+        * torch.eye(3, device=stress.device, dtype=stress.dtype).expand(n_systems, 3, 3)
+    )
+    return average_kinetic_energy_tensor - stress
+
+
+def _crescale_average_anisotropic_barostat_step(
+    state: NPTCRescaleState,
+    kT: torch.Tensor,
+    dt: torch.Tensor,
+    external_pressure: torch.Tensor,
+) -> NPTCRescaleState:
+    volume = torch.det(state.cell)  # shape: (n_systems,)
+    P_int = compute_average_pressure_tensor(
+        degrees_of_freedom=state.get_number_of_degrees_of_freedom() / 3,
+        kT=kT,
+        stress=state.stress,
+        volumes=volume,
+    )
+    sqrt_vol = torch.sqrt(volume)
+    trace_P_int = torch.einsum("bii->b", P_int)
+    prefactor_random = torch.sqrt(
+        kT * state.isothermal_compressibility * dt / (4 * state.tau_p)
+    )
+    prefactor = state.isothermal_compressibility * sqrt_vol / (2 * state.tau_p)
+    change_sqrt_vol = -prefactor * (
+        external_pressure - trace_P_int / 3 - kT / (2 * volume)
+    ) * dt / 2 + prefactor_random * torch.randn_like(sqrt_vol)
+    new_sqrt_volume = sqrt_vol + change_sqrt_vol
+    ## Step 2: compute deformation matrix
+    prefactor_random_matrix = (
+        torch.sqrt(2 * state.isothermal_compressibility * kT * dt / (3 * state.tau_p))
+        / new_sqrt_volume
+    )
+    a_tilde = -(state.isothermal_compressibility / (3 * state.tau_p))[:, None, None] * (
+        P_int
+        - trace_P_int[:, None, None]
+        / 3
+        * torch.eye(
+            3, device=state.positions.device, dtype=state.positions.dtype
+        ).expand_as(P_int)
+    )
+    random_matrix = torch.randn(
+        state.n_systems,
+        3,
+        3,
+        device=state.positions.device,
+        dtype=state.positions.dtype,
+    )
+    random_matrix_tilde = random_matrix - torch.einsum("bii->b", random_matrix)[
+        :, None, None
+    ] / 3 * torch.eye(
+        3, device=state.positions.device, dtype=state.positions.dtype
+    ).expand_as(random_matrix)
+    deformation_matrix = torch.matrix_exp(
+        a_tilde * dt + prefactor_random_matrix[:, None, None] * random_matrix_tilde
+    )
+    deformation_matrix = rotate_gram_schmidt(deformation_matrix)
+
+    ## Step 3: propagate sqrt(volume) for dt/2
+    new_sqrt_volume += -prefactor * (
+        external_pressure - trace_P_int / 3 - kT / (2 * volume)
+    ) * dt / 2 + prefactor_random * torch.randn_like(sqrt_vol)
+    rscaling = deformation_matrix * torch.pow((new_sqrt_volume / sqrt_vol), 2 / 3).view(
+        -1, 1, 1
+    )
+
+    # Update positions and momenta (barostat + half momentum step)
+    state.positions = batch_matrix_vector(
+        rscaling[state.system_idx], state.positions
+    ) + batch_matrix_vector(
+        (
+            torch.eye(
+                3, device=state.positions.device, dtype=state.positions.dtype
+            ).expand_as(rscaling)
+            + rscaling
+        )[state.system_idx],
+        state.momenta,
+    ) * dt / (2 * state.masses.unsqueeze(-1))
     state.cell = rscaling @ state.cell
     return state
 
@@ -1781,7 +1902,7 @@ def _crescale_isotropic_barostat_step(
     rscaling = torch.pow((new_sqrt_volume / sqrt_vol), 2 / 3).unsqueeze(-1)
     state.positions = rscaling[state.system_idx] * state.positions + (
         rscaling + 1 / rscaling
-    )[state.system_idx] * state.momenta * dt / (2 * state.masses.unsqueeze(-1))
+    )[state.system_idx] * state.momenta * (0.5 * dt) / state.masses.unsqueeze(-1)
     state.momenta = (1 / rscaling)[state.system_idx] * state.momenta
     rscaling = rscaling.unsqueeze(-1)  # make [n_systems, 1, 1]
     state.cell = rscaling * state.cell
@@ -1840,7 +1961,8 @@ def npt_crescale_anisotropic_step(
     state = momentum_step(state, dt / 2)
 
     # Barostat step
-    state = _crescale_anisotropic_barostat_step(state, kT, dt, external_pressure)
+    # state = _crescale_anisotropic_barostat_step(state, kT, dt, external_pressure)
+    state = _crescale_average_anisotropic_barostat_step(state, kT, dt, external_pressure)
 
     # Forces
     model_output = model(state)
