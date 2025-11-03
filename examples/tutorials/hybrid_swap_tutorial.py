@@ -89,7 +89,7 @@ The key components we'll combine are:
 from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(kw_only=True)
 class HybridSwapMCState(SwapMCState, MDState):
     """State for hybrid MD-Monte Carlo simulations.
 
