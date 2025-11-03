@@ -40,8 +40,9 @@ from torch_sim.integrators import (
 from torch_sim.integrators.npt import (
     NPTLangevinState,
     NPTNoseHooverState,
+    npt_crescale_anisotropic_step,
     npt_crescale_init,
-    npt_crescale_step,
+    npt_crescale_isotropic_step,
     npt_langevin_init,
     npt_langevin_step,
     npt_nose_hoover_init,

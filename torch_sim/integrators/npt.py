@@ -1688,59 +1688,12 @@ def batch_matrix_vector(
     return torch.matmul(matrices, vectors.unsqueeze(-1)).squeeze(-1)
 
 
-def npt_crescale_step(
+def _crescale_anisotropic_barostat_step(
     state: NPTCRescaleState,
-    model: ModelInterface,
-    *,
-    dt: torch.Tensor,
     kT: torch.Tensor,
+    dt: torch.Tensor,
     external_pressure: torch.Tensor,
-    tau: torch.Tensor | None = None,
 ) -> NPTCRescaleState:
-    """Perform one NPT integration step with cell rescaling barostat.
-
-    This function performs a single integration step for NPT dynamics using
-    a cell rescaling barostat. It updates particle positions, momenta, and
-    the simulation cell based on the target temperature and pressure.
-
-    Trotter based splitting:
-    1. Half Thermostat (velocity scaling)
-    2. Half Update momenta with forces
-    3. Barostat (cell rescaling)
-    4. Update positions (from barostat + half momenta)
-    5. Update forces with new positions and cell
-    6. Compute forces
-    7. Half Update momenta with forces
-    8. Half Thermostat (velocity scaling)
-
-    Only allow isotropic external stress. Can only run anisotropic
-    cell rescaling.
-
-    Inspired from: https://github.com/bussilab/crescale/blob/master/simplemd_anisotropic/simplemd.cpp
-    - Time reversible integrator
-    - Instantaneous kinetic energy (not not the average from equipartition)
-
-    Args:
-        model (ModelInterface): Model to compute forces and energies
-        state (NPTCRescaleState): Current system state
-        dt (torch.Tensor): Integration timestep
-        kT (torch.Tensor): Target temperature
-        external_pressure (torch.Tensor): Target external pressure
-        tau (torch.Tensor | None): V-Rescale thermostat relaxation time. If None,
-            defaults to 100*dt
-
-    Returns:
-        NPTCRescaleState: Updated state after one integration step
-    """
-    # Note: would probably be better to have tau in NVTCRescaleState
-    if tau is None:
-        tau = 100 * dt
-    state = _vrescale_update(state, tau, kT, dt / 2)
-
-    state = momentum_step(state, dt / 2)
-
-    # Barostat step
-    ## Step 1: propagate sqrt(volume) for dt/2
     volume = torch.det(state.cell)  # shape: (n_systems,)
     P_int = ts.quantities.compute_instantaneous_pressure_tensor(
         momenta=state.momenta,
@@ -1797,6 +1750,170 @@ def npt_crescale_step(
     ) * dt / (2 * state.masses.unsqueeze(-1))
     state.momenta = batch_matrix_vector(vscaling[state.system_idx], state.momenta)
     state.cell = rscaling @ state.cell
+    return state
+
+
+def _crescale_isotropic_barostat_step(
+    state: NPTCRescaleState,
+    kT: torch.Tensor,
+    dt: torch.Tensor,
+    external_pressure: torch.Tensor,
+) -> NPTCRescaleState:
+    volume = torch.det(state.cell)  # shape: (n_systems,)
+    P_int = ts.quantities.compute_instantaneous_pressure_tensor(
+        momenta=state.momenta,
+        masses=state.masses,
+        system_idx=state.system_idx,
+        stress=state.stress,
+        volumes=volume,
+    )
+    sqrt_vol = torch.sqrt(volume)
+    trace_P_int = torch.einsum("bii->b", P_int)
+    prefactor_random = torch.sqrt(
+        kT * state.isothermal_compressibility * dt / (4 * state.tau_p)
+    )
+    prefactor = state.isothermal_compressibility * sqrt_vol / (2 * state.tau_p)
+    change_sqrt_vol = -prefactor * (
+        external_pressure - trace_P_int / 3 - kT / (2 * volume)
+    ) * dt + prefactor_random * torch.randn_like(sqrt_vol)
+    new_sqrt_volume = sqrt_vol + change_sqrt_vol
+
+    # Update positions and momenta (barostat + half momentum step)
+    # SI (S13ab): notice there is a typo in the SI where q_i(t)
+    # should be scaled as well by rscaling
+    rscaling = torch.pow((new_sqrt_volume / sqrt_vol), 2 / 3).view(-1, 1, 1)
+    state.positions = rscaling[state.system_idx] * state.positions + (
+        rscaling + 1 / rscaling
+    )[state.system_idx] * state.momenta * dt / (2 * state.masses.unsqueeze(-1))
+    state.momenta = (1 / rscaling)[state.system_idx] * state.momenta
+    state.cell = rscaling * state.cell
+    return state
+
+
+def npt_crescale_anisotropic_step(
+    state: NPTCRescaleState,
+    model: ModelInterface,
+    *,
+    dt: torch.Tensor,
+    kT: torch.Tensor,
+    external_pressure: torch.Tensor,
+    tau: torch.Tensor | None = None,
+) -> NPTCRescaleState:
+    """Perform one NPT integration step with cell rescaling barostat.
+
+    This function performs a single integration step for NPT dynamics using
+    a cell rescaling barostat. It updates particle positions, momenta, and
+    the simulation cell based on the target temperature and pressure.
+
+    Trotter based splitting:
+    1. Half Thermostat (velocity scaling)
+    2. Half Update momenta with forces
+    3. Barostat (cell rescaling)
+    4. Update positions (from barostat + half momenta)
+    5. Update forces with new positions and cell
+    6. Compute forces
+    7. Half Update momenta with forces
+    8. Half Thermostat (velocity scaling)
+
+    Only allow isotropic external stress. Can only run anisotropic
+    cell rescaling.
+
+    Inspired from: https://github.com/bussilab/crescale/blob/master/simplemd_anisotropic/simplemd.cpp
+    - Time reversible integrator
+    - Instantaneous kinetic energy (not not the average from equipartition)
+
+    Args:
+        model (ModelInterface): Model to compute forces and energies
+        state (NPTCRescaleState): Current system state
+        dt (torch.Tensor): Integration timestep
+        kT (torch.Tensor): Target temperature
+        external_pressure (torch.Tensor): Target external pressure
+        tau (torch.Tensor | None): V-Rescale thermostat relaxation time. If None,
+            defaults to 100*dt
+
+    Returns:
+        NPTCRescaleState: Updated state after one integration step
+    """
+    # Note: would probably be better to have tau in NVTCRescaleState
+    if tau is None:
+        tau = 100 * dt
+    state = _vrescale_update(state, tau, kT, dt / 2)
+
+    state = momentum_step(state, dt / 2)
+
+    # Barostat step
+    state = _crescale_anisotropic_barostat_step(state, kT, dt, external_pressure)
+
+    # Forces
+    model_output = model(state)
+    state.forces = model_output["forces"]
+    state.energy = model_output["energy"]
+    state.stress = model_output["stress"]
+
+    # Final momentum step
+    state = momentum_step(state, dt / 2)
+
+    # Final thermostat step
+    return _vrescale_update(state, tau, kT, dt / 2)
+
+
+def npt_crescale_isotropic_step(
+    state: NPTCRescaleState,
+    model: ModelInterface,
+    *,
+    dt: torch.Tensor,
+    kT: torch.Tensor,
+    external_pressure: torch.Tensor,
+    tau: torch.Tensor | None = None,
+) -> NPTCRescaleState:
+    """Perform one NPT integration step with cell rescaling barostat.
+
+    This function performs a single integration step for NPT dynamics using
+    a cell rescaling barostat. It updates particle positions, momenta, and
+    the simulation cell based on the target temperature and pressure.
+
+    Trotter based splitting:
+    1. Half Thermostat (velocity scaling)
+    2. Half Update momenta with forces
+    3. Barostat (cell rescaling)
+    4. Update positions (from barostat + half momenta)
+    5. Update forces with new positions and cell
+    6. Compute forces
+    7. Half Update momenta with forces
+    8. Half Thermostat (velocity scaling)
+
+    Only allow isotropic external stress. This performs isotropic
+    cell rescaling: cell shape is preserved, cell lengths are scaled equally.
+    For anisotropic cell rescaling, use npt_crescale_anisotropic_step.
+
+    References:
+        - Bernetti, Mattia, and Giovanni Bussi.
+        "Pressure control using stochastic cell rescaling."
+        The Journal of Chemical Physics 153.11 (2020).
+        - And the corresponding Supplementary Information which details
+        the integration scheme. Notice an error in scaling of positions in SI Eq. S13a.
+
+    Args:
+        model (ModelInterface): Model to compute forces and energies
+        state (NPTCRescaleState): Current system state
+        dt (torch.Tensor): Integration timestep
+        kT (torch.Tensor): Target temperature
+        external_pressure (torch.Tensor): Target external pressure
+        tau (torch.Tensor | None): V-Rescale thermostat relaxation time. If None,
+            defaults to 100*dt
+
+    Returns:
+        NPTCRescaleState: Updated state after one integration step
+    """
+    # Note: would probably be better to have tau in NVTCRescaleState
+    if tau is None:
+        tau = 100 * dt
+    state = _vrescale_update(state, tau, kT, dt / 2)
+
+    state = momentum_step(state, dt / 2)
+
+    # Barostat step
+    state = _crescale_isotropic_barostat_step(state, kT, dt, external_pressure)
 
     # Forces
     model_output = model(state)
@@ -1827,7 +1944,8 @@ def npt_crescale_init(
     cell rescaling barostat. It sets up the system with appropriate initial
     conditions including particle positions, momenta, and cell variables.
 
-    Only allow isotropic external stress.
+    Only allow isotropic external stress, but can run both isotropic and
+    anisotropic cell rescaling.
 
     Args:
         state: Initial system state as MDState or dict containing positions, masses,

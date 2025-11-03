@@ -16,7 +16,10 @@ NVT:
 NPT:
     - Langevin barostat integrator :func:`npt.npt_langevin_step` [4, 5]
     - Nosé-Hoover barostat integrator :func:`npt.npt_nose_hoover_step` from [3]
-    - C-Rescale barostat integrator :func:`npt.npt_crescale_step` from [6, 7, 8]
+    - Isotropic C-Rescale barostat integrator :func:`npt.npt_crescale_isotropic_step`
+    from [6, 8, 9]
+    - Anisotropic C-Rescale barostat integrator :func:`npt.npt_crescale_anisotropic_step`
+    from [7, 8, 9]
 
 References:
     [1] Bussi G, Donadio D, Parrinello M. "Canonical sampling through velocity rescaling."
@@ -38,6 +41,7 @@ References:
         Applied Sciences 12.3 (2022): 1139.
     [8] Bussi Anisotropic C-Rescale SimpleMD implementation:
         https://github.com/bussilab/crescale/blob/master/simplemd_anisotropic/simplemd.cpp
+    [9] Supplementary Information for [6].
 
 
 Examples:
@@ -66,8 +70,9 @@ from .md import MDState, calculate_momenta, momentum_step, position_step, veloci
 from .npt import (
     NPTLangevinState,
     NPTNoseHooverState,
+    npt_crescale_anisotropic_step,
     npt_crescale_init,
-    npt_crescale_step,
+    npt_crescale_isotropic_step,
     npt_langevin_init,
     npt_langevin_step,
     npt_nose_hoover_init,
@@ -102,6 +107,10 @@ class Integrator(StrEnum):
         - ``npt_langevin``: Langevin barostat for constant temperature and pressure.
         - ``npt_nose_hoover``: Nosé-Hoover barostat for constant temperature
                 and constant pressure.
+        - ``npt_isotropic_crescale``: Isotropic C-Rescale barostat for constant
+                temperature and pressure with fixed cell shape.
+        - ``npt_anisotropic_crescale``: Anisotropic C-Rescale barostat for constant
+                temperature and pressure with variable cell shape.
 
     Example:
         >>> integrator = Integrator.nvt_langevin
@@ -116,7 +125,8 @@ class Integrator(StrEnum):
     nvt_nose_hoover = "nvt_nose_hoover"
     npt_langevin = "npt_langevin"
     npt_nose_hoover = "npt_nose_hoover"
-    npt_crescale = "npt_crescale"
+    npt_isotropic_crescale = "npt_isotropic_crescale"
+    npt_anisotropic_crescale = "npt_anisotropic_crescale"
 
 
 #: Integrator registry - maps integrator names to (init_fn, step_fn) pairs.
@@ -141,7 +151,8 @@ class Integrator(StrEnum):
 #: - ``Integrator.nvt_nose_hoover``: Nosé-Hoover thermostat
 #: - ``Integrator.npt_langevin``: Langevin barostat
 #: - ``Integrator.npt_nose_hoover``: Nosé-Hoover barostat
-#: - ``Integrator.npt_crescale``: C-Rescale barostat
+#: - ``Integrator.npt_isotropic_crescale``: Isotropic NPT C-Rescale barostat
+#: - ``Integrator.npt_anisotropic_crescale``: Anisotropic NPT C-Rescale barostat
 #:
 #: :type: dict[Integrator, tuple[Callable[..., Any], Callable[..., Any]]]
 INTEGRATOR_REGISTRY: Final[
@@ -153,5 +164,9 @@ INTEGRATOR_REGISTRY: Final[
     Integrator.nvt_nose_hoover: (nvt_nose_hoover_init, nvt_nose_hoover_step),
     Integrator.npt_langevin: (npt_langevin_init, npt_langevin_step),
     Integrator.npt_nose_hoover: (npt_nose_hoover_init, npt_nose_hoover_step),
-    Integrator.npt_crescale: (npt_crescale_init, npt_crescale_step),
+    Integrator.npt_isotropic_crescale: (npt_crescale_init, npt_crescale_isotropic_step),
+    Integrator.npt_anisotropic_crescale: (
+        npt_crescale_init,
+        npt_crescale_anisotropic_step,
+    ),
 }
