@@ -12,7 +12,7 @@ from torch_sim.state import SimState
 from torch_sim.units import MetalUnits
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MDState(SimState):
     """State information for molecular dynamics simulations.
 

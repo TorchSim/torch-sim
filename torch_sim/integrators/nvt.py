@@ -54,7 +54,7 @@ def _ou_step(
           p(t+dt) = c1*p(t) + c2*sqrt(m)*N(0,1)
           where c1 = exp(-gamma*dt) and c2 = sqrt(kT*(1-c1²))
     """
-    c1 = torch.exp(torch.tensor(-gamma * dt))
+    c1 = torch.exp(-gamma * dt)
 
     if isinstance(kT, torch.Tensor) and len(kT.shape) > 0:
         # kT is a tensor with shape (n_systems,)
@@ -196,7 +196,7 @@ def nvt_langevin_step(
     return momentum_step(state, dt / 2)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class NVTNoseHooverState(MDState):
     """State information for an NVT system with a Nose-Hoover chain thermostat.
 
