@@ -2,6 +2,10 @@
 
 TorchSim welcomes contributions and feedback from the community.
 
+## Developer Installation
+
+To install TorchSim, follow the instructions in the [Developer Installation](https://torchsim.github.io/torch-sim/dev/dev_install.html) guide.
+
 ## Code Reviews
 
 All submissions require review by project maintainers before merging:

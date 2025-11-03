@@ -58,7 +58,7 @@ state = ts.io.structures_to_state([structure], device=device, dtype=dtype)
 
 
 # %%
-@dataclass
+@dataclass(kw_only=True)
 class HybridSwapMCState(ts.SwapMCState, MDState):
     """State for Monte Carlo simulations.
 
