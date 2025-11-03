@@ -524,9 +524,7 @@ def _vrescale_update(
     dt_tensor = torch.as_tensor(dt, device=device, dtype=dtype)
 
     # Calculate current temperature per system
-    current_kT = ts.quantities.calc_kT(
-        masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
-    )
+    current_kT = state.calc_kT()
 
     # Calculate degrees of freedom per system
     dof = state.get_number_of_degrees_of_freedom()
