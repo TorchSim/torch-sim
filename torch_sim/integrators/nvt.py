@@ -492,7 +492,8 @@ class NVTVRescaleState(MDState):
 
     def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
         """Calculate the degrees of freedom per system."""
-        return super().get_number_of_degrees_of_freedom() - 3  # Subtract 3 for center of mass motion
+        # Subtract 3 for center of mass motion
+        return super().get_number_of_degrees_of_freedom() - 3
 
 
 def _vrescale_update(

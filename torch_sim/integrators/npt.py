@@ -1625,7 +1625,8 @@ class NPTCRescaleState(MDState):
         Returns:
             torch.Tensor: Degrees of freedom for each system, shape [n_systems]
         """
-        return super().get_number_of_degrees_of_freedom() - 3  # Subtract 3 for center of mass motion
+        # Subtract 3 for center of mass motion
+        return super().get_number_of_degrees_of_freedom() - 3
 
 
 def rotate_gram_schmidt(box: torch.Tensor) -> torch.Tensor:
@@ -1782,7 +1783,7 @@ def _crescale_isotropic_barostat_step(
         rscaling + 1 / rscaling
     )[state.system_idx] * state.momenta * dt / (2 * state.masses.unsqueeze(-1))
     state.momenta = (1 / rscaling)[state.system_idx] * state.momenta
-    rscaling = rscaling.unsqueeze(-1) # make [n_systems, 1, 1]
+    rscaling = rscaling.unsqueeze(-1)  # make [n_systems, 1, 1]
     state.cell = rscaling * state.cell
     return state
 
