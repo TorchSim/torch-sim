@@ -490,9 +490,9 @@ class NVTVRescaleState(MDState):
         - Time-reversible when integrated with appropriate algorithms
     """
 
-    def calc_dof(self) -> torch.Tensor:
+    def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
         """Calculate the degrees of freedom per system."""
-        return super().calc_dof() - 3  # Subtract 3 for center of mass motion
+        return super().get_number_of_degrees_of_freedom() - 3  # Subtract 3 for center of mass motion
 
 
 def _vrescale_update(
@@ -528,7 +528,7 @@ def _vrescale_update(
     )
 
     # Calculate degrees of freedom per system
-    dof = state.calc_dof()
+    dof = state.get_number_of_degrees_of_freedom()
 
     # Ensure kT and tau have proper batch dimensions
     n_systems = current_kT.shape[0]

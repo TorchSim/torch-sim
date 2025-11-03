@@ -1619,13 +1619,13 @@ class NPTCRescaleState(MDState):
         "tau_p",
     }
 
-    def calc_dof(self) -> torch.Tensor:
+    def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
         """Calculate degrees of freedom for each system in the batch.
 
         Returns:
             torch.Tensor: Degrees of freedom for each system, shape [n_systems]
         """
-        return super().calc_dof() - 3  # Subtract 3 for center of mass motion
+        return super().get_number_of_degrees_of_freedom() - 3  # Subtract 3 for center of mass motion
 
 
 def rotate_gram_schmidt(box: torch.Tensor) -> torch.Tensor:
@@ -1777,11 +1777,12 @@ def _crescale_isotropic_barostat_step(
     # Update positions and momenta (barostat + half momentum step)
     # SI (S13ab): notice there is a typo in the SI where q_i(t)
     # should be scaled as well by rscaling
-    rscaling = torch.pow((new_sqrt_volume / sqrt_vol), 2 / 3).view(-1, 1, 1)
+    rscaling = torch.pow((new_sqrt_volume / sqrt_vol), 2 / 3).unsqueeze(-1)
     state.positions = rscaling[state.system_idx] * state.positions + (
         rscaling + 1 / rscaling
     )[state.system_idx] * state.momenta * dt / (2 * state.masses.unsqueeze(-1))
     state.momenta = (1 / rscaling)[state.system_idx] * state.momenta
+    rscaling = rscaling.unsqueeze(-1) # make [n_systems, 1, 1]
     state.cell = rscaling * state.cell
     return state
 
