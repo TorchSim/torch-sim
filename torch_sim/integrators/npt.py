@@ -59,6 +59,10 @@ class NPTLangevinState(MDState):
     # System state variables
     stress: torch.Tensor
 
+    alpha: torch.Tensor
+    cell_alpha: torch.Tensor
+    b_tau: torch.Tensor
+
     # Cell variables
     reference_cell: torch.Tensor
     cell_positions: torch.Tensor
@@ -71,12 +75,14 @@ class NPTLangevinState(MDState):
         "cell_velocities",
         "cell_masses",
         "reference_cell",
+        "alpha",
+        "cell_alpha",
+        "b_tau",
     }
 
 
 def _npt_langevin_beta(
     state: NPTLangevinState,
-    alpha: torch.Tensor,
     kT: torch.Tensor,
     dt: torch.Tensor,
 ) -> torch.Tensor:
@@ -110,14 +116,13 @@ def _npt_langevin_beta(
 
     # Calculate the prefactor for each atom
     # The standard deviation should be sqrt(2*alpha*kB*T*dt)
-    prefactor = torch.sqrt(2 * alpha * atom_kT * dt)
+    prefactor = torch.sqrt(2 * state.alpha * atom_kT * dt)
 
     return prefactor.unsqueeze(-1) * noise
 
 
 def _npt_langevin_cell_beta(
     state: NPTLangevinState,
-    cell_alpha: torch.Tensor,
     kT: torch.Tensor,
     dt: torch.Tensor,
 ) -> torch.Tensor:
@@ -144,20 +149,17 @@ def _npt_langevin_cell_beta(
     # Generate standard normal distribution (zero mean, unit variance)
     noise = torch.randn_like(state.cell_positions, device=state.device, dtype=state.dtype)
 
-    # Ensure cell_alpha and kT have batch dimension if they're scalars
-    if cell_alpha.ndim == 0:
-        cell_alpha = cell_alpha.expand(state.n_systems)
     if kT.ndim == 0:
         kT = kT.expand(state.n_systems)
 
     # Reshape for broadcasting
-    cell_alpha = cell_alpha.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
+    cell_alpha_expanded = state.cell_alpha.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
     kT = kT.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
     dt = dt.expand(state.n_systems).view(-1, 1, 1) if dt.ndim == 0 else dt.view(-1, 1, 1)
 
     # Scale to satisfy the fluctuation-dissipation theorem
     # The standard deviation should be sqrt(2*alpha*kB*T*dt)
-    scaling_factor = torch.sqrt(2.0 * cell_alpha * kT * dt)
+    scaling_factor = torch.sqrt(2.0 * cell_alpha_expanded * kT * dt)
 
     return scaling_factor * noise
 
@@ -167,7 +169,6 @@ def _npt_langevin_cell_position_step(
     dt: torch.Tensor,
     pressure_force: torch.Tensor,
     kT: torch.Tensor,
-    cell_alpha: torch.Tensor,
 ) -> NPTLangevinState:
     """Update the cell position in NPT dynamics.
 
@@ -194,12 +195,10 @@ def _npt_langevin_cell_position_step(
     # Ensure parameters have batch dimension
     if dt.ndim == 0:
         dt = dt.expand(state.n_systems)
-    if cell_alpha.ndim == 0:
-        cell_alpha = cell_alpha.expand(state.n_systems)
 
     # Reshape for broadcasting
     dt_expanded = dt.view(-1, 1, 1)
-    cell_alpha_expanded = cell_alpha.view(-1, 1, 1)
+    cell_alpha_expanded = state.cell_alpha.view(-1, 1, 1)
 
     # Calculate damping factor for cell position update
     cell_b = 1 / (1 + ((cell_alpha_expanded * dt_expanded) / Q_2))
@@ -211,7 +210,7 @@ def _npt_langevin_cell_position_step(
     c_2 = cell_b * dt_expanded * dt_expanded * pressure_force / Q_2
 
     # Random noise contribution (thermal fluctuations)
-    c_3 = cell_b * dt_expanded * _npt_langevin_cell_beta(state, cell_alpha, kT, dt) / Q_2
+    c_3 = cell_b * dt_expanded * _npt_langevin_cell_beta(state, kT, dt) / Q_2
 
     # Update cell positions with all contributions
     state.cell_positions = state.cell_positions + c_1 + c_2 + c_3
@@ -223,7 +222,6 @@ def _npt_langevin_cell_velocity_step(
     F_p_n: torch.Tensor,
     dt: torch.Tensor,
     pressure_force: torch.Tensor,
-    cell_alpha: torch.Tensor,
     kT: torch.Tensor,
 ) -> NPTLangevinState:
     """Update the cell velocities in NPT dynamics.
@@ -251,14 +249,12 @@ def _npt_langevin_cell_velocity_step(
     # Ensure parameters have batch dimension
     if dt.ndim == 0:
         dt = dt.expand(state.n_systems)
-    if cell_alpha.ndim == 0:
-        cell_alpha = cell_alpha.expand(state.n_systems)
     if kT.ndim == 0:
         kT = kT.expand(state.n_systems)
 
     # Reshape for broadcasting - need to maintain 3x3 dimensions
     dt_expanded = dt.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
-    cell_alpha_expanded = cell_alpha.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
+    cell_alpha_expanded = state.cell_alpha.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
 
     # Calculate cell masses per system - reshape to match 3x3 cell matrices
     cell_masses_expanded = state.cell_masses.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
@@ -298,7 +294,6 @@ def _npt_langevin_position_step(
     L_n: torch.Tensor,  # This should be shape (n_systems,)
     dt: torch.Tensor,
     kT: torch.Tensor,
-    alpha: torch.Tensor,
 ) -> NPTLangevinState:
     """Update the particle positions in NPT dynamics.
 
@@ -339,24 +334,18 @@ def _npt_langevin_position_step(
     L_n_new_atoms = L_n_new[state.system_idx]  # shape: (n_atoms,)
 
     # Calculate damping factor
-    alpha_atoms = alpha
-    if alpha.ndim > 0:
-        alpha_atoms = alpha[state.system_idx]
+    alpha_atoms = state.alpha[state.system_idx]
     dt_atoms = dt
     if dt.ndim > 0:
         dt_atoms = dt[state.system_idx]
 
-    b = 1 / (1 + ((alpha_atoms * dt_atoms) / M_2))
+    b = 1 / (1 + ((alpha_atoms * dt_atoms) / (2 * state.masses)))
 
     # Scale positions due to cell volume change
     c_1 = (L_n_new_atoms / L_n_atoms).unsqueeze(-1) * state.positions
 
     # Time step factor with average length scale
-    c_2 = (
-        (2 * L_n_new_atoms / (L_n_new_atoms + L_n_atoms)).unsqueeze(-1)
-        * b
-        * dt_atoms.unsqueeze(-1)
-    )
+    c_2 = (2 * L_n_new_atoms / (L_n_new_atoms + L_n_atoms)) * b * dt_atoms
 
     # Generate atom-specific noise
     noise = torch.randn_like(state.momenta)
@@ -375,7 +364,7 @@ def _npt_langevin_position_step(
     )
 
     # Update positions with all contributions
-    state.positions = c_1 + c_2 * c_3
+    state.positions = c_1 + c_2.unsqueeze(-1) * c_3
 
     # Apply periodic boundary conditions if needed
     if state.pbc:
@@ -391,7 +380,6 @@ def _npt_langevin_velocity_step(
     forces: torch.Tensor,
     dt: torch.Tensor,
     kT: torch.Tensor,
-    alpha: torch.Tensor,
 ) -> NPTLangevinState:
     """Update the particle velocities in NPT dynamics.
 
@@ -412,25 +400,24 @@ def _npt_langevin_velocity_step(
         NPTLangevinState: Updated state with new velocities
     """
     # Calculate denominator for update equations
-    M_2 = 2 * state.masses.unsqueeze(-1)  # shape: (n_atoms, 1)
+    M_2 = 2 * state.masses  # shape: (n_atoms, 1)
 
     # Map batch parameters to atom level
-    alpha_atoms = alpha
-    if alpha.ndim > 0:
-        alpha_atoms = alpha[state.system_idx]
+    alpha_atoms = state.alpha[state.system_idx]
     dt_atoms = dt
     if dt.ndim > 0:
         dt_atoms = dt[state.system_idx]
 
     # Calculate damping factors for Langevin integration
     a = (1 - (alpha_atoms * dt_atoms) / M_2) / (1 + (alpha_atoms * dt_atoms) / M_2)
-    b = 1 / (1 + (alpha_atoms * dt_atoms) / M_2)
+    a = a.unsqueeze(-1)
+    b = 1 / (1 + (alpha_atoms * dt_atoms) / M_2).unsqueeze(-1)
 
     # Velocity contribution with damping
     c_1 = a * state.velocities
 
     # Force contribution (average of initial and final forces)
-    c_2 = dt_atoms.unsqueeze(-1) * ((a * forces) + state.forces) / M_2
+    c_2 = dt_atoms.unsqueeze(-1) * ((a * forces) + state.forces) / M_2.unsqueeze(-1)
 
     # Generate atom-specific noise
     noise = torch.randn_like(state.momenta)
@@ -522,11 +509,11 @@ def npt_langevin_init(
     state: SimState | StateDict,
     model: ModelInterface,
     *,
-    kT: torch.Tensor,
-    dt: torch.Tensor,
-    alpha: torch.Tensor | None = None,
-    cell_alpha: torch.Tensor | None = None,
-    b_tau: torch.Tensor | None = None,
+    kT: float | torch.Tensor,
+    dt: float | torch.Tensor,
+    alpha: float | torch.Tensor | None = None,
+    cell_alpha: float | torch.Tensor | None = None,
+    b_tau: float | torch.Tensor | None = None,
     seed: int | None = None,
     **_kwargs: Any,
 ) -> NPTLangevinState:
@@ -572,16 +559,18 @@ def npt_langevin_init(
         b_tau = 1 / (1000 * dt)  # Default barostat time constant
 
     # Convert all parameters to tensors with correct device and dtype
-    if isinstance(alpha, float):
-        alpha = torch.tensor(alpha, device=device, dtype=dtype)
-    if isinstance(cell_alpha, float):
-        cell_alpha = torch.tensor(cell_alpha, device=device, dtype=dtype)
-    if isinstance(dt, float):
-        dt = torch.tensor(dt, device=device, dtype=dtype)
-    if isinstance(kT, float):
-        kT = torch.tensor(kT, device=device, dtype=dtype)
-    if isinstance(b_tau, float):
-        b_tau = torch.tensor(b_tau, device=device, dtype=dtype)
+    alpha = torch.as_tensor(alpha, device=device, dtype=dtype)
+    cell_alpha = torch.as_tensor(cell_alpha, device=device, dtype=dtype)
+    b_tau = torch.as_tensor(b_tau, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+
+    if alpha.ndim == 0:
+        alpha = alpha.expand(state.n_systems)
+    if cell_alpha.ndim == 0:
+        cell_alpha = cell_alpha.expand(state.n_systems)
+    if b_tau.ndim == 0:
+        b_tau = b_tau.expand(state.n_systems)
 
     if not isinstance(state, SimState):
         state = SimState(**state)
@@ -629,10 +618,13 @@ def npt_langevin_init(
         pbc=state.pbc,
         system_idx=state.system_idx,
         atomic_numbers=state.atomic_numbers,
+        alpha=alpha,
+        b_tau=b_tau,
         reference_cell=reference_cell,
         cell_positions=cell_positions,
         cell_velocities=cell_velocities,
         cell_masses=cell_masses,
+        cell_alpha=cell_alpha,
     )
 
 
@@ -643,9 +635,6 @@ def npt_langevin_step(
     dt: torch.Tensor,
     kT: torch.Tensor,
     external_pressure: torch.Tensor,
-    alpha: torch.Tensor,
-    cell_alpha: torch.Tensor,
-    b_tau: torch.Tensor,
 ) -> NPTLangevinState:
     """Perform one complete NPT Langevin dynamics integration step.
 
@@ -676,12 +665,12 @@ def npt_langevin_step(
     device, dtype = model.device, model.dtype
 
     # Convert any scalar parameters to tensors with batch dimension if needed
-    if isinstance(alpha, float):
-        alpha = torch.tensor(alpha, device=device, dtype=dtype)
+    if isinstance(state.alpha, float):
+        state.alpha = torch.tensor(state.alpha, device=device, dtype=dtype)
     if isinstance(kT, float):
         kT = torch.tensor(kT, device=device, dtype=dtype)
-    if isinstance(cell_alpha, float):
-        cell_alpha = torch.tensor(cell_alpha, device=device, dtype=dtype)
+    if isinstance(state.cell_alpha, float):
+        state.cell_alpha = torch.tensor(state.cell_alpha, device=device, dtype=dtype)
     if isinstance(dt, float):
         dt = torch.tensor(dt, device=device, dtype=dtype)
 
@@ -691,7 +680,7 @@ def npt_langevin_step(
     # Update barostat mass based on current temperature
     # This ensures proper coupling between system and barostat
     n_atoms_per_system = torch.bincount(state.system_idx)
-    state.cell_masses = (n_atoms_per_system + 1) * batch_kT * b_tau * b_tau
+    state.cell_masses = (n_atoms_per_system + 1) * batch_kT * torch.square(state.b_tau)
 
     # Compute model output for current state
     model_output = model(state)
@@ -706,7 +695,7 @@ def npt_langevin_step(
     )  # shape: (n_systems,)
 
     # Step 1: Update cell position
-    state = _npt_langevin_cell_position_step(state, dt, F_p_n, kT, cell_alpha)
+    state = _npt_langevin_cell_position_step(state, dt, F_p_n, kT)
 
     # Update cell (currently only isotropic fluctuations)
     dim = state.positions.shape[1]  # Usually 3 for 3D
@@ -725,7 +714,7 @@ def npt_langevin_step(
     state.cell = new_cell
 
     # Step 2: Update particle positions
-    state = _npt_langevin_position_step(state, L_n, dt, kT, alpha)
+    state = _npt_langevin_position_step(state, L_n, dt, kT)
 
     # Recompute model output after position updates
     model_output = model(state)
@@ -739,10 +728,10 @@ def npt_langevin_step(
     )
 
     # Step 3: Update cell velocities
-    state = _npt_langevin_cell_velocity_step(state, F_p_n, dt, F_p_n_new, cell_alpha, kT)
+    state = _npt_langevin_cell_velocity_step(state, F_p_n, dt, F_p_n_new, kT)
 
     # Step 4: Update particle velocities
-    return _npt_langevin_velocity_step(state, forces, dt, kT, alpha)
+    return _npt_langevin_velocity_step(state, forces, dt, kT)
 
 
 @dataclass(kw_only=True)
@@ -849,6 +838,11 @@ class NPTNoseHooverState(MDState):
         # Expand scale to [n_systems, 1, 1] for broadcasting
         scale = scale.unsqueeze(-1).unsqueeze(-1)
         return scale * self.reference_cell
+
+    def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
+        """Calculate degrees of freedom per system."""
+        dof = super().get_number_of_degrees_of_freedom()
+        return dof - 3  # Subtract 3 degrees of freedom for center of mass motion
 
 
 def _npt_nose_hoover_cell_info(
@@ -1448,6 +1442,8 @@ def npt_nose_hoover_step(
     external_pressure: torch.Tensor,
 ) -> NPTNoseHooverState:
     """Perform a complete NPT integration step with Nose-Hoover chain thermostats.
+    If the center of mass motion is removed initially, it remains removed throughout
+    the simulation, so the degrees of freedom decreases by 3.
 
     This function performs a full NPT integration step including:
     1. Mass parameter updates for thermostats and cell
