@@ -28,12 +28,12 @@ classifiers = [
 requires-python = ">=3.12"
 dependencies = [
     "h5py>=3.12.1",
-    "numpy>=2",
+    "numpy>=1.26,<3",
     "tables>=3.10.2",
     "torch>=2",
     "tqdm>=4.67",
-    "vesin-torch>=0.3.7",
-    "vesin>=0.3.7",
+    "vesin-torch>=0.3.7, <0.4.0",
+    "vesin>=0.3.7, <0.4.0",
 ]
 
 [project.optional-dependencies]
@@ -51,7 +51,7 @@ mattersim = ["mattersim>=0.1.2"]
 metatomic = ["metatomic-torch>=0.1.1", "metatrain[pet]>=2025.7"]
 orb = ["orb-models>=0.5.2"]
 sevenn = ["sevenn>=0.11.0"]
-graphpes = ["graph-pes>=0.0.34,<=0.2.0", "mace-torch>=0.3.12"]
+graphpes = ["graph-pes>=0.1", "mace-torch>=0.3.12"]
 nequip = ["nequip>=0.12.0"]
 fairchem = ["fairchem-core>=2.7"]
 docs = [
