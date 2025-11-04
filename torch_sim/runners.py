@@ -5,6 +5,7 @@ optimizations using various models and integrators. It includes utilities for
 converting between different atomistic representations and handling simulation state.
 """
 
+import copy
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -29,7 +30,6 @@ from torch_sim.units import UnitSystem
 def _configure_reporter(
     trajectory_reporter: TrajectoryReporter | dict,
     *,
-    state_kwargs: dict | None = None,
     properties: list[str] | None = None,
     prop_frequency: int = 10,
     state_frequency: int = 100,
@@ -53,12 +53,12 @@ def _configure_reporter(
     }
 
     # ordering is important to ensure we can override defaults
+    trajectory_reporter = copy.deepcopy(trajectory_reporter)
     return TrajectoryReporter(
         prop_calculators=trajectory_reporter.pop(
             "prop_calculators", {prop_frequency: prop_calculators}
         ),
         state_frequency=trajectory_reporter.pop("state_frequency", state_frequency),
-        state_kwargs=state_kwargs or {},
         **trajectory_reporter,
     )
 
@@ -561,13 +561,15 @@ def static(
         properties.append("forces")
     if model.compute_stress:
         properties.append("stress")
-    trajectory_reporter = _configure_reporter(
-        trajectory_reporter or dict(filenames=None),
-        state_kwargs={
+    if isinstance(trajectory_reporter, dict):
+        trajectory_reporter = copy.deepcopy(trajectory_reporter)
+        trajectory_reporter["state_kwargs"] = {
             "variable_atomic_numbers": True,
             "variable_masses": True,
             "save_forces": model.compute_forces,
-        },
+        }
+    trajectory_reporter = _configure_reporter(
+        trajectory_reporter or dict(filenames=None),
         properties=properties,
     )
 
