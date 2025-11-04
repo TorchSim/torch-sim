@@ -54,7 +54,7 @@ def _ou_step(
           p(t+dt) = c1*p(t) + c2*sqrt(m)*N(0,1)
           where c1 = exp(-gamma*dt) and c2 = sqrt(kT*(1-c1²))
     """
-    c1 = torch.exp(torch.tensor(-gamma * dt))
+    c1 = torch.exp(-gamma * dt)
 
     if isinstance(kT, torch.Tensor) and len(kT.shape) > 0:
         # kT is a tensor with shape (n_systems,)
@@ -196,7 +196,7 @@ def nvt_langevin_step(
     return momentum_step(state, dt / 2)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class NVTNoseHooverState(MDState):
     """State information for an NVT system with a Nose-Hoover chain thermostat.
 
@@ -239,6 +239,11 @@ class NVTNoseHooverState(MDState):
         [n_particles, n_dimensions].
         """
         return self.momenta / self.masses.unsqueeze(-1)
+
+    def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
+        """Calculate degrees of freedom per system."""
+        dof = super().get_number_of_degrees_of_freedom()
+        return dof - 3  # Subtract 3 degrees of freedom for center of mass motion
 
 
 def nvt_nose_hoover_init(
@@ -310,10 +315,6 @@ def nvt_nose_hoover_init(
         n_atoms_per_system * state.positions.shape[-1]
     )  # n_atoms * n_dimensions
 
-    # For now, sum the per-system DOF as chain expects a single int
-    # This is a limitation that should be addressed in the chain implementation
-    total_dof = int(dof_per_system.sum().item())
-
     # Initialize state
     return NVTNoseHooverState(
         positions=state.positions,
@@ -325,7 +326,7 @@ def nvt_nose_hoover_init(
         pbc=state.pbc,
         atomic_numbers=atomic_numbers,
         system_idx=state.system_idx,
-        chain=chain_fns.initialize(total_dof, KE, kT),
+        chain=chain_fns.initialize(dof_per_system, KE, kT),
         _chain_fns=chain_fns,  # Store the chain functions
     )
 
@@ -341,7 +342,9 @@ def nvt_nose_hoover_step(
 
     This function performs one integration step for an NVT system using a Nose-Hoover
     chain thermostat. The integration scheme is time-reversible and conserves an
-    extended energy quantity.
+    extended energy quantity. If the center of mass motion is removed initially,
+    it remains removed throughout the simulation, so the degrees of freedom decreases
+    by 3.
 
     Args:
         model: Neural network model that computes energies and forces
@@ -368,7 +371,7 @@ def nvt_nose_hoover_step(
     chain = chain_fns.update_mass(chain, kT)
 
     # First half-step of chain evolution
-    momenta, chain = chain_fns.half_step(state.momenta, chain, kT)
+    momenta, chain = chain_fns.half_step(state.momenta, chain, kT, state.system_idx)
     state.momenta = momenta
 
     # Full velocity Verlet step
@@ -381,7 +384,7 @@ def nvt_nose_hoover_step(
     chain.kinetic_energy = KE
 
     # Second half-step of chain evolution
-    momenta, chain = chain_fns.half_step(state.momenta, chain, kT)
+    momenta, chain = chain_fns.half_step(state.momenta, chain, kT, state.system_idx)
     state.momenta = momenta
     state.chain = chain
 
@@ -433,8 +436,8 @@ def nvt_nose_hoover_invariant(
     # Add first thermostat term
     c = state.chain
     # Ensure chain momenta and masses broadcast correctly with batch dimensions
-    chain_ke_0 = torch.square(c.momenta[0]) / (2 * c.masses[0])
-    chain_pe_0 = dof * kT * c.positions[0]
+    chain_ke_0 = torch.square(c.momenta[:, 0]) / (2 * c.masses[:, 0])
+    chain_pe_0 = dof * kT * c.positions[:, 0]
 
     # If chain variables are scalars but we have batches, broadcast them
     if chain_ke_0.numel() == 1 and e_tot.numel() > 1:
@@ -445,9 +448,11 @@ def nvt_nose_hoover_invariant(
     e_tot = e_tot + chain_ke_0 + chain_pe_0
 
     # Add remaining chain terms
-    for pos, momentum, mass in zip(
-        c.positions[1:], c.momenta[1:], c.masses[1:], strict=True
-    ):
+    for i in range(1, c.positions.shape[1]):
+        pos = c.positions[:, i]
+        momentum = c.momenta[:, i]
+        mass = c.masses[:, i]
+
         chain_ke = momentum**2 / (2 * mass)
         chain_pe = kT * pos
 
