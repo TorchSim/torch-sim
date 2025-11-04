@@ -1773,22 +1773,18 @@ def compute_average_pressure_tensor(
     Args:
         degrees_of_freedom (torch.Tensor): Degrees of freedom of
             the system, shape (n_systems,)
-        kT (torch.Tensor): Thermal energy (k_B * T), shape (n_system
+        kT (torch.Tensor): Thermal energy (k_B * T), shape (n_systems,)
         stress (torch.Tensor): Stress tensor of the system, shape (n_systems, 3, 3)
         volumes (torch.Tensor): Volumes of the systems, shape (n_systems,)
 
     Returns:
         torch.Tensor: Instanteneous internal pressure tesnor [n_systems, 3, 3]
     """
-    # Reshape for broadcasting
-    volumes = volumes.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
-
     # Calculate virials: 2/V * (N_{atoms}k_B T / 2 - Virial_{tensor})
     n_systems = stress.shape[0]
+    prefactor = degrees_of_freedom * kT / volumes # shape: (n_systems,)
     average_kinetic_energy_tensor = (
-        degrees_of_freedom
-        * kT
-        / volumes
+        prefactor[:, None, None]
         * torch.eye(3, device=stress.device, dtype=stress.dtype).expand(n_systems, 3, 3)
     )
     return average_kinetic_energy_tensor - stress
@@ -1961,8 +1957,7 @@ def npt_crescale_anisotropic_step(
     state = momentum_step(state, dt / 2)
 
     # Barostat step
-    # state = _crescale_anisotropic_barostat_step(state, kT, dt, external_pressure)
-    state = _crescale_average_anisotropic_barostat_step(state, kT, dt, external_pressure)
+    state = _crescale_anisotropic_barostat_step(state, kT, dt, external_pressure)
 
     # Forces
     model_output = model(state)
@@ -1976,6 +1971,72 @@ def npt_crescale_anisotropic_step(
     # Final thermostat step
     return _vrescale_update(state, tau, kT, dt / 2)
 
+
+def npt_crescale_average_anisotropic_step(
+    state: NPTCRescaleState,
+    model: ModelInterface,
+    *,
+    dt: torch.Tensor,
+    kT: torch.Tensor,
+    external_pressure: torch.Tensor,
+    tau: torch.Tensor | None = None,
+) -> NPTCRescaleState:
+    """Perform one NPT integration step with cell rescaling barostat.
+
+    This function performs a single integration step for NPT dynamics using
+    a cell rescaling barostat. It updates particle positions, momenta, and
+    the simulation cell based on the target temperature and pressure.
+
+    Trotter based splitting:
+    1. Half Thermostat (velocity scaling)
+    2. Half Update momenta with forces
+    3. Barostat (cell rescaling)
+    4. Update positions (from barostat + half momenta)
+    5. Update forces with new positions and cell
+    6. Compute forces
+    7. Half Update momenta with forces
+    8. Half Thermostat (velocity scaling)
+
+    Only allow isotropic external stress. Can only run anisotropic
+    cell rescaling.
+
+    Inspired from: https://github.com/bussilab/crescale/blob/master/simplemd_anisotropic/simplemd.cpp
+    - Time reversible integrator
+    - Average kinetic energy, scaling only positions
+
+    Args:
+        model (ModelInterface): Model to compute forces and energies
+        state (NPTCRescaleState): Current system state
+        dt (torch.Tensor): Integration timestep
+        kT (torch.Tensor): Target temperature
+        external_pressure (torch.Tensor): Target external pressure
+        tau (torch.Tensor | None): V-Rescale thermostat relaxation time. If None,
+            defaults to 100*dt
+
+    Returns:
+        NPTCRescaleState: Updated state after one integration step
+    """
+    # Note: would probably be better to have tau in NVTCRescaleState
+    if tau is None:
+        tau = 100 * dt
+    state = _vrescale_update(state, tau, kT, dt / 2)
+
+    state = momentum_step(state, dt / 2)
+
+    # Barostat step
+    state = _crescale_average_anisotropic_barostat_step(state, kT, dt, external_pressure)
+
+    # Forces
+    model_output = model(state)
+    state.forces = model_output["forces"]
+    state.energy = model_output["energy"]
+    state.stress = model_output["stress"]
+
+    # Final momentum step
+    state = momentum_step(state, dt / 2)
+
+    # Final thermostat step
+    return _vrescale_update(state, tau, kT, dt / 2)
 
 def npt_crescale_isotropic_step(
     state: NPTCRescaleState,
