@@ -80,12 +80,14 @@ test_validate_direct_model_outputs = make_validate_model_outputs_test(
 )
 
 
-def test_cell_to_cellpar(si_sim_state: SimState) -> None:
+def test_cell_to_cellpar(ti_sim_state: SimState) -> None:
     assert np.allclose(
-        ase_c2p(si_sim_state.row_vector_cell.squeeze()),
-        cell_to_cellpar(si_sim_state.column_vector_cell).cpu().numpy(),
+        ase_c2p(ti_sim_state.row_vector_cell.squeeze()),
+        cell_to_cellpar(ti_sim_state.row_vector_cell.squeeze(0)).cpu().numpy(),
     )
     assert np.allclose(
-        ase_c2p(si_sim_state.row_vector_cell.squeeze(), radians=True),
-        cell_to_cellpar(si_sim_state.column_vector_cell, radians=True).cpu().numpy(),
+        ase_c2p(ti_sim_state.row_vector_cell.squeeze(), radians=True),
+        cell_to_cellpar(ti_sim_state.row_vector_cell.squeeze(0), radians=True)
+        .cpu()
+        .numpy(),
     )

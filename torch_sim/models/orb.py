@@ -66,7 +66,7 @@ def cell_to_cellpar(
     torch version of ase's cell_to_cellpar.
 
     Args:
-        cell:  lattice vector in column vector convention.
+        cell:  lattice vector in row vector convention, same as ase
         radians: If True, return angles in radians. Otherwise, return degrees (default).
 
     Returns:
@@ -79,8 +79,8 @@ def cell_to_cellpar(
         k = i - 2
         ll = lengths[j] * lengths[k]
         if ll.item() > 1e-16:
-            cell_j = cell[:, j].squeeze()
-            cell_k = cell[:, k].squeeze()
+            cell_j = cell[j].squeeze()
+            cell_k = cell[k].squeeze()
             x = torch.dot(cell_j, cell_k) / ll
             angle = 180.0 / torch.pi * torch.arccos(x)
         else:
