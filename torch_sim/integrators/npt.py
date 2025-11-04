@@ -1782,11 +1782,10 @@ def compute_average_pressure_tensor(
     """
     # Calculate virials: 2/V * (N_{atoms}k_B T / 2 - Virial_{tensor})
     n_systems = stress.shape[0]
-    prefactor = degrees_of_freedom * kT / volumes # shape: (n_systems,)
-    average_kinetic_energy_tensor = (
-        prefactor[:, None, None]
-        * torch.eye(3, device=stress.device, dtype=stress.dtype).expand(n_systems, 3, 3)
-    )
+    prefactor = degrees_of_freedom * kT / volumes  # shape: (n_systems,)
+    average_kinetic_energy_tensor = prefactor[:, None, None] * torch.eye(
+        3, device=stress.device, dtype=stress.dtype
+    ).expand(n_systems, 3, 3)
     return average_kinetic_energy_tensor - stress
 
 
@@ -2037,6 +2036,7 @@ def npt_crescale_average_anisotropic_step(
 
     # Final thermostat step
     return _vrescale_update(state, tau, kT, dt / 2)
+
 
 def npt_crescale_isotropic_step(
     state: NPTCRescaleState,
