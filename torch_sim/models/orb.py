@@ -72,16 +72,14 @@ def cell_to_cellpar(
     Returns:
         Tensor with [a, b, c, alpha, beta, gamma].
     """
-    lengths = torch.linalg.norm(cell, dim=1).squeeze()
+    lengths = torch.linalg.norm(cell, dim=1)
     angles = []
     for i in range(3):
         j = i - 1
         k = i - 2
         ll = lengths[j] * lengths[k]
         if ll.item() > 1e-16:
-            cell_j = cell[j].squeeze()
-            cell_k = cell[k].squeeze()
-            x = torch.dot(cell_j, cell_k) / ll
+            x = torch.dot(cell[j], cell[k]) / ll
             angle = 180.0 / torch.pi * torch.arccos(x)
         else:
             angle = 90.0
