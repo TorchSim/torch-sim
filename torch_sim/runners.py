@@ -579,8 +579,8 @@ def static(
         forces: torch.Tensor
         stress: torch.Tensor
 
-        _atom_attributes = state._atom_attributes | {"forces"}  # noqa: SLF001
-        _system_attributes = state._system_attributes | {  # noqa: SLF001
+        _atom_attributes = SimState._atom_attributes | {"forces"}  # noqa: SLF001
+        _system_attributes = SimState._system_attributes | {  # noqa: SLF001
             "energy",
             "stress",
         }
@@ -605,9 +605,13 @@ def static(
             )
 
         model_outputs = model(sub_state)
-
-        sub_state = StaticState(
-            **vars(sub_state),
+        static_state = StaticState(
+            positions=sub_state.positions,
+            masses=sub_state.masses,
+            cell=sub_state.cell,
+            pbc=sub_state.pbc,
+            atomic_numbers=sub_state.atomic_numbers,
+            system_idx=sub_state.system_idx,
             energy=model_outputs["energy"],
             forces=(
                 model_outputs["forces"]
@@ -621,11 +625,11 @@ def static(
             ),
         )
 
-        props = trajectory_reporter.report(sub_state, 0, model=model)
+        props = trajectory_reporter.report(static_state, 0, model=model)
         all_props.extend(props)
 
         if tqdm_pbar:
-            tqdm_pbar.update(sub_state.n_systems)
+            tqdm_pbar.update(static_state.n_systems)
 
     trajectory_reporter.finish()
 
