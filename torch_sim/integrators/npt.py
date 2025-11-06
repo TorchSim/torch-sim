@@ -1630,42 +1630,38 @@ class NPTCRescaleState(MDState):
 
 
 def rotate_gram_schmidt(box: torch.Tensor) -> torch.Tensor:
-    """Convert a batch of 3x3 box matrices into upper-triangular form.
+    """Convert a batch of 3x3 box matrices into lower-triangular form.
 
     Args:
         box (torch.Tensor): shape [n_systems, 3, 3]
 
     Returns:
-        torch.Tensor: shape [n_systems, 3, 3] upper-triangular boxes
+        torch.Tensor: shape [n_systems, 3, 3] lower-triangular boxes
     """
-    out = box.clone()
+    out = torch.zeros_like(box)
 
     # Columns (a, b, c) correspond to box vectors in column form
-    a = out[:, :, 0]
-    b = out[:, :, 1]
-    c = out[:, :, 2]
+    a = box[:, :, 0]
+    b = box[:, :, 1]
+    c = box[:, :, 2]
 
-    # --- Compute upper-triangular entries ---
+    # --- Compute the lower-triangular entries ---
 
-    # First vector (x-axis)
+    # a-axis
     out[:, 0, 0] = torch.norm(a, dim=1)
 
-    # Project b onto a
-    out[:, 0, 1] = torch.sum(a * b, dim=1) / out[:, 0, 0]
-    out[:, 1, 1] = torch.sqrt(torch.sum(b * b, dim=1) - out[:, 0, 1] ** 2)
+    # b projections
+    out[:, 1, 0] = torch.sum(a * b, dim=1) / out[:, 0, 0]
+    out[:, 1, 1] = torch.sqrt(torch.sum(b * b, dim=1) - out[:, 1, 0] ** 2)
 
-    # Project c onto a and b
-    out[:, 0, 2] = torch.sum(a * c, dim=1) / out[:, 0, 0]
-    out[:, 1, 2] = (torch.sum(b * c, dim=1) - out[:, 0, 2] * out[:, 0, 1]) / out[:, 1, 1]
+    # c projections
+    out[:, 2, 0] = torch.sum(a * c, dim=1) / out[:, 0, 0]
+    out[:, 2, 1] = (torch.sum(b * c, dim=1) - out[:, 2, 0] * out[:, 1, 0]) / out[:, 1, 1]
     out[:, 2, 2] = torch.sqrt(
-        torch.sum(c * c, dim=1) - out[:, 0, 2] ** 2 - out[:, 1, 2] ** 2
+        torch.sum(c * c, dim=1) - out[:, 2, 0] ** 2 - out[:, 2, 1] ** 2
     )
 
-    # Upper-triangular form → zero lower elements
-    out[:, 1, 0] = 0.0
-    out[:, 2, 0] = 0.0
-    out[:, 2, 1] = 0.0
-
+    # Upper-triangular entries are 0 by initialization
     return out
 
 
@@ -1755,7 +1751,7 @@ def _crescale_anisotropic_barostat_step(
         (vscaling + rscaling)[state.system_idx], state.momenta
     ) * dt / (2 * state.masses.unsqueeze(-1))
     state.momenta = batch_matrix_vector(vscaling[state.system_idx], state.momenta)
-    state.cell = rscaling @ state.cell
+    state.cell = rscaling.mT @ state.cell
     return state
 
 
@@ -1862,7 +1858,7 @@ def _crescale_average_anisotropic_barostat_step(
         )[state.system_idx],
         state.momenta,
     ) * dt / (2 * state.masses.unsqueeze(-1))
-    state.cell = rscaling @ state.cell
+    state.cell = rscaling.mT @ state.cell
     return state
 
 
