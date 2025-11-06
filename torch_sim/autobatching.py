@@ -309,7 +309,7 @@ def determine_max_batch_size(
 
         try:
             measure_model_memory_forward(concat_state, model)
-        except RuntimeError as exc:
+        except Exception as exc:
             exc_str = str(exc)
             # Check if any of the OOM error messages match
             for msg in oom_error_message:
