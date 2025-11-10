@@ -159,9 +159,11 @@ class SystemConstraint(Constraint):
             ValueError: If both indices and mask are provided, or if indices have
                         wrong shape/type
         """
+        self.initialized = True
         if system_idx is None:
             # Empty constraint
-            self.system_idx = slice(None)  # All systems
+            self.system_idx = []
+            self.initialized = True
             return
 
         # Convert to tensor if needed
