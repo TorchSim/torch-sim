@@ -25,9 +25,8 @@ class OptimState(SimState):
 
     def set_forces(self, new_forces: torch.Tensor) -> None:
         """Set new forces in the optimization state."""
-        if self.constraints is not None:
-            for constraint in self.constraints:
-                constraint.adjust_forces(self, new_forces)
+        for constraint in self.constraints:
+            constraint.adjust_forces(self, new_forces)
         self.forces = new_forces
 
     def __init__(
@@ -42,21 +41,20 @@ class OptimState(SimState):
         pbc: torch.Tensor,
         atomic_numbers: torch.Tensor,
         system_idx: torch.Tensor,
-        constraints: list | None = None,
+        _constraints: list | None = None,
     ) -> None:
         """Initialize optimization state."""
-        super().__init__(
-            positions=positions,
-            masses=masses,
-            cell=cell,
-            pbc=pbc,
-            atomic_numbers=atomic_numbers,
-            system_idx=system_idx,
-            constraints=constraints,
-        )
+        self.positions = positions
+        self.masses = masses
+        self.cell = cell
+        self.pbc = pbc
+        self.atomic_numbers = atomic_numbers
+        self.system_idx = system_idx
+        self._constraints = _constraints
         self.energy = energy
         self.set_forces(forces)
         self.stress = stress
+        SimState.__post_init__(self)
 
 
 @dataclass(kw_only=True)

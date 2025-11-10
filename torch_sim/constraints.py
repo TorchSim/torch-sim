@@ -162,8 +162,8 @@ class SystemConstraint(Constraint):
         self.initialized = True
         if system_idx is None:
             # Empty constraint
-            self.system_idx = []
-            self.initialized = True
+            self.system_idx = torch.empty(0, dtype=torch.long)
+            self.initialized = False
             return
 
         # Convert to tensor if needed
@@ -402,7 +402,7 @@ def count_degrees_of_freedom(
     return max(0, total_dof)  # Ensure non-negative
 
 
-def validate_constraints(  # noqa: C901
+def validate_constraints(
     constraints: list[Constraint], state: SimState | None = None
 ) -> None:
     """Validate constraints for potential issues and incompatibilities.
@@ -433,23 +433,16 @@ def validate_constraints(  # noqa: C901
             indexed_constraints.append(constraint)
 
             # Validate that atom indices exist in state if provided
-            if state is not None and len(constraint.indices) > 0:
-                if constraint.indices.max() >= state.n_atoms:
-                    raise ValueError(
-                        f"Constraint {type(constraint).__name__} has indices up to "
-                        f"{constraint.indices.max()}, but state only has {state.n_atoms} "
-                        "atoms"
-                    )
-
-                # Check that all constrained atoms belong to same system
-                constrained_system_indices = state.system_idx[constraint.indices]
-                unique_systems = torch.unique(constrained_system_indices)
-                if len(unique_systems) > 1:
-                    raise ValueError(
-                        f"Constraint {type(constraint).__name__} acts on atoms from "
-                        f"multiple systems {unique_systems.tolist()}. Each constraint "
-                        f"must operate within a single system."
-                    )
+            if (
+                (state is not None)
+                and (len(constraint.indices) > 0)
+                and (constraint.indices.max() >= state.n_atoms)
+            ):
+                raise ValueError(
+                    f"Constraint {type(constraint).__name__} has indices up to "
+                    f"{constraint.indices.max()}, but state only has {state.n_atoms} "
+                    "atoms"
+                )
 
         elif isinstance(constraint, FixCom):
             has_com_constraint = True

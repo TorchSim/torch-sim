@@ -72,7 +72,7 @@ def _ou_step(
         c1.unsqueeze(-1) * state.momenta
         + c2 * torch.sqrt(state.masses).unsqueeze(-1) * noise
     )
-    state.momenta = new_momenta
+    state.set_momenta(new_momenta)
     return state
 
 
@@ -118,7 +118,6 @@ def nvt_langevin_init(
         "momenta",
         calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
     )
-
     return MDState(
         positions=state.positions,
         momenta=momenta,
@@ -129,13 +128,13 @@ def nvt_langevin_init(
         pbc=state.pbc,
         system_idx=state.system_idx,
         atomic_numbers=state.atomic_numbers,
-        constraints=state.constraints,
+        _constraints=state.constraints,
     )
 
 
 def nvt_langevin_step(
-    model: ModelInterface,
     state: MDState,
+    model: ModelInterface,
     *,
     dt: float | torch.Tensor,
     kT: float | torch.Tensor,
@@ -248,8 +247,8 @@ class NVTNoseHooverState(MDState):
 
 
 def nvt_nose_hoover_init(
-    model: ModelInterface,
     state: SimState | StateDict,
+    model: ModelInterface,
     *,
     kT: torch.Tensor,
     dt: torch.Tensor,
@@ -329,13 +328,13 @@ def nvt_nose_hoover_init(
         system_idx=state.system_idx,
         chain=chain_fns.initialize(dof_per_system, KE, kT),
         _chain_fns=chain_fns,  # Store the chain functions
-        constraints=state.constraints,
+        _constraints=state.constraints,
     )
 
 
 def nvt_nose_hoover_step(
-    model: ModelInterface,
     state: NVTNoseHooverState,
+    model: ModelInterface,
     *,
     dt: torch.Tensor,
     kT: torch.Tensor,
@@ -374,7 +373,7 @@ def nvt_nose_hoover_step(
 
     # First half-step of chain evolution
     momenta, chain = chain_fns.half_step(state.momenta, chain, kT, state.system_idx)
-    state.momenta = momenta
+    state.set_momenta(momenta)
 
     # Full velocity Verlet step
     state = velocity_verlet(state=state, dt=dt, model=model)
@@ -387,7 +386,7 @@ def nvt_nose_hoover_step(
 
     # Second half-step of chain evolution
     momenta, chain = chain_fns.half_step(state.momenta, chain, kT, state.system_idx)
-    state.momenta = momenta
+    state.set_momenta(momenta)
     state.chain = chain
 
     return state

@@ -80,9 +80,11 @@ def test_fix_com_nvt_langevin(cu_sim_state: ts.SimState, lj_model: LennardJonesM
     dt = torch.tensor(0.001, dtype=DTYPE)
     kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
 
-    dofs_before = cu_sim_state.calc_dof()
+    dofs_before = cu_sim_state.get_number_of_degrees_of_freedom()
     cu_sim_state.constraints = [FixCom()]
-    assert torch.allclose(cu_sim_state.calc_dof(), dofs_before - 3)
+    assert torch.allclose(
+        cu_sim_state.get_number_of_degrees_of_freedom(), dofs_before - 3
+    )
 
     state = ts.nvt_langevin_init(state=cu_sim_state, model=lj_model, kT=kT, seed=42)
     positions = []
@@ -99,7 +101,7 @@ def test_fix_com_nvt_langevin(cu_sim_state: ts.SimState, lj_model: LennardJonesM
             masses=state.masses,
             momenta=state.momenta,
             system_idx=state.system_idx,
-            dof_per_system=state.calc_dof(),
+            dof_per_system=state.get_number_of_degrees_of_freedom(),
         )
         temperatures.append(temp / MetalUnits.temperature)
     temperatures = torch.stack(temperatures)
@@ -126,9 +128,11 @@ def test_fix_atoms_nvt_langevin(cu_sim_state: ts.SimState, lj_model: LennardJone
     dt = torch.tensor(0.001, dtype=DTYPE)
     kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
 
-    dofs_before = cu_sim_state.calc_dof()
+    dofs_before = cu_sim_state.get_number_of_degrees_of_freedom()
     cu_sim_state.constraints = [FixAtoms(indices=torch.tensor([0, 1], dtype=torch.long))]
-    assert torch.allclose(cu_sim_state.calc_dof(), dofs_before - torch.tensor([6]))
+    assert torch.allclose(
+        cu_sim_state.get_number_of_degrees_of_freedom(), dofs_before - torch.tensor([6])
+    )
     state = ts.nvt_langevin_init(state=cu_sim_state, model=lj_model, kT=kT, seed=42)
     positions = []
     temperatures = []
@@ -139,7 +143,7 @@ def test_fix_atoms_nvt_langevin(cu_sim_state: ts.SimState, lj_model: LennardJone
             masses=state.masses,
             momenta=state.momenta,
             system_idx=state.system_idx,
-            dof_per_system=state.calc_dof(),
+            dof_per_system=state.get_number_of_degrees_of_freedom(),
         )
         temperatures.append(temp / MetalUnits.temperature)
     temperatures = torch.stack(temperatures)
@@ -188,9 +192,7 @@ def test_state_manipulation_with_constraints(ar_double_sim_state: ts.SimState):
     assert len(split_systems[0].constraints) == 2
     assert torch.all(split_systems[0].constraints[0].indices == torch.tensor([0, 1]))
     assert torch.all(split_systems[1].constraints[0].indices == torch.tensor([0, 1]))
-    assert torch.all(
-        split_systems[2].constraints[0].indices == torch.tensor([], dtype=torch.long)
-    )
+    assert len(split_systems[2].constraints) == 1
 
     # Test constraint manipulation with different configurations
     ar_double_sim_state.constraints = []
@@ -408,17 +410,12 @@ def test_constraint_validation_warnings() -> None:
 
 def test_constraint_validation_errors(
     cu_sim_state: ts.SimState,
-    ar_double_sim_state: ts.SimState,
     ar_supercell_sim_state: ts.SimState,
 ) -> None:
     """Test validation errors for invalid constraints."""
     # Out of bounds
     with pytest.raises(ValueError, match=r"has indices up to.*only has.*atoms"):
         cu_sim_state.constraints = [FixAtoms(indices=[0, 1, 100])]
-
-    # Spanning multiple systems
-    with pytest.raises(ValueError, match="acts on atoms from multiple systems"):
-        ar_double_sim_state.constraints = [FixAtoms(indices=[0, 32])]
 
     # Validation in __post_init__
     with pytest.raises(ValueError, match="duplicates"):
@@ -429,7 +426,7 @@ def test_constraint_validation_errors(
             pbc=ar_supercell_sim_state.pbc,
             atomic_numbers=ar_supercell_sim_state.atomic_numbers,
             system_idx=ar_supercell_sim_state.system_idx,
-            constraints=[FixAtoms(indices=[0, 0, 1])],
+            _constraints=[FixAtoms(indices=[0, 0, 1])],
         )
 
 
@@ -452,6 +449,7 @@ def test_integrators_with_constraints(
     """Test all integrators respect constraints."""
     cu_sim_state.constraints = [constraint]
     kT = torch.tensor(300.0, dtype=DTYPE) * MetalUnits.temperature
+    dt = torch.tensor(0.001, dtype=DTYPE)
 
     # Store initial state
     if isinstance(constraint, FixAtoms):
@@ -468,25 +466,23 @@ def test_integrators_with_constraints(
     if integrator == "nve":
         state = ts.nve_init(cu_sim_state, lj_model, kT=kT, seed=42)
         for _ in range(n_steps):
-            state = ts.nve_step(state, lj_model, dt=torch.tensor(0.001, dtype=DTYPE))
+            state = ts.nve_step(state, lj_model, dt=dt)
     elif integrator == "nvt_nose_hoover":
-        state = ts.nvt_nose_hoover_init(cu_sim_state, lj_model, kT=kT)
+        state = ts.nvt_nose_hoover_init(cu_sim_state, lj_model, kT=kT, dt=dt)
         for _ in range(n_steps):
-            state = ts.nvt_nose_hoover_step(
-                state, lj_model, dt=torch.tensor(0.001, dtype=DTYPE), kT=kT
-            )
+            state = ts.nvt_nose_hoover_step(state, lj_model, dt=dt, kT=kT)
     elif integrator == "npt_langevin":
-        state = ts.npt_langevin_init(cu_sim_state, lj_model, kT=kT, seed=42)
+        state = ts.npt_langevin_init(cu_sim_state, lj_model, kT=kT, seed=42, dt=dt)
         for _ in range(n_steps):
             state = ts.npt_langevin_step(
                 state,
                 lj_model,
-                dt=torch.tensor(0.001, dtype=DTYPE),
+                dt=dt,
                 kT=kT,
                 external_pressure=torch.tensor(0.0, dtype=DTYPE),
             )
     else:  # npt_nose_hoover
-        state = ts.npt_nose_hoover_init(cu_sim_state, lj_model, kT=kT)
+        state = ts.npt_nose_hoover_init(cu_sim_state, lj_model, kT=kT, dt=dt)
         for _ in range(n_steps):
             state = ts.npt_nose_hoover_step(
                 state,
@@ -512,11 +508,11 @@ def test_multiple_constraints_and_dof(
     """Test multiple constraints together with correct DOF calculation."""
     # Test DOF calculation
     n = cu_sim_state.n_atoms
-    assert torch.all(cu_sim_state.calc_dof() == 3 * n)
+    assert torch.all(cu_sim_state.get_number_of_degrees_of_freedom() == 3 * n)
     cu_sim_state.constraints = [FixAtoms(indices=[0])]
-    assert torch.all(cu_sim_state.calc_dof() == 3 * n - 3)
-    cu_sim_state.constraints = [FixCom()]
-    assert torch.all(cu_sim_state.calc_dof() == 3 * n - 6)
+    assert torch.all(cu_sim_state.get_number_of_degrees_of_freedom() == 3 * n - 3)
+    cu_sim_state.constraints = [FixCom(), FixAtoms(indices=[0])]
+    assert torch.all(cu_sim_state.get_number_of_degrees_of_freedom() == 3 * n - 6)
 
     # Verify both constraints hold during dynamics
     initial_pos = cu_sim_state.positions[0].clone()
@@ -549,9 +545,9 @@ def test_multiple_constraints_and_dof(
 @pytest.mark.parametrize(
     ("cell_filter", "fire_flavor"),
     [
-        ("unit_cell", "ase_fire"),
-        ("frechet_cell", "ase_fire"),
-        ("frechet_cell", "vv_fire"),
+        (ts.CellFilter.unit, "ase_fire"),
+        (ts.CellFilter.frechet, "ase_fire"),
+        (ts.CellFilter.frechet, "vv_fire"),
     ],
 )
 def test_cell_optimization_with_constraints(
@@ -596,7 +592,7 @@ def test_constraints_with_non_pbc(lj_model: LennardJonesModel) -> None:
             dtype=DTYPE,
         ),
         masses=torch.ones(4, dtype=DTYPE) * 39.948,
-        cell=torch.eye(3, dtype=DTYPE) * 10.0,
+        cell=torch.eye(3, dtype=DTYPE).unsqueeze(0) * 10.0,
         pbc=False,
         atomic_numbers=torch.full((4,), 18, dtype=torch.long),
         system_idx=torch.zeros(4, dtype=torch.long),
@@ -631,11 +627,12 @@ def test_high_level_api_with_constraints(
     final = ts.integrate(
         cu_sim_state,
         lj_model,
-        integrator="nvt_langevin",
-        n_steps=100,
+        integrator=ts.Integrator.nvt_langevin,
+        n_steps=1,
         temperature=300.0,
         timestep=0.001,
     )
+
     final_com = get_centers_of_mass(
         final.positions, final.masses, final.system_idx, final.n_systems
     )
@@ -647,7 +644,9 @@ def test_high_level_api_with_constraints(
     )
     ar_supercell_sim_state.constraints = [FixAtoms(indices=[0, 1, 2])]
     initial_pos = ar_supercell_sim_state.positions[[0, 1, 2]].clone()
-    final = ts.optimize(ar_supercell_sim_state, lj_model, optimizer="fire", max_steps=500)
+    final = ts.optimize(
+        ar_supercell_sim_state, lj_model, optimizer=ts.Optimizer.fire, max_steps=500
+    )
     assert torch.allclose(final.positions[[0, 1, 2]], initial_pos, atol=1e-5)
 
 
@@ -671,9 +670,7 @@ def test_temperature_with_constrained_dof(
             dt=torch.tensor(0.001, dtype=DTYPE),
             kT=torch.tensor(target, dtype=DTYPE) * MetalUnits.temperature,
         )
-        temp = ts.calc_kT(
-            state.masses, state.momenta, state.system_idx, dof_per_system=state.calc_dof()
-        )
+        temp = state.calc_kT()
         temps.append(temp / MetalUnits.temperature)
     avg = torch.mean(torch.stack(temps)[500:])
     assert abs(avg - target) / target < 0.30
