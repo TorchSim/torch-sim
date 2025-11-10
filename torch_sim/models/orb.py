@@ -86,7 +86,7 @@ def cell_to_cellpar(
         angles.append(angle)
     if radians:
         angles = [angle * torch.pi / 180 for angle in angles]
-    return torch.concat((torch.tensor(lengths), torch.tensor(angles)))
+    return torch.concat((lengths, torch.stack(angles)))
 
 
 def state_to_atom_graphs(  # noqa: PLR0915
