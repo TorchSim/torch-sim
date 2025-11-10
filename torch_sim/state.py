@@ -23,7 +23,12 @@ if TYPE_CHECKING:
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure
 
-from torch_sim.constraints import AtomIndexedConstraint, Constraint, SystemConstraint
+from torch_sim.constraints import (
+    AtomIndexedConstraint,
+    Constraint,
+    SystemConstraint,
+    validate_constraints,
+)
 
 
 @dataclass
@@ -140,6 +145,9 @@ class SimState:
             if not torch.all(counts == torch.bincount(initial_system_idx)):
                 raise ValueError("System indices must be unique consecutive integers")
 
+        if self.constraints:
+            validate_constraints(self.constraints, state=self)
+
         if self.cell.ndim != 3 and initial_system_idx is None:
             self.cell = self.cell.unsqueeze(0)
 
@@ -249,6 +257,9 @@ class SimState:
         Args:
             constraints (list["Constraint"] | None): List of constraints to apply.
                 If None, no constraints are applied.
+
+        Raises:
+            ValueError: If constraints are invalid or span multiple systems
         """
         # check it is a list
         if isinstance(constraints, Constraint):
@@ -257,6 +268,10 @@ class SimState:
             # if constraint.system_idx exists
             if hasattr(constraint, "system_idx") and constraint.system_idx == slice(None):
                 constraint.system_idx = torch.arange(self.n_systems, device=self.device)
+
+        # Validate new constraints before adding
+        all_constraints = self.constraints + constraints
+        validate_constraints(all_constraints, state=self)
 
         self.constraints += constraints
 

@@ -400,21 +400,55 @@ def count_degrees_of_freedom(
     return max(0, total_dof)  # Ensure non-negative
 
 
-def warn_if_overlapping_constraints(constraints: list[Constraint]) -> None:
-    """Issue warnings if constraints might overlap in problematic ways.
+def validate_constraints(  # noqa: C901
+    constraints: list[Constraint], state: SimState | None = None
+) -> None:
+    """Validate constraints for potential issues and incompatibilities.
 
-    This function checks for potential issues like multiple constraints
-    acting on the same atoms, which could lead to unexpected behavior.
+    This function checks for:
+    1. Overlapping atom indices across multiple constraints
+    2. AtomIndexedConstraints spanning multiple systems (requires state)
+    3. Mixing FixCom with other constraints (warning only)
 
     Args:
-        constraints: List of constraints to check
+        constraints: List of constraints to validate
+        state: Optional SimState for validating atom indices belong to same system
+
+    Raises:
+        ValueError: If constraints are invalid or span multiple systems
+
+    Warns:
+        UserWarning: If constraints may lead to unexpected behavior
     """
+    if not constraints:
+        return
+
     indexed_constraints = []
     has_com_constraint = False
 
     for constraint in constraints:
         if isinstance(constraint, AtomIndexedConstraint):
             indexed_constraints.append(constraint)
+
+            # Validate that atom indices exist in state if provided
+            if state is not None and len(constraint.indices) > 0:
+                if constraint.indices.max() >= state.n_atoms:
+                    raise ValueError(
+                        f"Constraint {type(constraint).__name__} has indices up to "
+                        f"{constraint.indices.max()}, but state only has {state.n_atoms} "
+                        "atoms"
+                    )
+
+                # Check that all constrained atoms belong to same system
+                constrained_system_indices = state.system_idx[constraint.indices]
+                unique_systems = torch.unique(constrained_system_indices)
+                if len(unique_systems) > 1:
+                    raise ValueError(
+                        f"Constraint {type(constraint).__name__} acts on atoms from "
+                        f"multiple systems {unique_systems.tolist()}. Each constraint "
+                        f"must operate within a single system."
+                    )
+
         elif isinstance(constraint, FixCom):
             has_com_constraint = True
 
@@ -427,7 +461,7 @@ def warn_if_overlapping_constraints(constraints: list[Constraint]) -> None:
                 "Multiple constraints are acting on the same atoms. "
                 "This may lead to unexpected behavior.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=3,
             )
 
     # Warn about COM constraint with fixed atoms
@@ -437,5 +471,5 @@ def warn_if_overlapping_constraints(constraints: list[Constraint]) -> None:
             "unexpected behavior. The center of mass constraint is applied "
             "to all atoms, including those that may be constrained by other means.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=3,
         )
