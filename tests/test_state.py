@@ -619,3 +619,34 @@ def test_derived_classes_trigger_init_subclass() -> None:
     assert "is not allowed to be of type 'torch.Tensor | None' because torch.cat" in str(
         exc_info.value
     )
+
+
+def test_state_to_device_no_side_effects(si_sim_state: SimState) -> None:
+    """Test that SimState.to() doesn't modify the original state."""
+    # Store original values
+    original_positions = si_sim_state.positions.clone()
+    original_dtype = si_sim_state.dtype
+    original_device = si_sim_state.device
+
+    # Convert to different dtype
+    new_state = si_sim_state.to(dtype=torch.float64)
+
+    # Verify original state is unchanged
+    assert torch.allclose(si_sim_state.positions, original_positions), (
+        "Original state was modified!"
+    )
+    assert si_sim_state.dtype == original_dtype, "Original state dtype was changed!"
+    assert si_sim_state.device == original_device, "Original state device was changed!"
+    assert si_sim_state is not new_state, "New state is not a different object!"
+    assert new_state.dtype == torch.float64, "New state doesn't have correct dtype!"
+
+    # Test device conversion
+    if torch.cuda.is_available():
+        new_state_gpu = si_sim_state.to(device=torch.device("cuda"))
+        assert si_sim_state.device == original_device, (
+            "Original state device was changed!"
+        )
+        assert new_state_gpu.device.type == "cuda", (
+            "New state doesn't have correct device!"
+        )
+        assert si_sim_state is not new_state_gpu, "New state is not a different object!"

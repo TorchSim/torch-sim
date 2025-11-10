@@ -10,6 +10,7 @@ from functools import wraps
 
 import torch
 from torch.types import _dtype
+from typing_extensions import deprecated
 
 
 def get_fractional_coordinates(
@@ -110,6 +111,7 @@ def inverse_box(box: torch.Tensor) -> torch.Tensor:
     raise ValueError(f"Box must be either: a scalar, a vector, or a matrix. Found {box}.")
 
 
+@deprecated("Use wrap_positions instead")
 def pbc_wrap_general(
     positions: torch.Tensor, lattice_vectors: torch.Tensor
 ) -> torch.Tensor:

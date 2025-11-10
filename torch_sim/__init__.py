@@ -3,6 +3,7 @@
 # ruff: noqa: F401
 import os
 from datetime import datetime
+from importlib.metadata import version
 
 import torch_sim as ts
 from torch_sim import (
@@ -66,6 +67,7 @@ from torch_sim.properties.correlations import CorrelationCalculator
 from torch_sim.quantities import (
     calc_kinetic_energy,
     calc_kT,
+    calc_temperature,
     get_pressure,
     system_wise_max_force,
 )
@@ -83,3 +85,5 @@ from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 PKG_DIR = os.path.dirname(__file__)
 ROOT = os.path.dirname(PKG_DIR)
 SCRIPTS_DIR = f"{ROOT}/examples"
+
+__version__ = version("torch-sim-atomistic")

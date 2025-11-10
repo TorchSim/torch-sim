@@ -6,7 +6,9 @@ from dataclasses import dataclass
 import torch
 
 from torch_sim.models.interface import ModelInterface
+from torch_sim.quantities import calc_temperature
 from torch_sim.state import SimState
+from torch_sim.units import MetalUnits
 
 
 @dataclass(kw_only=True)
@@ -60,6 +62,25 @@ class MDState(SimState):
             for constraint in self.constraints:
                 constraint.adjust_momenta(self, new_momenta)
         self.momenta = new_momenta
+
+    def calc_temperature(
+        self, units: MetalUnits = MetalUnits.temperature
+    ) -> torch.Tensor:
+        """Calculate temperature from momenta, masses, and system indices.
+
+        Args:
+            units (MetalUnits): Units to return the temperature in
+
+        Returns:
+            torch.Tensor: Calculated temperature
+        """
+        return calc_temperature(
+            masses=self.masses,
+            momenta=self.momenta,
+            system_idx=self.system_idx,
+            dof_per_system=self.get_number_of_degrees_of_freedom(),
+            units=units,
+        )
 
 
 def calculate_momenta(
@@ -214,13 +235,13 @@ class NoseHooverChain:
     in the chain has its own positions, momenta, and masses.
 
     Attributes:
-        positions: Positions of the chain thermostats. Shape: [chain_length]
-        momenta: Momenta of the chain thermostats. Shape: [chain_length]
-        masses: Masses of the chain thermostats. Shape: [chain_length]
+        positions: Positions of the chain thermostats. Shape: [n_systems, chain_length]
+        momenta: Momenta of the chain thermostats. Shape: [n_systems, chain_length]
+        masses: Masses of the chain thermostats. Shape: [n_systems, chain_length]
         tau: Thermostat relaxation time. Longer values give better stability
-            but worse temperature control. Shape: scalar
-        kinetic_energy: Current kinetic energy of the coupled system. Shape: scalar
-        degrees_of_freedom: Number of degrees of freedom in the coupled system
+            but worse temperature control. Shape: [n_systems] or scalar
+        kinetic_energy: Current kinetic energy of the coupled system. Shape: [n_systems]
+        degrees_of_freedom: Number of degrees of freedom per system. Shape: [n_systems]
     """
 
     positions: torch.Tensor
@@ -228,7 +249,8 @@ class NoseHooverChain:
     masses: torch.Tensor
     tau: torch.Tensor
     kinetic_energy: torch.Tensor
-    degrees_of_freedom: int
+    degrees_of_freedom: torch.Tensor
+    system_idx: torch.Tensor | None = None
 
 
 @dataclass
@@ -291,7 +313,7 @@ SUZUKI_YOSHIDA_WEIGHTS = {
 }
 
 
-def construct_nose_hoover_chain(
+def construct_nose_hoover_chain(  # noqa: C901 PLR0915
     dt: torch.Tensor,
     chain_length: int,
     chain_steps: int,
@@ -330,14 +352,14 @@ def construct_nose_hoover_chain(
     """
 
     def init_fn(
-        degrees_of_freedom: int, KE: torch.Tensor, kT: torch.Tensor
+        degrees_of_freedom: torch.Tensor, KE: torch.Tensor, kT: torch.Tensor
     ) -> NoseHooverChain:
         """Initialize a Nose-Hoover chain state.
 
         Args:
-            degrees_of_freedom: Number of degrees of freedom in coupled system
-            KE: Initial kinetic energy of the system
-            kT: Target temperature in energy units
+            degrees_of_freedom: Number of degrees of freedom per system, shape [n_systems]
+            KE: Initial kinetic energy per system, shape [n_systems]
+            kT: Target temperature in energy units, shape [n_systems] or scalar
 
         Returns:
             Initial NoseHooverChain state
@@ -345,16 +367,40 @@ def construct_nose_hoover_chain(
         device = KE.device
         dtype = KE.dtype
 
-        xi = torch.zeros(chain_length, dtype=dtype, device=device)
-        p_xi = torch.zeros(chain_length, dtype=dtype, device=device)
+        # Ensure n_systems is determined from KE shape
+        n_systems = KE.shape[0] if KE.dim() > 0 else 1
 
-        Q = kT * torch.square(tau) * torch.ones(chain_length, dtype=dtype, device=device)
-        Q[0] *= degrees_of_freedom
+        # Initialize chain variables with proper batch dimensions
+        xi = torch.zeros((n_systems, chain_length), dtype=dtype, device=device)
+        p_xi = torch.zeros((n_systems, chain_length), dtype=dtype, device=device)
 
-        return NoseHooverChain(xi, p_xi, Q, tau, KE, degrees_of_freedom)
+        # Broadcast tau to match n_systems
+        if isinstance(tau, torch.Tensor):
+            tau_batched = tau.expand(n_systems) if tau.dim() == 0 else tau
+        else:
+            tau_batched = torch.full((n_systems,), tau, dtype=dtype, device=device)
+
+        # Ensure kT has proper batch dimension
+        if isinstance(kT, torch.Tensor):
+            kT_batched = kT.expand(n_systems) if kT.dim() == 0 else kT
+        else:
+            kT_batched = torch.full((n_systems,), kT, dtype=dtype, device=device)
+
+        Q = (
+            kT_batched.unsqueeze(-1)
+            * torch.square(tau_batched).unsqueeze(-1) ** 2
+            * torch.ones((n_systems, chain_length), dtype=dtype, device=device)
+        )
+        Q[:, 0] *= degrees_of_freedom
+
+        return NoseHooverChain(xi, p_xi, Q, tau_batched, KE, degrees_of_freedom)
 
     def substep_fn(
-        delta: torch.Tensor, P: torch.Tensor, state: NoseHooverChain, kT: torch.Tensor
+        delta: torch.Tensor,
+        P: torch.Tensor,
+        state: NoseHooverChain,
+        kT: torch.Tensor,
+        system_idx: torch.Tensor,
     ) -> tuple[torch.Tensor, NoseHooverChain, torch.Tensor]:
         """Perform single update of chain parameters and rescale velocities.
 
@@ -363,6 +409,7 @@ def construct_nose_hoover_chain(
             P: System momenta to be rescaled
             state: Current chain state
             kT: Target temperature
+            system_idx: Index of the system being evolved
 
         Returns:
             Tuple of (rescaled momenta, updated chain state, temperature)
@@ -382,40 +429,53 @@ def construct_nose_hoover_chain(
 
         M = chain_length - 1
 
+        # Ensure kT has proper batch dimension
+        if isinstance(kT, torch.Tensor):
+            kT_batched = kT.expand(KE.shape[0]) if kT.dim() == 0 else kT
+        else:
+            kT_batched = torch.full_like(KE, kT)
+
         # Update chain momenta backwards
-        G = torch.square(p_xi[M - 1]) / Q[M - 1] - kT
-        p_xi[M] += delta_4 * G
+        if M > 0:
+            G = torch.square(p_xi[:, M - 1]) / Q[:, M - 1] - kT_batched
+            p_xi[:, M] += delta_4 * G
 
         for m in range(M - 1, 0, -1):
-            G = torch.square(p_xi[m - 1]) / Q[m - 1] - kT
-            scale = torch.exp(-delta_8 * p_xi[m + 1] / Q[m + 1])
-            p_xi[m] = scale * (scale * p_xi[m] + delta_4 * G)
+            G = torch.square(p_xi[:, m - 1]) / Q[:, m - 1] - kT_batched
+            scale = torch.exp(-delta_8 * p_xi[:, m + 1] / Q[:, m + 1])
+            p_xi[:, m] = scale * (scale * p_xi[:, m] + delta_4 * G)
 
         # Update system coupling
-        G = 2.0 * KE - DOF * kT
-        scale = torch.exp(-delta_8 * p_xi[1] / Q[1])
-        p_xi[0] = scale * (scale * p_xi[0] + delta_4 * G)
+        G = 2.0 * KE - DOF * kT_batched
+        scale = torch.exp(-delta_8 * p_xi[:, 1] / Q[:, 1]) if M > 0 else 1.0
+        p_xi[:, 0] = scale * (scale * p_xi[:, 0] + delta_4 * G)
 
         # Rescale system momenta
-        scale = torch.exp(-delta_2 * p_xi[0] / Q[0])
+        scale = torch.exp(-delta_2 * p_xi[:, 0] / Q[:, 0])
         KE = KE * torch.square(scale)
-        P = P * scale
+
+        # Apply scale to momenta - need to map from system to atom indices
+        atom_scale = scale[system_idx].unsqueeze(-1)
+        P = P * atom_scale
 
         # Update positions
         xi = xi + delta_2 * p_xi / Q
 
         # Update chain momenta forwards
-        G = 2.0 * KE - DOF * kT
+        G = 2.0 * KE - DOF * kT_batched
         for m in range(M):
-            scale = torch.exp(-delta_8 * p_xi[m + 1] / Q[m + 1])
-            p_xi[m] = scale * (scale * p_xi[m] + delta_4 * G)
-            G = torch.square(p_xi[m]) / Q[m] - kT
-        p_xi[M] += delta_4 * G
+            scale = torch.exp(-delta_8 * p_xi[:, m + 1] / Q[:, m + 1])
+            p_xi[:, m] = scale * (scale * p_xi[:, m] + delta_4 * G)
+            G = torch.square(p_xi[:, m]) / Q[:, m] - kT_batched
+        p_xi[:, M] += delta_4 * G
 
-        return P, NoseHooverChain(xi, p_xi, Q, _tau, KE, DOF), kT
+        return P, NoseHooverChain(xi, p_xi, Q, _tau, KE, DOF), kT_batched
 
     def half_step_chain_fn(
-        P: torch.Tensor, state: NoseHooverChain, kT: torch.Tensor
+        P: torch.Tensor,
+        state: NoseHooverChain,
+        kT: torch.Tensor,
+        system_idx: torch.Tensor,
     ) -> tuple[torch.Tensor, NoseHooverChain]:
         """Evolve chain for half timestep using multi-timestep integration.
 
@@ -423,12 +483,13 @@ def construct_nose_hoover_chain(
             P: System momenta to be rescaled
             state: Current chain state
             kT: Target temperature
+            system_idx: Index of the system being evolved
 
         Returns:
             Tuple of (rescaled momenta, updated chain state)
         """
         if chain_steps == 1 and sy_steps == 1:
-            P, state, _ = substep_fn(dt, P, state, kT)
+            P, state, _ = substep_fn(dt, P, state, kT, system_idx)
             return P, state
 
         delta = dt / chain_steps
@@ -436,7 +497,7 @@ def construct_nose_hoover_chain(
 
         for step in range(chain_steps * sy_steps):
             d = delta * weights[step % sy_steps]
-            P, state, _ = substep_fn(d, P, state, kT)
+            P, state, _ = substep_fn(d, P, state, kT, system_idx)
 
         return P, state
 
@@ -455,12 +516,21 @@ def construct_nose_hoover_chain(
         device = chain_state.positions.device
         dtype = chain_state.positions.dtype
 
+        # Get number of systems
+        n_systems = chain_state.kinetic_energy.shape[0]
+
+        # Ensure kT has proper batch dimension
+        if isinstance(kT, torch.Tensor):
+            kT_batched = kT.expand(n_systems) if kT.dim() == 0 else kT
+        else:
+            kT_batched = torch.full((n_systems,), kT, dtype=dtype, device=device)
+
         Q = (
-            kT
-            * torch.square(chain_state.tau)
-            * torch.ones(chain_length, dtype=dtype, device=device)
+            kT_batched.unsqueeze(-1)
+            * torch.square(chain_state.tau).unsqueeze(-1)
+            * torch.ones((n_systems, chain_length), dtype=dtype, device=device)
         )
-        Q[0] *= chain_state.degrees_of_freedom
+        Q[:, 0] *= chain_state.degrees_of_freedom
 
         return NoseHooverChain(
             chain_state.positions,

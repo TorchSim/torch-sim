@@ -58,7 +58,7 @@ state = ts.io.structures_to_state([structure], device=device, dtype=dtype)
 
 
 # %%
-@dataclass
+@dataclass(kw_only=True)
 class HybridSwapMCState(ts.SwapMCState, MDState):
     """State for Monte Carlo simulations.
 
@@ -79,7 +79,7 @@ md_state = ts.nvt_langevin_init(state=state, model=model, kT=torch.tensor(kT), s
 
 swap_state = ts.swap_mc_init(state=md_state, model=model)
 hybrid_state = HybridSwapMCState(
-    **vars(md_state),
+    **md_state.attributes,
     last_permutation=torch.arange(
         md_state.n_atoms, device=md_state.device, dtype=torch.long
     ),

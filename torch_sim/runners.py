@@ -5,6 +5,7 @@ optimizations using various models and integrators. It includes utilities for
 converting between different atomistic representations and handling simulation state.
 """
 
+import copy
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -29,7 +30,6 @@ from torch_sim.units import UnitSystem
 def _configure_reporter(
     trajectory_reporter: TrajectoryReporter | dict,
     *,
-    state_kwargs: dict | None = None,
     properties: list[str] | None = None,
     prop_frequency: int = 10,
     state_frequency: int = 100,
@@ -43,9 +43,7 @@ def _configure_reporter(
         "kinetic_energy": lambda state: ts.calc_kinetic_energy(
             velocities=state.velocities, masses=state.masses
         ),
-        "temperature": lambda state: ts.calc_kT(
-            velocities=state.velocities, masses=state.masses
-        ),
+        "temperature": lambda state: state.calc_temperature(),
     }
 
     prop_calculators = {
@@ -55,12 +53,12 @@ def _configure_reporter(
     }
 
     # ordering is important to ensure we can override defaults
+    trajectory_reporter = copy.deepcopy(trajectory_reporter)
     return TrajectoryReporter(
         prop_calculators=trajectory_reporter.pop(
             "prop_calculators", {prop_frequency: prop_calculators}
         ),
         state_frequency=trajectory_reporter.pop("state_frequency", state_frequency),
-        state_kwargs=state_kwargs or {},
         **trajectory_reporter,
     )
 
@@ -229,7 +227,7 @@ def _configure_in_flight_autobatcher(
     model: ModelInterface,
     *,
     autobatcher: InFlightAutoBatcher | bool,
-    max_attempts: int,  # TODO: change name to max_iterations
+    max_iterations: int,  # TODO: change name to max_iterations
 ) -> InFlightAutoBatcher:
     """Configure the hot swapping autobatcher for the optimize function.
 
@@ -238,14 +236,15 @@ def _configure_in_flight_autobatcher(
         state (SimState): The state to use for the autobatcher
         autobatcher (InFlightAutoBatcher | bool): The autobatcher to use for the
             autobatcher
-        max_attempts (int): The maximum number of attempts for the autobatcher
+        max_iterations (int): The maximum number of iterations for each state in
+            the autobatcher.
 
     Returns:
         A hot swapping autobatcher
     """
     # load and properly configure the autobatcher
     if isinstance(autobatcher, InFlightAutoBatcher):
-        autobatcher.max_attempts = max_attempts
+        autobatcher.max_iterations = max_iterations
     elif isinstance(autobatcher, bool):
         if autobatcher:
             memory_scales_with = model.memory_scales_with
@@ -257,7 +256,7 @@ def _configure_in_flight_autobatcher(
             model=model,
             max_memory_scaler=max_memory_scaler,
             memory_scales_with=memory_scales_with,
-            max_iterations=max_attempts,
+            max_iterations=max_iterations,
             max_memory_padding=0.9,
         )
     else:
@@ -373,10 +372,10 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     *,
     optimizer: Optimizer | tuple[Callable[..., T], Callable[..., T]],
     convergence_fn: Callable[[T, torch.Tensor | None], torch.Tensor] | None = None,
-    trajectory_reporter: TrajectoryReporter | dict | None = None,
-    autobatcher: InFlightAutoBatcher | bool = False,
     max_steps: int = 10_000,
     steps_between_swaps: int = 5,
+    trajectory_reporter: TrajectoryReporter | dict | None = None,
+    autobatcher: InFlightAutoBatcher | bool = False,
     pbar: bool | dict[str, Any] = False,
     init_kwargs: dict[str, Any] | None = None,
     **optimizer_kwargs: Any,
@@ -398,7 +397,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             infinite memory and will not batch, but will still remove converged
             structures from the batch. If True, the system will estimate the memory
             available and batch accordingly. If a InFlightAutoBatcher, the system
-            will use the provided autobatcher, but will reset the max_attempts to
+            will use the provided autobatcher, but will reset the max_iterations to
             max_steps // steps_between_swaps.
         max_steps (int): Maximum number of total optimization steps
         steps_between_swaps: Number of steps to take before checking convergence
@@ -434,9 +433,9 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             f"(init_func, step_func), got {optimizer_type}"
         )
 
-    max_attempts = max_steps // steps_between_swaps
+    max_iterations = max_steps // steps_between_swaps
     autobatcher = _configure_in_flight_autobatcher(
-        initial_state, model, autobatcher=autobatcher, max_attempts=max_attempts
+        initial_state, model, autobatcher=autobatcher, max_iterations=max_iterations
     )
 
     if isinstance(initial_state, OptimState):
@@ -450,6 +449,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             max_memory_scaler=autobatcher.max_memory_scaler,
             memory_scales_with=autobatcher.memory_scales_with,
             max_atoms_to_try=autobatcher.max_atoms_to_try,
+            oom_error_message=autobatcher.oom_error_message,
         )
     autobatcher.load_states(state)
     if trajectory_reporter is not None:
@@ -562,13 +562,15 @@ def static(
         properties.append("forces")
     if model.compute_stress:
         properties.append("stress")
-    trajectory_reporter = _configure_reporter(
-        trajectory_reporter or dict(filenames=None),
-        state_kwargs={
+    if isinstance(trajectory_reporter, dict):
+        trajectory_reporter = copy.deepcopy(trajectory_reporter)
+        trajectory_reporter["state_kwargs"] = {
             "variable_atomic_numbers": True,
             "variable_masses": True,
             "save_forces": model.compute_forces,
-        },
+        }
+    trajectory_reporter = _configure_reporter(
+        trajectory_reporter or dict(filenames=None),
         properties=properties,
     )
 
@@ -578,8 +580,8 @@ def static(
         forces: torch.Tensor
         stress: torch.Tensor
 
-        _atom_attributes = state._atom_attributes | {"forces"}  # noqa: SLF001
-        _system_attributes = state._system_attributes | {  # noqa: SLF001
+        _atom_attributes = SimState._atom_attributes | {"forces"}  # noqa: SLF001
+        _system_attributes = SimState._system_attributes | {  # noqa: SLF001
             "energy",
             "stress",
         }
@@ -604,9 +606,13 @@ def static(
             )
 
         model_outputs = model(sub_state)
-
-        sub_state = StaticState(
-            **vars(sub_state),
+        static_state = StaticState(
+            positions=sub_state.positions,
+            masses=sub_state.masses,
+            cell=sub_state.cell,
+            pbc=sub_state.pbc,
+            atomic_numbers=sub_state.atomic_numbers,
+            system_idx=sub_state.system_idx,
             energy=model_outputs["energy"],
             forces=(
                 model_outputs["forces"]
@@ -620,11 +626,11 @@ def static(
             ),
         )
 
-        props = trajectory_reporter.report(sub_state, 0, model=model)
+        props = trajectory_reporter.report(static_state, 0, model=model)
         all_props.extend(props)
 
         if tqdm_pbar:
-            tqdm_pbar.update(sub_state.n_systems)
+            tqdm_pbar.update(static_state.n_systems)
 
     trajectory_reporter.finish()
 

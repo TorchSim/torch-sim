@@ -72,6 +72,7 @@ def calc_temperature(
     momenta: torch.Tensor | None = None,
     velocities: torch.Tensor | None = None,
     system_idx: torch.Tensor | None = None,
+    dof_per_system: torch.Tensor | None = None,
     units: MetalUnits = MetalUnits.temperature,
 ) -> torch.Tensor:
     """Calculate temperature from momenta/velocities and masses.
@@ -82,13 +83,19 @@ def calc_temperature(
         velocities (torch.Tensor | None): Particle velocities, shape (n_particles, n_dim)
         system_idx (torch.Tensor | None): Optional tensor indicating system membership of
         each particle
+        dof_per_system (torch.Tensor | None): Optional tensor indicating
+        degrees of freedom per system
         units (object): Units to return the temperature in
 
     Returns:
-        torch.Tensor: Temperature value in specified units
+        torch.Tensor: Temperature value in specified units (default, K)
     """
     kT = calc_kT(
-        masses=masses, momenta=momenta, velocities=velocities, system_idx=system_idx
+        masses=masses,
+        momenta=momenta,
+        velocities=velocities,
+        system_idx=system_idx,
+        dof_per_system=dof_per_system,
     )
     return kT / units
 

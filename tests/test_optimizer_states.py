@@ -34,7 +34,7 @@ def optim_data() -> dict:
 
 def test_optim_state_init(sim_state: SimState, optim_data: dict) -> None:
     """Test OptimState initialization."""
-    state = OptimState(**vars(sim_state), **optim_data)
+    state = OptimState(**sim_state.attributes, **optim_data)
     assert torch.equal(state.forces, optim_data["forces"])
     assert torch.equal(state.energy, optim_data["energy"])
     assert torch.equal(state.stress, optim_data["stress"])
@@ -51,7 +51,7 @@ def test_fire_state_custom_values(sim_state: SimState, optim_data: dict) -> None
         "n_pos": torch.tensor([5], dtype=torch.int32),
     }
 
-    state = FireState(**vars(sim_state), **optim_data, **fire_data)
+    state = FireState(**sim_state.attributes, **optim_data, **fire_data)
 
     assert torch.equal(state.velocities, fire_data["velocities"])
     assert torch.equal(state.dt, fire_data["dt"])
