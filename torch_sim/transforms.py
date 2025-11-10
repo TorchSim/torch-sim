@@ -1248,5 +1248,8 @@ def get_centers_of_mass(
         system_idx.unsqueeze(-1).expand(-1, 3),
         masses.unsqueeze(-1) * positions,
     )
-    coms /= masses.unsqueeze(-1).sum(dim=0)
+    system_masses = torch.zeros((n_systems,), dtype=positions.dtype).scatter_add_(
+        0, system_idx, masses
+    )
+    coms /= system_masses.unsqueeze(-1)
     return coms
