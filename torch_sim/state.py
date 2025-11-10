@@ -92,7 +92,7 @@ class SimState:
     pbc: bool  # TODO: do all calculators support mixed pbc?
     atomic_numbers: torch.Tensor
     system_idx: torch.Tensor | None = field(default=None)
-    constraints: list["Constraint"] = field(default_factory=lambda: [])  # noqa: PIE807
+    _constraints: list["Constraint"] = field(default_factory=lambda: [])  # noqa: PIE807
 
     if TYPE_CHECKING:
 
@@ -108,7 +108,7 @@ class SimState:
         "system_idx",
     }
     _system_attributes: ClassVar[set[str]] = {"cell"}
-    _global_attributes: ClassVar[set[str]] = {"pbc", "constraints"}
+    _global_attributes: ClassVar[set[str]] = {"pbc"}
 
     def __post_init__(self) -> None:
         """Initialize the SimState and validate the arguments."""
@@ -251,7 +251,17 @@ class SimState:
                 constraint.adjust_positions(self, new_positions)
         self.positions = new_positions
 
-    def add_constraints(self, constraints: list[Constraint] | Constraint) -> None:
+    @property
+    def constraints(self) -> list[Constraint]:
+        """Get the constraints for the SimState.
+
+        Returns:
+            list["Constraint"]: List of constraints applied to the system.
+        """
+        return self._constraints
+
+    @constraints.setter
+    def constraints(self, constraints: list[Constraint] | Constraint) -> None:
         """Set the constraints for the SimState.
 
         Args:
@@ -265,15 +275,17 @@ class SimState:
         if isinstance(constraints, Constraint):
             constraints = [constraints]
         for constraint in constraints:
-            # if constraint.system_idx exists
-            if hasattr(constraint, "system_idx") and constraint.system_idx == slice(None):
+            if (
+                isinstance(constraint, SystemConstraint)
+                and constraint.initialized is False
+            ):
                 constraint.system_idx = torch.arange(self.n_systems, device=self.device)
+                constraint.initialized = True
 
         # Validate new constraints before adding
-        all_constraints = self.constraints + constraints
-        validate_constraints(all_constraints, state=self)
+        validate_constraints(constraints, state=self)
 
-        self.constraints += constraints
+        self._constraints = constraints
 
     def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
         """Calculate degrees of freedom accounting for constraints.
