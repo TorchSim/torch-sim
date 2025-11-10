@@ -400,7 +400,6 @@ def count_degrees_of_freedom(
     return max(0, total_dof)  # Ensure non-negative
 
 
-# WIP
 def warn_if_overlapping_constraints(constraints: list[Constraint]) -> None:
     """Issue warnings if constraints might overlap in problematic ways.
 
@@ -421,7 +420,7 @@ def warn_if_overlapping_constraints(constraints: list[Constraint]) -> None:
 
     # Check for overlapping atom indices
     if len(indexed_constraints) > 1:
-        all_indices = torch.cat([c.index for c in indexed_constraints])
+        all_indices = torch.cat([c.indices for c in indexed_constraints])
         unique_indices = torch.unique(all_indices)
         if len(unique_indices) < len(all_indices):
             warnings.warn(
