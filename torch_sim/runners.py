@@ -5,6 +5,7 @@ optimizations using various models and integrators. It includes utilities for
 converting between different atomistic representations and handling simulation state.
 """
 
+import copy
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -29,7 +30,6 @@ from torch_sim.units import UnitSystem
 def _configure_reporter(
     trajectory_reporter: TrajectoryReporter | dict,
     *,
-    state_kwargs: dict | None = None,
     properties: list[str] | None = None,
     prop_frequency: int = 10,
     state_frequency: int = 100,
@@ -53,12 +53,12 @@ def _configure_reporter(
     }
 
     # ordering is important to ensure we can override defaults
+    trajectory_reporter = copy.deepcopy(trajectory_reporter)
     return TrajectoryReporter(
         prop_calculators=trajectory_reporter.pop(
             "prop_calculators", {prop_frequency: prop_calculators}
         ),
         state_frequency=trajectory_reporter.pop("state_frequency", state_frequency),
-        state_kwargs=state_kwargs or {},
         **trajectory_reporter,
     )
 
@@ -449,6 +449,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             max_memory_scaler=autobatcher.max_memory_scaler,
             memory_scales_with=autobatcher.memory_scales_with,
             max_atoms_to_try=autobatcher.max_atoms_to_try,
+            oom_error_message=autobatcher.oom_error_message,
         )
     autobatcher.load_states(state)
     if trajectory_reporter is not None:
@@ -561,13 +562,15 @@ def static(
         properties.append("forces")
     if model.compute_stress:
         properties.append("stress")
-    trajectory_reporter = _configure_reporter(
-        trajectory_reporter or dict(filenames=None),
-        state_kwargs={
+    if isinstance(trajectory_reporter, dict):
+        trajectory_reporter = copy.deepcopy(trajectory_reporter)
+        trajectory_reporter["state_kwargs"] = {
             "variable_atomic_numbers": True,
             "variable_masses": True,
             "save_forces": model.compute_forces,
-        },
+        }
+    trajectory_reporter = _configure_reporter(
+        trajectory_reporter or dict(filenames=None),
         properties=properties,
     )
 
@@ -577,8 +580,8 @@ def static(
         forces: torch.Tensor
         stress: torch.Tensor
 
-        _atom_attributes = state._atom_attributes | {"forces"}  # noqa: SLF001
-        _system_attributes = state._system_attributes | {  # noqa: SLF001
+        _atom_attributes = SimState._atom_attributes | {"forces"}  # noqa: SLF001
+        _system_attributes = SimState._system_attributes | {  # noqa: SLF001
             "energy",
             "stress",
         }
@@ -603,9 +606,13 @@ def static(
             )
 
         model_outputs = model(sub_state)
-
-        sub_state = StaticState(
-            **vars(sub_state),
+        static_state = StaticState(
+            positions=sub_state.positions,
+            masses=sub_state.masses,
+            cell=sub_state.cell,
+            pbc=sub_state.pbc,
+            atomic_numbers=sub_state.atomic_numbers,
+            system_idx=sub_state.system_idx,
             energy=model_outputs["energy"],
             forces=(
                 model_outputs["forces"]
@@ -619,11 +626,11 @@ def static(
             ),
         )
 
-        props = trajectory_reporter.report(sub_state, 0, model=model)
+        props = trajectory_reporter.report(static_state, 0, model=model)
         all_props.extend(props)
 
         if tqdm_pbar:
-            tqdm_pbar.update(sub_state.n_systems)
+            tqdm_pbar.update(static_state.n_systems)
 
     trajectory_reporter.finish()
 
