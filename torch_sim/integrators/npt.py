@@ -1,5 +1,6 @@
 """Implementations of NPT integrators."""
 
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -599,6 +600,16 @@ def npt_langevin_init(
         else kT
     )
     cell_masses = (n_atoms_per_system + 1) * batch_kT * b_tau * b_tau
+
+    if state.constraints:
+        # warn if constraints are present
+        warnings.warn(
+            "Constraints are present in the system. "
+            "Make sure they are compatible with NPT Langevin dynamics."
+            "We recommend not using constraints with NPT dynamics for now.",
+            UserWarning,
+            stacklevel=3,
+        )
 
     # Create the initial state
     return NPTLangevinState(
@@ -1398,6 +1409,16 @@ def npt_nose_hoover_init(
     model_output = model(state)
     forces = model_output["forces"]
     energy = model_output["energy"]
+
+    if state.constraints:
+        # warn if constraints are present
+        warnings.warn(
+            "Constraints are present in the system. "
+            "Make sure they are compatible with NPT Nosé Hoover dynamics."
+            "We recommend not using constraints with NPT dynamics for now.",
+            UserWarning,
+            stacklevel=3,
+        )
 
     # Create initial state
     return NPTNoseHooverState(
