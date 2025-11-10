@@ -71,6 +71,7 @@ from torch_sim.properties.correlations import CorrelationCalculator
 from torch_sim.quantities import (
     calc_kinetic_energy,
     calc_kT,
+    calc_temperature,
     get_pressure,
     system_wise_max_force,
 )
