@@ -1,6 +1,6 @@
 changelog:
   exclude:
-    authors: [github-actions, pre-commit-ci]
+    authors: [github-actions]
   categories:
     - title: 💥 Breaking Changes
       labels: [breaking]
@@ -33,4 +33,4 @@ changelog:
     - title: 🧹 Linting
       labels: [linting]
     - title: 🤷‍♂️ Other Changes
-      labels: ["*"]
+      labels: ['*']

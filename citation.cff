@@ -15,8 +15,8 @@ authors:
   - family-names: Falletta
     given-names: Stefano
 license: MIT
-license-url: https://github.com/Radical-AI/torch-sim/blob/main/LICENSE
-repository-code: https://github.com/Radical-AI/torch-sim
-url: https://github.com/Radical-AI/torch-sim
+license-url: https://github.com/torchsim/torch-sim/blob/main/LICENSE
+repository-code: https://github.com/torchsim/torch-sim
+url: https://github.com/torchsim/torch-sim
 type: software
 date-released: 2025-04-02

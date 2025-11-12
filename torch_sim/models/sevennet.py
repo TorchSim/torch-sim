@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import traceback
 import warnings
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -27,13 +28,14 @@ try:
     import torch
     from sevenn.atom_graph_data import AtomGraphData
     from sevenn.calculator import torch_script_type
+    from sevenn.util import load_checkpoint
     from torch_geometric.loader.dataloader import Collater
 
 except ImportError as exc:
     warnings.warn(f"SevenNet import failed: {traceback.format_exc()}", stacklevel=2)
 
     class SevenNetModel(ModelInterface):
-        """SevenNet model wrapper for torch_sim.
+        """SevenNet model wrapper for torch-sim.
 
         This class is a placeholder for the SevenNetModel class.
         It raises an ImportError if sevenn is not installed.
@@ -42,6 +44,27 @@ except ImportError as exc:
         def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
             """Dummy init for type checking."""
             raise err
+
+
+def _validate(model: AtomGraphSequential, modal: str) -> None:
+    if not model.type_map:
+        raise ValueError("type_map is missing")
+
+    if model.cutoff == 0.0:
+        raise ValueError("Model cutoff seems not initialized")
+
+    modal_map = model.modal_map
+    if modal_map:
+        modal_ava = list(modal_map)
+        if not modal:
+            raise ValueError(f"modal argument missing (avail: {modal_ava})")
+        if modal not in modal_ava:
+            raise ValueError(f"unknown modal {modal} (not in {modal_ava})")
+    elif not model.modal_map and modal:
+        warnings.warn(
+            f"modal={modal} is ignored as model has no modal_map",
+            stacklevel=2,
+        )
 
 
 class SevenNetModel(ModelInterface):
@@ -59,7 +82,7 @@ class SevenNetModel(ModelInterface):
 
     def __init__(
         self,
-        model: AtomGraphSequential,
+        model: AtomGraphSequential | str | Path,
         *,  # force remaining arguments to be keyword-only
         modal: str | None = None,
         neighbor_list_fn: Callable = vesin_nl_ts,
@@ -72,7 +95,9 @@ class SevenNetModel(ModelInterface):
         Sets up the model parameters for subsequent use in energy and force calculations.
 
         Args:
-            model (AtomGraphSequential): The SevenNet model to wrap.
+            model (str | Path | AtomGraphSequential): The SevenNet model to wrap.
+                Accepts either 1) a path to a checkpoint file, 2) a model instance,
+                or 3) a pretrained model name.
             modal (str | None): modal (fidelity) if given model is multi-modal model.
                 for 7net-mf-ompa, it should be one of 'mpa' (MPtrj + sAlex) or 'omat24'
                 (OMat24).
@@ -103,8 +128,12 @@ class SevenNetModel(ModelInterface):
                 stacklevel=2,
             )
 
-        if not model.type_map:
-            raise ValueError("type_map is missing")
+        if isinstance(model, (str, Path)):
+            cp = load_checkpoint(model)
+            model = cp.build_model()
+
+        _validate(model, modal)
+
         model.eval_type_map = torch.tensor(data=True)
 
         self._dtype = dtype
@@ -112,30 +141,13 @@ class SevenNetModel(ModelInterface):
         self._compute_stress = True
         self._compute_forces = True
 
-        if model.cutoff == 0.0:
-            raise ValueError("Model cutoff seems not initialized")
-
         model.set_is_batch_data(True)
         model_loaded = model
         self.cutoff = torch.tensor(model.cutoff)
         self.neighbor_list_fn = neighbor_list_fn
 
         self.model = model_loaded
-
-        self.modal = None
-        modal_map = self.model.modal_map
-        if modal_map:
-            modal_ava = list(modal_map)
-            if not modal:
-                raise ValueError(f"modal argument missing (avail: {modal_ava})")
-            if modal not in modal_ava:
-                raise ValueError(f"unknown modal {modal} (not in {modal_ava})")
-            self.modal = modal
-        elif not self.model.modal_map and modal:
-            warnings.warn(
-                f"modal={modal} is ignored as model has no modal_map",
-                stacklevel=2,
-            )
+        self.modal = modal
 
         self.model = model.to(self._device)
         self.model = self.model.eval()
@@ -143,11 +155,7 @@ class SevenNetModel(ModelInterface):
         if self.dtype is not None:
             self.model = self.model.to(dtype=self.dtype)
 
-        self.implemented_properties = [
-            "energy",
-            "forces",
-            "stress",
-        ]
+        self.implemented_properties = ["energy", "forces", "stress"]
 
     def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
@@ -171,24 +179,27 @@ class SevenNetModel(ModelInterface):
             The state is automatically transferred to the model's device if needed.
             All output tensors are detached from the computation graph.
         """
-        if isinstance(state, dict):
-            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        sim_state = (
+            state
+            if isinstance(state, ts.SimState)
+            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        )
 
-        if state.device != self._device:
-            state = state.to(self._device)
+        if sim_state.device != self._device:
+            sim_state = sim_state.to(self._device)
 
         # TODO: is this clone necessary?
-        state = state.clone()
+        sim_state = sim_state.clone()
 
         data_list = []
-        for b in range(state.system_idx.max().item() + 1):
-            system_mask = state.system_idx == b
+        for sys_idx in range(sim_state.system_idx.max().item() + 1):
+            system_mask = sim_state.system_idx == sys_idx
 
-            pos = state.positions[system_mask]
+            pos = sim_state.positions[system_mask]
             # SevenNet uses row vector cell convention for neighbor list
-            row_vector_cell = state.row_vector_cell[b]
-            pbc = state.pbc
-            atomic_numbers = state.atomic_numbers[system_mask]
+            row_vector_cell = sim_state.row_vector_cell[sys_idx]
+            pbc = sim_state.pbc
+            atomic_nums = sim_state.atomic_numbers[system_mask]
 
             edge_idx, shifts_idx = self.neighbor_list_fn(
                 positions=pos,
@@ -203,17 +214,15 @@ class SevenNetModel(ModelInterface):
             # vol = vol if vol > 0.0 else torch.tensor(np.finfo(float).eps)
 
             data = {
-                key.NODE_FEATURE: atomic_numbers,
-                key.ATOMIC_NUMBERS: atomic_numbers.to(
-                    dtype=torch.int64, device=self.device
-                ),
+                key.NODE_FEATURE: atomic_nums,
+                key.ATOMIC_NUMBERS: atomic_nums.to(dtype=torch.int64, device=self.device),
                 key.POS: pos,
                 key.EDGE_IDX: edge_idx,
                 key.EDGE_VEC: edge_vec,
                 key.CELL: row_vector_cell,
                 key.CELL_SHIFT: shifts_idx,
                 key.CELL_VOLUME: vol,
-                key.NUM_ATOMS: torch.tensor(len(atomic_numbers), device=self.device),
+                key.NUM_ATOMS: torch.tensor(len(atomic_nums), device=self.device),
                 key.DATA_MODALITY: self.modal,
             }
             data[key.INFO] = {}
@@ -239,13 +248,13 @@ class SevenNetModel(ModelInterface):
 
         output = self.model(batched_data)
 
-        results = {}
+        results: dict[str, torch.Tensor] = {}
         energy = output[key.PRED_TOTAL_ENERGY]
         if energy is not None:
             results["energy"] = energy.detach()
         else:
             results["energy"] = torch.zeros(
-                state.system_idx.max().item() + 1, device=self.device
+                sim_state.system_idx.max().item() + 1, device=self.device
             )
 
         forces = output[key.PRED_FORCE]

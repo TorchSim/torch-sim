@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.12'
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
@@ -58,7 +58,7 @@ jobs:
           path: ./docs_build
 
   deploy:
-    if: github.repository_owner == 'Radical-AI' && github.ref == 'refs/heads/main'
+    if: github.repository_owner == 'TorchSim' && github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

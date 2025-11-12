@@ -1,10 +1,11 @@
-"""Cheap integration tests ensuring different parts of torchsim work together."""
+"""Cheap integration tests ensuring different parts of TorchSim work together."""
 
 import pytest
 import torch
 from ase.build import bulk
 
 import torch_sim as ts
+from tests.conftest import DEVICE
 from torch_sim.models.interface import validate_model_outputs
 from torch_sim.models.lennard_jones import (
     LennardJonesModel,
@@ -136,11 +137,11 @@ def test_lennard_jones_force_energy_consistency() -> None:
 #       is not used in the neighbor list calculation. So to get correct results,
 #       we need a system that is large enough (2*cutoff).
 @pytest.fixture
-def ar_supercell_sim_state_large(device: torch.device) -> ts.SimState:
+def ar_supercell_sim_state_large() -> ts.SimState:
     """Create a face-centered cubic (FCC) Argon structure."""
     # Create FCC Ar using ASE, with 4x4x4 supercell
     ar_atoms = bulk("Ar", "fcc", a=5.26, cubic=True).repeat([4, 4, 4])
-    return ts.io.atoms_to_state(ar_atoms, device, torch.float64)
+    return ts.io.atoms_to_state(ar_atoms, DEVICE, torch.float64)
 
 
 @pytest.fixture
@@ -230,9 +231,6 @@ def test_stress_tensor_symmetry(
     assert torch.allclose(stress_tensor, stress_tensor.T, atol=1e-10)
 
 
-def test_validate_model_outputs(
-    lj_model: LennardJonesModel,
-    device: torch.device,
-) -> None:
+def test_validate_model_outputs(lj_model: LennardJonesModel) -> None:
     """Test that the model outputs are valid."""
-    validate_model_outputs(lj_model, device, torch.float64)
+    validate_model_outputs(lj_model, DEVICE, torch.float64)

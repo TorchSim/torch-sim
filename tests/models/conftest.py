@@ -5,6 +5,7 @@ import pytest
 import torch
 
 import torch_sim as ts
+from tests.conftest import DEVICE
 from torch_sim.elastic import full_3x3_to_voigt_6_stress
 
 
@@ -23,6 +24,7 @@ consistency_test_simstate_fixtures: Final[tuple[str, ...]] = (
     "niti_sim_state",
     "ti_sim_state",
     "si_sim_state",
+    "rattled_si_sim_state",
     "sio2_sim_state",
     "rattled_sio2_sim_state",
     "ar_supercell_sim_state",
@@ -37,6 +39,8 @@ def make_model_calculator_consistency_test(
     model_fixture_name: str,
     calculator_fixture_name: str,
     sim_state_names: tuple[str, ...],
+    device: torch.device = DEVICE,
+    dtype: torch.dtype = torch.float64,
     energy_rtol: float = 1e-5,
     energy_atol: float = 1e-5,
     force_rtol: float = 1e-5,
@@ -61,10 +65,7 @@ def make_model_calculator_consistency_test(
 
     @pytest.mark.parametrize("sim_state_name", sim_state_names)
     def test_model_calculator_consistency(
-        sim_state_name: str,
-        request: pytest.FixtureRequest,
-        device: torch.device,
-        dtype: torch.dtype,
+        sim_state_name: str, request: pytest.FixtureRequest
     ) -> None:
         """Test consistency between model and calculator implementations."""
         # Get the model and calculator fixtures dynamically
@@ -122,8 +123,10 @@ def make_model_calculator_consistency_test(
     return test_model_calculator_consistency
 
 
-def make_validate_model_outputs_test(
+def make_validate_model_outputs_test(  # noqa: PLR0915
     model_fixture_name: str,
+    device: torch.device = DEVICE,
+    dtype: torch.dtype = torch.float64,
 ):
     """Factory function to create model output validation tests.
 
@@ -132,11 +135,7 @@ def make_validate_model_outputs_test(
         model_fixture_name: Name of the model fixture to validate
     """
 
-    def test_model_output_validation(
-        request: pytest.FixtureRequest,
-        device: torch.device,
-        dtype: torch.dtype,
-    ) -> None:
+    def test_model_output_validation(request: pytest.FixtureRequest) -> None:  # noqa: PLR0915
         """Test that a model implementation follows the ModelInterface contract."""
         # Get the model fixture dynamically
         model: ModelInterface = request.getfixturevalue(model_fixture_name)
@@ -170,7 +169,7 @@ def make_validate_model_outputs_test(
         og_positions = sim_state.positions.clone()
         og_cell = sim_state.cell.clone()
         og_batch = sim_state.system_idx.clone()
-        og_atomic_numbers = sim_state.atomic_numbers.clone()
+        og_atomic_nums = sim_state.atomic_numbers.clone()
 
         model_output = model.forward(sim_state)
 
@@ -178,7 +177,7 @@ def make_validate_model_outputs_test(
         assert torch.allclose(og_positions, sim_state.positions)
         assert torch.allclose(og_cell, sim_state.cell)
         assert torch.allclose(og_batch, sim_state.system_idx)
-        assert torch.allclose(og_atomic_numbers, sim_state.atomic_numbers)
+        assert torch.allclose(og_atomic_nums, sim_state.atomic_numbers)
 
         # assert model output has the correct keys
         assert "energy" in model_output
@@ -224,6 +223,15 @@ def make_validate_model_outputs_test(
         #     model_output["stress"][1],
         #     atol=10e-3,
         # )
+
+        # Test single system output
+        assert fe_model_output["energy"].shape == (1,)
+        # forces should be shape (n_atoms, 3) for n_atoms in the system
+        if force_computed:
+            assert fe_model_output["forces"].shape == (12, 3)
+        # stress should be shape (1, 3, 3) for 1 system
+        if stress_computed:
+            assert fe_model_output["stress"].shape == (1, 3, 3)
 
     # Rename the function to include the test name
     test_model_output_validation.__name__ = f"test_{model_fixture_name}_output_validation"

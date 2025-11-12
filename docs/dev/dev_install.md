@@ -4,7 +4,7 @@ You can install TorchSim with `pip` or from source.
 
 ## Install using pip
 
-You can install the basic functionality of torch-sim using pip:
+You can install the basic functionality of TorchSim using pip:
 
 ```bash
 pip install torch-sim-atomistic
@@ -12,27 +12,27 @@ pip install torch-sim-atomistic
 
 ## Install from source
 
-To install torch-sim from source, clone the repository from [github](https://github.com/Radical-AI/torch-sim)
+To install TorchSim from source, clone the repository from [github](https://github.com/torchsim/torch-sim)
 
 ```bash
-git clone https://github.com/Radical-AI/torch-sim
+git clone https://github.com/torchsim/torch-sim
 cd torch-sim
 pip install . -e
 ```
 
-### Installing pre-commit
+### Installing prek
 
 If you're planning on contributing to the torch-sim source, you should also install
 the developer requirements with:
 
 ```bash
 pip install -e .
-pre-commit install
-pre-commit run --all-files
+prek install
+prek run --all-files
 ```
 
-The `pre-commit` command will ensure that changes to the source code match the
-torch-sim style guidelines by running code linters such as `black` and `ruff` automatically with each commit.
+The `prek` command will ensure that changes to the source code match the
+TorchSim style guidelines by running the `ruff` code linters and the `ty` type checker automatically with each commit.
 
 ## Running unit tests
 
@@ -51,7 +51,7 @@ pytest
 
 ## Building the documentation
 
-The torch-sim documentation can be built using the sphinx package. First, install the requirements:
+The TorchSim documentation can be built using the sphinx package. First, install the requirements:
 
 ```bash
 pip install .[docs]

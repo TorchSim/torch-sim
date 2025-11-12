@@ -1,6 +1,6 @@
-"""Core interfaces for all models in torchsim.
+"""Core interfaces for all models in TorchSim.
 
-This module defines the abstract base class that all torchsim models must implement.
+This module defines the abstract base class that all TorchSim models must implement.
 It establishes a common API for interacting with different force and energy models,
 ensuring consistent behavior regardless of the underlying implementation. The module
 also provides validation utilities to verify model conformance to the interface.
@@ -36,7 +36,7 @@ from torch_sim.typing import MemoryScaling, StateDict
 
 
 class ModelInterface(torch.nn.Module, ABC):
-    """Abstract base class for all simulation models in torchsim.
+    """Abstract base class for all simulation models in TorchSim.
 
     This interface provides a common structure for all energy and force models,
     ensuring they implement the required methods and properties. It defines how
@@ -208,14 +208,14 @@ def validate_model_outputs(  # noqa: C901, PLR0915
 
     try:
         if not model.compute_stress:
-            model.compute_stress = True
+            model.compute_stress = True  # type: ignore[unresolved-attribute]
         stress_computed = True
     except NotImplementedError:
         stress_computed = False
 
     try:
         if not model.compute_forces:
-            model.compute_forces = True
+            model.compute_forces = True  # type: ignore[unresolved-attribute]
         force_computed = True
     except NotImplementedError:
         force_computed = False
@@ -228,7 +228,7 @@ def validate_model_outputs(  # noqa: C901, PLR0915
     og_positions = sim_state.positions.clone()
     og_cell = sim_state.cell.clone()
     og_system_idx = sim_state.system_idx.clone()
-    og_atomic_numbers = sim_state.atomic_numbers.clone()
+    og_atomic_nums = sim_state.atomic_numbers.clone()
 
     model_output = model.forward(sim_state)
 
@@ -239,8 +239,8 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         raise ValueError(f"{og_cell=} != {sim_state.cell=}")
     if not torch.allclose(og_system_idx, sim_state.system_idx):
         raise ValueError(f"{og_system_idx=} != {sim_state.system_idx=}")
-    if not torch.allclose(og_atomic_numbers, sim_state.atomic_numbers):
-        raise ValueError(f"{og_atomic_numbers=} != {sim_state.atomic_numbers=}")
+    if not torch.allclose(og_atomic_nums, sim_state.atomic_numbers):
+        raise ValueError(f"{og_atomic_nums=} != {sim_state.atomic_numbers=}")
 
     # assert model output has the correct keys
     if "energy" not in model_output:

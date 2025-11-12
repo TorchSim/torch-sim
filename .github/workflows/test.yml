@@ -8,7 +8,7 @@ on:
   workflow_call:
 
 concurrency:
-  group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -18,8 +18,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-14]
         version:
-          - { python: "3.11", resolution: highest }
-          - { python: "3.12", resolution: lowest-direct }
+          - { python: '3.12', resolution: highest }
+          - { python: '3.12', resolution: lowest-direct }
+          - { python: '3.13', resolution: highest }
+          - { python: '3.13', resolution: lowest-direct }
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -37,20 +39,16 @@ jobs:
       - name: Install torch_sim
         run: |
           uv pip install "torch>2" --index-url https://download.pytorch.org/whl/cpu --system
-          uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
+          # always use numpy>=2 with Python 3.13
+          if [ "${{ matrix.version.python }}" = "3.13" ]; then
+            uv pip install -e ".[test]" "numpy>=2" --resolution=${{ matrix.version.resolution }} --system
+          else
+            uv pip install -e ".[test]" --resolution=${{ matrix.version.resolution }} --system
+          fi
 
       - name: Run core tests
         run: |
-          pytest --cov=torch_sim --cov-report=xml \
-            --ignore=tests/test_elastic.py \
-            --ignore=tests/models/test_fairchem.py \
-            --ignore=tests/models/test_graphpes.py \
-            --ignore=tests/models/test_mace.py \
-            --ignore=tests/models/test_orb.py \
-            --ignore=tests/models/test_sevennet.py \
-            --ignore=tests/models/test_mattersim.py \
-            --ignore=tests/models/test_metatomic.py \
-            --ignore=tests/test_optimizers_vs_ase.py \
+          pytest --cov=torch_sim --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -64,18 +62,31 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-14]
         version:
-          - { python: "3.11", resolution: highest }
-          - { python: "3.12", resolution: lowest-direct }
+          - { python: '3.12', resolution: highest }
+          - { python: '3.12', resolution: lowest-direct }
+          - { python: '3.13', resolution: highest }
+          - { python: '3.13', resolution: lowest-direct }
         model:
           - { name: fairchem, test_path: "tests/models/test_fairchem.py" }
+          - { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
           - { name: graphpes, test_path: "tests/models/test_graphpes.py" }
           - { name: mace, test_path: "tests/models/test_mace.py" }
           - { name: mace, test_path: "tests/test_elastic.py" }
           - { name: mace, test_path: "tests/test_optimizers_vs_ase.py" }
           - { name: mattersim, test_path: "tests/models/test_mattersim.py" }
           - { name: metatomic, test_path: "tests/models/test_metatomic.py" }
+          - { name: nequip, test_path: "tests/models/test_nequip_framework.py" }
           - { name: orb, test_path: "tests/models/test_orb.py" }
           - { name: sevenn, test_path: "tests/models/test_sevennet.py" }
+        exclude:
+          - version: { python: '3.13', resolution: lowest-direct }
+            model: { name: orb, test_path: "tests/models/test_orb.py" }
+          - version: { python: '3.13', resolution: highest }
+            model: { name: orb, test_path: "tests/models/test_orb.py" }
+          - version: { python: '3.13', resolution: lowest-direct }
+            model: { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
+          - version: { python: '3.13', resolution: highest }
+            model: { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -83,7 +94,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check out fairchem repository
-        if: ${{ matrix.model.name == 'fairchem' }}
+        if: ${{ matrix.model.name == 'fairchem-legacy' }}
         uses: actions/checkout@v4
         with:
           repository: FAIR-Chem/fairchem
@@ -98,17 +109,13 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
 
-      - name: Install fairchem repository and dependencies
-        if: ${{ matrix.model.name == 'fairchem' }}
-        env:
-          HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
+      - name: Install HDF5 on macOS
+        if: runner.os == 'macOS'
+        run: brew install hdf5
+
+      - name: Install legacy fairchem repository and dependencies
+        if: ${{ matrix.model.name == 'fairchem-legacy' }}
         run: |
-          uv pip install huggingface_hub --system
-          if [ -n "$HF_TOKEN" ]; then
-            huggingface-cli login --token "$HF_TOKEN"
-          else
-            echo "HF_TOKEN is not set. Skipping login."
-          fi
           if [ -f fairchem-repo/packages/requirements.txt ]; then
             uv pip install -r fairchem-repo/packages/requirements.txt --system
           fi
@@ -116,16 +123,29 @@ jobs:
             uv pip install -r fairchem-repo/packages/requirements-optional.txt --system
           fi
           uv pip install -e fairchem-repo/packages/fairchem-core[dev] --system
-          uv pip install -e .[test] --resolution=${{ matrix.version.resolution }} --system
+          uv pip install -e ".[test]" --resolution=${{ matrix.version.resolution }} --system
+
 
       - name: Install torch_sim with model dependencies
-        if: ${{ matrix.model.name != 'fairchem' }}
+        if: ${{ matrix.model.name != 'fairchem-legacy' }}
         run: |
-          uv pip install -e .[test,${{ matrix.model.name }}] --resolution=${{ matrix.version.resolution }} --system
+          # always use numpy>=2 with Python 3.13
+          if [ "${{ matrix.version.python }}" = "3.13" ]; then
+            uv pip install -e ".[test,${{ matrix.model.name }}]" "numpy>=2" --resolution=${{ matrix.version.resolution }} --system
+          else
+            uv pip install -e ".[test,${{ matrix.model.name }}]" --resolution=${{ matrix.version.resolution }} --system
+          fi
 
       - name: Run ${{ matrix.model.test_path }} tests
+        if: ${{ !contains(matrix.model.name, 'fairchem') || github.event.pull_request.head.repo.fork == false }}
+        env:
+          HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
         run: |
-          pytest --cov=torch_sim --cov-report=xml ${{ matrix.model.test_path }}
+          if [[ "${{ matrix.model.name }}" == *"fairchem"* ]]; then
+            uv pip install "huggingface_hub[cli]" --system
+            hf auth login --token "$HF_TOKEN"
+          fi
+          pytest -vv -ra -rs --cov=torch_sim --cov-report=xml ${{ matrix.model.test_path }}
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -162,10 +182,18 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: '3.12'
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
 
       - name: Run example
-        run: uv run --with . ${{ matrix.example }}
+        if: ${{ !contains(matrix.example, 'fairchem') || github.event.pull_request.head.repo.fork == false }}
+        env:
+          HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
+        run: |
+          if [[ "${{ matrix.example }}" == *"fairchem"* ]]; then
+            uv pip install "huggingface_hub[cli]" --system
+            hf auth login --token "$HF_TOKEN"
+          fi
+          uv run --with . ${{ matrix.example }}

@@ -12,6 +12,8 @@ from collections.abc import Callable
 import pytest
 import torch
 
+import torch_sim as ts
+from tests.conftest import DEVICE
 from torch_sim.properties.correlations import (
     CircularBuffer,
     CorrelationCalculator,
@@ -43,24 +45,24 @@ class MockState:
 
 
 @pytest.fixture
-def buffer(device: torch.device) -> CircularBuffer:
+def buffer() -> CircularBuffer:
     """Fixture for CircularBuffer instance."""
-    return CircularBuffer(size=10, device=device)
+    return CircularBuffer(size=10, device=DEVICE)
 
 
 @pytest.fixture
-def mock_state_factory(device: torch.device) -> Callable[[torch.Tensor], MockState]:
+def mock_state_factory() -> Callable[[torch.Tensor], MockState]:
     """Factory fixture for creating mock state objects."""
 
     def create_mock_state(velocities: torch.Tensor) -> MockState:
         """Create mock state with given data tensor."""
-        return MockState(velocities, device)
+        return MockState(velocities, DEVICE)
 
     return create_mock_state
 
 
 @pytest.fixture
-def corr_calc(device: torch.device) -> CorrelationCalculator:
+def corr_calc() -> CorrelationCalculator:
     """Fixture for creating a CorrelationCalculator instance."""
     window_size = 5
 
@@ -72,7 +74,7 @@ def corr_calc(device: torch.device) -> CorrelationCalculator:
     return CorrelationCalculator(
         window_size=window_size,
         properties=properties,
-        device=device,
+        device=DEVICE,
         normalize=True,
     )
 
@@ -80,13 +82,13 @@ def corr_calc(device: torch.device) -> CorrelationCalculator:
 class TestCircularBuffer:
     """Test suite for CircularBuffer functionality."""
 
-    def test_circular_buffer_operations(self, device: torch.device) -> None:
+    def test_circular_buffer_operations(self) -> None:
         """Test core buffer operations including append, retrieval,
         and wraparound.
 
         Tests initialization, data append, retrieval and circular wrapping.
         """
-        buffer = CircularBuffer(size=3, device=device)
+        buffer = CircularBuffer(size=3, device=DEVICE)
 
         # Test initialization state
         assert buffer.size == 3
@@ -96,26 +98,26 @@ class TestCircularBuffer:
         assert not buffer.is_full
 
         # Test append and retrieval
-        buffer.append(torch.tensor([1.0], device=device))
-        buffer.append(torch.tensor([2.0], device=device))
+        buffer.append(torch.tensor([1.0], device=DEVICE))
+        buffer.append(torch.tensor([2.0], device=DEVICE))
 
         assert buffer.count == 2
         assert buffer.head == 2
 
         result = buffer.get_array()
-        expected = torch.tensor([[1.0], [2.0]], device=device)
+        expected = torch.tensor([[1.0], [2.0]], device=DEVICE)
         assert torch.allclose(result, expected)
 
         # Test wraparound behavior
-        buffer.append(torch.tensor([3.0], device=device))
+        buffer.append(torch.tensor([3.0], device=DEVICE))
         assert buffer.is_full
 
-        buffer.append(torch.tensor([4.0], device=device))
+        buffer.append(torch.tensor([4.0], device=DEVICE))
         assert buffer.count == 3
         assert buffer.head == 1
 
         result = buffer.get_array()
-        expected = torch.tensor([[2.0], [3.0], [4.0]], device=device)
+        expected = torch.tensor([[2.0], [3.0], [4.0]], device=DEVICE)
         assert torch.allclose(result, expected)
 
 
@@ -156,9 +158,7 @@ class TestCorrelationCalculator:
         corr_calc.update(state1)
         assert corr_calc.buffers["velocity"].count == 2
 
-    def test_constant_signal(
-        self, device: torch.device, mock_state_factory: Callable
-    ) -> None:
+    def test_constant_signal(self, mock_state_factory: Callable) -> None:
         """Test correlation of constant signals.
 
         Mean-centered constant signals should have zero autocorrelation.
@@ -167,12 +167,12 @@ class TestCorrelationCalculator:
         corr_calc = CorrelationCalculator(
             window_size=win_size,
             properties={"velocity": lambda s: s.velocities},
-            device=device,
+            device=DEVICE,
             normalize=False,
         )
 
         # Constant signal
-        const_vel = torch.ones((2, 3), device=device)
+        const_vel = torch.ones((2, 3), device=DEVICE)
 
         # Identical states
         for _ in range(win_size):
@@ -183,9 +183,7 @@ class TestCorrelationCalculator:
         acf = corr_calc.get_auto_correlations()["velocity"]
         assert torch.allclose(acf, torch.zeros_like(acf), atol=1e-5)
 
-    def test_white_noise(
-        self, device: torch.device, mock_state_factory: Callable
-    ) -> None:
+    def test_white_noise(self, mock_state_factory: Callable) -> None:
         """Test autocorrelation of white noise.
 
         White noise should have a delta function as its autocorrelation.
@@ -194,7 +192,7 @@ class TestCorrelationCalculator:
         corr_calc = CorrelationCalculator(
             window_size=win_size,
             properties={"velocity": lambda s: s.velocities},
-            device=device,
+            device=DEVICE,
             normalize=True,
         )
 
@@ -202,7 +200,7 @@ class TestCorrelationCalculator:
 
         # White noise
         for _ in range(win_size):
-            noise = torch.randn(4, 3, device=device)
+            noise = torch.randn(4, 3, device=DEVICE)
             state = mock_state_factory(noise)
             corr_calc.update(state)
 
@@ -211,29 +209,29 @@ class TestCorrelationCalculator:
         acf_mean = torch.mean(acf, dim=(1, 2))
 
         # Delta function
-        assert torch.isclose(acf_mean[0], torch.tensor(1.0, device=device))
+        assert torch.isclose(acf_mean[0], torch.tensor(1.0, device=DEVICE))
         assert torch.all(torch.abs(acf_mean[1:]) < 0.3)
 
-    def test_sinusoidal(self, device: torch.device, mock_state_factory: Callable) -> None:
+    def test_sinusoidal(self, mock_state_factory: Callable) -> None:
         """Test autocorrelation of sinusoidal signals.
 
         Sine waves should have a cosine-like acf.
         """
-        win_size = 32
+        window_size = 32
         period = 8
         corr_calc = CorrelationCalculator(
-            window_size=win_size,
+            window_size=window_size,
             properties={"velocity": lambda s: s.velocities},
-            device=device,
+            device=DEVICE,
             normalize=True,
         )
 
-        t = torch.arange(win_size, dtype=torch.float32, device=device)
+        t = torch.arange(window_size, device=DEVICE)
         freq = 2 * math.pi / period
 
         # Sine
-        for i in range(win_size):
-            phase = freq * t[i]
+        for idx in range(window_size):
+            phase = freq * t[idx]
             signal_val = torch.sin(phase)
 
             # Expand to shape [2, 3]
@@ -244,7 +242,7 @@ class TestCorrelationCalculator:
         acf = corr_calc.get_auto_correlations()["velocity"]
         acf_mean = torch.mean(acf, dim=(1, 2))
 
-        assert torch.isclose(acf_mean[0], torch.tensor(1.0, device=device))
+        assert torch.isclose(acf_mean[0], torch.tensor(1.0, device=DEVICE))
 
         half_period = period // 2
         assert acf_mean[half_period] < 0
@@ -268,9 +266,7 @@ class TestCorrelationCalculator:
         assert corr_calc.buffers["velocity"].count == 0
         assert corr_calc.correlations == {}
 
-    def test_normalization(
-        self, device: torch.device, mock_state_factory: Callable
-    ) -> None:
+    def test_normalization(self, mock_state_factory: Callable) -> None:
         """Test normalization of correlation functions.
 
         Validates that normalized correlations have first lag = 1.0.
@@ -278,21 +274,21 @@ class TestCorrelationCalculator:
         corr_calc_norm = CorrelationCalculator(
             window_size=5,
             properties={"velocity": lambda s: s.velocities},
-            device=device,
+            device=DEVICE,
             normalize=True,
         )
 
         corr_calc_no_norm = CorrelationCalculator(
             window_size=5,
             properties={"velocity": lambda s: s.velocities},
-            device=device,
+            device=DEVICE,
             normalize=False,
         )
 
         torch.manual_seed(42)
 
         for _ in range(5):
-            vel = torch.randn((2, 3), device=device)
+            vel = torch.randn((2, 3), device=DEVICE)
 
             # Reuse data
             state = mock_state_factory(vel)
@@ -303,7 +299,7 @@ class TestCorrelationCalculator:
         corr_no_norm = corr_calc_no_norm.get_auto_correlations()["velocity"]
 
         norm_first = torch.mean(corr_norm[0])
-        assert torch.isclose(norm_first, torch.tensor(1.0, device=device))
+        assert torch.isclose(norm_first, torch.tensor(1.0, device=DEVICE))
 
         no_norm_first = torch.mean(corr_no_norm[0])
         assert not torch.allclose(no_norm_first, torch.ones_like(no_norm_first))
@@ -315,18 +311,16 @@ class TestCorrelationCalculator:
                     expected = corr_no_norm[:, a, d] / scale_factor
                     assert torch.allclose(corr_norm[:, a, d], expected, atol=1e-5)
 
-    def test_cross_correlation_basics(
-        self, device: torch.device, mock_state_factory: Callable
-    ) -> None:
+    def test_cross_correlation_basics(self, mock_state_factory: Callable) -> None:
         """Test basic cross-correlation."""
-        win_size = 10
+        window_size = 10
         corr_calc = CorrelationCalculator(
-            window_size=win_size,
+            window_size=window_size,
             properties={
                 "signal_a": lambda s: s.velocities[:1],
                 "signal_b": lambda s: s.velocities[1:],
             },
-            device=device,
+            device=DEVICE,
             normalize=True,
         )
 
@@ -334,14 +328,14 @@ class TestCorrelationCalculator:
         torch.manual_seed(42)
 
         # Initialize prev_signal_a
-        prev_signal_a = torch.randn(1, 3, device=device)
+        prev_signal_a = torch.randn(1, 3, device=DEVICE)
 
-        for i in range(win_size):
-            signal_a = torch.randn(1, 3, device=device)
-            if i > 0:
-                signal_b = prev_signal_a * 0.7 + torch.randn(1, 3, device=device) * 0.3
+        for idx in range(window_size):
+            signal_a = torch.randn(1, 3, device=DEVICE)
+            if idx > 0:
+                signal_b = prev_signal_a * 0.7 + torch.randn(1, 3, device=DEVICE) * 0.3
             else:
-                signal_b = torch.randn(1, 3, device=device)
+                signal_b = torch.randn(1, 3, device=DEVICE)
 
             prev_signal_a = signal_a.clone()
 
@@ -353,7 +347,7 @@ class TestCorrelationCalculator:
         assert ("signal_a", "signal_b") in cross_corrs
 
         cross_corr = cross_corrs[("signal_a", "signal_b")]
-        assert len(cross_corr) == win_size
+        assert len(cross_corr) == window_size
 
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
     def test_device_migration(self, mock_state_factory: Callable) -> None:
@@ -374,7 +368,7 @@ class TestCorrelationCalculator:
         for _ in range(3):
             corr_calc.update(state)
 
-        cuda_device = torch.device("cuda")
+        cuda_device = torch.device("cuda:0")
         corr_calc = corr_calc.to(cuda_device)
 
         assert corr_calc.device == cuda_device
@@ -383,9 +377,7 @@ class TestCorrelationCalculator:
             assert corr_calc.buffers["velocity"].buffer.device == cuda_device
 
 
-def test_velocity_autocorrelation(
-    device: torch.device, mock_state_factory: Callable
-) -> None:
+def test_velocity_autocorrelation(mock_state_factory: Callable) -> None:
     """Test VACF calculation with cosine pattern velocities.
 
     Test checks:
@@ -393,25 +385,24 @@ def test_velocity_autocorrelation(
     2. Expected periodicity
     3. Exhibits sign changes at specific locations
     """
-    window_size = 32
-    period = 8
+    window_size, period = 32, 8
 
     vacf_calc = VelocityAutoCorrelation(
         window_size=window_size,
-        device=device,
+        device=DEVICE,
         use_running_average=False,
         normalize=True,
     )
 
     # Cosine velocity pattern
-    t = torch.arange(window_size, dtype=torch.float32, device=device)
+    t = torch.arange(window_size, device=DEVICE)
     freq = 2 * math.pi / period
 
     velocities = []
-    for i in range(window_size):
+    for idx in range(window_size):
         # cos(ωt) pattern
-        val = torch.cos(freq * t[i])
-        vel = torch.tensor([[val, val, val]], device=device)
+        val = torch.cos(freq * t[idx])
+        vel = torch.tensor([[val, val, val]], device=DEVICE)
         velocities.append(vel)
 
     for vel in velocities:
@@ -422,7 +413,7 @@ def test_velocity_autocorrelation(
     assert vacf is not None
 
     # 1. First lag is 1.0
-    assert torch.isclose(vacf[0], torch.tensor(1.0, device=device))
+    assert torch.isclose(vacf[0], torch.tensor(1.0))
 
     # 2. Check periodicity expect
     # positive peaks at t=0, t=8, t=16, ...
@@ -445,7 +436,7 @@ def test_velocity_autocorrelation(
 
 
 def test_velocity_autocorrelation_with_trajectory_reporter(
-    device: torch.device, mock_state_factory: Callable
+    mock_state_factory: Callable,
 ) -> None:
     """Test VelocityAutoCorrelation integration with TrajectoryReporter.
 
@@ -453,17 +444,13 @@ def test_velocity_autocorrelation_with_trajectory_reporter(
     1. ``VelocityAutoCorrelation`` as a property calculator
     2. ``TrajectoryReporter`` calls correctly
     """
-    from torch_sim.properties.correlations import VelocityAutoCorrelation
-    from torch_sim.trajectory import TrajectoryReporter
 
     window_size = 20
     vacf_calc = VelocityAutoCorrelation(
-        window_size=window_size,
-        device=device,
-        use_running_average=True,
+        window_size=window_size, device=DEVICE, use_running_average=True
     )
 
-    reporter = TrajectoryReporter(
+    reporter = ts.TrajectoryReporter(
         None,  # Don't write file
         state_frequency=100,
         prop_calculators={5: {"vacf": vacf_calc}},
@@ -473,7 +460,7 @@ def test_velocity_autocorrelation_with_trajectory_reporter(
     n_steps = 25
     for step in range(n_steps):
         # Mock state
-        velocities = torch.randn(4, 3, device=device)
+        velocities = torch.randn(4, 3, device=DEVICE)
         state = mock_state_factory(velocities)
 
         props = reporter.report(state, step)
