@@ -5,11 +5,12 @@ boundary conditions in molecular simulations, including matrix inversions and
 general PBC wrapping.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from functools import wraps
 
 import torch
 from torch.types import _dtype
+from typing_extensions import deprecated
 
 
 def get_fractional_coordinates(
@@ -110,6 +111,7 @@ def inverse_box(box: torch.Tensor) -> torch.Tensor:
     raise ValueError(f"Box must be either: a scalar, a vector, or a matrix. Found {box}.")
 
 
+@deprecated("Use wrap_positions instead")
 def pbc_wrap_general(
     positions: torch.Tensor, lattice_vectors: torch.Tensor
 ) -> torch.Tensor:
@@ -129,8 +131,7 @@ def pbc_wrap_general(
             lattice vectors as columns (A matrix in the equations).
 
     Returns:
-        torch.Tensor: Tensor of wrapped positions in real space with
-            same shape as input positions.
+        torch.Tensor: Wrapped positions in real space with same shape as input positions.
     """
     # Validate inputs
     if not torch.is_floating_point(positions) or not torch.is_floating_point(
@@ -172,8 +173,7 @@ def pbc_wrap_batched(
             indices for each atom.
 
     Returns:
-        torch.Tensor: Tensor of wrapped positions in real space with
-            same shape as input positions.
+        torch.Tensor: Wrapped positions in real space with same shape as input positions.
     """
     # Validate inputs
     if not torch.is_floating_point(positions) or not torch.is_floating_point(cell):
@@ -183,8 +183,8 @@ def pbc_wrap_batched(
         raise ValueError("Position dimensionality must match lattice vectors.")
 
     # Get unique system indices and counts
-    unique_systems = torch.unique(system_idx)
-    n_systems = len(unique_systems)
+    uniq_systems = torch.unique(system_idx)
+    n_systems = len(uniq_systems)
 
     if n_systems != cell.shape[0]:
         raise ValueError(
@@ -407,7 +407,7 @@ def wrap_positions(
     cell: torch.Tensor,
     *,
     pbc: bool | list[bool] | torch.Tensor = True,
-    center: tuple[float, float, float] | float = (0.5, 0.5, 0.5),
+    center: tuple[float, float, float] = (0.5, 0.5, 0.5),
     pretty_translation: bool = False,
     eps: float = 1e-7,
 ) -> torch.Tensor:
@@ -432,10 +432,7 @@ def wrap_positions(
     device = positions.device
 
     # Convert center to tensor
-    if isinstance(center, float):
-        center_pos = torch.tensor((center,) * 3, dtype=positions.dtype, device=device)
-    else:
-        center_pos = torch.tensor(center, dtype=positions.dtype, device=device)
+    center_tensor = torch.tensor(center, dtype=positions.dtype, device=device)
 
     # Handle PBC input
     if isinstance(pbc, bool):
@@ -444,7 +441,7 @@ def wrap_positions(
         pbc = torch.tensor(pbc, dtype=torch.bool, device=device)
 
     # Calculate shift based on center
-    shift = center_pos - 0.5 - eps
+    shift = center_tensor - 0.5 - eps
     shift[~pbc] = 0.0
 
     # Convert positions to fractional coordinates
@@ -452,7 +449,7 @@ def wrap_positions(
 
     if pretty_translation:
         fractional = translate_pretty(fractional, pbc)
-        shift = center_pos - 0.5
+        shift = center_tensor - 0.5
         shift[~pbc] = 0.0
         fractional += shift
     else:
@@ -547,7 +544,7 @@ def get_cell_shift_idx(num_repeats: torch.Tensor, dtype: _dtype) -> torch.Tensor
             num_repeats[ii] + 1,
             device=num_repeats.device,
             dtype=dtype,
-        )  # type: ignore[call-overload]
+        )
         _, indices = torch.sort(torch.abs(r1))
         reps.append(r1[indices])
     return torch.cartesian_prod(reps[0], reps[1], reps[2])
@@ -556,7 +553,7 @@ def get_cell_shift_idx(num_repeats: torch.Tensor, dtype: _dtype) -> torch.Tensor
 def compute_distances_with_cell_shifts(
     pos: torch.Tensor,
     mapping: torch.Tensor,
-    cell_shifts: torch.Tensor | None,
+    cell_shifts: torch.Tensor,
 ) -> torch.Tensor:
     """Compute distances between pairs of positions, optionally
         including cell shifts.
@@ -572,7 +569,7 @@ def compute_distances_with_cell_shifts(
         mapping (torch.Tensor): A tensor of shape (2, n_pairs) that
             specifies pairs of indices in `pos` for which to compute
             distances.
-        cell_shifts (torch.Tensor | None): A tensor of shape (n_pairs, 3)
+        cell_shifts (Optional[torch.Tensor]): A tensor of shape (n_pairs, 3)
             representing the shifts to apply to the distances for
             periodic boundary conditions. If None, no shifts are applied.
 
@@ -594,15 +591,15 @@ def compute_distances_with_cell_shifts(
 
 
 def compute_cell_shifts(
-    cell: torch.Tensor | None, shifts_idx: torch.Tensor, system_mapping: torch.Tensor
-) -> torch.Tensor | None:
+    cell: torch.Tensor, shifts_idx: torch.Tensor, system_mapping: torch.Tensor
+) -> torch.Tensor:
     """Compute the cell shifts based on the provided indices and cell matrix.
 
     This function calculates the shifts to apply to positions based on the specified
     indices and the unit cell matrix. If the cell is None, it returns None.
 
     Args:
-        cell (torch.Tensor | None): A tensor of shape (n_cells, 3, 3)
+        cell (torch.Tensor): A tensor of shape (n_cells, 3, 3)
             representing the unit cell matrices.
         shifts_idx (torch.Tensor): A tensor of shape (n_shifts, 3)
             representing the indices for shifts.
@@ -614,17 +611,12 @@ def compute_cell_shifts(
             the computed cell shifts.
     """
     if cell is None:
-        return None
-    return compute_cell_shifts_strict(cell, shifts_idx, system_mapping)
-
-
-def compute_cell_shifts_strict(
-    cell: torch.Tensor, shifts_idx: torch.Tensor, system_mapping: torch.Tensor
-) -> torch.Tensor:
-    """Same thing as compute_cell_shifts, but cell cannot be None.
-    Having a non-optional cell makes torchjit not complain.
-    """
-    return torch.einsum("jn,jnm->jm", shifts_idx, cell.view(-1, 3, 3)[system_mapping])
+        cell_shifts = None
+    else:
+        cell_shifts = torch.einsum(
+            "jn,jnm->jm", shifts_idx, cell.view(-1, 3, 3)[system_mapping]
+        )
+    return cell_shifts
 
 
 def get_fully_connected_mapping(
@@ -724,22 +716,17 @@ def build_naive_neighborhood(
     ids = torch.arange(positions.shape[0], device=device, dtype=torch.long)
 
     mapping, system_mapping, shifts_idx_ = [], [], []
-    for i_structure in range(n_atoms.shape[0]):
-        num_repeats = num_repeats_[i_structure]
+    for struct_idx in range(n_atoms.shape[0]):
+        num_repeats = num_repeats_[struct_idx]
         shifts_idx = get_cell_shift_idx(num_repeats, dtype)
-        i_ids = ids[stride[i_structure] : stride[i_structure + 1]]
+        i_ids = ids[stride[struct_idx] : stride[struct_idx + 1]]
 
         s_mapping, shifts_idx = get_fully_connected_mapping(
             i_ids=i_ids, shifts_idx=shifts_idx, self_interaction=self_interaction
         )
         mapping.append(s_mapping)
         system_mapping.append(
-            torch.full(
-                (s_mapping.shape[0],),
-                i_structure,
-                dtype=torch.long,
-                device=device,
-            )
+            torch.full((s_mapping.shape[0],), struct_idx, dtype=torch.long, device=device)
         )
         shifts_idx_.append(shifts_idx)
     return (
@@ -912,7 +899,7 @@ def linked_cell(  # noqa: PLR0915
         shifts_idx, n_atom, dim=0, output_size=n_atom * n_cell_image
     )
     batch_image = torch.zeros((shifts_idx.shape[0]), dtype=torch.long)
-    cell_shifts = compute_cell_shifts_strict(cell.view(-1, 3, 3), shifts_idx, batch_image)
+    cell_shifts = compute_cell_shifts(cell.view(-1, 3, 3), shifts_idx, batch_image)
 
     i_ids = torch.arange(n_atom, device=device, dtype=torch.long)
     i_ids = i_ids.repeat(n_cell_image)
@@ -1079,21 +1066,21 @@ def build_linked_cell_neighborhood(
     stride = strides_of(n_atoms)
 
     mapping, system_mapping, cell_shifts_idx = [], [], []
-    for i_structure in range(n_structure):
+    for struct_idx in range(n_structure):
         # Compute the neighborhood with the linked cell algorithm
         neigh_atom, neigh_shift_idx = linked_cell(
-            positions[stride[i_structure] : stride[i_structure + 1]],
-            cell[i_structure],
+            positions[stride[struct_idx] : stride[struct_idx + 1]],
+            cell[struct_idx],
             cutoff,
-            num_repeats[i_structure],
+            num_repeats[struct_idx],
             self_interaction,
         )
 
         system_mapping.append(
-            i_structure * torch.ones(neigh_atom.shape[1], dtype=torch.long, device=device)
+            struct_idx * torch.ones(neigh_atom.shape[1], dtype=torch.long, device=device)
         )
         # Shift the mapping indices to access positions
-        mapping.append(neigh_atom + stride[i_structure])
+        mapping.append(neigh_atom + stride[struct_idx])
         cell_shifts_idx.append(neigh_shift_idx)
 
     return (
@@ -1105,8 +1092,8 @@ def build_linked_cell_neighborhood(
 
 def multiplicative_isotropic_cutoff(
     fn: Callable[..., torch.Tensor],
-    r_onset: torch.Tensor,
-    r_cutoff: torch.Tensor,
+    r_onset: float | torch.Tensor,
+    r_cutoff: float | torch.Tensor,
 ) -> Callable[..., torch.Tensor]:
     """Creates a smoothly truncated version of an isotropic function.
 
@@ -1138,16 +1125,16 @@ def multiplicative_isotropic_cutoff(
         HOOMD-blue documentation:
         https://hoomd-blue.readthedocs.io/en/latest/hoomd/md/module-pair.html
     """
-    r_c = r_cutoff**2
-    r_o = r_onset**2
+    r_c = torch.square(torch.tensor(r_cutoff))
+    r_o = torch.square(torch.tensor(r_onset))
 
     def smooth_fn(dr: torch.Tensor) -> torch.Tensor:
         """Compute the smooth switching function."""
-        r = dr**2
+        r = torch.square(dr)
 
         # Compute switching function for intermediate region
-        numerator = (r_c - r) ** 2 * (r_c + 2 * r - 3 * r_o)
-        denominator = (r_c - r_o) ** 3
+        numerator = torch.square(r_c - r) * (r_c + 2 * r - 3 * r_o)
+        denominator = torch.pow(r_c - r_o, 3)
         intermediate = torch.where(
             dr < r_cutoff, numerator / denominator, torch.zeros_like(dr)
         )
@@ -1165,7 +1152,7 @@ def multiplicative_isotropic_cutoff(
 
 def high_precision_sum(
     x: torch.Tensor,
-    dim: int | list[int] | tuple[int, ...] | None = None,
+    dim: int | Iterable[int] | None = None,
     *,
     keepdim: bool = False,
 ) -> torch.Tensor:
@@ -1202,7 +1189,7 @@ def high_precision_sum(
 
 def safe_mask(
     mask: torch.Tensor,
-    fn: Callable[..., torch.Tensor],
+    fn: Callable[[torch.Tensor], torch.Tensor],
     operand: torch.Tensor,
     placeholder: float = 0.0,
 ) -> torch.Tensor:
@@ -1214,7 +1201,7 @@ def safe_mask(
 
     Args:
         mask: Boolean tensor indicating which elements to process (True) or mask (False)
-        fn: callable function to apply to the masked elements
+        fn: TorchScript function to apply to the masked elements
         operand: Input tensor to apply the function to
         placeholder: Value to use for masked-out positions (default: 0.0)
 

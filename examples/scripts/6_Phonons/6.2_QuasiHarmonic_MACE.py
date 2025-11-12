@@ -10,7 +10,6 @@ different volumes and FC2 calculations with MACE.
 #     "plotly!=6.2.0", # TODO remove pin pending https://github.com/plotly/plotly.py/issues/5253#issuecomment-3016615635
 # ]
 # ///
-
 import os
 
 import numpy as np
@@ -31,17 +30,17 @@ from torch_sim.models.mace import MaceModel, MaceUrls
 def get_relaxed_structure(
     struct: Atoms,
     model: ModelInterface,
-    Nrelax: int = 300,
+    max_steps: int = 300,
     fmax: float = 1e-3,
     *,
     use_autobatcher: bool = False,
-) -> ts.state.SimState:
+) -> ts.SimState:
     """Get relaxed structure.
 
     Args:
         struct: ASE structure
         model: MACE model
-        Nrelax: Maximum number of relaxation steps
+        max_steps: Maximum number of relaxation steps
         fmax: Force convergence criterion
         use_autobatcher: Whether to use automatic batching
 
@@ -63,23 +62,25 @@ def get_relaxed_structure(
     final_state = ts.optimize(
         system=struct,
         model=model,
-        optimizer=ts.optimizers.frechet_cell_fire,
-        constant_volume=True,
-        hydrostatic_strain=True,
-        max_steps=Nrelax,
+        optimizer=ts.Optimizer.fire,
+        max_steps=max_steps,
         convergence_fn=converge_max_force,
         trajectory_reporter=reporter,
         autobatcher=use_autobatcher,
+        init_kwargs=dict(
+            cell_filter=ts.CellFilter.frechet,
+            constant_volume=True,
+            hydrostatic_strain=True,
+        ),
     )
 
-    # Remove trajectory file
     os.remove(trajectory_file)
 
     return final_state
 
 
 def get_qha_structures(
-    state: ts.state.SimState,
+    state: ts.SimState,
     length_factors: np.ndarray,
     model: ModelInterface,
     Nmax: int = 300,
@@ -117,12 +118,15 @@ def get_qha_structures(
     scaled_state = ts.optimize(
         system=scaled_structs,
         model=model,
-        optimizer=ts.optimizers.frechet_cell_fire,
-        constant_volume=True,
-        hydrostatic_strain=True,
+        optimizer=ts.Optimizer.fire,
         max_steps=Nmax,
         convergence_fn=ts.runners.generate_force_convergence_fn(force_tol=fmax),
         autobatcher=use_autobatcher,
+        init_kwargs=dict(
+            cell_filter=ts.CellFilter.frechet,
+            constant_volume=True,
+            hydrostatic_strain=True,
+        ),
     )
 
     return scaled_state.to_phonopy()
@@ -165,9 +169,9 @@ def get_qha_phonons(
         )
         ph.generate_displacements(distance=displ)
         supercells = ph.supercells_with_displacements
-        n_atoms = sum(len(cell) for cell in supercells)
+        n_atoms = 0 if supercells is None else sum(len(cell) for cell in supercells)
         supercell_boundaries.append(supercell_boundaries[-1] + n_atoms)
-        supercells_flat.extend(supercells)
+        supercells_flat.extend([] if supercells is None else supercells)
         ph_sets.append(ph)
 
     # Run the model on flattened structure
@@ -194,15 +198,15 @@ def get_qha_phonons(
     energies = (
         torch.tensor([r["potential_energy"] for r in results]).detach().cpu().numpy()
     )
-    for i, ph in enumerate(ph_sets):
-        start, end = supercell_boundaries[i], supercell_boundaries[i + 1]
+    for sys_idx, ph in enumerate(ph_sets):
+        start, end = supercell_boundaries[sys_idx], supercell_boundaries[sys_idx + 1]
         forces_i = forces[start:end]
         n_atoms = len(ph.supercell)
         n_displacements = len(ph.supercells_with_displacements)
         force_sets_i = []
-        for j in range(n_displacements):
-            start_j = j * n_atoms
-            end_j = (j + 1) * n_atoms
+        for disp_idx in range(n_displacements):
+            start_j = disp_idx * n_atoms
+            end_j = (disp_idx + 1) * n_atoms
             force_sets_i.append(forces_i[start_j:end_j])
         force_sets.append(force_sets_i)
 
@@ -210,16 +214,17 @@ def get_qha_phonons(
 
 
 # Set device and data type
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float64
+
 autobatcher = False
 
 # Load the raw model
 loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
-    default_dtype=dtype,
-    device=device,
+    default_dtype=str(dtype).removeprefix("torch."),
+    device=str(device),
 )
 model = MaceModel(
     model=loaded_model,
@@ -244,7 +249,7 @@ length_factors = np.linspace(
 
 # Relax initial structure
 state = get_relaxed_structure(
-    struct=struct, model=model, Nrelax=Nmax, fmax=fmax, use_autobatcher=autobatcher
+    struct=struct, model=model, max_steps=Nmax, fmax=fmax, use_autobatcher=autobatcher
 )
 
 # Get relaxed structures at different volumes
@@ -272,7 +277,7 @@ energies = []
 free_energies = []
 entropies = []
 heat_capacities = []
-n_displacements = len(ph_sets[0].supercells_with_displacements)
+n_displacements = len(getattr(ph_sets[0], "supercells_with_displacements", []))
 for i in range(len(ph_sets)):
     ph_sets[i].forces = force_sets[i]
     ph_sets[i].produce_force_constants()

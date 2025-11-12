@@ -39,7 +39,6 @@ Example::
         epsilon_matrix=strength_matrix,
     )
     results = multi_model(sim_state)
-
 """
 
 import torch
@@ -58,9 +57,9 @@ DEFAULT_ALPHA = torch.tensor(2.0)
 
 def soft_sphere_pair(
     dr: torch.Tensor,
-    sigma: torch.Tensor = DEFAULT_SIGMA,
-    epsilon: torch.Tensor = DEFAULT_EPSILON,
-    alpha: torch.Tensor = DEFAULT_ALPHA,
+    sigma: float | torch.Tensor = DEFAULT_SIGMA,
+    epsilon: float | torch.Tensor = DEFAULT_EPSILON,
+    alpha: float | torch.Tensor = DEFAULT_ALPHA,
 ) -> torch.Tensor:
     """Calculate pairwise repulsive energies between soft spheres with finite-range
     interactions.
@@ -250,10 +249,7 @@ class SoftSphereModel(ModelInterface):
         self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self.device)
         self.alpha = torch.tensor(alpha, dtype=dtype, device=self.device)
 
-    def unbatched_forward(
-        self,
-        state: ts.SimState,
-    ) -> dict[str, torch.Tensor]:
+    def unbatched_forward(self, state: ts.SimState) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single unbatched system.
 
         Internal implementation that processes a single, non-batched simulation state.
@@ -411,20 +407,25 @@ class SoftSphereModel(ModelInterface):
             forces = results["forces"]  # Shape: [n_atoms, 3]
             ```
         """
-        if isinstance(state, dict):
-            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        sim_state = (
+            state
+            if isinstance(state, ts.SimState)
+            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        )
 
         # Handle System indices if not provided
-        if state.system_idx is None and state.cell.shape[0] > 1:
+        if sim_state.system_idx is None and sim_state.cell.shape[0] > 1:
             raise ValueError(
                 "system_idx can only be inferred if there is only one system"
             )
 
-        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_systems)]
+        outputs = [
+            self.unbatched_forward(sim_state[i]) for i in range(sim_state.n_systems)
+        ]
         properties = outputs[0]
 
         # Combine results
-        results = {}
+        results: dict[str, torch.Tensor] = {}
         for key in ("stress", "energy"):
             if key in properties:
                 results[key] = torch.stack([out[key] for out in outputs])
@@ -506,7 +507,7 @@ class SoftSphereMultiModel(ModelInterface):
         epsilon_matrix: torch.Tensor | None = None,
         alpha_matrix: torch.Tensor | None = None,
         device: torch.device | None = None,
-        dtype: torch.dtype = torch.float32,
+        dtype: torch.dtype = torch.float64,
         *,  # Force keyword-only arguments
         pbc: bool = True,
         compute_forces: bool = True,
@@ -862,11 +863,13 @@ class SoftSphereMultiModel(ModelInterface):
                 "system_idx can only be inferred if there is only one system"
             )
 
-        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_systems)]
+        outputs = [
+            self.unbatched_forward(state[sys_idx]) for sys_idx in range(state.n_systems)
+        ]
         properties = outputs[0]
 
         # Combine results
-        results = {}
+        results: dict[str, torch.Tensor] = {}
         for key in ("stress", "energy", "forces", "energies", "stresses"):
             if key in properties:
                 results[key] = torch.stack([out[key] for out in outputs])

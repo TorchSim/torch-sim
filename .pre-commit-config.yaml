@@ -9,7 +9,7 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.13
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: [--fix]
       - id: ruff-format
 
@@ -39,4 +39,4 @@ repos:
         # MD033: no inline HTML
         # MD041: first line in a file should be a top-level heading
         # MD034: bare URL used
-        args: [--disable, MD013, MD033, MD041, MD034, "--"]
+        args: [--disable, MD013, MD033, MD041, MD034, '--']

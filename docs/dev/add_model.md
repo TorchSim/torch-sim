@@ -1,12 +1,10 @@
 # Adding New Models
 
-## How to add a new model to torchsim
+## How to add a new model to TorchSim
 
 We welcome the addition of new models to `torch_sim`. We want
 easy batched simulations to be available to the whole community
 of MLIP developers and users.
-See https://github.com/Radical-AI/torch-sim/discussions/120 for
-our current posture on adding models to TorchSim.
 
 1. Open a PR or an issue to get feedback. We are happy to take a look,
 even if you haven't finished your implementation yet.
@@ -35,4 +33,4 @@ is being correctly included in the documentation.
 
 We are also happy for developers to implement model interfaces in their
 own codebases. Steps 1 & 2 should still be followed to ensure the model
-implementation is compatible with the rest of torch-sim.
+implementation is compatible with the rest of TorchSim.
