@@ -18,8 +18,10 @@ NPT:
     - Nosé-Hoover barostat integrator :func:`npt.npt_nose_hoover_step` from [3]
     - Isotropic C-Rescale barostat integrator :func:`npt.npt_crescale_isotropic_step`
     from [6, 8, 9]
-    - Anisotropic C-Rescale barostat integrator :func:`npt.npt_crescale_anisotropic_step`
-    from [7, 8, 9]
+    - C-Rescale barostat integrator :func:`npt.npt_crescale_anisotropic_step`
+    from [7, 8, 9]. Available implementations include isotropic and
+    anisotropic cell rescaling, allowing to change cell lengths, and potentially angles
+    as well.
 
 References:
     [1] Bussi G, Donadio D, Parrinello M. "Canonical sampling through velocity rescaling."
