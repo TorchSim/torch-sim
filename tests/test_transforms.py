@@ -973,7 +973,7 @@ def test_minimum_image_displacement_batched(
     Tests function with single and multiple systems, with and without PBC.
     Reuses test cases from minimum_image_displacement to ensure consistency.
     """
-    result = tst.minimum_image_displacement_batched(
+    result = ft.minimum_image_displacement_batched(
         dr=torch.tensor(dr), cell=cell, system_idx=system_idx, pbc=pbc
     )
     torch.testing.assert_close(result, torch.tensor(expected))
@@ -988,10 +988,10 @@ def test_minimum_image_displacement_batched_consistency() -> None:
     system_idx = torch.tensor([0, 0, 0])
 
     # Single system result
-    result_single = tst.minimum_image_displacement(dr=dr, cell=cell_single, pbc=True)
+    result_single = ft.minimum_image_displacement(dr=dr, cell=cell_single, pbc=True)
 
     # Batched result with single system
-    result_batched = tst.minimum_image_displacement_batched(
+    result_batched = ft.minimum_image_displacement_batched(
         dr=dr, cell=cell_batched, system_idx=system_idx, pbc=True
     )
 
@@ -1015,15 +1015,15 @@ def test_minimum_image_displacement_batched_triclinic() -> None:
     )
     system_idx = torch.tensor([0, 1])
 
-    result = tst.minimum_image_displacement_batched(
+    result = ft.minimum_image_displacement_batched(
         dr=dr, cell=cell_batched, system_idx=system_idx, pbc=True
     )
 
     # Verify results by computing expected values manually
     # For system 0 with cell1
-    expected_0 = tst.minimum_image_displacement(dr=dr[0:1], cell=cell1, pbc=True)
+    expected_0 = ft.minimum_image_displacement(dr=dr[0:1], cell=cell1, pbc=True)
     # For system 1 with cell2
-    expected_1 = tst.minimum_image_displacement(dr=dr[1:2], cell=cell2, pbc=True)
+    expected_1 = ft.minimum_image_displacement(dr=dr[1:2], cell=cell2, pbc=True)
 
     torch.testing.assert_close(result[0:1], expected_0)
     torch.testing.assert_close(result[1:2], expected_1)
@@ -1037,7 +1037,7 @@ def test_minimum_image_displacement_batched_invalid_inputs() -> None:
 
     # Test integer tensors
     with pytest.raises(TypeError):
-        tst.minimum_image_displacement_batched(
+        ft.minimum_image_displacement_batched(
             dr=torch.ones(4, 3, dtype=torch.int64),
             cell=cell,
             system_idx=system_idx,
@@ -1046,7 +1046,7 @@ def test_minimum_image_displacement_batched_invalid_inputs() -> None:
 
     # Test dimension mismatch - displacement vectors
     with pytest.raises(ValueError):
-        tst.minimum_image_displacement_batched(
+        ft.minimum_image_displacement_batched(
             dr=torch.ones(4, 2),  # Wrong dimension (2 instead of 3)
             cell=cell,
             system_idx=system_idx,
@@ -1055,7 +1055,7 @@ def test_minimum_image_displacement_batched_invalid_inputs() -> None:
 
     # Test mismatch between system indices and cell
     with pytest.raises(ValueError):
-        tst.minimum_image_displacement_batched(
+        ft.minimum_image_displacement_batched(
             dr=dr,
             cell=torch.stack([torch.eye(3)] * 3),  # 3 cells but only 2 systems
             system_idx=system_idx,
