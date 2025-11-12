@@ -1793,7 +1793,8 @@ def _crescale_average_anisotropic_barostat_step(
 ) -> NPTCRescaleState:
     volume = torch.det(state.cell)  # shape: (n_systems,)
     P_int = compute_average_pressure_tensor(
-        degrees_of_freedom=state.get_number_of_degrees_of_freedom() / 3,
+        # Should it be degrees_of_freedom=state.get_number_of_degrees_of_freedom() / 3,
+        degrees_of_freedom=state.n_atoms_per_system,
         kT=kT,
         stress=state.stress,
         volumes=volume,
