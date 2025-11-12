@@ -193,6 +193,7 @@ def run_forward_ti_workflow_from_einstein(
     temperature: float,
     save_dir: str,
     *,
+    frequencies: torch.Tensor | None = None,
     n_trajectories: int = 10,
     n_steps_frequency: int = 1000,
     n_ti_steps: int = 1000,
@@ -206,6 +207,7 @@ def run_forward_ti_workflow_from_einstein(
         model: Target model.
         temperature: Temperature in K.
         save_dir: Directory to save trajectory files.
+        frequencies: Precomputed Einstein model frequencies.
         n_trajectories: Number of TI trajectories.
         n_steps_frequency: Number of NVT steps to compute frequencies for Einstein model.
         n_ti_steps: Number of TI steps per trajectory.
@@ -220,15 +222,23 @@ def run_forward_ti_workflow_from_einstein(
     if system.n_systems != 1:
         raise NotImplementedError("Only single system input is supported.")
 
-    # Find frequencies for Einstein reference model
-    frequencies = compute_einstein_frequencies_from_nvt(
-        system=system,
-        model=model,
-        temperature=temperature,
-        save_dir=save_dir,
-        n_steps=n_steps_frequency,
-        timestep=timestep,
-    )
+    if frequencies is None:
+        # Find frequencies for Einstein reference model
+        frequencies = compute_einstein_frequencies_from_nvt(
+            system=system,
+            model=model,
+            temperature=temperature,
+            save_dir=save_dir,
+            n_steps=n_steps_frequency,
+            timestep=timestep,
+        )
+        # Use same frequencies for all atoms of same type
+        frequencies = torch.full(
+            (system.n_atoms,),
+            frequencies.mean().item(),
+            device=system.device,
+            dtype=system.dtype,
+        )
 
     logger.info(
         "Einstein frequencies (eV^(0.5)/A/amu^(0.5)): %s", frequencies.cpu().numpy()
@@ -321,6 +331,7 @@ def run_forward_backward_ti_workflow_from_einstein(
     *,
     n_trajectories: int = 10,
     n_steps_frequency: int = 1000,
+    frequencies: torch.Tensor | None = None,
     n_ti_steps: int = 1000,
     n_equil_steps: int = 500,
     timestep: float = 0.002,
@@ -341,6 +352,7 @@ def run_forward_backward_ti_workflow_from_einstein(
         save_dir: Directory to save trajectory files.
         n_trajectories: Number of TI trajectories.
         n_steps_frequency: Number of NVT steps to compute frequencies for Einstein model.
+        frequencies: Precomputed Einstein model frequencies.
         n_ti_steps: Number of TI steps per trajectory.
         n_equil_steps: Number of equilibration steps at model_b.
         timestep: Integration timestep.
@@ -355,15 +367,23 @@ def run_forward_backward_ti_workflow_from_einstein(
     if system.n_systems != 1:
         raise NotImplementedError("Only single system input is supported.")
 
-    # Find frequencies for Einstein reference model
-    frequencies = compute_einstein_frequencies_from_nvt(
-        system=system,
-        model=model,
-        temperature=temperature,
-        save_dir=save_dir,
-        n_steps=n_steps_frequency,
-        timestep=timestep,
-    )
+    if frequencies is None:
+        # Find frequencies for Einstein reference model
+        frequencies = compute_einstein_frequencies_from_nvt(
+            system=system,
+            model=model,
+            temperature=temperature,
+            save_dir=save_dir,
+            n_steps=n_steps_frequency,
+            timestep=timestep,
+        )
+        # Use same frequencies for all atoms of same type
+        frequencies = torch.full(
+            (system.n_atoms,),
+            frequencies.mean().item(),
+            device=system.device,
+            dtype=system.dtype,
+        )
 
     # Prepare batched systems for multiple trajectories
     systems = [system.clone() for _ in range(n_trajectories)]
@@ -513,6 +533,7 @@ def run_thermodynamic_integration_from_einstein(
     run_parallel: bool = False,
     lambdas: torch.Tensor,
     n_steps_frequency: int = 1000,
+    frequencies: torch.Tensor | None = None,
     n_ti_steps: int = 1000,
     timestep: float = 0.002,
 ) -> dict[str, torch.Tensor]:
@@ -528,6 +549,7 @@ def run_thermodynamic_integration_from_einstein(
             for next trajectory.
         lambdas: tensor with lambda values to use for TI.
         n_steps_frequency: Number of NVT steps to compute frequencies for Einstein model.
+        frequencies: Precomputed Einstein model frequencies.
         n_ti_steps: Number of TI steps per trajectory.
         timestep: Integration timestep for TI.
 
@@ -539,15 +561,23 @@ def run_thermodynamic_integration_from_einstein(
     if system.n_systems != 1:
         raise NotImplementedError("Only single system input is supported.")
 
-    # Find frequencies for Einstein reference model
-    frequencies = compute_einstein_frequencies_from_nvt(
-        system=system,
-        model=model,
-        temperature=temperature,
-        save_dir=save_dir,
-        n_steps=n_steps_frequency,
-        timestep=timestep,
-    )
+    if frequencies is None:
+        # Find frequencies for Einstein reference model
+        frequencies = compute_einstein_frequencies_from_nvt(
+            system=system,
+            model=model,
+            temperature=temperature,
+            save_dir=save_dir,
+            n_steps=n_steps_frequency,
+            timestep=timestep,
+        )
+        # Use same frequencies for all atoms of same type
+        frequencies = torch.full(
+            (system.n_atoms,),
+            frequencies.mean().item(),
+            device=system.device,
+            dtype=system.dtype,
+        )
 
     if run_parallel:
         # Prepare batched systems for multiple trajectories
