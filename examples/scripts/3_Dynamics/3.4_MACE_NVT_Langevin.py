@@ -75,7 +75,7 @@ for step in range(N_steps):
             / Units.temperature
         )
         print(f"{step=}: Temperature: {temp.item():.4f}")
-    state = nvt_langevin_step(model=model, state=state, dt=dt, kT=kT, gamma=gamma)
+    state = nvt_langevin_step(state=state, model=model, dt=dt, kT=kT, gamma=gamma)
 
 final_temp = (
     ts.calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)

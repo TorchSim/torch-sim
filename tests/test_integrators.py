@@ -222,7 +222,7 @@ def test_nvt_langevin(ar_double_sim_state: ts.SimState, lj_model: LennardJonesMo
     energies = []
     temperatures = []
     for _step in range(n_steps):
-        state = ts.nvt_langevin_step(model=lj_model, state=state, dt=dt, kT=kT)
+        state = ts.nvt_langevin_step(state=state, model=lj_model, dt=dt, kT=kT)
 
         # Calculate instantaneous temperature from kinetic energy
         temp = ts.calc_kT(
@@ -278,7 +278,7 @@ def test_nvt_langevin_multi_kt(
     energies = []
     temperatures = []
     for _step in range(n_steps):
-        state = ts.nvt_langevin_step(model=lj_model, state=state, dt=dt, kT=kT)
+        state = ts.nvt_langevin_step(state=state, model=lj_model, dt=dt, kT=kT)
 
         # Calculate instantaneous temperature from kinetic energy
         temp = ts.calc_kT(

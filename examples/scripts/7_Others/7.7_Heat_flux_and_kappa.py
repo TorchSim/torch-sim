@@ -66,7 +66,7 @@ state = ts.nvt_langevin_init(state=state, model=lj_model, kT=kT)
 heat_flux = torch.zeros((num_steps_equilibration, 3), device=device, dtype=dtype)
 
 for step in range(num_steps_equilibration):
-    state = ts.nvt_langevin_step(model=lj_model, state=state, dt=dt, kT=kT)
+    state = ts.nvt_langevin_step(state=state, model=lj_model, dt=dt, kT=kT)
     results = lj_model(state)
     J = ts.quantities.calc_heat_flux(
         momenta=state.momenta,
@@ -103,7 +103,7 @@ reporter = ts.TrajectoryReporter(
 
 # Short production run
 for step in range(num_steps_production):
-    state = ts.nvt_langevin_step(model=lj_model, state=state, dt=dt, kT=kT)
+    state = ts.nvt_langevin_step(state=state, model=lj_model, dt=dt, kT=kT)
     reporter.report(state, step)
     if step % 1000 == 0:
         print(f"Step {step} | {state.energy.item():.4f} eV")
