@@ -117,10 +117,10 @@ print(f"Stress is a systemwise property with shape: {model_outputs['stress'].sha
 """
 ## Optimizers and Integrators
 
-All optimizers and integrators share a similar interface. They accept a model and
-return two functions: `init_fn` and step_fn`. The `init_fn` function returns the
-initialized optimizer-specific state, while the step_fn` function updates the
-simulation state.
+All optimizers and integrators have an associated `init_fn` and a `step_fn`.
+The `init_fn` function returns the initialized optimizer-specific state,
+while the `step_fn` function updates the simulation state. The formal pairings
+are stored in the `ts.INTEGRATOR_REGISTRY` and `ts.OPTIM_REGISTRY` dictionaries.
 
 ### Unit Cell Fire
 
@@ -128,6 +128,10 @@ We will walk through the fire optimizer with unit cell filter as an example.
 """
 
 # %%
+state = ts.fire_init(state=state, model=model, cell_filter=ts.CellFilter.unit)
+
+# add a little noise so we have something to relax
+state.positions = state.positions + torch.randn_like(state.positions) * 0.05
 
 
 # %% [markdown]
@@ -139,10 +143,6 @@ high-level API.
 """
 
 # %%
-state = ts.fire_init(state=state, model=model, cell_filter=ts.CellFilter.unit)
-
-# add a little noise so we have something to relax
-state.positions = state.positions + torch.randn_like(state.positions) * 0.05
 
 for step in range(20):
     state = ts.fire_step(state=state, model=model)
@@ -151,10 +151,9 @@ for step in range(20):
 
 # %% [markdown]
 """
-You can set the optimizer-specific arguments in the `optimize` function
-optimizer=ts.Optimizer.fire, cell_filter=ts.CellFilter.unit. Fixed
-parameters can usually be passed to the `init_fn` and parameters that vary over
-the course of the simulation can be passed to the step_fn`.
+Fixed parameters can usually be passed to the `init_fn` and parameters that vary over
+the course of the simulation can be passed to the `step_fn`. In the `optimize`
+function, you set these with the `init_kwargs` and `optimizer_kwargs` arguments.
 """
 
 # %%

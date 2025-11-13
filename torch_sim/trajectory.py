@@ -76,7 +76,6 @@ class TrajectoryReporter:
         trajectories (list): TorchSimTrajectory instances
         filenames (list): Trajectory file paths
         array_registry (dict): Map of array names to (shape, dtype) tuples
-        shape_warned (bool): Whether a shape warning has been issued
 
     Examples:
         >>> reporter = TrajectoryReporter(
@@ -96,7 +95,6 @@ class TrajectoryReporter:
     prop_calculators: dict[int, dict[str, Callable]]
     state_kwargs: dict[str, Any]
     metadata: dict[str, str] | None
-    shape_warned: bool
     trajectories: list["TorchSimTrajectory"]
     filenames: list[str | pathlib.Path] | None
 
@@ -140,7 +138,6 @@ class TrajectoryReporter:
 
         self.prop_calculators = prop_calculators or {}
         self.state_kwargs = state_kwargs or {}
-        self.shape_warned = False
         self.metadata = metadata
 
         self.trajectories = []
@@ -258,9 +255,6 @@ class TrajectoryReporter:
         all_props: list[dict[str, torch.Tensor]] = []
         # Process each system separately
         for idx, substate in enumerate(split_states):
-            # Slice the state once to get only the data for this system
-            self.shape_warned = True
-
             # Write state to trajectory if it's time
             if (
                 self.state_frequency

@@ -88,7 +88,7 @@ def calc_temperature(
         units (object): Units to return the temperature in
 
     Returns:
-        torch.Tensor: Temperature value in specified units
+        torch.Tensor: Temperature value in specified units (default, K)
     """
     kT = calc_kT(
         masses=masses,
