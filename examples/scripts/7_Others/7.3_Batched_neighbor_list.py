@@ -18,8 +18,8 @@ system_idx, n_atoms = state.system_idx, state.n_atoms
 cutoff = torch.tensor(4.0, dtype=pos.dtype)
 self_interaction = False
 
-# Fix: Ensure pbc has the correct shape [n_systems, 3]
-pbc_tensor = torch.tensor([[pbc] * 3] * len(atoms_list), dtype=torch.bool)
+# Ensure pbc has the correct shape [n_systems, 3]
+pbc_tensor = torch.tensor(pbc).repeat(state.n_systems, 1)
 
 mapping, mapping_system, shifts_idx = torch_nl_linked_cell(
     pos, cell, pbc_tensor, cutoff, system_idx, self_interaction

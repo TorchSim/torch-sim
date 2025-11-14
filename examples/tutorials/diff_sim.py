@@ -117,7 +117,7 @@ class BaseState:
 
     positions: torch.Tensor
     cell: torch.Tensor
-    pbc: bool
+    pbc: torch.Tensor
     species: torch.Tensor
 
 
@@ -133,14 +133,18 @@ class SoftSphereMultiModel(torch.nn.Module):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
-        pbc: bool = True,
+        pbc: torch.Tensor | bool = True,
         cutoff: float | None = None,
     ) -> None:
         """Initialize a soft sphere model for multi-component systems."""
         super().__init__()
         self.device = device or torch.device("cpu")
         self.dtype = dtype
-        self.pbc = pbc
+        self.pbc = (
+            pbc
+            if isinstance(pbc, torch.Tensor)
+            else torch.tensor([pbc] * 3, dtype=torch.bool)
+        )
 
         # Store species list and determine number of unique species
         self.species = species
@@ -382,7 +386,12 @@ def simulation(
     # Minimize to the nearest minimum.
     init_fn, apply_fn = gradient_descent(model, lr=0.1)
 
-    custom_state = BaseState(positions=R, cell=cell, species=species, pbc=True)
+    custom_state = BaseState(
+        positions=R,
+        cell=cell,
+        species=species,
+        pbc=torch.tensor([True] * 3, dtype=torch.bool),
+    )
     state = init_fn(custom_state)
     for _ in range(simulation_steps):
         state = apply_fn(state)

@@ -173,7 +173,6 @@ class MetatomicModel(ModelInterface):
         atomic_nums = sim_state.atomic_numbers
         cell = sim_state.row_vector_cell
         positions = sim_state.positions
-        pbc = sim_state.pbc
 
         # Check dtype (metatomic models require a specific input dtype)
         if positions.dtype != self._dtype:
@@ -196,9 +195,6 @@ class MetatomicModel(ModelInterface):
             system_mask = sim_state.system_idx == sys_idx
             system_positions = positions[system_mask]
             system_cell = cell[sys_idx]
-            system_pbc = torch.tensor(
-                [pbc, pbc, pbc], device=self._device, dtype=torch.bool
-            )
             system_atomic_numbers = atomic_nums[system_mask]
 
             # Create a System object for this system
@@ -217,7 +213,7 @@ class MetatomicModel(ModelInterface):
                     positions=system_positions,
                     types=system_atomic_numbers,
                     cell=system_cell,
-                    pbc=system_pbc,
+                    pbc=sim_state.pbc,
                 )
             )
 
