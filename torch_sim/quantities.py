@@ -153,6 +153,51 @@ def get_pressure(
     return 1 / dim * ((2 * kinetic_energy / volume) - torch.einsum("...ii", stress))
 
 
+def compute_instantaneous_pressure_tensor(
+    *,
+    momenta: torch.Tensor,
+    masses: torch.Tensor,
+    system_idx: torch.Tensor,
+    stress: torch.Tensor,
+    volumes: torch.Tensor,
+) -> torch.Tensor:
+    """Compute forces on the cell for NPT dynamics.
+
+    This function calculates the instantaneous internal pressure tensor.
+
+    Args:
+        momenta (torch.Tensor): Particle momenta, shape (n_particles, 3)
+        masses (torch.Tensor): Particle masses, shape (n_particles,)
+        system_idx (torch.Tensor): Tensor indicating system membership of each particle
+        stress (torch.Tensor): Stress tensor of the system, shape (n_systems, 3, 3)
+        volumes (torch.Tensor): Volumes of the systems, shape (n_systems,)
+
+    Returns:
+        torch.Tensor: Instanteneous internal pressure tesnor [n_systems, 3, 3]
+    """
+    # Reshape for broadcasting
+    volumes = volumes.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
+
+    # Calculate virials: 2/V * (K_{tensor} - Virial_{tensor})
+    twice_kinetic_energy_tensor = torch.einsum(
+        "bi,bj,b->bij", momenta, momenta, 1 / masses
+    )
+    n_systems = stress.shape[0]
+    twice_kinetic_energy_tensor = torch.scatter_add(
+        torch.zeros(
+            n_systems,
+            3,
+            3,
+            device=momenta.device,
+            dtype=momenta.dtype,
+        ),
+        0,
+        system_idx.unsqueeze(-1).unsqueeze(-1).expand_as(twice_kinetic_energy_tensor),
+        twice_kinetic_energy_tensor,
+    )
+    return twice_kinetic_energy_tensor / volumes - stress
+
+
 def calc_heat_flux(
     momenta: torch.Tensor | None,
     masses: torch.Tensor,

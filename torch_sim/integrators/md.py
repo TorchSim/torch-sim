@@ -7,7 +7,7 @@ import torch
 
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
-from torch_sim.quantities import calc_temperature
+from torch_sim.quantities import calc_kT, calc_temperature
 from torch_sim.state import SimState
 from torch_sim.units import MetalUnits
 
@@ -74,6 +74,19 @@ class MDState(SimState):
             system_idx=self.system_idx,
             dof_per_system=self.get_number_of_degrees_of_freedom(),
             units=units,
+        )
+
+    def calc_kT(self) -> torch.Tensor:  # noqa: N802
+        """Calculate kT from momenta, masses, and system indices.
+
+        Returns:
+            torch.Tensor: Calculated kT
+        """
+        return calc_kT(
+            masses=self.masses,
+            momenta=self.momenta,
+            system_idx=self.system_idx,
+            dof_per_system=self.get_number_of_degrees_of_freedom(),
         )
 
 
