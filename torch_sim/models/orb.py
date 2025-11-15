@@ -82,7 +82,7 @@ def cell_to_cellpar(
             x = torch.dot(cell[j], cell[k]) / ll
             angle = 180.0 / torch.pi * torch.arccos(x)
         else:
-            angle = 90.0
+            angle = torch.tensor(90.0, device=cell.device, dtype=cell.dtype)
         angles.append(angle)
     if radians:
         angles = [angle * torch.pi / 180 for angle in angles]
