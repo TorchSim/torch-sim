@@ -71,7 +71,7 @@ for step in range(N_steps):
     invariant = float(kinetic_energy + state.energy)
 
     print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}")
-    state = ts.nvt_langevin_step(model=model, state=state, dt=torch.tensor(dt), kT=kT)
+    state = ts.nvt_langevin_step(state=state, model=model, dt=torch.tensor(dt), kT=kT)
     if step % 10 == 0:
         results = model(state)
         stress[step // 10] = results["stress"]

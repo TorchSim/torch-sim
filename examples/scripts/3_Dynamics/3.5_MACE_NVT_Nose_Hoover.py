@@ -56,7 +56,7 @@ kT = (
 )  # Initial temperature (K)
 
 
-state = ts.nvt_nose_hoover_init(model=model, state=state, kT=kT, dt=dt)
+state = ts.nvt_nose_hoover_init(state=state, model=model, kT=kT, dt=dt)
 
 for step in range(N_steps):
     if step % 10 == 0:
@@ -68,7 +68,7 @@ for step in range(N_steps):
         )
         invariant = float(ts.nvt_nose_hoover_invariant(state, kT=kT))
         print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}")
-    state = ts.nvt_nose_hoover_step(model=model, state=state, dt=dt, kT=kT)
+    state = ts.nvt_nose_hoover_step(state=state, model=model, dt=dt, kT=kT)
 
 final_temp = (
     ts.calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)

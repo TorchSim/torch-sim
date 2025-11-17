@@ -133,8 +133,8 @@ def nvt_langevin_init(
 
 
 def nvt_langevin_step(
-    model: ModelInterface,
     state: MDState,
+    model: ModelInterface,
     *,
     dt: float | torch.Tensor,
     kT: float | torch.Tensor,
@@ -152,9 +152,9 @@ def nvt_langevin_step(
     5. Half momentum update using new forces (B step)
 
     Args:
+        state: Current system state containing positions, momenta, forces
         model: Neural network model that computes energies and forces.
             Must return a dict with 'energy' and 'forces' keys.
-        state: Current system state containing positions, momenta, forces
         dt: Integration timestep, either scalar or shape [n_systems]
         kT: Target temperature in energy units, either scalar or
             with shape [n_systems]
@@ -247,8 +247,8 @@ class NVTNoseHooverState(MDState):
 
 
 def nvt_nose_hoover_init(
-    model: ModelInterface,
     state: SimState | StateDict,
+    model: ModelInterface,
     *,
     kT: torch.Tensor,
     dt: torch.Tensor,
@@ -267,8 +267,8 @@ def nvt_nose_hoover_init(
     time-reversible and conserves an extended energy quantity.
 
     Args:
-        model: Neural network model that computes energies and forces
         state: Initial system state as SimState or dict
+        model: Neural network model that computes energies and forces
         kT: Target temperature in energy units
         dt: Integration timestep
         tau: Thermostat relaxation time (defaults to 100*dt)
@@ -332,8 +332,8 @@ def nvt_nose_hoover_init(
 
 
 def nvt_nose_hoover_step(
-    model: ModelInterface,
     state: NVTNoseHooverState,
+    model: ModelInterface,
     *,
     dt: torch.Tensor,
     kT: torch.Tensor,
@@ -347,8 +347,8 @@ def nvt_nose_hoover_step(
     by 3.
 
     Args:
-        model: Neural network model that computes energies and forces
         state: Current system state containing positions, momenta, forces, and chain
+        model: Neural network model that computes energies and forces
         dt: Integration timestep
         kT: Target temperature in energy units
 
