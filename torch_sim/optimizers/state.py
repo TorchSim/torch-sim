@@ -7,7 +7,7 @@ import torch
 from torch_sim.state import SimState
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, init=False)
 class OptimState(SimState):
     """Unified state class for optimization algorithms.
 
@@ -22,6 +22,39 @@ class OptimState(SimState):
 
     _atom_attributes = SimState._atom_attributes | {"forces"}  # noqa: SLF001
     _system_attributes = SimState._system_attributes | {"energy", "stress"}  # noqa: SLF001
+
+    def set_forces(self, new_forces: torch.Tensor) -> None:
+        """Set new forces in the optimization state."""
+        for constraint in self.constraints:
+            constraint.adjust_forces(self, new_forces)
+        self.forces = new_forces
+
+    def __init__(
+        self,
+        *,
+        positions: torch.Tensor,
+        forces: torch.Tensor,
+        energy: torch.Tensor,
+        stress: torch.Tensor | None = None,
+        masses: torch.Tensor,
+        cell: torch.Tensor,
+        pbc: torch.Tensor,
+        atomic_numbers: torch.Tensor,
+        system_idx: torch.Tensor,
+        _constraints: list | None = None,
+    ) -> None:
+        """Initialize optimization state."""
+        self.positions = positions
+        self.masses = masses
+        self.cell = cell
+        self.pbc = pbc
+        self.atomic_numbers = atomic_numbers
+        self.system_idx = system_idx
+        self._constraints = _constraints
+        self.energy = energy
+        self.set_forces(forces)
+        self.stress = stress
+        SimState.__post_init__(self)
 
 
 @dataclass(kw_only=True)

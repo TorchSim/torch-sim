@@ -67,6 +67,7 @@ def nve_init(
         pbc=state.pbc,
         system_idx=state.system_idx,
         atomic_numbers=state.atomic_numbers,
+        _constraints=state.constraints,
     )
 
 
