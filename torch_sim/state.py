@@ -226,6 +226,31 @@ class SimState:
         """
         self.cell = value.mT
 
+    def set_cell(
+        self,
+        cell: torch.Tensor,
+        scale_atoms: bool = False,  # noqa: FBT001, FBT002
+    ) -> None:
+        """Set the unit cell of the system.
+        Torch version of ASE Atoms.set_cell.
+
+        Args:
+            cell (torch.Tensor): New unit cell with shape (n_systems, 3, 3)
+            scale_atoms (bool, optional): Whether to scale atomic positions according to
+                the change in cell. Defaults to False.
+        """
+        if cell.shape != self.cell.shape:
+            raise ValueError(
+                f"New cell must have shape {self.cell.shape}, got {cell.shape}"
+            )
+        if scale_atoms:
+            M = torch.linalg.solve(self.cell.mT, cell.mT)
+            self.positions = torch.bmm(
+                self.positions.unsqueeze(1), M[self.system_idx]
+            ).squeeze(1)
+
+        self.cell = cell
+
     def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
         """Calculate degrees of freedom accounting for constraints.
 
