@@ -231,7 +231,7 @@ class SimState:
         cell: torch.Tensor,
         scale_atoms: bool = False,  # noqa: FBT001, FBT002
     ) -> None:
-        """Set the unit cell of the system.
+        """Set the unit cell of the system, optionally scaling atomic positions.
         Torch version of ASE Atoms.set_cell.
 
         Args:
