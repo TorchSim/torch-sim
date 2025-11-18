@@ -178,6 +178,71 @@ class SystemConstraint(Constraint):
             )
 
 
+def update_constraint(
+    constraint: AtomIndexedConstraint | SystemConstraint,
+    atom_mask: torch.Tensor,
+    system_mask: torch.Tensor,
+) -> Constraint:
+    """Update a constraint to account for atom and system masks.
+
+    Args:
+        constraint: Constraint to update
+        atom_mask: Boolean mask for atoms to keep
+        system_mask: Boolean mask for systems to keep
+    """
+    # n_atoms_per_system = system_idx.bincount()
+
+    def update_indices(idx: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        cumsum_atom_mask = torch.cumsum(~mask, dim=0)
+        new_indices = idx - cumsum_atom_mask[idx]
+        mask_indices = torch.where(mask)[0]
+        drop_indices = ~torch.isin(idx, mask_indices)
+        return new_indices[~drop_indices]
+
+    if isinstance(constraint, AtomIndexedConstraint):
+        constraint.indices = update_indices(constraint.indices, atom_mask)
+
+    elif isinstance(constraint, SystemConstraint):
+        constraint.system_idx = update_indices(constraint.system_idx, system_mask)
+
+    else:
+        raise NotImplementedError(
+            f"Constraint type {type(constraint)} is not implemented"
+        )
+
+    return constraint
+
+
+# def split_constraint(
+#     constraint: AtomIndexedConstraint | SystemConstraint,
+#     system_idx: torch.Tensor,
+# ) -> list[AtomIndexedConstraint | SystemConstraint]:
+#     """Split a constraint into a list of constraints."""
+#     n_atoms_per_system = system_idx.bincount()
+
+#     # just atom indexed for now
+#     for sys_idx in range(max(system_idx) + 1):
+
+
+#     return [constraint]
+
+
+# def merge_constraint_into_list(
+#     constraints: list[AtomIndexedConstraint | SystemConstraint],
+#     constraint: AtomIndexedConstraint | SystemConstraint,
+# ) -> list[Constraint]:
+#     """Merge a constraint into a list of constraints.
+
+#     Args:
+#         constraints: List of constraints
+#         constraint: Constraint to merge
+
+#     Returns:
+#         List of constraints
+#     """
+#     return constraints
+
+
 class FixAtoms(AtomIndexedConstraint):
     """Constraint that fixes specified atoms in place.
 
@@ -220,7 +285,11 @@ class FixAtoms(AtomIndexedConstraint):
         """
         new_positions[self.indices] = state.positions[self.indices]
 
-    def adjust_forces(self, state: SimState, forces: torch.Tensor) -> None:  # noqa: ARG002
+    def adjust_forces(
+        self,
+        state: SimState,  # noqa: ARG002
+        forces: torch.Tensor,
+    ) -> None:
         """Set forces on fixed atoms to zero.
 
         Args:

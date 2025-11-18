@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 import torch
 
 import torch_sim as ts
+from torch_sim.constraints import update_constraint
 from torch_sim.typing import StateLike
 
 
@@ -184,7 +185,7 @@ class SimState:
 
     @property
     def n_atoms_per_system(self) -> torch.Tensor:
-        """Number of atoms per system."""
+        """Number of atoms per system. Length is n_systems."""
         return (
             self.system_idx.bincount()
             if self.system_idx is not None
@@ -721,7 +722,12 @@ def _filter_attrs_by_mask(
     # atoms_mask = torch.isin(state.system_idx, torch.nonzero(system_mask).squeeze())
     # Copy global attributes directly
     filtered_attrs = dict(get_attrs_for_scope(state, "global"))
-    filtered_attrs["_constraints"] = copy.deepcopy(state.constraints)
+
+    # take into account constraints that are AtomIndexedConstraint
+    filtered_attrs["_constraints"] = [
+        update_constraint(constraint, atom_mask, system_mask)
+        for constraint in copy.deepcopy(state.constraints)
+    ]
 
     new_n_atoms_per_system = state.n_atoms_per_system[system_mask]
     cum_sum_atoms = torch.cumsum(new_n_atoms_per_system, dim=0)
@@ -750,34 +756,6 @@ def _filter_attrs_by_mask(
                 dtype=attr_value.dtype,
             )
             filtered_attrs[attr_name] = new_system_idxs
-
-            # take into account constraints that are AtomIndexedConstraint
-            for constraint in filtered_attrs.get("_constraints", []):
-                if isinstance(constraint, AtomIndexedConstraint):
-                    constraint.indices = torch.tensor(
-                        [
-                            i
-                            - cum_sum_atoms[
-                                system_idx_map[
-                                    old_system_indices[state.system_idx[i]].item()
-                                ]
-                            ]
-                            for i in constraint.indices
-                            if atom_mask[i]
-                        ],
-                        device=old_system_indices.device,
-                        dtype=constraint.indices.dtype,
-                    )
-                elif isinstance(constraint, SystemConstraint):
-                    constraint.system_idx = torch.tensor(
-                        [
-                            system_idx_map[idx.item()]
-                            for idx in constraint.system_idx
-                            if system_mask[idx]
-                        ],
-                        device=constraint.system_idx.device,
-                        dtype=constraint.system_idx.dtype,
-                    )
 
         else:
             filtered_attrs[attr_name] = attr_value[atom_mask]
