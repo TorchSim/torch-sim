@@ -77,6 +77,37 @@ class Constraint(ABC):
             forces: Forces to be adjusted
         """
 
+    @abstractmethod
+    def update_constraint(
+        self, atom_mask: torch.Tensor, system_mask: torch.Tensor
+    ) -> Constraint:
+        """Update the constraint to account for atom and system masks.
+
+        Args:
+            atom_mask: Boolean mask for atoms to keep
+            system_mask: Boolean mask for systems to keep
+        """
+
+    @abstractmethod
+    def select_sub_constraint(self, atom_idx: torch.Tensor, sys_idx: int) -> Constraint:
+        """Select a constraint for a given atom and system index.
+
+        Args:
+            atom_idx: Atom indices for a single system
+            sys_idx: System index for a single system
+
+        Returns:
+            Constraint for the given atom and system index
+        """
+
+
+def _mask_constraint_indices(idx: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    cumsum_atom_mask = torch.cumsum(~mask, dim=0)
+    new_indices = idx - cumsum_atom_mask[idx]
+    mask_indices = torch.where(mask)[0]
+    drop_indices = ~torch.isin(idx, mask_indices)
+    return new_indices[~drop_indices]
+
 
 class AtomIndexedConstraint(Constraint):
     """Base class for constraints that act on specific atom indices.
@@ -140,6 +171,38 @@ class AtomIndexedConstraint(Constraint):
         """
         return self.indices.clone()
 
+    def update_constraint(
+        self,
+        atom_mask: torch.Tensor,
+        system_mask: torch.Tensor,  # noqa: ARG002
+    ) -> Constraint:
+        """Update the constraint to account for atom and system masks.
+
+        Args:
+            atom_mask: Boolean mask for atoms to keep
+            system_mask: Boolean mask for systems to keep
+        """
+        self.indices = _mask_constraint_indices(self.indices, atom_mask)
+        return self
+
+    def select_sub_constraint(
+        self,
+        atom_idx: torch.Tensor,
+        sys_idx: int,  # noqa: ARG002
+    ) -> Constraint:
+        """Select a constraint for a given atom and system index.
+
+        Args:
+            atom_idx: Atom indices for a single system
+            sys_idx: System index for a single system
+        """
+        mask = torch.isin(self.indices, atom_idx)
+        masked_indices = self.indices[mask]
+        new_atom_idx = masked_indices - atom_idx.min()
+        if len(new_atom_idx) == 0:
+            return None
+        return type(self)(new_atom_idx)
+
 
 class SystemConstraint(Constraint):
     """Base class for constraints that act on specific system indices.
@@ -177,93 +240,76 @@ class SystemConstraint(Constraint):
                 f"Got {system_idx.ndim}, expected ndim <= 1"
             )
 
+    def update_constraint(
+        self,
+        atom_mask: torch.Tensor,  # noqa: ARG002
+        system_mask: torch.Tensor,
+    ) -> Constraint:
+        """Update the constraint to account for atom and system masks.
 
-def update_constraint(
-    constraint: AtomIndexedConstraint | SystemConstraint,
-    atom_mask: torch.Tensor,
-    system_mask: torch.Tensor,
-) -> Constraint:
-    """Update a constraint to account for atom and system masks.
+        Args:
+            atom_mask: Boolean mask for atoms to keep
+            system_mask: Boolean mask for systems to keep
+        """
+        self.system_idx = _mask_constraint_indices(self.system_idx, system_mask)
+        return self
 
-    Args:
-        constraint: Constraint to update
-        atom_mask: Boolean mask for atoms to keep
-        system_mask: Boolean mask for systems to keep
-    """
-    # n_atoms_per_system = system_idx.bincount()
+    def select_sub_constraint(
+        self,
+        atom_idx: torch.Tensor,  # noqa: ARG002
+        sys_idx: int,
+    ) -> Constraint:
+        """Select a constraint for a given atom and system index.
 
-    def update_indices(idx: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        cumsum_atom_mask = torch.cumsum(~mask, dim=0)
-        new_indices = idx - cumsum_atom_mask[idx]
-        mask_indices = torch.where(mask)[0]
-        drop_indices = ~torch.isin(idx, mask_indices)
-        return new_indices[~drop_indices]
-
-    if isinstance(constraint, AtomIndexedConstraint):
-        constraint.indices = update_indices(constraint.indices, atom_mask)
-
-    elif isinstance(constraint, SystemConstraint):
-        constraint.system_idx = update_indices(constraint.system_idx, system_mask)
-
-    else:
-        raise NotImplementedError(
-            f"Constraint type {type(constraint)} is not implemented"
-        )
-
-    return constraint
-
-
-def select_sub_constraint(
-    constraint: AtomIndexedConstraint | SystemConstraint,
-    atom_idx: torch.Tensor,
-    sys_idx: int,
-) -> AtomIndexedConstraint | SystemConstraint | None:
-    """Select a constraint for a given atom and system index.
-
-    Args:
-        constraint: Constraint to select
-        atom_idx: Atom indices for a single system
-        sys_idx: System index for a single system
-    """
-    """Split a constraint into a list of constraints."""
-
-    # TODO: finish this
-    # TODO: we can probably eliminate the for loop and make this a split
-    #       out constraint function that just bumps out a single constraint
-    #       then embed this function in the split_state function
-    if isinstance(constraint, AtomIndexedConstraint):
-        mask = torch.isin(constraint.indices, atom_idx)
-        masked_indices = constraint.indices[mask]
-        new_atom_idx = masked_indices - atom_idx.min()
-        if len(new_atom_idx) == 0:
-            return None
-        return type(constraint)(new_atom_idx)
-
-    if isinstance(constraint, SystemConstraint):
-        mask = torch.isin(constraint.system_idx, sys_idx)
-        masked_system_idx = constraint.system_idx[mask]
+        Args:
+            atom_idx: Atom indices for a single system
+            sys_idx: System index for a single system
+        """
+        mask = torch.isin(self.system_idx, sys_idx)
+        masked_system_idx = self.system_idx[mask]
         new_system_idx = masked_system_idx - sys_idx
         if len(new_system_idx) == 0:
             return None
-        return type(constraint)(new_system_idx)
-
-    raise NotImplementedError(f"Constraint type {type(constraint)} is not implemented")
+        return type(self)(new_system_idx)
 
 
-# def merge_constraint_into_list(
-#     constraints: list[AtomIndexedConstraint | SystemConstraint],
-#     constraint: AtomIndexedConstraint | SystemConstraint,
-# ) -> list[Constraint]:
-#     """Merge a constraint into a list of constraints.
+def merge_constraints(
+    constraint_lists: list[list[AtomIndexedConstraint | SystemConstraint]],
+    num_atoms_per_state: torch.Tensor,
+) -> list[Constraint]:
+    """Merge constraints from multiple systems into a single list of constraints.
 
-#     Args:
-#         constraints: List of constraints
-#         constraint: Constraint to merge
+    Args:
+        constraint_lists: List of lists of constraints
+        num_atoms_per_state: Number of atoms per system
 
-#     Returns:
-#         List of constraints
-#     """
-#     return constraints
+    Returns:
+        List of merged constraints
+    """
+    from collections import defaultdict
+
+    cumsum_atoms = torch.cumsum(num_atoms_per_state, dim=0) - num_atoms_per_state[0]
+
+    # aggregate updated constraint indices by constraint type
+    constraint_indices: dict[type[Constraint], list[torch.Tensor]] = defaultdict(list)
+    for i, constraint_list in enumerate(constraint_lists):
+        for constraint in constraint_list:
+            if isinstance(constraint, AtomIndexedConstraint):
+                idxs = constraint.indices
+                offset = cumsum_atoms[i]
+            elif isinstance(constraint, SystemConstraint):
+                idxs = constraint.system_idx
+                offset = i
+            else:
+                raise NotImplementedError(
+                    f"Constraint type {type(constraint)} is not implemented"
+                )
+            constraint_indices[type(constraint)].append(idxs + offset)
+
+    return [
+        constraint_type(torch.cat(idxs))
+        for constraint_type, idxs in constraint_indices.items()
+    ]
 
 
 class FixAtoms(AtomIndexedConstraint):
