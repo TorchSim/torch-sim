@@ -213,18 +213,41 @@ def update_constraint(
     return constraint
 
 
-# def split_constraint(
-#     constraint: AtomIndexedConstraint | SystemConstraint,
-#     system_idx: torch.Tensor,
-# ) -> list[AtomIndexedConstraint | SystemConstraint]:
-#     """Split a constraint into a list of constraints."""
-#     n_atoms_per_system = system_idx.bincount()
+def select_sub_constraint(
+    constraint: AtomIndexedConstraint | SystemConstraint,
+    atom_idx: torch.Tensor,
+    sys_idx: int,
+) -> AtomIndexedConstraint | SystemConstraint | None:
+    """Select a constraint for a given atom and system index.
 
-#     # just atom indexed for now
-#     for sys_idx in range(max(system_idx) + 1):
+    Args:
+        constraint: Constraint to select
+        atom_idx: Atom indices for a single system
+        sys_idx: System index for a single system
+    """
+    """Split a constraint into a list of constraints."""
 
+    # TODO: finish this
+    # TODO: we can probably eliminate the for loop and make this a split
+    #       out constraint function that just bumps out a single constraint
+    #       then embed this function in the split_state function
+    if isinstance(constraint, AtomIndexedConstraint):
+        mask = torch.isin(constraint.indices, atom_idx)
+        masked_indices = constraint.indices[mask]
+        new_atom_idx = masked_indices - atom_idx.min()
+        if len(new_atom_idx) == 0:
+            return None
+        return type(constraint)(new_atom_idx)
 
-#     return [constraint]
+    if isinstance(constraint, SystemConstraint):
+        mask = torch.isin(constraint.system_idx, sys_idx)
+        masked_system_idx = constraint.system_idx[mask]
+        new_system_idx = masked_system_idx - sys_idx
+        if len(new_system_idx) == 0:
+            return None
+        return type(constraint)(new_system_idx)
+
+    raise NotImplementedError(f"Constraint type {type(constraint)} is not implemented")
 
 
 # def merge_constraint_into_list(

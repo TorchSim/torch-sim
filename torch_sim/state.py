@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 import torch
 
 import torch_sim as ts
-from torch_sim.constraints import update_constraint
+from torch_sim.constraints import select_sub_constraint, update_constraint
 from torch_sim.typing import StateLike
 
 
@@ -802,7 +802,8 @@ def _split_state[T: SimState](state: T) -> list[T]:
     # Create a state for each system
     states: list[T] = []
     n_systems = len(system_sizes)
-    n_atoms_cumsum = 0
+    zero_tensor = torch.tensor([0], device=state.device, dtype=torch.int64)
+    cumsum_atoms = torch.cat((zero_tensor, torch.cumsum(state.n_atoms_per_system, dim=0)))
     for sys_idx in range(n_systems):
         system_attrs = {
             # Create a system tensor with all zeros for this system
@@ -822,46 +823,16 @@ def _split_state[T: SimState](state: T) -> list[T]:
             # Add the global attributes
             **global_attrs,
         }
-        new_constraints = copy.deepcopy(state.constraints)
-        for constraint in new_constraints:
-            if isinstance(constraint, SystemConstraint):
-                # Update system_mask to only include this system
-                constraint.system_idx = (
-                    torch.tensor([0], device=state.device, dtype=torch.int64)
-                    if sys_idx in constraint.system_idx
-                    else torch.tensor([], device=state.device, dtype=torch.int64)
-                )
-            elif isinstance(constraint, AtomIndexedConstraint):
-                # Update atom_indices to only include atoms from this system
-                atom_start = n_atoms_cumsum
-                atom_end = n_atoms_cumsum + system_sizes[sys_idx]
-                constraint.indices = torch.tensor(
-                    [
-                        idx - atom_start
-                        for idx in constraint.indices
-                        if atom_start <= idx < atom_end
-                    ],
-                    device=state.device,
-                    dtype=torch.int64,
-                )
-        # Remove empty constraints
+
+        atom_idx = torch.arange(cumsum_atoms[sys_idx], cumsum_atoms[sys_idx + 1])
         new_constraints = [
-            constraint
-            for constraint in new_constraints
-            if (
-                (
-                    isinstance(constraint, SystemConstraint)
-                    and len(constraint.system_idx) > 0
-                )
-                or (
-                    isinstance(constraint, AtomIndexedConstraint)
-                    and len(constraint.indices) > 0
-                )
-            )
+            new_constraint
+            for constraint in state.constraints
+            if (new_constraint := select_sub_constraint(constraint, atom_idx, sys_idx))
         ]
+
         system_attrs["_constraints"] = new_constraints
         states.append(type(state)(**system_attrs))  # type: ignore[invalid-argument-type]
-        n_atoms_cumsum += system_sizes[sys_idx]
 
     return states
 
