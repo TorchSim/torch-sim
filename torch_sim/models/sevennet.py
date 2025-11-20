@@ -12,7 +12,7 @@ import torch
 import torch_sim as ts
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
-from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.neighbors import torch_nl_linked_cell
 
 
 if TYPE_CHECKING:
@@ -85,7 +85,7 @@ class SevenNetModel(ModelInterface):
         model: AtomGraphSequential | str | Path,
         *,  # force remaining arguments to be keyword-only
         modal: str | None = None,
-        neighbor_list_fn: Callable = vesin_nl_ts,
+        neighbor_list_fn: Callable = torch_nl_linked_cell,
         device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
     ) -> None:
@@ -102,7 +102,7 @@ class SevenNetModel(ModelInterface):
                 for 7net-mf-ompa, it should be one of 'mpa' (MPtrj + sAlex) or 'omat24'
                 (OMat24).
             neighbor_list_fn (Callable): Neighbor list function to use.
-                Default is vesin_nl_ts.
+                Default is torch_nl_linked_cell.
             device (torch.device | str | None): Device to run the model on
             dtype (torch.dtype): Data type for computation
 
@@ -191,27 +191,48 @@ class SevenNetModel(ModelInterface):
         # TODO: is this clone necessary?
         sim_state = sim_state.clone()
 
-        data_list = []
-        for sys_idx in range(sim_state.system_idx.max().item() + 1):
-            system_mask = sim_state.system_idx == sys_idx
+        # Batched neighbor list using linked-cell algorithm with row-vector cell
+        n_systems = sim_state.system_idx.max().item() + 1
+        pbc_tensor = (
+            sim_state.pbc.repeat(n_systems, 1)
+            if sim_state.pbc.ndim == 1
+            else sim_state.pbc
+        )
+        edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
+            sim_state.positions,
+            sim_state.row_vector_cell,
+            pbc_tensor,
+            self.cutoff,
+            sim_state.system_idx,
+        )
 
-            pos = sim_state.positions[system_mask]
-            # SevenNet uses row vector cell convention for neighbor list
-            row_vector_cell = sim_state.row_vector_cell[sys_idx]
-            pbc = sim_state.pbc
-            atomic_nums = sim_state.atomic_numbers[system_mask]
-
-            edge_idx, shifts_idx = self.neighbor_list_fn(
-                positions=pos,
-                cell=row_vector_cell,
-                pbc=pbc,
-                cutoff=self.cutoff,
+        # Build per-system SevenNet AtomGraphData by slicing the global NL
+        n_atoms_per_system = sim_state.system_idx.bincount()
+        stride = torch.cat(
+            (
+                torch.tensor([0], device=self.device, dtype=torch.long),
+                n_atoms_per_system.cumsum(0),
             )
+        )
 
-            shifts = torch.mm(shifts_idx, row_vector_cell)
+        data_list = []
+        for sys_idx in range(n_systems):
+            sys_start = stride[sys_idx].item()
+            sys_end = stride[sys_idx + 1].item()
+
+            pos = sim_state.positions[sys_start:sys_end]
+            row_vector_cell = sim_state.row_vector_cell[sys_idx]
+            atomic_nums = sim_state.atomic_numbers[sys_start:sys_end]
+
+            mask = mapping_system == sys_idx
+            edge_idx_sys_global = edge_index[:, mask]
+            unit_shifts_sys = unit_shifts[mask]
+
+            # Convert global indices to local indices
+            edge_idx = edge_idx_sys_global - sys_start
+            shifts = torch.mm(unit_shifts_sys, row_vector_cell)
             edge_vec = pos[edge_idx[1]] - pos[edge_idx[0]] + shifts
             vol = torch.det(row_vector_cell)
-            # vol = vol if vol > 0.0 else torch.tensor(np.finfo(float).eps)
 
             data = {
                 key.NODE_FEATURE: atomic_nums,
@@ -220,7 +241,7 @@ class SevenNetModel(ModelInterface):
                 key.EDGE_IDX: edge_idx,
                 key.EDGE_VEC: edge_vec,
                 key.CELL: row_vector_cell,
-                key.CELL_SHIFT: shifts_idx,
+                key.CELL_SHIFT: unit_shifts_sys,
                 key.CELL_VOLUME: vol,
                 key.NUM_ATOMS: torch.tensor(len(atomic_nums), device=self.device),
                 key.DATA_MODALITY: self.modal,
