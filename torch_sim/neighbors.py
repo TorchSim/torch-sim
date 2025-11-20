@@ -2,10 +2,12 @@
 
 import torch
 
+
 # Make vesin optional - fall back to pure PyTorch implementation if unavailable
 try:
     from vesin import NeighborList as VesinNeighborList
     from vesin.torch import NeighborList as VesinNeighborListTorch
+
     VESIN_AVAILABLE = True
 except ImportError:
     VESIN_AVAILABLE = False
