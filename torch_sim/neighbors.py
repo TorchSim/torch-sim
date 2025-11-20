@@ -1,8 +1,16 @@
 """Utilities for neighbor list calculations."""
 
 import torch
-from vesin import NeighborList as VesinNeighborList
-from vesin.torch import NeighborList as VesinNeighborListTorch
+
+# Make vesin optional - fall back to pure PyTorch implementation if unavailable
+try:
+    from vesin import NeighborList as VesinNeighborList
+    from vesin.torch import NeighborList as VesinNeighborListTorch
+    VESIN_AVAILABLE = True
+except ImportError:
+    VESIN_AVAILABLE = False
+    VesinNeighborList = None
+    VesinNeighborListTorch = None
 
 import torch_sim.math as fm
 from torch_sim import transforms
@@ -498,7 +506,6 @@ def standard_nl(
     return mapping, shifts
 
 
-@torch.jit.script
 def vesin_nl_ts(
     positions: torch.Tensor,
     cell: torch.Tensor,
@@ -506,11 +513,12 @@ def vesin_nl_ts(
     cutoff: torch.Tensor,
     sort_id: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Compute neighbor lists using TorchScript-compatible Vesin implementation.
+    """Compute neighbor lists using TorchScript-compatible implementation.
 
-    This function provides a TorchScript-compatible interface to the Vesin neighbor
-    list algorithm using VesinNeighborListTorch. It handles both periodic and non-periodic
-    systems and returns neighbor pairs along with their periodic shifts.
+    This function provides a TorchScript-compatible interface for neighbor list
+    computation. When vesin is available, it uses VesinNeighborListTorch for optimal
+    performance. When vesin is not available (e.g., on AMD ROCm systems), it falls
+    back to the pure PyTorch implementation (standard_nl) which works on all devices.
 
     Args:
         positions: Atomic positions tensor of shape (num_atoms, 3)
@@ -532,15 +540,19 @@ def vesin_nl_ts(
               neighbor pair.
 
     Notes:
-        - Uses VesinNeighborListTorch for TorchScript compatibility
-        - Requires CPU tensors in float64 precision internally
-        - Returns tensors on the same device as input with original precision
-        - For non-periodic systems, shifts will be zero vectors
+        - Falls back to pure PyTorch implementation when vesin is unavailable
+        - Pure PyTorch implementation works on NVIDIA CUDA, AMD ROCm, and CPU
+        - For non-periodic systems (pbc=False), shifts will be zero vectors
         - The neighbor list includes both (i,j) and (j,i) pairs
 
     References:
-          https://github.com/Luthaf/vesin
+          https://github.com/Luthaf/vesin (when available)
     """
+    # If vesin is not available, use pure PyTorch implementation
+    if not VESIN_AVAILABLE:
+        return standard_nl(positions, cell, pbc, cutoff, sort_id)
+
+    # Use vesin if available
     device = positions.device
     dtype = positions.dtype
 
@@ -578,11 +590,11 @@ def vesin_nl(
     cutoff: float | torch.Tensor,
     sort_id: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Compute neighbor lists using the standard Vesin implementation.
+    """Compute neighbor lists using available implementation.
 
-    This function provides an interface to the standard Vesin neighbor list
-    algorithm using VesinNeighborList. It handles both periodic and non-periodic
-    systems and returns neighbor pairs along with their periodic shifts.
+    This function provides an interface for neighbor list computation. When vesin is
+    available, it uses VesinNeighborList. When vesin is not available (e.g., on AMD
+    ROCm systems), it falls back to the pure PyTorch implementation (standard_nl).
 
     Args:
         positions: Atomic positions tensor of shape (num_atoms, 3)
@@ -604,16 +616,23 @@ def vesin_nl(
               neighbor pair.
 
     Notes:
-        - Uses standard VesinNeighborList implementation
-        - Requires CPU tensors in float64 precision internally
-        - Returns tensors on the same device as input with original precision
+        - Falls back to pure PyTorch implementation when vesin is unavailable
+        - Pure PyTorch implementation works on NVIDIA CUDA, AMD ROCm, and CPU
         - For non-periodic systems (pbc=False), shifts will be zero vectors
         - The neighbor list includes both (i,j) and (j,i) pairs
-        - Supports pre-sorting through the VesinNeighborList constructor
 
     References:
-        - https://github.com/Luthaf/vesin
+        - https://github.com/Luthaf/vesin (when available)
     """
+    # Convert cutoff to tensor if needed
+    if isinstance(cutoff, float):
+        cutoff = torch.tensor(cutoff, device=positions.device, dtype=positions.dtype)
+
+    # If vesin is not available, use pure PyTorch implementation
+    if not VESIN_AVAILABLE:
+        return standard_nl(positions, cell, pbc, cutoff, sort_id)
+
+    # Use vesin if available
     device = positions.device
     dtype = positions.dtype
 
