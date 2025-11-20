@@ -299,10 +299,15 @@ class MaceModel(ModelInterface):
             self.setup_from_system_idx(sim_state.atomic_numbers, sim_state.system_idx)
 
         # Batched neighbor list using linked-cell algorithm
+        pbc_tensor = (
+            sim_state.pbc.repeat(self.n_systems, 1)
+            if sim_state.pbc.ndim == 1
+            else sim_state.pbc
+        )
         edge_index, mapping_system, unit_shifts = torch_nl_linked_cell(
             sim_state.positions,
             sim_state.row_vector_cell,
-            sim_state.pbc,
+            pbc_tensor,
             self.r_max,
             sim_state.system_idx,
         )
