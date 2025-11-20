@@ -304,7 +304,7 @@ class MaceModel(ModelInterface):
             if sim_state.pbc.ndim == 1
             else sim_state.pbc
         )
-        edge_index, mapping_system, unit_shifts = torch_nl_linked_cell(
+        edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
             sim_state.positions,
             sim_state.row_vector_cell,
             pbc_tensor,
