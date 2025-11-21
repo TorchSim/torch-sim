@@ -23,12 +23,7 @@ if TYPE_CHECKING:
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure
 
-from torch_sim.constraints import (
-    Constraint,
-    SystemConstraint,
-    merge_constraints,
-    validate_constraints,
-)
+from torch_sim.constraints import Constraint, merge_constraints, validate_constraints
 
 
 @dataclass
@@ -273,12 +268,6 @@ class SimState:
         # check it is a list
         if isinstance(constraints, Constraint):
             constraints = [constraints]
-        for constraint in constraints:
-            if (isinstance(constraint, SystemConstraint)) and (
-                not constraint.initialized
-            ):
-                constraint.system_idx = torch.arange(self.n_systems, device=self.device)
-                constraint.initialized = True
 
         # Validate new constraints before adding
         validate_constraints(constraints, state=self)
@@ -999,8 +988,8 @@ def concatenate_states[T: SimState](  # noqa: C901
     # Concatenate system indices
     concatenated["system_idx"] = torch.cat(new_system_indices)
 
+    # Merge constraints
     constraint_lists = [state.constraints for state in states]
-
     constraints = merge_constraints(
         constraint_lists, torch.tensor(num_atoms_per_state, device=target_device)
     )

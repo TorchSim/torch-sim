@@ -116,7 +116,7 @@ class AtomIndexedConstraint(Constraint):
     on a subset of atoms, identified by their indices.
     """
 
-    def __init__(self, indices: torch.Tensor | list[int] | None = None) -> None:
+    def __init__(self, indices: torch.Tensor | list[int]) -> None:
         """Initialize indexed constraint.
 
         Args:
@@ -126,11 +126,6 @@ class AtomIndexedConstraint(Constraint):
             ValueError: If both indices and mask are provided, or if indices have
                        wrong shape/type
         """
-        if indices is None:
-            # Empty constraint
-            self.indices = torch.empty(0, dtype=torch.long)
-            return
-
         # Convert to tensor if needed
         if not isinstance(indices, torch.Tensor):
             indices = torch.tensor(indices)
@@ -211,7 +206,7 @@ class SystemConstraint(Constraint):
     on a subset of systems, identified by their indices.
     """
 
-    def __init__(self, system_idx: torch.Tensor | list[int] | None = None) -> None:
+    def __init__(self, system_idx: torch.Tensor | list[int]) -> None:
         """Initialize indexed constraint.
 
         Args:
@@ -222,13 +217,6 @@ class SystemConstraint(Constraint):
             ValueError: If both indices and mask are provided, or if indices have
                         wrong shape/type
         """
-        self.initialized = True
-        if system_idx is None:
-            # Empty constraint
-            self.system_idx = torch.empty(0, dtype=torch.long)
-            self.initialized = False
-            return
-
         # Convert to tensor if needed
         system_idx = torch.as_tensor(system_idx)
 
@@ -239,6 +227,7 @@ class SystemConstraint(Constraint):
                 "system_idx has wrong number of dimensions. "
                 f"Got {system_idx.ndim}, expected ndim <= 1"
             )
+        self.system_idx = system_idx
 
     def update_constraint(
         self,
@@ -510,7 +499,7 @@ class FixCom(SystemConstraint):
 
     def __repr__(self) -> str:
         """String representation of the constraint."""
-        return "FixCom()"
+        return f"FixCom(system_idx={self.system_idx})"
 
 
 def count_degrees_of_freedom(
