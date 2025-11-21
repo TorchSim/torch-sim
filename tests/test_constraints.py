@@ -5,7 +5,13 @@ import torch
 
 import torch_sim as ts
 from tests.conftest import DTYPE
-from torch_sim.constraints import Constraint, FixAtoms, FixCom, validate_constraints
+from torch_sim.constraints import (
+    Constraint,
+    FixAtoms,
+    FixCom,
+    merge_constraints,
+    validate_constraints,
+)
 from torch_sim.models.interface import ModelInterface
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.optimizers import FireFlavor
@@ -686,3 +692,151 @@ def test_temperature_with_constrained_dof(
         temps.append(temp / MetalUnits.temperature)
     avg = torch.mean(torch.stack(temps)[500:])
     assert abs(avg - target) / target < 0.30
+
+
+def test_system_constraint_update_and_select() -> None:
+    """Test update_constraint and select_sub_constraint for SystemConstraint."""
+    # Create a FixCom constraint for systems 0, 1, 2
+    constraint = FixCom([0, 1, 2])
+
+    # Test update_constraint with system_mask
+    # Keep systems 0 and 2 (drop system 1)
+    atom_mask = torch.ones(10, dtype=torch.bool)
+    system_mask = torch.tensor([True, False, True], dtype=torch.bool)
+    updated_constraint = constraint.update_constraint(atom_mask, system_mask)
+
+    # System indices should be renumbered: [0, 2] -> [0, 1]
+    assert torch.all(updated_constraint.system_idx == torch.tensor([0, 1]))
+
+    # Test select_sub_constraint
+    # Select system 1 from the original constraint
+    constraint = FixCom([0, 1, 2])
+    atom_idx = torch.arange(5, 10)  # Atoms for a specific system
+    sys_idx = 1
+    sub_constraint = constraint.select_sub_constraint(atom_idx, sys_idx)
+
+    # Should return a constraint with system_idx = [0] (renumbered from 1)
+    assert sub_constraint is not None
+    assert torch.all(sub_constraint.system_idx == torch.tensor([0]))
+
+    # Test when system is not in constraint
+    constraint = FixCom([0, 2])
+    sub_constraint = constraint.select_sub_constraint(atom_idx, sys_idx=1)
+    assert sub_constraint is None
+
+
+def test_atom_indexed_constraint_update_and_select() -> None:
+    """Test update_constraint and select_sub_constraint for AtomIndexedConstraint."""
+    # Create a FixAtoms constraint for atoms 0, 1, 5, 8
+    constraint = FixAtoms(indices=[0, 1, 5, 8])
+
+    # Test update_constraint with atom_mask
+    # Keep atoms 0, 1, 2, 3, 5, 6, 7, 8 (drop atoms 4)
+    atom_mask = torch.tensor(
+        [True, True, True, True, False, True, True, True, True], dtype=torch.bool
+    )
+    system_mask = torch.ones(2, dtype=torch.bool)
+    updated_constraint = constraint.update_constraint(atom_mask, system_mask)
+
+    # Atom indices should be renumbered:
+    # Original: [0, 1, 5, 8]
+    # After dropping atom 4: [0, 1, 4, 7] (indices shift down by 1 after index 4)
+    assert torch.all(updated_constraint.indices == torch.tensor([0, 1, 4, 7]))
+
+    # Test select_sub_constraint
+    # Select atoms that belong to a specific system
+    constraint = FixAtoms(indices=[0, 1, 5, 8])
+    atom_idx = torch.tensor([0, 1, 2, 3, 4])  # Atoms for first system
+    sys_idx = 0
+    sub_constraint = constraint.select_sub_constraint(atom_idx, sys_idx)
+
+    # Should return a constraint with only atoms 0, 1 (within atom_idx range)
+    # Renumbered to start from 0
+    assert sub_constraint is not None
+    assert torch.all(sub_constraint.indices == torch.tensor([0, 1]))
+
+    # Test with different atom range
+    constraint = FixAtoms(indices=[0, 1, 5, 8])
+    atom_idx = torch.tensor([5, 6, 7, 8, 9])  # Atoms for second system
+    sys_idx = 1
+    sub_constraint = constraint.select_sub_constraint(atom_idx, sys_idx)
+
+    # Should return a constraint with atoms 5, 8 renumbered to [0, 3]
+    assert sub_constraint is not None
+    assert torch.all(sub_constraint.indices == torch.tensor([0, 3]))
+
+    # Test when no atoms in range
+    constraint = FixAtoms(indices=[0, 1])
+    atom_idx = torch.tensor([5, 6, 7, 8])
+    sub_constraint = constraint.select_sub_constraint(atom_idx, sys_idx=1)
+    assert sub_constraint is None
+
+
+def test_merge_constraints(ar_double_sim_state: ts.SimState) -> None:
+    """Test merge_constraints combines constraints from multiple systems."""
+    # Split the double system state
+    s1, s2 = ar_double_sim_state.split()
+    n_atoms_s1 = s1.n_atoms
+    n_atoms_s2 = s2.n_atoms
+
+    # Create constraints for each system
+    # System 1: Fix atoms 0, 1 and fix COM for system 0
+    s1_constraints = [
+        FixAtoms(indices=[0, 1]),
+        FixCom([0]),
+    ]
+
+    # System 2: Fix atoms 2, 3 and fix COM for system 0
+    s2_constraints = [
+        FixAtoms(indices=[2, 3]),
+        FixCom([0]),
+    ]
+
+    # Merge constraints
+    constraint_lists = [s1_constraints, s2_constraints]
+    num_atoms_per_state = torch.tensor([n_atoms_s1, n_atoms_s2])
+    merged_constraints = merge_constraints(constraint_lists, num_atoms_per_state)
+
+    # Should have 2 constraints: one FixAtoms and one FixCom
+    assert len(merged_constraints) == 2
+
+    # Find FixAtoms and FixCom in merged list
+    fix_atoms = None
+    fix_com = None
+    for constraint in merged_constraints:
+        if isinstance(constraint, FixAtoms):
+            fix_atoms = constraint
+        elif isinstance(constraint, FixCom):
+            fix_com = constraint
+
+    assert fix_atoms is not None
+    assert fix_com is not None
+
+    # FixAtoms should have indices [0, 1] from s1 and [2+n_atoms_s1, 3+n_atoms_s1] from s2
+    expected_atom_indices = torch.tensor([0, 1, 2 + n_atoms_s1, 3 + n_atoms_s1])
+    assert torch.all(fix_atoms.indices == expected_atom_indices)
+
+    # FixCom should have system_idx [0, 1] (one for each original system)
+    expected_system_indices = torch.tensor([0, 1])
+    assert torch.all(fix_com.system_idx == expected_system_indices)
+
+    # Test with three systems
+    s3 = s1.clone()
+    s3_constraints = [FixAtoms(indices=[0])]
+    constraint_lists = [s1_constraints, s2_constraints, s3_constraints]
+    num_atoms_per_state = torch.tensor([n_atoms_s1, n_atoms_s2, s3.n_atoms])
+    merged_constraints = merge_constraints(constraint_lists, num_atoms_per_state)
+
+    # Find FixAtoms
+    fix_atoms = None
+    for constraint in merged_constraints:
+        if isinstance(constraint, FixAtoms):
+            fix_atoms = constraint
+            break
+
+    assert fix_atoms is not None
+    # Should include atoms from all three systems with proper offsets
+    expected_atom_indices = torch.tensor(
+        [0, 1, 2 + n_atoms_s1, 3 + n_atoms_s1, 0 + n_atoms_s1 + n_atoms_s2]
+    )
+    assert torch.all(fix_atoms.indices == expected_atom_indices)
