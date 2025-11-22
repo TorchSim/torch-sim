@@ -47,12 +47,44 @@ def ts_mace_model() -> MaceModel:
     )
 
 
+@pytest.fixture
+def ase_mace_calculator_float64() -> MACECalculator:
+    return mace_mp(
+        model=MaceUrls.mace_mp_small,
+        device="cpu",
+        default_dtype="float64",
+        dispersion=False,
+    )
+
+
+@pytest.fixture
+def ts_mace_model_float64() -> MaceModel:
+    return MaceModel(
+        model=raw_mace_mp,
+        device=DEVICE,
+        dtype=torch.float64,
+        compute_forces=True,
+        compute_stress=True,
+    )
+
+
 test_mace_consistency = make_model_calculator_consistency_test(
     test_name="mace",
     model_fixture_name="ts_mace_model",
     calculator_fixture_name="ase_mace_calculator",
-    sim_state_names=consistency_test_simstate_fixtures,
+    sim_state_names=tuple(
+        s for s in consistency_test_simstate_fixtures if s != "ti_sim_state"
+    ),
     dtype=DTYPE,
+)
+
+
+test_mace_consistency_ti = make_model_calculator_consistency_test(
+    test_name="mace_ti",
+    model_fixture_name="ts_mace_model_float64",
+    calculator_fixture_name="ase_mace_calculator_float64",
+    sim_state_names=("ti_sim_state",),
+    dtype=torch.float64,
 )
 
 

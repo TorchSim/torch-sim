@@ -28,7 +28,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.neighbors import torchsim_nl
 from torch_sim.typing import StateDict
 
 
@@ -107,7 +107,7 @@ class MaceModel(ModelInterface):
         *,
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float64,
-        neighbor_list_fn: Callable = vesin_nl_ts,
+        neighbor_list_fn: Callable = torchsim_nl,
         compute_forces: bool = True,
         compute_stress: bool = True,
         enable_cueq: bool = False,
