@@ -53,6 +53,7 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
     cell = state.cell.detach().cpu().numpy()  # Shape: (n_systems, 3, 3)
     atomic_numbers = state.atomic_numbers.detach().cpu().numpy()
     system_indices = state.system_idx.detach().cpu().numpy()
+    pbc = state.pbc.detach().cpu().numpy()
 
     atoms_list = []
     for sys_idx in np.unique(system_indices):
@@ -65,7 +66,7 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
         symbols = [chemical_symbols[z] for z in system_numbers]
 
         atoms = Atoms(
-            symbols=symbols, positions=system_positions, cell=system_cell, pbc=state.pbc
+            symbols=symbols, positions=system_positions, cell=system_cell, pbc=pbc
         )
         atoms_list.append(atoms)
 
