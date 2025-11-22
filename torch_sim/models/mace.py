@@ -155,14 +155,12 @@ class MaceModel(ModelInterface):
 
         # Load model if provided as path
         if isinstance(model, str | Path):
-            # Implement model loading from file
-            raise NotImplementedError("Loading model from file not implemented yet")
-        if isinstance(model, torch.nn.Module):
-            self.model = model
+            self.model = torch.load(model, map_location=self._device)
+        elif isinstance(model, torch.nn.Module):
+            self.model = model.to(self._device)
         else:
             raise TypeError("Model must be a path or torch.nn.Module")
 
-        self.model = model.to(self._device)
         self.model = self.model.eval()
 
         if self.dtype is not None:
@@ -239,7 +237,9 @@ class MaceModel(ModelInterface):
             dtype=self.dtype,
         )
 
-    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:  # noqa: C901
+    def forward(  # noqa: C901
+        self, state: ts.SimState | StateDict
+    ) -> dict[str, torch.Tensor]:
         """Compute energies, forces, and stresses for the given atomic systems.
 
         Processes the provided state information and computes energies, forces, and
