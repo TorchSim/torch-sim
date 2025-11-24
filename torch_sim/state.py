@@ -204,6 +204,7 @@ class SimState:
             for attr in self._atom_attributes
             | self._system_attributes
             | self._global_attributes
+            | {"_constraints"}
         }
 
     @property
@@ -309,7 +310,6 @@ class SimState:
                 attrs[attr_name] = attr_value.clone()
             else:
                 attrs[attr_name] = copy.deepcopy(attr_value)
-        attrs["_constraints"] = copy.deepcopy(self.constraints)
 
         return type(self)(**attrs)
 
