@@ -378,6 +378,8 @@ class FixCom(SystemConstraint):
     The constraint is applied to all atoms in the system.
     """
 
+    coms: torch.Tensor | None = None
+
     def get_removed_dof(self, state: SimState) -> torch.Tensor:
         """Get number of removed degrees of freedom.
 
@@ -389,11 +391,9 @@ class FixCom(SystemConstraint):
         Returns:
             Always returns 3 (center of mass translation degrees of freedom)
         """
-        if self.system_idx != slice(None):
-            affected_systems = torch.zeros(state.n_systems, dtype=torch.long)
-            affected_systems[self.system_idx] = 1
-            return 3 * affected_systems
-        return 3 * torch.ones(state.n_systems, dtype=torch.long)
+        affected_systems = torch.zeros(state.n_systems, dtype=torch.long)
+        affected_systems[self.system_idx] = 1
+        return 3 * affected_systems
 
     def adjust_positions(self, state: SimState, new_positions: torch.Tensor) -> None:
         """Adjust positions to maintain center of mass position.
@@ -403,35 +403,27 @@ class FixCom(SystemConstraint):
             new_positions: Proposed positions to be adjusted in-place
         """
         dtype = state.positions.dtype
-        n_systems = (
-            state.n_systems if self.system_idx == slice(None) else len(self.system_idx)
+        system_mass = torch.zeros(state.n_systems, dtype=dtype).scatter_add_(
+            0, state.system_idx, state.masses
         )
-        index_to_consider = (
-            torch.isin(state.system_idx, self.system_idx)
-            if self.system_idx != slice(None)
-            else torch.ones(state.n_atoms, dtype=torch.bool)
-        )
-        system_mass = torch.zeros(n_systems, dtype=dtype).scatter_add_(
-            0, state.system_idx[index_to_consider], state.masses[index_to_consider]
-        )
-        if not hasattr(self, "coms"):
-            self.coms = torch.zeros((n_systems, 3), dtype=dtype).scatter_add_(
+        if self.coms is None:
+            self.coms = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
                 0,
-                state.system_idx[index_to_consider].unsqueeze(-1).expand(-1, 3),
-                state.masses[index_to_consider].unsqueeze(-1)
-                * state.positions[index_to_consider],
+                state.system_idx.unsqueeze(-1).expand(-1, 3),
+                state.masses.unsqueeze(-1) * state.positions,
             )
             self.coms /= system_mass.unsqueeze(-1)
 
-        new_com = torch.zeros((n_systems, 3), dtype=dtype).scatter_add_(
+        new_com = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
             0,
-            state.system_idx[index_to_consider].unsqueeze(-1).expand(-1, 3),
-            state.masses[index_to_consider].unsqueeze(-1)
-            * new_positions[index_to_consider],
+            state.system_idx.unsqueeze(-1).expand(-1, 3),
+            state.masses.unsqueeze(-1) * new_positions,
         )
         new_com /= system_mass.unsqueeze(-1)
         displacement = torch.zeros(state.n_systems, 3, dtype=dtype)
-        displacement[self.system_idx] = -new_com + self.coms
+        displacement[self.system_idx] = (
+            -new_com[self.system_idx] + self.coms[self.system_idx]
+        )
         new_positions += displacement[state.system_idx]
 
     def adjust_momenta(self, state: SimState, momenta: torch.Tensor) -> None:
@@ -443,25 +435,17 @@ class FixCom(SystemConstraint):
         """
         # Compute center of mass momenta
         dtype = momenta.dtype
-        n_systems = (
-            state.n_systems if self.system_idx == slice(None) else len(self.system_idx)
-        )
-        index_to_consider = (
-            torch.isin(state.system_idx, self.system_idx)
-            if self.system_idx != slice(None)
-            else torch.ones(state.n_atoms, dtype=torch.bool)
-        )
-        com_momenta = torch.zeros((n_systems, 3), dtype=dtype).scatter_add_(
+        com_momenta = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
             0,
-            state.system_idx[index_to_consider].unsqueeze(-1).expand(-1, 3),
-            momenta[index_to_consider],
+            state.system_idx.unsqueeze(-1).expand(-1, 3),
+            momenta,
         )
-        system_mass = torch.zeros(n_systems, dtype=dtype).scatter_add_(
-            0, state.system_idx[index_to_consider], state.masses[index_to_consider]
+        system_mass = torch.zeros(state.n_systems, dtype=dtype).scatter_add_(
+            0, state.system_idx, state.masses
         )
         velocity_com = com_momenta / system_mass.unsqueeze(-1)
         velocity_change = torch.zeros(state.n_systems, 3, dtype=dtype)
-        velocity_change[self.system_idx] = velocity_com
+        velocity_change[self.system_idx] = velocity_com[self.system_idx]
         momenta -= velocity_change[state.system_idx] * state.masses.unsqueeze(-1)
 
     def adjust_forces(self, state: SimState, forces: torch.Tensor) -> None:
@@ -475,27 +459,19 @@ class FixCom(SystemConstraint):
             forces: Forces to be adjusted in-place
         """
         dtype = state.positions.dtype
-        n_systems = (
-            state.n_systems if self.system_idx == slice(None) else len(self.system_idx)
-        )
-        index_to_consider = (
-            torch.isin(state.system_idx, self.system_idx)
-            if self.system_idx != slice(None)
-            else torch.ones(state.n_atoms, dtype=torch.bool)
-        )
-        system_square_mass = torch.zeros(n_systems, dtype=dtype).scatter_add_(
+        system_square_mass = torch.zeros(state.n_systems, dtype=dtype).scatter_add_(
             0,
-            state.system_idx[index_to_consider],
-            torch.square(state.masses[index_to_consider]),
+            state.system_idx,
+            torch.square(state.masses),
         )
-        lmd = torch.zeros((n_systems, 3), dtype=dtype).scatter_add_(
+        lmd = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
             0,
-            state.system_idx[index_to_consider].unsqueeze(-1).expand(-1, 3),
-            forces[index_to_consider] * state.masses[index_to_consider].unsqueeze(-1),
+            state.system_idx.unsqueeze(-1).expand(-1, 3),
+            forces * state.masses.unsqueeze(-1),
         )
         lmd /= system_square_mass.unsqueeze(-1)
         forces_change = torch.zeros(state.n_systems, 3, dtype=dtype)
-        forces_change[self.system_idx] = lmd
+        forces_change[self.system_idx] = lmd[self.system_idx]
         forces -= forces_change[state.system_idx] * state.masses.unsqueeze(-1)
 
     def __repr__(self) -> str:
