@@ -659,7 +659,7 @@ def _state_to_device[T: SimState](
         attrs["masses"] = attrs["masses"].to(dtype=dtype)
         attrs["cell"] = attrs["cell"].to(dtype=dtype)
         attrs["atomic_numbers"] = attrs["atomic_numbers"].to(dtype=torch.int)
-    return state
+    return type(state)(**attrs)
 
 
 def get_attrs_for_scope(
