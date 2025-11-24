@@ -95,5 +95,5 @@ for step in range(n_steps):
         hybrid_state = ts.swap_mc_step(state=hybrid_state, model=model, kT=kT, rng=rng)
     else:
         hybrid_state = ts.nvt_langevin_step(
-            model=model, state=hybrid_state, dt=dt, kT=torch.tensor(kT)
+            state=hybrid_state, model=model, dt=dt, kT=torch.tensor(kT)
         )

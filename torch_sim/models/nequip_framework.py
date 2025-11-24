@@ -345,11 +345,7 @@ class NequIPFrameworkModel(ModelInterface):
             "cell": sim_state.row_vector_cell,
             "batch": sim_state.system_idx,
             "num_atoms": sim_state.system_idx.bincount(),
-            "pbc": torch.tensor(
-                [sim_state.pbc, sim_state.pbc, sim_state.pbc],
-                dtype=torch.bool,
-                device=self.device,
-            ),
+            "pbc": sim_state.pbc,
             "atomic_numbers": sim_state.atomic_numbers,
             "atom_types": atomic_types,
             "edge_index": edge_index,

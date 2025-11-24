@@ -11,7 +11,7 @@ from torch_sim import transforms
 @torch.jit.script
 def primitive_neighbor_list(  # noqa: C901, PLR0915
     quantities: str,
-    pbc: tuple[bool, bool, bool],
+    pbc: torch.Tensor,
     cell: torch.Tensor,
     positions: torch.Tensor,
     cutoff: torch.Tensor,
@@ -42,8 +42,8 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
                   between atom i and j). With the shift vector S, the
                   distances D between atoms can be computed from:
                   D = positions[j]-positions[i]+S.dot(cell)
-        pbc: 3-tuple indicating giving periodic boundaries in the three Cartesian
-            directions.
+        pbc: Boolean tensor of shape (3,) indicating periodic boundary conditions in
+            each axis.
         cell: Unit cell vectors according to the row vector convention, i.e.
             `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
         positions: Atomic positions. Anything that can be converted to an ndarray of
@@ -411,7 +411,7 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
 def standard_nl(
     positions: torch.Tensor,
     cell: torch.Tensor,
-    pbc: bool,  # noqa: FBT001
+    pbc: torch.Tensor,
     cutoff: torch.Tensor,
     sort_id: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -437,7 +437,8 @@ def standard_nl(
         positions: Atomic positions tensor of shape (num_atoms, 3)
         cell: Unit cell vectors according to the row vector convention, i.e.
             `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
-        pbc: Whether to use periodic boundary conditions (applied to all directions)
+        pbc: Boolean tensor of shape (3,) indicating periodic boundary conditions in
+            each axis.
         cutoff: Maximum distance for considering atoms as neighbors
         sort_id: If True, sort neighbors by first atom index for better memory
             access patterns
@@ -462,7 +463,7 @@ def standard_nl(
     Notes:
         - The function uses primitive_neighbor_list internally but provides a simpler
           interface
-        - For non-periodic systems (pbc=False), shifts will be zero vectors
+        - For non-periodic systems, shifts will be zero vectors
         - The neighbor list includes both (i,j) and (j,i) pairs for complete force
           computation
         - Memory usage scales with system size and number of neighbors per atom
@@ -476,7 +477,7 @@ def standard_nl(
         quantities="ijS",
         positions=positions,
         cell=cell,
-        pbc=(pbc, pbc, pbc),
+        pbc=pbc,
         cutoff=cutoff,
         device=device,
         dtype=dtype,
@@ -501,7 +502,7 @@ def standard_nl(
 def vesin_nl_ts(
     positions: torch.Tensor,
     cell: torch.Tensor,
-    pbc: bool,  # noqa: FBT001
+    pbc: torch.Tensor,
     cutoff: torch.Tensor,
     sort_id: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -515,7 +516,8 @@ def vesin_nl_ts(
         positions: Atomic positions tensor of shape (num_atoms, 3)
         cell: Unit cell vectors according to the row vector convention, i.e.
             `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
-        pbc: Whether to use periodic boundary conditions (applied to all directions)
+        pbc: Boolean tensor of shape (3,) indicating periodic boundary conditions in
+            each axis.
         cutoff: Maximum distance (scalar tensor) for considering atoms as neighbors
         sort_id: If True, sort neighbors by first atom index for better memory
             access patterns
@@ -533,7 +535,7 @@ def vesin_nl_ts(
         - Uses VesinNeighborListTorch for TorchScript compatibility
         - Requires CPU tensors in float64 precision internally
         - Returns tensors on the same device as input with original precision
-        - For non-periodic systems (pbc=False), shifts will be zero vectors
+        - For non-periodic systems, shifts will be zero vectors
         - The neighbor list includes both (i,j) and (j,i) pairs
 
     References:
@@ -547,12 +549,13 @@ def vesin_nl_ts(
     # Convert tensors to CPU and float64 properly
     positions_cpu = positions.cpu().to(dtype=torch.float64)
     cell_cpu = cell.cpu().to(dtype=torch.float64)
+    periodic_cpu = pbc.to(dtype=torch.bool).cpu()
 
     # Only works on CPU and requires float64
     i, j, S = neighbor_list_fn.compute(
         points=positions_cpu,
         box=cell_cpu,
-        periodic=pbc,
+        periodic=periodic_cpu,
         quantities="ijS",
     )
 
@@ -571,7 +574,7 @@ def vesin_nl_ts(
 def vesin_nl(
     positions: torch.Tensor,
     cell: torch.Tensor,
-    pbc: bool,  # noqa: FBT001
+    pbc: torch.Tensor,
     cutoff: float | torch.Tensor,
     sort_id: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -585,7 +588,8 @@ def vesin_nl(
         positions: Atomic positions tensor of shape (num_atoms, 3)
         cell: Unit cell vectors according to the row vector convention, i.e.
             `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
-        pbc: Whether to use periodic boundary conditions (applied to all directions)
+        pbc: Boolean tensor of shape (3,) indicating periodic boundary conditions in
+            each axis.
         cutoff: Maximum distance (scalar tensor) for considering atoms as neighbors
         sort_id: If True, sort neighbors by first atom index for better memory
             access patterns
@@ -618,12 +622,13 @@ def vesin_nl(
     # Convert tensors to CPU and float64 without gradients
     positions_cpu = positions.detach().cpu().to(dtype=torch.float64)
     cell_cpu = cell.detach().cpu().to(dtype=torch.float64)
+    periodic_cpu = pbc.detach().to(dtype=torch.bool).cpu()
 
     # Only works on CPU and returns numpy arrays
     i, j, S = neighbor_list_fn.compute(
         points=positions_cpu,
         box=cell_cpu,
-        periodic=pbc,
+        periodic=periodic_cpu,
         quantities="ijS",
     )
     i, j = (
@@ -778,9 +783,9 @@ def torch_nl_linked_cell(
         positions (torch.Tensor [n_atom, 3]):
             A tensor containing the positions of atoms wrapped inside
             their respective unit cells.
-        cell (torch.Tensor [3*n_structure, 3]): Unit cell vectors according to
+        cell (torch.Tensor [3*n_systems, 3]): Unit cell vectors according to
             the row vector convention, i.e. `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
-        pbc (torch.Tensor [n_structure, 3] bool):
+        pbc (torch.Tensor [n_systems, 3] bool):
             A tensor indicating the periodic boundary conditions to apply.
             Partial PBC are not supported yet.
         system_idx (torch.Tensor [n_atom,] torch.long):

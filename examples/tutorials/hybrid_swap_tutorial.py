@@ -165,7 +165,7 @@ for step in range(n_steps):
         )
     else:  # Perform MD step
         hybrid_state = ts.nvt_langevin_step(
-            model=mace_model, state=hybrid_state, dt=0.002, kT=kT
+            state=hybrid_state, model=mace_model, dt=0.002, kT=kT
         )
 
     if step % 20 == 0:
