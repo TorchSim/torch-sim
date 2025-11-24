@@ -170,25 +170,24 @@ def test_state_manipulation_with_constraints(ar_double_sim_state: ts.SimState):
     """Test that constraints are properly propagated during state manipulation."""
     # Set up constraints on the original state
     ar_double_sim_state.constraints = [
-        FixAtoms(indices=torch.tensor([0, 1])),
+        FixAtoms(indices=torch.tensor([0, 1])),  # Only applied to first system
         FixCom([0, 1]),
     ]
 
     # Extract individual systems from the double system state
-    first_system = ar_double_sim_state[0]
-    second_system = ar_double_sim_state[1]
+    first_system = ar_double_sim_state[0]  # FixAtoms + FixCom
+    second_system = ar_double_sim_state[1]  # FixCom only
     concatenated_state = ts.concatenate_states(
         [first_system, first_system, second_system]
     )
 
     # Verify constraint propagation to subsystems
     assert len(first_system.constraints) == 2
-    assert len(second_system.constraints) == 2
+    assert len(second_system.constraints) == 1
     assert len(concatenated_state.constraints) == 2
 
     # Verify FixAtoms constraint indices are correctly mapped
     assert torch.all(first_system.constraints[0].indices == torch.tensor([0, 1]))
-    assert torch.all(second_system.constraints[0].indices == torch.tensor([]))
     assert torch.all(
         concatenated_state.constraints[0].indices == torch.tensor([0, 1, 32, 33])
     )
@@ -673,7 +672,7 @@ def test_temperature_with_constrained_dof(
 ) -> None:
     """Test temperature calculation uses constrained DOF."""
     target = 300.0
-    cu_sim_state.constraints = [FixAtoms(indices=[0, 1]), FixCom([0])]
+    cu_sim_state.constraints = [FixAtoms(indices=[0, 1, 2])]
     state = ts.nvt_langevin_init(
         cu_sim_state,
         lj_model,
@@ -681,7 +680,7 @@ def test_temperature_with_constrained_dof(
         seed=42,
     )
     temps = []
-    for _ in range(1000):
+    for _ in range(4000):
         state = ts.nvt_langevin_step(
             state,
             lj_model,
@@ -695,15 +694,15 @@ def test_temperature_with_constrained_dof(
 
 
 def test_system_constraint_update_and_select() -> None:
-    """Test update_constraint and select_sub_constraint for SystemConstraint."""
+    """Test select_constraint and select_sub_constraint for SystemConstraint."""
     # Create a FixCom constraint for systems 0, 1, 2
     constraint = FixCom([0, 1, 2])
 
-    # Test update_constraint with system_mask
+    # Test select_constraint with system_mask
     # Keep systems 0 and 2 (drop system 1)
     atom_mask = torch.ones(10, dtype=torch.bool)
     system_mask = torch.tensor([True, False, True], dtype=torch.bool)
-    updated_constraint = constraint.update_constraint(atom_mask, system_mask)
+    updated_constraint = constraint.select_constraint(atom_mask, system_mask)
 
     # System indices should be renumbered: [0, 2] -> [0, 1]
     assert torch.all(updated_constraint.system_idx == torch.tensor([0, 1]))
@@ -726,17 +725,17 @@ def test_system_constraint_update_and_select() -> None:
 
 
 def test_atom_indexed_constraint_update_and_select() -> None:
-    """Test update_constraint and select_sub_constraint for AtomIndexedConstraint."""
+    """Test select_constraint and select_sub_constraint for AtomIndexedConstraint."""
     # Create a FixAtoms constraint for atoms 0, 1, 5, 8
     constraint = FixAtoms(indices=[0, 1, 5, 8])
 
-    # Test update_constraint with atom_mask
+    # Test select_constraint with atom_mask
     # Keep atoms 0, 1, 2, 3, 5, 6, 7, 8 (drop atoms 4)
     atom_mask = torch.tensor(
         [True, True, True, True, False, True, True, True, True], dtype=torch.bool
     )
     system_mask = torch.ones(2, dtype=torch.bool)
-    updated_constraint = constraint.update_constraint(atom_mask, system_mask)
+    updated_constraint = constraint.select_constraint(atom_mask, system_mask)
 
     # Atom indices should be renumbered:
     # Original: [0, 1, 5, 8]

@@ -713,8 +713,14 @@ def _filter_attrs_by_mask(
 
     # take into account constraints that are AtomIndexedConstraint
     filtered_attrs["_constraints"] = [
-        constraint.update_constraint(atom_mask, system_mask)
+        constraint.select_constraint(atom_mask, system_mask)
         for constraint in copy.deepcopy(state.constraints)
+    ]
+    # Remove any None constraints resulting from selection
+    filtered_attrs["_constraints"] = [
+        constraint
+        for constraint in filtered_attrs["_constraints"]
+        if constraint is not None
     ]
 
     # Filter per-atom attributes

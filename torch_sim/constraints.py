@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import warnings
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 import torch
 
@@ -78,9 +78,9 @@ class Constraint(ABC):
         """
 
     @abstractmethod
-    def update_constraint(
+    def select_constraint(
         self, atom_mask: torch.Tensor, system_mask: torch.Tensor
-    ) -> Constraint:
+    ) -> None | Self:
         """Update the constraint to account for atom and system masks.
 
         Args:
@@ -89,7 +89,7 @@ class Constraint(ABC):
         """
 
     @abstractmethod
-    def select_sub_constraint(self, atom_idx: torch.Tensor, sys_idx: int) -> Constraint:
+    def select_sub_constraint(self, atom_idx: torch.Tensor, sys_idx: int) -> None | Self:
         """Select a constraint for a given atom and system index.
 
         Args:
@@ -166,25 +166,28 @@ class AtomIndexedConstraint(Constraint):
         """
         return self.indices.clone()
 
-    def update_constraint(
+    def select_constraint(
         self,
         atom_mask: torch.Tensor,
         system_mask: torch.Tensor,  # noqa: ARG002
-    ) -> Constraint:
+    ) -> None | Self:
         """Update the constraint to account for atom and system masks.
 
         Args:
             atom_mask: Boolean mask for atoms to keep
             system_mask: Boolean mask for systems to keep
         """
-        self.indices = _mask_constraint_indices(self.indices, atom_mask)
-        return self
+        indices = self.indices.clone()
+        indices = _mask_constraint_indices(indices, atom_mask)
+        if len(indices) == 0:
+            return None
+        return type(self)(indices)
 
     def select_sub_constraint(
         self,
         atom_idx: torch.Tensor,
         sys_idx: int,  # noqa: ARG002
-    ) -> Constraint:
+    ) -> None | Self:
         """Select a constraint for a given atom and system index.
 
         Args:
@@ -227,39 +230,37 @@ class SystemConstraint(Constraint):
                 "system_idx has wrong number of dimensions. "
                 f"Got {system_idx.ndim}, expected ndim <= 1"
             )
-        self.system_idx = system_idx
+        self.system_idx: torch.Tensor = system_idx
 
-    def update_constraint(
+    def select_constraint(
         self,
         atom_mask: torch.Tensor,  # noqa: ARG002
         system_mask: torch.Tensor,
-    ) -> Constraint:
+    ) -> None | Self:
         """Update the constraint to account for atom and system masks.
 
         Args:
             atom_mask: Boolean mask for atoms to keep
             system_mask: Boolean mask for systems to keep
         """
-        self.system_idx = _mask_constraint_indices(self.system_idx, system_mask)
-        return self
+        system_idx = self.system_idx.clone()
+        system_idx = _mask_constraint_indices(system_idx, system_mask)
+        if len(system_idx) == 0:
+            return None
+        return type(self)(system_idx)
 
     def select_sub_constraint(
         self,
         atom_idx: torch.Tensor,  # noqa: ARG002
         sys_idx: int,
-    ) -> Constraint:
+    ) -> None | Self:
         """Select a constraint for a given atom and system index.
 
         Args:
             atom_idx: Atom indices for a single system
             sys_idx: System index for a single system
         """
-        mask = torch.isin(self.system_idx, sys_idx)
-        masked_system_idx = self.system_idx[mask]
-        new_system_idx = masked_system_idx - sys_idx
-        if len(new_system_idx) == 0:
-            return None
-        return type(self)(new_system_idx)
+        return type(self)(torch.tensor([0])) if sys_idx in self.system_idx else None
 
 
 def merge_constraints(
