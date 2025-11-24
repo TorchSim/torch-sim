@@ -645,11 +645,10 @@ def test_high_level_api_with_constraints(
         cu_sim_state,
         lj_model,
         integrator=ts.Integrator.nvt_langevin,
-        n_steps=1,
+        n_steps=50,
         temperature=300.0,
         timestep=0.001,
     )
-
     final_com = get_centers_of_mass(
         final.positions, final.masses, final.system_idx, final.n_systems
     )
