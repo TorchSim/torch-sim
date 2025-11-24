@@ -212,14 +212,12 @@ def _vv_fire_step[T: "FireState | CellFireState"](  # noqa: PLR0915
     state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
 
     # Position update
-    # state.positions = state.positions + atom_wise_dt * state.velocities
     state.set_positions(state.positions + atom_wise_dt * state.velocities)
 
     # Cell position updates are handled in the velocity update step above
 
     # Get new forces and energy
     model_output = model(state)
-    # state.forces = model_output["forces"]
     state.set_forces(model_output["forces"])
     state.energy = model_output["energy"]
     if "stress" in model_output:
@@ -468,7 +466,6 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
 
     # Get new forces, energy, and stress
     model_output = model(state)
-    # state.forces = model_output["forces"]
     state.set_forces(model_output["forces"])
     state.energy = model_output["energy"]
     if "stress" in model_output:

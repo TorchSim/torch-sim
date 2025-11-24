@@ -108,7 +108,6 @@ def gradient_descent_step(
     atom_lr = pos_lr[state.system_idx].unsqueeze(-1)
 
     # Update atomic positions
-    # state.positions = state.positions + atom_lr * state.forces
     state.set_positions(state.positions + atom_lr * state.forces)
 
     # Update cell if using cell optimization
