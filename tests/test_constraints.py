@@ -15,7 +15,7 @@ from torch_sim.constraints import (
 from torch_sim.models.interface import ModelInterface
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.optimizers import FireFlavor
-from torch_sim.transforms import get_centers_of_mass, unwrap_positions
+from torch_sim.transforms import get_centers_of_mass
 from torch_sim.units import MetalUnits
 
 
@@ -116,9 +116,6 @@ def test_fix_com_nvt_langevin(cu_sim_state: ts.SimState, lj_model: LennardJonesM
 
     traj_positions = torch.stack(positions)
 
-    # unwrapped_positions = unwrap_positions(
-    #     traj_positions, ar_double_sim_state.cell, state.system_idx
-    # )
     coms = torch.zeros((n_steps, state.n_systems, 3), dtype=DTYPE).scatter_add_(
         1,
         state.system_idx[None, :, None].expand(n_steps, -1, 3),
@@ -157,10 +154,7 @@ def test_fix_atoms_nvt_langevin(cu_sim_state: ts.SimState, lj_model: LennardJone
     temperatures = torch.stack(temperatures)
     traj_positions = torch.stack(positions)
 
-    unwrapped_positions = unwrap_positions(
-        traj_positions, cu_sim_state.cell, state.system_idx
-    )
-    diff_positions = unwrapped_positions - unwrapped_positions[0]
+    diff_positions = traj_positions - traj_positions[0]
     assert torch.max(diff_positions[:, :2]) < 1e-8
     assert torch.max(diff_positions[:, 2:]) > 1e-3
     assert (torch.mean(temperatures[len(temperatures) // 2 :]) - 300) / 300 < 0.30
@@ -414,12 +408,15 @@ def test_fix_atoms_validation() -> None:
         FixAtoms(indices=torch.tensor([[0, 1]]))
 
 
-def test_constraint_validation_warnings() -> None:
+def test_constraint_validation_warnings(ar_double_sim_state: ts.SimState) -> None:
     """Test validation warnings for constraint conflicts."""
     with pytest.warns(UserWarning, match="Multiple constraints.*same atoms"):
-        validate_constraints([FixAtoms(indices=[0, 1, 2]), FixAtoms(indices=[2, 3, 4])])
+        validate_constraints(
+            [FixAtoms(indices=[0, 1, 2]), FixAtoms(indices=[2, 3, 4])],
+            ar_double_sim_state,
+        )
     with pytest.warns(UserWarning, match="FixCom together with other constraints"):
-        validate_constraints([FixCom([0]), FixAtoms(indices=[0, 1])])
+        validate_constraints([FixCom([0]), FixAtoms(indices=[0, 1])], ar_double_sim_state)
 
 
 def test_constraint_validation_errors(
