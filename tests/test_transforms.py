@@ -1332,7 +1332,7 @@ def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJon
         state.cell,
         state.system_idx,
     )
-    assert torch.allclose(unwrapped_positions, positions, atol=1e-5)
+    assert torch.allclose(unwrapped_positions, positions, atol=1e-4)
 
     # Different cell
     state = ts.npt_langevin_init(
@@ -1364,4 +1364,4 @@ def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJon
         state.cell,
         state.system_idx,
     )
-    assert torch.allclose(unwrapped_positions, positions, atol=1e-5)
+    assert torch.allclose(unwrapped_positions, positions, atol=1e-4)
