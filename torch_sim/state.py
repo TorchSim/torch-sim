@@ -191,11 +191,7 @@ class SimState:
     @property
     def n_atoms_per_system(self) -> torch.Tensor:
         """Number of atoms per system."""
-        return (
-            self.system_idx.bincount()
-            if self.system_idx is not None
-            else torch.tensor([self.n_atoms], device=self.device)
-        )
+        return self.system_idx.bincount()
 
     @property
     def n_systems(self) -> int:
