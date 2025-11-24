@@ -23,12 +23,7 @@ if TYPE_CHECKING:
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure
 
-from torch_sim.constraints import (
-    AtomIndexedConstraint,
-    Constraint,
-    SystemConstraint,
-    validate_constraints,
-)
+from torch_sim.constraints import Constraint, merge_constraints, validate_constraints
 
 
 @dataclass
@@ -184,7 +179,7 @@ class SimState:
 
     @property
     def n_atoms_per_system(self) -> torch.Tensor:
-        """Number of atoms per system."""
+        """Number of atoms per system. Length is n_systems."""
         return (
             self.system_idx.bincount()
             if self.system_idx is not None
@@ -273,12 +268,6 @@ class SimState:
         # check it is a list
         if isinstance(constraints, Constraint):
             constraints = [constraints]
-        for constraint in constraints:
-            if (isinstance(constraint, SystemConstraint)) and (
-                not constraint.initialized
-            ):
-                constraint.system_idx = torch.arange(self.n_systems, device=self.device)
-                constraint.initialized = True
 
         # Validate new constraints before adding
         validate_constraints(constraints, state=self)
@@ -721,13 +710,12 @@ def _filter_attrs_by_mask(
     # atoms_mask = torch.isin(state.system_idx, torch.nonzero(system_mask).squeeze())
     # Copy global attributes directly
     filtered_attrs = dict(get_attrs_for_scope(state, "global"))
-    filtered_attrs["_constraints"] = copy.deepcopy(state.constraints)
 
-    new_n_atoms_per_system = state.n_atoms_per_system[system_mask]
-    cum_sum_atoms = torch.cumsum(new_n_atoms_per_system, dim=0)
-    cum_sum_atoms = torch.cat(
-        (torch.tensor([0], device=cum_sum_atoms.device), cum_sum_atoms)
-    )
+    # take into account constraints that are AtomIndexedConstraint
+    filtered_attrs["_constraints"] = [
+        constraint.update_constraint(atom_mask, system_mask)
+        for constraint in copy.deepcopy(state.constraints)
+    ]
 
     # Filter per-atom attributes
     for attr_name, attr_value in get_attrs_for_scope(state, "per-atom"):
@@ -750,34 +738,6 @@ def _filter_attrs_by_mask(
                 dtype=attr_value.dtype,
             )
             filtered_attrs[attr_name] = new_system_idxs
-
-            # take into account constraints that are AtomIndexedConstraint
-            for constraint in filtered_attrs.get("_constraints", []):
-                if isinstance(constraint, AtomIndexedConstraint):
-                    constraint.indices = torch.tensor(
-                        [
-                            i
-                            - cum_sum_atoms[
-                                system_idx_map[
-                                    old_system_indices[state.system_idx[i]].item()
-                                ]
-                            ]
-                            for i in constraint.indices
-                            if atom_mask[i]
-                        ],
-                        device=old_system_indices.device,
-                        dtype=constraint.indices.dtype,
-                    )
-                elif isinstance(constraint, SystemConstraint):
-                    constraint.system_idx = torch.tensor(
-                        [
-                            system_idx_map[idx.item()]
-                            for idx in constraint.system_idx
-                            if system_mask[idx]
-                        ],
-                        device=constraint.system_idx.device,
-                        dtype=constraint.system_idx.dtype,
-                    )
 
         else:
             filtered_attrs[attr_name] = attr_value[atom_mask]
@@ -824,7 +784,8 @@ def _split_state[T: SimState](state: T) -> list[T]:
     # Create a state for each system
     states: list[T] = []
     n_systems = len(system_sizes)
-    n_atoms_cumsum = 0
+    zero_tensor = torch.tensor([0], device=state.device, dtype=torch.int64)
+    cumsum_atoms = torch.cat((zero_tensor, torch.cumsum(state.n_atoms_per_system, dim=0)))
     for sys_idx in range(n_systems):
         system_attrs = {
             # Create a system tensor with all zeros for this system
@@ -844,46 +805,16 @@ def _split_state[T: SimState](state: T) -> list[T]:
             # Add the global attributes
             **global_attrs,
         }
-        new_constraints = copy.deepcopy(state.constraints)
-        for constraint in new_constraints:
-            if isinstance(constraint, SystemConstraint):
-                # Update system_mask to only include this system
-                constraint.system_idx = (
-                    torch.tensor([0], device=state.device, dtype=torch.int64)
-                    if sys_idx in constraint.system_idx
-                    else torch.tensor([], device=state.device, dtype=torch.int64)
-                )
-            elif isinstance(constraint, AtomIndexedConstraint):
-                # Update atom_indices to only include atoms from this system
-                atom_start = n_atoms_cumsum
-                atom_end = n_atoms_cumsum + system_sizes[sys_idx]
-                constraint.indices = torch.tensor(
-                    [
-                        idx - atom_start
-                        for idx in constraint.indices
-                        if atom_start <= idx < atom_end
-                    ],
-                    device=state.device,
-                    dtype=torch.int64,
-                )
-        # Remove empty constraints
+
+        atom_idx = torch.arange(cumsum_atoms[sys_idx], cumsum_atoms[sys_idx + 1])
         new_constraints = [
-            constraint
-            for constraint in new_constraints
-            if (
-                (
-                    isinstance(constraint, SystemConstraint)
-                    and len(constraint.system_idx) > 0
-                )
-                or (
-                    isinstance(constraint, AtomIndexedConstraint)
-                    and len(constraint.indices) > 0
-                )
-            )
+            new_constraint
+            for constraint in state.constraints
+            if (new_constraint := constraint.select_sub_constraint(atom_idx, sys_idx))
         ]
+
         system_attrs["_constraints"] = new_constraints
         states.append(type(state)(**system_attrs))  # type: ignore[invalid-argument-type]
-        n_atoms_cumsum += system_sizes[sys_idx]
 
     return states
 
@@ -972,7 +903,7 @@ def _slice_state[T: SimState](state: T, system_indices: list[int] | torch.Tensor
     return type(state)(**filtered_attrs)  # type: ignore[invalid-return-type]
 
 
-def concatenate_states[T: SimState](  # noqa: C901, PLR0915
+def concatenate_states[T: SimState](  # noqa: C901
     states: Sequence[T], device: torch.device | None = None
 ) -> T:
     """Concatenate a list of SimStates into a single SimState.
@@ -1015,9 +946,7 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
     per_system_tensors = defaultdict(list)
     new_system_indices = []
     system_offset = 0
-    n_atoms_offset = 0
-
-    constraints = {}
+    num_atoms_per_state = []
 
     # Process all states in a single pass
     for state in states:
@@ -1040,48 +969,8 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
         num_systems = state.n_systems
         new_indices = state.system_idx + system_offset
         new_system_indices.append(new_indices)
+        num_atoms_per_state.append(state.n_atoms)
 
-        for constraint in state.constraints:
-            constraint_name = type(constraint).__name__
-            if constraint_name not in constraints:
-                # if it's IndexedConstraint then we need to adjust the indices
-                if isinstance(constraint, AtomIndexedConstraint):
-                    new_constraint = copy.deepcopy(constraint)
-                    new_constraint.indices = torch.empty(
-                        0, dtype=torch.long, device=target_device
-                    )
-                    constraints[constraint_name] = new_constraint
-                elif isinstance(constraint, SystemConstraint):
-                    new_constraint = copy.deepcopy(constraint)
-                    new_constraint.system_idx = torch.empty(
-                        0, dtype=torch.long, device=target_device
-                    )
-                    constraints[constraint_name] = new_constraint
-                else:
-                    raise NotImplementedError(
-                        f"Concatenation of constraint type "
-                        f"{type(constraint)} is not implemented"
-                    )
-            # need to adjust the indices for IndexedConstraint
-            if isinstance(constraint, AtomIndexedConstraint):
-                new_constraint = constraints[constraint_name]
-                new_constraint.indices = torch.concat(
-                    (
-                        new_constraint.indices,
-                        constraint.indices + n_atoms_offset,
-                    )
-                )
-            elif isinstance(constraint, SystemConstraint):
-                new_constraint = constraints[constraint_name]
-                new_constraint.system_idx = torch.concat(
-                    (
-                        new_constraint.system_idx,
-                        constraint.system_idx + system_offset,
-                    )
-                )
-            constraints[constraint_name] = new_constraint
-
-        n_atoms_offset += state.n_atoms
         system_offset += num_systems
 
     # Concatenate collected tensors
@@ -1099,7 +988,12 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
     # Concatenate system indices
     concatenated["system_idx"] = torch.cat(new_system_indices)
 
-    constraints = list(constraints.values())
+    # Merge constraints
+    constraint_lists = [state.constraints for state in states]
+    constraints = merge_constraints(
+        constraint_lists, torch.tensor(num_atoms_per_state, device=target_device)
+    )
+
     # Create a new instance of the same class
     return state_class(**concatenated, _constraints=constraints)
 
