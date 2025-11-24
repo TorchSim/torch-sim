@@ -112,7 +112,7 @@ class SimState:
     _system_attributes: ClassVar[set[str]] = {"cell"}
     _global_attributes: ClassVar[set[str]] = {"pbc"}
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:  # noqa: C901
         """Initialize the SimState and validate the arguments."""
         # Check that positions, masses and atomic numbers have compatible shapes
         shapes = [
