@@ -506,9 +506,19 @@ def count_degrees_of_freedom(
     return max(0, total_dof)  # Ensure non-negative
 
 
-def validate_constraints(
-    constraints: list[Constraint], state: SimState | None = None
+def check_no_index_out_of_bounds(
+    indices: torch.Tensor, max_state_indices: int, constraint_name: str
 ) -> None:
+    """Check that constraint indices are within bounds of the state."""
+    if (len(indices) > 0) and (indices.max() >= max_state_indices):
+        raise ValueError(
+            f"Constraint {constraint_name} has indices up to "
+            f"{indices.max()}, but state only has {max_state_indices} "
+            "atoms"
+        )
+
+
+def validate_constraints(constraints: list[Constraint], state: SimState) -> None:
     """Validate constraints for potential issues and incompatibilities.
 
     This function checks for:
@@ -518,7 +528,7 @@ def validate_constraints(
 
     Args:
         constraints: List of constraints to validate
-        state: Optional SimState for validating atom indices belong to same system
+        state: SimState to check against
 
     Raises:
         ValueError: If constraints are invalid or span multiple systems
@@ -537,18 +547,15 @@ def validate_constraints(
             indexed_constraints.append(constraint)
 
             # Validate that atom indices exist in state if provided
-            if (
-                (state is not None)
-                and (len(constraint.indices) > 0)
-                and (constraint.indices.max() >= state.n_atoms)
-            ):
-                raise ValueError(
-                    f"Constraint {type(constraint).__name__} has indices up to "
-                    f"{constraint.indices.max()}, but state only has {state.n_atoms} "
-                    "atoms"
-                )
+            check_no_index_out_of_bounds(
+                constraint.indices, state.n_atoms, type(constraint).__name__
+            )
+        elif isinstance(constraint, SystemConstraint):
+            check_no_index_out_of_bounds(
+                constraint.system_idx, state.n_systems, type(constraint).__name__
+            )
 
-        elif isinstance(constraint, FixCom):
+        if isinstance(constraint, FixCom):
             has_com_constraint = True
 
     # Check for overlapping atom indices
