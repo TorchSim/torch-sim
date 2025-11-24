@@ -293,7 +293,9 @@ class SimState:
                 dof_per_system -= removed_dof
 
         # Ensure non-negative DOF
-        return torch.clamp(dof_per_system, min=0)
+        if (dof_per_system <= 0).any():
+            raise ValueError("Degrees of freedom cannot be zero or negative")
+        return dof_per_system
 
     def clone(self) -> Self:
         """Create a deep copy of the SimState.
@@ -707,7 +709,6 @@ def _filter_attrs_by_mask(
     Returns:
         dict: Filtered attributes with appropriate handling for each scope
     """
-    # atoms_mask = torch.isin(state.system_idx, torch.nonzero(system_mask).squeeze())
     # Copy global attributes directly
     filtered_attrs = dict(get_attrs_for_scope(state, "global"))
 
