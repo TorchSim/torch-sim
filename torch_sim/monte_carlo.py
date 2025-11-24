@@ -214,7 +214,7 @@ def swap_mc_init(
         system_idx=state.system_idx,
         energy=model_output["energy"],
         last_permutation=torch.arange(state.n_atoms, device=state.device),
-        constraints=state.constraints,
+        _constraints=state.constraints,
     )
 
 
