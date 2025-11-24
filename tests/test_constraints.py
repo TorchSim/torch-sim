@@ -181,9 +181,9 @@ def test_state_manipulation_with_constraints(ar_double_sim_state: ts.SimState):
     assert len(concatenated_state.constraints) == 2
 
     # Verify FixAtoms constraint indices are correctly mapped
-    assert torch.all(first_system.constraints[0].indices == torch.tensor([0, 1]))
+    assert torch.all(first_system.constraints[0].atom_idx == torch.tensor([0, 1]))
     assert torch.all(
-        concatenated_state.constraints[0].indices == torch.tensor([0, 1, 32, 33])
+        concatenated_state.constraints[0].atom_idx == torch.tensor([0, 1, 32, 33])
     )
 
     # Verify FixCom constraint system masks
@@ -194,8 +194,8 @@ def test_state_manipulation_with_constraints(ar_double_sim_state: ts.SimState):
     # Test constraint propagation after splitting concatenated state
     split_systems = concatenated_state.split()
     assert len(split_systems[0].constraints) == 2
-    assert torch.all(split_systems[0].constraints[0].indices == torch.tensor([0, 1]))
-    assert torch.all(split_systems[1].constraints[0].indices == torch.tensor([0, 1]))
+    assert torch.all(split_systems[0].constraints[0].atom_idx == torch.tensor([0, 1]))
+    assert torch.all(split_systems[1].constraints[0].atom_idx == torch.tensor([0, 1]))
     assert len(split_systems[2].constraints) == 1
 
     # Test constraint manipulation with different configurations
@@ -397,7 +397,7 @@ def test_fix_atoms_validation() -> None:
     # Boolean mask conversion
     mask = torch.zeros(10, dtype=torch.bool)
     mask[:3] = True
-    assert torch.all(FixAtoms(indices=mask).indices == torch.tensor([0, 1, 2]))
+    assert torch.all(FixAtoms(indices=mask).atom_idx == torch.tensor([0, 1, 2]))
 
     # Invalid indices
     with pytest.raises(ValueError, match="Indices must be integers"):
@@ -464,7 +464,7 @@ def test_integrators_with_constraints(
 
     # Store initial state
     if isinstance(constraint, FixAtoms):
-        initial = cu_sim_state.positions[constraint.indices].clone()
+        initial = cu_sim_state.positions[constraint.atom_idx].clone()
     else:
         initial = get_centers_of_mass(
             cu_sim_state.positions,
@@ -505,7 +505,7 @@ def test_integrators_with_constraints(
 
     # Verify constraint held
     if isinstance(constraint, FixAtoms):
-        assert torch.allclose(state.positions[constraint.indices], initial, atol=1e-6)
+        assert torch.allclose(state.positions[constraint.atom_idx], initial, atol=1e-6)
     else:
         final = get_centers_of_mass(
             state.positions, state.masses, state.system_idx, state.n_systems
@@ -593,7 +593,7 @@ def test_batched_constraints(ar_double_sim_state: ts.SimState) -> None:
     combined = ts.concatenate_states([s1, s2])
     assert len(combined.constraints) == 2
     assert isinstance(combined.constraints[0], FixAtoms)
-    assert torch.all(combined.constraints[0].indices == torch.tensor([0, 1]))
+    assert torch.all(combined.constraints[0].atom_idx == torch.tensor([0, 1]))
     assert isinstance(combined.constraints[1], FixCom)
     assert torch.all(combined.constraints[1].system_idx == torch.tensor([1]))
 
@@ -721,7 +721,7 @@ def test_system_constraint_update_and_select() -> None:
 
 
 def test_atom_indexed_constraint_update_and_select() -> None:
-    """Test select_constraint and select_sub_constraint for AtomIndexedConstraint."""
+    """Test select_constraint and select_sub_constraint for AtomConstraint."""
     # Create a FixAtoms constraint for atoms 0, 1, 5, 8
     constraint = FixAtoms(indices=[0, 1, 5, 8])
 
@@ -736,7 +736,7 @@ def test_atom_indexed_constraint_update_and_select() -> None:
     # Atom indices should be renumbered:
     # Original: [0, 1, 5, 8]
     # After dropping atom 4: [0, 1, 4, 7] (indices shift down by 1 after index 4)
-    assert torch.all(updated_constraint.indices == torch.tensor([0, 1, 4, 7]))
+    assert torch.all(updated_constraint.atom_idx == torch.tensor([0, 1, 4, 7]))
 
     # Test select_sub_constraint
     # Select atoms that belong to a specific system
@@ -748,7 +748,7 @@ def test_atom_indexed_constraint_update_and_select() -> None:
     # Should return a constraint with only atoms 0, 1 (within atom_idx range)
     # Renumbered to start from 0
     assert sub_constraint is not None
-    assert torch.all(sub_constraint.indices == torch.tensor([0, 1]))
+    assert torch.all(sub_constraint.atom_idx == torch.tensor([0, 1]))
 
     # Test with different atom range
     constraint = FixAtoms(indices=[0, 1, 5, 8])
@@ -758,7 +758,7 @@ def test_atom_indexed_constraint_update_and_select() -> None:
 
     # Should return a constraint with atoms 5, 8 renumbered to [0, 3]
     assert sub_constraint is not None
-    assert torch.all(sub_constraint.indices == torch.tensor([0, 3]))
+    assert torch.all(sub_constraint.atom_idx == torch.tensor([0, 3]))
 
     # Test when no atoms in range
     constraint = FixAtoms(indices=[0, 1])
@@ -809,7 +809,7 @@ def test_merge_constraints(ar_double_sim_state: ts.SimState) -> None:
 
     # FixAtoms should have indices [0, 1] from s1 and [2+n_atoms_s1, 3+n_atoms_s1] from s2
     expected_atom_indices = torch.tensor([0, 1, 2 + n_atoms_s1, 3 + n_atoms_s1])
-    assert torch.all(fix_atoms.indices == expected_atom_indices)
+    assert torch.all(fix_atoms.atom_idx == expected_atom_indices)
 
     # FixCom should have system_idx [0, 1] (one for each original system)
     expected_system_indices = torch.tensor([0, 1])
@@ -834,4 +834,4 @@ def test_merge_constraints(ar_double_sim_state: ts.SimState) -> None:
     expected_atom_indices = torch.tensor(
         [0, 1, 2 + n_atoms_s1, 3 + n_atoms_s1, 0 + n_atoms_s1 + n_atoms_s2]
     )
-    assert torch.all(fix_atoms.indices == expected_atom_indices)
+    assert torch.all(fix_atoms.atom_idx == expected_atom_indices)

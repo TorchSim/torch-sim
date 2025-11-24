@@ -724,7 +724,7 @@ def _filter_attrs_by_mask(
     # Copy global attributes directly
     filtered_attrs = dict(get_attrs_for_scope(state, "global"))
 
-    # take into account constraints that are AtomIndexedConstraint
+    # take into account constraints that are AtomConstraint
     filtered_attrs["_constraints"] = [
         constraint.select_constraint(atom_mask, system_mask)
         for constraint in copy.deepcopy(state.constraints)

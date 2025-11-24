@@ -109,7 +109,7 @@ def _mask_constraint_indices(idx: torch.Tensor, mask: torch.Tensor) -> torch.Ten
     return new_indices[~drop_indices]
 
 
-class AtomIndexedConstraint(Constraint):
+class AtomConstraint(Constraint):
     """Base class for constraints that act on specific atom indices.
 
     This class provides common functionality for constraints that operate
@@ -156,7 +156,7 @@ class AtomIndexedConstraint(Constraint):
                 "forgot the mask= keyword."
             )
 
-        self.indices = indices.long()
+        self.atom_idx = indices.long()
 
     def get_indices(self) -> torch.Tensor:
         """Get the constrained atom indices.
@@ -164,7 +164,7 @@ class AtomIndexedConstraint(Constraint):
         Returns:
             Tensor of atom indices affected by this constraint
         """
-        return self.indices.clone()
+        return self.atom_idx.clone()
 
     def select_constraint(
         self,
@@ -177,7 +177,7 @@ class AtomIndexedConstraint(Constraint):
             atom_mask: Boolean mask for atoms to keep
             system_mask: Boolean mask for systems to keep
         """
-        indices = self.indices.clone()
+        indices = self.atom_idx.clone()
         indices = _mask_constraint_indices(indices, atom_mask)
         if len(indices) == 0:
             return None
@@ -194,8 +194,8 @@ class AtomIndexedConstraint(Constraint):
             atom_idx: Atom indices for a single system
             sys_idx: System index for a single system
         """
-        mask = torch.isin(self.indices, atom_idx)
-        masked_indices = self.indices[mask]
+        mask = torch.isin(self.atom_idx, atom_idx)
+        masked_indices = self.atom_idx[mask]
         new_atom_idx = masked_indices - atom_idx.min()
         if len(new_atom_idx) == 0:
             return None
@@ -264,7 +264,7 @@ class SystemConstraint(Constraint):
 
 
 def merge_constraints(
-    constraint_lists: list[list[AtomIndexedConstraint | SystemConstraint]],
+    constraint_lists: list[list[AtomConstraint | SystemConstraint]],
     num_atoms_per_state: torch.Tensor,
 ) -> list[Constraint]:
     """Merge constraints from multiple systems into a single list of constraints.
@@ -284,8 +284,8 @@ def merge_constraints(
     constraint_indices: dict[type[Constraint], list[torch.Tensor]] = defaultdict(list)
     for i, constraint_list in enumerate(constraint_lists):
         for constraint in constraint_list:
-            if isinstance(constraint, AtomIndexedConstraint):
-                idxs = constraint.indices
+            if isinstance(constraint, AtomConstraint):
+                idxs = constraint.atom_idx
                 offset = cumsum_atoms[i]
             elif isinstance(constraint, SystemConstraint):
                 idxs = constraint.system_idx
@@ -302,7 +302,7 @@ def merge_constraints(
     ]
 
 
-class FixAtoms(AtomIndexedConstraint):
+class FixAtoms(AtomConstraint):
     """Constraint that fixes specified atoms in place.
 
     This constraint prevents the specified atoms from moving by:
@@ -331,7 +331,7 @@ class FixAtoms(AtomIndexedConstraint):
             Number of degrees of freedom removed (3 * number of fixed atoms)
         """
         fixed_atoms_system_idx = torch.bincount(
-            state.system_idx[self.indices], minlength=state.n_systems
+            state.system_idx[self.atom_idx], minlength=state.n_systems
         )
         return 3 * fixed_atoms_system_idx
 
@@ -342,7 +342,7 @@ class FixAtoms(AtomIndexedConstraint):
             state: Current simulation state
             new_positions: Proposed positions to be adjusted in-place
         """
-        new_positions[self.indices] = state.positions[self.indices]
+        new_positions[self.atom_idx] = state.positions[self.atom_idx]
 
     def adjust_forces(
         self,
@@ -355,14 +355,14 @@ class FixAtoms(AtomIndexedConstraint):
             state: Current simulation state
             forces: Forces to be adjusted in-place
         """
-        forces[self.indices] = 0.0
+        forces[self.atom_idx] = 0.0
 
     def __repr__(self) -> str:
         """String representation of the constraint."""
-        if len(self.indices) <= 10:
-            indices_str = self.indices.tolist()
+        if len(self.atom_idx) <= 10:
+            indices_str = self.atom_idx.tolist()
         else:
-            indices_str = f"{self.indices[:5].tolist()}...{self.indices[-5:].tolist()}"
+            indices_str = f"{self.atom_idx[:5].tolist()}...{self.atom_idx[-5:].tolist()}"
         return f"FixAtoms(indices={indices_str})"
 
 
@@ -523,7 +523,7 @@ def validate_constraints(constraints: list[Constraint], state: SimState) -> None
 
     This function checks for:
     1. Overlapping atom indices across multiple constraints
-    2. AtomIndexedConstraints spanning multiple systems (requires state)
+    2. AtomConstraints spanning multiple systems (requires state)
     3. Mixing FixCom with other constraints (warning only)
 
     Args:
@@ -543,12 +543,12 @@ def validate_constraints(constraints: list[Constraint], state: SimState) -> None
     has_com_constraint = False
 
     for constraint in constraints:
-        if isinstance(constraint, AtomIndexedConstraint):
+        if isinstance(constraint, AtomConstraint):
             indexed_constraints.append(constraint)
 
             # Validate that atom indices exist in state if provided
             check_no_index_out_of_bounds(
-                constraint.indices, state.n_atoms, type(constraint).__name__
+                constraint.atom_idx, state.n_atoms, type(constraint).__name__
             )
         elif isinstance(constraint, SystemConstraint):
             check_no_index_out_of_bounds(
@@ -560,7 +560,7 @@ def validate_constraints(constraints: list[Constraint], state: SimState) -> None
 
     # Check for overlapping atom indices
     if len(indexed_constraints) > 1:
-        all_indices = torch.cat([c.indices for c in indexed_constraints])
+        all_indices = torch.cat([c.atom_idx for c in indexed_constraints])
         unique_indices = torch.unique(all_indices)
         if len(unique_indices) < len(all_indices):
             warnings.warn(
