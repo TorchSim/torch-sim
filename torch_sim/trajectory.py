@@ -312,8 +312,7 @@ class TrajectoryReporter:
         if not self.trajectories:
             raise ValueError("No trajectories loaded.")
         # Key is guaranteed to exist because we set it during initialization.
-        return self.trajectory_kwargs["mode"] 
-    
+        return self.trajectory_kwargs["mode"]
 
     @property
     def last_step(self) -> int:
@@ -711,7 +710,7 @@ class TorchSimTrajectory:
             np.ndarray: Array of step numbers with shape [n_selected_frames]
         """
         return self._file.get_node("/steps/", name=name).read()
-        
+
     @property
     def last_step(self) -> int:
         """Get the last step number from the trajectory.

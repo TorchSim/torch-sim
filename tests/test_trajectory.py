@@ -837,7 +837,9 @@ def test_write_ase_trajectory_importerror(
     traj.close()
 
 
-def test_optimize_append_to_trajectory(si_double_sim_state: SimState, lj_model: LennardJonesModel) -> None:
+def test_optimize_append_to_trajectory(
+    si_double_sim_state: SimState, lj_model: LennardJonesModel
+) -> None:
     """Test appending to an existing trajectory when running ts.optimize."""
 
     # Create a temporary trajectory file
@@ -857,7 +859,7 @@ def test_optimize_append_to_trajectory(si_double_sim_state: SimState, lj_model: 
             max_steps=5,
             optimizer=ts.Optimizer.fire,
             trajectory_reporter=trajectory_reporter,
-            steps_between_swaps=100
+            steps_between_swaps=100,
         )
 
         for traj in trajectory_reporter.trajectories:
@@ -866,9 +868,7 @@ def test_optimize_append_to_trajectory(si_double_sim_state: SimState, lj_model: 
                 np.testing.assert_allclose(traj.get_steps("positions"), range(1, 6))
 
         trajectory_reporter_2 = ts.TrajectoryReporter(
-            traj_files,
-            state_frequency=1,
-            trajectory_kwargs=dict(mode="a")
+            traj_files, state_frequency=1, trajectory_kwargs=dict(mode="a")
         )
         _ = ts.optimize(
             system=opt_state,
@@ -876,14 +876,17 @@ def test_optimize_append_to_trajectory(si_double_sim_state: SimState, lj_model: 
             max_steps=7,
             optimizer=ts.Optimizer.fire,
             trajectory_reporter=trajectory_reporter_2,
-            steps_between_swaps=100
+            steps_between_swaps=100,
         )
         for traj in trajectory_reporter_2.trajectories:
             with TorchSimTrajectory(traj._file.filename, mode="r") as traj:
                 # Check that the trajectory file now has 12 frames
                 np.testing.assert_allclose(traj.get_steps("positions"), range(1, 13))
 
-def test_integrate_append_to_trajectory(si_double_sim_state: SimState, lj_model: LennardJonesModel) -> None:
+
+def test_integrate_append_to_trajectory(
+    si_double_sim_state: SimState, lj_model: LennardJonesModel
+) -> None:
     """Test appending to an existing trajectory when running ts.integrate."""
 
     # Create a temporary trajectory file
@@ -913,9 +916,7 @@ def test_integrate_append_to_trajectory(si_double_sim_state: SimState, lj_model:
                 np.testing.assert_allclose(traj.get_steps("positions"), range(1, 6))
 
         trajectory_reporter_2 = ts.TrajectoryReporter(
-            traj_files,
-            state_frequency=1,
-            trajectory_kwargs=dict(mode="a")
+            traj_files, state_frequency=1, trajectory_kwargs=dict(mode="a")
         )
         _ = ts.integrate(
             system=int_state,
