@@ -260,8 +260,7 @@ class TrajectoryReporter:
                 and step % self.state_frequency == 0
                 and self.filenames is not None
             ):
-                traj = self.trajectories[idx]
-                traj.write_state(substate, step, **self.state_kwargs)
+                self.trajectories[idx].write_state(substate, step, **self.state_kwargs)
 
             all_state_props = {}
             # Process property calculators for this system
