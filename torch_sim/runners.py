@@ -206,7 +206,7 @@ def integrate[T: SimState](  # noqa: C901
         # run the simulation
         for step in range(initial_step, initial_step + n_steps):
             state = step_func(
-                state=state, model=model, dt=dt, kT=kTs[step - 1], **integrator_kwargs
+                state=state, model=model, dt=dt, kT=kTs[step - initial_step], **integrator_kwargs
             )
 
             if trajectory_reporter:

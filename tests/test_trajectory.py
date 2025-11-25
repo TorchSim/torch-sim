@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 from collections.abc import Callable, Generator
 from pathlib import Path
 
@@ -834,3 +835,98 @@ def test_write_ase_trajectory_importerror(
     with pytest.raises(ImportError, match="ASE is required to convert to ASE trajectory"):
         traj.write_ase_trajectory(tmp_path / "dummy.traj")
     traj.close()
+
+
+def test_optimize_append_to_trajectory(si_double_sim_state: SimState, lj_model: LennardJonesModel) -> None:
+    """Test appending to an existing trajectory when running ts.optimize."""
+
+    # Create a temporary trajectory file
+    with tempfile.TemporaryDirectory() as temp_dir:
+        traj_files = [f"{temp_dir}/optimize_trajectory_{idx}.h5" for idx in range(2)]
+
+        # Initialize model and state
+        trajectory_reporter = ts.TrajectoryReporter(
+            traj_files,
+            state_frequency=1,
+        )
+
+        # First optimization run
+        opt_state = ts.optimize(
+            system=si_double_sim_state,
+            model=lj_model,
+            max_steps=5,
+            optimizer=ts.Optimizer.fire,
+            trajectory_reporter=trajectory_reporter,
+            steps_between_swaps=100
+        )
+
+        for traj in trajectory_reporter.trajectories:
+            with TorchSimTrajectory(traj._file.filename, mode="r") as traj:
+                # Check that the trajectory file has 5 frames
+                np.testing.assert_allclose(traj.get_steps("positions"), range(1, 6))
+
+        trajectory_reporter_2 = ts.TrajectoryReporter(
+            traj_files,
+            state_frequency=1,
+            trajectory_kwargs=dict(mode="a")
+        )
+        _ = ts.optimize(
+            system=opt_state,
+            model=lj_model,
+            max_steps=7,
+            optimizer=ts.Optimizer.fire,
+            trajectory_reporter=trajectory_reporter_2,
+            steps_between_swaps=100
+        )
+        for traj in trajectory_reporter_2.trajectories:
+            with TorchSimTrajectory(traj._file.filename, mode="r") as traj:
+                # Check that the trajectory file now has 12 frames
+                np.testing.assert_allclose(traj.get_steps("positions"), range(1, 13))
+
+def test_integrate_append_to_trajectory(si_double_sim_state: SimState, lj_model: LennardJonesModel) -> None:
+    """Test appending to an existing trajectory when running ts.integrate."""
+
+    # Create a temporary trajectory file
+    with tempfile.TemporaryDirectory() as temp_dir:
+        traj_files = [f"{temp_dir}/integrate_trajectory_{idx}.h5" for idx in range(2)]
+
+        # Initialize model and state
+        trajectory_reporter = ts.TrajectoryReporter(
+            traj_files,
+            state_frequency=1,
+        )
+
+        # First integration run
+        int_state = ts.integrate(
+            system=si_double_sim_state,
+            model=lj_model,
+            timestep=0.1,
+            n_steps=5,
+            temperature=300.0,
+            integrator=ts.Integrator.nvt_langevin,
+            trajectory_reporter=trajectory_reporter,
+        )
+
+        for traj in trajectory_reporter.trajectories:
+            with TorchSimTrajectory(traj._file.filename, mode="r") as traj:
+                # Check that the trajectory file has 5 frames
+                np.testing.assert_allclose(traj.get_steps("positions"), range(1, 6))
+
+        trajectory_reporter_2 = ts.TrajectoryReporter(
+            traj_files,
+            state_frequency=1,
+            trajectory_kwargs=dict(mode="a")
+        )
+        _ = ts.integrate(
+            system=int_state,
+            model=lj_model,
+            timestep=0.1,
+            temperature=300.0,
+            n_steps=7,
+            integrator=ts.Integrator.nvt_langevin,
+            trajectory_reporter=trajectory_reporter_2,
+        )
+        for traj in trajectory_reporter_2.trajectories:
+            with TorchSimTrajectory(traj._file.filename, mode="r") as traj:
+                # Check that the trajectory file now has 12 frames
+                np.testing.assert_allclose(traj.get_steps("positions"), range(1, 13))
