@@ -41,7 +41,6 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
-
 if TYPE_CHECKING:
     from ase import Atoms
     from ase.io.trajectory import TrajectoryReader
@@ -261,7 +260,8 @@ class TrajectoryReporter:
                 and step % self.state_frequency == 0
                 and self.filenames is not None
             ):
-                self.trajectories[idx].write_state(substate, step, **self.state_kwargs)
+                traj = self.trajectories[idx]
+                traj.write_state(substate, step, **self.state_kwargs)
 
             all_state_props = {}
             # Process property calculators for this system
@@ -301,6 +301,44 @@ class TrajectoryReporter:
         """
         for trajectory in self.trajectories:
             trajectory.close()
+
+    @property
+    def mode(self) -> Literal["r", "w", "a"]:
+        """Get the mode of the first trajectory file.
+
+        Returns:
+            "r" | "w" | "a": Mode from the trajectory_kwargs used during initialization.
+        """
+        if not self.trajectories:
+            raise ValueError("No trajectories loaded.")
+        # Key is guaranteed to exist because we set it during initialization.
+        return self.trajectory_kwargs["mode"] 
+    
+
+    @property
+    def last_step(self) -> int:
+        """Get the maximum last step across all trajectory files.
+
+        Returns the highest step number found across all trajectory files.
+        This is useful for resuming optimizations from where they left off.
+
+        Returns:
+            int: The maximum last step number across all trajectories, or 0 if
+                no trajectories exist or all are empty
+        """
+        if not self.trajectories:
+            return 0
+
+        max_step = 0
+        for trajectory in self.trajectories:
+            if trajectory._file.isopen:
+                last_step = trajectory.last_step
+            else:
+                with TorchSimTrajectory(trajectory._file.filename, mode="r") as traj:
+                    last_step = traj.last_step
+            max_step = max(max_step, last_step)
+
+        return max_step
 
     def __enter__(self) -> "TrajectoryReporter":
         """Support the context manager protocol.
@@ -594,7 +632,7 @@ class TorchSimTrajectory:
             )
 
         # Validate step is monotonically increasing by checking HDF5 file directly
-        steps_node = self._file.get_node("/steps/", name=name)
+        steps_node = self.get_steps(name)
         if len(steps_node) > 0:
             last_step = steps_node[-1]  # Get the last recorded step
             if steps[0] <= last_step:
@@ -658,9 +696,6 @@ class TorchSimTrajectory:
     def get_steps(
         self,
         name: str,
-        start: int | None = None,
-        stop: int | None = None,
-        step: int = 1,
     ) -> np.ndarray:
         """Get the steps for an array.
 
@@ -675,9 +710,29 @@ class TorchSimTrajectory:
         Returns:
             np.ndarray: Array of step numbers with shape [n_selected_frames]
         """
-        return self._file.root.steps.__getitem__(name).read(
-            start=start, stop=stop, step=step
-        )
+        return self._file.get_node("/steps/", name=name).read()
+        
+    @property
+    def last_step(self) -> int:
+        """Get the last step number from the trajectory.
+
+        Retrieves the maximum step number across all arrays in the trajectory.
+        If the trajectory is empty or has no arrays, returns 0.
+
+        Returns:
+            int: The last (maximum) step number in the trajectory, or 0 if empty
+        """
+        if not self.array_registry:
+            return 0
+
+        max_step = 0
+        for name in self.array_registry:
+            steps_node = self.get_steps(name)
+            if len(steps_node) > 0:
+                last_step = int(steps_node[-1])
+                max_step = max(max_step, last_step)
+
+        return max_step
 
     def __str__(self) -> str:
         """Get a string representation of the trajectory.

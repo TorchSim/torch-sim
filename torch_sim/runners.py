@@ -175,7 +175,12 @@ def integrate[T: SimState](  # noqa: C901
             trajectory_reporter,
             properties=["kinetic_energy", "potential_energy", "temperature"],
         )
-
+    # Auto-detect initial step from trajectory files for resuming integration
+    initial_step: int = 1
+    if trajectory_reporter is not None and trajectory_reporter.mode == "a":
+        last_step = trajectory_reporter.last_step
+        if last_step > 0:
+            initial_step = last_step + 1
     final_states: list[T] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
 
@@ -199,7 +204,7 @@ def integrate[T: SimState](  # noqa: C901
             )
 
         # run the simulation
-        for step in range(1, n_steps + 1):
+        for step in range(initial_step, initial_step + n_steps):
             state = step_func(
                 state=state, model=model, dt=dt, kT=kTs[step - 1], **integrator_kwargs
             )
@@ -457,7 +462,14 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             trajectory_reporter, properties=["potential_energy"]
         )
 
-    step: int = 1
+    # Auto-detect initial step from trajectory files for resuming optimizations
+    initial_step: int = 1
+    if trajectory_reporter is not None and trajectory_reporter.mode == "a":
+        last_step = trajectory_reporter.last_step
+        if last_step > 0:
+            initial_step = last_step + 1
+    step: int = initial_step
+
     last_energy = None
     all_converged_states: list[T] = []
     convergence_tensor = None
@@ -485,9 +497,13 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             and og_filenames is not None
             and (step == 1 or len(converged_states) > 0)
         ):
+            mode_before = trajectory_reporter.trajectory_kwargs["mode"]
+            # temporarily set to "append" mode to avoid overwriting existing files
+            trajectory_reporter.trajectory_kwargs["mode"] = "a"
             trajectory_reporter.load_new_trajectories(
                 filenames=[og_filenames[i] for i in autobatcher.current_idx]
             )
+            trajectory_reporter.trajectory_kwargs["mode"] = mode_before
 
         for _step in range(steps_between_swaps):
             if hasattr(state, "energy"):
@@ -498,7 +514,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             if trajectory_reporter:
                 trajectory_reporter.report(state, step, model=model)
             step += 1
-            if step > max_steps:
+            if step > max_steps + initial_step - 1:
                 # TODO: max steps should be tracked for each structure in the batch
                 warnings.warn(f"Optimize has reached max steps: {step}", stacklevel=2)
                 break
