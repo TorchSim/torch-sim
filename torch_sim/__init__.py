@@ -47,10 +47,13 @@ from torch_sim.integrators.npt import (
 from torch_sim.monte_carlo import SwapMCState, swap_mc_init, swap_mc_step
 from torch_sim.optimizers import (
     OPTIM_REGISTRY,
+    BFGSState,
     FireState,
     LBFGSState,
     Optimizer,
     OptimState,
+    bfgs_init,
+    bfgs_step,
     fire_init,
     fire_step,
     gradient_descent_init,

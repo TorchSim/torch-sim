@@ -41,6 +41,47 @@ class FireState(OptimState):
 
 
 @dataclass(kw_only=True)
+class BFGSState(OptimState):
+    """State for batched BFGS optimization.
+
+    Stores the state needed to run a batched BFGS optimizer that maintains
+    an approximate Hessian or inverse Hessian.
+
+    Attributes:
+        hessian: Hessian matrix [n_systems, 3*max_atoms, 3*max_atoms]
+        prev_forces: Previous-step forces [n_atoms, 3]
+        prev_positions: Previous-step positions [n_atoms, 3]
+        alpha: Initial Hessian scale [n_systems]
+        max_step: Maximum step size [n_systems]
+        n_iter: Per-system iteration counter [n_systems] (int32)
+        atom_idx_in_system: Index of each atom within its system [n_atoms]
+        max_atoms: Maximum number of atoms in any system (int)
+    """
+
+    hessian: torch.Tensor
+    prev_forces: torch.Tensor
+    prev_positions: torch.Tensor
+    alpha: torch.Tensor
+    max_step: torch.Tensor
+    n_iter: torch.Tensor
+    atom_idx_in_system: torch.Tensor
+    max_atoms: int
+
+    _atom_attributes = OptimState._atom_attributes | {  # noqa: SLF001
+        "prev_forces",
+        "prev_positions",
+        "atom_idx_in_system",
+    }
+    _system_attributes = OptimState._system_attributes | {  # noqa: SLF001
+        "hessian",
+        "alpha",
+        "max_step",
+        "n_iter",
+        "max_atoms",
+    }
+
+
+@dataclass(kw_only=True)
 class LBFGSState(OptimState):
     """State for batched L-BFGS minimization (no line search).
 
