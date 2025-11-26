@@ -212,7 +212,7 @@ def integrate[T: SimState](  # noqa: C901
         # set up trajectory reporters
         if autobatcher and trajectory_reporter is not None and og_filenames is not None:
             # we must remake the trajectory reporter for each system
-            trajectory_reporter.load_new_trajectories(
+            trajectory_reporter.reopen_trajectories(
                 filenames=[og_filenames[i] for i in system_indices]
             )
 
@@ -519,13 +519,9 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             and og_filenames is not None
             and (steps_so_far == 0 or len(converged_states) > 0)
         ):
-            mode_before = trajectory_reporter.trajectory_kwargs["mode"]
-            # temporarily set to "append" mode to avoid overwriting existing files
-            trajectory_reporter.trajectory_kwargs["mode"] = "a"
-            trajectory_reporter.load_new_trajectories(
+            trajectory_reporter.reopen_trajectories(
                 filenames=[og_filenames[i] for i in autobatcher.current_idx]
             )
-            trajectory_reporter.trajectory_kwargs["mode"] = mode_before
             # Remove initial_step entries for converged states
             initial_step = initial_step[autobatcher.current_idx]
 
@@ -645,7 +641,7 @@ def static(
         # set up trajectory reporters
         if autobatcher and trajectory_reporter and og_filenames is not None:
             # we must remake the trajectory reporter for each system
-            trajectory_reporter.load_new_trajectories(
+            trajectory_reporter.reopen_trajectories(
                 filenames=[og_filenames[idx] for idx in system_indices]
             )
 

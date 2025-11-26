@@ -95,7 +95,6 @@ class TrajectoryReporter:
     state_kwargs: dict[str, Any]
     metadata: dict[str, str] | None
     trajectories: list["TorchSimTrajectory"]
-    filenames: list[str | pathlib.Path] | None
 
     def __init__(
         self,
@@ -140,19 +139,35 @@ class TrajectoryReporter:
         self.metadata = metadata
 
         self.trajectories = []
-        if filenames is None:
-            self.filenames = None
-        else:
-            self.load_new_trajectories(filenames)
+        if filenames is not None:
+            # Initialize trajectories for the first time. Unlike in reopen_trajectories,
+            # if the user specified "w" mode, we respect that here and start fresh.
+            self.trajectories = [
+                TorchSimTrajectory(
+                    filename=filename, metadata=self.metadata, **self.trajectory_kwargs
+                )
+                for filename in filenames
+            ]
 
         self._add_model_arg_to_prop_calculators()
 
-    def load_new_trajectories(
+    @property
+    def filenames(self) -> list[str | None]:
+        """Get the list of trajectory filenames.
+
+        Returns:
+            list[str | pathlib.Path] | None: List of trajectory file paths,
+                or None if no trajectories are loaded.
+        """
+        if not self.trajectories:
+            return None
+        return [traj._file.filename for traj in self.trajectories]
+
+    def reopen_trajectories(
         self, filenames: str | pathlib.Path | Sequence[str | pathlib.Path]
     ) -> None:
-        """Load new trajectories into the reporter.
-
-        Closes any existing trajectory files and initializes new ones.
+        """
+        Closes any existing trajectory files and reopens new ones given by filenames.
 
         Args:
             filenames (str | pathlib.Path | list[str | pathlib.Path]): Path(s) to save
@@ -166,19 +181,23 @@ class TrajectoryReporter:
         filenames = (
             [filenames] if isinstance(filenames, (str, pathlib.Path)) else list(filenames)
         )
-        self.filenames = [pathlib.Path(filename) for filename in filenames]
-        if len(set(self.filenames)) != len(self.filenames):
+        filenames = [pathlib.Path(filename) for filename in filenames]
+        if len(set(filenames)) != len(filenames):
             raise ValueError("All filenames must be unique.")
-
-        self.trajectories = []
-        for filename in self.filenames:
-            self.trajectories.append(
-                TorchSimTrajectory(
-                    filename=filename,
-                    metadata=self.metadata,
-                    **self.trajectory_kwargs,
-                )
+        # Avoid wiping existing trajectory files when reopening them, hence
+        # we set to "a" mode temporarily (read mode is unaffected).
+        _mode = self.trajectory_kwargs.get("mode", "w")
+        self.trajectory_kwargs["mode"] = "a" if _mode in ["a", "w"] else "r"
+        self.trajectories = [
+            TorchSimTrajectory(
+                filename=filename,
+                metadata=self.metadata,
+                **self.trajectory_kwargs,
             )
+            for filename in filenames
+        ]
+        # Restore original mode
+        self.trajectory_kwargs["mode"] = _mode
 
     @property
     def array_registry(self) -> dict[str, tuple[tuple[int, ...], np.dtype]]:
