@@ -246,7 +246,7 @@ def lbfgs_step(  # noqa: PLR0915
     model_output = model(state)
     new_forces = model_output["forces"]
     new_energy = model_output["energy"]
-    new_stress = model_output("stress")
+    new_stress = model_output["stress"]
 
     # Build new (s, y)
     s_new = state.positions - state.prev_positions
