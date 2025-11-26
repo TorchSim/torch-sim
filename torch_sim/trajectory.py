@@ -212,7 +212,7 @@ class TrajectoryReporter:
                     self.prop_calculators[frequency][name] = new_fn
 
     def report(
-        self, state: SimState, step: torch.LongTensor, model: ModelInterface | None = None
+        self, state: SimState, step: int | list[int], model: ModelInterface | None = None
     ) -> list[dict[str, torch.Tensor]]:
         """Report a state and step to the trajectory files.
 
@@ -223,8 +223,9 @@ class TrajectoryReporter:
         Args:
             state (SimState): Current system state with n_systems equal to
                 len(filenames)
-            step (torch.LongTensor): Current simulation step per system, setting step to 0 will write
-                the state and all properties.
+            step (int | list[int]): Current simulation step per system, setting step to 0 will write
+                the state and all properties. If a list is provided, it must have length equal to n_systems.
+                Otherwise, a single integer step is broadcast to all systems.
             model (ModelInterface, optional): Model used for simulation.
                 Defaults to None. Must be provided if any prop_calculators
                 are provided.
@@ -254,7 +255,7 @@ class TrajectoryReporter:
         all_props: list[dict[str, torch.Tensor]] = []
         # Process each system separately
         for idx, substate in enumerate(split_states):
-            _step = step[idx].item()
+            _step = step[idx] if isinstance(step, list) else step
             # Write state to trajectory if it's time
             if (
                 self.state_frequency

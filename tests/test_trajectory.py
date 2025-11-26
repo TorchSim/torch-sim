@@ -918,6 +918,19 @@ def test_integrate_append_to_trajectory(
         trajectory_reporter_2 = ts.TrajectoryReporter(
             traj_files, state_frequency=1, trajectory_kwargs=dict(mode="a")
         )
+        # Nothing to do here, as we already have step 5 in the trajectory
+        # and n_steps is 5.
+        state_2 = ts.integrate(
+            system=int_state,
+            model=lj_model,
+            timestep=0.001,
+            temperature=300.0,
+            n_steps=5,
+            integrator=ts.Integrator.nvt_langevin,
+            trajectory_reporter=trajectory_reporter_2,
+        )
+        torch.testing.assert_close(state_2.positions, int_state.positions)
+        # run two (7 - 5) more steps of integration.
         _ = ts.integrate(
             system=int_state,
             model=lj_model,
@@ -929,5 +942,5 @@ def test_integrate_append_to_trajectory(
         )
         for traj in trajectory_reporter_2.trajectories:
             with TorchSimTrajectory(traj._file.filename, mode="r") as traj:
-                # Check that the trajectory file now has 12 frames
-                np.testing.assert_allclose(traj.get_steps("positions"), range(1, 13))
+                # Check that the trajectory file now has 7 frames
+                np.testing.assert_allclose(traj.get_steps("positions"), range(1, 8))

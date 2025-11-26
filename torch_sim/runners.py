@@ -120,7 +120,10 @@ def integrate[T: SimState](  # noqa: C901
         model (ModelInterface): Neural network model module
         integrator (Integrator | tuple): Either a key from Integrator or a tuple of
             (init_func, step_func) functions.
-        n_steps (int): Number of integration steps
+        n_steps (int): Number of integration steps. If resuming from a trajectory, this is the
+            total number of steps to run, not the number of additional steps. That is,
+            if the trajectory has 10 steps and n_steps=20, the integrator will run
+            an additional 10 steps.
         temperature (float | ArrayLike): Temperature or array of temperatures for each
             step
         timestep (float): Integration time step
@@ -176,17 +179,18 @@ def integrate[T: SimState](  # noqa: C901
             properties=["kinetic_energy", "potential_energy", "temperature"],
         )
     # Auto-detect initial step from trajectory files for resuming integration
-    initial_step: torch.LongTensor = torch.full(
-        size=(initial_state.n_systems,),
-        fill_value=1,
-        dtype=torch.long,
-        device=initial_state.device,
-    )
+    initial_step: int = 1
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
-        last_logged_steps = torch.tensor(
-            trajectory_reporter.last_step, dtype=torch.long, device=initial_state.device
+        last_logged_steps = trajectory_reporter.last_step
+        assert len(set(last_logged_steps)) == 1, (
+            "All trajectory files must have the same last step for resuming integration."
         )
-        initial_step = initial_step + last_logged_steps
+        initial_step = initial_step + last_logged_steps[0]
+        if initial_step >= n_steps:
+            warnings.warn(
+                f"Initial step {initial_step} ≥ n_steps {n_steps}. Nothing will be done.",
+            )
+            return initial_state  # type: ignore[return-value]
     final_states: list[T] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
 
@@ -203,16 +207,14 @@ def integrate[T: SimState](  # noqa: C901
         state = init_func(state=state, model=model, kT=kTs[0], dt=dt, **integrator_kwargs)
 
         # set up trajectory reporters
-        _initial_step = initial_step
         if autobatcher and trajectory_reporter is not None and og_filenames is not None:
             # we must remake the trajectory reporter for each system
             trajectory_reporter.load_new_trajectories(
                 filenames=[og_filenames[i] for i in system_indices]
             )
-            _initial_step = initial_step[system_indices]
 
         # run the simulation
-        for steps_so_far in range(n_steps):
+        for steps_so_far in range(n_steps - initial_step + 1):
             state = step_func(
                 state=state,
                 model=model,
@@ -223,7 +225,7 @@ def integrate[T: SimState](  # noqa: C901
 
             if trajectory_reporter:
                 trajectory_reporter.report(
-                    state, _initial_step + steps_so_far, model=model
+                    state, initial_step + steps_so_far, model=model
                 )
 
         # finish the trajectory reporter
@@ -532,7 +534,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
 
             if trajectory_reporter:
                 trajectory_reporter.report(
-                    state, initial_step + steps_so_far, model=model
+                    state, (initial_step + steps_so_far).tolist(), model=model
                 )
             steps_so_far += 1
             if steps_so_far >= max_steps:
