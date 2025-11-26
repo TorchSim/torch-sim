@@ -240,7 +240,8 @@ def test_primitive_neighbor_list(
 @pytest.mark.parametrize("atoms_list", ["periodic_atoms_set", "molecule_atoms_set"])
 @pytest.mark.parametrize(
     "nl_implementation",
-    [neighbors.standard_nl, neighbors.vesin_nl, neighbors.vesin_nl_ts],
+    [neighbors.standard_nl]
+    + ([neighbors.vesin_nl, neighbors.vesin_nl_ts] if neighbors.VESIN_AVAILABLE else []),
 )
 def test_neighbor_list_implementations(
     *,
@@ -421,6 +422,7 @@ def test_standard_nl_edge_cases() -> None:
     assert torch.all(mapping[0][1:] >= mapping[0][:-1])
 
 
+@pytest.mark.skipif(not neighbors.VESIN_AVAILABLE, reason="Vesin not available")
 def test_vesin_nl_edge_cases() -> None:
     """Test edge cases for vesin_nl and vesin_nl_ts."""
     pos = torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]], device=DEVICE, dtype=DTYPE)
@@ -459,6 +461,114 @@ def test_vesin_nl_edge_cases() -> None:
                 cutoff=cutoff,
             )
             assert len(mapping[0]) > 0  # Should find neighbors
+
+
+def test_torchsim_nl_availability() -> None:
+    """Test that VESIN_AVAILABLE flag is correctly set."""
+    assert isinstance(neighbors.VESIN_AVAILABLE, bool)
+    if neighbors.VESIN_AVAILABLE:
+        assert neighbors.VesinNeighborList is not None
+        assert neighbors.VesinNeighborListTorch is not None
+    else:
+        assert neighbors.VesinNeighborList is None
+        assert neighbors.VesinNeighborListTorch is None
+
+
+def test_torchsim_nl_consistency() -> None:
+    """Test that torchsim_nl produces consistent results."""
+    device = torch.device("cpu")
+    dtype = torch.float32
+
+    # Simple 4-atom test system
+    positions = torch.tensor(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
+        device=device,
+        dtype=dtype,
+    )
+    cell = torch.eye(3, device=device, dtype=dtype) * 3.0
+    pbc = torch.tensor([False, False, False], device=device)
+    cutoff = torch.tensor(1.5, device=device, dtype=dtype)
+
+    # Test torchsim_nl against standard_nl
+    mapping_torchsim, shifts_torchsim = neighbors.torchsim_nl(
+        positions, cell, pbc, cutoff
+    )
+    mapping_standard, shifts_standard = neighbors.standard_nl(
+        positions, cell, pbc, cutoff
+    )
+
+    # torchsim_nl should always give consistent shape with standard_nl
+    assert mapping_torchsim.shape == mapping_standard.shape
+    assert shifts_torchsim.shape == shifts_standard.shape
+
+    # When vesin is unavailable, torchsim_nl should match standard_nl exactly
+    if not neighbors.VESIN_AVAILABLE:
+        torch.testing.assert_close(mapping_torchsim, mapping_standard)
+        torch.testing.assert_close(shifts_torchsim, shifts_standard)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="GPU not available for testing")
+def test_torchsim_nl_gpu() -> None:
+    """Test that torchsim_nl works on GPU (CUDA/ROCm)."""
+    device = torch.device("cuda")
+    dtype = torch.float32
+
+    positions = torch.tensor(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+        device=device,
+        dtype=dtype,
+    )
+    cell = torch.eye(3, device=device, dtype=dtype) * 3.0
+    pbc = torch.tensor([True, True, True], device=device)
+    cutoff = torch.tensor(1.5, device=device, dtype=dtype)
+
+    # Should work on GPU regardless of vesin availability
+    mapping, shifts = neighbors.torchsim_nl(positions, cell, pbc, cutoff)
+
+    assert mapping.device.type == "cuda"
+    assert shifts.device.type == "cuda"
+    assert mapping.shape[0] == 2  # (2, num_neighbors)
+
+
+def test_torchsim_nl_fallback_when_vesin_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test that torchsim_nl falls back to standard_nl when vesin is unavailable.
+
+    This test simulates the case where vesin is not installed by monkeypatching
+    VESIN_AVAILABLE to False. This ensures the fallback logic is tested even in
+    CI environments where vesin is actually installed.
+    """
+    device = torch.device("cpu")
+    dtype = torch.float32
+
+    # Simple 4-atom test system
+    positions = torch.tensor(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
+        device=device,
+        dtype=dtype,
+    )
+    cell = torch.eye(3, device=device, dtype=dtype) * 3.0
+    pbc = torch.tensor([False, False, False], device=device)
+    cutoff = torch.tensor(1.5, device=device, dtype=dtype)
+
+    # Monkeypatch VESIN_AVAILABLE to False to simulate vesin not being installed
+    monkeypatch.setattr(neighbors, "VESIN_AVAILABLE", False)
+
+    # Call torchsim_nl with mocked unavailable vesin
+    mapping_torchsim, shifts_torchsim = neighbors.torchsim_nl(
+        positions, cell, pbc, cutoff
+    )
+
+    # Call standard_nl directly for comparison
+    mapping_standard, shifts_standard = neighbors.standard_nl(
+        positions, cell, pbc, cutoff
+    )
+
+    # When VESIN_AVAILABLE is False, torchsim_nl should use standard_nl
+    # and produce identical results
+    torch.testing.assert_close(mapping_torchsim, mapping_standard)
+    torch.testing.assert_close(shifts_torchsim, shifts_standard)
 
 
 def test_strict_nl_edge_cases() -> None:
@@ -507,13 +617,17 @@ def test_neighbor_lists_time_and_memory() -> None:
     cutoff = torch.tensor(2.0, device=DEVICE, dtype=DTYPE)
 
     # Test different implementations
-    for nl_fn in (
+    nl_implementations = [
         neighbors.standard_nl,
-        neighbors.vesin_nl_ts,
         neighbors.torch_nl_n2,
         neighbors.torch_nl_linked_cell,
-        cast("Callable[..., Any]", neighbors.vesin_nl),
-    ):
+    ]
+    if neighbors.VESIN_AVAILABLE:
+        nl_implementations.extend(
+            [neighbors.vesin_nl_ts, cast("Callable[..., Any]", neighbors.vesin_nl)]
+        )
+
+    for nl_fn in nl_implementations:
         # Get initial memory usage
         process = psutil.Process()
         initial_cpu_memory = process.memory_info().rss  # in bytes

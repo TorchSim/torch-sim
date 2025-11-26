@@ -1,8 +1,18 @@
 """Utilities for neighbor list calculations."""
 
 import torch
-from vesin import NeighborList as VesinNeighborList
-from vesin.torch import NeighborList as VesinNeighborListTorch
+
+
+# Make vesin optional - fall back to pure PyTorch implementation if unavailable
+try:
+    from vesin import NeighborList as VesinNeighborList
+    from vesin.torch import NeighborList as VesinNeighborListTorch
+
+    VESIN_AVAILABLE = True
+except ImportError:
+    VESIN_AVAILABLE = False
+    VesinNeighborList = None
+    VesinNeighborListTorch = None
 
 import torch_sim.math as fm
 from torch_sim import transforms
@@ -498,91 +508,165 @@ def standard_nl(
     return mapping, shifts
 
 
-@torch.jit.script
-def vesin_nl_ts(
+if VESIN_AVAILABLE:
+
+    @torch.jit.script
+    def vesin_nl_ts(
+        positions: torch.Tensor,
+        cell: torch.Tensor,
+        pbc: torch.Tensor,
+        cutoff: torch.Tensor,
+        sort_id: bool = False,  # noqa: FBT001, FBT002
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute neighbor lists using TorchScript-compatible Vesin.
+
+        This function provides a TorchScript-compatible interface to the Vesin
+        neighbor list algorithm using VesinNeighborListTorch. It handles both
+        periodic and non-periodic systems and returns neighbor pairs along with
+        their periodic shifts.
+
+        Args:
+            positions: Atomic positions tensor of shape (num_atoms, 3)
+            cell: Unit cell vectors according to the row vector convention, i.e.
+                `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
+            pbc: Boolean tensor of shape (3,) indicating periodic boundary conditions in
+                each axis.
+            cutoff: Maximum distance (scalar tensor) for considering atoms as neighbors
+            sort_id: If True, sort neighbors by first atom index for better memory
+                access patterns
+
+        Returns:
+            tuple containing:
+                - mapping: Tensor of shape (2, num_neighbors) containing pairs of
+                  atom indices that are neighbors. Each column (i,j) represents a
+                  neighbor pair.
+                - shifts: Tensor of shape (num_neighbors, 3) containing the periodic
+                  shift vectors needed to get the correct periodic image for each
+                  neighbor pair.
+
+        Notes:
+            - Uses VesinNeighborListTorch for TorchScript compatibility
+            - Requires CPU tensors in float64 precision internally
+            - Returns tensors on the same device as input with original precision
+            - For non-periodic systems, shifts will be zero vectors
+            - The neighbor list includes both (i,j) and (j,i) pairs
+
+        References:
+              https://github.com/Luthaf/vesin
+        """
+        device = positions.device
+        dtype = positions.dtype
+
+        neighbor_list_fn = VesinNeighborListTorch(cutoff.item(), full_list=True)
+
+        # Convert tensors to CPU and float64 properly
+        positions_cpu = positions.cpu().to(dtype=torch.float64)
+        cell_cpu = cell.cpu().to(dtype=torch.float64)
+        periodic_cpu = pbc.to(dtype=torch.bool).cpu()
+
+        # Only works on CPU and requires float64
+        i, j, S = neighbor_list_fn.compute(
+            points=positions_cpu,
+            box=cell_cpu,
+            periodic=periodic_cpu,
+            quantities="ijS",
+        )
+
+        mapping = torch.stack((i, j), dim=0)
+        mapping = mapping.to(dtype=torch.long, device=device)
+        shifts = S.to(dtype=dtype, device=device)
+
+        if sort_id:
+            idx = torch.argsort(mapping[0])
+            mapping = mapping[:, idx]
+            shifts = shifts[idx, :]
+
+        return mapping, shifts
+
+    def vesin_nl(
+        positions: torch.Tensor,
+        cell: torch.Tensor,
+        pbc: torch.Tensor,
+        cutoff: float | torch.Tensor,
+        sort_id: bool = False,  # noqa: FBT001, FBT002
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute neighbor lists using the standard Vesin implementation.
+
+        This function provides an interface to the standard Vesin neighbor list
+        algorithm using VesinNeighborList. It handles both periodic and non-periodic
+        systems and returns neighbor pairs along with their periodic shifts.
+
+        Args:
+            positions: Atomic positions tensor of shape (num_atoms, 3)
+            cell: Unit cell vectors according to the row vector convention, i.e.
+                `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
+            pbc: Boolean tensor of shape (3,) indicating periodic boundary conditions in
+                each axis.
+            cutoff: Maximum distance (scalar tensor) for considering atoms as neighbors
+            sort_id: If True, sort neighbors by first atom index for better memory
+                access patterns
+
+        Returns:
+            tuple containing:
+                - mapping: Tensor of shape (2, num_neighbors) containing pairs of
+                  atom indices that are neighbors. Each column (i,j) represents a
+                  neighbor pair.
+                - shifts: Tensor of shape (num_neighbors, 3) containing the periodic
+                  shift vectors needed to get the correct periodic image for each
+                  neighbor pair.
+
+        Notes:
+            - Uses standard VesinNeighborList implementation
+            - Requires CPU tensors in float64 precision internally
+            - Returns tensors on the same device as input with original precision
+            - For non-periodic systems (pbc=False), shifts will be zero vectors
+            - The neighbor list includes both (i,j) and (j,i) pairs
+            - Supports pre-sorting through the VesinNeighborList constructor
+
+        References:
+            - https://github.com/Luthaf/vesin
+        """
+        device = positions.device
+        dtype = positions.dtype
+
+        neighbor_list_fn = VesinNeighborList(
+            (float(cutoff)), full_list=True, sorted=sort_id
+        )
+
+        # Convert tensors to CPU and float64 without gradients
+        positions_cpu = positions.detach().cpu().to(dtype=torch.float64)
+        cell_cpu = cell.detach().cpu().to(dtype=torch.float64)
+        periodic_cpu = pbc.detach().to(dtype=torch.bool).cpu()
+
+        # Only works on CPU and returns numpy arrays
+        i, j, S = neighbor_list_fn.compute(
+            points=positions_cpu,
+            box=cell_cpu,
+            periodic=periodic_cpu,
+            quantities="ijS",
+        )
+        i, j = (
+            torch.tensor(i, dtype=torch.long, device=device),
+            torch.tensor(j, dtype=torch.long, device=device),
+        )
+        mapping = torch.stack((i, j), dim=0)
+        shifts = torch.tensor(S, dtype=dtype, device=device)
+
+        return mapping, shifts
+
+
+def torchsim_nl(
     positions: torch.Tensor,
     cell: torch.Tensor,
     pbc: torch.Tensor,
     cutoff: torch.Tensor,
     sort_id: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Compute neighbor lists using TorchScript-compatible Vesin implementation.
+    """Compute neighbor lists with automatic fallback for AMD ROCm compatibility.
 
-    This function provides a TorchScript-compatible interface to the Vesin neighbor
-    list algorithm using VesinNeighborListTorch. It handles both periodic and non-periodic
-    systems and returns neighbor pairs along with their periodic shifts.
-
-    Args:
-        positions: Atomic positions tensor of shape (num_atoms, 3)
-        cell: Unit cell vectors according to the row vector convention, i.e.
-            `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
-        pbc: Boolean tensor of shape (3,) indicating periodic boundary conditions in
-            each axis.
-        cutoff: Maximum distance (scalar tensor) for considering atoms as neighbors
-        sort_id: If True, sort neighbors by first atom index for better memory
-            access patterns
-
-    Returns:
-        tuple containing:
-            - mapping: Tensor of shape (2, num_neighbors) containing pairs of
-              atom indices that are neighbors. Each column (i,j) represents a
-              neighbor pair.
-            - shifts: Tensor of shape (num_neighbors, 3) containing the periodic
-              shift vectors needed to get the correct periodic image for each
-              neighbor pair.
-
-    Notes:
-        - Uses VesinNeighborListTorch for TorchScript compatibility
-        - Requires CPU tensors in float64 precision internally
-        - Returns tensors on the same device as input with original precision
-        - For non-periodic systems, shifts will be zero vectors
-        - The neighbor list includes both (i,j) and (j,i) pairs
-
-    References:
-          https://github.com/Luthaf/vesin
-    """
-    device = positions.device
-    dtype = positions.dtype
-
-    neighbor_list_fn = VesinNeighborListTorch(cutoff.item(), full_list=True)
-
-    # Convert tensors to CPU and float64 properly
-    positions_cpu = positions.cpu().to(dtype=torch.float64)
-    cell_cpu = cell.cpu().to(dtype=torch.float64)
-    periodic_cpu = pbc.to(dtype=torch.bool).cpu()
-
-    # Only works on CPU and requires float64
-    i, j, S = neighbor_list_fn.compute(
-        points=positions_cpu,
-        box=cell_cpu,
-        periodic=periodic_cpu,
-        quantities="ijS",
-    )
-
-    mapping = torch.stack((i, j), dim=0)
-    mapping = mapping.to(dtype=torch.long, device=device)
-    shifts = S.to(dtype=dtype, device=device)
-
-    if sort_id:
-        idx = torch.argsort(mapping[0])
-        mapping = mapping[:, idx]
-        shifts = shifts[idx, :]
-
-    return mapping, shifts
-
-
-def vesin_nl(
-    positions: torch.Tensor,
-    cell: torch.Tensor,
-    pbc: torch.Tensor,
-    cutoff: float | torch.Tensor,
-    sort_id: bool = False,  # noqa: FBT001, FBT002
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Compute neighbor lists using the standard Vesin implementation.
-
-    This function provides an interface to the standard Vesin neighbor list
-    algorithm using VesinNeighborList. It handles both periodic and non-periodic
-    systems and returns neighbor pairs along with their periodic shifts.
+    This function automatically selects the best available neighbor list implementation.
+    When vesin is available, it uses vesin_nl_ts for optimal performance. When vesin
+    is not available (e.g., on AMD ROCm systems), it falls back to standard_nl.
 
     Args:
         positions: Atomic positions tensor of shape (num_atoms, 3)
@@ -604,41 +688,16 @@ def vesin_nl(
               neighbor pair.
 
     Notes:
-        - Uses standard VesinNeighborList implementation
-        - Requires CPU tensors in float64 precision internally
-        - Returns tensors on the same device as input with original precision
+        - Automatically uses vesin_nl_ts when vesin is available
+        - Falls back to standard_nl when vesin is unavailable (AMD ROCm)
+        - Fallback works on NVIDIA CUDA, AMD ROCm, and CPU
         - For non-periodic systems (pbc=False), shifts will be zero vectors
         - The neighbor list includes both (i,j) and (j,i) pairs
-        - Supports pre-sorting through the VesinNeighborList constructor
-
-    References:
-        - https://github.com/Luthaf/vesin
     """
-    device = positions.device
-    dtype = positions.dtype
+    if not VESIN_AVAILABLE:
+        return standard_nl(positions, cell, pbc, cutoff, sort_id)
 
-    neighbor_list_fn = VesinNeighborList((float(cutoff)), full_list=True, sorted=sort_id)
-
-    # Convert tensors to CPU and float64 without gradients
-    positions_cpu = positions.detach().cpu().to(dtype=torch.float64)
-    cell_cpu = cell.detach().cpu().to(dtype=torch.float64)
-    periodic_cpu = pbc.detach().to(dtype=torch.bool).cpu()
-
-    # Only works on CPU and returns numpy arrays
-    i, j, S = neighbor_list_fn.compute(
-        points=positions_cpu,
-        box=cell_cpu,
-        periodic=periodic_cpu,
-        quantities="ijS",
-    )
-    i, j = (
-        torch.tensor(i, dtype=torch.long, device=device),
-        torch.tensor(j, dtype=torch.long, device=device),
-    )
-    mapping = torch.stack((i, j), dim=0)
-    shifts = torch.tensor(S, dtype=dtype, device=device)
-
-    return mapping, shifts
+    return vesin_nl_ts(positions, cell, pbc, cutoff, sort_id)
 
 
 def strict_nl(
