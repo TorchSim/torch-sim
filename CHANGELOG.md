@@ -1,6 +1,15 @@
 <!-- markdownlint-disable -->
 # Changelog
 
+## Unreleased
+
+### 🎉 New Features
+* Constraints support for molecular dynamics and optimization by @thomasloux in [#294](https://github.com/TorchSim/torch-sim/pull/294)
+  - Added `FixAtoms` constraint to fix specific atoms in place
+  - Added `FixCom` constraint to prevent center of mass drift
+  - Constraints automatically adjust degrees of freedom for accurate temperature calculations
+  - Full support across all integrators (NVE, NVT, NPT) and optimizers (FIRE, Gradient Descent)
+  - Constraints preserved during state manipulation (slicing, splitting, concatenation)
 ## v0.4.1
 
 Thank you to everyone who contributed to this release! This release includes important bug fixes, new features, and API improvements. @thomasloux, @curtischong, @CompRhys, @orionarcher, @WillEngler, @samanvya10, @hn-yu, @wendymak8, @chuin-wei, @pragnya17, and many others made valuable contributions. 🚀
