@@ -45,7 +45,7 @@ def test_fix_com(ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesMode
 def test_fix_atoms(ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesModel):
     """Test adjustment of positions and momenta with FixAtoms constraint."""
     indices_to_fix = torch.tensor([0, 5, 10], dtype=torch.long)
-    ar_supercell_sim_state.constraints = [FixAtoms(indices=indices_to_fix)]
+    ar_supercell_sim_state.constraints = [FixAtoms(atom_idx=indices_to_fix)]
     initial_positions = ar_supercell_sim_state.positions.clone()
     # displacement = torch.randn_like(ar_supercell_sim_state.positions) * 0.5
     displacement = 0.5
@@ -134,7 +134,7 @@ def test_fix_atoms_nvt_langevin(cu_sim_state: ts.SimState, lj_model: LennardJone
     kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
 
     dofs_before = cu_sim_state.get_number_of_degrees_of_freedom()
-    cu_sim_state.constraints = [FixAtoms(indices=torch.tensor([0, 1], dtype=torch.long))]
+    cu_sim_state.constraints = [FixAtoms(atom_idx=torch.tensor([0, 1], dtype=torch.long))]
     assert torch.allclose(
         cu_sim_state.get_number_of_degrees_of_freedom(), dofs_before - torch.tensor([6])
     )
@@ -164,7 +164,7 @@ def test_state_manipulation_with_constraints(ar_double_sim_state: ts.SimState):
     """Test that constraints are properly propagated during state manipulation."""
     # Set up constraints on the original state
     ar_double_sim_state.constraints = [
-        FixAtoms(indices=torch.tensor([0, 1])),  # Only applied to first system
+        FixAtoms(atom_idx=torch.tensor([0, 1])),  # Only applied to first system
         FixCom([0, 1]),
     ]
 
@@ -271,7 +271,7 @@ def test_fix_atoms_gradient_descent_optimization(
 
     ar_supercell_sim_state.positions = perturbed_positions
     initial_state = ar_supercell_sim_state
-    initial_state.constraints = [FixAtoms(indices=[0])]
+    initial_state.constraints = [FixAtoms(atom_idx=[0])]
     initial_position = initial_state.positions[0].clone()
 
     # Initialize Gradient Descent optimizer
@@ -315,7 +315,7 @@ def test_test_atoms_fire_optimization(
         system_idx=ar_supercell_sim_state.system_idx.clone(),
     )
     indices = torch.tensor([0, 2], dtype=torch.long)
-    current_sim_state.constraints = [FixAtoms(indices=indices)]
+    current_sim_state.constraints = [FixAtoms(atom_idx=indices)]
 
     # Initialize FIRE optimizer
     state = ts.fire_init(
@@ -397,26 +397,28 @@ def test_fix_atoms_validation() -> None:
     # Boolean mask conversion
     mask = torch.zeros(10, dtype=torch.bool)
     mask[:3] = True
-    assert torch.all(FixAtoms(indices=mask).atom_idx == torch.tensor([0, 1, 2]))
+    assert torch.all(FixAtoms(atom_mask=mask).atom_idx == torch.tensor([0, 1, 2]))
 
     # Invalid indices
     with pytest.raises(ValueError, match="Indices must be integers"):
-        FixAtoms(indices=torch.tensor([0.5, 1.5]))
-    with pytest.raises(ValueError, match="duplicates"):
-        FixAtoms(indices=torch.tensor([0, 1, 1]))
+        FixAtoms(atom_idx=torch.tensor([0.5, 1.5]))
+    with pytest.raises(ValueError, match="Duplicate"):
+        FixAtoms(atom_idx=torch.tensor([0, 1, 1]))
     with pytest.raises(ValueError, match="wrong number of dimensions"):
-        FixAtoms(indices=torch.tensor([[0, 1]]))
+        FixAtoms(atom_idx=torch.tensor([[0, 1]]))
 
 
 def test_constraint_validation_warnings(ar_double_sim_state: ts.SimState) -> None:
     """Test validation warnings for constraint conflicts."""
     with pytest.warns(UserWarning, match="Multiple constraints.*same atoms"):
         validate_constraints(
-            [FixAtoms(indices=[0, 1, 2]), FixAtoms(indices=[2, 3, 4])],
+            [FixAtoms(atom_idx=[0, 1, 2]), FixAtoms(atom_idx=[2, 3, 4])],
             ar_double_sim_state,
         )
     with pytest.warns(UserWarning, match="FixCom together with other constraints"):
-        validate_constraints([FixCom([0]), FixAtoms(indices=[0, 1])], ar_double_sim_state)
+        validate_constraints(
+            [FixCom([0]), FixAtoms(atom_idx=[0, 1])], ar_double_sim_state
+        )
 
 
 def test_constraint_validation_errors(
@@ -426,10 +428,10 @@ def test_constraint_validation_errors(
     """Test validation errors for invalid constraints."""
     # Out of bounds
     with pytest.raises(ValueError, match=r"has indices up to.*only has.*atoms"):
-        cu_sim_state.constraints = [FixAtoms(indices=[0, 1, 100])]
+        cu_sim_state.constraints = [FixAtoms(atom_idx=[0, 1, 100])]
 
     # Validation in __post_init__
-    with pytest.raises(ValueError, match="duplicates"):
+    with pytest.raises(ValueError, match="Duplicate"):
         ts.SimState(
             positions=ar_supercell_sim_state.positions.clone(),
             masses=ar_supercell_sim_state.masses,
@@ -437,16 +439,16 @@ def test_constraint_validation_errors(
             pbc=ar_supercell_sim_state.pbc,
             atomic_numbers=ar_supercell_sim_state.atomic_numbers,
             system_idx=ar_supercell_sim_state.system_idx,
-            _constraints=[FixAtoms(indices=[0, 0, 1])],
+            _constraints=[FixAtoms(atom_idx=[0, 0, 1])],
         )
 
 
 @pytest.mark.parametrize(
     ("integrator", "constraint", "n_steps"),
     [
-        ("nve", FixAtoms(indices=[0, 1]), 100),
+        ("nve", FixAtoms(atom_idx=[0, 1]), 100),
         ("nvt_nose_hoover", FixCom([0]), 200),
-        ("npt_langevin", FixAtoms(indices=[0, 3]), 200),
+        ("npt_langevin", FixAtoms(atom_idx=[0, 3]), 200),
         ("npt_nose_hoover", FixCom([0]), 200),
     ],
 )
@@ -520,9 +522,9 @@ def test_multiple_constraints_and_dof(
     # Test DOF calculation
     n = cu_sim_state.n_atoms
     assert torch.all(cu_sim_state.get_number_of_degrees_of_freedom() == 3 * n)
-    cu_sim_state.constraints = [FixAtoms(indices=[0])]
+    cu_sim_state.constraints = [FixAtoms(atom_idx=[0])]
     assert torch.all(cu_sim_state.get_number_of_degrees_of_freedom() == 3 * n - 3)
-    cu_sim_state.constraints = [FixCom([0]), FixAtoms(indices=[0])]
+    cu_sim_state.constraints = [FixCom([0]), FixAtoms(atom_idx=[0])]
     assert torch.all(cu_sim_state.get_number_of_degrees_of_freedom() == 3 * n - 6)
 
     # Verify both constraints hold during dynamics
@@ -571,7 +573,7 @@ def test_cell_optimization_with_constraints(
     ar_supercell_sim_state.positions += (
         torch.randn_like(ar_supercell_sim_state.positions) * 0.05
     )
-    ar_supercell_sim_state.constraints = [FixAtoms(indices=[0, 1])]
+    ar_supercell_sim_state.constraints = [FixAtoms(atom_idx=[0, 1])]
     state = ts.fire_init(
         ar_supercell_sim_state,
         lj_model,
@@ -588,7 +590,7 @@ def test_cell_optimization_with_constraints(
 def test_batched_constraints(ar_double_sim_state: ts.SimState) -> None:
     """Test system-specific constraints in batched states."""
     s1, s2 = ar_double_sim_state.split()
-    s1.constraints = [FixAtoms(indices=[0, 1])]
+    s1.constraints = [FixAtoms(atom_idx=[0, 1])]
     s2.constraints = [FixCom([0])]
     combined = ts.concatenate_states([s1, s2])
     assert len(combined.constraints) == 2
@@ -655,7 +657,7 @@ def test_high_level_api_with_constraints(
     ar_supercell_sim_state.positions += (
         torch.randn_like(ar_supercell_sim_state.positions) * 0.1
     )
-    ar_supercell_sim_state.constraints = [FixAtoms(indices=[0, 1, 2])]
+    ar_supercell_sim_state.constraints = [FixAtoms(atom_idx=[0, 1, 2])]
     initial_pos = ar_supercell_sim_state.positions[[0, 1, 2]].clone()
     final = ts.optimize(
         ar_supercell_sim_state, lj_model, optimizer=ts.Optimizer.fire, max_steps=500
@@ -668,7 +670,7 @@ def test_temperature_with_constrained_dof(
 ) -> None:
     """Test temperature calculation uses constrained DOF."""
     target = 300.0
-    cu_sim_state.constraints = [FixAtoms(indices=[0, 1, 2])]
+    cu_sim_state.constraints = [FixAtoms(atom_idx=[0, 1, 2])]
     state = ts.nvt_langevin_init(
         cu_sim_state,
         lj_model,
@@ -723,7 +725,7 @@ def test_system_constraint_update_and_select() -> None:
 def test_atom_indexed_constraint_update_and_select() -> None:
     """Test select_constraint and select_sub_constraint for AtomConstraint."""
     # Create a FixAtoms constraint for atoms 0, 1, 5, 8
-    constraint = FixAtoms(indices=[0, 1, 5, 8])
+    constraint = FixAtoms(atom_idx=[0, 1, 5, 8])
 
     # Test select_constraint with atom_mask
     # Keep atoms 0, 1, 2, 3, 5, 6, 7, 8 (drop atoms 4)
@@ -740,7 +742,7 @@ def test_atom_indexed_constraint_update_and_select() -> None:
 
     # Test select_sub_constraint
     # Select atoms that belong to a specific system
-    constraint = FixAtoms(indices=[0, 1, 5, 8])
+    constraint = FixAtoms(atom_idx=[0, 1, 5, 8])
     atom_idx = torch.tensor([0, 1, 2, 3, 4])  # Atoms for first system
     sys_idx = 0
     sub_constraint = constraint.select_sub_constraint(atom_idx, sys_idx)
@@ -751,7 +753,7 @@ def test_atom_indexed_constraint_update_and_select() -> None:
     assert torch.all(sub_constraint.atom_idx == torch.tensor([0, 1]))
 
     # Test with different atom range
-    constraint = FixAtoms(indices=[0, 1, 5, 8])
+    constraint = FixAtoms(atom_idx=[0, 1, 5, 8])
     atom_idx = torch.tensor([5, 6, 7, 8, 9])  # Atoms for second system
     sys_idx = 1
     sub_constraint = constraint.select_sub_constraint(atom_idx, sys_idx)
@@ -761,7 +763,7 @@ def test_atom_indexed_constraint_update_and_select() -> None:
     assert torch.all(sub_constraint.atom_idx == torch.tensor([0, 3]))
 
     # Test when no atoms in range
-    constraint = FixAtoms(indices=[0, 1])
+    constraint = FixAtoms(atom_idx=[0, 1])
     atom_idx = torch.tensor([5, 6, 7, 8])
     sub_constraint = constraint.select_sub_constraint(atom_idx, sys_idx=1)
     assert sub_constraint is None
@@ -777,13 +779,13 @@ def test_merge_constraints(ar_double_sim_state: ts.SimState) -> None:
     # Create constraints for each system
     # System 1: Fix atoms 0, 1 and fix COM for system 0
     s1_constraints = [
-        FixAtoms(indices=[0, 1]),
+        FixAtoms(atom_idx=[0, 1]),
         FixCom([0]),
     ]
 
     # System 2: Fix atoms 2, 3 and fix COM for system 0
     s2_constraints = [
-        FixAtoms(indices=[2, 3]),
+        FixAtoms(atom_idx=[2, 3]),
         FixCom([0]),
     ]
 
@@ -817,7 +819,7 @@ def test_merge_constraints(ar_double_sim_state: ts.SimState) -> None:
 
     # Test with three systems
     s3 = s1.clone()
-    s3_constraints = [FixAtoms(indices=[0])]
+    s3_constraints = [FixAtoms(atom_idx=[0])]
     constraint_lists = [s1_constraints, s2_constraints, s3_constraints]
     num_atoms_per_state = torch.tensor([n_atoms_s1, n_atoms_s2, s3.n_atoms])
     merged_constraints = merge_constraints(constraint_lists, num_atoms_per_state)
