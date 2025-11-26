@@ -176,11 +176,10 @@ def integrate[T: SimState](  # noqa: C901
             properties=["kinetic_energy", "potential_energy", "temperature"],
         )
     # Auto-detect initial step from trajectory files for resuming integration
-    initial_step: int = 1
+    initial_step: torch.LongTensor = torch.full(size=(initial_state.n_systems,), fill_value=1, dtype=torch.long, device=initial_state.device)
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
-        last_step = trajectory_reporter.last_step
-        if last_step > 0:
-            initial_step = last_step + 1
+        last_logged_steps = torch.tensor(trajectory_reporter.last_step, dtype=torch.long, device=initial_state.device)
+        initial_step = initial_step + last_logged_steps
     final_states: list[T] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
 
@@ -197,24 +196,26 @@ def integrate[T: SimState](  # noqa: C901
         state = init_func(state=state, model=model, kT=kTs[0], dt=dt, **integrator_kwargs)
 
         # set up trajectory reporters
+        _initial_step = initial_step
         if autobatcher and trajectory_reporter is not None and og_filenames is not None:
             # we must remake the trajectory reporter for each system
             trajectory_reporter.load_new_trajectories(
                 filenames=[og_filenames[i] for i in system_indices]
             )
+            _initial_step = initial_step[system_indices]
 
         # run the simulation
-        for step in range(initial_step, initial_step + n_steps):
+        for steps_so_far in range(n_steps):
             state = step_func(
                 state=state,
                 model=model,
                 dt=dt,
-                kT=kTs[step - initial_step],
+                kT=kTs[steps_so_far],
                 **integrator_kwargs,
             )
 
             if trajectory_reporter:
-                trajectory_reporter.report(state, step, model=model)
+                trajectory_reporter.report(state, _initial_step + steps_so_far, model=model)
 
         # finish the trajectory reporter
         final_states.append(state)
@@ -467,12 +468,11 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         )
 
     # Auto-detect initial step from trajectory files for resuming optimizations
-    initial_step: int = 1
+    initial_step: torch.LongTensor = torch.full(size=(state.n_systems,), fill_value=1, dtype=torch.long, device=state.device)
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
-        last_step = trajectory_reporter.last_step
-        if last_step > 0:
-            initial_step = last_step + 1
-    step: int = initial_step
+        last_logged_steps = torch.tensor(trajectory_reporter.last_step, dtype=torch.long, device=state.device)
+        initial_step = initial_step + last_logged_steps
+    steps_so_far = 0
 
     last_energy = None
     all_converged_states: list[T] = []
@@ -499,7 +499,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         if (
             trajectory_reporter is not None
             and og_filenames is not None
-            and (step == 1 or len(converged_states) > 0)
+            and (steps_so_far == 0 or len(converged_states) > 0)
         ):
             mode_before = trajectory_reporter.trajectory_kwargs["mode"]
             # temporarily set to "append" mode to avoid overwriting existing files
@@ -508,6 +508,8 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
                 filenames=[og_filenames[i] for i in autobatcher.current_idx]
             )
             trajectory_reporter.trajectory_kwargs["mode"] = mode_before
+            # Remove initial_step entries for converged states
+            initial_step = initial_step[autobatcher.current_idx]
 
         for _step in range(steps_between_swaps):
             if hasattr(state, "energy"):
@@ -516,11 +518,11 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             state = step_fn(state=state, model=model, **optimizer_kwargs)
 
             if trajectory_reporter:
-                trajectory_reporter.report(state, step, model=model)
-            step += 1
-            if step > max_steps + initial_step - 1:
+                trajectory_reporter.report(state, initial_step + steps_so_far, model=model)
+            steps_so_far += 1
+            if steps_so_far >= max_steps:
                 # TODO: max steps should be tracked for each structure in the batch
-                warnings.warn(f"Optimize has reached max steps: {step}", stacklevel=2)
+                warnings.warn(f"Optimize has reached max steps: {steps_so_far}", stacklevel=2)
                 break
 
         convergence_tensor = convergence_fn(state, last_energy)

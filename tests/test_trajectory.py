@@ -903,7 +903,7 @@ def test_integrate_append_to_trajectory(
         int_state = ts.integrate(
             system=si_double_sim_state,
             model=lj_model,
-            timestep=0.1,
+            timestep=0.001,
             n_steps=5,
             temperature=300.0,
             integrator=ts.Integrator.nvt_langevin,
@@ -921,7 +921,7 @@ def test_integrate_append_to_trajectory(
         _ = ts.integrate(
             system=int_state,
             model=lj_model,
-            timestep=0.1,
+            timestep=0.001,
             temperature=300.0,
             n_steps=7,
             integrator=ts.Integrator.nvt_langevin,

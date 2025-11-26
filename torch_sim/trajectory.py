@@ -212,7 +212,7 @@ class TrajectoryReporter:
                     self.prop_calculators[frequency][name] = new_fn
 
     def report(
-        self, state: SimState, step: int, model: ModelInterface | None = None
+        self, state: SimState, step: torch.LongTensor, model: ModelInterface | None = None
     ) -> list[dict[str, torch.Tensor]]:
         """Report a state and step to the trajectory files.
 
@@ -223,7 +223,7 @@ class TrajectoryReporter:
         Args:
             state (SimState): Current system state with n_systems equal to
                 len(filenames)
-            step (int): Current simulation step, setting step to 0 will write
+            step (torch.LongTensor): Current simulation step per system, setting step to 0 will write
                 the state and all properties.
             model (ModelInterface, optional): Model used for simulation.
                 Defaults to None. Must be provided if any prop_calculators
@@ -254,18 +254,19 @@ class TrajectoryReporter:
         all_props: list[dict[str, torch.Tensor]] = []
         # Process each system separately
         for idx, substate in enumerate(split_states):
+            _step = step[idx].item()
             # Write state to trajectory if it's time
             if (
                 self.state_frequency
-                and step % self.state_frequency == 0
+                and _step % self.state_frequency == 0
                 and self.filenames is not None
             ):
-                self.trajectories[idx].write_state(substate, step, **self.state_kwargs)
+                self.trajectories[idx].write_state(substate, _step, **self.state_kwargs)
 
             all_state_props = {}
             # Process property calculators for this system
             for report_frequency, calculators in self.prop_calculators.items():
-                if step % report_frequency != 0 or report_frequency == 0:
+                if _step % report_frequency != 0 or report_frequency == 0:
                     continue
 
                 # Calculate properties for this substate
@@ -314,29 +315,25 @@ class TrajectoryReporter:
         return self.trajectory_kwargs["mode"]
 
     @property
-    def last_step(self) -> int:
-        """Get the maximum last step across all trajectory files.
+    def last_step(self) -> list[int]:
+        """Get the last logged step across all trajectory files.
 
-        Returns the highest step number found across all trajectory files.
         This is useful for resuming optimizations from where they left off.
 
         Returns:
-            int: The maximum last step number across all trajectories, or 0 if
+            list[int]: The last step number for each trajectory, or 0 if
                 no trajectories exist or all are empty
         """
         if not self.trajectories:
-            return 0
-
-        max_step = 0
+            return []
+        last_steps = []
         for trajectory in self.trajectories:
             if trajectory._file.isopen:
-                last_step = trajectory.last_step
+                last_steps.append(trajectory.last_step)
             else:
                 with TorchSimTrajectory(trajectory._file.filename, mode="r") as traj:
-                    last_step = traj.last_step
-            max_step = max(max_step, last_step)
-
-        return max_step
+                    last_steps.append(traj.last_step)
+        return last_steps
 
     def __enter__(self) -> "TrajectoryReporter":
         """Support the context manager protocol.
