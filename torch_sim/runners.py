@@ -176,9 +176,16 @@ def integrate[T: SimState](  # noqa: C901
             properties=["kinetic_energy", "potential_energy", "temperature"],
         )
     # Auto-detect initial step from trajectory files for resuming integration
-    initial_step: torch.LongTensor = torch.full(size=(initial_state.n_systems,), fill_value=1, dtype=torch.long, device=initial_state.device)
+    initial_step: torch.LongTensor = torch.full(
+        size=(initial_state.n_systems,),
+        fill_value=1,
+        dtype=torch.long,
+        device=initial_state.device,
+    )
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
-        last_logged_steps = torch.tensor(trajectory_reporter.last_step, dtype=torch.long, device=initial_state.device)
+        last_logged_steps = torch.tensor(
+            trajectory_reporter.last_step, dtype=torch.long, device=initial_state.device
+        )
         initial_step = initial_step + last_logged_steps
     final_states: list[T] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
@@ -215,7 +222,9 @@ def integrate[T: SimState](  # noqa: C901
             )
 
             if trajectory_reporter:
-                trajectory_reporter.report(state, _initial_step + steps_so_far, model=model)
+                trajectory_reporter.report(
+                    state, _initial_step + steps_so_far, model=model
+                )
 
         # finish the trajectory reporter
         final_states.append(state)
@@ -468,9 +477,13 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         )
 
     # Auto-detect initial step from trajectory files for resuming optimizations
-    initial_step: torch.LongTensor = torch.full(size=(state.n_systems,), fill_value=1, dtype=torch.long, device=state.device)
+    initial_step: torch.LongTensor = torch.full(
+        size=(state.n_systems,), fill_value=1, dtype=torch.long, device=state.device
+    )
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
-        last_logged_steps = torch.tensor(trajectory_reporter.last_step, dtype=torch.long, device=state.device)
+        last_logged_steps = torch.tensor(
+            trajectory_reporter.last_step, dtype=torch.long, device=state.device
+        )
         initial_step = initial_step + last_logged_steps
     steps_so_far = 0
 
@@ -518,11 +531,15 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             state = step_fn(state=state, model=model, **optimizer_kwargs)
 
             if trajectory_reporter:
-                trajectory_reporter.report(state, initial_step + steps_so_far, model=model)
+                trajectory_reporter.report(
+                    state, initial_step + steps_so_far, model=model
+                )
             steps_so_far += 1
             if steps_so_far >= max_steps:
                 # TODO: max steps should be tracked for each structure in the batch
-                warnings.warn(f"Optimize has reached max steps: {steps_so_far}", stacklevel=2)
+                warnings.warn(
+                    f"Optimize has reached max steps: {steps_so_far}", stacklevel=2
+                )
                 break
 
         convergence_tensor = convergence_fn(state, last_energy)
