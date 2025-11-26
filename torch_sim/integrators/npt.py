@@ -429,7 +429,7 @@ def _npt_langevin_velocity_step(
 
     # Update momenta (velocities * masses) with all contributions
     new_velocities = c_1 + c_2 + c_3
-    # Apply constraints. Is it correct to apply constraints here?
+    # Apply constraints.
     state.set_momenta(new_velocities * state.masses.unsqueeze(-1))
     return state
 
