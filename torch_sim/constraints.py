@@ -239,6 +239,10 @@ class SystemConstraint(Constraint):
                 f"Got {system_idx.ndim}, expected ndim <= 1"
             )
 
+        # Check for duplicates
+        if len(system_idx) != len(torch.unique(system_idx)):
+            raise ValueError("Duplicate system indices found in SystemConstraint.")
+
         if torch.is_floating_point(system_idx):
             raise ValueError(
                 f"Indices must be integers or boolean mask, not dtype={system_idx.dtype}"
@@ -332,6 +336,17 @@ class FixAtoms(AtomConstraint):
         >>> mask = torch.tensor([True, True, True, False, False])
         >>> constraint = FixAtoms(mask=mask)
     """
+
+    def __init__(
+        self,
+        atom_idx: torch.Tensor | list[int] | None = None,
+        atom_mask: torch.Tensor | list[int] | None = None,
+    ) -> None:
+        """Initialize FixAtoms constraint and check for duplicate indices."""
+        super().__init__(atom_idx=atom_idx, atom_mask=atom_mask)
+        # Check duplicates
+        if len(self.atom_idx) != len(torch.unique(self.atom_idx)):
+            raise ValueError("Duplicate atom indices found in FixAtoms constraint.")
 
     def get_removed_dof(self, state: SimState) -> torch.Tensor:
         """Get number of removed degrees of freedom.
