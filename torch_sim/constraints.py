@@ -116,47 +116,44 @@ class AtomConstraint(Constraint):
     on a subset of atoms, identified by their indices.
     """
 
-    def __init__(self, indices: torch.Tensor | list[int]) -> None:
+    def __init__(
+        self,
+        atom_idx: torch.Tensor | list[int] | None = None,
+        atom_mask: torch.Tensor | list[int] | None = None,
+    ) -> None:
         """Initialize indexed constraint.
 
         Args:
-            indices: Indices of atoms to constrain. Can be a tensor or list of integers.
+            atom_idx: Indices of atoms to constrain. Can be a tensor or list of integers.
+            atom_mask: Boolean mask for atoms to constrain.
 
         Raises:
             ValueError: If both indices and mask are provided, or if indices have
                        wrong shape/type
         """
+        if atom_idx is not None and atom_mask is not None:
+            raise ValueError("Provide either atom_idx or atom_mask, not both.")
+        if atom_mask is not None:
+            atom_mask = torch.as_tensor(atom_mask)
+            atom_idx = torch.where(atom_mask)[0]
+
         # Convert to tensor if needed
-        if not isinstance(indices, torch.Tensor):
-            indices = torch.tensor(indices)
+        atom_idx = torch.as_tensor(atom_idx)
 
         # Ensure we have the right shape and type
-        indices = torch.atleast_1d(indices)
-        if indices.ndim > 1:
+        atom_idx = torch.atleast_1d(atom_idx)
+        if atom_idx.ndim > 1:
             raise ValueError(
-                "indices has wrong number of dimensions. "
-                f"Got {indices.ndim}, expected ndim <= 1"
+                "atom_idx has wrong number of dimensions. "
+                f"Got {atom_idx.ndim}, expected ndim <= 1"
             )
 
-        if indices.dtype == torch.bool:
-            # Convert boolean mask to indices
-            indices = torch.where(indices)[0]
-        elif len(indices) == 0:
-            indices = torch.empty(0, dtype=torch.long)
-        elif torch.is_floating_point(indices):
+        if torch.is_floating_point(atom_idx):
             raise ValueError(
-                f"Indices must be integers or boolean mask, not dtype={indices.dtype}"
+                f"Indices must be integers or boolean mask, not dtype={atom_idx.dtype}"
             )
 
-        # Check for duplicates
-        if len(torch.unique(indices)) < len(indices):
-            raise ValueError(
-                "The indices array contains duplicates. "
-                "Perhaps you want to specify a mask instead, but "
-                "forgot the mask= keyword."
-            )
-
-        self.atom_idx = indices.long()
+        self.atom_idx = atom_idx.long()
 
     def get_indices(self) -> torch.Tensor:
         """Get the constrained atom indices.
@@ -209,17 +206,28 @@ class SystemConstraint(Constraint):
     on a subset of systems, identified by their indices.
     """
 
-    def __init__(self, system_idx: torch.Tensor | list[int]) -> None:
+    def __init__(
+        self,
+        system_idx: torch.Tensor | list[int] | None = None,
+        system_mask: torch.Tensor | list[int] | None = None,
+    ) -> None:
         """Initialize indexed constraint.
 
         Args:
-            system_idx: Indices of systems to constrain. Can be a tensor or
-                        list of integers.
+            system_idx: Indices of systems to constrain.
+                Can be a tensor or list of integers.
+            system_mask: Boolean mask for systems to constrain.
 
         Raises:
             ValueError: If both indices and mask are provided, or if indices have
-                        wrong shape/type
+                       wrong shape/type
         """
+        if system_idx is not None and system_mask is not None:
+            raise ValueError("Provide either system_idx or system_mask, not both.")
+        if system_mask is not None:
+            system_idx = torch.as_tensor(system_idx)
+            system_idx = torch.where(system_mask)[0]
+
         # Convert to tensor if needed
         system_idx = torch.as_tensor(system_idx)
 
@@ -230,7 +238,13 @@ class SystemConstraint(Constraint):
                 "system_idx has wrong number of dimensions. "
                 f"Got {system_idx.ndim}, expected ndim <= 1"
             )
-        self.system_idx: torch.Tensor = system_idx
+
+        if torch.is_floating_point(system_idx):
+            raise ValueError(
+                f"Indices must be integers or boolean mask, not dtype={system_idx.dtype}"
+            )
+
+        self.system_idx = system_idx.long()
 
     def select_constraint(
         self,
@@ -312,7 +326,7 @@ class FixAtoms(AtomConstraint):
 
     Examples:
         Fix atoms with indices [0, 1, 2]:
-        >>> constraint = FixAtoms(indices=[0, 1, 2])
+        >>> constraint = FixAtoms(atom_idx=[0, 1, 2])
 
         Fix atoms using a boolean mask:
         >>> mask = torch.tensor([True, True, True, False, False])
