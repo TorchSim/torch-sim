@@ -16,7 +16,8 @@ from torch_sim.optimizers.gradient_descent import (
     gradient_descent_init,
     gradient_descent_step,
 )
-from torch_sim.optimizers.state import FireState, OptimState  # noqa: F401
+from torch_sim.optimizers.lbfgs import lbfgs_init, lbfgs_step
+from torch_sim.optimizers.state import FireState, LBFGSState, OptimState  # noqa: F401
 
 
 FireFlavor = Literal["vv_fire", "ase_fire"]
@@ -28,9 +29,11 @@ class Optimizer(StrEnum):
 
     gradient_descent = "gradient_descent"
     fire = "fire"
+    lbfgs = "lbfgs"
 
 
 OPTIM_REGISTRY: Final[dict[Optimizer, tuple[Callable[..., Any], Callable[..., Any]]]] = {
     Optimizer.gradient_descent: (gradient_descent_init, gradient_descent_step),
     Optimizer.fire: (fire_init, fire_step),
+    Optimizer.lbfgs: (lbfgs_init, lbfgs_step),
 }
