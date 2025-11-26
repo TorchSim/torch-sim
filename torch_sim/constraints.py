@@ -142,7 +142,7 @@ class AtomConstraint(Constraint):
 
         # Ensure we have the right shape and type
         atom_idx = torch.atleast_1d(atom_idx)
-        if atom_idx.ndim > 1:
+        if atom_idx.ndim != 1:
             raise ValueError(
                 "atom_idx has wrong number of dimensions. "
                 f"Got {atom_idx.ndim}, expected ndim <= 1"
@@ -233,7 +233,7 @@ class SystemConstraint(Constraint):
 
         # Ensure we have the right shape and type
         system_idx = torch.atleast_1d(system_idx)
-        if system_idx.ndim > 1:
+        if system_idx.ndim != 1:
             raise ValueError(
                 "system_idx has wrong number of dimensions. "
                 f"Got {system_idx.ndim}, expected ndim <= 1"
