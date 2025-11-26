@@ -46,7 +46,7 @@ import torch
 import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
-from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.neighbors import torchsim_nl
 from torch_sim.typing import StateDict
 
 
@@ -286,7 +286,7 @@ class SoftSphereModel(ModelInterface):
 
         if self.use_neighbor_list:
             # Get neighbor list using vesin_nl_ts
-            mapping, shifts = vesin_nl_ts(
+            mapping, shifts = torchsim_nl(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
@@ -710,7 +710,7 @@ class SoftSphereMultiModel(ModelInterface):
         # Compute neighbor list or full distance matrix
         if self.use_neighbor_list:
             # Get neighbor list for efficient computation
-            mapping, shifts = vesin_nl_ts(
+            mapping, shifts = torchsim_nl(
                 positions=positions,
                 cell=cell,
                 pbc=self.pbc,
