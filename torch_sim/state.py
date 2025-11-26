@@ -47,7 +47,9 @@ class SimState:
             stored as `[[a1, b1, c1], [a2, b2, c2], [a3, b3, c3]]` as opposed to
             the row vector convention `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`
             used by ASE.
-        pbc (bool): Boolean indicating whether to use periodic boundary conditions
+        pbc (bool | list[bool] | torch.Tensor): indicates periodic boundary
+            conditions in each axis. If a boolean is provided, all axes are
+            assumed to have the same periodic boundary conditions.
         atomic_numbers (torch.Tensor): Atomic numbers with shape (n_atoms,)
         system_idx (torch.Tensor): Maps each atom index to its system index.
             Has shape (n_atoms,), must be unique consecutive integers starting from 0.
@@ -80,7 +82,7 @@ class SimState:
     positions: torch.Tensor
     masses: torch.Tensor
     cell: torch.Tensor
-    pbc: bool  # TODO: do all calculators support mixed pbc?
+    pbc: torch.Tensor | list[bool] | bool
     atomic_numbers: torch.Tensor
     system_idx: torch.Tensor | None = field(default=None)
 
@@ -90,6 +92,11 @@ class SimState:
         def system_idx(self) -> torch.Tensor:
             """A getter for system_idx that tells type checkers it's always defined."""
             return self.system_idx
+
+        @property
+        def pbc(self) -> torch.Tensor:
+            """A getter for pbc that tells type checkers it's always defined."""
+            return self.pbc
 
     _atom_attributes: ClassVar[set[str]] = {
         "positions",
@@ -102,17 +109,6 @@ class SimState:
 
     def __post_init__(self) -> None:
         """Initialize the SimState and validate the arguments."""
-        # Validate and process the state after initialization.
-        # data validation and fill system_idx
-        # should make pbc a tensor here
-        # if devices aren't all the same, raise an error, in a clean way
-        devices = {
-            attr: getattr(self, attr).device
-            for attr in ("positions", "masses", "cell", "atomic_numbers")
-        }
-        if len(set(devices.values())) > 1:
-            raise ValueError("All tensors must be on the same device")
-
         # Check that positions, masses and atomic numbers have compatible shapes
         shapes = [
             getattr(self, attr).shape[0]
@@ -124,6 +120,11 @@ class SimState:
                 f"Incompatible shapes: positions {shapes[0]}, "
                 f"masses {shapes[1]}, atomic_numbers {shapes[2]}"
             )
+
+        if isinstance(self.pbc, bool):
+            self.pbc = [self.pbc] * 3
+        if not isinstance(self.pbc, torch.Tensor):
+            self.pbc = torch.tensor(self.pbc, dtype=torch.bool, device=self.device)
 
         initial_system_idx = self.system_idx
         if initial_system_idx is None:
@@ -145,6 +146,21 @@ class SimState:
             raise ValueError(
                 f"Cell must have shape (n_systems, 3, 3), got {self.cell.shape}"
             )
+
+        # if devices aren't all the same, raise an error, in a clean way
+        devices = {
+            attr: getattr(self, attr).device
+            for attr in (
+                "positions",
+                "masses",
+                "cell",
+                "atomic_numbers",
+                "pbc",
+                "system_idx",
+            )
+        }
+        if len(set(devices.values())) > 1:
+            raise ValueError("All tensors must be on the same device")
 
     @property
     def wrap_positions(self) -> torch.Tensor:
@@ -172,11 +188,7 @@ class SimState:
     @property
     def n_atoms_per_system(self) -> torch.Tensor:
         """Number of atoms per system."""
-        return (
-            self.system_idx.bincount()
-            if self.system_idx is not None
-            else torch.tensor([self.n_atoms], device=self.device)
-        )
+        return self.system_idx.bincount()
 
     @property
     def n_systems(self) -> int:

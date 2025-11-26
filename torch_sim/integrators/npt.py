@@ -367,9 +367,9 @@ def _npt_langevin_position_step(
     state.positions = c_1 + c_2.unsqueeze(-1) * c_3
 
     # Apply periodic boundary conditions if needed
-    if state.pbc:
+    if state.pbc.any():
         state.positions = ts.transforms.pbc_wrap_batched(
-            state.positions, state.cell, state.system_idx
+            state.positions, state.cell, state.system_idx, state.pbc
         )
 
     return state
@@ -1030,9 +1030,9 @@ def _npt_nose_hoover_exp_iL1(  # noqa: N802
     new_positions = state.positions + new_positions
 
     # Apply periodic boundary conditions if needed
-    if state.pbc:
+    if state.pbc.any():
         return ts.transforms.pbc_wrap_batched(
-            new_positions, state.current_cell, state.system_idx
+            new_positions, state.current_cell, state.system_idx, pbc=state.pbc
         )
     return new_positions
 
