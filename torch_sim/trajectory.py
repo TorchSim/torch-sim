@@ -247,9 +247,10 @@ class TrajectoryReporter:
         Args:
             state (SimState): Current system state with n_systems equal to
                 len(filenames)
-            step (int | list[int]): Current simulation step per system, setting step to 0 will write
-                the state and all properties. If a list is provided, it must have length equal to n_systems.
-                Otherwise, a single integer step is broadcast to all systems.
+            step (int | list[int]): Current simulation step per system, setting step
+                to 0 will write the state and all properties. If a list is provided, it
+                must have length equal to n_systems. Otherwise, a single integer step
+                is broadcast to all systems.
             model (ModelInterface, optional): Model used for simulation.
                 Defaults to None. Must be provided if any prop_calculators
                 are provided.
@@ -660,6 +661,15 @@ class TorchSimTrajectory:
                     f"{steps[0]=} must be greater than the last recorded "
                     f"step {last_step} for array {name}"
                 )
+
+    @property
+    def filename(self) -> str:
+        """Get the filename of the trajectory file.
+
+        Returns:
+            str: Path to the HDF5 file
+        """
+        return self._file.filename
 
     def _serialize_array(self, name: str, data: np.ndarray, steps: list[int]) -> None:
         """Add additional contents to an array already in the registry.
@@ -1123,7 +1133,7 @@ class TorchSimTrajectory:
         for name in self.array_registry:
             steps_node = self._file.get_node("/steps/", name=name)
             steps_data = steps_node.read()
-            if set(steps_data) == set([0]):
+            if set(steps_data) == {0}:
                 continue  # skip global arrays
             # Find the index where the step is less than or equal to the desired step
             # We know that it must be at least one index because of the earlier check.

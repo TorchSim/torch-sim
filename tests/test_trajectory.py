@@ -863,7 +863,7 @@ def test_optimize_append_to_trajectory(
         )
 
         for traj in trajectory_reporter.trajectories:
-            with TorchSimTrajectory(traj._file.filename, mode="r") as traj:
+            with TorchSimTrajectory(traj.filename, mode="r") as traj:
                 # Check that the trajectory file has 5 frames
                 np.testing.assert_allclose(traj.get_steps("positions"), range(1, 6))
 
@@ -879,7 +879,7 @@ def test_optimize_append_to_trajectory(
             steps_between_swaps=100,
         )
         for traj in trajectory_reporter_2.trajectories:
-            with TorchSimTrajectory(traj._file.filename, mode="r") as traj:
+            with TorchSimTrajectory(traj.filename, mode="r") as traj:
                 # Check that the trajectory file now has 7 frames
                 np.testing.assert_allclose(traj.get_steps("positions"), range(1, 8))
 
@@ -911,7 +911,7 @@ def test_integrate_append_to_trajectory(
         )
 
         for traj in trajectory_reporter.trajectories:
-            with TorchSimTrajectory(traj._file.filename, mode="r") as traj:
+            with TorchSimTrajectory(traj.filename, mode="r") as traj:
                 # Check that the trajectory file has 5 frames
                 np.testing.assert_allclose(traj.get_steps("positions"), range(1, 6))
 
@@ -941,7 +941,7 @@ def test_integrate_append_to_trajectory(
             trajectory_reporter=trajectory_reporter_2,
         )
         for traj in trajectory_reporter_2.trajectories:
-            with TorchSimTrajectory(traj._file.filename, mode="r") as traj:
+            with TorchSimTrajectory(traj.filename, mode="r") as traj:
                 # Check that the trajectory file now has 7 frames
                 np.testing.assert_allclose(traj.get_steps("positions"), range(1, 8))
 
@@ -979,7 +979,7 @@ def test_truncate_trajectory(
         with TorchSimTrajectory(traj_files[1], mode="a") as traj:
             traj.truncate_to_step(3)
             # Verify that it has 3 frames now.
-            for array_name in traj.array_registry.keys():
+            for array_name in traj.array_registry:
                 target_length = 3
                 target_steps = [1, 2, 3]
                 # Special cases: global arrays
@@ -993,7 +993,10 @@ def test_truncate_trajectory(
                 np.testing.assert_allclose(traj.get_steps(array_name), target_steps)
             with pytest.raises(
                 ValueError,
-                match="Cannot truncate to a step greater than the last step. self.last_step=3 < step=10",
+                match=(
+                    "Cannot truncate to a step greater than the last step. "
+                    "self.last_step=3 < step=10"
+                ),
             ):
                 traj.truncate_to_step(10)
             with pytest.raises(
@@ -1006,9 +1009,9 @@ def test_integrate_uneven_trajectory_append(
     si_double_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """
-    Test appending to an existing trajectory with uneven frames when running ts.integrate.
-    Expected behavior: ts.integrate should first truncate all trajectories to the shortest length,
-    and then append new frames to all trajectories.
+    Test appending to an existing trajectory with uneven frames running ts.integrate.
+    Expected behavior: ts.integrate should first truncate all trajectories to the shortest
+    length, and then append new frames to all trajectories.
     """
 
     # Create a temporary trajectory file
@@ -1057,6 +1060,6 @@ def test_integrate_uneven_trajectory_append(
 
         for traj in trajectory_reporter_2.trajectories:
             # both trajectories should have 4 frames now.
-            with TorchSimTrajectory(traj._file.filename, mode="r") as traj:
+            with TorchSimTrajectory(traj.filename, mode="r") as traj:
                 expected_steps = [1, 2, 3, 4]
                 np.testing.assert_allclose(traj.get_steps("positions"), expected_steps)

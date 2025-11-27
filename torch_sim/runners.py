@@ -121,10 +121,10 @@ def integrate[T: SimState](  # noqa: C901
         model (ModelInterface): Neural network model module
         integrator (Integrator | tuple): Either a key from Integrator or a tuple of
             (init_func, step_func) functions.
-        n_steps (int): Number of integration steps. If resuming from a trajectory, this is the
-            total number of steps to run, not the number of additional steps. That is,
-            if the trajectory has 10 steps and n_steps=20, the integrator will run
-            an additional 10 steps.
+        n_steps (int): Number of integration steps. If resuming from a trajectory, this
+            is the total number of steps to run, not the number of additional steps.
+            That is, if the trajectory has 10 steps and n_steps=20, the integrator will
+            run an additional 10 steps.
         temperature (float | ArrayLike): Temperature or array of temperatures for each
             step
         timestep (float): Integration time step
@@ -190,6 +190,7 @@ def integrate[T: SimState](  # noqa: C901
         if initial_step > n_steps:
             warnings.warn(
                 f"Initial step {initial_step} > n_steps {n_steps}. Nothing will be done.",
+                stacklevel=2,
             )
             return initial_state  # type: ignore[return-value]
         if len(set(last_logged_steps)) != 1:
@@ -197,6 +198,7 @@ def integrate[T: SimState](  # noqa: C901
                 "Trajectory files have different last steps. "
                 "Using the minimum last step for resuming integration."
                 "This means that some trajectories may be truncated.",
+                stacklevel=2,
             )
             for traj in trajectory_reporter.trajectories:
                 traj.truncate_to_step(last_logged_step)
@@ -543,7 +545,8 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             exceeded_max_steps = (initial_step + steps_so_far) > max_steps
             if exceeded_max_steps.all():
                 warnings.warn(
-                    f"All systems have reached the maximum number of steps: {max_steps}."
+                    f"All systems have reached the maximum number of steps: {max_steps}.",
+                    stacklevel=2,
                 )
                 break
 
