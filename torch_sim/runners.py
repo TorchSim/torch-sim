@@ -217,18 +217,18 @@ def integrate[T: SimState](  # noqa: C901
             )
 
         # run the simulation
-        for steps_so_far in range(n_steps - initial_step + 1):
+        for step in range(initial_step, n_steps + 1):
             state = step_func(
                 state=state,
                 model=model,
                 dt=dt,
-                kT=kTs[steps_so_far],
+                kT=kTs[step - initial_step],
                 **integrator_kwargs,
             )
 
             if trajectory_reporter:
                 trajectory_reporter.report(
-                    state, initial_step + steps_so_far, model=model
+                    state, step, model=model
                 )
 
         # finish the trajectory reporter
