@@ -227,9 +227,7 @@ def integrate[T: SimState](  # noqa: C901
             )
 
             if trajectory_reporter:
-                trajectory_reporter.report(
-                    state, step, model=model
-                )
+                trajectory_reporter.report(state, step, model=model)
 
         # finish the trajectory reporter
         final_states.append(state)
