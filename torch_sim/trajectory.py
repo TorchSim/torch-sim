@@ -140,6 +140,11 @@ class TrajectoryReporter:
 
         self.trajectories = []
         if filenames is not None:
+            filenames = (
+                [filenames]
+                if isinstance(filenames, (str, pathlib.Path))
+                else list(filenames)
+            )
             # Initialize trajectories for the first time. Unlike in reopen_trajectories,
             # if the user specified "w" mode, we respect that here and start fresh.
             self.trajectories = [
@@ -301,7 +306,7 @@ class TrajectoryReporter:
                 if props:
                     all_state_props.update(props)
                     if self.filenames is not None:
-                        self.trajectories[idx].write_arrays(props, step)
+                        self.trajectories[idx].write_arrays(props, _step)
             all_props.append(all_state_props)
 
         return all_props

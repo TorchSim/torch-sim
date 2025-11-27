@@ -487,14 +487,14 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         )
 
     # Auto-detect initial step from trajectory files for resuming optimizations
-    initial_step: torch.LongTensor = torch.full(
+    og_initial_step: torch.LongTensor = torch.full(
         size=(state.n_systems,), fill_value=1, dtype=torch.long, device=state.device
     )
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
         last_logged_steps = torch.tensor(
             trajectory_reporter.last_step, dtype=torch.long, device=state.device
         )
-        initial_step = initial_step + last_logged_steps
+        og_initial_step = og_initial_step + last_logged_steps
     steps_so_far = 0
 
     last_energy = None
@@ -517,6 +517,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             break
         state, converged_states = result
         all_converged_states.extend(converged_states)
+        initial_step = og_initial_step[autobatcher.current_idx]
 
         # need to update the trajectory reporter if any states have converged
         if (
@@ -527,8 +528,6 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             trajectory_reporter.reopen_trajectories(
                 filenames=[og_filenames[i] for i in autobatcher.current_idx]
             )
-            # Remove initial_step entries for converged states
-            initial_step = initial_step[autobatcher.current_idx]
 
         for _step in range(steps_between_swaps):
             if hasattr(state, "energy"):
@@ -541,14 +540,16 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
                     state, (initial_step + steps_so_far).tolist(), model=model
                 )
             steps_so_far += 1
-            if steps_so_far >= max_steps:
-                # TODO: max steps should be tracked for each structure in the batch
+            exceeded_max_steps = (initial_step + steps_so_far) > max_steps
+            if exceeded_max_steps.all():
                 warnings.warn(
-                    f"Optimize has reached max steps: {steps_so_far}", stacklevel=2
+                    f"All systems have reached the maximum number of steps: {max_steps}."
                 )
                 break
 
         convergence_tensor = convergence_fn(state, last_energy)
+        # Mark states that exceeded max steps as converged to remove them from batch
+        convergence_tensor = convergence_tensor | exceeded_max_steps
         if tqdm_pbar:
             # assume convergence_tensor shape is correct
             tqdm_pbar.update(torch.count_nonzero(convergence_tensor).item())

@@ -880,8 +880,8 @@ def test_optimize_append_to_trajectory(
         )
         for traj in trajectory_reporter_2.trajectories:
             with TorchSimTrajectory(traj._file.filename, mode="r") as traj:
-                # Check that the trajectory file now has 12 frames
-                np.testing.assert_allclose(traj.get_steps("positions"), range(1, 13))
+                # Check that the trajectory file now has 7 frames
+                np.testing.assert_allclose(traj.get_steps("positions"), range(1, 8))
 
 
 def test_integrate_append_to_trajectory(
