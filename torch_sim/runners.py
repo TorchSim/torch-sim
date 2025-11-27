@@ -184,7 +184,11 @@ def integrate[T: SimState](  # noqa: C901
             (init_func, step_func) functions.
         n_steps (int): Number of integration steps
         temperature (float | ArrayLike): Temperature or array of temperatures for each
-            step
+            step or system:
+            Float: used for all steps and systems
+            1D array of length n_steps: used for each step
+            1D array of length n_systems: used for each system
+            2D array of shape (n_steps, n_systems): used for each step and system.
         timestep (float): Integration time step
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
             tracking trajectory. If a dict, will be passed to the TrajectoryReporter
