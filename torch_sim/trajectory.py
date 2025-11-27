@@ -41,6 +41,7 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
+
 if TYPE_CHECKING:
     from ase import Atoms
     from ase.io.trajectory import TrajectoryReader
@@ -171,8 +172,7 @@ class TrajectoryReporter:
     def reopen_trajectories(
         self, filenames: str | pathlib.Path | Sequence[str | pathlib.Path]
     ) -> None:
-        """
-        Closes any existing trajectory files and reopens new ones given by filenames.
+        """Closes any existing trajectory files and reopens new ones given by filenames.
 
         Args:
             filenames (str | pathlib.Path | list[str | pathlib.Path]): Path(s) to save
@@ -1116,7 +1116,7 @@ class TorchSimTrajectory:
                 f"Cannot truncate to a step greater than the last step."
                 f" {self.last_step=} < {step=}"
             )
-        elif self.last_step == step:
+        if self.last_step == step:
             return  # No truncation needed
         if step <= 0:
             raise ValueError(f"Step must be larger than 0. Got {step=}")
