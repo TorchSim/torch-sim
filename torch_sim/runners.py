@@ -185,15 +185,22 @@ def integrate[T: SimState](  # noqa: C901
     initial_step: int = 1
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
         last_logged_steps = trajectory_reporter.last_step
-        assert len(set(last_logged_steps)) == 1, (
-            "All trajectory files must have the same last step for resuming integration."
-        )
-        initial_step = initial_step + last_logged_steps[0]
-        if initial_step >= n_steps:
+        last_logged_step = min(last_logged_steps)
+        initial_step = initial_step + last_logged_step
+        if initial_step > n_steps:
             warnings.warn(
-                f"Initial step {initial_step} ≥ n_steps {n_steps}. Nothing will be done.",
+                f"Initial step {initial_step} > n_steps {n_steps}. Nothing will be done.",
             )
             return initial_state  # type: ignore[return-value]
+        if len(set(last_logged_steps)) != 1:
+            warnings.warn(
+                "Trajectory files have different last steps. "
+                "Using the minimum last step for resuming integration."
+                "This means that some trajectories may be truncated.",
+            )
+            for traj in trajectory_reporter.trajectories:
+                traj.truncate_to_step(last_logged_step)
+
     final_states: list[T] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
 

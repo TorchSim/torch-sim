@@ -1096,3 +1096,37 @@ class TorchSimTrajectory:
 
         traj.close()
         return Trajectory(filename, mode="r")  # Reopen in read mode
+
+    def truncate_to_step(self, step: int) -> None:
+        """Truncate the trajectory to a specified step.
+
+        Removes frames from the end of the trajectory to reduce its length such that the
+        last logged step is `step`.
+
+        Args:
+            step (int): Desired last step of the trajectory after truncation
+        """
+        if self.last_step < step:
+            raise ValueError(
+                f"Cannot truncate to a step greater than the last step."
+                f" {self.last_step=} < {step=}"
+            )
+        elif self.last_step == step:
+            return  # No truncation needed
+        if step <= 0:
+            raise ValueError(f"Step must be larger than 0. Got {step=}")
+        for name in self.array_registry:
+            steps_node = self._file.get_node("/steps/", name=name)
+            steps_data = steps_node.read()
+            if set(steps_data) == set([0]):
+                continue  # skip global arrays
+            # Find the index where the step is less than or equal to the desired step
+            # We know that it must be at least one index because of the earlier check.
+            indices = np.where(steps_data <= step)[0]
+            length = indices[-1] + 1  # +1 because we want to include this index
+
+            data_node = self._file.get_node("/data/", name=name)
+            data_node.truncate(length)
+            steps_node.truncate(length)
+
+        self.flush()
