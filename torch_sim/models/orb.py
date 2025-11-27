@@ -82,7 +82,7 @@ def cell_to_cellpar(
             x = torch.dot(cell[j], cell[k]) / ll
             angle = 180.0 / torch.pi * torch.arccos(x)
         else:
-            angle = 90.0
+            angle = torch.tensor(90.0, device=cell.device, dtype=cell.dtype)
         angles.append(angle)
     if radians:
         angles = [angle * torch.pi / 180 for angle in angles]
@@ -147,9 +147,6 @@ def state_to_atom_graphs(  # noqa: PLR0915
     )  # Orb uses row vector cell convention for neighbor list
     atomic_numbers = state.atomic_numbers.long()
 
-    # Create PBC tensor based on state.pbc
-    pbc = torch.tensor([state.pbc, state.pbc, state.pbc], dtype=torch.bool)
-
     max_num_neighbors = max_num_neighbors or system_config.max_num_neighbors
 
     # Get atom embeddings for the model
@@ -168,7 +165,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
     atomic_numbers_embedding = atom_type_embedding.to(output_dtype)
 
     # Wrap positions into the central cell if needed
-    if wrap and (torch.any(row_vector_cell != 0) and torch.any(pbc)):
+    if wrap and (torch.any(row_vector_cell != 0) and torch.any(state.pbc)):
         positions = feat_util.batch_map_to_pbc_cell(positions, row_vector_cell, n_node)
 
     n_systems = state.system_idx.max().item() + 1
@@ -190,13 +187,13 @@ def state_to_atom_graphs(  # noqa: PLR0915
         atomic_numbers_per_system = atomic_numbers[system_mask]
         atomic_numbers_embedding_per_system = atomic_numbers_embedding[system_mask]
         cell_per_system = row_vector_cell[sys_idx]
-        pbc_per_system = pbc
+        pbc = state.pbc
 
         # Compute edges directly for this system
         edges, vectors, unit_shifts = feat_util.compute_pbc_radius_graph(
             positions=positions_per_system,
             cell=cell_per_system,
-            pbc=pbc_per_system,
+            pbc=pbc,
             radius=system_config.radius,
             max_number_neighbors=max_num_neighbors,
             edge_method=edge_method,
@@ -230,7 +227,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
 
         graph_feats = {
             "cell": cell_per_system,
-            "pbc": pbc_per_system,
+            "pbc": pbc,
             "lattice": lattice_per_system.to(device=positions_per_system.device),
         }
 

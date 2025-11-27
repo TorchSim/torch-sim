@@ -57,7 +57,7 @@ target_pressure = torch.tensor(
     10_000 * Units.pressure, device=device, dtype=dtype
 )  # Target pressure (0 bar)
 
-state = ts.nvt_nose_hoover_init(model=model, state=state, kT=kT, dt=dt, seed=1)
+state = ts.nvt_nose_hoover_init(state=state, model=model, kT=kT, dt=dt, seed=1)
 
 for step in range(N_steps_nvt):
     if step % 10 == 0:
@@ -69,7 +69,7 @@ for step in range(N_steps_nvt):
         )
         invariant = float(ts.nvt_nose_hoover_invariant(state, kT=kT))
         print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}, ")
-    state = ts.nvt_nose_hoover_step(model=model, state=state, dt=dt, kT=kT)
+    state = ts.nvt_nose_hoover_step(state=state, model=model, dt=dt, kT=kT)
 
 state = ts.npt_langevin_init(
     state=state,
