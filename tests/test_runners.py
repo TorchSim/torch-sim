@@ -108,6 +108,21 @@ def test_integrate_double_nvt(
     assert not torch.isnan(final_state.energy).any()
 
 
+def test_integrate_double_nvt_multiple_temperatures(
+    ar_double_sim_state: SimState, lj_model: LennardJonesModel
+) -> None:
+    """Test NVT integration with LJ potential."""
+    _ = ts.integrate(
+        system=ar_double_sim_state,
+        model=lj_model,
+        integrator=ts.Integrator.nvt_langevin,
+        n_steps=10,
+        temperature=[100.0, 200.0],  # K
+        timestep=0.001,  # ps
+        init_kwargs=dict(seed=481516),
+    )
+
+
 def test_integrate_double_nvt_with_reporter(
     ar_double_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
 ) -> None:
