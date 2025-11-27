@@ -41,7 +41,6 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
-
 if TYPE_CHECKING:
     from ase import Atoms
     from ase.io.trajectory import TrajectoryReader
@@ -158,16 +157,16 @@ class TrajectoryReporter:
         self._add_model_arg_to_prop_calculators()
 
     @property
-    def filenames(self) -> list[str | None]:
+    def filenames(self) -> list[str] | None:
         """Get the list of trajectory filenames.
 
         Returns:
-            list[str | pathlib.Path] | None: List of trajectory file paths,
+            list[str] | None: List of trajectory file paths,
                 or None if no trajectories are loaded.
         """
         if not self.trajectories:
             return None
-        return [traj._file.filename for traj in self.trajectories]
+        return [traj.filename for traj in self.trajectories]
 
     def reopen_trajectories(
         self, filenames: str | pathlib.Path | Sequence[str | pathlib.Path]
