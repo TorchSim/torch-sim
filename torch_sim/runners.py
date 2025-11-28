@@ -231,7 +231,7 @@ def integrate[T: SimState](  # noqa: C901
                 state=state,
                 model=model,
                 dt=dt,
-                kT=kTs[step - initial_step],
+                kT=kTs[step - 1],
                 **integrator_kwargs,
             )
 
@@ -498,6 +498,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         )
         og_initial_step = og_initial_step + last_logged_steps
     steps_so_far = 0
+    step = og_initial_step.clone()
 
     last_energy = None
     all_converged_states: list[T] = []
@@ -519,7 +520,6 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             break
         state, converged_states = result
         all_converged_states.extend(converged_states)
-        initial_step = og_initial_step[autobatcher.current_idx]
 
         # need to update the trajectory reporter if any states have converged
         if (
@@ -534,15 +534,14 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         for _step in range(steps_between_swaps):
             if hasattr(state, "energy"):
                 last_energy = state.energy
-
             state = step_fn(state=state, model=model, **optimizer_kwargs)
 
             if trajectory_reporter:
                 trajectory_reporter.report(
-                    state, (initial_step + steps_so_far).tolist(), model=model
+                    state, step[autobatcher.current_idx].tolist(), model=model
                 )
-            steps_so_far += 1
-            exceeded_max_steps = (initial_step + steps_so_far) > max_steps
+            step[autobatcher.current_idx] += 1
+            exceeded_max_steps = step > max_steps
             if exceeded_max_steps.all():
                 warnings.warn(
                     f"All systems have reached the maximum number of steps: {max_steps}.",
@@ -552,7 +551,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
 
         convergence_tensor = convergence_fn(state, last_energy)
         # Mark states that exceeded max steps as converged to remove them from batch
-        convergence_tensor = convergence_tensor | exceeded_max_steps
+        convergence_tensor = convergence_tensor | exceeded_max_steps[autobatcher.current_idx]
         if tqdm_pbar:
             # assume convergence_tensor shape is correct
             tqdm_pbar.update(torch.count_nonzero(convergence_tensor).item())
