@@ -250,7 +250,9 @@ def integrate[T: SimState](  # noqa: C901
     # Handle both BinningAutoBatcher and list of tuples
     for state, system_indices in batch_iterator:
         # Pass correct parameters based on integrator type
-        batch_kT = kTs[:, system_indices] if (system_indices and kTs.shape == 2) else kTs
+        batch_kT = (
+            kTs[:, system_indices] if (system_indices and len(kTs.shape) == 2) else kTs
+        )
         state = init_func(
             state=state, model=model, kT=batch_kT[0], dt=dt, **init_kwargs or {}
         )
