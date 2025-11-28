@@ -121,7 +121,10 @@ def integrate[T: SimState](  # noqa: C901
         model (ModelInterface): Neural network model module
         integrator (Integrator | tuple): Either a key from Integrator or a tuple of
             (init_func, step_func) functions.
-        n_steps (int): Number of integration steps
+        n_steps (int): Number of integration steps. If resuming from a trajectory, this
+            is the total number of steps to run, not the number of additional steps.
+            That is, if the trajectory has 10 steps and n_steps=20, the integrator will
+            run an additional 10 steps.
         temperature (float | ArrayLike): Temperature or array of temperatures for each
             step
         timestep (float): Integration time step
@@ -178,6 +181,27 @@ def integrate[T: SimState](  # noqa: C901
             trajectory_reporter,
             properties=["kinetic_energy", "potential_energy", "temperature"],
         )
+    # Auto-detect initial step from trajectory files for resuming integration
+    initial_step: int = 1
+    if trajectory_reporter is not None and trajectory_reporter.mode == "a":
+        last_logged_steps = trajectory_reporter.last_step
+        last_logged_step = min(last_logged_steps)
+        initial_step = initial_step + last_logged_step
+        if initial_step > n_steps:
+            warnings.warn(
+                f"Initial step {initial_step} > n_steps {n_steps}. Nothing will be done.",
+                stacklevel=2,
+            )
+            return initial_state  # type: ignore[return-value]
+        if len(set(last_logged_steps)) != 1:
+            warnings.warn(
+                "Trajectory files have different last steps. "
+                "Using the minimum last step for resuming integration."
+                "This means that some trajectories may be truncated.",
+                stacklevel=2,
+            )
+            for traj in trajectory_reporter.trajectories:
+                traj.truncate_to_step(last_logged_step)
 
     final_states: list[T] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
@@ -197,14 +221,18 @@ def integrate[T: SimState](  # noqa: C901
         # set up trajectory reporters
         if autobatcher and trajectory_reporter is not None and og_filenames is not None:
             # we must remake the trajectory reporter for each system
-            trajectory_reporter.load_new_trajectories(
+            trajectory_reporter.reopen_trajectories(
                 filenames=[og_filenames[i] for i in system_indices]
             )
 
         # run the simulation
-        for step in range(1, n_steps + 1):
+        for step in range(initial_step, n_steps + 1):
             state = step_func(
-                state=state, model=model, dt=dt, kT=kTs[step - 1], **integrator_kwargs
+                state=state,
+                model=model,
+                dt=dt,
+                kT=kTs[step - 1],
+                **integrator_kwargs,
             )
 
             if trajectory_reporter:
@@ -460,7 +488,18 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             trajectory_reporter, properties=["potential_energy"]
         )
 
-    step: int = 1
+    # Auto-detect initial step from trajectory files for resuming optimizations
+    og_initial_step: torch.LongTensor = torch.full(
+        size=(state.n_systems,), fill_value=1, dtype=torch.long, device=state.device
+    )
+    if trajectory_reporter is not None and trajectory_reporter.mode == "a":
+        last_logged_steps = torch.tensor(
+            trajectory_reporter.last_step, dtype=torch.long, device=state.device
+        )
+        og_initial_step = og_initial_step + last_logged_steps
+    steps_so_far = 0
+    step = og_initial_step.clone()
+
     last_energy = None
     all_converged_states: list[T] = []
     convergence_tensor = None
@@ -486,27 +525,35 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         if (
             trajectory_reporter is not None
             and og_filenames is not None
-            and (step == 1 or len(converged_states) > 0)
+            and (steps_so_far == 0 or len(converged_states) > 0)
         ):
-            trajectory_reporter.load_new_trajectories(
+            trajectory_reporter.reopen_trajectories(
                 filenames=[og_filenames[i] for i in autobatcher.current_idx]
             )
 
         for _step in range(steps_between_swaps):
             if hasattr(state, "energy"):
                 last_energy = state.energy
-
             state = step_fn(state=state, model=model, **optimizer_kwargs)
 
             if trajectory_reporter:
-                trajectory_reporter.report(state, step, model=model)
-            step += 1
-            if step > max_steps:
-                # TODO: max steps should be tracked for each structure in the batch
-                warnings.warn(f"Optimize has reached max steps: {step}", stacklevel=2)
+                trajectory_reporter.report(
+                    state, step[autobatcher.current_idx].tolist(), model=model
+                )
+            step[autobatcher.current_idx] += 1
+            exceeded_max_steps = step > max_steps
+            if exceeded_max_steps.all():
+                warnings.warn(
+                    f"All systems have reached the maximum number of steps: {max_steps}.",
+                    stacklevel=2,
+                )
                 break
 
         convergence_tensor = convergence_fn(state, last_energy)
+        # Mark states that exceeded max steps as converged to remove them from batch
+        convergence_tensor = (
+            convergence_tensor | exceeded_max_steps[autobatcher.current_idx]
+        )
         if tqdm_pbar:
             # assume convergence_tensor shape is correct
             tqdm_pbar.update(torch.count_nonzero(convergence_tensor).item())
@@ -604,7 +651,7 @@ def static(
         # set up trajectory reporters
         if autobatcher and trajectory_reporter and og_filenames is not None:
             # we must remake the trajectory reporter for each system
-            trajectory_reporter.load_new_trajectories(
+            trajectory_reporter.reopen_trajectories(
                 filenames=[og_filenames[idx] for idx in system_indices]
             )
 
