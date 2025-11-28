@@ -206,8 +206,8 @@ class FairChemModel(ModelInterface):
             zip(n_atoms, torch.cumsum(n_atoms, dim=0), strict=False)
         ):
             # Extract system data
-            positions = sim_state.positions[c - n: c].cpu().numpy()
-            atomic_nums = sim_state.atomic_numbers[c - n: c].cpu().numpy()
+            positions = sim_state.positions[c - n : c].cpu().numpy()
+            atomic_nums = sim_state.atomic_numbers[c - n : c].cpu().numpy()
             pbc = sim_state.pbc.cpu().numpy()
             cell = (
                 sim_state.row_vector_cell[idx].cpu().numpy()
