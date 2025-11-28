@@ -151,6 +151,10 @@ def _normalize_temperature_tensor(
         )
 
     if temps.shape[0] == initial_state.n_systems:
+        if temps.ndim == 2:
+            raise ValueError(
+                "If temperature tensor is 2D, first dimension must be n_steps."
+            )
         # Interpret as single-step multi-system temperatures → broadcast over steps
         return temps.unsqueeze(0).expand(n_steps, -1)  # (n_steps, n_systems)
 
