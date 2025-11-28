@@ -122,6 +122,22 @@ def test_integrate_double_nvt_multiple_temperatures(
         init_kwargs=dict(seed=481516),
     )
 
+    batcher = ts.autobatching.BinningAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=ar_double_sim_state[0].n_atoms,
+    )
+    _ = ts.integrate(
+        system=ar_double_sim_state,
+        model=lj_model,
+        integrator=ts.Integrator.nvt_langevin,
+        n_steps=10,
+        temperature=[100.0, 200.0],  # K
+        timestep=0.001,  # ps
+        autobatcher=batcher,
+        init_kwargs=dict(seed=481516),
+    )
+
 
 def test_integrate_double_nvt_with_reporter(
     ar_double_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
