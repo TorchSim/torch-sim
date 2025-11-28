@@ -551,7 +551,9 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
 
         convergence_tensor = convergence_fn(state, last_energy)
         # Mark states that exceeded max steps as converged to remove them from batch
-        convergence_tensor = convergence_tensor | exceeded_max_steps[autobatcher.current_idx]
+        convergence_tensor = (
+            convergence_tensor | exceeded_max_steps[autobatcher.current_idx]
+        )
         if tqdm_pbar:
             # assume convergence_tensor shape is correct
             tqdm_pbar.update(torch.count_nonzero(convergence_tensor).item())
