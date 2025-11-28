@@ -143,8 +143,13 @@ def _normalize_temperature_tensor(
         # A single value in a 1-element list/tensor
         return temps.repeat(n_steps)
 
-    # This assumes that in case n_systems == n_steps, the user wants to apply
-    # different temperatures per system, not per step.
+    if initial_state.n_systems == n_steps:
+        warnings.warn(
+            "n_systems is equal to n_steps. Interpreting temperature array of length "
+            "n_systems as temperatures for each system, broadcasted over steps.",
+            stacklevel=2,
+        )
+
     if temps.shape[0] == initial_state.n_systems:
         # Interpret as single-step multi-system temperatures → broadcast over steps
         return temps.unsqueeze(0).expand(n_steps, -1)  # (n_steps, n_systems)
