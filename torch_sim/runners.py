@@ -577,18 +577,6 @@ def static(
         properties=properties,
     )
 
-    @dataclass(kw_only=True)
-    class StaticState(SimState):
-        energy: torch.Tensor
-        forces: torch.Tensor
-        stress: torch.Tensor
-
-        _atom_attributes = SimState._atom_attributes | {"forces"}  # noqa: SLF001
-        _system_attributes = SimState._system_attributes | {  # noqa: SLF001
-            "energy",
-            "stress",
-        }
-
     all_props: list[dict[str, torch.Tensor]] = []
     og_filenames = trajectory_reporter.filenames
 
@@ -609,25 +597,21 @@ def static(
             )
 
         model_outputs = model(sub_state)
-        static_state = StaticState(
-            positions=sub_state.positions,
-            masses=sub_state.masses,
-            cell=sub_state.cell,
-            pbc=sub_state.pbc,
-            atomic_numbers=sub_state.atomic_numbers,
-            system_idx=sub_state.system_idx,
-            energy=model_outputs["energy"],
-            forces=(
-                model_outputs["forces"]
-                if model.compute_forces
-                else torch.full_like(sub_state.positions, fill_value=float("nan"))
-            ),
-            stress=(
-                model_outputs["stress"]
-                if model.compute_stress
-                else torch.full_like(sub_state.cell, fill_value=float("nan"))
-            ),
-        )
+        static_state = sub_state.clone()
+        for attribute_name, value in model_outputs["atom_attributes"].items():
+            static_state.set(attribute_name, value, "atom")
+        for attribute_name, value in model_outputs["system_attributes"].items():
+            static_state.set(attribute_name, value, "system")
+        for attribute_name, value in model_outputs["global_attributes"].items():
+            static_state.set(attribute_name, value, "global")
+
+        # Handle deprecated model outputs
+        if "energy" in model_outputs:
+            static_state.set("energy", model_outputs["energy"], "system")
+        if "forces" in model_outputs:
+            static_state.set("forces", model_outputs["forces"], "atom")
+        if "stress" in model_outputs:
+            static_state.set("stress", model_outputs["stress"], "system")
 
         props = trajectory_reporter.report(static_state, 0, model=model)
         all_props.extend(props)

@@ -27,6 +27,8 @@ Notes:
 """
 
 from abc import ABC, abstractmethod
+from typing import TypedDict
+from typing_extensions import deprecated
 
 import torch
 
@@ -35,13 +37,28 @@ from torch_sim.state import SimState
 from torch_sim.typing import MemoryScaling, StateDict
 
 
+class ModelInterfaceOutput(TypedDict):
+    """The expected output of a model forward pass implementation."""
+
+    atom_attributes: dict[str, torch.Tensor]
+    system_attributes: dict[str, torch.Tensor]
+    global_attributes: dict[str, torch.Tensor]
+
+    # deprecated attributes. People who've written their own model interfaces should move
+    # away from this and write their results to atom_attributes, system_attributes, and
+    # global_attributes.
+    energy: torch.Tensor | None
+    forces: torch.Tensor | None
+    stress: torch.Tensor | None
+
+
 class ModelInterface(torch.nn.Module, ABC):
     """Abstract base class for all simulation models in TorchSim.
 
     This interface provides a common structure for all energy and force models,
     ensuring they implement the required methods and properties. It defines how
-    models should process atomic positions and system information to compute energies,
-    forces, and stresses.
+    models should process atomic positions and system information to compute
+    system-wide attributes like energies/stresses, or atom-wise attributes like forces.
 
     Attributes:
         device (torch.device): Device where the model runs computations.
@@ -133,7 +150,7 @@ class ModelInterface(torch.nn.Module, ABC):
         return getattr(self, "_memory_scales_with", "n_atoms_x_density")
 
     @abstractmethod
-    def forward(self, state: SimState | StateDict, **kwargs) -> dict[str, torch.Tensor]:
+    def forward(self, state: SimState | StateDict, **kwargs) -> ModelInterfaceOutput:
         """Calculate energies, forces, and stresses for a atomistic system.
 
         This is the main computational method that all model implementations must provide.
@@ -151,27 +168,32 @@ class ModelInterface(torch.nn.Module, ABC):
             **kwargs: Additional model-specific parameters.
 
         Returns:
-            dict[str, torch.Tensor]: Computed properties:
-                - "energy": Potential energy with shape [n_systems]
-                - "forces": Atomic forces with shape [n_atoms, 3]
-                - "stress": Stress tensor with shape [n_systems, 3, 3] (if
-                    compute_stress=True)
-                - May include additional model-specific outputs
+            ModelInterfaceOutput: Computed properties:
+                - "atom_attributes": Dictionary of atom-wise attributes
+                - "system_attributes": Dictionary of system-wide attributes
+                - "global_attributes": Dictionary of global attributes
 
         Examples:
             ```py
             # Compute energies and forces with a model
             output = model.forward(state)
 
-            energy = output["energy"]
-            forces = output["forces"]
-            stress = output.get("stress", None)
+            energy = output["system_attributes"]["energy"]
+            forces = output["atom_attributes"]["forces"]
+            stress = output["system_attributes"].get("stress")
             ```
         """
 
 
+# TODO: we should put this logic inside __init_subclass__ of Modelinterface to
+# automatically validate the model outputs when the model is subclassed.
 def validate_model_outputs(  # noqa: C901, PLR0915
-    model: ModelInterface, device: torch.device, dtype: torch.dtype
+    model: ModelInterface,
+    device: torch.device,
+    dtype: torch.dtype,
+    expected_output_atom_attributes: set[str],
+    expected_output_system_attributes: set[str],
+    expected_output_global_attributes: set[str],
 ) -> None:
     """Validate the outputs of a model implementation against the interface requirements.
 
@@ -183,7 +205,8 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         model (ModelInterface): Model implementation to validate.
         device (torch.device): Device to run the validation tests on.
         dtype (torch.dtype): Data type to use for validation tensors.
-
+        expected_output_attributes (set[str]): The attributes that the model is expected
+            to return.
     Raises:
         AssertionError: If the model doesn't conform to the required interface,
             including issues with output shapes, types, or behavior consistency.
@@ -243,46 +266,54 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         raise ValueError(f"{og_atomic_nums=} != {sim_state.atomic_numbers=}")
 
     # assert model output has the correct keys
-    if "energy" not in model_output:
-        raise ValueError("energy not in model output")
-    if force_computed and "forces" not in model_output:
-        raise ValueError("forces not in model output")
-    if stress_computed and "stress" not in model_output:
-        raise ValueError("stress not in model output")
-
-    # assert model output shapes are correct
-    if model_output["energy"].shape != (2,):
-        raise ValueError(f"{model_output['energy'].shape=} != (2,)")
-    if force_computed and model_output["forces"].shape != (20, 3):
-        raise ValueError(f"{model_output['forces'].shape=} != (20, 3)")
-    if stress_computed and model_output["stress"].shape != (2, 3, 3):
-        raise ValueError(f"{model_output['stress'].shape=} != (2, 3, 3)")
+    for attr in expected_output_atom_attributes:
+        if attr not in model_output["atom_attributes"]:
+            raise ValueError(f"{attr} not in model output")
+    for attr in expected_output_system_attributes:
+        if attr not in model_output["system_attributes"]:
+            raise ValueError(f"{attr} not in model output")
+    for attr in expected_output_global_attributes:
+        if attr not in model_output["global_attributes"]:
+            raise ValueError(f"{attr} not in model output")
 
     si_state = ts.io.atoms_to_state([si_atoms], device, dtype)
     fe_state = ts.io.atoms_to_state([fe_atoms], device, dtype)
 
     si_model_output = model.forward(si_state)
-    if not torch.allclose(
-        si_model_output["energy"], model_output["energy"][0], atol=10e-3
-    ):
-        raise ValueError(f"{si_model_output['energy']=} != {model_output['energy'][0]=}")
-    if not torch.allclose(
-        forces := si_model_output["forces"],
-        expected_forces := model_output["forces"][: si_state.n_atoms],
-        atol=10e-3,
-    ):
-        raise ValueError(f"{forces=} != {expected_forces=}")
-
     fe_model_output = model.forward(fe_state)
-    si_model_output = model.forward(si_state)
 
-    if not torch.allclose(
-        fe_model_output["energy"], model_output["energy"][1], atol=10e-2
-    ):
-        raise ValueError(f"{fe_model_output['energy']=} != {model_output['energy'][1]=}")
-    if not torch.allclose(
-        forces := fe_model_output["forces"],
-        expected_forces := model_output["forces"][si_state.n_atoms :],
-        atol=10e-2,
-    ):
-        raise ValueError(f"{forces=} != {expected_forces=}")
+    for attr in expected_output_atom_attributes:
+        if attr in model_output["atom_attributes"]:
+            si_attr = si_model_output["atom_attributes"][attr]
+            batched_attr = model_output["atom_attributes"][attr]
+            expected_attr = batched_attr[: si_state.n_atoms]
+            if not torch.allclose(si_attr, expected_attr, atol=10e-3):
+                raise ValueError(f"{attr}: {si_attr=} != {expected_attr=}")
+
+            fe_attr = fe_model_output["atom_attributes"][attr]
+            expected_fe_attr = batched_attr[si_state.n_atoms :]
+            if not torch.allclose(fe_attr, expected_fe_attr, atol=10e-2):
+                raise ValueError(f"{attr}: {fe_attr=} != {expected_fe_attr=}")
+
+    for attr in expected_output_system_attributes:
+        if attr in model_output["system_attributes"]:
+            si_attr = si_model_output["system_attributes"][attr]
+            batched_attr = model_output["system_attributes"][attr]
+            expected_attr = batched_attr[0]
+            if not torch.allclose(si_attr, expected_attr, atol=10e-3):
+                raise ValueError(f"{attr}: {si_attr=} != {expected_attr=}")
+
+            fe_attr = fe_model_output["system_attributes"][attr]
+            expected_fe_attr = batched_attr[1]
+            if not torch.allclose(fe_attr, expected_fe_attr, atol=10e-2):
+                raise ValueError(f"{attr}: {fe_attr=} != {expected_fe_attr=}")
+
+    for attr in expected_output_global_attributes:
+        if attr in model_output["global_attributes"]:
+            si_attr = si_model_output["global_attributes"][attr]
+            fe_attr = fe_model_output["global_attributes"][attr]
+            batched_attr = model_output["global_attributes"][attr]
+            if not torch.allclose(si_attr, batched_attr, atol=10e-3):
+                raise ValueError(f"{attr}: {si_attr=} != {batched_attr=}")
+            if not torch.allclose(fe_attr, batched_attr, atol=10e-2):
+                raise ValueError(f"{attr}: {fe_attr=} != {batched_attr=}")

@@ -10,7 +10,7 @@ import typing
 from collections import defaultdict
 from collections.abc import Generator, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, Set, TypeVar
 
 import torch
 
@@ -97,6 +97,10 @@ class SimState:
         def pbc(self) -> torch.Tensor:
             """A getter for pbc that tells type checkers it's always defined."""
             return self.pbc
+
+    _extra_atom_attributes: dict[str, torch.Tensor] = field(default_factory=dict)
+    _extra_system_attributes: dict[str, torch.Tensor] = field(default_factory=dict)
+    _extra_global_attributes: dict[str, Any] = field(default_factory=dict)
 
     _atom_attributes: ClassVar[set[str]] = {
         "positions",
@@ -204,7 +208,7 @@ class SimState:
     def attributes(self) -> dict[str, torch.Tensor]:
         """Get all public attributes of the state."""
         return {
-            attr: getattr(self, attr)
+            attr: self.get(attr)
             for attr in self._atom_attributes
             | self._system_attributes
             | self._global_attributes
@@ -401,6 +405,74 @@ class SimState:
         )
 
         return _slice_state(self, system_indices)
+
+    def get(self, attribute_name: str) -> Any:
+        """Get the attribute of the state."""
+        if (
+            attribute_name
+            in self._atom_attributes | self._system_attributes | self._global_attributes
+        ):
+            return getattr(self, attribute_name)
+
+        if attribute_name in self._extra_atom_attributes:
+            return self._extra_atom_attributes[attribute_name]
+        if attribute_name in self._extra_system_attributes:
+            return self._extra_system_attributes[attribute_name]
+        if attribute_name in self._extra_global_attributes:
+            return self._extra_global_attributes[attribute_name]
+        return None
+
+    def get_strict(self, attribute_name: str) -> Any:
+        """Get the attribute of the state.
+
+        Raises a ValueError if the attribute is not found.
+        """
+        res = self.get(attribute_name)
+        if res is None:
+            raise ValueError(f"Attribute '{attribute_name}' not found in state")
+        return res
+
+    def set(
+        self,
+        attribute_name: str,
+        value: Any,
+        kind: Literal["atom", "system", "global"] | None = None,
+    ) -> None:
+        """Set the attribute of the state."""
+        # 1) Handle special cases for default attributes
+        all_default_attributes = (
+            self._atom_attributes | self._system_attributes | self._global_attributes
+        )
+        if attribute_name in all_default_attributes:
+            # no need to check kind since it's already a default attribute
+            setattr(self, attribute_name, value)
+            return
+
+        # 2) validate the kind and value
+        if kind is None:
+            raise ValueError("Kind must be specified for extra attributes")
+        if kind in ("atom", "system") and not isinstance(value, torch.Tensor):
+            raise ValueError(f"Value for '{attribute_name}' must be a torch.Tensor")
+
+        # 3) Write the value to the appropriate extra attribute
+        if kind == "atom":
+            if value.shape[0] != self.n_atoms:
+                raise ValueError(
+                    f"Value for '{attribute_name}' must have shape (n_atoms, ...)"
+                )
+            self._extra_atom_attributes[attribute_name] = value
+        elif kind == "system":
+            if value.shape[0] != self.n_systems:
+                raise ValueError(
+                    f"Value for '{attribute_name}' must have shape (n_systems, ...)"
+                )
+            self._extra_system_attributes[attribute_name] = value
+        elif kind == "global":
+            self._extra_global_attributes[attribute_name] = value
+        else:
+            raise ValueError(
+                f"Invalid kind: {kind}. Must be 'atom', 'system', or 'global'."
+            )
 
     def __init_subclass__(cls, **kwargs) -> None:
         """Enforce that all derived states cannot have tensor attributes that can also be
@@ -617,7 +689,9 @@ def _state_to_device[T: SimState](
 
 
 def get_attrs_for_scope(
-    state: SimState, scope: Literal["per-atom", "per-system", "global"]
+    state: SimState,
+    scope: Literal["per-atom", "per-system", "global"],
+    attribute_kind: Literal["only_default", "only_extra", "all"] = "all",
 ) -> Generator[tuple[str, Any], None, None]:
     """Get attributes for a given scope.
 
@@ -629,17 +703,27 @@ def get_attrs_for_scope(
     Returns:
         Generator[tuple[str, Any], None, None]: A generator of attribute names and values
     """
+    attr_names = set[str]()
     match scope:
         case "per-atom":
-            attr_names = state._atom_attributes  # noqa: SLF001
+            if attribute_kind in ["only_default", "all"]:
+                attr_names |= state._atom_attributes  # noqa: SLF001
+            if attribute_kind in ["only_extra", "all"]:
+                attr_names |= state._extra_atom_attributes.keys()  # noqa: SLF001
         case "per-system":
-            attr_names = state._system_attributes  # noqa: SLF001
+            if attribute_kind in ["only_default", "all"]:
+                attr_names |= state._system_attributes  # noqa: SLF001
+            if attribute_kind in ["only_extra", "all"]:
+                attr_names |= state._extra_system_attributes.keys()  # noqa: SLF001
         case "global":
-            attr_names = state._global_attributes  # noqa: SLF001
+            if attribute_kind in ["only_default", "all"]:
+                attr_names |= state._global_attributes  # noqa: SLF001
+            if attribute_kind in ["only_extra", "all"]:
+                attr_names |= state._extra_global_attributes.keys()  # noqa: SLF001
         case _:
             raise ValueError(f"Unknown scope: {scope!r}")
     for attr_name in attr_names:
-        yield attr_name, getattr(state, attr_name)
+        yield attr_name, state.get(attr_name)
 
 
 def _filter_attrs_by_mask(
@@ -870,15 +954,31 @@ def concatenate_states[T: SimState](  # noqa: C901
     if not all(isinstance(state, state_class) for state in states):
         raise TypeError("All states must be of the same type")
 
+    # ensure all states have the same extra attributes
+    first_state_attribute_names = extra_attribute_names(first_state)
+    if not all(
+        extra_attribute_names(state) == first_state_attribute_names for state in states
+    ):
+        raise ValueError(
+            "All states must have the same extra attributes. Currently, the first state "
+            "has these extra attributes: {first_state_attribute_names}"
+        )
+
     # Use the target device or default to the first state's device
     target_device = device or first_state.device
 
     # Initialize result with global properties from first state
-    concatenated = dict(get_attrs_for_scope(first_state, "global"))
+    concatenated = dict(get_attrs_for_scope(first_state, "global", "only_default"))
+    concatenated_global_extra = dict(
+        get_attrs_for_scope(first_state, "global", "only_extra")
+    )
 
     # Pre-allocate lists for tensors to concatenate
     per_atom_tensors = defaultdict(list)
     per_system_tensors = defaultdict(list)
+    per_atom_tensors_extra = defaultdict[str, list[torch.Tensor]](list)
+    per_system_tensors_extra = defaultdict[str, list[torch.Tensor]](list)
+
     new_system_indices = []
     system_offset = 0
 
@@ -889,15 +989,29 @@ def concatenate_states[T: SimState](  # noqa: C901
             state = state.to(target_device)
 
         # Collect per-atom properties
-        for prop, val in get_attrs_for_scope(state, "per-atom"):
+        for prop, val in get_attrs_for_scope(
+            state, "per-atom", attribute_kind="only_default"
+        ):
             if prop == "system_idx":
                 # skip system_idx, it will be handled below
                 continue
             per_atom_tensors[prop].append(val)
 
+        for prop, val in get_attrs_for_scope(
+            state, "per-atom", attribute_kind="only_extra"
+        ):
+            per_atom_tensors_extra[prop].append(val)
+
         # Collect per-system properties
-        for prop, val in get_attrs_for_scope(state, "per-system"):
+        for prop, val in get_attrs_for_scope(
+            state, "per-system", attribute_kind="only_default"
+        ):
             per_system_tensors[prop].append(val)
+
+        for prop, val in get_attrs_for_scope(
+            state, "per-system", attribute_kind="only_extra"
+        ):
+            per_system_tensors_extra[prop].append(val)
 
         # Update system indices
         num_systems = state.n_systems
@@ -907,21 +1021,53 @@ def concatenate_states[T: SimState](  # noqa: C901
 
     # Concatenate collected tensors
     for prop, tensors in per_atom_tensors.items():
-        # if tensors:
         concatenated[prop] = torch.cat(tensors, dim=0)
 
     for prop, tensors in per_system_tensors.items():
-        # if tensors:
         if isinstance(tensors[0], torch.Tensor):
             concatenated[prop] = torch.cat(tensors, dim=0)
         else:  # Non-tensor attributes, take first one (they should all be identical)
             concatenated[prop] = tensors[0]
 
+    # concatenate the extra attributes
+    concatenated_per_atom_extra = dict(
+        get_attrs_for_scope(first_state, "per-atom", "only_extra")
+    )
+    concatenated_per_system_extra = dict(
+        get_attrs_for_scope(first_state, "per-system", "only_extra")
+    )
+    for prop, tensors in per_atom_tensors_extra.items():
+        concatenated_per_atom_extra[prop] = torch.cat(tensors, dim=0)
+    for prop, tensors in per_system_tensors_extra.items():
+        if isinstance(tensors[0], torch.Tensor):
+            concatenated_per_system_extra[prop] = torch.cat(tensors, dim=0)
+        else:  # Non-tensor attributes, take first one (they should all be identical)
+            concatenated_per_system_extra[prop] = tensors[0]
+
     # Concatenate system indices
     concatenated["system_idx"] = torch.cat(new_system_indices)
 
     # Create a new instance of the same class
-    return state_class(**concatenated)
+    new_state = state_class(**concatenated)
+
+    # Add the extra attributes (since these attributes are not in the class' constructor)
+    for prop, value in concatenated_per_atom_extra.items():
+        new_state.set(prop, value, kind="atom")
+    for prop, value in concatenated_per_system_extra.items():
+        new_state.set(prop, value, kind="system")
+    for prop, value in concatenated_global_extra.items():
+        new_state.set(prop, value, kind="global")
+
+    return new_state
+
+
+def extra_attribute_names(state: SimState) -> set[str]:
+    """Get the names of the extra attributes of the state."""
+    return (
+        state._extra_atom_attributes.keys()  # noqa: SLF001
+        | state._extra_system_attributes.keys()  # noqa: SLF001
+        | state._extra_global_attributes.keys()  # noqa: SLF001
+    )
 
 
 def initialize_state(
