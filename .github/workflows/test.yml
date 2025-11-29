@@ -192,7 +192,6 @@ jobs:
           HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
         run: |
           if [[ "${{ matrix.example }}" == *"fairchem"* ]]; then
-            uv pip install "huggingface_hub[cli]" --system
-            hf auth login --token "$HF_TOKEN"
+            uv pip install huggingface_hub --system
           fi
           uv run --with . ${{ matrix.example }}
