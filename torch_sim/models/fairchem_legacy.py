@@ -129,7 +129,7 @@ class FairChemV1Model(ModelInterface):
         seed: int | None = None,
         dtype: torch.dtype | None = None,
         compute_stress: bool = False,
-        pbc: bool = True,
+        pbc: torch.Tensor | bool = True,
         disable_amp: bool = True,
     ) -> None:
         """Initialize the FairChemV1Model with specified configuration.
@@ -150,7 +150,7 @@ class FairChemV1Model(ModelInterface):
             seed (int | None): Random seed for reproducibility
             dtype (torch.dtype | None): Data type to use for computation
             compute_stress (bool): Whether to compute stress tensor
-            pbc (bool): Whether to use periodic boundary conditions
+            pbc (torch.Tensor | bool): Whether to use periodic boundary conditions
             disable_amp (bool): Whether to disable AMP
         Raises:
             RuntimeError: If both model_name and model are specified
@@ -170,6 +170,12 @@ class FairChemV1Model(ModelInterface):
         self._compute_stress = compute_stress
         self._compute_forces = True
         self._memory_scales_with = "n_atoms"
+        if isinstance(pbc, bool):
+            pbc = torch.tensor([pbc] * 3, dtype=torch.bool)
+        elif not torch.all(pbc == pbc[0]):
+            raise ValueError(
+                f"FairChemV1Model does not support mixed PBC (got pbc={pbc.tolist()})"
+            )
         self.pbc = pbc
 
         if model_name is not None:
@@ -236,8 +242,10 @@ class FairChemV1Model(ModelInterface):
                 "Custom neighbor list is not supported for FairChemV1Model."
             )
 
+        pbc_bool = bool(self.pbc[0].item())
+
         if "backbone" in config["model"]:
-            config["model"]["backbone"]["use_pbc"] = pbc
+            config["model"]["backbone"]["use_pbc"] = pbc_bool
             config["model"]["backbone"]["use_pbc_single"] = False
             if dtype is not None:
                 try:
@@ -251,7 +259,7 @@ class FairChemV1Model(ModelInterface):
                         "WARNING: dtype not found in backbone, using default model dtype"
                     )
         else:
-            config["model"]["use_pbc"] = pbc
+            config["model"]["use_pbc"] = pbc_bool
             config["model"]["use_pbc_single"] = False
             if dtype is not None:
                 try:
@@ -333,7 +341,9 @@ class FairChemV1Model(ModelInterface):
         except NotImplementedError:
             print("Unable to load checkpoint!")
 
-    def forward(self, state: ts.SimState | StateDict) -> dict:
+    def forward(  # noqa: C901
+        self, state: ts.SimState | StateDict
+    ) -> dict:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by the model,
@@ -364,10 +374,24 @@ class FairChemV1Model(ModelInterface):
         if state.system_idx is None:
             state.system_idx = torch.zeros(state.positions.shape[0], dtype=torch.int)
 
-        if self.pbc != state.pbc:
+        # Extract uniform PBC value from state (validate it's uniform)
+        if isinstance(state.pbc, torch.Tensor):
+            if not torch.all(state.pbc == state.pbc[0]):
+                raise ValueError(
+                    "FairChemV1Model does not support mixed PBC "
+                    f"(got state.pbc={state.pbc.tolist()})"
+                )
+            state_pbc_bool = bool(state.pbc[0].item())
+        else:
+            state_pbc_bool = bool(state.pbc)
+
+        model_pbc_bool = bool(self.pbc[0].item())
+
+        if model_pbc_bool != state_pbc_bool:
             raise ValueError(
-                "PBC mismatch between model and state. "
-                "For FairChemV1Model PBC needs to be defined in the model class."
+                f"PBC mismatch: model has pbc={model_pbc_bool}, "
+                f"but state has pbc={state_pbc_bool}. "
+                "FairChemV1Model requires model and state PBC to match."
             )
 
         natoms = torch.bincount(state.system_idx)
@@ -383,7 +407,7 @@ class FairChemV1Model(ModelInterface):
                     atomic_numbers=state.atomic_numbers[c - n : c].clone(),
                     fixed=fixed[c - n : c].clone(),
                     natoms=n,
-                    pbc=torch.tensor([state.pbc, state.pbc, state.pbc], dtype=torch.bool),
+                    pbc=state.pbc,
                 )
             )
         self.data_object = Batch.from_data_list(data_list)
