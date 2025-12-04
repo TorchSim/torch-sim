@@ -232,6 +232,22 @@ def atoms_to_state(
     if not all(np.all(np.equal(at.pbc, atoms_list[0].pbc)) for at in atoms_list[1:]):
         raise ValueError("All systems must have the same periodic boundary conditions")
 
+    # Extract charge and spin from atoms.info if available
+    charge_list = []
+    spin_list = []
+    for at in atoms_list:
+        # ASE convention: store charge and spin in atoms.info dict
+        charge_list.append(at.info.get("charge", 0.0))
+        spin_list.append(at.info.get("spin", 0.0))
+
+    # Create tensors if any non-zero values exist
+    charge = None
+    spin = None
+    if any(c != 0.0 for c in charge_list):
+        charge = torch.tensor(charge_list, dtype=dtype, device=device)
+    if any(s != 0.0 for s in spin_list):
+        spin = torch.tensor(spin_list, dtype=dtype, device=device)
+
     return ts.SimState(
         positions=positions,
         masses=masses,
@@ -239,6 +255,8 @@ def atoms_to_state(
         pbc=atoms_list[0].pbc,
         atomic_numbers=atomic_numbers,
         system_idx=system_idx,
+        charge=charge,
+        spin=spin,
     )
 
 
