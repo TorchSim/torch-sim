@@ -255,6 +255,64 @@ def minimum_image_displacement(
     return torch.einsum("ij,...j->...i", cell, dr_frac)
 
 
+def minimum_image_displacement_batched(
+    dr: torch.Tensor, cell: torch.Tensor, system_idx: torch.Tensor, *, pbc: bool = True
+) -> torch.Tensor:
+    """Apply minimum image convention to displacement vectors with batched systems.
+
+    Args:
+        dr (torch.Tensor): Displacement vectors [n_atoms, 3] or [n_atoms, N, 3].
+        cell (torch.Tensor): Unit cell matrix [n_systems, 3, 3].
+        system_idx (torch.Tensor): Tensor of shape (n_atoms,)
+            containing system indices for each atom.
+        pbc (bool): Whether to apply periodic boundary conditions.
+
+    Returns:
+        torch.Tensor: Minimum image displacement vectors with same shape as input.
+    """
+    if not pbc:
+        return dr
+
+    # Validate inputs
+    if not torch.is_floating_point(dr) or not torch.is_floating_point(cell):
+        raise TypeError(
+            "Displacement vectors \
+         and lattice vectors must be floating point tensors."
+        )
+
+    if dr.shape[-1] != cell.shape[-1]:
+        raise ValueError("Displacement dimensionality must match lattice vectors.")
+
+    # Get unique system indices and counts
+    unique_systems = torch.unique(system_idx)
+    n_systems = len(unique_systems)
+
+    if n_systems != cell.shape[0]:
+        raise ValueError(
+            f"Number of unique systems ({n_systems}) doesn't "
+            f"match number of cells ({cell.shape[0]})"
+        )
+
+    # Efficient approach without explicit loops
+    # Get the cell for each atom based on its system index
+    B = torch.linalg.inv(cell)  # Shape: (n_systems, 3, 3)
+    B_per_atom = B[system_idx]  # Shape: (n_atoms, 3, 3)
+
+    # Transform to fractional coordinates: f = B·r
+    # For each atom, multiply its position by its system's inverse cell matrix
+    frac_coords = torch.bmm(B_per_atom, dr.unsqueeze(2)).squeeze(2)
+
+    # Round to nearest integer to apply minimum image convention
+    wrapped_frac = frac_coords - torch.round(frac_coords)
+
+    # Transform back to real space: r = A·f
+    # Get the cell for each atom based on its system index
+    cell_per_atom = cell[system_idx]  # Shape: (n_atoms, 3, 3)
+
+    # For each atom, multiply its wrapped fractional coords by its system's cell matrix
+    return torch.bmm(cell_per_atom, wrapped_frac.unsqueeze(2)).squeeze(2)
+
+
 def get_pair_displacements(
     *,
     positions: torch.Tensor,
@@ -1175,3 +1233,46 @@ def safe_mask(
     """
     masked = torch.where(mask, operand, torch.zeros_like(operand))
     return torch.where(mask, fn(masked), torch.full_like(operand, placeholder))
+
+
+def unwrap_positions(pos: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
+    """Unwrap wrapped positions into continuous coordinates.
+
+    Parameters
+    ----------
+    pos : (T, N, 3) tensor
+        Wrapped cartesian positions
+    box : (3,3) or (T,3,3) tensor
+        Box matrix (orthorhombic: diagonal; triclinic: full 3x3).
+        If constant, pass shape (3,3). If time-dependent, pass (T,3,3).
+
+    Returns:
+    -------
+    unwrapped_pos : (T, N, 3) tensor
+        Unwrapped cartesian positions
+    """
+    box = box.squeeze()
+    if box.ndim == 2:  # constant box
+        inv_box = torch.inverse(box)  # (3,3)
+        frac = torch.matmul(pos, inv_box.T)  # (T,N,3)
+        dfrac = frac[1:] - frac[:-1]  # (T-1,N,3)
+        dfrac_corrected = dfrac - torch.round(dfrac)
+        dcart = torch.matmul(dfrac_corrected, box.T)  # (T-1,N,3)
+
+    elif box.ndim == 3:  # time-dependent box
+        inv_box = torch.inverse(box)  # (T,3,3)
+        # fractional coords: (T,N,3) = (T,3,3) @ (T,N,3)
+        frac = torch.einsum("tij,tnj->tni", inv_box, pos)
+        dfrac = frac[1:] - frac[:-1]  # (T-1,N,3)
+        dfrac_corrected = dfrac - torch.round(dfrac)
+        dcart = torch.einsum("tij,tnj->tni", box[:-1], dfrac_corrected)
+
+    else:
+        raise ValueError("box must be shape (3,3) or (T,3,3)")
+
+    # cumulative reconstruction
+    unwrapped = torch.empty_like(pos)
+    unwrapped[0] = pos[0]
+    unwrapped[1:] = torch.cumsum(dcart, dim=0) + unwrapped[0]
+
+    return unwrapped
