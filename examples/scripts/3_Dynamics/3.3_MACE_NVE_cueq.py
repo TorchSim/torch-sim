@@ -53,8 +53,10 @@ state = ts.io.atoms_to_state(si_dc, device=device, dtype=dtype)
 results = model(state)
 
 # Setup NVE MD simulation parameters
-kT = torch.tensor(1000, device=device, dtype=dtype) * Units.temperature
-dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # Timestep (ps)
+kT = (
+    torch.tensor(1000, device=device, dtype=dtype) * Units.temperature
+)  # Initial temperature (1000 K)
+dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # Timestep (fs)
 
 
 # Initialize NVE integrator

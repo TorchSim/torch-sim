@@ -50,7 +50,7 @@ state = ts.io.atoms_to_state(si_dc, device=device, dtype=dtype)
 # Run initial inference
 results = model(state)
 
-dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # Timestep (ps)
+dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # Timestep (fs)
 kT = (
     torch.tensor(1000, device=device, dtype=dtype) * Units.temperature
 )  # Initial temperature (K)

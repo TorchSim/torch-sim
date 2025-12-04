@@ -49,7 +49,7 @@ model = MaceModel(
 
 state = ts.io.atoms_to_state(si_dc, device=device, dtype=dtype)
 
-dt = 0.002 * Units.time  # Timestep (ps)
+dt = 0.002 * Units.time  # Timestep (fs)
 kT = (
     torch.tensor(1000, device=device, dtype=dtype) * Units.temperature
 )  # Initial temperature (K)

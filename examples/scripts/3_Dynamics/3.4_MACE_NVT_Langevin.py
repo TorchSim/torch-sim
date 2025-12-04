@@ -57,8 +57,10 @@ state = ts.SimState(
     positions=positions, masses=masses, cell=cell, atomic_numbers=atomic_numbers, pbc=True
 )
 
-dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # Timestep (ps)
-kT = torch.tensor(1000, device=device, dtype=dtype) * Units.temperature
+dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # Timestep (fs)
+kT = (
+    torch.tensor(1000, device=device, dtype=dtype) * Units.temperature
+)  # Initial temperature (1000 K)
 gamma = torch.tensor(
     10 / Units.time, device=device, dtype=dtype
 )  # Langevin friction coefficient (ps^-1)
