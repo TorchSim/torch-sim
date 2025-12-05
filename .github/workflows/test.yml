@@ -18,8 +18,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-14]
         version:
-          - { python: '3.12', resolution: highest }
-          - { python: '3.12', resolution: lowest-direct }
+          - { python: '3.11', resolution: highest }
+          - { python: '3.11', resolution: lowest-direct }
           - { python: '3.13', resolution: highest }
           - { python: '3.13', resolution: lowest-direct }
     runs-on: ${{ matrix.os }}
@@ -62,8 +62,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-14]
         version:
-          - { python: '3.12', resolution: highest }
-          - { python: '3.12', resolution: lowest-direct }
+          - { python: '3.11', resolution: highest }
+          - { python: '3.11', resolution: lowest-direct }
           - { python: '3.13', resolution: highest }
           - { python: '3.13', resolution: lowest-direct }
         model:
@@ -181,7 +181,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.11'
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
