@@ -341,12 +341,9 @@ class MaceModel(ModelInterface):
             edge_index=edge_index,
             unit_shifts=unit_shifts,
             shifts=shifts,
+            total_charge=sim_state.charge,
+            total_spin=sim_state.spin,
         )
-
-        # Add charge and spin (MACE expects "total_charge" and "total_spin")
-        # SimState always has these initialized (defaulting to zeros if not provided)
-        data_dict["total_charge"] = sim_state.charge
-        data_dict["total_spin"] = sim_state.spin
 
         # Get model output
         out = self.model(
