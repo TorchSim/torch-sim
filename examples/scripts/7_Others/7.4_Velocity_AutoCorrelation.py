@@ -93,7 +93,7 @@ def main() -> None:
 
     num_steps = 15000  # NOTE: short run
     for step in range(num_steps):
-        state = ts.nve_step(state=state, model=lj_model, dt=dt)  # type: ignore[call-arg]
+        state = ts.nve_step(state=state, model=lj_model, dt=dt)
         reporter.report(state, step)
 
     reporter.close()
