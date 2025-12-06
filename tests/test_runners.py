@@ -108,6 +108,63 @@ def test_integrate_double_nvt(
     assert not torch.isnan(final_state.energy).any()
 
 
+def test_integrate_double_nvt_multiple_temperatures(
+    ar_double_sim_state: SimState, lj_model: LennardJonesModel
+) -> None:
+    """Test NVT integration with LJ potential."""
+    n_steps = 5
+    _ = ts.integrate(
+        system=ar_double_sim_state,
+        model=lj_model,
+        integrator=ts.Integrator.nvt_langevin,
+        n_steps=n_steps,
+        temperature=[100.0, 200.0],  # K
+        timestep=0.001,  # ps
+        init_kwargs=dict(seed=481516),
+    )
+
+    batcher = ts.autobatching.BinningAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=ar_double_sim_state[0].n_atoms,
+    )
+    _ = ts.integrate(
+        system=ar_double_sim_state,
+        model=lj_model,
+        integrator=ts.Integrator.nvt_langevin,
+        n_steps=n_steps,
+        temperature=[100.0, 200.0],  # K
+        timestep=0.001,  # ps
+        autobatcher=batcher,
+        init_kwargs=dict(seed=481516),
+    )
+
+    # Temperature tensor with correct shape (n_steps, n_systems)
+    _ = ts.integrate(
+        system=ar_double_sim_state,
+        model=lj_model,
+        integrator=ts.Integrator.nvt_langevin,
+        n_steps=n_steps,
+        temperature=torch.tensor([100.0, 200.0])[None, :].repeat(n_steps, 1),
+        timestep=0.001,  # ps
+        autobatcher=batcher,
+        init_kwargs=dict(seed=481516),
+    )
+
+    # Temperature tensor with incorrect shape (n_systems, n_steps)
+    with pytest.raises(ValueError, match="first dimension must be n_steps"):
+        _ = ts.integrate(
+            system=ar_double_sim_state,
+            model=lj_model,
+            integrator=ts.Integrator.nvt_langevin,
+            n_steps=n_steps,
+            temperature=torch.tensor([100.0, 200.0])[None, :].repeat(n_steps, 1).T,  # K
+            timestep=0.001,  # ps
+            autobatcher=batcher,
+            init_kwargs=dict(seed=481516),
+        )
+
+
 def test_integrate_double_nvt_with_reporter(
     ar_double_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
 ) -> None:
