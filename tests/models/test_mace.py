@@ -16,7 +16,7 @@ from torch_sim.models.mace import MaceUrls
 
 try:
     from mace.calculators import MACECalculator
-    from mace.calculators.foundations_models import mace_mp, mace_off
+    from mace.calculators.foundations_models import mace_mp, mace_off, mace_omol
 
     from torch_sim.models.mace import MaceModel
 except (ImportError, ValueError):
@@ -25,6 +25,7 @@ except (ImportError, ValueError):
 
 raw_mace_mp = mace_mp(model=MaceUrls.mace_mp_small, return_raw_model=True)
 raw_mace_off = mace_off(model=MaceUrls.mace_off_small, return_raw_model=True)
+raw_mace_omol = mace_omol(model="extra_large", return_raw_model=True)
 DTYPE = torch.float64
 
 
@@ -137,3 +138,53 @@ def test_mace_urls_enum() -> None:
     for key in MaceUrls:
         assert key.value.startswith("https://github.com/ACEsuit/mace-")
         assert key.value.endswith((".model", ".model?raw=true"))
+
+
+@pytest.mark.parametrize(
+    ("charge", "spin"),
+    [
+        (0.0, 0.0),  # Neutral, no spin
+        (1.0, 1.0),  # +1 charge, spin=1 (doublet)
+        (-1.0, 0.0),  # -1 charge, no spin (singlet)
+        (0.0, 2.0),  # Neutral, spin=2 (triplet)
+    ],
+)
+def test_mace_charge_spin(benzene_atoms: Atoms, charge: float, spin: float) -> None:
+    """Test that MaceModel correctly handles charge and spin from atoms.info."""
+    # Set charge and spin in ASE atoms.info
+    benzene_atoms.info["charge"] = charge
+    benzene_atoms.info["spin"] = spin
+
+    # Convert to SimState (should extract charge/spin)
+    state = ts.io.atoms_to_state([benzene_atoms], DEVICE, DTYPE)
+
+    # Verify charge/spin were extracted correctly
+    if charge != 0.0:
+        assert state.charge is not None
+        assert state.charge[0].item() == charge
+    else:
+        assert state.charge is None or state.charge[0].item() == 0.0
+
+    if spin != 0.0:
+        assert state.spin is not None
+        assert state.spin[0].item() == spin
+    else:
+        assert state.spin is None or state.spin[0].item() == 0.0
+
+    # Create model with MACE-OMOL (supports charge/spin for molecules)
+    model = MaceModel(
+        model=raw_mace_omol,
+        device=DEVICE,
+        dtype=DTYPE,
+        compute_forces=True,
+    )
+
+    # This should not raise an error
+    result = model.forward(state)
+
+    # Verify outputs exist
+    assert "energy" in result
+    assert result["energy"].shape == (1,)
+    if model.compute_forces:
+        assert "forces" in result
+        assert result["forces"].shape == benzene_atoms.positions.shape
