@@ -19,9 +19,11 @@ Notes:
 from __future__ import annotations
 
 import copy
+import os
 import traceback
 import typing
 import warnings
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
@@ -71,7 +73,6 @@ except ImportError as exc:
 
 if typing.TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from torch_sim.typing import StateDict
 
@@ -118,11 +119,10 @@ class FairChemV1Model(ModelInterface):
 
     def __init__(  # noqa: C901, PLR0915
         self,
-        model: str | Path | None,
+        model: str | Path | None = None,
         neighbor_list_fn: Callable | None = None,
         *,  # force remaining arguments to be keyword-only
         config_yml: str | None = None,
-        model_name: str | None = None,
         local_cache: str | None = None,
         trainer: str | None = None,
         cpu: bool = False,
@@ -139,12 +139,15 @@ class FairChemV1Model(ModelInterface):
         in energy and force calculations.
 
         Args:
-            model (str | Path | None): Path to model checkpoint file
+            model (str | Path | None): Either a pretrained model name or path to model
+                checkpoint file. The function will first check if it's a valid file
+                path, and if not, will attempt to load it as a pretrained model name
+                (requires local_cache to be set). If None, config_yml must be provided.
             neighbor_list_fn (Callable | None): Function to compute neighbor lists
                 (not currently supported)
             config_yml (str | None): Path to configuration YAML file
-            model_name (str | None): Name of pretrained model to load
-            local_cache (str | None): Path to local model cache directory
+            local_cache (str | None): Path to local model cache directory (required
+                when using pretrained model names)
             trainer (str | None): Name of trainer class to use
             cpu (bool): Whether to use CPU instead of GPU for computation
             seed (int | None): Random seed for reproducibility
@@ -153,10 +156,10 @@ class FairChemV1Model(ModelInterface):
             pbc (torch.Tensor | bool): Whether to use periodic boundary conditions
             disable_amp (bool): Whether to disable AMP
         Raises:
-            RuntimeError: If both model_name and model are specified
-            NotImplementedError: If local_cache is not set when model_name is used
             NotImplementedError: If custom neighbor list function is provided
             ValueError: If stress computation is requested but not supported by model
+            ValueError: If neither config_yml nor model is provided
+            ValueError: If model cannot be loaded as file or pretrained model
 
         Notes:
             Either config_yml or model must be provided. The model loads configuration
@@ -178,19 +181,25 @@ class FairChemV1Model(ModelInterface):
             )
         self.pbc = pbc
 
-        if model_name is not None:
-            if model is not None:
-                raise RuntimeError(
-                    "model_name and checkpoint_path were both specified, "
-                    "please use only one at a time"
+        # Process model parameter if provided
+        if model is not None:
+            # Convert Path to string for consistency
+            if isinstance(model, Path):
+                model = str(model)
+
+            # Determine if model is a file path or a pretrained model name
+            # First check if it's a valid file path
+            if not os.path.isfile(model):
+                # If not a file, try to load as pretrained model name
+                if local_cache is None:
+                    raise ValueError(
+                        f"Model '{model}' is not a valid file path. "
+                        "If using a pretrained model name, local_cache must be set."
+                    )
+                # Attempt to load as pretrained model name
+                model = model_name_to_local_file(
+                    model_name=model, local_cache=local_cache
                 )
-            if local_cache is None:
-                raise NotImplementedError(
-                    "Local cache must be set when specifying a model name"
-                )
-            model = model_name_to_local_file(
-                model_name=model_name, local_cache=local_cache
-            )
 
         # Either the config path or the checkpoint path needs to be provided
         if not config_yml and model is None:
