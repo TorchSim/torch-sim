@@ -246,3 +246,53 @@ test_fairchem_uma_model_outputs = pytest.mark.skipif(
         model_fixture_name="eqv2_uma_model_pbc", device=DEVICE, dtype=DTYPE
     )
 )
+
+
+@pytest.mark.skipif(
+    get_token() is None, reason="Requires HuggingFace authentication for UMA model access"
+)
+@pytest.mark.parametrize(
+    ("charge", "spin"),
+    [
+        (0.0, 0.0),  # Neutral, no spin
+        (1.0, 1.0),  # +1 charge, spin=1 (doublet)
+        (-1.0, 0.0),  # -1 charge, no spin (singlet)
+        (0.0, 2.0),  # Neutral, spin=2 (triplet)
+    ],
+)
+def test_fairchem_charge_spin(charge: float, spin: float) -> None:
+    """Test that FairChemModel correctly handles charge and spin from atoms.info."""
+    # Create a water molecule
+    mol = molecule("H2O")
+
+    # Set charge and spin in ASE atoms.info
+    mol.info["charge"] = charge
+    mol.info["spin"] = spin
+
+    # Convert to SimState (should extract charge/spin)
+    state = ts.io.atoms_to_state([mol], device=DEVICE, dtype=DTYPE)
+
+    # Verify charge/spin were extracted correctly
+    assert state.charge[0].item() == charge
+    assert state.spin[0].item() == spin
+
+    # Create model with UMA omol task (supports charge/spin for molecules)
+    model = FairChemModel(
+        model=None,
+        model_name="uma-s-1",
+        task_name="omol",
+        cpu=DEVICE.type == "cpu",
+    )
+
+    # This should not raise an error
+    result = model(state)
+
+    # Verify outputs exist
+    assert "energy" in result
+    assert result["energy"].shape == (1,)
+    assert "forces" in result
+    assert result["forces"].shape == (len(mol), 3)
+
+    # Verify outputs are finite
+    assert torch.isfinite(result["energy"]).all()
+    assert torch.isfinite(result["forces"]).all()

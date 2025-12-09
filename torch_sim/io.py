@@ -53,6 +53,7 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
     cell = state.cell.detach().cpu().numpy()  # Shape: (n_systems, 3, 3)
     atomic_numbers = state.atomic_numbers.detach().cpu().numpy()
     system_indices = state.system_idx.detach().cpu().numpy()
+    pbc = state.pbc.detach().cpu().numpy()
 
     atoms_list = []
     for sys_idx in np.unique(system_indices):
@@ -65,7 +66,7 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
         symbols = [chemical_symbols[z] for z in system_numbers]
 
         atoms = Atoms(
-            symbols=symbols, positions=system_positions, cell=system_cell, pbc=state.pbc
+            symbols=symbols, positions=system_positions, cell=system_cell, pbc=pbc
         )
         atoms_list.append(atoms)
 
@@ -117,7 +118,7 @@ def state_to_structures(state: "ts.SimState") -> list["Structure"]:
 
         # Create structure for this system
         struct = Structure(
-            lattice=Lattice(system_cell),
+            lattice=Lattice(system_cell, pbc=(state.pbc.tolist())),
             species=species,
             coords=system_positions,
             coords_are_cartesian=True,
@@ -164,8 +165,11 @@ def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
 
         # Convert atomic numbers to chemical symbols
         symbols = [chemical_symbols[z] for z in system_numbers]
+
+        # Note: pbc is not used in the init since it's always assumed to be true
+        # https://github.com/phonopy/phonopy/blob/develop/phonopy/structure/atoms.py#L140
         phonopy_atoms = PhonopyAtoms(
-            symbols=symbols, positions=system_positions, cell=system_cell, pbc=state.pbc
+            symbols=symbols, positions=system_positions, cell=system_cell
         )
         phonopy_atoms_list.append(phonopy_atoms)
 
@@ -225,16 +229,25 @@ def atoms_to_state(
     )
 
     # Verify consistent pbc
-    if not all(all(at.pbc) == all(atoms_list[0].pbc) for at in atoms_list):
+    if not all(np.all(np.equal(at.pbc, atoms_list[0].pbc)) for at in atoms_list[1:]):
         raise ValueError("All systems must have the same periodic boundary conditions")
+
+    charge = torch.tensor(
+        [at.info.get("charge", 0.0) for at in atoms_list], dtype=dtype, device=device
+    )
+    spin = torch.tensor(
+        [at.info.get("spin", 0.0) for at in atoms_list], dtype=dtype, device=device
+    )
 
     return ts.SimState(
         positions=positions,
         masses=masses,
         cell=cell,
-        pbc=all(atoms_list[0].pbc),
+        pbc=atoms_list[0].pbc,
         atomic_numbers=atomic_numbers,
         system_idx=system_idx,
+        charge=charge,
+        spin=spin,
     )
 
 
@@ -294,11 +307,15 @@ def structures_to_state(
         torch.arange(len(struct_list), device=device), atoms_per_system
     )
 
+    # Verify consistent pbc
+    if not all(tuple(s.pbc) == tuple(struct_list[0].pbc) for s in struct_list[1:]):
+        raise ValueError("All systems must have the same periodic boundary conditions")
+
     return ts.SimState(
         positions=positions,
         masses=masses,
         cell=cell,
-        pbc=True,  # Structures are always periodic
+        pbc=struct_list[0].pbc,
         atomic_numbers=atomic_numbers,
         system_idx=system_idx,
     )

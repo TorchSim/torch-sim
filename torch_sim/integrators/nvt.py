@@ -133,8 +133,8 @@ def nvt_langevin_init(
 
 
 def nvt_langevin_step(
-    model: ModelInterface,
     state: MDState,
+    model: ModelInterface,
     *,
     dt: float | torch.Tensor,
     kT: float | torch.Tensor,
@@ -152,9 +152,9 @@ def nvt_langevin_step(
     5. Half momentum update using new forces (B step)
 
     Args:
+        state: Current system state containing positions, momenta, forces
         model: Neural network model that computes energies and forces.
             Must return a dict with 'energy' and 'forces' keys.
-        state: Current system state containing positions, momenta, forces
         dt: Integration timestep, either scalar or shape [n_systems]
         kT: Target temperature in energy units, either scalar or
             with shape [n_systems]
@@ -247,8 +247,8 @@ class NVTNoseHooverState(MDState):
 
 
 def nvt_nose_hoover_init(
-    model: ModelInterface,
     state: SimState | StateDict,
+    model: ModelInterface,
     *,
     kT: torch.Tensor,
     dt: torch.Tensor,
@@ -267,8 +267,8 @@ def nvt_nose_hoover_init(
     time-reversible and conserves an extended energy quantity.
 
     Args:
-        model: Neural network model that computes energies and forces
         state: Initial system state as SimState or dict
+        model: Neural network model that computes energies and forces
         kT: Target temperature in energy units
         dt: Integration timestep
         tau: Thermostat relaxation time (defaults to 100*dt)
@@ -332,8 +332,8 @@ def nvt_nose_hoover_init(
 
 
 def nvt_nose_hoover_step(
-    model: ModelInterface,
     state: NVTNoseHooverState,
+    model: ModelInterface,
     *,
     dt: torch.Tensor,
     kT: torch.Tensor,
@@ -347,8 +347,8 @@ def nvt_nose_hoover_step(
     by 3.
 
     Args:
-        model: Neural network model that computes energies and forces
         state: Current system state containing positions, momenta, forces, and chain
+        model: Neural network model that computes energies and forces
         dt: Integration timestep
         kT: Target temperature in energy units
 
@@ -465,3 +465,210 @@ def nvt_nose_hoover_invariant(
         e_tot = e_tot + chain_ke + chain_pe
 
     return e_tot
+
+
+class NVTVRescaleState(MDState):
+    """State information for an NVT system with a V-Rescale thermostat.
+
+    This class represents the complete state of a molecular system being integrated
+    in the NVT (constant particle number, volume, temperature) ensemble using a
+    Velocity Rescaling thermostat. The thermostat maintains constant temperature
+    through stochastic velocity rescaling.
+
+    Attributes:
+        positions: Particle positions with shape [n_particles, n_dimensions]
+        masses: Particle masses with shape [n_particles]
+        cell: Simulation cell matrix with shape [n_dimensions, n_dimensions]
+        pbc: Whether to use periodic boundary conditions
+        momenta: Particle momenta with shape [n_particles, n_dimensions]
+        energy: Energy of the system
+        forces: Forces on particles with shape [n_particles, n_dimensions]
+
+    Notes:
+        - The V-Rescale thermostat provides proper canonical sampling
+        - Stochastic velocity rescaling ensures correct temperature distribution
+        - Time-reversible when integrated with appropriate algorithms
+    """
+
+    def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
+        """Calculate the degrees of freedom per system."""
+        # Subtract 3 for center of mass motion
+        return super().get_number_of_degrees_of_freedom() - 3
+
+
+def _vrescale_update(
+    state: MDState,
+    tau: float | torch.Tensor,
+    kT: float | torch.Tensor,
+    dt: float | torch.Tensor,
+) -> MDState:
+    """Update the momentum by a scaling factor as described by Eq.A7 Bussi et al.
+
+    Note that we don't implement the optimize code from Bussi, which won't be useful
+    on a high level framework like PyTorch.
+
+    Args:
+        state: Current MD state
+        tau: Thermostat relaxation time
+        kT: Target temperature
+        dt: Integration timestep
+
+    Returns:
+        Updated state with rescaled momenta
+    """
+    device, dtype = state.device, state.dtype
+
+    # Convert all inputs to tensors
+    tau_tensor = torch.as_tensor(tau, device=device, dtype=dtype)
+    kT_tensor = torch.as_tensor(kT, device=device, dtype=dtype)
+    dt_tensor = torch.as_tensor(dt, device=device, dtype=dtype)
+
+    # Calculate current temperature per system
+    current_kT = state.calc_kT()
+
+    # Calculate degrees of freedom per system
+    dof = state.get_number_of_degrees_of_freedom()
+
+    # Ensure kT and tau have proper batch dimensions
+    n_systems = current_kT.shape[0]
+    if kT_tensor.dim() == 0:
+        kT_tensor = kT_tensor.expand(n_systems)
+    if tau_tensor.dim() == 0:
+        tau_tensor = tau_tensor.expand(n_systems)
+
+    # Calculate kinetic energies
+    KE_old = dof * current_kT / 2
+    KE_new = dof * kT_tensor / 2
+
+    # Generate random numbers
+    r1 = torch.randn(n_systems, device=device, dtype=dtype)
+    # Sample Gamma((dof - 1)/2, 1/2) = \sum_2^{dof} X_i^2 where X_i ~ N(0,1)
+    r2 = torch.distributions.Gamma((dof - 1) / 2, torch.ones_like(dof) / 2).sample()
+
+    # Calculate scaling coefficients
+    c1 = torch.exp(-dt_tensor / tau_tensor)
+    c2 = (1 - c1) * KE_new / KE_old / dof
+
+    # Calculate scaling factor
+    scale = c1 + (c2 * (torch.square(r1) + r2)) + (2 * r1 * torch.sqrt(c1 * c2))
+    lam = torch.sqrt(scale)
+
+    # Apply scaling to momenta - map from system to atom indices
+    state.momenta = state.momenta * lam[state.system_idx].unsqueeze(-1)
+    return state
+
+
+def nvt_vrescale_init(
+    state: SimState | StateDict,
+    model: ModelInterface,
+    *,
+    kT: float | torch.Tensor,
+    seed: int | None = None,
+    **_kwargs: Any,
+) -> NVTVRescaleState:
+    """Initialize an NVT state from input data for velocity rescaling dynamics.
+
+    Creates an initial state for NVT molecular dynamics using the canonical
+    sampling through velocity rescaling (CSVR) thermostat. This thermostat
+    samples from the canonical ensemble by rescaling velocities with an
+    appropriately chosen random factor.
+
+    Args:
+        model: Neural network model that computes energies and forces.
+            Must return a dict with 'energy' and 'forces' keys.
+        state: Either a SimState object or a dictionary containing positions,
+            masses, cell, pbc, and other required state vars
+        kT: Temperature in energy units for initializing momenta,
+            either scalar or with shape [n_systems]
+        seed: Random seed for reproducibility
+
+    Returns:
+        MDState: Initialized state for NVT integration containing positions,
+            momenta, forces, energy, and other required attributes
+
+    Notes:
+        The initial momenta are sampled from a Maxwell-Boltzmann distribution
+        at the specified temperature. The V-Rescale thermostat provides proper
+        canonical sampling through stochastic velocity rescaling.
+    """
+    if not isinstance(state, SimState):
+        state = SimState(**state)
+
+    model_output = model(state)
+
+    momenta = getattr(
+        state,
+        "momenta",
+        calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
+    )
+
+    return NVTVRescaleState(
+        positions=state.positions,
+        momenta=momenta,
+        energy=model_output["energy"],
+        forces=model_output["forces"],
+        masses=state.masses,
+        cell=state.cell,
+        pbc=state.pbc,
+        system_idx=state.system_idx,
+        atomic_numbers=state.atomic_numbers,
+    )
+
+
+def nvt_vrescale_step(
+    model: ModelInterface,
+    state: NVTVRescaleState,
+    *,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
+    tau: float | torch.Tensor | None = None,
+) -> NVTVRescaleState:
+    """Perform one complete V-Rescale dynamics integration step.
+
+    This function implements the canonical sampling through velocity rescaling (V-Rescale)
+    thermostat combined with velocity Verlet integration. The V-Rescale thermostat samples
+    the canonical distribution by rescaling velocities with a properly chosen random
+    factor that ensures correct canonical sampling.
+
+    Args:
+        model: Neural network model that computes energies and forces.
+            Must return a dict with 'energy' and 'forces' keys.
+        state: Current system state containing positions, momenta, forces
+        dt: Integration timestep, either scalar or shape [n_systems]
+        kT: Target temperature in energy units, either scalar or
+            with shape [n_systems]
+        tau: Thermostat relaxation time controlling the coupling strength,
+            either scalar or with shape [n_systems]. Defaults to 100*dt.
+        seed: Random seed for reproducibility
+
+    Returns:
+        MDState: Updated state after one complete V-Rescale step with new positions,
+            momenta, forces, and energy
+
+    Notes:
+        - Uses V-Rescale thermostat for proper canonical ensemble sampling
+        - Unlike Berendsen thermostat, V-Rescale samples the true canonical distribution
+        - Integration sequence: V-Rescale rescaling + Velocity Verlet step
+        - The rescaling factor follows the distribution derived in Bussi et al.
+
+    References:
+        Bussi G, Donadio D, Parrinello M. "Canonical sampling through velocity rescaling."
+        The Journal of chemical physics, 126(1), 014101 (2007).
+    """
+    device, dtype = model.device, model.dtype
+
+    if tau is None:
+        tau = 100 * dt
+
+    if isinstance(tau, float):
+        tau = torch.tensor(tau, device=device, dtype=dtype)
+    if isinstance(dt, float):
+        dt = torch.tensor(dt, device=device, dtype=dtype)
+    if isinstance(kT, float):
+        kT = torch.tensor(kT, device=device, dtype=dtype)
+
+    # Apply V-Rescale rescaling
+    state = _vrescale_update(state, tau, kT, dt)
+
+    # Perform velocity Verlet step
+    return velocity_verlet(state=state, dt=dt, model=model)

@@ -28,7 +28,7 @@ def test_get_attrs_for_scope(si_sim_state: SimState) -> None:
     per_atom_attrs = dict(get_attrs_for_scope(si_sim_state, "per-atom"))
     assert set(per_atom_attrs) == {"positions", "masses", "atomic_numbers", "system_idx"}
     per_system_attrs = dict(get_attrs_for_scope(si_sim_state, "per-system"))
-    assert set(per_system_attrs) == {"cell"}
+    assert set(per_system_attrs) == {"cell", "charge", "spin"}
     global_attrs = dict(get_attrs_for_scope(si_sim_state, "global"))
     assert set(global_attrs) == {"pbc"}
 

@@ -25,7 +25,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.neighbors import torchsim_nl
 from torch_sim.typing import StateDict
 
 
@@ -165,7 +165,7 @@ class NequIPFrameworkModel(ModelInterface):
         r_max: float,
         type_names: list[str],
         device: torch.device | None = None,
-        neighbor_list_fn: Callable = vesin_nl_ts,
+        neighbor_list_fn: Callable = torchsim_nl,
         atomic_numbers: torch.Tensor | None = None,
         system_idx: torch.Tensor | None = None,
     ) -> None:
@@ -345,11 +345,7 @@ class NequIPFrameworkModel(ModelInterface):
             "cell": sim_state.row_vector_cell,
             "batch": sim_state.system_idx,
             "num_atoms": sim_state.system_idx.bincount(),
-            "pbc": torch.tensor(
-                [sim_state.pbc, sim_state.pbc, sim_state.pbc],
-                dtype=torch.bool,
-                device=self.device,
-            ),
+            "pbc": sim_state.pbc,
             "atomic_numbers": sim_state.atomic_numbers,
             "atom_types": atomic_types,
             "edge_index": edge_index,

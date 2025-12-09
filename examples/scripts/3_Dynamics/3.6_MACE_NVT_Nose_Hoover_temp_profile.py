@@ -136,7 +136,7 @@ results = model(state)
 dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)
 kT = torch.tensor(init_temp, device=device, dtype=dtype) * Units.temperature
 
-state = ts.nvt_nose_hoover_init(model=model, state=state, kT=kT, dt=dt, seed=1)
+state = ts.nvt_nose_hoover_init(state=state, model=model, kT=kT, dt=dt, seed=1)
 
 # Run simulation with temperature profile
 actual_temps = np.zeros(n_steps)
@@ -175,7 +175,7 @@ for step in range(n_steps):
 
     # Update simulation state
     state = ts.nvt_nose_hoover_step(
-        model=model, state=state, dt=dt, kT=current_kT * Units.temperature
+        state=state, model=model, dt=dt, kT=current_kT * Units.temperature
     )
 
 # Visualize temperature profile
