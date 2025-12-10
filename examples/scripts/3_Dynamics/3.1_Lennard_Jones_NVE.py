@@ -98,7 +98,7 @@ results = model(state)
 
 # Set up NVE simulation
 # kT: initial temperature in metal units (K)
-# dt: timestep in metal units (fs)
+# dt: timestep in metal units (1 fs)
 kT = torch.tensor(80 * Units.temperature, device=device, dtype=dtype)
 dt = torch.tensor(0.001 * Units.time, device=device, dtype=dtype)
 
