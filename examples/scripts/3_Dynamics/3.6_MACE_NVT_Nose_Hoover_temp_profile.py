@@ -133,7 +133,7 @@ state = ts.io.atoms_to_state(fcc_lattice, device=device, dtype=dtype)
 results = model(state)
 
 # Set up simulation parameters
-dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # Timestep (fs)
+dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # Timestep (2 fs)
 kT = (
     torch.tensor(init_temp, device=device, dtype=dtype) * Units.temperature
 )  # Initial temperature (K)
