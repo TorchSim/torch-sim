@@ -1,6 +1,3 @@
-from pymatgen.core.structure import Structure
-
-
 import pytest
 import torch
 from pymatgen.core import Structure
@@ -33,7 +30,7 @@ def batched_diverse_state() -> ts.SimState:
         [0.5, 0.5, 0.0],
         [0.75, 0.75, 0.25],
     ]
-    structure: Structure = Structure(lattice, species, coords)
+    structure = Structure(lattice, species, coords)
     return ts.io.structures_to_state([structure] * 2, device=DEVICE, dtype=torch.float64)
 
 
@@ -230,7 +227,7 @@ def test_generate_swaps_ragged_systems():
 
         # Check that indices are within bounds
         assert torch.all(swaps < ragged_state.n_atoms), (
-            f"Generated swap indices {swaps.max()} exceed total atoms {ragged_state.n_atoms}"
+            f"Swap indices {swaps.max()} exceed total n_atoms {ragged_state.n_atoms}"
         )
 
         # Check that swapped atoms belong to the same system
