@@ -84,6 +84,8 @@ class SimState:
     cell: torch.Tensor
     pbc: torch.Tensor | list[bool] | bool
     atomic_numbers: torch.Tensor
+    charge: torch.Tensor | None = field(default=None)
+    spin: torch.Tensor | None = field(default=None)
     system_idx: torch.Tensor | None = field(default=None)
 
     if TYPE_CHECKING:
@@ -104,10 +106,10 @@ class SimState:
         "atomic_numbers",
         "system_idx",
     }
-    _system_attributes: ClassVar[set[str]] = {"cell"}
+    _system_attributes: ClassVar[set[str]] = {"cell", "charge", "spin"}
     _global_attributes: ClassVar[set[str]] = {"pbc"}
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:  # noqa: C901
         """Initialize the SimState and validate the arguments."""
         # Check that positions, masses and atomic numbers have compatible shapes
         shapes = [
@@ -135,6 +137,17 @@ class SimState:
             _, counts = torch.unique_consecutive(initial_system_idx, return_counts=True)
             if not torch.all(counts == torch.bincount(initial_system_idx)):
                 raise ValueError("System indices must be unique consecutive integers")
+
+        if self.charge is None:
+            self.charge = torch.zeros(
+                self.n_systems, device=self.device, dtype=self.dtype
+            )
+        elif self.charge.shape[0] != self.n_systems:
+            raise ValueError(f"Charge must have shape (n_systems={self.n_systems},)")
+        if self.spin is None:
+            self.spin = torch.zeros(self.n_systems, device=self.device, dtype=self.dtype)
+        elif self.spin.shape[0] != self.n_systems:
+            raise ValueError(f"Spin must have shape (n_systems={self.n_systems},)")
 
         if self.cell.ndim != 3 and initial_system_idx is None:
             self.cell = self.cell.unsqueeze(0)
@@ -419,7 +432,7 @@ class SimState:
 
         # exceptions exist because the type hint doesn't actually reflect the real type
         # (since we change their type in the post_init)
-        exceptions = {"system_idx"}
+        exceptions = {"system_idx", "charge", "spin"}
 
         type_hints = typing.get_type_hints(cls)
         for attr_name, attr_type_hint in type_hints.items():

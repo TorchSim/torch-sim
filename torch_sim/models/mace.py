@@ -316,19 +316,24 @@ class MaceModel(ModelInterface):
             sim_state.row_vector_cell, unit_shifts, mapping_system
         )
 
+        # Build data dict for MACE model
+        data_dict = dict(
+            ptr=self.ptr,
+            node_attrs=self.node_attrs,
+            batch=sim_state.system_idx,
+            pbc=sim_state.pbc,
+            cell=sim_state.row_vector_cell,
+            positions=sim_state.positions,
+            edge_index=edge_index,
+            unit_shifts=unit_shifts,
+            shifts=shifts,
+            total_charge=sim_state.charge,
+            total_spin=sim_state.spin,
+        )
+
         # Get model output
         out = self.model(
-            dict(
-                ptr=self.ptr,
-                node_attrs=self.node_attrs,
-                batch=sim_state.system_idx,
-                pbc=sim_state.pbc,
-                cell=sim_state.row_vector_cell,
-                positions=sim_state.positions,
-                edge_index=edge_index,
-                unit_shifts=unit_shifts,
-                shifts=shifts,
-            ),
+            data_dict,
             compute_force=self.compute_forces,
             compute_stress=self.compute_stress,
         )
