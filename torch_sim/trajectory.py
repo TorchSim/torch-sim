@@ -763,10 +763,9 @@ class TorchSimTrajectory:
         Returns:
             int: The last recorded step number, or 0 if no data exists
         """
-        if not self.array_registry:
+        if not self.array_registry or "positions" not in self.array_registry:
             return 0
-
-        return self.get_steps("positions")[-1]
+        return self.get_steps("positions")[-1].item()
 
     def __str__(self) -> str:
         """Get a string representation of the trajectory.
