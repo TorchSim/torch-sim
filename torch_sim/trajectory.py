@@ -41,7 +41,6 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
-
 if TYPE_CHECKING:
     from ase import Atoms
     from ase.io.trajectory import TrajectoryReader
@@ -280,19 +279,21 @@ class TrajectoryReporter:
         all_props: list[dict[str, torch.Tensor]] = []
         # Process each system separately
         for idx, substate in enumerate(split_states):
-            _step = step[idx] if isinstance(step, list) else step
+            sys_step = step[idx] if isinstance(step, list) else step
             # Write state to trajectory if it's time
             if (
                 self.state_frequency
-                and _step % self.state_frequency == 0
+                and sys_step % self.state_frequency == 0
                 and self.filenames is not None
             ):
-                self.trajectories[idx].write_state(substate, _step, **self.state_kwargs)
+                self.trajectories[idx].write_state(
+                    substate, sys_step, **self.state_kwargs
+                )
 
             all_state_props = {}
             # Process property calculators for this system
             for report_frequency, calculators in self.prop_calculators.items():
-                if _step % report_frequency != 0 or report_frequency == 0:
+                if sys_step % report_frequency != 0 or report_frequency == 0:
                     continue
 
                 # Calculate properties for this substate
@@ -307,7 +308,7 @@ class TrajectoryReporter:
                 if props:
                     all_state_props.update(props)
                     if self.filenames is not None:
-                        self.trajectories[idx].write_arrays(props, _step)
+                        self.trajectories[idx].write_arrays(props, sys_step)
             all_props.append(all_state_props)
 
         return all_props
