@@ -100,6 +100,68 @@ def _configure_batches_iterator(
     return batches
 
 
+def _determine_initial_step_for_integrate(
+    trajectory_reporter: TrajectoryReporter | None,
+    n_steps: int,
+) -> int:
+    """Determine the initial step for resuming integration from trajectory files.
+
+    Args:
+        trajectory_reporter (TrajectoryReporter | None): The trajectory reporter to
+            check for resume information
+        n_steps (int): The total number of steps to run
+
+    Returns:
+        int: The initial step to start from (1 if not resuming, otherwise last_step + 1)
+    """
+    initial_step: int = 1
+    if trajectory_reporter is not None and trajectory_reporter.mode == "a":
+        last_logged_steps = trajectory_reporter.last_step
+        last_logged_step = min(last_logged_steps)
+        initial_step = initial_step + last_logged_step
+        if initial_step > n_steps:
+            warnings.warn(
+                f"Initial step {initial_step} > n_steps {n_steps}. Nothing will be done.",
+                stacklevel=2,
+            )
+        if len(set(last_logged_steps)) != 1:
+            warnings.warn(
+                "Trajectory files have different last steps. "
+                "Using the minimum last step for resuming integration."
+                "This means that some trajectories may be truncated.",
+                stacklevel=2,
+            )
+            for traj in trajectory_reporter.trajectories:
+                traj.truncate_to_step(last_logged_step)
+    return initial_step
+
+
+def _determine_initial_step_for_optimize(
+    trajectory_reporter: TrajectoryReporter | None,
+    state: SimState,
+) -> torch.LongTensor:
+    """Determine the initial steps for resuming optimization from trajectory files.
+
+    Args:
+        trajectory_reporter (TrajectoryReporter | None): The trajectory reporter to
+            check for resume information
+        state (SimState): The state being optimized
+
+    Returns:
+        torch.LongTensor: Tensor of initial steps for each system (1 if not resuming,
+            otherwise last_step + 1 for each system)
+    """
+    initial_step: torch.LongTensor = torch.full(
+        size=(state.n_systems,), fill_value=1, dtype=torch.long, device=state.device
+    )
+    if trajectory_reporter is not None and trajectory_reporter.mode == "a":
+        last_logged_steps = torch.tensor(
+            trajectory_reporter.last_step, dtype=torch.long, device=state.device
+        )
+        initial_step = initial_step + last_logged_steps
+    return initial_step
+
+
 def integrate[T: SimState](  # noqa: C901
     system: StateLike,
     model: ModelInterface,
@@ -182,26 +244,9 @@ def integrate[T: SimState](  # noqa: C901
             properties=["kinetic_energy", "potential_energy", "temperature"],
         )
     # Auto-detect initial step from trajectory files for resuming integration
-    initial_step: int = 1
-    if trajectory_reporter is not None and trajectory_reporter.mode == "a":
-        last_logged_steps = trajectory_reporter.last_step
-        last_logged_step = min(last_logged_steps)
-        initial_step = initial_step + last_logged_step
-        if initial_step > n_steps:
-            warnings.warn(
-                f"Initial step {initial_step} > n_steps {n_steps}. Nothing will be done.",
-                stacklevel=2,
-            )
-            return initial_state  # type: ignore[return-value]
-        if len(set(last_logged_steps)) != 1:
-            warnings.warn(
-                "Trajectory files have different last steps. "
-                "Using the minimum last step for resuming integration."
-                "This means that some trajectories may be truncated.",
-                stacklevel=2,
-            )
-            for traj in trajectory_reporter.trajectories:
-                traj.truncate_to_step(last_logged_step)
+    initial_step = _determine_initial_step_for_integrate(trajectory_reporter, n_steps)
+    if initial_step > n_steps:
+        return initial_state  # type: ignore[return-value]
 
     final_states: list[T] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
@@ -489,16 +534,8 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         )
 
     # Auto-detect initial step from trajectory files for resuming optimizations
-    og_initial_step: torch.LongTensor = torch.full(
-        size=(state.n_systems,), fill_value=1, dtype=torch.long, device=state.device
-    )
-    if trajectory_reporter is not None and trajectory_reporter.mode == "a":
-        last_logged_steps = torch.tensor(
-            trajectory_reporter.last_step, dtype=torch.long, device=state.device
-        )
-        og_initial_step = og_initial_step + last_logged_steps
+    step = _determine_initial_step_for_optimize(trajectory_reporter, state)
     steps_so_far = 0
-    step = og_initial_step.clone()
 
     last_energy = None
     all_converged_states: list[T] = []
