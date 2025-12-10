@@ -205,16 +205,17 @@ def test_swap_mc_state_attributes():
     assert system_attrs >= parent_system_attrs
 
 
-def test_generate_swaps_multiple_systems():
+def test_generate_swaps_ragged_systems():
     """
-    Test that generate_swaps correctly handles multiple systems.
+    Test that generate_swaps works with multiple systems with different atom counts.
+
+    This ensures that we are properly calculating the system_starts for each system.
     """
-    # Create two structures with DIFFERENT number of atoms
     s1 = Structure(torch.eye(3), ["H", "He"], [[0, 0, 0], [0.5, 0.5, 0.5]])
     s2 = Structure(
         torch.eye(3),
-        ["Li", "Be", "B", "C", "N"],
-        [[0, 0, 0], [0.2, 0.2, 0.2], [0.4, 0.4, 0.4], [0.6, 0.6, 0.6], [0.8, 0.8, 0.8]],
+        ["Li", "Be", "B"],
+        [[0, 0, 0], [0.2, 0.2, 0.2], [0.4, 0.4, 0.4]],
     )
 
     # Combine into a single batched state
