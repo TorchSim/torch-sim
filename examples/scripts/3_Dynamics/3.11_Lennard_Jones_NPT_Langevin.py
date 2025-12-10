@@ -100,7 +100,7 @@ state = ts.SimState(
 # Run initial simulation and get results
 results = model(state)
 
-dt = torch.tensor(0.001 * Units.time, device=device, dtype=dtype)  # Time step (1 ps)
+dt = torch.tensor(0.001 * Units.time, device=device, dtype=dtype)  # Time step (1 fs)
 kT = torch.tensor(
     200 * Units.temperature, device=device, dtype=dtype
 )  # Temperature (200 K)

@@ -50,10 +50,10 @@ state = ts.io.atoms_to_state(si_dc, device=device, dtype=dtype)
 # Run initial inference
 results = model(state)
 
-dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # Timestep (ps)
+dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # Timestep (2 fs)
 kT = (
     torch.tensor(1000, device=device, dtype=dtype) * Units.temperature
-)  # Initial temperature (K)
+)  # Initial temperature (1000 K)
 
 
 state = ts.nvt_nose_hoover_init(state=state, model=model, kT=kT, dt=dt)

@@ -223,6 +223,9 @@ class FairChemModel(ModelInterface):
                 pbc=pbc if cell is not None else False,
             )
 
+            atoms.info["charge"] = sim_state.charge[idx].item()
+            atoms.info["spin"] = sim_state.spin[idx].item()
+
             # Convert ASE Atoms to AtomicData (task_name only applies to UMA models)
             if self.task_name is None:
                 atomic_data = AtomicData.from_ase(atoms)
