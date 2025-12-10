@@ -1,3 +1,6 @@
+from pymatgen.core.structure import Structure
+
+
 import pytest
 import torch
 from pymatgen.core import Structure
@@ -30,7 +33,7 @@ def batched_diverse_state() -> ts.SimState:
         [0.5, 0.5, 0.0],
         [0.75, 0.75, 0.25],
     ]
-    structure = Structure(lattice, species, coords)
+    structure: Structure = Structure(lattice, species, coords)
     return ts.io.structures_to_state([structure] * 2, device=DEVICE, dtype=torch.float64)
 
 
@@ -200,3 +203,38 @@ def test_swap_mc_state_attributes():
     parent_system_attrs = SimState._system_attributes  # noqa: SLF001
     assert atom_attrs >= parent_atom_attrs
     assert system_attrs >= parent_system_attrs
+
+
+def test_generate_swaps_multiple_systems():
+    """
+    Test that generate_swaps correctly handles multiple systems.
+    """
+    # Create two structures with DIFFERENT number of atoms
+    s1 = Structure(torch.eye(3), ["H", "He"], [[0, 0, 0], [0.5, 0.5, 0.5]])
+    s2 = Structure(
+        torch.eye(3),
+        ["Li", "Be", "B", "C", "N"],
+        [[0, 0, 0], [0.2, 0.2, 0.2], [0.4, 0.4, 0.4], [0.6, 0.6, 0.6], [0.8, 0.8, 0.8]],
+    )
+
+    # Combine into a single batched state
+    ragged_state = ts.io.structures_to_state([s1, s2], device=DEVICE, dtype=torch.float64)
+
+    # Run multiple times to ensure the RNG hits the out-of-bounds indices
+    rng = torch.Generator(device=DEVICE)
+    _ = rng.manual_seed(42)
+
+    for _ in range(10):
+        swaps = generate_swaps(ragged_state, rng=rng)
+
+        # Check that indices are within bounds
+        assert torch.all(swaps < ragged_state.n_atoms), (
+            f"Generated swap indices {swaps.max()} exceed total atoms {ragged_state.n_atoms}"
+        )
+
+        # Check that swapped atoms belong to the same system
+        sys_idx = ragged_state.system_idx
+        sys_0 = sys_idx[swaps[:, 0]]
+        sys_1 = sys_idx[swaps[:, 1]]
+
+        assert torch.all(sys_0 == sys_1), "Proposed swap crosses system boundaries!"
