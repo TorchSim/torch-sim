@@ -747,23 +747,15 @@ class TorchSimTrajectory:
     def last_step(self) -> int:
         """Get the last step number from the trajectory.
 
-        Retrieves the maximum step number across all arrays in the trajectory.
-        If the trajectory is empty or has no arrays, returns 0.
+        Retrieves the last time step recorded in the trajectory based on the "positions" array.
 
         Returns:
-            int: The last (maximum) step number in the trajectory, or 0 if empty
+            int: The last recorded step number, or 0 if no data exists
         """
         if not self.array_registry:
             return 0
 
-        max_step = 0
-        for name in self.array_registry:
-            steps_node = self.get_steps(name)
-            if len(steps_node) > 0:
-                last_step = int(steps_node[-1])
-                max_step = max(max_step, last_step)
-
-        return max_step
+        return self.get_steps("positions")[-1]
 
     def __str__(self) -> str:
         """Get a string representation of the trajectory.
