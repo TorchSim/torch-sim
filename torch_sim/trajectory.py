@@ -42,6 +42,7 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
+
 if TYPE_CHECKING:
     from ase import Atoms
     from ase.io.trajectory import TrajectoryReader
@@ -471,7 +472,8 @@ class TorchSimTrajectory:
             if inconsistent_step:
                 warnings.warn(
                     "Inconsistent last steps detected in trajectory arrays. "
-                    "Truncating all arrays to the `positions` array's last step."
+                    "Truncating all arrays to the `positions` array's last step.",
+                    stacklevel=2,
                 )
                 self.truncate_to_step(self.last_step)
 
@@ -758,7 +760,8 @@ class TorchSimTrajectory:
     def last_step(self) -> int:
         """Get the last step number from the trajectory.
 
-        Retrieves the last time step recorded in the trajectory based on the "positions" array.
+        Retrieves the last time step recorded in the trajectory based
+        on the "positions" array.
 
         Returns:
             int: The last recorded step number, or 0 if no data exists
