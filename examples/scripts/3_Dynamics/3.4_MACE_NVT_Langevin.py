@@ -57,7 +57,7 @@ state = ts.SimState(
     positions=positions, masses=masses, cell=cell, atomic_numbers=atomic_numbers, pbc=True
 )
 
-dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # Timestep (fs)
+dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # Timestep (2 fs)
 kT = (
     torch.tensor(1000, device=device, dtype=dtype) * Units.temperature
 )  # Initial temperature (1000 K)
