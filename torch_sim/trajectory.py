@@ -30,6 +30,7 @@ Notes:
 import copy
 import inspect
 import pathlib
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, Self
@@ -463,6 +464,16 @@ class TorchSimTrajectory:
         self.type_map = self._initialize_type_map(
             coerce_to_float32=coerce_to_float32, coerce_to_int32=coerce_to_int32
         )
+        if mode == "a":
+            inconsistent_step = any(
+                self.get_steps(name)[-1] > self.last_step for name in self.array_registry
+            )
+            if inconsistent_step:
+                warnings.warn(
+                    "Inconsistent last steps detected in trajectory arrays. "
+                    "Truncating all arrays to the `positions` array's last step."
+                )
+                self.truncate_to_step(self.last_step)
 
     def _initialize_header(self, metadata: dict[str, str] | None = None) -> None:
         """Initialize the HDF5 file header with metadata.
