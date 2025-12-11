@@ -39,14 +39,18 @@ def _normalize_inputs(
         if cell.shape[0] == 3:
             cell = cell.unsqueeze(0).expand(n_systems, -1, -1).contiguous()
         else:
-            cell = cell.reshape(n_systems, 3, 3)
+            cell = cell.reshape(n_systems, 3, 3).contiguous()
+    else:
+        cell = cell.contiguous()
 
     # Normalize PBC
     if pbc.ndim == 1:
         if pbc.shape[0] == 3:
             pbc = pbc.unsqueeze(0).expand(n_systems, -1).contiguous()
         else:
-            pbc = pbc.reshape(n_systems, 3)
+            pbc = pbc.reshape(n_systems, 3).contiguous()
+    else:
+        pbc = pbc.contiguous()
 
     return cell, pbc
 
