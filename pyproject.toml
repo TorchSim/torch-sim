@@ -1,6 +1,6 @@
 [project]
 name = "torch-sim-atomistic"
-version = "0.4.1"
+version = "0.4.2"
 description = "A pytorch toolkit for calculating material properties using MLIPs"
 authors = [
     { name = "Abhijeet Gangan", email = "abhijeetgangan@g.ucla.edu" },
