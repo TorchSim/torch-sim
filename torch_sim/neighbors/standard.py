@@ -418,24 +418,12 @@ def standard_nl(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute neighbor lists using primitive neighbor list algorithm.
 
-    This function provides a standardized interface for computing neighbor lists
-    in atomic systems. It handles both single systems and batched (multi-system)
-    calculations with a unified API.
-
-    Key Features:
-    - Unified API for single and batched systems
-    - Supports both periodic and non-periodic boundary conditions
-    - Returns neighbor indices, system mapping, and shift vectors
-    - Fully compatible with PyTorch's automatic differentiation
-    - Consistent with torch_nl_n2 and torch_nl_linked_cell API
-
     Args:
-        positions: Atomic positions tensor of shape [n_atoms, 3]
-        cell: Unit cell vectors [3*n_systems, 3] (row vector convention)
-        pbc: Boolean tensor [3] or [n_systems, 3] for periodic boundary conditions
+        positions: Atomic positions tensor [n_atoms, 3]
+        cell: Unit cell vectors [n_systems, 3, 3] or [3, 3]
+        pbc: Boolean tensor [n_systems, 3] or [3]
         cutoff: Maximum distance for considering atoms as neighbors
-        system_idx: Tensor [n_atoms] indicating which system each atom belongs to.
-            For single system, use torch.zeros(n_atoms, dtype=torch.long)
+        system_idx: Tensor [n_atoms] indicating which system each atom belongs to
         self_interaction: If True, include self-pairs. Default: False
 
     Returns:
@@ -466,23 +454,12 @@ def standard_nl(
     References:
         - https://gist.github.com/Linux-cpp-lisp/692018c74b3906b63529e60619f5a207
     """
+    from torch_sim.neighbors import _normalize_inputs
+
     device = positions.device
     dtype = positions.dtype
     n_systems = system_idx.max().item() + 1
-
-    # Handle PBC: reshape if needed
-    if pbc.ndim == 1:
-        if pbc.shape[0] == 3:
-            # Single PBC for all systems
-            pbc_per_system = pbc.unsqueeze(0).expand(n_systems, -1)
-        elif pbc.shape[0] == n_systems * 3:
-            # Flat concatenated PBC, reshape to [n_systems, 3]
-            pbc_per_system = pbc.reshape(n_systems, 3)
-        else:
-            raise ValueError(f"Unexpected PBC shape: {pbc.shape}")
-    else:
-        # Already [n_systems, 3]
-        pbc_per_system = pbc
+    cell, pbc = _normalize_inputs(cell, pbc, n_systems)
 
     # Process each system's neighbor list separately
     edge_indices = []
@@ -498,13 +475,11 @@ def standard_nl(
             continue
 
         # Get the cell for this system
-        cell_sys = cell if cell.shape[0] == 3 else cell[sys_idx * 3 : (sys_idx + 1) * 3]
+        cell_sys = cell[sys_idx]
 
         # Calculate neighbor list for this system using primitive_neighbor_list
-        # Ensure tensors are contiguous for TorchScript
-        positions_sys = positions[system_mask].contiguous()
-        cell_sys = cell_sys.contiguous()
-        pbc_sys = pbc_per_system[sys_idx].contiguous()
+        positions_sys = positions[system_mask]
+        pbc_sys = pbc[sys_idx]
 
         i, j, S = primitive_neighbor_list(
             quantities="ijS",

@@ -17,6 +17,28 @@ import torch
 from torch_sim import transforms
 
 
+@torch.jit.script
+def _normalize_inputs_jit(
+    cell: torch.Tensor, pbc: torch.Tensor, n_systems: int
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """JIT-compatible input normalization for torch_nl functions."""
+    # Normalize cell
+    if cell.ndim == 2:
+        if cell.shape[0] == 3:
+            cell = cell.unsqueeze(0).expand(n_systems, -1, -1).contiguous()
+        else:
+            cell = cell.reshape(n_systems, 3, 3)
+
+    # Normalize PBC
+    if pbc.ndim == 1:
+        if pbc.shape[0] == 3:
+            pbc = pbc.unsqueeze(0).expand(n_systems, -1).contiguous()
+        else:
+            pbc = pbc.reshape(n_systems, 3)
+
+    return cell, pbc
+
+
 def strict_nl(
     cutoff: float,
     positions: torch.Tensor,
@@ -106,11 +128,9 @@ def torch_nl_n2(
     Args:
         positions (torch.Tensor [n_atom, 3]): A tensor containing the positions
             of atoms wrapped inside their respective unit cells.
-        cell (torch.Tensor [3*n_structure, 3]): Unit cell vectors according to
-            the row vector convention, i.e. `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
-        pbc (torch.Tensor [n_structure, 3] bool):
+        cell (torch.Tensor [n_systems, 3, 3]): Unit cell vectors.
+        pbc (torch.Tensor [n_systems, 3] bool):
             A tensor indicating the periodic boundary conditions to apply.
-            Partial PBC are not supported yet.
         cutoff (torch.Tensor):
             The cutoff radius used for the neighbor search.
         system_idx (torch.Tensor [n_atom,] torch.long):
@@ -146,6 +166,8 @@ def torch_nl_n2(
     References:
         - https://github.com/felixmusil/torch_nl
     """
+    n_systems = system_idx.max().item() + 1
+    cell, pbc = _normalize_inputs_jit(cell, pbc, n_systems)
     n_atoms = torch.bincount(system_idx)
     mapping, system_mapping, shifts_idx = transforms.build_naive_neighborhood(
         positions, cell, pbc, cutoff.item(), n_atoms, self_interaction
@@ -178,11 +200,9 @@ def torch_nl_linked_cell(
         positions (torch.Tensor [n_atom, 3]):
             A tensor containing the positions of atoms wrapped inside
             their respective unit cells.
-        cell (torch.Tensor [3*n_systems, 3]): Unit cell vectors according to
-            the row vector convention, i.e. `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`.
+        cell (torch.Tensor [n_systems, 3, 3]): Unit cell vectors.
         pbc (torch.Tensor [n_systems, 3] bool):
             A tensor indicating the periodic boundary conditions to apply.
-            Partial PBC are not supported yet.
         cutoff (torch.Tensor):
             The cutoff radius used for the neighbor search.
         system_idx (torch.Tensor [n_atom,] torch.long):
@@ -219,6 +239,8 @@ def torch_nl_linked_cell(
     References:
         - https://github.com/felixmusil/torch_nl
     """
+    n_systems = system_idx.max().item() + 1
+    cell, pbc = _normalize_inputs_jit(cell, pbc, n_systems)
     n_atoms = torch.bincount(system_idx)
     mapping, system_mapping, shifts_idx = transforms.build_linked_cell_neighborhood(
         positions, cell, pbc, cutoff.item(), n_atoms, self_interaction

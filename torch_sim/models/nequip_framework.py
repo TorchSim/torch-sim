@@ -304,16 +304,11 @@ class NequIPFrameworkModel(ModelInterface):
         ):
             self.setup_from_system_idx(sim_state.atomic_numbers, sim_state.system_idx)
 
-        # Batched neighbor list using linked-cell algorithm (row-vector cell convention)
-        pbc_tensor = (
-            sim_state.pbc.repeat(self.n_systems, 1)
-            if sim_state.pbc.ndim == 1
-            else sim_state.pbc
-        )
+        # Batched neighbor list using linked-cell algorithm
         edge_index, _mapping_system, unit_shifts = self.neighbor_list_fn(
             sim_state.positions,
             sim_state.row_vector_cell,
-            pbc_tensor,
+            sim_state.pbc,
             self.r_max,
             sim_state.system_idx,
         )

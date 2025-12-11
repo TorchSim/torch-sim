@@ -41,16 +41,14 @@ if VESIN_AVAILABLE:
         """Compute neighbor lists using TorchScript-compatible Vesin.
 
         This function provides a TorchScript-compatible interface to the Vesin
-        neighbor list algorithm using VesinNeighborListTorch. It handles both
-        single systems and batched (multi-system) calculations with a unified API.
+        neighbor list algorithm using VesinNeighborListTorch.
 
         Args:
             positions: Atomic positions tensor [n_atoms, 3]
-            cell: Unit cell vectors [3*n_systems, 3] (row vector convention)
-            pbc: Boolean tensor [3] or [n_systems, 3] for periodic boundary conditions
+            cell: Unit cell vectors [n_systems, 3, 3] or [3, 3]
+            pbc: Boolean tensor [n_systems, 3] or [3]
             cutoff: Maximum distance (scalar tensor) for considering atoms as neighbors
-            system_idx: Tensor [n_atoms] indicating which system each atom belongs to.
-                For single system, use torch.zeros(n_atoms, dtype=torch.long)
+            system_idx: Tensor [n_atoms] indicating which system each atom belongs to
             self_interaction: If True, include self-pairs. Default: False
 
         Returns:
@@ -81,19 +79,17 @@ if VESIN_AVAILABLE:
         dtype = positions.dtype
         n_systems = system_idx.max().item() + 1
 
-        # Handle PBC: reshape if needed
+        # Normalize inputs to batch format
+        if cell.ndim == 2:
+            if cell.shape[0] == 3:
+                cell = cell.unsqueeze(0).expand(n_systems, -1, -1)
+            else:
+                cell = cell.reshape(n_systems, 3, 3)
         if pbc.ndim == 1:
             if pbc.shape[0] == 3:
-                # Single PBC for all systems
-                pbc_per_system = pbc.unsqueeze(0).expand(n_systems, -1)
-            elif pbc.shape[0] == n_systems * 3:
-                # Flat concatenated PBC, reshape to [n_systems, 3]
-                pbc_per_system = pbc.reshape(n_systems, 3)
+                pbc = pbc.unsqueeze(0).expand(n_systems, -1)
             else:
-                raise ValueError(f"Unexpected PBC shape: {pbc.shape}")
-        else:
-            # Already [n_systems, 3]
-            pbc_per_system = pbc
+                pbc = pbc.reshape(n_systems, 3)
 
         # Process each system's neighbor list separately
         edge_indices = []
@@ -112,14 +108,12 @@ if VESIN_AVAILABLE:
             neighbor_list_fn = VesinNeighborListTorch(cutoff.item(), full_list=True)
 
             # Get the cell for this system
-            cell_sys = (
-                cell if cell.shape[0] == 3 else cell[sys_idx * 3 : (sys_idx + 1) * 3]
-            )
+            cell_sys = cell[sys_idx]
 
             # Convert tensors to CPU and float64 properly
             positions_cpu = positions[system_mask].cpu().to(dtype=torch.float64)
             cell_cpu = cell_sys.cpu().to(dtype=torch.float64)
-            periodic_cpu = pbc_per_system[sys_idx].to(dtype=torch.bool).cpu()
+            periodic_cpu = pbc[sys_idx].to(dtype=torch.bool).cpu()
 
             # Only works on CPU and requires float64
             i, j, S = neighbor_list_fn.compute(
@@ -168,7 +162,7 @@ if VESIN_AVAILABLE:
 
         return mapping, system_mapping, shifts_idx
 
-    def vesin_nl(  # noqa: PLR0915
+    def vesin_nl(
         positions: torch.Tensor,
         cell: torch.Tensor,
         pbc: torch.Tensor,
@@ -179,16 +173,14 @@ if VESIN_AVAILABLE:
         """Compute neighbor lists using the standard Vesin implementation.
 
         This function provides an interface to the standard Vesin neighbor list
-        algorithm using VesinNeighborList. It handles both single systems and
-        batched (multi-system) calculations with a unified API.
+        algorithm using VesinNeighborList.
 
         Args:
             positions: Atomic positions tensor [n_atoms, 3]
-            cell: Unit cell vectors [3*n_systems, 3] (row vector convention)
-            pbc: Boolean tensor [3] or [n_systems, 3] for periodic boundary conditions
+            cell: Unit cell vectors [n_systems, 3, 3] or [3, 3]
+            pbc: Boolean tensor [n_systems, 3] or [3]
             cutoff: Maximum distance for considering atoms as neighbors
-            system_idx: Tensor [n_atoms] indicating which system each atom belongs to.
-                For single system, use torch.zeros(n_atoms, dtype=torch.long)
+            system_idx: Tensor [n_atoms] indicating which system each atom belongs to
             self_interaction: If True, include self-pairs. Default: False
 
         Returns:
@@ -215,23 +207,12 @@ if VESIN_AVAILABLE:
         References:
             - https://github.com/Luthaf/vesin
         """
+        from torch_sim.neighbors import _normalize_inputs
+
         device = positions.device
         dtype = positions.dtype
         n_systems = system_idx.max().item() + 1
-
-        # Handle PBC: reshape if needed
-        if pbc.ndim == 1:
-            if pbc.shape[0] == 3:
-                # Single PBC for all systems
-                pbc_per_system = pbc.unsqueeze(0).expand(n_systems, -1)
-            elif pbc.shape[0] == n_systems * 3:
-                # Flat concatenated PBC, reshape to [n_systems, 3]
-                pbc_per_system = pbc.reshape(n_systems, 3)
-            else:
-                raise ValueError(f"Unexpected PBC shape: {pbc.shape}")
-        else:
-            # Already [n_systems, 3]
-            pbc_per_system = pbc
+        cell, pbc = _normalize_inputs(cell, pbc, n_systems)
 
         # Process each system's neighbor list separately
         edge_indices = []
@@ -247,9 +228,7 @@ if VESIN_AVAILABLE:
                 continue
 
             # Get the cell for this system
-            cell_sys = (
-                cell if cell.shape[0] == 3 else cell[sys_idx * 3 : (sys_idx + 1) * 3]
-            )
+            cell_sys = cell[sys_idx]
 
             # Calculate neighbor list for this system
             neighbor_list_fn = VesinNeighborList(
@@ -259,7 +238,7 @@ if VESIN_AVAILABLE:
             # Convert tensors to CPU and float64 without gradients
             positions_cpu = positions[system_mask].detach().cpu().to(dtype=torch.float64)
             cell_cpu = cell_sys.detach().cpu().to(dtype=torch.float64)
-            periodic_cpu = pbc_per_system[sys_idx].detach().to(dtype=torch.bool).cpu()
+            periodic_cpu = pbc[sys_idx].detach().to(dtype=torch.bool).cpu()
 
             # Only works on CPU and returns numpy arrays
             i, j, S = neighbor_list_fn.compute(

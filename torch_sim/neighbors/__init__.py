@@ -21,6 +21,36 @@ from torch_sim.neighbors.standard import primitive_neighbor_list, standard_nl
 from torch_sim.neighbors.torch_nl import strict_nl, torch_nl_linked_cell, torch_nl_n2
 
 
+def _normalize_inputs(
+    cell: torch.Tensor, pbc: torch.Tensor, n_systems: int
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Normalize cell and PBC tensors to standard batch format.
+
+    Handles multiple input formats:
+    - cell: [3, 3], [n_systems, 3, 3], or [n_systems*3, 3]
+    - pbc: [3], [n_systems, 3], or [n_systems*3]
+
+    Returns:
+        (cell, pbc) normalized to ([n_systems, 3, 3], [n_systems, 3])
+        Both tensors are guaranteed to be contiguous.
+    """
+    # Normalize cell
+    if cell.ndim == 2:
+        if cell.shape[0] == 3:
+            cell = cell.unsqueeze(0).expand(n_systems, -1, -1).contiguous()
+        else:
+            cell = cell.reshape(n_systems, 3, 3)
+
+    # Normalize PBC
+    if pbc.ndim == 1:
+        if pbc.shape[0] == 3:
+            pbc = pbc.unsqueeze(0).expand(n_systems, -1).contiguous()
+        else:
+            pbc = pbc.reshape(n_systems, 3)
+
+    return cell, pbc
+
+
 # Try to import Alchemiops implementations (NVIDIA CUDA acceleration)
 try:
     from torch_sim.neighbors.alchemiops import ALCHEMIOPS_AVAILABLE, alchemiops_nl_n2
@@ -74,11 +104,10 @@ def torchsim_nl(
 
     Args:
         positions: Atomic positions tensor [n_atoms, 3]
-        cell: Unit cell vectors [3*n_systems, 3] (row vector convention)
-        pbc: Boolean tensor [3] or [n_systems, 3] for periodic boundary conditions
+        cell: Unit cell vectors [n_systems, 3, 3] or [3, 3]
+        pbc: Boolean tensor [n_systems, 3] or [3]
         cutoff: Maximum distance (scalar tensor) for considering atoms as neighbors
-        system_idx: Tensor [n_atoms] indicating which system each atom belongs to.
-            For single system, use torch.zeros(n_atoms, dtype=torch.long)
+        system_idx: Tensor [n_atoms] indicating which system each atom belongs to
         self_interaction: If True, include self-pairs. Default: False
 
     Returns:
@@ -93,6 +122,8 @@ def torchsim_nl(
         - Fallback works on NVIDIA CUDA, AMD ROCm, and CPU
         - For non-periodic systems (pbc=False), shifts will be zero vectors
         - The neighbor list includes both (i,j) and (j,i) pairs
+        - Accepts both single-system [3, 3] or batched [n_systems, 3, 3] cell formats
+        - Accepts both single [3] or batched [n_systems, 3] PBC formats
     """
     if ALCHEMIOPS_AVAILABLE:
         return alchemiops_nl_n2(

@@ -193,15 +193,10 @@ class SevenNetModel(ModelInterface):
 
         # Batched neighbor list using linked-cell algorithm with row-vector cell
         n_systems = sim_state.system_idx.max().item() + 1
-        pbc_tensor = (
-            sim_state.pbc.repeat(n_systems, 1)
-            if sim_state.pbc.ndim == 1
-            else sim_state.pbc
-        )
         edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
             sim_state.positions,
             sim_state.row_vector_cell,
-            pbc_tensor,
+            sim_state.pbc,
             self.cutoff,
             sim_state.system_idx,
         )
