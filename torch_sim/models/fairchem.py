@@ -75,7 +75,7 @@ class FairChemModel(ModelInterface):
         neighbor_list_fn: Callable | None = None,
         *,  # force remaining arguments to be keyword-only
         model_cache_dir: str | Path | None = None,
-        cpu: bool = False,
+        device: torch.device | None = None,
         dtype: torch.dtype | None = None,
         compute_stress: bool = False,
         task_name: UMATask | str | None = None,
@@ -89,7 +89,8 @@ class FairChemModel(ModelInterface):
             neighbor_list_fn (Callable | None): Function to compute neighbor lists
                 (not currently supported)
             model_cache_dir (str | Path | None): Path where to save the model
-            cpu (bool): Whether to use CPU instead of GPU for computation
+            device (torch.device | None): Device to use for computation. If None,
+                defaults to CUDA if available, otherwise CPU.
             dtype (torch.dtype | None): Data type to use for computation
             compute_stress (bool): Whether to compute stress tensor
             task_name (UMATask | str | None): Task type for UMA models (optional,
@@ -122,8 +123,10 @@ class FairChemModel(ModelInterface):
             task_name = UMATask(task_name)
 
         # Use the efficient predictor API for optimal performance
-        device_str = "cpu" if cpu else "cuda" if torch.cuda.is_available() else "cpu"
-        self._device = torch.device(device_str)
+        self._device = device or torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
+        device_str = str(self._device)
         self.task_name = task_name
 
         # Create efficient batch predictor for fast inference

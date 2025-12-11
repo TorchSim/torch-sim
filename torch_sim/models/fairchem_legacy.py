@@ -111,6 +111,7 @@ class FairChemV1Model(ModelInterface):
     Examples:
         >>> model = FairChemV1Model(model="path/to/checkpoint.pt", compute_stress=True)
         >>> results = model(state)
+
     """
 
     _reshaped_props = MappingProxyType(
@@ -125,7 +126,7 @@ class FairChemV1Model(ModelInterface):
         config_yml: str | None = None,
         local_cache: str | None = None,
         trainer: str | None = None,
-        cpu: bool = False,
+        device: torch.device | None = None,
         seed: int | None = None,
         dtype: torch.dtype | None = None,
         compute_stress: bool = False,
@@ -149,7 +150,8 @@ class FairChemV1Model(ModelInterface):
             local_cache (str | None): Path to local model cache directory (required
                 when using pretrained model names)
             trainer (str | None): Name of trainer class to use
-            cpu (bool): Whether to use CPU instead of GPU for computation
+            device (torch.device | None): Device to use for computation. If None,
+                defaults to CUDA if available, otherwise CPU.
             seed (int | None): Random seed for reproducibility
             dtype (torch.dtype | None): Data type to use for computation
             compute_stress (bool): Whether to compute stress tensor
@@ -284,6 +286,11 @@ class FairChemV1Model(ModelInterface):
         self.config = copy.deepcopy(config)
         self.config["checkpoint"] = str(model)
         del config["dataset"]["src"]
+
+        # Determine if CPU should be used (for the legacy trainer API)
+        cpu = device is not None and device.type == "cpu"
+        if device is None:
+            cpu = not torch.cuda.is_available()
 
         self.trainer = registry.get_trainer_class(config["trainer"])(
             task=config.get("task", {}),

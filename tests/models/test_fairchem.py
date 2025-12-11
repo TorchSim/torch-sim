@@ -29,8 +29,7 @@ except ImportError:
 @pytest.fixture
 def eqv2_uma_model_pbc() -> FairChemModel:
     """UMA model for periodic boundary condition systems."""
-    cpu = DEVICE.type == "cpu"
-    return FairChemModel(model="uma-s-1", task_name="omat", cpu=cpu)
+    return FairChemModel(model="uma-s-1", task_name="omat", device=DEVICE)
 
 
 @pytest.mark.skipif(
@@ -39,7 +38,9 @@ def eqv2_uma_model_pbc() -> FairChemModel:
 @pytest.mark.parametrize("task_name", ["omat", "omol", "oc20"])
 def test_task_initialization(task_name: str) -> None:
     """Test that different UMA task names work correctly."""
-    model = FairChemModel(model="uma-s-1", task_name=task_name, cpu=True)
+    model = FairChemModel(
+        model="uma-s-1", task_name=task_name, device=torch.device("cpu")
+    )
     assert model.task_name
     assert str(model.task_name.value) == task_name
     assert hasattr(model, "predictor")
@@ -75,7 +76,7 @@ def test_homogeneous_batching(task_name: str, systems_func: Callable) -> None:
         for mol in systems:
             mol.info |= {"charge": 0, "spin": 1}
 
-    model = FairChemModel(model="uma-s-1", task_name=task_name, cpu=DEVICE.type == "cpu")
+    model = FairChemModel(model="uma-s-1", task_name=task_name, device=DEVICE)
     state = ts.io.atoms_to_state(systems, device=DEVICE, dtype=DTYPE)
     results = model(state)
 
@@ -109,7 +110,7 @@ def test_heterogeneous_tasks() -> None:
         model = FairChemModel(
             model="uma-s-1",
             task_name=task_name,
-            cpu=DEVICE.type == "cpu",
+            device=DEVICE,
         )
         state = ts.io.atoms_to_state(systems, device=DEVICE, dtype=DTYPE)
         results = model(state)
@@ -148,7 +149,7 @@ def test_batch_size_variations(systems_func: Callable, expected_count: int) -> N
     """Test batching with different numbers and sizes of systems."""
     systems = systems_func()
 
-    model = FairChemModel(model="uma-s-1", task_name="omat", cpu=DEVICE.type == "cpu")
+    model = FairChemModel(model="uma-s-1", task_name="omat", device=DEVICE)
     state = ts.io.atoms_to_state(systems, device=DEVICE, dtype=DTYPE)
     results = model(state)
 
@@ -170,7 +171,7 @@ def test_stress_computation(*, compute_stress: bool) -> None:
     model = FairChemModel(
         model="uma-s-1",
         task_name="omat",
-        cpu=DEVICE.type == "cpu",
+        device=DEVICE,
         compute_stress=compute_stress,
     )
     state = ts.io.atoms_to_state(systems, device=DEVICE, dtype=DTYPE)
@@ -189,9 +190,7 @@ def test_stress_computation(*, compute_stress: bool) -> None:
 )
 def test_device_consistency() -> None:
     """Test device consistency between model and data."""
-    cpu = DEVICE.type == "cpu"
-
-    model = FairChemModel(model="uma-s-1", task_name="omat", cpu=cpu)
+    model = FairChemModel(model="uma-s-1", task_name="omat", device=DEVICE)
     system = bulk("Si", "diamond", a=5.43)
     state = ts.io.atoms_to_state([system], device=DEVICE, dtype=DTYPE)
 
@@ -205,7 +204,7 @@ def test_device_consistency() -> None:
 )
 def test_empty_batch_error() -> None:
     """Test that empty batches raise appropriate errors."""
-    model = FairChemModel(model="uma-s-1", task_name="omat", cpu=True)
+    model = FairChemModel(model="uma-s-1", task_name="omat", device=torch.device("cpu"))
     with pytest.raises((ValueError, RuntimeError, IndexError)):
         model(ts.io.atoms_to_state([], device=torch.device("cpu"), dtype=torch.float32))
 
@@ -217,7 +216,7 @@ def test_load_from_checkpoint_path() -> None:
     """Test loading model from a saved checkpoint file path."""
     checkpoint_path = pretrained_checkpoint_path_from_name("uma-s-1")
     loaded_model = FairChemModel(
-        model=str(checkpoint_path), task_name="omat", cpu=DEVICE == "cpu"
+        model=str(checkpoint_path), task_name="omat", device=DEVICE
     )
 
     # Verify the loaded model works
@@ -274,7 +273,7 @@ def test_fairchem_charge_spin(charge: float, spin: float) -> None:
     model = FairChemModel(
         model="uma-s-1",
         task_name="omol",
-        cpu=DEVICE.type == "cpu",
+        device=DEVICE,
     )
 
     # This should not raise an error
