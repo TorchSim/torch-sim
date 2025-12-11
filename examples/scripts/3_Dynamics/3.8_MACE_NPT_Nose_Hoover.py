@@ -49,7 +49,7 @@ results = model(state)
 SMOKE_TEST = os.getenv("CI") is not None
 N_steps_nvt = 20 if SMOKE_TEST else 2_000
 N_steps_npt = 20 if SMOKE_TEST else 2_000
-dt = 0.001 * Units.time  # Time step (1 ps)
+dt = 0.001 * Units.time  # Time step (1 fs)
 kT = (
     torch.tensor(300, device=device, dtype=dtype) * Units.temperature
 )  # Initial temperature (300 K)
