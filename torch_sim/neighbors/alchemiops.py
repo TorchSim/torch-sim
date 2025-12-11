@@ -30,7 +30,10 @@ __all__ = [
 
 
 def _prepare_inputs(cell: torch.Tensor, pbc: torch.Tensor, system_idx: torch.Tensor):  # noqa: ANN202
-    """Prepare cell and PBC tensors for alchemiops functions."""
+    """Prepare cell and PBC tensors for alchemiops functions.
+
+    Ensures tensors are properly shaped and contiguous for Warp backend.
+    """
     n_systems = system_idx.max().item() + 1
 
     # Reshape cell: [3*n_systems, 3] or [3, 3] -> [n_systems, 3, 3]
@@ -50,6 +53,10 @@ def _prepare_inputs(cell: torch.Tensor, pbc: torch.Tensor, system_idx: torch.Ten
         )
     else:
         pbc_reshaped = pbc
+
+    # Ensure tensors are contiguous for Warp backend
+    cell_reshaped = cell_reshaped.contiguous()
+    pbc_reshaped = pbc_reshaped.contiguous()
 
     return cell_reshaped, pbc_reshaped.to(torch.bool), n_systems
 
