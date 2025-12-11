@@ -209,19 +209,23 @@ def test_generate_swaps_ragged_systems():
     This ensures that we are properly calculating the system_starts for each system.
     """
     s1 = Structure(torch.eye(3), ["H", "He"], [[0, 0, 0], [0.5, 0.5, 0.5]])
+    # use more elements for the second system so there's a higher chance that the swap
+    # chooses an atom from the second system - and when we the actual index of that
+    # atom in the SimState, we get an out-of-bounds index if we improperly
+    # calculate the system_starts.
     s2 = Structure(
         torch.eye(3),
-        ["Li", "Be", "B"],
-        [[0, 0, 0], [0.2, 0.2, 0.2], [0.4, 0.4, 0.4]],
+        ["Li", "Be", "B", "C", "N"],
+        [[0, 0, 0], [0.1, 0.1, 0.1], [0.2, 0.2, 0.2], [0.3, 0.3, 0.3], [0.4, 0.4, 0.4]],
     )
 
     # Combine into a single batched state
     ragged_state = ts.io.structures_to_state([s1, s2], device=DEVICE, dtype=torch.float64)
 
-    # Run multiple times to ensure the RNG hits the out-of-bounds indices
     rng = torch.Generator(device=DEVICE)
     _ = rng.manual_seed(42)
 
+    # Run multiple times to ensure the RNG hits the out-of-bounds indices
     for _ in range(10):
         swaps = generate_swaps(ragged_state, rng=rng)
 
