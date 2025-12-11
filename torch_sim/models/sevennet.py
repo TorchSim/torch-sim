@@ -12,7 +12,7 @@ import torch
 import torch_sim as ts
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
-from torch_sim.neighbors import torch_nl_linked_cell
+from torch_sim.neighbors import torchsim_nl
 
 
 if TYPE_CHECKING:
@@ -85,7 +85,7 @@ class SevenNetModel(ModelInterface):
         model: AtomGraphSequential | str | Path,
         *,  # force remaining arguments to be keyword-only
         modal: str | None = None,
-        neighbor_list_fn: Callable = torch_nl_linked_cell,
+        neighbor_list_fn: Callable = torchsim_nl,
         device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
     ) -> None:

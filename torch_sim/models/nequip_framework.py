@@ -25,7 +25,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.neighbors import torch_nl_linked_cell
+from torch_sim.neighbors import torchsim_nl
 from torch_sim.typing import StateDict
 
 
@@ -165,7 +165,7 @@ class NequIPFrameworkModel(ModelInterface):
         r_max: float,
         type_names: list[str],
         device: torch.device | None = None,
-        neighbor_list_fn: Callable = torch_nl_linked_cell,
+        neighbor_list_fn: Callable = torchsim_nl,
         atomic_numbers: torch.Tensor | None = None,
         system_idx: torch.Tensor | None = None,
     ) -> None:

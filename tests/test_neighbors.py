@@ -315,7 +315,8 @@ def test_neighbor_list_implementations(
         neighbors.torch_nl_linked_cell,
         neighbors.standard_nl,
     ]
-    + ([neighbors.vesin_nl, neighbors.vesin_nl_ts] if neighbors.VESIN_AVAILABLE else []),
+    + ([neighbors.vesin_nl, neighbors.vesin_nl_ts] if neighbors.VESIN_AVAILABLE else [])
+    + ([neighbors.alchemiops_nl_n2] if neighbors.ALCHEMIOPS_AVAILABLE else []),
 )
 def test_torch_nl_implementations(
     *,
@@ -463,14 +464,89 @@ def test_vesin_nl_edge_cases() -> None:
 
 
 def test_torchsim_nl_availability() -> None:
-    """Test that VESIN_AVAILABLE flag is correctly set."""
+    """Test that availability flags are correctly set."""
     assert isinstance(neighbors.VESIN_AVAILABLE, bool)
+    assert isinstance(neighbors.ALCHEMIOPS_AVAILABLE, bool)
+
     if neighbors.VESIN_AVAILABLE:
         assert neighbors.VesinNeighborList is not None
         assert neighbors.VesinNeighborListTorch is not None
     else:
         assert neighbors.VesinNeighborList is None
         assert neighbors.VesinNeighborListTorch is None
+
+    if neighbors.ALCHEMIOPS_AVAILABLE:
+        assert neighbors.alchemiops_nl_n2 is not None
+    else:
+        assert neighbors.alchemiops_nl_n2 is None
+
+
+@pytest.mark.skipif(
+    not neighbors.ALCHEMIOPS_AVAILABLE or not torch.cuda.is_available(),
+    reason="Alchemiops requires CUDA",
+)
+def test_alchemiops_nl_edge_cases() -> None:
+    """Test edge cases for alchemiops_nl_n2 implementation (CUDA only)."""
+    device = torch.device("cuda")
+    dtype = torch.float32
+
+    pos = torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]], device=device, dtype=dtype)
+    cell = torch.eye(3, device=device, dtype=dtype) * 2.0
+    cutoff = torch.tensor(1.5, device=device, dtype=dtype)
+    system_idx = torch.zeros(2, dtype=torch.long, device=device)
+
+    # Test alchemiops_nl_n2
+    for pbc in (
+        torch.tensor([True, True, True], device=device),
+        torch.tensor([False, False, False], device=device),
+    ):
+        mapping, sys_map, _shifts = neighbors.alchemiops_nl_n2(
+            positions=pos,
+            cell=cell,
+            pbc=pbc,
+            cutoff=cutoff,
+            system_idx=system_idx,
+        )
+        assert len(mapping[0]) > 0  # Should find neighbors
+        assert (sys_map == 0).all()  # All in system 0
+
+
+def test_fallback_when_alchemiops_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that torch-sim works correctly without alchemiops (CI compatibility)."""
+    # This test ensures CI works even if alchemiops fails to import
+    # torchsim_nl should fall back to pure PyTorch implementations
+    device = torch.device("cpu")
+    dtype = torch.float32
+
+    positions = torch.tensor(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
+        device=device,
+        dtype=dtype,
+    )
+    cell = torch.eye(3, device=device, dtype=dtype) * 3.0
+    pbc = torch.tensor([False, False, False], device=device)
+    cutoff = torch.tensor(1.5, device=device, dtype=dtype)
+    system_idx = torch.zeros(4, dtype=torch.long, device=device)
+
+    # Use monkeypatch to temporarily disable alchemiops
+    monkeypatch.setattr(neighbors, "ALCHEMIOPS_AVAILABLE", False)
+
+    # torchsim_nl should always work (with fallback)
+    mapping, sys_map, _shifts = neighbors.torchsim_nl(
+        positions, cell, pbc, cutoff, system_idx
+    )
+
+    # Should find neighbors
+    assert mapping.shape[0] == 2
+    assert mapping.shape[1] > 0
+    assert sys_map.shape[0] == mapping.shape[1]
+
+    # default_batched_nl should always be available
+    assert neighbors.default_batched_nl is not None
+    mapping2, _sys_map2, _shifts2 = neighbors.default_batched_nl(
+        positions, cell, pbc, cutoff, system_idx
+    )
+    assert mapping2.shape[1] > 0
 
 
 def test_torchsim_nl_consistency() -> None:
@@ -512,6 +588,9 @@ def test_torchsim_nl_consistency() -> None:
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="GPU not available for testing")
 def test_torchsim_nl_gpu() -> None:
     """Test that torchsim_nl works on GPU (CUDA/ROCm)."""
+    torch.cuda.empty_cache()
+    torch.cuda.synchronize()
+
     device = torch.device("cuda")
     dtype = torch.float32
 
@@ -525,7 +604,7 @@ def test_torchsim_nl_gpu() -> None:
     cutoff = torch.tensor(1.5, device=device, dtype=dtype)
     system_idx = torch.zeros(2, dtype=torch.long, device=device)
 
-    # Should work on GPU regardless of vesin availability
+    # Should work on GPU regardless of implementation availability
     mapping, sys_map, shifts = neighbors.torchsim_nl(
         positions, cell, pbc, cutoff, system_idx
     )
@@ -535,15 +614,18 @@ def test_torchsim_nl_gpu() -> None:
     assert sys_map.device.type == "cuda"
     assert mapping.shape[0] == 2  # (2, num_neighbors)
 
+    # Cleanup
+    torch.cuda.empty_cache()
+
 
 def test_torchsim_nl_fallback_when_vesin_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test that torchsim_nl falls back to standard_nl when vesin is unavailable.
+    """Test that torchsim_nl falls back to torch_nl when alchemiops/vesin unavailable.
 
-    This test simulates the case where vesin is not installed by monkeypatching
-    VESIN_AVAILABLE to False. This ensures the fallback logic is tested even in
-    CI environments where vesin is actually installed.
+    This test simulates the case where alchemiops and vesin are not available by
+    monkeypatching their availability flags to False. This ensures the fallback logic
+    is tested even in environments where they are actually installed.
     """
     device = torch.device("cpu")
     dtype = torch.float32
@@ -559,24 +641,25 @@ def test_torchsim_nl_fallback_when_vesin_unavailable(
     cutoff = torch.tensor(1.5, device=device, dtype=dtype)
     system_idx = torch.zeros(4, dtype=torch.long, device=device)
 
-    # Monkeypatch VESIN_AVAILABLE to False to simulate vesin not being installed
+    # Monkeypatch both availability flags to False
     monkeypatch.setattr(neighbors, "VESIN_AVAILABLE", False)
+    monkeypatch.setattr(neighbors, "ALCHEMIOPS_AVAILABLE", False)
 
-    # Call torchsim_nl with mocked unavailable vesin
+    # Call torchsim_nl with mocked unavailable implementations
     mapping_torchsim, sys_map_ts, shifts_torchsim = neighbors.torchsim_nl(
         positions, cell, pbc, cutoff, system_idx
     )
 
-    # Call standard_nl directly for comparison
-    mapping_standard, sys_map_std, shifts_standard = neighbors.standard_nl(
+    # Call torch_nl_linked_cell directly for comparison
+    mapping_expected, sys_map_exp, shifts_expected = neighbors.torch_nl_linked_cell(
         positions, cell, pbc, cutoff, system_idx
     )
 
-    # When VESIN_AVAILABLE is False, torchsim_nl should use standard_nl
+    # When both are unavailable, torchsim_nl should use torch_nl_linked_cell
     # and produce identical results
-    torch.testing.assert_close(mapping_torchsim, mapping_standard)
-    torch.testing.assert_close(shifts_torchsim, shifts_standard)
-    torch.testing.assert_close(sys_map_ts, sys_map_std)
+    torch.testing.assert_close(mapping_torchsim, mapping_expected)
+    torch.testing.assert_close(shifts_torchsim, shifts_expected)
+    torch.testing.assert_close(sys_map_ts, sys_map_exp)
 
 
 def test_strict_nl_edge_cases() -> None:
@@ -637,6 +720,8 @@ def test_neighbor_lists_time_and_memory() -> None:
                 cast("Callable[..., Any]", neighbors.vesin_nl),
             ]
         )
+    if neighbors.ALCHEMIOPS_AVAILABLE and DEVICE.type == "cuda":
+        nl_implementations.append(neighbors.alchemiops_nl_n2)
 
     for nl_fn in nl_implementations:
         # Get initial memory usage

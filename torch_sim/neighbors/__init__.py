@@ -21,6 +21,13 @@ from torch_sim.neighbors.standard import primitive_neighbor_list, standard_nl
 from torch_sim.neighbors.torch_nl import strict_nl, torch_nl_linked_cell, torch_nl_n2
 
 
+# Try to import Alchemiops implementations (NVIDIA CUDA acceleration)
+try:
+    from torch_sim.neighbors.alchemiops import ALCHEMIOPS_AVAILABLE, alchemiops_nl_n2
+except ImportError:
+    ALCHEMIOPS_AVAILABLE = False
+    alchemiops_nl_n2 = None  # type: ignore[assignment]
+
 # Try to import Vesin implementations
 try:
     from torch_sim.neighbors.vesin import (
@@ -37,16 +44,16 @@ except ImportError:
     vesin_nl = None  # type: ignore[assignment]
     vesin_nl_ts = None  # type: ignore[assignment]
 
-# Set default neighbor list based on what's available
-if VESIN_AVAILABLE:
-    default_nl = vesin_nl
-    default_nl_ts = vesin_nl_ts
+# Set default neighbor list based on what's available (priority order)
+if ALCHEMIOPS_AVAILABLE:
+    # Alchemiops is fastest on NVIDIA GPUs
+    default_batched_nl = alchemiops_nl_n2
+elif VESIN_AVAILABLE:
+    # Vesin is good fallback
+    default_batched_nl = vesin_nl_ts  # Still use native for batched
 else:
-    default_nl = standard_nl
-    default_nl_ts = standard_nl
-
-# For batched calculations, always use linked cell as default
-default_batched_nl = torch_nl_linked_cell
+    # Pure PyTorch fallback
+    default_batched_nl = torch_nl_linked_cell
 
 
 def torchsim_nl(
@@ -57,11 +64,13 @@ def torchsim_nl(
     system_idx: torch.Tensor,
     self_interaction: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Compute neighbor lists with automatic fallback for AMD ROCm compatibility.
+    """Compute neighbor lists with automatic selection of best available implementation.
 
-    This function automatically selects the best available neighbor list implementation.
-    When vesin is available, it uses vesin_nl_ts for optimal performance. When vesin
-    is not available (e.g., on AMD ROCm systems), it falls back to standard_nl.
+    This function automatically selects the best available neighbor list implementation
+    based on what's installed. Priority order:
+    1. Alchemiops (NVIDIA CUDA optimized) if available
+    2. Vesin (fast, cross-platform) if available
+    3. torch_nl_linked_cell (pure PyTorch fallback)
 
     Args:
         positions: Atomic positions tensor [n_atoms, 3]
@@ -79,39 +88,36 @@ def torchsim_nl(
             - shifts_idx: Tensor [num_neighbors, 3] - periodic shift indices
 
     Notes:
-        - Automatically uses vesin_nl_ts when vesin is available
-        - Falls back to standard_nl when vesin is unavailable (AMD ROCm)
+        - Automatically uses best available implementation
+        - Priority: Alchemiops > Vesin > torch_nl_linked_cell
         - Fallback works on NVIDIA CUDA, AMD ROCm, and CPU
         - For non-periodic systems (pbc=False), shifts will be zero vectors
         - The neighbor list includes both (i,j) and (j,i) pairs
     """
-    if not VESIN_AVAILABLE:
-        return torch_nl_linked_cell(
+    if ALCHEMIOPS_AVAILABLE:
+        return alchemiops_nl_n2(
             positions, cell, pbc, cutoff, system_idx, self_interaction
         )
-
-    return vesin_nl_ts(positions, cell, pbc, cutoff, system_idx, self_interaction)
+    if VESIN_AVAILABLE:
+        return vesin_nl_ts(positions, cell, pbc, cutoff, system_idx, self_interaction)
+    return torch_nl_linked_cell(
+        positions, cell, pbc, cutoff, system_idx, self_interaction
+    )
 
 
 __all__ = [
-    # Availability
+    "ALCHEMIOPS_AVAILABLE",
     "VESIN_AVAILABLE",
     "VesinNeighborList",
     "VesinNeighborListTorch",
-    # Defaults
+    "alchemiops_nl_n2",
     "default_batched_nl",
-    "default_nl",
-    "default_nl_ts",
-    # Core implementations
     "primitive_neighbor_list",
     "standard_nl",
-    # Utilities
     "strict_nl",
-    # Batched implementations
     "torch_nl_linked_cell",
     "torch_nl_n2",
     "torchsim_nl",
-    # Vesin implementations
     "vesin_nl",
     "vesin_nl_ts",
 ]
