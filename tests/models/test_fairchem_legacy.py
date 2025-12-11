@@ -35,16 +35,14 @@ def model_path_oc20(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 @pytest.fixture
 def eqv2_oc20_model_pbc(model_path_oc20: str) -> FairChemV1Model:
-    cpu = DEVICE.type == "cpu"
-    return FairChemV1Model(model=model_path_oc20, cpu=cpu, seed=0, pbc=True)
+    return FairChemV1Model(model=model_path_oc20, device=DEVICE, seed=0, pbc=True)
 
 
 @pytest.fixture
 def eqv2_oc20_model_non_pbc(
     model_path_oc20: str,
 ) -> FairChemV1Model:
-    cpu = DEVICE.type == "cpu"
-    return FairChemV1Model(model=model_path_oc20, cpu=cpu, seed=0, pbc=False)
+    return FairChemV1Model(model=model_path_oc20, device=DEVICE, seed=0, pbc=False)
 
 
 if get_token():
@@ -59,8 +57,7 @@ if get_token():
     def eqv2_omat24_model_pbc(
         model_path_omat24: str,
     ) -> FairChemV1Model:
-        cpu = DEVICE.type == "cpu"
-        return FairChemV1Model(model=model_path_omat24, cpu=cpu, seed=0, pbc=True)
+        return FairChemV1Model(model=model_path_omat24, device=DEVICE, seed=0, pbc=True)
 
 
 @pytest.fixture
@@ -106,10 +103,9 @@ test_fairchem_ocp_model_outputs = pytest.mark.skipif(
 
 def test_fairchem_mixed_pbc_init_raises(model_path_oc20: str) -> None:
     """Test that initializing FairChemV1Model with mixed PBC raises ValueError."""
-    cpu = DEVICE.type == "cpu"
     mixed_pbc = torch.tensor([True, False, True], dtype=torch.bool)
     with pytest.raises(ValueError, match="FairChemV1Model does not support mixed PBC"):
-        FairChemV1Model(model=model_path_oc20, cpu=cpu, seed=0, pbc=mixed_pbc)
+        FairChemV1Model(model=model_path_oc20, device=DEVICE, seed=0, pbc=mixed_pbc)
 
 
 def test_fairchem_mixed_pbc_forward_raises(
