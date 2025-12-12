@@ -101,7 +101,12 @@ final_state = ts.integrate(
 with TorchSimTrajectory(trajectory_file) as traj:
     kinetic_energies = traj.get_array("kinetic_energy")
     potential_energies = traj.get_array("potential_energy")
-    final_energy = potential_energies[-1]
+    # Convert to scalar, handling both numpy arrays and tensors
+    final_energy = (
+        potential_energies[-1].item()
+        if hasattr(potential_energies[-1], "item")
+        else float(potential_energies[-1])
+    )
     final_atoms = traj.get_atoms(-1)
 
 print(f"Final energy from trajectory: {final_energy:.4f} eV")

@@ -183,16 +183,20 @@ print(f"Forces shape: {results['forces'].shape}")
 # The stress has shape (n_systems, 3, 3) same as cell
 print(f"Stress shape: {results['stress'].shape}")
 
-# Check if the energy, forces, and stress are the same for the Si system across the batch
-print(
-    f"\nMax energy difference: {torch.max(torch.abs(results['energy'][0] - results['energy'][1]))}"
+# Check if the energy, forces, and stress are the same for the Si system across batches
+# Each system has 64 atoms (2x2x2 supercell of 8-atom Si diamond)
+n_atoms_per_system = len(si_dc)
+energy_diff = torch.max(torch.abs(results["energy"][0] - results["energy"][1]))
+forces_diff = torch.max(
+    torch.abs(
+        results["forces"][:n_atoms_per_system] - results["forces"][n_atoms_per_system:]
+    )
 )
-print(
-    f"Max forces difference: {torch.max(torch.abs(results['forces'][:8] - results['forces'][8:]))}"
-)
-print(
-    f"Max stress difference: {torch.max(torch.abs(results['stress'][0] - results['stress'][1]))}"
-)
+stress_diff = torch.max(torch.abs(results["stress"][0] - results["stress"][1]))
+
+print(f"\nMax energy difference: {energy_diff}")
+print(f"Max forces difference: {forces_diff}")
+print(f"Max stress difference: {stress_diff}")
 
 print("\n" + "=" * 70)
 print("Introduction examples completed!")
