@@ -28,7 +28,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.neighbors import torchsim_nl
 from torch_sim.typing import StateDict
 
 
@@ -107,7 +107,7 @@ class MaceModel(ModelInterface):
         *,
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float64,
-        neighbor_list_fn: Callable = vesin_nl_ts,
+        neighbor_list_fn: Callable = torchsim_nl,
         compute_forces: bool = True,
         compute_stress: bool = True,
         enable_cueq: bool = False,
@@ -330,19 +330,24 @@ class MaceModel(ModelInterface):
         unit_shifts = torch.cat(unit_shifts_list, dim=0)
         shifts = torch.cat(shifts_list, dim=0)
 
+        # Build data dict for MACE model
+        data_dict = dict(
+            ptr=self.ptr,
+            node_attrs=self.node_attrs,
+            batch=sim_state.system_idx,
+            pbc=sim_state.pbc,
+            cell=sim_state.row_vector_cell,
+            positions=sim_state.positions,
+            edge_index=edge_index,
+            unit_shifts=unit_shifts,
+            shifts=shifts,
+            total_charge=sim_state.charge,
+            total_spin=sim_state.spin,
+        )
+
         # Get model output
         out = self.model(
-            dict(
-                ptr=self.ptr,
-                node_attrs=self.node_attrs,
-                batch=sim_state.system_idx,
-                pbc=sim_state.pbc,
-                cell=sim_state.row_vector_cell,
-                positions=sim_state.positions,
-                edge_index=edge_index,
-                unit_shifts=unit_shifts,
-                shifts=shifts,
-            ),
+            data_dict,
             compute_force=self.compute_forces,
             compute_stress=self.compute_stress,
         )

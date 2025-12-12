@@ -97,14 +97,15 @@ state = ts.SimState(
 # Run initial simulation and get results
 results = model(state)
 
-dt = torch.tensor(0.001 * Units.time, device=device, dtype=dtype)  # Time step (1 ps)
+dt = torch.tensor(
+    0.001 * Units.time, device=device, dtype=dtype
+)  # Time step (1 fs) # Default time step is ps in Metal units
 kT = torch.tensor(
     200 * Units.temperature, device=device, dtype=dtype
 )  # Temperature (200 K)
 target_pressure = (
     torch.tensor(10, device=device, dtype=dtype) * Units.pressure
-)  # Target pressure (10 kbar)
-
+)  # Target pressure (10 bar, using Metal units)
 state = ts.npt_nose_hoover_init(
     state=state,
     model=model,
