@@ -75,7 +75,12 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
         # model's cutoff value. To ensure no strange edge effects whereby
         # edges that are exactly `cutoff` long are included/excluded,
         # we bump cutoff + 1e-5 up slightly
-        nl, shifts = torchsim_nl(R, cell, state.pbc, cutoff + 1e-5)
+
+        # Create system_idx for this single system (all atoms belong to system 0)
+        system_idx_single = torch.zeros(R.shape[0], dtype=torch.long, device=R.device)
+        nl, _system_mapping, shifts = torchsim_nl(
+            R, cell, state.pbc, cutoff + 1e-5, system_idx_single
+        )
 
         atomic_graph = AtomicGraph(
             Z=Z.long(),
