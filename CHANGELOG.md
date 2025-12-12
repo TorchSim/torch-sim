@@ -8,7 +8,7 @@ Thank you to everyone who contributed to this release! This release includes imp
 ### 🎉 New Features
 * Add CSVR / V-Rescale thermostat and anisotropic C rescale barostat by @thomasloux in [#326](https://github.com/TorchSim/torch-sim/pull/326)
 * Support for electrostatics by @orionarcher in [#373](https://github.com/TorchSim/torch-sim/pull/373)
-* Add support for AMD GPUs (consumer/datacenter) by @andrewrm98 in [#347](https://github.com/TorchSim/torch-sim/pull/347)
+* Add support for AMD GPUs (consumer/datacenter) by @amacbride in [#347](https://github.com/TorchSim/torch-sim/pull/347)
 
 ### 🐛 Bug Fixes
 * Fix: add init_kwargs to ts.integrate by @danielzuegner in [#360](https://github.com/TorchSim/torch-sim/pull/360)
@@ -21,7 +21,7 @@ Thank you to everyone who contributed to this release! This release includes imp
 * Consolidate model and model_name args in FairchemModel by @orionarcher in [#377](https://github.com/TorchSim/torch-sim/pull/377)
 
 ## New Contributors
-* @andrewrm98 made their first contribution in [#347](https://github.com/TorchSim/torch-sim/pull/347)
+* @amacbride made their first contribution in [#347](https://github.com/TorchSim/torch-sim/pull/347)
 * @danielzuegner made their first contribution in [#360](https://github.com/TorchSim/torch-sim/pull/360)
 * @RishikeshMagar made their first contribution in [#378](https://github.com/TorchSim/torch-sim/pull/378)
 
