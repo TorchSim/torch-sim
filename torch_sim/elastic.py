@@ -21,9 +21,12 @@ Online Resources:
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 
+import torch_sim as ts
+from torch_sim.autobatching import BinningAutoBatcher
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers import OptimState
 from torch_sim.state import SimState
@@ -1113,6 +1116,8 @@ def calculate_elastic_tensor(
     max_strain_normal: float = 0.01,
     max_strain_shear: float = 0.06,
     n_deform: int = 5,
+    autobatcher: BinningAutoBatcher | bool = False,
+    pbar: bool | dict[str, Any] = False,
 ) -> torch.Tensor:
     """Calculate the elastic tensor of a structure.
 
@@ -1123,6 +1128,12 @@ def calculate_elastic_tensor(
         max_strain_normal: Maximum normal strain
         max_strain_shear: Maximum shear strain
         n_deform: Number of deformations
+        autobatcher: Optional autobatcher for batching calculations. If True,
+            automatically determines batch sizes based on available memory.
+            If False (default), processes all deformations in a single batch.
+            If a BinningAutoBatcher instance, uses the provided configuration.
+        pbar: Show a progress bar. If True, displays default progress bar.
+            If a dict, passed as kwargs to tqdm. Defaults to False.
 
     Returns:
         torch.Tensor: Elastic tensor
@@ -1138,13 +1149,29 @@ def calculate_elastic_tensor(
         bravais_type=bravais_type,
     )
 
-    # Calculate stresses for deformations
+    # Calculate stresses for deformations using static runner
     ref_pressure = -torch.trace(state.stress.squeeze()) / 3
-    stresses = torch.zeros((len(deformations), 6), device=device, dtype=dtype)
 
-    for def_idx, deformation in enumerate(deformations):
-        result = model(deformation)
-        stresses[def_idx] = full_3x3_to_voigt_6_stress(result["stress"].squeeze())
+    # Validate that model computes stress
+    if not model.compute_stress:
+        raise ValueError("Model must compute stress for elastic tensor calculation")
+
+    # Concatenate deformations into single multi-system state
+    concatenated_deformations = ts.concatenate_states(deformations)
+
+    # Run static calculations on all deformations
+    properties_list = ts.static(
+        system=concatenated_deformations,
+        model=model,
+        autobatcher=autobatcher,
+        pbar=pbar,
+    )
+
+    # Extract stresses from results
+    stresses = torch.zeros((len(deformations), 6), device=device, dtype=dtype)
+    for def_idx, props in enumerate(properties_list):
+        stress_3x3 = props["stress"].squeeze()
+        stresses[def_idx] = full_3x3_to_voigt_6_stress(stress_3x3)
 
     # Calculate elastic tensor
     C_ij, _residuals = get_elastic_coeffs(
