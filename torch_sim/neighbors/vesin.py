@@ -30,7 +30,7 @@ __all__ = [
 
 if VESIN_AVAILABLE:
 
-    def vesin_nl_ts(  # noqa: PLR0915
+    def vesin_nl_ts(
         positions: torch.Tensor,
         cell: torch.Tensor,
         pbc: torch.Tensor,
@@ -75,21 +75,12 @@ if VESIN_AVAILABLE:
         References:
               https://github.com/Luthaf/vesin
         """
+        from torch_sim.neighbors import _normalize_inputs
+
         device = positions.device
         dtype = positions.dtype
         n_systems = system_idx.max().item() + 1
-
-        # Normalize inputs to batch format
-        if cell.ndim == 2:
-            if cell.shape[0] == 3:
-                cell = cell.unsqueeze(0).expand(n_systems, -1, -1)
-            else:
-                cell = cell.reshape(n_systems, 3, 3)
-        if pbc.ndim == 1:
-            if pbc.shape[0] == 3:
-                pbc = pbc.unsqueeze(0).expand(n_systems, -1)
-            else:
-                pbc = pbc.reshape(n_systems, 3)
+        cell, pbc = _normalize_inputs(cell, pbc, n_systems)
 
         # Process each system's neighbor list separately
         edge_indices = []
