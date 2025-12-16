@@ -89,7 +89,7 @@ The key components we'll combine are:
 from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(kw_only=True)
 class HybridSwapMCState(SwapMCState, MDState):
     """State for hybrid MD-Monte Carlo simulations.
 
@@ -129,7 +129,7 @@ swap_state = ts.swap_mc_init(state=md_state, model=mace_model)
 
 # Create hybrid state combining both
 hybrid_state = HybridSwapMCState(
-    **vars(md_state),
+    **md_state.attributes,
     last_permutation=torch.arange(
         md_state.n_atoms, device=md_state.device, dtype=torch.long
     ),
@@ -163,7 +163,7 @@ for step in range(n_steps):
         )
     else:  # Perform MD step
         hybrid_state = ts.nvt_langevin_step(
-            model=mace_model, state=hybrid_state, dt=0.002, kT=kT
+            state=hybrid_state, model=mace_model, dt=0.002, kT=kT
         )
 
     if step % 20 == 0:

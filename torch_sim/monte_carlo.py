@@ -24,7 +24,7 @@ from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
 
-@dataclass
+@dataclass(kw_only=True)
 class SwapMCState(SimState):
     """State for Monte Carlo simulations with swap moves.
 
@@ -87,7 +87,7 @@ def generate_swaps(state: SimState, rng: torch.Generator | None = None) -> torch
     first_index = torch.multinomial(weights, 1, replacement=False, generator=rng)
 
     # Process each system - we need this loop because of ragged systems
-    system_starts = system_lengths.cumsum(dim=0) - system_lengths[0]
+    system_starts = system_lengths.cumsum(dim=0) - system_lengths
 
     for sys_idx in range(n_systems):
         # Get global index of selected atom
@@ -107,7 +107,7 @@ def generate_swaps(state: SimState, rng: torch.Generator | None = None) -> torch
     second_index = torch.multinomial(weights, 1, replacement=False, generator=rng)
     zeroed_swaps = torch.concatenate([first_index, second_index], dim=1)
 
-    return zeroed_swaps + (system_lengths.cumsum(dim=0) - system_lengths[0]).unsqueeze(1)
+    return zeroed_swaps + system_starts.unsqueeze(1)
 
 
 def swaps_to_permutation(swaps: torch.Tensor, n_atoms: int) -> torch.Tensor:

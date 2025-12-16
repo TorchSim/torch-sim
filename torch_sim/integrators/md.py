@@ -7,10 +7,12 @@ import torch
 
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
+from torch_sim.quantities import calc_kT, calc_temperature
 from torch_sim.state import SimState
+from torch_sim.units import MetalUnits
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MDState(SimState):
     """State information for molecular dynamics simulations.
 
@@ -54,6 +56,38 @@ class MDState(SimState):
         [n_particles, n_dimensions].
         """
         return self.momenta / self.masses.unsqueeze(-1)
+
+    def calc_temperature(
+        self, units: MetalUnits = MetalUnits.temperature
+    ) -> torch.Tensor:
+        """Calculate temperature from momenta, masses, and system indices.
+
+        Args:
+            units (MetalUnits): Units to return the temperature in
+
+        Returns:
+            torch.Tensor: Calculated temperature
+        """
+        return calc_temperature(
+            masses=self.masses,
+            momenta=self.momenta,
+            system_idx=self.system_idx,
+            dof_per_system=self.get_number_of_degrees_of_freedom(),
+            units=units,
+        )
+
+    def calc_kT(self) -> torch.Tensor:  # noqa: N802
+        """Calculate kT from momenta, masses, and system indices.
+
+        Returns:
+            torch.Tensor: Calculated kT
+        """
+        return calc_kT(
+            masses=self.masses,
+            momenta=self.momenta,
+            system_idx=self.system_idx,
+            dof_per_system=self.get_number_of_degrees_of_freedom(),
+        )
 
 
 def calculate_momenta(
@@ -154,10 +188,13 @@ def position_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
     """
     new_positions = state.positions + state.velocities * dt
 
-    if state.pbc:
+    if state.pbc.any():
         # Split positions and cells by system
         new_positions = transforms.pbc_wrap_batched(
-            new_positions, state.cell, state.system_idx
+            new_positions,
+            state.cell,
+            state.system_idx,
+            state.pbc,
         )
 
     state.positions = new_positions

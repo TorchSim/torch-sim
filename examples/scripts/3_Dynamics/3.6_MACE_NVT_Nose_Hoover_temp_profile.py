@@ -133,10 +133,12 @@ state = ts.io.atoms_to_state(fcc_lattice, device=device, dtype=dtype)
 results = model(state)
 
 # Set up simulation parameters
-dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)
-kT = torch.tensor(init_temp, device=device, dtype=dtype) * Units.temperature
+dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # Timestep (2 fs)
+kT = (
+    torch.tensor(init_temp, device=device, dtype=dtype) * Units.temperature
+)  # Initial temperature (K)
 
-state = ts.nvt_nose_hoover_init(model=model, state=state, kT=kT, dt=dt, seed=1)
+state = ts.nvt_nose_hoover_init(state=state, model=model, kT=kT, dt=dt, seed=1)
 
 # Run simulation with temperature profile
 actual_temps = np.zeros(n_steps)
@@ -175,7 +177,7 @@ for step in range(n_steps):
 
     # Update simulation state
     state = ts.nvt_nose_hoover_step(
-        model=model, state=state, dt=dt, kT=current_kT * Units.temperature
+        state=state, model=model, dt=dt, kT=current_kT * Units.temperature
     )
 
 # Visualize temperature profile

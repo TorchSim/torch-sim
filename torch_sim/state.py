@@ -9,7 +9,7 @@ import importlib
 import typing
 from collections import defaultdict
 from collections.abc import Generator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 
 import torch
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from pymatgen.core import Structure
 
 
-@dataclass(init=False)
+@dataclass
 class SimState:
     """State representation for atomistic systems with batched operations support.
 
@@ -47,7 +47,9 @@ class SimState:
             stored as `[[a1, b1, c1], [a2, b2, c2], [a3, b3, c3]]` as opposed to
             the row vector convention `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`
             used by ASE.
-        pbc (bool): Boolean indicating whether to use periodic boundary conditions
+        pbc (bool | list[bool] | torch.Tensor): indicates periodic boundary
+            conditions in each axis. If a boolean is provided, all axes are
+            assumed to have the same periodic boundary conditions.
         atomic_numbers (torch.Tensor): Atomic numbers with shape (n_atoms,)
         system_idx (torch.Tensor): Maps each atom index to its system index.
             Has shape (n_atoms,), must be unique consecutive integers starting from 0.
@@ -80,9 +82,23 @@ class SimState:
     positions: torch.Tensor
     masses: torch.Tensor
     cell: torch.Tensor
-    pbc: bool  # TODO: do all calculators support mixed pbc?
+    pbc: torch.Tensor | list[bool] | bool
     atomic_numbers: torch.Tensor
-    system_idx: torch.Tensor
+    charge: torch.Tensor | None = field(default=None)
+    spin: torch.Tensor | None = field(default=None)
+    system_idx: torch.Tensor | None = field(default=None)
+
+    if TYPE_CHECKING:
+
+        @property
+        def system_idx(self) -> torch.Tensor:
+            """A getter for system_idx that tells type checkers it's always defined."""
+            return self.system_idx
+
+        @property
+        def pbc(self) -> torch.Tensor:
+            """A getter for pbc that tells type checkers it's always defined."""
+            return self.pbc
 
     _atom_attributes: ClassVar[set[str]] = {
         "positions",
@@ -90,47 +106,11 @@ class SimState:
         "atomic_numbers",
         "system_idx",
     }
-    _system_attributes: ClassVar[set[str]] = {"cell"}
+    _system_attributes: ClassVar[set[str]] = {"cell", "charge", "spin"}
     _global_attributes: ClassVar[set[str]] = {"pbc"}
 
-    def __init__(
-        self,
-        positions: torch.Tensor,
-        masses: torch.Tensor,
-        cell: torch.Tensor,
-        pbc: bool,  # noqa: FBT001
-        atomic_numbers: torch.Tensor,
-        system_idx: torch.Tensor | None = None,
-    ) -> None:
-        """Initialize the SimState and validate the arguments.
-
-        Args:
-            positions (torch.Tensor): Atomic positions with shape (n_atoms, 3)
-            masses (torch.Tensor): Atomic masses with shape (n_atoms,)
-            cell (torch.Tensor): Unit cell vectors with shape (n_systems, 3, 3).
-            pbc (bool): Boolean indicating whether to use periodic boundary conditions
-            atomic_numbers (torch.Tensor): Atomic numbers with shape (n_atoms,)
-            system_idx (torch.Tensor | None): Maps each atom index to its system index.
-                Has shape (n_atoms,), must be unique consecutive integers starting from 0.
-                If not provided, it is initialized to zeros.
-        """
-        self.positions = positions
-        self.masses = masses
-        self.cell = cell
-        self.pbc = pbc
-        self.atomic_numbers = atomic_numbers
-
-        # Validate and process the state after initialization.
-        # data validation and fill system_idx
-        # should make pbc a tensor here
-        # if devices aren't all the same, raise an error, in a clean way
-        devices = {
-            attr: getattr(self, attr).device
-            for attr in ("positions", "masses", "cell", "atomic_numbers")
-        }
-        if len(set(devices.values())) > 1:
-            raise ValueError("All tensors must be on the same device")
-
+    def __post_init__(self) -> None:  # noqa: C901
+        """Initialize the SimState and validate the arguments."""
         # Check that positions, masses and atomic numbers have compatible shapes
         shapes = [
             getattr(self, attr).shape[0]
@@ -143,17 +123,33 @@ class SimState:
                 f"masses {shapes[1]}, atomic_numbers {shapes[2]}"
             )
 
-        if system_idx is None:
+        if isinstance(self.pbc, bool):
+            self.pbc = [self.pbc] * 3
+        if not isinstance(self.pbc, torch.Tensor):
+            self.pbc = torch.tensor(self.pbc, dtype=torch.bool, device=self.device)
+
+        initial_system_idx = self.system_idx
+        if initial_system_idx is None:
             self.system_idx = torch.zeros(
                 self.n_atoms, device=self.device, dtype=torch.int64
             )
         else:  # assert that system indices are unique consecutive integers
-            _, counts = torch.unique_consecutive(system_idx, return_counts=True)
-            if not torch.all(counts == torch.bincount(system_idx)):
+            _, counts = torch.unique_consecutive(initial_system_idx, return_counts=True)
+            if not torch.all(counts == torch.bincount(initial_system_idx)):
                 raise ValueError("System indices must be unique consecutive integers")
-            self.system_idx = system_idx
 
-        if self.cell.ndim != 3 and system_idx is None:
+        if self.charge is None:
+            self.charge = torch.zeros(
+                self.n_systems, device=self.device, dtype=self.dtype
+            )
+        elif self.charge.shape[0] != self.n_systems:
+            raise ValueError(f"Charge must have shape (n_systems={self.n_systems},)")
+        if self.spin is None:
+            self.spin = torch.zeros(self.n_systems, device=self.device, dtype=self.dtype)
+        elif self.spin.shape[0] != self.n_systems:
+            raise ValueError(f"Spin must have shape (n_systems={self.n_systems},)")
+
+        if self.cell.ndim != 3 and initial_system_idx is None:
             self.cell = self.cell.unsqueeze(0)
 
         if self.cell.shape[-2:] != (3, 3):
@@ -163,6 +159,21 @@ class SimState:
             raise ValueError(
                 f"Cell must have shape (n_systems, 3, 3), got {self.cell.shape}"
             )
+
+        # if devices aren't all the same, raise an error, in a clean way
+        devices = {
+            attr: getattr(self, attr).device
+            for attr in (
+                "positions",
+                "masses",
+                "cell",
+                "atomic_numbers",
+                "pbc",
+                "system_idx",
+            )
+        }
+        if len(set(devices.values())) > 1:
+            raise ValueError("All tensors must be on the same device")
 
     @property
     def wrap_positions(self) -> torch.Tensor:
@@ -190,11 +201,7 @@ class SimState:
     @property
     def n_atoms_per_system(self) -> torch.Tensor:
         """Number of atoms per system."""
-        return (
-            self.system_idx.bincount()
-            if self.system_idx is not None
-            else torch.tensor([self.n_atoms], device=self.device)
-        )
+        return self.system_idx.bincount()
 
     @property
     def n_systems(self) -> int:
@@ -205,6 +212,16 @@ class SimState:
     def volume(self) -> torch.Tensor:
         """Volume of the system."""
         return torch.det(self.cell)
+
+    @property
+    def attributes(self) -> dict[str, torch.Tensor]:
+        """Get all public attributes of the state."""
+        return {
+            attr: getattr(self, attr)
+            for attr in self._atom_attributes
+            | self._system_attributes
+            | self._global_attributes
+        }
 
     @property
     def column_vector_cell(self) -> torch.Tensor:
@@ -234,6 +251,17 @@ class SimState:
         """
         self.cell = value.mT
 
+    def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
+        """Calculate degrees of freedom accounting for constraints.
+
+        Returns:
+            torch.Tensor: Number of degrees of freedom per system, with shape
+                (n_systems,). Each system starts with 3 * n_atoms_per_system degrees
+                of freedom, minus any degrees removed by constraints.
+        """
+        # Start with unconstrained DOF: 3 degrees per atom
+        return 3 * self.n_atoms_per_system
+
     def clone(self) -> Self:
         """Create a deep copy of the SimState.
 
@@ -244,7 +272,7 @@ class SimState:
             SimState: A new SimState object with the same properties as the original
         """
         attrs = {}
-        for attr_name, attr_value in vars(self).items():
+        for attr_name, attr_value in self.attributes.items():
             if isinstance(attr_value, torch.Tensor):
                 attrs[attr_name] = attr_value.clone()
             else:
@@ -278,7 +306,7 @@ class SimState:
         """
         # Copy all attributes from the source state
         attrs = {}
-        for attr_name, attr_value in vars(state).items():
+        for attr_name, attr_value in state.attributes.items():
             if isinstance(attr_value, torch.Tensor):
                 attrs[attr_name] = attr_value.clone()
             else:
@@ -348,7 +376,7 @@ class SimState:
         modified_state, popped_states = _pop_states(self, system_indices)
 
         # Update all attributes of self with the modified state's attributes
-        for attr_name, attr_value in vars(modified_state).items():
+        for attr_name, attr_value in modified_state.attributes.items():
             setattr(self, attr_name, attr_value)
 
         return popped_states
@@ -401,10 +429,16 @@ class SimState:
     @classmethod
     def _assert_no_tensor_attributes_can_be_none(cls) -> None:
         # We need to use get_type_hints to correctly inspect the types
+
+        # exceptions exist because the type hint doesn't actually reflect the real type
+        # (since we change their type in the post_init)
+        exceptions = {"system_idx", "charge", "spin"}
+
         type_hints = typing.get_type_hints(cls)
         for attr_name, attr_type_hint in type_hints.items():
             origin = typing.get_origin(attr_type_hint)
-
+            if attr_name in exceptions:
+                continue
             is_union = origin is typing.Union
             if not is_union and origin is not None:
                 # For Python 3.10+ `|` syntax, origin is types.UnionType
@@ -443,12 +477,15 @@ class SimState:
             if hasattr(parent_cls, "__annotations__"):
                 all_annotations.update(parent_cls.__annotations__)
 
-        attributes_to_check = set(vars(cls)) | set(all_annotations)
+        # Get class namespace attributes (methods, properties, class vars with values)
+        class_namespace = vars(cls)
+        attributes_to_check = set(class_namespace.keys()) | set(all_annotations.keys())
 
         for attr_name in attributes_to_check:
             is_special_attribute = attr_name.startswith("__")
-            is_property = attr_name in vars(cls) and isinstance(
-                vars(cls).get(attr_name), property
+            is_private_attribute = attr_name.startswith("_") and not is_special_attribute
+            is_property = attr_name in class_namespace and isinstance(
+                class_namespace.get(attr_name), property
             )
             is_method = hasattr(cls, attr_name) and callable(getattr(cls, attr_name))
             is_class_variable = (
@@ -457,7 +494,13 @@ class SimState:
                 typing.get_origin(all_annotations.get(attr_name)) is typing.ClassVar
             )
 
-            if is_special_attribute or is_property or is_method or is_class_variable:
+            if (
+                is_special_attribute
+                or is_private_attribute
+                or is_property
+                or is_method
+                or is_class_variable
+            ):
                 continue
 
             if attr_name not in all_defined_attributes:
@@ -573,7 +616,7 @@ def _state_to_device[T: SimState](
     if dtype is None:
         dtype = state.dtype
 
-    attrs = vars(state)
+    attrs = state.attributes
     for attr_name, attr_value in attrs.items():
         if isinstance(attr_value, torch.Tensor):
             attrs[attr_name] = attr_value.to(device=device)

@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
+from ase.build.bulk import bulk
 
 import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
@@ -99,6 +100,7 @@ def test_integrate_double_nvt(
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
+        init_kwargs=dict(seed=481516),
     )
 
     assert isinstance(final_state, SimState)
@@ -776,6 +778,27 @@ def test_static_no_filenames(
     assert len(props) == 1
     assert "potential_energy" in props[0]
     assert isinstance(props[0]["potential_energy"], torch.Tensor)
+
+
+def test_static_after_optimize(lj_model: LennardJonesModel):
+    """Tests that we can calculate static properties after an optimize run."""
+    atoms = bulk("Si", "diamond", a=5.43, cubic=True)
+    initial_state = ts.io.atoms_to_state(
+        atoms, device=lj_model.device, dtype=lj_model.dtype
+    )
+
+    final_state = ts.optimize(
+        system=initial_state,
+        model=lj_model,
+        optimizer=ts.Optimizer.fire,
+        max_steps=100,
+    )
+
+    results = ts.static(
+        system=final_state,
+        model=lj_model,
+    )
+    assert results[0]["potential_energy"] == final_state.energy
 
 
 def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:

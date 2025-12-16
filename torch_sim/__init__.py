@@ -34,10 +34,15 @@ from torch_sim.integrators import (
     nvt_nose_hoover_init,
     nvt_nose_hoover_invariant,
     nvt_nose_hoover_step,
+    nvt_vrescale_init,
+    nvt_vrescale_step,
 )
 from torch_sim.integrators.npt import (
     NPTLangevinState,
     NPTNoseHooverState,
+    npt_crescale_anisotropic_step,
+    npt_crescale_init,
+    npt_crescale_isotropic_step,
     npt_langevin_init,
     npt_langevin_step,
     npt_nose_hoover_init,
@@ -66,6 +71,7 @@ from torch_sim.properties.correlations import CorrelationCalculator
 from torch_sim.quantities import (
     calc_kinetic_energy,
     calc_kT,
+    calc_temperature,
     get_pressure,
     system_wise_max_force,
 )

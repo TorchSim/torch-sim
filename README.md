@@ -93,7 +93,7 @@ print(relaxed_state.energy)
 
 TorchSim achieves up to 100x speedup compared to ASE with popular MLIPs.
 
-<img src="/docs/_static/speedup_plot.svg" alt="Speedup comparison" width="100%">
+<img src="https://raw.githubusercontent.com/TorchSim/torch-sim/main/docs/_static/speedup_plot.svg" alt="Speedup comparison" width="100%">
 
 This figure compares the time per atom of ASE and `torch_sim`. Time per atom is defined
 as the number of atoms / total time. While ASE can only run a single system of `n_atoms`
@@ -139,4 +139,4 @@ TorchSim is released under an [MIT license](LICENSE).
 
 ## Citation
 
-If you use TorchSim in your research, please cite the [arXiv preprint](https://arxiv.org/abs/2508.06628).
+If you use TorchSim in your research, please cite our [publication](https://iopscience.iop.org/article/10.1088/3050-287X/ae1799).

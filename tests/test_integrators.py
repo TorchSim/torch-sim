@@ -90,7 +90,14 @@ def test_npt_langevin(
 
     # Initialize integrator using new direct API
     state = ts.npt_langevin_init(
-        state=ar_double_sim_state, model=lj_model, dt=dt, kT=kT, alpha=alpha, seed=42
+        state=ar_double_sim_state,
+        model=lj_model,
+        dt=dt,
+        kT=kT,
+        alpha=alpha,
+        cell_alpha=cell_alpha,
+        b_tau=b_tau,
+        seed=42,
     )
 
     # Run dynamics for several steps
@@ -103,9 +110,6 @@ def test_npt_langevin(
             dt=dt,
             kT=kT,
             external_pressure=external_pressure,
-            alpha=alpha,
-            cell_alpha=cell_alpha,
-            b_tau=b_tau,
         )
 
         # Calculate instantaneous temperature from kinetic energy
@@ -161,7 +165,14 @@ def test_npt_langevin_multi_kt(
 
     # Initialize integrator using new direct API
     state = ts.npt_langevin_init(
-        state=ar_double_sim_state, model=lj_model, dt=dt, kT=kT, alpha=alpha, seed=42
+        state=ar_double_sim_state,
+        model=lj_model,
+        dt=dt,
+        kT=kT,
+        alpha=alpha,
+        cell_alpha=cell_alpha,
+        b_tau=b_tau,
+        seed=42,
     )
 
     # Run dynamics for several steps
@@ -174,9 +185,6 @@ def test_npt_langevin_multi_kt(
             dt=dt,
             kT=kT,
             external_pressure=external_pressure,
-            alpha=alpha,
-            cell_alpha=cell_alpha,
-            b_tau=b_tau,
         )
 
         # Calculate instantaneous temperature from kinetic energy
@@ -214,7 +222,7 @@ def test_nvt_langevin(ar_double_sim_state: ts.SimState, lj_model: LennardJonesMo
     energies = []
     temperatures = []
     for _step in range(n_steps):
-        state = ts.nvt_langevin_step(model=lj_model, state=state, dt=dt, kT=kT)
+        state = ts.nvt_langevin_step(state=state, model=lj_model, dt=dt, kT=kT)
 
         # Calculate instantaneous temperature from kinetic energy
         temp = ts.calc_kT(
@@ -270,7 +278,7 @@ def test_nvt_langevin_multi_kt(
     energies = []
     temperatures = []
     for _step in range(n_steps):
-        state = ts.nvt_langevin_step(model=lj_model, state=state, dt=dt, kT=kT)
+        state = ts.nvt_langevin_step(state=state, model=lj_model, dt=dt, kT=kT)
 
         # Calculate instantaneous temperature from kinetic energy
         temp = ts.calc_kT(
@@ -477,6 +485,206 @@ def test_nvt_nose_hoover_multi_kt(
         assert invariant_std / invariant_traj.mean() < 0.1
 
 
+def test_nvt_vrescale(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
+    n_steps = 100
+    dt = torch.tensor(0.001, dtype=DTYPE)
+    kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
+
+    # Initialize integrator
+    state = ts.nvt_vrescale_init(
+        state=ar_double_sim_state, model=lj_model, kT=kT, seed=42
+    )
+    energies = []
+    temperatures = []
+    for _step in range(n_steps):
+        state = ts.nvt_vrescale_step(model=lj_model, state=state, dt=dt, kT=kT)
+
+        # Calculate instantaneous temperature from kinetic energy
+        temp = ts.calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
+        energies.append(state.energy)
+        temperatures.append(temp / MetalUnits.temperature)
+
+    # Convert temperatures list to tensor
+    temperatures_tensor = torch.stack(temperatures)
+    temperatures_list = [t.tolist() for t in temperatures_tensor.T]
+
+    energies_tensor = torch.stack(energies)
+    energies_list = [t.tolist() for t in energies_tensor.T]
+
+    # Basic sanity checks
+    assert len(energies_list[0]) == n_steps
+    assert len(temperatures_list[0]) == n_steps
+
+    # Check temperature is roughly maintained for each trajectory
+    mean_temps = torch.mean(temperatures_tensor, dim=0)  # Mean temp for each trajectory
+    for mean_temp in mean_temps:
+        assert (
+            abs(mean_temp - kT.item() / MetalUnits.temperature) < 100.0
+        )  # Allow for thermal fluctuations
+
+    # Check energy is stable for each trajectory
+    for traj in energies_list:
+        energy_std = torch.tensor(traj).std()
+        assert energy_std < 1.0  # Adjust threshold as needed
+
+    # Check positions and momenta have correct shapes
+    n_atoms = 8
+
+    # Verify the two systems remain distinct
+    pos_diff = torch.norm(
+        state.positions[:n_atoms].mean(0) - state.positions[n_atoms:].mean(0)
+    )
+    assert pos_diff > 0.0001  # Systems should remain separated
+
+
+def test_npt_anisotropic_crescale(
+    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
+) -> None:
+    n_steps = 200
+    dt = torch.tensor(0.001, dtype=DTYPE)
+    kT = torch.tensor(100.0, dtype=DTYPE) * MetalUnits.temperature
+    external_pressure = torch.tensor(0.0, dtype=DTYPE) * MetalUnits.pressure
+    tau_p = torch.tensor(0.1, dtype=DTYPE)
+    isothermal_compressibility = torch.tensor(1e-4, dtype=DTYPE)
+
+    # Initialize integrator using new direct API
+    state = ts.npt_crescale_init(
+        state=ar_double_sim_state,
+        model=lj_model,
+        dt=dt,
+        kT=kT,
+        tau_p=tau_p,
+        isothermal_compressibility=isothermal_compressibility,
+        seed=42,
+    )
+
+    # Run dynamics for several steps
+    energies = []
+    temperatures = []
+    for _step in range(n_steps):
+        state = ts.npt_crescale_anisotropic_step(
+            state=state,
+            model=lj_model,
+            dt=dt,
+            kT=kT,
+            external_pressure=external_pressure,
+        )
+
+        # Calculate instantaneous temperature from kinetic energy
+        temp = ts.calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
+        energies.append(state.energy)
+        temperatures.append(temp / MetalUnits.temperature)
+
+    # Convert temperatures list to tensor
+    temperatures_tensor = torch.stack(temperatures)
+    temperatures_list = [t.tolist() for t in temperatures_tensor.T]
+
+    energies_tensor = torch.stack(energies)
+    energies_list = [t.tolist() for t in energies_tensor.T]
+
+    # Basic sanity checks
+    assert len(energies_list[0]) == n_steps
+    assert len(temperatures_list[0]) == n_steps
+
+    # Check temperature is roughly maintained for each trajectory
+    mean_temps = torch.mean(temperatures_tensor, dim=0)  # Mean temp for each trajectory
+    for mean_temp in mean_temps:
+        assert (
+            abs(mean_temp - kT.item() / MetalUnits.temperature) < 150.0
+        )  # Allow for thermal fluctuations
+
+    # Check energy is stable for each trajectory
+    for traj in energies_list:
+        energy_std = torch.tensor(traj).std()
+        assert energy_std < 1.0  # Adjust threshold as needed
+
+    # Check positions and momenta have correct shapes
+    n_atoms = 8
+
+    # Verify the two systems remain distinct
+    pos_diff = torch.norm(
+        state.positions[:n_atoms].mean(0) - state.positions[n_atoms:].mean(0)
+    )
+    assert pos_diff > 0.0001  # Systems should remain separated
+
+
+def test_npt_isotropic_crescale(
+    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
+) -> None:
+    n_steps = 200
+    dt = torch.tensor(0.001, dtype=DTYPE)
+    kT = torch.tensor(100.0, dtype=DTYPE) * MetalUnits.temperature
+    external_pressure = torch.tensor(0.0, dtype=DTYPE) * MetalUnits.pressure
+    tau_p = torch.tensor(0.1, dtype=DTYPE)
+    isothermal_compressibility = torch.tensor(1e-4, dtype=DTYPE)
+
+    # Initialize integrator using new direct API
+    state = ts.npt_crescale_init(
+        state=ar_double_sim_state,
+        model=lj_model,
+        dt=dt,
+        kT=kT,
+        tau_p=tau_p,
+        isothermal_compressibility=isothermal_compressibility,
+        seed=42,
+    )
+
+    # Run dynamics for several steps
+    energies = []
+    temperatures = []
+    for _step in range(n_steps):
+        state = ts.npt_crescale_isotropic_step(
+            state=state,
+            model=lj_model,
+            dt=dt,
+            kT=kT,
+            external_pressure=external_pressure,
+        )
+
+        # Calculate instantaneous temperature from kinetic energy
+        temp = ts.calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
+        energies.append(state.energy)
+        temperatures.append(temp / MetalUnits.temperature)
+
+    # Convert temperatures list to tensor
+    temperatures_tensor = torch.stack(temperatures)
+    temperatures_list = [t.tolist() for t in temperatures_tensor.T]
+
+    energies_tensor = torch.stack(energies)
+    energies_list = [t.tolist() for t in energies_tensor.T]
+
+    # Basic sanity checks
+    assert len(energies_list[0]) == n_steps
+    assert len(temperatures_list[0]) == n_steps
+
+    # Check temperature is roughly maintained for each trajectory
+    mean_temps = torch.mean(temperatures_tensor, dim=0)  # Mean temp for each trajectory
+    for mean_temp in mean_temps:
+        assert (
+            abs(mean_temp - kT.item() / MetalUnits.temperature) < 150.0
+        )  # Allow for thermal fluctuations
+
+    # Check energy is stable for each trajectory
+    for traj in energies_list:
+        energy_std = torch.tensor(traj).std()
+        assert energy_std < 1.0  # Adjust threshold as needed
+
+    # Check positions and momenta have correct shapes
+    n_atoms = 8
+
+    # Verify the two systems remain distinct
+    pos_diff = torch.norm(
+        state.positions[:n_atoms].mean(0) - state.positions[n_atoms:].mean(0)
+    )
+    assert pos_diff > 0.0001  # Systems should remain separated
+
+
 def test_npt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
     dtype = torch.float64
     n_steps = 100
@@ -613,7 +821,11 @@ def test_npt_nose_hoover_multi_equivalent_to_single(
     )
     for _step in range(n_steps):
         state = ts.npt_nose_hoover_step(
-            state=state, model=lj_model, dt=dt, kT=kT, external_pressure=external_pressure
+            state=state,
+            model=lj_model,
+            dt=dt,
+            kT=kT,
+            external_pressure=external_pressure,
         )
 
         # Calculate instantaneous temperature from kinetic energy
@@ -787,6 +999,9 @@ def test_compute_cell_force_atoms_per_system():
         cell_positions=torch.ones((2, 3, 3)),
         cell_velocities=torch.zeros((2, 3, 3)),
         cell_masses=torch.ones(2),
+        alpha=torch.ones(2),
+        cell_alpha=torch.ones(2),
+        b_tau=torch.ones(2),
     )
 
     # Get forces and compare ratio

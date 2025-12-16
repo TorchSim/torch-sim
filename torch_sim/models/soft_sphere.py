@@ -46,7 +46,7 @@ import torch
 import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
-from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.neighbors import torchsim_nl
 from torch_sim.typing import StateDict
 
 
@@ -285,21 +285,27 @@ class SoftSphereModel(ModelInterface):
         pbc = state.pbc
 
         if self.use_neighbor_list:
-            # Get neighbor list using vesin_nl_ts
-            mapping, shifts = vesin_nl_ts(
+            # Get neighbor list using torchsim_nl
+            # Ensure system_idx exists (create if None for single system)
+            system_idx = (
+                state.system_idx
+                if state.system_idx is not None
+                else torch.zeros(positions.shape[0], dtype=torch.long, device=self.device)
+            )
+            mapping, system_mapping, shifts_idx = torchsim_nl(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
                 cutoff=self.cutoff,
-                sort_id=False,
+                system_idx=system_idx,
             )
-            # Get displacements between neighbor pairs
+            # Pass shifts_idx directly - get_pair_displacements will convert them
             dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
-                pairs=mapping,
-                shifts=shifts,
+                pairs=(mapping[0], mapping[1]),
+                shifts=shifts_idx,
             )
 
         else:
@@ -509,7 +515,7 @@ class SoftSphereMultiModel(ModelInterface):
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float64,
         *,  # Force keyword-only arguments
-        pbc: bool = True,
+        pbc: torch.Tensor | bool = True,
         compute_forces: bool = True,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
@@ -538,8 +544,9 @@ class SoftSphereMultiModel(ModelInterface):
             device (torch.device | None): Device for computations. If None, uses CPU.
                 Defaults to None.
             dtype (torch.dtype): Data type for calculations. Defaults to torch.float32.
-            pbc (bool): Whether to use periodic boundary conditions. Defaults to
-                True.
+            pbc (torch.Tensor | bool): Boolean tensor of shape (3,) indicating periodic
+                boundary conditions in each axis. If None, all axes are assumed to be
+                periodic. Defaults to True.
             compute_forces (bool): Whether to compute forces. Defaults to True.
             compute_stress (bool): Whether to compute stress tensor. Defaults to False.
             per_atom_energies (bool): Whether to compute per-atom energy decomposition.
@@ -597,7 +604,7 @@ class SoftSphereMultiModel(ModelInterface):
         super().__init__()
         self._device = device or torch.device("cpu")
         self._dtype = dtype
-        self.pbc = pbc
+        self.pbc = torch.tensor([pbc] * 3) if isinstance(pbc, bool) else pbc
         self._compute_forces = compute_forces
         self._compute_stress = compute_stress
         self.per_atom_energies = per_atom_energies
@@ -709,20 +716,24 @@ class SoftSphereMultiModel(ModelInterface):
         # Compute neighbor list or full distance matrix
         if self.use_neighbor_list:
             # Get neighbor list for efficient computation
-            mapping, shifts = vesin_nl_ts(
+            # Ensure system_idx exists (create if None for single system)
+            system_idx = torch.zeros(
+                positions.shape[0], dtype=torch.long, device=self.device
+            )
+            mapping, system_mapping, shifts_idx = torchsim_nl(
                 positions=positions,
                 cell=cell,
                 pbc=self.pbc,
                 cutoff=self.cutoff,
-                sorti=False,
+                system_idx=system_idx,
             )
-            # Get displacements between neighbor pairs
+            # Pass shifts_idx directly - get_pair_displacements will convert them
             dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=self.pbc,
-                pairs=mapping,
-                shifts=shifts,
+                pairs=(mapping[0], mapping[1]),
+                shifts=shifts_idx,
             )
 
         else:

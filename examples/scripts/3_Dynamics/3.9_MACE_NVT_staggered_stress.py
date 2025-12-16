@@ -49,10 +49,10 @@ model = MaceModel(
 
 state = ts.io.atoms_to_state(si_dc, device=device, dtype=dtype)
 
-dt = 0.002 * Units.time  # Timestep (ps)
+dt = 0.002 * Units.time  # Timestep (2 fs)
 kT = (
     torch.tensor(1000, device=device, dtype=dtype) * Units.temperature
-)  # Initial temperature (K)
+)  # Initial temperature (1000 K)
 
 state = ts.nvt_langevin_init(state=state, model=model, kT=kT)
 
@@ -71,7 +71,7 @@ for step in range(N_steps):
     invariant = float(kinetic_energy + state.energy)
 
     print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}")
-    state = ts.nvt_langevin_step(model=model, state=state, dt=torch.tensor(dt), kT=kT)
+    state = ts.nvt_langevin_step(state=state, model=model, dt=torch.tensor(dt), kT=kT)
     if step % 10 == 0:
         results = model(state)
         stress[step // 10] = results["stress"]

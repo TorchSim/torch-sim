@@ -25,7 +25,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.neighbors import torchsim_nl
 from torch_sim.typing import StateDict
 
 
@@ -150,7 +150,7 @@ class NequIPFrameworkModel(ModelInterface):
         device (torch.device | None): Device to run calculations on.
             Defaults to CUDA if available, otherwise CPU.
         neighbor_list_fn (Callable): Function to compute neighbor lists.
-            Defaults to vesin_nl_ts.
+            Defaults to torch_nl_linked_cell.
         atomic_numbers (torch.Tensor | None): Atomic numbers with shape [n_atoms].
             If provided at initialization, cannot be provided again during forward pass.
         system_idx (torch.Tensor | None): Batch indices with shape [n_atoms] indicating
@@ -165,7 +165,7 @@ class NequIPFrameworkModel(ModelInterface):
         r_max: float,
         type_names: list[str],
         device: torch.device | None = None,
-        neighbor_list_fn: Callable = vesin_nl_ts,
+        neighbor_list_fn: Callable = torchsim_nl,
         atomic_numbers: torch.Tensor | None = None,
         system_idx: torch.Tensor | None = None,
     ) -> None:
@@ -304,37 +304,14 @@ class NequIPFrameworkModel(ModelInterface):
         ):
             self.setup_from_system_idx(sim_state.atomic_numbers, sim_state.system_idx)
 
-        # Process each system's neighbor list separately
-        edge_indices = []
-        shifts_list = []
-        unit_shifts_list = []
-        offset = 0
-
-        # TODO (AG): Currently doesn't work for batched neighbor lists
-        for sys_idx in range(self.n_systems):
-            system_idx_mask = sim_state.system_idx == sys_idx
-            # Calculate neighbor list for this system
-            edge_idx, shifts_idx = self.neighbor_list_fn(
-                positions=sim_state.positions[system_idx_mask],
-                cell=sim_state.row_vector_cell[sys_idx],
-                pbc=sim_state.pbc,
-                cutoff=self.r_max,
-            )
-
-            # Adjust indices for the batch
-            edge_idx = edge_idx + offset
-            shifts = torch.mm(shifts_idx, sim_state.row_vector_cell[sys_idx])
-
-            edge_indices.append(edge_idx)
-            unit_shifts_list.append(shifts_idx)
-            shifts_list.append(shifts)
-
-            offset += len(sim_state.positions[system_idx_mask])
-
-        # Combine all neighbor lists
-        edge_index = torch.cat(edge_indices, dim=1)
-        unit_shifts = torch.cat(unit_shifts_list, dim=0)
-        shifts = torch.cat(shifts_list, dim=0)
+        # Batched neighbor list using linked-cell algorithm
+        edge_index, _mapping_system, unit_shifts = self.neighbor_list_fn(
+            sim_state.positions,
+            sim_state.row_vector_cell,
+            sim_state.pbc,
+            self.r_max,
+            sim_state.system_idx,
+        )
         atomic_types = ChemicalSpeciesToAtomTypeMapper(self.type_names)(
             sim_state.atomic_numbers
         )
@@ -345,11 +322,7 @@ class NequIPFrameworkModel(ModelInterface):
             "cell": sim_state.row_vector_cell,
             "batch": sim_state.system_idx,
             "num_atoms": sim_state.system_idx.bincount(),
-            "pbc": torch.tensor(
-                [sim_state.pbc, sim_state.pbc, sim_state.pbc],
-                dtype=torch.bool,
-                device=self.device,
-            ),
+            "pbc": sim_state.pbc,
             "atomic_numbers": sim_state.atomic_numbers,
             "atom_types": atomic_types,
             "edge_index": edge_index,

@@ -116,8 +116,8 @@ state_dict = {
     "atomic_numbers": atomic_numbers,
 }
 state = ts.nvt_nose_hoover_init(
-    model=model,
     state=state_dict,
+    model=model,
     kT=torch.tensor(T_high * Units.temperature, device=device, dtype=dtype),
     dt=dt,
     seed=1,
@@ -143,8 +143,8 @@ def step_fn(
         kT=torch.tensor(current_temp * Units.temperature, device=device, dtype=dtype),
     ).item()
     state = ts.nvt_nose_hoover_step(
-        model=model,
         state=state,
+        model=model,
         dt=dt,
         kT=torch.tensor(current_temp * Units.temperature, device=device, dtype=dtype),
     )

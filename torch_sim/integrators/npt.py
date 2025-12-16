@@ -13,7 +13,9 @@ from torch_sim.integrators.md import (
     NoseHooverChainFns,
     calculate_momenta,
     construct_nose_hoover_chain,
+    momentum_step,
 )
+from torch_sim.integrators.nvt import _vrescale_update
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 from torch_sim.typing import StateDict
@@ -55,9 +57,11 @@ class NPTLangevinState(MDState):
     """
 
     # System state variables
-    energy: torch.Tensor
-    forces: torch.Tensor
     stress: torch.Tensor
+
+    alpha: torch.Tensor
+    cell_alpha: torch.Tensor
+    b_tau: torch.Tensor
 
     # Cell variables
     reference_cell: torch.Tensor
@@ -71,12 +75,14 @@ class NPTLangevinState(MDState):
         "cell_velocities",
         "cell_masses",
         "reference_cell",
+        "alpha",
+        "cell_alpha",
+        "b_tau",
     }
 
 
 def _npt_langevin_beta(
     state: NPTLangevinState,
-    alpha: torch.Tensor,
     kT: torch.Tensor,
     dt: torch.Tensor,
 ) -> torch.Tensor:
@@ -110,14 +116,13 @@ def _npt_langevin_beta(
 
     # Calculate the prefactor for each atom
     # The standard deviation should be sqrt(2*alpha*kB*T*dt)
-    prefactor = torch.sqrt(2 * alpha * atom_kT * dt)
+    prefactor = torch.sqrt(2 * state.alpha * atom_kT * dt)
 
     return prefactor.unsqueeze(-1) * noise
 
 
 def _npt_langevin_cell_beta(
     state: NPTLangevinState,
-    cell_alpha: torch.Tensor,
     kT: torch.Tensor,
     dt: torch.Tensor,
 ) -> torch.Tensor:
@@ -144,20 +149,17 @@ def _npt_langevin_cell_beta(
     # Generate standard normal distribution (zero mean, unit variance)
     noise = torch.randn_like(state.cell_positions, device=state.device, dtype=state.dtype)
 
-    # Ensure cell_alpha and kT have batch dimension if they're scalars
-    if cell_alpha.ndim == 0:
-        cell_alpha = cell_alpha.expand(state.n_systems)
     if kT.ndim == 0:
         kT = kT.expand(state.n_systems)
 
     # Reshape for broadcasting
-    cell_alpha = cell_alpha.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
+    cell_alpha_expanded = state.cell_alpha.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
     kT = kT.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
     dt = dt.expand(state.n_systems).view(-1, 1, 1) if dt.ndim == 0 else dt.view(-1, 1, 1)
 
     # Scale to satisfy the fluctuation-dissipation theorem
     # The standard deviation should be sqrt(2*alpha*kB*T*dt)
-    scaling_factor = torch.sqrt(2.0 * cell_alpha * kT * dt)
+    scaling_factor = torch.sqrt(2.0 * cell_alpha_expanded * kT * dt)
 
     return scaling_factor * noise
 
@@ -167,7 +169,6 @@ def _npt_langevin_cell_position_step(
     dt: torch.Tensor,
     pressure_force: torch.Tensor,
     kT: torch.Tensor,
-    cell_alpha: torch.Tensor,
 ) -> NPTLangevinState:
     """Update the cell position in NPT dynamics.
 
@@ -194,12 +195,10 @@ def _npt_langevin_cell_position_step(
     # Ensure parameters have batch dimension
     if dt.ndim == 0:
         dt = dt.expand(state.n_systems)
-    if cell_alpha.ndim == 0:
-        cell_alpha = cell_alpha.expand(state.n_systems)
 
     # Reshape for broadcasting
     dt_expanded = dt.view(-1, 1, 1)
-    cell_alpha_expanded = cell_alpha.view(-1, 1, 1)
+    cell_alpha_expanded = state.cell_alpha.view(-1, 1, 1)
 
     # Calculate damping factor for cell position update
     cell_b = 1 / (1 + ((cell_alpha_expanded * dt_expanded) / Q_2))
@@ -211,7 +210,7 @@ def _npt_langevin_cell_position_step(
     c_2 = cell_b * dt_expanded * dt_expanded * pressure_force / Q_2
 
     # Random noise contribution (thermal fluctuations)
-    c_3 = cell_b * dt_expanded * _npt_langevin_cell_beta(state, cell_alpha, kT, dt) / Q_2
+    c_3 = cell_b * dt_expanded * _npt_langevin_cell_beta(state, kT, dt) / Q_2
 
     # Update cell positions with all contributions
     state.cell_positions = state.cell_positions + c_1 + c_2 + c_3
@@ -223,7 +222,6 @@ def _npt_langevin_cell_velocity_step(
     F_p_n: torch.Tensor,
     dt: torch.Tensor,
     pressure_force: torch.Tensor,
-    cell_alpha: torch.Tensor,
     kT: torch.Tensor,
 ) -> NPTLangevinState:
     """Update the cell velocities in NPT dynamics.
@@ -251,14 +249,12 @@ def _npt_langevin_cell_velocity_step(
     # Ensure parameters have batch dimension
     if dt.ndim == 0:
         dt = dt.expand(state.n_systems)
-    if cell_alpha.ndim == 0:
-        cell_alpha = cell_alpha.expand(state.n_systems)
     if kT.ndim == 0:
         kT = kT.expand(state.n_systems)
 
     # Reshape for broadcasting - need to maintain 3x3 dimensions
     dt_expanded = dt.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
-    cell_alpha_expanded = cell_alpha.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
+    cell_alpha_expanded = state.cell_alpha.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
 
     # Calculate cell masses per system - reshape to match 3x3 cell matrices
     cell_masses_expanded = state.cell_masses.view(-1, 1, 1)  # shape: (n_systems, 1, 1)
@@ -298,7 +294,6 @@ def _npt_langevin_position_step(
     L_n: torch.Tensor,  # This should be shape (n_systems,)
     dt: torch.Tensor,
     kT: torch.Tensor,
-    alpha: torch.Tensor,
 ) -> NPTLangevinState:
     """Update the particle positions in NPT dynamics.
 
@@ -339,24 +334,18 @@ def _npt_langevin_position_step(
     L_n_new_atoms = L_n_new[state.system_idx]  # shape: (n_atoms,)
 
     # Calculate damping factor
-    alpha_atoms = alpha
-    if alpha.ndim > 0:
-        alpha_atoms = alpha[state.system_idx]
+    alpha_atoms = state.alpha[state.system_idx]
     dt_atoms = dt
     if dt.ndim > 0:
         dt_atoms = dt[state.system_idx]
 
-    b = 1 / (1 + ((alpha_atoms * dt_atoms) / M_2))
+    b = 1 / (1 + ((alpha_atoms * dt_atoms) / (2 * state.masses)))
 
     # Scale positions due to cell volume change
     c_1 = (L_n_new_atoms / L_n_atoms).unsqueeze(-1) * state.positions
 
     # Time step factor with average length scale
-    c_2 = (
-        (2 * L_n_new_atoms / (L_n_new_atoms + L_n_atoms)).unsqueeze(-1)
-        * b
-        * dt_atoms.unsqueeze(-1)
-    )
+    c_2 = (2 * L_n_new_atoms / (L_n_new_atoms + L_n_atoms)) * b * dt_atoms
 
     # Generate atom-specific noise
     noise = torch.randn_like(state.momenta)
@@ -375,12 +364,12 @@ def _npt_langevin_position_step(
     )
 
     # Update positions with all contributions
-    state.positions = c_1 + c_2 * c_3
+    state.positions = c_1 + c_2.unsqueeze(-1) * c_3
 
     # Apply periodic boundary conditions if needed
-    if state.pbc:
+    if state.pbc.any():
         state.positions = ts.transforms.pbc_wrap_batched(
-            state.positions, state.cell, state.system_idx
+            state.positions, state.cell, state.system_idx, state.pbc
         )
 
     return state
@@ -391,7 +380,6 @@ def _npt_langevin_velocity_step(
     forces: torch.Tensor,
     dt: torch.Tensor,
     kT: torch.Tensor,
-    alpha: torch.Tensor,
 ) -> NPTLangevinState:
     """Update the particle velocities in NPT dynamics.
 
@@ -412,25 +400,24 @@ def _npt_langevin_velocity_step(
         NPTLangevinState: Updated state with new velocities
     """
     # Calculate denominator for update equations
-    M_2 = 2 * state.masses.unsqueeze(-1)  # shape: (n_atoms, 1)
+    M_2 = 2 * state.masses  # shape: (n_atoms, 1)
 
     # Map batch parameters to atom level
-    alpha_atoms = alpha
-    if alpha.ndim > 0:
-        alpha_atoms = alpha[state.system_idx]
+    alpha_atoms = state.alpha[state.system_idx]
     dt_atoms = dt
     if dt.ndim > 0:
         dt_atoms = dt[state.system_idx]
 
     # Calculate damping factors for Langevin integration
     a = (1 - (alpha_atoms * dt_atoms) / M_2) / (1 + (alpha_atoms * dt_atoms) / M_2)
-    b = 1 / (1 + (alpha_atoms * dt_atoms) / M_2)
+    a = a.unsqueeze(-1)
+    b = 1 / (1 + (alpha_atoms * dt_atoms) / M_2).unsqueeze(-1)
 
     # Velocity contribution with damping
     c_1 = a * state.velocities
 
     # Force contribution (average of initial and final forces)
-    c_2 = dt_atoms.unsqueeze(-1) * ((a * forces) + state.forces) / M_2
+    c_2 = dt_atoms.unsqueeze(-1) * ((a * forces) + state.forces) / M_2.unsqueeze(-1)
 
     # Generate atom-specific noise
     noise = torch.randn_like(state.momenta)
@@ -522,11 +509,11 @@ def npt_langevin_init(
     state: SimState | StateDict,
     model: ModelInterface,
     *,
-    kT: torch.Tensor,
-    dt: torch.Tensor,
-    alpha: torch.Tensor | None = None,
-    cell_alpha: torch.Tensor | None = None,
-    b_tau: torch.Tensor | None = None,
+    kT: float | torch.Tensor,
+    dt: float | torch.Tensor,
+    alpha: float | torch.Tensor | None = None,
+    cell_alpha: float | torch.Tensor | None = None,
+    b_tau: float | torch.Tensor | None = None,
     seed: int | None = None,
     **_kwargs: Any,
 ) -> NPTLangevinState:
@@ -572,16 +559,18 @@ def npt_langevin_init(
         b_tau = 1 / (1000 * dt)  # Default barostat time constant
 
     # Convert all parameters to tensors with correct device and dtype
-    if isinstance(alpha, float):
-        alpha = torch.tensor(alpha, device=device, dtype=dtype)
-    if isinstance(cell_alpha, float):
-        cell_alpha = torch.tensor(cell_alpha, device=device, dtype=dtype)
-    if isinstance(dt, float):
-        dt = torch.tensor(dt, device=device, dtype=dtype)
-    if isinstance(kT, float):
-        kT = torch.tensor(kT, device=device, dtype=dtype)
-    if isinstance(b_tau, float):
-        b_tau = torch.tensor(b_tau, device=device, dtype=dtype)
+    alpha = torch.as_tensor(alpha, device=device, dtype=dtype)
+    cell_alpha = torch.as_tensor(cell_alpha, device=device, dtype=dtype)
+    b_tau = torch.as_tensor(b_tau, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+
+    if alpha.ndim == 0:
+        alpha = alpha.expand(state.n_systems)
+    if cell_alpha.ndim == 0:
+        cell_alpha = cell_alpha.expand(state.n_systems)
+    if b_tau.ndim == 0:
+        b_tau = b_tau.expand(state.n_systems)
 
     if not isinstance(state, SimState):
         state = SimState(**state)
@@ -629,10 +618,13 @@ def npt_langevin_init(
         pbc=state.pbc,
         system_idx=state.system_idx,
         atomic_numbers=state.atomic_numbers,
+        alpha=alpha,
+        b_tau=b_tau,
         reference_cell=reference_cell,
         cell_positions=cell_positions,
         cell_velocities=cell_velocities,
         cell_masses=cell_masses,
+        cell_alpha=cell_alpha,
     )
 
 
@@ -643,9 +635,6 @@ def npt_langevin_step(
     dt: torch.Tensor,
     kT: torch.Tensor,
     external_pressure: torch.Tensor,
-    alpha: torch.Tensor,
-    cell_alpha: torch.Tensor,
-    b_tau: torch.Tensor,
 ) -> NPTLangevinState:
     """Perform one complete NPT Langevin dynamics integration step.
 
@@ -676,12 +665,12 @@ def npt_langevin_step(
     device, dtype = model.device, model.dtype
 
     # Convert any scalar parameters to tensors with batch dimension if needed
-    if isinstance(alpha, float):
-        alpha = torch.tensor(alpha, device=device, dtype=dtype)
+    if isinstance(state.alpha, float):
+        state.alpha = torch.tensor(state.alpha, device=device, dtype=dtype)
     if isinstance(kT, float):
         kT = torch.tensor(kT, device=device, dtype=dtype)
-    if isinstance(cell_alpha, float):
-        cell_alpha = torch.tensor(cell_alpha, device=device, dtype=dtype)
+    if isinstance(state.cell_alpha, float):
+        state.cell_alpha = torch.tensor(state.cell_alpha, device=device, dtype=dtype)
     if isinstance(dt, float):
         dt = torch.tensor(dt, device=device, dtype=dtype)
 
@@ -691,7 +680,7 @@ def npt_langevin_step(
     # Update barostat mass based on current temperature
     # This ensures proper coupling between system and barostat
     n_atoms_per_system = torch.bincount(state.system_idx)
-    state.cell_masses = (n_atoms_per_system + 1) * batch_kT * b_tau * b_tau
+    state.cell_masses = (n_atoms_per_system + 1) * batch_kT * torch.square(state.b_tau)
 
     # Compute model output for current state
     model_output = model(state)
@@ -706,7 +695,7 @@ def npt_langevin_step(
     )  # shape: (n_systems,)
 
     # Step 1: Update cell position
-    state = _npt_langevin_cell_position_step(state, dt, F_p_n, kT, cell_alpha)
+    state = _npt_langevin_cell_position_step(state, dt, F_p_n, kT)
 
     # Update cell (currently only isotropic fluctuations)
     dim = state.positions.shape[1]  # Usually 3 for 3D
@@ -725,7 +714,7 @@ def npt_langevin_step(
     state.cell = new_cell
 
     # Step 2: Update particle positions
-    state = _npt_langevin_position_step(state, L_n, dt, kT, alpha)
+    state = _npt_langevin_position_step(state, L_n, dt, kT)
 
     # Recompute model output after position updates
     model_output = model(state)
@@ -739,10 +728,10 @@ def npt_langevin_step(
     )
 
     # Step 3: Update cell velocities
-    state = _npt_langevin_cell_velocity_step(state, F_p_n, dt, F_p_n_new, cell_alpha, kT)
+    state = _npt_langevin_cell_velocity_step(state, F_p_n, dt, F_p_n_new, kT)
 
     # Step 4: Update particle velocities
-    return _npt_langevin_velocity_step(state, forces, dt, kT, alpha)
+    return _npt_langevin_velocity_step(state, forces, dt, kT)
 
 
 @dataclass(kw_only=True)
@@ -849,6 +838,11 @@ class NPTNoseHooverState(MDState):
         # Expand scale to [n_systems, 1, 1] for broadcasting
         scale = scale.unsqueeze(-1).unsqueeze(-1)
         return scale * self.reference_cell
+
+    def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
+        """Calculate degrees of freedom per system."""
+        dof = super().get_number_of_degrees_of_freedom()
+        return dof - 3  # Subtract 3 degrees of freedom for center of mass motion
 
 
 def _npt_nose_hoover_cell_info(
@@ -1036,9 +1030,9 @@ def _npt_nose_hoover_exp_iL1(  # noqa: N802
     new_positions = state.positions + new_positions
 
     # Apply periodic boundary conditions if needed
-    if state.pbc:
+    if state.pbc.any():
         return ts.transforms.pbc_wrap_batched(
-            new_positions, state.current_cell, state.system_idx
+            new_positions, state.current_cell, state.system_idx, pbc=state.pbc
         )
     return new_positions
 
@@ -1448,6 +1442,8 @@ def npt_nose_hoover_step(
     external_pressure: torch.Tensor,
 ) -> NPTNoseHooverState:
     """Perform a complete NPT integration step with Nose-Hoover chain thermostats.
+    If the center of mass motion is removed initially, it remains removed throughout
+    the simulation, so the degrees of freedom decreases by 3.
 
     This function performs a full NPT integration step including:
     1. Mass parameter updates for thermostats and cell
@@ -1602,3 +1598,724 @@ def npt_nose_hoover_invariant(
     e_tot += torch.square(cell_momentum) / (2 * state.cell_mass)
 
     return e_tot
+
+
+@dataclass(kw_only=True)
+class NPTCRescaleState(MDState):
+    """State for NPT ensemble with cell rescaling barostat.
+
+    This class extends the MDState to include variables and properties
+    specific to the NPT ensemble with a cell rescaling barostat.
+    """
+
+    # System state variables
+    stress: torch.Tensor
+    isothermal_compressibility: torch.Tensor  # shape: [n_systems]
+    tau_p: torch.Tensor  # shape: [n_systems]
+
+    _system_attributes = MDState._system_attributes | {  # noqa: SLF001
+        "stress",
+        "isothermal_compressibility",
+        "tau_p",
+    }
+
+    def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
+        """Calculate degrees of freedom for each system in the batch.
+
+        Returns:
+            torch.Tensor: Degrees of freedom for each system, shape [n_systems]
+        """
+        # Subtract 3 for center of mass motion
+        return super().get_number_of_degrees_of_freedom() - 3
+
+
+def rotate_gram_schmidt(box: torch.Tensor) -> torch.Tensor:
+    """Convert a batch of 3x3 box matrices into lower-triangular form.
+
+    Args:
+        box (torch.Tensor): shape [n_systems, 3, 3]
+
+    Returns:
+        torch.Tensor: shape [n_systems, 3, 3] lower-triangular boxes
+    """
+    out = torch.zeros_like(box)
+
+    # Columns (a, b, c) correspond to box vectors in column form
+    a = box[:, :, 0]
+    b = box[:, :, 1]
+    c = box[:, :, 2]
+
+    # --- Compute the lower-triangular entries ---
+
+    # a-axis
+    out[:, 0, 0] = torch.norm(a, dim=1)
+
+    # b projections
+    out[:, 1, 0] = torch.sum(a * b, dim=1) / out[:, 0, 0]
+    out[:, 1, 1] = torch.sqrt(torch.sum(b * b, dim=1) - out[:, 1, 0] ** 2)
+
+    # c projections
+    out[:, 2, 0] = torch.sum(a * c, dim=1) / out[:, 0, 0]
+    out[:, 2, 1] = (torch.sum(b * c, dim=1) - out[:, 2, 0] * out[:, 1, 0]) / out[:, 1, 1]
+    out[:, 2, 2] = torch.sqrt(
+        torch.sum(c * c, dim=1) - out[:, 2, 0] ** 2 - out[:, 2, 1] ** 2
+    )
+
+    # Upper-triangular entries are 0 by initialization
+    return out
+
+
+def batch_matrix_vector(
+    matrices: torch.Tensor,
+    vectors: torch.Tensor,
+) -> torch.Tensor:
+    """Perform batch matrix-vector multiplication.
+
+    Args:
+        matrices (torch.Tensor): shape [n_systems, n, n]
+        vectors (torch.Tensor): shape [n_systems, n, m]
+
+    Returns:
+        torch.Tensor: shape [n_systems, n, m] result of multiplication
+    """
+    return torch.matmul(matrices, vectors.unsqueeze(-1)).squeeze(-1)
+
+
+def _crescale_anisotropic_barostat_step(
+    state: NPTCRescaleState,
+    kT: torch.Tensor,
+    dt: torch.Tensor,
+    external_pressure: torch.Tensor,
+) -> NPTCRescaleState:
+    volume = torch.det(state.cell)  # shape: (n_systems,)
+    P_int = ts.quantities.compute_instantaneous_pressure_tensor(
+        momenta=state.momenta,
+        masses=state.masses,
+        system_idx=state.system_idx,
+        stress=state.stress,
+        volumes=volume,
+    )
+    sqrt_vol = torch.sqrt(volume)
+    trace_P_int = torch.einsum("bii->b", P_int)
+    prefactor_random = torch.sqrt(
+        kT * state.isothermal_compressibility * dt / (4 * state.tau_p)
+    )
+    prefactor = state.isothermal_compressibility * sqrt_vol / (2 * state.tau_p)
+    change_sqrt_vol = -prefactor * (
+        external_pressure - trace_P_int / 3 - kT / (2 * volume)
+    ) * dt / 2 + prefactor_random * torch.randn_like(sqrt_vol)
+    new_sqrt_volume = sqrt_vol + change_sqrt_vol
+    ## Step 2: compute deformation matrix
+    prefactor_random_matrix = (
+        torch.sqrt(2 * state.isothermal_compressibility * kT * dt / (3 * state.tau_p))
+        / new_sqrt_volume
+    )
+    a_tilde = -(state.isothermal_compressibility / (3 * state.tau_p))[:, None, None] * (
+        P_int
+        - trace_P_int[:, None, None]
+        / 3
+        * torch.eye(
+            3, device=state.positions.device, dtype=state.positions.dtype
+        ).expand_as(P_int)
+    )
+    random_matrix = torch.randn(
+        state.n_systems,
+        3,
+        3,
+        device=state.positions.device,
+        dtype=state.positions.dtype,
+    )
+    random_matrix_tilde = random_matrix - torch.einsum("bii->b", random_matrix)[
+        :, None, None
+    ] / 3 * torch.eye(
+        3, device=state.positions.device, dtype=state.positions.dtype
+    ).expand_as(random_matrix)
+    deformation_matrix = torch.matrix_exp(
+        a_tilde * dt + prefactor_random_matrix[:, None, None] * random_matrix_tilde
+    )
+    deformation_matrix = rotate_gram_schmidt(deformation_matrix)
+
+    ## Step 3: propagate sqrt(volume) for dt/2
+    new_sqrt_volume += -prefactor * (
+        external_pressure - trace_P_int / 3 - kT / (2 * volume)
+    ) * dt / 2 + prefactor_random * torch.randn_like(sqrt_vol)
+    rscaling = deformation_matrix * torch.pow((new_sqrt_volume / sqrt_vol), 2 / 3).view(
+        -1, 1, 1
+    )
+    vscaling = torch.inverse(rscaling).transpose(-2, -1)
+
+    # Update positions and momenta (barostat + half momentum step)
+    state.positions = batch_matrix_vector(
+        rscaling[state.system_idx], state.positions
+    ) + batch_matrix_vector(
+        (vscaling + rscaling)[state.system_idx], state.momenta
+    ) * dt / (2 * state.masses.unsqueeze(-1))
+    state.momenta = batch_matrix_vector(vscaling[state.system_idx], state.momenta)
+    state.cell = rscaling.mT @ state.cell
+    return state
+
+
+def _crescale_independent_lengths_barostat_step(
+    state: NPTCRescaleState,
+    kT: torch.Tensor,
+    dt: torch.Tensor,
+    external_pressure: torch.Tensor,
+) -> NPTCRescaleState:
+    volume = torch.det(state.cell)  # shape: (n_systems,)
+    P_int = ts.quantities.compute_instantaneous_pressure_tensor(
+        momenta=state.momenta,
+        masses=state.masses,
+        system_idx=state.system_idx,
+        stress=state.stress,
+        volumes=volume,
+    )
+    sqrt_vol = torch.sqrt(volume)
+    trace_P_int = torch.einsum("bii->b", P_int)
+    prefactor_random = torch.sqrt(
+        kT * state.isothermal_compressibility * dt / (4 * state.tau_p)
+    )
+    prefactor = state.isothermal_compressibility * sqrt_vol / (2 * state.tau_p)
+    change_sqrt_vol = -prefactor * (
+        external_pressure - trace_P_int / 3 - kT / (2 * volume)
+    ) * dt / 2 + prefactor_random * torch.randn_like(sqrt_vol)
+    new_sqrt_volume = sqrt_vol + change_sqrt_vol
+    ## Step 2: compute deformation matrix
+    prefactor_random_matrix = (
+        torch.sqrt(2 * state.isothermal_compressibility * kT * dt / (3 * state.tau_p))
+        / new_sqrt_volume
+    )
+    # Note: it corresponds to using a diagonal isothermal compressibility tensor
+    P_int_diagonal = torch.diagonal(P_int, dim1=-2, dim2=-1)
+    a_tilde = -(state.isothermal_compressibility / (3 * state.tau_p))[:, None] * (
+        P_int_diagonal - trace_P_int[:, None] / 3
+    )
+
+    random_matrix = torch.randn(
+        state.n_systems,
+        3,
+        device=state.positions.device,
+        dtype=state.positions.dtype,
+    )
+    random_matrix_tilde = random_matrix - torch.mean(random_matrix, dim=1, keepdim=True)
+    deformation_matrix = torch.exp(
+        a_tilde * dt + prefactor_random_matrix[:, None] * random_matrix_tilde
+    )
+
+    ## Step 3: propagate sqrt(volume) for dt/2
+    new_sqrt_volume += -prefactor * (
+        external_pressure - trace_P_int / 3 - kT / (2 * volume)
+    ) * dt / 2 + prefactor_random * torch.randn_like(sqrt_vol)
+    rscaling = deformation_matrix * torch.pow(
+        (new_sqrt_volume / sqrt_vol), 2 / 3
+    ).unsqueeze(-1)
+
+    # Update positions and momenta (barostat + half momentum step)
+    state.positions = rscaling[state.system_idx] * state.positions + (
+        rscaling + 1 / rscaling
+    )[state.system_idx] * state.momenta * dt / (2 * state.masses.unsqueeze(-1))
+    state.momenta = (1 / rscaling)[state.system_idx] * state.momenta
+    state.cell = torch.diag_embed(rscaling) @ state.cell
+    return state
+
+
+def compute_average_pressure_tensor(
+    *,
+    degrees_of_freedom: torch.Tensor,
+    kT: torch.Tensor,
+    stress: torch.Tensor,
+    volumes: torch.Tensor,
+) -> torch.Tensor:
+    """Compute forces on the cell for NPT dynamics.
+
+    This function calculates the instantaneous internal pressure tensor.
+
+    Args:
+        degrees_of_freedom (torch.Tensor): Degrees of freedom of
+            the system, shape (n_systems,)
+        kT (torch.Tensor): Thermal energy (k_B * T), shape (n_systems,)
+        stress (torch.Tensor): Stress tensor of the system, shape (n_systems, 3, 3)
+        volumes (torch.Tensor): Volumes of the systems, shape (n_systems,)
+
+    Returns:
+        torch.Tensor: Instanteneous internal pressure tesnor [n_systems, 3, 3]
+    """
+    # Calculate virials: 2/V * (N_{atoms}k_B T / 2 - Virial_{tensor})
+    n_systems = stress.shape[0]
+    prefactor = degrees_of_freedom * kT / volumes  # shape: (n_systems,)
+    average_kinetic_energy_tensor = prefactor[:, None, None] * torch.eye(
+        3, device=stress.device, dtype=stress.dtype
+    ).expand(n_systems, 3, 3)
+    return average_kinetic_energy_tensor - stress
+
+
+def _crescale_average_anisotropic_barostat_step(
+    state: NPTCRescaleState,
+    kT: torch.Tensor,
+    dt: torch.Tensor,
+    external_pressure: torch.Tensor,
+) -> NPTCRescaleState:
+    volume = torch.det(state.cell)  # shape: (n_systems,)
+    P_int = compute_average_pressure_tensor(
+        # Should it be degrees_of_freedom=state.get_number_of_degrees_of_freedom() / 3,
+        degrees_of_freedom=state.n_atoms_per_system,
+        kT=kT,
+        stress=state.stress,
+        volumes=volume,
+    )
+    sqrt_vol = torch.sqrt(volume)
+    trace_P_int = torch.einsum("bii->b", P_int)
+    prefactor_random = torch.sqrt(
+        kT * state.isothermal_compressibility * dt / (4 * state.tau_p)
+    )
+    prefactor = state.isothermal_compressibility * sqrt_vol / (2 * state.tau_p)
+    change_sqrt_vol = -prefactor * (
+        external_pressure - trace_P_int / 3 - kT / (2 * volume)
+    ) * dt / 2 + prefactor_random * torch.randn_like(sqrt_vol)
+    new_sqrt_volume = sqrt_vol + change_sqrt_vol
+    ## Step 2: compute deformation matrix
+    prefactor_random_matrix = (
+        torch.sqrt(2 * state.isothermal_compressibility * kT * dt / (3 * state.tau_p))
+        / new_sqrt_volume
+    )
+    a_tilde = -(state.isothermal_compressibility / (3 * state.tau_p))[:, None, None] * (
+        P_int
+        - trace_P_int[:, None, None]
+        / 3
+        * torch.eye(
+            3, device=state.positions.device, dtype=state.positions.dtype
+        ).expand_as(P_int)
+    )
+    random_matrix = torch.randn(
+        state.n_systems,
+        3,
+        3,
+        device=state.positions.device,
+        dtype=state.positions.dtype,
+    )
+    random_matrix_tilde = random_matrix - torch.einsum("bii->b", random_matrix)[
+        :, None, None
+    ] / 3 * torch.eye(
+        3, device=state.positions.device, dtype=state.positions.dtype
+    ).expand_as(random_matrix)
+    deformation_matrix = torch.matrix_exp(
+        a_tilde * dt + prefactor_random_matrix[:, None, None] * random_matrix_tilde
+    )
+    deformation_matrix = rotate_gram_schmidt(deformation_matrix)
+
+    ## Step 3: propagate sqrt(volume) for dt/2
+    new_sqrt_volume += -prefactor * (
+        external_pressure - trace_P_int / 3 - kT / (2 * volume)
+    ) * dt / 2 + prefactor_random * torch.randn_like(sqrt_vol)
+    rscaling = deformation_matrix * torch.pow((new_sqrt_volume / sqrt_vol), 2 / 3).view(
+        -1, 1, 1
+    )
+
+    # Update positions and momenta (barostat + half momentum step)
+    state.positions = batch_matrix_vector(
+        rscaling[state.system_idx], state.positions
+    ) + batch_matrix_vector(
+        (
+            torch.eye(
+                3, device=state.positions.device, dtype=state.positions.dtype
+            ).expand_as(rscaling)
+            + rscaling
+        )[state.system_idx],
+        state.momenta,
+    ) * dt / (2 * state.masses.unsqueeze(-1))
+    state.cell = rscaling.mT @ state.cell
+    return state
+
+
+def _crescale_isotropic_barostat_step(
+    state: NPTCRescaleState,
+    kT: torch.Tensor,
+    dt: torch.Tensor,
+    external_pressure: torch.Tensor,
+) -> NPTCRescaleState:
+    volume = torch.det(state.cell)  # shape: (n_systems,)
+    P_int = ts.quantities.compute_instantaneous_pressure_tensor(
+        momenta=state.momenta,
+        masses=state.masses,
+        system_idx=state.system_idx,
+        stress=state.stress,
+        volumes=volume,
+    )
+    sqrt_vol = torch.sqrt(volume)
+    trace_P_int = torch.einsum("bii->b", P_int)
+    prefactor_random = torch.sqrt(
+        kT * state.isothermal_compressibility * dt / (4 * state.tau_p)
+    )
+    prefactor = state.isothermal_compressibility * sqrt_vol / (2 * state.tau_p)
+    change_sqrt_vol = -prefactor * (
+        external_pressure - trace_P_int / 3 - kT / (2 * volume)
+    ) * dt + prefactor_random * torch.randn_like(sqrt_vol)
+    new_sqrt_volume = sqrt_vol + change_sqrt_vol
+
+    # Update positions and momenta (barostat + half momentum step)
+    # SI (S13ab): notice there is a typo in the SI where q_i(t)
+    # should be scaled as well by rscaling
+    rscaling = torch.pow((new_sqrt_volume / sqrt_vol), 2 / 3).unsqueeze(-1)
+    state.positions = rscaling[state.system_idx] * state.positions + (
+        rscaling + 1 / rscaling
+    )[state.system_idx] * state.momenta * (0.5 * dt) / state.masses.unsqueeze(-1)
+    state.momenta = (1 / rscaling)[state.system_idx] * state.momenta
+    rscaling = rscaling.unsqueeze(-1)  # make [n_systems, 1, 1]
+    state.cell = rscaling * state.cell
+    return state
+
+
+def npt_crescale_anisotropic_step(
+    state: NPTCRescaleState,
+    model: ModelInterface,
+    *,
+    dt: torch.Tensor,
+    kT: torch.Tensor,
+    external_pressure: torch.Tensor,
+    tau: torch.Tensor | None = None,
+) -> NPTCRescaleState:
+    """Perform one NPT integration step with cell rescaling barostat.
+
+    This function performs a single integration step for NPT dynamics using
+    a cell rescaling barostat. It updates particle positions, momenta, and
+    the simulation cell based on the target temperature and pressure.
+
+    Trotter based splitting:
+    1. Half Thermostat (velocity scaling)
+    2. Half Update momenta with forces
+    3. Barostat (cell rescaling)
+    4. Update positions (from barostat + half momenta)
+    5. Update forces with new positions and cell
+    6. Compute forces
+    7. Half Update momenta with forces
+    8. Half Thermostat (velocity scaling)
+
+    Only allow isotropic external stress. This method performs anisotropic
+    cell rescaling. Lengths and angles can change independently. Based on
+    pressure using kinetic energy. Positions and momenta are scaled when scaling the cell.
+
+    Inspired from: https://github.com/bussilab/crescale/blob/master/simplemd_anisotropic/simplemd.cpp
+    - Time reversible integrator
+    - Instantaneous kinetic energy (not not the average from equipartition)
+
+    Args:
+        model (ModelInterface): Model to compute forces and energies
+        state (NPTCRescaleState): Current system state
+        dt (torch.Tensor): Integration timestep
+        kT (torch.Tensor): Target temperature
+        external_pressure (torch.Tensor): Target external pressure
+        tau (torch.Tensor | None): V-Rescale thermostat relaxation time. If None,
+            defaults to 100*dt
+
+    Returns:
+        NPTCRescaleState: Updated state after one integration step
+    """
+    # Note: would probably be better to have tau in NVTCRescaleState
+    if tau is None:
+        tau = 100 * dt
+    state = _vrescale_update(state, tau, kT, dt / 2)
+
+    state = momentum_step(state, dt / 2)
+
+    # Barostat step
+    state = _crescale_anisotropic_barostat_step(state, kT, dt, external_pressure)
+
+    # Forces
+    model_output = model(state)
+    state.forces = model_output["forces"]
+    state.energy = model_output["energy"]
+    state.stress = model_output["stress"]
+
+    # Final momentum step
+    state = momentum_step(state, dt / 2)
+
+    # Final thermostat step
+    return _vrescale_update(state, tau, kT, dt / 2)
+
+
+def npt_crescale_independent_lengths_step(
+    state: NPTCRescaleState,
+    model: ModelInterface,
+    *,
+    dt: torch.Tensor,
+    kT: torch.Tensor,
+    external_pressure: torch.Tensor,
+    tau: torch.Tensor | None = None,
+) -> NPTCRescaleState:
+    """Perform one NPT integration step with cell rescaling barostat.
+
+    This function performs a single integration step for NPT dynamics using
+    a cell rescaling barostat. It updates particle positions, momenta, and
+    the simulation cell based on the target temperature and pressure.
+
+    Trotter based splitting:
+    1. Half Thermostat (velocity scaling)
+    2. Half Update momenta with forces
+    3. Barostat (cell rescaling)
+    4. Update positions (from barostat + half momenta)
+    5. Update forces with new positions and cell
+    6. Compute forces
+    7. Half Update momenta with forces
+    8. Half Thermostat (velocity scaling)
+
+    Only allow isotropic external stress.
+    This method has 3 degrees of freedom for each cell length,
+    allowing independent scaling of each cell vector.
+
+    Inspired from: https://github.com/bussilab/crescale/blob/master/simplemd_anisotropic/simplemd.cpp
+    - Time reversible integrator
+    - Instantaneous kinetic energy (not not the average from equipartition)
+
+    Args:
+        model (ModelInterface): Model to compute forces and energies
+        state (NPTCRescaleState): Current system state
+        dt (torch.Tensor): Integration timestep
+        kT (torch.Tensor): Target temperature
+        external_pressure (torch.Tensor): Target external pressure
+        tau (torch.Tensor | None): V-Rescale thermostat relaxation time. If None,
+            defaults to 100*dt
+
+    Returns:
+        NPTCRescaleState: Updated state after one integration step
+    """
+    # Note: would probably be better to have tau in NVTCRescaleState
+    if tau is None:
+        tau = 100 * dt
+    state = _vrescale_update(state, tau, kT, dt / 2)
+
+    state = momentum_step(state, dt / 2)
+
+    # Barostat step
+    state = _crescale_independent_lengths_barostat_step(state, kT, dt, external_pressure)
+
+    # Forces
+    model_output = model(state)
+    state.forces = model_output["forces"]
+    state.energy = model_output["energy"]
+    state.stress = model_output["stress"]
+
+    # Final momentum step
+    state = momentum_step(state, dt / 2)
+
+    # Final thermostat step
+    return _vrescale_update(state, tau, kT, dt / 2)
+
+
+def npt_crescale_average_anisotropic_step(
+    state: NPTCRescaleState,
+    model: ModelInterface,
+    *,
+    dt: torch.Tensor,
+    kT: torch.Tensor,
+    external_pressure: torch.Tensor,
+    tau: torch.Tensor | None = None,
+) -> NPTCRescaleState:
+    """Perform one NPT integration step with cell rescaling barostat.
+
+    This function performs a single integration step for NPT dynamics using
+    a cell rescaling barostat. It updates particle positions, momenta, and
+    the simulation cell based on the target temperature and pressure.
+
+    Trotter based splitting:
+    1. Half Thermostat (velocity scaling)
+    2. Half Update momenta with forces
+    3. Barostat (cell rescaling)
+    4. Update positions (from barostat + half momenta)
+    5. Update forces with new positions and cell
+    6. Compute forces
+    7. Half Update momenta with forces
+    8. Half Thermostat (velocity scaling)
+
+    Only allow isotropic external stress. This method performs anisotropic
+    cell rescaling. Lengths and angles can change independently. Based on
+    pressure using average kinetic energy from equipartition theorem.
+    Only positions are scaled when scaling the cell.
+
+    Inspired from: https://github.com/bussilab/crescale/blob/master/simplemd_anisotropic/simplemd.cpp
+    - Time reversible integrator
+    - Average kinetic energy, scaling only positions
+
+    Args:
+        model (ModelInterface): Model to compute forces and energies
+        state (NPTCRescaleState): Current system state
+        dt (torch.Tensor): Integration timestep
+        kT (torch.Tensor): Target temperature
+        external_pressure (torch.Tensor): Target external pressure
+        tau (torch.Tensor | None): V-Rescale thermostat relaxation time. If None,
+            defaults to 100*dt
+
+    Returns:
+        NPTCRescaleState: Updated state after one integration step
+    """
+    # Note: would probably be better to have tau in NVTCRescaleState
+    if tau is None:
+        tau = 100 * dt
+    state = _vrescale_update(state, tau, kT, dt / 2)
+
+    state = momentum_step(state, dt / 2)
+
+    # Barostat step
+    state = _crescale_average_anisotropic_barostat_step(state, kT, dt, external_pressure)
+
+    # Forces
+    model_output = model(state)
+    state.forces = model_output["forces"]
+    state.energy = model_output["energy"]
+    state.stress = model_output["stress"]
+
+    # Final momentum step
+    state = momentum_step(state, dt / 2)
+
+    # Final thermostat step
+    return _vrescale_update(state, tau, kT, dt / 2)
+
+
+def npt_crescale_isotropic_step(
+    state: NPTCRescaleState,
+    model: ModelInterface,
+    *,
+    dt: torch.Tensor,
+    kT: torch.Tensor,
+    external_pressure: torch.Tensor,
+    tau: torch.Tensor | None = None,
+) -> NPTCRescaleState:
+    """Perform one NPT integration step with cell rescaling barostat.
+
+    This function performs a single integration step for NPT dynamics using
+    a cell rescaling barostat. It updates particle positions, momenta, and
+    the simulation cell based on the target temperature and pressure.
+
+    Trotter based splitting:
+    1. Half Thermostat (velocity scaling)
+    2. Half Update momenta with forces
+    3. Barostat (cell rescaling)
+    4. Update positions (from barostat + half momenta)
+    5. Update forces with new positions and cell
+    6. Compute forces
+    7. Half Update momenta with forces
+    8. Half Thermostat (velocity scaling)
+
+    Only allow isotropic external stress. This performs isotropic
+    cell rescaling: cell shape is preserved, cell lengths are scaled equally.
+    For anisotropic cell rescaling, use npt_crescale_anisotropic_step.
+
+    References:
+        - Bernetti, Mattia, and Giovanni Bussi.
+        "Pressure control using stochastic cell rescaling."
+        The Journal of Chemical Physics 153.11 (2020).
+        - And the corresponding Supplementary Information which details
+        the integration scheme. Notice an error in scaling of positions in SI Eq. S13a.
+
+    Args:
+        model (ModelInterface): Model to compute forces and energies
+        state (NPTCRescaleState): Current system state
+        dt (torch.Tensor): Integration timestep
+        kT (torch.Tensor): Target temperature
+        external_pressure (torch.Tensor): Target external pressure
+        tau (torch.Tensor | None): V-Rescale thermostat relaxation time. If None,
+            defaults to 100*dt
+
+    Returns:
+        NPTCRescaleState: Updated state after one integration step
+    """
+    # Note: would probably be better to have tau in NVTCRescaleState
+    if tau is None:
+        tau = 100 * dt
+    state = _vrescale_update(state, tau, kT, dt / 2)
+
+    state = momentum_step(state, dt / 2)
+
+    # Barostat step
+    state = _crescale_isotropic_barostat_step(state, kT, dt, external_pressure)
+
+    # Forces
+    model_output = model(state)
+    state.forces = model_output["forces"]
+    state.energy = model_output["energy"]
+    state.stress = model_output["stress"]
+
+    # Final momentum step
+    state = momentum_step(state, dt / 2)
+
+    # Final thermostat step
+    return _vrescale_update(state, tau, kT, dt / 2)
+
+
+def npt_crescale_init(
+    state: SimState | StateDict,
+    model: ModelInterface,
+    *,
+    kT: torch.Tensor,
+    dt: torch.Tensor,
+    tau_p: torch.Tensor | None = None,
+    isothermal_compressibility: torch.Tensor | None = None,
+    seed: int | None = None,
+) -> NPTCRescaleState:
+    """Initialize the NPT cell rescaling state.
+
+    This function initializes a state for NPT molecular dynamics with a
+    cell rescaling barostat. It sets up the system with appropriate initial
+    conditions including particle positions, momenta, and cell variables.
+
+    Only allow isotropic external stress, but can run both isotropic and
+    anisotropic cell rescaling.
+
+    Args:
+        state: Initial system state as MDState or dict containing positions, masses,
+            cell, and PBC information
+        model (ModelInterface): Model to compute forces and energies
+        kT: Target temperature in energy units
+        dt: Integration timestep
+        tau_p: Barostat relaxation time. Controls how quickly pressure equilibrates.
+        isothermal_compressibility: Isothermal compressibility of the system.
+        seed: Random seed for momenta initialization.
+    """
+    device, dtype = model.device, model.dtype
+
+    # Set default values if not provided
+    if tau_p is None:
+        tau_p = 5000 * dt  # 5ps for dt=1fs
+    if isothermal_compressibility is None:
+        isothermal_compressibility = 1e-1  # (eV/A^3)^-1
+
+    # Convert all parameters to tensors with correct device and dtype
+    tau_p = torch.as_tensor(tau_p, device=device, dtype=dtype)
+    isothermal_compressibility = torch.as_tensor(
+        isothermal_compressibility, device=device, dtype=dtype
+    )
+    if tau_p.ndim == 0:
+        tau_p = tau_p.expand(state.n_systems)
+    if isothermal_compressibility.ndim == 0:
+        isothermal_compressibility = isothermal_compressibility.expand(state.n_systems)
+    if isinstance(dt, float):
+        dt = torch.tensor(dt, device=device, dtype=dtype)
+    if isinstance(kT, float):
+        kT = torch.tensor(kT, device=device, dtype=dtype)
+
+    if not isinstance(state, SimState):
+        state = SimState(**state)
+
+    # Get model output to initialize forces and stress
+    model_output = model(state)
+
+    # Initialize momenta if not provided
+    momenta = getattr(
+        state,
+        "momenta",
+        calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
+    )
+
+    # Create the initial state
+    return NPTCRescaleState(
+        positions=state.positions,
+        momenta=momenta,
+        energy=model_output["energy"],
+        forces=model_output["forces"],
+        stress=model_output["stress"],
+        masses=state.masses,
+        cell=state.cell,
+        pbc=state.pbc,
+        system_idx=state.system_idx,
+        atomic_numbers=state.atomic_numbers,
+        tau_p=tau_p,
+        isothermal_compressibility=isothermal_compressibility,
+    )

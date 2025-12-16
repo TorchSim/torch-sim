@@ -1,6 +1,91 @@
 <!-- markdownlint-disable -->
 # Changelog
 
+## v0.4.2
+
+Thank you to everyone who contributed to this release! This release includes important bug fixes and new features. @thomasloux, @orionarcher, @WillEngler, @RishikeshMagar, @nh-univie, @andrewrm98, @danielzuegner, and others made valuable contributions. 🚀
+
+### 🎉 New Features
+* Add CSVR / V-Rescale thermostat and anisotropic C rescale barostat by @thomasloux in [#326](https://github.com/TorchSim/torch-sim/pull/326)
+* Support for electrostatics by @orionarcher in [#373](https://github.com/TorchSim/torch-sim/pull/373)
+* Add support for AMD GPUs (consumer/datacenter) by @amacbride in [#347](https://github.com/TorchSim/torch-sim/pull/347)
+
+### 🐛 Bug Fixes
+* Fix: add init_kwargs to ts.integrate by @danielzuegner in [#360](https://github.com/TorchSim/torch-sim/pull/360)
+* Fix PBC extraction to CPU fairchem model by @nh-univie in [#368](https://github.com/TorchSim/torch-sim/pull/368)
+* Handle tensor PBC input in FairChemV1Model by @WillEngler in [#372](https://github.com/TorchSim/torch-sim/pull/372)
+* Fix Comments Issue#309 by @RishikeshMagar in [#378](https://github.com/TorchSim/torch-sim/pull/378)
+* Fix fairchem-legacy tests by removing explicit Hugging Face login by @WillEngler in [#369](https://github.com/TorchSim/torch-sim/pull/369)
+
+### 🛠 Enhancements
+* Consolidate model and model_name args in FairchemModel by @orionarcher in [#377](https://github.com/TorchSim/torch-sim/pull/377)
+
+## New Contributors
+* @amacbride made their first contribution in [#347](https://github.com/TorchSim/torch-sim/pull/347)
+* @danielzuegner made their first contribution in [#360](https://github.com/TorchSim/torch-sim/pull/360)
+* @RishikeshMagar made their first contribution in [#378](https://github.com/TorchSim/torch-sim/pull/378)
+
+## v0.4.1
+
+Thank you to everyone who contributed to this release! This release includes important bug fixes, new features, and API improvements. @thomasloux, @curtischong, @CompRhys, @orionarcher, @WillEngler, @samanvya10, @hn-yu, @wendymak8, @chuin-wei, @pragnya17, and many others made valuable contributions. 🚀
+
+### 💥 Breaking Changes
+* Standardize argument order to (state, model) by @pragnya17 in [#341](https://github.com/TorchSim/torch-sim/pull/341)
+* Deprecate pbc_wrap_general by @curtischong in [#305](https://github.com/TorchSim/torch-sim/pull/305)
+
+### 🎉 New Features
+* Mixed PBC Support by @curtischong in [#320](https://github.com/TorchSim/torch-sim/pull/320)
+* Feature: Batched NVT Nose-Hoover by @thomasloux in [#265](https://github.com/TorchSim/torch-sim/pull/265)
+* Add degrees of freedom (dof) in state and temperature computation by @thomasloux in [#328](https://github.com/TorchSim/torch-sim/pull/328)
+* Add sources npt langevin by @thomasloux in [#298](https://github.com/TorchSim/torch-sim/pull/298)
+
+### 🐛 Bug Fixes
+* MACE: transfer atomic numbers to CPU before converting to numpy by @t-reents in [#289](https://github.com/TorchSim/torch-sim/pull/289)
+* Fixed max atoms memory estimation by @nh-univie in [#279](https://github.com/TorchSim/torch-sim/pull/279)
+* Fixing model loading logic (names and cache dir) for fairchem models by @nh-univie in [#278](https://github.com/TorchSim/torch-sim/pull/278)
+* Fix fairchem and neighbors tests by @WillEngler in [#317](https://github.com/TorchSim/torch-sim/pull/317)
+* Fix #293: State to device side effects by @samanvya10 in [#297](https://github.com/TorchSim/torch-sim/pull/297)
+* Fix graph-pes key issue by @jla-gardner in [#303](https://github.com/TorchSim/torch-sim/pull/303)
+* Fix calculate static state after relax by @curtischong in [#338](https://github.com/TorchSim/torch-sim/pull/338)
+* Misc fixes by @orionarcher in [#336](https://github.com/TorchSim/torch-sim/pull/336)
+* Fix cell to cellpar by @thomasloux in [#342](https://github.com/TorchSim/torch-sim/pull/342)
+* Fix failing Docs build by @CompRhys in [#296](https://github.com/TorchSim/torch-sim/pull/296)
+* Fix: correct speedup plot image path in README by @Joaqland in [#333](https://github.com/TorchSim/torch-sim/pull/333)
+
+### 🛠 Enhancements
+* Put SimState Init logic into __post_init__ (and enforce kw_args=true for SimState children) by @curtischong in [#335](https://github.com/TorchSim/torch-sim/pull/335)
+* Replace vars(state) with state.attributes by @orionarcher in [#329](https://github.com/TorchSim/torch-sim/pull/329)
+* Rename and reorder some variables by @orionarcher in [#316](https://github.com/TorchSim/torch-sim/pull/316)
+* Add SevenNet path, str types for model arg by @YutackPark in [#322](https://github.com/TorchSim/torch-sim/pull/322)
+* Add version attribute by @thomasloux in [#311](https://github.com/TorchSim/torch-sim/pull/311)
+* Convert cell_to_cellpar from ase's numpy implementation to pytorch by @wendymak8 in [#306](https://github.com/TorchSim/torch-sim/pull/306)
+* Autobatch OOM handling by @chuin-wei in [#337](https://github.com/TorchSim/torch-sim/pull/337)
+* Allow Mace to be loaded from a model path by @orionarcher in [#349](https://github.com/TorchSim/torch-sim/pull/349)
+* NPTLangevinState inherits from MDState by @hn-yu in [#299](https://github.com/TorchSim/torch-sim/pull/299)
+
+### 📖 Documentation
+* Add integrators in docs by @thomasloux in [#290](https://github.com/TorchSim/torch-sim/pull/290)
+
+### 🏷️ Type Hints
+* Create py.typed by @arosen93 in [#287](https://github.com/TorchSim/torch-sim/pull/287)
+
+### 🧹 House-Keeping
+* Remove unused imports orb and updates class type check by @thomasloux in [#292](https://github.com/TorchSim/torch-sim/pull/292)
+* Skip FairChem tests on forks due to HF secret by @CompRhys in [#295](https://github.com/TorchSim/torch-sim/pull/295)
+
+### 📦 Dependencies
+* Loosen numpy dependency by @chuin-wei in [#321](https://github.com/TorchSim/torch-sim/pull/321)
+
+## New Contributors
+* @arosen93 made their first contribution in [#287](https://github.com/TorchSim/torch-sim/pull/287)
+* @nh-univie made their first contribution in [#278](https://github.com/TorchSim/torch-sim/pull/278)
+* @samanvya10 made their first contribution in [#297](https://github.com/TorchSim/torch-sim/pull/297)
+* @wendymak8 made their first contribution in [#306](https://github.com/TorchSim/torch-sim/pull/306)
+* @pragnya17 made their first contribution in [#341](https://github.com/TorchSim/torch-sim/pull/341)
+* @chuin-wei made their first contribution in [#321](https://github.com/TorchSim/torch-sim/pull/321)
+* @hn-yu made their first contribution in [#299](https://github.com/TorchSim/torch-sim/pull/299)
+* @Joaqland made their first contribution in [#333](https://github.com/TorchSim/torch-sim/pull/333)
+
 ## v0.4.0
 
 Thank you to everyone who contributed to this release! This release includes significant API improvements and breaking changes. @janosh led a major API redesign to improve usability. @stefanbringuier added heat flux calculations. @curtischong continued improving type safety across the codebase. @CompRhys, @orionarcher, @WillEngler, and @thomasloux all made valuable contributions. 🚀

@@ -49,15 +49,15 @@ results = model(state)
 SMOKE_TEST = os.getenv("CI") is not None
 N_steps_nvt = 20 if SMOKE_TEST else 2_000
 N_steps_npt = 20 if SMOKE_TEST else 2_000
-dt = torch.tensor(0.001 * Units.time, device=device, dtype=dtype)  # Time step (1 ps)
+dt = torch.tensor(0.001 * Units.time, device=device, dtype=dtype)  # Time step (1 fs)
 kT = (
     torch.tensor(300, device=device, dtype=dtype) * Units.temperature
 )  # Initial temperature (300 K)
 target_pressure = torch.tensor(
     10_000 * Units.pressure, device=device, dtype=dtype
-)  # Target pressure (0 bar)
+)  # Target pressure (10 Kbar)
 
-state = ts.nvt_nose_hoover_init(model=model, state=state, kT=kT, dt=dt, seed=1)
+state = ts.nvt_nose_hoover_init(state=state, model=model, kT=kT, dt=dt, seed=1)
 
 for step in range(N_steps_nvt):
     if step % 10 == 0:
@@ -69,9 +69,18 @@ for step in range(N_steps_nvt):
         )
         invariant = float(ts.nvt_nose_hoover_invariant(state, kT=kT))
         print(f"{step=}: Temperature: {temp.item():.4f}: {invariant=:.4f}, ")
-    state = ts.nvt_nose_hoover_step(model=model, state=state, dt=dt, kT=kT)
+    state = ts.nvt_nose_hoover_step(state=state, model=model, dt=dt, kT=kT)
 
-state = ts.npt_langevin_init(state=state, model=model, kT=kT, dt=dt, seed=1)
+state = ts.npt_langevin_init(
+    state=state,
+    model=model,
+    kT=kT,
+    dt=dt,
+    seed=1,
+    alpha=1.0 / (100 * dt),
+    cell_alpha=1.0 / (100 * dt),
+    b_tau=1 / (1000 * dt),
+)
 
 for step in range(N_steps_npt):
     if step % 10 == 0:
@@ -107,9 +116,6 @@ for step in range(N_steps_npt):
         dt=dt,
         kT=kT,
         external_pressure=target_pressure,
-        alpha=1.0 / (100 * dt),
-        cell_alpha=1.0 / (100 * dt),
-        b_tau=1 / (1000 * dt),
     )
 
 final_temp = (

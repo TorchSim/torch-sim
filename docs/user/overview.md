@@ -27,6 +27,6 @@ Learn more in [Understanding Reporting](../tutorials/reporting_tutorial.ipynb)
 
 ## High-level vs Low-Level
 
-Under the hood, TorchSim takes a modular functional approach to atomistic simulation. Each integrator or optimizer function, such as `nvt_langevin,` takes in a model and parameters and returns `init` and `update` functions that act on a unique `State.` The state inherits from `SimState` and tracks the fixed and fluctuating parameters of the simulation, such as the `momenta` for NVT or the timestep for FIRE. The runner functions take this basic structure and wrap it in a convenient interface with autobatching and reporting.
+Under the hood, TorchSim takes a modular functional approach to atomistic simulation. Each integrator or optimizer has associated `init` and `update` functions that initialize and update a unique `State.` The state inherits from `SimState` and tracks the fixed and fluctuating parameters of the simulation, such as the `momenta` for NVT or the timestep for FIRE. The runner functions take this basic structure and wrap it in a convenient interface with autobatching and reporting.
 
 Learn more in [Fundamentals of TorchSim](../tutorials/low_level_tutorial.ipynb) and [Implementing New Methods](../tutorials/hybrid_swap_tutorial.ipynb)
