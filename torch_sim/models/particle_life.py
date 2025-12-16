@@ -150,21 +150,27 @@ class ParticleLifeModel(ModelInterface):
             cell = cell.squeeze(0)  # Squeeze the first dimension
 
         if self.use_neighbor_list:
-            # Get neighbor list using wrapping_nl
-            mapping, shifts = torchsim_nl(
+            # Get neighbor list using torchsim_nl
+            # Ensure system_idx exists (create if None for single system)
+            system_idx = (
+                state.system_idx
+                if state.system_idx is not None
+                else torch.zeros(positions.shape[0], dtype=torch.long, device=self.device)
+            )
+            mapping, system_mapping, shifts_idx = torchsim_nl(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
-                cutoff=float(self.cutoff),
-                sort_id=False,
+                cutoff=self.cutoff,
+                system_idx=system_idx,
             )
-            # Get displacements using neighbor list
+            # Pass shifts_idx directly - get_pair_displacements will convert them
             dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
-                pairs=mapping,
-                shifts=shifts,
+                pairs=(mapping[0], mapping[1]),
+                shifts=shifts_idx,
             )
         else:
             # Get all pairwise displacements
@@ -180,7 +186,7 @@ class ParticleLifeModel(ModelInterface):
             mask = distances < self.cutoff
             # Get valid pairs - match neighbor list convention for pair order
             i, j = torch.where(mask)
-            mapping = torch.stack([j, i])  # Changed from [j, i] to [i, j]
+            mapping = torch.stack([j, i])
             # Get valid displacements and distances
             dr_vec = dr_vec[mask]
             distances = distances[mask]

@@ -12,6 +12,7 @@ import os
 import traceback
 import typing
 import warnings
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -43,7 +44,6 @@ except ImportError as exc:
 
 if typing.TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from torch_sim.typing import StateDict
 
@@ -71,12 +71,11 @@ class FairChemModel(ModelInterface):
 
     def __init__(
         self,
-        model: str | Path | None,
+        model: str | Path,
         neighbor_list_fn: Callable | None = None,
         *,  # force remaining arguments to be keyword-only
-        model_name: str | None = None,
         model_cache_dir: str | Path | None = None,
-        cpu: bool = False,
+        device: torch.device | None = None,
         dtype: torch.dtype | None = None,
         compute_stress: bool = False,
         task_name: UMATask | str | None = None,
@@ -84,21 +83,22 @@ class FairChemModel(ModelInterface):
         """Initialize the FairChem model.
 
         Args:
-            model (str | Path | None): Path to model checkpoint file
+            model (str | Path): Either a pretrained model name or path to model
+                checkpoint file. The function will first check if the input matches
+                a known pretrained model name, then check if it's a valid file path.
             neighbor_list_fn (Callable | None): Function to compute neighbor lists
                 (not currently supported)
-            model_name (str | None): Name of pretrained model to load
             model_cache_dir (str | Path | None): Path where to save the model
-            cpu (bool): Whether to use CPU instead of GPU for computation
+            device (torch.device | None): Device to use for computation. If None,
+                defaults to CUDA if available, otherwise CPU.
             dtype (torch.dtype | None): Data type to use for computation
             compute_stress (bool): Whether to compute stress tensor
             task_name (UMATask | str | None): Task type for UMA models (optional,
                 only needed for UMA models)
 
         Raises:
-            RuntimeError: If both model_name and model are specified
             NotImplementedError: If custom neighbor list function is provided
-            ValueError: If neither model nor model_name is provided
+            ValueError: If model is not a known model name or valid file path
         """
         setup_imports()
         setup_logging()
@@ -114,24 +114,19 @@ class FairChemModel(ModelInterface):
                 "Custom neighbor list is not supported for FairChemModel."
             )
 
-        if model_name is not None:
-            if model is not None:
-                raise RuntimeError(
-                    "model_name and checkpoint_path were both specified, "
-                    "please use only one at a time"
-                )
-            model = model_name
-
-        if model is None:
-            raise ValueError("Either model or model_name must be provided")
+        # Convert Path to string for consistency
+        if isinstance(model, Path):
+            model = str(model)
 
         # Convert task_name to UMATask if it's a string (only for UMA models)
         if isinstance(task_name, str):
             task_name = UMATask(task_name)
 
         # Use the efficient predictor API for optimal performance
-        device_str = "cpu" if cpu else "cuda" if torch.cuda.is_available() else "cpu"
-        self._device = torch.device(device_str)
+        self._device = device or torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
+        device_str = str(self._device)
         self.task_name = task_name
 
         # Create efficient batch predictor for fast inference
@@ -222,6 +217,9 @@ class FairChemModel(ModelInterface):
                 cell=cell,
                 pbc=pbc if cell is not None else False,
             )
+
+            atoms.info["charge"] = sim_state.charge[idx].item()
+            atoms.info["spin"] = sim_state.spin[idx].item()
 
             # Convert ASE Atoms to AtomicData (task_name only applies to UMA models)
             if self.task_name is None:

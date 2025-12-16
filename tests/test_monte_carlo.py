@@ -200,3 +200,43 @@ def test_swap_mc_state_attributes():
     parent_system_attrs = SimState._system_attributes  # noqa: SLF001
     assert atom_attrs >= parent_atom_attrs
     assert system_attrs >= parent_system_attrs
+
+
+def test_generate_swaps_ragged_systems():
+    """
+    Test that generate_swaps works with multiple systems with different atom counts.
+
+    This ensures that we are properly calculating the system_starts for each system.
+    """
+    s1 = Structure(torch.eye(3), ["H", "He"], [[0, 0, 0], [0.5, 0.5, 0.5]])
+    # use more elements for the second system so there's a higher chance that the swap
+    # chooses an atom from the second system - and when we the actual index of that
+    # atom in the SimState, we get an out-of-bounds index if we improperly
+    # calculate the system_starts.
+    s2 = Structure(
+        torch.eye(3),
+        ["Li", "Be", "B", "C", "N"],
+        [[0, 0, 0], [0.1, 0.1, 0.1], [0.2, 0.2, 0.2], [0.3, 0.3, 0.3], [0.4, 0.4, 0.4]],
+    )
+
+    # Combine into a single batched state
+    ragged_state = ts.io.structures_to_state([s1, s2], device=DEVICE, dtype=torch.float64)
+
+    rng = torch.Generator(device=DEVICE)
+    _ = rng.manual_seed(42)
+
+    # Run multiple times to ensure the RNG hits the out-of-bounds indices
+    for _ in range(10):
+        swaps = generate_swaps(ragged_state, rng=rng)
+
+        # Check that indices are within bounds
+        assert torch.all(swaps < ragged_state.n_atoms), (
+            f"Swap indices {swaps.max()} exceed total n_atoms {ragged_state.n_atoms}"
+        )
+
+        # Check that swapped atoms belong to the same system
+        sys_idx = ragged_state.system_idx
+        sys_0 = sys_idx[swaps[:, 0]]
+        sys_1 = sys_idx[swaps[:, 1]]
+
+        assert torch.all(sys_0 == sys_1), "Proposed swap crosses system boundaries!"

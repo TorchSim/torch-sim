@@ -1,6 +1,30 @@
 <!-- markdownlint-disable -->
 # Changelog
 
+## v0.4.2
+
+Thank you to everyone who contributed to this release! This release includes important bug fixes and new features. @thomasloux, @orionarcher, @WillEngler, @RishikeshMagar, @nh-univie, @andrewrm98, @danielzuegner, and others made valuable contributions. 🚀
+
+### 🎉 New Features
+* Add CSVR / V-Rescale thermostat and anisotropic C rescale barostat by @thomasloux in [#326](https://github.com/TorchSim/torch-sim/pull/326)
+* Support for electrostatics by @orionarcher in [#373](https://github.com/TorchSim/torch-sim/pull/373)
+* Add support for AMD GPUs (consumer/datacenter) by @amacbride in [#347](https://github.com/TorchSim/torch-sim/pull/347)
+
+### 🐛 Bug Fixes
+* Fix: add init_kwargs to ts.integrate by @danielzuegner in [#360](https://github.com/TorchSim/torch-sim/pull/360)
+* Fix PBC extraction to CPU fairchem model by @nh-univie in [#368](https://github.com/TorchSim/torch-sim/pull/368)
+* Handle tensor PBC input in FairChemV1Model by @WillEngler in [#372](https://github.com/TorchSim/torch-sim/pull/372)
+* Fix Comments Issue#309 by @RishikeshMagar in [#378](https://github.com/TorchSim/torch-sim/pull/378)
+* Fix fairchem-legacy tests by removing explicit Hugging Face login by @WillEngler in [#369](https://github.com/TorchSim/torch-sim/pull/369)
+
+### 🛠 Enhancements
+* Consolidate model and model_name args in FairchemModel by @orionarcher in [#377](https://github.com/TorchSim/torch-sim/pull/377)
+
+## New Contributors
+* @amacbride made their first contribution in [#347](https://github.com/TorchSim/torch-sim/pull/347)
+* @danielzuegner made their first contribution in [#360](https://github.com/TorchSim/torch-sim/pull/360)
+* @RishikeshMagar made their first contribution in [#378](https://github.com/TorchSim/torch-sim/pull/378)
+
 ## v0.4.1
 
 Thank you to everyone who contributed to this release! This release includes important bug fixes, new features, and API improvements. @thomasloux, @curtischong, @CompRhys, @orionarcher, @WillEngler, @samanvya10, @hn-yu, @wendymak8, @chuin-wei, @pragnya17, and many others made valuable contributions. 🚀

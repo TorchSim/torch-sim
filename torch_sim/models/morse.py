@@ -267,19 +267,26 @@ class MorseModel(ModelInterface):
         pbc = sim_state.pbc
 
         if self.use_neighbor_list:
-            mapping, shifts = torchsim_nl(
+            # Ensure system_idx exists (create if None for single system)
+            system_idx = (
+                sim_state.system_idx
+                if sim_state.system_idx is not None
+                else torch.zeros(positions.shape[0], dtype=torch.long, device=self.device)
+            )
+            mapping, system_mapping, shifts_idx = torchsim_nl(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
                 cutoff=self.cutoff,
-                sort_id=False,
+                system_idx=system_idx,
             )
+            # Pass shifts_idx directly - get_pair_displacements will convert them
             dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
-                pairs=mapping,
-                shifts=shifts,
+                pairs=(mapping[0], mapping[1]),
+                shifts=shifts_idx,
             )
         else:
             dr_vec, distances = transforms.get_pair_displacements(
