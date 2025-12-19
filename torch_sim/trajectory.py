@@ -512,6 +512,20 @@ class TorchSimTrajectory:
 
         self.flush()
 
+    def write_global_array(self, name: str, array: np.ndarray | torch.Tensor) -> None:
+        """Write a global array to the trajectory file.
+
+        This function is used to write a global array to the trajectory file.
+        """
+        if isinstance(array, torch.Tensor):
+            array = array.cpu().detach().numpy()
+
+        steps = [0]
+        if name not in self.array_registry:
+            self._initialize_array(name, array)
+        self._validate_array(name, array, steps)
+        self._serialize_array(name, array, steps)
+
     def _initialize_array(self, name: str, array: np.ndarray) -> None:
         """Initialize a single array and add it to the registry.
 
@@ -736,6 +750,7 @@ class TorchSimTrajectory:
 
         if len(sub_states) != len(steps):
             raise ValueError(f"{len(sub_states)=} must match the {len(steps)=}")
+
         # Initialize data dictionary with required arrays
         data = {
             "positions": torch.stack([s.positions for s in state]),
@@ -776,7 +791,7 @@ class TorchSimTrajectory:
             self.write_arrays({"atomic_numbers": state[0].atomic_numbers}, 0)
 
         if "pbc" not in self.array_registry:
-            self.write_arrays({"pbc": np.array(state[0].pbc)}, 0)
+            self.write_global_array("pbc", state[0].pbc)
 
         # Write all arrays to file
         self.write_arrays(data, steps)
@@ -818,6 +833,8 @@ class TorchSimTrajectory:
         arrays["positions"] = self.get_array("positions", start=frame, stop=frame + 1)[0]
 
         def return_prop(self: Self, prop: str, frame: int) -> np.ndarray:
+            if prop == "pbc":
+                return self.get_array(prop, start=0, stop=3)
             if getattr(self._file.root.data, prop).shape[0] > 1:  # Variable prop
                 start, stop = frame, frame + 1
             else:  # Static prop
@@ -887,13 +904,11 @@ class TorchSimTrajectory:
 
         arrays = self._get_state_arrays(frame)
 
-        pbc = arrays.get("pbc", True)
-
         return Atoms(
             numbers=np.ascontiguousarray(arrays["atomic_numbers"]),
             positions=np.ascontiguousarray(arrays["positions"]),
             cell=np.ascontiguousarray(arrays["cell"])[0],
-            pbc=pbc,
+            pbc=np.ascontiguousarray(arrays["pbc"]),
         )
 
     def get_state(
@@ -925,7 +940,7 @@ class TorchSimTrajectory:
             positions=torch.tensor(arrays["positions"], device=device, dtype=dtype),
             masses=torch.tensor(arrays.get("masses", None), device=device, dtype=dtype),
             cell=torch.tensor(arrays["cell"], device=device, dtype=dtype),
-            pbc=bool(arrays.get("pbc", True)),
+            pbc=torch.tensor(arrays["pbc"], device=device, dtype=torch.bool),
             atomic_numbers=torch.tensor(
                 arrays["atomic_numbers"], device=device, dtype=torch.int
             ),

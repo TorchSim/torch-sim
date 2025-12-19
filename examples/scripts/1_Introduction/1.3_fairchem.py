@@ -36,10 +36,9 @@ MODEL_NAME = "uma-s-1"
 si_dc = bulk("Si", "diamond", a=5.43).repeat((2, 2, 2))
 atomic_numbers = si_dc.get_atomic_numbers()
 model = FairChemModel(
-    model=None,
-    model_name=MODEL_NAME,
+    model=MODEL_NAME,
     task_name="omat",  # Open Materials task for crystalline systems
-    cpu=False,
+    device=device,
 )
 atoms_list = [si_dc, si_dc]
 state = ts.io.atoms_to_state(atoms_list, device=device, dtype=dtype)

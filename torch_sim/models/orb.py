@@ -29,7 +29,6 @@ from torch_sim.models.interface import ModelInterface
 
 
 try:
-    from ase.geometry import cell_to_cellpar
     from orb_models.forcefield import featurization_utilities as feat_util
     from orb_models.forcefield.atomic_system import SystemConfig
     from orb_models.forcefield.base import AtomGraphs, _map_concat
@@ -57,6 +56,37 @@ if typing.TYPE_CHECKING:
     from orb_models.forcefield.featurization_utilities import EdgeCreationMethod
 
     from torch_sim.typing import StateDict
+
+
+def cell_to_cellpar(
+    cell: torch.Tensor,
+    radians: bool = False,  # noqa: FBT001, FBT002
+) -> torch.Tensor:
+    """Returns the cell parameters [a, b, c, alpha, beta, gamma].
+    torch version of ase's cell_to_cellpar.
+
+    Args:
+        cell:  lattice vector in row vector convention, same as ase
+        radians: If True, return angles in radians. Otherwise, return degrees (default).
+
+    Returns:
+        Tensor with [a, b, c, alpha, beta, gamma].
+    """
+    lengths = torch.linalg.norm(cell, dim=1)
+    angles = []
+    for i in range(3):
+        j = i - 1
+        k = i - 2
+        ll = lengths[j] * lengths[k]
+        if ll.item() > 1e-16:
+            x = torch.dot(cell[j], cell[k]) / ll
+            angle = 180.0 / torch.pi * torch.arccos(x)
+        else:
+            angle = torch.tensor(90.0, device=cell.device, dtype=cell.dtype)
+        angles.append(angle)
+    if radians:
+        angles = [angle * torch.pi / 180 for angle in angles]
+    return torch.concat((lengths, torch.stack(angles)))
 
 
 def state_to_atom_graphs(  # noqa: PLR0915
@@ -117,9 +147,6 @@ def state_to_atom_graphs(  # noqa: PLR0915
     )  # Orb uses row vector cell convention for neighbor list
     atomic_numbers = state.atomic_numbers.long()
 
-    # Create PBC tensor based on state.pbc
-    pbc = torch.tensor([state.pbc, state.pbc, state.pbc], dtype=torch.bool)
-
     max_num_neighbors = max_num_neighbors or system_config.max_num_neighbors
 
     # Get atom embeddings for the model
@@ -138,7 +165,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
     atomic_numbers_embedding = atom_type_embedding.to(output_dtype)
 
     # Wrap positions into the central cell if needed
-    if wrap and (torch.any(row_vector_cell != 0) and torch.any(pbc)):
+    if wrap and (torch.any(row_vector_cell != 0) and torch.any(state.pbc)):
         positions = feat_util.batch_map_to_pbc_cell(positions, row_vector_cell, n_node)
 
     n_systems = state.system_idx.max().item() + 1
@@ -160,13 +187,13 @@ def state_to_atom_graphs(  # noqa: PLR0915
         atomic_numbers_per_system = atomic_numbers[system_mask]
         atomic_numbers_embedding_per_system = atomic_numbers_embedding[system_mask]
         cell_per_system = row_vector_cell[sys_idx]
-        pbc_per_system = pbc
+        pbc = state.pbc
 
         # Compute edges directly for this system
         edges, vectors, unit_shifts = feat_util.compute_pbc_radius_graph(
             positions=positions_per_system,
             cell=cell_per_system,
-            pbc=pbc_per_system,
+            pbc=pbc,
             radius=system_config.radius,
             max_number_neighbors=max_num_neighbors,
             edge_method=edge_method,
@@ -181,9 +208,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
         num_edges.append(len(edges[0]))
 
         # Calculate lattice parameters
-        lattice_per_system = torch.from_numpy(
-            cell_to_cellpar(cell_per_system.squeeze(0).cpu().numpy())
-        )
+        lattice_per_system = cell_to_cellpar(cell_per_system.squeeze(0))
 
         # Create features dictionaries
         node_feats = {
@@ -202,7 +227,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
 
         graph_feats = {
             "cell": cell_per_system,
-            "pbc": pbc_per_system,
+            "pbc": pbc,
             "lattice": lattice_per_system.to(device=positions_per_system.device),
         }
 

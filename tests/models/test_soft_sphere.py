@@ -350,8 +350,8 @@ def test_multispecies_cutoff_default() -> None:
 @pytest.mark.parametrize(
     ("flag_name", "flag_value"),
     [
-        ("pbc", True),
-        ("pbc", False),
+        ("pbc", torch.tensor([True, True, True])),
+        ("pbc", torch.tensor([False, False, False])),
         ("compute_forces", False),
         ("compute_stress", True),
         ("per_atom_energies", True),
