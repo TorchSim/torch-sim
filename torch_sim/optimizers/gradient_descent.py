@@ -108,7 +108,8 @@ def gradient_descent_step(
     atom_lr = pos_lr[state.system_idx].unsqueeze(-1)
 
     # Update atomic positions
-    state.set_positions(state.positions + atom_lr * state.forces)
+    state.positions = state.positions + atom_lr * state.forces
+    state.constrain_positions()
 
     # Update cell if using cell optimization
     if isinstance(state, CellOptimState):

@@ -212,7 +212,8 @@ def _vv_fire_step[T: "FireState | CellFireState"](  # noqa: PLR0915
     state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
 
     # Position update
-    state.set_positions(state.positions + atom_wise_dt * state.velocities)
+    state.positions = state.positions + atom_wise_dt * state.velocities
+    state.constrain_positions()
 
     # Cell position updates are handled in the velocity update step above
 
@@ -420,12 +421,13 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
         cur_deform_grad = cell_filters.deform_grad(
             state.reference_cell.mT, state.row_vector_cell
         )
-        state.set_positions(
+        state.positions = (
             torch.linalg.solve(
                 cur_deform_grad[state.system_idx], state.positions.unsqueeze(-1)
             ).squeeze(-1)
             + dr_atom
         )
+        state.constrain_positions()
 
         # Update cell positions directly based on stored cell filter type
         if hasattr(state, "cell_filter") and state.cell_filter is not None:
@@ -455,14 +457,13 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
         new_deform_grad = cell_filters.deform_grad(
             state.reference_cell.mT, state.row_vector_cell
         )
-        state.set_positions(
-            torch.bmm(
-                state.positions.unsqueeze(1),
-                new_deform_grad[state.system_idx].transpose(-2, -1),
-            ).squeeze(1)
-        )
+        state.positions = torch.bmm(
+            state.positions.unsqueeze(1),
+            new_deform_grad[state.system_idx].transpose(-2, -1),
+        ).squeeze(1)
     else:
-        state.set_positions(state.positions + dr_atom)
+        state.positions = state.positions + dr_atom
+    state.constrain_positions()
 
     # Get new forces, energy, and stress
     model_output = model(state)

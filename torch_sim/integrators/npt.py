@@ -365,7 +365,8 @@ def _npt_langevin_position_step(
     )
 
     # Update positions with all contributions
-    state.set_positions(c_1 + c_2.unsqueeze(-1) * c_3)
+    state.positions = c_1 + c_2.unsqueeze(-1) * c_3
+    state.constrain_positions()
     return state
 
 
@@ -1243,7 +1244,10 @@ def _npt_nose_hoover_inner_step(
 
     # Update particle positions and forces
     positions = _npt_nose_hoover_exp_iL1(state, state.velocities, cell_velocities, dt)
-    state.set_positions(positions)
+
+    state.positions = positions
+    state.constrain_positions()
+
     state.cell = cell
     model_output = model(state)
 
@@ -1264,8 +1268,11 @@ def _npt_nose_hoover_inner_step(
     cell_momentum = cell_momentum + dt_2 * cell_force_val.unsqueeze(-1)
 
     # Return updated state
-    state.set_positions(positions)
-    state.set_momenta(momenta)
+    state.positions = positions
+    state.constrain_positions()
+    # state.set_momenta(momenta)
+    state.momenta = momenta
+    state.constrain_momenta()
     state.forces = model_output["forces"]
     state.energy = model_output["energy"]
     state.cell_position = cell_position
