@@ -100,6 +100,7 @@ def test_integrate_double_nvt(
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
+        init_kwargs=dict(seed=481516),
     )
 
     assert isinstance(final_state, SimState)

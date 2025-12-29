@@ -111,6 +111,7 @@ def integrate[T: SimState](  # noqa: C901
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: BinningAutoBatcher | bool = False,
     pbar: bool | dict[str, Any] = False,
+    init_kwargs: dict[str, Any] | None = None,
     **integrator_kwargs: Any,
 ) -> T:
     """Simulate a system using a model and integrator.
@@ -131,6 +132,8 @@ def integrate[T: SimState](  # noqa: C901
         pbar (bool | dict[str, Any], optional): Show a progress bar.
             Only works with an autobatcher in interactive shell. If a dict is given,
             it's passed to `tqdm` as kwargs.
+        init_kwargs (dict[str, Any], optional): Additional keyword arguments for
+            integrator init function.
         **integrator_kwargs: Additional keyword arguments for integrator init function
 
     Returns:
@@ -188,7 +191,7 @@ def integrate[T: SimState](  # noqa: C901
     # Handle both BinningAutoBatcher and list of tuples
     for state, system_indices in batch_iterator:
         # Pass correct parameters based on integrator type
-        state = init_func(state=state, model=model, kT=kTs[0], dt=dt, **integrator_kwargs)
+        state = init_func(state=state, model=model, kT=kTs[0], dt=dt, **init_kwargs or {})
 
         # set up trajectory reporters
         if autobatcher and trajectory_reporter is not None and og_filenames is not None:

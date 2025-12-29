@@ -29,8 +29,7 @@ except ImportError:
 @pytest.fixture
 def eqv2_uma_model_pbc() -> FairChemModel:
     """UMA model for periodic boundary condition systems."""
-    cpu = DEVICE.type == "cpu"
-    return FairChemModel(model=None, model_name="uma-s-1", task_name="omat", cpu=cpu)
+    return FairChemModel(model="uma-s-1", task_name="omat", device=DEVICE)
 
 
 @pytest.mark.skipif(
@@ -39,7 +38,9 @@ def eqv2_uma_model_pbc() -> FairChemModel:
 @pytest.mark.parametrize("task_name", ["omat", "omol", "oc20"])
 def test_task_initialization(task_name: str) -> None:
     """Test that different UMA task names work correctly."""
-    model = FairChemModel(model=None, model_name="uma-s-1", task_name=task_name, cpu=True)
+    model = FairChemModel(
+        model="uma-s-1", task_name=task_name, device=torch.device("cpu")
+    )
     assert model.task_name
     assert str(model.task_name.value) == task_name
     assert hasattr(model, "predictor")
@@ -75,9 +76,7 @@ def test_homogeneous_batching(task_name: str, systems_func: Callable) -> None:
         for mol in systems:
             mol.info |= {"charge": 0, "spin": 1}
 
-    model = FairChemModel(
-        model=None, model_name="uma-s-1", task_name=task_name, cpu=DEVICE.type == "cpu"
-    )
+    model = FairChemModel(model="uma-s-1", task_name=task_name, device=DEVICE)
     state = ts.io.atoms_to_state(systems, device=DEVICE, dtype=DTYPE)
     results = model(state)
 
@@ -109,10 +108,9 @@ def test_heterogeneous_tasks() -> None:
             systems[0].info |= {"charge": 0, "spin": 1}
 
         model = FairChemModel(
-            model=None,
-            model_name="uma-s-1",
+            model="uma-s-1",
             task_name=task_name,
-            cpu=DEVICE.type == "cpu",
+            device=DEVICE,
         )
         state = ts.io.atoms_to_state(systems, device=DEVICE, dtype=DTYPE)
         results = model(state)
@@ -151,9 +149,7 @@ def test_batch_size_variations(systems_func: Callable, expected_count: int) -> N
     """Test batching with different numbers and sizes of systems."""
     systems = systems_func()
 
-    model = FairChemModel(
-        model=None, model_name="uma-s-1", task_name="omat", cpu=DEVICE.type == "cpu"
-    )
+    model = FairChemModel(model="uma-s-1", task_name="omat", device=DEVICE)
     state = ts.io.atoms_to_state(systems, device=DEVICE, dtype=DTYPE)
     results = model(state)
 
@@ -173,10 +169,9 @@ def test_stress_computation(*, compute_stress: bool) -> None:
     systems = [bulk("Si", "diamond", a=5.43), bulk("Al", "fcc", a=4.05)]
 
     model = FairChemModel(
-        model=None,
-        model_name="uma-s-1",
+        model="uma-s-1",
         task_name="omat",
-        cpu=DEVICE.type == "cpu",
+        device=DEVICE,
         compute_stress=compute_stress,
     )
     state = ts.io.atoms_to_state(systems, device=DEVICE, dtype=DTYPE)
@@ -195,9 +190,7 @@ def test_stress_computation(*, compute_stress: bool) -> None:
 )
 def test_device_consistency() -> None:
     """Test device consistency between model and data."""
-    cpu = DEVICE.type == "cpu"
-
-    model = FairChemModel(model=None, model_name="uma-s-1", task_name="omat", cpu=cpu)
+    model = FairChemModel(model="uma-s-1", task_name="omat", device=DEVICE)
     system = bulk("Si", "diamond", a=5.43)
     state = ts.io.atoms_to_state([system], device=DEVICE, dtype=DTYPE)
 
@@ -211,7 +204,7 @@ def test_device_consistency() -> None:
 )
 def test_empty_batch_error() -> None:
     """Test that empty batches raise appropriate errors."""
-    model = FairChemModel(model=None, model_name="uma-s-1", task_name="omat", cpu=True)
+    model = FairChemModel(model="uma-s-1", task_name="omat", device=torch.device("cpu"))
     with pytest.raises((ValueError, RuntimeError, IndexError)):
         model(ts.io.atoms_to_state([], device=torch.device("cpu"), dtype=torch.float32))
 
@@ -223,7 +216,7 @@ def test_load_from_checkpoint_path() -> None:
     """Test loading model from a saved checkpoint file path."""
     checkpoint_path = pretrained_checkpoint_path_from_name("uma-s-1")
     loaded_model = FairChemModel(
-        model=str(checkpoint_path), task_name="omat", cpu=DEVICE == "cpu"
+        model=str(checkpoint_path), task_name="omat", device=DEVICE
     )
 
     # Verify the loaded model works
@@ -246,3 +239,52 @@ test_fairchem_uma_model_outputs = pytest.mark.skipif(
         model_fixture_name="eqv2_uma_model_pbc", device=DEVICE, dtype=DTYPE
     )
 )
+
+
+@pytest.mark.skipif(
+    get_token() is None, reason="Requires HuggingFace authentication for UMA model access"
+)
+@pytest.mark.parametrize(
+    ("charge", "spin"),
+    [
+        (0.0, 0.0),  # Neutral, no spin
+        (1.0, 1.0),  # +1 charge, spin=1 (doublet)
+        (-1.0, 0.0),  # -1 charge, no spin (singlet)
+        (0.0, 2.0),  # Neutral, spin=2 (triplet)
+    ],
+)
+def test_fairchem_charge_spin(charge: float, spin: float) -> None:
+    """Test that FairChemModel correctly handles charge and spin from atoms.info."""
+    # Create a water molecule
+    mol = molecule("H2O")
+
+    # Set charge and spin in ASE atoms.info
+    mol.info["charge"] = charge
+    mol.info["spin"] = spin
+
+    # Convert to SimState (should extract charge/spin)
+    state = ts.io.atoms_to_state([mol], device=DEVICE, dtype=DTYPE)
+
+    # Verify charge/spin were extracted correctly
+    assert state.charge[0].item() == charge
+    assert state.spin[0].item() == spin
+
+    # Create model with UMA omol task (supports charge/spin for molecules)
+    model = FairChemModel(
+        model="uma-s-1",
+        task_name="omol",
+        device=DEVICE,
+    )
+
+    # This should not raise an error
+    result = model(state)
+
+    # Verify outputs exist
+    assert "energy" in result
+    assert result["energy"].shape == (1,)
+    assert "forces" in result
+    assert result["forces"].shape == (len(mol), 3)
+
+    # Verify outputs are finite
+    assert torch.isfinite(result["energy"]).all()
+    assert torch.isfinite(result["forces"]).all()

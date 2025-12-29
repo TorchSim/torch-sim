@@ -88,6 +88,19 @@ class MDState(SimState):
             dof_per_system=self.get_number_of_degrees_of_freedom(),
         )
 
+    def calc_kT(self) -> torch.Tensor:  # noqa: N802
+        """Calculate kT from momenta, masses, and system indices.
+
+        Returns:
+            torch.Tensor: Calculated kT
+        """
+        return calc_kT(
+            masses=self.masses,
+            momenta=self.momenta,
+            system_idx=self.system_idx,
+            dof_per_system=self.get_number_of_degrees_of_freedom(),
+        )
+
 
 def calculate_momenta(
     positions: torch.Tensor,

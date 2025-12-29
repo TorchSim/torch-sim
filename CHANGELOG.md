@@ -10,6 +10,52 @@
   - Constraints automatically adjust degrees of freedom for accurate temperature calculations
   - Full support across all integrators (NVE, NVT, NPT) and optimizers (FIRE, Gradient Descent)
   - Constraints preserved during state manipulation (slicing, splitting, concatenation)
+
+## v0.5.0
+
+This release focuses on improving batch processing capabilities across TorchSim. The neighbor list module has been completely refactored to support batched calculations with multiple backend implementations, elastic tensor calculations now leverage batched operations for improved performance, and a bug fix ensures Monte Carlo swaps work correctly with ragged (different-sized) systems.
+
+### 🎉 New Features
+* Refactor neighbor list module with batched support and multiple backends by @abhijeetgangan in [#348](https://github.com/TorchSim/torch-sim/pull/348)
+  - New unified `torchsim_nl` function with automatic backend selection
+  - Multiple implementations: Alchemiops (NVIDIA CUDA), Vesin, torch_nl, and pure PyTorch fallback
+  - Support for both single-system and batched (multi-system) calculations
+  - Automatic selection of best available implementation based on installed packages
+
+### 🛠 Enhancements
+* Batch elastic operations by @orionarcher in [#384](https://github.com/TorchSim/torch-sim/pull/384)
+  - `calculate_elastic_tensor` now uses `ts.static` runner for batched calculations
+  - Added `autobatcher` parameter for memory-efficient processing of deformations
+  - Added `pbar` parameter for progress bar support
+
+### 🐛 Bug Fixes
+* Fix Monte Carlo swap for ragged systems by @curtischong in [#380](https://github.com/TorchSim/torch-sim/pull/380)
+  - Fixed `generate_swaps` calculation of system start indices for systems with different atom counts
+
+## v0.4.2
+
+Thank you to everyone who contributed to this release! This release includes important bug fixes and new features. @thomasloux, @orionarcher, @WillEngler, @RishikeshMagar, @nh-univie, @andrewrm98, @danielzuegner, and others made valuable contributions. 🚀
+
+### 🎉 New Features
+* Add CSVR / V-Rescale thermostat and anisotropic C rescale barostat by @thomasloux in [#326](https://github.com/TorchSim/torch-sim/pull/326)
+* Support for electrostatics by @orionarcher in [#373](https://github.com/TorchSim/torch-sim/pull/373)
+* Add support for AMD GPUs (consumer/datacenter) by @amacbride in [#347](https://github.com/TorchSim/torch-sim/pull/347)
+
+### 🐛 Bug Fixes
+* Fix: add init_kwargs to ts.integrate by @danielzuegner in [#360](https://github.com/TorchSim/torch-sim/pull/360)
+* Fix PBC extraction to CPU fairchem model by @nh-univie in [#368](https://github.com/TorchSim/torch-sim/pull/368)
+* Handle tensor PBC input in FairChemV1Model by @WillEngler in [#372](https://github.com/TorchSim/torch-sim/pull/372)
+* Fix Comments Issue#309 by @RishikeshMagar in [#378](https://github.com/TorchSim/torch-sim/pull/378)
+* Fix fairchem-legacy tests by removing explicit Hugging Face login by @WillEngler in [#369](https://github.com/TorchSim/torch-sim/pull/369)
+
+### 🛠 Enhancements
+* Consolidate model and model_name args in FairchemModel by @orionarcher in [#377](https://github.com/TorchSim/torch-sim/pull/377)
+
+## New Contributors
+* @amacbride made their first contribution in [#347](https://github.com/TorchSim/torch-sim/pull/347)
+* @danielzuegner made their first contribution in [#360](https://github.com/TorchSim/torch-sim/pull/360)
+* @RishikeshMagar made their first contribution in [#378](https://github.com/TorchSim/torch-sim/pull/378)
+
 ## v0.4.1
 
 Thank you to everyone who contributed to this release! This release includes important bug fixes, new features, and API improvements. @thomasloux, @curtischong, @CompRhys, @orionarcher, @WillEngler, @samanvya10, @hn-yu, @wendymak8, @chuin-wei, @pragnya17, and many others made valuable contributions. 🚀
