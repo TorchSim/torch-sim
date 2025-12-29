@@ -23,15 +23,14 @@ class OptimState(SimState):
     _atom_attributes = SimState._atom_attributes | {"forces"}  # noqa: SLF001
     _system_attributes = SimState._system_attributes | {"energy", "stress"}  # noqa: SLF001
 
-    def set_forces(self, new_forces: torch.Tensor) -> None:
+    def constrain_forces(self) -> None:
         """Set new forces in the optimization state."""
         for constraint in self._constraints:
-            constraint.adjust_forces(self, new_forces)
-        self.forces = new_forces
+            constraint.adjust_forces(self, self.forces)
 
     def __post_init__(self) -> None:
         """Post-initialization to ensure SimState setup."""
-        self.set_forces(self.forces)
+        self.constrain_forces()
 
 
 @dataclass(kw_only=True)

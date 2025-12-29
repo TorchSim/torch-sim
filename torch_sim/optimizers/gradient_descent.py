@@ -119,7 +119,8 @@ def gradient_descent_step(
 
     # Get updated forces, energy, and stress
     model_output = model(state)
-    state.set_forces(model_output["forces"])
+    state.forces = model_output["forces"]
+    state.constrain_forces()
     state.energy = model_output["energy"]
     if "stress" in model_output:
         state.stress = model_output["stress"]

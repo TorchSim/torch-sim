@@ -219,7 +219,8 @@ def _vv_fire_step[T: "FireState | CellFireState"](  # noqa: PLR0915
 
     # Get new forces and energy
     model_output = model(state)
-    state.set_forces(model_output["forces"])
+    state.forces = model_output["forces"]
+    state.constrain_forces()
     state.energy = model_output["energy"]
     if "stress" in model_output:
         state.stress = model_output["stress"]
@@ -467,7 +468,8 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
 
     # Get new forces, energy, and stress
     model_output = model(state)
-    state.set_forces(model_output["forces"])
+    state.forces = model_output["forces"]
+    state.constrain_forces()
     state.energy = model_output["energy"]
     if "stress" in model_output:
         state.stress = model_output["stress"]
