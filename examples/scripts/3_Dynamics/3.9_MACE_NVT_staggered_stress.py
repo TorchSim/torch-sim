@@ -49,10 +49,10 @@ model = MaceModel(
 
 state = ts.io.atoms_to_state(si_dc, device=device, dtype=dtype)
 
-dt = 0.002 * Units.time  # Timestep (ps)
+dt = 0.002 * Units.time  # Timestep (2 fs)
 kT = (
     torch.tensor(1000, device=device, dtype=dtype) * Units.temperature
-)  # Initial temperature (K)
+)  # Initial temperature (1000 K)
 
 state = ts.nvt_langevin_init(state=state, model=model, kT=kT)
 

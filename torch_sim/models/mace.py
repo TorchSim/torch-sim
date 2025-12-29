@@ -133,7 +133,7 @@ class MaceModel(ModelInterface):
                 indicating which system each atom belongs to. If not provided with
                 atomic_numbers, all atoms are assumed to be in the same system.
             neighbor_list_fn (Callable): Function to compute neighbor lists.
-                Defaults to vesin_nl_ts.
+                Defaults to torch_nl_linked_cell.
             compute_forces (bool): Whether to compute forces. Defaults to True.
             compute_stress (bool): Whether to compute stress. Defaults to True.
             enable_cueq (bool): Whether to enable CuEq acceleration. Defaults to False.
@@ -155,7 +155,7 @@ class MaceModel(ModelInterface):
 
         # Load model if provided as path
         if isinstance(model, str | Path):
-            self.model = torch.load(model, map_location=self._device)
+            self.model = torch.load(model, map_location=self._device, weights_only=False)
         elif isinstance(model, torch.nn.Module):
             self.model = model.to(self._device)
         else:
@@ -163,6 +163,8 @@ class MaceModel(ModelInterface):
 
         self.model = self.model.eval()
 
+        # Move all model components to device
+        self.model = self.model.to(device=self._device)
         if self.dtype is not None:
             self.model = self.model.to(dtype=self.dtype)
 
@@ -298,37 +300,18 @@ class MaceModel(ModelInterface):
         ):
             self.setup_from_system_idx(sim_state.atomic_numbers, sim_state.system_idx)
 
-        # Process each system's neighbor list separately
-        edge_indices = []
-        shifts_list = []
-        unit_shifts_list = []
-        offset = 0
-
-        # TODO (AG): Currently doesn't work for batched neighbor lists
-        for sys_idx in range(self.n_systems):
-            system_mask = sim_state.system_idx == sys_idx
-            # Calculate neighbor list for this system
-            edge_idx, shifts_idx = self.neighbor_list_fn(
-                positions=sim_state.positions[system_mask],
-                cell=sim_state.row_vector_cell[sys_idx],
-                pbc=sim_state.pbc,
-                cutoff=self.r_max,
-            )
-
-            # Adjust indices for the system
-            edge_idx = edge_idx + offset
-            shifts = torch.mm(shifts_idx, sim_state.row_vector_cell[sys_idx])
-
-            edge_indices.append(edge_idx)
-            unit_shifts_list.append(shifts_idx)
-            shifts_list.append(shifts)
-
-            offset += len(sim_state.positions[system_mask])
-
-        # Combine all neighbor lists
-        edge_index = torch.cat(edge_indices, dim=1)
-        unit_shifts = torch.cat(unit_shifts_list, dim=0)
-        shifts = torch.cat(shifts_list, dim=0)
+        # Batched neighbor list using linked-cell algorithm
+        edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
+            sim_state.positions,
+            sim_state.row_vector_cell,
+            sim_state.pbc,
+            self.r_max,
+            sim_state.system_idx,
+        )
+        # Convert unit cell shift indices to Cartesian shifts
+        shifts = ts.transforms.compute_cell_shifts(
+            sim_state.row_vector_cell, unit_shifts, mapping_system
+        )
 
         # Build data dict for MACE model
         data_dict = dict(
