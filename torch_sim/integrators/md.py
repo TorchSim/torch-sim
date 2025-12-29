@@ -56,7 +56,7 @@ class MDState(SimState):
         """
         return self.momenta / self.masses.unsqueeze(-1)
 
-    def set_momenta(self, new_momenta: torch.Tensor) -> None:
+    def set_constrained_momenta(self, new_momenta: torch.Tensor) -> None:
         """Set new momenta, applying any constraints as needed."""
         for constraint in self.constraints:
             constraint.adjust_momenta(self, new_momenta)
@@ -166,7 +166,7 @@ def momentum_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
 
     """
     new_momenta = state.momenta + state.forces * dt
-    state.set_momenta(new_momenta)
+    state.set_constrained_momenta(new_momenta)
     return state
 
 
@@ -186,8 +186,7 @@ def position_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
 
     """
     new_positions = state.positions + state.velocities * dt
-    state.positions = new_positions
-    state.constrain_positions()
+    state.set_constrained_positions(new_positions)
     return state
 
 

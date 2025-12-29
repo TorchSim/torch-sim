@@ -260,7 +260,7 @@ class SimState:
         """
         self.cell = value.mT
 
-    def set_positions(self, new_positions: torch.Tensor) -> None:
+    def set_constrained_positions(self, new_positions: torch.Tensor) -> None:
         """Set the positions and apply constraints if they exist.
 
         Args:

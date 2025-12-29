@@ -23,7 +23,7 @@ def test_fix_com(ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesMode
     """Test adjustment of positions and momenta with FixCom constraint."""
     ar_supercell_sim_state.constraints = [FixCom([0])]
     initial_positions = ar_supercell_sim_state.positions.clone()
-    ar_supercell_sim_state.set_positions(initial_positions + 0.5)
+    ar_supercell_sim_state.set_constrained_positions(initial_positions + 0.5)
     assert torch.allclose(ar_supercell_sim_state.positions, initial_positions, atol=1e-8)
 
     ar_supercell_md_state = ts.nve_init(
@@ -32,7 +32,7 @@ def test_fix_com(ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesMode
         kT=torch.tensor(10.0, dtype=DTYPE),
         seed=42,
     )
-    ar_supercell_md_state.set_momenta(
+    ar_supercell_md_state.set_constrained_momenta(
         torch.randn_like(ar_supercell_md_state.momenta) * 0.1
     )
     assert torch.allclose(
@@ -49,7 +49,7 @@ def test_fix_atoms(ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesMo
     initial_positions = ar_supercell_sim_state.positions.clone()
     # displacement = torch.randn_like(ar_supercell_sim_state.positions) * 0.5
     displacement = 0.5
-    ar_supercell_sim_state.set_positions(initial_positions + displacement)
+    ar_supercell_sim_state.set_constrained_positions(initial_positions + displacement)
     assert torch.allclose(
         ar_supercell_sim_state.positions[indices_to_fix],
         initial_positions[indices_to_fix],
@@ -72,7 +72,7 @@ def test_fix_atoms(ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesMo
         kT=torch.tensor(10.0, dtype=DTYPE),
         seed=42,
     )
-    ar_supercell_md_state.set_momenta(
+    ar_supercell_md_state.set_constrained_momenta(
         torch.randn_like(ar_supercell_md_state.momenta) * 0.1
     )
     assert torch.allclose(

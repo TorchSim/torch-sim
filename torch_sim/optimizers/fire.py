@@ -212,13 +212,13 @@ def _vv_fire_step[T: "FireState | CellFireState"](  # noqa: PLR0915
     state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
 
     # Position update
-    state.set_positions(state.positions + atom_wise_dt * state.velocities)
+    state.set_constrained_positions(state.positions + atom_wise_dt * state.velocities)
 
     # Cell position updates are handled in the velocity update step above
 
     # Get new forces and energy
     model_output = model(state)
-    state.set_forces(model_output["forces"])
+    state.set_constrained_forces(model_output["forces"])
     state.energy = model_output["energy"]
     if "stress" in model_output:
         state.stress = model_output["stress"]
@@ -420,7 +420,7 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
         cur_deform_grad = cell_filters.deform_grad(
             state.reference_cell.mT, state.row_vector_cell
         )
-        state.set_positions(
+        state.set_constrained_positions(
             torch.linalg.solve(
                 cur_deform_grad[state.system_idx], state.positions.unsqueeze(-1)
             ).squeeze(-1)
@@ -455,18 +455,18 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
         new_deform_grad = cell_filters.deform_grad(
             state.reference_cell.mT, state.row_vector_cell
         )
-        state.set_positions(
+        state.set_constrained_positions(
             torch.bmm(
                 state.positions.unsqueeze(1),
                 new_deform_grad[state.system_idx].transpose(-2, -1),
             ).squeeze(1)
         )
     else:
-        state.set_positions(state.positions + dr_atom)
+        state.set_constrained_positions(state.positions + dr_atom)
 
     # Get new forces, energy, and stress
     model_output = model(state)
-    state.set_forces(model_output["forces"])
+    state.set_constrained_forces(model_output["forces"])
     state.energy = model_output["energy"]
     if "stress" in model_output:
         state.stress = model_output["stress"]

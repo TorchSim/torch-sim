@@ -108,7 +108,7 @@ def gradient_descent_step(
     atom_lr = pos_lr[state.system_idx].unsqueeze(-1)
 
     # Update atomic positions
-    state.set_positions(state.positions + atom_lr * state.forces)
+    state.set_constrained_positions(state.positions + atom_lr * state.forces)
 
     # Update cell if using cell optimization
     if isinstance(state, CellOptimState):
@@ -118,7 +118,7 @@ def gradient_descent_step(
 
     # Get updated forces, energy, and stress
     model_output = model(state)
-    state.set_forces(model_output["forces"])
+    state.set_constrained_forces(model_output["forces"])
     state.energy = model_output["energy"]
     if "stress" in model_output:
         state.stress = model_output["stress"]
