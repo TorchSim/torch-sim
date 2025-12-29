@@ -72,7 +72,8 @@ def _ou_step(
         c1.unsqueeze(-1) * state.momenta
         + c2 * torch.sqrt(state.masses).unsqueeze(-1) * noise
     )
-    state.set_momenta(new_momenta)
+    state.momenta = new_momenta
+    state.constrain_momenta()
     return state
 
 
@@ -373,7 +374,8 @@ def nvt_nose_hoover_step(
 
     # First half-step of chain evolution
     momenta, chain = chain_fns.half_step(state.momenta, chain, kT, state.system_idx)
-    state.set_momenta(momenta)
+    state.momenta = momenta
+    state.constrain_momenta()
 
     # Full velocity Verlet step
     state = velocity_verlet(state=state, dt=dt, model=model)
@@ -386,7 +388,8 @@ def nvt_nose_hoover_step(
 
     # Second half-step of chain evolution
     momenta, chain = chain_fns.half_step(state.momenta, chain, kT, state.system_idx)
-    state.set_momenta(momenta)
+    state.momenta = momenta
+    state.constrain_momenta()
     state.chain = chain
 
     return state

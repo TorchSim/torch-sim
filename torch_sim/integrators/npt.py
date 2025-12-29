@@ -431,7 +431,8 @@ def _npt_langevin_velocity_step(
     # Update momenta (velocities * masses) with all contributions
     new_velocities = c_1 + c_2 + c_3
     # Apply constraints.
-    state.set_momenta(new_velocities * state.masses.unsqueeze(-1))
+    state.momenta = new_velocities * state.masses.unsqueeze(-1)
+    state.constrain_momenta()
     return state
 
 
@@ -1270,9 +1271,9 @@ def _npt_nose_hoover_inner_step(
     # Return updated state
     state.positions = positions
     state.constrain_positions()
-    # state.set_momenta(momenta)
     state.momenta = momenta
     state.constrain_momenta()
+
     state.forces = model_output["forces"]
     state.energy = model_output["energy"]
     state.cell_position = cell_position

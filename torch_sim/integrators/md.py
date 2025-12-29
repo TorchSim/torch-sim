@@ -56,11 +56,10 @@ class MDState(SimState):
         """
         return self.momenta / self.masses.unsqueeze(-1)
 
-    def set_momenta(self, new_momenta: torch.Tensor) -> None:
+    def constrain_momenta(self) -> None:
         """Set new momenta, applying any constraints as needed."""
         for constraint in self.constraints:
-            constraint.adjust_momenta(self, new_momenta)
-        self.momenta = new_momenta
+            constraint.adjust_momenta(self, self.momenta)
 
     def calc_temperature(
         self, units: MetalUnits = MetalUnits.temperature
@@ -166,7 +165,8 @@ def momentum_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
 
     """
     new_momenta = state.momenta + state.forces * dt
-    state.set_momenta(new_momenta)
+    state.momenta = new_momenta
+    state.constrain_momenta()
     return state
 
 

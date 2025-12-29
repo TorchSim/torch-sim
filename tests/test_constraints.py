@@ -33,9 +33,8 @@ def test_fix_com(ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesMode
         kT=torch.tensor(10.0, dtype=DTYPE),
         seed=42,
     )
-    ar_supercell_md_state.set_momenta(
-        torch.randn_like(ar_supercell_md_state.momenta) * 0.1
-    )
+    ar_supercell_md_state.momenta = torch.randn_like(ar_supercell_md_state.momenta) * 0.1
+    ar_supercell_md_state.constrain_momenta()
     assert torch.allclose(
         ar_supercell_md_state.momenta.mean(dim=0),
         torch.zeros(3, dtype=DTYPE),
@@ -74,9 +73,8 @@ def test_fix_atoms(ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesMo
         kT=torch.tensor(10.0, dtype=DTYPE),
         seed=42,
     )
-    ar_supercell_md_state.set_momenta(
-        torch.randn_like(ar_supercell_md_state.momenta) * 0.1
-    )
+    ar_supercell_md_state.momenta = torch.randn_like(ar_supercell_md_state.momenta) * 0.1
+    ar_supercell_md_state.constrain_momenta()
     assert torch.allclose(
         ar_supercell_md_state.momenta[indices_to_fix],
         torch.zeros_like(ar_supercell_md_state.momenta[indices_to_fix]),
