@@ -102,14 +102,12 @@ def _configure_batches_iterator(
 
 def _determine_initial_step_for_integrate(
     trajectory_reporter: TrajectoryReporter | None,
-    n_steps: int,
 ) -> int:
     """Determine the initial step for resuming integration from trajectory files.
 
     Args:
         trajectory_reporter (TrajectoryReporter | None): The trajectory reporter to
             check for resume information
-        n_steps (int): The total number of steps to run
 
     Returns:
         int: The initial step to start from (1 if not resuming, otherwise last_step + 1)
@@ -119,20 +117,18 @@ def _determine_initial_step_for_integrate(
         last_logged_steps = trajectory_reporter.last_step
         last_logged_step = min(last_logged_steps)
         initial_step = initial_step + last_logged_step
-        if initial_step > n_steps:
-            warnings.warn(
-                f"Initial step {initial_step} > n_steps {n_steps}. Nothing will be done.",
-                stacklevel=2,
-            )
         if len(set(last_logged_steps)) != 1:
-            warnings.warn(
-                "Trajectory files have different last steps. "
-                "Using the minimum last step for resuming integration."
-                "This means that some trajectories may be truncated.",
-                stacklevel=2,
+            raise ValueError(
+                f"Trajectory files have different last steps: {set(last_logged_steps)} "
+                "Cannot resume integration from inconsistent states."
+                "You can truncate the trajectories to the same step using:\n\n"
+                "    trajectory_reporter.truncate_to_step(min(trajectory_reporter.last_step))\n\n"
+                "before calling integrate again."
             )
-            for traj in trajectory_reporter.trajectories:
-                traj.truncate_to_step(last_logged_step)
+        print(
+            f"Detected existing trajectory with last step {last_logged_step}."
+            f" Resuming integration from step {initial_step}."
+        )
     return initial_step
 
 
@@ -254,9 +250,7 @@ def integrate[T: SimState](  # noqa: C901
         integrator (Integrator | tuple): Either a key from Integrator or a tuple of
             (init_func, step_func) functions.
         n_steps (int): Number of integration steps. If resuming from a trajectory, this
-            is the total number of steps to run, not the number of additional steps.
-            That is, if the trajectory has 10 steps and n_steps=20, the integrator will
-            run an additional 10 steps.
+            is the  number of additional steps to run.
         temperature (float | ArrayLike): Temperature or array of temperatures for each
             step or system:
             Float: used for all steps and systems
@@ -310,9 +304,7 @@ def integrate[T: SimState](  # noqa: C901
             properties=["kinetic_energy", "potential_energy", "temperature"],
         )
     # Auto-detect initial step from trajectory files for resuming integration
-    initial_step = _determine_initial_step_for_integrate(trajectory_reporter, n_steps)
-    if initial_step > n_steps:
-        return initial_state  # type: ignore[return-value]
+    initial_step = _determine_initial_step_for_integrate(trajectory_reporter)
 
     final_states: list[T] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
@@ -342,12 +334,12 @@ def integrate[T: SimState](  # noqa: C901
             )
 
         # run the simulation
-        for step in range(initial_step, n_steps + 1):
+        for step in range(initial_step, initial_step + n_steps):
             state = step_func(
                 state=state,
                 model=model,
                 dt=dt,
-                kT=batch_kT[step - 1],
+                kT=batch_kT[step - initial_step],
                 **integrator_kwargs,
             )
 

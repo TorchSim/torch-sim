@@ -918,19 +918,7 @@ def test_integrate_append_to_trajectory(
         trajectory_reporter_2 = ts.TrajectoryReporter(
             traj_files, state_frequency=1, trajectory_kwargs=dict(mode="a")
         )
-        # Nothing to do here, as we already have step 5 in the trajectory
-        # and n_steps is 5.
-        state_2 = ts.integrate(
-            system=int_state,
-            model=lj_model,
-            timestep=0.001,
-            temperature=300.0,
-            n_steps=5,
-            integrator=ts.Integrator.nvt_langevin,
-            trajectory_reporter=trajectory_reporter_2,
-        )
-        torch.testing.assert_close(state_2.positions, int_state.positions)
-        # run two (7 - 5) more steps of integration.
+        # run 7 more steps of integration.
         _ = ts.integrate(
             system=int_state,
             model=lj_model,
@@ -942,8 +930,8 @@ def test_integrate_append_to_trajectory(
         )
         for traj in trajectory_reporter_2.trajectories:
             with TorchSimTrajectory(traj.filename, mode="r") as traj:
-                # Check that the trajectory file now has 7 frames
-                np.testing.assert_allclose(traj.get_steps("positions"), range(1, 8))
+                # Check that the trajectory file now has 12 (5 + 7) frames
+                np.testing.assert_allclose(traj.get_steps("positions"), range(1, 13))
 
 
 def test_truncate_trajectory(
@@ -1005,6 +993,55 @@ def test_truncate_trajectory(
                 traj.truncate_to_step(0)
 
 
+def test_truncate_trajectory_reporter(
+    si_double_sim_state: SimState, lj_model: LennardJonesModel
+) -> None:
+    """
+    Test TrajectoryReporter.truncate_to_step().
+    """
+
+    # Create a temporary trajectory file
+    with tempfile.TemporaryDirectory() as temp_dir:
+        traj_files = [
+            f"{temp_dir}/truncate_reporter_trajectory_{idx}.h5" for idx in range(2)
+        ]
+
+        # Initialize model and state
+        trajectory_reporter = ts.TrajectoryReporter(
+            traj_files,
+            state_frequency=1,
+            prop_calculators={1: {"velocities": lambda state: state.velocities}},
+        )
+
+        # First integration run for 5 steps.
+        _ = ts.integrate(
+            system=si_double_sim_state,
+            model=lj_model,
+            timestep=0.001,
+            n_steps=5,
+            temperature=300.0,
+            integrator=ts.Integrator.nvt_langevin,
+            trajectory_reporter=trajectory_reporter,
+        )
+
+        trajectory_reporter.truncate_to_step(step=min(trajectory_reporter.last_step))
+        assert trajectory_reporter.last_step == [5, 5]
+        with pytest.raises(
+            ValueError,
+            match=(
+                "Step 7 is greater than the minimum last step "
+                r"across trajectories \(5\)\."
+            ),
+        ):
+            trajectory_reporter.truncate_to_step(7)
+        # try negative number
+        with pytest.raises(ValueError, match="Step must be greater than 0. Got step=-2"):
+            trajectory_reporter.truncate_to_step(-2)
+        # truncate to step 3
+        trajectory_reporter.truncate_to_step(3)
+        assert trajectory_reporter.last_step == [3, 3]
+
+
 def test_integrate_uneven_trajectory_append(
     si_double_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
@@ -1045,21 +1082,14 @@ def test_integrate_uneven_trajectory_append(
         trajectory_reporter_2 = ts.TrajectoryReporter(
             traj_files, state_frequency=1, trajectory_kwargs=dict(mode="a")
         )
-        # Continue integration for one step, which means we first
-        # truncate the first trajectory to 3 steps to match the second one,
-        # and then append 4th step to both.
-        _ = ts.integrate(
-            system=si_double_sim_state,
-            model=lj_model,
-            timestep=0.001,
-            temperature=300.0,
-            n_steps=4,
-            integrator=ts.Integrator.nvt_langevin,
-            trajectory_reporter=trajectory_reporter_2,
-        )
-
-        for traj in trajectory_reporter_2.trajectories:
-            # both trajectories should have 4 frames now.
-            with TorchSimTrajectory(traj.filename, mode="r") as traj:
-                expected_steps = [1, 2, 3, 4]
-                np.testing.assert_allclose(traj.get_steps("positions"), expected_steps)
+        # Should raise a ValueError:
+        with pytest.raises(ValueError):
+            _ = ts.integrate(
+                system=si_double_sim_state,
+                model=lj_model,
+                timestep=0.001,
+                temperature=300.0,
+                n_steps=4,
+                integrator=ts.Integrator.nvt_langevin,
+                trajectory_reporter=trajectory_reporter_2,
+            )

@@ -213,6 +213,29 @@ class TrajectoryReporter:
             return self.trajectories[0].array_registry
         return {}
 
+    def truncate_to_step(self, step: int) -> None:
+        """Truncate all trajectory files to the specified step.
+        **WARNING**: This operation is irreversible and will remove data from
+        the trajectory files.
+
+        Args:
+            step (int): The step to truncate to.
+        """
+        if step <= 0:
+            raise ValueError(f"Step must be greater than 0. Got step={step}.")
+        if step > min(self.last_step):
+            raise ValueError(
+                f"Step {step} is greater than the minimum last step "
+                f"across trajectories ({min(self.last_step)})."
+            )
+        for trajectory in self.trajectories:
+            # trajectory file could be closed
+            if trajectory._file.isopen:
+                trajectory.truncate_to_step(step)
+            else:
+                with TorchSimTrajectory(trajectory.filename, mode="a") as traj:
+                    traj.truncate_to_step(step)
+
     def _add_model_arg_to_prop_calculators(self) -> None:
         """Add model argument to property calculators that only accept state.
 
@@ -1120,6 +1143,8 @@ class TorchSimTrajectory:
 
     def truncate_to_step(self, step: int) -> None:
         """Truncate the trajectory to a specified step.
+        **WARNING**: This operation is irreversible and will permanently
+        modify the trajectory file.
 
         Removes frames from the end of the trajectory to reduce its length such that the
         last logged step is `step`.
