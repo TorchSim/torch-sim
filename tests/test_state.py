@@ -28,7 +28,7 @@ def test_get_attrs_for_scope(si_sim_state: SimState) -> None:
     per_atom_attrs = dict(get_attrs_for_scope(si_sim_state, "per-atom"))
     assert set(per_atom_attrs) == {"positions", "masses", "atomic_numbers", "system_idx"}
     per_system_attrs = dict(get_attrs_for_scope(si_sim_state, "per-system"))
-    assert set(per_system_attrs) == {"cell"}
+    assert set(per_system_attrs) == {"cell", "charge", "spin"}
     global_attrs = dict(get_attrs_for_scope(si_sim_state, "global"))
     assert set(global_attrs) == {"pbc"}
 
@@ -650,3 +650,34 @@ def test_state_to_device_no_side_effects(si_sim_state: SimState) -> None:
             "New state doesn't have correct device!"
         )
         assert si_sim_state is not new_state_gpu, "New state is not a different object!"
+
+
+def test_state_set_cell(ti_sim_state: SimState) -> None:
+    """Test the set_cell method of SimState."""
+    new_cell = (
+        torch.diag_embed(
+            torch.tensor(
+                [3.0, 4.0, 5.0], device=ti_sim_state.device, dtype=ti_sim_state.dtype
+            )
+        )
+        @ ti_sim_state.cell
+    )
+    ase_atoms = ti_sim_state.to_atoms()[0]
+    ti_sim_state.set_cell(new_cell, scale_atoms=True)
+    ase_atoms.set_cell(new_cell[0].T.cpu().numpy(), scale_atoms=True)
+    assert torch.allclose(
+        ti_sim_state.positions.cpu(), torch.from_numpy(ase_atoms.positions)
+    )
+
+    M = torch.tensor(
+        [[[1.0, 0.2, 0.0], [0.1, 1.5, 0.0], [0.0, 0.0, 2.0]]],
+        device=DEVICE,
+        dtype=ti_sim_state.dtype,
+    )
+    new_cell = M @ ti_sim_state.cell
+    ase_atoms = ti_sim_state.to_atoms()[0]
+    ti_sim_state.set_cell(new_cell, scale_atoms=True)
+    ase_atoms.set_cell(new_cell[0].T.cpu().numpy(), scale_atoms=True)
+    assert torch.allclose(
+        ti_sim_state.positions.cpu(), torch.from_numpy(ase_atoms.positions)
+    )

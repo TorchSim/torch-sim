@@ -232,6 +232,13 @@ def atoms_to_state(
     if not all(np.all(np.equal(at.pbc, atoms_list[0].pbc)) for at in atoms_list[1:]):
         raise ValueError("All systems must have the same periodic boundary conditions")
 
+    charge = torch.tensor(
+        [at.info.get("charge", 0.0) for at in atoms_list], dtype=dtype, device=device
+    )
+    spin = torch.tensor(
+        [at.info.get("spin", 0.0) for at in atoms_list], dtype=dtype, device=device
+    )
+
     return ts.SimState(
         positions=positions,
         masses=masses,
@@ -239,6 +246,8 @@ def atoms_to_state(
         pbc=atoms_list[0].pbc,
         atomic_numbers=atomic_numbers,
         system_idx=system_idx,
+        charge=charge,
+        spin=spin,
     )
 
 

@@ -49,13 +49,13 @@ results = model(state)
 SMOKE_TEST = os.getenv("CI") is not None
 N_steps_nvt = 20 if SMOKE_TEST else 2_000
 N_steps_npt = 20 if SMOKE_TEST else 2_000
-dt = torch.tensor(0.001 * Units.time, device=device, dtype=dtype)  # Time step (1 ps)
+dt = torch.tensor(0.001 * Units.time, device=device, dtype=dtype)  # Time step (1 fs)
 kT = (
     torch.tensor(300, device=device, dtype=dtype) * Units.temperature
 )  # Initial temperature (300 K)
 target_pressure = torch.tensor(
     10_000 * Units.pressure, device=device, dtype=dtype
-)  # Target pressure (0 bar)
+)  # Target pressure (10 Kbar)
 
 state = ts.nvt_nose_hoover_init(state=state, model=model, kT=kT, dt=dt, seed=1)
 
