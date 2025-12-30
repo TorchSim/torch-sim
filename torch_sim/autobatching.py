@@ -578,7 +578,9 @@ class BinningAutoBatcher[T: SimState]:
         self.index_to_scaler = dict(enumerate(self.memory_scalers))
         self.index_bins = to_constant_volume_bins(
             self.index_to_scaler, max_volume=self.max_memory_scaler
-        )
+        )  # list[dict[original_index: int, memory_scale:float]]
+        # Convert to list of lists of indices
+        self.index_bins = [list(batch.keys()) for batch in self.index_bins]
         self.batched_states = []
         for index_bin in self.index_bins:
             self.batched_states.append([self.state_slices[idx] for idx in index_bin])
