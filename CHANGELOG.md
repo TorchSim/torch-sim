@@ -8,8 +8,11 @@
   - Added `FixAtoms` constraint to fix specific atoms in place
   - Added `FixCom` constraint to prevent center of mass drift
   - Constraints automatically adjust degrees of freedom for accurate temperature calculations
-  - Full support across all integrators (NVE, NVT, NPT) and optimizers (FIRE, Gradient Descent)
+  - Support for NVE and NVT and optimizers (FIRE, Gradient Descent). Constraints on NPT should be used with caution.
   - Constraints preserved during state manipulation (slicing, splitting, concatenation)
+ 
+### 💥 Breaking Changes
+* Trajectories are not wrapped anymore. MLIP models still wrapped coordinates before force evaluation but SimState.positions are not wrapped during MD.
 
 ## v0.5.0
 
