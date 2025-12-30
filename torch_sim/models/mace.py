@@ -168,7 +168,7 @@ class MaceModel(ModelInterface):
 
         if enable_cueq:
             print("Converting models to CuEq for acceleration")  # noqa: T201
-            self.model = run_e3nn_to_cueq(self.model)
+            self.model = run_e3nn_to_cueq(self.model, device=self.device.type)
 
         # Set model properties
         self.r_max = self.model.r_max
