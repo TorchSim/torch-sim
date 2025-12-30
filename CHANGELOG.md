@@ -1,6 +1,16 @@
 <!-- markdownlint-disable -->
 # Changelog
 
+## Unreleased
+
+### 🎉 New Features
+* Constraints support for molecular dynamics and optimization by @thomasloux in [#294](https://github.com/TorchSim/torch-sim/pull/294)
+  - Added `FixAtoms` constraint to fix specific atoms in place
+  - Added `FixCom` constraint to prevent center of mass drift
+  - Constraints automatically adjust degrees of freedom for accurate temperature calculations
+  - Full support across all integrators (NVE, NVT, NPT) and optimizers (FIRE, Gradient Descent)
+  - Constraints preserved during state manipulation (slicing, splitting, concatenation)
+
 ## v0.5.0
 
 This release focuses on improving batch processing capabilities across TorchSim. The neighbor list module has been completely refactored to support batched calculations with multiple backend implementations, elastic tensor calculations now leverage batched operations for improved performance, and a bug fix ensures Monte Carlo swaps work correctly with ragged (different-sized) systems.
