@@ -160,6 +160,8 @@ def _determine_initial_step_for_optimize(
         )
         initial_step = initial_step + last_logged_steps
     return initial_step
+
+
 def _normalize_temperature_tensor(
     temperature: float | list | torch.Tensor, n_steps: int, initial_state: SimState
 ) -> torch.Tensor:
