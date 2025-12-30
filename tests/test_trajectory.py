@@ -1024,8 +1024,8 @@ def test_truncate_trajectory_reporter(
             trajectory_reporter=trajectory_reporter,
         )
 
-        trajectory_reporter.truncate_to_step(step=min(trajectory_reporter.last_step))
-        assert trajectory_reporter.last_step == [5, 5]
+        trajectory_reporter.truncate_to_step(step=min(trajectory_reporter.last_steps))
+        assert trajectory_reporter.last_steps == [5, 5]
         with pytest.raises(
             ValueError,
             match=(
@@ -1039,7 +1039,7 @@ def test_truncate_trajectory_reporter(
             trajectory_reporter.truncate_to_step(-2)
         # truncate to step 3
         trajectory_reporter.truncate_to_step(3)
-        assert trajectory_reporter.last_step == [3, 3]
+        assert trajectory_reporter.last_steps == [3, 3]
 
 
 def test_integrate_uneven_trajectory_append(

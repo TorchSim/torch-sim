@@ -114,7 +114,7 @@ def _determine_initial_step_for_integrate(
     """
     initial_step: int = 1
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
-        last_logged_steps = trajectory_reporter.last_step
+        last_logged_steps = trajectory_reporter.last_steps
         last_logged_step = min(last_logged_steps)
         initial_step = initial_step + last_logged_step
         if len(set(last_logged_steps)) != 1:
@@ -153,7 +153,7 @@ def _determine_initial_step_for_optimize(
     )
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
         last_logged_steps = torch.tensor(
-            trajectory_reporter.last_step, dtype=torch.long, device=state.device
+            trajectory_reporter.last_steps, dtype=torch.long, device=state.device
         )
         initial_step = initial_step + last_logged_steps
     return initial_step

@@ -42,7 +42,6 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
-
 if TYPE_CHECKING:
     from ase import Atoms
     from ase.io.trajectory import TrajectoryReader
@@ -223,10 +222,10 @@ class TrajectoryReporter:
         """
         if step <= 0:
             raise ValueError(f"Step must be greater than 0. Got step={step}.")
-        if step > min(self.last_step):
+        if step > min(self.last_steps):
             raise ValueError(
                 f"Step {step} is greater than the minimum last step "
-                f"across trajectories ({min(self.last_step)})."
+                f"across trajectories ({min(self.last_steps)})."
             )
         for trajectory in self.trajectories:
             # trajectory file could be closed
@@ -367,7 +366,7 @@ class TrajectoryReporter:
         return self.trajectory_kwargs["mode"]
 
     @property
-    def last_step(self) -> list[int]:
+    def last_steps(self) -> list[int]:
         """Get the last logged step across all trajectory files.
 
         This is useful for resuming optimizations from where they left off.
