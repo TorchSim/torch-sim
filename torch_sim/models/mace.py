@@ -155,9 +155,9 @@ class MaceModel(ModelInterface):
 
         # Load model if provided as path
         if isinstance(model, str | Path):
-            self.model = torch.load(model, map_location=self._device)
+            self.model = torch.load(model, map_location=self.device)
         elif isinstance(model, torch.nn.Module):
-            self.model = model.to(self._device)
+            self.model = model.to(self.device)
         else:
             raise TypeError("Model must be a path or torch.nn.Module")
 
