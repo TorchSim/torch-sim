@@ -1083,7 +1083,9 @@ def test_integrate_uneven_trajectory_append(
             traj_files, state_frequency=1, trajectory_kwargs=dict(mode="a")
         )
         # Should raise a ValueError:
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match="Cannot resume integration from inconsistent states"
+        ):
             _ = ts.integrate(
                 system=si_double_sim_state,
                 model=lj_model,

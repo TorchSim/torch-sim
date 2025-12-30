@@ -122,12 +122,13 @@ def _determine_initial_step_for_integrate(
                 f"Trajectory files have different last steps: {set(last_logged_steps)} "
                 "Cannot resume integration from inconsistent states."
                 "You can truncate the trajectories to the same step using:\n\n"
-                "    trajectory_reporter.truncate_to_step(min(trajectory_reporter.last_step))\n\n"
+                "    reporter.truncate_to_step(min(reporter.last_step))\n\n"
                 "before calling integrate again."
             )
-        print(
+        warnings.warn(
             f"Detected existing trajectory with last step {last_logged_step}."
-            f" Resuming integration from step {initial_step}."
+            f" Resuming integration from step {initial_step}.",
+            stacklevel=2,
         )
     return initial_step
 
