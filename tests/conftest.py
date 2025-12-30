@@ -339,7 +339,7 @@ def distorted_fcc_al_conventional_sim_state() -> ts.SimState:
     positions = atoms_fcc.get_positions()
     np_rng = np.random.default_rng(seed=42)
     positions += np_rng.normal(scale=0.01, size=positions.shape)
-    atoms_fcc.set_positions(positions)
+    atoms_fcc.positions = positions
 
     # Convert the ASE Atoms object to SimState (will be a single batch with 4 atoms)
     return ts.io.atoms_to_state(atoms_fcc, device=DEVICE, dtype=DTYPE)

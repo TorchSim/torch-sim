@@ -1,5 +1,6 @@
 """Implementations of NPT integrators."""
 
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -364,14 +365,7 @@ def _npt_langevin_position_step(
     )
 
     # Update positions with all contributions
-    state.positions = c_1 + c_2.unsqueeze(-1) * c_3
-
-    # Apply periodic boundary conditions if needed
-    if state.pbc.any():
-        state.positions = ts.transforms.pbc_wrap_batched(
-            state.positions, state.cell, state.system_idx, state.pbc
-        )
-
+    state.set_constrained_positions(c_1 + c_2.unsqueeze(-1) * c_3)
     return state
 
 
@@ -435,7 +429,8 @@ def _npt_langevin_velocity_step(
 
     # Update momenta (velocities * masses) with all contributions
     new_velocities = c_1 + c_2 + c_3
-    state.momenta = new_velocities * state.masses.unsqueeze(-1)
+    # Apply constraints.
+    state.set_constrained_momenta(new_velocities * state.masses.unsqueeze(-1))
     return state
 
 
@@ -565,15 +560,15 @@ def npt_langevin_init(
     kT = torch.as_tensor(kT, device=device, dtype=dtype)
     dt = torch.as_tensor(dt, device=device, dtype=dtype)
 
+    if not isinstance(state, SimState):
+        state = SimState(**state)
+
     if alpha.ndim == 0:
         alpha = alpha.expand(state.n_systems)
     if cell_alpha.ndim == 0:
         cell_alpha = cell_alpha.expand(state.n_systems)
     if b_tau.ndim == 0:
         b_tau = b_tau.expand(state.n_systems)
-
-    if not isinstance(state, SimState):
-        state = SimState(**state)
 
     # Get model output to initialize forces and stress
     model_output = model(state)
@@ -606,6 +601,16 @@ def npt_langevin_init(
     )
     cell_masses = (n_atoms_per_system + 1) * batch_kT * b_tau * b_tau
 
+    if state.constraints:
+        # warn if constraints are present
+        warnings.warn(
+            "Constraints are present in the system. "
+            "Make sure they are compatible with NPT Langevin dynamics."
+            "We recommend not using constraints with NPT dynamics for now.",
+            UserWarning,
+            stacklevel=3,
+        )
+
     # Create the initial state
     return NPTLangevinState(
         positions=state.positions,
@@ -625,6 +630,7 @@ def npt_langevin_init(
         cell_velocities=cell_velocities,
         cell_masses=cell_masses,
         cell_alpha=cell_alpha,
+        _constraints=state.constraints,
     )
 
 
@@ -1027,14 +1033,7 @@ def _npt_nose_hoover_exp_iL1(  # noqa: N802
         state.positions * (torch.exp(x_expanded) - 1)
         + dt * velocities * torch.exp(x_2_expanded) * sinh_expanded
     )
-    new_positions = state.positions + new_positions
-
-    # Apply periodic boundary conditions if needed
-    if state.pbc.any():
-        return ts.transforms.pbc_wrap_batched(
-            new_positions, state.current_cell, state.system_idx, pbc=state.pbc
-        )
-    return new_positions
+    return state.positions + new_positions
 
 
 def _npt_nose_hoover_exp_iL2(  # noqa: N802
@@ -1244,7 +1243,7 @@ def _npt_nose_hoover_inner_step(
 
     # Update particle positions and forces
     positions = _npt_nose_hoover_exp_iL1(state, state.velocities, cell_velocities, dt)
-    state.positions = positions
+    state.set_constrained_positions(positions)
     state.cell = cell
     model_output = model(state)
 
@@ -1265,8 +1264,8 @@ def _npt_nose_hoover_inner_step(
     cell_momentum = cell_momentum + dt_2 * cell_force_val.unsqueeze(-1)
 
     # Return updated state
-    state.positions = positions
-    state.momenta = momenta
+    state.set_constrained_positions(positions)
+    state.set_constrained_momenta(momenta)
     state.forces = model_output["forces"]
     state.energy = model_output["energy"]
     state.cell_position = cell_position
@@ -1411,6 +1410,16 @@ def npt_nose_hoover_init(
     forces = model_output["forces"]
     energy = model_output["energy"]
 
+    if state.constraints:
+        # warn if constraints are present
+        warnings.warn(
+            "Constraints are present in the system. "
+            "Make sure they are compatible with NPT Nosé Hoover dynamics."
+            "We recommend not using constraints with NPT dynamics for now.",
+            UserWarning,
+            stacklevel=3,
+        )
+
     # Create initial state
     return NPTNoseHooverState(
         positions=state.positions,
@@ -1430,6 +1439,7 @@ def npt_nose_hoover_init(
         thermostat=thermostat_fns.initialize(dof_per_system, KE_thermostat, kT),
         barostat_fns=barostat_fns,
         thermostat_fns=thermostat_fns,
+        _constraints=state.constraints,
     )
 
 
