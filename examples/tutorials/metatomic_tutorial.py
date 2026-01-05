@@ -1,7 +1,7 @@
 # %%
 # /// script
 # dependencies = [
-#     "metatrain[pet]==2025.7",
+#     "metatrain[pet]==2025.12",
 #     "metatomic-torch>=0.1.1,<0.2",
 #     "vesin-torch>=0.3.7",
 # ]
