@@ -123,7 +123,9 @@ jobs:
             uv pip install -r fairchem-repo/packages/requirements-optional.txt --system
           fi
           uv pip install -e fairchem-repo/packages/fairchem-core[dev] --system
-          uv pip install -e ".[test]" --resolution=${{ matrix.version.resolution }} --system
+          uv pip install -e "." --no-deps --system
+          uv pip install "h5py>=3.12.1" "numpy>=1.26,<3" "tables>=3.10.2" "torch>=2" "tqdm>=4.67" --system
+          uv pip install "ase>=3.26" "phonopy>=2.37.0" "psutil>=7.0.0" "pymatgen>=2025.6.14" "pytest-cov>=6" "pytest>=8" --resolution=${{ matrix.version.resolution }} --system
 
 
       - name: Install torch_sim with model dependencies
