@@ -153,8 +153,10 @@ def _determine_initial_step_for_optimize(
         size=(state.n_systems,), fill_value=1, dtype=torch.long, device=state.device
     )
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
+        last_steps = trajectory_reporter.last_steps
+        last_steps = [step if step is not None else 0 for step in last_steps]
         last_logged_steps = torch.tensor(
-            trajectory_reporter.last_steps, dtype=torch.long, device=state.device
+            last_steps, dtype=torch.long, device=state.device
         )
         initial_step = initial_step + last_logged_steps
     return initial_step
