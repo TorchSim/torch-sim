@@ -599,7 +599,6 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
 
     # Auto-detect initial step from trajectory files for resuming optimizations
     step = _determine_initial_step_for_optimize(trajectory_reporter, state)
-    steps_so_far = 0
 
     last_energy = None
     all_converged_states: list[T] = []
@@ -626,7 +625,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         if (
             trajectory_reporter is not None
             and og_filenames is not None
-            and (steps_so_far == 0 or len(converged_states) > 0)
+            and len(converged_states) > 0
         ):
             trajectory_reporter.reopen_trajectories(
                 filenames=[og_filenames[i] for i in autobatcher.current_idx]
