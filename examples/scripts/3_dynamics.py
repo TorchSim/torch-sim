@@ -370,7 +370,8 @@ for step in range(N_steps_npt):
         xx, yy, zz = torch.diag(state.current_cell[0])
         print(
             f"Step {step}: Temperature: {temp.item():.4f} K, Invariant: {invariant:.4f}, "
-            f"Pressure: {pressure:.4f} eV/Å³, Cell: [{xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}]"
+            f"Pressure: {pressure:.4f} eV/Å³, "
+            f"Cell: [{xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}]"
         )
     state = ts.npt_nose_hoover_step(
         state=state,

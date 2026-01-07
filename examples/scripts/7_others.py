@@ -140,7 +140,7 @@ print(f"  Cutoff: {cutoff:.2f} Å")
 # Simulation parameters
 timestep = 0.001  # ps (1 fs)
 dt = torch.tensor(timestep * Units.time, device=device, dtype=dtype)
-temp_kT = temperature * Units.temperature
+temp_kT = temperature * Units.temperature  # noqa: N816
 kT = torch.tensor(temp_kT, device=device, dtype=dtype)
 
 # Initialize NVE integrator
@@ -189,7 +189,7 @@ time = time_steps * correlation_dt * timestep * 1000  # Convert to fs
 if vacf_calc.vacf is not None:
     vacf_data = vacf_calc.vacf.cpu().numpy()
     print("\nVACF calculation complete:")
-    print(f"  Number of windows averaged: {vacf_calc._window_count}")
+    print(f"  Number of windows averaged: {vacf_calc._window_count}")  # noqa: SLF001
     print(f"  VACF at t=0: {vacf_data[0]:.4f}")
     print(f"  VACF decay at t_max: {vacf_data[-1]:.4f}")
 
@@ -203,7 +203,7 @@ if vacf_calc.vacf is not None:
             f"Velocity Autocorrelation Function (Argon at {temperature}K)", fontsize=14
         )
         plt.axhline(y=0, color="k", linestyle="--", alpha=0.3)
-        plt.grid(True, alpha=0.3)
+        plt.grid(visible=True, alpha=0.3)
         plt.tight_layout()
         plt.savefig("tmp/vacf_example.png", dpi=150)
         print("\n✓ VACF plot saved to tmp/vacf_example.png")

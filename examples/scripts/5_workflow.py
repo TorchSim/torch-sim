@@ -53,6 +53,8 @@ mace_model = MaceModel(
 fmax = 0.05  # Force convergence threshold
 max_atoms_in_batch = 50 if SMOKE_TEST else 8_000
 
+prng = np.random.Generator(np.random.PCG64(seed=42))
+
 # Load or create structures
 if not SMOKE_TEST:
     try:
@@ -69,15 +71,15 @@ if not SMOKE_TEST:
         ase_atoms_list = []
         for _ in range(n_structures_to_relax):
             atoms = bulk("Al", "hcp", a=4.05).repeat((2, 2, 2))
-            atoms.positions += 0.1 * np.random.randn(*atoms.positions.shape)
+            atoms.positions += 0.1 * prng.normal(size=atoms.positions.shape)
             ase_atoms_list.append(atoms)
 else:
     n_structures_to_relax = 2
     print(f"Loading {n_structures_to_relax:,} test structures...")
     al_atoms = bulk("Al", "hcp", a=4.05)
-    al_atoms.positions += 0.1 * np.random.randn(*al_atoms.positions.shape)
+    al_atoms.positions += 0.1 * prng.normal(size=al_atoms.positions.shape)
     fe_atoms = bulk("Fe", "bcc", a=2.86).repeat((2, 2, 2))
-    fe_atoms.positions += 0.1 * np.random.randn(*fe_atoms.positions.shape)
+    fe_atoms.positions += 0.1 * prng.normal(size=fe_atoms.positions.shape)
     ase_atoms_list = [al_atoms, fe_atoms]
 
 # Initialize first batch
@@ -222,10 +224,7 @@ print(f"  Poisson's ratio: {poisson_ratio:.4f}")
 print(f"  Pugh's ratio (K/G): {pugh_ratio:.4f}")
 
 # Interpret Pugh's ratio
-if pugh_ratio > 1.75:
-    material_type = "ductile"
-else:
-    material_type = "brittle"
+material_type = "ductile" if pugh_ratio > 1.75 else "brittle"
 print(f"  Material behavior: {material_type}")
 
 print("\n" + "=" * 70)

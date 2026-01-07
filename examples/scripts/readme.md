@@ -17,11 +17,13 @@ uv run 1_introduction.py
 ## Overview of Examples
 
 ### 1. [1_introduction.py](1_introduction.py)
-**Introduction to TorchSim basics**
+
+#### Introduction to TorchSim basics
 
 Learn the fundamentals of TorchSim with simple examples using classical and machine learning potentials.
 
 **Topics covered:**
+
 - Lennard-Jones model for classical potentials
 - MACE model for machine learning potentials
 - Batched inference for efficient computation
@@ -32,11 +34,13 @@ Learn the fundamentals of TorchSim with simple examples using classical and mach
 ---
 
 ### 2. [2_structural_optimization.py](2_structural_optimization.py)
-**Structure optimization techniques**
+
+#### Structure optimization techniques
 
 Comprehensive examples of structural relaxation using different optimizers and cell filters.
 
 **Topics covered:**
+
 - FIRE optimizer (Fast Inertial Relaxation Engine)
 - Gradient descent optimizer
 - Position-only optimization
@@ -52,11 +56,13 @@ Comprehensive examples of structural relaxation using different optimizers and c
 ---
 
 ### 3. [3_dynamics.py](3_dynamics.py)
-**Molecular dynamics simulations**
+
+#### Molecular dynamics simulations
 
 Explore various ensembles and integrators for molecular dynamics.
 
 **Topics covered:**
+
 - **NVE ensemble** (microcanonical): Energy conservation
 - **NVT ensemble** (canonical): Temperature control with Langevin and Nose-Hoover thermostats
 - **NPT ensemble** (isothermal-isobaric): Pressure and temperature control
@@ -71,11 +77,13 @@ Explore various ensembles and integrators for molecular dynamics.
 ---
 
 ### 4. [4_high_level_api.py](4_high_level_api.py)
-**Simplified high-level interface**
+
+#### Simplified high-level interface
 
 Use TorchSim's high-level API for common workflows with minimal code.
 
 **Topics covered:**
+
 - Simple integration interface (`ts.integrate`)
 - Simple optimization interface (`ts.optimize`)
 - Trajectory logging and reporting
@@ -90,11 +98,13 @@ Use TorchSim's high-level API for common workflows with minimal code.
 ---
 
 ### 5. [5_workflow.py](5_workflow.py)
-**Advanced workflows and utilities**
+
+#### Advanced workflows and utilities
 
 Complex simulation workflows for production use cases.
 
 **Topics covered:**
+
 - In-flight autobatching for memory-efficient optimization
 - Dynamic batch management
 - Elastic constant calculations
@@ -109,11 +119,13 @@ Complex simulation workflows for production use cases.
 ---
 
 ### 6. [6_phonons.py](6_phonons.py)
-**Phonon calculations**
+
+#### Phonon calculations
 
 Calculate vibrational properties using finite differences.
 
 **Topics covered:**
+
 - Structure relaxation for phonons
 - Phonon density of states (DOS)
 - Phonon band structure
@@ -129,11 +141,13 @@ Calculate vibrational properties using finite differences.
 ---
 
 ### 7. [7_others.py](7_others.py)
-**Miscellaneous advanced features**
+
+#### Miscellaneous advanced features
 
 Advanced features and utility functions.
 
 **Topics covered:**
+
 - Batched neighbor list calculations
   - Linked cell method (efficient for large systems)
   - N^2 method (simple reference implementation)
@@ -198,25 +212,30 @@ We recommend working through the examples in order:
 ## Key Features Demonstrated
 
 ### Models
+
 - **Lennard-Jones**: Classical pair potential
 - **MACE**: Machine learning interatomic potential
 
 ### Optimizers
+
 - **FIRE**: Fast, adaptive optimizer for geometry relaxation
 - **Gradient Descent**: Simple first-order optimizer
 
 ### Integrators
+
 - **NVE**: Microcanonical ensemble (energy conservation)
 - **NVT Langevin**: Canonical ensemble with stochastic thermostat
 - **NVT Nose-Hoover**: Canonical ensemble with deterministic thermostat
 - **NPT Nose-Hoover**: Isothermal-isobaric ensemble
 
 ### Cell Filters
+
 - **None**: Position-only optimization
 - **Unit Cell**: Optimize cell with uniform scaling
 - **Frechet Cell**: Full cell optimization with metric-preserving updates
 
 ### Batching
+
 - Efficient batched inference for multiple structures
 - Dynamic autobatching for memory optimization
 - Mixed system sizes in single batch
@@ -238,6 +257,7 @@ We recommend working through the examples in order:
 ## Differences from Original Examples
 
 These consolidated examples:
+
 - ✅ Remove duplicate code and common setup patterns
 - ✅ Use consistent naming and style
 - ✅ Add clear section markers and documentation
