@@ -115,8 +115,6 @@ def _determine_initial_step_for_integrate(
     initial_step: int = 1
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
         last_logged_steps = trajectory_reporter.last_steps
-        last_logged_step = min(last_logged_steps)
-        initial_step = initial_step + last_logged_step
         if len(set(last_logged_steps)) != 1:
             raise ValueError(
                 f"Trajectory files have different last steps: {set(last_logged_steps)} "
@@ -125,11 +123,14 @@ def _determine_initial_step_for_integrate(
                 "    reporter.truncate_to_step(min(reporter.last_step))\n\n"
                 "before calling integrate again."
             )
-        warnings.warn(
-            f"Detected existing trajectory with last step {last_logged_step}."
-            f" Resuming integration from step {initial_step}.",
-            stacklevel=2,
-        )
+        if all(step is not None for step in last_logged_steps):
+            last_logged_step = min(last_logged_steps)
+            initial_step = initial_step + last_logged_step
+            warnings.warn(
+                f"Detected existing trajectory with last step {last_logged_step}."
+                f" Resuming integration from step {initial_step}.",
+                stacklevel=2,
+            )
     return initial_step
 
 
