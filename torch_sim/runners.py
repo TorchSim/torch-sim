@@ -625,7 +625,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         if (
             trajectory_reporter is not None
             and og_filenames is not None
-            and len(converged_states) > 0
+            and ((step[autobatcher.current_idx] == 1).any() or len(converged_states) > 0)
         ):
             trajectory_reporter.reopen_trajectories(
                 filenames=[og_filenames[i] for i in autobatcher.current_idx]
