@@ -9,6 +9,8 @@ from ase.geometry import wrap_positions as ase_wrap_positions
 import torch_sim as ts
 import torch_sim.transforms as ft
 from tests.conftest import DEVICE, DTYPE
+from torch_sim.models.lennard_jones import LennardJonesModel
+from torch_sim.units import MetalUnits
 
 
 def test_inverse_box_scalar() -> None:
@@ -1301,3 +1303,65 @@ def test_build_linked_cell_neighborhood_basic() -> None:
     # Verify that there are neighbors from both batches
     assert torch.any(system_mapping == 0)
     assert torch.any(system_mapping == 1)
+
+
+def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
+    n_steps = 50
+    dt = torch.tensor(0.001, dtype=DTYPE)
+    kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
+
+    # Same cell
+    state = ts.nvt_langevin_init(
+        state=ar_double_sim_state, model=lj_model, kT=kT, seed=42
+    )
+    state.positions = ft.pbc_wrap_batched(state.positions, state.cell, state.system_idx)
+    positions = [state.positions.detach().clone()]
+    for _step in range(n_steps):
+        state = ts.nvt_langevin_step(model=lj_model, state=state, dt=dt, kT=kT)
+        positions.append(state.positions.detach().clone())
+
+    positions = torch.stack(positions)
+    wrapped_positions = torch.stack(
+        [
+            ft.pbc_wrap_batched(positions, state.cell, state.system_idx)
+            for positions in positions
+        ]
+    )
+    unwrapped_positions = ft.unwrap_positions(
+        wrapped_positions,
+        state.cell,
+        state.system_idx,
+    )
+    assert torch.allclose(unwrapped_positions, positions, atol=1e-4)
+
+    # Different cell
+    state = ts.npt_langevin_init(
+        state=ar_double_sim_state, model=lj_model, kT=kT, seed=42, dt=dt
+    )
+    state.positions = ft.pbc_wrap_batched(state.positions, state.cell, state.system_idx)
+    positions = [state.positions.detach().clone()]
+    cells = [state.cell.detach().clone()]
+    for _step in range(n_steps):
+        state = ts.npt_langevin_step(
+            model=lj_model,
+            state=state,
+            dt=dt,
+            kT=kT,
+            external_pressure=torch.tensor(0.0, dtype=DTYPE, device=DEVICE),
+        )
+        positions.append(state.positions.detach().clone())
+        cells.append(state.cell.detach().clone())
+
+    positions = torch.stack(positions)
+    wrapped_positions = torch.stack(
+        [
+            ft.pbc_wrap_batched(positions, cell, state.system_idx)
+            for positions, cell in zip(positions, cells, strict=True)
+        ]
+    )
+    unwrapped_positions = ft.unwrap_positions(
+        wrapped_positions,
+        state.cell,
+        state.system_idx,
+    )
+    assert torch.allclose(unwrapped_positions, positions, atol=1e-4)

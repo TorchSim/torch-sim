@@ -1,6 +1,6 @@
 # %%
 # /// script
-# dependencies = ["mace-torch>=0.3.12", "pymatgen>=2025.2.18"]
+# dependencies = ["torch_sim_atomistic[mace, io]"]
 # ///
 
 
@@ -100,9 +100,11 @@ class HybridSwapMCState(SwapMCState, MDState):
     from MDState.
     """
 
-    last_permutation: torch.Tensor
     _atom_attributes = (
-        MDState._atom_attributes | {"last_permutation"}  # noqa: SLF001
+        ts.SwapMCState._atom_attributes | MDState._atom_attributes  # noqa: SLF001
+    )
+    _system_attributes = (
+        ts.SwapMCState._system_attributes | MDState._system_attributes  # noqa: SLF001
     )
 
 

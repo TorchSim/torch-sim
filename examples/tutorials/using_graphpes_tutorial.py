@@ -1,9 +1,7 @@
 # %%
 # /// script
 # dependencies = [
-#     "graph-pes>=0.0.30",
-#     "torch==2.5",
-#     "vesin-torch>=0.3.7",
+#     "torch_sim_atomistic[graphpes]"
 # ]
 # ///
 

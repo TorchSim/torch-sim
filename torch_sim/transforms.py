@@ -1175,3 +1175,97 @@ def safe_mask(
     """
     masked = torch.where(mask, operand, torch.zeros_like(operand))
     return torch.where(mask, fn(masked), torch.full_like(operand, placeholder))
+
+
+def unwrap_positions(
+    positions: torch.Tensor, cells: torch.Tensor, system_idx: torch.Tensor
+) -> torch.Tensor:
+    """Vectorized unwrapping for multiple systems without explicit loops.
+
+    Parameters
+    ----------
+    positions : (T, N_tot, 3)
+        Wrapped cartesian positions for all systems concatenated.
+    cells : (n_systems, 3, 3) or (T, n_systems, 3, 3)
+        Box matrices, constant or time-dependent.
+    system_idx : (N_tot,)
+        For each atom, which system it belongs to (0..n_systems-1).
+
+    Returns:
+    -------
+    unwrapped_pos : (T, N_tot, 3)
+        Unwrapped cartesian positions.
+    """
+    # -- Constant boxes per system
+    if cells.ndim == 3:
+        inv_box = torch.inverse(cells)  # (n_systems, 3, 3)
+
+        # Map each atom to its system's box
+        inv_box_atoms = inv_box[system_idx]  # (N, 3, 3)
+        box_atoms = cells[system_idx]  # (N, 3, 3)
+
+        # Compute fractional coordinates
+        frac = torch.einsum("tni,nij->tnj", positions, inv_box_atoms)
+
+        # Fractional displacements and unwrap
+        dfrac = frac[1:] - frac[:-1]
+        dfrac -= torch.round(dfrac)
+
+        # Back to Cartesian
+        dcart = torch.einsum("tni,nij->tnj", dfrac, box_atoms)
+
+    # -- Time-dependent boxes per system
+    elif cells.ndim == 4:
+        inv_box = torch.inverse(cells)  # (T, n_systems, 3, 3)
+
+        # Gather each atom's box per frame efficiently
+        inv_box_atoms = inv_box[:, system_idx]  # (T, N, 3, 3)
+        box_atoms = cells[:, system_idx]  # (T, N, 3, 3)
+
+        # Compute fractional coordinates per frame
+        frac = torch.einsum("tni,tnij->tnj", positions, inv_box_atoms)
+
+        dfrac = frac[1:] - frac[:-1]
+        dfrac -= torch.round(dfrac)
+
+        dcart = torch.einsum("tni,tnij->tnj", dfrac, box_atoms[:-1])
+
+    else:
+        raise ValueError("box must have shape (n_systems,3,3) or (T,n_systems,3,3)")
+
+    # Cumulative reconstruction
+    unwrapped = torch.empty_like(positions)
+    unwrapped[0] = positions[0]
+    unwrapped[1:] = torch.cumsum(dcart, dim=0) + unwrapped[0]
+
+    return unwrapped
+
+
+def get_centers_of_mass(
+    positions: torch.Tensor,
+    masses: torch.Tensor,
+    system_idx: torch.Tensor,
+    n_systems: int,
+) -> torch.Tensor:
+    """Compute the centers of mass for each structure in the simulation state.s.
+
+    Args:
+        positions (torch.Tensor): Atomic positions of shape (N, 3).
+        masses (torch.Tensor): Atomic masses of shape (N,).
+        system_idx (torch.Tensor): System indices for each atom of shape (N,).
+        n_systems (int): Total number of systems.
+
+    Returns:
+        torch.Tensor: A tensor of shape (n_structures, 3) containing
+            the center of mass coordinates for each structure.
+    """
+    coms = torch.zeros((n_systems, 3), dtype=positions.dtype).scatter_add_(
+        0,
+        system_idx.unsqueeze(-1).expand(-1, 3),
+        masses.unsqueeze(-1) * positions,
+    )
+    system_masses = torch.zeros((n_systems,), dtype=positions.dtype).scatter_add_(
+        0, system_idx, masses
+    )
+    coms /= system_masses.unsqueeze(-1)
+    return coms
