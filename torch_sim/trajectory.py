@@ -42,7 +42,6 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
-
 if TYPE_CHECKING:
     from ase import Atoms
     from ase.io.trajectory import TrajectoryReader
@@ -223,10 +222,13 @@ class TrajectoryReporter:
         """
         if step <= 0:
             raise ValueError(f"Step must be greater than 0. Got step={step}.")
-        if step > min(self.last_steps):
+        last_steps = self.last_steps
+        if any(s is None for s in last_steps):
+            raise ValueError("Cannot truncate: one or more trajectories are empty.")
+        if step > min(last_steps):
             raise ValueError(
                 f"Step {step} is greater than the minimum last step "
-                f"across trajectories ({min(self.last_steps)})."
+                f"across trajectories ({min(last_steps)})."
             )
         for trajectory in self.trajectories:
             # trajectory file could be closed
@@ -367,14 +369,14 @@ class TrajectoryReporter:
         return self.trajectory_kwargs["mode"]
 
     @property
-    def last_steps(self) -> list[int]:
+    def last_steps(self) -> list[int | None]:
         """Get the last logged step across all trajectory files.
 
         This is useful for resuming optimizations from where they left off.
 
         Returns:
-            list[int]: The last step number for each trajectory, or 0 if
-                no trajectories exist or all are empty
+            list[int | None]: The last step number for each trajectory, or None if
+                the trajectory is empty. Returns empty list if no trajectories exist.
         """
         if not self.trajectories:
             return []
@@ -488,7 +490,7 @@ class TorchSimTrajectory:
         self.type_map = self._initialize_type_map(
             coerce_to_float32=coerce_to_float32, coerce_to_int32=coerce_to_int32
         )
-        if mode == "a":
+        if mode == "a" and self.last_step is not None:
             inconsistent_step = any(
                 self.get_steps(name)[-1] > self.last_step for name in self.array_registry
             )
@@ -780,17 +782,17 @@ class TorchSimTrajectory:
         return self._file.get_node("/steps/", name=name).read()
 
     @property
-    def last_step(self) -> int:
+    def last_step(self) -> int | None:
         """Get the last step number from the trajectory.
 
         Retrieves the last time step recorded in the trajectory based
         on the "positions" array.
 
         Returns:
-            int: The last recorded step number, or 0 if no data exists
+            int | None: The last recorded step number, or None if no data exists
         """
         if not self.array_registry or "positions" not in self.array_registry:
-            return 0
+            return None
         return self.get_steps("positions")[-1].item()
 
     def __str__(self) -> str:
@@ -1152,6 +1154,10 @@ class TorchSimTrajectory:
         Args:
             step (int): Desired last step of the trajectory after truncation
         """
+        if self.last_step is None:
+            raise ValueError(
+                "Cannot truncate an empty trajectory (no data has been written)."
+            )
         if self.last_step < step:
             raise ValueError(
                 f"Cannot truncate to a step greater than the last step."

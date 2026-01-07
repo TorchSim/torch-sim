@@ -229,6 +229,33 @@ def _normalize_temperature_tensor(
     )
 
 
+def _write_initial_state_if_needed(
+    save_initial_state: bool,
+    trajectory_reporter: TrajectoryReporter | None,
+    state: SimState,
+    model: ModelInterface,
+) -> None:
+    """Write initial state (step 0) to trajectory if conditions are met.
+
+    Only writes step 0 if:
+    1. save_initial_state is True
+    2. trajectory_reporter is provided
+    3. All trajectories are empty (last_step returns None)
+
+    Args:
+        save_initial_state (bool): Whether to save initial state
+        trajectory_reporter (TrajectoryReporter | None): Optional reporter
+        state (SimState): Current simulation state
+        model (ModelInterface): Model used for simulation
+    """
+    if save_initial_state and trajectory_reporter:
+        trajectories_empty = all(
+            traj.last_step is None for traj in trajectory_reporter.trajectories
+        )
+        if trajectories_empty:
+            trajectory_reporter.report(state, 0, model=model)
+
+
 def integrate[T: SimState](  # noqa: C901
     system: StateLike,
     model: ModelInterface,
@@ -240,6 +267,7 @@ def integrate[T: SimState](  # noqa: C901
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: BinningAutoBatcher | bool = False,
     pbar: bool | dict[str, Any] = False,
+    save_initial_state: bool = False,
     init_kwargs: dict[str, Any] | None = None,
     **integrator_kwargs: Any,
 ) -> T:
@@ -266,6 +294,8 @@ def integrate[T: SimState](  # noqa: C901
         pbar (bool | dict[str, Any], optional): Show a progress bar.
             Only works with an autobatcher in interactive shell. If a dict is given,
             it's passed to `tqdm` as kwargs.
+        save_initial_state (bool, optional): If True, save the initial state at step 0
+            before starting integration. Defaults to False.
         init_kwargs (dict[str, Any], optional): Additional keyword arguments for
             integrator init function.
         **integrator_kwargs: Additional keyword arguments for integrator init function
@@ -333,6 +363,11 @@ def integrate[T: SimState](  # noqa: C901
             trajectory_reporter.reopen_trajectories(
                 filenames=[og_filenames[i] for i in system_indices]
             )
+
+        # Save initial state if requested and trajectory is empty
+        _write_initial_state_if_needed(
+            save_initial_state, trajectory_reporter, state, model
+        )
 
         # run the simulation
         for step in range(initial_step, initial_step + n_steps):
@@ -517,6 +552,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: InFlightAutoBatcher | bool = False,
     pbar: bool | dict[str, Any] = False,
+    save_initial_state: bool = False,
     init_kwargs: dict[str, Any] | None = None,
     **optimizer_kwargs: Any,
 ) -> T:
@@ -545,6 +581,8 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         pbar (bool | dict[str, Any], optional): Show a progress bar.
             Only works with an autobatcher in interactive shell. If a dict is given,
             it's passed to `tqdm` as kwargs.
+        save_initial_state (bool, optional): If True, save the initial state at step 0
+            before starting optimization. Defaults to False.
         init_kwargs (dict[str, Any], optional): Additional keyword arguments for optimizer
             init function.
         **optimizer_kwargs: Additional keyword arguments for optimizer step function
@@ -599,6 +637,9 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
 
     # Auto-detect initial step from trajectory files for resuming optimizations
     step = _determine_initial_step_for_optimize(trajectory_reporter, state)
+
+    # Save initial state if requested and trajectory is empty
+    _write_initial_state_if_needed(save_initial_state, trajectory_reporter, state, model)
 
     last_energy = None
     all_converged_states: list[T] = []
