@@ -47,7 +47,7 @@ test = [
 io = ["ase>=3.26", "phonopy>=2.37.0", "pymatgen>=2025.6.14"]
 mace = ["mace-torch>=0.3.14"]
 mattersim = ["mattersim>=0.1.2"]
-metatomic = ["metatomic-torch>=0.1.3", "metatrain[pet]>=2025.7"]
+metatomic = ["metatomic-torch>=0.1.3", "metatrain[pet]>=2025.12"]
 orb = ["orb-models>=0.5.2"]
 sevenn = ["sevenn>=0.11.0"]
 graphpes = ["graph-pes>=0.1", "mace-torch>=0.3.12"]
