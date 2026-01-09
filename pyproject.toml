@@ -39,6 +39,7 @@ dependencies = [
 test = [
     "ase>=3.26",
     "phonopy>=2.37.0",
+    "platformdirs>=4.0.0",
     "psutil>=7.0.0",
     "pymatgen>=2025.6.14",
     "pytest-cov>=6",
@@ -51,7 +52,7 @@ metatomic = ["metatomic-torch>=0.1.3", "metatrain[pet]>=2025.12"]
 orb = ["orb-models>=0.5.2"]
 sevenn = ["sevenn>=0.11.0"]
 graphpes = ["graph-pes>=0.1", "mace-torch>=0.3.12"]
-nequip = ["nequip>=0.12.0"]
+nequip = ["nequip>=0.16.2"]
 fairchem = ["fairchem-core>=2.7"]
 docs = [
     "autodoc_pydantic==2.2.0",
@@ -101,7 +102,7 @@ ignore = [
     "FIX002",  # Line contains TODO, consider resolving the issue
     "N803",    # Variable name should be lowercase
     "N806",    # Uppercase letters in variable names
-    "PLC0415", # import` should be at the top-level of a file
+    "PLC0415", # import should be at the top-level of a file
     "PLR0912", # too many branches
     "PLR0913", # too many function arguments
     "PLR2004", # Magic value used in comparison, consider replacing {value} with a constant variable
