@@ -31,7 +31,7 @@ dtype = torch.float32
 
 # Number of steps to run
 SMOKE_TEST = os.getenv("CI") is not None
-N_steps = 10 if SMOKE_TEST else 500
+N_steps = 10 if SMOKE_TEST else 100
 
 
 # ============================================================================
@@ -111,7 +111,7 @@ state = ts.fire_init(state=state, model=lj_model, dt_start=0.005)
 
 # Run optimization
 for step in range(N_steps):
-    if step % 100 == 0:
+    if step % (N_steps // 5) == 0:
         print(f"Step {step}: Potential energy: {state.energy[0].item()} eV")
     state = ts.fire_step(state=state, model=lj_model, dt_max=0.01)
 
@@ -174,7 +174,7 @@ state = ts.fire_init(state=state, model=model, dt_start=0.005)
 
 print("\nRunning FIRE:")
 for step in range(N_steps):
-    if step % 20 == 0:
+    if step % (N_steps // 5) == 0:
         print(f"Step {step}, Energy: {[energy.item() for energy in state.energy]}")
 
     state = ts.fire_step(state=state, model=model, dt_max=0.01)
@@ -254,7 +254,7 @@ state = ts.gradient_descent_init(
 
 print("\nRunning batched unit cell gradient descent:")
 for step in range(N_steps):
-    if step % 20 == 0:
+    if step % (N_steps // 5) == 0:
         P1 = -torch.trace(state.stress[0]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P2 = -torch.trace(state.stress[1]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P3 = -torch.trace(state.stress[2]) * UnitConversion.eV_per_Ang3_to_GPa / 3
@@ -308,7 +308,7 @@ state = ts.fire_init(
 
 print("\nRunning batched unit cell FIRE:")
 for step in range(N_steps):
-    if step % 20 == 0:
+    if step % (N_steps // 5) == 0:
         P1 = -torch.trace(state.stress[0]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P2 = -torch.trace(state.stress[1]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P3 = -torch.trace(state.stress[2]) * UnitConversion.eV_per_Ang3_to_GPa / 3
@@ -360,7 +360,7 @@ state = ts.fire_init(
 
 print("\nRunning batched frechet cell filter with FIRE:")
 for step in range(N_steps):
-    if step % 20 == 0:
+    if step % (N_steps // 5) == 0:
         P1 = -torch.trace(state.stress[0]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P2 = -torch.trace(state.stress[1]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P3 = -torch.trace(state.stress[2]) * UnitConversion.eV_per_Ang3_to_GPa / 3
@@ -385,6 +385,72 @@ final_pressure = [
 ]
 print(f"Initial pressure: {initial_pressure} GPa")
 print(f"Final pressure: {final_pressure} GPa")
+
+# ============================================================================
+# SECTION 7: Batched MACE L-BFGS
+# ============================================================================
+print("\n" + "=" * 70)
+print("SECTION 7: Batched MACE L-BFGS")
+print("=" * 70)
+
+# Recreate structures with perturbations
+si_dc = bulk("Si", "diamond", a=5.21).repeat((2, 2, 2))
+si_dc.positions += 0.2 * rng.standard_normal(si_dc.positions.shape)
+
+cu_dc = bulk("Cu", "fcc", a=3.85).repeat((2, 2, 2))
+cu_dc.positions += 0.2 * rng.standard_normal(cu_dc.positions.shape)
+
+fe_dc = bulk("Fe", "bcc", a=2.95).repeat((2, 2, 2))
+fe_dc.positions += 0.2 * rng.standard_normal(fe_dc.positions.shape)
+
+atoms_list = [si_dc, cu_dc, fe_dc]
+
+state = ts.io.atoms_to_state(atoms_list, device=device, dtype=dtype)
+results = model(state)
+state = ts.lbfgs_init(state=state, model=model, alpha=70.0, step_size=1.0)
+
+print("\nRunning L-BFGS:")
+for step in range(N_steps):
+    if step % (N_steps // 5) == 0:
+        print(f"Step {step}, Energy: {[energy.item() for energy in state.energy]}")
+    state = ts.lbfgs_step(state=state, model=model, max_history=100)
+
+print(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
+print(f"Final energies: {[energy.item() for energy in state.energy]} eV")
+
+
+# ============================================================================
+# SECTION 8: Batched MACE BFGS
+# ============================================================================
+print("\n" + "=" * 70)
+print("SECTION 8: Batched MACE BFGS")
+print("=" * 70)
+
+# Recreate structures with perturbations
+si_dc = bulk("Si", "diamond", a=5.21).repeat((2, 2, 2))
+si_dc.positions += 0.2 * rng.standard_normal(si_dc.positions.shape)
+
+cu_dc = bulk("Cu", "fcc", a=3.85).repeat((2, 2, 2))
+cu_dc.positions += 0.2 * rng.standard_normal(cu_dc.positions.shape)
+
+fe_dc = bulk("Fe", "bcc", a=2.95).repeat((2, 2, 2))
+fe_dc.positions += 0.2 * rng.standard_normal(fe_dc.positions.shape)
+
+atoms_list = [si_dc, cu_dc, fe_dc]
+
+state = ts.io.atoms_to_state(atoms_list, device=device, dtype=dtype)
+results = model(state)
+state = ts.bfgs_init(state=state, model=model, alpha=70.0)
+
+print("\nRunning BFGS:")
+for step in range(N_steps):
+    if step % (N_steps // 5) == 0:
+        print(f"Step {step}, Energy: {[energy.item() for energy in state.energy]}")
+    state = ts.bfgs_step(state=state, model=model)
+
+print(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
+print(f"Final energies: {[energy.item() for energy in state.energy]} eV")
+
 
 print("\n" + "=" * 70)
 print("Structural optimization examples completed!")

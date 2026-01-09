@@ -213,7 +213,7 @@ def lbfgs_step(  # noqa: PLR0915
         alpha = alphas[state.s_history.shape[0] - 1 - i]
         # z <- z + s_i * (alpha - beta)
         coeff = (alpha - beta)[state.system_idx].unsqueeze(-1)
-        z = z + coeff * s_i
+        z = z + s_i * coeff
 
     d = -z  # search direction
 
