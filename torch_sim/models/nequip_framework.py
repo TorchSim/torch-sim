@@ -28,7 +28,7 @@ try:
                 "The AOTInductor may actually contain a different dtype.",
                 stacklevel=2,
             )
-            return self.model.dtype
+            return super().dtype
 
 
 except ImportError as exc:

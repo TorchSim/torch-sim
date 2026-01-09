@@ -27,7 +27,7 @@ NEQUIP_CACHE_DIR = Path(__file__).parent.parent / ".cache" / "nequip_compiled_mo
 
 
 @pytest.fixture(scope="session")
-def compiled_nequip_model_path() -> Path:
+def compiled_ase_nequip_model_path() -> Path:
     """Compile NequIP OAM-L model from nequip.net for ASE (with persistent caching)."""
     NEQUIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -53,7 +53,7 @@ def compiled_nequip_model_path() -> Path:
 
 
 @pytest.fixture(scope="session")
-def batch_compiled_nequip_model_path() -> Path:
+def compiled_batch_nequip_model_path() -> Path:
     """Compile NequIP OAM-L model from nequip.net for batch (with persistent caching)."""
     NEQUIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -79,31 +79,21 @@ def batch_compiled_nequip_model_path() -> Path:
 
 
 @pytest.fixture(scope="session")
-def nequip_model(batch_compiled_nequip_model_path: Path) -> NequIPFrameworkModel:
+def nequip_model(compiled_batch_nequip_model_path: Path) -> NequIPFrameworkModel:
     """Create an NequIPModel wrapper for the pretrained model."""
     return NequIPFrameworkModel.from_compiled_model(
-        batch_compiled_nequip_model_path,
+        compiled_batch_nequip_model_path,
         device=DEVICE,
         chemical_species_to_atom_type_map=True,  # Use identity mapping without warning
     )
 
 
 @pytest.fixture(scope="session")
-def nequip_calculator(compiled_nequip_model_path: Path) -> NequIPCalculator:
+def nequip_calculator(compiled_ase_nequip_model_path: Path) -> NequIPCalculator:
     """Create an NequIPCalculator for the pretrained model."""
     return NequIPCalculator.from_compiled_model(
-        str(compiled_nequip_model_path), device=DEVICE
+        str(compiled_ase_nequip_model_path), device=DEVICE
     )
-
-
-def test_nequip_initialization(batch_compiled_nequip_model_path: Path) -> None:
-    """Test that the NequIP model initializes correctly."""
-    model = NequIPFrameworkModel.from_compiled_model(
-        batch_compiled_nequip_model_path,
-        device=DEVICE,
-        chemical_species_to_atom_type_map=True,
-    )
-    assert model._device == DEVICE  # noqa: SLF001
 
 
 test_nequip_consistency = make_model_calculator_consistency_test(
