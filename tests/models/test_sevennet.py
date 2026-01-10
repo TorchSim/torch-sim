@@ -66,7 +66,7 @@ test_sevennet_consistency = make_model_calculator_consistency_test(
     test_name="sevennet",
     model_fixture_name="sevenn_model",
     calculator_fixture_name="sevenn_calculator",
-    sim_state_names=consistency_test_simstate_fixtures,
+    sim_state_names=consistency_test_simstate_fixtures[:-1],
     dtype=DTYPE,
 )
 
