@@ -103,7 +103,7 @@ def make_model_calculator_consistency_test(
             atol=force_atol,
         )
 
-        if "stress" in model_results and all(sim_state.pbc):
+        if "stress" in model_results:
             calc_stress = torch.tensor(
                 atoms.get_stress(),
                 device=device,
