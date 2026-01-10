@@ -29,7 +29,8 @@ try:
             """The data type of the model."""
             warnings.warn(
                 "NequIPFrameworkModel.dtype is always set to torch.float64. "
-                "The AOTInductor may actually contain a different dtype.",
+                "The AOTInductor may actually contain a different dtype but the "
+                "model will cast to the correct dtype internally.",
                 stacklevel=2,
             )
             return super().dtype
