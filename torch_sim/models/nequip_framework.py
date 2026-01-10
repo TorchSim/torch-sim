@@ -19,7 +19,11 @@ try:
 
     # Re-export with backward-compatible name
     class NequIPFrameworkModel(NequIPTorchSimCalc):
-        """NequIP model wrapper for torch-sim."""
+        """NequIP framework model wrapper for torch-sim.
+        
+        NOTE: Nequip framework models always take float64 inputs and then cast
+        internally to the dtype of the compiled AOTInductor model.
+        """
 
         def dtype(self) -> torch.dtype:
             """The data type of the model."""
