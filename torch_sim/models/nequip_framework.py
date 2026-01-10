@@ -11,30 +11,18 @@ import traceback
 import warnings
 from typing import Any
 
-import torch
-
 
 try:
     from nequip.integrations.torchsim import NequIPTorchSimCalc
 
     # Re-export with backward-compatible name
     class NequIPFrameworkModel(NequIPTorchSimCalc):
-        """NequIP framework model wrapper for torch-sim.
-        
-        NOTE: Nequip framework models always take float64 inputs and then cast
-        internally to the dtype of the compiled AOTInductor model.
+        """NequIP model framework wrapper for torch-sim.
+
+        NOTE: NequIPFrameworkModel.dtype is always set to torch.float64.
+        The AOTInductor may actually contain a different dtype but the
+        model will cast to the correct dtype internally.
         """
-
-        def dtype(self) -> torch.dtype:
-            """The data type of the model."""
-            warnings.warn(
-                "NequIPFrameworkModel.dtype is always set to torch.float64. "
-                "The AOTInductor may actually contain a different dtype but the "
-                "model will cast to the correct dtype internally.",
-                stacklevel=2,
-            )
-            return super().dtype
-
 
 except ImportError as exc:
     warnings.warn(f"NequIP import failed: {traceback.format_exc()}", stacklevel=2)
@@ -42,9 +30,9 @@ except ImportError as exc:
     from torch_sim.models.interface import ModelInterface
 
     class NequIPFrameworkModel(ModelInterface):  # type: ignore[no-redef]
-        """NequIP model wrapper for torch-sim.
+        """NequIP model framework wrapper for torch-sim.
 
-        This class is a placeholder when NequIP is not installed.
+        NOTE:This class is a placeholder when NequIP is not installed.
         It raises an ImportError if accessed.
         """
 
