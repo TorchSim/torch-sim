@@ -96,13 +96,11 @@ def nequip_calculator(compiled_ase_nequip_model_path: Path) -> NequIPCalculator:
     )
 
 
-# NOTE: we take [:-1] to skip benzene. This is because the stress calculation in NequIP
-# for non-periodic systems gave infinity.
 test_nequip_consistency = make_model_calculator_consistency_test(
     test_name="nequip",
     model_fixture_name="nequip_model",
     calculator_fixture_name="nequip_calculator",
-    sim_state_names=consistency_test_simstate_fixtures[:-1],
+    sim_state_names=consistency_test_simstate_fixtures,
     energy_atol=5e-5,
     dtype=DTYPE,
     device=DEVICE,

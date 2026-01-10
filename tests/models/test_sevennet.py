@@ -60,13 +60,11 @@ def test_sevennet_initialization(pretrained_sevenn_model: AtomGraphSequential) -
     assert model.device == DEVICE
 
 
-# NOTE: we take [:-1] to skipbenzene due to eps volume giving numerically
-# unstable stress off diagonal in xy. See: https://github.com/MDIL-SNU/SevenNet/issues/212
 test_sevennet_consistency = make_model_calculator_consistency_test(
     test_name="sevennet",
     model_fixture_name="sevenn_model",
     calculator_fixture_name="sevenn_calculator",
-    sim_state_names=consistency_test_simstate_fixtures[:-1],
+    sim_state_names=consistency_test_simstate_fixtures,
     dtype=DTYPE,
 )
 
