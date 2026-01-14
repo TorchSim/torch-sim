@@ -769,10 +769,10 @@ def test_atom_indexed_constraint_update_and_select() -> None:
     assert sub_constraint is None
 
 
-def test_merge_constraints(ar_double_sim_state: ts.SimState) -> None:
+def test_merge_constraints(mixed_double_sim_state: ts.SimState) -> None:
     """Test merge_constraints combines constraints from multiple systems."""
     # Split the double system state
-    s1, s2 = ar_double_sim_state.split()
+    s1, s2 = mixed_double_sim_state.split()
     n_atoms_s1 = s1.n_atoms
     n_atoms_s2 = s2.n_atoms
 
