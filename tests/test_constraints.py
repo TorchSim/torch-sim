@@ -783,9 +783,9 @@ def test_merge_constraints(mixed_double_sim_state: ts.SimState) -> None:
         FixCom([0]),
     ]
 
-    # System 2: Fix atom 0 and fix COM for system 0
+    # System 2: Fix atoms 2, 3 and fix COM for system 0
     s2_constraints = [
-        FixAtoms(atom_idx=[0]),
+        FixAtoms(atom_idx=[2, 3]),
         FixCom([0]),
     ]
 
@@ -809,11 +809,11 @@ def test_merge_constraints(mixed_double_sim_state: ts.SimState) -> None:
     assert fix_atoms is not None
     assert fix_com is not None
 
-    # FixAtoms should have indices [0, 1] from s1 and [0+n_atoms_s1] from s2
-    expected_atom_indices = torch.tensor([0, 1, 0 + n_atoms_s1])
+    # FixAtoms should have indices [0, 1] from s1 and [2+n_atoms_s1, 3+n_atoms_s1] from s2
+    expected_atom_indices = torch.tensor([0, 1, 2 + n_atoms_s1, 3 + n_atoms_s1])
     assert torch.all(fix_atoms.atom_idx == expected_atom_indices)
 
-    # FixCom should have system_idx [0, 1]
+    # FixCom should have system_idx [0, 1] (one for each original system)
     expected_system_indices = torch.tensor([0, 1])
     assert torch.all(fix_com.system_idx == expected_system_indices)
 
@@ -833,10 +833,7 @@ def test_merge_constraints(mixed_double_sim_state: ts.SimState) -> None:
 
     assert fix_atoms is not None
     # Should include atoms from all three systems with proper offsets
-    # System 1: [0, 1] with offset 0 → [0, 1]
-    # System 2: [0] with offset n_atoms_s1 → [0 + n_atoms_s1]
-    # System 3: [0] with offset n_atoms_s1 + n_atoms_s2 → [0 + n_atoms_s1 + n_atoms_s2]
     expected_atom_indices = torch.tensor(
-        [0, 1, 0 + n_atoms_s1, 0 + n_atoms_s1 + n_atoms_s2]
+        [0, 1, 2 + n_atoms_s1, 3 + n_atoms_s1, 0 + n_atoms_s1 + n_atoms_s2]
     )
     assert torch.all(fix_atoms.atom_idx == expected_atom_indices)
