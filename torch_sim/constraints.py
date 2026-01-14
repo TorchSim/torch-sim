@@ -298,7 +298,12 @@ def merge_constraints(
 
     # Calculate offsets: for state i, offset = sum of atoms in states 0 to i-1
     device, dtype = num_atoms_per_state.device, num_atoms_per_state.dtype
-    cumsum_atoms = torch.cat([torch.zeros(1, device=device, dtype=dtype), torch.cumsum(num_atoms_per_state[:-1], dim=0)])
+    cumsum_atoms = torch.cat(
+        [
+            torch.zeros(1, device=device, dtype=dtype),
+            torch.cumsum(num_atoms_per_state[:-1], dim=0),
+        ]
+    )
 
     # aggregate updated constraint indices by constraint type
     constraint_indices: dict[type[Constraint], list[torch.Tensor]] = defaultdict(list)
