@@ -316,7 +316,11 @@ def test_neighbor_list_implementations(
         neighbors.standard_nl,
     ]
     + ([neighbors.vesin_nl, neighbors.vesin_nl_ts] if neighbors.VESIN_AVAILABLE else [])
-    + ([neighbors.alchemiops_nl_n2] if neighbors.ALCHEMIOPS_AVAILABLE else []),
+    + (
+        [neighbors.alchemiops_nl_n2, neighbors.alchemiops_nl_cell_list]
+        if neighbors.ALCHEMIOPS_AVAILABLE
+        else []
+    ),
 )
 def test_torch_nl_implementations(
     *,
@@ -477,8 +481,10 @@ def test_torchsim_nl_availability() -> None:
 
     if neighbors.ALCHEMIOPS_AVAILABLE:
         assert neighbors.alchemiops_nl_n2 is not None
+        assert neighbors.alchemiops_nl_cell_list is not None
     else:
         assert neighbors.alchemiops_nl_n2 is None
+        assert neighbors.alchemiops_nl_cell_list is None
 
 
 @pytest.mark.skipif(
@@ -486,7 +492,7 @@ def test_torchsim_nl_availability() -> None:
     reason="Alchemiops requires CUDA",
 )
 def test_alchemiops_nl_edge_cases() -> None:
-    """Test edge cases for alchemiops_nl_n2 implementation (CUDA only)."""
+    """Test edge cases for alchemiops implementations (CUDA only)."""
     device = torch.device("cuda")
     dtype = torch.float32
 
@@ -495,20 +501,24 @@ def test_alchemiops_nl_edge_cases() -> None:
     cutoff = torch.tensor(1.5, device=device, dtype=dtype)
     system_idx = torch.zeros(2, dtype=torch.long, device=device)
 
-    # Test alchemiops_nl_n2
-    for pbc in (
-        torch.tensor([True, True, True], device=device),
-        torch.tensor([False, False, False], device=device),
-    ):
-        mapping, sys_map, _shifts = neighbors.alchemiops_nl_n2(
-            positions=pos,
-            cell=cell,
-            pbc=pbc,
-            cutoff=cutoff,
-            system_idx=system_idx,
-        )
-        assert len(mapping[0]) > 0  # Should find neighbors
-        assert (sys_map == 0).all()  # All in system 0
+    # Test both implementations
+    for nl_impl, impl_name in [
+        (neighbors.alchemiops_nl_n2, "alchemiops_nl_n2"),
+        (neighbors.alchemiops_nl_cell_list, "alchemiops_nl_cell_list"),
+    ]:
+        for pbc in (
+            torch.tensor([True, True, True], device=device),
+            torch.tensor([False, False, False], device=device),
+        ):
+            mapping, sys_map, _shifts = nl_impl(
+                positions=pos,
+                cell=cell,
+                pbc=pbc,
+                cutoff=cutoff,
+                system_idx=system_idx,
+            )
+            assert len(mapping[0]) > 0, f"{impl_name} should find neighbors"
+            assert (sys_map == 0).all(), f"{impl_name}: All pairs should be in system 0"
 
 
 def test_fallback_when_alchemiops_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -721,7 +731,9 @@ def test_neighbor_lists_time_and_memory() -> None:
             ]
         )
     if neighbors.ALCHEMIOPS_AVAILABLE and DEVICE.type == "cuda":
-        nl_implementations.append(neighbors.alchemiops_nl_n2)
+        nl_implementations.extend(
+            [neighbors.alchemiops_nl_n2, neighbors.alchemiops_nl_cell_list]
+        )
 
     for nl_fn in nl_implementations:
         # Get initial memory usage
