@@ -2,7 +2,9 @@ import os
 import traceback
 
 import pytest
+import torch
 
+import torch_sim as ts
 from tests.conftest import DEVICE
 from tests.models.conftest import (
     consistency_test_simstate_fixtures,
@@ -33,16 +35,14 @@ def model_path_oc20(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 @pytest.fixture
 def eqv2_oc20_model_pbc(model_path_oc20: str) -> FairChemV1Model:
-    cpu = DEVICE.type == "cpu"
-    return FairChemV1Model(model=model_path_oc20, cpu=cpu, seed=0, pbc=True)
+    return FairChemV1Model(model=model_path_oc20, device=DEVICE, seed=0, pbc=True)
 
 
 @pytest.fixture
 def eqv2_oc20_model_non_pbc(
     model_path_oc20: str,
 ) -> FairChemV1Model:
-    cpu = DEVICE.type == "cpu"
-    return FairChemV1Model(model=model_path_oc20, cpu=cpu, seed=0, pbc=False)
+    return FairChemV1Model(model=model_path_oc20, device=DEVICE, seed=0, pbc=False)
 
 
 if get_token():
@@ -57,8 +57,7 @@ if get_token():
     def eqv2_omat24_model_pbc(
         model_path_omat24: str,
     ) -> FairChemV1Model:
-        cpu = DEVICE.type == "cpu"
-        return FairChemV1Model(model=model_path_omat24, cpu=cpu, seed=0, pbc=True)
+        return FairChemV1Model(model=model_path_omat24, device=DEVICE, seed=0, pbc=True)
 
 
 @pytest.fixture
@@ -100,3 +99,20 @@ test_fairchem_ocp_model_outputs = pytest.mark.skipif(
     os.environ.get("HF_TOKEN") is None,
     reason="Issues in graph construction of older models",
 )(make_validate_model_outputs_test(model_fixture_name="eqv2_omat24_model_pbc"))
+
+
+def test_fairchem_mixed_pbc_init_raises(model_path_oc20: str) -> None:
+    """Test that initializing FairChemV1Model with mixed PBC raises ValueError."""
+    mixed_pbc = torch.tensor([True, False, True], dtype=torch.bool)
+    with pytest.raises(ValueError, match="FairChemV1Model does not support mixed PBC"):
+        FairChemV1Model(model=model_path_oc20, device=DEVICE, seed=0, pbc=mixed_pbc)
+
+
+def test_fairchem_mixed_pbc_forward_raises(
+    eqv2_oc20_model_pbc: FairChemV1Model, si_sim_state: ts.SimState
+) -> None:
+    """Test that calling forward with a SimState that has mixed PBC raises ValueError."""
+    mixed_pbc_state = si_sim_state.clone()
+    mixed_pbc_state.pbc = torch.tensor([True, False, True], dtype=torch.bool)
+    with pytest.raises(ValueError, match="FairChemV1Model does not support mixed PBC"):
+        eqv2_oc20_model_pbc(mixed_pbc_state)

@@ -1,84 +1,115 @@
 import traceback
-import urllib.request
-from enum import StrEnum
 from pathlib import Path
 
 import pytest
 
-from tests.conftest import DEVICE
-from tests.models.conftest import make_model_calculator_consistency_test
+from tests.conftest import DEVICE, DTYPE
+from tests.models.conftest import (
+    consistency_test_simstate_fixtures,
+    make_model_calculator_consistency_test,
+    make_validate_model_outputs_test,
+)
 
 
 try:
     from nequip.ase import NequIPCalculator
+    from nequip.scripts.compile import main
 
-    from torch_sim.models.nequip_framework import (
-        NequIPFrameworkModel,
-        from_compiled_model,
-    )
+    from torch_sim.models.nequip_framework import NequIPFrameworkModel
 except (ImportError, ModuleNotFoundError):
     pytest.skip(
         f"nequip not installed: {traceback.format_exc()}", allow_module_level=True
     )
 
 
-class NequIPUrls(StrEnum):
-    """Checkpoint download URLs for NequIP models."""
-
-    Si = "https://github.com/abhijeetgangan/pt_model_checkpoints/raw/refs/heads/main/nequip/Si.nequip.pth"
+# Cache directory for compiled models (under tests/ for easy cleanup)
+NEQUIP_CACHE_DIR = Path(__file__).parent.parent / ".cache" / "nequip_compiled_models"
 
 
 @pytest.fixture(scope="session")
-def model_path_nequip(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    tmp_path = tmp_path_factory.mktemp("nequip_checkpoints")
-    model_name = "Si.nequip.pth"
-    model_path = Path(tmp_path) / model_name
+def compiled_ase_nequip_model_path() -> Path:
+    """Compile NequIP OAM-L model from nequip.net for ASE (with persistent caching)."""
+    NEQUIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    if not model_path.is_file():
-        urllib.request.urlretrieve(NequIPUrls.Si, model_path)  # noqa: S310
+    output_model_name = f"mir-group__NequIP-OAM-L__0.1__{DEVICE.type}_ase.nequip.pt2"
+    output_path = NEQUIP_CACHE_DIR / output_model_name
 
-    return model_path
+    # Only compile if not already cached
+    if not output_path.exists():
+        main(
+            args=[
+                "nequip.net:mir-group/NequIP-OAM-L:0.1",
+                str(output_path),
+                "--mode",
+                "aotinductor",
+                "--device",
+                DEVICE.type,
+                "--target",
+                "ase",
+            ]
+        )
+
+    return output_path
 
 
-@pytest.fixture
-def nequip_model(model_path_nequip: Path) -> NequIPFrameworkModel:
+@pytest.fixture(scope="session")
+def compiled_batch_nequip_model_path() -> Path:
+    """Compile NequIP OAM-L model from nequip.net for batch (with persistent caching)."""
+    NEQUIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    output_model_name = f"mir-group__NequIP-OAM-L__0.1__{DEVICE.type}_batch.nequip.pt2"
+    output_path = NEQUIP_CACHE_DIR / output_model_name
+
+    # Only compile if not already cached
+    if not output_path.exists():
+        main(
+            args=[
+                "nequip.net:mir-group/NequIP-OAM-L:0.1",
+                str(output_path),
+                "--mode",
+                "aotinductor",
+                "--device",
+                DEVICE.type,
+                "--target",
+                "batch",
+            ]
+        )
+
+    return output_path
+
+
+@pytest.fixture(scope="session")
+def nequip_model(compiled_batch_nequip_model_path: Path) -> NequIPFrameworkModel:
     """Create an NequIPModel wrapper for the pretrained model."""
-    compiled_model, (r_max, type_names) = from_compiled_model(
-        model_path_nequip, device=DEVICE
-    )
-    return NequIPFrameworkModel(
-        model=compiled_model,
-        r_max=r_max,
-        type_names=type_names,
+    return NequIPFrameworkModel.from_compiled_model(
+        compiled_batch_nequip_model_path,
         device=DEVICE,
+        chemical_species_to_atom_type_map=True,  # Use identity mapping without warning
     )
 
 
-@pytest.fixture
-def nequip_calculator(model_path_nequip: Path) -> NequIPCalculator:
+@pytest.fixture(scope="session")
+def nequip_calculator(compiled_ase_nequip_model_path: Path) -> NequIPCalculator:
     """Create an NequIPCalculator for the pretrained model."""
-    return NequIPCalculator.from_compiled_model(str(model_path_nequip), device=DEVICE)
-
-
-def test_nequip_initialization(model_path_nequip: Path) -> None:
-    """Test that the NequIP model initializes correctly."""
-    compiled_model, (r_max, type_names) = from_compiled_model(
-        model_path_nequip, device=DEVICE
+    return NequIPCalculator.from_compiled_model(
+        str(compiled_ase_nequip_model_path), device=DEVICE
     )
-    model = NequIPFrameworkModel(
-        model=compiled_model,
-        r_max=r_max,
-        type_names=type_names,
-        device=DEVICE,
-    )
-    assert model._device == DEVICE  # noqa: SLF001
 
 
+# NOTE: we take [:-1] to skip benzene. This is because the stress calculation in NequIP
+# for non-periodic systems gave infinity.
 test_nequip_consistency = make_model_calculator_consistency_test(
     test_name="nequip",
     model_fixture_name="nequip_model",
     calculator_fixture_name="nequip_calculator",
-    sim_state_names=("si_sim_state", "rattled_si_sim_state"),
+    sim_state_names=consistency_test_simstate_fixtures[:-1],
+    energy_atol=5e-5,
+    dtype=DTYPE,
+    device=DEVICE,
 )
 
-# TODO (AG): Test multi element models
+test_nequip_model_outputs = make_validate_model_outputs_test(
+    model_fixture_name="nequip_model",
+    dtype=DTYPE,
+    device=DEVICE,
+)

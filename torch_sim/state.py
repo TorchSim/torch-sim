@@ -23,6 +23,8 @@ if TYPE_CHECKING:
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure
 
+from torch_sim.constraints import Constraint, merge_constraints, validate_constraints
+
 
 @dataclass
 class SimState:
@@ -53,6 +55,8 @@ class SimState:
         atomic_numbers (torch.Tensor): Atomic numbers with shape (n_atoms,)
         system_idx (torch.Tensor): Maps each atom index to its system index.
             Has shape (n_atoms,), must be unique consecutive integers starting from 0.
+        constraints (list["Constraint"] | None): List of constraints applied to the
+            system. Constraints affect degrees of freedom and modify positions.
 
     Properties:
         wrap_positions (torch.Tensor): Positions wrapped according to periodic boundary
@@ -84,7 +88,10 @@ class SimState:
     cell: torch.Tensor
     pbc: torch.Tensor | list[bool] | bool
     atomic_numbers: torch.Tensor
+    charge: torch.Tensor | None = field(default=None)
+    spin: torch.Tensor | None = field(default=None)
     system_idx: torch.Tensor | None = field(default=None)
+    _constraints: list["Constraint"] = field(default_factory=lambda: [])  # noqa: PIE807
 
     if TYPE_CHECKING:
 
@@ -104,10 +111,10 @@ class SimState:
         "atomic_numbers",
         "system_idx",
     }
-    _system_attributes: ClassVar[set[str]] = {"cell"}
+    _system_attributes: ClassVar[set[str]] = {"cell", "charge", "spin"}
     _global_attributes: ClassVar[set[str]] = {"pbc"}
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:  # noqa: C901
         """Initialize the SimState and validate the arguments."""
         # Check that positions, masses and atomic numbers have compatible shapes
         shapes = [
@@ -135,6 +142,20 @@ class SimState:
             _, counts = torch.unique_consecutive(initial_system_idx, return_counts=True)
             if not torch.all(counts == torch.bincount(initial_system_idx)):
                 raise ValueError("System indices must be unique consecutive integers")
+
+        if self.constraints:
+            validate_constraints(self.constraints, state=self)
+
+        if self.charge is None:
+            self.charge = torch.zeros(
+                self.n_systems, device=self.device, dtype=self.dtype
+            )
+        elif self.charge.shape[0] != self.n_systems:
+            raise ValueError(f"Charge must have shape (n_systems={self.n_systems},)")
+        if self.spin is None:
+            self.spin = torch.zeros(self.n_systems, device=self.device, dtype=self.dtype)
+        elif self.spin.shape[0] != self.n_systems:
+            raise ValueError(f"Spin must have shape (n_systems={self.n_systems},)")
 
         if self.cell.ndim != 3 and initial_system_idx is None:
             self.cell = self.cell.unsqueeze(0)
@@ -211,6 +232,7 @@ class SimState:
             for attr in self._atom_attributes
             | self._system_attributes
             | self._global_attributes
+            | {"_constraints"}
         }
 
     @property
@@ -241,6 +263,71 @@ class SimState:
         """
         self.cell = value.mT
 
+    def set_constrained_positions(self, new_positions: torch.Tensor) -> None:
+        """Set the positions and apply constraints if they exist.
+
+        Args:
+            new_positions: New positions tensor with shape (n_atoms, 3)
+        """
+        # Apply constraints if they exist
+        for constraint in self.constraints:
+            constraint.adjust_positions(self, new_positions)
+        self.positions = new_positions
+
+    @property
+    def constraints(self) -> list[Constraint]:
+        """Get the constraints for the SimState.
+
+        Returns:
+            list["Constraint"]: List of constraints applied to the system.
+        """
+        return self._constraints
+
+    @constraints.setter
+    def constraints(self, constraints: list[Constraint] | Constraint) -> None:
+        """Set the constraints for the SimState.
+
+        Args:
+            constraints (list["Constraint"] | None): List of constraints to apply.
+                If None, no constraints are applied.
+
+        Raises:
+            ValueError: If constraints are invalid or span multiple systems
+        """
+        # check it is a list
+        if isinstance(constraints, Constraint):
+            constraints = [constraints]
+
+        # Validate new constraints before adding
+        validate_constraints(constraints, state=self)
+
+        self._constraints = constraints
+
+    def set_cell(
+        self,
+        cell: torch.Tensor,
+        scale_atoms: bool = False,  # noqa: FBT001, FBT002
+    ) -> None:
+        """Set the unit cell of the system, optionally scaling atomic positions.
+        Torch version of ASE Atoms.set_cell.
+
+        Args:
+            cell (torch.Tensor): New unit cell with shape (n_systems, 3, 3)
+            scale_atoms (bool, optional): Whether to scale atomic positions according to
+                the change in cell. Defaults to False.
+        """
+        if cell.shape != self.cell.shape:
+            raise ValueError(
+                f"New cell must have shape {self.cell.shape}, got {cell.shape}"
+            )
+        if scale_atoms:
+            M = torch.linalg.solve(self.cell.mT, cell.mT)
+            self.positions = torch.bmm(
+                self.positions.unsqueeze(1), M[self.system_idx]
+            ).squeeze(1)
+
+        self.cell = cell
+
     def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
         """Calculate degrees of freedom accounting for constraints.
 
@@ -250,7 +337,18 @@ class SimState:
                 of freedom, minus any degrees removed by constraints.
         """
         # Start with unconstrained DOF: 3 degrees per atom
-        return 3 * self.n_atoms_per_system
+        dof_per_system = 3 * self.n_atoms_per_system
+
+        # Subtract DOF removed by constraints
+        if self.constraints is not None:
+            for constraint in self.constraints:
+                removed_dof = constraint.get_removed_dof(self)
+                dof_per_system -= removed_dof
+
+        # Ensure non-negative DOF
+        if (dof_per_system <= 0).any():
+            raise ValueError("Degrees of freedom cannot be zero or negative")
+        return dof_per_system
 
     def clone(self) -> Self:
         """Create a deep copy of the SimState.
@@ -422,7 +520,7 @@ class SimState:
 
         # exceptions exist because the type hint doesn't actually reflect the real type
         # (since we change their type in the post_init)
-        exceptions = {"system_idx"}
+        exceptions = {"system_idx", "charge", "spin"}
 
         type_hints = typing.get_type_hints(cls)
         for attr_name, attr_type_hint in type_hints.items():
@@ -616,7 +714,7 @@ def _state_to_device[T: SimState](
         attrs["masses"] = attrs["masses"].to(dtype=dtype)
         attrs["cell"] = attrs["cell"].to(dtype=dtype)
         attrs["atomic_numbers"] = attrs["atomic_numbers"].to(dtype=torch.int)
-    return type(state)(**attrs)  # type: ignore[invalid-return-type]
+    return type(state)(**attrs)
 
 
 def get_attrs_for_scope(
@@ -667,6 +765,18 @@ def _filter_attrs_by_mask(
     # Copy global attributes directly
     filtered_attrs = dict(get_attrs_for_scope(state, "global"))
 
+    # take into account constraints that are AtomConstraint
+    filtered_attrs["_constraints"] = [
+        constraint.select_constraint(atom_mask, system_mask)
+        for constraint in copy.deepcopy(state.constraints)
+    ]
+    # Remove any None constraints resulting from selection
+    filtered_attrs["_constraints"] = [
+        constraint
+        for constraint in filtered_attrs["_constraints"]
+        if constraint is not None
+    ]
+
     # Filter per-atom attributes
     for attr_name, attr_value in get_attrs_for_scope(state, "per-atom"):
         if attr_name == "system_idx":
@@ -688,6 +798,7 @@ def _filter_attrs_by_mask(
                 dtype=attr_value.dtype,
             )
             filtered_attrs[attr_name] = new_system_idxs
+
         else:
             filtered_attrs[attr_name] = attr_value[atom_mask]
 
@@ -714,7 +825,7 @@ def _split_state[T: SimState](state: T) -> list[T]:
         list[SimState]: A list of SimState objects, each containing a single
             system
     """
-    system_sizes = torch.bincount(state.system_idx).tolist()
+    system_sizes = state.n_atoms_per_system.tolist()
 
     split_per_atom = {}
     for attr_name, attr_value in get_attrs_for_scope(state, "per-atom"):
@@ -733,6 +844,8 @@ def _split_state[T: SimState](state: T) -> list[T]:
     # Create a state for each system
     states: list[T] = []
     n_systems = len(system_sizes)
+    zero_tensor = torch.tensor([0], device=state.device, dtype=torch.int64)
+    cumsum_atoms = torch.cat((zero_tensor, torch.cumsum(state.n_atoms_per_system, dim=0)))
     for sys_idx in range(n_systems):
         system_attrs = {
             # Create a system tensor with all zeros for this system
@@ -752,6 +865,15 @@ def _split_state[T: SimState](state: T) -> list[T]:
             # Add the global attributes
             **global_attrs,
         }
+
+        atom_idx = torch.arange(cumsum_atoms[sys_idx], cumsum_atoms[sys_idx + 1])
+        new_constraints = [
+            new_constraint
+            for constraint in state.constraints
+            if (new_constraint := constraint.select_sub_constraint(atom_idx, sys_idx))
+        ]
+
+        system_attrs["_constraints"] = new_constraints
         states.append(type(state)(**system_attrs))  # type: ignore[invalid-argument-type]
 
     return states
@@ -884,6 +1006,7 @@ def concatenate_states[T: SimState](  # noqa: C901
     per_system_tensors = defaultdict(list)
     new_system_indices = []
     system_offset = 0
+    num_atoms_per_state = []
 
     # Process all states in a single pass
     for state in states:
@@ -906,6 +1029,8 @@ def concatenate_states[T: SimState](  # noqa: C901
         num_systems = state.n_systems
         new_indices = state.system_idx + system_offset
         new_system_indices.append(new_indices)
+        num_atoms_per_state.append(state.n_atoms)
+
         system_offset += num_systems
 
     # Concatenate collected tensors
@@ -923,8 +1048,14 @@ def concatenate_states[T: SimState](  # noqa: C901
     # Concatenate system indices
     concatenated["system_idx"] = torch.cat(new_system_indices)
 
+    # Merge constraints
+    constraint_lists = [state.constraints for state in states]
+    constraints = merge_constraints(
+        constraint_lists, torch.tensor(num_atoms_per_state, device=target_device)
+    )
+
     # Create a new instance of the same class
-    return state_class(**concatenated)
+    return state_class(**concatenated, _constraints=constraints)
 
 
 def initialize_state(

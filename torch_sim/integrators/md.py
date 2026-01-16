@@ -5,9 +5,8 @@ from dataclasses import dataclass
 
 import torch
 
-from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
-from torch_sim.quantities import calc_temperature
+from torch_sim.quantities import calc_kT
 from torch_sim.state import SimState
 from torch_sim.units import MetalUnits
 
@@ -57,6 +56,12 @@ class MDState(SimState):
         """
         return self.momenta / self.masses.unsqueeze(-1)
 
+    def set_constrained_momenta(self, new_momenta: torch.Tensor) -> None:
+        """Set new momenta, applying any constraints as needed."""
+        for constraint in self.constraints:
+            constraint.adjust_momenta(self, new_momenta)
+        self.momenta = new_momenta
+
     def calc_temperature(
         self, units: MetalUnits = MetalUnits.temperature
     ) -> torch.Tensor:
@@ -68,12 +73,19 @@ class MDState(SimState):
         Returns:
             torch.Tensor: Calculated temperature
         """
-        return calc_temperature(
+        return self.calc_kT() / units.temperature
+
+    def calc_kT(self) -> torch.Tensor:  # noqa: N802
+        """Calculate kT from momenta, masses, and system indices.
+
+        Returns:
+            torch.Tensor: Calculated kT in energy units
+        """
+        return calc_kT(
             masses=self.masses,
             momenta=self.momenta,
             system_idx=self.system_idx,
             dof_per_system=self.get_number_of_degrees_of_freedom(),
-            units=units,
         )
 
 
@@ -154,7 +166,7 @@ def momentum_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
 
     """
     new_momenta = state.momenta + state.forces * dt
-    state.momenta = new_momenta
+    state.set_constrained_momenta(new_momenta)
     return state
 
 
@@ -174,17 +186,7 @@ def position_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
 
     """
     new_positions = state.positions + state.velocities * dt
-
-    if state.pbc.any():
-        # Split positions and cells by system
-        new_positions = transforms.pbc_wrap_batched(
-            new_positions,
-            state.cell,
-            state.system_idx,
-            state.pbc,
-        )
-
-    state.positions = new_positions
+    state.set_constrained_positions(new_positions)
     return state
 
 
