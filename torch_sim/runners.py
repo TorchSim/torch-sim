@@ -379,7 +379,7 @@ def _chunked_apply[T: SimState](
 
 
 def generate_force_convergence_fn[T: MDState | FireState](
-    force_tol: float = 1e-1, *, include_cell_forces: bool = True
+    force_tol: float = 1e-1, *, include_cell_forces: bool = False
 ) -> Callable:
     """Generate a force-based convergence function for the convergence_fn argument
     of the optimize function.
@@ -406,7 +406,7 @@ def generate_force_convergence_fn[T: MDState | FireState](
         """
         force_conv = ts.system_wise_max_force(state) < force_tol
 
-        if include_cell_forces and hasattr(state, "cell_forces"):
+        if include_cell_forces:
             if (cell_forces := getattr(state, "cell_forces", None)) is None:
                 raise ValueError("cell_forces not found in state")
             cell_forces_norm, _ = cell_forces.norm(dim=2).max(dim=1)
