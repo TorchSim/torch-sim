@@ -1,7 +1,10 @@
+import traceback
+
 import pytest
 import torch
 
 import torch_sim as ts
+from tests.conftest import DEVICE
 from torch_sim.elastic import (
     calculate_elastic_moduli,
     calculate_elastic_tensor,
@@ -10,7 +13,6 @@ from torch_sim.elastic import (
     get_elementary_deformations,
     get_strain,
 )
-from torch_sim.optimizers import frechet_cell_fire
 from torch_sim.typing import BravaisType
 from torch_sim.units import UnitConversion
 
@@ -20,7 +22,7 @@ try:
 
     from torch_sim.models.mace import MaceModel
 except ImportError:
-    pytest.skip("MACE not installed", allow_module_level=True)
+    pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)
 
 
 def test_get_strain_zero_deformation(cu_sim_state: ts.SimState) -> None:
@@ -219,7 +221,7 @@ def test_get_elementary_deformations_strain_consistency(
         n_deform=n_deform,
         max_strain_normal=max_strain_normal,
         max_strain_shear=max_strain_shear,
-        bravais_type=BravaisType.TRICLINIC,  # Test all axes
+        bravais_type=BravaisType.triclinic,  # Test all axes
     )
 
     # Should generate deformations for all 6 axes (triclinic)
@@ -232,11 +234,11 @@ def test_get_elementary_deformations_strain_consistency(
     # Check that each deformed state produces a strain with expected dominant component
     axis_to_strain_idx = {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5}  # axis -> Voigt index
 
-    for i, deformed_state in enumerate(deformed_states):
+    for def_idx, deformed_state in enumerate(deformed_states):
         strain = get_strain(deformed_state, cu_sim_state)
 
         # Determine which axis this deformation corresponds to
-        axis = i // strains_per_axis  # Integer division to get axis index
+        axis = def_idx // strains_per_axis  # Integer division to get axis index
         strain_idx = axis_to_strain_idx[axis]
 
         # The strain component corresponding to this axis should be the largest
@@ -253,13 +255,13 @@ def test_get_elementary_deformations_strain_consistency(
 
 
 @pytest.fixture
-def mace_model(device: torch.device) -> MaceModel:
+def mace_model() -> MaceModel:
     """Create a MACE model fixture for testing."""
     mace_model = mace_mp(model="medium", default_dtype="float64", return_raw_model=True)
 
     return MaceModel(
         model=mace_model,
-        device=device,
+        device=DEVICE,
         dtype=torch.float64,
         compute_forces=True,
         compute_stress=True,
@@ -269,12 +271,12 @@ def mace_model(device: torch.device) -> MaceModel:
 @pytest.mark.parametrize(
     ("sim_state_name", "expected_bravais_type", "atol"),
     [
-        ("cu_sim_state", BravaisType.CUBIC, 2e-1),
-        ("mg_sim_state", BravaisType.HEXAGONAL, 5e-1),
-        ("sb_sim_state", BravaisType.TRIGONAL, 5e-1),
-        ("tio2_sim_state", BravaisType.TETRAGONAL, 5e-1),
-        ("ga_sim_state", BravaisType.ORTHORHOMBIC, 5e-1),
-        ("niti_sim_state", BravaisType.MONOCLINIC, 5e-1),
+        ("cu_sim_state", BravaisType.cubic, 2e-1),
+        ("mg_sim_state", BravaisType.hexagonal, 5e-1),
+        ("sb_sim_state", BravaisType.trigonal, 5e-1),
+        ("tio2_sim_state", BravaisType.tetragonal, 5e-1),
+        ("ga_sim_state", BravaisType.orthorhombic, 5e-1),
+        ("niti_sim_state", BravaisType.monoclinic, 5e-1),
     ],
 )
 def test_elastic_tensor_symmetries(
@@ -305,8 +307,12 @@ def test_elastic_tensor_symmetries(
     )
 
     # Relax positions and cell
-    fire_init, fire_update = frechet_cell_fire(model=model, scalar_pressure=0.0)
-    state = fire_init(state=state)
+    state = ts.fire_init(
+        state=state,
+        model=model,
+        scalar_pressure=0.0,
+        cell_filter=ts.CellFilter.frechet,
+    )
     fmax = 1e-5
 
     for _ in range(300):
@@ -316,7 +322,7 @@ def test_elastic_tensor_symmetries(
         current_fmax = torch.max(torch.abs(state.forces.squeeze()))
         if current_fmax < fmax and abs(pressure) < 1e-2:
             break
-        state = fire_update(state=state)
+        state = ts.fire_step(state=state, model=model)
 
     # Verify the Bravais type of the relaxed structure
     actual_bravais_type = get_bravais_type(state)
@@ -327,11 +333,15 @@ def test_elastic_tensor_symmetries(
 
     # Calculate elastic tensors
     C_symmetric = (
-        calculate_elastic_tensor(model, state=state, bravais_type=expected_bravais_type)
+        calculate_elastic_tensor(
+            state=state, model=model, bravais_type=expected_bravais_type
+        )
         * UnitConversion.eV_per_Ang3_to_GPa
     )
     C_triclinic = (
-        calculate_elastic_tensor(model, state=state, bravais_type=BravaisType.TRICLINIC)
+        calculate_elastic_tensor(
+            state=state, model=model, bravais_type=BravaisType.triclinic
+        )
         * UnitConversion.eV_per_Ang3_to_GPa
     )
 
@@ -348,8 +358,12 @@ def test_copper_elastic_properties(
     """Test calculation of elastic properties for copper."""
 
     # Relax positions and cell
-    fire_init, fire_update = frechet_cell_fire(model=mace_model, scalar_pressure=0.0)
-    state = fire_init(state=cu_sim_state)
+    state = ts.fire_init(
+        state=cu_sim_state,
+        model=mace_model,
+        scalar_pressure=0.0,
+        cell_filter=ts.CellFilter.frechet,
+    )
     fmax = 1e-5
     for _ in range(300):
         pressure = (
@@ -358,12 +372,12 @@ def test_copper_elastic_properties(
         current_fmax = torch.max(torch.abs(state.forces.squeeze()))
         if current_fmax < fmax and abs(pressure) < 1e-2:
             break
-        state = fire_update(state=state)
+        state = ts.fire_step(state=state, model=mace_model)
 
     # Calculate elastic tensor
     bravais_type = get_bravais_type(state)
     elastic_tensor = calculate_elastic_tensor(
-        mace_model, state=state, bravais_type=bravais_type
+        state=state, model=mace_model, bravais_type=bravais_type
     )
 
     # Convert to GPa
@@ -372,8 +386,7 @@ def test_copper_elastic_properties(
     # Calculate elastic moduli
     bulk_modulus, shear_modulus, _, _ = calculate_elastic_moduli(elastic_tensor)
 
-    device = state.device
-    dtype = state.dtype
+    device, dtype = state.device, state.dtype
 
     # Expected values
     expected_elastic_tensor = torch.tensor(

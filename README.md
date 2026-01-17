@@ -1,9 +1,9 @@
 # TorchSim
 
-[![CI](https://github.com/radical-ai/torch-sim/actions/workflows/test.yml/badge.svg)](https://github.com/radical-ai/torch-sim/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/radical-ai/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/radical-ai/torch-sim)
-[![This project supports Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg?logo=python&logoColor=white)](https://python.org/downloads)
-[![PyPI](https://img.shields.io/pypi/v/torch_sim_atomistic?logo=pypi&logoColor=white)](https://pypi.org/project/torch_sim_atomistic)
+[![CI](https://github.com/torchsim/torch-sim/actions/workflows/test.yml/badge.svg)](https://github.com/torchsim/torch-sim/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/torchsim/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/torchsim/torch-sim)
+[![This project supports Python 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg?logo=python&logoColor=white)](https://python.org/downloads)
+[![PyPI](https://img.shields.io/pypi/v/torch-sim-atomistic?logo=pypi&logoColor=white)](https://pypi.org/project/torch-sim-atomistic)
 [![Zenodo](https://img.shields.io/badge/Zenodo-15127004-blue?logo=Zenodo&logoColor=white)][zenodo]
 
 [zenodo]: https://zenodo.org/records/15127004
@@ -58,7 +58,7 @@ final_state = ts.integrate(
     n_steps=50,
     timestep=0.002,
     temperature=1000,
-    integrator=ts.integrators.nvt_langevin,
+    integrator=ts.Integrator.nvt_langevin,
     trajectory_reporter=dict(filenames=trajectory_files, state_frequency=10),
 )
 final_atoms_list = final_state.to_atoms()
@@ -81,8 +81,9 @@ To then relax those structures with FIRE is just a few more lines.
 relaxed_state = ts.optimize(
     system=final_state,
     model=mace_model,
-    optimizer=ts.frechet_cell_fire,
+    optimizer=ts.Optimizer.fire,
     autobatcher=True,
+    init_kwargs=dict(cell_filter=ts.CellFilter.frechet),
 )
 
 print(relaxed_state.energy)
@@ -92,7 +93,7 @@ print(relaxed_state.energy)
 
 TorchSim achieves up to 100x speedup compared to ASE with popular MLIPs.
 
-<img src="/docs/_static/speedup_plot.svg" alt="Speedup comparison" width="100%">
+<img src="https://raw.githubusercontent.com/TorchSim/torch-sim/main/docs/_static/speedup_plot.svg" alt="Speedup comparison" width="100%">
 
 This figure compares the time per atom of ASE and `torch_sim`. Time per atom is defined
 as the number of atoms / total time. While ASE can only run a single system of `n_atoms`
@@ -113,20 +114,24 @@ pip install torch-sim-atomistic
 ### Installing from source
 
 ```sh
-git clone https://github.com/radical-ai/torch-sim
+git clone https://github.com/TorchSim/torch-sim
 cd torch-sim
 pip install .
 ```
 
 ## Examples
 
-To understand how TorchSim works, start with the [comprehensive tutorials](https://radical-ai.github.io/torch-sim/user/overview.html) in the documentation.
+To understand how TorchSim works, start with the [comprehensive tutorials](https://torchsim.github.io/torch-sim/user/overview.html) in the documentation.
 
 ## Core Modules
 
-TorchSim's package structure is summarized in the [API reference](https://radical-ai.github.io/torch-sim/reference/index.html) documentation and drawn as a treemap below.
+TorchSim's package structure is summarized in the [API reference](https://torchsim.github.io/torch-sim/reference/index.html) documentation and drawn as a treemap below.
 
 ![TorchSim package treemap](https://github.com/user-attachments/assets/1ccb3a15-233d-4bc0-b11c-35a676a2bcf3)
+
+## Contributing
+
+If you are interested in contributing, please join our [slack](https://join.slack.com/t/torchsim/shared_invite/zt-3fkiju9ip-XhUH7TYp_ejJT6QqEPKMJQ) and check out the [contributing.md](CONTRIBUTING.md).
 
 ## License
 
@@ -134,4 +139,4 @@ TorchSim is released under an [MIT license](LICENSE).
 
 ## Citation
 
-+If you use TorchSim in your research, please cite the [arXiv preprint](https://arxiv.org/abs/2508.06628).
+If you use TorchSim in your research, please cite our [publication](https://iopscience.iop.org/article/10.1088/3050-287X/ae1799).

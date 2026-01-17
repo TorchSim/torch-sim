@@ -30,7 +30,7 @@ Notes:
 import copy
 import inspect
 import pathlib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, Self
 
@@ -44,7 +44,7 @@ from torch_sim.state import SimState
 
 if TYPE_CHECKING:
     from ase import Atoms
-    from ase.io.trajectory import Trajectory
+    from ase.io.trajectory import TrajectoryReader
 
 _DATA_TYPE_MAP = {
     np.dtype("float32"): tables.Float32Atom(),
@@ -76,7 +76,6 @@ class TrajectoryReporter:
         trajectories (list): TorchSimTrajectory instances
         filenames (list): Trajectory file paths
         array_registry (dict): Map of array names to (shape, dtype) tuples
-        shape_warned (bool): Whether a shape warning has been issued
 
     Examples:
         >>> reporter = TrajectoryReporter(
@@ -91,9 +90,17 @@ class TrajectoryReporter:
         >>> reporter.close()
     """
 
+    state_frequency: int
+    trajectory_kwargs: dict[str, Any]
+    prop_calculators: dict[int, dict[str, Callable]]
+    state_kwargs: dict[str, Any]
+    metadata: dict[str, str] | None
+    trajectories: list["TorchSimTrajectory"]
+    filenames: list[str | pathlib.Path] | None
+
     def __init__(
         self,
-        filenames: str | pathlib.Path | list[str | pathlib.Path] | None,
+        filenames: str | pathlib.Path | Sequence[str | pathlib.Path] | None,
         state_frequency: int = 100,
         *,
         prop_calculators: dict[int, dict[str, Callable]] | None = None,
@@ -131,20 +138,18 @@ class TrajectoryReporter:
 
         self.prop_calculators = prop_calculators or {}
         self.state_kwargs = state_kwargs or {}
-        self.shape_warned = False
         self.metadata = metadata
 
         self.trajectories = []
         if filenames is None:
             self.filenames = None
-            self.trajectories = []
         else:
             self.load_new_trajectories(filenames)
 
         self._add_model_arg_to_prop_calculators()
 
     def load_new_trajectories(
-        self, filenames: str | pathlib.Path | list[str | pathlib.Path]
+        self, filenames: str | pathlib.Path | Sequence[str | pathlib.Path]
     ) -> None:
         """Load new trajectories into the reporter.
 
@@ -159,7 +164,9 @@ class TrajectoryReporter:
         """
         self.finish()
 
-        filenames = [filenames] if not isinstance(filenames, list) else filenames
+        filenames = (
+            [filenames] if isinstance(filenames, (str, pathlib.Path)) else list(filenames)
+        )
         self.filenames = [pathlib.Path(filename) for filename in filenames]
         if len(set(self.filenames)) != len(self.filenames):
             raise ValueError("All filenames must be unique.")
@@ -197,14 +204,16 @@ class TrajectoryReporter:
                 if len(sig.parameters) == 1:
                     # we partially evaluate the function to create a new function with
                     # an optional second argument, this can be set to state later on
-                    new_fn = partial(lambda state, _=None, fn=None: fn(state), fn=prop_fn)
+                    new_fn = partial(
+                        lambda state, _=None, fn=None: (
+                            None if fn is None else fn(state)
+                        ),
+                        fn=prop_fn,
+                    )
                     self.prop_calculators[frequency][name] = new_fn
 
     def report(
-        self,
-        state: SimState,
-        step: int,
-        model: ModelInterface | None = None,
+        self, state: SimState, step: int, model: ModelInterface | None = None
     ) -> list[dict[str, torch.Tensor]]:
         """Report a state and step to the trajectory files.
 
@@ -246,9 +255,6 @@ class TrajectoryReporter:
         all_props: list[dict[str, torch.Tensor]] = []
         # Process each system separately
         for idx, substate in enumerate(split_states):
-            # Slice the state once to get only the data for this system
-            self.shape_warned = True
-
             # Write state to trajectory if it's time
             if (
                 self.state_frequency
@@ -377,7 +383,9 @@ class TorchSimTrajectory:
             compression = None
 
         # TODO FIX THIS
-        if handles := tables.file._open_files.get_handlers_by_name(str(filename)):
+        if hasattr(tables, "file") and (
+            handles := tables.file._open_files.get_handlers_by_name(str(filename))
+        ):
             list(handles)[-1].close()
 
         # create parent directory if it doesn't exist
@@ -387,7 +395,7 @@ class TorchSimTrajectory:
         self.array_registry: dict[str, tuple[tuple[int, ...], np.dtype]] = {}
 
         # check if the header has already been written
-        if "header" not in [node._v_name for node in self._file.list_nodes("/")]:
+        if "header" not in (node._v_name for node in self._file.list_nodes("/")):
             self._initialize_header(metadata)
 
         self._initialize_registry()
@@ -455,7 +463,7 @@ class TorchSimTrajectory:
 
     def write_arrays(
         self,
-        data: dict[str, np.ndarray | torch.Tensor],
+        data: "Mapping[str, np.ndarray | np.generic | torch.Tensor]",
         steps: int | list[int],
     ) -> None:
         """Write arrays to the trajectory file.
@@ -469,8 +477,8 @@ class TorchSimTrajectory:
         file and that the steps are monotonically increasing.
 
         Args:
-            data (dict[str, np.ndarray | torch.Tensor]): Map of array names to numpy
-                arrays or torch tensors with shapes [n_frames, ...]
+            data (Mapping[str, np.ndarray | np.generic | torch.Tensor]): Map of array
+                names to numpy arrays or torch tensors with shapes [n_frames, ...]
             steps (int | list[int]): Step number(s) for the frame(s) being written.
                 If steps is an integer, arrays will be treated as single frame data.
 
@@ -485,9 +493,12 @@ class TorchSimTrajectory:
             pad_first_dim = False
 
         for name, array in data.items():
-            # TODO: coerce dtypes to numpy
+            # Normalize to numpy arrays
             if isinstance(array, torch.Tensor):
                 array = array.cpu().detach().numpy()
+            elif not isinstance(array, np.ndarray):
+                # Convert numpy scalar (np.generic) or Python scalar to ndarray
+                array = np.array(array)
 
             if pad_first_dim:
                 # pad 1st dim of array with 1
@@ -500,6 +511,20 @@ class TorchSimTrajectory:
             self._serialize_array(name, array, steps)
 
         self.flush()
+
+    def write_global_array(self, name: str, array: np.ndarray | torch.Tensor) -> None:
+        """Write a global array to the trajectory file.
+
+        This function is used to write a global array to the trajectory file.
+        """
+        if isinstance(array, torch.Tensor):
+            array = array.cpu().detach().numpy()
+
+        steps = [0]
+        if name not in self.array_registry:
+            self._initialize_array(name, array)
+        self._validate_array(name, array, steps)
+        self._serialize_array(name, array, steps)
 
     def _initialize_array(self, name: str, array: np.ndarray) -> None:
         """Initialize a single array and add it to the registry.
@@ -715,10 +740,8 @@ class TorchSimTrajectory:
             steps = [steps]
 
         if isinstance(system_index, int):
-            system_index = [system_index]
             sub_states = [state[system_index] for state in state]
         elif system_index is None and torch.unique(state[0].system_idx) == 0:
-            system_index = 0
             sub_states = state
         else:
             raise ValueError(
@@ -727,6 +750,7 @@ class TorchSimTrajectory:
 
         if len(sub_states) != len(steps):
             raise ValueError(f"{len(sub_states)=} must match the {len(steps)=}")
+
         # Initialize data dictionary with required arrays
         data = {
             "positions": torch.stack([s.positions for s in state]),
@@ -767,12 +791,12 @@ class TorchSimTrajectory:
             self.write_arrays({"atomic_numbers": state[0].atomic_numbers}, 0)
 
         if "pbc" not in self.array_registry:
-            self.write_arrays({"pbc": np.array(state[0].pbc)}, 0)
+            self.write_global_array("pbc", state[0].pbc)
 
         # Write all arrays to file
         self.write_arrays(data, steps)
 
-    def _get_state_arrays(self, frame: int) -> dict[str, torch.Tensor]:
+    def _get_state_arrays(self, frame: int) -> dict[str, np.ndarray]:
         """Get all available state tensors for a given frame.
 
         Retrieves all state-related arrays (positions, cell, masses, etc.) for a
@@ -782,7 +806,7 @@ class TorchSimTrajectory:
             frame (int): Frame index to retrieve (-1 for last frame)
 
         Returns:
-            dict[str, torch.Tensor]: Map of tensor names to their values
+            dict[str, np.ndarray]: Map of array names to their values
 
         Raises:
             ValueError: If required arrays are missing from trajectory or frame is
@@ -809,6 +833,8 @@ class TorchSimTrajectory:
         arrays["positions"] = self.get_array("positions", start=frame, stop=frame + 1)[0]
 
         def return_prop(self: Self, prop: str, frame: int) -> np.ndarray:
+            if prop == "pbc":
+                return self.get_array(prop, start=0, stop=3)
             if getattr(self._file.root.data, prop).shape[0] > 1:  # Variable prop
                 start, stop = frame, frame + 1
             else:  # Static prop
@@ -878,13 +904,11 @@ class TorchSimTrajectory:
 
         arrays = self._get_state_arrays(frame)
 
-        pbc = arrays.get("pbc", True)
-
         return Atoms(
             numbers=np.ascontiguousarray(arrays["atomic_numbers"]),
             positions=np.ascontiguousarray(arrays["positions"]),
             cell=np.ascontiguousarray(arrays["cell"])[0],
-            pbc=pbc,
+            pbc=np.ascontiguousarray(arrays["pbc"]),
         )
 
     def get_state(
@@ -916,7 +940,7 @@ class TorchSimTrajectory:
             positions=torch.tensor(arrays["positions"], device=device, dtype=dtype),
             masses=torch.tensor(arrays.get("masses", None), device=device, dtype=dtype),
             cell=torch.tensor(arrays["cell"], device=device, dtype=dtype),
-            pbc=arrays.get("pbc", True),
+            pbc=torch.tensor(arrays["pbc"], device=device, dtype=torch.bool),
             atomic_numbers=torch.tensor(
                 arrays["atomic_numbers"], device=device, dtype=torch.int
             ),
@@ -970,7 +994,7 @@ class TorchSimTrajectory:
         """
         return self._file.root.data.positions.shape[0]
 
-    def write_ase_trajectory(self, filename: str | pathlib.Path) -> "Trajectory":
+    def write_ase_trajectory(self, filename: str | pathlib.Path) -> "TrajectoryReader":
         """Convert trajectory to ASE Trajectory format.
 
         Writes the entire trajectory to a new file in ASE format for compatibility
@@ -980,7 +1004,7 @@ class TorchSimTrajectory:
             filename (str | pathlib.Path): Path to the output ASE trajectory file
 
         Returns:
-            ase.io.trajectory.Trajectory: ASE trajectory object
+            ase.io.trajectory.TrajectoryReader: ASE trajectory object
 
         Raises:
             ImportError: If ASE is not installed
@@ -1001,4 +1025,4 @@ class TorchSimTrajectory:
             traj.write(atoms)
 
         traj.close()
-        return Trajectory(filename)  # Reopen in read mode
+        return Trajectory(filename, mode="r")  # Reopen in read mode

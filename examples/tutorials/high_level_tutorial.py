@@ -1,14 +1,9 @@
-# %% [markdown]
-# <details>
-#   <summary>Dependencies</summary>
+# %%
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.12",
-#     "pymatgen>=2025.2.18",
-#     "ase>=3.23.1",
+#     "torch_sim_atomistic[mace, io]"
 # ]
 # ///
-# </details>
 
 
 # %% [markdown]
@@ -47,8 +42,8 @@ potential. First, let's set up our model and create an atomic structure:
 """
 
 # %%
-import torch
 import torch_sim as ts
+import torch
 from ase.build import bulk
 from torch_sim.models.lennard_jones import LennardJonesModel
 
@@ -76,7 +71,7 @@ n_steps = 50
 final_state = ts.integrate(
     system=cu_atoms,  # Input atomic system
     model=lj_model,  # Energy/force model
-    integrator=ts.nvt_langevin,  # Integrator to use
+    integrator=ts.Integrator.nvt_langevin,  # Integrator to use
     n_steps=n_steps,  # Number of MD steps
     temperature=2000,  # Target temperature (K)
     timestep=0.002,  # Integration timestep (ps)
@@ -101,7 +96,7 @@ n_steps = 50
 final_state = ts.integrate(
     system=cu_atoms,
     model=lj_model,
-    integrator=ts.nvt_langevin,
+    integrator=ts.Integrator.nvt_langevin,
     n_steps=n_steps,
     temperature=2000,
     timestep=0.002,
@@ -154,7 +149,7 @@ Now we can run the simulation with trajectory reporting:
 final_state = ts.integrate(
     system=cu_atoms,
     model=lj_model,
-    integrator=ts.nvt_langevin,
+    integrator=ts.Integrator.nvt_langevin,
     n_steps=n_steps,
     temperature=2000,
     timestep=0.002,
@@ -197,7 +192,7 @@ from mace.calculators.foundations_models import mace_mp
 from torch_sim.models.mace import MaceModel
 
 # Use CUDA if available
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Load the MACE "small" foundation model
 mace = mace_mp(model="small", return_raw_model=True)
@@ -212,7 +207,7 @@ mace_model = MaceModel(
 final_state = ts.integrate(
     system=cu_atoms,
     model=mace_model,
-    integrator=ts.nvt_langevin,
+    integrator=ts.Integrator.nvt_langevin,
     n_steps=n_steps,
     temperature=2000,
     timestep=0.002,
@@ -248,7 +243,7 @@ We can simulate all these systems in a single call to `integrate`:
 final_state = ts.integrate(
     system=systems,  # List of systems to simulate
     model=mace_model,  # Single model for all systems
-    integrator=ts.nvt_langevin,
+    integrator=ts.Integrator.nvt_langevin,
     n_steps=n_steps,
     temperature=2000,
     timestep=0.002,
@@ -267,7 +262,7 @@ When simulating multiple systems, we can save each to its own trajectory file:
 """
 
 # %% Create individual filenames for each system
-filenames = [f"batch_traj_{i}.h5" for i in range(len(systems))]
+filenames = [f"tmp/batch_traj_{i}.h5" for i in range(len(systems))]
 
 # Create a reporter that handles multiple trajectories
 batch_reporter = ts.TrajectoryReporter(
@@ -280,7 +275,7 @@ batch_reporter = ts.TrajectoryReporter(
 final_state = ts.integrate(
     system=systems,
     model=mace_model,
-    integrator=ts.nvt_langevin,
+    integrator=ts.Integrator.nvt_langevin,
     n_steps=n_steps,
     temperature=2000,
     timestep=0.002,
@@ -295,12 +290,14 @@ We can analyze each trajectory individually:
 
 # %% Calculate final energy per atom for each system
 final_energies_per_atom = []
-for i, filename in enumerate(filenames):
+for sys_idx, filename in enumerate(filenames):
     with ts.TorchSimTrajectory(filename) as traj:
         final_energy = traj.get_array("potential_energy")[-1].item()
         n_atoms = len(traj.get_atoms(-1))
         final_energies_per_atom.append(final_energy / n_atoms)
-        print(f"System {i}: {final_energy:.6f} eV, {final_energy / n_atoms:.6f} eV/atom")
+        print(
+            f"System {sys_idx}: {final_energy:.6f} eV, {final_energy / n_atoms:.6f} eV/atom"
+        )
 
 
 # %% [markdown]
@@ -317,11 +314,7 @@ Ignore the following cell, it just exists so that the example runs on CPU.
 
 
 # %%
-def mock_determine_max_batch_size(*args, **kwargs):
-    return 10
-
-
-ts.autobatching.determine_max_batch_size = mock_determine_max_batch_size
+ts.autobatching.determine_max_batch_size = lambda *args, **kwargs: 10  # type: ignore[invalid-assignment]
 
 
 # %% [markdown]
@@ -332,7 +325,7 @@ We enable autobatching by simply setting the `autobatcher` argument to `True`.
 final_state = ts.integrate(
     system=systems,
     model=mace_model,
-    integrator=ts.nvt_langevin,
+    integrator=ts.Integrator.nvt_langevin,
     n_steps=n_steps,
     temperature=2000,
     timestep=0.002,
@@ -361,7 +354,8 @@ Let's use the `optimize` function with the FIRE algorithm to relax our structure
 final_state = ts.optimize(
     system=systems,
     model=mace_model,
-    optimizer=ts.unit_cell_fire,
+    optimizer=ts.Optimizer.fire,
+    init_kwargs=dict(cell_filter=ts.CellFilter.unit),
 )
 
 final_atoms = final_state.to_atoms()
@@ -392,7 +386,7 @@ def default_energy_convergence(state, last_energy):
 
 # we arbitrarily add energy so nothing is converged
 convergence_tensor = default_energy_convergence(final_state, final_state.energy + 1)
-print("Any converged?", torch.any(convergence_tensor).item())
+print(f"Any converged? {torch.any(convergence_tensor).item()}")
 
 
 # %% [markdown]
@@ -408,8 +402,9 @@ force_convergence_fn = ts.generate_force_convergence_fn(force_tol=1e-3)
 final_state = ts.optimize(
     system=systems,
     model=mace_model,
-    optimizer=ts.unit_cell_fire,
+    optimizer=ts.Optimizer.fire,
     convergence_fn=force_convergence_fn,  # Custom convergence function
+    init_kwargs=dict(cell_filter=ts.CellFilter.unit),
 )
 
 final_atoms = final_state.to_atoms()
@@ -484,7 +479,7 @@ structure = Structure(lattice, species, coords)
 final_state = ts.integrate(
     system=structure,
     model=lj_model,
-    integrator=ts.nvt_langevin,
+    integrator=ts.Integrator.nvt_langevin,
     n_steps=n_steps,
     temperature=2000,
     timestep=0.002,

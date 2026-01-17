@@ -1,14 +1,9 @@
-# %% [markdown]
-# <details>
-#   <summary>Dependencies</summary>
+# %%
 # /// script
 # dependencies = [
-#     "graph-pes>=0.0.30",
-#     "torch==2.5",
-#     "vesin-torch>=0.3.7",
+#     "torch_sim_atomistic[graphpes]"
 # ]
 # ///
-# </details>
 
 
 # %% [markdown]
@@ -38,7 +33,7 @@ from graph_pes.models import TensorNet, load_model
 # here, we just create a TensorNet model with random weights
 model = TensorNet(cutoff=5.0)
 
-print("Number of parameters:", sum(p.numel() for p in model.parameters()))
+print(f"Number of parameters: {sum(p.numel() for p in model.parameters()):,}")
 
 # %% [markdown]
 """
@@ -65,6 +60,7 @@ ts_model = GraphPESWrapper(model, compute_stress=False)
 Now that we have a model, we can drive MD simulations with it. For this, we will use the
 `integrate` function.
 """
+
 # %%
 from ase.build import molecule
 import torch_sim as ts
@@ -76,7 +72,7 @@ atoms = molecule("H2O")
 final_state = ts.integrate(
     system=atoms,
     model=ts_model,
-    integrator=ts.nvt_langevin,
+    integrator=ts.Integrator.nvt_langevin,
     n_steps=50,
     temperature=300,
     timestep=0.001,

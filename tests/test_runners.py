@@ -4,18 +4,19 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
+from ase.build.bulk import bulk
 
 import torch_sim as ts
+from tests.conftest import DEVICE, DTYPE
 from torch_sim.autobatching import BinningAutoBatcher, InFlightAutoBatcher
-from torch_sim.integrators import nve, nvt_langevin
+from torch_sim.integrators.md import MDState
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.optimizers import unit_cell_fire
-from torch_sim.quantities import calc_kinetic_energy
+from torch_sim.state import SimState
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 
 
 def test_integrate_nve(
-    ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesModel, tmp_path: Path
+    ar_supercell_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
 ) -> None:
     """Test NVE integration with LJ potential."""
     traj_file = tmp_path / "nve.h5md"
@@ -24,7 +25,7 @@ def test_integrate_nve(
         state_frequency=1,
         prop_calculators={
             1: {
-                "ke": lambda state: calc_kinetic_energy(
+                "ke": lambda state: ts.calc_kinetic_energy(
                     momenta=state.momenta, masses=state.masses
                 )
             }
@@ -34,14 +35,14 @@ def test_integrate_nve(
     final_state = ts.integrate(
         system=ar_supercell_sim_state,
         model=lj_model,
-        integrator=nve,
+        integrator=ts.Integrator.nve,
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
         trajectory_reporter=reporter,
     )
 
-    assert isinstance(final_state, ts.SimState)
+    assert isinstance(final_state, SimState)
     assert traj_file.is_file()
 
     # Check energy conservation
@@ -52,7 +53,7 @@ def test_integrate_nve(
 
 
 def test_integrate_single_nvt(
-    ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesModel, tmp_path: Path
+    ar_supercell_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
 ) -> None:
     """Test NVT integration with LJ potential."""
     traj_file = tmp_path / "nvt.h5md"
@@ -61,7 +62,7 @@ def test_integrate_single_nvt(
         state_frequency=1,
         prop_calculators={
             1: {
-                "ke": lambda state: calc_kinetic_energy(
+                "ke": lambda state: ts.calc_kinetic_energy(
                     momenta=state.momenta, masses=state.masses
                 )
             }
@@ -71,15 +72,14 @@ def test_integrate_single_nvt(
     final_state = ts.integrate(
         system=ar_supercell_sim_state,
         model=lj_model,
-        integrator=nvt_langevin,
+        integrator=ts.Integrator.nvt_langevin,
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
         trajectory_reporter=reporter,
-        gamma=0.1,  # ps^-1
     )
 
-    assert isinstance(final_state, ts.SimState)
+    assert isinstance(final_state, SimState)
     assert traj_file.is_file()
 
     # Check energy fluctuations
@@ -90,25 +90,83 @@ def test_integrate_single_nvt(
 
 
 def test_integrate_double_nvt(
-    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
+    ar_double_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test NVT integration with LJ potential."""
     final_state = ts.integrate(
         system=ar_double_sim_state,
         model=lj_model,
-        integrator=nvt_langevin,
+        integrator=ts.Integrator.nvt_langevin,
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
+        init_kwargs=dict(seed=481516),
     )
 
-    assert isinstance(final_state, ts.SimState)
+    assert isinstance(final_state, SimState)
     assert final_state.n_atoms == 64
     assert not torch.isnan(final_state.energy).any()
 
 
+def test_integrate_double_nvt_multiple_temperatures(
+    ar_double_sim_state: SimState, lj_model: LennardJonesModel
+) -> None:
+    """Test NVT integration with LJ potential."""
+    n_steps = 5
+    _ = ts.integrate(
+        system=ar_double_sim_state,
+        model=lj_model,
+        integrator=ts.Integrator.nvt_langevin,
+        n_steps=n_steps,
+        temperature=[100.0, 200.0],  # K
+        timestep=0.001,  # ps
+        init_kwargs=dict(seed=481516),
+    )
+
+    batcher = ts.autobatching.BinningAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=ar_double_sim_state[0].n_atoms,
+    )
+    _ = ts.integrate(
+        system=ar_double_sim_state,
+        model=lj_model,
+        integrator=ts.Integrator.nvt_langevin,
+        n_steps=n_steps,
+        temperature=[100.0, 200.0],  # K
+        timestep=0.001,  # ps
+        autobatcher=batcher,
+        init_kwargs=dict(seed=481516),
+    )
+
+    # Temperature tensor with correct shape (n_steps, n_systems)
+    _ = ts.integrate(
+        system=ar_double_sim_state,
+        model=lj_model,
+        integrator=ts.Integrator.nvt_langevin,
+        n_steps=n_steps,
+        temperature=torch.tensor([100.0, 200.0])[None, :].repeat(n_steps, 1),
+        timestep=0.001,  # ps
+        autobatcher=batcher,
+        init_kwargs=dict(seed=481516),
+    )
+
+    # Temperature tensor with incorrect shape (n_systems, n_steps)
+    with pytest.raises(ValueError, match="first dimension must be n_steps"):
+        _ = ts.integrate(
+            system=ar_double_sim_state,
+            model=lj_model,
+            integrator=ts.Integrator.nvt_langevin,
+            n_steps=n_steps,
+            temperature=torch.tensor([100.0, 200.0])[None, :].repeat(n_steps, 1).T,  # K
+            timestep=0.001,  # ps
+            autobatcher=batcher,
+            init_kwargs=dict(seed=481516),
+        )
+
+
 def test_integrate_double_nvt_with_reporter(
-    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel, tmp_path: Path
+    ar_double_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
 ) -> None:
     """Test NVT integration with LJ potential."""
     trajectory_files = [tmp_path / "nvt_0.h5md", tmp_path / "nvt_1.h5md"]
@@ -117,7 +175,7 @@ def test_integrate_double_nvt_with_reporter(
         state_frequency=1,
         prop_calculators={
             1: {
-                "ke": lambda state: calc_kinetic_energy(
+                "ke": lambda state: ts.calc_kinetic_energy(
                     momenta=state.momenta, masses=state.masses
                 )
             }
@@ -127,15 +185,14 @@ def test_integrate_double_nvt_with_reporter(
     final_state = ts.integrate(
         system=ar_double_sim_state,
         model=lj_model,
-        integrator=nvt_langevin,
+        integrator=ts.Integrator.nvt_langevin,
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
         trajectory_reporter=reporter,
-        gamma=0.1,  # ps^-1
     )
 
-    assert isinstance(final_state, ts.SimState)
+    assert isinstance(final_state, SimState)
     assert final_state.n_atoms == 64
     assert all(traj_file.is_file() for traj_file in trajectory_files)
 
@@ -149,8 +206,8 @@ def test_integrate_double_nvt_with_reporter(
 
 
 def test_integrate_many_nvt(
-    ar_supercell_sim_state: ts.SimState,
-    fe_supercell_sim_state: ts.SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
     lj_model: LennardJonesModel,
     tmp_path: Path,
 ) -> None:
@@ -161,14 +218,14 @@ def test_integrate_many_nvt(
         lj_model.dtype,
     )
     trajectory_files = [
-        tmp_path / f"nvt_{batch}.h5md" for batch in range(triple_state.n_systems)
+        tmp_path / f"nvt_{sys_idx}.h5md" for sys_idx in range(triple_state.n_systems)
     ]
     reporter = TrajectoryReporter(
         filenames=trajectory_files,
         state_frequency=1,
         prop_calculators={
             1: {
-                "ke": lambda state: calc_kinetic_energy(
+                "ke": lambda state: ts.calc_kinetic_energy(
                     momenta=state.momenta, masses=state.masses
                 )
             }
@@ -178,14 +235,14 @@ def test_integrate_many_nvt(
     final_state = ts.integrate(
         system=triple_state,
         model=lj_model,
-        integrator=nve,
+        integrator=ts.Integrator.nve,
         n_steps=10,
         temperature=300.0,  # K
         timestep=0.001,  # ps
         trajectory_reporter=reporter,
     )
 
-    assert isinstance(final_state, ts.SimState)
+    assert isinstance(final_state, SimState)
     assert all(traj_file.is_file() for traj_file in trajectory_files)
     assert not torch.isnan(final_state.energy).any()
     assert not torch.isnan(final_state.positions).any()
@@ -196,8 +253,8 @@ def test_integrate_many_nvt(
 
 
 def test_integrate_with_autobatcher(
-    ar_supercell_sim_state: ts.SimState,
-    fe_supercell_sim_state: ts.SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
     lj_model: LennardJonesModel,
 ) -> None:
     """Test integration with autobatcher."""
@@ -215,22 +272,22 @@ def test_integrate_with_autobatcher(
     final_states = ts.integrate(
         system=triple_state,
         model=lj_model,
-        integrator=nve,
+        integrator=ts.Integrator.nve,
         n_steps=10,
         temperature=300.0,
         timestep=0.001,
         autobatcher=autobatcher,
     )
 
-    assert isinstance(final_states, ts.SimState)
+    assert isinstance(final_states, SimState)
     for init_state, final_state in zip(states, final_states.split(), strict=True):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
 
 
 def test_integrate_with_autobatcher_and_reporting(
-    ar_supercell_sim_state: ts.SimState,
-    fe_supercell_sim_state: ts.SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
     lj_model: LennardJonesModel,
     tmp_path: Path,
 ) -> None:
@@ -247,7 +304,7 @@ def test_integrate_with_autobatcher_and_reporting(
         max_memory_scaler=260,
     )
     trajectory_files = [
-        tmp_path / f"nvt_{batch}.h5md" for batch in range(triple_state.n_systems)
+        tmp_path / f"nvt_{sys_idx}.h5md" for sys_idx in range(triple_state.n_systems)
     ]
     reporter = TrajectoryReporter(
         filenames=trajectory_files,
@@ -257,7 +314,7 @@ def test_integrate_with_autobatcher_and_reporting(
     final_states = ts.integrate(
         system=triple_state,
         model=lj_model,
-        integrator=nve,
+        integrator=ts.Integrator.nve,
         n_steps=10,
         temperature=300.0,
         timestep=0.001,
@@ -267,7 +324,7 @@ def test_integrate_with_autobatcher_and_reporting(
 
     assert all(traj_file.is_file() for traj_file in trajectory_files)
 
-    assert isinstance(final_states, ts.SimState)
+    assert isinstance(final_states, SimState)
     for init_state, final_state in zip(states, final_states.split(), strict=True):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
@@ -287,7 +344,7 @@ def test_integrate_with_autobatcher_and_reporting(
 
 
 def test_optimize_fire(
-    ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesModel, tmp_path: Path
+    ar_supercell_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
 ) -> None:
     """Test FIRE optimization with LJ potential."""
     trajectory_files = [tmp_path / "opt.h5md"]
@@ -304,9 +361,10 @@ def test_optimize_fire(
     final_state = ts.optimize(
         system=ar_supercell_sim_state,
         model=lj_model,
-        optimizer=unit_cell_fire,
+        optimizer=ts.Optimizer.fire,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         trajectory_reporter=reporter,
+        init_kwargs={"cell_filter": ts.CellFilter.unit},
     )
 
     with TorchSimTrajectory(trajectory_files[0]) as traj:
@@ -319,8 +377,24 @@ def test_optimize_fire(
     assert not torch.allclose(original_state.positions, final_state.positions)
 
 
+def test_force_convergence_fn_w_cell_filter(lj_model: LennardJonesModel):
+    """Tests that we can calculate static properties after an optimize run."""
+    atoms = bulk("Si", "diamond", a=5.43, cubic=True)
+    initial_state = ts.io.atoms_to_state(
+        atoms, device=lj_model.device, dtype=lj_model.dtype
+    )
+
+    ts.optimize(
+        system=initial_state,
+        model=lj_model,
+        optimizer=ts.Optimizer.fire,
+        convergence_fn=ts.generate_force_convergence_fn(),
+        max_steps=100,
+    )
+
+
 def test_default_converged_fn(
-    ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesModel, tmp_path: Path
+    ar_supercell_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
 ) -> None:
     """Test default converged function."""
     ar_supercell_sim_state.positions += (
@@ -329,7 +403,8 @@ def test_default_converged_fn(
 
     traj_file = tmp_path / "opt.h5md"
     reporter = TrajectoryReporter(
-        filenames=traj_file, prop_calculators={1: {"energy": lambda state: state.energy}}
+        filenames=traj_file,
+        prop_calculators={1: {"energy": lambda state: state.energy}},
     )
 
     original_state = ar_supercell_sim_state.clone()
@@ -337,8 +412,9 @@ def test_default_converged_fn(
     final_state = ts.optimize(
         system=ar_supercell_sim_state,
         model=lj_model,
-        optimizer=unit_cell_fire,
+        optimizer=ts.Optimizer.fire,
         trajectory_reporter=reporter,
+        init_kwargs={"cell_filter": ts.CellFilter.unit},
     )
 
     with TorchSimTrajectory(traj_file) as traj:
@@ -350,7 +426,7 @@ def test_default_converged_fn(
 
 
 def test_batched_optimize_fire(
-    ar_double_sim_state: ts.SimState,
+    ar_double_sim_state: SimState,
     lj_model: LennardJonesModel,
     tmp_path: Path,
 ) -> None:
@@ -363,7 +439,7 @@ def test_batched_optimize_fire(
         state_frequency=1,
         prop_calculators={
             1: {
-                "ke": lambda state: calc_kinetic_energy(
+                "ke": lambda state: ts.calc_kinetic_energy(
                     velocities=state.velocities, masses=state.masses
                 )
             }
@@ -373,17 +449,19 @@ def test_batched_optimize_fire(
     final_state = ts.optimize(
         system=ar_double_sim_state,
         model=lj_model,
-        optimizer=unit_cell_fire,
-        convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
+        optimizer=ts.Optimizer.fire,
+        convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-5),
         trajectory_reporter=reporter,
+        max_steps=500,
+        init_kwargs={"cell_filter": ts.CellFilter.unit},
     )
 
     assert torch.all(final_state.forces < 1e-4)
 
 
 def test_optimize_with_autobatcher(
-    ar_supercell_sim_state: ts.SimState,
-    fe_supercell_sim_state: ts.SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
     lj_model: LennardJonesModel,
 ) -> None:
     """Test optimize with autobatcher."""
@@ -394,27 +472,26 @@ def test_optimize_with_autobatcher(
         lj_model.dtype,
     )
     autobatcher = InFlightAutoBatcher(
-        model=lj_model,
-        memory_scales_with="n_atoms",
-        max_memory_scaler=260,
+        model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=260
     )
     final_states = ts.optimize(
         system=triple_state,
         model=lj_model,
-        optimizer=unit_cell_fire,
+        optimizer=ts.Optimizer.fire,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         autobatcher=autobatcher,
+        init_kwargs={"cell_filter": ts.CellFilter.unit},
     )
 
-    assert isinstance(final_states, ts.SimState)
+    assert isinstance(final_states, SimState)
     for init_state, final_state in zip(states, final_states.split(), strict=True):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
 
 
 def test_optimize_with_autobatcher_and_reporting(
-    ar_supercell_sim_state: ts.SimState,
-    fe_supercell_sim_state: ts.SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
     lj_model: LennardJonesModel,
     tmp_path: Path,
 ) -> None:
@@ -434,7 +511,7 @@ def test_optimize_with_autobatcher_and_reporting(
     )
 
     trajectory_files = [
-        tmp_path / f"opt_{batch}.h5md" for batch in range(triple_state.n_systems)
+        tmp_path / f"opt_{sys_idx}.h5md" for sys_idx in range(triple_state.n_systems)
     ]
     reporter = TrajectoryReporter(
         filenames=trajectory_files,
@@ -445,15 +522,16 @@ def test_optimize_with_autobatcher_and_reporting(
     final_states = ts.optimize(
         system=triple_state,
         model=lj_model,
-        optimizer=unit_cell_fire,
+        optimizer=ts.Optimizer.fire,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         trajectory_reporter=reporter,
         autobatcher=autobatcher,
+        init_kwargs={"cell_filter": ts.CellFilter.unit},
     )
 
     assert all(traj_file.is_file() for traj_file in trajectory_files)
 
-    assert isinstance(final_states, ts.SimState)
+    assert isinstance(final_states, SimState)
     for init_state, final_state in zip(states, final_states.split(), strict=True):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
@@ -476,8 +554,8 @@ def test_optimize_with_autobatcher_and_reporting(
 
 
 def test_integrate_with_default_autobatcher(
-    ar_supercell_sim_state: ts.SimState,
-    fe_supercell_sim_state: ts.SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
     lj_model: LennardJonesModel,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -491,31 +569,27 @@ def test_integrate_with_default_autobatcher(
     )
 
     states = [ar_supercell_sim_state, fe_supercell_sim_state, ar_supercell_sim_state]
-    triple_state = ts.initialize_state(
-        states,
-        lj_model.device,
-        lj_model.dtype,
-    )
+    triple_state = ts.initialize_state(states, lj_model.device, lj_model.dtype)
 
     final_states = ts.integrate(
         system=triple_state,
         model=lj_model,
-        integrator=nve,
+        integrator=ts.Integrator.nve,
         n_steps=10,
         temperature=300.0,
         timestep=0.001,
         autobatcher=True,
     )
 
-    assert isinstance(final_states, ts.SimState)
+    assert isinstance(final_states, SimState)
     for init_state, final_state in zip(states, final_states.split(), strict=True):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
 
 
 def test_optimize_with_default_autobatcher(
-    ar_supercell_sim_state: ts.SimState,
-    fe_supercell_sim_state: ts.SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
     lj_model: LennardJonesModel,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -536,19 +610,20 @@ def test_optimize_with_default_autobatcher(
     final_states = ts.optimize(
         system=triple_state,
         model=lj_model,
-        optimizer=unit_cell_fire,
+        optimizer=ts.Optimizer.fire,
         convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
         autobatcher=True,
+        init_kwargs={"cell_filter": ts.CellFilter.unit},
     )
 
-    assert isinstance(final_states, ts.SimState)
+    assert isinstance(final_states, SimState)
     for init_state, final_state in zip(states, final_states.split(), strict=True):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
 
 
 def test_static_single(
-    ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesModel, tmp_path: Path
+    ar_supercell_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
 ) -> None:
     """Test static calculation with LJ potential."""
     traj_file = tmp_path / "static.h5md"
@@ -587,7 +662,7 @@ def test_static_single(
 
 
 def test_static_double(
-    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel, tmp_path: Path
+    ar_double_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
 ) -> None:
     """Test static calculation with multiple systems."""
     trajectory_files = [tmp_path / "static_0.h5md", tmp_path / "static_1.h5md"]
@@ -619,8 +694,8 @@ def test_static_double(
 
 
 def test_static_with_autobatcher(
-    ar_supercell_sim_state: ts.SimState,
-    fe_supercell_sim_state: ts.SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
     lj_model: LennardJonesModel,
 ) -> None:
     """Test static calculation with autobatcher."""
@@ -666,7 +741,7 @@ def test_static_with_autobatcher_and_reporting(
     s2_atoms = bulk("Cu", "fcc", a=3.6, cubic=True).repeat((2, 1, 1))
     s3_atoms = bulk("Ar", "fcc", a=5.3, cubic=True)  # Different params from s0_atoms
 
-    initial_sim_states: list[ts.SimState] = []
+    initial_sim_states: list[SimState] = []
     for idx, atoms_obj in enumerate((s0_atoms, s1_atoms, s2_atoms, s3_atoms)):
         sim_state_batched = ts.initialize_state(
             atoms_obj, device=lj_model.device, dtype=lj_model.dtype
@@ -699,7 +774,6 @@ def test_static_with_autobatcher_and_reporting(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=10,
-        return_indices=True,
     )
 
     # 4. Call ts.static with trajectory reporting
@@ -760,7 +834,7 @@ def test_static_with_autobatcher_and_reporting(
 
 
 def test_static_no_filenames(
-    ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesModel
+    ar_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test static calculation with no trajectory filenames."""
     reporter = TrajectoryReporter(
@@ -779,12 +853,31 @@ def test_static_no_filenames(
     assert isinstance(props[0]["potential_energy"], torch.Tensor)
 
 
+def test_static_after_optimize(lj_model: LennardJonesModel):
+    """Tests that we can calculate static properties after an optimize run."""
+    atoms = bulk("Si", "diamond", a=5.43, cubic=True)
+    initial_state = ts.io.atoms_to_state(
+        atoms, device=lj_model.device, dtype=lj_model.dtype
+    )
+
+    final_state = ts.optimize(
+        system=initial_state,
+        model=lj_model,
+        optimizer=ts.Optimizer.fire,
+        max_steps=100,
+    )
+
+    results = ts.static(
+        system=final_state,
+        model=lj_model,
+    )
+    assert results[0]["potential_energy"] == final_state.energy
+
+
 def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:
     # this tests the example from the readme, update as needed
 
     from ase.build import bulk
-
-    import torch_sim as ts
 
     cu_atoms = bulk("Cu", "fcc", a=3.58, cubic=True).repeat((2, 2, 2))
     many_cu_atoms = [cu_atoms] * 5
@@ -797,10 +890,9 @@ def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:
         n_steps=50,
         timestep=0.002,
         temperature=1000,
-        integrator=ts.nvt_langevin,
+        integrator=ts.Integrator.nvt_langevin,
         trajectory_reporter=dict(filenames=trajectory_files, state_frequency=10),
     )
-    final_atoms_list = final_state.to_atoms()  # noqa: F841
 
     # extract the final energy from the trajectory file
     final_energies = []
@@ -814,8 +906,9 @@ def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:
     relaxed_state = ts.optimize(
         system=final_state,
         model=lj_model,
-        optimizer=ts.frechet_cell_fire,
+        optimizer=ts.Optimizer.fire,
         # autobatcher=True,  # disabled for CPU-based LJ model in test
+        init_kwargs={"cell_filter": ts.CellFilter.frechet},
     )
 
     assert relaxed_state.energy.shape == (final_state.n_systems,)
@@ -824,23 +917,21 @@ def test_readme_example(lj_model: LennardJonesModel, tmp_path: Path) -> None:
 @pytest.fixture
 def mock_state() -> Callable:
     """Create a mock state for testing convergence functions."""
-    device = torch.device("cpu")
-    dtype = torch.float64
     n_systems, n_atoms = 2, 8
     torch.manual_seed(0)  # deterministic forces
 
     class MockState:
         def __init__(self, *, include_cell_forces: bool = True) -> None:
-            self.forces = torch.randn(n_atoms, 3, device=device, dtype=dtype)
+            self.forces = torch.randn(n_atoms, 3, device=DEVICE, dtype=DTYPE)
             self.system_idx = torch.repeat_interleave(
                 torch.arange(n_systems), n_atoms // n_systems
             )
-            self.device = device
-            self.dtype = dtype
+            self.device = DEVICE
+            self.dtype = DTYPE
             self.n_systems = n_systems
             if include_cell_forces:
                 self.cell_forces = torch.randn(
-                    n_systems, 3, 3, device=device, dtype=dtype
+                    n_systems, 3, 3, device=DEVICE, dtype=DTYPE
                 )
 
     return MockState
@@ -858,7 +949,7 @@ def mock_state() -> Callable:
 )
 def test_generate_force_convergence_fn(
     *,
-    ar_supercell_sim_state: ts.SimState,
+    ar_supercell_sim_state: SimState,
     lj_model: LennardJonesModel,
     mock_state: Callable,
     force_tol: float,
@@ -871,20 +962,22 @@ def test_generate_force_convergence_fn(
     if should_error:
         state = mock_state(include_cell_forces=False)
     else:
-        # Prepare real state
+        # Create a proper state with forces from the model output
         model_output = lj_model(ar_supercell_sim_state)
-        ar_supercell_sim_state.forces = model_output["forces"]
-        ar_supercell_sim_state.energy = model_output["energy"]
+
+        state = MDState.from_state(
+            ar_supercell_sim_state,
+            energy=model_output["energy"],
+            forces=model_output["forces"],
+            momenta=torch.zeros_like(ar_supercell_sim_state.positions),
+        )
 
         if has_cell_forces:
-            ar_supercell_sim_state.cell_forces = torch.randn(
-                ar_supercell_sim_state.n_systems,
-                3,
-                3,
+            state.cell_forces = torch.randn(
+                *(ar_supercell_sim_state.n_systems, 3, 3),
                 device=ar_supercell_sim_state.device,
                 dtype=ar_supercell_sim_state.dtype,
             )
-        state = ar_supercell_sim_state
 
     convergence_fn = ts.generate_force_convergence_fn(
         force_tol=force_tol, include_cell_forces=include_cell_forces
@@ -901,13 +994,18 @@ def test_generate_force_convergence_fn(
 
 
 def test_generate_force_convergence_fn_tolerance_ordering(
-    ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesModel
+    ar_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test that higher tolerances are less restrictive than lower ones."""
     model_output = lj_model(ar_supercell_sim_state)
-    ar_supercell_sim_state.forces = model_output["forces"]
-    ar_supercell_sim_state.energy = model_output["energy"]
-    ar_supercell_sim_state.cell_forces = torch.randn(
+
+    test_state = MDState.from_state(
+        ar_supercell_sim_state,
+        energy=model_output["energy"],
+        forces=model_output["forces"],
+        momenta=torch.zeros_like(ar_supercell_sim_state.positions),
+    )
+    test_state.cell_forces = torch.randn(
         ar_supercell_sim_state.n_systems,
         3,
         3,
@@ -917,8 +1015,7 @@ def test_generate_force_convergence_fn_tolerance_ordering(
 
     tolerances = [1e-4, 1e-2, 1e0, 1e2]
     results = [
-        ts.generate_force_convergence_fn(force_tol=tol)(ar_supercell_sim_state)
-        for tol in tolerances
+        ts.generate_force_convergence_fn(force_tol=tol)(test_state) for tol in tolerances
     ]
 
     # If converged at lower tolerance, must be converged at higher tolerance
@@ -960,12 +1057,12 @@ def test_generate_force_convergence_fn_logic(
             self.forces = torch.zeros(n_atoms, 3, device=device, dtype=dtype)
             self.cell_forces = torch.zeros(n_systems, 3, 3, device=device, dtype=dtype)
 
-            for system_idx, (atomic_force, cell_force) in enumerate(
+            for sys_idx, (atomic_force, cell_force) in enumerate(
                 zip(atomic_forces, cell_forces, strict=False)
             ):
-                system_mask = self.system_idx == system_idx
+                system_mask = self.system_idx == sys_idx
                 self.forces[system_mask, 0] = atomic_force
-                self.cell_forces[system_idx, 0, 0] = cell_force
+                self.cell_forces[sys_idx, 0, 0] = cell_force
 
     state = ControlledMockState()
     convergence_fn = ts.generate_force_convergence_fn(
@@ -977,21 +1074,26 @@ def test_generate_force_convergence_fn_logic(
 
 
 def test_generate_force_convergence_fn_ignores_last_energy(
-    ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesModel
+    ar_supercell_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test that convergence function ignores last_energy parameter."""
     model_output = lj_model(ar_supercell_sim_state)
-    ar_supercell_sim_state.forces = model_output["forces"]
-    ar_supercell_sim_state.energy = model_output["energy"]
+
+    test_state = MDState.from_state(
+        ar_supercell_sim_state,
+        energy=model_output["energy"],
+        forces=model_output["forces"],
+        momenta=torch.zeros_like(ar_supercell_sim_state.positions),
+    )
 
     convergence_fn = ts.generate_force_convergence_fn(
         force_tol=1e-2, include_cell_forces=False
     )
 
     results = [
-        convergence_fn(ar_supercell_sim_state),
-        convergence_fn(ar_supercell_sim_state, last_energy=torch.tensor([1.0])),
-        convergence_fn(ar_supercell_sim_state, last_energy=None),
+        convergence_fn(test_state),
+        convergence_fn(test_state, last_energy=torch.tensor([1.0])),
+        convergence_fn(test_state, last_energy=None),
     ]
 
     # All results should be identical

@@ -10,6 +10,7 @@ from functools import wraps
 
 import torch
 from torch.types import _dtype
+from typing_extensions import deprecated
 
 
 def get_fractional_coordinates(
@@ -110,6 +111,7 @@ def inverse_box(box: torch.Tensor) -> torch.Tensor:
     raise ValueError(f"Box must be either: a scalar, a vector, or a matrix. Found {box}.")
 
 
+@deprecated("Use wrap_positions instead")
 def pbc_wrap_general(
     positions: torch.Tensor, lattice_vectors: torch.Tensor
 ) -> torch.Tensor:
@@ -129,8 +131,7 @@ def pbc_wrap_general(
             lattice vectors as columns (A matrix in the equations).
 
     Returns:
-        torch.Tensor: Tensor of wrapped positions in real space with
-            same shape as input positions.
+        torch.Tensor: Wrapped positions in real space with same shape as input positions.
     """
     # Validate inputs
     if not torch.is_floating_point(positions) or not torch.is_floating_point(
@@ -155,7 +156,10 @@ def pbc_wrap_general(
 
 
 def pbc_wrap_batched(
-    positions: torch.Tensor, cell: torch.Tensor, system_idx: torch.Tensor
+    positions: torch.Tensor,
+    cell: torch.Tensor,
+    system_idx: torch.Tensor,
+    pbc: torch.Tensor | bool = True,  # noqa: FBT002
 ) -> torch.Tensor:
     """Apply periodic boundary conditions to batched systems.
 
@@ -170,11 +174,16 @@ def pbc_wrap_batched(
             lattice vectors as column vectors.
         system_idx (torch.Tensor): Tensor of shape (n_atoms,) containing system
             indices for each atom.
+        pbc (torch.Tensor | bool): Tensor of shape (3,) containing boolean values
+            indicating whether periodic boundary conditions are applied in each dimension.
+            Can also be a bool. Defaults to True.
 
     Returns:
-        torch.Tensor: Tensor of wrapped positions in real space with
-            same shape as input positions.
+        torch.Tensor: Wrapped positions in real space with same shape as input positions.
     """
+    if isinstance(pbc, bool):
+        pbc = torch.tensor([pbc, pbc, pbc], dtype=torch.bool, device=positions.device)
+
     # Validate inputs
     if not torch.is_floating_point(positions) or not torch.is_floating_point(cell):
         raise TypeError("Positions and lattice vectors must be floating point tensors.")
@@ -183,8 +192,8 @@ def pbc_wrap_batched(
         raise ValueError("Position dimensionality must match lattice vectors.")
 
     # Get unique system indices and counts
-    unique_systems = torch.unique(system_idx)
-    n_systems = len(unique_systems)
+    uniq_systems = torch.unique(system_idx)
+    n_systems = len(uniq_systems)
 
     if n_systems != cell.shape[0]:
         raise ValueError(
@@ -202,7 +211,8 @@ def pbc_wrap_batched(
     frac_coords = torch.bmm(B_per_atom, positions.unsqueeze(2)).squeeze(2)
 
     # Wrap to reference cell [0,1) using modulo
-    wrapped_frac = frac_coords % 1.0
+    wrapped_frac = frac_coords.clone()
+    wrapped_frac[:, pbc] = frac_coords[:, pbc] % 1.0
 
     # Transform back to real space: r = A·f
     # Get the cell for each atom based on its system index
@@ -216,19 +226,22 @@ def minimum_image_displacement(
     *,
     dr: torch.Tensor,
     cell: torch.Tensor | None = None,
-    pbc: bool = True,
+    pbc: torch.Tensor | bool = True,
 ) -> torch.Tensor:
     """Apply minimum image convention to displacement vectors.
 
     Args:
         dr (torch.Tensor): Displacement vectors [N, 3] or [N, N, 3].
         cell (Optional[torch.Tensor]): Unit cell matrix [3, 3].
-        pbc (bool): Whether to apply periodic boundary conditions.
+        pbc (Optional[torch.Tensor]): Boolean tensor of shape (3,) indicating
+            periodic boundary conditions in each dimension.
 
     Returns:
         torch.Tensor: Minimum image displacement vectors with same shape as input.
     """
-    if cell is None or not pbc:
+    if isinstance(pbc, bool):
+        pbc = torch.tensor([pbc] * 3, dtype=torch.bool, device=dr.device)
+    if cell is None or not pbc.any():
         return dr
 
     # Convert to fractional coordinates
@@ -236,7 +249,7 @@ def minimum_image_displacement(
     dr_frac = torch.einsum("ij,...j->...i", cell_inv, dr)
 
     # Apply minimum image convention
-    dr_frac -= torch.round(dr_frac)
+    dr_frac -= torch.where(pbc, torch.round(dr_frac), torch.zeros_like(dr_frac))
 
     # Convert back to cartesian
     return torch.einsum("ij,...j->...i", cell, dr_frac)
@@ -246,7 +259,7 @@ def get_pair_displacements(
     *,
     positions: torch.Tensor,
     cell: torch.Tensor | None = None,
-    pbc: bool = True,
+    pbc: torch.Tensor | bool = True,
     pairs: tuple[torch.Tensor, torch.Tensor] | None = None,
     shifts: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -255,7 +268,8 @@ def get_pair_displacements(
     Args:
         positions (torch.Tensor): Atomic positions [N, 3].
         cell (Optional[torch.Tensor]): Unit cell matrix [3, 3].
-        pbc (bool): Whether to apply periodic boundary conditions.
+        pbc (Optional[torch.Tensor]): Boolean tensor of shape (3,) indicating
+            periodic boundary conditions in each dimension.
         pairs (Optional[Tuple[torch.Tensor, torch.Tensor]]):
             (i, j) indices for specific pairs to compute.
         shifts (Optional[torch.Tensor]): Shift vectors for periodic images [n_pairs, 3].
@@ -265,13 +279,15 @@ def get_pair_displacements(
             - Displacement vectors [n_pairs, 3].
             - Distances [n_pairs].
     """
+    if isinstance(pbc, bool):
+        pbc = torch.tensor([pbc] * 3, dtype=torch.bool, device=positions.device)
     if pairs is None:
         # Create full distance matrix
         ri = positions.unsqueeze(0)  # [1, N, 3]
         rj = positions.unsqueeze(1)  # [N, 1, 3]
         dr = rj - ri  # [N, N, 3]
 
-        if cell is not None and pbc:
+        if cell is not None and pbc.any():
             dr = minimum_image_displacement(dr=dr, cell=cell, pbc=pbc)
 
         # Calculate distances
@@ -287,7 +303,7 @@ def get_pair_displacements(
     i, j = pairs
     dr = positions[j] - positions[i]  # [n_pairs, 3]
 
-    if cell is not None and pbc:
+    if cell is not None and pbc.any():
         if shifts is not None:
             # Apply provided shifts
             dr = dr + torch.einsum("ij,kj->ki", cell, shifts)
@@ -374,9 +390,7 @@ def wrap_positions(
     device = positions.device
 
     # Convert center to tensor
-    if not hasattr(center, "__len__"):
-        center = (center,) * 3
-    center = torch.tensor(center, dtype=positions.dtype, device=device)
+    center_tensor = torch.tensor(center, dtype=positions.dtype, device=device)
 
     # Handle PBC input
     if isinstance(pbc, bool):
@@ -385,7 +399,7 @@ def wrap_positions(
         pbc = torch.tensor(pbc, dtype=torch.bool, device=device)
 
     # Calculate shift based on center
-    shift = center - 0.5 - eps
+    shift = center_tensor - 0.5 - eps
     shift[~pbc] = 0.0
 
     # Convert positions to fractional coordinates
@@ -393,7 +407,7 @@ def wrap_positions(
 
     if pretty_translation:
         fractional = translate_pretty(fractional, pbc)
-        shift = center - 0.5
+        shift = center_tensor - 0.5
         shift[~pbc] = 0.0
         fractional += shift
     else:
@@ -660,22 +674,17 @@ def build_naive_neighborhood(
     ids = torch.arange(positions.shape[0], device=device, dtype=torch.long)
 
     mapping, system_mapping, shifts_idx_ = [], [], []
-    for i_structure in range(n_atoms.shape[0]):
-        num_repeats = num_repeats_[i_structure]
+    for struct_idx in range(n_atoms.shape[0]):
+        num_repeats = num_repeats_[struct_idx]
         shifts_idx = get_cell_shift_idx(num_repeats, dtype)
-        i_ids = ids[stride[i_structure] : stride[i_structure + 1]]
+        i_ids = ids[stride[struct_idx] : stride[struct_idx + 1]]
 
         s_mapping, shifts_idx = get_fully_connected_mapping(
             i_ids=i_ids, shifts_idx=shifts_idx, self_interaction=self_interaction
         )
         mapping.append(s_mapping)
         system_mapping.append(
-            torch.full(
-                (s_mapping.shape[0],),
-                i_structure,
-                dtype=torch.long,
-                device=device,
-            )
+            torch.full((s_mapping.shape[0],), struct_idx, dtype=torch.long, device=device)
         )
         shifts_idx_.append(shifts_idx)
     return (
@@ -1015,21 +1024,21 @@ def build_linked_cell_neighborhood(
     stride = strides_of(n_atoms)
 
     mapping, system_mapping, cell_shifts_idx = [], [], []
-    for i_structure in range(n_structure):
+    for struct_idx in range(n_structure):
         # Compute the neighborhood with the linked cell algorithm
         neigh_atom, neigh_shift_idx = linked_cell(
-            positions[stride[i_structure] : stride[i_structure + 1]],
-            cell[i_structure],
+            positions[stride[struct_idx] : stride[struct_idx + 1]],
+            cell[struct_idx],
             cutoff,
-            num_repeats[i_structure],
+            num_repeats[struct_idx],
             self_interaction,
         )
 
         system_mapping.append(
-            i_structure * torch.ones(neigh_atom.shape[1], dtype=torch.long, device=device)
+            struct_idx * torch.ones(neigh_atom.shape[1], dtype=torch.long, device=device)
         )
         # Shift the mapping indices to access positions
-        mapping.append(neigh_atom + stride[i_structure])
+        mapping.append(neigh_atom + stride[struct_idx])
         cell_shifts_idx.append(neigh_shift_idx)
 
     return (
@@ -1041,8 +1050,8 @@ def build_linked_cell_neighborhood(
 
 def multiplicative_isotropic_cutoff(
     fn: Callable[..., torch.Tensor],
-    r_onset: torch.Tensor,
-    r_cutoff: torch.Tensor,
+    r_onset: float | torch.Tensor,
+    r_cutoff: float | torch.Tensor,
 ) -> Callable[..., torch.Tensor]:
     """Creates a smoothly truncated version of an isotropic function.
 
@@ -1074,16 +1083,16 @@ def multiplicative_isotropic_cutoff(
         HOOMD-blue documentation:
         https://hoomd-blue.readthedocs.io/en/latest/hoomd/md/module-pair.html
     """
-    r_c = r_cutoff**2
-    r_o = r_onset**2
+    r_c = torch.square(torch.tensor(r_cutoff))
+    r_o = torch.square(torch.tensor(r_onset))
 
     def smooth_fn(dr: torch.Tensor) -> torch.Tensor:
         """Compute the smooth switching function."""
-        r = dr**2
+        r = torch.square(dr)
 
         # Compute switching function for intermediate region
-        numerator = (r_c - r) ** 2 * (r_c + 2 * r - 3 * r_o)
-        denominator = (r_c - r_o) ** 3
+        numerator = torch.square(r_c - r) * (r_c + 2 * r - 3 * r_o)
+        denominator = torch.pow(r_c - r_o, 3)
         intermediate = torch.where(
             dr < r_cutoff, numerator / denominator, torch.zeros_like(dr)
         )
@@ -1138,7 +1147,7 @@ def high_precision_sum(
 
 def safe_mask(
     mask: torch.Tensor,
-    fn: torch.jit.ScriptFunction,
+    fn: Callable[[torch.Tensor], torch.Tensor],
     operand: torch.Tensor,
     placeholder: float = 0.0,
 ) -> torch.Tensor:
@@ -1166,3 +1175,97 @@ def safe_mask(
     """
     masked = torch.where(mask, operand, torch.zeros_like(operand))
     return torch.where(mask, fn(masked), torch.full_like(operand, placeholder))
+
+
+def unwrap_positions(
+    positions: torch.Tensor, cells: torch.Tensor, system_idx: torch.Tensor
+) -> torch.Tensor:
+    """Vectorized unwrapping for multiple systems without explicit loops.
+
+    Parameters
+    ----------
+    positions : (T, N_tot, 3)
+        Wrapped cartesian positions for all systems concatenated.
+    cells : (n_systems, 3, 3) or (T, n_systems, 3, 3)
+        Box matrices, constant or time-dependent.
+    system_idx : (N_tot,)
+        For each atom, which system it belongs to (0..n_systems-1).
+
+    Returns:
+    -------
+    unwrapped_pos : (T, N_tot, 3)
+        Unwrapped cartesian positions.
+    """
+    # -- Constant boxes per system
+    if cells.ndim == 3:
+        inv_box = torch.inverse(cells)  # (n_systems, 3, 3)
+
+        # Map each atom to its system's box
+        inv_box_atoms = inv_box[system_idx]  # (N, 3, 3)
+        box_atoms = cells[system_idx]  # (N, 3, 3)
+
+        # Compute fractional coordinates
+        frac = torch.einsum("tni,nij->tnj", positions, inv_box_atoms)
+
+        # Fractional displacements and unwrap
+        dfrac = frac[1:] - frac[:-1]
+        dfrac -= torch.round(dfrac)
+
+        # Back to Cartesian
+        dcart = torch.einsum("tni,nij->tnj", dfrac, box_atoms)
+
+    # -- Time-dependent boxes per system
+    elif cells.ndim == 4:
+        inv_box = torch.inverse(cells)  # (T, n_systems, 3, 3)
+
+        # Gather each atom's box per frame efficiently
+        inv_box_atoms = inv_box[:, system_idx]  # (T, N, 3, 3)
+        box_atoms = cells[:, system_idx]  # (T, N, 3, 3)
+
+        # Compute fractional coordinates per frame
+        frac = torch.einsum("tni,tnij->tnj", positions, inv_box_atoms)
+
+        dfrac = frac[1:] - frac[:-1]
+        dfrac -= torch.round(dfrac)
+
+        dcart = torch.einsum("tni,tnij->tnj", dfrac, box_atoms[:-1])
+
+    else:
+        raise ValueError("box must have shape (n_systems,3,3) or (T,n_systems,3,3)")
+
+    # Cumulative reconstruction
+    unwrapped = torch.empty_like(positions)
+    unwrapped[0] = positions[0]
+    unwrapped[1:] = torch.cumsum(dcart, dim=0) + unwrapped[0]
+
+    return unwrapped
+
+
+def get_centers_of_mass(
+    positions: torch.Tensor,
+    masses: torch.Tensor,
+    system_idx: torch.Tensor,
+    n_systems: int,
+) -> torch.Tensor:
+    """Compute the centers of mass for each structure in the simulation state.s.
+
+    Args:
+        positions (torch.Tensor): Atomic positions of shape (N, 3).
+        masses (torch.Tensor): Atomic masses of shape (N,).
+        system_idx (torch.Tensor): System indices for each atom of shape (N,).
+        n_systems (int): Total number of systems.
+
+    Returns:
+        torch.Tensor: A tensor of shape (n_structures, 3) containing
+            the center of mass coordinates for each structure.
+    """
+    coms = torch.zeros((n_systems, 3), dtype=positions.dtype).scatter_add_(
+        0,
+        system_idx.unsqueeze(-1).expand(-1, 3),
+        masses.unsqueeze(-1) * positions,
+    )
+    system_masses = torch.zeros((n_systems,), dtype=positions.dtype).scatter_add_(
+        0, system_idx, masses
+    )
+    coms /= system_masses.unsqueeze(-1)
+    return coms

@@ -22,7 +22,7 @@ except ImportError as exc:
     warnings.warn(f"MatterSim import failed: {traceback.format_exc()}", stacklevel=2)
 
     class MatterSimModel(ModelInterface):
-        """MatterSim model wrapper for torch_sim.
+        """MatterSim model wrapper for torch-sim.
 
         This class is a placeholder for the MatterSimModel class.
         It raises an ImportError if sevenn is not installed.
@@ -132,13 +132,16 @@ class MatterSimModel(ModelInterface):
             The state is automatically transferred to the model's device if needed.
             All output tensors are detached from the computation graph.
         """
-        if isinstance(state, dict):
-            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        sim_state = (
+            state
+            if isinstance(state, ts.SimState)
+            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        )
 
-        if state.device != self._device:
-            state = state.to(self._device)
+        if sim_state.device != self._device:
+            sim_state = sim_state.to(self._device)
 
-        atoms_list = ts.io.state_to_atoms(state)
+        atoms_list = ts.io.state_to_atoms(sim_state)
         data_list = [self.convertor.convert(atoms) for atoms in atoms_list]
         batched_data = Collater([], follow_batch=None, exclude_keys=None)(data_list)
         batched_data.to(self._device)
@@ -148,7 +151,7 @@ class MatterSimModel(ModelInterface):
             include_stresses=self.compute_stress,
         )
 
-        results = {}
+        results: dict[str, torch.Tensor] = {}
         results["energy"] = output["total_energy"].detach()
         results["forces"] = output["forces"].detach()
         results["stress"] = self.stress_weight * output["stresses"].detach()

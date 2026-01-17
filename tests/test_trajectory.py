@@ -11,6 +11,7 @@ import torch_sim as ts
 from torch_sim.integrators import MDState
 from torch_sim.models.interface import ModelInterface
 from torch_sim.models.lennard_jones import LennardJonesModel
+from torch_sim.state import SimState
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 
 
@@ -28,18 +29,16 @@ def random_state() -> MDState:
         momenta=torch.randn(10, 3),
         energy=torch.tensor(1.0),
         forces=torch.randn(10, 3),
-        masses=torch.ones(
-            10,
-        ),
+        masses=torch.ones(10),
         cell=torch.unsqueeze(torch.eye(3) * 10.0, 0),
         atomic_numbers=torch.ones(10, dtype=torch.int32),
         system_idx=torch.zeros(10, dtype=torch.int32),
-        pbc=True,
+        pbc=[True, True, False],
     )
 
 
 @pytest.fixture
-def trajectory(test_file: Path) -> Generator[TorchSimTrajectory, None, None]:
+def trajectory(test_file: Path) -> Generator[TorchSimTrajectory]:
     """Create a trajectory file for testing."""
     traj = TorchSimTrajectory(test_file, compress_data=True, mode="w")
     yield traj
@@ -49,7 +48,7 @@ def trajectory(test_file: Path) -> Generator[TorchSimTrajectory, None, None]:
 def test_initialization(test_file: Path) -> None:
     """Test trajectory file initialization."""
     traj = TorchSimTrajectory(test_file, mode="w")
-    assert os.path.exists(test_file)
+    assert os.path.isfile(test_file)
     assert traj._file.isopen  # noqa: SLF001
     traj.close()
 
@@ -94,7 +93,7 @@ def test_write_state_single(
     assert trajectory.get_array("positions").shape == (1, 10, 3)
     assert trajectory.get_array("atomic_numbers").shape == (1, 10)
     assert trajectory.get_array("cell").shape == (1, 3, 3)
-    assert trajectory.get_array("pbc").shape == (1,)
+    assert trajectory.get_array("pbc").shape == (3,)
 
 
 def test_write_state_multiple(
@@ -107,7 +106,7 @@ def test_write_state_multiple(
     assert trajectory.get_array("positions").shape == (2, 10, 3)
     assert trajectory.get_array("atomic_numbers").shape == (1, 10)
     assert trajectory.get_array("cell").shape == (2, 3, 3)
-    assert trajectory.get_array("pbc").shape == (1,)
+    assert trajectory.get_array("pbc").shape == (3,)
 
 
 def test_optional_arrays(trajectory: TorchSimTrajectory, random_state: MDState) -> None:
@@ -260,7 +259,7 @@ def test_data_type_conversions(test_file: Path) -> None:
 
     rng = np.random.default_rng(seed=0)
     # Test data with different types
-    test_data = {
+    test_data: dict[str, np.ndarray | torch.Tensor] = {
         # NumPy arrays
         "np_float64": rng.random((10, 3)).astype(np.float64),
         "np_float32": rng.random((10, 3)).astype(np.float32),
@@ -356,12 +355,12 @@ def test_invalid_dtype_handling(test_file: Path) -> None:
     complex_data = {
         "complex": np.random.default_rng(seed=0).random((10, 3)).astype(np.float16)
     }
-    with pytest.raises(ValueError, match="Unsupported array.dtype="):
+    with pytest.raises(ValueError, match=r"Unsupported array.dtype="):
         traj.write_arrays(complex_data, steps=0)
 
     # Test string data
     string_data = {"strings": np.array([["a", "b", "c"]] * 10)}
-    with pytest.raises(ValueError, match="Unsupported array.dtype="):
+    with pytest.raises(ValueError, match=r"Unsupported array.dtype="):
         traj.write_arrays(string_data, steps=0)
 
     traj.close()
@@ -370,13 +369,10 @@ def test_invalid_dtype_handling(test_file: Path) -> None:
 def test_scalar_dtype_handling(test_file: Path) -> None:
     """Test handling of scalar values with different dtypes."""
     traj = TorchSimTrajectory(
-        test_file,
-        coerce_to_float32=True,
-        coerce_to_int32=True,
-        mode="w",
+        test_file, coerce_to_float32=True, coerce_to_int32=True, mode="w"
     )
 
-    scalar_data = {
+    scalar_data: dict[str, np.ndarray | np.generic | torch.Tensor] = {
         "float64_scalar": np.float64(1.0),
         "float32_scalar": np.float32(1.0),
         "int64_scalar": np.int64(1),
@@ -443,7 +439,7 @@ def test_get_atoms(trajectory: TorchSimTrajectory, random_state: MDState) -> Non
     np.testing.assert_allclose(
         atoms.get_atomic_numbers(), random_state.atomic_numbers.numpy()
     )
-    assert atoms.pbc.all() == random_state.pbc
+    np.testing.assert_array_equal(atoms.pbc, random_state.pbc.detach().cpu().numpy())
 
 
 def test_get_state(trajectory: TorchSimTrajectory, random_state: MDState) -> None:
@@ -477,12 +473,13 @@ def test_get_state(trajectory: TorchSimTrajectory, random_state: MDState) -> Non
         assert state.positions.dtype == expected_dtype
         assert state.cell.dtype == expected_dtype
         assert state.atomic_numbers.dtype == torch.int  # Should always be int
+        assert state.pbc.dtype == torch.bool  # Should always be bool
 
         # Test values (convert to CPU for comparison)
         np.testing.assert_allclose(state.positions, random_state.positions)
         np.testing.assert_allclose(state.cell, random_state.cell)
         np.testing.assert_allclose(state.atomic_numbers, random_state.atomic_numbers)
-        assert state.pbc == random_state.pbc
+        assert torch.equal(state.pbc, random_state.pbc)
 
 
 def test_write_ase_trajectory(
@@ -513,7 +510,7 @@ def test_write_ase_trajectory(
         np.testing.assert_allclose(
             atoms.get_atomic_numbers(), random_state.atomic_numbers.numpy()
         )
-        assert atoms.pbc.all() == random_state.pbc
+        np.testing.assert_array_equal(atoms.pbc, random_state.pbc.numpy())
 
     # Clean up
     ase_traj.close()
@@ -532,12 +529,9 @@ def prop_calculators() -> dict[int, dict[str, Callable]]:
     }
 
 
-def test_report_no_properties(si_sim_state: ts.SimState, tmp_path: Path) -> None:
+def test_report_no_properties(si_sim_state: SimState, tmp_path: Path) -> None:
     """Test TrajectoryReporter with no properties."""
-    reporter = TrajectoryReporter(
-        tmp_path / "no_properties.hdf5",
-        state_frequency=1,
-    )
+    reporter = TrajectoryReporter(tmp_path / "no_properties.hdf5", state_frequency=1)
     # Run several steps
     for step in range(5):
         reporter.report(si_sim_state, step)
@@ -545,7 +539,7 @@ def test_report_no_properties(si_sim_state: ts.SimState, tmp_path: Path) -> None
     reporter.close()
 
     # Verify file was created
-    assert os.path.exists(tmp_path / "no_properties.hdf5")
+    assert os.path.isfile(tmp_path / "no_properties.hdf5")
 
     # Open trajectory and check contents
     trajectory = TorchSimTrajectory(tmp_path / "no_properties.hdf5", mode="r")
@@ -557,11 +551,9 @@ def test_report_no_properties(si_sim_state: ts.SimState, tmp_path: Path) -> None
     assert "atomic_numbers" in trajectory.array_registry
 
 
-def test_report_no_filenames(si_sim_state: ts.SimState, prop_calculators: dict) -> None:
+def test_report_no_filenames(si_sim_state: SimState, prop_calculators: dict) -> None:
     """Test TrajectoryReporter with no filenames."""
-    from torch_sim.state import initialize_state
-
-    triple_state = initialize_state(
+    triple_state = ts.initialize_state(
         [si_sim_state.clone() for _ in range(3)],
         device=si_sim_state.device,
         dtype=si_sim_state.dtype,
@@ -587,7 +579,7 @@ def test_report_no_filenames(si_sim_state: ts.SimState, prop_calculators: dict) 
 
 
 def test_single_batch_reporter(
-    si_sim_state: ts.SimState, tmp_path: Path, prop_calculators: dict
+    si_sim_state: SimState, tmp_path: Path, prop_calculators: dict
 ) -> None:
     """Test TrajectoryReporter with a single batch."""
     # Create a reporter with a single file
@@ -604,7 +596,7 @@ def test_single_batch_reporter(
     reporter.close()
 
     # Verify file was created
-    assert os.path.exists(tmp_path / "single_batch.hdf5")
+    assert os.path.isfile(tmp_path / "single_batch.hdf5")
 
     # Open trajectory and check contents
     trajectory = TorchSimTrajectory(tmp_path / "single_batch.hdf5", mode="r")
@@ -624,7 +616,7 @@ def test_single_batch_reporter(
 
 
 def test_multi_batch_reporter_filenames_none(
-    si_double_sim_state: ts.SimState, prop_calculators: dict
+    si_double_sim_state: SimState, prop_calculators: dict
 ) -> None:
     """Test TrajectoryReporter with multiple batches and no filenames."""
     reporter = TrajectoryReporter(
@@ -649,7 +641,7 @@ def test_multi_batch_reporter_filenames_none(
 
 
 def test_multi_batch_reporter(
-    si_double_sim_state: ts.SimState, tmp_path: Path, prop_calculators: dict
+    si_double_sim_state: SimState, tmp_path: Path, prop_calculators: dict
 ) -> None:
     """Test TrajectoryReporter with multiple batches."""
     # Create a reporter with multiple files
@@ -666,8 +658,8 @@ def test_multi_batch_reporter(
     reporter.close()
 
     # Verify files were created
-    assert os.path.exists(tmp_path / "batch0.hdf5")
-    assert os.path.exists(tmp_path / "batch1.hdf5")
+    assert os.path.isfile(tmp_path / "batch0.hdf5")
+    assert os.path.isfile(tmp_path / "batch1.hdf5")
 
     # Open trajectories and check contents
     traj0 = TorchSimTrajectory(tmp_path / "batch0.hdf5", mode="r")
@@ -694,7 +686,7 @@ def test_multi_batch_reporter(
 
 
 def test_property_model_consistency(
-    si_double_sim_state: ts.SimState, tmp_path: Path, prop_calculators: dict
+    si_double_sim_state: SimState, tmp_path: Path, prop_calculators: dict
 ) -> None:
     """Test property models are consistent for single and multi-batch cases."""
     # Create reporters for single and multi-batch cases
@@ -744,12 +736,12 @@ def test_property_model_consistency(
 
 
 def test_reporter_with_model(
-    si_double_sim_state: ts.SimState, tmp_path: Path, lj_model: LennardJonesModel
+    si_double_sim_state: SimState, tmp_path: Path, lj_model: LennardJonesModel
 ) -> None:
     """Test TrajectoryReporter with a model argument in property calculators."""
 
     # Create a property calculator that uses the model
-    def energy_calculator(state: ts.SimState, model: ModelInterface) -> torch.Tensor:
+    def energy_calculator(state: SimState, model: ModelInterface) -> torch.Tensor:
         output = model(state)
         # Calculate a property that depends on the model
         return output["energy"]
@@ -781,13 +773,13 @@ def test_reporter_with_model(
         TorchSimTrajectory(tmp_path / "model_1.hdf5", mode="r"),
     ]
 
-    for system_idx, trajectory in enumerate(trajectories):
+    for sys_idx, trajectory in enumerate(trajectories):
         # Get the property value from file
         file_energy = trajectory.get_array("energy")[0]
-        system_props = props[system_idx]
+        system_props = props[sys_idx]
 
         # Calculate expected value
-        substate = si_double_sim_state[system_idx]
+        substate = si_double_sim_state[sys_idx]
         expected = lj_model(substate)["energy"]
 
         # Compare file contents with expected
@@ -806,7 +798,7 @@ def test_get_atoms_importerror(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
 
     traj = TorchSimTrajectory(tmp_path / "dummy.h5", mode="w")
     # Write minimal data so get_atoms can be called
-    state = ts.SimState(
+    state = SimState(
         positions=torch.zeros(1, 3),
         masses=torch.ones(1),
         cell=torch.eye(3).unsqueeze(0),
@@ -830,7 +822,7 @@ def test_write_ase_trajectory_importerror(
 
     traj = TorchSimTrajectory(tmp_path / "dummy.h5", mode="w")
     # Write minimal data so write_ase_trajectory can be called
-    state = ts.SimState(
+    state = SimState(
         positions=torch.zeros(1, 3),
         masses=torch.ones(1),
         cell=torch.eye(3).unsqueeze(0),

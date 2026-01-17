@@ -5,7 +5,7 @@ import torch
 import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
-from torch_sim.neighbors import vesin_nl_ts
+from torch_sim.neighbors import torchsim_nl
 from torch_sim.typing import StateDict
 
 
@@ -139,7 +139,6 @@ class ParticleLifeModel(ModelInterface):
         Returns:
             A dictionary containing the energy, forces, and stresses
         """
-        # Extract required data from input
         if isinstance(state, dict):
             state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
 
@@ -151,21 +150,27 @@ class ParticleLifeModel(ModelInterface):
             cell = cell.squeeze(0)  # Squeeze the first dimension
 
         if self.use_neighbor_list:
-            # Get neighbor list using wrapping_nl
-            mapping, shifts = vesin_nl_ts(
+            # Get neighbor list using torchsim_nl
+            # Ensure system_idx exists (create if None for single system)
+            system_idx = (
+                state.system_idx
+                if state.system_idx is not None
+                else torch.zeros(positions.shape[0], dtype=torch.long, device=self.device)
+            )
+            mapping, system_mapping, shifts_idx = torchsim_nl(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
-                cutoff=float(self.cutoff),
-                sort_id=False,
+                cutoff=self.cutoff,
+                system_idx=system_idx,
             )
-            # Get displacements using neighbor list
+            # Pass shifts_idx directly - get_pair_displacements will convert them
             dr_vec, distances = transforms.get_pair_displacements(
                 positions=positions,
                 cell=cell,
                 pbc=pbc,
-                pairs=mapping,
-                shifts=shifts,
+                pairs=(mapping[0], mapping[1]),
+                shifts=shifts_idx,
             )
         else:
             # Get all pairwise displacements
@@ -181,7 +186,7 @@ class ParticleLifeModel(ModelInterface):
             mask = distances < self.cutoff
             # Get valid pairs - match neighbor list convention for pair order
             i, j = torch.where(mask)
-            mapping = torch.stack([j, i])  # Changed from [j, i] to [i, j]
+            mapping = torch.stack([j, i])
             # Get valid displacements and distances
             dr_vec = dr_vec[mask]
             distances = distances[mask]
@@ -194,7 +199,7 @@ class ParticleLifeModel(ModelInterface):
 
         # Calculate forces and apply cutoff
         pair_forces = asymmetric_particle_pair_force_jit(
-            distances, sigma=self.sigma, epsilon=self.epsilon
+            dr=distances, A=self.epsilon, sigma=self.sigma, beta=self.beta
         )
         pair_forces = torch.where(mask, pair_forces, torch.zeros_like(pair_forces))
 
@@ -236,21 +241,26 @@ class ParticleLifeModel(ModelInterface):
         Raises:
             ValueError: If batch cannot be inferred for multi-cell systems.
         """
-        if isinstance(state, dict):
-            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        sim_state = (
+            state
+            if isinstance(state, ts.SimState)
+            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        )
 
-        if state.system_idx is None and state.cell.shape[0] > 1:
+        if sim_state.system_idx is None and sim_state.cell.shape[0] > 1:
             raise ValueError(
                 "system_idx can only be inferred if there is only one system."
             )
 
-        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_systems)]
+        outputs = [
+            self.unbatched_forward(sim_state[idx]) for idx in range(sim_state.n_systems)
+        ]
         properties = outputs[0]
 
         # we always return tensors
         # per atom properties are returned as (atoms, ...) tensors
         # global properties are returned as shape (..., n) tensors
-        results = {}
+        results: dict[str, torch.Tensor] = {}
         for key in ("stress", "energy"):
             if key in properties:
                 results[key] = torch.stack([out[key] for out in outputs])

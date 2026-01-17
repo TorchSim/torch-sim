@@ -1,14 +1,9 @@
-# %% [markdown]
-# <details>
-#   <summary>Dependencies</summary>
+# %%
 # /// script
 # dependencies = [
-#     "metatrain[pet]==2025.7",
-#     "metatomic-torch>=0.1.1,<0.2",
-#     "vesin-torch>=0.3.7",
+#    "torch_sim_atomistic[metatomic]"
 # ]
 # ///
-# </details>
 
 
 # %% [markdown]
@@ -48,7 +43,7 @@ atoms = bulk("Si", "diamond", a=5.43, cubic=True)
 equilibrated_state = ts.integrate(
     system=atoms,
     model=model,
-    integrator=ts.nvt_langevin,
+    integrator=ts.Integrator.nvt_langevin,
     n_steps=100,
     temperature=300,  # K
     timestep=0.001,  # ps
@@ -57,7 +52,7 @@ equilibrated_state = ts.integrate(
 final_state = ts.integrate(
     system=equilibrated_state,
     model=model,
-    integrator=ts.nve,
+    integrator=ts.Integrator.nve,
     n_steps=100,
     temperature=300,  # K
     timestep=0.001,  # ps

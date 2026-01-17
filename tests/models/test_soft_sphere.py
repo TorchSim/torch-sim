@@ -1,10 +1,11 @@
-"""Tests for soft sphere models ensuring different parts of torchsim work together."""
+"""Tests for soft sphere models ensuring different parts of TorchSim work together."""
 
 import pytest
 import torch
 
 import torch_sim as ts
 import torch_sim.models.soft_sphere as ss
+from tests.conftest import DEVICE
 from torch_sim.models.interface import validate_model_outputs
 
 
@@ -68,7 +69,7 @@ def small_sim_state(small_system: tuple[torch.Tensor, torch.Tensor]) -> ts.SimSt
     return ts.SimState(
         positions=positions,
         cell=cell,
-        pbc=torch.tensor([True, True, True]),
+        pbc=True,
         masses=torch.ones(positions.shape[0], dtype=torch.float64),
         atomic_numbers=torch.ones(positions.shape[0], dtype=torch.long),
     )
@@ -110,7 +111,7 @@ def test_stress_tensor_symmetry(
     assert torch.allclose(results_nl["stress"], results_nl["stress"].T, atol=1e-10)
 
 
-def test_validate_model_outputs(device: torch.device) -> None:
+def test_validate_model_outputs() -> None:
     """Test that the model outputs are valid."""
     model_params = {
         "sigma": 3.405,  # Å, typical for Ar
@@ -123,8 +124,8 @@ def test_validate_model_outputs(device: torch.device) -> None:
 
     model_nl = ss.SoftSphereModel(use_neighbor_list=True, **model_params)
     model_direct = ss.SoftSphereModel(use_neighbor_list=False, **model_params)
-    for out in [model_nl, model_direct]:
-        validate_model_outputs(out, device, torch.float64)
+    for out in (model_nl, model_direct):
+        validate_model_outputs(out, DEVICE, torch.float64)
 
 
 @pytest.mark.parametrize(
@@ -244,7 +245,8 @@ def test_multispecies_initialization_defaults() -> None:
     """Test initialization of multi-species model with defaults."""
     # Create with minimal parameters
     species = torch.tensor([0, 1], dtype=torch.long)
-    model = ss.SoftSphereMultiModel(species=species)
+    dtype = torch.float32
+    model = ss.SoftSphereMultiModel(species=species, dtype=dtype)
 
     # Check matrices are created with defaults
     assert model.sigma_matrix.shape == (2, 2)
@@ -252,9 +254,10 @@ def test_multispecies_initialization_defaults() -> None:
     assert model.alpha_matrix.shape == (2, 2)
 
     # Check default values
-    assert torch.allclose(model.sigma_matrix, ss.DEFAULT_SIGMA * torch.ones(2, 2))
-    assert torch.allclose(model.epsilon_matrix, ss.DEFAULT_EPSILON * torch.ones(2, 2))
-    assert torch.allclose(model.alpha_matrix, ss.DEFAULT_ALPHA * torch.ones(2, 2))
+    ones = torch.ones(2, 2, dtype=dtype)
+    assert torch.allclose(model.sigma_matrix, ss.DEFAULT_SIGMA * ones)
+    assert torch.allclose(model.epsilon_matrix, ss.DEFAULT_EPSILON * ones)
+    assert torch.allclose(model.alpha_matrix, ss.DEFAULT_ALPHA * ones)
 
     # Check cutoff is max sigma
     assert model.cutoff.item() == ss.DEFAULT_SIGMA.item()
@@ -347,8 +350,8 @@ def test_multispecies_cutoff_default() -> None:
 @pytest.mark.parametrize(
     ("flag_name", "flag_value"),
     [
-        ("pbc", True),
-        ("pbc", False),
+        ("pbc", torch.tensor([True, True, True])),
+        ("pbc", torch.tensor([False, False, False])),
         ("compute_forces", False),
         ("compute_stress", True),
         ("per_atom_energies", True),

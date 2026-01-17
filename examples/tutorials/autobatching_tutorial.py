@@ -1,12 +1,7 @@
-# %% [markdown]
-# <details>
-#   <summary>Dependencies</summary>
+# %%
 # /// script
-# dependencies = [
-#     "mace-torch>=0.3.12",
-# ]
+# dependencies = ["torch_sim_atomistic[mace]"]
 # ///
-# </details>
 
 
 # %% [markdown]
@@ -26,7 +21,7 @@ unless:
 ## Introduction
 
 Simulating many molecular systems on GPUs can be challenging when the total number of
-atoms exceeds available GPU memory. The `torch_sim.autobatching` module solves this by:
+atoms exceeds available GPU memory. The `ts.autobatching` module solves this by:
 
 1. Automatically determining optimal batch sizes based on GPU memory constraints
 2. Providing two complementary strategies: binning and in-flight
@@ -43,11 +38,7 @@ in CI on a CPU. Using the AutoBatcher is generally not supported on CPUs.
 import torch_sim as ts
 
 
-def mock_determine_max_batch_size(*args, **kwargs):
-    return 3
-
-
-ts.autobatching.determine_max_batch_size = mock_determine_max_batch_size
+ts.autobatching.determine_max_batch_size = lambda *args, **kwargs: 3  # type: ignore[invalid-assignment]
 
 
 # %% [markdown]
@@ -110,7 +101,7 @@ memory_metric_values = [
 ]
 
 max_memory_metric = estimate_max_memory_scaler(
-    mace_model, state_list, metric_values=memory_metric_values
+    state_list, mace_model, metric_values=memory_metric_values
 )
 print(f"Max memory metric: {max_memory_metric}")
 
@@ -152,7 +143,7 @@ def process_batch(batch):
 
 # Process each batch
 processed_batches = []
-for batch in batcher:
+for batch, _indices in batcher:
     # Process the batch (e.g., run dynamics or optimization)
     batch = process_batch(batch)
     processed_batches.append(batch)
@@ -186,10 +177,7 @@ Here's a real example using FIRE optimization from the test suite:
 """
 
 # %% Initialize nvt langevin integrator
-nvt_init, nvt_update = ts.nvt_langevin(mace_model, dt=0.001, kT=0.01)
-
-# Prepare states for optimization
-nvt_state = nvt_init(state)
+nvt_state = ts.nvt_langevin_init(state, mace_model, kT=0.01)
 
 # Initialize the batcher
 batcher = ts.BinningAutoBatcher(
@@ -199,15 +187,15 @@ batcher = ts.BinningAutoBatcher(
 max_memory_scaler = batcher.load_states(nvt_state)
 print(f"Max memory scaler: {max_memory_scaler}")
 
-print("There are ", len(batcher.index_bins), " bins")
-print("The indices of the states in each bin are: ", batcher.index_bins)
+print(f"There are {len(batcher.index_bins)} bins")
+print(f"The indices of the states in each bin are: {batcher.index_bins}")
 
 # Run optimization on each batch
 finished_states = []
-for batch in batcher:
-    # Run 5 steps of FIRE optimization
+for batch, _indices in batcher:
+    # Run 5 steps of NVT dynamics
     for _ in range(5):
-        batch = nvt_update(batch)
+        batch = ts.nvt_langevin_step(batch, mace_model, dt=0.001, kT=0.01)
 
     finished_states.append(batch)
 
@@ -232,8 +220,9 @@ the state have converged.
 """
 
 # %%
-fire_init, fire_update = ts.frechet_cell_fire(mace_model)
-fire_state = fire_init(state)
+fire_state = ts.fire_init(
+    state=state, model=mace_model, cell_filter=ts.CellFilter.frechet
+)
 
 # Initialize the batcher
 batcher = ts.InFlightAutoBatcher(
@@ -263,7 +252,7 @@ while (result := batcher.next_batch(fire_state, convergence_tensor))[0] is not N
 
     # optimize the batch, we stagger the steps to avoid state processing overhead
     for _ in range(10):
-        fire_state = fire_update(fire_state)
+        fire_state = ts.fire_step(state=fire_state, model=mace_model)
 
     # Check which states have converged
     convergence_tensor = convergence_fn(fire_state, None)
@@ -295,17 +284,14 @@ tracking the progress of individual states. This is especially critical when
 using the `TrajectoryReporter`, because the files must be regularly updated.
 """
 
-# %% Initialize with return_indices=True
+# %% Initialize batcher
 batcher = ts.BinningAutoBatcher(
-    model=mace_model,
-    memory_scales_with="n_atoms",
-    max_memory_scaler=80,
-    return_indices=True,
+    model=mace_model, memory_scales_with="n_atoms", max_memory_scaler=80
 )
 batcher.load_states(state)
 
-# Iterate with indices
-for batch, indices in batcher:
+# Iterate over batches
+for idx, (batch, indices) in enumerate(batcher):
     print(f"Processing states with original indices: {indices}")
     # Process batch...
 
