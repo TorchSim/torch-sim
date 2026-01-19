@@ -6,6 +6,7 @@ converting between different atomistic representations and handling simulation s
 """
 
 import copy
+import logging
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -125,10 +126,9 @@ def _determine_initial_step_for_integrate(
                 "    reporter.truncate_to_step(min(reporter.last_step))\n\n"
                 "before calling integrate again."
             )
-        warnings.warn(
+        logging.info(
             f"Detected existing trajectory with last step {last_logged_step}."
-            f" Resuming integration from step {initial_step}.",
-            stacklevel=2,
+            f" Resuming integration from step {initial_step}."
         )
     return initial_step
 
