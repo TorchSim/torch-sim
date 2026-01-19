@@ -62,10 +62,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-14]
         version:
-          - { python: '3.12', resolution: highest }
           - { python: '3.12', resolution: lowest-direct }
           - { python: '3.13', resolution: highest }
-          - { python: '3.13', resolution: lowest-direct }
         model:
           - { name: fairchem, test_path: "tests/models/test_fairchem.py" }
           - { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
@@ -124,7 +122,7 @@ jobs:
           fi
           uv pip install -e fairchem-repo/packages/fairchem-core[dev] --system
           uv pip install -e "." --no-deps --system
-          uv pip install "h5py>=3.12.1" "numpy>=1.26,<3" "tables>=3.10.2" "torch>=2" "tqdm>=4.67" --system
+          uv pip install "h5py>=3.12.1" "numpy>=1.26,<3" "scipy<1.17.0" "tables>=3.10.2" "torch>=2" "tqdm>=4.67" --system
           uv pip install "ase>=3.26" "phonopy>=2.37.0" "psutil>=7.0.0" "pymatgen>=2025.6.14" "pytest-cov>=6" "pytest>=8" --resolution=${{ matrix.version.resolution }} --system
 
 

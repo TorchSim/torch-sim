@@ -53,7 +53,7 @@ orb = ["orb-models>=0.5.2"]
 sevenn = ["sevenn>=0.11.0"]
 graphpes = ["graph-pes>=0.1", "mace-torch>=0.3.12"]
 nequip = ["nequip>=0.16.2"]
-fairchem = ["fairchem-core>=2.7"]
+fairchem = ["fairchem-core>=2.7", "scipy<1.17.0"]
 docs = [
     "autodoc_pydantic==2.2.0",
     "furo==2024.8.6",

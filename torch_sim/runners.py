@@ -441,7 +441,7 @@ def _chunked_apply[T: SimState](
 
 
 def generate_force_convergence_fn[T: MDState | FireState](
-    force_tol: float = 1e-1, *, include_cell_forces: bool = True
+    force_tol: float = 1e-1, *, include_cell_forces: bool = False
 ) -> Callable:
     """Generate a force-based convergence function for the convergence_fn argument
     of the optimize function.
