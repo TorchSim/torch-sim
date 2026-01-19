@@ -28,6 +28,9 @@ from torch_sim.typing import StateLike
 from torch_sim.units import UnitSystem
 
 
+logger = logging.getLogger(__name__)
+
+
 def _configure_reporter(
     trajectory_reporter: TrajectoryReporter | dict,
     *,
@@ -126,9 +129,11 @@ def _determine_initial_step_for_integrate(
                 "    reporter.truncate_to_step(min(reporter.last_step))\n\n"
                 "before calling integrate again."
             )
-        logging.info(
-            f"Detected existing trajectory with last step {last_logged_step}."
-            f" Resuming integration from step {initial_step}."
+        logger.info(
+            "Detected existing trajectory with last step %s. Resuming integration "
+            "from step %s.",
+            last_logged_step,
+            initial_step,
         )
     return initial_step
 
