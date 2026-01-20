@@ -56,17 +56,6 @@ if ALCHEMIOPS_AVAILABLE:
         n_systems = system_idx.max().item() + 1
         cell, pbc = _normalize_inputs(cell, pbc, n_systems)
 
-        # For non-periodic systems with zero cells, use a nominal identity cell
-        # to avoid division by zero in alchemiops warp kernels
-        # See https://github.com/NVIDIA/nvalchemi-toolkit-ops/issues/4
-        is_non_periodic = ~pbc.any(dim=1)  # [n_systems]
-        is_zero_cell = cell.abs().sum(dim=(1, 2)) == 0  # [n_systems]
-        needs_nominal_cell = is_non_periodic & is_zero_cell
-        if needs_nominal_cell.any():
-            identity = torch.eye(3, dtype=cell.dtype, device=cell.device)
-            cell = cell.clone()  # Avoid modifying the original
-            cell[needs_nominal_cell] = identity
-
         # Call alchemiops neighbor list
         res = batch_naive_neighbor_list(
             positions=positions,
