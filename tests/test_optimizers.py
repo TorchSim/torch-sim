@@ -907,3 +907,58 @@ def test_fire_fixed_cell_unit_cell_consistency(  # noqa: C901
             f"Energy for system {step} doesn't match position only optimization: "
             f"system={energy_unit_cell}, individual={individual_energies_fire[step]}"
         )
+
+
+# Test for charge and spin preservation (GitHub Issue #389)
+
+
+@pytest.mark.parametrize(
+    ("optimizer_fn", "cell_filter"),
+    [
+        (ts.Optimizer.fire, None),
+        (ts.Optimizer.gradient_descent, None),
+        (ts.Optimizer.fire, ts.CellFilter.unit),
+        (ts.Optimizer.gradient_descent, ts.CellFilter.frechet),
+    ],
+)
+def test_optimizer_preserves_charge_spin(
+    optimizer_fn: ts.Optimizer,
+    cell_filter: ts.CellFilter | None,
+    ar_supercell_sim_state: SimState,
+    lj_model: ModelInterface,
+) -> None:
+    """Test that optimizers preserve charge and spin through initialization and steps."""
+    # Add perturbation to positions for meaningful optimization
+    ar_supercell_sim_state.positions = (
+        ar_supercell_sim_state.positions
+        + torch.randn_like(ar_supercell_sim_state.positions) * 0.1
+    )
+
+    # Set non-zero charge and spin values
+    original_charge = torch.tensor(
+        [5.0], device=ar_supercell_sim_state.device, dtype=ar_supercell_sim_state.dtype
+    )
+    original_spin = torch.tensor(
+        [6.0], device=ar_supercell_sim_state.device, dtype=ar_supercell_sim_state.dtype
+    )
+    ar_supercell_sim_state.charge = original_charge.clone()
+    ar_supercell_sim_state.spin = original_spin.clone()
+
+    init_fn, step_fn = ts.OPTIM_REGISTRY[optimizer_fn]
+    opt_state = init_fn(
+        model=lj_model, state=ar_supercell_sim_state, cell_filter=cell_filter
+    )
+
+    # Verify after initialization
+    assert torch.allclose(opt_state.charge, original_charge)
+    assert torch.allclose(opt_state.spin, original_spin)
+
+    # Run several optimization steps and verify preservation
+    for _ in range(3):
+        if optimizer_fn == ts.Optimizer.fire:
+            opt_state = step_fn(state=opt_state, model=lj_model, dt_max=0.3)
+        else:
+            opt_state = step_fn(state=opt_state, model=lj_model, pos_lr=0.01, cell_lr=0.1)
+
+        assert torch.allclose(opt_state.charge, original_charge)
+        assert torch.allclose(opt_state.spin, original_spin)
