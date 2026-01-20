@@ -367,7 +367,7 @@ def calculate_memory_scaler(
             volume = torch.abs(torch.linalg.det(state.cell[0])) / 1000
         else:
             bbox = state.positions.max(dim=0).values - state.positions.min(dim=0).values
-            volume = bbox.prod() / 1000
+            volume = bbox.clamp(min=1.0).prod() / 1000  # min 1 Å for planar molecules
         number_density = state.n_atoms / volume.item()
         return state.n_atoms * number_density
     raise ValueError(

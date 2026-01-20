@@ -107,6 +107,19 @@ def test_calculate_scaling_metric(si_sim_state: ts.SimState) -> None:
         calculate_memory_scaler(si_sim_state, "invalid_metric")
 
 
+def test_calculate_scaling_metric_non_periodic(benzene_sim_state: ts.SimState) -> None:
+    """Test calculation of scaling metrics for a non-periodic state."""
+    # Test that calculate passes
+    n_atoms_metric = calculate_memory_scaler(benzene_sim_state, "n_atoms")
+    assert n_atoms_metric == benzene_sim_state.n_atoms
+
+    # Test n_atoms_x_density metric works for non-periodic systems
+    n_atoms_x_density_metric = calculate_memory_scaler(
+        benzene_sim_state, "n_atoms_x_density"
+    )
+    assert n_atoms_x_density_metric > 0
+
+
 def test_split_state(si_double_sim_state: ts.SimState) -> None:
     """Test splitting a batched state into individual states."""
     split_states = si_double_sim_state.split()
