@@ -363,7 +363,11 @@ def calculate_memory_scaler(
     if memory_scales_with == "n_atoms":
         return state.n_atoms
     if memory_scales_with == "n_atoms_x_density":
-        volume = torch.abs(torch.linalg.det(state.cell[0])) / 1000
+        if all(state.pbc):
+            volume = torch.abs(torch.linalg.det(state.cell[0])) / 1000
+        else:
+            bbox = state.positions.max(dim=0).values - state.positions.min(dim=0).values
+            volume = bbox.prod() / 1000
         number_density = state.n_atoms / volume.item()
         return state.n_atoms * number_density
     raise ValueError(
