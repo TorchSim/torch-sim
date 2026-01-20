@@ -377,6 +377,22 @@ def test_optimize_fire(
     assert not torch.allclose(original_state.positions, final_state.positions)
 
 
+def test_force_convergence_fn_w_cell_filter(lj_model: LennardJonesModel):
+    """Tests that we can calculate static properties after an optimize run."""
+    atoms = bulk("Si", "diamond", a=5.43, cubic=True)
+    initial_state = ts.io.atoms_to_state(
+        atoms, device=lj_model.device, dtype=lj_model.dtype
+    )
+
+    ts.optimize(
+        system=initial_state,
+        model=lj_model,
+        optimizer=ts.Optimizer.fire,
+        convergence_fn=ts.generate_force_convergence_fn(),
+        max_steps=100,
+    )
+
+
 def test_default_converged_fn(
     ar_supercell_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
 ) -> None:
