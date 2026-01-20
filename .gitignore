@@ -32,6 +32,9 @@ docs/reference/torch_sim.*
 coverage.xml
 .coverage*
 
+# test cache (compiled models, etc.)
+tests/.cache/
+
 # env
 uv.lock
 

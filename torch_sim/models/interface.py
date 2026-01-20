@@ -259,30 +259,44 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         raise ValueError(f"{model_output['stress'].shape=} != (2, 3, 3)")
 
     si_state = ts.io.atoms_to_state([si_atoms], device, dtype)
-    fe_state = ts.io.atoms_to_state([fe_atoms], device, dtype)
 
     si_model_output = model.forward(si_state)
     if not torch.allclose(
-        si_model_output["energy"], model_output["energy"][0], atol=10e-3
+        si_model_output["energy"], model_output["energy"][0], atol=1e-3
     ):
         raise ValueError(f"{si_model_output['energy']=} != {model_output['energy'][0]=}")
     if not torch.allclose(
         forces := si_model_output["forces"],
         expected_forces := model_output["forces"][: si_state.n_atoms],
-        atol=10e-3,
+        atol=1e-3,
     ):
         raise ValueError(f"{forces=} != {expected_forces=}")
 
-    fe_model_output = model.forward(fe_state)
-    si_model_output = model.forward(si_state)
+    # Test single Si system output shapes (8 atoms)
+    if si_model_output["energy"].shape != (1,):
+        raise ValueError(f"{si_model_output['energy'].shape=} != (1,)")
+    if force_computed and si_model_output["forces"].shape != (8, 3):
+        raise ValueError(f"{si_model_output['forces'].shape=} != (8, 3)")
+    if stress_computed and si_model_output["stress"].shape != (1, 3, 3):
+        raise ValueError(f"{si_model_output['stress'].shape=} != (1, 3, 3)")
 
+    fe_state = ts.io.atoms_to_state([fe_atoms], device, dtype)
+    fe_model_output = model.forward(fe_state)
     if not torch.allclose(
-        fe_model_output["energy"], model_output["energy"][1], atol=10e-2
+        fe_model_output["energy"], model_output["energy"][1], atol=1e-3
     ):
         raise ValueError(f"{fe_model_output['energy']=} != {model_output['energy'][1]=}")
     if not torch.allclose(
         forces := fe_model_output["forces"],
         expected_forces := model_output["forces"][si_state.n_atoms :],
-        atol=10e-2,
+        atol=1e-3,
     ):
         raise ValueError(f"{forces=} != {expected_forces=}")
+
+    # Test single Fe system output shapes (12 atoms)
+    if fe_model_output["energy"].shape != (1,):
+        raise ValueError(f"{fe_model_output['energy'].shape=} != (1,)")
+    if force_computed and fe_model_output["forces"].shape != (12, 3):
+        raise ValueError(f"{fe_model_output['forces'].shape=} != (12, 3)")
+    if stress_computed and fe_model_output["stress"].shape != (1, 3, 3):
+        raise ValueError(f"{fe_model_output['stress'].shape=} != (1, 3, 3)")
