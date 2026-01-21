@@ -909,9 +909,8 @@ def test_fire_fixed_cell_unit_cell_consistency(  # noqa: C901
         )
 
 
-# Test for charge and spin preservation (GitHub Issue #389)
-
-
+# Test for charge and spin preservation
+# GitHub Issue https://github.com/TorchSim/torch-sim/issues/389
 @pytest.mark.parametrize(
     ("optimizer_fn", "cell_filter"),
     [
