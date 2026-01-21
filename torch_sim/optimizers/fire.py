@@ -82,6 +82,8 @@ def fire_init(
         "system_idx": state.system_idx.clone(),
         "_constraints": state.constraints,
         "pbc": state.pbc,
+        "charge": state.charge.clone(),
+        "spin": state.spin.clone(),
         # Optimization state
         "forces": forces,
         "energy": energy,
