@@ -42,6 +42,7 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
+
 if TYPE_CHECKING:
     from ase import Atoms
     from ase.io.trajectory import TrajectoryReader

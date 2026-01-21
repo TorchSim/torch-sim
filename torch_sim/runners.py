@@ -27,6 +27,7 @@ from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.typing import StateLike
 from torch_sim.units import UnitSystem
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -118,7 +119,9 @@ def _determine_initial_step_for_integrate(
     """
     initial_step: int = 1
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
-        last_logged_steps = [step if step is not None else 0 for step in trajectory_reporter.last_steps]
+        last_logged_steps = [
+            step if step is not None else 0 for step in trajectory_reporter.last_steps
+        ]
         last_logged_step = min(last_logged_steps)
         initial_step = initial_step + last_logged_step
         if len(set(last_logged_steps)) != 1:
@@ -236,8 +239,7 @@ def _normalize_temperature_tensor(
     )
 
 
-def _write_initial_state_if_needed(
-    save_initial_state: bool,
+def _write_initial_state(
     trajectory_reporter: TrajectoryReporter | None,
     state: SimState,
     model: ModelInterface,
@@ -245,17 +247,15 @@ def _write_initial_state_if_needed(
     """Write initial state (step 0) to trajectory if conditions are met.
 
     Only writes step 0 if:
-    1. save_initial_state is True
-    2. trajectory_reporter is provided
-    3. All trajectories are empty (last_step returns None)
+    1. trajectory_reporter is provided
+    2. All trajectories are empty (last_step returns None)
 
     Args:
-        save_initial_state (bool): Whether to save initial state
         trajectory_reporter (TrajectoryReporter | None): Optional reporter
         state (SimState): Current simulation state
         model (ModelInterface): Model used for simulation
     """
-    if save_initial_state and trajectory_reporter:
+    if trajectory_reporter:
         trajectories_empty = all(
             traj.last_step is None for traj in trajectory_reporter.trajectories
         )
@@ -372,9 +372,8 @@ def integrate[T: SimState](  # noqa: C901
             )
 
         # Save initial state if requested and trajectory is empty
-        _write_initial_state_if_needed(
-            save_initial_state, trajectory_reporter, state, model
-        )
+        if save_initial_state:
+            _write_initial_state(trajectory_reporter, state, model)
 
         # run the simulation
         for step in range(initial_step, initial_step + n_steps):
@@ -646,7 +645,8 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     step = _determine_initial_step_for_optimize(trajectory_reporter, state)
 
     # Save initial state if requested and trajectory is empty
-    _write_initial_state_if_needed(save_initial_state, trajectory_reporter, state, model)
+    if save_initial_state:
+        _write_initial_state(trajectory_reporter, state, model)
 
     last_energy = None
     all_converged_states: list[T] = []

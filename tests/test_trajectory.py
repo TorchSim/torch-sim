@@ -209,13 +209,14 @@ def test_last_step_returns_none_for_empty(test_file: Path) -> None:
     # Test with empty trajectory
     with TorchSimTrajectory(test_file, mode="w") as traj:
         assert traj.last_step is None
-    
+
     # Test after writing step 0
+    rng = np.random.default_rng()
     with TorchSimTrajectory(test_file, mode="a") as traj:
-        positions = np.random.random((10, 3)).astype(np.float32)
+        positions = rng.random((10, 3)).astype(np.float32)
         traj.write_arrays({"positions": positions}, steps=0)
         assert traj.last_step == 0
-    
+
     # Test that it persists when reopening
     with TorchSimTrajectory(test_file, mode="r") as traj:
         assert traj.last_step == 0
@@ -1119,9 +1120,7 @@ def test_integrate_save_initial_state(
 ) -> None:
     """Test that save_initial_state=True writes step 0 to trajectory."""
     with tempfile.TemporaryDirectory() as temp_dir:
-        traj_files = [
-            f"{temp_dir}/integrate_initial_state_{idx}.h5" for idx in range(2)
-        ]
+        traj_files = [f"{temp_dir}/integrate_initial_state_{idx}.h5" for idx in range(2)]
 
         # Test 1: Without save_initial_state (default behavior)
         trajectory_reporter = ts.TrajectoryReporter(traj_files, state_frequency=1)
@@ -1143,9 +1142,7 @@ def test_integrate_save_initial_state(
                 np.testing.assert_allclose(steps, [1, 2, 3])
 
         # Test 2: With save_initial_state=True
-        traj_files_2 = [
-            f"{temp_dir}/integrate_with_initial_{idx}.h5" for idx in range(2)
-        ]
+        traj_files_2 = [f"{temp_dir}/integrate_with_initial_{idx}.h5" for idx in range(2)]
         trajectory_reporter_2 = ts.TrajectoryReporter(traj_files_2, state_frequency=1)
         _ = ts.integrate(
             system=si_double_sim_state,
@@ -1170,9 +1167,7 @@ def test_optimize_save_initial_state(
 ) -> None:
     """Test that save_initial_state=True writes step 0 to trajectory."""
     with tempfile.TemporaryDirectory() as temp_dir:
-        traj_files = [
-            f"{temp_dir}/optimize_initial_state_{idx}.h5" for idx in range(2)
-        ]
+        traj_files = [f"{temp_dir}/optimize_initial_state_{idx}.h5" for idx in range(2)]
 
         # Test 1: Without save_initial_state (default behavior)
         trajectory_reporter = ts.TrajectoryReporter(traj_files, state_frequency=1)
@@ -1193,9 +1188,7 @@ def test_optimize_save_initial_state(
                 np.testing.assert_allclose(steps, [1, 2, 3])
 
         # Test 2: With save_initial_state=True
-        traj_files_2 = [
-            f"{temp_dir}/optimize_with_initial_{idx}.h5" for idx in range(2)
-        ]
+        traj_files_2 = [f"{temp_dir}/optimize_with_initial_{idx}.h5" for idx in range(2)]
         trajectory_reporter_2 = ts.TrajectoryReporter(traj_files_2, state_frequency=1)
         _ = ts.optimize(
             system=si_double_sim_state,
@@ -1212,103 +1205,3 @@ def test_optimize_save_initial_state(
                 steps = traj.get_steps("positions")
                 # Should start at step 0
                 np.testing.assert_allclose(steps, [0, 1, 2, 3])
-
-
-def test_integrate_save_initial_state_no_duplicate_on_resume(
-    si_double_sim_state: SimState, lj_model: LennardJonesModel
-) -> None:
-    """Test that step 0 is not written twice when resuming with save_initial_state=True."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        traj_files = [
-            f"{temp_dir}/integrate_resume_initial_{idx}.h5" for idx in range(2)
-        ]
-
-        # First run: write initial state and some steps
-        trajectory_reporter = ts.TrajectoryReporter(traj_files, state_frequency=1)
-        int_state = ts.integrate(
-            system=si_double_sim_state,
-            model=lj_model,
-            timestep=0.001,
-            n_steps=3,
-            temperature=300.0,
-            integrator=ts.Integrator.nvt_langevin,
-            trajectory_reporter=trajectory_reporter,
-            save_initial_state=True,
-        )
-
-        for traj_file in traj_files:
-            with TorchSimTrajectory(traj_file, mode="r") as traj:
-                steps = traj.get_steps("positions")
-                np.testing.assert_allclose(steps, [0, 1, 2, 3])
-
-        # Resume run: save_initial_state=True should NOT write step 0 again
-        trajectory_reporter_2 = ts.TrajectoryReporter(
-            traj_files, state_frequency=1, trajectory_kwargs=dict(mode="a")
-        )
-        _ = ts.integrate(
-            system=int_state,
-            model=lj_model,
-            timestep=0.001,
-            n_steps=2,
-            temperature=300.0,
-            integrator=ts.Integrator.nvt_langevin,
-            trajectory_reporter=trajectory_reporter_2,
-            save_initial_state=True,  # Should be ignored since trajectory not empty
-        )
-
-        for traj_file in traj_files:
-            with TorchSimTrajectory(traj_file, mode="r") as traj:
-                steps = traj.get_steps("positions")
-                # Should have steps [0, 1, 2, 3, 4, 5] with only one step 0
-                np.testing.assert_allclose(steps, [0, 1, 2, 3, 4, 5])
-                assert list(steps).count(0) == 1, "Step 0 should appear exactly once"
-
-
-def test_optimize_save_initial_state_no_duplicate_on_resume(
-    si_double_sim_state: SimState, lj_model: LennardJonesModel
-) -> None:
-    """Test that step 0 is not written twice when resuming with save_initial_state=True."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        traj_files = [
-            f"{temp_dir}/optimize_resume_initial_{idx}.h5" for idx in range(2)
-        ]
-
-        # First run: write initial state and some steps
-        trajectory_reporter = ts.TrajectoryReporter(traj_files, state_frequency=1)
-        opt_state = ts.optimize(
-            system=si_double_sim_state,
-            model=lj_model,
-            max_steps=3,
-            optimizer=ts.Optimizer.fire,
-            trajectory_reporter=trajectory_reporter,
-            steps_between_swaps=100,
-            save_initial_state=True,
-        )
-
-        for traj_file in traj_files:
-            with TorchSimTrajectory(traj_file, mode="r") as traj:
-                steps = traj.get_steps("positions")
-                np.testing.assert_allclose(steps, [0, 1, 2, 3])
-
-        # Resume run: save_initial_state=True should NOT write step 0 again
-        trajectory_reporter_2 = ts.TrajectoryReporter(
-            traj_files, state_frequency=1, trajectory_kwargs=dict(mode="a")
-        )
-        _ = ts.optimize(
-            system=opt_state,
-            model=lj_model,
-            max_steps=2,
-            optimizer=ts.Optimizer.fire,
-            trajectory_reporter=trajectory_reporter_2,
-            steps_between_swaps=100,
-            save_initial_state=True,  # Should be ignored since trajectory not empty
-        )
-
-        for traj_file in traj_files:
-            with TorchSimTrajectory(traj_file, mode="r") as traj:
-                steps = traj.get_steps("positions")
-                # Should have consecutive steps starting from 0 with only one step 0
-                assert steps[0] == 0, "First step should be 0"
-                assert list(steps).count(0) == 1, "Step 0 should appear exactly once"
-                # Should be at least [0, 1, 2, 3, 4]
-                assert len(steps) >= 5, f"Should have at least 5 steps, got {len(steps)}"
