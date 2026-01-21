@@ -57,10 +57,15 @@ def _normalize_inputs(
 
 # Try to import Alchemiops implementations (NVIDIA CUDA acceleration)
 try:
-    from torch_sim.neighbors.alchemiops import ALCHEMIOPS_AVAILABLE, alchemiops_nl_n2
+    from torch_sim.neighbors.alchemiops import (
+        ALCHEMIOPS_AVAILABLE,
+        alchemiops_nl_cell_list,
+        alchemiops_nl_n2,
+    )
 except ImportError:
     ALCHEMIOPS_AVAILABLE = False
     alchemiops_nl_n2 = None  # type: ignore[assignment]
+    alchemiops_nl_cell_list = None  # type: ignore[assignment]
 
 # Try to import Vesin implementations
 try:
@@ -145,6 +150,7 @@ __all__ = [
     "VESIN_AVAILABLE",
     "VesinNeighborList",
     "VesinNeighborListTorch",
+    "alchemiops_nl_cell_list",
     "alchemiops_nl_n2",
     "default_batched_nl",
     "primitive_neighbor_list",

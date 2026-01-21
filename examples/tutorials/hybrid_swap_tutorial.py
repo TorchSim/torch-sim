@@ -1,6 +1,6 @@
 # %%
 # /// script
-# dependencies = ["mace-torch>=0.3.12", "pymatgen>=2025.2.18"]
+# dependencies = ["torch_sim_atomistic[mace, io]"]
 # ///
 
 

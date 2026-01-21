@@ -6,6 +6,7 @@ converting between different atomistic representations and handling simulation s
 """
 
 import copy
+import logging
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -26,6 +27,8 @@ from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.typing import StateLike
 from torch_sim.units import UnitSystem
 
+logger = logging.getLogger(__name__)
+
 
 def _configure_reporter(
     trajectory_reporter: TrajectoryReporter | dict,
@@ -44,6 +47,7 @@ def _configure_reporter(
             velocities=state.velocities, masses=state.masses
         ),
         "temperature": lambda state: state.calc_temperature(),
+        "max_force": lambda state: ts.system_wise_max_force(state),
     }
 
     prop_calculators = {
@@ -114,7 +118,9 @@ def _determine_initial_step_for_integrate(
     """
     initial_step: int = 1
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
-        last_logged_steps = trajectory_reporter.last_steps
+        last_logged_steps = [step if step is not None else 0 for step in trajectory_reporter.last_steps]
+        last_logged_step = min(last_logged_steps)
+        initial_step = initial_step + last_logged_step
         if len(set(last_logged_steps)) != 1:
             raise ValueError(
                 f"Trajectory files have different last steps: {set(last_logged_steps)} "
@@ -123,14 +129,12 @@ def _determine_initial_step_for_integrate(
                 "    reporter.truncate_to_step(min(reporter.last_step))\n\n"
                 "before calling integrate again."
             )
-        if all(step is not None for step in last_logged_steps):
-            last_logged_step = min(last_logged_steps)
-            initial_step = initial_step + last_logged_step
-            warnings.warn(
-                f"Detected existing trajectory with last step {last_logged_step}."
-                f" Resuming integration from step {initial_step}.",
-                stacklevel=2,
-            )
+        logger.info(
+            "Detected existing trajectory with last step %s. Resuming integration "
+            "from step %s.",
+            last_logged_step,
+            initial_step,
+        )
     return initial_step
 
 
@@ -479,7 +483,7 @@ def _chunked_apply[T: SimState](
 
 
 def generate_force_convergence_fn[T: MDState | FireState](
-    force_tol: float = 1e-1, *, include_cell_forces: bool = True
+    force_tol: float = 1e-1, *, include_cell_forces: bool = False
 ) -> Callable:
     """Generate a force-based convergence function for the convergence_fn argument
     of the optimize function.
