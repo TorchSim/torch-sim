@@ -363,19 +363,34 @@ def calculate_memory_scaler(
     if memory_scales_with == "n_atoms":
         return state.n_atoms
     if memory_scales_with == "n_atoms_x_density":
-        if all(state.pbc):
-            volume = torch.abs(torch.linalg.det(state.cell[0])) / 1000
-        else:
+        if _is_rectangular_cell(state):
+            # we need to use bbox instead of the cell's determinant since
+            # there may be excess vacuum.
             bbox = state.positions.max(dim=0).values - state.positions.min(dim=0).values
             # add 2 A in non-periodic directions to account for 2D systems and slabs
             for i, periodic in enumerate(state.pbc):
                 if not periodic:
                     bbox[i] += 2.0
             volume = bbox.prod() / 1000  # convert A^3 to nm^3
+        else:
+            # since this is a non-rectangular cell, it's unlikely for there to be
+            # excess vacuum, so use the determinant of the cell as the volume
+            volume = torch.abs(torch.linalg.det(state.cell[0])) / 1000
         number_density = state.n_atoms / volume.item()
         return state.n_atoms * number_density
     raise ValueError(
         f"Invalid metric: {memory_scales_with}, must be one of {get_args(MemoryScaling)}"
+    )
+
+
+def _is_rectangular_cell(state: SimState, atol: float = 1e-6) -> bool:
+    """Tells us if the first system's cell is rectangular (all angles are 90 degrees)."""
+    cell = state.row_vector_cell[0]  # get the first system's cell
+    dot_01 = torch.dot(cell[0], cell[1])
+    dot_02 = torch.dot(cell[0], cell[2])
+    dot_12 = torch.dot(cell[1], cell[2])
+    return torch.allclose(
+        torch.stack([dot_01, dot_02, dot_12]), torch.zeros(3), atol=atol
     )
 
 
