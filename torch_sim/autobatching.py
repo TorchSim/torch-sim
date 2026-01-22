@@ -389,9 +389,8 @@ def _is_rectangular_cell(state: SimState, atol: float = 1e-6) -> bool:
     dot_01 = torch.dot(cell[0], cell[1])
     dot_02 = torch.dot(cell[0], cell[2])
     dot_12 = torch.dot(cell[1], cell[2])
-    return torch.allclose(
-        torch.stack([dot_01, dot_02, dot_12]), torch.zeros(3), atol=atol
-    )
+    dots = torch.stack([dot_01, dot_02, dot_12])
+    return torch.allclose(dots, torch.zeros_like(dots), atol=atol)
 
 
 def estimate_max_memory_scaler(
