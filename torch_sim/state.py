@@ -369,9 +369,10 @@ class SimState:
     def from_state(cls, state: "SimState", **additional_attrs: Any) -> Self:
         """Create a new state from an existing state with additional attributes.
 
-        This method copies all attributes from the source state and adds any additional
-        attributes needed for the target state class. It's useful for converting between
-        different state types (e.g., SimState to MDState).
+        This method copies attributes from the source state that are valid for the
+        target state class, and adds any additional attributes needed. It supports
+        upcasting (SimState -> MDState), downcasting (MDState -> SimState), and
+        cross-casting (MDState -> OptimState) between state types.
 
         Args:
             state: Source state to copy base attributes from
@@ -389,13 +390,22 @@ class SimState:
             ...     momenta=torch.zeros_like(sim_state.positions),
             ... )
         """
-        # Copy all attributes from the source state
+        # Get attributes that the TARGET class accepts
+        target_attrs = (
+            cls._atom_attributes
+            | cls._system_attributes
+            | cls._global_attributes
+            | {"_constraints"}
+        )
+
+        # Copy only attributes that exist on BOTH source AND target
         attrs = {}
         for attr_name, attr_value in state.attributes.items():
-            if isinstance(attr_value, torch.Tensor):
-                attrs[attr_name] = attr_value.clone()
-            else:
-                attrs[attr_name] = copy.deepcopy(attr_value)
+            if attr_name in target_attrs:
+                if isinstance(attr_value, torch.Tensor):
+                    attrs[attr_name] = attr_value.clone()
+                else:
+                    attrs[attr_name] = copy.deepcopy(attr_value)
 
         # Add/override with additional attributes
         attrs.update(additional_attrs)
