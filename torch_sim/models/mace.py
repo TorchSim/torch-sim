@@ -33,6 +33,14 @@ from torch_sim.typing import StateDict
 
 
 try:
+    from mace.calculators.foundations_models import mace_mp
+
+    try:
+        from mace.calculators.foundations_models import mace_mp_urls
+    except (ImportError, AttributeError):
+        # if mace_mp_urls is not available in this version of mace, use an empty dict
+        mace_mp_urls = {}
+    from mace.calculators.mace import MACECalculator
     from mace.cli.convert_e3nn_cueq import run as run_e3nn_to_cueq
     from mace.tools import atomic_numbers_to_indices, utils
 except (ImportError, ModuleNotFoundError) as exc:
@@ -48,6 +56,19 @@ except (ImportError, ModuleNotFoundError) as exc:
         def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
             """Dummy init for type checking."""
             raise err
+
+    class MACECalculator:
+        """MACE calculator from mace.calculators.mace.MACECalculator.
+
+        This class is a placeholder for the MaceModel class.
+        It raises an ImportError if MACE is not installed.
+        """
+
+        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
+            """Dummy init for type checking."""
+            raise err
+
+    mace_mp_urls = {}
 
 
 def to_one_hot(
@@ -88,7 +109,8 @@ class MaceModel(ModelInterface):
     Attributes:
         r_max (float): Cutoff radius for neighbor interactions.
         z_table (utils.AtomicNumberTable): Table mapping atomic numbers to indices.
-        model (torch.nn.Module): The underlying MACE neural network model.
+        model (str | Path | torch.nn.Module | MACECalculator | None): The underlying
+            MACE neural network model.
         neighbor_list_fn (Callable): Function used to compute neighbor lists.
         atomic_numbers (torch.Tensor): Atomic numbers with shape [n_atoms].
         system_idx (torch.Tensor): System indices with shape [n_atoms].
@@ -103,7 +125,7 @@ class MaceModel(ModelInterface):
 
     def __init__(
         self,
-        model: str | Path | torch.nn.Module | None = None,
+        model: str | Path | torch.nn.Module | MACECalculator | None = None,
         *,
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float64,
@@ -121,8 +143,10 @@ class MaceModel(ModelInterface):
         and system indices, or these can be provided during the forward pass.
 
         Args:
-            model (str | Path | torch.nn.Module | None): The MACE neural network model,
-                either as a path to a saved model or as a loaded torch.nn.Module instance.
+            model (str | Path | torch.nn.Module | MACECalculator | None): The MACE
+                neural network model, either as a path to a saved model, a url, a
+                default model name (from the mace package), or as a loaded
+                torch.nn.Module instance.
             device (torch.device | None): The device to run computations on.
                 Defaults to CUDA if available, otherwise CPU.
             dtype (torch.dtype): The data type for tensor operations.
@@ -155,7 +179,17 @@ class MaceModel(ModelInterface):
 
         # Load model if provided as path
         if isinstance(model, str | Path):
-            self.model = torch.load(model, map_location=self.device, weights_only=False)
+            if str(model).startswith("http") or str(model) in mace_mp_urls:
+                self.model = mace_mp(
+                    model=model,
+                    return_raw_model=True,
+                    default_dtype=str(dtype).removeprefix("torch."),
+                    device=str(device),
+                )
+            else:
+                self.model = torch.load(
+                    model, map_location=self.device, weights_only=False
+                )
         elif isinstance(model, torch.nn.Module):
             self.model = model.to(self.device)
         else:

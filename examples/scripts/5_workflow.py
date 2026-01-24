@@ -41,9 +41,8 @@ print("SECTION 1: In-Flight Autobatching Workflow")
 print("=" * 70)
 
 print("Loading MACE model...")
-mace = mace_mp(model=MaceUrls.mace_mpa_medium, return_raw_model=True)
 mace_model = MaceModel(
-    model=mace,
+    model=MaceUrls.mace_mpa_medium,
     device=device,
     dtype=dtype,
     compute_forces=True,

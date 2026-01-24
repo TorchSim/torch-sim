@@ -18,8 +18,6 @@ from torch_sim.units import UnitConversion
 
 
 try:
-    from mace.calculators.foundations_models import mace_mp
-
     from torch_sim.models.mace import MaceModel
 except ImportError:
     pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)
@@ -257,10 +255,8 @@ def test_get_elementary_deformations_strain_consistency(
 @pytest.fixture
 def mace_model() -> MaceModel:
     """Create a MACE model fixture for testing."""
-    mace_model = mace_mp(model="medium", default_dtype="float64", return_raw_model=True)
-
     return MaceModel(
-        model=mace_model,
+        model="medium",
         device=DEVICE,
         dtype=torch.float64,
         compute_forces=True,

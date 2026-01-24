@@ -38,8 +38,7 @@ from torch_sim.monte_carlo import SwapMCState
 
 # Initialize the mace model
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-mace = mace_mp(model="small", return_raw_model=True)
-mace_model = MaceModel(model=mace, device=device)
+mace_model = MaceModel(model="small", device=device)
 
 
 # %% [markdown]

@@ -14,7 +14,6 @@ import itertools
 import numpy as np
 import torch
 from ase.build import bulk
-from mace.calculators.foundations_models import mace_mp
 
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.models.mace import MaceModel, MaceUrls
@@ -111,20 +110,12 @@ print("\n" + "=" * 70)
 print("SECTION 2: MACE Model with Batched Input")
 print("=" * 70)
 
-# Load the raw model from the downloaded model
-loaded_model = mace_mp(
-    model=MaceUrls.mace_mpa_medium,
-    return_raw_model=True,
-    default_dtype=str(dtype).removeprefix("torch."),
-    device=str(device),
-)
-
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
 atoms_list = [si_dc, si_dc]
 
 batched_model = MaceModel(
-    model=loaded_model,
+    model=MaceUrls.mace_mpa_medium,
     device=device,
     compute_forces=True,
     compute_stress=True,

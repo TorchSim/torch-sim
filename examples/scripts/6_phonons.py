@@ -26,7 +26,6 @@ import os
 import numpy as np
 import torch
 from ase.build import bulk
-from mace.calculators.foundations_models import mace_mp
 from phonopy import Phonopy
 
 import torch_sim as ts
@@ -46,14 +45,6 @@ print("\n" + "=" * 70)
 print("SECTION 1: Structure Relaxation")
 print("=" * 70)
 
-# Load the MACE model
-loaded_model = mace_mp(
-    model=MaceUrls.mace_mpa_medium,
-    return_raw_model=True,
-    default_dtype=str(dtype).removeprefix("torch."),
-    device=str(device),
-)
-
 # Create Silicon diamond structure
 struct = bulk("Si", "diamond", a=5.431, cubic=True)
 supercell_matrix = 2 * np.eye(3)  # 2x2x2 supercell for phonons
@@ -63,7 +54,7 @@ displ = 0.01  # Atomic displacement for finite differences (Angstrom)
 
 # Create MACE model
 model = MaceModel(
-    model=loaded_model,
+    model=MaceUrls.mace_mpa_medium,
     device=device,
     compute_forces=True,
     compute_stress=True,
