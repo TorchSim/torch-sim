@@ -68,8 +68,6 @@ except (ImportError, ModuleNotFoundError) as exc:
             """Dummy init for type checking."""
             raise err
 
-    mace_mp_urls = {}
-
 
 def to_one_hot(
     indices: torch.Tensor, num_classes: int, dtype: torch.dtype

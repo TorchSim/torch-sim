@@ -19,7 +19,7 @@ from torch_sim.units import UnitConversion
 
 try:
     # This import below tells us if mace is installed (even though mace_mp is not used)
-    from mace.calculators.foundations_models import mace_mp  # noqa: F401
+    import mace.calculators.foundations_models  # noqa: F401
 
     from torch_sim.models.mace import MaceModel
 except ImportError:
