@@ -62,6 +62,8 @@ def gradient_descent_init(
         "atomic_numbers": state.atomic_numbers,
         "system_idx": state.system_idx,
         "_constraints": state.constraints,
+        "charge": state.charge,
+        "spin": state.spin,
     }
 
     if cell_filter is not None:  # Create cell optimization state

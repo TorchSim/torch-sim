@@ -363,7 +363,15 @@ def calculate_memory_scaler(
     if memory_scales_with == "n_atoms":
         return state.n_atoms
     if memory_scales_with == "n_atoms_x_density":
-        volume = torch.abs(torch.linalg.det(state.cell[0])) / 1000
+        if all(state.pbc):
+            volume = torch.abs(torch.linalg.det(state.cell[0])) / 1000
+        else:
+            bbox = state.positions.max(dim=0).values - state.positions.min(dim=0).values
+            # add 2 A in non-periodic directions to account for 2D systems and slabs
+            for i, periodic in enumerate(state.pbc):
+                if not periodic:
+                    bbox[i] += 2.0
+            volume = bbox.prod() / 1000  # convert A^3 to nm^3
         number_density = state.n_atoms / volume.item()
         return state.n_atoms * number_density
     raise ValueError(
