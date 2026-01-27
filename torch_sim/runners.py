@@ -762,13 +762,8 @@ def static(
             )
 
         model_outputs = model(sub_state)
-        static_state = StaticState(
-            positions=sub_state.positions,
-            masses=sub_state.masses,
-            cell=sub_state.cell,
-            pbc=sub_state.pbc,
-            atomic_numbers=sub_state.atomic_numbers,
-            system_idx=sub_state.system_idx,
+        static_state = StaticState.from_state(
+            state=sub_state,
             energy=model_outputs["energy"],
             forces=(
                 model_outputs["forces"]

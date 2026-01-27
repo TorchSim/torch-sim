@@ -183,6 +183,17 @@ class SimState:
         if len(set(devices.values())) > 1:
             raise ValueError("All tensors must be on the same device")
 
+    @classmethod
+    @property
+    def _all_attributes(cls) -> set[str]:
+        """Get all attributes of the SimState."""
+        return (
+            cls._atom_attributes
+            | cls._system_attributes
+            | cls._global_attributes
+            | {"_constraints"}
+        )
+
     @property
     def wrap_positions(self) -> torch.Tensor:
         """Atomic positions wrapped according to periodic boundary conditions if pbc=True,
@@ -390,18 +401,9 @@ class SimState:
             ...     momenta=torch.zeros_like(sim_state.positions),
             ... )
         """
-        # Get attributes that the TARGET class accepts
-        target_attrs = (
-            cls._atom_attributes
-            | cls._system_attributes
-            | cls._global_attributes
-            | {"_constraints"}
-        )
-
-        # Copy only attributes that exist on BOTH source AND target
         attrs = {}
         for attr_name, attr_value in state.attributes.items():
-            if attr_name in target_attrs:
+            if attr_name in cls._all_attributes:
                 if isinstance(attr_value, torch.Tensor):
                     attrs[attr_name] = attr_value.clone()
                 else:
