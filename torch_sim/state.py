@@ -96,14 +96,13 @@ class SimState:
     if TYPE_CHECKING:
 
         @property
-        def system_idx(self) -> torch.Tensor:
-            """A getter for system_idx that tells type checkers it's always defined."""
-            return self.system_idx
-
+        def system_idx(self) -> torch.Tensor: ...  # noqa: D102
         @property
-        def pbc(self) -> torch.Tensor:
-            """A getter for pbc that tells type checkers it's always defined."""
-            return self.pbc
+        def pbc(self) -> torch.Tensor: ...  # noqa: D102
+        @property
+        def charge(self) -> torch.Tensor: ...  # noqa: D102
+        @property
+        def spin(self) -> torch.Tensor: ...  # noqa: D102
 
     _atom_attributes: ClassVar[set[str]] = {
         "positions",

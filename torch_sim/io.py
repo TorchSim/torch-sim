@@ -57,8 +57,8 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
     pbc = state.pbc.detach().cpu().numpy()
 
     # Extract charge and spin if available (per-system attributes)
-    charge = state.charge.detach().cpu().numpy() if state.charge is not None else None
-    spin = state.spin.detach().cpu().numpy() if state.spin is not None else None
+    charge = state.charge.detach().cpu().numpy()
+    spin = state.spin.detach().cpu().numpy()
 
     atoms_list = []
     for sys_idx in np.unique(system_indices):
