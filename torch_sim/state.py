@@ -182,8 +182,8 @@ class SimState:
         if len(set(devices.values())) > 1:
             raise ValueError("All tensors must be on the same device")
 
-    @property
     @classmethod
+    @property
     def _all_attributes(cls) -> set[str]:
         """Get all attributes of the SimState."""
         return (
