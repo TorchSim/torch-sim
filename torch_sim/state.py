@@ -183,8 +183,7 @@ class SimState:
             raise ValueError("All tensors must be on the same device")
 
     @classmethod
-    @property
-    def _all_attributes(cls) -> set[str]:
+    def _get_all_attributes(cls) -> set[str]:
         """Get all attributes of the SimState."""
         return (
             cls._atom_attributes
@@ -234,7 +233,7 @@ class SimState:
     @property
     def attributes(self) -> dict[str, torch.Tensor]:
         """Get all public attributes of the state."""
-        return {attr: getattr(self, attr) for attr in self._all_attributes}
+        return {attr: getattr(self, attr) for attr in self._get_all_attributes()}
 
     @property
     def column_vector_cell(self) -> torch.Tensor:
@@ -396,7 +395,7 @@ class SimState:
         """
         attrs = {}
         for attr_name, attr_value in state.attributes.items():
-            if attr_name in cls._all_attributes:
+            if attr_name in cls._get_all_attributes():
                 if isinstance(attr_value, torch.Tensor):
                     attrs[attr_name] = attr_value.clone()
                 else:
