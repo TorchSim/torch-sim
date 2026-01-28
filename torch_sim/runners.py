@@ -132,12 +132,13 @@ def _determine_initial_step_for_integrate(
                 "    reporter.truncate_to_step(min(reporter.last_step))\n\n"
                 "before calling integrate again."
             )
-        logger.info(
-            "Detected existing trajectory with last step %s. Resuming integration "
-            "from step %s.",
-            last_logged_step,
-            initial_step,
-        )
+        if last_logged_step > 0:
+            logger.info(
+                "Detected existing trajectory with last step %s. Resuming integration "
+                "from step %s.",
+                last_logged_step,
+                initial_step,
+            )
     return initial_step
 
 
