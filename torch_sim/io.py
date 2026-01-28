@@ -41,6 +41,7 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
     Notes:
         - Output positions and cell will be in Å
         - Output masses will be in amu
+        - Charge and spin are preserved in atoms.info if present in the state
     """
     try:
         from ase import Atoms
@@ -55,6 +56,10 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
     system_indices = state.system_idx.detach().cpu().numpy()
     pbc = state.pbc.detach().cpu().numpy()
 
+    # Extract charge and spin if available (per-system attributes)
+    charge = state.charge.detach().cpu().numpy()
+    spin = state.spin.detach().cpu().numpy()
+
     atoms_list = []
     for sys_idx in np.unique(system_indices):
         mask = system_indices == sys_idx
@@ -68,6 +73,13 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
         atoms = Atoms(
             symbols=symbols, positions=system_positions, cell=system_cell, pbc=pbc
         )
+
+        # Preserve charge and spin in atoms.info (as integers for FairChem compatibility)
+        if charge is not None:
+            atoms.info["charge"] = int(charge[sys_idx].item())
+        if spin is not None:
+            atoms.info["spin"] = int(spin[sys_idx].item())
+
         atoms_list.append(atoms)
 
     return atoms_list
