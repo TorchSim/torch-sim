@@ -259,6 +259,67 @@ class TrajectoryReporter:
                     )
                     self.prop_calculators[frequency][name] = new_fn
 
+    def _report_props_from_batched_state(
+        self, state: SimState, step: int | list[int]
+    ) -> list[dict[str, torch.Tensor]]:
+        """Build per-system props by slicing batched state (no files, no split)."""
+        sys_step = step[0] if isinstance(step, list) else step
+        active_calcs = {}
+        for report_frequency, calculators in self.prop_calculators.items():
+            if sys_step % report_frequency == 0 and report_frequency != 0:
+                active_calcs.update(calculators)
+        if not active_calcs:
+            return [{} for _ in range(state.n_systems)]
+        n_atoms = state.n_atoms_per_system
+        cum = torch.cat(
+            (
+                torch.zeros(1, device=state.positions.device, dtype=torch.long),
+                torch.cumsum(n_atoms, dim=0),
+            )
+        )
+        all_props = []
+        for i in range(state.n_systems):
+            props = {}
+            if "potential_energy" in active_calcs:
+                props["potential_energy"] = state.energy[i : i + 1]
+            if "forces" in active_calcs:
+                start, end = int(cum[i].item()), int(cum[i + 1].item())
+                props["forces"] = state.forces[start:end]
+            if "stress" in active_calcs:
+                props["stress"] = state.stress[i : i + 1]
+            all_props.append(props)
+        return all_props
+
+    def _report_one_system(
+        self,
+        idx: int,
+        substate: SimState,
+        sys_step: int,
+        model: ModelInterface | None,
+    ) -> dict[str, torch.Tensor]:
+        """Write state and run prop calculators for one system; return props."""
+        if (
+            self.state_frequency
+            and sys_step % self.state_frequency == 0
+            and self.filenames is not None
+        ):
+            self.trajectories[idx].write_state(substate, sys_step, **self.state_kwargs)
+        all_state_props: dict[str, torch.Tensor] = {}
+        for report_frequency, calculators in self.prop_calculators.items():
+            if sys_step % report_frequency != 0 or report_frequency == 0:
+                continue
+            props = {}
+            for prop_name, prop_fn in calculators.items():
+                prop = prop_fn(substate, model)
+                if len(prop.shape) == 0:
+                    prop = prop.unsqueeze(0)
+                props[prop_name] = prop
+            if props:
+                all_state_props.update(props)
+                if self.filenames is not None:
+                    self.trajectories[idx].write_arrays(props, sys_step)
+        return all_state_props
+
     def report(
         self, state: SimState, step: int | list[int], model: ModelInterface | None = None
     ) -> list[dict[str, torch.Tensor]]:
@@ -278,9 +339,6 @@ class TrajectoryReporter:
             model (ModelInterface, optional): Model used for simulation.
                 Defaults to None. Must be provided if any prop_calculators
                 are provided.
-            write_to_file (bool, optional): Whether to write the state to the trajectory
-                files. Defaults to True. Should only be set to `False` if the props
-                are being collected separately.
 
         Returns:
             list[dict[str, torch.Tensor]]: Map of property names to tensors for each
@@ -289,54 +347,27 @@ class TrajectoryReporter:
         Raises:
             ValueError: If number of systems doesn't match number of trajectory files
         """
-        # Get unique system indices
         system_indices = range(state.n_systems)
-        # system_indices = torch.unique(state.system_idx).cpu().tolist()
-
-        # Ensure we have the right number of trajectories
         if self.filenames is not None and len(system_indices) != len(self.trajectories):
             raise ValueError(
                 f"Number of systems ({len(system_indices)}) doesn't match "
                 f"number of trajectory files ({len(self.trajectories)})"
             )
+        if (
+            self.filenames is None
+            and state.n_systems > 1
+            and hasattr(state, "energy")
+            and hasattr(state, "forces")
+            and hasattr(state, "stress")
+        ):
+            return self._report_props_from_batched_state(state, step)
 
         split_states = state.split()
-        all_props: list[dict[str, torch.Tensor]] = []
-        # Process each system separately
-        for idx, substate in enumerate(split_states):
-            sys_step = step[idx] if isinstance(step, list) else step
-            # Write state to trajectory if it's time
-            if (
-                self.state_frequency
-                and sys_step % self.state_frequency == 0
-                and self.filenames is not None
-            ):
-                self.trajectories[idx].write_state(
-                    substate, sys_step, **self.state_kwargs
-                )
-
-            all_state_props = {}
-            # Process property calculators for this system
-            for report_frequency, calculators in self.prop_calculators.items():
-                if sys_step % report_frequency != 0 or report_frequency == 0:
-                    continue
-
-                # Calculate properties for this substate
-                props = {}
-                for prop_name, prop_fn in calculators.items():
-                    prop = prop_fn(substate, model)
-                    if len(prop.shape) == 0:
-                        prop = prop.unsqueeze(0)
-                    props[prop_name] = prop
-
-                # Write properties to this trajectory
-                if props:
-                    all_state_props.update(props)
-                    if self.filenames is not None:
-                        self.trajectories[idx].write_arrays(props, sys_step)
-            all_props.append(all_state_props)
-
-        return all_props
+        steps = step if isinstance(step, list) else [step] * len(split_states)
+        return [
+            self._report_one_system(i, s, steps[i], model)
+            for i, s in enumerate(split_states)
+        ]
 
     def finish(self) -> None:
         """Finish writing the trajectory files.

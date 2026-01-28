@@ -325,7 +325,7 @@ def determine_max_batch_size(
 def calculate_memory_scaler(
     state: SimState,
     memory_scales_with: MemoryScaling = "n_atoms_x_density",
-) -> float:
+) -> float | list[float]:
     """Calculate a metric that estimates memory requirements for a state.
 
     Provides different scaling metrics that correlate with memory usage.
@@ -333,6 +333,9 @@ def calculate_memory_scaler(
     while models with a fixed number of neighbors scale with "n_atoms".
     The choice of metric can significantly impact the accuracy of memory requirement
     estimations for different types of simulation systems.
+
+    For n_systems > 1 returns a list of per-system metrics without splitting the
+    state. For n_systems == 1 returns a float.
 
     Args:
         state (SimState): State to calculate metric for, with shape information
@@ -344,11 +347,12 @@ def calculate_memory_scaler(
             Defaults to "n_atoms_x_density".
 
     Returns:
-        float: Calculated metric value.
+        float: Calculated metric value when state has one system.
+        list[float]: One metric per system when state is batched (n_systems > 1).
 
     Raises:
-        ValueError: If state has multiple batches or if an invalid metric type is
-            provided.
+        ValueError: If an invalid metric type is provided. For batched states
+            with n_atoms_x_density, if not all systems are periodic.
 
     Example::
 
@@ -359,7 +363,26 @@ def calculate_memory_scaler(
         metric = calculate_memory_scaler(state, memory_scales_with="n_atoms_x_density")
     """
     if state.n_systems > 1:
-        return sum(calculate_memory_scaler(s, memory_scales_with) for s in state.split())
+        n_atoms_per_system = state.n_atoms_per_system
+        if memory_scales_with == "n_atoms":
+            return n_atoms_per_system.tolist()
+        if memory_scales_with == "n_atoms_x_density":
+            pbc = state.pbc
+            if not (
+                isinstance(pbc, torch.Tensor) and pbc.numel() >= 1 and pbc.all().item()
+            ):
+                raise ValueError(
+                    "calculate_memory_scaler with n_atoms_x_density on a batched "
+                    "state requires all systems to be periodic (all(state.pbc)). "
+                    "Use load_states with a list of states for non-periodic systems."
+                )
+            volume = torch.abs(torch.linalg.det(state.cell)) / 1000  # (n_systems,)
+            volume = volume.clamp(min=1e-12)
+            number_density = n_atoms_per_system.float() / volume
+            metric = n_atoms_per_system.float() * number_density
+            return metric.tolist()
+        valid = get_args(MemoryScaling)
+        raise ValueError(f"Invalid metric: {memory_scales_with}, must be one of {valid}")
     if memory_scales_with == "n_atoms":
         return state.n_atoms
     if memory_scales_with == "n_atoms_x_density":
@@ -523,6 +546,7 @@ class BinningAutoBatcher[T: SimState]:
         self.memory_scaling_factor = memory_scaling_factor
         self.max_memory_padding = max_memory_padding
         self.oom_error_message = oom_error_message
+        self._batched_state: SimState | None = None
 
     def load_states(self, states: T | Sequence[T]) -> float:
         """Load new states into the batcher.
@@ -533,9 +557,9 @@ class BinningAutoBatcher[T: SimState]:
 
         Args:
             states (SimState | list[SimState]): Collection of states to batch. Either a
-                list of individual SimState objects or a single batched SimState that
-                will be split into individual states. Each SimState has shape
-                information specific to its instance.
+                single batched SimState (kept batched when all periodic) or a list of
+                individual SimState objects. Each SimState has shape information
+                specific to its instance.
 
         Returns:
             float: Maximum memory scaling metric that fits in GPU memory.
@@ -549,28 +573,50 @@ class BinningAutoBatcher[T: SimState]:
             # Load individual states
             batcher.load_states([state1, state2, state3])
 
-            # Or load a batched state that will be split
+            # Or load a batched state
             batcher.load_states(batched_state)
 
         Notes:
             This method resets the current state bin index, so any ongoing iteration
             will be restarted when this method is called.
         """
-        self.state_slices = states.split() if isinstance(states, SimState) else states
-        self.memory_scalers = [
-            calculate_memory_scaler(state_slice, self.memory_scales_with)
-            for state_slice in self.state_slices
-        ]
+        if isinstance(states, SimState):
+            try:
+                scalers = calculate_memory_scaler(states, self.memory_scales_with)
+                self.memory_scalers = scalers if isinstance(scalers, list) else [scalers]
+                self._batched_state = states
+                self.state_slices = None
+            except ValueError as e:
+                if "periodic" not in str(e):
+                    raise
+                self._batched_state = None
+                self.state_slices = states.split()
+                self.memory_scalers = [
+                    calculate_memory_scaler(s, self.memory_scales_with)
+                    for s in self.state_slices
+                ]
+        else:
+            self._batched_state = None
+            self.state_slices = list(states)
+            self.memory_scalers = [
+                calculate_memory_scaler(s, self.memory_scales_with)
+                for s in self.state_slices
+            ]
         if not self.max_memory_scaler:
+            state_list = (
+                [self._batched_state[[i]] for i in range(self._batched_state.n_systems)]
+                if self._batched_state is not None
+                else self.state_slices
+            )
             self.max_memory_scaler = estimate_max_memory_scaler(
-                self.state_slices,
+                state_list,
                 self.model,
                 self.memory_scalers,
                 max_atoms=self.max_atoms_to_try,
                 scale_factor=self.memory_scaling_factor,
                 oom_error_message=self.oom_error_message,
             )
-            self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
+        self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
 
         # verify that no systems are too large
         max_metric_value = max(self.memory_scalers)
@@ -589,9 +635,14 @@ class BinningAutoBatcher[T: SimState]:
         )  # list[dict[original_index: int, memory_scale:float]]
         # Convert to list of lists of indices
         self.index_bins = [list(batch.keys()) for batch in self.index_bins]
-        self.batched_states = []
-        for index_bin in self.index_bins:
-            self.batched_states.append([self.state_slices[idx] for idx in index_bin])
+        self.batched_states = (
+            self.index_bins
+            if self._batched_state is not None
+            else [
+                [self.state_slices[idx] for idx in index_bin]
+                for index_bin in self.index_bins
+            ]
+        )
         self.current_state_bin = 0
 
         return self.max_memory_scaler
@@ -620,12 +671,12 @@ class BinningAutoBatcher[T: SimState]:
         # TODO: definitely a clever treatment to be done with iterators here
         if self.current_state_bin < len(self.batched_states):
             state_bin = self.batched_states[self.current_state_bin]
-            state = ts.concatenate_states(state_bin)
-            indices = (
-                self.index_bins[self.current_state_bin]
-                if self.current_state_bin < len(self.index_bins)
-                else []
+            state = (
+                self._batched_state[state_bin]
+                if self._batched_state is not None
+                else ts.concatenate_states(state_bin)
             )
+            indices = self.index_bins[self.current_state_bin]
             self.current_state_bin += 1
             return state, indices
         return None, []
@@ -834,7 +885,7 @@ class InFlightAutoBatcher[T: SimState]:
             # Load individual states
             batcher.load_states([state1, state2, state3])
 
-            # Or load a batched state that will be split
+            # Or load a batched state (kept batched, no splitting)
             batcher.load_states(batched_state)
 
             # Or load states from an iterator
