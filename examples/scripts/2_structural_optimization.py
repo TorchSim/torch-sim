@@ -17,7 +17,6 @@ import os
 import numpy as np
 import torch
 from ase.build import bulk
-from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
 from torch_sim.models.lennard_jones import LennardJonesModel
@@ -128,14 +127,6 @@ print("\n" + "=" * 70)
 print("SECTION 2: Batched MACE FIRE - Positions Only")
 print("=" * 70)
 
-# Load MACE model
-loaded_model = mace_mp(
-    model=MaceUrls.mace_mpa_medium,
-    return_raw_model=True,
-    default_dtype=str(dtype).removeprefix("torch."),
-    device=str(device),
-)
-
 # Set random seed for reproducibility
 rng = np.random.default_rng(seed=0)
 
@@ -157,7 +148,7 @@ print(f"Iron atoms: {len(fe_dc)}")
 
 # Create batched model
 model = MaceModel(
-    model=loaded_model,
+    model=MaceUrls.mace_mpa_medium,
     device=device,
     compute_forces=True,
     compute_stress=True,

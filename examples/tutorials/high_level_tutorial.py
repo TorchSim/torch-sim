@@ -195,9 +195,8 @@ from torch_sim.models.mace import MaceModel
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Load the MACE "small" foundation model
-mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(
-    model=mace,
+    model="small",
     device=device,
     dtype=torch.float64,
     compute_forces=True,

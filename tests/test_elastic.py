@@ -18,7 +18,8 @@ from torch_sim.units import UnitConversion
 
 
 try:
-    from mace.calculators.foundations_models import mace_mp
+    # This import below tells us if mace is installed (even though mace_mp is not used)
+    import mace.calculators.foundations_models  # noqa: F401
 
     from torch_sim.models.mace import MaceModel
 except ImportError:
@@ -257,10 +258,8 @@ def test_get_elementary_deformations_strain_consistency(
 @pytest.fixture
 def mace_model() -> MaceModel:
     """Create a MACE model fixture for testing."""
-    mace_model = mace_mp(model="medium", default_dtype="float64", return_raw_model=True)
-
     return MaceModel(
-        model=mace_model,
+        model="https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-03-mace-128-L1_epoch-199.model",
         device=DEVICE,
         dtype=torch.float64,
         compute_forces=True,

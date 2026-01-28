@@ -17,7 +17,6 @@ import os
 import numpy as np
 import torch
 from ase.build import bulk
-from mace.calculators.foundations_models import mace_mp
 from pymatgen.core import Structure
 
 import torch_sim as ts
@@ -121,9 +120,8 @@ print("\n" + "=" * 70)
 print("SECTION 3: MACE Model with High-Level API")
 print("=" * 70)
 
-mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(
-    model=mace,
+    model="small",
     device=device,
     dtype=torch.float64,
     compute_forces=True,
