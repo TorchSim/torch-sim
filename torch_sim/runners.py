@@ -27,6 +27,7 @@ from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.typing import StateLike
 from torch_sim.units import UnitSystem
 
+
 logger = logging.getLogger(__name__)
 
 

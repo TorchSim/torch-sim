@@ -883,7 +883,7 @@ def test_optimize_append_to_trajectory(
         for traj in trajectory_reporter.trajectories:
             with TorchSimTrajectory(traj.filename, mode="r") as traj:
                 # Check that the trajectory file has 5 frames
-                np.testing.assert_allclose(traj.get_steps("positions"), range(0, 6))
+                np.testing.assert_allclose(traj.get_steps("positions"), range(6))
 
         trajectory_reporter_2 = ts.TrajectoryReporter(
             traj_files, state_frequency=1, trajectory_kwargs=dict(mode="a")
@@ -899,7 +899,7 @@ def test_optimize_append_to_trajectory(
         for traj in trajectory_reporter_2.trajectories:
             with TorchSimTrajectory(traj.filename, mode="r") as traj:
                 # Check that the trajectory file now has 7 frames
-                np.testing.assert_allclose(traj.get_steps("positions"), range(0, 8))
+                np.testing.assert_allclose(traj.get_steps("positions"), range(8))
 
 
 def test_integrate_append_to_trajectory(
@@ -931,7 +931,7 @@ def test_integrate_append_to_trajectory(
         for traj in trajectory_reporter.trajectories:
             with TorchSimTrajectory(traj.filename, mode="r") as traj:
                 # Check that the trajectory file has 5 frames
-                np.testing.assert_allclose(traj.get_steps("positions"), range(0, 6))
+                np.testing.assert_allclose(traj.get_steps("positions"), range(6))
 
         trajectory_reporter_2 = ts.TrajectoryReporter(
             traj_files, state_frequency=1, trajectory_kwargs=dict(mode="a")
@@ -949,7 +949,7 @@ def test_integrate_append_to_trajectory(
         for traj in trajectory_reporter_2.trajectories:
             with TorchSimTrajectory(traj.filename, mode="r") as traj:
                 # Check that the trajectory file now has 12 (5 + 7) frames
-                np.testing.assert_allclose(traj.get_steps("positions"), range(0, 13))
+                np.testing.assert_allclose(traj.get_steps("positions"), range(13))
 
 
 def test_truncate_trajectory(
