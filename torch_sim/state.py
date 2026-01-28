@@ -1084,6 +1084,8 @@ def initialize_state(
     # TODO: create a way to pass velocities from pmg and ase
 
     if isinstance(system, SimState):
+        if system.device == device and system.dtype == dtype:
+            return system
         return system.clone().to(device, dtype)
 
     if isinstance(system, list | tuple) and all(isinstance(s, SimState) for s in system):
