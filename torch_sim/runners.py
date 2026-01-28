@@ -27,7 +27,6 @@ from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.typing import StateLike
 from torch_sim.units import UnitSystem
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -274,7 +273,6 @@ def integrate[T: SimState](  # noqa: C901
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: BinningAutoBatcher | bool = False,
     pbar: bool | dict[str, Any] = False,
-    save_initial_state: bool = False,
     init_kwargs: dict[str, Any] | None = None,
     **integrator_kwargs: Any,
 ) -> T:
@@ -301,8 +299,6 @@ def integrate[T: SimState](  # noqa: C901
         pbar (bool | dict[str, Any], optional): Show a progress bar.
             Only works with an autobatcher in interactive shell. If a dict is given,
             it's passed to `tqdm` as kwargs.
-        save_initial_state (bool, optional): If True, save the initial state at step 0
-            before starting integration. Defaults to False.
         init_kwargs (dict[str, Any], optional): Additional keyword arguments for
             integrator init function.
         **integrator_kwargs: Additional keyword arguments for integrator init function
@@ -371,9 +367,8 @@ def integrate[T: SimState](  # noqa: C901
                 filenames=[og_filenames[i] for i in system_indices]
             )
 
-        # Save initial state if requested and trajectory is empty
-        if save_initial_state:
-            _write_initial_state(trajectory_reporter, state, model)
+        # Save initial state into step 0
+        _write_initial_state(trajectory_reporter, state, model)
 
         # run the simulation
         for step in range(initial_step, initial_step + n_steps):
@@ -558,7 +553,6 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: InFlightAutoBatcher | bool = False,
     pbar: bool | dict[str, Any] = False,
-    save_initial_state: bool = False,
     init_kwargs: dict[str, Any] | None = None,
     **optimizer_kwargs: Any,
 ) -> T:
@@ -587,8 +581,6 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         pbar (bool | dict[str, Any], optional): Show a progress bar.
             Only works with an autobatcher in interactive shell. If a dict is given,
             it's passed to `tqdm` as kwargs.
-        save_initial_state (bool, optional): If True, save the initial state at step 0
-            before starting optimization. Defaults to False.
         init_kwargs (dict[str, Any], optional): Additional keyword arguments for optimizer
             init function.
         **optimizer_kwargs: Additional keyword arguments for optimizer step function
@@ -644,9 +636,8 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     # Auto-detect initial step from trajectory files for resuming optimizations
     step = _determine_initial_step_for_optimize(trajectory_reporter, state)
 
-    # Save initial state if requested and trajectory is empty
-    if save_initial_state:
-        _write_initial_state(trajectory_reporter, state, model)
+    # Save initial state into step 0
+    _write_initial_state(trajectory_reporter, state, model)
 
     last_energy = None
     all_converged_states: list[T] = []
