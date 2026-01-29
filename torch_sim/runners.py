@@ -119,7 +119,9 @@ def _determine_initial_step_for_integrate(
     """
     initial_step: int = 1
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
-        last_logged_steps = trajectory_reporter.last_steps
+        last_logged_steps = [
+            step if step is not None else 0 for step in trajectory_reporter.last_steps
+        ]
         last_logged_step = min(last_logged_steps)
         initial_step = initial_step + last_logged_step
         if len(set(last_logged_steps)) != 1:
@@ -130,12 +132,13 @@ def _determine_initial_step_for_integrate(
                 "    reporter.truncate_to_step(min(reporter.last_step))\n\n"
                 "before calling integrate again."
             )
-        logger.info(
-            "Detected existing trajectory with last step %s. Resuming integration "
-            "from step %s.",
-            last_logged_step,
-            initial_step,
-        )
+        if last_logged_step > 0:
+            logger.info(
+                "Detected existing trajectory with last step %s. Resuming integration "
+                "from step %s.",
+                last_logged_step,
+                initial_step,
+            )
     return initial_step
 
 
@@ -158,8 +161,10 @@ def _determine_initial_step_for_optimize(
         size=(state.n_systems,), fill_value=1, dtype=torch.long, device=state.device
     )
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
+        last_steps = trajectory_reporter.last_steps
+        last_steps = [step if step is not None else 0 for step in last_steps]
         last_logged_steps = torch.tensor(
-            trajectory_reporter.last_steps, dtype=torch.long, device=state.device
+            last_steps, dtype=torch.long, device=state.device
         )
         initial_step = initial_step + last_logged_steps
     return initial_step
@@ -233,6 +238,30 @@ def _normalize_temperature_tensor(
         f" - 1 (scalar),\n"
         f"but got {temps.shape[0]}."
     )
+
+
+def _write_initial_state(
+    trajectory_reporter: TrajectoryReporter | None,
+    state: SimState,
+    model: ModelInterface,
+) -> None:
+    """Write initial state (step 0) to trajectory if conditions are met.
+
+    Only writes step 0 if:
+    1. trajectory_reporter is provided
+    2. All trajectories are empty (last_step returns None)
+
+    Args:
+        trajectory_reporter (TrajectoryReporter | None): Optional reporter
+        state (SimState): Current simulation state
+        model (ModelInterface): Model used for simulation
+    """
+    if trajectory_reporter:
+        trajectories_empty = all(
+            traj.last_step is None for traj in trajectory_reporter.trajectories
+        )
+        if trajectories_empty:
+            trajectory_reporter.report(state, 0, model=model)
 
 
 def integrate[T: SimState](  # noqa: C901
@@ -339,6 +368,9 @@ def integrate[T: SimState](  # noqa: C901
             trajectory_reporter.reopen_trajectories(
                 filenames=[og_filenames[i] for i in system_indices]
             )
+
+        # Save initial state into step 0
+        _write_initial_state(trajectory_reporter, state, model)
 
         # run the simulation
         for step in range(initial_step, initial_step + n_steps):
@@ -605,6 +637,9 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
 
     # Auto-detect initial step from trajectory files for resuming optimizations
     step = _determine_initial_step_for_optimize(trajectory_reporter, state)
+
+    # Save initial state into step 0
+    _write_initial_state(trajectory_reporter, state, model)
 
     last_energy = None
     all_converged_states: list[T] = []

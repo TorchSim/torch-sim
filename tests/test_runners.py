@@ -336,8 +336,8 @@ def test_integrate_with_autobatcher_and_reporting(
             )
             energies = traj.get_array("pe")
             energy_steps = traj.get_steps("pe")
-            assert len(energies) == 10
-            assert len(energy_steps) == 10
+            assert len(energies) == 11  # includes initial state at step 0, hence 10 + 1
+            assert len(energy_steps) == 11
 
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
@@ -372,7 +372,7 @@ def test_optimize_fire(
 
     # Check force convergence
     assert torch.all(final_state.forces < 3e-1)
-    assert energies.shape[0] >= 10
+    assert energies.shape[0] >= 11
     assert energies[0] > energies[-1]
     assert not torch.allclose(original_state.positions, final_state.positions)
 
