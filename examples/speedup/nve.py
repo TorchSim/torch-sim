@@ -1,11 +1,10 @@
-"""Speedup comparison TorchSim vs ASE for NVE MD (10 steps).
-
-To run:
-uv sync --extra mace --extra test
-uv run nve.py
-"""
-
-# pyright: basic
+"""Speedup comparison TorchSim vs ASE for NVE MD (10 steps)."""
+# %%
+# /// script
+# dependencies = [
+#     "torch_sim_atomistic[mace,test]"
+# ]
+# ///
 
 import io
 import time
@@ -189,3 +188,6 @@ if __name__ == "__main__":
         ase_times,
         output_path="nve.html",
     )
+
+    if ts_times[-1] > ase_times[-1]:
+        raise ValueError("TorchSim is slower than ASE")

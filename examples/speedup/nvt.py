@@ -1,11 +1,11 @@
-"""Speedup comparison TorchSim vs ASE for NVT MD with Nose-Hoover thermostat (10 steps).
+"""Speedup comparison TorchSim vs ASE for NVT MD with Nose-Hoover thermostat."""
 
-To run:
-uv sync --extra mace --extra test
-uv run nvt.py
-"""
-
-# pyright: basic
+# %%
+# /// script
+# dependencies = [
+#     "torch_sim_atomistic[mace,test]"
+# ]
+# ///
 
 import io
 import time
@@ -194,3 +194,6 @@ if __name__ == "__main__":
         ase_times,
         output_path="nvt.html",
     )
+
+    if ts_times[-1] > ase_times[-1]:
+        raise ValueError("TorchSim is slower than ASE")

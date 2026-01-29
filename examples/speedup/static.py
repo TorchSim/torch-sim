@@ -1,11 +1,11 @@
-"""Speedup comparison TorchSim vs ASE for static calculations.
+"""Speedup comparison TorchSim vs ASE for static calculations."""
 
-To run:
-uv sync --extra mace --extra test
-uv run static.py
-"""
-
-# pyright: basic
+# %%
+# /// script
+# dependencies = [
+#     "torch_sim_atomistic[mace,test]"
+# ]
+# ///
 
 import time
 import typing
@@ -163,13 +163,16 @@ if __name__ == "__main__":
     iterations = 2
     n_structures_list: list[int] = [1, 10, 100, 500]
 
-    static_times = run_torchsim_static(n_structures_list, iterations, base_structure)
+    ts_times = run_torchsim_static(n_structures_list, iterations, base_structure)
     ase_times = run_ase_static(n_structures_list, iterations, mgo_ase)
 
     plot_results(
         n_structures_list,
         iterations,
-        static_times,
+        ts_times,
         ase_times,
         output_path="static.html",
     )
+
+    if ts_times[-1] > ase_times[-1]:
+        raise ValueError("TorchSim is slower than ASE")

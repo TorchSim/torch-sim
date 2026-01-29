@@ -1,11 +1,11 @@
-"""Speedup comparison TorchSim vs ASE for 10 relaxation steps.
+"""Speedup comparison TorchSim vs ASE for 10 relaxation steps."""
 
-To run:
-uv sync --extra mace --extra test
-uv run relax.py
-"""
-
-# pyright: basic
+# %%
+# /// script
+# dependencies = [
+#     "torch_sim_atomistic[mace,test]"
+# ]
+# ///
 
 import io
 import time
@@ -181,13 +181,16 @@ if __name__ == "__main__":
     iterations = 2
     n_structures_list: list[int] = [1, 10, 100, 500]
 
-    relax_times = run_torchsim_relax(n_structures_list, iterations, base_structure)
+    ts_times = run_torchsim_relax(n_structures_list, iterations, base_structure)
     ase_times = run_ase_relax(n_structures_list, iterations, mgo_ase)
 
     plot_results(
         n_structures_list,
         iterations,
-        relax_times,
+        ts_times,
         ase_times,
         output_path="relax.html",
     )
+
+    if ts_times[-1] > ase_times[-1]:
+        raise ValueError("TorchSim is slower than ASE")
