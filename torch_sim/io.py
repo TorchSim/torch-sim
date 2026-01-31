@@ -189,7 +189,7 @@ def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
 
 
 def atoms_to_state(
-    atoms: "Atoms | list[Atoms]", device: torch.device, dtype: torch.dtype
+    atoms: "Atoms | list[Atoms]", device: torch.device | None, dtype: torch.dtype | None
 ) -> "ts.SimState":
     """Convert an ASE Atoms object or list of Atoms objects to a SimState.
 
@@ -264,7 +264,9 @@ def atoms_to_state(
 
 
 def structures_to_state(
-    structure: "Structure | list[Structure]", device: torch.device, dtype: torch.dtype
+    structure: "Structure | list[Structure]",
+    device: torch.device | None,
+    dtype: torch.dtype | None,
 ) -> "ts.SimState":
     """Create a SimState from pymatgen Structure(s).
 
@@ -335,8 +337,8 @@ def structures_to_state(
 
 def phonopy_to_state(
     phonopy_atoms: "PhonopyAtoms | list[PhonopyAtoms]",
-    device: torch.device,
-    dtype: torch.dtype,
+    device: torch.device | None,
+    dtype: torch.dtype | None,
 ) -> "ts.SimState":
     """Create state tensors from a PhonopyAtoms object or list of PhonopyAtoms objects.
 

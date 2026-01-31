@@ -5,10 +5,10 @@ import torch
 
 from tests.conftest import DEVICE
 from tests.models.conftest import (
-    consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
+from torch_sim.testing import SIMSTATE_GENERATORS
 
 
 try:
@@ -51,7 +51,7 @@ test_metatomic_consistency = make_model_calculator_consistency_test(
     test_name="metatomic",
     model_fixture_name="metatomic_model",
     calculator_fixture_name="metatomic_calculator",
-    sim_state_names=consistency_test_simstate_fixtures,
+    sim_state_names=tuple(SIMSTATE_GENERATORS.keys()),
     energy_atol=5e-5,
     dtype=torch.float32,
     device=DEVICE,
