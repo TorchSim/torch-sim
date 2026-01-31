@@ -191,22 +191,10 @@ class SevenNetModel(ModelInterface):
         # TODO: is this clone necessary?
         sim_state = sim_state.clone()
 
-        # Wrap positions into the unit cell
-        wrapped_positions = (
-            ts.transforms.pbc_wrap_batched(
-                sim_state.positions,
-                sim_state.cell,
-                sim_state.system_idx,
-                sim_state.pbc,
-            )
-            if sim_state.pbc.any()
-            else sim_state.positions
-        )
-
         # Batched neighbor list using linked-cell algorithm with row-vector cell
         n_systems = sim_state.system_idx.max().item() + 1
         edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
-            wrapped_positions,
+            sim_state.positions,
             sim_state.row_vector_cell,
             sim_state.pbc,
             self.cutoff,
@@ -227,7 +215,7 @@ class SevenNetModel(ModelInterface):
             sys_start = stride[sys_idx].item()
             sys_end = stride[sys_idx + 1].item()
 
-            pos = wrapped_positions[sys_start:sys_end]
+            pos = sim_state.positions[sys_start:sys_end]
             row_vector_cell = sim_state.row_vector_cell[sys_idx]
             atomic_nums = sim_state.atomic_numbers[sys_start:sys_end]
 

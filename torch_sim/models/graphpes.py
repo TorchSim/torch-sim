@@ -64,18 +64,6 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
     Returns:
         AtomicGraph object representing the batched structures
     """
-    # Wrap positions into the unit cell
-    wrapped_positions = (  # noqa: F841
-        ts.transforms.pbc_wrap_batched(
-            state.positions,
-            state.cell,
-            state.system_idx,
-            state.pbc,
-        )
-        if state.pbc.any()
-        else state.positions
-    )
-
     graphs = []
 
     for sys_idx in range(state.n_systems):
