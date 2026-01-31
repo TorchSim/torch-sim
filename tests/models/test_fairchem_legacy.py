@@ -7,10 +7,10 @@ import torch
 import torch_sim as ts
 from tests.conftest import DEVICE
 from tests.models.conftest import (
-    consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
+from torch_sim.testing import SIMSTATE_BULK_GENERATORS, SIMSTATE_MOLECULE_GENERATORS
 
 
 try:
@@ -69,7 +69,7 @@ test_fairchem_ocp_consistency_pbc = make_model_calculator_consistency_test(
     test_name="fairchem_ocp",
     model_fixture_name="eqv2_oc20_model_pbc",
     calculator_fixture_name="ocp_calculator",
-    sim_state_names=consistency_test_simstate_fixtures[:-1],
+    sim_state_names=tuple(SIMSTATE_BULK_GENERATORS.keys()),
     energy_rtol=5e-4,  # NOTE: EqV2 doesn't pass at the 1e-5 level used for other models
     energy_atol=5e-4,
     force_rtol=5e-4,
@@ -78,11 +78,11 @@ test_fairchem_ocp_consistency_pbc = make_model_calculator_consistency_test(
     stress_atol=5e-4,
 )
 
-test_fairchem_non_pbc_benzene = make_model_calculator_consistency_test(
+test_fairchem_non_pbc = make_model_calculator_consistency_test(
     test_name="fairchem_non_pbc_benzene",
     model_fixture_name="eqv2_oc20_model_non_pbc",
     calculator_fixture_name="ocp_calculator",
-    sim_state_names=["benzene_sim_state"],
+    sim_state_names=tuple(SIMSTATE_MOLECULE_GENERATORS.keys()),
     energy_rtol=5e-4,  # NOTE: EqV2 doesn't pass at the 1e-5 level used for other models
     energy_atol=5e-4,
     force_rtol=5e-4,

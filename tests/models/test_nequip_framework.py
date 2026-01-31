@@ -6,10 +6,10 @@ import pytest
 
 from tests.conftest import DEVICE, DTYPE
 from tests.models.conftest import (
-    consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
+from torch_sim.testing import SIMSTATE_BULK_GENERATORS
 
 
 try:
@@ -122,7 +122,7 @@ test_nequip_consistency = make_model_calculator_consistency_test(
     test_name="nequip",
     model_fixture_name="nequip_model",
     calculator_fixture_name="nequip_calculator",
-    sim_state_names=consistency_test_simstate_fixtures[:-1],
+    sim_state_names=tuple(SIMSTATE_BULK_GENERATORS.keys()),
     energy_atol=5e-5,
     dtype=DTYPE,
     device=DEVICE,
