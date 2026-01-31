@@ -234,3 +234,76 @@ def test_stress_tensor_symmetry(
 def test_validate_model_outputs(lj_model: LennardJonesModel) -> None:
     """Test that the model outputs are valid."""
     validate_model_outputs(lj_model, DEVICE, torch.float64)
+
+
+def test_unwrapped_positions_consistency() -> None:
+    """Test that wrapped and unwrapped positions give identical results.
+
+    This tests that models correctly handle positions outside the unit cell
+    by wrapping them before neighbor list computation.
+    """
+    # Create a periodic system
+    ar_atoms = bulk("Ar", "fcc", a=5.26, cubic=True).repeat([2, 2, 2])
+    cell = torch.tensor(ar_atoms.get_cell().array, dtype=torch.float64, device=DEVICE)
+
+    # Create wrapped state (positions inside unit cell)
+    state_wrapped = ts.io.atoms_to_state(ar_atoms, DEVICE, torch.float64)
+
+    # Create unwrapped state by shifting some atoms outside the cell
+    positions_unwrapped = state_wrapped.positions.clone()
+    # Shift first half of atoms by +1 cell vector in x direction
+    n_atoms = positions_unwrapped.shape[0]
+    positions_unwrapped[: n_atoms // 2] += cell[0]
+    # Shift some atoms by -1 cell vector in y direction
+    positions_unwrapped[n_atoms // 4 : n_atoms // 2] -= cell[1]
+
+    state_unwrapped = ts.SimState(
+        positions=positions_unwrapped,
+        masses=state_wrapped.masses,
+        cell=state_wrapped.cell,
+        pbc=state_wrapped.pbc,
+        atomic_numbers=state_wrapped.atomic_numbers,
+    )
+
+    # Create model
+    model = LennardJonesModel(
+        sigma=3.405,
+        epsilon=0.0104,
+        cutoff=2.5 * 3.405,
+        dtype=torch.float64,
+        device=DEVICE,
+        compute_forces=True,
+        compute_stress=True,
+        use_neighbor_list=True,
+    )
+
+    # Compute results
+    results_wrapped = model(state_wrapped)
+    results_unwrapped = model(state_unwrapped)
+
+    # Verify energy matches
+    torch.testing.assert_close(
+        results_wrapped["energy"],
+        results_unwrapped["energy"],
+        rtol=1e-10,
+        atol=1e-10,
+        msg="Energies should match for wrapped and unwrapped positions",
+    )
+
+    # Verify forces match
+    torch.testing.assert_close(
+        results_wrapped["forces"],
+        results_unwrapped["forces"],
+        rtol=1e-10,
+        atol=1e-10,
+        msg="Forces should match for wrapped and unwrapped positions",
+    )
+
+    # Verify stress matches
+    torch.testing.assert_close(
+        results_wrapped["stress"],
+        results_unwrapped["stress"],
+        rtol=1e-10,
+        atol=1e-10,
+        msg="Stress should match for wrapped and unwrapped positions",
+    )
