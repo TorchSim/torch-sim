@@ -258,14 +258,18 @@ def make_osn2_sim_state(
     device: torch.device | None = None, dtype: torch.dtype | None = None
 ) -> ts.SimState:
     """Create rhombohedral OsN2."""
-    from pymatgen.core import Lattice, Structure
+    import numpy as np
+    from ase import Atoms
+    from ase.geometry import cellpar_to_cell
 
     a = 3.211996
-    lattice = Lattice.from_parameters(a, a, a, 60, 60, 60)
-    species = ["Os", "N"]
-    frac_coords = [[0.75, 0.7501, -0.25], [0, 0, 0]]
-    structure = Structure(lattice, species, frac_coords, coords_are_cartesian=False)
-    return ts.initialize_state(structure, dtype=dtype, device=device)
+    atoms = Atoms(
+        symbols=["Os", "N"],
+        scaled_positions=[[0.75, 0.7501, -0.25], [0, 0, 0]],
+        cell=np.roll(cellpar_to_cell([a, a, a, 60, 60, 60]), -1, axis=(0, 1)),
+        pbc=True,
+    )
+    return ts.io.atoms_to_state(atoms, device=device, dtype=dtype)
 
 
 def make_distorted_fcc_al_conventional_sim_state(
