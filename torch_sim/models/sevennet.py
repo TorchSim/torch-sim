@@ -227,7 +227,7 @@ class SevenNetModel(ModelInterface):
             sys_start = stride[sys_idx].item()
             sys_end = stride[sys_idx + 1].item()
 
-            pos = sim_state.positions[sys_start:sys_end]
+            pos = wrapped_positions[sys_start:sys_end]
             row_vector_cell = sim_state.row_vector_cell[sys_idx]
             atomic_nums = sim_state.atomic_numbers[sys_start:sys_end]
 
