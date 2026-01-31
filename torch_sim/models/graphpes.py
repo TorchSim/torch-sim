@@ -65,7 +65,7 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
         AtomicGraph object representing the batched structures
     """
     # Wrap positions into the unit cell
-    wrapped_positions = (
+    wrapped_positions = (  # noqa: F841
         ts.transforms.pbc_wrap_batched(
             state.positions,
             state.cell,
@@ -80,7 +80,7 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
 
     for sys_idx in range(state.n_systems):
         system_mask = state.system_idx == sys_idx
-        R = wrapped_positions[system_mask]
+        R = state.positions[system_mask]
         Z = state.atomic_numbers[system_mask]
         cell = state.row_vector_cell[sys_idx]
         # graph-pes models internally trim the neighbor list to the
