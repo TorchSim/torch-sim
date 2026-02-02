@@ -7,11 +7,11 @@ from ase.build import bulk, molecule
 import torch_sim as ts
 from tests.conftest import DEVICE
 from tests.models.conftest import (
-    consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
 from torch_sim.models.graphpes import GraphPESWrapper
+from torch_sim.testing import CONSISTENCY_SIMSTATES
 
 
 try:
@@ -141,7 +141,7 @@ test_graphpes_nequip_consistency = make_model_calculator_consistency_test(
     test_name="graphpes-nequip",
     model_fixture_name="ts_nequip_model",
     calculator_fixture_name="ase_nequip_calculator",
-    sim_state_names=consistency_test_simstate_fixtures,
+    sim_state_names=CONSISTENCY_SIMSTATES,
     device=DEVICE,
     dtype=DTYPE,
     energy_rtol=1e-3,
@@ -176,7 +176,7 @@ test_graphpes_mace_consistency = make_model_calculator_consistency_test(
     test_name="graphpes-mace",
     model_fixture_name="ts_mace_model",
     calculator_fixture_name="ase_mace_calculator",
-    sim_state_names=consistency_test_simstate_fixtures,
+    sim_state_names=CONSISTENCY_SIMSTATES,
     device=DEVICE,
     dtype=DTYPE,
 )
@@ -205,7 +205,7 @@ test_graphpes_lj_consistency = make_model_calculator_consistency_test(
     test_name="graphpes-lj",
     model_fixture_name="ts_lj_model",
     calculator_fixture_name="ase_lj_calculator",
-    sim_state_names=consistency_test_simstate_fixtures,
+    sim_state_names=CONSISTENCY_SIMSTATES,
     device=DEVICE,
     dtype=DTYPE,
 )
