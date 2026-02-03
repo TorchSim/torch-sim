@@ -266,15 +266,23 @@ class MorseModel(ModelInterface):
         cell = cell.squeeze()
         pbc = sim_state.pbc
 
+        # Ensure system_idx exists (create if None for single system)
+        system_idx = (
+            sim_state.system_idx
+            if sim_state.system_idx is not None
+            else torch.zeros(positions.shape[0], dtype=torch.long, device=self.device)
+        )
+
+        # Wrap positions into the unit cell
+        wrapped_positions = (
+            ts.transforms.pbc_wrap_batched(positions, sim_state.cell, system_idx, pbc)
+            if pbc.any()
+            else positions
+        )
+
         if self.use_neighbor_list:
-            # Ensure system_idx exists (create if None for single system)
-            system_idx = (
-                sim_state.system_idx
-                if sim_state.system_idx is not None
-                else torch.zeros(positions.shape[0], dtype=torch.long, device=self.device)
-            )
             mapping, system_mapping, shifts_idx = torchsim_nl(
-                positions=positions,
+                positions=wrapped_positions,
                 cell=cell,
                 pbc=pbc,
                 cutoff=self.cutoff,
@@ -282,7 +290,7 @@ class MorseModel(ModelInterface):
             )
             # Pass shifts_idx directly - get_pair_displacements will convert them
             dr_vec, distances = transforms.get_pair_displacements(
-                positions=positions,
+                positions=wrapped_positions,
                 cell=cell,
                 pbc=pbc,
                 pairs=(mapping[0], mapping[1]),
@@ -290,11 +298,13 @@ class MorseModel(ModelInterface):
             )
         else:
             dr_vec, distances = transforms.get_pair_displacements(
-                positions=positions,
+                positions=wrapped_positions,
                 cell=cell,
                 pbc=pbc,
             )
-            mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)
+            mask = torch.eye(
+                wrapped_positions.shape[0], dtype=torch.bool, device=self.device
+            )
             distances = distances.masked_fill(mask, float("inf"))
             mask = distances < self.cutoff
             i, j = torch.where(mask)
