@@ -18,6 +18,7 @@ from torch_sim.constraints import FixSymmetry
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.symmetrize import get_symmetry_datasets
 
+
 # Skip all tests if spglib is not available
 spglib = pytest.importorskip("spglib")
 from spglib import SpglibDataset
@@ -40,11 +41,11 @@ class OptimizationResult(TypedDict):
 
 # Expected space groups for each structure type
 SPACEGROUPS = {
-    "fcc": 225,      # Fm-3m
-    "hcp": 194,      # P6_3/mmc
+    "fcc": 225,  # Fm-3m
+    "hcp": 194,  # P6_3/mmc
     "diamond": 227,  # Fd-3m
-    "bcc": 229,      # Im-3m
-    "p6bar": 174,    # P-6 (low symmetry)
+    "bcc": 229,  # Im-3m
+    "p6bar": 174,  # P-6 (low symmetry)
 }
 
 # Default maximum optimization steps for tests
@@ -134,6 +135,7 @@ def model() -> LennardJonesModel:
         dtype=DTYPE,
     )
 
+
 @pytest.fixture
 def noisy_lj_model(model: LennardJonesModel):
     """Create a LJ model that adds noise to forces/stress (like ASE's NoisyLennardJones)."""
@@ -145,10 +147,11 @@ def noisy_lj_model(model: LennardJonesModel):
             self.model = model
             self.rng = np.random.RandomState(rng_seed)
             self.noise_scale = noise_scale
-        
+
         @property
         def device(self):
             return self.model.device
+
         @property
         def dtype(self):
             return self.model.dtype
@@ -168,6 +171,7 @@ def noisy_lj_model(model: LennardJonesModel):
                     noise, dtype=results["stress"].dtype, device=results["stress"].device
                 )
             return results
+
     return NoisyModelWrapper(model)
 
 
@@ -176,7 +180,9 @@ def noisy_lj_model(model: LennardJonesModel):
 # =============================================================================
 
 
-def get_symmetry_dataset_from_atoms(atoms: Atoms, symprec: float = SYMPREC) -> SpglibDataset:
+def get_symmetry_dataset_from_atoms(
+    atoms: Atoms, symprec: float = SYMPREC
+) -> SpglibDataset:
     """Get full symmetry dataset for an ASE Atoms object using spglib directly."""
     return spglib.get_symmetry_dataset(
         (atoms.cell[:], atoms.get_scaled_positions(), atoms.numbers),
@@ -281,8 +287,10 @@ class TestFixSymmetryCreation:
     def test_p1_identity_only(self):
         """Test P1 (no symmetry) has only identity and doesn't change forces/stress."""
         atoms = Atoms(
-            "SiGe", positions=[[0.1, 0.2, 0.3], [1.1, 0.9, 1.3]],
-            cell=[[3.0, 0.1, 0.2], [0.15, 3.5, 0.1], [0.2, 0.15, 4.0]], pbc=True
+            "SiGe",
+            positions=[[0.1, 0.2, 0.3], [1.1, 0.9, 1.3]],
+            cell=[[3.0, 0.1, 0.2], [0.15, 3.5, 0.1], [0.2, 0.15, 4.0]],
+            pbc=True,
         )
         state = ts.io.atoms_to_state(atoms, torch.device("cpu"), DTYPE)
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
@@ -315,17 +323,19 @@ class TestFixSymmetryCreation:
         # Compare each with direct spglib call (covers both single and batched)
         for i, atoms in enumerate(atoms_list):
             spglib_dataset = get_symmetry_dataset_from_atoms(atoms, SYMPREC)
-            
+
             # Compare key fields
             assert ts_datasets[i].number == spglib_dataset.number, (
-                f"Space group mismatch for {atoms_list[i].get_chemical_formula()}: "
+                f"Space group mismatch for {atoms.get_chemical_formula()}: "
                 f"{ts_datasets[i].number} vs {spglib_dataset.number}"
             )
             assert ts_datasets[i].international == spglib_dataset.international
             assert ts_datasets[i].hall == spglib_dataset.hall
             assert len(ts_datasets[i].rotations) == len(spglib_dataset.rotations)
             assert np.allclose(ts_datasets[i].rotations, spglib_dataset.rotations)
-            assert np.allclose(ts_datasets[i].translations, spglib_dataset.translations, atol=1e-10)
+            assert np.allclose(
+                ts_datasets[i].translations, spglib_dataset.translations, atol=1e-10
+            )
 
 
 class TestFixSymmetryComparisonWithASE:
@@ -389,11 +399,7 @@ class TestFixSymmetryComparisonWithASE:
         ase_constraint = ASEFixSymmetry(ase_atoms, symprec=SYMPREC)
 
         # Create asymmetric but symmetric (as a matrix) stress tensor
-        stress_3x3 = np.array([
-            [10.0, 1.0, 0.5],
-            [1.0, 8.0, 0.3],
-            [0.5, 0.3, 6.0]
-        ])
+        stress_3x3 = np.array([[10.0, 1.0, 0.5], [1.0, 8.0, 0.3], [0.5, 0.3, 6.0]])
 
         # ASE uses Voigt notation
         stress_voigt = full_3x3_to_voigt_6_stress(stress_3x3)
@@ -434,7 +440,8 @@ class TestFixSymmetryComparisonWithASE:
 
         # TorchSim - need column vector convention for adjust_cell
         new_cell_ts = torch.tensor(
-            [deformed_cell.copy().T], dtype=DTYPE  # Transpose for column vectors
+            [deformed_cell.copy().T],
+            dtype=DTYPE,  # Transpose for column vectors
         )
         ts_constraint.adjust_cell(state, new_cell_ts)
         ts_result = new_cell_ts[0].mT.numpy()  # Back to row vectors
@@ -454,9 +461,7 @@ class TestFixSymmetryMergeAndSelect:
 
     def test_merge_two_constraints(self):
         """Test merging two FixSymmetry constraints."""
-        state1 = ts.io.atoms_to_state(
-            make_structure("fcc"), torch.device("cpu"), DTYPE
-        )
+        state1 = ts.io.atoms_to_state(make_structure("fcc"), torch.device("cpu"), DTYPE)
         state2 = ts.io.atoms_to_state(
             make_structure("diamond"), torch.device("cpu"), DTYPE
         )
@@ -470,15 +475,15 @@ class TestFixSymmetryMergeAndSelect:
         assert merged.system_idx.tolist() == [0, 1]
 
     @pytest.mark.parametrize("mismatch_field", ["adjust_positions", "adjust_cell"])
-    def test_merge_mismatched_settings_raises(self, mismatch_field: Literal['adjust_positions'] | Literal['adjust_cell']):
+    def test_merge_mismatched_settings_raises(
+        self, mismatch_field: Literal["adjust_positions", "adjust_cell"]
+    ):
         """Test that merging constraints with different settings raises ValueError."""
-        state1 = ts.io.atoms_to_state(
-            make_structure("fcc"), torch.device("cpu"), DTYPE
-        )
+        state1 = ts.io.atoms_to_state(make_structure("fcc"), torch.device("cpu"), DTYPE)
         state2 = ts.io.atoms_to_state(
             make_structure("diamond"), torch.device("cpu"), DTYPE
         )
-        
+
         kwargs1 = {mismatch_field: True}
         kwargs2 = {mismatch_field: False}
         c1 = FixSymmetry.from_state(state1, symprec=SYMPREC, **kwargs1)
@@ -497,7 +502,9 @@ class TestFixSymmetryMergeAndSelect:
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
 
         # Create masks to select only first system
-        atom_mask = torch.tensor([True, False, False], dtype=torch.bool)  # 1 Cu + 2 Si atoms
+        atom_mask = torch.tensor(
+            [True, False, False], dtype=torch.bool
+        )  # 1 Cu + 2 Si atoms
         system_mask = torch.tensor([True, False], dtype=torch.bool)
 
         selected = constraint.select_constraint(atom_mask, system_mask)
@@ -544,7 +551,11 @@ class TestFixSymmetryWithOptimization:
         [(True, True), (True, False), (False, True), (False, False)],
     )
     def test_distorted_structure_preserves_symmetry(
-        self, noisy_lj_model, structure_name: str, adjust_positions: bool, adjust_cell: bool
+        self,
+        noisy_lj_model,
+        structure_name: str,
+        adjust_positions: bool,
+        adjust_cell: bool,
     ):
         """Test that a distorted structure relaxes while preserving symmetry.
 
@@ -572,8 +583,12 @@ class TestFixSymmetryWithOptimization:
         state.positions = state.positions * scale_factor
 
         result = run_optimization_check_symmetry(
-            state, noisy_lj_model, constraint=constraint, adjust_cell=adjust_cell,
-            max_steps=MAX_STEPS, force_tol=0.01  # Looser tolerance to ensure movement
+            state,
+            noisy_lj_model,
+            constraint=constraint,
+            adjust_cell=adjust_cell,
+            max_steps=MAX_STEPS,
+            force_tol=0.01,  # Looser tolerance to ensure movement
         )
 
         assert result["final_spacegroups"][0] == expected_spacegroup, (
@@ -583,11 +598,11 @@ class TestFixSymmetryWithOptimization:
         )
 
     @pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
-    def test_cell_filter_preserves_symmetry(self, model: LennardJonesModel, cell_filter: ts.CellFilter | ts.CellFilter):
+    def test_cell_filter_preserves_symmetry(
+        self, model: LennardJonesModel, cell_filter: ts.CellFilter
+    ):
         """Test that cell filters with FixSymmetry preserve symmetry."""
-        state = ts.io.atoms_to_state(
-            make_structure("fcc"), torch.device("cpu"), DTYPE
-        )
+        state = ts.io.atoms_to_state(make_structure("fcc"), torch.device("cpu"), DTYPE)
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
         state.constraints = [constraint]
 
@@ -606,7 +621,9 @@ class TestFixSymmetryWithOptimization:
         assert initial_datasets[0].number == final_datasets[0].number
 
     @pytest.mark.parametrize("rotated", [False, True])
-    def test_noisy_model_loses_symmetry_without_constraint(self, noisy_lj_model, rotated: bool):
+    def test_noisy_model_loses_symmetry_without_constraint(
+        self, noisy_lj_model, rotated: bool
+    ):
         """Test that WITHOUT FixSymmetry, optimization with noisy forces loses symmetry.
 
         This is a negative control - verifies that noisy forces will break symmetry
@@ -628,7 +645,9 @@ class TestFixSymmetryWithOptimization:
         )
 
     @pytest.mark.parametrize("rotated", [False, True])
-    def test_noisy_model_preserves_symmetry_with_constraint(self, noisy_lj_model, rotated: bool):
+    def test_noisy_model_preserves_symmetry_with_constraint(
+        self, noisy_lj_model, rotated: bool
+    ):
         """Test that WITH FixSymmetry, optimization with noisy forces preserves symmetry.
 
         Mirrors ASE's test_sym_adj_cell.
@@ -637,7 +656,10 @@ class TestFixSymmetryWithOptimization:
         state = ts.io.atoms_to_state(bcc_atoms, torch.device("cpu"), DTYPE)
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
         result = run_optimization_check_symmetry(
-            state, noisy_lj_model, constraint=constraint, max_steps=MAX_STEPS,
+            state,
+            noisy_lj_model,
+            constraint=constraint,
+            max_steps=MAX_STEPS,
         )
 
         assert result["initial_spacegroups"][0] == 229
@@ -647,15 +669,12 @@ class TestFixSymmetryWithOptimization:
         )
 
 
-
 class TestFixSymmetryEdgeCases:
     """Tests for edge cases and error handling."""
 
     def test_get_removed_dof_raises(self):
         """Test that get_removed_dof raises NotImplementedError."""
-        state = ts.io.atoms_to_state(
-            make_structure("fcc"), torch.device("cpu"), DTYPE
-        )
+        state = ts.io.atoms_to_state(make_structure("fcc"), torch.device("cpu"), DTYPE)
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
 
         with pytest.raises(NotImplementedError, match="get_removed_dof"):
@@ -663,9 +682,7 @@ class TestFixSymmetryEdgeCases:
 
     def test_large_deformation_gradient_raises(self):
         """Test that large deformation gradient raises RuntimeError."""
-        state = ts.io.atoms_to_state(
-            make_structure("fcc"), torch.device("cpu"), DTYPE
-        )
+        state = ts.io.atoms_to_state(make_structure("fcc"), torch.device("cpu"), DTYPE)
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
 
         # Create a very large deformation (> 0.25)
@@ -678,9 +695,7 @@ class TestFixSymmetryEdgeCases:
 
     def test_medium_deformation_gradient_warns(self):
         """Test that medium deformation gradient emits warning."""
-        state = ts.io.atoms_to_state(
-            make_structure("fcc"), torch.device("cpu"), DTYPE
-        )
+        state = ts.io.atoms_to_state(make_structure("fcc"), torch.device("cpu"), DTYPE)
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
 
         # Create a medium deformation (> 0.15 but < 0.25)
@@ -698,9 +713,7 @@ class TestFixSymmetryEdgeCases:
         perturbed = atoms.copy()
         perturbed.positions += np.random.randn(*perturbed.positions.shape) * 0.001
 
-        state = ts.io.atoms_to_state(
-            perturbed, torch.device("cpu"), DTYPE
-        )
+        state = ts.io.atoms_to_state(perturbed, torch.device("cpu"), DTYPE)
         original_positions = state.positions.clone()
         original_cell = state.cell.clone()
 

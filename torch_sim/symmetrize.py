@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import torch
 
+
 if TYPE_CHECKING:
     from spglib import SpglibDataset
 
@@ -21,11 +22,11 @@ if TYPE_CHECKING:
 
 
 __all__ = [
-    "refine_symmetry",
     "build_symmetry_map",
+    "get_symmetry_datasets",
+    "refine_symmetry",
     "symmetrize_rank1",
     "symmetrize_rank2",
-    "get_symmetry_datasets",
 ]
 
 
@@ -129,9 +130,7 @@ def _symmetrize_cell(
     trans_matrix = torch.as_tensor(
         dataset.transformation_matrix, dtype=dtype, device=device
     )
-    rot_matrix = torch.as_tensor(
-        dataset.std_rotation_matrix, dtype=dtype, device=device
-    )
+    rot_matrix = torch.as_tensor(dataset.std_rotation_matrix, dtype=dtype, device=device)
 
     trans_std_cell = trans_matrix.T @ std_cell
     rot_trans_std_cell = trans_std_cell @ rot_matrix
@@ -162,9 +161,7 @@ def _symmetrize_positions(
 
     # Calculate offset between standard cell and actual cell
     std_cell = torch.as_tensor(dataset.std_lattice, dtype=dtype, device=device)
-    rot_matrix = torch.as_tensor(
-        dataset.std_rotation_matrix, dtype=dtype, device=device
-    )
+    rot_matrix = torch.as_tensor(dataset.std_rotation_matrix, dtype=dtype, device=device)
     std_positions = torch.as_tensor(dataset.std_positions, dtype=dtype, device=device)
 
     rot_std_cell = std_cell @ rot_matrix
@@ -174,9 +171,10 @@ def _symmetrize_positions(
     mapping_to_primitive = list(dataset.mapping_to_primitive)
     std_mapping_to_primitive = list(dataset.std_mapping_to_primitive)
 
-    dp0 = positions[mapping_to_primitive.index(0)] - rot_std_pos[
-        std_mapping_to_primitive.index(0)
-    ]
+    dp0 = (
+        positions[mapping_to_primitive.index(0)]
+        - rot_std_pos[std_mapping_to_primitive.index(0)]
+    )
 
     # Create aligned set of standard cell positions
     rot_prim_cell = prim_cell @ rot_matrix
@@ -191,7 +189,9 @@ def _symmetrize_positions(
         std_i_at = std_mapping_to_primitive.index(mapping_to_primitive[i_at])
         dp = aligned_std_pos[std_i_at] - positions[i_at]
         dp_s = dp @ inv_rot_prim_cell
-        new_positions[i_at] = aligned_std_pos[std_i_at] - torch.round(dp_s) @ rot_prim_cell
+        new_positions[i_at] = (
+            aligned_std_pos[std_i_at] - torch.round(dp_s) @ rot_prim_cell
+        )
 
     return new_positions
 
@@ -266,9 +266,7 @@ def refine_symmetry(
     if primitive_result is None:
         raise RuntimeError("spglib could not find primitive cell")
 
-    new_positions = _symmetrize_positions(
-        new_positions, dataset, primitive_result
-    )
+    new_positions = _symmetrize_positions(new_positions, dataset, primitive_result)
 
     # Final check
     if verbose:
@@ -357,7 +355,10 @@ def build_symmetry_map(
     """
     # Transform all atoms by all symmetry operations at once
     # new_pos: (n_ops, n_atoms, 3)
-    new_pos = torch.einsum("oij,nj->oni", rotations, scaled_positions) + translations[:, None, :]
+    new_pos = (
+        torch.einsum("oij,nj->oni", rotations, scaled_positions)
+        + translations[:, None, :]
+    )
 
     # Compute wrapped deltas to account for periodicity
     # delta: (n_ops, n_atoms, n_atoms, 3)
@@ -448,9 +449,9 @@ def symmetrize_rank2(
     # r.T @ scaled_stress @ r for all rotations at once
     # For r.T @ A @ r: result[i,l] = sum_j,k r[j,i] * A[j,k] * r[k,l]
     # With batched rotations: einsum "nji,jk,nkl->il"
-    symmetrized_scaled_stress = torch.einsum(
-        "nji,jk,nkl->il", rotations, scaled_stress, rotations
-    ) / n_ops
+    symmetrized_scaled_stress = (
+        torch.einsum("nji,jk,nkl->il", rotations, scaled_stress, rotations) / n_ops
+    )
 
     # Transform back: inv_lattice @ symmetrized_scaled_stress @ inv_lattice.T
     return inv_lattice @ symmetrized_scaled_stress @ inv_lattice.T
