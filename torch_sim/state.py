@@ -96,14 +96,13 @@ class SimState:
     if TYPE_CHECKING:
 
         @property
-        def system_idx(self) -> torch.Tensor:
-            """A getter for system_idx that tells type checkers it's always defined."""
-            return self.system_idx
-
+        def system_idx(self) -> torch.Tensor: ...  # noqa: D102
         @property
-        def pbc(self) -> torch.Tensor:
-            """A getter for pbc that tells type checkers it's always defined."""
-            return self.pbc
+        def pbc(self) -> torch.Tensor: ...  # noqa: D102
+        @property
+        def charge(self) -> torch.Tensor: ...  # noqa: D102
+        @property
+        def spin(self) -> torch.Tensor: ...  # noqa: D102
 
     _atom_attributes: ClassVar[set[str]] = {
         "positions",
@@ -183,6 +182,16 @@ class SimState:
         if len(set(devices.values())) > 1:
             raise ValueError("All tensors must be on the same device")
 
+    @classmethod
+    def _get_all_attributes(cls) -> set[str]:
+        """Get all attributes of the SimState."""
+        return (
+            cls._atom_attributes
+            | cls._system_attributes
+            | cls._global_attributes
+            | {"_constraints"}
+        )
+
     @property
     def wrap_positions(self) -> torch.Tensor:
         """Atomic positions wrapped according to periodic boundary conditions if pbc=True,
@@ -224,13 +233,7 @@ class SimState:
     @property
     def attributes(self) -> dict[str, torch.Tensor]:
         """Get all public attributes of the state."""
-        return {
-            attr: getattr(self, attr)
-            for attr in self._atom_attributes
-            | self._system_attributes
-            | self._global_attributes
-            | {"_constraints"}
-        }
+        return {attr: getattr(self, attr) for attr in self._get_all_attributes()}
 
     @property
     def column_vector_cell(self) -> torch.Tensor:
@@ -369,9 +372,10 @@ class SimState:
     def from_state(cls, state: "SimState", **additional_attrs: Any) -> Self:
         """Create a new state from an existing state with additional attributes.
 
-        This method copies all attributes from the source state and adds any additional
-        attributes needed for the target state class. It's useful for converting between
-        different state types (e.g., SimState to MDState).
+        This method copies attributes from the source state that are valid for the
+        target state class, and adds any additional attributes needed. It supports
+        upcasting (SimState -> MDState), downcasting (MDState -> SimState), and
+        cross-casting (MDState -> OptimState) between state types.
 
         Args:
             state: Source state to copy base attributes from
@@ -389,13 +393,13 @@ class SimState:
             ...     momenta=torch.zeros_like(sim_state.positions),
             ... )
         """
-        # Copy all attributes from the source state
         attrs = {}
         for attr_name, attr_value in state.attributes.items():
-            if isinstance(attr_value, torch.Tensor):
-                attrs[attr_name] = attr_value.clone()
-            else:
-                attrs[attr_name] = copy.deepcopy(attr_value)
+            if attr_name in cls._get_all_attributes():
+                if isinstance(attr_value, torch.Tensor):
+                    attrs[attr_name] = attr_value.clone()
+                else:
+                    attrs[attr_name] = copy.deepcopy(attr_value)
 
         # Add/override with additional attributes
         attrs.update(additional_attrs)
@@ -1057,8 +1061,8 @@ def concatenate_states[T: SimState](  # noqa: C901
 
 def initialize_state(
     system: StateLike,
-    device: torch.device,
-    dtype: torch.dtype,
+    device: torch.device | None = None,
+    dtype: torch.dtype | None = None,
 ) -> SimState:
     """Initialize state tensors from a atomistic system representation.
 

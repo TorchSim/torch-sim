@@ -8,10 +8,10 @@ import pytest
 
 from tests.conftest import DEVICE
 from tests.models.conftest import (
-    consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
+from torch_sim.testing import SIMSTATE_GENERATORS
 
 
 try:
@@ -62,7 +62,7 @@ test_mattersim_consistency = make_model_calculator_consistency_test(
     test_name="mattersim",
     model_fixture_name="mattersim_model",
     calculator_fixture_name="mattersim_calculator",
-    sim_state_names=consistency_test_simstate_fixtures,
+    sim_state_names=tuple(SIMSTATE_GENERATORS.keys()),
 )
 
 test_mattersim_model_outputs = make_validate_model_outputs_test(

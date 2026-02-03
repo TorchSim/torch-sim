@@ -204,6 +204,24 @@ def test_get_steps(trajectory: TorchSimTrajectory) -> None:
     assert steps == [5]
 
 
+def test_last_step_returns_none_for_empty(test_file: Path) -> None:
+    """Test that last_step returns None for empty trajectories."""
+    # Test with empty trajectory
+    with TorchSimTrajectory(test_file, mode="w") as traj:
+        assert traj.last_step is None
+
+    # Test after writing step 0
+    rng = np.random.default_rng()
+    with TorchSimTrajectory(test_file, mode="a") as traj:
+        positions = rng.random((10, 3)).astype(np.float32)
+        traj.write_arrays({"positions": positions}, steps=0)
+        assert traj.last_step == 0
+
+    # Test that it persists when reopening
+    with TorchSimTrajectory(test_file, mode="r") as traj:
+        assert traj.last_step == 0
+
+
 def test_compression(test_file: Path) -> None:
     """Test file compression."""
     # Write same data with and without compression
@@ -865,7 +883,7 @@ def test_optimize_append_to_trajectory(
         for traj in trajectory_reporter.trajectories:
             with TorchSimTrajectory(traj.filename, mode="r") as traj:
                 # Check that the trajectory file has 5 frames
-                np.testing.assert_allclose(traj.get_steps("positions"), range(1, 6))
+                np.testing.assert_allclose(traj.get_steps("positions"), range(6))
 
         trajectory_reporter_2 = ts.TrajectoryReporter(
             traj_files, state_frequency=1, trajectory_kwargs=dict(mode="a")
@@ -881,7 +899,7 @@ def test_optimize_append_to_trajectory(
         for traj in trajectory_reporter_2.trajectories:
             with TorchSimTrajectory(traj.filename, mode="r") as traj:
                 # Check that the trajectory file now has 7 frames
-                np.testing.assert_allclose(traj.get_steps("positions"), range(1, 8))
+                np.testing.assert_allclose(traj.get_steps("positions"), range(8))
 
 
 def test_integrate_append_to_trajectory(
@@ -913,7 +931,7 @@ def test_integrate_append_to_trajectory(
         for traj in trajectory_reporter.trajectories:
             with TorchSimTrajectory(traj.filename, mode="r") as traj:
                 # Check that the trajectory file has 5 frames
-                np.testing.assert_allclose(traj.get_steps("positions"), range(1, 6))
+                np.testing.assert_allclose(traj.get_steps("positions"), range(6))
 
         trajectory_reporter_2 = ts.TrajectoryReporter(
             traj_files, state_frequency=1, trajectory_kwargs=dict(mode="a")
@@ -931,7 +949,7 @@ def test_integrate_append_to_trajectory(
         for traj in trajectory_reporter_2.trajectories:
             with TorchSimTrajectory(traj.filename, mode="r") as traj:
                 # Check that the trajectory file now has 12 (5 + 7) frames
-                np.testing.assert_allclose(traj.get_steps("positions"), range(1, 13))
+                np.testing.assert_allclose(traj.get_steps("positions"), range(13))
 
 
 def test_truncate_trajectory(
@@ -968,8 +986,8 @@ def test_truncate_trajectory(
             traj.truncate_to_step(3)
             # Verify that it has 3 frames now.
             for array_name in traj.array_registry:
-                target_length = 3
-                target_steps = [1, 2, 3]
+                target_length = 4
+                target_steps = [0, 1, 2, 3]
                 # Special cases: global arrays
                 if array_name in ["atomic_numbers", "masses"]:
                     target_length = 1
@@ -1095,3 +1113,50 @@ def test_integrate_uneven_trajectory_append(
                 integrator=ts.Integrator.nvt_langevin,
                 trajectory_reporter=trajectory_reporter_2,
             )
+
+
+def test_integrate_save_initial_state(
+    si_double_sim_state: SimState, lj_model: LennardJonesModel
+) -> None:
+    """Test that ts.integrate writes step 0 to trajectory."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        traj_files = [f"{temp_dir}/integrate_with_initial_{idx}.h5" for idx in range(2)]
+        trajectory_reporter = ts.TrajectoryReporter(traj_files, state_frequency=1)
+        _ = ts.integrate(
+            system=si_double_sim_state,
+            model=lj_model,
+            timestep=0.001,
+            n_steps=3,
+            temperature=300.0,
+            integrator=ts.Integrator.nvt_langevin,
+            trajectory_reporter=trajectory_reporter,
+        )
+
+        for traj_file in traj_files:
+            with TorchSimTrajectory(traj_file, mode="r") as traj:
+                steps = traj.get_steps("positions")
+                # Should start at step 0
+                np.testing.assert_allclose(steps, [0, 1, 2, 3])
+
+
+def test_optimize_save_initial_state(
+    si_double_sim_state: SimState, lj_model: LennardJonesModel
+) -> None:
+    """Test that ts.optimize writes step 0 to trajectory."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        traj_files = [f"{temp_dir}/optimize_with_initial_{idx}.h5" for idx in range(2)]
+        trajectory_reporter = ts.TrajectoryReporter(traj_files, state_frequency=1)
+        _ = ts.optimize(
+            system=si_double_sim_state,
+            model=lj_model,
+            max_steps=3,
+            optimizer=ts.Optimizer.fire,
+            trajectory_reporter=trajectory_reporter,
+            steps_between_swaps=100,
+        )
+
+        for traj_file in traj_files:
+            with TorchSimTrajectory(traj_file, mode="r") as traj:
+                steps = traj.get_steps("positions")
+                # Should start at step 0
+                np.testing.assert_allclose(steps, [0, 1, 2, 3])
