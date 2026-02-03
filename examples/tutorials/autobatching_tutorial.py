@@ -63,14 +63,14 @@ many_cu_atoms = [cu_atoms] * 5
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 state = ts.initialize_state(many_cu_atoms, device=device, dtype=torch.float64)
 
-# Calculate memory scaling factor based on atom count
-atom_metric = calculate_memory_scaler(state, memory_scales_with="n_atoms")
+# Calculate memory scaling factor based on atom count (returns list, one per system)
+atom_metrics = calculate_memory_scaler(state, memory_scales_with="n_atoms")
 
 # Calculate memory scaling based on atom count and density
-density_metric = calculate_memory_scaler(state, memory_scales_with="n_atoms_x_density")
+density_metrics = calculate_memory_scaler(state, memory_scales_with="n_atoms_x_density")
 
-print(f"Atom-based memory metric: {atom_metric}")
-print(f"Density-based memory metric: {density_metric:.2f}")
+print(f"Atom-based memory metrics: {atom_metrics}")
+print(f"Density-based memory metrics: {[f'{m:.2f}' for m in density_metrics]}")
 
 
 # %% [markdown]
@@ -95,11 +95,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(model=mace, device=device)
 
-state_list = state.split()
-memory_metric_values = [
-    calculate_memory_scaler(s, memory_scales_with="n_atoms") for s in state_list
-]
+# calculate_memory_scaler returns a list with one value per system in the state
+memory_metric_values = calculate_memory_scaler(state, memory_scales_with="n_atoms")
 
+# estimate_max_memory_scaler needs a list of individual states
+state_list = state.split()
 max_memory_metric = estimate_max_memory_scaler(
     state_list, mace_model, metric_values=memory_metric_values
 )
