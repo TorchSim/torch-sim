@@ -54,6 +54,8 @@ def run_torchsim_relax(
     times: list[float] = []
     for n in n_structures_list:
         structures = [base_structure] * n
+        if device.type == "cuda":
+            torch.cuda.synchronize()
         t0 = time.perf_counter()
         ts.optimize(
             system=structures,
@@ -73,7 +75,6 @@ def run_torchsim_relax(
         )
         if device.type == "cuda":
             torch.cuda.synchronize()
-            torch.cuda.empty_cache()
         elapsed = time.perf_counter() - t0
         times.append(elapsed)
         print(f"  n={n} relax_{RELAX_STEPS}_time={elapsed:.6f}s")

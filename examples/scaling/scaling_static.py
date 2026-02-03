@@ -43,7 +43,7 @@ def run_torchsim_static(
         dtype=torch.float64,
         enable_cueq=False,
     )
-    batcher = ts.BinningAutoBatcher(
+    autobatcher = ts.BinningAutoBatcher(
         model=model,
         max_memory_scaler=400_000,
         memory_scales_with="n_atoms_x_density",
@@ -51,14 +51,12 @@ def run_torchsim_static(
     times: list[float] = []
     for n in n_structures_list:
         structures = [base_structure] * n
-        t0 = time.perf_counter()
-        state = ts.initialize_state(structures, model.device, model.dtype)
-        batcher.load_states(state)
-        for sub_state, _ in batcher:
-            model(sub_state)
         if device.type == "cuda":
             torch.cuda.synchronize()
-            torch.cuda.empty_cache()
+        t0 = time.perf_counter()
+        ts.static(structures, model, autobatcher=autobatcher)
+        if device.type == "cuda":
+            torch.cuda.synchronize()
         elapsed = time.perf_counter() - t0
         times.append(elapsed)
         print(f"  n={n} static_time={elapsed:.6f}s")

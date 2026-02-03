@@ -49,6 +49,8 @@ def run_torchsim_nve(
     times: list[float] = []
     for n in n_structures_list:
         structures = [base_structure] * n
+        if device.type == "cuda":
+            torch.cuda.synchronize()
         t0 = time.perf_counter()
         ts.integrate(
             system=structures,
@@ -64,7 +66,7 @@ def run_torchsim_nve(
             ),
         )
         if device.type == "cuda":
-            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
         elapsed = time.perf_counter() - t0
         times.append(elapsed)
         print(f"  n={n} nve_time={elapsed:.6f}s")
