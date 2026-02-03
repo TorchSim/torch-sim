@@ -284,29 +284,25 @@ def compute_cell_forces[T: AnyCellState](
         n_systems = state.n_systems
 
         # Create direction matrices for Frechet derivative
+        idx_flat = torch.arange(9, device=device)
+        i, j = idx_flat // 3, idx_flat % 3
         directions = torch.zeros((9, 3, 3), device=device, dtype=dtype)
-        for idx, (mu, nu) in enumerate([(i, j) for i in range(3) for j in range(3)]):
-            directions[idx, mu, nu] = 1.0
+        directions[idx_flat, i, j] = 1.0
 
-        # Compute deformation gradient log
-        deform_grad_log = torch.zeros_like(cur_deform_grad)
-        for sys_idx in range(n_systems):
-            deform_grad_log[sys_idx] = fm.matrix_log_33(cur_deform_grad[sys_idx])
+        # Compute deformation gradient log (batched for parallelism)
+        deform_grad_log = fm.matrix_log_33(
+            cur_deform_grad, sim_dtype=cur_deform_grad.dtype
+        )
 
-        # Compute Frechet derivatives
-        cell_forces = torch.zeros_like(ucf_cell_grad)
-        for sys_idx in range(n_systems):
-            expm_derivs = torch.stack(
-                [
-                    fm.expm_frechet(deform_grad_log[sys_idx], direction)[1]
-                    for direction in directions
-                ]
-            )
-            forces_flat = torch.sum(
-                expm_derivs * ucf_cell_grad[sys_idx].unsqueeze(0), dim=(1, 2)
-            )
-            cell_forces[sys_idx] = forces_flat.reshape(3, 3)
-
+        # Compute Frechet derivatives (batched over systems and directions)
+        A_batch = (
+            deform_grad_log.unsqueeze(1).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
+        )
+        E_batch = directions.unsqueeze(0).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
+        _, expm_derivs_batch = fm.expm_frechet(A_batch, E_batch)
+        expm_derivs = expm_derivs_batch.reshape(n_systems, 9, 3, 3)
+        forces_flat = (expm_derivs * ucf_cell_grad.unsqueeze(1)).sum(dim=(2, 3))
+        cell_forces = forces_flat.reshape(n_systems, 3, 3)
         state.cell_forces = cell_forces / state.cell_factor
     else:  # Unit cell force computation
         state.cell_forces = virial / state.cell_factor
