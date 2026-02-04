@@ -435,7 +435,7 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
                 deform_grad_new = cell_positions_new / cell_factor_expanded
 
             # Compute new cell from deformation gradient
-            new_col_vector_cell = torch.bmm(state.reference_cell, deform_grad_new)
+            new_col_vector_cell = torch.bmm(deform_grad_new, state.reference_cell)
 
             # Apply cell constraints and scale positions to new cell coordinates
             # (needed for correct displacement calculation in position constraints)
