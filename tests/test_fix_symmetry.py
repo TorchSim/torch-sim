@@ -18,7 +18,6 @@ from torch_sim.constraints import FixSymmetry
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.symmetrize import get_symmetry_datasets
 
-
 # Skip all tests if spglib is not available
 spglib = pytest.importorskip("spglib")
 from spglib import SpglibDataset  # noqa: E402
