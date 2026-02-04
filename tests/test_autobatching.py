@@ -713,11 +713,6 @@ def _group_states_by_size(
     return groups
 
 
-@pytest.mark.skip(
-    reason="L-BFGS with InFlightAutoBatcher has a known issue: history tensors "
-    "become misaligned when systems are dynamically removed on convergence. "
-    "Use BinningAutoBatcher instead for L-BFGS."
-)
 @pytest.mark.parametrize(
     "num_steps_per_batch",
     [
