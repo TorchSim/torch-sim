@@ -69,8 +69,10 @@ from torch_sim.optimizers import (
 )
 from torch_sim.optimizers.cell_filters import (
     CELL_FILTER_REGISTRY,
+    CellBFGSState,
     CellFilter,
     CellFireState,
+    CellLBFGSState,
     CellOptimState,
     get_cell_filter,
 )

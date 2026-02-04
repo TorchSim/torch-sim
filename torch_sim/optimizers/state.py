@@ -112,11 +112,16 @@ class LBFGSState(OptimState):
             these are scaled forces (forces @ deform_grad) for ASE compatibility.
         prev_positions: Previous-step positions [n_atoms, 3]. For cell filter,
             these are fractional coordinates for ASE compatibility.
-        s_history: Displacement history [h, n_atoms, 3] (global, not per-system)
-        y_history: Gradient-diff history [h, n_atoms, 3] (global, not per-system)
+        s_history: Displacement history [n_systems, h, max_atoms, 3] per-system.
+            For cell filter: [n_systems, h, max_atoms + 3, 3] to include cell DOFs.
+            May be padded when systems have different sizes.
+        y_history: Gradient-diff history [n_systems, h, max_atoms, 3] per-system.
+            For cell filter: [n_systems, h, max_atoms + 3, 3] to include cell DOFs.
+            May be padded when systems have different sizes.
         step_size: Per-system fixed step size [n_systems]
         alpha: Initial inverse Hessian scale (stiffness) [n_systems]
         n_iter: Per-system iteration counter [n_systems] (int32)
+        max_atoms: Atoms per system [n_systems] - used for size-binned operations
     """
 
     prev_forces: torch.Tensor
@@ -126,6 +131,7 @@ class LBFGSState(OptimState):
     step_size: torch.Tensor
     alpha: torch.Tensor
     n_iter: torch.Tensor
+    max_atoms: torch.Tensor  # [S] atoms per system for padding support
 
     _atom_attributes = OptimState._atom_attributes | {  # noqa: SLF001
         "prev_forces",
@@ -135,13 +141,12 @@ class LBFGSState(OptimState):
         "step_size",
         "alpha",
         "n_iter",
-    }
-    # Note (AG): s_history and y_history are global attributes because they are not
-    # per-system indexable, so they must be copied as-is on slice.
-    _global_attributes = OptimState._global_attributes | {  # noqa: SLF001
+        "max_atoms",
         "s_history",
         "y_history",
     }
+    # Attributes that need padding when concatenating different-sized systems
+    _padded_system_attributes: ClassVar[set[str]] = {"s_history", "y_history"}
 
 
 # there's no GradientDescentState, it's the same as OptimState

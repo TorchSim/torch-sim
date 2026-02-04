@@ -191,6 +191,8 @@ def bfgs_init(
             "pbc": state.pbc,  # [S, 3]
             "reference_cell": reference_cell,  # [S, 3, 3]
             "cell_filter": cell_filter_funcs,
+            "charge": state.charge,  # preserve charge
+            "spin": state.spin,  # preserve spin
         }
 
         cell_state = CellBFGSState(**common_args)
@@ -229,6 +231,8 @@ def bfgs_init(
         "max_atoms": max_atoms,  # scalar M
         "system_idx": state.system_idx.clone(),  # [N]
         "pbc": state.pbc,  # [S, 3]
+        "charge": state.charge,  # preserve charge
+        "spin": state.spin,  # preserve spin
     }
 
     return BFGSState(**common_args)
