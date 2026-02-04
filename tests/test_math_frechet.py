@@ -92,11 +92,11 @@ class TestExpmFrechet:
         )
 
     @pytest.mark.parametrize("seed", range(10))
-    def test_random_matrices(self, seed):
+    def test_random_matrices(self, seed: int) -> None:
         """Test expm_frechet with random matrices."""
-        np.random.seed(seed)
-        A_np = np.random.randn(3, 3) * 0.5
-        E_np = np.random.randn(3, 3) * 0.2
+        rng = np.random.default_rng(seed)
+        A_np = rng.standard_normal((3, 3)) * 0.5
+        E_np = rng.standard_normal((3, 3)) * 0.2
 
         expm_scipy, frechet_scipy = scipy.linalg.expm_frechet(A_np, E_np)
         expm_torch, frechet_torch = expm_frechet(
@@ -115,17 +115,15 @@ class TestExpmFrechet:
     def test_batched_matrices(self):
         """Test expm_frechet with batched 3x3 matrices."""
         batch_size = 4
-        np.random.seed(42)
-        A_batch_np = np.random.randn(batch_size, 3, 3) * 0.3
-        E_batch_np = np.random.randn(batch_size, 3, 3) * 0.1
+        rng = np.random.default_rng(42)
+        A_batch_np = rng.standard_normal((batch_size, 3, 3)) * 0.3
+        E_batch_np = rng.standard_normal((batch_size, 3, 3)) * 0.1
 
         A_batch_torch = torch.tensor(A_batch_np, dtype=torch.float64)
         E_batch_torch = torch.tensor(E_batch_np, dtype=torch.float64)
 
         # torch_sim batched
-        expm_batch_torch, frechet_batch_torch = expm_frechet(
-            A_batch_torch, E_batch_torch
-        )
+        expm_batch_torch, frechet_batch_torch = expm_frechet(A_batch_torch, E_batch_torch)
 
         # scipy unbatched (for comparison)
         expm_batch_scipy = np.zeros_like(A_batch_np)
@@ -141,6 +139,7 @@ class TestExpmFrechet:
         np.testing.assert_allclose(
             frechet_batch_torch.numpy(), frechet_batch_scipy, atol=ATOL_STRICT, rtol=0
         )
+
 
 class TestMatrixLog33:
     """Tests for matrix_log_33 against scipy.linalg.logm.
@@ -182,15 +181,13 @@ class TestMatrixLog33:
 
         # Verify round-trip: exp(log(T)) = T
         T_recovered = torch.matrix_exp(log_torch)
-        np.testing.assert_allclose(
-            T_recovered.numpy(), T_np, atol=ATOL_NORMAL, rtol=0
-        )
+        np.testing.assert_allclose(T_recovered.numpy(), T_np, atol=ATOL_NORMAL, rtol=0)
 
     def test_batched_matrices(self):
         """Test batched matrix logarithm."""
         batch_size = 5
-        np.random.seed(42)
-        L_batch = np.random.randn(batch_size, 3, 3)
+        rng = np.random.default_rng(42)
+        L_batch = rng.standard_normal((batch_size, 3, 3))
         T_batch_np = np.array(
             [L_batch[i] @ L_batch[i].T + 0.5 * np.eye(3) for i in range(batch_size)]
         )
@@ -209,7 +206,7 @@ class TestMatrixLog33:
         )
 
     @pytest.mark.parametrize("eps", [1e-2, 1e-4, 1e-6, 1e-8])
-    def test_near_identity(self, eps):
+    def test_near_identity(self, eps: float) -> None:
         """Test log of near-identity matrices with various perturbation sizes."""
         M_np = np.eye(3) + eps * np.array(
             [[0.1, 0.2, 0.1], [0.2, 0.15, 0.05], [0.1, 0.05, 0.2]]
@@ -219,9 +216,7 @@ class TestMatrixLog33:
         log_scipy = scipy.linalg.logm(M_np).real
         log_torch = matrix_log_33(M_torch)
 
-        np.testing.assert_allclose(
-            log_torch.numpy(), log_scipy, atol=ATOL_NORMAL, rtol=0
-        )
+        np.testing.assert_allclose(log_torch.numpy(), log_scipy, atol=ATOL_NORMAL, rtol=0)
 
 
 class TestDeformGrad:
@@ -236,12 +231,10 @@ class TestDeformGrad:
 
         F = deform_grad(ref_cell.T, current_cell)
 
-        np.testing.assert_allclose(
-            F.numpy(), np.eye(3), atol=ATOL_STRICT, rtol=0
-        )
+        np.testing.assert_allclose(F.numpy(), np.eye(3), atol=ATOL_STRICT, rtol=0)
 
     @pytest.mark.parametrize("stretch_factor", [0.9, 1.0, 1.05, 1.1, 1.5])
-    def test_uniaxial_stretch(self, stretch_factor):
+    def test_uniaxial_stretch(self, stretch_factor: float) -> None:
         """Test deformation gradient for uniaxial stretch."""
         ref_cell = torch.tensor(
             [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]], dtype=torch.float64
@@ -256,7 +249,7 @@ class TestDeformGrad:
         np.testing.assert_allclose(F.numpy(), expected, atol=ATOL_STRICT, rtol=0)
 
     @pytest.mark.parametrize("shear", [0.01, 0.05, 0.1])
-    def test_shear_deformation(self, shear):
+    def test_shear_deformation(self, shear: float) -> None:
         """Test deformation gradient for shear deformation."""
         ref_cell = torch.tensor(
             [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]], dtype=torch.float64
@@ -403,7 +396,9 @@ class TestFrechetCellFilterIntegration:
         forces_flat_scipy = (
             expm_derivs_scipy * ucf_cell_grad.numpy()[:, np.newaxis, :, :]
         ).sum(axis=(2, 3))
-        cell_forces_scipy = forces_flat_scipy.reshape(n_systems, 3, 3) / cell_factor.numpy()
+        cell_forces_scipy = (
+            forces_flat_scipy.reshape(n_systems, 3, 3) / cell_factor.numpy()
+        )
 
         np.testing.assert_allclose(
             cell_forces_torch.numpy(), cell_forces_scipy, atol=ATOL_NORMAL, rtol=0
@@ -414,28 +409,26 @@ class TestRoundTripConsistency:
     """Tests for round-trip consistency exp(log(M)) = M."""
 
     @pytest.mark.parametrize("seed", range(20))
-    def test_positive_definite_roundtrip(self, seed):
+    def test_positive_definite_roundtrip(self, seed: int) -> None:
         """Test that exp(log(M)) = M for positive definite matrices."""
-        np.random.seed(seed)
-        L = np.random.randn(3, 3)
+        rng = np.random.default_rng(seed)
+        L = rng.standard_normal((3, 3))
         M_np = L @ L.T + 0.5 * np.eye(3)
         M_torch = torch.tensor(M_np, dtype=torch.float64)
 
         log_torch = matrix_log_33(M_torch)
         M_recovered = torch.matrix_exp(log_torch)
 
-        np.testing.assert_allclose(
-            M_recovered.numpy(), M_np, atol=ATOL_RELAXED, rtol=0
-        )
+        np.testing.assert_allclose(M_recovered.numpy(), M_np, atol=ATOL_RELAXED, rtol=0)
 
     def test_batched_roundtrip(self):
         """Test round-trip for batched matrices."""
         batch_size = 10
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
 
         M_batch = []
         for _ in range(batch_size):
-            L = np.random.randn(3, 3)
+            L = rng.standard_normal((3, 3))
             M_batch.append(L @ L.T + 0.5 * np.eye(3))
         M_batch_np = np.array(M_batch)
         M_batch_torch = torch.tensor(M_batch_np, dtype=torch.float64)
