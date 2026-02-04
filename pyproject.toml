@@ -44,10 +44,10 @@ test = [
     "pymatgen>=2025.6.14",
     "pytest-cov>=6",
     "pytest>=8",
-    "spglib>=2.5",
+    "spglib>=2.6",
 ]
 io = ["ase>=3.26", "phonopy>=2.37.0", "pymatgen>=2025.6.14"]
-symmetry = ["spglib>=2.5"]
+symmetry = ["spglib>=2.6"]
 mace = ["mace-torch>=0.3.14"]
 mattersim = ["mattersim>=0.1.2"]
 metatomic = ["metatomic-torch>=0.1.3", "metatrain[pet]>=2025.12"]
