@@ -72,22 +72,12 @@ def fire_init(
     forces = model_output["forces"]
     stress = model_output.get("stress")
 
-    # Common state arguments
-    common_args = {
-        # Copy SimState attributes
-        "positions": state.positions.clone(),
-        "masses": state.masses.clone(),
-        "cell": state.cell.clone(),
-        "atomic_numbers": state.atomic_numbers.clone(),
-        "system_idx": state.system_idx.clone(),
-        "_constraints": state.constraints,
-        "pbc": state.pbc,
-        # Optimization state
+    # FIRE-specific additional attributes
+    fire_attrs = {
         "forces": forces,
         "energy": energy,
         "stress": stress,
         "velocities": torch.full(state.positions.shape, torch.nan, **tensor_args),
-        # FIRE parameters
         "dt": torch.full((n_systems,), dt_start, **tensor_args),
         "alpha": torch.full((n_systems,), alpha_start, **tensor_args),
         "n_pos": torch.zeros((n_systems,), device=model.device, dtype=torch.int32),
@@ -95,9 +85,9 @@ def fire_init(
 
     if cell_filter is not None:  # Create cell optimization state
         cell_filter_funcs = init_fn, _step_fn = ts.get_cell_filter(cell_filter)
-        common_args["reference_cell"] = state.cell.clone()
-        common_args["cell_filter"] = cell_filter_funcs
-        cell_state = CellFireState(**common_args)
+        fire_attrs["reference_cell"] = state.cell.clone()
+        fire_attrs["cell_filter"] = cell_filter_funcs
+        cell_state = CellFireState.from_state(state, **fire_attrs)
 
         # Initialize cell-specific attributes
         init_fn(cell_state, model, **filter_kwargs)
@@ -109,7 +99,7 @@ def fire_init(
 
         return cell_state
     # Create regular FireState without cell optimization
-    return FireState(**common_args)
+    return FireState.from_state(state, **fire_attrs)
 
 
 def fire_step(

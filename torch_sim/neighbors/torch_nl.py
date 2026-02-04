@@ -112,7 +112,6 @@ def strict_nl(
     return mapping, mapping_system, shifts_idx
 
 
-@torch.jit.script
 def torch_nl_n2(
     positions: torch.Tensor,
     cell: torch.Tensor,
@@ -172,6 +171,7 @@ def torch_nl_n2(
     """
     n_systems = system_idx.max().item() + 1
     cell, pbc = _normalize_inputs_jit(cell, pbc, n_systems)
+
     n_atoms = torch.bincount(system_idx)
     mapping, system_mapping, shifts_idx = transforms.build_naive_neighborhood(
         positions, cell, pbc, cutoff.item(), n_atoms, self_interaction
@@ -182,28 +182,26 @@ def torch_nl_n2(
     return mapping, mapping_system, shifts_idx
 
 
-@torch.jit.script
 def torch_nl_linked_cell(
     positions: torch.Tensor,
     cell: torch.Tensor,
     pbc: torch.Tensor,
     cutoff: torch.Tensor,
     system_idx: torch.Tensor,
-    self_interaction: bool = False,  # noqa: FBT001, FBT002 (*, not compatible with torch.jit.script)
+    self_interaction: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute the neighbor list for a set of atomic structures using the linked
     cell algorithm before applying a strict `cutoff`.
 
-    The atoms positions `pos` should be wrapped inside their respective unit cells.
+    The atomic positions `pos` should be wrapped inside their respective unit cells.
 
     This is the recommended default for batched neighbor list calculations as it
     provides good performance for systems of various sizes using the linked cell
     algorithm which has O(N) complexity.
 
     Args:
-        positions (torch.Tensor [n_atom, 3]):
-            A tensor containing the positions of atoms wrapped inside
-            their respective unit cells.
+        positions (torch.Tensor [n_atom, 3]): A tensor containing the positions
+            of atoms wrapped inside their respective unit cells.
         cell (torch.Tensor [n_systems, 3, 3]): Unit cell vectors.
         pbc (torch.Tensor [n_systems, 3] bool):
             A tensor indicating the periodic boundary conditions to apply.
@@ -245,6 +243,7 @@ def torch_nl_linked_cell(
     """
     n_systems = system_idx.max().item() + 1
     cell, pbc = _normalize_inputs_jit(cell, pbc, n_systems)
+
     n_atoms = torch.bincount(system_idx)
     mapping, system_mapping, shifts_idx = transforms.build_linked_cell_neighborhood(
         positions, cell, pbc, cutoff.item(), n_atoms, self_interaction

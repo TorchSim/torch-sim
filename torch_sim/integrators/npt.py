@@ -612,17 +612,12 @@ def npt_langevin_init(
         )
 
     # Create the initial state
-    return NPTLangevinState(
-        positions=state.positions,
+    return NPTLangevinState.from_state(
+        state,
         momenta=momenta,
         energy=model_output["energy"],
         forces=model_output["forces"],
         stress=model_output["stress"],
-        masses=state.masses,
-        cell=state.cell,
-        pbc=state.pbc,
-        system_idx=state.system_idx,
-        atomic_numbers=state.atomic_numbers,
         alpha=alpha,
         b_tau=b_tau,
         reference_cell=reference_cell,
@@ -630,7 +625,6 @@ def npt_langevin_init(
         cell_velocities=cell_velocities,
         cell_masses=cell_masses,
         cell_alpha=cell_alpha,
-        _constraints=state.constraints,
     )
 
 
@@ -1421,16 +1415,12 @@ def npt_nose_hoover_init(
         )
 
     # Create initial state
-    return NPTNoseHooverState(
-        positions=state.positions,
+    return NPTNoseHooverState.from_state(
+        state,
         momenta=momenta,
         energy=energy,
         forces=forces,
-        masses=state.masses,
         atomic_numbers=atomic_numbers,
-        cell=state.cell,
-        pbc=state.pbc,
-        system_idx=state.system_idx,
         reference_cell=reference_cell,
         cell_position=cell_position,
         cell_momentum=cell_momentum,
@@ -1439,7 +1429,6 @@ def npt_nose_hoover_init(
         thermostat=thermostat_fns.initialize(dof_per_system, KE_thermostat, kT),
         barostat_fns=barostat_fns,
         thermostat_fns=thermostat_fns,
-        _constraints=state.constraints,
     )
 
 
@@ -2315,17 +2304,12 @@ def npt_crescale_init(
     )
 
     # Create the initial state
-    return NPTCRescaleState(
-        positions=state.positions,
+    return NPTCRescaleState.from_state(
+        state,
         momenta=momenta,
         energy=model_output["energy"],
         forces=model_output["forces"],
         stress=model_output["stress"],
-        masses=state.masses,
-        cell=state.cell,
-        pbc=state.pbc,
-        system_idx=state.system_idx,
-        atomic_numbers=state.atomic_numbers,
         tau_p=tau_p,
         isothermal_compressibility=isothermal_compressibility,
     )

@@ -222,10 +222,13 @@ class FairChemModel(ModelInterface):
             atoms.info["spin"] = sim_state.spin[idx].item()
 
             # Convert ASE Atoms to AtomicData (task_name only applies to UMA models)
+            # r_data_keys must be passed for charge/spin to be read from atoms.info
             if self.task_name is None:
-                atomic_data = AtomicData.from_ase(atoms)
+                atomic_data = AtomicData.from_ase(atoms, r_data_keys=["charge", "spin"])
             else:
-                atomic_data = AtomicData.from_ase(atoms, task_name=self.task_name)
+                atomic_data = AtomicData.from_ase(
+                    atoms, task_name=self.task_name, r_data_keys=["charge", "spin"]
+                )
             atomic_data_list.append(atomic_data)
 
         # Create batch for efficient inference

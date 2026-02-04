@@ -300,9 +300,21 @@ class MaceModel(ModelInterface):
         ):
             self.setup_from_system_idx(sim_state.atomic_numbers, sim_state.system_idx)
 
+        # Wrap positions into the unit cell
+        wrapped_positions = (
+            ts.transforms.pbc_wrap_batched(
+                sim_state.positions,
+                sim_state.cell,
+                sim_state.system_idx,
+                sim_state.pbc,
+            )
+            if sim_state.pbc.any()
+            else sim_state.positions
+        )
+
         # Batched neighbor list using linked-cell algorithm
         edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
-            sim_state.positions,
+            wrapped_positions,
             sim_state.row_vector_cell,
             sim_state.pbc,
             self.r_max,
@@ -320,7 +332,7 @@ class MaceModel(ModelInterface):
             batch=sim_state.system_idx,
             pbc=sim_state.pbc,
             cell=sim_state.row_vector_cell,
-            positions=sim_state.positions,
+            positions=wrapped_positions,
             edge_index=edge_index,
             unit_shifts=unit_shifts,
             shifts=shifts,

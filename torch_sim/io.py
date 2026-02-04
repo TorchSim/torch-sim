@@ -41,6 +41,7 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
     Notes:
         - Output positions and cell will be in Å
         - Output masses will be in amu
+        - Charge and spin are preserved in atoms.info if present in the state
     """
     try:
         from ase import Atoms
@@ -55,6 +56,10 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
     system_indices = state.system_idx.detach().cpu().numpy()
     pbc = state.pbc.detach().cpu().numpy()
 
+    # Extract charge and spin if available (per-system attributes)
+    charge = state.charge.detach().cpu().numpy()
+    spin = state.spin.detach().cpu().numpy()
+
     atoms_list = []
     for sys_idx in np.unique(system_indices):
         mask = system_indices == sys_idx
@@ -68,6 +73,13 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
         atoms = Atoms(
             symbols=symbols, positions=system_positions, cell=system_cell, pbc=pbc
         )
+
+        # Preserve charge and spin in atoms.info (as integers for FairChem compatibility)
+        if charge is not None:
+            atoms.info["charge"] = int(charge[sys_idx].item())
+        if spin is not None:
+            atoms.info["spin"] = int(spin[sys_idx].item())
+
         atoms_list.append(atoms)
 
     return atoms_list
@@ -177,7 +189,9 @@ def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
 
 
 def atoms_to_state(
-    atoms: "Atoms | list[Atoms]", device: torch.device, dtype: torch.dtype
+    atoms: "Atoms | list[Atoms]",
+    device: torch.device | None = None,
+    dtype: torch.dtype | None = None,
 ) -> "ts.SimState":
     """Convert an ASE Atoms object or list of Atoms objects to a SimState.
 
@@ -252,7 +266,9 @@ def atoms_to_state(
 
 
 def structures_to_state(
-    structure: "Structure | list[Structure]", device: torch.device, dtype: torch.dtype
+    structure: "Structure | list[Structure]",
+    device: torch.device | None = None,
+    dtype: torch.dtype | None = None,
 ) -> "ts.SimState":
     """Create a SimState from pymatgen Structure(s).
 
@@ -323,8 +339,8 @@ def structures_to_state(
 
 def phonopy_to_state(
     phonopy_atoms: "PhonopyAtoms | list[PhonopyAtoms]",
-    device: torch.device,
-    dtype: torch.dtype,
+    device: torch.device | None = None,
+    dtype: torch.dtype | None = None,
 ) -> "ts.SimState":
     """Create state tensors from a PhonopyAtoms object or list of PhonopyAtoms objects.
 
