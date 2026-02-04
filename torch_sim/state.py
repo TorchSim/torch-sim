@@ -848,6 +848,12 @@ def _split_state[T: SimState](state: T) -> list[T]:
     zero_tensor = torch.tensor([0], device=state.device, dtype=torch.int64)
     cumsum_atoms = torch.cat((zero_tensor, torch.cumsum(state.n_atoms_per_system, dim=0)))
     for sys_idx in range(n_systems):
+        # Build per-system attributes (padded attributes stay padded for consistency)
+        per_system_dict = {
+            attr_name: split_per_system[attr_name][sys_idx]
+            for attr_name in split_per_system
+        }
+
         system_attrs = {
             # Create a system tensor with all zeros for this system
             "system_idx": torch.zeros(
@@ -858,11 +864,8 @@ def _split_state[T: SimState](state: T) -> list[T]:
                 attr_name: split_per_atom[attr_name][sys_idx]
                 for attr_name in split_per_atom
             },
-            # Add the split per-system attributes
-            **{
-                attr_name: split_per_system[attr_name][sys_idx]
-                for attr_name in split_per_system
-            },
+            # Add the split per-system attributes (with unpadding applied)
+            **per_system_dict,
             # Add the global attributes
             **global_attrs,
         }
@@ -964,7 +967,7 @@ def _slice_state[T: SimState](state: T, system_indices: list[int] | torch.Tensor
     return type(state)(**filtered_attrs)  # type: ignore[invalid-return-type]
 
 
-def concatenate_states[T: SimState](  # noqa: C901
+def concatenate_states[T: SimState](  # noqa: C901, PLR0915
     states: Sequence[T], device: torch.device | None = None
 ) -> T:
     """Concatenate a list of SimStates into a single SimState.
@@ -1039,10 +1042,57 @@ def concatenate_states[T: SimState](  # noqa: C901
         # if tensors:
         concatenated[prop] = torch.cat(tensors, dim=0)
 
+    # Get padded attributes if defined on the state class
+    padded_attrs = getattr(first_state, "_padded_system_attributes", set())
+
     for prop, tensors in per_system_tensors.items():
         # if tensors:
         if isinstance(tensors[0], torch.Tensor):
-            concatenated[prop] = torch.cat(tensors, dim=0)
+            # TODO(AG): Is there a clean way to handle this?
+            if prop in padded_attrs:
+                # Pad tensors to max size before concatenating
+                # Detect tensor shape to determine padding strategy
+                first_tensor = tensors[0]
+                ndim = first_tensor.ndim
+
+                if ndim == 3:
+                    # Shape [S, D, D] required for BFGS hessian
+                    # Pad last two dimensions
+                    max_size = max(t.shape[-1] for t in tensors)
+                    padded_tensors = []
+                    for t in tensors:
+                        if t.shape[-1] < max_size:
+                            pad_size = max_size - t.shape[-1]
+                            t = torch.nn.functional.pad(t, (0, pad_size, 0, pad_size))
+                        padded_tensors.append(t)
+                    concatenated[prop] = torch.cat(padded_tensors, dim=0)
+                elif ndim == 4:
+                    # Shape [S, H, M, 3] required for L-BFGS history
+                    # Pad dimension 2 (M) to max, and dimension 1 (H) to max
+                    max_m = max(t.shape[2] for t in tensors)  # max atoms dim
+                    max_h = max(t.shape[1] for t in tensors)  # max history dim
+                    padded_tensors = []
+                    for t in tensors:
+                        s_dim, h_dim, m_dim, last_dim = t.shape
+                        if h_dim == 0:
+                            # Special case: empty history, just create new shape
+                            t = torch.zeros(
+                                (s_dim, max_h, max_m, last_dim),
+                                device=t.device,
+                                dtype=t.dtype,
+                            )
+                        elif m_dim < max_m or h_dim < max_h:
+                            pad_m = max_m - m_dim
+                            pad_h = max_h - h_dim
+                            # For [S, H, M, 3]: pad M (dim 2) and H (dim 1)
+                            t = torch.nn.functional.pad(t, (0, 0, 0, pad_m, 0, pad_h))
+                        padded_tensors.append(t)
+                    concatenated[prop] = torch.cat(padded_tensors, dim=0)
+                else:
+                    # Unknown shape, just concatenate without padding
+                    concatenated[prop] = torch.cat(tensors, dim=0)
+            else:
+                concatenated[prop] = torch.cat(tensors, dim=0)
         else:  # Non-tensor attributes, take first one (they should all be identical)
             concatenated[prop] = tensors[0]
 

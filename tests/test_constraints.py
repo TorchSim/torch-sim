@@ -392,6 +392,111 @@ def test_fix_com_fire_optimization(
     assert torch.allclose(final_com, initial_com, atol=1e-4)
 
 
+@pytest.mark.parametrize("optimizer", ["bfgs", "lbfgs"])
+def test_fix_atoms_bfgs_lbfgs_optimization(
+    ar_supercell_sim_state: ts.SimState,
+    lj_model: ModelInterface,
+    optimizer: str,
+) -> None:
+    """Test FixAtoms constraint in BFGS/LBFGS optimization."""
+    # Create a fresh copy with random displacement
+    current_positions = (
+        ar_supercell_sim_state.positions.clone()
+        + torch.randn_like(ar_supercell_sim_state.positions) * 0.1
+    )
+
+    current_sim_state = ts.SimState(
+        positions=current_positions,
+        masses=ar_supercell_sim_state.masses.clone(),
+        cell=ar_supercell_sim_state.cell.clone(),
+        pbc=ar_supercell_sim_state.pbc,
+        atomic_numbers=ar_supercell_sim_state.atomic_numbers.clone(),
+        system_idx=ar_supercell_sim_state.system_idx.clone(),
+    )
+    indices = torch.tensor([0, 2], dtype=torch.long)
+    current_sim_state.constraints = [FixAtoms(atom_idx=indices)]
+
+    # Initialize optimizer
+    if optimizer == "bfgs":
+        state = ts.bfgs_init(current_sim_state, lj_model)
+        step_fn = ts.bfgs_step
+    else:
+        state = ts.lbfgs_init(current_sim_state, lj_model)
+        step_fn = ts.lbfgs_step
+
+    initial_position = state.positions[indices].clone()
+
+    # Run optimization
+    energies = [1000, state.energy.item()]
+    max_steps = 500
+    steps_taken = 0
+    while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
+        state = step_fn(state=state, model=lj_model)
+        energies.append(state.energy.item())
+        steps_taken += 1
+
+    final_position = state.positions[indices]
+
+    assert torch.allclose(final_position, initial_position, atol=1e-5)
+
+
+@pytest.mark.parametrize("optimizer", ["bfgs", "lbfgs"])
+def test_fix_com_bfgs_lbfgs_optimization(
+    ar_supercell_sim_state: ts.SimState,
+    lj_model: ModelInterface,
+    optimizer: str,
+) -> None:
+    """Test FixCom constraint in BFGS/LBFGS optimization."""
+    # Create a fresh copy with random displacement
+    current_positions = (
+        ar_supercell_sim_state.positions.clone()
+        + torch.randn_like(ar_supercell_sim_state.positions) * 0.1
+    )
+
+    current_sim_state = ts.SimState(
+        positions=current_positions,
+        masses=ar_supercell_sim_state.masses.clone(),
+        cell=ar_supercell_sim_state.cell.clone(),
+        pbc=ar_supercell_sim_state.pbc,
+        atomic_numbers=ar_supercell_sim_state.atomic_numbers.clone(),
+        system_idx=ar_supercell_sim_state.system_idx.clone(),
+    )
+    current_sim_state.constraints = [FixCom([0])]
+
+    # Initialize optimizer
+    if optimizer == "bfgs":
+        state = ts.bfgs_init(current_sim_state, lj_model)
+        step_fn = ts.bfgs_step
+    else:
+        state = ts.lbfgs_init(current_sim_state, lj_model)
+        step_fn = ts.lbfgs_step
+
+    initial_com = get_centers_of_mass(
+        positions=state.positions,
+        masses=state.masses,
+        system_idx=state.system_idx,
+        n_systems=state.n_systems,
+    )
+
+    # Run optimization
+    energies = [1000, state.energy.item()]
+    max_steps = 500
+    steps_taken = 0
+    while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
+        state = step_fn(state=state, model=lj_model)
+        energies.append(state.energy.item())
+        steps_taken += 1
+
+    final_com = get_centers_of_mass(
+        positions=state.positions,
+        masses=state.masses,
+        system_idx=state.system_idx,
+        n_systems=state.n_systems,
+    )
+
+    assert torch.allclose(final_com, initial_com, atol=1e-4)
+
+
 def test_fix_atoms_validation() -> None:
     """Test FixAtoms construction and validation."""
     # Boolean mask conversion
@@ -582,6 +687,41 @@ def test_cell_optimization_with_constraints(
     )
     for _ in range(50):
         state = ts.fire_step(state, lj_model, dt_max=0.1)
+        if state.forces.abs().max() < 0.05:
+            break
+    assert len(state.constraints) > 0
+
+
+@pytest.mark.parametrize(
+    ("cell_filter", "optimizer"),
+    [
+        (ts.CellFilter.unit, "bfgs"),
+        (ts.CellFilter.frechet, "bfgs"),
+        (ts.CellFilter.unit, "lbfgs"),
+        (ts.CellFilter.frechet, "lbfgs"),
+    ],
+)
+def test_cell_optimization_with_constraints_bfgs_lbfgs(
+    ar_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    cell_filter: str,
+    optimizer: str,
+) -> None:
+    """Test cell filters work with constraints for BFGS/LBFGS."""
+    ar_supercell_sim_state.positions += (
+        torch.randn_like(ar_supercell_sim_state.positions) * 0.05
+    )
+    ar_supercell_sim_state.constraints = [FixAtoms(atom_idx=[0, 1])]
+
+    if optimizer == "bfgs":
+        state = ts.bfgs_init(ar_supercell_sim_state, lj_model, cell_filter=cell_filter)
+        step_fn = ts.bfgs_step
+    else:
+        state = ts.lbfgs_init(ar_supercell_sim_state, lj_model, cell_filter=cell_filter)
+        step_fn = ts.lbfgs_step
+
+    for _ in range(50):
+        state = step_fn(state, lj_model)
         if state.forces.abs().max() < 0.05:
             break
     assert len(state.constraints) > 0
