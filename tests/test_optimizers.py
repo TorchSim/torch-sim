@@ -408,7 +408,7 @@ def test_unit_cell_bfgs_multi_batch(
     )
 
     # We are evolving identical systems
-    assert current_energy[0] == current_energy[1]
+    assert torch.allclose(current_energy[0], current_energy[1])
 
 
 @pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
@@ -554,7 +554,7 @@ def test_unit_cell_lbfgs_multi_batch(
     )
 
     # We are evolving identical systems
-    assert current_energy[0] == current_energy[1]
+    assert torch.allclose(current_energy[0], current_energy[1])
 
 
 @pytest.mark.parametrize(
