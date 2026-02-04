@@ -230,7 +230,7 @@ def lbfgs_init(
         scaled_forces = torch.bmm(
             forces.unsqueeze(1),  # [N, 1, 3]
             cur_deform_grad[state.system_idx],  # [N, 3, 3]
-        ).squeeze(-1)  # [N, 3]
+        ).squeeze(1)  # [N, 3]
 
         common_args["reference_cell"] = reference_cell  # [S, 3, 3]
         common_args["cell_filter"] = cell_filter_funcs
@@ -267,7 +267,7 @@ def lbfgs_step(  # noqa: PLR0915, C901
     state: "LBFGSState | CellLBFGSState",
     model: "ModelInterface",
     *,
-    max_history: int = 10,
+    max_history: int = 20,
     max_step: float = 0.2,
     curvature_eps: float = 1e-12,
 ) -> "LBFGSState | CellLBFGSState":

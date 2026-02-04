@@ -31,7 +31,7 @@ dtype = torch.float32
 
 # Number of steps to run
 SMOKE_TEST = os.getenv("CI") is not None
-N_steps = 10 if SMOKE_TEST else 100
+N_steps = 10 if SMOKE_TEST else 500
 
 
 # ============================================================================
@@ -111,7 +111,7 @@ state = ts.fire_init(state=state, model=lj_model, dt_start=0.005)
 
 # Run optimization
 for step in range(N_steps):
-    if step % (N_steps // 5) == 0:
+    if step % 100 == 0:
         print(f"Step {step}: Potential energy: {state.energy[0].item()} eV")
     state = ts.fire_step(state=state, model=lj_model, dt_max=0.01)
 
@@ -174,7 +174,7 @@ state = ts.fire_init(state=state, model=model, dt_start=0.005)
 
 print("\nRunning FIRE:")
 for step in range(N_steps):
-    if step % (N_steps // 5) == 0:
+    if step % 100 == 0:
         print(f"Step {step}, Energy: {[energy.item() for energy in state.energy]}")
 
     state = ts.fire_step(state=state, model=model, dt_max=0.01)
@@ -254,7 +254,7 @@ state = ts.gradient_descent_init(
 
 print("\nRunning batched unit cell gradient descent:")
 for step in range(N_steps):
-    if step % (N_steps // 5) == 0:
+    if step % 100 == 0:
         P1 = -torch.trace(state.stress[0]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P2 = -torch.trace(state.stress[1]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P3 = -torch.trace(state.stress[2]) * UnitConversion.eV_per_Ang3_to_GPa / 3
@@ -308,7 +308,7 @@ state = ts.fire_init(
 
 print("\nRunning batched unit cell FIRE:")
 for step in range(N_steps):
-    if step % (N_steps // 5) == 0:
+    if step % 100 == 0:
         P1 = -torch.trace(state.stress[0]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P2 = -torch.trace(state.stress[1]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P3 = -torch.trace(state.stress[2]) * UnitConversion.eV_per_Ang3_to_GPa / 3
@@ -360,7 +360,7 @@ state = ts.fire_init(
 
 print("\nRunning batched frechet cell filter with FIRE:")
 for step in range(N_steps):
-    if step % (N_steps // 5) == 0:
+    if step % 100 == 0:
         P1 = -torch.trace(state.stress[0]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P2 = -torch.trace(state.stress[1]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P3 = -torch.trace(state.stress[2]) * UnitConversion.eV_per_Ang3_to_GPa / 3
@@ -411,7 +411,7 @@ state = ts.lbfgs_init(state=state, model=model, alpha=70.0, step_size=1.0)
 
 print("\nRunning L-BFGS:")
 for step in range(N_steps):
-    if step % (N_steps // 5) == 0:
+    if step % 100 == 0:
         print(f"Step {step}, Energy: {[energy.item() for energy in state.energy]}")
     state = ts.lbfgs_step(state=state, model=model, max_history=100)
 
@@ -444,7 +444,7 @@ state = ts.bfgs_init(state=state, model=model, alpha=70.0)
 
 print("\nRunning BFGS:")
 for step in range(N_steps):
-    if step % (N_steps // 5) == 0:
+    if step % 100 == 0:
         print(f"Step {step}, Energy: {[energy.item() for energy in state.energy]}")
     state = ts.bfgs_step(state=state, model=model)
 
