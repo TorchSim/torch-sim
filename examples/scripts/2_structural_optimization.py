@@ -111,7 +111,7 @@ state = ts.fire_init(state=state, model=lj_model, dt_start=0.005)
 
 # Run optimization
 for step in range(N_steps):
-    if step % 20 == 0:
+    if step % 100 == 0:
         print(f"Step {step}: Potential energy: {state.energy[0].item()} eV")
     state = ts.fire_step(state=state, model=lj_model, dt_max=0.01)
 
