@@ -848,6 +848,12 @@ def _split_state[T: SimState](state: T) -> list[T]:
     zero_tensor = torch.tensor([0], device=state.device, dtype=torch.int64)
     cumsum_atoms = torch.cat((zero_tensor, torch.cumsum(state.n_atoms_per_system, dim=0)))
     for sys_idx in range(n_systems):
+        # Build per-system attributes (padded attributes stay padded for consistency)
+        per_system_dict = {
+            attr_name: split_per_system[attr_name][sys_idx]
+            for attr_name in split_per_system
+        }
+
         system_attrs = {
             # Create a system tensor with all zeros for this system
             "system_idx": torch.zeros(
@@ -858,11 +864,8 @@ def _split_state[T: SimState](state: T) -> list[T]:
                 attr_name: split_per_atom[attr_name][sys_idx]
                 for attr_name in split_per_atom
             },
-            # Add the split per-system attributes
-            **{
-                attr_name: split_per_system[attr_name][sys_idx]
-                for attr_name in split_per_system
-            },
+            # Add the split per-system attributes (with unpadding applied)
+            **per_system_dict,
             # Add the global attributes
             **global_attrs,
         }
@@ -1039,10 +1042,26 @@ def concatenate_states[T: SimState](  # noqa: C901
         # if tensors:
         concatenated[prop] = torch.cat(tensors, dim=0)
 
+    # Get padded attributes if defined on the state class
+    padded_attrs = getattr(first_state, "_padded_system_attributes", set())
+
     for prop, tensors in per_system_tensors.items():
         # if tensors:
         if isinstance(tensors[0], torch.Tensor):
-            concatenated[prop] = torch.cat(tensors, dim=0)
+            if prop in padded_attrs:
+                # Pad tensors to max size before concatenating
+                # Assumes padding is needed on last two dimensions (e.g., hessian)
+                max_size = max(t.shape[-1] for t in tensors)
+                padded_tensors = []
+                for t in tensors:
+                    if t.shape[-1] < max_size:
+                        pad_size = max_size - t.shape[-1]
+                        # Pad last two dimensions (for 3D tensors like hessian)
+                        t = torch.nn.functional.pad(t, (0, pad_size, 0, pad_size))
+                    padded_tensors.append(t)
+                concatenated[prop] = torch.cat(padded_tensors, dim=0)
+            else:
+                concatenated[prop] = torch.cat(tensors, dim=0)
         else:  # Non-tensor attributes, take first one (they should all be identical)
             concatenated[prop] = tensors[0]
 

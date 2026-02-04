@@ -1,6 +1,7 @@
 """Optimizer state classes."""
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 import torch
 
@@ -55,17 +56,21 @@ class BFGSState(OptimState):
     """State for batched BFGS optimization.
 
     Stores the state needed to run a batched BFGS optimizer that maintains
-    an approximate Hessian or inverse Hessian.
+    an approximate Hessian matrix.
 
     Attributes:
-        hessian: Hessian matrix [n_systems, 3*max_atoms, 3*max_atoms]
-        prev_forces: Previous-step forces [n_atoms, 3]
-        prev_positions: Previous-step positions [n_atoms, 3]
-        alpha: Initial Hessian scale [n_systems]
-        max_step: Maximum step size [n_systems]
+        hessian: Hessian matrix [n_systems, dim, dim] where dim = 3*max_atoms
+            for position-only or 3*max_atoms + 9 with cell filter.
+            May be padded when systems have different sizes.
+        prev_forces: Previous-step forces [n_atoms, 3]. For cell filter,
+            these are scaled forces (forces @ deform_grad) for ASE compatibility.
+        prev_positions: Previous-step positions [n_atoms, 3]. For cell filter,
+            these are fractional coordinates for ASE compatibility.
+        alpha: Initial Hessian scale (stiffness) [n_systems]
+        max_step: Maximum step size per atom [n_systems]
         n_iter: Per-system iteration counter [n_systems] (int32)
         atom_idx_in_system: Index of each atom within its system [n_atoms]
-        max_atoms: Maximum number of atoms in any system (int)
+        max_atoms: Atoms per system [n_systems] - used for size-binned eigendecomp
     """
 
     hessian: torch.Tensor
@@ -75,7 +80,7 @@ class BFGSState(OptimState):
     max_step: torch.Tensor
     n_iter: torch.Tensor
     atom_idx_in_system: torch.Tensor
-    max_atoms: int
+    max_atoms: torch.Tensor  # Changed from int to Tensor for padding support
 
     _atom_attributes = OptimState._atom_attributes | {  # noqa: SLF001
         "prev_forces",
@@ -89,6 +94,8 @@ class BFGSState(OptimState):
         "n_iter",
         "max_atoms",
     }
+    # Attributes that need padding when concatenating different-sized systems
+    _padded_system_attributes: ClassVar[set[str]] = {"hessian"}
 
 
 @dataclass(kw_only=True)
@@ -101,11 +108,14 @@ class LBFGSState(OptimState):
     systems via `system_idx`.
 
     Attributes:
-        prev_forces: Previous-step forces [n_atoms, 3]
-        prev_positions: Previous-step positions [n_atoms, 3]
-        s_history: Displacement history [h, n_atoms, 3]
-        y_history: Gradient-diff history [h, n_atoms, 3]
+        prev_forces: Previous-step forces [n_atoms, 3]. For cell filter,
+            these are scaled forces (forces @ deform_grad) for ASE compatibility.
+        prev_positions: Previous-step positions [n_atoms, 3]. For cell filter,
+            these are fractional coordinates for ASE compatibility.
+        s_history: Displacement history [h, n_atoms, 3] (global, not per-system)
+        y_history: Gradient-diff history [h, n_atoms, 3] (global, not per-system)
         step_size: Per-system fixed step size [n_systems]
+        alpha: Initial inverse Hessian scale (stiffness) [n_systems]
         n_iter: Per-system iteration counter [n_systems] (int32)
     """
 
