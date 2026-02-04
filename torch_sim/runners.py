@@ -709,7 +709,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     return state  # type: ignore[return-value]
 
 
-def static(
+def static(  # noqa: C901
     system: StateLike,
     model: ModelInterface,
     *,
@@ -753,17 +753,18 @@ def static(
         properties.append("forces")
     if model.compute_stress:
         properties.append("stress")
-    if isinstance(trajectory_reporter, dict):
-        trajectory_reporter = copy.deepcopy(trajectory_reporter)
-        trajectory_reporter["state_kwargs"] = {
-            "variable_atomic_numbers": True,
-            "variable_masses": True,
-            "save_forces": model.compute_forces,
-        }
-    trajectory_reporter = _configure_reporter(
-        trajectory_reporter or dict(filenames=None),
-        properties=properties,
-    )
+    if trajectory_reporter is not None:
+        if isinstance(trajectory_reporter, dict):
+            trajectory_reporter = copy.deepcopy(trajectory_reporter)
+            trajectory_reporter["state_kwargs"] = {
+                "variable_atomic_numbers": True,
+                "variable_masses": True,
+                "save_forces": model.compute_forces,
+            }
+        trajectory_reporter = _configure_reporter(
+            trajectory_reporter,
+            properties=properties,
+        )
 
     @dataclass(kw_only=True)
     class StaticState(SimState):
@@ -778,7 +779,7 @@ def static(
         }
 
     all_props: list[dict[str, torch.Tensor]] = []
-    og_filenames = trajectory_reporter.filenames
+    og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
 
     tqdm_pbar = None
     if pbar and autobatcher:
@@ -812,13 +813,15 @@ def static(
             ),
         )
 
-        props = trajectory_reporter.report(static_state, 0, model=model)
-        all_props.extend(props)
+        if trajectory_reporter:
+            props = trajectory_reporter.report(static_state, 0, model=model)
+            all_props.extend(props)
 
         if tqdm_pbar:
             tqdm_pbar.update(static_state.n_systems)
 
-    trajectory_reporter.finish()
+    if trajectory_reporter:
+        trajectory_reporter.finish()
 
     if isinstance(batch_iterator, BinningAutoBatcher):
         # reorder properties to match original order of states
