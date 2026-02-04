@@ -10,9 +10,13 @@ and atomic positions according to the detected space group symmetry.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 import torch
+
+
+logger = logging.getLogger(__name__)
 
 
 if TYPE_CHECKING:
@@ -133,9 +137,7 @@ def _symmetrize_cell(
     rot_matrix = torch.as_tensor(dataset.std_rotation_matrix, dtype=dtype, device=device)
 
     trans_std_cell = trans_matrix.T @ std_cell
-    rot_trans_std_cell = trans_std_cell @ rot_matrix
-
-    return rot_trans_std_cell
+    return trans_std_cell @ rot_matrix
 
 
 def _symmetrize_positions(
@@ -201,6 +203,7 @@ def refine_symmetry(
     positions: torch.Tensor,
     atomic_numbers: torch.Tensor,
     symprec: float = 0.01,
+    *,
     verbose: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Refine symmetry of a structure.
@@ -235,10 +238,13 @@ def refine_symmetry(
         raise RuntimeError("spglib could not determine symmetry for structure")
 
     if verbose:
-        print(
-            f"symmetrize: prec {symprec} got symmetry group number {dataset.number}, "
-            f"international (Hermann-Mauguin) {dataset.international}, "
-            f"Hall {dataset.hall}"
+        logger.info(
+            "symmetrize: prec %s got symmetry group number %s, "
+            "international (Hermann-Mauguin) %s, Hall %s",
+            symprec,
+            dataset.number,
+            dataset.international,
+            dataset.hall,
         )
 
     new_cell = _symmetrize_cell(cell, dataset)
@@ -275,11 +281,12 @@ def refine_symmetry(
             new_cell, final_scaled, atomic_numbers, 1e-4
         )
         if final_dataset is not None:
-            print(
-                f"symmetrize: prec 1e-4 got symmetry group number "
-                f"{final_dataset.number}, "
-                f"international (Hermann-Mauguin) {final_dataset.international}, "
-                f"Hall {final_dataset.hall}"
+            logger.info(
+                "symmetrize: prec 1e-4 got symmetry group number %s, "
+                "international (Hermann-Mauguin) %s, Hall %s",
+                final_dataset.number,
+                final_dataset.international,
+                final_dataset.hall,
             )
 
     return new_cell, new_positions
@@ -290,6 +297,7 @@ def _prep_symmetry(
     positions: torch.Tensor,
     atomic_numbers: torch.Tensor,
     symprec: float = 1.0e-6,
+    *,
     verbose: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Prepare structure for symmetry-preserving minimization.
@@ -319,10 +327,13 @@ def _prep_symmetry(
         raise RuntimeError("spglib could not determine symmetry for structure")
 
     if verbose:
-        print(
-            f"symmetrize: prec {symprec} got symmetry group number {dataset.number}, "
-            f"international (Hermann-Mauguin) {dataset.international}, "
-            f"Hall {dataset.hall}"
+        logger.info(
+            "symmetrize: prec %s got symmetry group number %s, "
+            "international (Hermann-Mauguin) %s, Hall %s",
+            symprec,
+            dataset.number,
+            dataset.international,
+            dataset.hall,
         )
 
     rotations = torch.as_tensor(dataset.rotations.copy(), dtype=dtype, device=device)
@@ -367,9 +378,7 @@ def build_symmetry_map(
 
     # Distances to all candidate atoms, then choose nearest
     distances = torch.linalg.norm(delta, dim=-1)  # (n_ops, n_atoms, n_atoms)
-    symm_map = torch.argmin(distances, dim=-1).to(dtype=torch.long)  # (n_ops, n_atoms)
-
-    return symm_map
+    return torch.argmin(distances, dim=-1).to(dtype=torch.long)  # (n_ops, n_atoms)
 
 
 def symmetrize_rank1(
@@ -419,9 +428,7 @@ def symmetrize_rank1(
     symmetrized_scaled = accumulated / n_ops
 
     # Transform back to Cartesian
-    symmetrized_forces = symmetrized_scaled @ lattice
-
-    return symmetrized_forces
+    return symmetrized_scaled @ lattice
 
 
 def symmetrize_rank2(

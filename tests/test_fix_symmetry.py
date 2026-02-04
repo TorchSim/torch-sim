@@ -21,7 +21,7 @@ from torch_sim.symmetrize import get_symmetry_datasets
 
 # Skip all tests if spglib is not available
 spglib = pytest.importorskip("spglib")
-from spglib import SpglibDataset
+from spglib import SpglibDataset  # noqa: E402
 
 
 class OptimizationResult(TypedDict):
@@ -136,42 +136,54 @@ def model() -> LennardJonesModel:
     )
 
 
+class NoisyModelWrapper:
+    """Wrapper that adds noise to forces and stress from an underlying model."""
+
+    def __init__(
+        self,
+        model: LennardJonesModel,
+        rng_seed: int = 1,
+        noise_scale: float = 1e-4,
+    ) -> None:
+        self.model = model
+        self.rng = np.random.default_rng(rng_seed)
+        self.noise_scale = noise_scale
+
+    @property
+    def device(self) -> torch.device:
+        return self.model.device
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return self.model.dtype
+
+    def __call__(self, state: ts.SimState) -> dict[str, torch.Tensor]:
+        results = self.model(state)
+        # Add noise to forces
+        if "forces" in results:
+            noise = self.rng.normal(size=results["forces"].shape)
+            results["forces"] = results["forces"] + self.noise_scale * torch.tensor(
+                noise,
+                dtype=results["forces"].dtype,
+                device=results["forces"].device,
+            )
+        # Add noise to stress
+        if "stress" in results:
+            noise = self.rng.normal(size=results["stress"].shape)
+            results["stress"] = results["stress"] + self.noise_scale * torch.tensor(
+                noise,
+                dtype=results["stress"].dtype,
+                device=results["stress"].device,
+            )
+        return results
+
+
 @pytest.fixture
-def noisy_lj_model(model: LennardJonesModel):
-    """Create a LJ model that adds noise to forces/stress (like ASE's NoisyLennardJones)."""
+def noisy_lj_model(model: LennardJonesModel) -> NoisyModelWrapper:
+    """Create a LJ model that adds noise to forces/stress.
 
-    class NoisyModelWrapper:
-        """Wrapper that adds noise to forces and stress from an underlying model."""
-
-        def __init__(self, model, rng_seed: int = 1, noise_scale: float = 1e-4):
-            self.model = model
-            self.rng = np.random.RandomState(rng_seed)
-            self.noise_scale = noise_scale
-
-        @property
-        def device(self):
-            return self.model.device
-
-        @property
-        def dtype(self):
-            return self.model.dtype
-
-        def __call__(self, state):
-            results = self.model(state)
-            # Add noise to forces
-            if "forces" in results:
-                noise = self.rng.normal(size=results["forces"].shape)
-                results["forces"] = results["forces"] + self.noise_scale * torch.tensor(
-                    noise, dtype=results["forces"].dtype, device=results["forces"].device
-                )
-            # Add noise to stress
-            if "stress" in results:
-                noise = self.rng.normal(size=results["stress"].shape)
-                results["stress"] = results["stress"] + self.noise_scale * torch.tensor(
-                    noise, dtype=results["stress"].dtype, device=results["stress"].device
-                )
-            return results
-
+    Similar to ASE's NoisyLennardJones.
+    """
     return NoisyModelWrapper(model)
 
 
@@ -194,6 +206,7 @@ def run_optimization_check_symmetry(
     state: ts.SimState,
     model: LennardJonesModel,
     constraint: FixSymmetry | None = None,
+    *,
     adjust_cell: bool = True,
     symprec: float = SYMPREC,
     max_steps: int = MAX_STEPS,
@@ -374,8 +387,8 @@ class TestFixSymmetryComparisonWithASE:
         ase_constraint = ASEFixSymmetry(ase_atoms, symprec=SYMPREC)
 
         # Create random test forces
-        np.random.seed(42)
-        forces_np = np.random.randn(len(atoms), 3)
+        rng = np.random.default_rng(42)
+        forces_np = rng.standard_normal((len(atoms), 3))
         forces_ts = torch.tensor(forces_np.copy(), dtype=DTYPE)
 
         # Symmetrize with both
@@ -457,7 +470,7 @@ class TestFixSymmetryComparisonWithASE:
 
 
 class TestFixSymmetryMergeAndSelect:
-    """Tests for FixSymmetry.merge, select_constraint, and select_sub_constraint methods."""
+    """Tests for FixSymmetry.merge, select_constraint, select_sub_constraint."""
 
     def test_merge_two_constraints(self):
         """Test merging two FixSymmetry constraints."""
@@ -547,13 +560,14 @@ class TestFixSymmetryWithOptimization:
 
     @pytest.mark.parametrize("structure_name", ["fcc", "hcp", "diamond", "p6bar"])
     @pytest.mark.parametrize(
-        "adjust_positions,adjust_cell",
+        ("adjust_positions", "adjust_cell"),
         [(True, True), (True, False), (False, True), (False, False)],
     )
     def test_distorted_structure_preserves_symmetry(
         self,
-        noisy_lj_model,
+        noisy_lj_model: NoisyModelWrapper,
         structure_name: str,
+        *,
         adjust_positions: bool,
         adjust_cell: bool,
     ):
@@ -622,7 +636,7 @@ class TestFixSymmetryWithOptimization:
 
     @pytest.mark.parametrize("rotated", [False, True])
     def test_noisy_model_loses_symmetry_without_constraint(
-        self, noisy_lj_model, rotated: bool
+        self, noisy_lj_model: NoisyModelWrapper, *, rotated: bool
     ):
         """Test that WITHOUT FixSymmetry, optimization with noisy forces loses symmetry.
 
@@ -646,7 +660,7 @@ class TestFixSymmetryWithOptimization:
 
     @pytest.mark.parametrize("rotated", [False, True])
     def test_noisy_model_preserves_symmetry_with_constraint(
-        self, noisy_lj_model, rotated: bool
+        self, noisy_lj_model: NoisyModelWrapper, *, rotated: bool
     ):
         """Test that WITH FixSymmetry, optimization with noisy forces preserves symmetry.
 
@@ -706,12 +720,13 @@ class TestFixSymmetryEdgeCases:
             constraint.adjust_cell(state, new_cell_col)
 
     @pytest.mark.parametrize("refine_symmetry_state", [True, False])
-    def test_from_state_refine_symmetry(self, refine_symmetry_state: bool):
+    def test_from_state_refine_symmetry(self, *, refine_symmetry_state: bool):
         """Test from_state with different refine_symmetry_state settings."""
         atoms = make_structure("fcc")
         # Add small perturbation
         perturbed = atoms.copy()
-        perturbed.positions += np.random.randn(*perturbed.positions.shape) * 0.001
+        rng = np.random.default_rng(42)
+        perturbed.positions += rng.standard_normal(perturbed.positions.shape) * 0.001
 
         state = ts.io.atoms_to_state(perturbed, torch.device("cpu"), DTYPE)
         original_positions = state.positions.clone()
