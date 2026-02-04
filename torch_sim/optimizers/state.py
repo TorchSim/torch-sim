@@ -122,11 +122,15 @@ class LBFGSState(OptimState):
         "prev_positions",
     }
     _system_attributes = OptimState._system_attributes | {  # noqa: SLF001
-        "s_history",
-        "y_history",
         "step_size",
         "alpha",
         "n_iter",
+    }
+    # Note (AG): s_history and y_history are global attributes because they are not
+    # per-system indexable, so they must be copied as-is on slice.
+    _global_attributes = OptimState._global_attributes | {  # noqa: SLF001
+        "s_history",
+        "y_history",
     }
 
 
