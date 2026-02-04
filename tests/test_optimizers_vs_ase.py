@@ -4,7 +4,9 @@ from typing import TYPE_CHECKING, Any
 import pytest
 import torch
 from ase.filters import FrechetCellFilter, UnitCellFilter
+from ase.optimize import BFGS as ASE_BFGS
 from ase.optimize import FIRE
+from ase.optimize import LBFGS as ASE_LBFGS
 from pymatgen.analysis.structure_matcher import StructureMatcher
 
 import torch_sim as ts
@@ -316,3 +318,338 @@ def test_optimizer_vs_ase_parametrized(
         tolerances=tolerances,
         test_id_prefix=test_id_prefix,
     )
+
+
+# TODO (AG): Can we merge these tests with the FIRE tests?
+
+
+@pytest.mark.parametrize(
+    (
+        "sim_state_fixture_name",
+        "cell_filter",
+        "ase_filter_cls",
+        "checkpoints",
+        "force_tol",
+        "tolerances",
+        "test_id_prefix",
+    ),
+    [
+        (
+            "rattled_sio2_sim_state",
+            ts.CellFilter.frechet,
+            FrechetCellFilter,
+            [1, 33, 66, 100],
+            0.02,
+            {
+                "energy": 1e-2,
+                "force_max": 5e-2,
+                "lattice_tol": 3e-2,
+                "site_tol": 3e-2,
+                "angle_tol": 1e-1,
+            },
+            "BFGS SiO2 (Frechet)",
+        ),
+        (
+            "osn2_sim_state",
+            ts.CellFilter.frechet,
+            FrechetCellFilter,
+            [1, 16, 33, 50],
+            0.02,
+            {
+                "energy": 1e-2,
+                "force_max": 5e-2,
+                "lattice_tol": 3e-2,
+                "site_tol": 3e-2,
+                "angle_tol": 1e-1,
+            },
+            "BFGS OsN2 (Frechet)",
+        ),
+        (
+            "distorted_fcc_al_conventional_sim_state",
+            ts.CellFilter.frechet,
+            FrechetCellFilter,
+            [1, 33, 66, 100],
+            0.01,
+            {
+                "energy": 1e-2,
+                "force_max": 5e-2,
+                "lattice_tol": 3e-2,
+                "site_tol": 3e-2,
+                "angle_tol": 5e-1,
+            },
+            "BFGS Triclinic Al (Frechet)",
+        ),
+        (
+            "distorted_fcc_al_conventional_sim_state",
+            ts.CellFilter.unit,
+            UnitCellFilter,
+            [1, 33, 66, 100],
+            0.01,
+            {
+                "energy": 1e-2,
+                "force_max": 5e-2,
+                "lattice_tol": 3e-2,
+                "site_tol": 3e-2,
+                "angle_tol": 5e-1,
+            },
+            "BFGS Triclinic Al (UnitCell)",
+        ),
+        (
+            "rattled_sio2_sim_state",
+            ts.CellFilter.unit,
+            UnitCellFilter,
+            [1, 33, 66, 100],
+            0.02,
+            {
+                "energy": 1e-2,
+                "force_max": 5e-2,
+                "lattice_tol": 3e-2,
+                "site_tol": 3e-2,
+                "angle_tol": 1e-1,
+            },
+            "BFGS SiO2 (UnitCell)",
+        ),
+        (
+            "osn2_sim_state",
+            ts.CellFilter.unit,
+            UnitCellFilter,
+            [1, 16, 33, 50],
+            0.02,
+            {
+                "energy": 1e-2,
+                "force_max": 5e-2,
+                "lattice_tol": 3e-2,
+                "site_tol": 3e-2,
+                "angle_tol": 1e-1,
+            },
+            "BFGS OsN2 (UnitCell)",
+        ),
+    ],
+)
+def test_bfgs_vs_ase_parametrized(
+    sim_state_fixture_name: str,
+    cell_filter: ts.CellFilter,
+    ase_filter_cls: type,
+    checkpoints: list[int],
+    force_tol: float,
+    tolerances: dict[str, float],
+    test_id_prefix: str,
+    ts_mace_mpa: MaceModel,
+    ase_mace_mpa: "MACECalculator",
+    request: pytest.FixtureRequest,
+) -> None:
+    """Compare torch-sim BFGS with ASE BFGS at multiple checkpoints."""
+    pytest.importorskip("mace")
+    device = ts_mace_mpa.device
+
+    initial_sim_state = request.getfixturevalue(sim_state_fixture_name)
+    state = initial_sim_state.clone()
+
+    ase_atoms = ts.io.state_to_atoms(
+        initial_sim_state.clone().to(dtype=DTYPE, device=device)
+    )[0]
+    ase_atoms.calc = ase_mace_mpa
+    filtered_ase_atoms = ase_filter_cls(ase_atoms)
+    ase_optimizer = ASE_BFGS(filtered_ase_atoms, logfile=None, alpha=70.0)
+
+    convergence_fn = ts.generate_force_convergence_fn(
+        force_tol=force_tol, include_cell_forces=True
+    )
+
+    # Compare initial state
+    results = ts_mace_mpa(state)
+    ts_initial = state.clone()
+    ts_initial.forces = results["forces"]
+    ts_initial.energy = results["energy"]
+    ase_mace_mpa.calculate(ase_atoms)
+    _compare_ase_and_ts_states(
+        ts_initial, filtered_ase_atoms, tolerances, f"{test_id_prefix} (Initial)"
+    )
+
+    last_step = 0
+    for checkpoint in checkpoints:
+        steps = checkpoint - last_step
+        if steps > 0:
+            state = ts.optimize(
+                system=state,
+                model=ts_mace_mpa,
+                optimizer=ts.Optimizer.bfgs,
+                max_steps=steps,
+                convergence_fn=convergence_fn,
+                steps_between_swaps=1,
+                init_kwargs=dict(cell_filter=cell_filter),
+            )
+            ase_optimizer.run(fmax=force_tol, steps=steps)
+
+        _compare_ase_and_ts_states(
+            state, filtered_ase_atoms, tolerances, f"{test_id_prefix} (Step {checkpoint})"
+        )
+        last_step = checkpoint
+
+
+# TODO (AG): Can we merge these tests with the FIRE tests?
+
+
+@pytest.mark.parametrize(
+    (
+        "sim_state_fixture_name",
+        "cell_filter",
+        "ase_filter_cls",
+        "checkpoints",
+        "force_tol",
+        "tolerances",
+        "test_id_prefix",
+    ),
+    [
+        (
+            "rattled_sio2_sim_state",
+            ts.CellFilter.frechet,
+            FrechetCellFilter,
+            [1, 33, 66, 100],
+            0.02,
+            {
+                "energy": 1e-2,
+                "force_max": 5e-2,
+                "lattice_tol": 3e-2,
+                "site_tol": 3e-2,
+                "angle_tol": 1e-1,
+            },
+            "LBFGS SiO2 (Frechet)",
+        ),
+        (
+            "osn2_sim_state",
+            ts.CellFilter.frechet,
+            FrechetCellFilter,
+            [1, 16, 33, 50],
+            0.02,
+            {
+                "energy": 1e-2,
+                "force_max": 5e-2,
+                "lattice_tol": 3e-2,
+                "site_tol": 3e-2,
+                "angle_tol": 1e-1,
+            },
+            "LBFGS OsN2 (Frechet)",
+        ),
+        (
+            "distorted_fcc_al_conventional_sim_state",
+            ts.CellFilter.frechet,
+            FrechetCellFilter,
+            [1, 33, 66, 100],
+            0.01,
+            {
+                "energy": 1e-2,
+                "force_max": 5e-2,
+                "lattice_tol": 3e-2,
+                "site_tol": 3e-2,
+                "angle_tol": 5e-1,
+            },
+            "LBFGS Triclinic Al (Frechet)",
+        ),
+        (
+            "distorted_fcc_al_conventional_sim_state",
+            ts.CellFilter.unit,
+            UnitCellFilter,
+            [1, 33, 66, 100],
+            0.01,
+            {
+                "energy": 1e-2,
+                "force_max": 5e-2,
+                "lattice_tol": 3e-2,
+                "site_tol": 3e-2,
+                "angle_tol": 5e-1,
+            },
+            "LBFGS Triclinic Al (UnitCell)",
+        ),
+        (
+            "rattled_sio2_sim_state",
+            ts.CellFilter.unit,
+            UnitCellFilter,
+            [1, 33, 66, 100],
+            0.02,
+            {
+                "energy": 1e-2,
+                "force_max": 5e-2,
+                "lattice_tol": 3e-2,
+                "site_tol": 3e-2,
+                "angle_tol": 1e-1,
+            },
+            "LBFGS SiO2 (UnitCell)",
+        ),
+        (
+            "osn2_sim_state",
+            ts.CellFilter.unit,
+            UnitCellFilter,
+            [1, 16, 33, 50],
+            0.02,
+            {
+                "energy": 1e-2,
+                "force_max": 5e-2,
+                "lattice_tol": 3e-2,
+                "site_tol": 3e-2,
+                "angle_tol": 1e-1,
+            },
+            "LBFGS OsN2 (UnitCell)",
+        ),
+    ],
+)
+def test_lbfgs_vs_ase_parametrized(
+    sim_state_fixture_name: str,
+    cell_filter: ts.CellFilter,
+    ase_filter_cls: type,
+    checkpoints: list[int],
+    force_tol: float,
+    tolerances: dict[str, float],
+    test_id_prefix: str,
+    ts_mace_mpa: MaceModel,
+    ase_mace_mpa: "MACECalculator",
+    request: pytest.FixtureRequest,
+) -> None:
+    """Compare torch-sim L-BFGS with ASE LBFGS at multiple checkpoints."""
+    pytest.importorskip("mace")
+    device = ts_mace_mpa.device
+
+    initial_sim_state = request.getfixturevalue(sim_state_fixture_name)
+    state = initial_sim_state.clone()
+
+    ase_atoms = ts.io.state_to_atoms(
+        initial_sim_state.clone().to(dtype=DTYPE, device=device)
+    )[0]
+    ase_atoms.calc = ase_mace_mpa
+    filtered_ase_atoms = ase_filter_cls(ase_atoms)
+    ase_optimizer = ASE_LBFGS(filtered_ase_atoms, logfile=None, alpha=70.0, damping=1.0)
+
+    convergence_fn = ts.generate_force_convergence_fn(
+        force_tol=force_tol, include_cell_forces=True
+    )
+
+    # Compare initial state
+    results = ts_mace_mpa(state)
+    ts_initial = state.clone()
+    ts_initial.forces = results["forces"]
+    ts_initial.energy = results["energy"]
+    ase_mace_mpa.calculate(ase_atoms)
+    _compare_ase_and_ts_states(
+        ts_initial, filtered_ase_atoms, tolerances, f"{test_id_prefix} (Initial)"
+    )
+
+    last_step = 0
+    for checkpoint in checkpoints:
+        steps = checkpoint - last_step
+        if steps > 0:
+            state = ts.optimize(
+                system=state,
+                model=ts_mace_mpa,
+                optimizer=ts.Optimizer.lbfgs,
+                max_steps=steps,
+                convergence_fn=convergence_fn,
+                steps_between_swaps=1,
+                init_kwargs=dict(cell_filter=cell_filter, alpha=70.0, step_size=1.0),
+                max_step=0.2,
+            )
+            ase_optimizer.run(fmax=force_tol, steps=steps)
+
+        _compare_ase_and_ts_states(
+            state, filtered_ase_atoms, tolerances, f"{test_id_prefix} (Step {checkpoint})"
+        )
+        last_step = checkpoint
