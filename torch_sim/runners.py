@@ -813,24 +813,21 @@ def static(  # noqa: C901
             ),
         )
 
-        # Collect base properties for each system
-        for sys_idx in range(sub_state.n_systems):
-            base_props: dict[str, torch.Tensor] = {
-                "potential_energy": static_state.energy[sys_idx],
-            }
-            atom_mask = sub_state.system_idx == sys_idx
-            if model.compute_forces:
-                base_props["forces"] = static_state.forces[atom_mask]
-            if model.compute_stress:
-                base_props["stress"] = static_state.stress[sys_idx]
-            all_props.append(base_props)
-
         if trajectory_reporter:
             props = trajectory_reporter.report(static_state, 0, model=model)
-            # Merge any additional properties from reporter into base props
-            start_idx = len(all_props) - static_state.n_systems
-            for i, prop in enumerate(props):
-                all_props[start_idx + i].update(prop)
+            all_props.extend(props)
+        else:
+            # Collect base properties for each system when no reporter
+            for sys_idx in range(sub_state.n_systems):
+                atom_mask = sub_state.system_idx == sys_idx
+                base_props: dict[str, torch.Tensor] = {
+                    "potential_energy": static_state.energy[sys_idx],
+                }
+                if model.compute_forces:
+                    base_props["forces"] = static_state.forces[atom_mask]
+                if model.compute_stress:
+                    base_props["stress"] = static_state.stress[sys_idx]
+                all_props.append(base_props)
 
         if tqdm_pbar:
             tqdm_pbar.update(static_state.n_systems)
