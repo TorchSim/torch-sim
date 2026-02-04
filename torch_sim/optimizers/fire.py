@@ -412,12 +412,8 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
         frac_positions = torch.linalg.solve(
             cur_deform_grad[state.system_idx], state.positions.unsqueeze(-1)
         ).squeeze(-1)
+        # Store fractional positions (will transform to Cartesian after cell update)
         new_frac_positions = frac_positions + dr_atom
-        # Back to Cartesian coordinates
-        new_positions = torch.bmm(
-            new_frac_positions.unsqueeze(1), cur_deform_grad[state.system_idx]
-        ).squeeze(1)
-        state.set_constrained_positions(new_positions)
 
         # Update cell positions directly based on stored cell filter type
         if hasattr(state, "cell_filter") and state.cell_filter is not None:
@@ -441,8 +437,21 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
             # Compute new cell from deformation gradient
             new_col_vector_cell = torch.bmm(state.reference_cell, deform_grad_new)
 
-            # Apply cell constraints and scale positions to preserve fractional coords
+            # Apply cell constraints and scale positions to new cell coordinates
+            # (needed for correct displacement calculation in position constraints)
             state.set_constrained_cell(new_col_vector_cell, scale_atoms=True)
+
+        # Transform fractional positions to Cartesian using NEW deformation gradient
+        new_deform_grad = cell_filters.deform_grad(
+            state.reference_cell.mT, state.row_vector_cell
+        )
+
+        state.set_constrained_positions(
+            torch.bmm(
+                new_frac_positions.unsqueeze(1),
+                new_deform_grad[state.system_idx].transpose(-2, -1),
+            ).squeeze(1)
+        )
     else:
         state.set_constrained_positions(state.positions + dr_atom)
 
