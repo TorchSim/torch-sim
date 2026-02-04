@@ -11,7 +11,12 @@ from enum import StrEnum
 from typing import Any, Final, Literal, get_args
 
 from torch_sim.optimizers.bfgs import bfgs_init, bfgs_step
-from torch_sim.optimizers.cell_filters import CellFireState, CellOptimState  # noqa: F401
+from torch_sim.optimizers.cell_filters import (  # noqa: F401
+    CellBFGSState,
+    CellFireState,
+    CellLBFGSState,
+    CellOptimState,
+)
 from torch_sim.optimizers.fire import fire_init, fire_step
 from torch_sim.optimizers.gradient_descent import (
     gradient_descent_init,
