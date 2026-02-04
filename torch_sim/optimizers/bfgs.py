@@ -193,6 +193,7 @@ def bfgs_init(
             "cell_filter": cell_filter_funcs,
             "charge": state.charge,  # preserve charge
             "spin": state.spin,  # preserve spin
+            "_constraints": state.constraints,  # preserve constraints
         }
 
         cell_state = CellBFGSState(**common_args)
@@ -233,6 +234,7 @@ def bfgs_init(
         "pbc": state.pbc,  # [S, 3]
         "charge": state.charge,  # preserve charge
         "spin": state.spin,  # preserve spin
+        "_constraints": state.constraints,  # preserve constraints
     }
 
     return BFGSState(**common_args)
@@ -527,15 +529,15 @@ def bfgs_step(  # noqa: C901, PLR0915
             new_frac.unsqueeze(1),  # [N, 1, 3]
             new_deform_grad[state.system_idx].transpose(-2, -1),  # [N, 3, 3]
         ).squeeze(1)  # [N, 3]
-        state.positions = new_positions  # [N, 3]
+        state.set_constrained_positions(new_positions)  # [N, 3]
     else:
         state.prev_positions = state.positions.clone()  # [N, 3]
         state.prev_forces = state.forces.clone()  # [N, 3]
-        state.positions = state.positions + flat_step  # [N, 3]
+        state.set_constrained_positions(state.positions + flat_step)  # [N, 3]
 
     # Evaluate new forces and energy
     model_output = model(state)
-    state.forces = model_output["forces"]  # [N, 3]
+    state.set_constrained_forces(model_output["forces"])  # [N, 3]
     state.energy = model_output["energy"]  # [S]
     if "stress" in model_output:
         state.stress = model_output["stress"]  # [S, 3, 3]
