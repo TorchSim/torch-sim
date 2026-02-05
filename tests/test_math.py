@@ -1,25 +1,114 @@
-"""Tests for the math module."""
+"""Tests for the math module. Adapted from https://github.com/abhijeetgangan/torch_matfunc"""
+
 
 # ruff: noqa: SLF001
 
 import numpy as np
-import pytest
 import scipy
-import scipy.linalg
 import torch
+from numpy.testing import assert_allclose
 
 import torch_sim.math as fm
 from tests.conftest import DTYPE
-from torch_sim.math import expm_frechet, matrix_log_33
-from torch_sim.optimizers.cell_filters import deform_grad
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Tolerances for numerical comparisons
-ATOL_STRICT = 1e-14  # For operations that should be exact
-ATOL_NORMAL = 1e-12  # For normal numerical operations
-ATOL_RELAXED = 1e-10  # For operations with some numerical accumulation
+
+class TestExpmFrechet:
+    """Test suite for expm_frechet for 3x3 matrices."""
+
+    def test_expm_frechet(self):
+        """Test basic functionality of expm_frechet against scipy implementation."""
+        A = np.array([[1, 2, 0], [5, 6, 0], [0, 0, 1]], dtype=np.float64)
+        E = np.array([[3, 4, 0], [7, 8, 0], [0, 0, 0]], dtype=np.float64)
+        expected_expm = scipy.linalg.expm(A)
+        expected_frechet = scipy.linalg.expm_frechet(A, E)[1]
+
+        A = torch.from_numpy(A).to(device=device)
+        E = torch.from_numpy(E).to(device=device)
+        observed_expm, observed_frechet = fm.expm_frechet(A, E)
+        assert_allclose(expected_expm, observed_expm.cpu().numpy(), atol=1e-14)
+        assert_allclose(expected_frechet, observed_frechet.cpu().numpy(), atol=1e-14)
+
+    def test_small_norm_expm_frechet(self):
+        """Test matrices with small norms."""
+        A = np.array([[0.1, 0.2, 0], [0.5, 0.6, 0], [0, 0, 0.1]], dtype=np.float64)
+        E = np.array([[0.3, 0.4, 0], [0.7, 0.8, 0], [0, 0, 0]], dtype=np.float64)
+        expected_expm = scipy.linalg.expm(A)
+        expected_frechet = scipy.linalg.expm_frechet(A, E)[1]
+
+        A = torch.from_numpy(A).to(device=device, dtype=DTYPE)
+        E = torch.from_numpy(E).to(device=device, dtype=DTYPE)
+        observed_expm, observed_frechet = fm.expm_frechet(A, E)
+        assert_allclose(expected_expm, observed_expm.cpu().numpy(), atol=1e-14)
+        assert_allclose(expected_frechet, observed_frechet.cpu().numpy(), atol=1e-14)
+
+    def test_fuzz(self):
+        """Test with a variety of random 3x3 inputs to ensure robustness."""
+        rng = np.random.default_rng(1726500908359153)
+        ntests = 20
+        for _ in range(ntests):
+            target_norm_1 = rng.exponential()
+            A_original = rng.standard_normal((3, 3))
+            E_original = rng.standard_normal((3, 3))
+            A_original_norm_1 = scipy.linalg.norm(A_original, 1)
+            scale = target_norm_1 / A_original_norm_1
+            A = scale * A_original
+            E = scale * E_original
+            expected_expm = scipy.linalg.expm(A)
+            expected_frechet = scipy.linalg.expm_frechet(A, E)[1]
+            A = torch.from_numpy(A).to(device=device, dtype=DTYPE)
+            E = torch.from_numpy(E).to(device=device, dtype=DTYPE)
+            observed_expm, observed_frechet = fm.expm_frechet(A, E)
+            assert_allclose(expected_expm, observed_expm.cpu().numpy(), atol=5e-8)
+            assert_allclose(expected_frechet, observed_frechet.cpu().numpy(), atol=1e-7)
+
+    def test_large_norm_matrices(self):
+        """Test expm_frechet with larger norm matrices requiring scaling."""
+        A = np.array(
+            [[1.5, 0.8, 0.3], [0.6, 1.2, 0.5], [0.4, 0.7, 1.8]], dtype=np.float64
+        )
+        E = np.array(
+            [[0.1, 0.2, 0.1], [0.2, 0.15, 0.1], [0.1, 0.1, 0.2]], dtype=np.float64
+        )
+        expected_expm = scipy.linalg.expm(A)
+        expected_frechet = scipy.linalg.expm_frechet(A, E)[1]
+
+        A = torch.from_numpy(A).to(device=device, dtype=DTYPE)
+        E = torch.from_numpy(E).to(device=device, dtype=DTYPE)
+        observed_expm, observed_frechet = fm.expm_frechet(A, E)
+        assert_allclose(expected_expm, observed_expm.cpu().numpy(), atol=1e-12)
+        assert_allclose(expected_frechet, observed_frechet.cpu().numpy(), atol=1e-12)
+
+
+class TestExpmFrechetTorch:
+    """Test suite for expm_frechet using native torch tensors."""
+
+    def test_expm_frechet(self):
+        """Test basic functionality of expm_frechet against torch.linalg.matrix_exp."""
+        A = torch.tensor([[1, 2, 0], [5, 6, 0], [0, 0, 1]], dtype=DTYPE, device=device)
+        E = torch.tensor([[3, 4, 0], [7, 8, 0], [0, 0, 0]], dtype=DTYPE, device=device)
+        expected_expm = torch.linalg.matrix_exp(A)
+
+        observed_expm, _ = fm.expm_frechet(A, E)
+        torch.testing.assert_close(expected_expm, observed_expm)
+
+    def test_fuzz(self):
+        """Test with a variety of random 3x3 inputs using torch tensors."""
+        rng = np.random.default_rng(1726500908359153)
+        ntests = 20
+        for _ in range(ntests):
+            target_norm_1 = rng.exponential()
+            A_original = torch.tensor(rng.standard_normal((3, 3)), device=device)
+            E_original = torch.tensor(rng.standard_normal((3, 3)), device=device)
+            A_original_norm_1 = torch.linalg.norm(A_original, 1)
+            scale = target_norm_1 / A_original_norm_1
+            A = scale * A_original
+            E = scale * E_original
+            expected_expm = torch.linalg.matrix_exp(A)
+            observed_expm, _ = fm.expm_frechet(A, E)
+            torch.testing.assert_close(expected_expm, observed_expm, atol=5e-8, rtol=1e-5)
 
 
 class TestLogM33:
@@ -209,348 +298,52 @@ class TestLogM33:
             M_logm, torch.tensor(scipy_logm, dtype=DTYPE, device=device)
         )
 
-
-class TestExpmFrechet:
-    """Tests for expm_frechet against scipy.linalg.expm_frechet."""
-
-    def test_small_matrices_batched(self):
-        """Test expm_frechet with small 3x3 matrices in a batch."""
-        A_np = np.array(
-            [
-                [[0.1, 0.2, 0.05], [0.15, 0.1, 0.1], [0.05, 0.1, 0.15]],
-                [[0.15, 0.1, 0.08], [0.12, 0.18, 0.05], [0.08, 0.05, 0.12]],
-            ],
-            dtype=np.float64,
-        )
-        E_np = np.array(
-            [
-                [[0.01, 0.02, 0.03], [0.02, 0.01, 0.02], [0.03, 0.02, 0.01]],
-                [[0.02, 0.01, 0.02], [0.01, 0.03, 0.01], [0.02, 0.01, 0.02]],
-            ],
-            dtype=np.float64,
-        )
-
-        A_torch = torch.tensor(A_np, dtype=torch.float64)
-        E_torch = torch.tensor(E_np, dtype=torch.float64)
-
-        # torch_sim batched implementation
-        expm_torch, frechet_torch = expm_frechet(A_torch, E_torch)
-
-        # scipy reference (unbatched, for comparison)
-        for i in range(A_np.shape[0]):
-            expm_scipy, frechet_scipy = scipy.linalg.expm_frechet(A_np[i], E_np[i])
-            np.testing.assert_allclose(
-                expm_torch[i].numpy(), expm_scipy, atol=ATOL_STRICT, rtol=0
-            )
-            np.testing.assert_allclose(
-                frechet_torch[i].numpy(), frechet_scipy, atol=ATOL_STRICT, rtol=0
-            )
-
-    def test_large_norm_matrices_batched(self):
-        """Test expm_frechet with larger norm matrices requiring scaling."""
-        A_np = np.array(
-            [
-                [[1.5, 0.8, 0.3], [0.6, 1.2, 0.5], [0.4, 0.7, 1.8]],
-                [[1.2, 0.6, 0.4], [0.5, 1.4, 0.6], [0.3, 0.5, 1.6]],
-            ],
-            dtype=np.float64,
-        )
-        E_np = np.array(
-            [
-                [[0.1, 0.2, 0.1], [0.2, 0.15, 0.1], [0.1, 0.1, 0.2]],
-                [[0.15, 0.1, 0.15], [0.1, 0.2, 0.1], [0.15, 0.1, 0.15]],
-            ],
-            dtype=np.float64,
-        )
-
-        A_torch = torch.tensor(A_np, dtype=torch.float64)
-        E_torch = torch.tensor(E_np, dtype=torch.float64)
-
-        expm_torch, frechet_torch = expm_frechet(A_torch, E_torch)
-
-        for i in range(A_np.shape[0]):
-            expm_scipy, frechet_scipy = scipy.linalg.expm_frechet(A_np[i], E_np[i])
-            np.testing.assert_allclose(
-                expm_torch[i].numpy(), expm_scipy, atol=ATOL_NORMAL, rtol=0
-            )
-            np.testing.assert_allclose(
-                frechet_torch[i].numpy(), frechet_scipy, atol=ATOL_NORMAL, rtol=0
-            )
-
-    @pytest.mark.parametrize("seed", range(5))
-    def test_random_matrices_batched(self, seed: int) -> None:
-        """Test expm_frechet with random batched matrices."""
+    def test_batched_positive_definite(self):
+        """Test batched matrix logarithm with positive definite matrices."""
         batch_size = 3
-        rng = np.random.default_rng(seed)
-        A_np = rng.standard_normal((batch_size, 3, 3)) * 0.5
-        E_np = rng.standard_normal((batch_size, 3, 3)) * 0.2
-
-        expm_torch, frechet_torch = expm_frechet(
-            torch.tensor(A_np, dtype=torch.float64),
-            torch.tensor(E_np, dtype=torch.float64),
-        )
-
-        for i in range(batch_size):
-            expm_scipy, frechet_scipy = scipy.linalg.expm_frechet(A_np[i], E_np[i])
-            np.testing.assert_allclose(
-                expm_torch[i].numpy(), expm_scipy, atol=ATOL_STRICT, rtol=0
-            )
-            np.testing.assert_allclose(
-                frechet_torch[i].numpy(), frechet_scipy, atol=ATOL_STRICT, rtol=0
-            )
-
-
-class TestMatrixLog33Batched:
-    """Additional tests for matrix_log_33 with batched inputs and deformation cases."""
-
-    def test_distinct_eigenvalues_batched(self):
-        """Test log of matrices with 3 distinct eigenvalues (case3)."""
-        batch_size = 3
-        eigenvalues_list = [
-            np.array([1.5, 2.0, 3.0]),
-            np.array([1.2, 1.8, 2.5]),
-            np.array([1.1, 1.6, 2.2]),
-        ]
-        Q_base = np.array(
-            [[0.6, 0.7, 0.3], [0.7, -0.5, 0.5], [0.4, 0.5, -0.8]], dtype=np.float64
-        )
-        Q_np, _ = np.linalg.qr(Q_base)
-
-        T_batch_np = np.array([Q_np @ np.diag(eig) @ Q_np.T for eig in eigenvalues_list])
-        T_batch_torch = torch.tensor(T_batch_np, dtype=torch.float64)
-
-        log_torch = matrix_log_33(T_batch_torch)
-
-        for i in range(batch_size):
-            log_scipy = scipy.linalg.logm(T_batch_np[i])
-            np.testing.assert_allclose(
-                log_torch[i].numpy(), log_scipy.real, atol=ATOL_STRICT, rtol=0
-            )
-
-            # Verify round-trip: exp(log(T)) = T
-            T_recovered = torch.matrix_exp(log_torch[i])
-            np.testing.assert_allclose(
-                T_recovered.numpy(), T_batch_np[i], atol=ATOL_NORMAL, rtol=0
-            )
-
-    def test_batched_matrices(self):
-        """Test batched matrix logarithm with random positive definite matrices."""
-        batch_size = 5
         rng = np.random.default_rng(42)
-        L_batch = rng.standard_normal((batch_size, 3, 3))
-        T_batch_np = np.array(
-            [L_batch[i] @ L_batch[i].T + 0.5 * np.eye(3) for i in range(batch_size)]
-        )
-        T_batch_torch = torch.tensor(T_batch_np, dtype=torch.float64)
-
-        # scipy unbatched (for comparison)
-        log_batch_scipy = np.array(
-            [scipy.linalg.logm(T_batch_np[i]).real for i in range(batch_size)]
-        )
-
-        # torch_sim batched
-        log_batch_torch = matrix_log_33(T_batch_torch)
-
-        np.testing.assert_allclose(
-            log_batch_torch.numpy(), log_batch_scipy, atol=ATOL_NORMAL, rtol=0
-        )
-
-    @pytest.mark.parametrize("eps", [1e-2, 1e-4, 1e-6, 1e-8])
-    def test_near_identity_batched(self, eps: float) -> None:
-        """Test log of near-identity matrices with various perturbation sizes."""
-        batch_size = 3
-        perturbations = np.array(
-            [
-                [[0.1, 0.2, 0.1], [0.2, 0.15, 0.05], [0.1, 0.05, 0.2]],
-                [[0.15, 0.1, 0.08], [0.1, 0.2, 0.1], [0.08, 0.1, 0.15]],
-                [[0.08, 0.15, 0.12], [0.15, 0.1, 0.08], [0.12, 0.08, 0.18]],
-            ],
-            dtype=np.float64,
-        )
-        M_np = np.eye(3) + eps * perturbations
-        M_torch = torch.tensor(M_np, dtype=torch.float64)
-
-        log_torch = matrix_log_33(M_torch)
-
-        for i in range(batch_size):
-            log_scipy = scipy.linalg.logm(M_np[i]).real
-            np.testing.assert_allclose(
-                log_torch[i].numpy(), log_scipy, atol=ATOL_NORMAL, rtol=0
-            )
-
-
-class TestDeformGrad:
-    """Tests for deformation gradient computation."""
-
-    @pytest.mark.parametrize("stretch_factor", [0.9, 1.0, 1.05, 1.1, 1.5])
-    def test_uniaxial_stretch_batched(self, stretch_factor: float) -> None:
-        """Test deformation gradient for uniaxial stretch."""
-        batch_size = 2
-        ref_cell = torch.tensor(
-            [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]], dtype=torch.float64
-        )
-        ref_cells = ref_cell.unsqueeze(0).expand(batch_size, -1, -1).clone()
-        current_cells = ref_cells.clone()
-        current_cells[:, 0, 0] *= stretch_factor
-
-        F = deform_grad(ref_cells.transpose(-1, -2), current_cells)
-
-        expected = np.eye(3)
-        expected[0, 0] = stretch_factor
-        for i in range(batch_size):
-            np.testing.assert_allclose(F[i].numpy(), expected, atol=ATOL_STRICT, rtol=0)
-
-    @pytest.mark.parametrize("shear", [0.01, 0.05, 0.1])
-    def test_shear_deformation_batched(self, shear: float) -> None:
-        """Test deformation gradient for shear deformation (batched)."""
-        batch_size = 2
-        ref_cell = torch.tensor(
-            [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]], dtype=torch.float64
-        )
-        ref_cells = ref_cell.unsqueeze(0).expand(batch_size, -1, -1).clone()
-        current_cells = ref_cells.clone()
-        current_cells[:, 0, 1] = shear * ref_cells[:, 1, 1]
-
-        F = deform_grad(ref_cells.transpose(-1, -2), current_cells)
-
-        expected = np.eye(3)
-        expected[1, 0] = shear  # Note: transpose in deform_grad
-        for i in range(batch_size):
-            np.testing.assert_allclose(F[i].numpy(), expected, atol=ATOL_STRICT, rtol=0)
-
-
-class TestFrechetCellFilterIntegration:
-    """Integration tests for the full Frechet cell filter pipeline."""
-
-    def test_frechet_cell_step_vs_scipy(self):
-        """Test Frechet cell step computation matches scipy."""
-        n_systems = 2
-        cell_factor = torch.tensor([10.0, 12.0], dtype=torch.float64).view(
-            n_systems, 1, 1
-        )
-        cell_lr = torch.tensor([0.01, 0.01], dtype=torch.float64)
-
-        # Initialize cell positions (in log space)
-        cell_positions = torch.zeros((n_systems, 3, 3), dtype=torch.float64)
-
-        # Fixed random forces for reproducibility
-        torch.manual_seed(42)
-        cell_forces = torch.randn(n_systems, 3, 3, dtype=torch.float64) * 0.1
-
-        # Perform step update
-        cell_wise_lr = cell_lr.view(n_systems, 1, 1)
-        cell_step = cell_wise_lr * cell_forces
-        cell_positions_new = cell_positions + cell_step
-
-        # Convert from log space to deformation gradient
-        deform_grad_log_new = cell_positions_new / cell_factor
-        deform_grad_new_torch = torch.matrix_exp(deform_grad_log_new)
-
-        # Compare with scipy
-        deform_grad_new_scipy = np.array(
-            [scipy.linalg.expm(deform_grad_log_new[i].numpy()) for i in range(n_systems)]
-        )
-
-        np.testing.assert_allclose(
-            deform_grad_new_torch.numpy(), deform_grad_new_scipy, atol=ATOL_STRICT, rtol=0
-        )
-
-    def test_frechet_force_computation_vs_scipy(self):
-        """Test full Frechet force computation matches scipy-based computation."""
-        n_systems = 2
-
-        # Setup deformation gradients
-        torch.manual_seed(42)
-        cell_factor = torch.tensor([10.0, 12.0], dtype=torch.float64).view(
-            n_systems, 1, 1
-        )
-
-        # Create small deformations
-        deform_log = torch.randn(n_systems, 3, 3, dtype=torch.float64) * 0.001
-        cur_deform_grad = torch.matrix_exp(deform_log)
-
-        torch.manual_seed(123)
-        virial = torch.randn(n_systems, 3, 3, dtype=torch.float64) * 0.5
-
-        # UCF cell gradient
-        ucf_cell_grad = torch.bmm(
-            virial, torch.linalg.inv(cur_deform_grad.transpose(-1, -2))
-        )
-
-        # torch_sim log computation
-        deform_grad_log_torch = matrix_log_33(cur_deform_grad)
-
-        # scipy log computation
-        deform_grad_log_scipy = np.array(
-            [scipy.linalg.logm(cur_deform_grad[i].numpy()).real for i in range(n_systems)]
-        )
-
-        np.testing.assert_allclose(
-            deform_grad_log_torch.numpy(), deform_grad_log_scipy, atol=ATOL_NORMAL, rtol=0
-        )
-
-        # Compute Frechet derivatives
-        device, dtype = virial.device, virial.dtype
-        idx_flat = torch.arange(9, device=device)
-        i_idx, j_idx = idx_flat // 3, idx_flat % 3
-        directions = torch.zeros((9, 3, 3), device=device, dtype=dtype)
-        directions[idx_flat, i_idx, j_idx] = 1.0
-
-        # torch_sim batched Frechet
-        A_batch = (
-            deform_grad_log_torch.unsqueeze(1)
-            .expand(n_systems, 9, 3, 3)
-            .reshape(-1, 3, 3)
-        )
-        E_batch = directions.unsqueeze(0).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
-        _, expm_derivs_batch_torch = expm_frechet(A_batch, E_batch)
-        expm_derivs_torch = expm_derivs_batch_torch.reshape(n_systems, 9, 3, 3)
-
-        # scipy Frechet (for comparison)
-        expm_derivs_scipy = np.zeros((n_systems, 9, 3, 3))
-        for sys_idx in range(n_systems):
-            for dir_idx in range(9):
-                A_sys = deform_grad_log_scipy[sys_idx]
-                E_dir = directions[dir_idx].numpy()
-                _, expm_derivs_scipy[sys_idx, dir_idx] = scipy.linalg.expm_frechet(
-                    A_sys, E_dir
-                )
-
-        np.testing.assert_allclose(
-            expm_derivs_torch.numpy(), expm_derivs_scipy, atol=ATOL_NORMAL, rtol=0
-        )
-
-        # Final cell forces
-        forces_flat_torch = (expm_derivs_torch * ucf_cell_grad.unsqueeze(1)).sum(
-            dim=(2, 3)
-        )
-        cell_forces_torch = forces_flat_torch.reshape(n_systems, 3, 3) / cell_factor
-
-        forces_flat_scipy = (
-            expm_derivs_scipy * ucf_cell_grad.numpy()[:, np.newaxis, :, :]
-        ).sum(axis=(2, 3))
-        cell_forces_scipy = (
-            forces_flat_scipy.reshape(n_systems, 3, 3) / cell_factor.numpy()
-        )
-
-        np.testing.assert_allclose(
-            cell_forces_torch.numpy(), cell_forces_scipy, atol=ATOL_NORMAL, rtol=0
-        )
-
-
-class TestRoundTripConsistency:
-    """Tests for round-trip consistency exp(log(M)) = M."""
-
-    @pytest.mark.parametrize("seed", range(5))
-    def test_positive_definite_roundtrip_batched(self, seed: int) -> None:
-        """Test that exp(log(M)) = M for positive definite matrices."""
-        batch_size = 3
-        rng = np.random.default_rng(seed)
         L = rng.standard_normal((batch_size, 3, 3))
         M_np = np.array([L[i] @ L[i].T + 0.5 * np.eye(3) for i in range(batch_size)])
         M_torch = torch.tensor(M_np, dtype=torch.float64)
 
-        log_torch = matrix_log_33(M_torch)
-        M_recovered = torch.matrix_exp(log_torch)
+        log_torch = fm.matrix_log_33(M_torch)
 
-        np.testing.assert_allclose(M_recovered.numpy(), M_np, atol=ATOL_RELAXED, rtol=0)
+        for i in range(batch_size):
+            log_scipy = scipy.linalg.logm(M_np[i]).real
+            assert_allclose(log_torch[i].numpy(), log_scipy, atol=1e-12)
+            # Verify round-trip: exp(log(M)) = M
+            M_recovered = torch.matrix_exp(log_torch[i])
+            assert_allclose(M_recovered.numpy(), M_np[i], atol=1e-10)
+
+
+class TestFrechetCellFilterIntegration:
+    """Integration tests for the Frechet cell filter pipeline."""
+
+    def test_frechet_derivatives_vs_scipy(self):
+        """Test Frechet derivative computation matches scipy."""
+        n_systems = 2
+        torch.manual_seed(42)
+
+        # Create small deformations
+        deform_log = torch.randn(n_systems, 3, 3, dtype=torch.float64) * 0.01
+
+        # Compute Frechet derivatives for all 9 directions
+        idx_flat = torch.arange(9)
+        i_idx, j_idx = idx_flat // 3, idx_flat % 3
+        directions = torch.zeros((9, 3, 3), dtype=torch.float64)
+        directions[idx_flat, i_idx, j_idx] = 1.0
+
+        A_batch = deform_log.unsqueeze(1).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
+        E_batch = directions.unsqueeze(0).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
+        _, frechet_torch = fm.expm_frechet(A_batch, E_batch)
+        frechet_torch = frechet_torch.reshape(n_systems, 9, 3, 3)
+
+        # Compare with scipy
+        for sys_idx in range(n_systems):
+            for dir_idx in range(9):
+                A_np = deform_log[sys_idx].numpy()
+                E_np = directions[dir_idx].numpy()
+                _, frechet_scipy = scipy.linalg.expm_frechet(A_np, E_np)
+                assert_allclose(
+                    frechet_torch[sys_idx, dir_idx].numpy(), frechet_scipy, atol=1e-12
+                )

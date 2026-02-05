@@ -284,10 +284,9 @@ def compute_cell_forces[T: AnyCellState](
         n_systems = state.n_systems
 
         # Create direction matrices for Frechet derivative
-        idx_flat = torch.arange(9, device=device)
-        i, j = idx_flat // 3, idx_flat % 3
         directions = torch.zeros((9, 3, 3), device=device, dtype=dtype)
-        directions[idx_flat, i, j] = 1.0
+        for idx, (mu, nu) in enumerate([(i, j) for i in range(3) for j in range(3)]):
+            directions[idx, mu, nu] = 1.0
 
         # Compute deformation gradient log (batched for parallelism)
         deform_grad_log = fm.matrix_log_33(
