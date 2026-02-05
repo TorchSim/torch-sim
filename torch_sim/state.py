@@ -198,8 +198,11 @@ class SimState:
         """Atomic positions wrapped according to periodic boundary conditions if pbc=True,
         otherwise returns unwrapped positions with shape (n_atoms, 3).
         """
-        # TODO: implement a wrapping method
-        return self.positions
+        if not self.pbc.any():
+            return self.positions
+        return ts.transforms.pbc_wrap_batched(
+            self.positions, self.cell, self.system_idx, self.pbc
+        )
 
     @property
     def device(self) -> torch.device:
@@ -917,7 +920,8 @@ def _slice_state[T: SimState](state: T, system_indices: list[int] | torch.Tensor
     """Slice a substate from the SimState containing only the specified system indices.
 
     Creates a new SimState containing only the specified systems, preserving
-    their requested order (not natural 0,1,2 order).
+    the requested order. E.g., system_indices=[3, 1, 4] results in original
+    systems 3, 1, 4 becoming new systems 0, 1, 2.
 
     Args:
         state (SimState): The state to slice

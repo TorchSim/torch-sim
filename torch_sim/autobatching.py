@@ -22,7 +22,7 @@ Notes:
 
 from collections.abc import Callable, Iterator, Sequence
 from itertools import chain
-from typing import Any
+from typing import Any, get_args
 
 import torch
 
@@ -322,7 +322,7 @@ def determine_max_batch_size(
     return sizes[-1]
 
 
-def calculate_memory_scaler(
+def calculate_memory_scalers(
     state: SimState,
     memory_scales_with: MemoryScaling = "n_atoms_x_density",
 ) -> list[float]:
@@ -341,9 +341,9 @@ def calculate_memory_scaler(
         return state.n_atoms_per_system.tolist()
     if memory_scales_with == "n_atoms_x_density":
         if state.n_systems > 1 and state.pbc.all().item():  # vectorized path
-            n = state.n_atoms_per_system.to(state.volume.dtype)
-            vol = torch.abs(state.volume) / 1000  # A^3 -> nm^3
-            return torch.where(vol > 0, n * n / vol, n).tolist()
+            n_atoms = state.n_atoms_per_system.to(state.volume.dtype)
+            volume = torch.abs(state.volume) / 1000  # A^3 -> nm^3
+            return torch.where(volume > 0, n_atoms * n_atoms / volume, n_atoms).tolist()
         # per-system path (non-periodic or single system)
         scalers = []
         for s in state.split():
@@ -357,7 +357,9 @@ def calculate_memory_scaler(
                 volume = bbox.prod() / 1000
             scalers.append(s.n_atoms * (s.n_atoms / volume.item()))
         return scalers
-    raise ValueError(f"Invalid metric: {memory_scales_with}")
+    raise ValueError(
+        f"Invalid metric: {memory_scales_with}, must be one of {get_args(MemoryScaling)}"
+    )
 
 
 def estimate_max_memory_scaler(
@@ -378,7 +380,7 @@ def estimate_max_memory_scaler(
         state_list (list[SimState]): States to test, each with shape information
             specific to the SimState instance.
         metric_values (list[float]): Corresponding metric values for each state,
-            as calculated by calculate_memory_scaler().
+            as calculated by calculate_memory_scalers().
         **kwargs: Additional keyword arguments passed to determine_max_batch_size.
 
     Returns:
@@ -387,7 +389,7 @@ def estimate_max_memory_scaler(
     Example::
 
         # Calculate metrics for a set of states
-        metrics = [calculate_memory_scaler(state) for state in states]
+        metrics = [calculate_memory_scalers(state) for state in states]
 
         # Estimate maximum safe metric value
         max_metric = estimate_max_memory_scaler(model, states, metrics)
@@ -540,7 +542,7 @@ class BinningAutoBatcher[T: SimState]:
         batched = (
             states if isinstance(states, SimState) else ts.concatenate_states(states)
         )
-        self.memory_scalers = calculate_memory_scaler(batched, self.memory_scales_with)
+        self.memory_scalers = calculate_memory_scalers(batched, self.memory_scales_with)
         self.state_slices = batched.split()
         if not self.max_memory_scaler:
             self.max_memory_scaler = estimate_max_memory_scaler(
@@ -855,7 +857,7 @@ class InFlightAutoBatcher[T: SimState]:
         new_idx: list[int] = []
         new_states: list[T] = []
         for state in self.states_iterator:
-            metric = calculate_memory_scaler(state, self.memory_scales_with)[0]
+            metric = calculate_memory_scalers(state, self.memory_scales_with)[0]
             if metric > self.max_memory_scaler:
                 raise ValueError(
                     f"State {metric=} is greater than max_metric {self.max_memory_scaler}"
@@ -911,7 +913,7 @@ class InFlightAutoBatcher[T: SimState]:
         # we need to sample a state and use it to estimate the max metric
         # for the first batch
         first_state = next(self.states_iterator)
-        first_metric = calculate_memory_scaler(first_state, self.memory_scales_with)[0]
+        first_metric = calculate_memory_scalers(first_state, self.memory_scales_with)[0]
         self.current_scalers += [first_metric]
         self.current_idx += [0]
         self.iteration_count.append(0)  # Initialize attempt counter for first state

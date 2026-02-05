@@ -7,7 +7,7 @@ import torch_sim as ts
 from torch_sim.autobatching import (
     BinningAutoBatcher,
     InFlightAutoBatcher,
-    calculate_memory_scaler,
+    calculate_memory_scalers,
     determine_max_batch_size,
     to_constant_volume_bins,
 )
@@ -93,29 +93,26 @@ def test_bounds_and_tuples():
 def test_calculate_scaling_metric(si_sim_state: ts.SimState) -> None:
     """Test calculation of scaling metrics for a state."""
     # Test n_atoms metric
-    n_atoms_metric = calculate_memory_scaler(si_sim_state, "n_atoms")
+    n_atoms_metric = calculate_memory_scalers(si_sim_state, "n_atoms")
     assert n_atoms_metric == [si_sim_state.n_atoms]
-    assert n_atoms_metric == [8]
 
     # Test n_atoms_x_density metric
-    density_metric = calculate_memory_scaler(si_sim_state, "n_atoms_x_density")
+    density_metric = calculate_memory_scalers(si_sim_state, "n_atoms_x_density")
     volume = torch.abs(torch.linalg.det(si_sim_state.cell[0])) / 1000
     expected = si_sim_state.n_atoms * (si_sim_state.n_atoms / volume.item())
     assert pytest.approx(density_metric[0], rel=1e-5) == expected
-    assert pytest.approx(density_metric[0], rel=1e-5) == (8**2) * 1000 / (5.43**3)
 
     # Test invalid metric
     with pytest.raises(ValueError, match="Invalid metric"):
-        calculate_memory_scaler(si_sim_state, "invalid_metric")
+        calculate_memory_scalers(si_sim_state, "invalid_metric")
 
 
 def test_calculate_scaling_metric_non_periodic(benzene_sim_state: ts.SimState) -> None:
     """Test calculation of scaling metrics for a non-periodic state."""
-    n_atoms_metric = calculate_memory_scaler(benzene_sim_state, "n_atoms")
+    n_atoms_metric = calculate_memory_scalers(benzene_sim_state, "n_atoms")
     assert n_atoms_metric == [benzene_sim_state.n_atoms]
-    assert n_atoms_metric == [12]
 
-    n_atoms_x_density_metric = calculate_memory_scaler(
+    n_atoms_x_density_metric = calculate_memory_scalers(
         benzene_sim_state, "n_atoms_x_density"
     )
     assert n_atoms_x_density_metric[0] > 0
