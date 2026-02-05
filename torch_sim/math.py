@@ -2,10 +2,9 @@
 
 # ruff: noqa: FBT001, FBT002, RUF002, RUF003
 
-from typing import Any, Final
+from typing import Final
 
 import torch
-from torch.autograd import Function
 
 
 @torch.jit.script
@@ -26,25 +25,20 @@ def torch_divmod(a: torch.Tensor, b: torch.Tensor) -> tuple[torch.Tensor, torch.
     return d, m
 
 
-def expm_frechet(  # noqa: C901, PLR0915
+def expm_frechet(  # noqa: PLR0915, C901
     A: torch.Tensor,
     E: torch.Tensor,
-    method: str | None = None,
     check_finite: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Frechet derivative of the matrix exponential of A in the direction E.
 
-    Also supports batched 3x3 matrices of shape (B, 3, 3).
+    Optimized for batched 3x3 matrices. Also handles single 3x3 matrices by
+    auto-adding a batch dimension.
 
     Args:
-        A: (N, N) array_like. Matrix of which to take the matrix exponential.
-            Also accepts batched (B, 3, 3) input.
-        E: (N, N) array_like. Matrix direction in which to take the Frechet derivative.
-            Also accepts batched (B, 3, 3) input.
-        method: str, optional. Choice of algorithm. Should be one of
-            - `SPS` (default)
-            - `blockEnlarge`
-            Ignored for batched input.
+        A: (B, 3, 3) or (3, 3) tensor. Matrix of which to take the matrix exponential.
+        E: (B, 3, 3) or (3, 3) tensor. Matrix direction in which to take the Frechet
+            derivative. Must have same shape as A.
         check_finite: bool, optional. Whether to check that the input matrix contains
             only finite numbers. Disabling may give a performance gain, but may result
             in problems (crashes, non-termination) if the inputs do contain
@@ -68,94 +62,80 @@ def expm_frechet(  # noqa: C901, PLR0915
     if not isinstance(E, torch.Tensor):
         E = torch.tensor(E, dtype=torch.float64)
 
-    batched = A.dim() == 3
-    if batched:
-        if E.dim() != 3 or A.shape != E.shape or A.shape[1:] != (3, 3):
-            raise ValueError("expected A, E to be (B, 3, 3) with same shape")
-        batch_size = A.shape[0]
-        device, dtype = A.device, A.dtype
-        ident = (
-            torch.eye(3, device=device, dtype=dtype).unsqueeze(0).expand(batch_size, 3, 3)
-        )
-        A_norm_1 = torch.norm(A, p=1, dim=(-2, -1))
-        scale_val = torch.log2(
-            torch.clamp(A_norm_1.max() / ell_table_61[13], min=1.0, max=2.0**64)
-        )
-        s = max(0, min(int(torch.ceil(scale_val).item()), 64))
-        A = A * 2.0**-s
-        E = E * 2.0**-s
-        A2 = torch.matmul(A, A)
-        M2 = torch.matmul(A, E) + torch.matmul(E, A)
-        A4 = torch.matmul(A2, A2)
-        M4 = torch.matmul(A2, M2) + torch.matmul(M2, A2)
-        A6 = torch.matmul(A2, A4)
-        M6 = torch.matmul(A4, M2) + torch.matmul(M4, A2)
-        b = _PADE13_COEFFS
-        W1 = b[13] * A6 + b[11] * A4 + b[9] * A2
-        W2 = b[7] * A6 + b[5] * A4 + b[3] * A2 + b[1] * ident
-        Z1 = b[12] * A6 + b[10] * A4 + b[8] * A2
-        Z2 = b[6] * A6 + b[4] * A4 + b[2] * A2 + b[0] * ident
-        W = torch.matmul(A6, W1) + W2
-        U = torch.matmul(A, W)
-        V = torch.matmul(A6, Z1) + Z2
-        Lw1 = b[13] * M6 + b[11] * M4 + b[9] * M2
-        Lw2 = b[7] * M6 + b[5] * M4 + b[3] * M2
-        Lz1 = b[12] * M6 + b[10] * M4 + b[8] * M2
-        Lz2 = b[6] * M6 + b[4] * M4 + b[2] * M2
-        Lw = torch.matmul(A6, Lw1) + torch.matmul(M6, W1) + Lw2
-        Lu = torch.matmul(A, Lw) + torch.matmul(E, W)
-        Lv = torch.matmul(A6, Lz1) + torch.matmul(M6, Z1) + Lz2
-        R = torch.linalg.solve(-U + V, U + V)
-        L = torch.linalg.solve(-U + V, Lu + Lv + torch.matmul(Lu - Lv, R))
-        for _ in range(s):
-            L = torch.matmul(R, L) + torch.matmul(L, R)
-            R = torch.matmul(R, R)
-        return R, L
+    # Handle unbatched 3x3 input by adding batch dimension
+    unbatched = A.dim() == 2
+    if unbatched:
+        if A.shape != (3, 3):
+            raise ValueError("expected A to be (3, 3) or (B, 3, 3)")
+        if E.shape != (3, 3):
+            raise ValueError("expected E to be (3, 3) or (B, 3, 3)")
+        A = A.unsqueeze(0)
+        E = E.unsqueeze(0)
 
-    if A.dim() != 2 or A.shape[0] != A.shape[1]:
-        raise ValueError("expected A to be a square matrix")
-    if E.dim() != 2 or E.shape[0] != E.shape[1]:
-        raise ValueError("expected E to be a square matrix")
-    if A.shape != E.shape:
-        raise ValueError("expected A and E to be the same shape")
+    if E.dim() != 3 or A.shape != E.shape or A.shape[1:] != (3, 3):
+        raise ValueError("expected A, E to be (B, 3, 3) with same shape")
 
-    if method is None:
-        method = "SPS"
+    batch_size = A.shape[0]
+    device, dtype = A.device, A.dtype
+    ident = torch.eye(3, device=device, dtype=dtype).unsqueeze(0).expand(batch_size, 3, 3)
 
-    if method == "SPS":
-        expm_A, expm_frechet_AE = expm_frechet_algo_64(A, E)
-    elif method == "blockEnlarge":
-        expm_A, expm_frechet_AE = expm_frechet_block_enlarge(A, E)
-    else:
-        raise ValueError(f"Unknown {method=}")
+    A_norm_1 = torch.norm(A, p=1, dim=(-2, -1))
+    scale_val = torch.log2(
+        torch.clamp(A_norm_1.max() / ell_table_61[13], min=1.0, max=2.0**64)
+    )
+    s = max(0, min(int(torch.ceil(scale_val).item()), 64))
+    A = A * 2.0**-s
+    E = E * 2.0**-s
 
-    return expm_A, expm_frechet_AE
+    A2 = torch.matmul(A, A)
+    M2 = torch.matmul(A, E) + torch.matmul(E, A)
+    A4 = torch.matmul(A2, A2)
+    M4 = torch.matmul(A2, M2) + torch.matmul(M2, A2)
+    A6 = torch.matmul(A2, A4)
+    M6 = torch.matmul(A4, M2) + torch.matmul(M4, A2)
 
+    b = (
+        64764752532480000.0,
+        32382376266240000.0,
+        7771770303897600.0,
+        1187353796428800.0,
+        129060195264000.0,
+        10559470521600.0,
+        670442572800.0,
+        33522128640.0,
+        1323241920.0,
+        40840800.0,
+        960960.0,
+        16380.0,
+        182.0,
+        1.0,
+    )
+    W1 = b[13] * A6 + b[11] * A4 + b[9] * A2
+    W2 = b[7] * A6 + b[5] * A4 + b[3] * A2 + b[1] * ident
+    Z1 = b[12] * A6 + b[10] * A4 + b[8] * A2
+    Z2 = b[6] * A6 + b[4] * A4 + b[2] * A2 + b[0] * ident
+    W = torch.matmul(A6, W1) + W2
+    U = torch.matmul(A, W)
+    V = torch.matmul(A6, Z1) + Z2
 
-def expm_frechet_block_enlarge(
-    A: torch.Tensor, E: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Helper function for testing and profiling.
+    Lw1 = b[13] * M6 + b[11] * M4 + b[9] * M2
+    Lw2 = b[7] * M6 + b[5] * M4 + b[3] * M2
+    Lz1 = b[12] * M6 + b[10] * M4 + b[8] * M2
+    Lz2 = b[6] * M6 + b[4] * M4 + b[2] * M2
+    Lw = torch.matmul(A6, Lw1) + torch.matmul(M6, W1) + Lw2
+    Lu = torch.matmul(A, Lw) + torch.matmul(E, W)
+    Lv = torch.matmul(A6, Lz1) + torch.matmul(M6, Z1) + Lz2
 
-    Args:
-        A: Input matrix
-        E: Direction matrix
+    R = torch.linalg.solve(-U + V, U + V)
+    L = torch.linalg.solve(-U + V, Lu + Lv + torch.matmul(Lu - Lv, R))
 
-    Returns:
-        expm_A: Matrix exponential of A
-        expm_frechet_AE: torch.Tensor
-            Frechet derivative of the matrix exponential of A in the direction E
-    """
-    n = A.shape[0]
-    # Create block matrix M = [[A, E], [0, A]]
-    M = torch.zeros((2 * n, 2 * n), dtype=A.dtype, device=A.device)
-    M[:n, :n] = A
-    M[:n, n:] = E
-    M[n:, n:] = A
+    for _ in range(s):
+        L = torch.matmul(R, L) + torch.matmul(L, R)
+        R = torch.matmul(R, R)
 
-    # Use matrix exponential
-    expm_M = matrix_exp(M)
-    return expm_M[:n, :n], expm_M[:n, n:]
+    if unbatched:
+        return R.squeeze(0), L.squeeze(0)
+    return R, L
 
 
 # Maximal values ell_m of ||2**-s A|| such that the backward error bound
@@ -185,463 +165,6 @@ ell_table_61: Final = (
     1.06e1,
     1.17e1,
 )
-
-# Order-13 Padé coefficients for matrix exponential Frechet derivative
-_PADE13_COEFFS: Final = (
-    64764752532480000.0,
-    32382376266240000.0,
-    7771770303897600.0,
-    1187353796428800.0,
-    129060195264000.0,
-    10559470521600.0,
-    670442572800.0,
-    33522128640.0,
-    1323241920.0,
-    40840800.0,
-    960960.0,
-    16380.0,
-    182.0,
-    1.0,
-)
-
-
-def _diff_pade3(
-    A: torch.Tensor, E: torch.Tensor, ident: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Compute Padé approximation of order 3 for matrix exponential and
-    its Frechet derivative.
-
-    Args:
-        A: Input matrix
-        E: Direction matrix
-        ident: Identity matrix of same shape as A
-
-    Returns:
-        U, V, Lu, Lv: Components needed for computing the matrix exponential and
-        its Frechet derivative
-    """
-    b = (120.0, 60.0, 12.0, 1.0)
-    A2 = torch.matmul(A, A)
-    M2 = torch.matmul(A, E) + torch.matmul(E, A)
-    U = torch.matmul(A, b[3] * A2 + b[1] * ident)
-    V = b[2] * A2 + b[0] * ident
-    Lu = torch.matmul(A, b[3] * M2) + torch.matmul(E, b[3] * A2 + b[1] * ident)
-    Lv = b[2] * M2
-    return U, V, Lu, Lv
-
-
-def _diff_pade5(
-    A: torch.Tensor, E: torch.Tensor, ident: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Compute Padé approximation of order 5 for matrix exponential and
-    its Frechet derivative.
-
-    Args:
-        A: Input matrix
-        E: Direction matrix
-        ident: Identity matrix of same shape as A
-
-    Returns:
-        U, V, Lu, Lv: Components needed for computing the matrix exponential and
-        its Frechet derivative
-    """
-    b = (30240.0, 15120.0, 3360.0, 420.0, 30.0, 1.0)
-    A2 = torch.matmul(A, A)
-    M2 = torch.matmul(A, E) + torch.matmul(E, A)
-    A4 = torch.matmul(A2, A2)
-    M4 = torch.matmul(A2, M2) + torch.matmul(M2, A2)
-    U = torch.matmul(A, b[5] * A4 + b[3] * A2 + b[1] * ident)
-    V = b[4] * A4 + b[2] * A2 + b[0] * ident
-    Lu = torch.matmul(A, b[5] * M4 + b[3] * M2) + torch.matmul(
-        E, b[5] * A4 + b[3] * A2 + b[1] * ident
-    )
-    Lv = b[4] * M4 + b[2] * M2
-    return U, V, Lu, Lv
-
-
-def _diff_pade7(
-    A: torch.Tensor, E: torch.Tensor, ident: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Compute Padé approximation of order 7 for matrix exponential and
-    its Frechet derivative.
-
-    Args:
-        A: Input matrix
-        E: Direction matrix
-        ident: Identity matrix of same shape as A
-
-    Returns:
-        U, V, Lu, Lv: Components needed for computing the matrix exponential and
-        its Frechet derivative
-    """
-    b = (17297280.0, 8648640.0, 1995840.0, 277200.0, 25200.0, 1512.0, 56.0, 1.0)
-    A2 = torch.matmul(A, A)
-    M2 = torch.matmul(A, E) + torch.matmul(E, A)
-    A4 = torch.matmul(A2, A2)
-    M4 = torch.matmul(A2, M2) + torch.matmul(M2, A2)
-    A6 = torch.matmul(A2, A4)
-    M6 = torch.matmul(A4, M2) + torch.matmul(M4, A2)
-    U = torch.matmul(A, b[7] * A6 + b[5] * A4 + b[3] * A2 + b[1] * ident)
-    V = b[6] * A6 + b[4] * A4 + b[2] * A2 + b[0] * ident
-    Lu = torch.matmul(A, b[7] * M6 + b[5] * M4 + b[3] * M2) + torch.matmul(
-        E, b[7] * A6 + b[5] * A4 + b[3] * A2 + b[1] * ident
-    )
-    Lv = b[6] * M6 + b[4] * M4 + b[2] * M2
-    return U, V, Lu, Lv
-
-
-def _diff_pade9(
-    A: torch.Tensor, E: torch.Tensor, ident: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Compute Padé approximation of order 9 for matrix exponential and
-    its Frechet derivative.
-
-    Args:
-        A: Input matrix
-        E: Direction matrix
-        ident: Identity matrix of same shape as A
-
-    Returns:
-        U, V, Lu, Lv: Components needed for computing the matrix exponential and
-        its Frechet derivative
-    """
-    b = (
-        17643225600.0,
-        8821612800.0,
-        2075673600.0,
-        302702400.0,
-        30270240.0,
-        2162160.0,
-        110880.0,
-        3960.0,
-        90.0,
-        1.0,
-    )
-    A2 = torch.matmul(A, A)
-    M2 = torch.matmul(A, E) + torch.matmul(E, A)
-    A4 = torch.matmul(A2, A2)
-    M4 = torch.matmul(A2, M2) + torch.matmul(M2, A2)
-    A6 = torch.matmul(A2, A4)
-    M6 = torch.matmul(A4, M2) + torch.matmul(M4, A2)
-    A8 = torch.matmul(A4, A4)
-    M8 = torch.matmul(A4, M4) + torch.matmul(M4, A4)
-    U = torch.matmul(A, b[9] * A8 + b[7] * A6 + b[5] * A4 + b[3] * A2 + b[1] * ident)
-    V = b[8] * A8 + b[6] * A6 + b[4] * A4 + b[2] * A2 + b[0] * ident
-    Lu = torch.matmul(A, b[9] * M8 + b[7] * M6 + b[5] * M4 + b[3] * M2) + torch.matmul(
-        E, b[9] * A8 + b[7] * A6 + b[5] * A4 + b[3] * A2 + b[1] * ident
-    )
-    Lv = b[8] * M8 + b[6] * M6 + b[4] * M4 + b[2] * M2
-    return U, V, Lu, Lv
-
-
-def expm_frechet_algo_64(
-    A: torch.Tensor, E: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Compute matrix exponential and its Frechet derivative using Algorithm 6.4.
-
-    This implementation follows Al-Mohy and Higham's Algorithm 6.4 from
-    "Computing the Frechet Derivative of the Matrix Exponential, with an
-    application to Condition Number Estimation".
-
-    Args:
-        A: Input matrix
-        E: Direction matrix
-
-    Returns:
-        R: Matrix exponential of A
-        L: Frechet derivative of the matrix exponential in the direction E
-    """
-    n = A.shape[0]
-    s = None
-    ident = torch.eye(n, dtype=A.dtype, device=A.device)
-    A_norm_1 = torch.norm(A, p=1)
-    m_pade_pairs = (
-        (3, _diff_pade3),
-        (5, _diff_pade5),
-        (7, _diff_pade7),
-        (9, _diff_pade9),
-    )
-
-    for m, pade in m_pade_pairs:
-        if A_norm_1 <= ell_table_61[m]:
-            U, V, Lu, Lv = pade(A, E, ident)
-            s = 0
-            break
-
-    if s is None:
-        # scaling
-        s = max(0, int(torch.ceil(torch.log2(A_norm_1 / ell_table_61[13]))))
-        A = A * 2.0**-s
-        E = E * 2.0**-s
-        # pade order 13
-        A2 = torch.matmul(A, A)
-        M2 = torch.matmul(A, E) + torch.matmul(E, A)
-        A4 = torch.matmul(A2, A2)
-        M4 = torch.matmul(A2, M2) + torch.matmul(M2, A2)
-        A6 = torch.matmul(A2, A4)
-        M6 = torch.matmul(A4, M2) + torch.matmul(M4, A2)
-        b = _PADE13_COEFFS
-        W1 = b[13] * A6 + b[11] * A4 + b[9] * A2
-        W2 = b[7] * A6 + b[5] * A4 + b[3] * A2 + b[1] * ident
-        Z1 = b[12] * A6 + b[10] * A4 + b[8] * A2
-        Z2 = b[6] * A6 + b[4] * A4 + b[2] * A2 + b[0] * ident
-        W = torch.matmul(A6, W1) + W2
-        U = torch.matmul(A, W)
-        V = torch.matmul(A6, Z1) + Z2
-        Lw1 = b[13] * M6 + b[11] * M4 + b[9] * M2
-        Lw2 = b[7] * M6 + b[5] * M4 + b[3] * M2
-        Lz1 = b[12] * M6 + b[10] * M4 + b[8] * M2
-        Lz2 = b[6] * M6 + b[4] * M4 + b[2] * M2
-        Lw = torch.matmul(A6, Lw1) + torch.matmul(M6, W1) + Lw2
-        Lu = torch.matmul(A, Lw) + torch.matmul(E, W)
-        Lv = torch.matmul(A6, Lz1) + torch.matmul(M6, Z1) + Lz2
-
-    # Solve the system (-U + V)X = (U + V) for R
-    R = torch.linalg.solve(-U + V, U + V)
-
-    # Solve the system (-U + V)X = (Lu + Lv + (Lu - Lv)R) for L
-    L = torch.linalg.solve(-U + V, Lu + Lv + torch.matmul(Lu - Lv, R))
-
-    # squaring
-    for _ in range(s):
-        L = torch.matmul(R, L) + torch.matmul(L, R)
-        R = torch.matmul(R, R)
-
-    return R, L
-
-
-def matrix_exp(A: torch.Tensor) -> torch.Tensor:
-    """Compute the matrix exponential of A using PyTorch's matrix_exp.
-
-    Args:
-        A: Input matrix
-
-    Returns:
-        torch.Tensor: Matrix exponential of A
-    """
-    return torch.matrix_exp(A)
-
-
-def vec(M: torch.Tensor) -> torch.Tensor:
-    """Stack columns of M to construct a single vector.
-
-    This is somewhat standard notation in linear algebra.
-
-    Args:
-        M: Input matrix
-
-    Returns:
-        torch.Tensor: Output vector
-    """
-    return M.t().reshape(-1)
-
-
-def expm_frechet_kronform(
-    A: torch.Tensor, method: str | None = None, check_finite: bool = True
-) -> torch.Tensor:
-    """Construct the Kronecker form of the Frechet derivative of expm.
-
-    Args:
-        A: Square matrix tensor with shape (N, N)
-        method: Optional extra keyword to be passed to expm_frechet
-        check_finite: Whether to check that the input matrix contains only finite numbers.
-            Disabling may give a performance gain, but may result in problems
-            (crashes, non-termination) if the inputs do contain infinities or NaNs.
-
-    Returns:
-        torch.Tensor: Kronecker form of the Frechet derivative of the matrix exponential
-            with shape (N*N, N*N)
-    """
-    if check_finite and not torch.isfinite(A).all():
-        raise ValueError("Matrix A contains non-finite values")
-
-    # Convert input to torch tensor if it isn't already
-    if not isinstance(A, torch.Tensor):
-        A = torch.tensor(A, dtype=torch.float64)
-
-    if A.dim() != 2 or A.shape[0] != A.shape[1]:
-        raise ValueError("expected a square matrix")
-
-    n = A.shape[0]
-    ident = torch.eye(n, dtype=A.dtype, device=A.device)
-    cols = []
-
-    for i in range(n):
-        for j in range(n):
-            E = torch.outer(ident[i], ident[j])
-            _, F = expm_frechet(A, E, method=method, check_finite=False)
-            cols.append(vec(F))
-
-    return torch.stack(cols, dim=1)
-
-
-def expm_cond(A: torch.Tensor, check_finite: bool = True) -> torch.Tensor:
-    """Relative condition number of the matrix exponential in the Frobenius norm.
-
-    Args:
-        A: Square input matrix with shape (N, N)
-        check_finite: Whether to check that the input matrix contains only finite numbers.
-            Disabling may give a performance gain, but may result in problems
-            (crashes, non-termination) if the inputs do contain infinities or NaNs.
-
-    Returns:
-        kappa: The relative condition number of the matrix exponential
-            in the Frobenius norm
-    """
-    if check_finite and not torch.isfinite(A).all():
-        raise ValueError("Matrix A contains non-finite values")
-
-    # Convert input to torch tensor if it isn't already
-    if not isinstance(A, torch.Tensor):
-        A = torch.tensor(A, dtype=torch.float64)
-
-    if A.dim() != 2 or A.shape[0] != A.shape[1]:
-        raise ValueError("expected a square matrix")
-
-    X = matrix_exp(A)
-    K = expm_frechet_kronform(A, check_finite=False)
-
-    # The following norm choices are deliberate.
-    # norms of A and X are Frobenius norms, and norm of K is the induced 2-norm.
-    norm_p = "fro"  # codespell:ignore
-    A_norm = torch.norm(A, p=norm_p)
-    X_norm = torch.norm(X, p=norm_p)
-    K_norm = torch.linalg.matrix_norm(K, ord=2)
-
-    return (K_norm * A_norm) / X_norm  # kappa
-
-
-class expm(Function):  # noqa: N801
-    """Compute the matrix exponential of a matrix or batch of matrices."""
-
-    @staticmethod
-    def forward(ctx: Any, A: torch.Tensor) -> torch.Tensor:
-        """Compute the matrix exponential of A.
-
-        Args:
-            ctx: ctx
-            A: Input matrix or batch of matrices
-
-        Returns:
-            Matrix exponential of A
-        """
-        # Save A for backward pass
-        ctx.save_for_backward(A)
-        # Use the matrix_exp function we already have
-        return matrix_exp(A)
-
-    @staticmethod
-    def backward(ctx: Any, grad_output: torch.Tensor) -> torch.Tensor:
-        """Compute the gradient of matrix exponential.
-
-        Args:
-            ctx: ctx
-            grad_output: Gradient with respect to the output
-
-        Returns:
-            Gradient with respect to the input
-        """
-        # Retrieve saved tensor
-        (A,) = ctx.saved_tensors
-
-        # Compute the Frechet derivative in the direction of grad_output
-        _, frechet_deriv = expm_frechet(A, grad_output, method="SPS", check_finite=False)
-        return frechet_deriv
-
-
-def _is_valid_matrix(T: torch.Tensor, n: int = 3) -> bool:
-    """Check if T is a valid nxn matrix.
-
-    Args:
-        T: The matrix to check
-        n: The expected dimension of the matrix, default=3
-
-    Returns:
-        bool: True if T is a valid nxn tensor, False otherwise
-    """
-    return isinstance(T, torch.Tensor) and T.shape == (n, n)
-
-
-def _determine_eigenvalue_case(  # noqa: C901
-    T: torch.Tensor, eigenvalues: torch.Tensor, num_tol: float = 1e-16
-) -> str:
-    """Determine the eigenvalue structure case of matrix T.
-
-    Args:
-        T: The 3x3 matrix to analyze
-        eigenvalues: The eigenvalues of T
-        num_tol: Numerical tolerance for comparing eigenvalues, default=1e-16
-
-    Returns:
-        The case identifier ("case1a", "case1b", etc.)
-
-    Raises:
-        ValueError: If the eigenvalue structure cannot be determined
-    """
-    # Get unique values and their counts directly with one call
-    uniq_vals, counts = torch.unique(eigenvalues, return_counts=True)
-
-    # Use np.isclose to group eigenvalues that are numerically close
-    # We can create a mask for each unique value to see if other values are close to it
-    if len(uniq_vals) > 1:
-        # Check if some "unique" values should actually be considered the same
-        i = 0
-        while i < len(uniq_vals):
-            # Find all values close to the current one
-            close_mask = torch.isclose(uniq_vals, uniq_vals[i], rtol=0, atol=num_tol)
-            close_count = torch.sum(close_mask)
-
-            if close_count > 1:  # If there are other close values
-                # Merge them (keep the first one, remove the others)
-                counts[i] = torch.sum(counts[close_mask])
-                uniq_vals = uniq_vals[~(close_mask & torch.arange(len(close_mask)) != i)]
-                counts = counts[~(close_mask & torch.arange(len(counts)) != i)]
-            else:
-                i += 1
-
-    # Now determine the case based on the number of unique eigenvalues
-    if len(uniq_vals) == 1:
-        # Case 1: All eigenvalues are equal (λ, λ, λ)
-        lambda_val = uniq_vals[0]
-        Identity = torch.eye(3, dtype=lambda_val.dtype, device=lambda_val.device)
-        T_minus_lambdaI = T - lambda_val * Identity
-
-        rank1 = torch.linalg.matrix_rank(T_minus_lambdaI)
-        if rank1 == 0:
-            return "case1a"  # q(T) = (T - λI)
-
-        rank2 = torch.linalg.matrix_rank(T_minus_lambdaI @ T_minus_lambdaI)
-        if rank2 == 0:
-            return "case1b"  # q(T) = (T - λI)²
-
-        return "case1c"  # q(T) = (T - λI)³
-
-    if len(uniq_vals) == 2:
-        # Case 2: Two distinct eigenvalues
-        # The counts array already tells us which eigenvalue is repeated
-        if counts.max() != 2 or counts.min() != 1:
-            raise ValueError("Unexpected eigenvalue pattern for Case 2")
-
-        mu = uniq_vals[torch.argmin(counts)]  # The non-repeated eigenvalue
-        lambda_val = uniq_vals[torch.argmax(counts)]  # The repeated eigenvalue
-
-        Identity = torch.eye(3, dtype=lambda_val.dtype, device=lambda_val.device)
-        T_minus_muI = T - mu * Identity
-        T_minus_lambdaI = T - lambda_val * Identity
-
-        # Check if (T - μI)(T - λI) annihilates T
-        if torch.allclose(
-            T_minus_muI @ T_minus_lambdaI @ T,
-            torch.zeros((3, 3), dtype=lambda_val.dtype, device=lambda_val.device),
-        ):
-            return "case2a"  # q(T) = (T - λI)(T - μI)
-        return "case2b"  # q(T) = (T - μI)(T - λI)²
-
-    if len(uniq_vals) == 3:
-        # Case 3: Three distinct eigenvalues (λ, μ, ν)
-        return "case3"  # q(T) = (T - λI)(T - μI)(T - νI)
-
-    raise ValueError("Could not determine eigenvalue structure")
 
 
 def _identity_for_t(
@@ -882,199 +405,184 @@ def _matrix_log_case3(
     return result.squeeze(0) if unbatched else result
 
 
-def _matrix_log_33(  # noqa: C901, PLR0911, PLR0915
-    T: torch.Tensor, case: str = "auto", dtype: torch.dtype = torch.float64
+def _determine_matrix_log_cases(
+    T: torch.Tensor,
+    sorted_eig: torch.Tensor,
+    diff: torch.Tensor,
+    n_unique: torch.Tensor,
+    valid: torch.Tensor,
+    num_tol: float,
 ) -> torch.Tensor:
+    """Determine which matrix log case applies to each system.
+
+    Args:
+        T: Input matrices of shape (n_systems, 3, 3)
+        sorted_eig: Sorted eigenvalues of shape (n_systems, 3)
+        diff: Differences between consecutive eigenvalues (n_systems, 2)
+        n_unique: Number of unique eigenvalues per system (n_systems,)
+        valid: Boolean mask of valid systems (n_systems,)
+        num_tol: Numerical tolerance
+
+    Returns:
+        Case indices: 0=case1a, 1=case1b, 2=case1c, 3=case2a, 4=case2b, 5=case3,
+        -1=fallback
+    """
+    n_systems = T.shape[0]
+    device, dtype_out = T.device, T.dtype
+    case_indices = torch.full((n_systems,), -1, dtype=torch.long, device=device)
+
+    if not valid.any():
+        return case_indices
+
+    eye3 = torch.eye(3, dtype=dtype_out, device=device).unsqueeze(0)
+
+    # Case 1: all eigenvalues equal
+    m1 = valid & (n_unique == 1)
+    if m1.any():
+        lam = sorted_eig[:, 0:1].unsqueeze(-1)
+        T_lam = T - lam * eye3
+        rank1 = torch.linalg.matrix_rank(T_lam)
+        rank2 = torch.linalg.matrix_rank(torch.bmm(T_lam, T_lam))
+        case_indices.masked_fill_(m1 & (rank1 == 0), 0)
+        case_indices.masked_fill_(m1 & (rank1 > 0) & (rank2 == 0), 1)
+        case_indices.masked_fill_(m1 & (rank1 > 0) & (rank2 > 0), 2)
+
+    # Case 2: two distinct eigenvalues
+    m2 = valid & (n_unique == 2)
+    if m2.any():
+        lam_rep = torch.where(
+            diff[:, 0:1] <= num_tol, sorted_eig[:, 0:1], sorted_eig[:, 2:3]
+        ).unsqueeze(-1)
+        mu_val = torch.where(
+            diff[:, 0:1] <= num_tol, sorted_eig[:, 2:3], sorted_eig[:, 0:1]
+        ).unsqueeze(-1)
+        M = torch.bmm(T - mu_val * eye3, torch.bmm(T - lam_rep * eye3, T))
+        case2a = m2 & (torch.linalg.norm(M, dim=(-2, -1)) < num_tol)
+        case_indices.masked_fill_(case2a, 3)
+        case_indices.masked_fill_(m2 & ~case2a, 4)
+
+    # Case 3: three distinct eigenvalues
+    case_indices.masked_fill_(valid & (n_unique == 3), 5)
+
+    return case_indices
+
+
+def _process_matrix_log_case(
+    case_int: int,
+    idx_t: torch.Tensor,
+    T_sub: torch.Tensor,
+    sorted_sub: torch.Tensor,
+    dtype_out: torch.dtype,
+    device: torch.device,
+    num_tol: float,
+) -> torch.Tensor:
+    """Process a single matrix log case for the given indices.
+
+    Args:
+        case_int: Case identifier (-1 to 5)
+        idx_t: Indices of systems belonging to this case
+        T_sub: Subset of matrices for this case
+        sorted_sub: Sorted eigenvalues for this case
+        dtype_out: Output dtype
+        device: Device for computation
+        num_tol: Numerical tolerance
+
+    Returns:
+        Computed matrix logarithms for the subset
+    """
+    if case_int == -1:  # Fallback to scipy for complex eigenvalues
+        n_sub = idx_t.numel()
+        result = torch.zeros_like(T_sub)
+        for i in range(n_sub):
+            result[i] = matrix_log_scipy(T_sub[i].cpu()).to(device)
+    elif case_int <= 2:  # Cases 1a, 1b, 1c
+        lam = sorted_sub[:, 0:1].unsqueeze(-1).to(dtype_out)
+        case1_funcs = {
+            0: lambda: _matrix_log_case1a(T_sub, lam),
+            1: lambda: _matrix_log_case1b(T_sub, lam, num_tol),
+            2: lambda: _matrix_log_case1c(T_sub, lam, num_tol),
+        }
+        result = case1_funcs[case_int]()
+    elif case_int <= 4:  # Cases 2a, 2b
+        d = sorted_sub[:, 1:2] - sorted_sub[:, 0:1]
+        lam_rep = (
+            torch.where(d <= num_tol, sorted_sub[:, 0:1], sorted_sub[:, 2:3])
+            .unsqueeze(-1)
+            .to(dtype_out)
+        )
+        mu_val = (
+            torch.where(d <= num_tol, sorted_sub[:, 2:3], sorted_sub[:, 0:1])
+            .unsqueeze(-1)
+            .to(dtype_out)
+        )
+        case2_func = _matrix_log_case2a if case_int == 3 else _matrix_log_case2b
+        result = case2_func(T_sub, lam_rep, mu_val, num_tol)
+    else:  # Case 3: three distinct eigenvalues
+        lam = sorted_sub[:, 0:1].unsqueeze(-1).to(dtype_out)
+        mu_val = sorted_sub[:, 1:2].unsqueeze(-1).to(dtype_out)
+        nu_val = sorted_sub[:, 2:3].unsqueeze(-1).to(dtype_out)
+        result = _matrix_log_case3(T_sub, lam, mu_val, nu_val, num_tol)
+    return result
+
+
+def _matrix_log_33(T: torch.Tensor, dtype: torch.dtype = torch.float64) -> torch.Tensor:
     """Compute the logarithm of 3x3 matrix T based on its eigenvalue structure.
 
     The logarithm of this matrix is known exactly as given the in the references.
-    Also supports batched input of shape (n_systems, 3, 3).
+    Supports both single matrix (3, 3) and batched input (n_systems, 3, 3).
 
     Args:
-        T: The matrix whose logarithm is to be computed (or batch of matrices)
-        case: One of "auto", "case1a", "case1b", "case1c", "case2a", "case2b", "case3"
-            - "auto": Automatically determine the structure
-            - "case1a": All eigenvalues are equal, q(T) = (T - λI)
-            - "case1b": All eigenvalues are equal, q(T) = (T - λI)²
-            - "case1c": All eigenvalues are equal, q(T) = (T - λI)³
-            - "case2a": Two distinct eigenvalues, q(T) = (T - λI)(T - μI)
-            - "case2b": Two distinct eigenvalues, q(T) = (T - μI)(T - λI)²
-            - "case3": Three distinct eigenvalues, q(T) = (T - λI)(T - μI)(T - νI)
-            For batched input, always uses auto.
+        T: The matrix whose logarithm is to be computed, shape (3, 3) or (n_systems, 3, 3)
         dtype: The data type to use for numerical tolerance, default=torch.float64
 
     Returns:
-        The logarithm of T
+        The logarithm of T, same shape as input
 
     References:
         - https://link.springer.com/article/10.1007/s10659-008-9169-x
     """
     num_tol = 1e-16 if dtype == torch.float64 else 1e-8
-    batched = T.dim() == 3
 
-    if batched:
-        n_systems = T.shape[0]
-        if T.shape[1:] != (3, 3):
-            raise ValueError("Batched input must have shape (n_systems, 3, 3)")
-        device, dtype_out = T.device, T.dtype
-        eigenvalues = torch.linalg.eigvals(T)
+    # Handle unbatched input by adding batch dimension
+    unbatched = T.dim() == 2
+    if unbatched:
+        if T.shape != (3, 3):
+            raise ValueError("Input must be a 3x3 matrix")
+        T = T.unsqueeze(0)
+    elif T.shape[1:] != (3, 3):
+        raise ValueError("Batched input must have shape (n_systems, 3, 3)")
 
-        # Check for complex eigenvalues - require scipy fallback
-        imag_magnitude = torch.abs(torch.imag(eigenvalues))
-        has_complex_eig = (imag_magnitude > num_tol).any(dim=1)
-        eigenvalues_real = torch.real(eigenvalues)
-
-        # Sort eigenvalues once for all systems
-        sorted_eig, _ = torch.sort(eigenvalues_real, dim=1)
-        diff = sorted_eig[:, 1:] - sorted_eig[:, :-1]
-        n_unique = 1 + (diff > num_tol).sum(dim=1)
-
-        # Vectorized case determination (0=case1a .. 5=case3, -1=fallback)
-        case_indices = torch.full((n_systems,), -1, dtype=torch.long, device=device)
-        valid = ~has_complex_eig & torch.isfinite(eigenvalues_real).all(dim=1)
-
-        if valid.any():
-            eye3 = torch.eye(3, dtype=dtype_out, device=device).unsqueeze(0)
-            # Case 1: all eigenvalues equal
-            m1 = valid & (n_unique == 1)
-            if m1.any():
-                lam = sorted_eig[:, 0:1].unsqueeze(-1)
-                T_lam = T - lam * eye3
-                rank1 = torch.linalg.matrix_rank(T_lam)
-                rank2 = torch.linalg.matrix_rank(torch.bmm(T_lam, T_lam))
-                case_indices.masked_fill_(m1 & (rank1 == 0), 0)
-                case_indices.masked_fill_(m1 & (rank1 > 0) & (rank2 == 0), 1)
-                case_indices.masked_fill_(m1 & (rank1 > 0) & (rank2 > 0), 2)
-            # Case 2: two distinct eigenvalues
-            m2 = valid & (n_unique == 2)
-            if m2.any():
-                lam_rep = torch.where(
-                    diff[:, 0:1] <= num_tol, sorted_eig[:, 0:1], sorted_eig[:, 2:3]
-                ).unsqueeze(-1)
-                mu_val = torch.where(
-                    diff[:, 0:1] <= num_tol, sorted_eig[:, 2:3], sorted_eig[:, 0:1]
-                ).unsqueeze(-1)
-                M = torch.bmm(T - mu_val * eye3, torch.bmm(T - lam_rep * eye3, T))
-                case2a = m2 & (torch.linalg.norm(M, dim=(-2, -1)) < num_tol)
-                case_indices.masked_fill_(case2a, 3)
-                case_indices.masked_fill_(m2 & ~case2a, 4)
-            # Case 3: three distinct eigenvalues
-            case_indices.masked_fill_(valid & (n_unique == 3), 5)
-
-        out = torch.zeros_like(T)
-        for case_int in range(-1, 6):
-            mask = case_indices == case_int
-            if not mask.any():
-                continue
-            idx_t = mask.nonzero(as_tuple=True)[0]
-            T_sub, n_sub = T[idx_t], idx_t.numel()
-            sorted_sub = sorted_eig[idx_t]
-
-            if case_int == -1:  # Fallback cases
-                for i in range(n_sub):
-                    gi = idx_t[i].item()
-                    try:
-                        out[gi] = _matrix_log_33(T_sub[i], dtype=dtype)
-                    except (ValueError, RuntimeError):
-                        out[gi] = matrix_log_scipy(T_sub[i].cpu()).to(device)
-            elif case_int <= 2:  # Cases 1a, 1b, 1c
-                lam = sorted_sub[:, 0:1].unsqueeze(-1).to(dtype_out)
-                if case_int == 0:
-                    out[idx_t] = _matrix_log_case1a(T_sub, lam)
-                elif case_int == 1:
-                    out[idx_t] = _matrix_log_case1b(T_sub, lam, num_tol)
-                else:
-                    out[idx_t] = _matrix_log_case1c(T_sub, lam, num_tol)
-            elif case_int <= 4:  # Cases 2a, 2b
-                d = sorted_sub[:, 1:2] - sorted_sub[:, 0:1]
-                lam_rep = (
-                    torch.where(d <= num_tol, sorted_sub[:, 0:1], sorted_sub[:, 2:3])
-                    .unsqueeze(-1)
-                    .to(dtype_out)
-                )
-                mu_val = (
-                    torch.where(d <= num_tol, sorted_sub[:, 2:3], sorted_sub[:, 0:1])
-                    .unsqueeze(-1)
-                    .to(dtype_out)
-                )
-                if case_int == 3:
-                    out[idx_t] = _matrix_log_case2a(T_sub, lam_rep, mu_val, num_tol)
-                else:
-                    out[idx_t] = _matrix_log_case2b(T_sub, lam_rep, mu_val, num_tol)
-            else:  # Case 3
-                lam = sorted_sub[:, 0:1].unsqueeze(-1).to(dtype_out)
-                mu_val = sorted_sub[:, 1:2].unsqueeze(-1).to(dtype_out)
-                nu_val = sorted_sub[:, 2:3].unsqueeze(-1).to(dtype_out)
-                out[idx_t] = _matrix_log_case3(T_sub, lam, mu_val, nu_val, num_tol)
-        return out
-
-    if not _is_valid_matrix(T):
-        raise ValueError("Input must be a 3x3 matrix")
-
-    # Compute eigenvalues
+    device, dtype_out = T.device, T.dtype
     eigenvalues = torch.linalg.eigvals(T)
-    # Convert eigenvalues to real if they're complex but with tiny imaginary parts
-    eigenvalues = (
-        torch.real(eigenvalues)
-        if torch.allclose(
-            torch.imag(eigenvalues),
-            torch.zeros_like(torch.imag(eigenvalues)),
-            atol=num_tol,
-        )
-        else eigenvalues
+
+    # Check for complex eigenvalues - require scipy fallback
+    imag_magnitude = torch.abs(torch.imag(eigenvalues))
+    has_complex_eig = (imag_magnitude > num_tol).any(dim=1)
+    eigenvalues_real = torch.real(eigenvalues)
+
+    # Sort eigenvalues once for all systems
+    sorted_eig, _ = torch.sort(eigenvalues_real, dim=1)
+    diff = sorted_eig[:, 1:] - sorted_eig[:, :-1]
+    n_unique = 1 + (diff > num_tol).sum(dim=1)
+    valid = ~has_complex_eig & torch.isfinite(eigenvalues_real).all(dim=1)
+
+    # Determine case for each system
+    case_indices = _determine_matrix_log_cases(
+        T, sorted_eig, diff, n_unique, valid, num_tol
     )
 
-    # If automatic detection, determine the structure
-    if case == "auto":
-        case = _determine_eigenvalue_case(T, eigenvalues, num_tol)
-
-    # Case 1: All eigenvalues are equal (λ, λ, λ)
-    if case in ("case1a", "case1b", "case1c"):
-        lambda_val = eigenvalues[0]
-
-        # Check for numerical stability
-        if torch.abs(lambda_val) < num_tol:
-            raise ValueError("Eigenvalue too close to zero, computation may be unstable")
-
-        if case == "case1a":
-            return _matrix_log_case1a(T, lambda_val)
-        if case == "case1b":
-            return _matrix_log_case1b(T, lambda_val, num_tol)
-        if case == "case1c":
-            return _matrix_log_case1c(T, lambda_val, num_tol)
-
-    # Case 2: Two distinct eigenvalues (μ, λ, λ)
-    elif case in ("case2a", "case2b"):
-        # Find the unique eigenvalue (μ) and the repeated eigenvalue (λ)
-        uniq_vals, counts = torch.unique(
-            torch.round(eigenvalues, decimals=10), return_counts=True
+    # Process each case
+    out = torch.zeros_like(T)
+    for case_int in range(-1, 6):
+        mask = case_indices == case_int
+        if not mask.any():
+            continue
+        idx_t = mask.nonzero(as_tuple=True)[0]
+        out[idx_t] = _process_matrix_log_case(
+            case_int, idx_t, T[idx_t], sorted_eig[idx_t], dtype_out, device, num_tol
         )
-        if len(uniq_vals) != 2 or counts.max() != 2:
-            raise ValueError(
-                "Case 2 requires exactly two distinct eigenvalues with one repeated"
-            )
 
-        mu = uniq_vals[torch.argmin(counts)]  # The non-repeated eigenvalue
-        lambda_val = uniq_vals[torch.argmax(counts)]  # The repeated eigenvalue
-
-        if case == "case2a":
-            return _matrix_log_case2a(T, lambda_val, mu, num_tol)
-        if case == "case2b":
-            return _matrix_log_case2b(T, lambda_val, mu, num_tol)
-
-    # Case 3: Three distinct eigenvalues (λ, μ, ν)
-    elif case == "case3":
-        if len(torch.unique(torch.round(eigenvalues, decimals=10))) != 3:
-            raise ValueError("Case 3 requires three distinct eigenvalues")
-
-        lambda_val, mu, nu = torch.sort(eigenvalues).values  # Sort for consistency
-        return _matrix_log_case3(T, lambda_val, mu, nu, num_tol)
-
-    else:
-        raise ValueError(f"Unknown eigenvalue {case=}")
-
-    # should never be reached, just for type checker
-    raise RuntimeError("Unexpected code path in _matrix_log_33")
+    return out.squeeze(0) if unbatched else out
 
 
 def matrix_log_scipy(matrix: torch.Tensor) -> torch.Tensor:

@@ -197,8 +197,11 @@ class SimState:
         """Atomic positions wrapped according to periodic boundary conditions if pbc=True,
         otherwise returns unwrapped positions with shape (n_atoms, 3).
         """
-        # TODO: implement a wrapping method
-        return self.positions
+        if not self.pbc.any():
+            return self.positions
+        return ts.transforms.pbc_wrap_batched(
+            self.positions, self.cell, self.system_idx, self.pbc
+        )
 
     @property
     def device(self) -> torch.device:
