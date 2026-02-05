@@ -260,16 +260,23 @@ class LennardJonesModel(ModelInterface):
         cell = cell.squeeze()
         pbc = state.pbc
 
+        # Ensure system_idx exists (create if None for single system)
+        system_idx = (
+            state.system_idx
+            if state.system_idx is not None
+            else torch.zeros(positions.shape[0], dtype=torch.long, device=self.device)
+        )
+
+        # Wrap positions into the unit cell
+        wrapped_positions = (
+            ts.transforms.pbc_wrap_batched(positions, state.cell, system_idx, pbc)
+            if pbc.any()
+            else positions
+        )
+
         if self.use_neighbor_list:
-            # Get neighbor list using torchsim_nl
-            # Ensure system_idx exists (create if None for single system)
-            system_idx = (
-                state.system_idx
-                if state.system_idx is not None
-                else torch.zeros(positions.shape[0], dtype=torch.long, device=self.device)
-            )
             mapping, system_mapping, shifts_idx = torchsim_nl(
-                positions=positions,
+                positions=wrapped_positions,
                 cell=cell,
                 pbc=pbc,
                 cutoff=self.cutoff,
@@ -277,7 +284,7 @@ class LennardJonesModel(ModelInterface):
             )
             # Pass shifts_idx directly - get_pair_displacements will convert them
             dr_vec, distances = transforms.get_pair_displacements(
-                positions=positions,
+                positions=wrapped_positions,
                 cell=cell,
                 pbc=pbc,
                 pairs=(mapping[0], mapping[1]),
@@ -286,10 +293,12 @@ class LennardJonesModel(ModelInterface):
         else:
             # Get all pairwise displacements
             dr_vec, distances = transforms.get_pair_displacements(
-                positions=positions, cell=cell, pbc=pbc
+                positions=wrapped_positions, cell=cell, pbc=pbc
             )
             # Mask out self-interactions
-            mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)
+            mask = torch.eye(
+                wrapped_positions.shape[0], dtype=torch.bool, device=self.device
+            )
             distances = distances.masked_fill(mask, float("inf"))
             # Apply cutoff
             mask = distances < self.cutoff

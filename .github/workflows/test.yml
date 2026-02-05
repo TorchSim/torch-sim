@@ -85,6 +85,10 @@ jobs:
             model: { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
           - version: { python: '3.13', resolution: highest }
             model: { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
+          - version: { python: '3.13', resolution: lowest-direct }
+            model: { name: nequip, test_path: "tests/models/test_nequip_framework.py" }
+          - version: { python: '3.13', resolution: highest }
+            model: { name: nequip, test_path: "tests/models/test_nequip_framework.py" }
     runs-on: ${{ matrix.os }}
 
     steps:

@@ -6,12 +6,12 @@ from ase.geometry.cell import cell_to_cellpar as ase_c2p
 
 from tests.conftest import DEVICE
 from tests.models.conftest import (
-    consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
 from torch_sim import SimState
 from torch_sim.models.orb import cell_to_cellpar
+from torch_sim.testing import SIMSTATE_GENERATORS
 
 
 try:
@@ -57,7 +57,7 @@ test_orb_conservative_consistency = make_model_calculator_consistency_test(
     test_name="orbv3_conservative_inf_omat",
     model_fixture_name="orbv3_conservative_inf_omat_model",
     calculator_fixture_name="orbv3_conservative_inf_omat_calculator",
-    sim_state_names=consistency_test_simstate_fixtures,
+    sim_state_names=tuple(SIMSTATE_GENERATORS.keys()),
     energy_rtol=5e-5,
     energy_atol=5e-5,
 )
@@ -66,7 +66,7 @@ test_orb_direct_consistency = make_model_calculator_consistency_test(
     test_name="orbv3_direct_20_omat",
     model_fixture_name="orbv3_direct_20_omat_model",
     calculator_fixture_name="orbv3_direct_20_omat_calculator",
-    sim_state_names=consistency_test_simstate_fixtures,
+    sim_state_names=tuple(SIMSTATE_GENERATORS.keys()),
     energy_rtol=5e-5,
     energy_atol=5e-5,
 )

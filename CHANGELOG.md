@@ -3,6 +3,10 @@
 
 ## Unreleased
 
+## v0.5.1
+
+This release adds several new features including constraints support for molecular dynamics and optimization, trajectory appending capabilities, and a batch cell list implementation. It also includes improvements to integrator initialization, temperature handling, and numerous bug fixes.
+
 ### 🎉 New Features
 * Constraints support for molecular dynamics and optimization by @thomasloux in [#294](https://github.com/TorchSim/torch-sim/pull/294)
   - Added `FixAtoms` constraint to fix specific atoms in place
@@ -10,6 +14,38 @@
   - Constraints automatically adjust degrees of freedom for accurate temperature calculations
   - Full support across all integrators (NVE, NVT, NPT) and optimizers (FIRE, Gradient Descent)
   - Constraints preserved during state manipulation (slicing, splitting, concatenation)
+* Scale atoms when changing cell by @thomasloux in [#344](https://github.com/TorchSim/torch-sim/pull/344)
+* Allow different temperatures in `ts.integrate` by @thomasloux in [#367](https://github.com/TorchSim/torch-sim/pull/367)
+* Add batch cell list by @abhijeetgangan in [#388](https://github.com/TorchSim/torch-sim/pull/388)
+* Enable appending to trajectory when using `ts.optimize`/`ts.integrate` by @danielzuegner in [#361](https://github.com/TorchSim/torch-sim/pull/361)
+* Enable user to save initial state of trajectory by @danielzuegner in [#415](https://github.com/TorchSim/torch-sim/pull/415)
+
+### 🛠 Enhancements
+* Better default force convergence function by @orionarcher in [#404](https://github.com/TorchSim/torch-sim/pull/404)
+* Add systemwise `max_force` as a default property for reporter_dict by @orionarcher in [#410](https://github.com/TorchSim/torch-sim/pull/410)
+* Add charge and spin to common_args dicts by @orionarcher in [#413](https://github.com/TorchSim/torch-sim/pull/413)
+* Replace manual initialization with `from_state` across integrators and optimizers by @orionarcher in [#420](https://github.com/TorchSim/torch-sim/pull/420)
+* Update energy description to 'Potential energy' by @danielzuegner in [#408](https://github.com/TorchSim/torch-sim/pull/408)
+* Use upstream NequipTorchSimModel by @CompRhys in [#400](https://github.com/TorchSim/torch-sim/pull/400)
+
+### 🐛 Bug Fixes
+* Fix cuequivariance MACE by @thomasloux in [#391](https://github.com/TorchSim/torch-sim/pull/391)
+* Fix SevenNet tests by @YutackPark in [#393](https://github.com/TorchSim/torch-sim/pull/393)
+* Fix tutorials dependencies by @thomasloux in [#396](https://github.com/TorchSim/torch-sim/pull/396)
+* Fix offsets in merge_constraints by @falletta in [#402](https://github.com/TorchSim/torch-sim/pull/402)
+* Fix memory scaling calculation for non-periodic boundary conditions by @orionarcher in [#412](https://github.com/TorchSim/torch-sim/pull/412)
+* Download NequIP model from Zenodo instead of nequip.net by @orionarcher in [#418](https://github.com/TorchSim/torch-sim/pull/418)
+
+### 📖 Documentation
+* Update metatrain version in metatomic tutorial by @Luthaf in [#395](https://github.com/TorchSim/torch-sim/pull/395)
+
+### 🧹 House-Keeping
+* Add close stale bot by @CompRhys in [#411](https://github.com/TorchSim/torch-sim/pull/411)
+* Significantly consolidate scripts to speed up testing by @orionarcher in [#385](https://github.com/TorchSim/torch-sim/pull/385)
+* Use validate_model_outputs in testing by @CompRhys in [#401](https://github.com/TorchSim/torch-sim/pull/401)
+* Reduce test wall time by @CompRhys in [#403](https://github.com/TorchSim/torch-sim/pull/403)
+* Pin scipy for fairchem tests by @CompRhys in [#405](https://github.com/TorchSim/torch-sim/pull/405)
+* Disable NequIP tests for Python 3.13 by @curtischong in [#421](https://github.com/TorchSim/torch-sim/pull/421)
 
 ## v0.5.0
 

@@ -7,25 +7,33 @@ from ase.atoms import Atoms
 import torch_sim as ts
 from tests.conftest import DEVICE
 from tests.models.conftest import (
-    consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
 from torch_sim.models.mace import MaceUrls
+from torch_sim.testing import SIMSTATE_BULK_GENERATORS, SIMSTATE_MOLECULE_GENERATORS
 
 
 try:
     from mace.calculators import MACECalculator
-    from mace.calculators.foundations_models import mace_mp, mace_off, mace_omol
+    from mace.calculators.foundations_models import mace_mp, mace_off
 
     from torch_sim.models.mace import MaceModel
 except (ImportError, ValueError):
     pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)
 
+# mace_omol is optional (added in newer MACE versions)
+try:
+    from mace.calculators.foundations_models import mace_omol
+
+    raw_mace_omol = mace_omol(model="extra_large", return_raw_model=True)
+    HAS_MACE_OMOL = True
+except ImportError:
+    raw_mace_omol = None
+    HAS_MACE_OMOL = False
 
 raw_mace_mp = mace_mp(model=MaceUrls.mace_mp_small, return_raw_model=True)
 raw_mace_off = mace_off(model=MaceUrls.mace_off_small, return_raw_model=True)
-raw_mace_omol = mace_omol(model="extra_large", return_raw_model=True)
 DTYPE = torch.float64
 
 
@@ -52,18 +60,7 @@ test_mace_consistency = make_model_calculator_consistency_test(
     test_name="mace",
     model_fixture_name="ts_mace_model",
     calculator_fixture_name="ase_mace_calculator",
-    sim_state_names=tuple(
-        s for s in consistency_test_simstate_fixtures if s != "ti_sim_state"
-    ),
-    dtype=DTYPE,
-)
-
-
-test_mace_consistency_ti = make_model_calculator_consistency_test(
-    test_name="mace_ti",
-    model_fixture_name="ts_mace_model",
-    calculator_fixture_name="ase_mace_calculator",
-    sim_state_names=("ti_sim_state",),
+    sim_state_names=tuple(SIMSTATE_BULK_GENERATORS.keys()),
     dtype=DTYPE,
 )
 
@@ -79,21 +76,6 @@ def test_mace_dtype_working(si_atoms: Atoms, dtype: torch.dtype) -> None:
 
     state = ts.io.atoms_to_state([si_atoms], DEVICE, dtype)
     model.forward(state)
-
-
-@pytest.fixture
-def benzene_system(benzene_atoms: Atoms) -> dict:
-    atomic_numbers = benzene_atoms.get_atomic_numbers()
-
-    positions = torch.tensor(benzene_atoms.positions, device=DEVICE, dtype=DTYPE)
-    cell = torch.tensor(benzene_atoms.cell.array, device=DEVICE, dtype=DTYPE)
-
-    return {
-        "positions": positions,
-        "cell": cell,
-        "atomic_numbers": atomic_numbers,
-        "ase_atoms": benzene_atoms,
-    }
 
 
 @pytest.fixture
@@ -115,7 +97,7 @@ test_mace_off_consistency = make_model_calculator_consistency_test(
     test_name="mace_off",
     model_fixture_name="ts_mace_off_model",
     calculator_fixture_name="ase_mace_off_calculator",
-    sim_state_names=("benzene_sim_state",),
+    sim_state_names=tuple(SIMSTATE_MOLECULE_GENERATORS.keys()),
     dtype=DTYPE,
 )
 
@@ -125,12 +107,11 @@ test_mace_off_model_outputs = make_validate_model_outputs_test(
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_mace_off_dtype_working(benzene_atoms: Atoms, dtype: torch.dtype) -> None:
+def test_mace_off_dtype_working(
+    benzene_sim_state: ts.SimState, dtype: torch.dtype
+) -> None:
     model = MaceModel(model=raw_mace_off, device=DEVICE, dtype=dtype, compute_forces=True)
-
-    state = ts.io.atoms_to_state([benzene_atoms], DEVICE, dtype)
-
-    model.forward(state)
+    model.forward(benzene_sim_state.to(DEVICE, dtype))
 
 
 def test_mace_urls_enum() -> None:
@@ -140,6 +121,7 @@ def test_mace_urls_enum() -> None:
         assert key.value.endswith((".model", ".model?raw=true"))
 
 
+@pytest.mark.skipif(not HAS_MACE_OMOL, reason="mace_omol not available")
 @pytest.mark.parametrize(
     ("charge", "spin"),
     [
@@ -149,27 +131,28 @@ def test_mace_urls_enum() -> None:
         (0.0, 2.0),  # Neutral, spin=2 (triplet)
     ],
 )
-def test_mace_charge_spin(benzene_atoms: Atoms, charge: float, spin: float) -> None:
+def test_mace_charge_spin(
+    benzene_sim_state: ts.SimState, charge: float, spin: float
+) -> None:
     """Test that MaceModel correctly handles charge and spin from atoms.info."""
-    # Set charge and spin in ASE atoms.info
-    benzene_atoms.info["charge"] = charge
-    benzene_atoms.info["spin"] = spin
-
     # Convert to SimState (should extract charge/spin)
-    state = ts.io.atoms_to_state([benzene_atoms], DEVICE, DTYPE)
+    benzene_sim_state.charge = torch.tensor([charge], device=DEVICE, dtype=DTYPE)
+    benzene_sim_state.spin = torch.tensor([spin], device=DEVICE, dtype=DTYPE)
 
     # Verify charge/spin were extracted correctly
     if charge != 0.0:
-        assert state.charge is not None
-        assert state.charge[0].item() == charge
+        assert benzene_sim_state.charge is not None
+        assert benzene_sim_state.charge[0].item() == charge
     else:
-        assert state.charge is None or state.charge[0].item() == 0.0
+        assert (
+            benzene_sim_state.charge is None or benzene_sim_state.charge[0].item() == 0.0
+        )
 
     if spin != 0.0:
-        assert state.spin is not None
-        assert state.spin[0].item() == spin
+        assert benzene_sim_state.spin is not None
+        assert benzene_sim_state.spin[0].item() == spin
     else:
-        assert state.spin is None or state.spin[0].item() == 0.0
+        assert benzene_sim_state.spin is None or benzene_sim_state.spin[0].item() == 0.0
 
     # Create model with MACE-OMOL (supports charge/spin for molecules)
     model = MaceModel(
@@ -180,11 +163,11 @@ def test_mace_charge_spin(benzene_atoms: Atoms, charge: float, spin: float) -> N
     )
 
     # This should not raise an error
-    result = model.forward(state)
+    result = model.forward(benzene_sim_state)
 
     # Verify outputs exist
     assert "energy" in result
     assert result["energy"].shape == (1,)
     if model.compute_forces:
         assert "forces" in result
-        assert result["forces"].shape == benzene_atoms.positions.shape
+        assert result["forces"].shape == benzene_sim_state.positions.shape

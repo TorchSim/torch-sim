@@ -96,14 +96,13 @@ class SimState:
     if TYPE_CHECKING:
 
         @property
-        def system_idx(self) -> torch.Tensor:
-            """A getter for system_idx that tells type checkers it's always defined."""
-            return self.system_idx
-
+        def system_idx(self) -> torch.Tensor: ...  # noqa: D102
         @property
-        def pbc(self) -> torch.Tensor:
-            """A getter for pbc that tells type checkers it's always defined."""
-            return self.pbc
+        def pbc(self) -> torch.Tensor: ...  # noqa: D102
+        @property
+        def charge(self) -> torch.Tensor: ...  # noqa: D102
+        @property
+        def spin(self) -> torch.Tensor: ...  # noqa: D102
 
     _atom_attributes: ClassVar[set[str]] = {
         "positions",
@@ -183,6 +182,16 @@ class SimState:
         if len(set(devices.values())) > 1:
             raise ValueError("All tensors must be on the same device")
 
+    @classmethod
+    def _get_all_attributes(cls) -> set[str]:
+        """Get all attributes of the SimState."""
+        return (
+            cls._atom_attributes
+            | cls._system_attributes
+            | cls._global_attributes
+            | {"_constraints"}
+        )
+
     @property
     def wrap_positions(self) -> torch.Tensor:
         """Atomic positions wrapped according to periodic boundary conditions if pbc=True,
@@ -227,13 +236,7 @@ class SimState:
     @property
     def attributes(self) -> dict[str, torch.Tensor]:
         """Get all public attributes of the state."""
-        return {
-            attr: getattr(self, attr)
-            for attr in self._atom_attributes
-            | self._system_attributes
-            | self._global_attributes
-            | {"_constraints"}
-        }
+        return {attr: getattr(self, attr) for attr in self._get_all_attributes()}
 
     @property
     def column_vector_cell(self) -> torch.Tensor:
@@ -372,9 +375,10 @@ class SimState:
     def from_state(cls, state: "SimState", **additional_attrs: Any) -> Self:
         """Create a new state from an existing state with additional attributes.
 
-        This method copies all attributes from the source state and adds any additional
-        attributes needed for the target state class. It's useful for converting between
-        different state types (e.g., SimState to MDState).
+        This method copies attributes from the source state that are valid for the
+        target state class, and adds any additional attributes needed. It supports
+        upcasting (SimState -> MDState), downcasting (MDState -> SimState), and
+        cross-casting (MDState -> OptimState) between state types.
 
         Args:
             state: Source state to copy base attributes from
@@ -392,13 +396,13 @@ class SimState:
             ...     momenta=torch.zeros_like(sim_state.positions),
             ... )
         """
-        # Copy all attributes from the source state
         attrs = {}
         for attr_name, attr_value in state.attributes.items():
-            if isinstance(attr_value, torch.Tensor):
-                attrs[attr_name] = attr_value.clone()
-            else:
-                attrs[attr_name] = copy.deepcopy(attr_value)
+            if attr_name in cls._get_all_attributes():
+                if isinstance(attr_value, torch.Tensor):
+                    attrs[attr_name] = attr_value.clone()
+                else:
+                    attrs[attr_name] = copy.deepcopy(attr_value)
 
         # Add/override with additional attributes
         attrs.update(additional_attrs)
@@ -847,6 +851,12 @@ def _split_state[T: SimState](state: T) -> list[T]:
     zero_tensor = torch.tensor([0], device=state.device, dtype=torch.int64)
     cumsum_atoms = torch.cat((zero_tensor, torch.cumsum(state.n_atoms_per_system, dim=0)))
     for sys_idx in range(n_systems):
+        # Build per-system attributes (padded attributes stay padded for consistency)
+        per_system_dict = {
+            attr_name: split_per_system[attr_name][sys_idx]
+            for attr_name in split_per_system
+        }
+
         system_attrs = {
             # Create a system tensor with all zeros for this system
             "system_idx": torch.zeros(
@@ -857,11 +867,8 @@ def _split_state[T: SimState](state: T) -> list[T]:
                 attr_name: split_per_atom[attr_name][sys_idx]
                 for attr_name in split_per_atom
             },
-            # Add the split per-system attributes
-            **{
-                attr_name: split_per_system[attr_name][sys_idx]
-                for attr_name in split_per_system
-            },
+            # Add the split per-system attributes (with unpadding applied)
+            **per_system_dict,
             # Add the global attributes
             **global_attrs,
         }
@@ -963,7 +970,7 @@ def _slice_state[T: SimState](state: T, system_indices: list[int] | torch.Tensor
     return type(state)(**filtered_attrs)  # type: ignore[invalid-return-type]
 
 
-def concatenate_states[T: SimState](  # noqa: C901
+def concatenate_states[T: SimState](  # noqa: C901, PLR0915
     states: Sequence[T], device: torch.device | None = None
 ) -> T:
     """Concatenate a list of SimStates into a single SimState.
@@ -1038,10 +1045,57 @@ def concatenate_states[T: SimState](  # noqa: C901
         # if tensors:
         concatenated[prop] = torch.cat(tensors, dim=0)
 
+    # Get padded attributes if defined on the state class
+    padded_attrs = getattr(first_state, "_padded_system_attributes", set())
+
     for prop, tensors in per_system_tensors.items():
         # if tensors:
         if isinstance(tensors[0], torch.Tensor):
-            concatenated[prop] = torch.cat(tensors, dim=0)
+            # TODO(AG): Is there a clean way to handle this?
+            if prop in padded_attrs:
+                # Pad tensors to max size before concatenating
+                # Detect tensor shape to determine padding strategy
+                first_tensor = tensors[0]
+                ndim = first_tensor.ndim
+
+                if ndim == 3:
+                    # Shape [S, D, D] required for BFGS hessian
+                    # Pad last two dimensions
+                    max_size = max(t.shape[-1] for t in tensors)
+                    padded_tensors = []
+                    for t in tensors:
+                        if t.shape[-1] < max_size:
+                            pad_size = max_size - t.shape[-1]
+                            t = torch.nn.functional.pad(t, (0, pad_size, 0, pad_size))
+                        padded_tensors.append(t)
+                    concatenated[prop] = torch.cat(padded_tensors, dim=0)
+                elif ndim == 4:
+                    # Shape [S, H, M, 3] required for L-BFGS history
+                    # Pad dimension 2 (M) to max, and dimension 1 (H) to max
+                    max_m = max(t.shape[2] for t in tensors)  # max atoms dim
+                    max_h = max(t.shape[1] for t in tensors)  # max history dim
+                    padded_tensors = []
+                    for t in tensors:
+                        s_dim, h_dim, m_dim, last_dim = t.shape
+                        if h_dim == 0:
+                            # Special case: empty history, just create new shape
+                            t = torch.zeros(
+                                (s_dim, max_h, max_m, last_dim),
+                                device=t.device,
+                                dtype=t.dtype,
+                            )
+                        elif m_dim < max_m or h_dim < max_h:
+                            pad_m = max_m - m_dim
+                            pad_h = max_h - h_dim
+                            # For [S, H, M, 3]: pad M (dim 2) and H (dim 1)
+                            t = torch.nn.functional.pad(t, (0, 0, 0, pad_m, 0, pad_h))
+                        padded_tensors.append(t)
+                    concatenated[prop] = torch.cat(padded_tensors, dim=0)
+                else:
+                    # Unknown shape, just concatenate without padding
+                    concatenated[prop] = torch.cat(tensors, dim=0)
+            else:
+                concatenated[prop] = torch.cat(tensors, dim=0)
         else:  # Non-tensor attributes, take first one (they should all be identical)
             concatenated[prop] = tensors[0]
 
@@ -1060,8 +1114,8 @@ def concatenate_states[T: SimState](  # noqa: C901
 
 def initialize_state(
     system: StateLike,
-    device: torch.device,
-    dtype: torch.dtype,
+    device: torch.device | None = None,
+    dtype: torch.dtype | None = None,
 ) -> SimState:
     """Initialize state tensors from a atomistic system representation.
 

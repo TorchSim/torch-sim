@@ -1,6 +1,6 @@
 [project]
 name = "torch-sim-atomistic"
-version = "0.5.0"
+version = "0.5.1"
 description = "A pytorch toolkit for calculating material properties using MLIPs"
 authors = [
     { name = "Abhijeet Gangan", email = "abhijeetgangan@g.ucla.edu" },
@@ -28,7 +28,7 @@ classifiers = [
 requires-python = ">=3.12"
 dependencies = [
     "h5py>=3.12.1",
-    "nvalchemi-toolkit-ops",
+    "nvalchemi-toolkit-ops>=0.2.0",
     "numpy>=1.26,<3",
     "tables>=3.10.2",
     "torch>=2",
