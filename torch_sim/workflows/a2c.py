@@ -196,16 +196,8 @@ def get_diameter_matrix(
                 diameter = float(elem1.metallic_radius + elem2.metallic_radius)
             else:
                 # For other pairs, sum atomic (preferred) or ionic radii
-                radius1 = float(
-                    elem1.atomic_radius
-                    if elem1.atomic_radius
-                    else elem1.average_ionic_radius
-                )
-                radius2 = float(
-                    elem2.atomic_radius
-                    if elem2.atomic_radius
-                    else elem2.average_ionic_radius
-                )
+                radius1 = float(elem1.atomic_radius or elem1.average_ionic_radius)
+                radius2 = float(elem2.atomic_radius or elem2.average_ionic_radius)
                 diameter = radius1 + radius2
 
             # Fill both symmetric positions in the matrix

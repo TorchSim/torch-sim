@@ -397,7 +397,7 @@ def bfgs_step(  # noqa: C901, PLR0915
         H = state.hessian[idx]  # [S_active, dim, dim]
 
         dp = dpos[idx].unsqueeze(2)  # [S_active, dim, 1]
-        df = dforces[idx].unsqueeze(2)  # [S_active, dim, 1] # noqa: PD901
+        df = dforces[idx].unsqueeze(2)  # [S_active, dim, 1]
 
         # a = dp^T @ df: [S_active, 1, dim] @ [S_active, dim, 1] -> [S_active, 1, 1]
         a = torch.bmm(dp.transpose(1, 2), df).squeeze(2)  # [S_active, 1]
