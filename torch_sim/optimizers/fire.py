@@ -405,17 +405,15 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
     if isinstance(state, CellFireState):
         # For cell optimization, handle both atomic and cell position updates
         # This follows the ASE FIRE implementation pattern
-
         # Transform atomic positions to fractional coordinates
         cur_deform_grad = cell_filters.deform_grad(
             state.reference_cell.mT, state.row_vector_cell
         )
-        state.set_constrained_positions(
-            torch.linalg.solve(
-                cur_deform_grad[state.system_idx], state.positions.unsqueeze(-1)
-            ).squeeze(-1)
-            + dr_atom
-        )
+        frac_positions = torch.linalg.solve(
+            cur_deform_grad[state.system_idx], state.positions.unsqueeze(-1)
+        ).squeeze(-1)
+        # Store fractional positions (will transform to Cartesian after cell update)
+        new_frac_positions = frac_positions + dr_atom
 
         # Update cell positions directly based on stored cell filter type
         if hasattr(state, "cell_filter") and state.cell_filter is not None:
@@ -436,18 +434,21 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
                 cell_factor_expanded = state.cell_factor.expand(state.n_systems, 3, 1)
                 deform_grad_new = cell_positions_new / cell_factor_expanded
 
-            # Update cell from deformation gradient
-            state.row_vector_cell = torch.bmm(
-                state.reference_cell.mT, deform_grad_new.transpose(-2, -1)
-            )
+            # Compute new cell from deformation gradient
+            new_col_vector_cell = torch.bmm(deform_grad_new, state.reference_cell)
 
-        # Transform positions back to Cartesian
+            # Apply cell constraints and scale positions to new cell coordinates
+            # (needed for correct displacement calculation in position constraints)
+            state.set_constrained_cell(new_col_vector_cell, scale_atoms=True)
+
+        # Transform fractional positions to Cartesian using NEW deformation gradient
         new_deform_grad = cell_filters.deform_grad(
             state.reference_cell.mT, state.row_vector_cell
         )
+
         state.set_constrained_positions(
             torch.bmm(
-                state.positions.unsqueeze(1),
+                new_frac_positions.unsqueeze(1),
                 new_deform_grad[state.system_idx].transpose(-2, -1),
             ).squeeze(1)
         )
