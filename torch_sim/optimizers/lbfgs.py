@@ -536,8 +536,10 @@ def lbfgs_step(  # noqa: PLR0915, C901
     if is_cell_state:
         cell_filters.compute_cell_forces(model_output, state)
 
-    # Update forces
+    # Update state
     state.set_constrained_forces(new_forces)  # [N, 3]
+    state.energy = new_energy  # [S]
+    state.stress = new_stress  # [S, 3, 3] or None
 
     # Build new (s, y) for history in per-system format [S, M_ext, 3] or [S, M, 3]
     # s = position difference, y = gradient difference
@@ -604,10 +606,6 @@ def lbfgs_step(  # noqa: PLR0915, C901
     if s_hist.shape[1] > max_history:
         s_hist = s_hist[:, -max_history:]  # [S, max_history, ...]
         y_hist = y_hist[:, -max_history:]
-
-    # Update state
-    state.energy = new_energy  # [S]
-    state.stress = new_stress  # [S, 3, 3] or None
 
     if is_cell_state:
         # Store fractional/scaled for next iteration
