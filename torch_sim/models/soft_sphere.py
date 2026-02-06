@@ -299,7 +299,7 @@ class SoftSphereModel(ModelInterface):
         )
 
         if self.use_neighbor_list:
-            mapping, system_mapping, shifts_idx = torchsim_nl(
+            mapping, _, shifts_idx = torchsim_nl(
                 positions=wrapped_positions,
                 cell=cell,
                 pbc=pbc,
@@ -727,7 +727,7 @@ class SoftSphereMultiModel(ModelInterface):
             system_idx = torch.zeros(
                 positions.shape[0], dtype=torch.long, device=self.device
             )
-            mapping, system_mapping, shifts_idx = torchsim_nl(
+            mapping, _, shifts_idx = torchsim_nl(
                 positions=positions,
                 cell=cell,
                 pbc=self.pbc,
