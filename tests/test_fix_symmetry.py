@@ -12,7 +12,7 @@ from pymatgen.core import Lattice, Structure
 from pymatgen.io.ase import AseAtomsAdaptor
 
 import torch_sim as ts
-from torch_sim.constraints import FixSymmetry
+from torch_sim.constraints import FixCom, FixSymmetry
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.symmetrize import get_symmetry_datasets
 
@@ -24,6 +24,7 @@ SPACEGROUPS = {"fcc": 225, "hcp": 194, "diamond": 227, "bcc": 229, "p6bar": 174}
 MAX_STEPS = 30
 DTYPE = torch.float64
 SYMPREC = 0.01
+CPU = torch.device("cpu")
 
 
 # === Structure helpers ===
@@ -118,6 +119,18 @@ def noisy_lj_model(model: LennardJonesModel) -> NoisyModelWrapper:
     return NoisyModelWrapper(model)
 
 
+@pytest.fixture
+def p6bar_both_constraints() -> tuple[ts.SimState, FixSymmetry, Atoms, ASEFixSymmetry]:
+    """P-6 structure with both TorchSim and ASE constraints (shared setup)."""
+    atoms = make_structure("p6bar")
+    state = ts.io.atoms_to_state(atoms, CPU, DTYPE)
+    ts_constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
+    ase_atoms = atoms.copy()
+    ase_refine_symmetry(ase_atoms, symprec=SYMPREC)
+    ase_constraint = ASEFixSymmetry(ase_atoms, symprec=SYMPREC)
+    return state, ts_constraint, ase_atoms, ase_constraint
+
+
 # === Optimization helper ===
 
 
@@ -162,10 +175,10 @@ class TestFixSymmetryCreation:
     """Tests for FixSymmetry creation and basic behavior."""
 
     def test_from_state_batched(self) -> None:
-        """Batched state with FCC + diamond gets correct ops and atom counts."""
+        """Batched state with FCC + diamond gets correct ops, atom counts, and DOF."""
         state = ts.io.atoms_to_state(
             [make_structure("fcc"), make_structure("diamond")],
-            torch.device("cpu"),
+            CPU,
             DTYPE,
         )
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
@@ -173,35 +186,30 @@ class TestFixSymmetryCreation:
         assert constraint.rotations[0].shape[0] == 48  # cubic
         assert constraint.symm_maps[0].shape == (48, 1)  # Cu: 1 atom
         assert constraint.symm_maps[1].shape == (48, 2)  # Si: 2 atoms
+        assert torch.all(constraint.get_removed_dof(state) == 0)
 
-    def test_p1_identity_only(self) -> None:
-        """P1 structure has 1 op and symmetrization is a no-op."""
+    def test_p1_identity_is_noop(self) -> None:
+        """P1 structure has 1 op and symmetrization is a no-op for forces and stress."""
         atoms = Atoms(
             "SiGe",
             positions=[[0.1, 0.2, 0.3], [1.1, 0.9, 1.3]],
             cell=[[3.0, 0.1, 0.2], [0.15, 3.5, 0.1], [0.2, 0.15, 4.0]],
             pbc=True,
         )
-        state = ts.io.atoms_to_state(atoms, torch.device("cpu"), DTYPE)
+        state = ts.io.atoms_to_state(atoms, CPU, DTYPE)
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
         assert constraint.rotations[0].shape[0] == 1
 
         forces = torch.randn(2, 3, dtype=DTYPE)
-        original = forces.clone()
+        orig_forces = forces.clone()
         constraint.adjust_forces(state, forces)
-        assert torch.allclose(forces, original, atol=1e-10)
+        assert torch.allclose(forces, orig_forces, atol=1e-10)
 
         stress = torch.randn(1, 3, 3, dtype=DTYPE)
         stress = (stress + stress.mT) / 2
-        original_stress = stress.clone()
+        orig_stress = stress.clone()
         constraint.adjust_stress(state, stress)
-        assert torch.allclose(stress, original_stress, atol=1e-10)
-
-    def test_get_removed_dof_returns_zero(self) -> None:
-        """FixSymmetry constrains direction, not DOF count."""
-        state = ts.io.atoms_to_state(make_structure("fcc"), torch.device("cpu"), DTYPE)
-        constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
-        assert torch.all(constraint.get_removed_dof(state) == 0)
+        assert torch.allclose(stress, orig_stress, atol=1e-10)
 
     @pytest.mark.parametrize("refine", [True, False])
     def test_from_state_refine_symmetry(self, *, refine: bool) -> None:
@@ -209,7 +217,7 @@ class TestFixSymmetryCreation:
         atoms = make_structure("fcc")
         rng = np.random.default_rng(42)
         atoms.positions += rng.standard_normal(atoms.positions.shape) * 0.001
-        state = ts.io.atoms_to_state(atoms, torch.device("cpu"), DTYPE)
+        state = ts.io.atoms_to_state(atoms, CPU, DTYPE)
         orig_pos = state.positions.clone()
         _ = FixSymmetry.from_state(state, symprec=SYMPREC, refine_symmetry_state=refine)
         if not refine:
@@ -221,129 +229,31 @@ class TestFixSymmetryCreation:
         structure_name: str,
     ) -> None:
         """Perturbed structure recovers correct spacegroup after refinement."""
-        from torch_sim.symmetrize import get_symmetry_datasets, refine_symmetry
+        from torch_sim.symmetrize import refine_symmetry
 
         atoms = make_structure(structure_name)
         expected = SPACEGROUPS[structure_name]
         rng = np.random.default_rng(42)
         atoms.positions += rng.standard_normal(atoms.positions.shape) * 0.001
+        state = ts.io.atoms_to_state(atoms, CPU, DTYPE)
 
-        state = ts.io.atoms_to_state(atoms, torch.device("cpu"), DTYPE)
-        cell = state.row_vector_cell[0]
-        pos = state.positions
-        nums = state.atomic_numbers
-
-        refined_cell, refined_pos = refine_symmetry(cell, pos, nums, symprec=SYMPREC)
+        refined_cell, refined_pos = refine_symmetry(
+            state.row_vector_cell[0],
+            state.positions,
+            state.atomic_numbers,
+            symprec=SYMPREC,
+        )
         state.cell[0] = refined_cell.mT
         state.positions = refined_pos
 
-        # Check at tight precision
         datasets = get_symmetry_datasets(state, symprec=1e-4)
-        assert datasets[0].number == expected, (
-            f"{structure_name}: expected SG {expected}, got {datasets[0].number}"
-        )
-
-    def test_large_deformation_raises(self) -> None:
-        """Deformation gradient > 0.25 raises RuntimeError."""
-        state = ts.io.atoms_to_state(make_structure("fcc"), torch.device("cpu"), DTYPE)
-        constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
-        new_cell = state.cell.clone()
-        new_cell[0] *= 1.5
-        with pytest.raises(RuntimeError, match="deformation gradient"):
-            constraint.adjust_cell(state, new_cell)
-
-
-# === Tests: Comparison with ASE ===
-
-
-class TestFixSymmetryComparisonWithASE:
-    """Compare TorchSim FixSymmetry with ASE's implementation."""
-
-    def test_force_symmetrization_matches_ase(self) -> None:
-        """Force symmetrization matches ASE on multi-atom P-6 structure."""
-        atoms = make_structure("p6bar")
-        state = ts.io.atoms_to_state(atoms, torch.device("cpu"), DTYPE)
-        ts_constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
-
-        ase_atoms = atoms.copy()
-        ase_refine_symmetry(ase_atoms, symprec=SYMPREC)
-        ase_constraint = ASEFixSymmetry(ase_atoms, symprec=SYMPREC)
-
-        rng = np.random.default_rng(42)
-        forces_np = rng.standard_normal((len(atoms), 3))
-        forces_ts = torch.tensor(forces_np.copy(), dtype=DTYPE)
-
-        ts_constraint.adjust_forces(state, forces_ts)
-        ase_constraint.adjust_forces(ase_atoms, forces_np)
-        assert np.allclose(forces_ts.numpy(), forces_np, atol=1e-10)
-
-    def test_stress_symmetrization_matches_ase(self) -> None:
-        """Stress symmetrization matches ASE on P-6 structure."""
-        atoms = make_structure("p6bar")
-        state = ts.io.atoms_to_state(atoms, torch.device("cpu"), DTYPE)
-        ts_constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
-
-        ase_atoms = atoms.copy()
-        ase_refine_symmetry(ase_atoms, symprec=SYMPREC)
-        ase_constraint = ASEFixSymmetry(ase_atoms, symprec=SYMPREC)
-
-        stress_3x3 = np.array([[10.0, 1.0, 0.5], [1.0, 8.0, 0.3], [0.5, 0.3, 6.0]])
-        stress_voigt = full_3x3_to_voigt_6_stress(stress_3x3)
-        stress_voigt_copy = stress_voigt.copy()
-        stress_ts = torch.tensor([stress_3x3.copy()], dtype=DTYPE)
-
-        ts_constraint.adjust_stress(state, stress_ts)
-        ase_constraint.adjust_stress(ase_atoms, stress_voigt_copy)
-        ase_result = voigt_6_to_full_3x3_stress(stress_voigt_copy)
-        assert np.allclose(stress_ts[0].numpy(), ase_result, atol=1e-10)
-
-    def test_cell_deformation_matches_ase(self) -> None:
-        """Cell deformation symmetrization matches ASE on P-6 structure."""
-        atoms = make_structure("p6bar")
-        state = ts.io.atoms_to_state(atoms, torch.device("cpu"), DTYPE)
-        ts_constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
-
-        ase_atoms = atoms.copy()
-        ase_refine_symmetry(ase_atoms, symprec=SYMPREC)
-        ase_constraint = ASEFixSymmetry(ase_atoms, symprec=SYMPREC)
-
-        original_cell = ase_atoms.get_cell().copy()
-        deformed_cell = original_cell.copy()
-        deformed_cell[0, 1] += 0.05
-
-        new_cell_ts = torch.tensor([deformed_cell.copy().T], dtype=DTYPE)
-        ts_constraint.adjust_cell(state, new_cell_ts)
-        ts_result = new_cell_ts[0].mT.numpy()
-
-        ase_cell = deformed_cell.copy()
-        ase_constraint.adjust_cell(ase_atoms, ase_cell)
-        assert np.allclose(ts_result, ase_cell, atol=1e-10)
-
-    def test_position_symmetrization_matches_ase(self) -> None:
-        """Position displacement symmetrization matches ASE on P-6 structure."""
-        atoms = make_structure("p6bar")
-        state = ts.io.atoms_to_state(atoms, torch.device("cpu"), DTYPE)
-        ts_constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
-
-        ase_atoms = atoms.copy()
-        ase_refine_symmetry(ase_atoms, symprec=SYMPREC)
-        ase_constraint = ASEFixSymmetry(ase_atoms, symprec=SYMPREC)
-
-        # Create a displacement by proposing new positions
-        rng = np.random.default_rng(42)
-        displacement = rng.standard_normal((len(atoms), 3)) * 0.01
-        new_pos_ts = state.positions.clone() + torch.tensor(displacement, dtype=DTYPE)
-        new_pos_ase = ase_atoms.positions.copy() + displacement
-
-        ts_constraint.adjust_positions(state, new_pos_ts)
-        ase_constraint.adjust_positions(ase_atoms, new_pos_ase)
-        assert np.allclose(new_pos_ts.numpy(), new_pos_ase, atol=1e-10)
+        assert datasets[0].number == expected
 
     def test_cubic_forces_vanish(self) -> None:
         """Asymmetric force on single cubic atom symmetrizes to zero."""
         state = ts.io.atoms_to_state(
             [make_structure("fcc"), make_structure("diamond")],
-            torch.device("cpu"),
+            CPU,
             DTYPE,
         )
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
@@ -354,17 +264,125 @@ class TestFixSymmetryComparisonWithASE:
         constraint.adjust_forces(state, forces)
         assert torch.allclose(forces[0], torch.zeros(3, dtype=DTYPE), atol=1e-10)
 
+    def test_large_deformation_raises(self) -> None:
+        """Deformation gradient > 0.25 raises RuntimeError."""
+        state = ts.io.atoms_to_state(make_structure("fcc"), CPU, DTYPE)
+        constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
+        new_cell = state.cell.clone()
+        new_cell[0] *= 1.5
+        with pytest.raises(RuntimeError, match="deformation gradient"):
+            constraint.adjust_cell(state, new_cell)
 
-# === Tests: Merge & Select ===
+    def test_init_mismatched_lengths_raises(self) -> None:
+        """Mismatched rotations/symm_maps lengths raises ValueError."""
+        rots = [torch.eye(3).unsqueeze(0)]
+        smaps = [torch.zeros(1, 1, dtype=torch.long), torch.zeros(1, 2, dtype=torch.long)]
+        with pytest.raises(ValueError, match="length mismatch"):
+            FixSymmetry(rots, smaps)
+
+    @pytest.mark.parametrize("method", ["adjust_positions", "adjust_cell"])
+    def test_adjust_skipped_when_disabled(self, method: str) -> None:
+        """adjust_positions=False / adjust_cell=False leaves data unchanged."""
+        flag = method.replace("adjust_", "")  # "positions" or "cell"
+        state = ts.io.atoms_to_state(make_structure("fcc"), CPU, DTYPE)
+        constraint = FixSymmetry.from_state(
+            state,
+            symprec=SYMPREC,
+            **{f"adjust_{flag}": False},
+        )
+        if method == "adjust_positions":
+            data = state.positions.clone() + 0.1
+        else:
+            data = state.cell.clone() * 1.01
+        expected = data.clone()
+        getattr(constraint, method)(state, data)
+        assert torch.equal(data, expected)
 
 
-class TestFixSymmetryMergeAndSelect:
-    """Tests for merge, select_constraint, select_sub_constraint."""
+# === Tests: Comparison with ASE ===
+
+
+class TestFixSymmetryComparisonWithASE:
+    """Compare TorchSim FixSymmetry with ASE's implementation on P-6 structure."""
+
+    def test_force_symmetrization_matches_ase(
+        self,
+        p6bar_both_constraints: tuple,
+    ) -> None:
+        """Force symmetrization matches ASE."""
+        state, ts_c, ase_atoms, ase_c = p6bar_both_constraints
+        rng = np.random.default_rng(42)
+        forces_np = rng.standard_normal((len(ase_atoms), 3))
+        forces_ts = torch.tensor(forces_np.copy(), dtype=DTYPE)
+        ts_c.adjust_forces(state, forces_ts)
+        ase_c.adjust_forces(ase_atoms, forces_np)
+        assert np.allclose(forces_ts.numpy(), forces_np, atol=1e-10)
+
+    def test_stress_symmetrization_matches_ase(
+        self,
+        p6bar_both_constraints: tuple,
+    ) -> None:
+        """Stress symmetrization matches ASE."""
+        state, ts_c, ase_atoms, ase_c = p6bar_both_constraints
+        stress_3x3 = np.array([[10.0, 1.0, 0.5], [1.0, 8.0, 0.3], [0.5, 0.3, 6.0]])
+        stress_voigt = full_3x3_to_voigt_6_stress(stress_3x3).copy()
+        stress_ts = torch.tensor([stress_3x3.copy()], dtype=DTYPE)
+        ts_c.adjust_stress(state, stress_ts)
+        ase_c.adjust_stress(ase_atoms, stress_voigt)
+        assert np.allclose(
+            stress_ts[0].numpy(),
+            voigt_6_to_full_3x3_stress(stress_voigt),
+            atol=1e-10,
+        )
+
+    def test_cell_deformation_matches_ase(
+        self,
+        p6bar_both_constraints: tuple,
+    ) -> None:
+        """Cell deformation symmetrization matches ASE."""
+        state, ts_c, ase_atoms, ase_c = p6bar_both_constraints
+        deformed = ase_atoms.get_cell().copy()
+        deformed[0, 1] += 0.05
+        new_cell_ts = torch.tensor([deformed.copy().T], dtype=DTYPE)
+        ts_c.adjust_cell(state, new_cell_ts)
+        ase_cell = deformed.copy()
+        ase_c.adjust_cell(ase_atoms, ase_cell)
+        assert np.allclose(new_cell_ts[0].mT.numpy(), ase_cell, atol=1e-10)
+
+    def test_position_symmetrization_matches_ase(
+        self,
+        p6bar_both_constraints: tuple,
+    ) -> None:
+        """Position displacement symmetrization matches ASE."""
+        state, ts_c, ase_atoms, ase_c = p6bar_both_constraints
+        rng = np.random.default_rng(42)
+        disp = rng.standard_normal((len(ase_atoms), 3)) * 0.01
+        new_pos_ts = state.positions.clone() + torch.tensor(disp, dtype=DTYPE)
+        new_pos_ase = ase_atoms.positions.copy() + disp
+        ts_c.adjust_positions(state, new_pos_ts)
+        ase_c.adjust_positions(ase_atoms, new_pos_ase)
+        assert np.allclose(new_pos_ts.numpy(), new_pos_ase, atol=1e-10)
+
+
+# === Tests: Merge, Select, Reindex ===
+
+
+class TestFixSymmetryMergeSelectReindex:
+    """Tests for reindex/merge API, select, and concatenation."""
+
+    def test_reindex_preserves_symmetry_data(self) -> None:
+        """reindex shifts system_idx but preserves rotations and symm_maps."""
+        state = ts.io.atoms_to_state(make_structure("fcc"), CPU, DTYPE)
+        orig = FixSymmetry.from_state(state, symprec=SYMPREC)
+        shifted = orig.reindex(atom_offset=100, system_offset=5)
+        assert shifted.system_idx.item() == 5
+        assert torch.equal(shifted.rotations[0], orig.rotations[0])
+        assert torch.equal(shifted.symm_maps[0], orig.symm_maps[0])
 
     def test_merge_two_constraints(self) -> None:
-        """Merge two single-system constraints."""
-        s1 = ts.io.atoms_to_state(make_structure("fcc"), torch.device("cpu"), DTYPE)
-        s2 = ts.io.atoms_to_state(make_structure("diamond"), torch.device("cpu"), DTYPE)
+        """Merge two single-system constraints via reindex + merge."""
+        s1 = ts.io.atoms_to_state(make_structure("fcc"), CPU, DTYPE)
+        s2 = ts.io.atoms_to_state(make_structure("diamond"), CPU, DTYPE)
         c1 = FixSymmetry.from_state(s1)
         c2 = FixSymmetry.from_state(s2).reindex(atom_offset=0, system_offset=1)
         merged = FixSymmetry.merge([c1, c2])
@@ -379,42 +397,123 @@ class TestFixSymmetryMergeAndSelect:
             make_structure("hcp"),
         ]
         atoms_b = [make_structure("bcc"), make_structure("fcc")]
-        c_a = FixSymmetry.from_state(
-            ts.io.atoms_to_state(atoms_a, torch.device("cpu"), DTYPE),
-        )
+        c_a = FixSymmetry.from_state(ts.io.atoms_to_state(atoms_a, CPU, DTYPE))
         c_b = FixSymmetry.from_state(
-            ts.io.atoms_to_state(atoms_b, torch.device("cpu"), DTYPE),
+            ts.io.atoms_to_state(atoms_b, CPU, DTYPE),
         ).reindex(atom_offset=0, system_offset=3)
         merged = FixSymmetry.merge([c_a, c_b])
         assert merged.system_idx.tolist() == [0, 1, 2, 3, 4]
+
+    def test_system_constraint_merge_multi_system_via_concatenate(self) -> None:
+        """Regression: merging multi-system FixCom via concatenate_states."""
+        s1 = ts.io.atoms_to_state(
+            [make_structure("fcc"), make_structure("diamond")],
+            CPU,
+            DTYPE,
+        )
+        s2 = ts.io.atoms_to_state(
+            [make_structure("bcc"), make_structure("hcp")],
+            CPU,
+            DTYPE,
+        )
+        s1.constraints = [FixCom(system_idx=torch.tensor([0, 1]))]
+        s2.constraints = [FixCom(system_idx=torch.tensor([0, 1]))]
+        combined = ts.concatenate_states([s1, s2])
+        assert combined.constraints[0].system_idx.tolist() == [0, 1, 2, 3]
+
+    def test_concatenate_states_with_fix_symmetry(self) -> None:
+        """FixSymmetry survives concatenate_states and still symmetrizes correctly."""
+        s1 = ts.io.atoms_to_state(make_structure("fcc"), CPU, DTYPE)
+        s2 = ts.io.atoms_to_state(make_structure("diamond"), CPU, DTYPE)
+        s1.constraints = [FixSymmetry.from_state(s1, symprec=SYMPREC)]
+        s2.constraints = [FixSymmetry.from_state(s2, symprec=SYMPREC)]
+        combined = ts.concatenate_states([s1, s2])
+        constraint = combined.constraints[0]
+        assert isinstance(constraint, FixSymmetry)
+        assert constraint.system_idx.tolist() == [0, 1]
+        assert len(constraint.rotations) == 2
+        # Forces on single FCC atom should still vanish
+        forces = torch.tensor(
+            [[1.0, 0.0, 0.0], [0.5, 0.5, 0.0], [0.0, 0.5, 0.5]],
+            dtype=DTYPE,
+        )
+        constraint.adjust_forces(combined, forces)
+        assert torch.allclose(forces[0], torch.zeros(3, dtype=DTYPE), atol=1e-10)
 
     def test_select_sub_constraint(self) -> None:
         """Select second system from batched constraint."""
         state = ts.io.atoms_to_state(
             [make_structure("fcc"), make_structure("diamond")],
-            torch.device("cpu"),
+            CPU,
             DTYPE,
         )
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
         selected = constraint.select_sub_constraint(torch.tensor([1, 2]), sys_idx=1)
         assert selected is not None
-        assert selected.symm_maps[0].shape[1] == 2  # Si diamond: 2 atoms
+        assert selected.symm_maps[0].shape[1] == 2
         assert selected.system_idx.item() == 0
 
     def test_select_constraint_by_mask(self) -> None:
         """Select first system via system_mask."""
         state = ts.io.atoms_to_state(
             [make_structure("fcc"), make_structure("diamond")],
-            torch.device("cpu"),
+            CPU,
             DTYPE,
         )
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
-        atom_mask = torch.tensor([True, False, False], dtype=torch.bool)
-        system_mask = torch.tensor([True, False], dtype=torch.bool)
-        selected = constraint.select_constraint(atom_mask, system_mask)
+        selected = constraint.select_constraint(
+            atom_mask=torch.tensor([True, False, False]),
+            system_mask=torch.tensor([True, False]),
+        )
         assert selected is not None
         assert len(selected.rotations) == 1
         assert selected.rotations[0].shape[0] == 48
+
+    def test_select_returns_none_for_nonexistent(self) -> None:
+        """select_sub_constraint and select_constraint return None when no match."""
+        state = ts.io.atoms_to_state(
+            [make_structure("fcc"), make_structure("diamond")],
+            CPU,
+            DTYPE,
+        )
+        constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
+        assert constraint.select_sub_constraint(torch.tensor([0]), sys_idx=99) is None
+        assert (
+            constraint.select_constraint(
+                atom_mask=torch.zeros(3, dtype=torch.bool),
+                system_mask=torch.zeros(2, dtype=torch.bool),
+            )
+            is None
+        )
+
+
+# === Tests: build_symmetry_map chunked path ===
+
+
+def test_build_symmetry_map_chunked_matches_vectorized() -> None:
+    """Per-op loop gives same result as vectorized path."""
+    import torch_sim.symmetrize as sym_mod
+    from torch_sim.symmetrize import (
+        _extract_symmetry_ops,
+        _moyo_dataset,
+        build_symmetry_map,
+    )
+
+    state = ts.io.atoms_to_state(make_structure("p6bar"), CPU, DTYPE)
+    cell = state.row_vector_cell[0]
+    frac = state.positions @ torch.linalg.inv(cell)
+    dataset = _moyo_dataset(cell, frac, state.atomic_numbers)
+    rotations, translations = _extract_symmetry_ops(dataset, DTYPE, CPU)
+
+    old_threshold = sym_mod._SYMM_MAP_CHUNK_THRESHOLD  # noqa: SLF001
+    try:
+        sym_mod._SYMM_MAP_CHUNK_THRESHOLD = len(state.positions) + 1  # noqa: SLF001
+        vectorized = build_symmetry_map(rotations, translations, frac)
+        sym_mod._SYMM_MAP_CHUNK_THRESHOLD = 0  # noqa: SLF001
+        chunked = build_symmetry_map(rotations, translations, frac)
+    finally:
+        sym_mod._SYMM_MAP_CHUNK_THRESHOLD = old_threshold  # noqa: SLF001
+    assert torch.equal(vectorized, chunked)
 
 
 # === Tests: Optimization ===
@@ -439,7 +538,7 @@ class TestFixSymmetryWithOptimization:
         """Compressed structure relaxes while preserving symmetry."""
         atoms = make_structure(structure_name)
         expected = SPACEGROUPS[structure_name]
-        state = ts.io.atoms_to_state(atoms, torch.device("cpu"), DTYPE)
+        state = ts.io.atoms_to_state(atoms, CPU, DTYPE)
         constraint = FixSymmetry.from_state(
             state,
             symprec=SYMPREC,
@@ -464,7 +563,7 @@ class TestFixSymmetryWithOptimization:
         cell_filter: ts.CellFilter,
     ) -> None:
         """Cell filters with FixSymmetry preserve symmetry."""
-        state = ts.io.atoms_to_state(make_structure("fcc"), torch.device("cpu"), DTYPE)
+        state = ts.io.atoms_to_state(make_structure("fcc"), CPU, DTYPE)
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
         state.constraints = [constraint]
         initial = get_symmetry_datasets(state, symprec=SYMPREC)
@@ -486,7 +585,7 @@ class TestFixSymmetryWithOptimization:
         cell_filter: ts.CellFilter,
     ) -> None:
         """Regression: LBFGS must use set_constrained_cell for FixSymmetry support."""
-        state = ts.io.atoms_to_state(make_structure("bcc"), torch.device("cpu"), DTYPE)
+        state = ts.io.atoms_to_state(make_structure("bcc"), CPU, DTYPE)
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
         state.constraints = [constraint]
         state.cell = state.cell * 0.95
@@ -514,7 +613,7 @@ class TestFixSymmetryWithOptimization:
     ) -> None:
         """Negative control: without FixSymmetry, noisy forces break symmetry."""
         name = "bcc_rotated" if rotated else "bcc"
-        state = ts.io.atoms_to_state(make_structure(name), torch.device("cpu"), DTYPE)
+        state = ts.io.atoms_to_state(make_structure(name), CPU, DTYPE)
         result = run_optimization_check_symmetry(state, noisy_lj_model, constraint=None)
         assert result["initial_spacegroups"][0] == 229
         assert result["final_spacegroups"][0] != 229
@@ -528,7 +627,7 @@ class TestFixSymmetryWithOptimization:
     ) -> None:
         """With FixSymmetry, noisy forces still preserve symmetry."""
         name = "bcc_rotated" if rotated else "bcc"
-        state = ts.io.atoms_to_state(make_structure(name), torch.device("cpu"), DTYPE)
+        state = ts.io.atoms_to_state(make_structure(name), CPU, DTYPE)
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
         result = run_optimization_check_symmetry(
             state,
