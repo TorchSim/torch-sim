@@ -1121,8 +1121,11 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
 
     # Merge constraints
     constraint_lists = [state.constraints for state in states]
+    num_systems_per_state = [state.n_systems for state in states]
     constraints = merge_constraints(
-        constraint_lists, torch.tensor(num_atoms_per_state, device=target_device)
+        constraint_lists,
+        torch.tensor(num_atoms_per_state, device=target_device),
+        torch.tensor(num_systems_per_state, device=target_device),
     )
 
     # Create a new instance of the same class

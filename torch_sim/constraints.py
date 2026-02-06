@@ -366,28 +366,32 @@ class SystemConstraint(Constraint):
 
         Args:
             constraints: List of constraints to merge
-            state_indices: Index of the source state for each constraint
+            state_indices: Cumulative system offset for each constraint's source
+                state (computed by ``merge_constraints``)
             atom_offsets: Cumulative atom counts (unused for SystemConstraint)
 
         Returns:
             A single merged constraint with adjusted system indices
         """
         all_indices = []
-        for constraint, state_idx in zip(constraints, state_indices, strict=False):
-            # For SystemConstraint, the offset is the state index itself
-            all_indices.append(constraint.system_idx + state_idx)
+        for constraint, offset in zip(constraints, state_indices, strict=False):
+            all_indices.append(constraint.system_idx + offset)
         return cls(torch.cat(all_indices))
 
 
 def merge_constraints(
     constraint_lists: list[list[AtomConstraint | SystemConstraint]],
     num_atoms_per_state: torch.Tensor,
+    num_systems_per_state: torch.Tensor | None = None,
 ) -> list[Constraint]:
     """Merge constraints from multiple systems into a single list of constraints.
 
     Args:
         constraint_lists: List of lists of constraints
-        num_atoms_per_state: Number of atoms per system
+        num_atoms_per_state: Number of atoms per state
+        num_systems_per_state: Number of systems per state (needed for correct
+            SystemConstraint offsets in multi-system states). Falls back to 1
+            per state if not provided.
 
     Returns:
         List of merged constraints
@@ -403,6 +407,19 @@ def merge_constraints(
         ]
     )
 
+    # Calculate system offsets for SystemConstraints
+    if num_systems_per_state is None:
+        # Default: assume 1 system per state (backward compatible)
+        num_systems_per_state = torch.ones(
+            len(constraint_lists), device=device, dtype=dtype
+        )
+    system_offsets = torch.cat(
+        [
+            torch.zeros(1, device=device, dtype=dtype),
+            torch.cumsum(num_systems_per_state[:-1], dim=0),
+        ]
+    )
+
     # Group constraints by type, tracking their source state index
     constraints_by_type: dict[type[Constraint], tuple[list, list[int]]] = defaultdict(
         lambda: ([], [])
@@ -411,7 +428,11 @@ def merge_constraints(
         for constraint in constraint_list:
             constraints, indices = constraints_by_type[type(constraint)]
             constraints.append(constraint)
-            indices.append(state_idx)
+            # SystemConstraints need cumulative system offsets, not raw state indices
+            if isinstance(constraint, SystemConstraint):
+                indices.append(int(system_offsets[state_idx].item()))
+            else:
+                indices.append(state_idx)
 
     # Merge each group using the constraint's merge method
     result = []
