@@ -124,28 +124,26 @@ class Constraint(ABC):
             Constraint for the given atom and system index
         """
 
-    @classmethod
-    def merge(
-        cls,
-        constraints: list[Self],
-        state_indices: list[int],
-        atom_offsets: torch.Tensor,
-    ) -> Self:
-        """Merge multiple constraints of the same type into one.
+    @abstractmethod
+    def reindex(self, atom_offset: int, system_offset: int) -> Self:
+        """Return a copy with indices shifted to global coordinates.
 
-        This method is called during state concatenation to combine constraints
-        from multiple states. Subclasses can override this for custom merge logic.
+        Called during state concatenation to adjust indices before merging.
 
         Args:
-            constraints: List of constraints to merge (all of the same type)
-            state_indices: Index of the source state for each constraint
-            atom_offsets: Cumulative atom counts for offset calculation
+            atom_offset: Offset to add to atom indices
+            system_offset: Offset to add to system indices
+        """
 
-        Returns:
-            A single merged constraint
+    @classmethod
+    def merge(cls, constraints: list[Self]) -> Self:
+        """Merge multiple already-reindexed constraints into one.
 
-        Raises:
-            NotImplementedError: If the constraint type doesn't support merging
+        Constraints must have global (absolute) indices — call ``reindex``
+        first. Subclasses override this to handle type-specific data.
+
+        Args:
+            constraints: Constraints to merge (all same type, already reindexed)
         """
         raise NotImplementedError(
             f"Constraint type {cls.__name__} does not implement merge. "
@@ -250,28 +248,14 @@ class AtomConstraint(Constraint):
             return None
         return type(self)(new_atom_idx)
 
+    def reindex(self, atom_offset: int, system_offset: int) -> Self:  # noqa: ARG002
+        """Return copy with atom indices shifted by atom_offset."""
+        return type(self)(self.atom_idx + atom_offset)
+
     @classmethod
-    def merge(
-        cls,
-        constraints: list[Self],
-        state_indices: list[int],
-        atom_offsets: torch.Tensor,
-    ) -> Self:
-        """Merge multiple AtomConstraints by concatenating indices with offsets.
-
-        Args:
-            constraints: List of constraints to merge
-            state_indices: Index of the source state for each constraint
-            atom_offsets: Cumulative atom counts for offset calculation
-
-        Returns:
-            A single merged constraint with adjusted atom indices
-        """
-        all_indices = []
-        for constraint, state_idx in zip(constraints, state_indices, strict=False):
-            offset = atom_offsets[state_idx]
-            all_indices.append(constraint.atom_idx + offset)
-        return cls(torch.cat(all_indices))
+    def merge(cls, constraints: list[Self]) -> Self:
+        """Merge by concatenating already-reindexed atom indices."""
+        return cls(torch.cat([c.atom_idx for c in constraints]))
 
 
 class SystemConstraint(Constraint):
@@ -355,28 +339,14 @@ class SystemConstraint(Constraint):
         """
         return type(self)(torch.tensor([0])) if sys_idx in self.system_idx else None
 
+    def reindex(self, atom_offset: int, system_offset: int) -> Self:  # noqa: ARG002
+        """Return copy with system indices shifted by system_offset."""
+        return type(self)(self.system_idx + system_offset)
+
     @classmethod
-    def merge(
-        cls,
-        constraints: list[Self],
-        state_indices: list[int],
-        atom_offsets: torch.Tensor,  # noqa: ARG003
-    ) -> Self:
-        """Merge multiple SystemConstraints by concatenating indices with offsets.
-
-        Args:
-            constraints: List of constraints to merge
-            state_indices: Cumulative system offset for each constraint's source
-                state (computed by ``merge_constraints``)
-            atom_offsets: Cumulative atom counts (unused for SystemConstraint)
-
-        Returns:
-            A single merged constraint with adjusted system indices
-        """
-        all_indices = []
-        for constraint, offset in zip(constraints, state_indices, strict=False):
-            all_indices.append(constraint.system_idx + offset)
-        return cls(torch.cat(all_indices))
+    def merge(cls, constraints: list[Self]) -> Self:
+        """Merge by concatenating already-reindexed system indices."""
+        return cls(torch.cat([c.system_idx for c in constraints]))
 
 
 def merge_constraints(
@@ -384,13 +354,15 @@ def merge_constraints(
     num_atoms_per_state: torch.Tensor,
     num_systems_per_state: torch.Tensor | None = None,
 ) -> list[Constraint]:
-    """Merge constraints from multiple systems into a single list of constraints.
+    """Merge constraints from multiple states into a single list.
+
+    Each constraint is first reindexed to global coordinates (via ``reindex``),
+    then constraints of the same type are merged (via ``merge``).
 
     Args:
-        constraint_lists: List of lists of constraints
+        constraint_lists: List of lists of constraints, one list per state
         num_atoms_per_state: Number of atoms per state
-        num_systems_per_state: Number of systems per state (needed for correct
-            SystemConstraint offsets in multi-system states). Falls back to 1
+        num_systems_per_state: Number of systems per state. Falls back to 1
             per state if not provided.
 
     Returns:
@@ -398,7 +370,7 @@ def merge_constraints(
     """
     from collections import defaultdict
 
-    # Calculate atom offsets: for state i, offset = sum of atoms in states 0 to i-1
+    # Calculate cumulative offsets for atoms and systems
     device, dtype = num_atoms_per_state.device, num_atoms_per_state.dtype
     atom_offsets = torch.cat(
         [
@@ -406,10 +378,7 @@ def merge_constraints(
             torch.cumsum(num_atoms_per_state[:-1], dim=0),
         ]
     )
-
-    # Calculate system offsets for SystemConstraints
     if num_systems_per_state is None:
-        # Default: assume 1 system per state (backward compatible)
         num_systems_per_state = torch.ones(
             len(constraint_lists), device=device, dtype=dtype
         )
@@ -420,27 +389,15 @@ def merge_constraints(
         ]
     )
 
-    # Group constraints by type, tracking their source state index
-    constraints_by_type: dict[type[Constraint], tuple[list, list[int]]] = defaultdict(
-        lambda: ([], [])
-    )
+    # Reindex each constraint to global coordinates, then group by type
+    grouped: dict[type[Constraint], list[Constraint]] = defaultdict(list)
     for state_idx, constraint_list in enumerate(constraint_lists):
+        a_off = int(atom_offsets[state_idx].item())
+        s_off = int(system_offsets[state_idx].item())
         for constraint in constraint_list:
-            constraints, indices = constraints_by_type[type(constraint)]
-            constraints.append(constraint)
-            # SystemConstraints need cumulative system offsets, not raw state indices
-            if isinstance(constraint, SystemConstraint):
-                indices.append(int(system_offsets[state_idx].item()))
-            else:
-                indices.append(state_idx)
+            grouped[type(constraint)].append(constraint.reindex(a_off, s_off))
 
-    # Merge each group using the constraint's merge method
-    result = []
-    for constraint_type, (constraints, state_indices) in constraints_by_type.items():
-        merged = constraint_type.merge(constraints, state_indices, atom_offsets)
-        result.append(merged)
-
-    return result
+    return [ctype.merge(cs) for ctype, cs in grouped.items()]
 
 
 class FixAtoms(AtomConstraint):
@@ -942,28 +899,28 @@ class FixSymmetry(SystemConstraint):
         """Returns zero - constrains direction, not DOF count."""
         return torch.zeros(state.n_systems, dtype=torch.long, device=state.device)
 
+    def reindex(self, atom_offset: int, system_offset: int) -> Self:  # noqa: ARG002
+        """Return copy with system indices shifted by system_offset."""
+        return type(self)(
+            self.rotations,
+            self.symm_maps,
+            self.system_idx + system_offset,
+            adjust_positions=self.do_adjust_positions,
+            adjust_cell=self.do_adjust_cell,
+        )
+
     @classmethod
-    def merge(
-        cls,
-        constraints: list[Self],
-        state_indices: list[int],  # noqa: ARG003
-        atom_offsets: torch.Tensor,  # noqa: ARG003
-    ) -> Self:
-        """Merge multiple FixSymmetry constraints into one."""
+    def merge(cls, constraints: list[Self]) -> Self:
+        """Merge by concatenating rotations, symm_maps, and system indices."""
         if not constraints:
             raise ValueError("Cannot merge empty constraint list")
-        rotations, symm_maps, sys_indices = [], [], []
-        offset = 0
-        for constraint in constraints:
-            for idx in range(len(constraint.rotations)):
-                rotations.append(constraint.rotations[idx])
-                symm_maps.append(constraint.symm_maps[idx])
-                sys_indices.append(offset + idx)
-            offset += len(constraint.rotations)
+        rotations = [r for c in constraints for r in c.rotations]
+        symm_maps = [s for c in constraints for s in c.symm_maps]
+        system_idx = torch.cat([c.system_idx for c in constraints])
         return cls(
             rotations,
             symm_maps,
-            system_idx=torch.tensor(sys_indices, device=rotations[0].device),
+            system_idx=system_idx,
             adjust_positions=constraints[0].do_adjust_positions,
             adjust_cell=constraints[0].do_adjust_cell,
         )

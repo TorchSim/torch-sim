@@ -365,11 +365,9 @@ class TestFixSymmetryMergeAndSelect:
         """Merge two single-system constraints."""
         s1 = ts.io.atoms_to_state(make_structure("fcc"), torch.device("cpu"), DTYPE)
         s2 = ts.io.atoms_to_state(make_structure("diamond"), torch.device("cpu"), DTYPE)
-        merged = FixSymmetry.merge(
-            [FixSymmetry.from_state(s1), FixSymmetry.from_state(s2)],
-            state_indices=[0, 1],
-            atom_offsets=None,
-        )
+        c1 = FixSymmetry.from_state(s1)
+        c2 = FixSymmetry.from_state(s2).reindex(atom_offset=0, system_offset=1)
+        merged = FixSymmetry.merge([c1, c2])
         assert len(merged.rotations) == 2
         assert merged.system_idx.tolist() == [0, 1]
 
@@ -386,8 +384,8 @@ class TestFixSymmetryMergeAndSelect:
         )
         c_b = FixSymmetry.from_state(
             ts.io.atoms_to_state(atoms_b, torch.device("cpu"), DTYPE),
-        )
-        merged = FixSymmetry.merge([c_a, c_b], state_indices=[0, 1], atom_offsets=None)
+        ).reindex(atom_offset=0, system_offset=3)
+        merged = FixSymmetry.merge([c_a, c_b])
         assert merged.system_idx.tolist() == [0, 1, 2, 3, 4]
 
     def test_select_sub_constraint(self) -> None:
