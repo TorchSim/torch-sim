@@ -48,7 +48,7 @@ def _configure_reporter(
             velocities=state.velocities, masses=state.masses
         ),
         "temperature": lambda state: state.calc_temperature(),
-        "max_force": lambda state: ts.system_wise_max_force(state),
+        "max_force": ts.system_wise_max_force,
     }
 
     prop_calculators = {
