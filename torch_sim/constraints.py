@@ -726,7 +726,7 @@ class FixSymmetry(SystemConstraint):
     according to the crystal symmetry operations. Each system in a batch can
     have different symmetry operations.
 
-    Requires the spglib package to be available for automatic symmetry detection.
+    Requires the moyopy package to be available for automatic symmetry detection.
 
     The constraint works by:
     - Symmetrizing forces/momenta as rank-1 tensors using all symmetry operations
@@ -826,7 +826,7 @@ class FixSymmetry(SystemConstraint):
 
         Args:
             state: SimState containing one or more systems.
-            symprec: Symmetry precision for spglib.
+            symprec: Symmetry precision for moyopy.
             adjust_positions: Whether to symmetrize position adjustments.
             adjust_cell: Whether to symmetrize cell/stress adjustments.
             refine_symmetry_state: Whether to refine the state's positions and cell
@@ -839,9 +839,12 @@ class FixSymmetry(SystemConstraint):
             FixSymmetry constraint configured for the state's structures.
         """
         try:
-            import spglib  # noqa: F401
+            import moyopy  # noqa: F401
         except ImportError:
-            raise ImportError("spglib is required for FixSymmetry.from_state") from None
+            raise ImportError(
+                "moyopy is required for FixSymmetry.from_state. "
+                "Install with: pip install moyopy"
+            ) from None
 
         rotations = []
         symm_maps = []
@@ -967,16 +970,16 @@ class FixSymmetry(SystemConstraint):
     def get_removed_dof(self, state: SimState) -> torch.Tensor:
         """Get number of removed degrees of freedom.
 
-        FixSymmetry doesn't explicitly remove DOF in the same way as FixAtoms.
-        This matches ASE's FixSymmetry behavior which also raises NotImplementedError.
+        FixSymmetry constrains motion direction rather than removing explicit DOF,
+        so returns 0 to avoid breaking temperature calculations in MD.
 
         Args:
             state: Simulation state
 
-        Raises:
-            NotImplementedError: FixSymmetry does not support DOF counting.
+        Returns:
+            Zero tensor of shape (n_systems,)
         """
-        raise NotImplementedError("FixSymmetry does not implement get_removed_dof.")
+        return torch.zeros(state.n_systems, dtype=torch.long, device=state.device)
 
     def adjust_positions(self, state: SimState, new_positions: torch.Tensor) -> None:
         """Symmetrize position displacements.
@@ -1041,10 +1044,10 @@ class FixSymmetry(SystemConstraint):
         dtype = state.dtype
         identity = torch.eye(3, device=device, dtype=dtype)
 
-        for sys_idx_local, sys_idx_global in enumerate(self.system_idx):
+        for constraint_idx, sys_idx in enumerate(self.system_idx):
             # Get current and new cells in row vector convention
-            cur_cell = state.row_vector_cell[sys_idx_global]
-            new_cell_row = new_cell[sys_idx_global].mT
+            cur_cell = state.row_vector_cell[sys_idx]
+            new_cell_row = new_cell[sys_idx].mT
 
             # Calculate deformation gradient
             cur_cell_inv = torch.linalg.inv(cur_cell)
@@ -1067,13 +1070,12 @@ class FixSymmetry(SystemConstraint):
                 )
 
             # Symmetrize deformation gradient directly
-            symmetrized_delta = symmetrize_rank2(
-                cur_cell, delta_deform_grad, self.rotations[sys_idx_local].to(dtype=dtype)
-            )
+            rots = self.rotations[constraint_idx].to(dtype=dtype)
+            symmetrized_delta = symmetrize_rank2(cur_cell, delta_deform_grad, rots)
 
             # Reconstruct cell and update in-place
             new_cell_row_sym = cur_cell @ (symmetrized_delta + identity).mT
-            new_cell[sys_idx_global] = new_cell_row_sym.mT  # Back to column convention
+            new_cell[sys_idx] = new_cell_row_sym.mT  # Back to column convention
 
     def adjust_stress(self, state: SimState, stress: torch.Tensor) -> None:
         """Symmetrize stress tensor in-place.
@@ -1084,19 +1086,17 @@ class FixSymmetry(SystemConstraint):
         """
         dtype = stress.dtype
 
-        for sys_idx_local, sys_idx_global in enumerate(self.system_idx):
-            # Get current cell and symmetrize stress directly
-            cur_cell = state.row_vector_cell[sys_idx_global]
-            sys_stress = stress[sys_idx_global]
+        for constraint_idx, sys_idx in enumerate(self.system_idx):
+            cur_cell = state.row_vector_cell[sys_idx]
             symmetrized = symmetrize_rank2(
-                cur_cell, sys_stress, self.rotations[sys_idx_local].to(dtype=dtype)
+                cur_cell, stress[sys_idx], self.rotations[constraint_idx].to(dtype=dtype)
             )
-            stress[sys_idx_global] = symmetrized
+            stress[sys_idx] = symmetrized
 
     def _symmetrize_rank1(self, state: SimState, vectors: torch.Tensor) -> None:
         """Symmetrize rank-1 tensors (forces, momenta, displacements) in-place.
 
-        Uses fractional-coordinate rotations from spglib together with the current
+        Uses fractional-coordinate rotations from moyopy together with the current
         cell to transform vectors. The cell is fetched at runtime to ensure
         correctness during variable-cell relaxation.
 
@@ -1114,22 +1114,18 @@ class FixSymmetry(SystemConstraint):
         )
 
         dtype = vectors.dtype
-        for sys_idx_local, sys_idx_global in enumerate(self.system_idx):
-            start = cumsum[sys_idx_global].item()
-            end = cumsum[sys_idx_global + 1].item()
+        for constraint_idx, sys_idx in enumerate(self.system_idx):
+            start = cumsum[sys_idx].item()
+            end = cumsum[sys_idx + 1].item()
 
-            # Extract vectors for this system
             sys_vectors = vectors[start:end]
+            cell = state.row_vector_cell[sys_idx]
 
-            # Get current cell for this system
-            cell = state.row_vector_cell[sys_idx_global]
-
-            # Symmetrize directly
             symmetrized = symmetrize_rank1(
                 cell,
                 sys_vectors,
-                self.rotations[sys_idx_local].to(dtype=dtype),
-                self.symm_maps[sys_idx_local],
+                self.rotations[constraint_idx].to(dtype=dtype),
+                self.symm_maps[constraint_idx],
             )
 
             # Update in place

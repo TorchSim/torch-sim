@@ -1,11 +1,14 @@
 """Symmetry refinement utilities for crystal structures.
 
 This module provides functions for refining and symmetrizing atomic structures
-using spglib. It is adapted from ASE's spacegroup.symmetrize module but
-reimplemented to work with torch tensors directly.
+using moyopy (Python bindings for the moyo crystal symmetry library).
 
 The main entry point is `refine_symmetry` which symmetrizes both the cell
 and atomic positions according to the detected space group symmetry.
+
+Note: Functions in this module operate on single (unbatched) systems.
+The `n_ops` dimension refers to the number of symmetry operations
+(rotations + translations) of the space group.
 """
 
 from __future__ import annotations
@@ -20,52 +23,50 @@ logger = logging.getLogger(__name__)
 
 
 if TYPE_CHECKING:
-    from spglib import SpglibDataset
+    from moyopy import MoyoDataset
 
     from torch_sim.state import SimState
 
 
-def _get_symmetry_dataset(
+def _get_moyo_dataset(
     cell: torch.Tensor,
     scaled_positions: torch.Tensor,
     atomic_numbers: torch.Tensor,
-    symprec: float = 1.0e-6,
-) -> SpglibDataset | None:
-    """Get symmetry dataset from spglib.
+    symprec: float = 1.0e-4,
+) -> MoyoDataset:
+    """Get symmetry dataset from moyopy.
 
     Args:
         cell: Unit cell as row vectors, shape (3, 3)
         scaled_positions: Fractional coordinates, shape (n_atoms, 3)
         atomic_numbers: Atomic numbers, shape (n_atoms,)
-        symprec: Symmetry precision
+        symprec: Symmetry precision in units of cell basis vectors
 
     Returns:
-        Symmetry dataset with attribute access
+        MoyoDataset with symmetry information
     """
-    import spglib
+    from moyopy import Cell, MoyoDataset
 
-    # Convert tensors to numpy for spglib
-    cell_np = cell.detach().cpu().numpy()
-    positions_np = scaled_positions.detach().cpu().numpy()
-    numbers_np = atomic_numbers.detach().cpu().numpy()
+    cell_list = cell.detach().cpu().tolist()
+    positions_list = scaled_positions.detach().cpu().tolist()
+    numbers_list = atomic_numbers.detach().cpu().int().tolist()
 
-    cell_tuple = (cell_np, positions_np, numbers_np)
-    return spglib.get_symmetry_dataset(cell_tuple, symprec=symprec)
+    moyo_cell = Cell(basis=cell_list, positions=positions_list, numbers=numbers_list)
+    return MoyoDataset(moyo_cell, symprec=symprec)
 
 
 def get_symmetry_datasets(
     state: SimState,
-    symprec: float = 1.0e-6,
-) -> list[SpglibDataset | None]:
+    symprec: float = 1.0e-4,
+) -> list[MoyoDataset]:
     """Get symmetry datasets for all systems in a SimState.
 
     Args:
         state: SimState containing one or more systems
-        symprec: Symmetry precision for spglib
+        symprec: Symmetry precision for moyopy
 
     Returns:
-        List of spglib symmetry datasets, one per system in the state.
-        Returns None for systems where symmetry detection fails.
+        List of MoyoDataset objects, one per system in the state.
     """
     datasets = []
 
@@ -73,10 +74,9 @@ def get_symmetry_datasets(
         cell = single_state.row_vector_cell[0]
         positions = single_state.positions
 
-        # Compute scaled (fractional) positions for this system
         scaled_positions = _get_scaled_positions(positions, cell)
 
-        dataset = _get_symmetry_dataset(
+        dataset = _get_moyo_dataset(
             cell=cell,
             scaled_positions=scaled_positions,
             atomic_numbers=single_state.atomic_numbers,
@@ -91,7 +91,9 @@ def _get_scaled_positions(
     positions: torch.Tensor,
     cell: torch.Tensor,
 ) -> torch.Tensor:
-    """Convert Cartesian positions to fractional coordinates.
+    """Convert Cartesian positions to fractional coordinates (unbatched).
+
+    See also ``transforms.get_fractional_coordinates`` for the batched version.
 
     Args:
         positions: Cartesian positions, shape (n_atoms, 3)
@@ -100,93 +102,7 @@ def _get_scaled_positions(
     Returns:
         Fractional coordinates, shape (n_atoms, 3)
     """
-    inv_cell = torch.linalg.inv(cell)
-    return positions @ inv_cell
-
-
-def _symmetrize_cell(
-    cell: torch.Tensor,
-    dataset: SpglibDataset,
-) -> torch.Tensor:
-    """Symmetrize the cell based on the symmetry dataset.
-
-    Args:
-        cell: Unit cell as row vectors, shape (3, 3)
-        dataset: spglib symmetry dataset
-
-    Returns:
-        Symmetrized cell as row vectors, shape (3, 3)
-    """
-    device = cell.device
-    dtype = cell.dtype
-
-    # Get standardized cell and apply transformations
-    std_cell = torch.as_tensor(dataset.std_lattice, dtype=dtype, device=device)
-    trans_matrix = torch.as_tensor(
-        dataset.transformation_matrix, dtype=dtype, device=device
-    )
-    rot_matrix = torch.as_tensor(dataset.std_rotation_matrix, dtype=dtype, device=device)
-
-    trans_std_cell = trans_matrix.T @ std_cell
-    return trans_std_cell @ rot_matrix
-
-
-def _symmetrize_positions(
-    positions: torch.Tensor,
-    dataset: SpglibDataset,
-    primitive_cell: tuple,
-) -> torch.Tensor:
-    """Symmetrize atomic positions.
-
-    Args:
-        positions: Cartesian positions, shape (n_atoms, 3)
-        dataset: spglib symmetry dataset
-        primitive_cell: Result from spglib.find_primitive (cell, positions, numbers)
-
-    Returns:
-        Symmetrized Cartesian positions, shape (n_atoms, 3)
-    """
-    device = positions.device
-    dtype = positions.dtype
-
-    prim_cell_np, _prim_scaled_pos, _prim_types = primitive_cell
-    prim_cell = torch.as_tensor(prim_cell_np, dtype=dtype, device=device)
-
-    # Calculate offset between standard cell and actual cell
-    std_cell = torch.as_tensor(dataset.std_lattice, dtype=dtype, device=device)
-    rot_matrix = torch.as_tensor(dataset.std_rotation_matrix, dtype=dtype, device=device)
-    std_positions = torch.as_tensor(dataset.std_positions, dtype=dtype, device=device)
-
-    rot_std_cell = std_cell @ rot_matrix
-    rot_std_pos = std_positions @ rot_std_cell
-
-    # Get mapping indices
-    mapping_to_primitive = list(dataset.mapping_to_primitive)
-    std_mapping_to_primitive = list(dataset.std_mapping_to_primitive)
-
-    dp0 = (
-        positions[mapping_to_primitive.index(0)]
-        - rot_std_pos[std_mapping_to_primitive.index(0)]
-    )
-
-    # Create aligned set of standard cell positions
-    rot_prim_cell = prim_cell @ rot_matrix
-    inv_rot_prim_cell = torch.linalg.inv(rot_prim_cell)
-    aligned_std_pos = rot_std_pos + dp0
-
-    # Find ideal positions
-    new_positions = positions.clone()
-    n_atoms = positions.shape[0]
-
-    for i_at in range(n_atoms):
-        std_i_at = std_mapping_to_primitive.index(mapping_to_primitive[i_at])
-        dp = aligned_std_pos[std_i_at] - positions[i_at]
-        dp_s = dp @ inv_rot_prim_cell
-        new_positions[i_at] = (
-            aligned_std_pos[std_i_at] - torch.round(dp_s) @ rot_prim_cell
-        )
-
-    return new_positions
+    return positions @ torch.linalg.inv(cell)
 
 
 def refine_symmetry(
@@ -199,137 +115,154 @@ def refine_symmetry(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Refine symmetry of a structure.
 
-    This function symmetrizes both the cell and atomic positions according
-    to the detected space group symmetry.
+    Symmetrizes both cell vectors and atomic positions by averaging
+    over the detected symmetry operations using polar decomposition
+    for the cell metric and scatter-add averaging for positions.
 
     The refinement process:
-    1. Detect symmetry of the input structure
-    2. Symmetrize the cell vectors to match the ideal lattice
-    3. Symmetrize atomic positions to ideal Wyckoff positions
+    1. Detect symmetry operations of the input structure
+    2. Symmetrize the cell metric tensor (preserving cell orientation)
+    3. Symmetrize atomic positions by averaging over symmetry orbits
 
     Args:
         cell: Unit cell as row vectors, shape (3, 3)
         positions: Cartesian positions, shape (n_atoms, 3)
         atomic_numbers: Atomic numbers, shape (n_atoms,)
-        symprec: Symmetry precision for spglib
-        verbose: If True, print symmetry information before and after
+        symprec: Symmetry precision for moyopy
+        verbose: If True, log symmetry information before and after
 
     Returns:
         Tuple of (symmetrized_cell, symmetrized_positions):
         - symmetrized_cell: Symmetrized cell as row vectors, shape (3, 3)
         - symmetrized_positions: Symmetrized Cartesian positions, shape (n_atoms, 3)
     """
-    import spglib
+    device = cell.device
+    dtype = cell.dtype
 
-    # Step 1: Check and symmetrize cell
+    # Step 1: Detect symmetry
     scaled_positions = _get_scaled_positions(positions, cell)
-    dataset = _get_symmetry_dataset(cell, scaled_positions, atomic_numbers, symprec)
-
-    if dataset is None:
-        raise RuntimeError("spglib could not determine symmetry for structure")
+    dataset = _get_moyo_dataset(cell, scaled_positions, atomic_numbers, symprec)
 
     if verbose:
         logger.info(
-            "symmetrize: prec %s got symmetry group number %s, "
-            "international (Hermann-Mauguin) %s, Hall %s",
+            "symmetrize: prec %s got space group number %s",
             symprec,
             dataset.number,
-            dataset.international,
-            dataset.hall,
         )
 
-    new_cell = _symmetrize_cell(cell, dataset)
-
-    # Scale positions to new cell
-    new_positions = scaled_positions @ new_cell
-
-    # Step 2: Check and symmetrize positions with the new cell
-    new_scaled_positions = _get_scaled_positions(new_positions, new_cell)
-    dataset = _get_symmetry_dataset(
-        new_cell, new_scaled_positions, atomic_numbers, symprec
+    rotations = torch.as_tensor(
+        dataset.operations.rotations, dtype=dtype, device=device
+    ).round()
+    translations = torch.as_tensor(
+        dataset.operations.translations, dtype=dtype, device=device
     )
+    n_ops = rotations.shape[0]
 
-    if dataset is None:
-        raise RuntimeError("spglib could not determine symmetry after cell refinement")
+    # Step 2: Symmetrize cell via metric tensor + polar decomposition
+    # Row-vector metric: g[i,j] = a_i · a_j = (cell @ cell.T)[i,j]
+    # Symmetry invariance: R.T @ g @ R = g for all rotations R
+    metric = cell @ cell.T
+    metric_sym = torch.einsum("nji,jk,nkl->il", rotations, metric, rotations) / n_ops
 
-    # Find primitive cell
-    cell_np = new_cell.detach().cpu().numpy()
-    positions_np = new_scaled_positions.detach().cpu().numpy()
-    numbers_np = atomic_numbers.detach().cpu().numpy()
+    # Left polar decomposition: cell = P @ V where P = sqrt(metric)
+    # Keep same orientation V but with symmetrized metric P_sym
+    sqrt_metric = _matrix_sqrt(metric)
+    sqrt_metric_sym = _matrix_sqrt(metric_sym)
+    new_cell = sqrt_metric_sym @ torch.linalg.inv(sqrt_metric) @ cell
 
-    primitive_result = spglib.find_primitive(
-        (cell_np, positions_np, numbers_np), symprec=symprec
-    )
-    if primitive_result is None:
-        raise RuntimeError("spglib could not find primitive cell")
+    # Step 3: Symmetrize positions by averaging displacements over symmetry orbits
+    # Recompute fractional coords in the symmetrized cell
+    new_frac = positions @ torch.linalg.inv(new_cell)
+    symm_map = build_symmetry_map(rotations, translations, new_frac)
 
-    new_positions = _symmetrize_positions(new_positions, dataset, primitive_result)
+    # For each op, transform fractional positions: R @ frac + t
+    new_frac_all = (
+        torch.einsum("oij,nj->oni", rotations, new_frac) + translations[:, None, :]
+    )  # (n_ops, n_atoms, 3)
+    # Compute displacement from target atom's current position, wrapped for periodicity
+    n_atoms = positions.shape[0]
+    target_frac = new_frac[symm_map]  # (n_ops, n_atoms, 3)
+    displacement = new_frac_all - target_frac
+    displacement -= displacement.round()  # wrap into [-0.5, 0.5]
 
-    # Final check
+    # Scatter-add wrapped displacements to target atoms and average
+    target = symm_map.reshape(-1).unsqueeze(-1).expand(-1, 3)
+    accum = torch.zeros(n_atoms, 3, dtype=dtype, device=device)
+    accum.scatter_add_(0, target, displacement.reshape(-1, 3))
+    sym_frac = new_frac + accum / n_ops
+
+    new_positions = sym_frac @ new_cell
+
     if verbose:
         final_scaled = _get_scaled_positions(new_positions, new_cell)
-        final_dataset = _get_symmetry_dataset(
-            new_cell, final_scaled, atomic_numbers, 1e-4
+        final_dataset = _get_moyo_dataset(new_cell, final_scaled, atomic_numbers, 1e-4)
+        logger.info(
+            "symmetrize: prec 1e-4 got space group number %s",
+            final_dataset.number,
         )
-        if final_dataset is not None:
-            logger.info(
-                "symmetrize: prec 1e-4 got symmetry group number %s, "
-                "international (Hermann-Mauguin) %s, Hall %s",
-                final_dataset.number,
-                final_dataset.international,
-                final_dataset.hall,
-            )
 
     return new_cell, new_positions
+
+
+def _matrix_sqrt(mat: torch.Tensor) -> torch.Tensor:
+    """Compute matrix square root of a symmetric positive-definite matrix.
+
+    Uses eigendecomposition: sqrt(A) = Q @ diag(sqrt(eigenvalues)) @ Q.T
+
+    Args:
+        mat: Symmetric positive-definite matrix, shape (3, 3)
+
+    Returns:
+        Matrix square root, shape (3, 3)
+    """
+    eigenvalues, eigenvectors = torch.linalg.eigh(mat)
+    return eigenvectors @ torch.diag(eigenvalues.sqrt()) @ eigenvectors.T
 
 
 def _prep_symmetry(
     cell: torch.Tensor,
     positions: torch.Tensor,
     atomic_numbers: torch.Tensor,
-    symprec: float = 1.0e-6,
+    symprec: float = 1.0e-4,
     *,
     verbose: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Prepare structure for symmetry-preserving minimization.
 
-    This function determines the symmetry operations and atom mappings
-    needed for symmetry-constrained optimization.
+    Determines the symmetry operations (rotations in fractional coordinates)
+    and atom mappings needed for symmetry-constrained optimization.
 
     Args:
         cell: Unit cell as row vectors, shape (3, 3)
         positions: Cartesian positions, shape (n_atoms, 3)
         atomic_numbers: Atomic numbers, shape (n_atoms,)
-        symprec: Symmetry precision for spglib
-        verbose: If True, print symmetry information
+        symprec: Symmetry precision for moyopy
+        verbose: If True, log symmetry information
 
     Returns:
         Tuple of (rotations, symm_map):
-        - rotations: Rotation matrices, shape (n_ops, 3, 3)
+        - rotations: Rotation matrices in fractional coords, shape (n_ops, 3, 3)
         - symm_map: Atom mapping tensor, shape (n_ops, n_atoms)
     """
     device = cell.device
     dtype = cell.dtype
 
     scaled_positions = _get_scaled_positions(positions, cell)
-    dataset = _get_symmetry_dataset(cell, scaled_positions, atomic_numbers, symprec)
-
-    if dataset is None:
-        raise RuntimeError("spglib could not determine symmetry for structure")
+    dataset = _get_moyo_dataset(cell, scaled_positions, atomic_numbers, symprec)
 
     if verbose:
         logger.info(
-            "symmetrize: prec %s got symmetry group number %s, "
-            "international (Hermann-Mauguin) %s, Hall %s",
+            "symmetrize: prec %s got space group number %s, n_ops %d",
             symprec,
             dataset.number,
-            dataset.international,
-            dataset.hall,
+            len(dataset.operations),
         )
 
-    rotations = torch.as_tensor(dataset.rotations.copy(), dtype=dtype, device=device)
+    rotations = torch.as_tensor(
+        dataset.operations.rotations, dtype=dtype, device=device
+    ).round()
     translations = torch.as_tensor(
-        dataset.translations.copy(), dtype=dtype, device=device
+        dataset.operations.translations, dtype=dtype, device=device
     )
 
     # Build symmetry mapping
@@ -345,11 +278,12 @@ def build_symmetry_map(
 ) -> torch.Tensor:
     """Build symmetry atom mapping for each symmetry operation.
 
-    For each symmetry operation, determines which atom each atom maps to.
+    For each symmetry operation (R, t), determines which atom each atom
+    maps to: atom i → atom j where R @ frac_i + t ≈ frac_j (mod 1).
 
     Args:
-        rotations: Rotation matrices, shape (n_ops, 3, 3)
-        translations: Translation vectors, shape (n_ops, 3)
+        rotations: Rotation matrices in fractional coords, shape (n_ops, 3, 3)
+        translations: Translation vectors in fractional coords, shape (n_ops, 3)
         scaled_positions: Fractional coordinates, shape (n_atoms, 3)
 
     Returns:
@@ -380,10 +314,13 @@ def symmetrize_rank1(
 ) -> torch.Tensor:
     """Symmetrize rank-1 tensor (forces, velocities, etc).
 
+    Averages the tensor over all symmetry operations, respecting atom
+    permutations. Works in fractional coordinates internally.
+
     Args:
         lattice: Cell vectors as row vectors, shape (3, 3)
         forces: Forces array, shape (n_atoms, 3)
-        rotations: Rotation matrices, shape (n_ops, 3, 3)
+        rotations: Rotation matrices in fractional coords, shape (n_ops, 3, 3)
         symm_map: Atom mapping for each symmetry operation, shape (n_ops, n_atoms)
 
     Returns:
@@ -429,10 +366,12 @@ def symmetrize_rank2(
 ) -> torch.Tensor:
     """Symmetrize rank-2 tensor (stress, strain, etc).
 
+    Averages the tensor over all symmetry operations in scaled coordinates.
+
     Args:
         lattice: Cell vectors as row vectors, shape (3, 3)
         stress: Stress tensor, shape (3, 3)
-        rotations: Rotation matrices, shape (n_ops, 3, 3)
+        rotations: Rotation matrices in fractional coords, shape (n_ops, 3, 3)
 
     Returns:
         Symmetrized stress tensor, shape (3, 3)

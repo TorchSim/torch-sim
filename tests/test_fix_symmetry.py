@@ -19,9 +19,10 @@ from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.symmetrize import get_symmetry_datasets
 
 
-# Skip all tests if spglib is not available
+# Skip all tests if moyopy is not available
+moyopy = pytest.importorskip("moyopy")
+# spglib still needed for ASE comparison tests
 spglib = pytest.importorskip("spglib")
-from spglib import SpglibDataset  # noqa: E402
 
 
 # =============================================================================
@@ -172,9 +173,9 @@ def noisy_lj_model(model: LennardJonesModel) -> NoisyModelWrapper:
 # =============================================================================
 
 
-def get_symmetry_dataset_from_atoms(
+def get_spglib_dataset_from_atoms(
     atoms: Atoms, symprec: float = SYMPREC
-) -> SpglibDataset:
+) -> spglib.SpglibDataset:
     """Get full symmetry dataset for an ASE Atoms object using spglib directly."""
     return spglib.get_symmetry_dataset(
         (atoms.cell[:], atoms.get_scaled_positions(), atoms.numbers),
@@ -288,30 +289,25 @@ class TestFixSymmetryCreation:
         assert torch.allclose(stress, original_stress, atol=1e-10)
 
     def test_symmetry_datasets_match_spglib(self):
-        """Test get_symmetry_datasets matches spglib for single and batched states."""
+        """Test get_symmetry_datasets space groups match spglib."""
         atoms_list = [make_structure(name) for name in ["fcc", "diamond", "hcp"]]
 
         # Test batched state
         batched_state = ts.io.atoms_to_state(atoms_list, torch.device("cpu"), DTYPE)
-        ts_datasets = get_symmetry_datasets(batched_state, SYMPREC)
-        assert len(ts_datasets) == 3
+        moyo_datasets = get_symmetry_datasets(batched_state, SYMPREC)
+        assert len(moyo_datasets) == 3
 
-        # Compare each with direct spglib call (covers both single and batched)
-        for i, atoms in enumerate(atoms_list):
-            spglib_dataset = get_symmetry_dataset_from_atoms(atoms, SYMPREC)
+        # Compare space group numbers with spglib
+        for idx, atoms in enumerate(atoms_list):
+            spglib_dataset = get_spglib_dataset_from_atoms(atoms, SYMPREC)
 
-            # Compare key fields
-            assert ts_datasets[i].number == spglib_dataset.number, (
+            assert moyo_datasets[idx].number == spglib_dataset.number, (
                 f"Space group mismatch for {atoms.get_chemical_formula()}: "
-                f"{ts_datasets[i].number} vs {spglib_dataset.number}"
+                f"moyopy={moyo_datasets[idx].number} vs "
+                f"spglib={spglib_dataset.number}"
             )
-            assert ts_datasets[i].international == spglib_dataset.international
-            assert ts_datasets[i].hall == spglib_dataset.hall
-            assert len(ts_datasets[i].rotations) == len(spglib_dataset.rotations)
-            assert np.allclose(ts_datasets[i].rotations, spglib_dataset.rotations)
-            assert np.allclose(
-                ts_datasets[i].translations, spglib_dataset.translations, atol=1e-10
-            )
+            # Both should find the same number of symmetry operations
+            assert len(moyo_datasets[idx].operations) == len(spglib_dataset.rotations)
 
 
 class TestFixSymmetryComparisonWithASE:
@@ -706,13 +702,13 @@ class TestFixSymmetryWithOptimization:
 class TestFixSymmetryEdgeCases:
     """Tests for edge cases and error handling."""
 
-    def test_get_removed_dof_raises(self):
-        """Test that get_removed_dof raises NotImplementedError."""
+    def test_get_removed_dof_returns_zero(self):
+        """Test get_removed_dof returns zero (constrains direction, not DOF count)."""
         state = ts.io.atoms_to_state(make_structure("fcc"), torch.device("cpu"), DTYPE)
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
 
-        with pytest.raises(NotImplementedError, match="get_removed_dof"):
-            constraint.get_removed_dof(state)
+        dof = constraint.get_removed_dof(state)
+        assert torch.all(dof == 0)
 
     def test_large_deformation_gradient_raises(self):
         """Test that large deformation gradient raises RuntimeError."""
