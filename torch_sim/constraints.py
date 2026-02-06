@@ -971,11 +971,18 @@ class FixSymmetry(SystemConstraint):
         symm_maps = []
         system_indices = []
 
-        for constraint, offset in zip(constraints, state_indices, strict=False):
-            for i in range(len(constraint.rotations)):
-                rotations.append(constraint.rotations[i])
-                symm_maps.append(constraint.symm_maps[i])
-                system_indices.append(offset + i)
+        # Use cumulative system count as offset instead of state_indices directly.
+        # Each constraint can cover multiple systems, so state_indices (which is the
+        # position of the source state in the concatenation list) does not account
+        # for multi-system constraints. Using a running offset avoids duplicate
+        # system indices when merging constraints from states with different system counts.
+        cumulative_offset = 0
+        for constraint in constraints:
+            for idx in range(len(constraint.rotations)):
+                rotations.append(constraint.rotations[idx])
+                symm_maps.append(constraint.symm_maps[idx])
+                system_indices.append(cumulative_offset + idx)
+            cumulative_offset += len(constraint.rotations)
 
         device = rotations[0].device
 
