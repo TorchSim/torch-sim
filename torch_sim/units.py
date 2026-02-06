@@ -7,6 +7,7 @@ Units are defined similar to https://docs.lammps.org/units.html.
 
 from enum import Enum
 from math import pi, sqrt
+from typing import Self
 
 
 class BaseConstant:
@@ -83,7 +84,7 @@ uc = UnitConversion
 class MetalUnits(float, Enum):
     """Metal unit system using Angstroms, eV, amu, and proton charge."""
 
-    def __new__(cls, value: float) -> "MetalUnits":
+    def __new__(cls, value: float) -> Self:
         """Create new MetalUnits enum value."""
         return float.__new__(cls, value)
 
@@ -106,7 +107,7 @@ class MetalUnits(float, Enum):
 class RealUnits(float, Enum):
     """Real unit system using Angstroms, kcal/mol, and proton charge."""
 
-    def __new__(cls, value: float) -> "RealUnits":
+    def __new__(cls, value: float) -> Self:
         """Create new RealUnits enum value."""
         return float.__new__(cls, value)
 
