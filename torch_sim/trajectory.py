@@ -255,9 +255,7 @@ class TrajectoryReporter:
                     # we partially evaluate the function to create a new function with
                     # an optional second argument, this can be set to state later on
                     new_fn = partial(
-                        lambda state, _=None, fn=None: (
-                            None if fn is None else fn(state)
-                        ),
+                        lambda state, _=None, fn=None: None if fn is None else fn(state),
                         fn=prop_fn,
                     )
                     self.prop_calculators[frequency][name] = new_fn
@@ -390,7 +388,7 @@ class TrajectoryReporter:
                     last_steps.append(traj.last_step)
         return last_steps
 
-    def __enter__(self) -> "TrajectoryReporter":
+    def __enter__(self) -> Self:
         """Support the context manager protocol.
 
         Returns:
@@ -1077,7 +1075,7 @@ class TorchSimTrajectory:
         if self._file.isopen:  # TODO: ???
             self._file.close()
 
-    def __enter__(self) -> "TorchSimTrajectory":
+    def __enter__(self) -> Self:
         """Support the context manager protocol.
 
         Returns:
