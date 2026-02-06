@@ -1,20 +1,15 @@
-ci:
-  autoupdate_schedule: quarterly
-
-default_stages: [pre-commit]
-
 default_install_hook_types: [pre-commit, commit-msg]
 
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.13
+    rev: v0.14.4
     hooks:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: check-case-conflict
       - id: check-symlinks
@@ -40,3 +35,11 @@ repos:
         # MD041: first line in a file should be a top-level heading
         # MD034: bare URL used
         args: [--disable, MD013, MD033, MD041, MD034, '--']
+
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty check
+        entry: ty check
+        language: python
+        additional_dependencies: [ty, torch, ase, mace-torch]
