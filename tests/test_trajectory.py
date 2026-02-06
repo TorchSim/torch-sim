@@ -1000,13 +1000,13 @@ def test_truncate_trajectory(
             with pytest.raises(
                 ValueError,
                 match=(
-                    "Cannot truncate to a step greater than the last step. "
-                    "self.last_step=3 < step=10"
+                    r"Cannot truncate to a step greater than the last step\. "
+                    r"self\.last_step=3 < step=10"
                 ),
             ):
                 traj.truncate_to_step(10)
             with pytest.raises(
-                ValueError, match="Step must be larger than 0. Got step=0"
+                ValueError, match=r"Step must be larger than 0\. Got step=0"
             ):
                 traj.truncate_to_step(0)
 
@@ -1053,7 +1053,9 @@ def test_truncate_trajectory_reporter(
         ):
             trajectory_reporter.truncate_to_step(7)
         # try negative number
-        with pytest.raises(ValueError, match="Step must be greater than 0. Got step=-2"):
+        with pytest.raises(
+            ValueError, match=r"Step must be greater than 0\. Got step=-2"
+        ):
             trajectory_reporter.truncate_to_step(-2)
         # truncate to step 3
         trajectory_reporter.truncate_to_step(3)

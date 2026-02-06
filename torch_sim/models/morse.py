@@ -281,7 +281,7 @@ class MorseModel(ModelInterface):
         )
 
         if self.use_neighbor_list:
-            mapping, system_mapping, shifts_idx = torchsim_nl(
+            mapping, _, shifts_idx = torchsim_nl(
                 positions=wrapped_positions,
                 cell=cell,
                 pbc=pbc,

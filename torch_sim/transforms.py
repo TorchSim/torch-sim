@@ -159,7 +159,7 @@ def pbc_wrap_batched(
     positions: torch.Tensor,
     cell: torch.Tensor,
     system_idx: torch.Tensor,
-    pbc: torch.Tensor | bool = True,  # noqa: FBT002
+    pbc: torch.Tensor | bool = True,  # noqa: FBT001, FBT002
 ) -> torch.Tensor:
     """Apply periodic boundary conditions to batched systems.
 
