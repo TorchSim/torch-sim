@@ -605,3 +605,179 @@ def test_in_flight_max_iterations(
     # Verify iteration_count tracking
     for idx in range(len(states)):
         assert batcher.iteration_count[idx] == max_iterations
+
+
+@pytest.mark.parametrize(
+    "num_steps_per_batch",
+    [
+        5,  # At 5 steps, not every state will converge before the next batch.
+        10,  # At 10 steps, all states will converge before the next batch
+    ],
+)
+def test_in_flight_with_bfgs(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    num_steps_per_batch: int,
+) -> None:
+    """Test InFlightAutoBatcher with BFGS optimizer."""
+    si_bfgs_state = ts.bfgs_init(si_sim_state, lj_model, cell_filter=ts.CellFilter.unit)
+    fe_bfgs_state = ts.bfgs_init(
+        fe_supercell_sim_state, lj_model, cell_filter=ts.CellFilter.unit
+    )
+
+    bfgs_states = [si_bfgs_state, fe_bfgs_state] * 5
+    bfgs_states = [state.clone() for state in bfgs_states]
+    for state in bfgs_states:
+        state.positions += torch.randn_like(state.positions) * 0.01
+
+    batcher = InFlightAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=6000,
+    )
+    batcher.load_states(bfgs_states)
+
+    def convergence_fn(state: ts.BFGSState) -> torch.Tensor:
+        system_wise_max_force = torch.zeros(
+            state.n_systems, device=state.device, dtype=torch.float64
+        )
+        max_forces = state.forces.norm(dim=1)
+        system_wise_max_force = system_wise_max_force.scatter_reduce(
+            dim=0, index=state.system_idx, src=max_forces, reduce="amax"
+        )
+        return system_wise_max_force < 5e-1
+
+    all_completed_states, convergence_tensor = [], None
+    while True:
+        state, completed_states = batcher.next_batch(state, convergence_tensor)
+
+        all_completed_states.extend(completed_states)
+        if state is None:
+            break
+
+        for _ in range(num_steps_per_batch):
+            state = ts.bfgs_step(state=state, model=lj_model)
+        convergence_tensor = convergence_fn(state)
+
+    assert len(all_completed_states) == len(bfgs_states)
+
+
+def test_binning_auto_batcher_with_bfgs(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    """Test BinningAutoBatcher with BFGS optimizer."""
+    si_bfgs_state = ts.bfgs_init(si_sim_state, lj_model, cell_filter=ts.CellFilter.unit)
+    fe_bfgs_state = ts.bfgs_init(
+        fe_supercell_sim_state, lj_model, cell_filter=ts.CellFilter.unit
+    )
+
+    bfgs_states = [si_bfgs_state, fe_bfgs_state] * 5
+    bfgs_states = [state.clone() for state in bfgs_states]
+    for state in bfgs_states:
+        state.positions += torch.randn_like(state.positions) * 0.01
+
+    batcher = BinningAutoBatcher(
+        model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=6000
+    )
+    batcher.load_states(bfgs_states)
+
+    all_finished_states: list[ts.SimState] = []
+    total_batches = 0
+    for batch, _ in batcher:
+        total_batches += 1  # noqa: SIM113
+        for _ in range(5):
+            batch = ts.bfgs_step(state=batch, model=lj_model)
+        all_finished_states.extend(batch.split())
+
+    assert len(all_finished_states) == len(bfgs_states)
+
+
+@pytest.mark.parametrize(
+    "num_steps_per_batch",
+    [
+        5,  # At 5 steps, not every state will converge before the next batch.
+        10,  # At 10 steps, all states will converge before the next batch
+    ],
+)
+def test_in_flight_with_lbfgs(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    num_steps_per_batch: int,
+) -> None:
+    """Test InFlightAutoBatcher with L-BFGS optimizer."""
+    si_lbfgs_state = ts.lbfgs_init(si_sim_state, lj_model, cell_filter=ts.CellFilter.unit)
+    fe_lbfgs_state = ts.lbfgs_init(
+        fe_supercell_sim_state, lj_model, cell_filter=ts.CellFilter.unit
+    )
+
+    lbfgs_states = [si_lbfgs_state, fe_lbfgs_state] * 5
+    lbfgs_states = [state.clone() for state in lbfgs_states]
+    for state in lbfgs_states:
+        state.positions += torch.randn_like(state.positions) * 0.01
+
+    batcher = InFlightAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=6000,
+    )
+    batcher.load_states(lbfgs_states)
+
+    def convergence_fn(state: ts.LBFGSState) -> torch.Tensor:
+        system_wise_max_force = torch.zeros(
+            state.n_systems, device=state.device, dtype=torch.float64
+        )
+        max_forces = state.forces.norm(dim=1)
+        system_wise_max_force = system_wise_max_force.scatter_reduce(
+            dim=0, index=state.system_idx, src=max_forces, reduce="amax"
+        )
+        return system_wise_max_force < 5e-1
+
+    all_completed_states, convergence_tensor = [], None
+    while True:
+        state, completed_states = batcher.next_batch(state, convergence_tensor)
+
+        all_completed_states.extend(completed_states)
+        if state is None:
+            break
+
+        for _ in range(num_steps_per_batch):
+            state = ts.lbfgs_step(state=state, model=lj_model)
+        convergence_tensor = convergence_fn(state)
+
+    assert len(all_completed_states) == len(lbfgs_states)
+
+
+def test_binning_auto_batcher_with_lbfgs(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    """Test BinningAutoBatcher with L-BFGS optimizer."""
+    si_lbfgs_state = ts.lbfgs_init(si_sim_state, lj_model, cell_filter=ts.CellFilter.unit)
+    fe_lbfgs_state = ts.lbfgs_init(
+        fe_supercell_sim_state, lj_model, cell_filter=ts.CellFilter.unit
+    )
+
+    lbfgs_states = [si_lbfgs_state, fe_lbfgs_state] * 5
+    lbfgs_states = [state.clone() for state in lbfgs_states]
+    for state in lbfgs_states:
+        state.positions += torch.randn_like(state.positions) * 0.01
+
+    batcher = BinningAutoBatcher(
+        model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=6000
+    )
+    batcher.load_states(lbfgs_states)
+
+    all_finished_states: list[ts.SimState] = []
+    total_batches = 0
+    for batch, _ in batcher:
+        total_batches += 1  # noqa: SIM113
+        for _ in range(5):
+            batch = ts.lbfgs_step(state=batch, model=lj_model)
+        all_finished_states.extend(batch.split())
+
+    assert len(all_finished_states) == len(lbfgs_states)

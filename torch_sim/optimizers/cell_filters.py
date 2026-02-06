@@ -15,7 +15,7 @@ import torch
 
 import torch_sim.math as fm
 from torch_sim.models.interface import ModelInterface
-from torch_sim.optimizers.state import FireState, OptimState
+from torch_sim.optimizers.state import BFGSState, FireState, LBFGSState, OptimState
 from torch_sim.state import SimState
 
 
@@ -329,7 +329,13 @@ def compute_cell_forces[T: AnyCellState](
 
         state.cell_forces = cell_forces / state.cell_factor
     else:  # Unit cell force computation
-        state.cell_forces = virial / state.cell_factor
+        # Note (AG): ASE transforms virial as:
+        # virial = np.linalg.solve(cur_deform_grad, virial.T).T
+        cur_deform_grad = deform_grad(state.reference_cell.mT, state.row_vector_cell)
+        virial_transformed = torch.linalg.solve(
+            cur_deform_grad, virial.transpose(-2, -1)
+        ).transpose(-2, -1)
+        state.cell_forces = virial_transformed / state.cell_factor
 
 
 CellFilterFuncs = tuple[Callable[..., None], Callable[..., None]]  # (init_fn, update_fn)
@@ -398,4 +404,60 @@ class CellFireState(CellOptimState, FireState):
     )
 
 
-AnyCellState = CellFireState | CellOptimState
+@dataclass(kw_only=True)
+class CellBFGSState(CellOptimState, BFGSState):
+    """State class for BFGS optimization with cell optimization.
+
+    Combines BFGS position optimization with cell filter for simultaneous
+    optimization of atomic positions and unit cell parameters using a unified
+    extended coordinate space (positions + cell DOFs).
+    """
+
+    # Previous cell state for Hessian update
+    prev_cell_positions: torch.Tensor = field(default_factory=lambda: None)
+    prev_cell_forces: torch.Tensor = field(default_factory=lambda: None)
+
+    _atom_attributes = (
+        CellOptimState._atom_attributes  # noqa: SLF001
+        | BFGSState._atom_attributes  # noqa: SLF001
+    )
+    _system_attributes = (
+        CellOptimState._system_attributes  # noqa: SLF001
+        | BFGSState._system_attributes  # noqa: SLF001
+        | {"prev_cell_positions", "prev_cell_forces"}
+    )
+    _global_attributes = (
+        CellOptimState._global_attributes  # noqa: SLF001
+        | BFGSState._global_attributes  # noqa: SLF001
+    )
+
+
+@dataclass(kw_only=True)
+class CellLBFGSState(CellOptimState, LBFGSState):
+    """State class for L-BFGS optimization with cell optimization.
+
+    Combines L-BFGS position optimization with cell filter for simultaneous
+    optimization of atomic positions and unit cell parameters using a unified
+    extended coordinate space (positions + cell DOFs).
+    """
+
+    # Previous cell state for history update
+    prev_cell_positions: torch.Tensor = field(default_factory=lambda: None)
+    prev_cell_forces: torch.Tensor = field(default_factory=lambda: None)
+
+    _atom_attributes = (
+        CellOptimState._atom_attributes  # noqa: SLF001
+        | LBFGSState._atom_attributes  # noqa: SLF001
+    )
+    _system_attributes = (
+        CellOptimState._system_attributes  # noqa: SLF001
+        | LBFGSState._system_attributes  # noqa: SLF001
+        | {"prev_cell_positions", "prev_cell_forces"}
+    )
+    _global_attributes = (
+        CellOptimState._global_attributes  # noqa: SLF001
+        | LBFGSState._global_attributes  # noqa: SLF001
+    )
+
+
+AnyCellState = CellFireState | CellOptimState | CellBFGSState | CellLBFGSState
