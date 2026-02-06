@@ -83,12 +83,14 @@ def build_symmetry_map(
 
     if n_atoms <= _SYMM_MAP_CHUNK_THRESHOLD:
         # Vectorized: allocates (n_ops, n_atoms, n_atoms, 3) — fast for small systems
+        # einsum computes R[o] @ frac[n] for all (o, n) pairs at once
         new_pos = torch.einsum("oij,nj->oni", rotations, frac_pos) + translations[:, None]
         delta = frac_pos[None, None] - new_pos[:, :, None]
         delta -= delta.round()
         return torch.argmin(torch.linalg.norm(delta, dim=-1), dim=-1).long()
 
     # Per-op loop: allocates only (n_atoms, n_atoms, 3) at a time
+    # Equivalent to vectorized path: frac @ R.T == R @ frac per row
     result = torch.empty(n_ops, n_atoms, dtype=torch.long, device=frac_pos.device)
     for op_idx in range(n_ops):
         new_pos_op = frac_pos @ rotations[op_idx].T + translations[op_idx]
@@ -138,9 +140,9 @@ def _refine_symmetry_impl(
 
     def _mat_sqrt(mat: torch.Tensor) -> torch.Tensor:
         evals, evecs = torch.linalg.eigh(mat)
-        return evecs @ torch.diag(evals.sqrt()) @ evecs.T
+        return evecs @ torch.diag(evals.clamp(min=0).sqrt()) @ evecs.T
 
-    new_cell = _mat_sqrt(metric_sym) @ torch.linalg.inv(_mat_sqrt(metric)) @ cell
+    new_cell = _mat_sqrt(metric_sym) @ torch.linalg.solve(_mat_sqrt(metric), cell)
 
     # Symmetrize positions via displacement averaging over symmetry orbits
     new_frac = positions @ torch.linalg.inv(new_cell)

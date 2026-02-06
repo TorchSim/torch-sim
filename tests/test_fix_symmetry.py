@@ -86,6 +86,10 @@ def model() -> LennardJonesModel:
 class NoisyModelWrapper:
     """Wrapper that adds noise to forces and stress."""
 
+    model: LennardJonesModel
+    rng: np.random.Generator
+    noise_scale: float
+
     def __init__(self, model: LennardJonesModel, noise_scale: float = 1e-4) -> None:
         self.model = model
         self.rng = np.random.default_rng(seed=1)

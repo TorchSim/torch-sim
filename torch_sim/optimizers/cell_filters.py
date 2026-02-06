@@ -65,6 +65,8 @@ def _get_constrained_stress(
     model_output: dict[str, torch.Tensor], state: SimState
 ) -> torch.Tensor:
     """Clone stress from model output and apply constraint symmetrization."""
+    if not state.constraints:
+        return model_output["stress"]
     stress = model_output["stress"].clone()
     for constraint in state.constraints:
         constraint.adjust_stress(state, stress)

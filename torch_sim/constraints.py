@@ -136,6 +136,7 @@ class Constraint(ABC):
         """
 
     @classmethod
+    @abstractmethod
     def merge(cls, constraints: list[Self]) -> Self:
         """Merge multiple already-reindexed constraints into one.
 
@@ -145,10 +146,13 @@ class Constraint(ABC):
         Args:
             constraints: Constraints to merge (all same type, already reindexed)
         """
-        raise NotImplementedError(
-            f"Constraint type {cls.__name__} does not implement merge. "
-            "Override this method to support state concatenation."
-        )
+
+
+def _cumsum_with_zero(tensor: torch.Tensor) -> torch.Tensor:
+    """Cumulative sum with a leading zero, e.g. [3, 2, 4] -> [0, 3, 5, 9]."""
+    return torch.cat(
+        [torch.zeros(1, device=tensor.device, dtype=tensor.dtype), tensor.cumsum(dim=0)]
+    )
 
 
 def _mask_constraint_indices(idx: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -372,22 +376,12 @@ def merge_constraints(
 
     # Calculate cumulative offsets for atoms and systems
     device, dtype = num_atoms_per_state.device, num_atoms_per_state.dtype
-    atom_offsets = torch.cat(
-        [
-            torch.zeros(1, device=device, dtype=dtype),
-            torch.cumsum(num_atoms_per_state[:-1], dim=0),
-        ]
-    )
+    atom_offsets = _cumsum_with_zero(num_atoms_per_state[:-1])
     if num_systems_per_state is None:
         num_systems_per_state = torch.ones(
             len(constraint_lists), device=device, dtype=dtype
         )
-    system_offsets = torch.cat(
-        [
-            torch.zeros(1, device=device, dtype=dtype),
-            torch.cumsum(num_systems_per_state[:-1], dim=0),
-        ]
-    )
+    system_offsets = _cumsum_with_zero(num_systems_per_state[:-1])
 
     # Reindex each constraint to global coordinates, then group by type
     grouped: dict[type[Constraint], list[Constraint]] = defaultdict(list)
@@ -777,13 +771,7 @@ class FixSymmetry(SystemConstraint):
         from torch_sim.symmetrize import prep_symmetry, refine_and_prep_symmetry
 
         rotations, symm_maps = [], []
-        n_per = state.n_atoms_per_system
-        cumsum = torch.cat(
-            [
-                torch.zeros(1, device=state.device, dtype=torch.long),
-                torch.cumsum(n_per, dim=0),
-            ]
-        )
+        cumsum = _cumsum_with_zero(state.n_atoms_per_system)
 
         for sys_idx in range(state.n_systems):
             start, end = cumsum[sys_idx].item(), cumsum[sys_idx + 1].item()
@@ -862,9 +850,9 @@ class FixSymmetry(SystemConstraint):
         for ci, si in enumerate(self.system_idx):
             cur_cell = state.row_vector_cell[si]
             new_row = new_cell[si].mT  # column → row convention
-            deform_delta = torch.linalg.inv(cur_cell) @ new_row - identity
+            deform_delta = torch.linalg.solve(cur_cell, new_row) - identity
             max_delta = torch.abs(deform_delta).max().item()
-            if max_delta > 0.25:
+            if not (max_delta <= 0.25):  # catches NaN via negated comparison
                 raise RuntimeError(
                     f"FixSymmetry: deformation gradient {max_delta:.4f} > 0.25 "
                     f"too large. Use smaller optimization steps."
@@ -877,12 +865,7 @@ class FixSymmetry(SystemConstraint):
         """Symmetrize a rank-1 tensor in-place for each constrained system."""
         from torch_sim.symmetrize import symmetrize_rank1
 
-        cumsum = torch.cat(
-            [
-                torch.zeros(1, device=state.device, dtype=torch.long),
-                torch.cumsum(state.n_atoms_per_system, dim=0),
-            ]
-        )
+        cumsum = _cumsum_with_zero(state.n_atoms_per_system)
         dtype = vectors.dtype
         for ci, si in enumerate(self.system_idx):
             start, end = cumsum[si].item(), cumsum[si + 1].item()
@@ -902,8 +885,8 @@ class FixSymmetry(SystemConstraint):
     def reindex(self, atom_offset: int, system_offset: int) -> Self:  # noqa: ARG002
         """Return copy with system indices shifted by system_offset."""
         return type(self)(
-            self.rotations,
-            self.symm_maps,
+            list(self.rotations),
+            list(self.symm_maps),
             self.system_idx + system_offset,
             adjust_positions=self.do_adjust_positions,
             adjust_cell=self.do_adjust_cell,
@@ -914,6 +897,15 @@ class FixSymmetry(SystemConstraint):
         """Merge by concatenating rotations, symm_maps, and system indices."""
         if not constraints:
             raise ValueError("Cannot merge empty constraint list")
+        if any(
+            c.do_adjust_positions != constraints[0].do_adjust_positions
+            or c.do_adjust_cell != constraints[0].do_adjust_cell
+            for c in constraints[1:]
+        ):
+            raise ValueError(
+                "Cannot merge FixSymmetry constraints with different "
+                "adjust_positions/adjust_cell settings"
+            )
         rotations = [r for c in constraints for r in c.rotations]
         symm_maps = [s for c in constraints for s in c.symm_maps]
         system_idx = torch.cat([c.system_idx for c in constraints])
@@ -935,10 +927,10 @@ class FixSymmetry(SystemConstraint):
         mask = torch.isin(self.system_idx, keep)
         if not mask.any():
             return None
-        indices = [idx for idx in range(len(mask)) if mask[idx]]
+        local_idx = mask.nonzero(as_tuple=False).flatten().tolist()
         return type(self)(
-            [self.rotations[idx] for idx in indices],
-            [self.symm_maps[idx] for idx in indices],
+            [self.rotations[idx] for idx in local_idx],
+            [self.symm_maps[idx] for idx in local_idx],
             _mask_constraint_indices(self.system_idx[mask], system_mask),
             adjust_positions=self.do_adjust_positions,
             adjust_cell=self.do_adjust_cell,
