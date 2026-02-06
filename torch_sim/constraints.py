@@ -84,22 +84,24 @@ class Constraint(ABC):
             forces: Forces to be adjusted
         """
 
-    @abstractmethod
-    def adjust_stress(self, state: SimState, stress: torch.Tensor) -> None:
+    def adjust_stress(  # noqa: B027
+        self, state: SimState, stress: torch.Tensor
+    ) -> None:
         """Adjust stress tensor to satisfy the constraint.
 
-        This method should modify stress in-place.
+        Default is a no-op. Override in subclasses that need stress symmetrization.
 
         Args:
             state: Current simulation state
             stress: Stress tensor to be adjusted in-place
         """
 
-    @abstractmethod
-    def adjust_cell(self, state: SimState, cell: torch.Tensor) -> None:
+    def adjust_cell(  # noqa: B027
+        self, state: SimState, cell: torch.Tensor
+    ) -> None:
         """Adjust cell to satisfy the constraint.
 
-        This method should modify cell in-place.
+        Default is a no-op. Override in subclasses that need cell symmetrization.
 
         Args:
             state: Current simulation state
@@ -493,20 +495,6 @@ class FixAtoms(AtomConstraint):
         """
         forces[self.atom_idx] = 0.0
 
-    def adjust_stress(
-        self,
-        state: SimState,
-        stress: torch.Tensor,
-    ) -> None:
-        """No stress adjustment needed for FixAtoms."""
-
-    def adjust_cell(
-        self,
-        state: SimState,
-        cell: torch.Tensor,
-    ) -> None:
-        """No cell adjustment needed for FixAtoms."""
-
     def __repr__(self) -> str:
         """String representation of the constraint."""
         if len(self.atom_idx) <= 10:
@@ -623,20 +611,6 @@ class FixCom(SystemConstraint):
         forces_change = torch.zeros(state.n_systems, 3, dtype=dtype)
         forces_change[self.system_idx] = lmd[self.system_idx]
         forces -= forces_change[state.system_idx] * state.masses.unsqueeze(-1)
-
-    def adjust_stress(
-        self,
-        state: SimState,
-        stress: torch.Tensor,
-    ) -> None:
-        """No stress adjustment needed for FixCom."""
-
-    def adjust_cell(
-        self,
-        state: SimState,
-        cell: torch.Tensor,
-    ) -> None:
-        """No cell adjustment needed for FixCom."""
 
     def __repr__(self) -> str:
         """String representation of the constraint."""
@@ -927,14 +901,14 @@ class FixSymmetry(SystemConstraint):
     def merge(
         cls,
         constraints: list[Self],
-        state_indices: list[int],
+        state_indices: list[int],  # noqa: ARG003
         atom_offsets: torch.Tensor,  # noqa: ARG003
     ) -> Self:
         """Merge multiple FixSymmetry constraints into one.
 
         Args:
             constraints: List of FixSymmetry constraints to merge.
-            state_indices: Index of the source state for each constraint.
+            state_indices: Index of the source state for each constraint (unused).
             atom_offsets: Cumulative atom counts (unused for FixSymmetry).
 
         Returns:
@@ -971,11 +945,7 @@ class FixSymmetry(SystemConstraint):
         symm_maps = []
         system_indices = []
 
-        # Use cumulative system count as offset instead of state_indices directly.
-        # Each constraint can cover multiple systems, so state_indices (which is the
-        # position of the source state in the concatenation list) does not account
-        # for multi-system constraints. Using a running offset avoids duplicate
-        # system indices when merging constraints from states with different system counts.
+        # Use cumulative offset (not state_indices) to handle multi-system constraints
         cumulative_offset = 0
         for constraint in constraints:
             for idx in range(len(constraint.rotations)):

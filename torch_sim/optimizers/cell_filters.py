@@ -112,10 +112,9 @@ def unit_cell_filter_init[T: AnyCellState](
     # Calculate initial cell forces
     stress = model_output["stress"].clone()
 
-    # Apply stress constraints if any exist
-    if state.constraints:
-        for constraint in state.constraints:
-            constraint.adjust_stress(state, stress)
+    # Apply stress constraints (e.g. FixSymmetry)
+    for constraint in state.constraints:
+        constraint.adjust_stress(state, stress)
 
     volumes = torch.linalg.det(state.cell).view(n_systems, 1, 1)
     virial = -volumes * (stress + pressure)
@@ -170,7 +169,7 @@ def frechet_cell_filter_init[T: AnyCellState](
     # Calculate initial cell forces using Frechet approach
     stress = model_output["stress"].clone()
 
-    # Apply stress constraints if present
+    # Apply stress constraints (e.g. FixSymmetry)
     for constraint in state.constraints:
         constraint.adjust_stress(state, stress)
 
@@ -273,10 +272,9 @@ def compute_cell_forces[T: AnyCellState](
     """Compute cell forces for both unit and frechet methods."""
     stress = model_output["stress"].clone()
 
-    # Apply stress constraints if any exist
-    if state.constraints:
-        for constraint in state.constraints:
-            constraint.adjust_stress(state, stress)
+    # Apply stress constraints (e.g. FixSymmetry)
+    for constraint in state.constraints:
+        constraint.adjust_stress(state, stress)
 
     volumes = torch.linalg.det(state.cell).view(state.n_systems, 1, 1)
     virial = -volumes * (stress + state.pressure)

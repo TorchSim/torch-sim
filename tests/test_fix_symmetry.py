@@ -1,6 +1,6 @@
 """Tests for the FixSymmetry constraint."""
 
-from typing import Literal, TypedDict
+from typing import Literal
 
 import numpy as np
 import pytest
@@ -22,17 +22,6 @@ from torch_sim.symmetrize import get_symmetry_datasets
 # Skip all tests if spglib is not available
 spglib = pytest.importorskip("spglib")
 from spglib import SpglibDataset  # noqa: E402
-
-
-class OptimizationResult(TypedDict):
-    """Return type for run_optimization_check_symmetry."""
-
-    initial_spacegroups: list[int | None]
-    final_spacegroups: list[int | None]
-    initial_datasets: list[SpglibDataset]
-    final_datasets: list[SpglibDataset]
-    final_state: ts.SimState
-    final_atoms_list: list[Atoms]
 
 
 # =============================================================================
@@ -112,15 +101,6 @@ def make_structure(name: str) -> Atoms:
 # =============================================================================
 # Shared Fixtures
 # =============================================================================
-
-
-@pytest.fixture(params=["fcc", "hcp", "hcp_supercell", "diamond", "p6bar"])
-def structure_with_spacegroup(request: pytest.FixtureRequest) -> tuple[Atoms, int]:
-    """Parameterized fixture returning (atoms, expected_spacegroup)."""
-    name = request.param
-    atoms = make_structure(name)
-    base_name = name.replace("_supercell", "")
-    return atoms, SPACEGROUPS[base_name]
 
 
 @pytest.fixture
@@ -211,10 +191,8 @@ def run_optimization_check_symmetry(
     symprec: float = SYMPREC,
     max_steps: int = MAX_STEPS,
     force_tol: float = 0.001,
-) -> OptimizationResult:
-    """Run optimization and return initial/final symmetry info.
-
-    This is the core helper for testing symmetry preservation during optimization.
+) -> dict[str, list[int | None]]:
+    """Run FIRE optimization and return initial/final space group numbers.
 
     Args:
         state: torch-sim SimState (can be batched)
@@ -226,23 +204,14 @@ def run_optimization_check_symmetry(
         force_tol: Force convergence tolerance
 
     Returns:
-        Dict with keys:
-            - 'initial_spacegroups': List of initial space group numbers
-            - 'final_spacegroups': List of final space group numbers
-            - 'initial_datasets': List of full spglib datasets for initial structures
-            - 'final_datasets': List of full spglib datasets for final structures
-            - 'final_state': Final SimState
-            - 'final_atoms_list': List of final ASE Atoms objects
+        Dict with 'initial_spacegroups' and 'final_spacegroups' lists.
     """
-    # Get initial symmetry for all systems using torch_sim.symmetrize
     initial_datasets = get_symmetry_datasets(state, symprec)
 
     if constraint is not None:
         state.constraints = [constraint]
 
-    # Run optimization
     init_kwargs = {"cell_filter": ts.CellFilter.frechet} if adjust_cell else None
-    # When doing cell optimization, include cell_forces in convergence check
     convergence_fn = ts.generate_force_convergence_fn(
         force_tol=force_tol, include_cell_forces=adjust_cell
     )
@@ -256,17 +225,11 @@ def run_optimization_check_symmetry(
         steps_between_swaps=1,
     )
 
-    # Get final symmetry for all systems
     final_datasets = get_symmetry_datasets(final_state, symprec)
-    final_atoms_list = final_state.to_atoms()
 
     return {
         "initial_spacegroups": [d.number if d else None for d in initial_datasets],
         "final_spacegroups": [d.number if d else None for d in final_datasets],
-        "initial_datasets": initial_datasets,
-        "final_datasets": final_datasets,
-        "final_state": final_state,
-        "final_atoms_list": final_atoms_list,
     }
 
 
@@ -487,6 +450,28 @@ class TestFixSymmetryMergeAndSelect:
         assert len(merged.symm_maps) == 2
         assert merged.system_idx.tolist() == [0, 1]
 
+    def test_merge_multi_system_constraints_no_duplicate_indices(self):
+        """Regression: merging multi-system constraints must not produce duplicates."""
+        # Create two batched states so each constraint covers multiple systems
+        atoms_a = [
+            make_structure("fcc"),
+            make_structure("diamond"),
+            make_structure("hcp"),
+        ]
+        atoms_b = [make_structure("bcc"), make_structure("fcc")]
+        state_a = ts.io.atoms_to_state(atoms_a, torch.device("cpu"), DTYPE)
+        state_b = ts.io.atoms_to_state(atoms_b, torch.device("cpu"), DTYPE)
+        c_a = FixSymmetry.from_state(state_a, symprec=SYMPREC)  # 3 systems
+        c_b = FixSymmetry.from_state(state_b, symprec=SYMPREC)  # 2 systems
+
+        # Old bug: state_indices=[0, 1] was used as offsets → [0,1,2, 1,2] (duplicates)
+        # Fix: cumulative offset → [0,1,2, 3,4]
+        merged = FixSymmetry.merge([c_a, c_b], state_indices=[0, 1], atom_offsets=None)
+
+        assert len(merged.rotations) == 5
+        assert len(merged.symm_maps) == 5
+        assert merged.system_idx.tolist() == [0, 1, 2, 3, 4]
+
     @pytest.mark.parametrize("mismatch_field", ["adjust_positions", "adjust_cell"])
     def test_merge_mismatched_settings_raises(
         self, mismatch_field: Literal["adjust_positions", "adjust_cell"]
@@ -633,6 +618,41 @@ class TestFixSymmetryWithOptimization:
 
         final_datasets = get_symmetry_datasets(final_state, symprec=SYMPREC)
         assert initial_datasets[0].number == final_datasets[0].number
+
+    @pytest.mark.parametrize("cell_filter", [ts.CellFilter.frechet, ts.CellFilter.unit])
+    def test_lbfgs_cell_optimization_preserves_symmetry(
+        self,
+        noisy_lj_model: NoisyModelWrapper,
+        cell_filter: ts.CellFilter,
+    ):
+        """Regression: LBFGS must use set_constrained_cell for FixSymmetry support."""
+        state = ts.io.atoms_to_state(make_structure("bcc"), torch.device("cpu"), DTYPE)
+        constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
+        state.constraints = [constraint]
+
+        # Compress cell to create forces
+        state.cell = state.cell * 0.95
+        state.positions = state.positions * 0.95
+
+        initial_datasets = get_symmetry_datasets(state, symprec=SYMPREC)
+        assert initial_datasets[0].number == SPACEGROUPS["bcc"]
+
+        final_state = ts.optimize(
+            system=state,
+            model=noisy_lj_model,
+            optimizer=ts.Optimizer.lbfgs,
+            convergence_fn=ts.generate_force_convergence_fn(
+                force_tol=0.01, include_cell_forces=True
+            ),
+            init_kwargs={"cell_filter": cell_filter},
+            max_steps=MAX_STEPS,
+        )
+
+        final_datasets = get_symmetry_datasets(final_state, symprec=SYMPREC)
+        assert final_datasets[0].number == SPACEGROUPS["bcc"], (
+            f"LBFGS+{cell_filter} lost symmetry: {SPACEGROUPS['bcc']} -> "
+            f"{final_datasets[0].number}"
+        )
 
     @pytest.mark.parametrize("rotated", [False, True])
     def test_noisy_model_loses_symmetry_without_constraint(
