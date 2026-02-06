@@ -504,10 +504,11 @@ def lbfgs_step(  # noqa: PLR0915, C901
             deform_grad_new = cell_positions_new / cell_factor_expanded  # [S, 3, 3]
 
         # Update cell: new_cell = reference_cell @ deform_grad^T
-        # reference_cell.mT: [S, 3, 3], deform_grad_new: [S, 3, 3]
-        state.row_vector_cell = torch.bmm(
-            state.reference_cell.mT, deform_grad_new.transpose(-2, -1)
+        # Use set_constrained_cell to apply cell constraints (e.g. FixSymmetry)
+        new_col_vector_cell = torch.bmm(
+            deform_grad_new, state.reference_cell
         )  # [S, 3, 3]
+        state.set_constrained_cell(new_col_vector_cell, scale_atoms=True)
 
         # Apply position step in fractional space, then convert to Cartesian
         new_frac = frac_positions + step_positions  # [N, 3]
@@ -535,6 +536,11 @@ def lbfgs_step(  # noqa: PLR0915, C901
     # Update cell forces for next step: [S, 3, 3]
     if is_cell_state:
         cell_filters.compute_cell_forces(model_output, state)
+
+    # Update state
+    state.set_constrained_forces(new_forces)  # [N, 3]
+    state.energy = new_energy  # [S]
+    state.stress = new_stress  # [S, 3, 3] or None
 
     # Build new (s, y) for history in per-system format [S, M_ext, 3] or [S, M, 3]
     # s = position difference, y = gradient difference
@@ -601,11 +607,6 @@ def lbfgs_step(  # noqa: PLR0915, C901
     if s_hist.shape[1] > max_history:
         s_hist = s_hist[:, -max_history:]  # [S, max_history, ...]
         y_hist = y_hist[:, -max_history:]
-
-    # Update state
-    state.set_constrained_forces(new_forces)  # [N, 3]
-    state.energy = new_energy  # [S]
-    state.stress = new_stress  # [S, 3, 3] or None
 
     if is_cell_state:
         # Store fractional/scaled for next iteration

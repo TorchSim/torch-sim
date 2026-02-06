@@ -61,6 +61,18 @@ def _compute_cell_masses(state: SimState) -> torch.Tensor:
     return cell_masses.unsqueeze(-1).expand(-1, 3)
 
 
+def _get_constrained_stress(
+    model_output: dict[str, torch.Tensor], state: SimState
+) -> torch.Tensor:
+    """Clone stress from model output and apply constraint symmetrization."""
+    if not state.constraints:
+        return model_output["stress"]
+    stress = model_output["stress"].clone()
+    for constraint in state.constraints:
+        constraint.adjust_stress(state, stress)
+    return stress
+
+
 def _apply_constraints(
     virial: torch.Tensor, *, hydrostatic_strain: bool, constant_volume: bool
 ) -> torch.Tensor:
@@ -110,7 +122,7 @@ def unit_cell_filter_init[T: AnyCellState](
     model_output = model(state)
 
     # Calculate initial cell forces
-    stress = model_output["stress"]
+    stress = _get_constrained_stress(model_output, state)
     volumes = torch.linalg.det(state.cell).view(n_systems, 1, 1)
     virial = -volumes * (stress + pressure)
     virial = _apply_constraints(
@@ -162,7 +174,7 @@ def frechet_cell_filter_init[T: AnyCellState](
     model_output = model(state)
 
     # Calculate initial cell forces using Frechet approach
-    stress = model_output["stress"]
+    stress = _get_constrained_stress(model_output, state)
     volumes = torch.linalg.det(state.cell).view(n_systems, 1, 1)
     virial = -volumes * (stress + pressure)
     virial = _apply_constraints(
@@ -222,9 +234,10 @@ def unit_cell_step[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) -> 
 
     # Update cell from new positions
     cell_update = cell_positions_new / cell_factor_expanded
-    state.row_vector_cell = torch.bmm(
-        state.reference_cell.mT, cell_update.transpose(-2, -1)
-    )
+    new_cell = torch.bmm(state.reference_cell.mT, cell_update.transpose(-2, -1))
+
+    # Apply cell constraints (in-place, column vector convention)
+    state.set_constrained_cell(new_cell.mT.contiguous())
     state.cell_positions = cell_positions_new
 
 
@@ -249,7 +262,9 @@ def frechet_cell_step[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) 
     new_row_vector_cell = torch.bmm(
         state.reference_cell.mT, deform_grad_new.transpose(-2, -1)
     )
-    state.row_vector_cell = new_row_vector_cell
+
+    # Apply cell constraints (in-place, column vector convention)
+    state.set_constrained_cell(new_row_vector_cell.mT.contiguous())
     state.cell_positions = cell_positions_new
 
 
@@ -257,7 +272,7 @@ def compute_cell_forces[T: AnyCellState](
     model_output: dict[str, torch.Tensor], state: T
 ) -> None:
     """Compute cell forces for both unit and frechet methods."""
-    stress = model_output["stress"]
+    stress = _get_constrained_stress(model_output, state)
     volumes = torch.linalg.det(state.cell).view(state.n_systems, 1, 1)
     virial = -volumes * (stress + state.pressure)
     virial = _apply_constraints(

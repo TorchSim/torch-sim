@@ -278,6 +278,23 @@ class SimState:
             constraint.adjust_positions(self, new_positions)
         self.positions = new_positions
 
+    def set_constrained_cell(
+        self,
+        new_cell: torch.Tensor,
+        scale_atoms: bool = False,  # noqa: FBT001, FBT002
+    ) -> None:
+        """Set the cell, apply constraints, and optionally scale atomic positions.
+
+        Args:
+            new_cell: New cell tensor with shape (n_systems, 3, 3)
+                in column vector convention
+            scale_atoms: Whether to scale atomic positions to preserve
+                fractional coordinates. Defaults to False.
+        """
+        for constraint in self.constraints:
+            constraint.adjust_cell(self, new_cell)
+        self.set_cell(new_cell, scale_atoms=scale_atoms)
+
     @property
     def constraints(self) -> list[Constraint]:
         """Get the constraints for the SimState.
@@ -1118,8 +1135,11 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
 
     # Merge constraints
     constraint_lists = [state.constraints for state in states]
+    num_systems_per_state = [state.n_systems for state in states]
     constraints = merge_constraints(
-        constraint_lists, torch.tensor(num_atoms_per_state, device=target_device)
+        constraint_lists,
+        torch.tensor(num_atoms_per_state, device=target_device),
+        torch.tensor(num_systems_per_state, device=target_device),
     )
 
     # Create a new instance of the same class
