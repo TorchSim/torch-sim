@@ -424,6 +424,8 @@ class FairChemV1Model(ModelInterface):
                     fixed=fixed[c - n : c].clone(),
                     natoms=n,
                     pbc=state.pbc,
+                    charge=state.charge[i].clone(),
+                    spin=state.spin[i].clone(),
                 )
             )
         self.data_object = Batch.from_data_list(data_list)
