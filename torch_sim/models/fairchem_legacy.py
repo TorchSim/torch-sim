@@ -416,6 +416,9 @@ class FairChemV1Model(ModelInterface):
         for i, (n, c) in enumerate(
             zip(natoms, torch.cumsum(natoms, dim=0), strict=False)
         ):
+            # NOTE: Legacy FairChem models (v1) do not support charge/spin,
+            # so we don't pass these fields to the Data object.
+            # The model will simply ignore charge/spin and treat all systems as neutral.
             data_list.append(
                 Data(
                     pos=state.positions[c - n : c].clone(),
@@ -424,8 +427,6 @@ class FairChemV1Model(ModelInterface):
                     fixed=fixed[c - n : c].clone(),
                     natoms=n,
                     pbc=state.pbc,
-                    charge=state.charge[i].clone(),
-                    spin=state.spin[i].clone(),
                 )
             )
         self.data_object = Batch.from_data_list(data_list)
