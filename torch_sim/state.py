@@ -137,8 +137,10 @@ class SimState:
             self.system_idx = torch.zeros(
                 self.n_atoms, device=self.device, dtype=torch.int64
             )
+            n_systems_val = 1
         else:  # assert that system indices are unique consecutive integers
             _, counts = torch.unique_consecutive(initial_system_idx, return_counts=True)
+            n_systems_val = len(counts)
             if not torch.all(counts == torch.bincount(initial_system_idx)):
                 raise ValueError("System indices must be unique consecutive integers")
 
@@ -146,15 +148,13 @@ class SimState:
             validate_constraints(self.constraints, state=self)
 
         if self.charge is None:
-            self.charge = torch.zeros(
-                self.n_systems, device=self.device, dtype=self.dtype
-            )
-        elif self.charge.shape[0] != self.n_systems:
-            raise ValueError(f"Charge must have shape (n_systems={self.n_systems},)")
+            self.charge = torch.zeros(n_systems_val, device=self.device, dtype=self.dtype)
+        elif self.charge.shape[0] != n_systems_val:
+            raise ValueError(f"Charge must have shape (n_systems={n_systems_val},)")
         if self.spin is None:
-            self.spin = torch.zeros(self.n_systems, device=self.device, dtype=self.dtype)
-        elif self.spin.shape[0] != self.n_systems:
-            raise ValueError(f"Spin must have shape (n_systems={self.n_systems},)")
+            self.spin = torch.zeros(n_systems_val, device=self.device, dtype=self.dtype)
+        elif self.spin.shape[0] != n_systems_val:
+            raise ValueError(f"Spin must have shape (n_systems={n_systems_val},)")
 
         if self.cell.ndim != 3 and initial_system_idx is None:
             self.cell = self.cell.unsqueeze(0)
@@ -162,9 +162,10 @@ class SimState:
         if self.cell.shape[-2:] != (3, 3):
             raise ValueError("Cell must have shape (n_systems, 3, 3)")
 
-        if self.cell.shape[0] != self.n_systems:
+        if self.cell.shape[0] != n_systems_val:
             raise ValueError(
-                f"Cell must have shape (n_systems, 3, 3), got {self.cell.shape}"
+                f"Cell must have shape (n_systems={n_systems_val}, 3, 3), "
+                f"got {self.cell.shape}"
             )
 
         # if devices aren't all the same, raise an error, in a clean way
@@ -450,14 +451,14 @@ class SimState:
         """
         return ts.io.state_to_phonopy(self)
 
-    def split(self) -> list[Self]:
-        """Split the SimState into a list of single-system SimStates.
+    def split(self) -> Sequence[Self]:
+        """Split the SimState into a sequence of single-system SimStates (O(1)).
 
-        Divides the current state into separate states, each containing a single system,
-        preserving all properties appropriately for each system.
+        Each single-system state is created on first access (index or iteration),
+        so the call itself is O(1). Use like a list: len(s), s[i], for x in s.
 
         Returns:
-            list[SimState]: A list of SimState objects, one per system
+            Sequence[SimState]: A sequence of SimState objects, one per system
         """
         return _split_state(self)
 
@@ -664,6 +665,58 @@ class DeformGradMixin:
         return self._deform_grad(self.reference_row_vector_cell, self.row_vector_cell)
 
 
+def _split_state[T: SimState](state: T) -> Sequence[T]:
+    """Return a lazy Sequence view of state split into single-system states.
+
+    Each single-system state is created on first access, so the call is O(1).
+
+    Args:
+        state: The SimState to split.
+
+    Returns:
+        A Sequence of SimState objects, one per system.
+    """
+    cumsum = torch.cat(
+        (state.n_atoms_per_system.new_zeros(1), state.n_atoms_per_system.cumsum(0))
+    )
+    n_systems = state.n_systems
+
+    def get_single(idx: int) -> T:
+        start, end = int(cumsum[idx]), int(cumsum[idx + 1])
+        attrs: dict[str, Any] = {
+            "system_idx": torch.zeros(
+                end - start, device=state.device, dtype=torch.int64
+            ),
+            **dict(get_attrs_for_scope(state, "global")),
+        }
+        for name, val in get_attrs_for_scope(state, "per-atom"):
+            if name != "system_idx":
+                attrs[name] = val[start:end]
+        for name, val in get_attrs_for_scope(state, "per-system"):
+            attrs[name] = val[idx : idx + 1] if isinstance(val, torch.Tensor) else val
+        atom_idx = torch.arange(start, end, device=state.device)
+        attrs["_constraints"] = [
+            c
+            for con in state.constraints
+            if (c := con.select_sub_constraint(atom_idx, idx))
+        ]
+        return type(state)(**attrs)
+
+    def _len(_: object) -> int:
+        return n_systems
+
+    def _getitem(_: object, idx: int | slice) -> T | list[T]:
+        if isinstance(idx, slice):
+            return [get_single(i) for i in range(*idx.indices(n_systems))]
+        if idx < 0:
+            idx += n_systems
+        if not 0 <= idx < n_systems:
+            raise IndexError(f"index {idx} out of range [0, {n_systems})")
+        return get_single(idx)
+
+    return type("SplitSeq", (Sequence,), {"__len__": _len, "__getitem__": _getitem})()
+
+
 def _normalize_system_indices(
     system_indices: int | Sequence[int] | slice | torch.Tensor,
     n_systems: int,
@@ -833,76 +886,6 @@ def _filter_attrs_by_mask(
     return filtered_attrs
 
 
-def _split_state[T: SimState](state: T) -> list[T]:
-    """Split a SimState into a list of states, each containing a single system.
-
-    Divides a multi-system state into individual single-system states, preserving
-    appropriate properties for each system.
-
-    Args:
-        state (SimState): The SimState to split
-
-    Returns:
-        list[SimState]: A list of SimState objects, each containing a single
-            system
-    """
-    system_sizes = state.n_atoms_per_system.tolist()
-
-    split_per_atom = {}
-    for attr_name, attr_value in get_attrs_for_scope(state, "per-atom"):
-        if attr_name != "system_idx":
-            split_per_atom[attr_name] = torch.split(attr_value, system_sizes, dim=0)
-
-    split_per_system = {}
-    for attr_name, attr_value in get_attrs_for_scope(state, "per-system"):
-        if isinstance(attr_value, torch.Tensor):
-            split_per_system[attr_name] = torch.split(attr_value, 1, dim=0)
-        else:  # Non-tensor attributes are replicated for each split
-            split_per_system[attr_name] = [attr_value] * state.n_systems
-
-    global_attrs = dict(get_attrs_for_scope(state, "global"))
-
-    # Create a state for each system
-    states: list[T] = []
-    n_systems = len(system_sizes)
-    zero_tensor = torch.tensor([0], device=state.device, dtype=torch.int64)
-    cumsum_atoms = torch.cat((zero_tensor, torch.cumsum(state.n_atoms_per_system, dim=0)))
-    for sys_idx in range(n_systems):
-        # Build per-system attributes (padded attributes stay padded for consistency)
-        per_system_dict = {
-            attr_name: split_per_system[attr_name][sys_idx]
-            for attr_name in split_per_system
-        }
-
-        system_attrs = {
-            # Create a system tensor with all zeros for this system
-            "system_idx": torch.zeros(
-                system_sizes[sys_idx], device=state.device, dtype=torch.int64
-            ),
-            # Add the split per-atom attributes
-            **{
-                attr_name: split_per_atom[attr_name][sys_idx]
-                for attr_name in split_per_atom
-            },
-            # Add the split per-system attributes (with unpadding applied)
-            **per_system_dict,
-            # Add the global attributes
-            **global_attrs,
-        }
-
-        atom_idx = torch.arange(cumsum_atoms[sys_idx], cumsum_atoms[sys_idx + 1])
-        new_constraints = [
-            new_constraint
-            for constraint in state.constraints
-            if (new_constraint := constraint.select_sub_constraint(atom_idx, sys_idx))
-        ]
-
-        system_attrs["_constraints"] = new_constraints
-        states.append(type(state)(**system_attrs))  # type: ignore[invalid-argument-type]
-
-    return states
-
-
 def _pop_states[T: SimState](
     state: T, pop_indices: list[int] | torch.Tensor
 ) -> tuple[T, list[T]]:
@@ -945,7 +928,7 @@ def _pop_states[T: SimState](
 
     # Create and split the pop state
     pop_state: T = type(state)(**pop_attrs)  # type: ignore[assignment]
-    pop_states = _split_state(pop_state)
+    pop_states = list(pop_state.split())
 
     return keep_state, pop_states
 
@@ -954,12 +937,13 @@ def _slice_state[T: SimState](state: T, system_indices: list[int] | torch.Tensor
     """Slice a substate from the SimState containing only the specified system indices.
 
     Creates a new SimState containing only the specified systems, preserving
-    all relevant properties.
+    the requested order. E.g., system_indices=[3, 1, 4] results in original
+    systems 3, 1, 4 becoming new systems 0, 1, 2.
 
     Args:
         state (SimState): The state to slice
         system_indices (list[int] | torch.Tensor): System indices to include in the
-            sliced state
+            sliced state (order preserved in the result)
 
     Returns:
         SimState: A new SimState object containing only the specified systems
@@ -975,15 +959,45 @@ def _slice_state[T: SimState](state: T, system_indices: list[int] | torch.Tensor
     if len(system_indices) == 0:
         raise ValueError("system_indices cannot be empty")
 
-    # Create masks for the atoms and systems to include
-    system_range = torch.arange(state.n_systems, device=state.device)
-    system_mask = torch.isin(system_range, system_indices)
-    atom_mask = torch.isin(state.system_idx, system_indices)
+    # Build atom indices in requested order (preserves system_indices order)
+    system_indices = system_indices.reshape(-1)
+    cumsum = torch.cat(
+        (state.n_atoms_per_system.new_zeros(1), state.n_atoms_per_system.cumsum(0))
+    )
+    atom_indices = torch.cat(
+        [
+            torch.arange(cumsum[i].item(), cumsum[i + 1].item(), device=state.device)
+            for i in system_indices
+        ]
+    )
 
-    # Filter attributes
-    filtered_attrs = _filter_attrs_by_mask(state, atom_mask, system_mask)
+    # Create masks for constraint selection
+    atom_mask = torch.zeros(state.n_atoms, dtype=torch.bool, device=state.device)
+    atom_mask[atom_indices] = True
+    system_mask = torch.zeros(state.n_systems, dtype=torch.bool, device=state.device)
+    system_mask[system_indices] = True
 
-    # Create the sliced state
+    # Build inverse map for system_idx remapping
+    inv = torch.empty(
+        system_indices.max().item() + 1, device=state.device, dtype=torch.long
+    )
+    inv[system_indices] = torch.arange(len(system_indices), device=state.device)
+
+    # Filter attributes preserving requested order
+    filtered_attrs = dict(get_attrs_for_scope(state, "global"))
+    filtered_attrs["_constraints"] = [
+        c
+        for con in copy.deepcopy(state.constraints)
+        if (c := con.select_constraint(atom_mask, system_mask))
+    ]
+    for name, val in get_attrs_for_scope(state, "per-atom"):
+        filtered_attrs[name] = (
+            inv[val[atom_indices]] if name == "system_idx" else val[atom_indices]
+        )
+    for name, val in get_attrs_for_scope(state, "per-system"):
+        filtered_attrs[name] = (
+            val[system_indices] if isinstance(val, torch.Tensor) else val
+        )
     return type(state)(**filtered_attrs)  # type: ignore[invalid-return-type]
 
 
@@ -1134,8 +1148,8 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
 
 def initialize_state(
     system: StateLike,
-    device: torch.device | None = None,
-    dtype: torch.dtype | None = None,
+    device: torch.device,
+    dtype: torch.dtype,
 ) -> SimState:
     """Initialize state tensors from a atomistic system representation.
 
