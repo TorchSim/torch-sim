@@ -881,7 +881,7 @@ class FixSymmetry(SystemConstraint):
             # guard below is the real safety net against phase transitions.
             deform_delta = torch.linalg.solve(cur_cell, new_row) - identity
             max_delta = torch.abs(deform_delta).max().item()
-            if math.isnan(max_delta) or math.isinf(max_delta):
+            if not math.isfinite(max_delta):
                 raise RuntimeError(
                     f"FixSymmetry: deformation gradient is {max_delta}, "
                     f"cell may be singular or ill-conditioned."
@@ -902,10 +902,8 @@ class FixSymmetry(SystemConstraint):
                 cumulative_strain = torch.linalg.solve(ref_cell, proposed_cell) - identity
                 max_cumulative = torch.abs(cumulative_strain).max().item()
                 if max_cumulative > self.max_cumulative_strain:
-                    # Clamp: scale the cumulative strain to stay within the envelope
                     scale = self.max_cumulative_strain / max_cumulative
-                    clamped_strain = cumulative_strain * scale
-                    proposed_cell = ref_cell @ (clamped_strain + identity)
+                    proposed_cell = ref_cell @ (cumulative_strain * scale + identity)
 
             new_cell[si] = proposed_cell.mT  # back to column convention
 

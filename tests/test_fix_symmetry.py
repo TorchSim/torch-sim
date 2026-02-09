@@ -283,12 +283,25 @@ class TestFixSymmetryCreation:
         strain = torch.linalg.solve(ref_cell, new_cell[0].mT) - identity
         assert torch.abs(strain).max().item() <= 0.25 + 1e-6
 
+    def test_nan_deformation_raises(self) -> None:
+        """NaN in proposed cell raises RuntimeError instead of propagating."""
+        state = ts.io.atoms_to_state(make_structure("fcc"), CPU, DTYPE)
+        constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
+        new_cell = state.cell.clone()
+        new_cell[0, 0, 0] = float("nan")
+        with pytest.raises(RuntimeError, match="singular or ill-conditioned"):
+            constraint.adjust_cell(state, new_cell)
+
     def test_init_mismatched_lengths_raises(self) -> None:
-        """Mismatched rotations/symm_maps lengths raises ValueError."""
+        """Mismatched rotations/symm_maps/reference_cells lengths raise ValueError."""
         rots = [torch.eye(3).unsqueeze(0)]
         smaps = [torch.zeros(1, 1, dtype=torch.long), torch.zeros(1, 2, dtype=torch.long)]
         with pytest.raises(ValueError, match="length mismatch"):
             FixSymmetry(rots, smaps)
+        # reference_cells length must match n_systems
+        smaps_ok = [torch.zeros(1, 1, dtype=torch.long)]
+        with pytest.raises(ValueError, match="reference_cells length"):
+            FixSymmetry(rots, smaps_ok, reference_cells=[torch.eye(3), torch.eye(3)])
 
     @pytest.mark.parametrize("method", ["adjust_positions", "adjust_cell"])
     def test_adjust_skipped_when_disabled(self, method: str) -> None:
