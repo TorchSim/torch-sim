@@ -277,11 +277,11 @@ class TestFixSymmetryCreation:
         constraint.adjust_cell(state, new_cell)
         # Cell should have changed (not rejected) but less than requested
         assert not torch.allclose(new_cell, orig_cell * 1.5, atol=1e-6)
-        # The change should be bounded
+        # Per-step clamp limits single-step strain to 0.25
         identity = torch.eye(3, dtype=DTYPE)
         ref_cell = constraint.reference_cells[0]
         strain = torch.linalg.solve(ref_cell, new_cell[0].mT) - identity
-        assert torch.abs(strain).max().item() <= 0.5 + 1e-6
+        assert torch.abs(strain).max().item() <= 0.25 + 1e-6
 
     def test_init_mismatched_lengths_raises(self) -> None:
         """Mismatched rotations/symm_maps lengths raises ValueError."""
@@ -666,7 +666,7 @@ class TestFixSymmetryWithOptimization:
         # Total would be ~100% without clamping, well over the 0.15 limit
         identity = torch.eye(3, dtype=DTYPE)
         for _ in range(20):
-            # Anisotropic stretch: elongate c-axis by 5% each step
+            # Stretch c-axis by 5% (cubic symmetrization isotropizes this)
             stretch = identity.clone()
             stretch[2, 2] = 1.05
             new_cell = (state.row_vector_cell[0] @ stretch).mT.unsqueeze(0)

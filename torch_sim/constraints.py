@@ -10,6 +10,7 @@ and positions during MD simulations.
 
 from __future__ import annotations
 
+import math
 import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Self
@@ -740,6 +741,11 @@ class FixSymmetry(SystemConstraint):
             raise ValueError(
                 f"system_idx length ({len(system_idx)}) != n_systems ({n_systems})"
             )
+        if reference_cells is not None and len(reference_cells) != n_systems:
+            raise ValueError(
+                f"reference_cells length ({len(reference_cells)}) "
+                f"!= n_systems ({n_systems})"
+            )
 
         super().__init__(system_idx=system_idx)
         self.rotations = rotations
@@ -858,7 +864,7 @@ class FixSymmetry(SystemConstraint):
             new_cell: Cell tensor (n_systems, 3, 3) in column vector convention.
 
         Raises:
-            RuntimeError: If per-step deformation gradient > 0.25.
+            RuntimeError: If deformation gradient contains NaN or Inf.
         """
         if not self.do_adjust_cell:
             return
@@ -875,7 +881,12 @@ class FixSymmetry(SystemConstraint):
             # guard below is the real safety net against phase transitions.
             deform_delta = torch.linalg.solve(cur_cell, new_row) - identity
             max_delta = torch.abs(deform_delta).max().item()
-            if not (max_delta <= 0.25):  # clamp large steps; negated form catches NaN
+            if math.isnan(max_delta) or math.isinf(max_delta):
+                raise RuntimeError(
+                    f"FixSymmetry: deformation gradient is {max_delta}, "
+                    f"cell may be singular or ill-conditioned."
+                )
+            if max_delta > 0.25:
                 deform_delta = deform_delta * (0.25 / max_delta)
 
             # Symmetrize the per-step deformation
@@ -939,11 +950,12 @@ class FixSymmetry(SystemConstraint):
         if any(
             c.do_adjust_positions != constraints[0].do_adjust_positions
             or c.do_adjust_cell != constraints[0].do_adjust_cell
+            or c.max_cumulative_strain != constraints[0].max_cumulative_strain
             for c in constraints[1:]
         ):
             raise ValueError(
                 "Cannot merge FixSymmetry constraints with different "
-                "adjust_positions/adjust_cell settings"
+                "adjust_positions/adjust_cell/max_cumulative_strain settings"
             )
         rotations = [r for c in constraints for r in c.rotations]
         symm_maps = [s for c in constraints for s in c.symm_maps]
