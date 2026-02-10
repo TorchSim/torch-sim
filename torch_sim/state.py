@@ -460,7 +460,7 @@ class SimState:
         Returns:
             Sequence[SimState]: A sequence of SimState objects, one per system
         """
-        return _split_state(self)
+        return _LazySplitView(self)
 
     def pop(self, system_indices: int | list[int] | slice | torch.Tensor) -> list[Self]:
         """Pop off states with the specified system indices.
@@ -665,24 +665,37 @@ class DeformGradMixin:
         return self._deform_grad(self.reference_row_vector_cell, self.row_vector_cell)
 
 
-def _split_state[T: SimState](state: T) -> Sequence[T]:
-    """Return a lazy Sequence view of state split into single-system states.
+class _LazySplitView[T: SimState](Sequence[T]):
+    """A lazy Sequence view that splits a batched SimState into single-system states.
 
-    Each single-system state is created on first access, so the call is O(1).
+    Each single-system state is created on first access, so construction is O(1).
 
     Args:
-        state: The SimState to split.
-
-    Returns:
-        A Sequence of SimState objects, one per system.
+        state: The batched SimState to split.
     """
-    cumsum = torch.cat(
-        (state.n_atoms_per_system.new_zeros(1), state.n_atoms_per_system.cumsum(0))
-    )
-    n_systems = state.n_systems
 
-    def get_single(idx: int) -> T:
-        start, end = int(cumsum[idx]), int(cumsum[idx + 1])
+    def __init__(self, state: T) -> None:
+        self._state = state
+        self._cumsum = torch.cat(
+            (state.n_atoms_per_system.new_zeros(1), state.n_atoms_per_system.cumsum(0))
+        )
+        self._n_systems = state.n_systems
+
+    def __len__(self) -> int:
+        return self._n_systems
+
+    def __getitem__(self, idx: int | slice) -> T | list[T]:  # type: ignore[override]
+        if isinstance(idx, slice):
+            return [self._get_single(i) for i in range(*idx.indices(self._n_systems))]
+        if idx < 0:
+            idx += self._n_systems
+        if not 0 <= idx < self._n_systems:
+            raise IndexError(f"index {idx} out of range [0, {self._n_systems})")
+        return self._get_single(idx)
+
+    def _get_single(self, idx: int) -> T:
+        state = self._state
+        start, end = int(self._cumsum[idx]), int(self._cumsum[idx + 1])
         attrs: dict[str, Any] = {
             "system_idx": torch.zeros(
                 end - start, device=state.device, dtype=torch.int64
@@ -701,20 +714,6 @@ def _split_state[T: SimState](state: T) -> Sequence[T]:
             if (c := con.select_sub_constraint(atom_idx, idx))
         ]
         return type(state)(**attrs)
-
-    def _len(_: object) -> int:
-        return n_systems
-
-    def _getitem(_: object, idx: int | slice) -> T | list[T]:
-        if isinstance(idx, slice):
-            return [get_single(i) for i in range(*idx.indices(n_systems))]
-        if idx < 0:
-            idx += n_systems
-        if not 0 <= idx < n_systems:
-            raise IndexError(f"index {idx} out of range [0, {n_systems})")
-        return get_single(idx)
-
-    return type("SplitSeq", (Sequence,), {"__len__": _len, "__getitem__": _getitem})()
 
 
 def _normalize_system_indices(
