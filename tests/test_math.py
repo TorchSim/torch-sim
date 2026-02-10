@@ -90,9 +90,14 @@ class TestExpmFrechetTorch:
         A = torch.tensor([[1, 2, 0], [5, 6, 0], [0, 0, 1]], dtype=DTYPE, device=device)
         E = torch.tensor([[3, 4, 0], [7, 8, 0], [0, 0, 0]], dtype=DTYPE, device=device)
         expected_expm = torch.linalg.matrix_exp(A)
+        M = torch.vstack(
+            [torch.hstack([A, E]), torch.hstack([torch.zeros_like(A), A])]
+        )
+        expected_frechet = torch.linalg.matrix_exp(M)[:3, 3:]
 
-        observed_expm, _ = fm.expm_frechet(A, E)
+        observed_expm, observed_frechet = fm.expm_frechet(A, E)
         torch.testing.assert_close(expected_expm, observed_expm)
+        torch.testing.assert_close(expected_frechet, observed_frechet)
 
     def test_fuzz(self):
         """Test with a variety of random 3x3 inputs using torch tensors."""
@@ -107,8 +112,15 @@ class TestExpmFrechetTorch:
             A = scale * A_original
             E = scale * E_original
             expected_expm = torch.linalg.matrix_exp(A)
-            observed_expm, _ = fm.expm_frechet(A, E)
+            M = torch.vstack(
+                [torch.hstack([A, E]), torch.hstack([torch.zeros_like(A), A])]
+            )
+            expected_frechet = torch.linalg.matrix_exp(M)[:3, 3:]
+            observed_expm, observed_frechet = fm.expm_frechet(A, E)
             torch.testing.assert_close(expected_expm, observed_expm, atol=5e-8, rtol=1e-5)
+            torch.testing.assert_close(
+                expected_frechet, observed_frechet, atol=1e-7, rtol=1e-5
+            )
 
 
 class TestLogM33:
