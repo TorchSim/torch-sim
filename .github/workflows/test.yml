@@ -78,17 +78,33 @@ jobs:
           - { name: sevenn, test_path: "tests/models/test_sevennet.py" }
         exclude:
           - version: { python: '3.13', resolution: lowest-direct }
-            model: { name: orb, test_path: "tests/models/test_orb.py" }
+            model: { name: orb, test_path: 'tests/models/test_orb.py' }
           - version: { python: '3.13', resolution: highest }
-            model: { name: orb, test_path: "tests/models/test_orb.py" }
+            model: { name: orb, test_path: 'tests/models/test_orb.py' }
           - version: { python: '3.13', resolution: lowest-direct }
-            model: { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
+            model:
+              {
+                name: fairchem-legacy,
+                test_path: 'tests/models/test_fairchem_legacy.py',
+              }
           - version: { python: '3.13', resolution: highest }
-            model: { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
+            model:
+              {
+                name: fairchem-legacy,
+                test_path: 'tests/models/test_fairchem_legacy.py',
+              }
           - version: { python: '3.13', resolution: lowest-direct }
-            model: { name: nequip, test_path: "tests/models/test_nequip_framework.py" }
+            model:
+              {
+                name: nequip,
+                test_path: 'tests/models/test_nequip_framework.py',
+              }
           - version: { python: '3.13', resolution: highest }
-            model: { name: nequip, test_path: "tests/models/test_nequip_framework.py" }
+            model:
+              {
+                name: nequip,
+                test_path: 'tests/models/test_nequip_framework.py',
+              }
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -129,15 +145,16 @@ jobs:
           uv pip install "h5py>=3.12.1" "numpy>=1.26,<3" "scipy<1.17.0" "tables>=3.10.2" "torch>=2" "tqdm>=4.67" --system
           uv pip install "ase>=3.26" "phonopy>=2.37.0" "psutil>=7.0.0" "pymatgen>=2025.6.14" "pytest-cov>=6" "pytest>=8" --resolution=${{ matrix.version.resolution }} --system
 
-
       - name: Install torch_sim with model dependencies
         if: ${{ matrix.model.name != 'fairchem-legacy' }}
         run: |
+          # setuptools <82 provides pkg_resources needed by mattersim and fairchem (via torchtnt).
+          # setuptools 82+ removed pkg_resources. Remove pin once those packages migrate.
           # always use numpy>=2 with Python 3.13
           if [ "${{ matrix.version.python }}" = "3.13" ]; then
-            uv pip install -e ".[test,${{ matrix.model.name }}]" "numpy>=2" --resolution=${{ matrix.version.resolution }} --system
+            uv pip install -e ".[test,${{ matrix.model.name }}]" "numpy>=2" "setuptools>=70,<82" --resolution=${{ matrix.version.resolution }} --system
           else
-            uv pip install -e ".[test,${{ matrix.model.name }}]" --resolution=${{ matrix.version.resolution }} --system
+            uv pip install -e ".[test,${{ matrix.model.name }}]" "setuptools>=70,<82" --resolution=${{ matrix.version.resolution }} --system
           fi
 
       - name: Run ${{ matrix.model.test_path }} tests
