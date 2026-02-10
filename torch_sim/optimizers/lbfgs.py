@@ -11,6 +11,7 @@ The prev_forces and prev_positions are stored in the scaled/fractional space to 
 ASE's behavior exactly.
 """
 
+import warnings
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -20,7 +21,6 @@ from torch_sim.optimizers import cell_filters
 from torch_sim.optimizers.cell_filters import frechet_cell_filter_init
 from torch_sim.state import SimState
 from torch_sim.typing import StateDict
-
 
 if TYPE_CHECKING:
     from torch_sim.models.interface import ModelInterface
@@ -369,7 +369,9 @@ def lbfgs_step(  # noqa: PLR0915, C901
         ).squeeze(-1)  # [N, 3]
 
         # Convert to padded per-system format: [S, M, 3]
-        g_atoms = _atoms_to_padded(-forces_scaled, state.system_idx, n_systems, max_atoms)
+        g_atoms = _atoms_to_padded(
+            -forces_scaled, state.system_idx, n_systems, max_atoms
+        )
         # Cell forces: [S, 3, 3] -> [S, 3, 3]
         g_cell = -state.cell_forces  # [S, 3, 3]
         # Extended gradient: [S, M_ext, 3] = [S, M+3, 3]
@@ -484,7 +486,6 @@ def lbfgs_step(  # noqa: PLR0915, C901
         # Apply cell step
         dr_cell = step_cell  # [S, 3, 3]
         cell_positions_new = state.cell_positions + dr_cell  # [S, 3, 3]
-        state.cell_positions = cell_positions_new  # [S, 3, 3]
 
         # Determine if Frechet filter
         init_fn, _step_fn = state.cell_filter
@@ -494,11 +495,46 @@ def lbfgs_step(  # noqa: PLR0915, C901
             # Frechet: deform_grad = exp(cell_positions / cell_factor)
             cell_factor_reshaped = state.cell_factor.view(n_systems, 1, 1)
             deform_grad_log_new = cell_positions_new / cell_factor_reshaped  # [S, 3, 3]
+
+            # Clamp log-space deformation to prevent matrix_exp overflow.
+            # Without this, cumulative LBFGS steps can push cell_positions to
+            # extreme values, causing matrix_exp to overflow to Inf/NaN.
+            # The NaN then propagates to the cell and positions, crashing
+            # matrix_log_33 in the next compute_cell_forces call and killing
+            # the entire batched optimization.
+            # exp(2) ≈ 7.4x strain per axis — structures deforming beyond
+            # this from their reference cell are diverging.
+            _MAX_LOG_DEFORM = 2.0
+            if (deform_grad_log_new.abs() > _MAX_LOG_DEFORM).any():
+                n_clamped = int(
+                    (deform_grad_log_new.abs() > _MAX_LOG_DEFORM)
+                    .any(dim=-1)
+                    .any(dim=-1)
+                    .sum()
+                    .item()
+                )
+                warnings.warn(
+                    f"Clamping log-space deformation gradient for {n_clamped} "
+                    f"system(s) to [-{_MAX_LOG_DEFORM}, {_MAX_LOG_DEFORM}] "
+                    f"(max |log(F)| = "
+                    f"{deform_grad_log_new.abs().max().item():.2f}). "
+                    f"This prevents matrix_exp overflow from diverging cell "
+                    f"optimization.",
+                    stacklevel=2,
+                )
+                deform_grad_log_new = deform_grad_log_new.clamp(
+                    -_MAX_LOG_DEFORM, _MAX_LOG_DEFORM
+                )
+                # Write back clamped values to cell_positions
+                cell_positions_new = deform_grad_log_new * cell_factor_reshaped
+
             deform_grad_new = torch.matrix_exp(deform_grad_log_new)  # [S, 3, 3]
         else:
             # UnitCell: deform_grad = cell_positions / cell_factor
             cell_factor_expanded = state.cell_factor.expand(n_systems, 3, 1)
             deform_grad_new = cell_positions_new / cell_factor_expanded  # [S, 3, 3]
+
+        state.cell_positions = cell_positions_new  # [S, 3, 3]
 
         # Update cell: new_cell = reference_cell @ deform_grad^T
         # Use set_constrained_cell to apply cell constraints (e.g. FixSymmetry)

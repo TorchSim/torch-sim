@@ -308,6 +308,12 @@ def compute_cell_forces[T: AnyCellState](
         for sys_idx in range(n_systems):
             deform_grad_log[sys_idx] = fm.matrix_log_33(cur_deform_grad[sys_idx])
 
+        # Clamp to the same limit used in lbfgs_step to prevent NaN from
+        # propagating into expm_frechet. Systems hitting the clamp have
+        # diverging cells; their cell forces will be approximate but finite.
+        _MAX_LOG_DEFORM = 2.0
+        deform_grad_log = deform_grad_log.clamp(-_MAX_LOG_DEFORM, _MAX_LOG_DEFORM)
+
         # Compute Frechet derivatives
         cell_forces = torch.zeros_like(ucf_cell_grad)
         for sys_idx in range(n_systems):
