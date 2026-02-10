@@ -1,6 +1,6 @@
 """Mathematical operations and utilities. Adapted from https://github.com/abhijeetgangan/torch_matfunc."""
 
-# ruff: noqa: FBT001, FBT002, RUF002, RUF003
+# ruff: noqa: FBT001, FBT002, RUF002
 
 from typing import Final
 
