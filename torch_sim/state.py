@@ -1147,8 +1147,8 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
 
 def initialize_state(
     system: StateLike,
-    device: torch.device,
-    dtype: torch.dtype,
+    device: torch.device | None = None,
+    dtype: torch.dtype | None = None,
 ) -> SimState:
     """Initialize state tensors from a atomistic system representation.
 
