@@ -6,15 +6,10 @@ from typing import Any, get_args
 
 import pytest
 import torch
+
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.optimizers import (
-    BFGSState,
-    FireFlavor,
-    FireState,
-    LBFGSState,
-    OptimState,
-)
+from torch_sim.optimizers import BFGSState, FireFlavor, FireState, LBFGSState, OptimState
 from torch_sim.state import SimState
 
 
@@ -52,9 +47,7 @@ def test_gradient_descent_optimization(
 
     # Check force convergence
     max_force = torch.max(torch.norm(state.forces, dim=1))
-    assert max_force < 0.2, (
-        f"Forces should be small after optimization, got {max_force=}"
-    )
+    assert max_force < 0.2, f"Forces should be small after optimization, got {max_force=}"
 
     assert not torch.allclose(state.positions, initial_state.positions)
 
@@ -99,9 +92,7 @@ def test_unit_cell_gradient_descent_optimization(
     assert pressure < 0.01, (
         f"Pressure should be small after optimization, got {pressure=}"
     )
-    assert max_force < 0.2, (
-        f"Forces should be small after optimization, got {max_force=}"
-    )
+    assert max_force < 0.2, f"Forces should be small after optimization, got {max_force=}"
 
     assert not torch.allclose(state.positions, initial_state.positions)
     assert not torch.allclose(state.cell, initial_state.cell)
@@ -202,9 +193,7 @@ def test_bfgs_optimization(
         energies.append(state.energy.item())
         steps_taken += 1
 
-    assert steps_taken < max_steps, (
-        f"BFGS optimization did not converge in {max_steps=}"
-    )
+    assert steps_taken < max_steps, f"BFGS optimization did not converge in {max_steps=}"
 
     energies = energies[1:]
 
@@ -216,9 +205,7 @@ def test_bfgs_optimization(
 
     # Check force convergence
     max_force = torch.max(torch.norm(state.forces, dim=1))
-    assert max_force < 0.3, (
-        f"Forces should be small after optimization, got {max_force=}"
-    )
+    assert max_force < 0.3, f"Forces should be small after optimization, got {max_force=}"
 
     assert not torch.allclose(state.positions, initial_state_positions), (
         "BFGS positions should have changed after optimization."
@@ -271,9 +258,7 @@ def test_lbfgs_optimization(
 
     # Check force convergence
     max_force = torch.max(torch.norm(state.forces, dim=1))
-    assert max_force < 0.3, (
-        f"Forces should be small after optimization, got {max_force=}"
-    )
+    assert max_force < 0.3, f"Forces should be small after optimization, got {max_force=}"
 
     assert not torch.allclose(state.positions, initial_state_positions), (
         "L-BFGS positions should have changed after optimization."
@@ -1064,8 +1049,8 @@ def test_frechet_lbfgs_clamps_extreme_deformation(
     ) * torch.eye(3, device=state.cell.device, dtype=state.cell.dtype).unsqueeze(0)
 
     log_deform_before = (
-        state.cell_positions / state.cell_factor.view(-1, 1, 1)
-    ).abs().max().item()
+        (state.cell_positions / state.cell_factor.view(-1, 1, 1)).abs().max().item()
+    )
     assert log_deform_before > 5.0, "Setup: log-deform should be extreme before step"
 
     with warnings.catch_warnings(record=True) as caught_warnings:
@@ -1074,8 +1059,8 @@ def test_frechet_lbfgs_clamps_extreme_deformation(
 
     # 1. Log-space deformation must be bounded after the clamp
     log_deform_after = (
-        state.cell_positions / state.cell_factor.view(-1, 1, 1)
-    ).abs().max().item()
+        (state.cell_positions / state.cell_factor.view(-1, 1, 1)).abs().max().item()
+    )
     assert log_deform_after <= 2.5, (
         f"Log-space deformation should be clamped to ~2.0, got {log_deform_after:.2f}"
     )
@@ -1311,9 +1296,7 @@ def test_fire_fixed_cell_unit_cell_consistency(  # noqa: C901
     final_individual_states_unit_cell = []
     total_steps_unit_cell = []
 
-    def energy_converged(
-        current_energy: torch.Tensor, prev_energy: torch.Tensor
-    ) -> bool:
+    def energy_converged(current_energy: torch.Tensor, prev_energy: torch.Tensor) -> bool:
         """Check if optimization should continue based on energy convergence."""
         return not torch.allclose(current_energy, prev_energy, atol=1e-6)
 
@@ -1347,9 +1330,7 @@ def test_fire_fixed_cell_unit_cell_consistency(  # noqa: C901
     final_individual_states_fire = []
     total_steps_fire = []
 
-    def energy_converged(
-        current_energy: torch.Tensor, prev_energy: torch.Tensor
-    ) -> bool:
+    def energy_converged(current_energy: torch.Tensor, prev_energy: torch.Tensor) -> bool:
         """Check if optimization should continue based on energy convergence."""
         return not torch.allclose(current_energy, prev_energy, atol=1e-6)
 
@@ -1439,9 +1420,7 @@ def test_optimizer_preserves_charge_spin(
         if optimizer_fn == ts.Optimizer.fire:
             opt_state = step_fn(state=opt_state, model=lj_model, dt_max=0.3)
         elif optimizer_fn == ts.Optimizer.gradient_descent:
-            opt_state = step_fn(
-                state=opt_state, model=lj_model, pos_lr=0.01, cell_lr=0.1
-            )
+            opt_state = step_fn(state=opt_state, model=lj_model, pos_lr=0.01, cell_lr=0.1)
         else:
             opt_state = step_fn(state=opt_state, model=lj_model)
 

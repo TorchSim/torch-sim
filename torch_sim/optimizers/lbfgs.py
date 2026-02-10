@@ -22,6 +22,7 @@ from torch_sim.optimizers.cell_filters import frechet_cell_filter_init
 from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
+
 if TYPE_CHECKING:
     from torch_sim.models.interface import ModelInterface
     from torch_sim.optimizers import CellLBFGSState, LBFGSState
@@ -369,9 +370,7 @@ def lbfgs_step(  # noqa: PLR0915, C901
         ).squeeze(-1)  # [N, 3]
 
         # Convert to padded per-system format: [S, M, 3]
-        g_atoms = _atoms_to_padded(
-            -forces_scaled, state.system_idx, n_systems, max_atoms
-        )
+        g_atoms = _atoms_to_padded(-forces_scaled, state.system_idx, n_systems, max_atoms)
         # Cell forces: [S, 3, 3] -> [S, 3, 3]
         g_cell = -state.cell_forces  # [S, 3, 3]
         # Extended gradient: [S, M_ext, 3] = [S, M+3, 3]
