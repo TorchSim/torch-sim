@@ -525,7 +525,14 @@ class TestLogM33:
             T_cuda = T.cuda()
             eigenvalues_cuda = torch.linalg.eigvalsh(T_cuda)
             case_cuda = fm._determine_eigenvalue_case(T_cuda, eigenvalues_cuda)
-            assert case_cuda in ["case1a", "case1b", "case1c", "case2a", "case2b", "case3"]
+            assert case_cuda in [
+                "case1a",
+                "case1b",
+                "case1c",
+                "case2a",
+                "case2b",
+                "case3",
+            ]
 
     def test_matrix_log_with_close_eigenvalues(self):
         """Test matrix logarithm with eigenvalues that are numerically close.
@@ -555,7 +562,9 @@ class TestLogM33:
         # Verify the result is reasonable (should be close to case 1b or 1c)
         # The diagonal should be approximately [1, 1, 1] since log(e) = 1
         assert torch.allclose(
-            torch.diag(result), torch.ones(3, dtype=torch.float64, device=device), atol=1e-6
+            torch.diag(result),
+            torch.ones(3, dtype=torch.float64, device=device),
+            atol=1e-6,
         )
 
         # Compare with scipy to ensure correctness
