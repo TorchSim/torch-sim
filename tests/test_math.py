@@ -90,9 +90,7 @@ class TestExpmFrechetTorch:
         A = torch.tensor([[1, 2, 0], [5, 6, 0], [0, 0, 1]], dtype=DTYPE, device=device)
         E = torch.tensor([[3, 4, 0], [7, 8, 0], [0, 0, 0]], dtype=DTYPE, device=device)
         expected_expm = torch.linalg.matrix_exp(A)
-        M = torch.vstack(
-            [torch.hstack([A, E]), torch.hstack([torch.zeros_like(A), A])]
-        )
+        M = torch.vstack([torch.hstack([A, E]), torch.hstack([torch.zeros_like(A), A])])
         expected_frechet = torch.linalg.matrix_exp(M)[:3, 3:]
 
         observed_expm, observed_frechet = fm.expm_frechet(A, E)
