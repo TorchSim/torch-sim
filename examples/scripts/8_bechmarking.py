@@ -7,6 +7,7 @@
 # ]
 # ///
 
+import os
 import time
 import typing
 
@@ -19,11 +20,23 @@ import torch_sim as ts
 from torch_sim.models.mace import MaceModel, MaceUrls
 
 
+SMOKE_TEST = os.getenv("CI") is not None
+
+device = torch.device(
+    "cpu" if SMOKE_TEST else ("cuda" if torch.cuda.is_available() else "cpu")
+)
+
 # Shared constants
-N_STRUCTURES_STATIC = [1, 1, 1, 1, 10, 100, 500, 1000, 2500, 5000]
-N_STRUCTURES_RELAX = [1, 10, 100, 500]
-N_STRUCTURES_NVE = [1, 10, 100, 500]
-N_STRUCTURES_NVT = [1, 10, 100, 500]
+if SMOKE_TEST:
+    N_STRUCTURES_STATIC = [1, 1, 1, 1, 10, 100]
+    N_STRUCTURES_RELAX = [1, 10]
+    N_STRUCTURES_NVE = [1, 10]
+    N_STRUCTURES_NVT = [1, 10]
+else:
+    N_STRUCTURES_STATIC = [1, 1, 1, 1, 10, 100, 500, 1000, 2500, 5000]
+    N_STRUCTURES_RELAX = [1, 10, 100, 500]
+    N_STRUCTURES_NVE = [1, 10, 100, 500]
+    N_STRUCTURES_NVT = [1, 10, 100, 500]
 RELAX_STEPS = 10
 MD_STEPS = 10
 MAX_MEMORY_SCALER = 400_000
@@ -185,24 +198,22 @@ def run_torchsim_nvt(
     return times
 
 
-if __name__ == "__main__":
-    # Setup
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    mgo_ase = bulk(name="MgO", crystalstructure="rocksalt", a=4.21, cubic=True)
-    base_structure = AseAtomsAdaptor.get_structure(atoms=mgo_ase)
+# Setup
+mgo_ase = bulk(name="MgO", crystalstructure="rocksalt", a=4.21, cubic=True)
+base_structure = AseAtomsAdaptor.get_structure(atoms=mgo_ase)
 
-    # Load model once
-    model = load_mace_model(device)
+# Load model once
+model = load_mace_model(device)
 
-    # Run all benchmarks
-    print("=== Static benchmark ===")
-    static_times = run_torchsim_static(N_STRUCTURES_STATIC, base_structure, model, device)
+# Run all benchmarks
+print("=== Static benchmark ===")
+static_times = run_torchsim_static(N_STRUCTURES_STATIC, base_structure, model, device)
 
-    print("\n=== Relax benchmark ===")
-    relax_times = run_torchsim_relax(N_STRUCTURES_RELAX, base_structure, model, device)
+print("\n=== Relax benchmark ===")
+relax_times = run_torchsim_relax(N_STRUCTURES_RELAX, base_structure, model, device)
 
-    print("\n=== NVE benchmark ===")
-    nve_times = run_torchsim_nve(N_STRUCTURES_NVE, base_structure, model, device)
+print("\n=== NVE benchmark ===")
+nve_times = run_torchsim_nve(N_STRUCTURES_NVE, base_structure, model, device)
 
-    print("\n=== NVT benchmark ===")
-    nvt_times = run_torchsim_nvt(N_STRUCTURES_NVT, base_structure, model, device)
+print("\n=== NVT benchmark ===")
+nvt_times = run_torchsim_nvt(N_STRUCTURES_NVT, base_structure, model, device)
