@@ -18,7 +18,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.optimizers import cell_filters
-from torch_sim.optimizers.cell_filters import frechet_cell_filter_init
+from torch_sim.optimizers.cell_filters import MAX_LOG_DEFORM, frechet_cell_filter_init
 from torch_sim.state import SimState
 from torch_sim.typing import StateDict
 
@@ -503,18 +503,12 @@ def lbfgs_step(  # noqa: PLR0915, C901
             # the entire batched optimization.
             # exp(2) ≈ 7.4x strain per axis — structures deforming beyond
             # this from their reference cell are diverging.
-            _MAX_LOG_DEFORM = 2.0
-            if (deform_grad_log_new.abs() > _MAX_LOG_DEFORM).any():
-                n_clamped = int(
-                    (deform_grad_log_new.abs() > _MAX_LOG_DEFORM)
-                    .any(dim=-1)
-                    .any(dim=-1)
-                    .sum()
-                    .item()
-                )
+            exceeds = deform_grad_log_new.abs() > MAX_LOG_DEFORM
+            if exceeds.any():
+                n_clamped = int(exceeds.any(dim=(-2, -1)).sum().item())
                 warnings.warn(
                     f"Clamping log-space deformation gradient for {n_clamped} "
-                    f"system(s) to [-{_MAX_LOG_DEFORM}, {_MAX_LOG_DEFORM}] "
+                    f"system(s) to [-{MAX_LOG_DEFORM}, {MAX_LOG_DEFORM}] "
                     f"(max |log(F)| = "
                     f"{deform_grad_log_new.abs().max().item():.2f}). "
                     f"This prevents matrix_exp overflow from diverging cell "
@@ -522,7 +516,7 @@ def lbfgs_step(  # noqa: PLR0915, C901
                     stacklevel=2,
                 )
                 deform_grad_log_new = deform_grad_log_new.clamp(
-                    -_MAX_LOG_DEFORM, _MAX_LOG_DEFORM
+                    -MAX_LOG_DEFORM, MAX_LOG_DEFORM
                 )
                 # Write back clamped values to cell_positions
                 cell_positions_new = deform_grad_log_new * cell_factor_reshaped

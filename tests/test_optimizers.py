@@ -1,4 +1,5 @@
 import copy
+import warnings
 from collections.abc import Callable
 from dataclasses import fields
 from functools import partial
@@ -1034,8 +1035,6 @@ def test_frechet_lbfgs_clamps_extreme_deformation(
     then verifies: (1) the clamp warning fires, (2) the log-space deformation
     is bounded after the step, and (3) positions/cell remain finite.
     """
-    import warnings
-
     state = ts.lbfgs_init(
         state=ar_supercell_sim_state,
         model=lj_model,
@@ -1043,7 +1042,7 @@ def test_frechet_lbfgs_clamps_extreme_deformation(
     )
 
     # Inject extreme cell_positions: log-deform = cell_positions/cell_factor = 10
-    # This far exceeds the _MAX_LOG_DEFORM=2.0 clamp threshold.
+    # This far exceeds the MAX_LOG_DEFORM=2.0 clamp threshold.
     state.cell_positions = state.cell_positions + 10.0 * state.cell_factor.view(
         -1, 1, 1
     ) * torch.eye(3, device=state.cell.device, dtype=state.cell.dtype).unsqueeze(0)
@@ -1073,7 +1072,7 @@ def test_frechet_lbfgs_clamps_extreme_deformation(
 
     # 3. The clamp warning must have fired
     clamp_warnings = [
-        w for w in caught_warnings if "Clamping log-space" in str(w.message)
+        warn for warn in caught_warnings if "Clamping log-space" in str(warn.message)
     ]
     assert len(clamp_warnings) > 0, "Expected clamping warning but none was emitted"
 
