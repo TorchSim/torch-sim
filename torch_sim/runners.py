@@ -345,12 +345,15 @@ def integrate[T: SimState](  # noqa: C901
     final_states: list[T] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
 
+    # Extract pbar kwargs for both outer and inner progress bars
+    pbar_kwargs = pbar if isinstance(pbar, dict) else {}
+
     tqdm_pbar = None
     if pbar and autobatcher:
-        pbar_kwargs = pbar if isinstance(pbar, dict) else {}
-        pbar_kwargs.setdefault("desc", "Integrate")
-        pbar_kwargs.setdefault("disable", None)
-        tqdm_pbar = tqdm(total=initial_state.n_systems, **pbar_kwargs)
+        outer_pbar_kwargs = pbar_kwargs.copy()
+        outer_pbar_kwargs.setdefault("desc", "Integrate")
+        outer_pbar_kwargs.setdefault("disable", None)
+        tqdm_pbar = tqdm(total=initial_state.n_systems, **outer_pbar_kwargs)
 
     # Handle both BinningAutoBatcher and list of tuples
     for state, system_indices in batch_iterator:
@@ -373,7 +376,15 @@ def integrate[T: SimState](  # noqa: C901
         _write_initial_state(trajectory_reporter, state, model)
 
         # run the simulation
-        for step in range(initial_step, initial_step + n_steps):
+        inner_pbar_kwargs = pbar_kwargs.copy()
+        inner_pbar_kwargs.setdefault("disable", pbar is False)
+        inner_pbar_kwargs.setdefault(
+            "desc", f"Batch systems {system_indices}" if system_indices else "Integrate"
+        )
+        inner_pbar_kwargs.setdefault("leave", False)
+        for step in tqdm(
+            range(initial_step, initial_step + n_steps), **inner_pbar_kwargs
+        ):
             state = step_func(
                 state=state,
                 model=model,
