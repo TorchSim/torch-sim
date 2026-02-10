@@ -105,6 +105,8 @@ def inverse_box(box: torch.Tensor) -> torch.Tensor:
                 [ 0,  1]])
     """
     if (torch.is_tensor(box) and box.ndim == 0) or box.numel() == 1 or box.ndim == 1:
+        if torch.any(box == 0):
+            raise ValueError("Cannot invert box with zero values")
         return 1 / box
     if box.ndim == 2:
         return torch.linalg.inv(box)

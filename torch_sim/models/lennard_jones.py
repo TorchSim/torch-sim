@@ -337,7 +337,15 @@ class LennardJonesModel(ModelInterface):
             pair_forces = torch.where(mask, pair_forces, torch.zeros_like(pair_forces))
 
             # Project forces along displacement vectors
-            force_vectors = (pair_forces / distances)[:, None] * dr_vec
+            # Avoid division by zero by using safe division
+            safe_distances = torch.where(
+                distances > 0, distances, torch.ones_like(distances)
+            )
+            force_vectors = torch.where(
+                distances[:, None] > 0,
+                (pair_forces / safe_distances)[:, None] * dr_vec,
+                torch.zeros_like(dr_vec),
+            )
 
             if self.compute_forces:
                 # Initialize forces tensor

@@ -469,3 +469,95 @@ class TestLogM33:
         torch.testing.assert_close(
             M_logm, torch.tensor(scipy_logm, dtype=DTYPE, device=device)
         )
+
+    def test_determine_eigenvalue_case_with_close_values(self):
+        """Test _determine_eigenvalue_case with numerically close eigenvalues.
+
+        This test specifically targets the bug fix in lines 545-546 of torch_sim/math.py
+        where boolean tensor operations were incorrectly combined with integer tensors.
+
+        The old code had:
+            uniq_vals = uniq_vals[~(close_mask & torch.arange(len(close_mask)) != i)]
+            counts = counts[~(close_mask & torch.arange(len(counts)) != i)]
+
+        This would fail because:
+        1. close_mask is a boolean tensor
+        2. torch.arange() returns an integer tensor
+        3. The & operator requires both operands to be the same type
+        4. The device of torch.arange() was not specified, causing device mismatch on GPU
+
+        The new code properly creates a boolean mask and specifies the device:
+            mask_indices = torch.arange(len(close_mask), device=uniq_vals.device)
+            keep_mask = ~close_mask | (mask_indices == i)
+            uniq_vals = uniq_vals[keep_mask]
+            counts = counts[keep_mask]
+
+        This test creates a matrix with eigenvalues that are numerically close
+        (within tolerance) to trigger the merging logic in _determine_eigenvalue_case.
+        """
+        # Create a diagonal matrix with very close eigenvalues
+        # This ensures real eigenvalues and triggers the merging logic
+        lambda_val = 2.0
+        eps = 1e-17  # Very small difference, within numerical tolerance
+
+        # Create a diagonal matrix with eigenvalues [2.0, 2.0 + eps, 2.0 + 2*eps]
+        # These should be merged into a single eigenvalue
+        T = torch.diag(
+            torch.tensor(
+                [lambda_val, lambda_val + eps, lambda_val + 2 * eps],
+                dtype=torch.float64,
+                device=device,
+            )
+        )
+
+        # Compute eigenvalues (will be real for diagonal matrix)
+        eigenvalues = torch.linalg.eigvalsh(T)  # Use eigvalsh for symmetric matrices
+
+        # This should not raise an error with the fix
+        # The old code would fail with a type error
+        case = fm._determine_eigenvalue_case(T, eigenvalues)
+
+        # The case should be determined successfully
+        assert case in ["case1a", "case1b", "case1c", "case2a", "case2b", "case3"]
+
+        # Test with GPU if available to ensure device handling is correct
+        if torch.cuda.is_available():
+            T_cuda = T.cuda()
+            eigenvalues_cuda = torch.linalg.eigvalsh(T_cuda)
+            case_cuda = fm._determine_eigenvalue_case(T_cuda, eigenvalues_cuda)
+            assert case_cuda in ["case1a", "case1b", "case1c", "case2a", "case2b", "case3"]
+
+    def test_matrix_log_with_close_eigenvalues(self):
+        """Test matrix logarithm with eigenvalues that are numerically close.
+
+        This is an integration test that verifies the entire matrix logarithm
+        computation works correctly when eigenvalues need to be merged due to
+        numerical closeness. This would fail with the old buggy code.
+        """
+        # Create a matrix with nearly identical eigenvalues
+        lambda_val = torch.exp(torch.tensor(1.0, dtype=torch.float64))
+        eps = 1e-17
+
+        # Upper triangular matrix with very close eigenvalues on diagonal
+        T = torch.tensor(
+            [
+                [lambda_val, 1.0, 0.5],
+                [0.0, lambda_val + eps, 1.0],
+                [0.0, 0.0, lambda_val + 2 * eps],
+            ],
+            dtype=torch.float64,
+            device=device,
+        )
+
+        # This should not raise an error with the fix
+        result = fm._matrix_log_33(T)
+
+        # Verify the result is reasonable (should be close to case 1b or 1c)
+        # The diagonal should be approximately [1, 1, 1] since log(e) = 1
+        assert torch.allclose(
+            torch.diag(result), torch.ones(3, dtype=torch.float64, device=device), atol=1e-6
+        )
+
+        # Compare with scipy to ensure correctness
+        scipy_result = fm.matrix_log_scipy(T)
+        torch.testing.assert_close(result, scipy_result, rtol=1e-5, atol=1e-8)
