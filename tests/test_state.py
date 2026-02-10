@@ -5,7 +5,7 @@ import pytest
 import torch
 
 import torch_sim as ts
-from tests.conftest import DEVICE, DTYPE
+from tests.conftest import DEVICE
 from torch_sim.integrators import MDState
 from torch_sim.state import (
     DeformGradMixin,
@@ -135,6 +135,7 @@ def test_slice_state_reversed_subset(
     assert torch.allclose(result.atomic_numbers, expected.atomic_numbers)
     assert torch.allclose(result.masses, expected.masses)
     assert result.n_systems == expected.n_systems
+
 
 def test_concatenate_two_si_states(
     si_sim_state: SimState, si_double_sim_state: SimState
