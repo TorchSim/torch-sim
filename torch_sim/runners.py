@@ -27,7 +27,6 @@ from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.typing import StateLike
 from torch_sim.units import UnitSystem
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -298,8 +297,7 @@ def integrate[T: SimState](  # noqa: C901
             tracking trajectory. If a dict, will be passed to the TrajectoryReporter
             constructor.
         autobatcher (BinningAutoBatcher | bool): Optional autobatcher to use
-        pbar (bool | dict[str, Any], optional): Show a progress bar.
-            Only works with an autobatcher in interactive shell. If a dict is given,
+        pbar (bool | dict[str, Any], optional): Show a progress bar. If a dict is given,
             it's passed to `tqdm` as kwargs.
         init_kwargs (dict[str, Any], optional): Additional keyword arguments for
             integrator init function.
