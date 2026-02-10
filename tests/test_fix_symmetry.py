@@ -268,21 +268,40 @@ class TestFixSymmetryCreation:
         constraint.adjust_forces(state, forces)
         assert torch.allclose(forces[0], torch.zeros(3, dtype=DTYPE), atol=1e-10)
 
-    def test_large_deformation_raises(self) -> None:
-        """Deformation gradient > 0.25 raises RuntimeError."""
+    def test_large_deformation_clamped(self) -> None:
+        """Per-step deformation > 0.25 is clamped rather than rejected."""
+        state = ts.io.atoms_to_state(make_structure("fcc"), CPU, DTYPE)
+        constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
+        orig_cell = state.cell.clone()
+        new_cell = state.cell.clone() * 1.5  # 50% strain, well over 0.25
+        constraint.adjust_cell(state, new_cell)
+        # Cell should have changed (not rejected) but less than requested
+        assert not torch.allclose(new_cell, orig_cell * 1.5, atol=1e-6)
+        # Per-step clamp limits single-step strain to 0.25
+        identity = torch.eye(3, dtype=DTYPE)
+        ref_cell = constraint.reference_cells[0]
+        strain = torch.linalg.solve(ref_cell, new_cell[0].mT) - identity
+        assert torch.abs(strain).max().item() <= 0.25 + 1e-6
+
+    def test_nan_deformation_raises(self) -> None:
+        """NaN in proposed cell raises RuntimeError instead of propagating."""
         state = ts.io.atoms_to_state(make_structure("fcc"), CPU, DTYPE)
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
         new_cell = state.cell.clone()
-        new_cell[0] *= 1.5
-        with pytest.raises(RuntimeError, match="deformation gradient"):
+        new_cell[0, 0, 0] = float("nan")
+        with pytest.raises(RuntimeError, match="singular or ill-conditioned"):
             constraint.adjust_cell(state, new_cell)
 
     def test_init_mismatched_lengths_raises(self) -> None:
-        """Mismatched rotations/symm_maps lengths raises ValueError."""
+        """Mismatched rotations/symm_maps/reference_cells lengths raise ValueError."""
         rots = [torch.eye(3).unsqueeze(0)]
         smaps = [torch.zeros(1, 1, dtype=torch.long), torch.zeros(1, 2, dtype=torch.long)]
         with pytest.raises(ValueError, match="length mismatch"):
             FixSymmetry(rots, smaps)
+        # reference_cells length must match n_systems
+        smaps_ok = [torch.zeros(1, 1, dtype=torch.long)]
+        with pytest.raises(ValueError, match="reference_cells length"):
+            FixSymmetry(rots, smaps_ok, reference_cells=[torch.eye(3), torch.eye(3)])
 
     @pytest.mark.parametrize("method", ["adjust_positions", "adjust_cell"])
     def test_adjust_skipped_when_disabled(self, method: str) -> None:
@@ -640,3 +659,45 @@ class TestFixSymmetryWithOptimization:
         )
         assert result["initial_spacegroups"][0] == 229
         assert result["final_spacegroups"][0] == 229
+
+    def test_cumulative_strain_clamp_direct(self) -> None:
+        """adjust_cell clamps deformation when cumulative strain exceeds limit.
+
+        Directly tests the clamping mechanism by repeatedly applying small
+        cell deformations that individually pass the per-step check (< 0.25)
+        but cumulatively exceed max_cumulative_strain. Verifies:
+        1. The cell doesn't drift beyond the strain envelope
+        2. Symmetry is preserved after many small steps
+        """
+        state = ts.io.atoms_to_state(make_structure("fcc"), CPU, DTYPE)
+        constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
+        constraint.max_cumulative_strain = 0.15
+        assert constraint.reference_cells is not None
+        ref_cell = constraint.reference_cells[0].clone()
+
+        # Apply 20 small deformations (each ~5% along one axis)
+        # Total would be ~100% without clamping, well over the 0.15 limit
+        identity = torch.eye(3, dtype=DTYPE)
+        for _ in range(20):
+            # Stretch c-axis by 5% (cubic symmetrization isotropizes this)
+            stretch = identity.clone()
+            stretch[2, 2] = 1.05
+            new_cell = (state.row_vector_cell[0] @ stretch).mT.unsqueeze(0)
+            constraint.adjust_cell(state, new_cell)
+            state.cell = new_cell
+
+        # Cumulative strain must be clamped to the limit
+        final_cell = state.row_vector_cell[0]
+        cumulative = torch.linalg.solve(ref_cell, final_cell) - identity
+        max_strain = torch.abs(cumulative).max().item()
+        assert max_strain <= constraint.max_cumulative_strain + 1e-6, (
+            f"Strain {max_strain:.4f} exceeded {constraint.max_cumulative_strain}"
+        )
+
+        # Without clamping, 1.05^20 = 2.65x → strain ~1.65, far over 0.15
+        # Verify it's actually being clamped (not just small steps)
+        assert max_strain > 0.10, f"Strain {max_strain:.4f} suspiciously low"
+
+        # Symmetry should still be detectable
+        datasets = get_symmetry_datasets(state, symprec=SYMPREC)
+        assert datasets[0].number == SPACEGROUPS["fcc"]
