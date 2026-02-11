@@ -354,8 +354,17 @@ class TrajectoryReporter:
         Returns:
             list[dict[str, torch.Tensor]]: Property dictionaries, one per system.
         """
-        sizes = state.n_atoms_per_system.tolist()
         n_sys = state.n_systems
+        n_atoms = getattr(
+            state,
+            "n_atoms",
+            state.system_idx.shape[0],
+        )
+        sizes = getattr(
+            state,
+            "n_atoms_per_system",
+            torch.bincount(state.system_idx, minlength=n_sys),
+        ).tolist()
         all_props: list[dict[str, torch.Tensor]] = [{} for _ in range(n_sys)]
 
         for frequency, calculators in self.prop_calculators.items():
@@ -367,10 +376,12 @@ class TrajectoryReporter:
                     result = result.unsqueeze(0)
 
                 # infer per-atom vs per-system from shape
-                if result.shape[0] == state.n_atoms:
+                if result.shape[0] == n_atoms:
                     splits = torch.split(result, sizes)
+                elif result.shape[0] == n_sys:
+                    splits = [result[i : i + 1] for i in range(n_sys)]
                 else:
-                    splits = [result[i] for i in range(n_sys)]
+                    splits = [result.clone() for _ in range(n_sys)]
 
                 for idx in range(n_sys):
                     sys_step = step[idx] if isinstance(step, list) else step
