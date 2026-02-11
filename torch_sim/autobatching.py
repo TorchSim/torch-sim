@@ -847,7 +847,8 @@ class InFlightAutoBatcher[T: SimState]:
             so any ongoing processing will be restarted when this method is called.
         """
         if isinstance(states, SimState):
-            states = (states[i] for i in range(states.n_systems))
+            sim_state = states
+            states = (sim_state[i] for i in range(sim_state.n_systems))
         if not isinstance(states, Iterator):
             states = iter(states)
 
