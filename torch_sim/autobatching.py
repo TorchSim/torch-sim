@@ -954,9 +954,9 @@ class InFlightAutoBatcher[T: SimState]:
         states = self._get_next_states()
 
         if not has_max_metric:
-            batched = ts.concatenate_states([first_state, *states])
+            concatenated_state = ts.concatenate_states([first_state, *states])
             self.max_memory_scaler = estimate_max_memory_scaler(
-                batched,
+                concatenated_state,
                 self.model,
                 self.current_scalers,
                 max_atoms=self.max_atoms_to_try,
@@ -966,8 +966,8 @@ class InFlightAutoBatcher[T: SimState]:
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
             newer_states = self._get_next_states()
             if newer_states:
-                return ts.concatenate_states([batched, *newer_states])
-            return batched
+                return ts.concatenate_states([concatenated_state, *newer_states])
+            return concatenated_state
         return ts.concatenate_states([first_state, *states])
 
     def next_batch(  # noqa: C901
