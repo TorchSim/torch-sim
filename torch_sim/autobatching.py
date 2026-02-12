@@ -966,8 +966,7 @@ class InFlightAutoBatcher[T: SimState]:
             )
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
             newer_states = self._get_next_states()
-            if newer_states:
-                all_states = [concatenated_state, *newer_states]
+            all_states.extend(newer_states)
 
         return ts.concatenate_states(all_states)
 
