@@ -847,8 +847,7 @@ class InFlightAutoBatcher[T: SimState]:
             so any ongoing processing will be restarted when this method is called.
         """
         if isinstance(states, SimState):
-            sim_state = states
-            states = (sim_state[i] for i in range(sim_state.n_systems))
+            states = states.split()
         if not isinstance(states, Iterator):
             states = iter(states)
 
@@ -953,9 +952,10 @@ class InFlightAutoBatcher[T: SimState]:
             self.max_memory_scaler = n_systems * first_metric * 0.8
 
         states = self._get_next_states()
+        all_states = [first_state, *states]
 
         if not has_max_metric:
-            concatenated_state = ts.concatenate_states([first_state, *states])
+            concatenated_state = ts.concatenate_states(all_states)
             self.max_memory_scaler = estimate_max_memory_scaler(
                 concatenated_state,
                 self.model,
@@ -967,9 +967,9 @@ class InFlightAutoBatcher[T: SimState]:
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
             newer_states = self._get_next_states()
             if newer_states:
-                return ts.concatenate_states([concatenated_state, *newer_states])
-            return concatenated_state
-        return ts.concatenate_states([first_state, *states])
+                all_states = [concatenated_state, *newer_states]
+
+        return ts.concatenate_states(all_states)
 
     def next_batch(  # noqa: C901
         self, updated_state: T | None, convergence_tensor: torch.Tensor | None

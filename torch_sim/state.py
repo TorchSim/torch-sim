@@ -137,10 +137,10 @@ class SimState:
             self.system_idx = torch.zeros(
                 self.n_atoms, device=self.device, dtype=torch.int64
             )
-            n_systems_val = 1
+            n_systems = 1
         else:  # assert that system indices are unique consecutive integers
             _, counts = torch.unique_consecutive(initial_system_idx, return_counts=True)
-            n_systems_val = len(counts)
+            n_systems = len(counts)
             if not torch.all(counts == torch.bincount(initial_system_idx)):
                 raise ValueError("System indices must be unique consecutive integers")
 
@@ -148,13 +148,13 @@ class SimState:
             validate_constraints(self.constraints, state=self)
 
         if self.charge is None:
-            self.charge = torch.zeros(n_systems_val, device=self.device, dtype=self.dtype)
-        elif self.charge.shape[0] != n_systems_val:
-            raise ValueError(f"Charge must have shape (n_systems={n_systems_val},)")
+            self.charge = torch.zeros(n_systems, device=self.device, dtype=self.dtype)
+        elif self.charge.shape[0] != n_systems:
+            raise ValueError(f"Charge must have shape (n_systems={n_systems},)")
         if self.spin is None:
-            self.spin = torch.zeros(n_systems_val, device=self.device, dtype=self.dtype)
-        elif self.spin.shape[0] != n_systems_val:
-            raise ValueError(f"Spin must have shape (n_systems={n_systems_val},)")
+            self.spin = torch.zeros(n_systems, device=self.device, dtype=self.dtype)
+        elif self.spin.shape[0] != n_systems:
+            raise ValueError(f"Spin must have shape (n_systems={n_systems},)")
 
         if self.cell.ndim != 3 and initial_system_idx is None:
             self.cell = self.cell.unsqueeze(0)
@@ -162,9 +162,9 @@ class SimState:
         if self.cell.shape[-2:] != (3, 3):
             raise ValueError("Cell must have shape (n_systems, 3, 3)")
 
-        if self.cell.shape[0] != n_systems_val:
+        if self.cell.shape[0] != n_systems:
             raise ValueError(
-                f"Cell must have shape (n_systems={n_systems_val}, 3, 3), "
+                f"Cell must have shape (n_systems={n_systems}, 3, 3), "
                 f"got {self.cell.shape}"
             )
 
