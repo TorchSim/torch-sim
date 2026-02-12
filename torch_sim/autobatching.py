@@ -848,7 +848,7 @@ class InFlightAutoBatcher[T: SimState]:
         """
         if isinstance(states, SimState):
             states = states.split()
-        if not isinstance(states, Iterator):
+        if isinstance(states, list | tuple):
             states = iter(states)
 
         self.states_iterator = states
