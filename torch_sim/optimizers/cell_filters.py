@@ -99,6 +99,42 @@ def deform_grad(reference_cell: torch.Tensor, current_cell: torch.Tensor) -> tor
     return torch.linalg.solve(reference_cell, current_cell).transpose(-2, -1)
 
 
+def _frechet_cell_forces(
+    deform_grad_log: torch.Tensor,
+    ucf_cell_grad: torch.Tensor,
+) -> torch.Tensor:
+    """Compute cell forces via the Frechet derivative of the matrix exponential.
+
+    Maps gradients from deformation-gradient space back to the log-space
+    parameterisation used by the Frechet cell filter.
+
+    Args:
+        deform_grad_log: Log of the deformation gradient, shape (n_systems, 3, 3).
+        ucf_cell_grad: Cell gradient in deformation-gradient space,
+            shape (n_systems, 3, 3).
+
+    Returns:
+        Cell forces in log-space, shape (n_systems, 3, 3).
+    """
+    device, dtype = deform_grad_log.device, deform_grad_log.dtype
+    n_systems = deform_grad_log.shape[0]
+
+    # Unit direction matrices spanning the 3x3 space
+    directions = torch.zeros((9, 3, 3), device=device, dtype=dtype)
+    for idx, (mu, nu) in enumerate([(i, j) for i in range(3) for j in range(3)]):
+        directions[idx, mu, nu] = 1.0
+
+    # Batch Frechet derivatives over systems and directions
+    A_batch = deform_grad_log.unsqueeze(1).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
+    E_batch = directions.unsqueeze(0).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
+    _, expm_derivs_batch = fm.expm_frechet(A_batch, E_batch)
+    expm_derivs = expm_derivs_batch.reshape(n_systems, 9, 3, 3)
+
+    # Contract Frechet derivatives with the cell gradient
+    forces_flat = (expm_derivs * ucf_cell_grad.unsqueeze(1)).sum(dim=(2, 3))
+    return forces_flat.reshape(n_systems, 3, 3)
+
+
 def unit_cell_filter_init[T: AnyCellState](
     state: T,
     model: ModelInterface,
@@ -294,29 +330,11 @@ def compute_cell_forces[T: AnyCellState](
             virial, torch.linalg.inv(torch.transpose(cur_deform_grad, 1, 2))
         )
 
-        # Calculate Frechet derivative for non-identity deformation gradients
-        device, dtype = virial.device, virial.dtype
-        n_systems = state.n_systems
-
-        # Create direction matrices for Frechet derivative
-        directions = torch.zeros((9, 3, 3), device=device, dtype=dtype)
-        for idx, (mu, nu) in enumerate([(i, j) for i in range(3) for j in range(3)]):
-            directions[idx, mu, nu] = 1.0
-
-        # Compute deformation gradient log (batched for parallelism)
+        # Map gradient back to log-space via Frechet derivative of matrix exp
         deform_grad_log = fm.matrix_log_33(
             cur_deform_grad, sim_dtype=cur_deform_grad.dtype
         )
-
-        # Compute Frechet derivatives (batched over systems and directions)
-        A_batch = (
-            deform_grad_log.unsqueeze(1).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
-        )
-        E_batch = directions.unsqueeze(0).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
-        _, expm_derivs_batch = fm.expm_frechet(A_batch, E_batch)
-        expm_derivs = expm_derivs_batch.reshape(n_systems, 9, 3, 3)
-        forces_flat = (expm_derivs * ucf_cell_grad.unsqueeze(1)).sum(dim=(2, 3))
-        cell_forces = forces_flat.reshape(n_systems, 3, 3)
+        cell_forces = _frechet_cell_forces(deform_grad_log, ucf_cell_grad)
         state.cell_forces = cell_forces / state.cell_factor
     else:  # Unit cell force computation
         # Note (AG): ASE transforms virial as:
