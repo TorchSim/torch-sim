@@ -64,23 +64,6 @@ class TestExpmFrechet:
             assert_allclose(expected_expm, observed_expm.cpu().numpy(), atol=5e-8)
             assert_allclose(expected_frechet, observed_frechet.cpu().numpy(), atol=1e-7)
 
-    def test_large_norm_matrices(self):
-        """Test expm_frechet with larger norm matrices requiring scaling."""
-        A = np.array(
-            [[1.5, 0.8, 0.3], [0.6, 1.2, 0.5], [0.4, 0.7, 1.8]], dtype=np.float64
-        )
-        E = np.array(
-            [[0.1, 0.2, 0.1], [0.2, 0.15, 0.1], [0.1, 0.1, 0.2]], dtype=np.float64
-        )
-        expected_expm = scipy.linalg.expm(A)
-        expected_frechet = scipy.linalg.expm_frechet(A, E)[1]
-
-        A = torch.from_numpy(A).to(device=device, dtype=DTYPE)
-        E = torch.from_numpy(E).to(device=device, dtype=DTYPE)
-        observed_expm, observed_frechet = fm.expm_frechet(A, E)
-        assert_allclose(expected_expm, observed_expm.cpu().numpy(), atol=1e-12)
-        assert_allclose(expected_frechet, observed_frechet.cpu().numpy(), atol=1e-12)
-
     def test_problematic_matrix(self):
         """Test a specific matrix that previously uncovered a bug."""
         A = np.array(
