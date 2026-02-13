@@ -28,6 +28,7 @@ def torch_divmod(a: torch.Tensor, b: torch.Tensor) -> tuple[torch.Tensor, torch.
 def expm_frechet(  # noqa: PLR0915, C901
     A: torch.Tensor,
     E: torch.Tensor,
+    method: str | None = None,
     check_finite: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Frechet derivative of the matrix exponential of A in the direction E.
@@ -39,6 +40,9 @@ def expm_frechet(  # noqa: PLR0915, C901
         A: (B, 3, 3) or (3, 3) tensor. Matrix of which to take the matrix exponential.
         E: (B, 3, 3) or (3, 3) tensor. Matrix direction in which to take the Frechet
             derivative. Must have same shape as A.
+        method: str, optional. Choice of algorithm. Should be one of
+            - `SPS` (default)
+            - `blockEnlarge`
         check_finite: bool, optional. Whether to check that the input matrix contains
             only finite numbers. Disabling may give a performance gain, but may result
             in problems (crashes, non-termination) if the inputs do contain
@@ -61,6 +65,19 @@ def expm_frechet(  # noqa: PLR0915, C901
         A = torch.tensor(A, dtype=torch.float64)
     if not isinstance(E, torch.Tensor):
         E = torch.tensor(E, dtype=torch.float64)
+
+    if method is None:
+        method = "SPS"
+
+    if method == "blockEnlarge":
+        if A.dim() != 3 or A.shape[1] != A.shape[2]:
+            raise ValueError("expected A to be (B, N, N)")
+        if A.shape != E.shape:
+            raise ValueError("expected A and E to be the same shape")
+        return expm_frechet_block_enlarge(A, E)
+
+    if method != "SPS":
+        raise ValueError(f"Unknown {method=}")
 
     # Handle unbatched 3x3 input by adding batch dimension
     unbatched = A.dim() == 2
@@ -136,6 +153,44 @@ def expm_frechet(  # noqa: PLR0915, C901
     if unbatched:
         return R.squeeze(0), L.squeeze(0)
     return R, L
+
+
+def matrix_exp(A: torch.Tensor) -> torch.Tensor:
+    """Compute the matrix exponential of A using PyTorch's matrix_exp.
+
+    Args:
+        A: Input matrix
+
+    Returns:
+        torch.Tensor: Matrix exponential of A
+    """
+    return torch.matrix_exp(A)
+
+
+def expm_frechet_block_enlarge(
+    A: torch.Tensor, E: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Helper function for testing and profiling.
+
+    Args:
+        A: (B, N, N) Batch of input matrices.
+        E: (B, N, N) Batch of direction matrices. Must have same shape as A.
+
+    Returns:
+        expm_A: Matrix exponential of A
+        expm_frechet_AE: torch.Tensor
+            Frechet derivative of the matrix exponential of A in the direction E
+    """
+    batch, n, _ = A.shape
+    # Create block matrix M = [[A, E], [0, A]] of shape (B, 2N, 2N)
+    M = torch.zeros((batch, 2 * n, 2 * n), dtype=A.dtype, device=A.device)
+    M[:, :n, :n] = A
+    M[:, :n, n:] = E
+    M[:, n:, n:] = A
+
+    # Use matrix exponential (supports batched input)
+    expm_M = matrix_exp(M)
+    return expm_M[:, :n, :n], expm_M[:, :n, n:]
 
 
 # Maximal values ell_m of ||2**-s A|| such that the backward error bound

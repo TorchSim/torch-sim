@@ -81,6 +81,41 @@ class TestExpmFrechet:
         assert_allclose(expected_expm, observed_expm.cpu().numpy(), atol=1e-12)
         assert_allclose(expected_frechet, observed_frechet.cpu().numpy(), atol=1e-12)
 
+    def test_problematic_matrix(self):
+        """Test a specific matrix that previously uncovered a bug."""
+        A = np.array(
+            [[1.50591997, 1.93537998], [0.41203263, 0.23443516]], dtype=np.float64
+        )
+        E = np.array(
+            [[1.87864034, 2.07055038], [1.34102727, 0.67341123]], dtype=np.float64
+        )
+        sps_expm = scipy.linalg.expm(A)
+        sps_frechet = scipy.linalg.expm_frechet(A, E)[1]
+        A = torch.from_numpy(A).to(device=device, dtype=DTYPE)
+        E = torch.from_numpy(E).to(device=device, dtype=DTYPE)
+        blockEnlarge_expm, blockEnlarge_frechet = fm.expm_frechet(
+            A.unsqueeze(0), E.unsqueeze(0), method="blockEnlarge"
+        )
+        assert_allclose(sps_expm, blockEnlarge_expm[0].cpu().numpy())
+        assert_allclose(sps_frechet, blockEnlarge_frechet[0].cpu().numpy())
+
+    def test_medium_matrix(self):
+        """Test with a medium-sized matrix to compare performance between methods."""
+        n = 1000
+        rng = np.random.default_rng()
+        A = rng.exponential(size=(n, n))
+        E = rng.exponential(size=(n, n))
+
+        sps_expm = scipy.linalg.expm(A)
+        sps_frechet = scipy.linalg.expm_frechet(A, E)[1]
+        A = torch.from_numpy(A).to(device=device, dtype=DTYPE)
+        E = torch.from_numpy(E).to(device=device, dtype=DTYPE)
+        blockEnlarge_expm, blockEnlarge_frechet = fm.expm_frechet(
+            A.unsqueeze(0), E.unsqueeze(0), method="blockEnlarge"
+        )
+        assert_allclose(sps_expm, blockEnlarge_expm[0].cpu().numpy())
+        assert_allclose(sps_frechet, blockEnlarge_frechet[0].cpu().numpy())
+
 
 class TestExpmFrechetTorch:
     """Test suite for expm_frechet using native torch tensors."""
@@ -119,6 +154,45 @@ class TestExpmFrechetTorch:
             torch.testing.assert_close(
                 expected_frechet, observed_frechet, atol=1e-7, rtol=1e-5
             )
+
+    def test_problematic_matrix(self):
+        """Test a specific matrix that previously uncovered a bug using torch tensors."""
+        A = torch.tensor(
+            [[1.50591997, 1.93537998], [0.41203263, 0.23443516]],
+            dtype=DTYPE,
+            device=device,
+        )
+        E = torch.tensor(
+            [[1.87864034, 2.07055038], [1.34102727, 0.67341123]],
+            dtype=DTYPE,
+            device=device,
+        )
+        sps_expm = torch.linalg.matrix_exp(A)
+        M = torch.vstack([torch.hstack([A, E]), torch.hstack([torch.zeros_like(A), A])])
+        sps_frechet = torch.linalg.matrix_exp(M)[:2, 2:]
+        blockEnlarge_expm, blockEnlarge_frechet = fm.expm_frechet(
+            A.unsqueeze(0), E.unsqueeze(0), method="blockEnlarge"
+        )
+        torch.testing.assert_close(sps_expm, blockEnlarge_expm[0])
+        torch.testing.assert_close(sps_frechet, blockEnlarge_frechet[0])
+
+    def test_medium_matrix(self):
+        """Test with a medium-sized matrix to compare performance
+        between methods using torch tensors.
+        """
+        n = 1000
+        rng = np.random.default_rng()
+        A = torch.tensor(rng.exponential(size=(n, n)))
+        E = torch.tensor(rng.exponential(size=(n, n)))
+
+        sps_expm = torch.linalg.matrix_exp(A)
+        M = torch.vstack([torch.hstack([A, E]), torch.hstack([torch.zeros_like(A), A])])
+        sps_frechet = torch.linalg.matrix_exp(M)[:n, n:]
+        blockEnlarge_expm, blockEnlarge_frechet = fm.expm_frechet(
+            A.unsqueeze(0), E.unsqueeze(0), method="blockEnlarge"
+        )
+        torch.testing.assert_close(sps_expm, blockEnlarge_expm[0])
+        torch.testing.assert_close(sps_frechet, blockEnlarge_frechet[0])
 
 
 class TestLogM33:
