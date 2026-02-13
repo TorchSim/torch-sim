@@ -102,6 +102,7 @@ def deform_grad(reference_cell: torch.Tensor, current_cell: torch.Tensor) -> tor
 def _frechet_cell_forces(
     deform_grad_log: torch.Tensor,
     ucf_cell_grad: torch.Tensor,
+    frechet_method: str | None = None,
 ) -> torch.Tensor:
     """Compute cell forces via the Frechet derivative of the matrix exponential.
 
@@ -112,6 +113,8 @@ def _frechet_cell_forces(
         deform_grad_log: Log of the deformation gradient, shape (n_systems, 3, 3).
         ucf_cell_grad: Cell gradient in deformation-gradient space,
             shape (n_systems, 3, 3).
+        frechet_method: Algorithm for computing the Frechet derivative. One of
+            ``"SPS"`` (default) or ``"blockEnlarge"``.
 
     Returns:
         Cell forces in log-space, shape (n_systems, 3, 3).
@@ -127,7 +130,7 @@ def _frechet_cell_forces(
     # Batch Frechet derivatives over systems and directions
     A_batch = deform_grad_log.unsqueeze(1).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
     E_batch = directions.unsqueeze(0).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
-    _, expm_derivs_batch = fm.expm_frechet(A_batch, E_batch)
+    _, expm_derivs_batch = fm.expm_frechet(A_batch, E_batch, method=frechet_method)
     expm_derivs = expm_derivs_batch.reshape(n_systems, 9, 3, 3)
 
     # Contract Frechet derivatives with the cell gradient
@@ -192,6 +195,7 @@ def frechet_cell_filter_init[T: AnyCellState](
     hydrostatic_strain: bool = False,
     constant_volume: bool = False,
     scalar_pressure: float = 0.0,
+    frechet_method: str | None = None,
     **_kwargs: Any,
 ) -> None:
     """Initialize Frechet cell filter state."""
@@ -237,6 +241,7 @@ def frechet_cell_filter_init[T: AnyCellState](
     state.cell_positions = cell_positions
     state.cell_forces = cell_forces
     state.cell_masses = cell_masses
+    state.frechet_method = frechet_method
 
 
 class CellFilter(StrEnum):
@@ -334,7 +339,10 @@ def compute_cell_forces[T: AnyCellState](
         deform_grad_log = fm.matrix_log_33(
             cur_deform_grad, sim_dtype=cur_deform_grad.dtype
         )
-        cell_forces = _frechet_cell_forces(deform_grad_log, ucf_cell_grad)
+        frechet_method = getattr(state, "frechet_method", None)
+        cell_forces = _frechet_cell_forces(
+            deform_grad_log, ucf_cell_grad, frechet_method=frechet_method
+        )
         state.cell_forces = cell_forces / state.cell_factor
     else:  # Unit cell force computation
         # Note (AG): ASE transforms virial as:
@@ -380,6 +388,7 @@ class CellOptimState(OptimState):
     pressure: torch.Tensor = field(default_factory=lambda: None)
     hydrostatic_strain: bool = False
     constant_volume: bool = False
+    frechet_method: str | None = None
     cell_positions: torch.Tensor = field(default_factory=lambda: None)
     cell_forces: torch.Tensor = field(default_factory=lambda: None)
     cell_masses: torch.Tensor = field(default_factory=lambda: None)
@@ -396,6 +405,7 @@ class CellOptimState(OptimState):
     _global_attributes = OptimState._global_attributes | {  # noqa: SLF001
         "hydrostatic_strain",
         "constant_volume",
+        "frechet_method",
     }
 
 
