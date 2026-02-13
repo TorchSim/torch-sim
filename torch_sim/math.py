@@ -66,14 +66,15 @@ def expm_frechet(  # noqa: PLR0915, C901
     if not isinstance(E, torch.Tensor):
         E = torch.tensor(E, dtype=torch.float64)
 
+    if A.shape != E.shape:
+        raise ValueError("expected A and E to be the same shape")
+
     if method is None:
         method = "SPS"
 
     if method == "blockEnlarge":
         if A.dim() != 3 or A.shape[1] != A.shape[2]:
             raise ValueError("expected A to be (B, N, N)")
-        if A.shape != E.shape:
-            raise ValueError("expected A and E to be the same shape")
         return expm_frechet_block_enlarge(A, E)
 
     if method != "SPS":
@@ -84,12 +85,10 @@ def expm_frechet(  # noqa: PLR0915, C901
     if unbatched:
         if A.shape != (3, 3):
             raise ValueError("expected A to be (3, 3) or (B, 3, 3)")
-        if E.shape != (3, 3):
-            raise ValueError("expected E to be (3, 3) or (B, 3, 3)")
         A = A.unsqueeze(0)
         E = E.unsqueeze(0)
 
-    if E.dim() != 3 or A.shape != E.shape or A.shape[1:] != (3, 3):
+    if A.dim() != 3 or A.shape[1:] != (3, 3):
         raise ValueError("expected A, E to be (B, 3, 3) with same shape")
 
     batch_size = A.shape[0]
