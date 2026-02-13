@@ -39,6 +39,7 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "torch-sim-atomistic[io,symmetry,vesin]",
+    "physical-validation>=1.0.5",
     "platformdirs>=4.0.0",
     "psutil>=7.0.0",
     "pymatgen>=2025.6.14",
@@ -139,8 +140,11 @@ check-filenames = true
 ignore-words-list = ["convertor"]  # codespell:ignore convertor
 
 [tool.pytest.ini_options]
-addopts = ["-p no:warnings"]
+addopts = ["-p no:warnings", "-m not physical_validation"]
 testpaths = ["tests"]
+markers = [
+    "physical_validation: long-running physical validation tests (run with: pytest -m physical_validation)",
+]
 
 [tool.uv]
 # make these dependencies mutually exclusive since they use incompatible e3nn versions
