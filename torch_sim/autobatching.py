@@ -387,7 +387,7 @@ def calculate_memory_scalers(
 
 
 def estimate_max_memory_scaler(
-    state: SimState,
+    states: SimState | Sequence[SimState],
     model: ModelInterface,
     metric_values: list[float] | torch.Tensor,
     **kwargs: Any,
@@ -399,9 +399,9 @@ def estimate_max_memory_scaler(
     for both small, dense systems and large, sparse systems.
 
     Args:
-        state (SimState): Batched state containing all systems. Individual
-            systems are accessed via ``state[idx]`` (integer indexing), so only
-            the two extreme states are materialized.
+        states (SimState | Sequence[SimState]): Batched state or list of states.
+            Individual systems are accessed via ``states[idx]`` (integer
+            indexing), so only the two extreme states are materialized.
         model (ModelInterface): Model to test with, implementing the ModelInterface
             protocol.
         metric_values (list[float]): Corresponding metric values for each state,
@@ -417,7 +417,7 @@ def estimate_max_memory_scaler(
         metrics = calculate_memory_scalers(state, memory_scales_with="n_atoms")
 
         # Estimate maximum safe metric value
-        max_metric = estimate_max_memory_scaler(state, model, metrics)
+        max_metric = estimate_max_memory_scaler(states, model, metrics)
 
     Notes:
         This function tests batch sizes with both the smallest and largest systems
@@ -430,8 +430,8 @@ def estimate_max_memory_scaler(
     min_metric = metric_values.min()
     max_metric = metric_values.max()
 
-    min_state = state[int(metric_values.argmin())]
-    max_state = state[int(metric_values.argmax())]
+    min_state = states[int(metric_values.argmin())]
+    max_state = states[int(metric_values.argmax())]
 
     print(  # noqa: T201
         "Model Memory Estimation: Estimating memory from worst case of "
@@ -955,9 +955,8 @@ class InFlightAutoBatcher[T: SimState]:
         all_states = [first_state, *states]
 
         if not has_max_metric:
-            concatenated_state = ts.concatenate_states(all_states)
             self.max_memory_scaler = estimate_max_memory_scaler(
-                concatenated_state,
+                all_states,
                 self.model,
                 self.current_scalers,
                 max_atoms=self.max_atoms_to_try,
