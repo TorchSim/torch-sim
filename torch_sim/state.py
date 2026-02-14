@@ -913,12 +913,10 @@ def _pop_states[T: SimState](
     if isinstance(pop_indices, list):
         pop_indices = torch.tensor(pop_indices, device=state.device, dtype=torch.int64)
 
-    # Build boolean masks then convert to integer indices
-    system_range = torch.arange(state.n_systems, device=state.device)
-    pop_system_mask = torch.isin(system_range, pop_indices)
+    # Derive keep/pop atom and system indices
+    all_systems = torch.arange(state.n_systems, device=state.device)
+    keep_system_indices = all_systems[~torch.isin(all_systems, pop_indices)]
     pop_atom_mask = torch.isin(state.system_idx, pop_indices)
-
-    keep_system_indices = torch.where(~pop_system_mask)[0]
     keep_atom_indices = torch.where(~pop_atom_mask)[0]
     pop_atom_indices = torch.where(pop_atom_mask)[0]
 
