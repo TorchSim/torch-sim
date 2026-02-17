@@ -542,8 +542,11 @@ def _determine_eigenvalue_case(  # noqa: C901
             if close_count > 1:  # If there are other close values
                 # Merge them (keep the first one, remove the others)
                 counts[i] = torch.sum(counts[close_mask])
-                uniq_vals = uniq_vals[~(close_mask & torch.arange(len(close_mask)) != i)]
-                counts = counts[~(close_mask & torch.arange(len(counts)) != i)]
+                # Create boolean mask properly with correct device
+                mask_indices = torch.arange(len(close_mask), device=uniq_vals.device)
+                keep_mask = ~close_mask | (mask_indices == i)
+                uniq_vals = uniq_vals[keep_mask]
+                counts = counts[keep_mask]
             else:
                 i += 1
 
