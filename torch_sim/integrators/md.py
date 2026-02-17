@@ -28,7 +28,7 @@ class MDState(SimState):
         system_idx (torch.Tensor): System indices [n_particles]
         atomic_numbers (torch.Tensor): Atomic numbers [n_particles]
         momenta (torch.Tensor): Particle momenta [n_particles, n_dim]
-        energy (torch.Tensor): Total energy of the system [n_systems]
+        energy (torch.Tensor): Potential energy of the system [n_systems]
         forces (torch.Tensor): Forces on particles [n_particles, n_dim]
 
     Properties:

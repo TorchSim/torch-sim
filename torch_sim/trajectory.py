@@ -30,6 +30,7 @@ Notes:
 import copy
 import inspect
 import pathlib
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, Self
@@ -96,7 +97,6 @@ class TrajectoryReporter:
     state_kwargs: dict[str, Any]
     metadata: dict[str, str] | None
     trajectories: list["TorchSimTrajectory"]
-    filenames: list[str | pathlib.Path] | None
 
     def __init__(
         self,
@@ -141,19 +141,39 @@ class TrajectoryReporter:
         self.metadata = metadata
 
         self.trajectories = []
-        if filenames is None:
-            self.filenames = None
-        else:
-            self.load_new_trajectories(filenames)
+        if filenames is not None:
+            filenames = (
+                [filenames]
+                if isinstance(filenames, (str, pathlib.Path))
+                else list(filenames)
+            )
+            # Initialize trajectories for the first time. Unlike in reopen_trajectories,
+            # if the user specified "w" mode, we respect that here and start fresh.
+            self.trajectories = [
+                TorchSimTrajectory(
+                    filename=filename, metadata=self.metadata, **self.trajectory_kwargs
+                )
+                for filename in filenames
+            ]
 
         self._add_model_arg_to_prop_calculators()
 
-    def load_new_trajectories(
+    @property
+    def filenames(self) -> list[str] | None:
+        """Get the list of trajectory filenames.
+
+        Returns:
+            list[str] | None: List of trajectory file paths,
+                or None if no trajectories are loaded.
+        """
+        if not self.trajectories:
+            return None
+        return [traj.filename for traj in self.trajectories]
+
+    def reopen_trajectories(
         self, filenames: str | pathlib.Path | Sequence[str | pathlib.Path]
     ) -> None:
-        """Load new trajectories into the reporter.
-
-        Closes any existing trajectory files and initializes new ones.
+        """Closes any existing trajectory files and reopens new ones given by filenames.
 
         Args:
             filenames (str | pathlib.Path | list[str | pathlib.Path]): Path(s) to save
@@ -167,19 +187,23 @@ class TrajectoryReporter:
         filenames = (
             [filenames] if isinstance(filenames, (str, pathlib.Path)) else list(filenames)
         )
-        self.filenames = [pathlib.Path(filename) for filename in filenames]
-        if len(set(self.filenames)) != len(self.filenames):
+        filenames = [pathlib.Path(filename) for filename in filenames]
+        if len(set(filenames)) != len(filenames):
             raise ValueError("All filenames must be unique.")
-
-        self.trajectories = []
-        for filename in self.filenames:
-            self.trajectories.append(
-                TorchSimTrajectory(
-                    filename=filename,
-                    metadata=self.metadata,
-                    **self.trajectory_kwargs,
-                )
+        # Avoid wiping existing trajectory files when reopening them, hence
+        # we set to "a" mode temporarily (read mode is unaffected).
+        _mode = self.trajectory_kwargs.get("mode", "w")
+        self.trajectory_kwargs["mode"] = "a" if _mode in ["a", "w"] else "r"
+        self.trajectories = [
+            TorchSimTrajectory(
+                filename=filename,
+                metadata=self.metadata,
+                **self.trajectory_kwargs,
             )
+            for filename in filenames
+        ]
+        # Restore original mode
+        self.trajectory_kwargs["mode"] = _mode
 
     @property
     def array_registry(self) -> dict[str, tuple[tuple[int, ...], np.dtype]]:
@@ -188,6 +212,32 @@ class TrajectoryReporter:
         if self.trajectories:
             return self.trajectories[0].array_registry
         return {}
+
+    def truncate_to_step(self, step: int) -> None:
+        """Truncate all trajectory files to the specified step.
+        **WARNING**: This operation is irreversible and will remove data from
+        the trajectory files.
+
+        Args:
+            step (int): The step to truncate to.
+        """
+        if step <= 0:
+            raise ValueError(f"Step must be greater than 0. Got step={step}.")
+        last_steps = self.last_steps
+        if any(s is None for s in last_steps):
+            raise ValueError("Cannot truncate: one or more trajectories are empty.")
+        if step > min(last_steps):
+            raise ValueError(
+                f"Step {step} is greater than the minimum last step "
+                f"across trajectories ({min(last_steps)})."
+            )
+        for trajectory in self.trajectories:
+            # trajectory file could be closed
+            if trajectory._file.isopen:
+                trajectory.truncate_to_step(step)
+            else:
+                with TorchSimTrajectory(trajectory.filename, mode="a") as traj:
+                    traj.truncate_to_step(step)
 
     def _add_model_arg_to_prop_calculators(self) -> None:
         """Add model argument to property calculators that only accept state.
@@ -205,15 +255,13 @@ class TrajectoryReporter:
                     # we partially evaluate the function to create a new function with
                     # an optional second argument, this can be set to state later on
                     new_fn = partial(
-                        lambda state, _=None, fn=None: (
-                            None if fn is None else fn(state)
-                        ),
+                        lambda state, _=None, fn=None: None if fn is None else fn(state),
                         fn=prop_fn,
                     )
                     self.prop_calculators[frequency][name] = new_fn
 
     def report(
-        self, state: SimState, step: int, model: ModelInterface | None = None
+        self, state: SimState, step: int | list[int], model: ModelInterface | None = None
     ) -> list[dict[str, torch.Tensor]]:
         """Report a state and step to the trajectory files.
 
@@ -224,8 +272,10 @@ class TrajectoryReporter:
         Args:
             state (SimState): Current system state with n_systems equal to
                 len(filenames)
-            step (int): Current simulation step, setting step to 0 will write
-                the state and all properties.
+            step (int | list[int]): Current simulation step per system, setting step
+                to 0 will write the state and all properties. If a list is provided, it
+                must have length equal to n_systems. Otherwise, a single integer step
+                is broadcast to all systems.
             model (ModelInterface, optional): Model used for simulation.
                 Defaults to None. Must be provided if any prop_calculators
                 are provided.
@@ -240,12 +290,16 @@ class TrajectoryReporter:
         Raises:
             ValueError: If number of systems doesn't match number of trajectory files
         """
+        # Fast path: no files to write, avoid N SimState constructions from split()
+        if self.filenames is None:
+            return self._extract_props_batched(state, step, model)
+
         # Get unique system indices
         system_indices = range(state.n_systems)
         # system_indices = torch.unique(state.system_idx).cpu().tolist()
 
         # Ensure we have the right number of trajectories
-        if self.filenames is not None and len(system_indices) != len(self.trajectories):
+        if len(system_indices) != len(self.trajectories):
             raise ValueError(
                 f"Number of systems ({len(system_indices)}) doesn't match "
                 f"number of trajectory files ({len(self.trajectories)})"
@@ -255,18 +309,17 @@ class TrajectoryReporter:
         all_props: list[dict[str, torch.Tensor]] = []
         # Process each system separately
         for idx, substate in enumerate(split_states):
+            sys_step = step[idx] if isinstance(step, list) else step
             # Write state to trajectory if it's time
-            if (
-                self.state_frequency
-                and step % self.state_frequency == 0
-                and self.filenames is not None
-            ):
-                self.trajectories[idx].write_state(substate, step, **self.state_kwargs)
+            if self.state_frequency and sys_step % self.state_frequency == 0:
+                self.trajectories[idx].write_state(
+                    substate, sys_step, **self.state_kwargs
+                )
 
             all_state_props = {}
             # Process property calculators for this system
             for report_frequency, calculators in self.prop_calculators.items():
-                if step % report_frequency != 0 or report_frequency == 0:
+                if sys_step % report_frequency != 0 or report_frequency == 0:
                     continue
 
                 # Calculate properties for this substate
@@ -280,9 +333,60 @@ class TrajectoryReporter:
                 # Write properties to this trajectory
                 if props:
                     all_state_props.update(props)
-                    if self.filenames is not None:
-                        self.trajectories[idx].write_arrays(props, step)
+                    self.trajectories[idx].write_arrays(props, sys_step)
             all_props.append(all_state_props)
+
+        return all_props
+
+    def _extract_props_batched(
+        self,
+        state: SimState,
+        step: int | list[int],
+        model: ModelInterface | None = None,
+    ) -> list[dict[str, torch.Tensor]]:
+        """Extract properties from a batched state without splitting into SimStates.
+
+        Args:
+            state (SimState): Batched system state.
+            step (int | list[int]): Current simulation step per system.
+            model (ModelInterface, optional): Model used for simulation.
+
+        Returns:
+            list[dict[str, torch.Tensor]]: Property dictionaries, one per system.
+        """
+        n_sys = state.n_systems
+        n_atoms = getattr(
+            state,
+            "n_atoms",
+            state.system_idx.shape[0],
+        )
+        sizes = getattr(
+            state,
+            "n_atoms_per_system",
+            torch.bincount(state.system_idx, minlength=n_sys),
+        ).tolist()
+        all_props: list[dict[str, torch.Tensor]] = [{} for _ in range(n_sys)]
+
+        for frequency, calculators in self.prop_calculators.items():
+            if frequency == 0:
+                continue
+            for prop_name, prop_fn in calculators.items():
+                result = prop_fn(state, model)
+                if result.dim() == 0:
+                    result = result.unsqueeze(0)
+
+                # infer per-atom vs per-system from shape
+                if result.shape[0] == n_atoms:
+                    splits = torch.split(result, sizes)
+                elif result.shape[0] == n_sys:
+                    splits = [result[i : i + 1] for i in range(n_sys)]
+                else:
+                    splits = [result.clone() for _ in range(n_sys)]
+
+                for idx in range(n_sys):
+                    sys_step = step[idx] if isinstance(step, list) else step
+                    if sys_step % frequency == 0:
+                        all_props[idx][prop_name] = splits[idx]
 
         return all_props
 
@@ -302,7 +406,40 @@ class TrajectoryReporter:
         for trajectory in self.trajectories:
             trajectory.close()
 
-    def __enter__(self) -> "TrajectoryReporter":
+    @property
+    def mode(self) -> Literal["r", "w", "a"]:
+        """Get the mode of the first trajectory file.
+
+        Returns:
+            "r" | "w" | "a": Mode from the trajectory_kwargs used during initialization.
+        """
+        if not self.trajectories:
+            raise ValueError("No trajectories loaded.")
+        # Key is guaranteed to exist because we set it during initialization.
+        return self.trajectory_kwargs["mode"]
+
+    @property
+    def last_steps(self) -> list[int | None]:
+        """Get the last logged step across all trajectory files.
+
+        This is useful for resuming optimizations from where they left off.
+
+        Returns:
+            list[int | None]: The last step number for each trajectory, or None if
+                the trajectory is empty. Returns empty list if no trajectories exist.
+        """
+        if not self.trajectories:
+            return []
+        last_steps = []
+        for trajectory in self.trajectories:
+            if trajectory._file.isopen:
+                last_steps.append(trajectory.last_step)
+            else:
+                with TorchSimTrajectory(trajectory._file.filename, mode="r") as traj:
+                    last_steps.append(traj.last_step)
+        return last_steps
+
+    def __enter__(self) -> Self:
         """Support the context manager protocol.
 
         Returns:
@@ -403,6 +540,17 @@ class TorchSimTrajectory:
         self.type_map = self._initialize_type_map(
             coerce_to_float32=coerce_to_float32, coerce_to_int32=coerce_to_int32
         )
+        if mode == "a" and self.last_step is not None:
+            inconsistent_step = any(
+                self.get_steps(name)[-1] > self.last_step for name in self.array_registry
+            )
+            if inconsistent_step:
+                warnings.warn(
+                    "Inconsistent last steps detected in trajectory arrays. "
+                    "Truncating all arrays to the `positions` array's last step.",
+                    stacklevel=2,
+                )
+                self.truncate_to_step(self.last_step)
 
     def _initialize_header(self, metadata: dict[str, str] | None = None) -> None:
         """Initialize the HDF5 file header with metadata.
@@ -594,7 +742,7 @@ class TorchSimTrajectory:
             )
 
         # Validate step is monotonically increasing by checking HDF5 file directly
-        steps_node = self._file.get_node("/steps/", name=name)
+        steps_node = self.get_steps(name)
         if len(steps_node) > 0:
             last_step = steps_node[-1]  # Get the last recorded step
             if steps[0] <= last_step:
@@ -602,6 +750,15 @@ class TorchSimTrajectory:
                     f"{steps[0]=} must be greater than the last recorded "
                     f"step {last_step} for array {name}"
                 )
+
+    @property
+    def filename(self) -> str:
+        """Get the filename of the trajectory file.
+
+        Returns:
+            str: Path to the HDF5 file
+        """
+        return self._file.filename
 
     def _serialize_array(self, name: str, data: np.ndarray, steps: list[int]) -> None:
         """Add additional contents to an array already in the registry.
@@ -658,9 +815,6 @@ class TorchSimTrajectory:
     def get_steps(
         self,
         name: str,
-        start: int | None = None,
-        stop: int | None = None,
-        step: int = 1,
     ) -> np.ndarray:
         """Get the steps for an array.
 
@@ -675,9 +829,21 @@ class TorchSimTrajectory:
         Returns:
             np.ndarray: Array of step numbers with shape [n_selected_frames]
         """
-        return self._file.root.steps.__getitem__(name).read(
-            start=start, stop=stop, step=step
-        )
+        return self._file.get_node("/steps/", name=name).read()
+
+    @property
+    def last_step(self) -> int | None:
+        """Get the last step number from the trajectory.
+
+        Retrieves the last time step recorded in the trajectory based
+        on the "positions" array.
+
+        Returns:
+            int | None: The last recorded step number, or None if no data exists
+        """
+        if not self.array_registry or "positions" not in self.array_registry:
+            return None
+        return self.get_steps("positions")[-1].item()
 
     def __str__(self) -> str:
         """Get a string representation of the trajectory.
@@ -960,7 +1126,7 @@ class TorchSimTrajectory:
         if self._file.isopen:  # TODO: ???
             self._file.close()
 
-    def __enter__(self) -> "TorchSimTrajectory":
+    def __enter__(self) -> Self:
         """Support the context manager protocol.
 
         Returns:
@@ -1026,3 +1192,43 @@ class TorchSimTrajectory:
 
         traj.close()
         return Trajectory(filename, mode="r")  # Reopen in read mode
+
+    def truncate_to_step(self, step: int) -> None:
+        """Truncate the trajectory to a specified step.
+        **WARNING**: This operation is irreversible and will permanently
+        modify the trajectory file.
+
+        Removes frames from the end of the trajectory to reduce its length such that the
+        last logged step is `step`.
+
+        Args:
+            step (int): Desired last step of the trajectory after truncation
+        """
+        if self.last_step is None:
+            raise ValueError(
+                "Cannot truncate an empty trajectory (no data has been written)."
+            )
+        if self.last_step < step:
+            raise ValueError(
+                f"Cannot truncate to a step greater than the last step."
+                f" {self.last_step=} < {step=}"
+            )
+        if self.last_step == step:
+            return  # No truncation needed
+        if step <= 0:
+            raise ValueError(f"Step must be larger than 0. Got {step=}")
+        for name in self.array_registry:
+            steps_node = self._file.get_node("/steps/", name=name)
+            steps_data = steps_node.read()
+            if set(steps_data) == {0}:
+                continue  # skip global arrays
+            # Find the index where the step is less than or equal to the desired step
+            # We know that it must be at least one index because of the earlier check.
+            indices = np.where(steps_data <= step)[0]
+            length = indices[-1] + 1  # +1 because we want to include this index
+
+            data_node = self._file.get_node("/data/", name=name)
+            data_node.truncate(length)
+            steps_node.truncate(length)
+
+        self.flush()

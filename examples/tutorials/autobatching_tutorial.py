@@ -50,7 +50,7 @@ Before diving into autobatching, let's understand how memory usage is estimated:
 
 # %%
 import torch
-from torch_sim.autobatching import calculate_memory_scaler
+from torch_sim.autobatching import calculate_memory_scalers
 from ase.build import bulk
 
 
@@ -64,13 +64,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 state = ts.initialize_state(many_cu_atoms, device=device, dtype=torch.float64)
 
 # Calculate memory scaling factor based on atom count
-atom_metric = calculate_memory_scaler(state, memory_scales_with="n_atoms")
+atom_metric = calculate_memory_scalers(state, memory_scales_with="n_atoms")
 
 # Calculate memory scaling based on atom count and density
-density_metric = calculate_memory_scaler(state, memory_scales_with="n_atoms_x_density")
+density_metric = calculate_memory_scalers(state, memory_scales_with="n_atoms_x_density")
 
 print(f"Atom-based memory metric: {atom_metric}")
-print(f"Density-based memory metric: {density_metric:.2f}")
+print(f"Density-based memory metric: {[f'{m:.2f}' for m in density_metric]}")
 
 
 # %% [markdown]
@@ -95,13 +95,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(model=mace, device=device)
 
-state_list = state.split()
-memory_metric_values = [
-    calculate_memory_scaler(s, memory_scales_with="n_atoms") for s in state_list
-]
+memory_metric_values = calculate_memory_scalers(state, memory_scales_with="n_atoms")
 
 max_memory_metric = estimate_max_memory_scaler(
-    state_list, mace_model, metric_values=memory_metric_values
+    state, mace_model, metric_values=memory_metric_values
 )
 print(f"Max memory metric: {max_memory_metric}")
 

@@ -10,13 +10,25 @@ from collections.abc import Callable
 from enum import StrEnum
 from typing import Any, Final, Literal, get_args
 
-from torch_sim.optimizers.cell_filters import CellFireState, CellOptimState  # noqa: F401
+from torch_sim.optimizers.bfgs import bfgs_init, bfgs_step
+from torch_sim.optimizers.cell_filters import (  # noqa: F401
+    CellBFGSState,
+    CellFireState,
+    CellLBFGSState,
+    CellOptimState,
+)
 from torch_sim.optimizers.fire import fire_init, fire_step
 from torch_sim.optimizers.gradient_descent import (
     gradient_descent_init,
     gradient_descent_step,
 )
-from torch_sim.optimizers.state import FireState, OptimState  # noqa: F401
+from torch_sim.optimizers.lbfgs import lbfgs_init, lbfgs_step
+from torch_sim.optimizers.state import (  # noqa: F401
+    BFGSState,
+    FireState,
+    LBFGSState,
+    OptimState,
+)
 
 
 FireFlavor = Literal["vv_fire", "ase_fire"]
@@ -28,9 +40,13 @@ class Optimizer(StrEnum):
 
     gradient_descent = "gradient_descent"
     fire = "fire"
+    lbfgs = "lbfgs"
+    bfgs = "bfgs"
 
 
 OPTIM_REGISTRY: Final[dict[Optimizer, tuple[Callable[..., Any], Callable[..., Any]]]] = {
     Optimizer.gradient_descent: (gradient_descent_init, gradient_descent_step),
     Optimizer.fire: (fire_init, fire_step),
+    Optimizer.lbfgs: (lbfgs_init, lbfgs_step),
+    Optimizer.bfgs: (bfgs_init, bfgs_step),
 }

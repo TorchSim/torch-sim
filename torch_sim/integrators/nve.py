@@ -57,17 +57,11 @@ def nve_init(
         calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
     )
 
-    return MDState(
-        positions=state.positions,
+    return MDState.from_state(
+        state,
         momenta=momenta,
         energy=model_output["energy"],
         forces=model_output["forces"],
-        masses=state.masses,
-        cell=state.cell,
-        pbc=state.pbc,
-        system_idx=state.system_idx,
-        atomic_numbers=state.atomic_numbers,
-        _constraints=state.constraints,
     )
 
 

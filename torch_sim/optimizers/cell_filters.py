@@ -15,7 +15,7 @@ import torch
 
 import torch_sim.math as fm
 from torch_sim.models.interface import ModelInterface
-from torch_sim.optimizers.state import FireState, OptimState
+from torch_sim.optimizers.state import BFGSState, FireState, LBFGSState, OptimState
 from torch_sim.state import SimState
 
 
@@ -61,6 +61,18 @@ def _compute_cell_masses(state: SimState) -> torch.Tensor:
     return cell_masses.unsqueeze(-1).expand(-1, 3)
 
 
+def _get_constrained_stress(
+    model_output: dict[str, torch.Tensor], state: SimState
+) -> torch.Tensor:
+    """Clone stress from model output and apply constraint symmetrization."""
+    if not state.constraints:
+        return model_output["stress"]
+    stress = model_output["stress"].clone()
+    for constraint in state.constraints:
+        constraint.adjust_stress(state, stress)
+    return stress
+
+
 def _apply_constraints(
     virial: torch.Tensor, *, hydrostatic_strain: bool, constant_volume: bool
 ) -> torch.Tensor:
@@ -87,6 +99,45 @@ def deform_grad(reference_cell: torch.Tensor, current_cell: torch.Tensor) -> tor
     return torch.linalg.solve(reference_cell, current_cell).transpose(-2, -1)
 
 
+def _frechet_cell_forces(
+    deform_grad_log: torch.Tensor,
+    ucf_cell_grad: torch.Tensor,
+    frechet_method: str | None = None,
+) -> torch.Tensor:
+    """Compute cell forces via the Frechet derivative of the matrix exponential.
+
+    Maps gradients from deformation-gradient space back to the log-space
+    parameterisation used by the Frechet cell filter.
+
+    Args:
+        deform_grad_log: Log of the deformation gradient, shape (n_systems, 3, 3).
+        ucf_cell_grad: Cell gradient in deformation-gradient space,
+            shape (n_systems, 3, 3).
+        frechet_method: Algorithm for computing the Frechet derivative. One of
+            ``"SPS"`` (default) or ``"blockEnlarge"``.
+
+    Returns:
+        Cell forces in log-space, shape (n_systems, 3, 3).
+    """
+    device, dtype = deform_grad_log.device, deform_grad_log.dtype
+    n_systems = deform_grad_log.shape[0]
+
+    # Unit direction matrices spanning the 3x3 space
+    directions = torch.zeros((9, 3, 3), device=device, dtype=dtype)
+    for idx, (mu, nu) in enumerate([(i, j) for i in range(3) for j in range(3)]):
+        directions[idx, mu, nu] = 1.0
+
+    # Batch Frechet derivatives over systems and directions
+    A_batch = deform_grad_log.unsqueeze(1).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
+    E_batch = directions.unsqueeze(0).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
+    _, expm_derivs_batch = fm.expm_frechet(A_batch, E_batch, method=frechet_method)
+    expm_derivs = expm_derivs_batch.reshape(n_systems, 9, 3, 3)
+
+    # Contract Frechet derivatives with the cell gradient
+    forces_flat = (expm_derivs * ucf_cell_grad.unsqueeze(1)).sum(dim=(2, 3))
+    return forces_flat.reshape(n_systems, 3, 3)
+
+
 def unit_cell_filter_init[T: AnyCellState](
     state: T,
     model: ModelInterface,
@@ -110,7 +161,7 @@ def unit_cell_filter_init[T: AnyCellState](
     model_output = model(state)
 
     # Calculate initial cell forces
-    stress = model_output["stress"]
+    stress = _get_constrained_stress(model_output, state)
     volumes = torch.linalg.det(state.cell).view(n_systems, 1, 1)
     virial = -volumes * (stress + pressure)
     virial = _apply_constraints(
@@ -144,6 +195,7 @@ def frechet_cell_filter_init[T: AnyCellState](
     hydrostatic_strain: bool = False,
     constant_volume: bool = False,
     scalar_pressure: float = 0.0,
+    frechet_method: str | None = None,
     **_kwargs: Any,
 ) -> None:
     """Initialize Frechet cell filter state."""
@@ -162,7 +214,7 @@ def frechet_cell_filter_init[T: AnyCellState](
     model_output = model(state)
 
     # Calculate initial cell forces using Frechet approach
-    stress = model_output["stress"]
+    stress = _get_constrained_stress(model_output, state)
     volumes = torch.linalg.det(state.cell).view(n_systems, 1, 1)
     virial = -volumes * (stress + pressure)
     virial = _apply_constraints(
@@ -189,6 +241,7 @@ def frechet_cell_filter_init[T: AnyCellState](
     state.cell_positions = cell_positions
     state.cell_forces = cell_forces
     state.cell_masses = cell_masses
+    state.frechet_method = frechet_method
 
 
 class CellFilter(StrEnum):
@@ -222,9 +275,10 @@ def unit_cell_step[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) -> 
 
     # Update cell from new positions
     cell_update = cell_positions_new / cell_factor_expanded
-    state.row_vector_cell = torch.bmm(
-        state.reference_cell.mT, cell_update.transpose(-2, -1)
-    )
+    new_cell = torch.bmm(state.reference_cell.mT, cell_update.transpose(-2, -1))
+
+    # Apply cell constraints (in-place, column vector convention)
+    state.set_constrained_cell(new_cell.mT.contiguous())
     state.cell_positions = cell_positions_new
 
 
@@ -249,7 +303,9 @@ def frechet_cell_step[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) 
     new_row_vector_cell = torch.bmm(
         state.reference_cell.mT, deform_grad_new.transpose(-2, -1)
     )
-    state.row_vector_cell = new_row_vector_cell
+
+    # Apply cell constraints (in-place, column vector convention)
+    state.set_constrained_cell(new_row_vector_cell.mT.contiguous())
     state.cell_positions = cell_positions_new
 
 
@@ -257,7 +313,7 @@ def compute_cell_forces[T: AnyCellState](
     model_output: dict[str, torch.Tensor], state: T
 ) -> None:
     """Compute cell forces for both unit and frechet methods."""
-    stress = model_output["stress"]
+    stress = _get_constrained_stress(model_output, state)
     volumes = torch.linalg.det(state.cell).view(state.n_systems, 1, 1)
     virial = -volumes * (stress + state.pressure)
     virial = _apply_constraints(
@@ -279,37 +335,23 @@ def compute_cell_forces[T: AnyCellState](
             virial, torch.linalg.inv(torch.transpose(cur_deform_grad, 1, 2))
         )
 
-        # Calculate Frechet derivative for non-identity deformation gradients
-        device, dtype = virial.device, virial.dtype
-        n_systems = state.n_systems
-
-        # Create direction matrices for Frechet derivative
-        directions = torch.zeros((9, 3, 3), device=device, dtype=dtype)
-        for idx, (mu, nu) in enumerate([(i, j) for i in range(3) for j in range(3)]):
-            directions[idx, mu, nu] = 1.0
-
-        # Compute deformation gradient log
-        deform_grad_log = torch.zeros_like(cur_deform_grad)
-        for sys_idx in range(n_systems):
-            deform_grad_log[sys_idx] = fm.matrix_log_33(cur_deform_grad[sys_idx])
-
-        # Compute Frechet derivatives
-        cell_forces = torch.zeros_like(ucf_cell_grad)
-        for sys_idx in range(n_systems):
-            expm_derivs = torch.stack(
-                [
-                    fm.expm_frechet(deform_grad_log[sys_idx], direction)[1]
-                    for direction in directions
-                ]
-            )
-            forces_flat = torch.sum(
-                expm_derivs * ucf_cell_grad[sys_idx].unsqueeze(0), dim=(1, 2)
-            )
-            cell_forces[sys_idx] = forces_flat.reshape(3, 3)
-
+        # Map gradient back to log-space via Frechet derivative of matrix exp
+        deform_grad_log = fm.matrix_log_33(
+            cur_deform_grad, sim_dtype=cur_deform_grad.dtype
+        )
+        frechet_method = getattr(state, "frechet_method", None)
+        cell_forces = _frechet_cell_forces(
+            deform_grad_log, ucf_cell_grad, frechet_method=frechet_method
+        )
         state.cell_forces = cell_forces / state.cell_factor
     else:  # Unit cell force computation
-        state.cell_forces = virial / state.cell_factor
+        # Note (AG): ASE transforms virial as:
+        # virial = np.linalg.solve(cur_deform_grad, virial.T).T
+        cur_deform_grad = deform_grad(state.reference_cell.mT, state.row_vector_cell)
+        virial_transformed = torch.linalg.solve(
+            cur_deform_grad, virial.transpose(-2, -1)
+        ).transpose(-2, -1)
+        state.cell_forces = virial_transformed / state.cell_factor
 
 
 CellFilterFuncs = tuple[Callable[..., None], Callable[..., None]]  # (init_fn, update_fn)
@@ -346,6 +388,7 @@ class CellOptimState(OptimState):
     pressure: torch.Tensor = field(default_factory=lambda: None)
     hydrostatic_strain: bool = False
     constant_volume: bool = False
+    frechet_method: str | None = None
     cell_positions: torch.Tensor = field(default_factory=lambda: None)
     cell_forces: torch.Tensor = field(default_factory=lambda: None)
     cell_masses: torch.Tensor = field(default_factory=lambda: None)
@@ -362,6 +405,7 @@ class CellOptimState(OptimState):
     _global_attributes = OptimState._global_attributes | {  # noqa: SLF001
         "hydrostatic_strain",
         "constant_volume",
+        "frechet_method",
     }
 
 
@@ -378,4 +422,60 @@ class CellFireState(CellOptimState, FireState):
     )
 
 
-AnyCellState = CellFireState | CellOptimState
+@dataclass(kw_only=True)
+class CellBFGSState(CellOptimState, BFGSState):
+    """State class for BFGS optimization with cell optimization.
+
+    Combines BFGS position optimization with cell filter for simultaneous
+    optimization of atomic positions and unit cell parameters using a unified
+    extended coordinate space (positions + cell DOFs).
+    """
+
+    # Previous cell state for Hessian update
+    prev_cell_positions: torch.Tensor = field(default_factory=lambda: None)
+    prev_cell_forces: torch.Tensor = field(default_factory=lambda: None)
+
+    _atom_attributes = (
+        CellOptimState._atom_attributes  # noqa: SLF001
+        | BFGSState._atom_attributes  # noqa: SLF001
+    )
+    _system_attributes = (
+        CellOptimState._system_attributes  # noqa: SLF001
+        | BFGSState._system_attributes  # noqa: SLF001
+        | {"prev_cell_positions", "prev_cell_forces"}
+    )
+    _global_attributes = (
+        CellOptimState._global_attributes  # noqa: SLF001
+        | BFGSState._global_attributes  # noqa: SLF001
+    )
+
+
+@dataclass(kw_only=True)
+class CellLBFGSState(CellOptimState, LBFGSState):
+    """State class for L-BFGS optimization with cell optimization.
+
+    Combines L-BFGS position optimization with cell filter for simultaneous
+    optimization of atomic positions and unit cell parameters using a unified
+    extended coordinate space (positions + cell DOFs).
+    """
+
+    # Previous cell state for history update
+    prev_cell_positions: torch.Tensor = field(default_factory=lambda: None)
+    prev_cell_forces: torch.Tensor = field(default_factory=lambda: None)
+
+    _atom_attributes = (
+        CellOptimState._atom_attributes  # noqa: SLF001
+        | LBFGSState._atom_attributes  # noqa: SLF001
+    )
+    _system_attributes = (
+        CellOptimState._system_attributes  # noqa: SLF001
+        | LBFGSState._system_attributes  # noqa: SLF001
+        | {"prev_cell_positions", "prev_cell_forces"}
+    )
+    _global_attributes = (
+        CellOptimState._global_attributes  # noqa: SLF001
+        | LBFGSState._global_attributes  # noqa: SLF001
+    )
+
+
+AnyCellState = CellFireState | CellOptimState | CellBFGSState | CellLBFGSState

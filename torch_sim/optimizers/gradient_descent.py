@@ -50,32 +50,25 @@ def gradient_descent_init(
     forces = model_output["forces"]
     stress = model_output.get("stress")
 
-    # Common state arguments
-    common_args = {
-        "positions": state.positions,
+    # Optimizer-specific additional attributes
+    optim_attrs = {
         "forces": forces,
         "energy": energy,
         "stress": stress,
-        "masses": state.masses,
-        "cell": state.cell,
-        "pbc": state.pbc,
-        "atomic_numbers": state.atomic_numbers,
-        "system_idx": state.system_idx,
-        "_constraints": state.constraints,
     }
 
     if cell_filter is not None:  # Create cell optimization state
         cell_filter_funcs = init_fn, _step_fn = ts.get_cell_filter(cell_filter)
-        common_args["reference_cell"] = state.cell.clone()
-        common_args["cell_filter"] = cell_filter_funcs
-        cell_state = CellOptimState(**common_args)
+        optim_attrs["reference_cell"] = state.cell.clone()
+        optim_attrs["cell_filter"] = cell_filter_funcs
+        cell_state = CellOptimState.from_state(state, **optim_attrs)
 
         # Initialize cell-specific attributes
         init_fn(cell_state, model, **filter_kwargs)
 
         return cell_state
     # Create regular OptimState without cell optimization
-    return OptimState(**common_args)
+    return OptimState.from_state(state, **optim_attrs)
 
 
 def gradient_descent_step(
