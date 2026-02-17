@@ -99,6 +99,44 @@ def test_slice_md_substate(si_double_sim_state: SimState) -> None:
         assert substate.energy.shape == (1,)
 
 
+def test_slice_state_permuted_order(
+    si_sim_state: SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
+) -> None:
+    """Slice with [2, 0, 1] should yield [Fe, Si, Ar]."""
+    concatenated = ts.concatenate_states(
+        [si_sim_state, ar_supercell_sim_state, fe_supercell_sim_state]
+    )
+    result = _slice_state(concatenated, [2, 0, 1])
+
+    assert torch.allclose(result[0].positions, fe_supercell_sim_state.positions)
+    assert torch.allclose(result[1].positions, si_sim_state.positions)
+    assert torch.allclose(result[2].positions, ar_supercell_sim_state.positions)
+    assert torch.allclose(result.cell[0], fe_supercell_sim_state.cell[0])
+    assert torch.allclose(result.cell[1], si_sim_state.cell[0])
+    assert torch.allclose(result.cell[2], ar_supercell_sim_state.cell[0])
+
+
+def test_slice_state_reversed_subset(
+    si_sim_state: SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
+) -> None:
+    """Slice with [2, 0] should match concatenate([Fe, Si])."""
+    concatenated = ts.concatenate_states(
+        [si_sim_state, ar_supercell_sim_state, fe_supercell_sim_state]
+    )
+    result = _slice_state(concatenated, [2, 0])
+    expected = ts.concatenate_states([fe_supercell_sim_state, si_sim_state])
+
+    assert torch.allclose(result.positions, expected.positions)
+    assert torch.allclose(result.cell, expected.cell)
+    assert torch.allclose(result.atomic_numbers, expected.atomic_numbers)
+    assert torch.allclose(result.masses, expected.masses)
+    assert result.n_systems == expected.n_systems
+
+
 def test_concatenate_two_si_states(
     si_sim_state: SimState, si_double_sim_state: SimState
 ) -> None:

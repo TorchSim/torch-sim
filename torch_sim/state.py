@@ -137,8 +137,10 @@ class SimState:
             self.system_idx = torch.zeros(
                 self.n_atoms, device=self.device, dtype=torch.int64
             )
+            n_systems = 1
         else:  # assert that system indices are unique consecutive integers
             _, counts = torch.unique_consecutive(initial_system_idx, return_counts=True)
+            n_systems = len(counts)
             if not torch.all(counts == torch.bincount(initial_system_idx)):
                 raise ValueError("System indices must be unique consecutive integers")
 
@@ -146,15 +148,13 @@ class SimState:
             validate_constraints(self.constraints, state=self)
 
         if self.charge is None:
-            self.charge = torch.zeros(
-                self.n_systems, device=self.device, dtype=self.dtype
-            )
-        elif self.charge.shape[0] != self.n_systems:
-            raise ValueError(f"Charge must have shape (n_systems={self.n_systems},)")
+            self.charge = torch.zeros(n_systems, device=self.device, dtype=self.dtype)
+        elif self.charge.shape[0] != n_systems:
+            raise ValueError(f"Charge must have shape (n_systems={n_systems},)")
         if self.spin is None:
-            self.spin = torch.zeros(self.n_systems, device=self.device, dtype=self.dtype)
-        elif self.spin.shape[0] != self.n_systems:
-            raise ValueError(f"Spin must have shape (n_systems={self.n_systems},)")
+            self.spin = torch.zeros(n_systems, device=self.device, dtype=self.dtype)
+        elif self.spin.shape[0] != n_systems:
+            raise ValueError(f"Spin must have shape (n_systems={n_systems},)")
 
         if self.cell.ndim != 3 and initial_system_idx is None:
             self.cell = self.cell.unsqueeze(0)
@@ -162,9 +162,10 @@ class SimState:
         if self.cell.shape[-2:] != (3, 3):
             raise ValueError("Cell must have shape (n_systems, 3, 3)")
 
-        if self.cell.shape[0] != self.n_systems:
+        if self.cell.shape[0] != n_systems:
             raise ValueError(
-                f"Cell must have shape (n_systems, 3, 3), got {self.cell.shape}"
+                f"Cell must have shape (n_systems={n_systems}, 3, 3), "
+                f"got {self.cell.shape}"
             )
 
         # if devices aren't all the same, raise an error, in a clean way
@@ -764,71 +765,55 @@ def get_attrs_for_scope(
         yield attr_name, getattr(state, attr_name)
 
 
-def _filter_attrs_by_mask(
+def _filter_attrs_by_index(
     state: SimState,
-    atom_mask: torch.Tensor,
-    system_mask: torch.Tensor,
+    atom_indices: torch.Tensor,
+    system_indices: torch.Tensor,
 ) -> dict:
-    """Filter attributes by atom and system masks.
+    """Filter attributes by integer atom and system indices.
 
-    Selects subsets of attributes based on boolean masks for atoms and systems.
+    Selects subsets of attributes using integer index tensors, preserving the
+    order specified by the indices.
 
     Args:
         state (SimState): The state to filter
-        atom_mask (torch.Tensor): Boolean mask for atoms to include with shape
-            (n_atoms,)
-        system_mask (torch.Tensor): Boolean mask for systems to include with shape
-            (n_systems,)
+        atom_indices (torch.Tensor): Integer indices of atoms to include
+        system_indices (torch.Tensor): Integer indices of systems to include
 
     Returns:
         dict: Filtered attributes with appropriate handling for each scope
     """
-    # Copy global attributes directly
     filtered_attrs = dict(get_attrs_for_scope(state, "global"))
 
-    # take into account constraints that are AtomConstraint
+    # Constraints need boolean masks
+    atom_mask = torch.zeros(state.n_atoms, dtype=torch.bool, device=state.device)
+    atom_mask[atom_indices] = True
+    system_mask = torch.zeros(state.n_systems, dtype=torch.bool, device=state.device)
+    system_mask[system_indices] = True
     filtered_attrs["_constraints"] = [
-        constraint.select_constraint(atom_mask, system_mask)
-        for constraint in copy.deepcopy(state.constraints)
-    ]
-    # Remove any None constraints resulting from selection
-    filtered_attrs["_constraints"] = [
-        constraint
-        for constraint in filtered_attrs["_constraints"]
-        if constraint is not None
+        c
+        for con in copy.deepcopy(state.constraints)
+        if (c := con.select_constraint(atom_mask, system_mask))
     ]
 
-    # Filter per-atom attributes
-    for attr_name, attr_value in get_attrs_for_scope(state, "per-atom"):
-        if attr_name == "system_idx":
-            # Get the old system indices for the selected atoms
-            old_system_indices = attr_value[atom_mask]
+    # Build inverse map for system_idx remapping (old index -> new position)
+    if len(system_indices) == 0:
+        inv = torch.empty(0, device=state.device, dtype=torch.long)
+    else:
+        inv = torch.empty(
+            system_indices.max().item() + 1, device=state.device, dtype=torch.long
+        )
+        inv[system_indices] = torch.arange(len(system_indices), device=state.device)
 
-            # Get the system indices that are kept
-            kept_indices = torch.arange(attr_value.max() + 1, device=attr_value.device)[
-                system_mask
-            ]
+    for name, val in get_attrs_for_scope(state, "per-atom"):
+        filtered_attrs[name] = (
+            inv[val[atom_indices]] if name == "system_idx" else val[atom_indices]
+        )
 
-            # Create a mapping from old system indices to new consecutive indices
-            system_idx_map = {idx.item(): i for i, idx in enumerate(kept_indices)}
-
-            # Create new system tensor with remapped indices
-            new_system_idxs = torch.tensor(
-                [system_idx_map[b.item()] for b in old_system_indices],
-                device=attr_value.device,
-                dtype=attr_value.dtype,
-            )
-            filtered_attrs[attr_name] = new_system_idxs
-
-        else:
-            filtered_attrs[attr_name] = attr_value[atom_mask]
-
-    # Filter per-system attributes
-    for attr_name, attr_value in get_attrs_for_scope(state, "per-system"):
-        if isinstance(attr_value, torch.Tensor):
-            filtered_attrs[attr_name] = attr_value[system_mask]
-        else:  # Non-tensor attributes (e.g. cell filter) are copied as-is
-            filtered_attrs[attr_name] = attr_value
+    for name, val in get_attrs_for_scope(state, "per-system"):
+        filtered_attrs[name] = (
+            val[system_indices] if isinstance(val, torch.Tensor) else val
+        )
 
     return filtered_attrs
 
@@ -928,17 +913,16 @@ def _pop_states[T: SimState](
     if isinstance(pop_indices, list):
         pop_indices = torch.tensor(pop_indices, device=state.device, dtype=torch.int64)
 
-    # Create masks for the atoms and systems to keep and pop
-    system_range = torch.arange(state.n_systems, device=state.device)
-    pop_system_mask = torch.isin(system_range, pop_indices)
-    keep_system_mask = ~pop_system_mask
-
+    # Derive keep/pop atom and system indices
+    all_systems = torch.arange(state.n_systems, device=state.device)
+    keep_system_indices = all_systems[~torch.isin(all_systems, pop_indices)]
     pop_atom_mask = torch.isin(state.system_idx, pop_indices)
-    keep_atom_mask = ~pop_atom_mask
+    keep_atom_indices = torch.where(~pop_atom_mask)[0]
+    pop_atom_indices = torch.where(pop_atom_mask)[0]
 
     # Filter attributes for keep and pop states
-    keep_attrs = _filter_attrs_by_mask(state, keep_atom_mask, keep_system_mask)
-    pop_attrs = _filter_attrs_by_mask(state, pop_atom_mask, pop_system_mask)
+    keep_attrs = _filter_attrs_by_index(state, keep_atom_indices, keep_system_indices)
+    pop_attrs = _filter_attrs_by_index(state, pop_atom_indices, pop_indices)
 
     # Create the keep state
     keep_state: T = type(state)(**keep_attrs)  # type: ignore[assignment]
@@ -954,12 +938,13 @@ def _slice_state[T: SimState](state: T, system_indices: list[int] | torch.Tensor
     """Slice a substate from the SimState containing only the specified system indices.
 
     Creates a new SimState containing only the specified systems, preserving
-    all relevant properties.
+    the requested order. E.g., system_indices=[3, 1, 4] results in original
+    systems 3, 1, 4 becoming new systems 0, 1, 2.
 
     Args:
         state (SimState): The state to slice
         system_indices (list[int] | torch.Tensor): System indices to include in the
-            sliced state
+            sliced state (order preserved in the result)
 
     Returns:
         SimState: A new SimState object containing only the specified systems
@@ -975,15 +960,19 @@ def _slice_state[T: SimState](state: T, system_indices: list[int] | torch.Tensor
     if len(system_indices) == 0:
         raise ValueError("system_indices cannot be empty")
 
-    # Create masks for the atoms and systems to include
-    system_range = torch.arange(state.n_systems, device=state.device)
-    system_mask = torch.isin(system_range, system_indices)
-    atom_mask = torch.isin(state.system_idx, system_indices)
+    # Build atom indices in requested order (preserves system_indices order)
+    system_indices = system_indices.reshape(-1)
+    cumsum = torch.cat(
+        (state.n_atoms_per_system.new_zeros(1), state.n_atoms_per_system.cumsum(0))
+    )
+    atom_indices = torch.cat(
+        [
+            torch.arange(cumsum[i].item(), cumsum[i + 1].item(), device=state.device)
+            for i in system_indices
+        ]
+    )
 
-    # Filter attributes
-    filtered_attrs = _filter_attrs_by_mask(state, atom_mask, system_mask)
-
-    # Create the sliced state
+    filtered_attrs = _filter_attrs_by_index(state, atom_indices, system_indices)
     return type(state)(**filtered_attrs)  # type: ignore[invalid-return-type]
 
 
