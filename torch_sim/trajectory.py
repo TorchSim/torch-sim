@@ -290,12 +290,16 @@ class TrajectoryReporter:
         Raises:
             ValueError: If number of systems doesn't match number of trajectory files
         """
+        # Fast path: no files to write, avoid N SimState constructions from split()
+        if self.filenames is None:
+            return self._extract_props_batched(state, step, model)
+
         # Get unique system indices
         system_indices = range(state.n_systems)
         # system_indices = torch.unique(state.system_idx).cpu().tolist()
 
         # Ensure we have the right number of trajectories
-        if self.filenames is not None and len(system_indices) != len(self.trajectories):
+        if len(system_indices) != len(self.trajectories):
             raise ValueError(
                 f"Number of systems ({len(system_indices)}) doesn't match "
                 f"number of trajectory files ({len(self.trajectories)})"
@@ -307,11 +311,7 @@ class TrajectoryReporter:
         for idx, substate in enumerate(split_states):
             sys_step = step[idx] if isinstance(step, list) else step
             # Write state to trajectory if it's time
-            if (
-                self.state_frequency
-                and sys_step % self.state_frequency == 0
-                and self.filenames is not None
-            ):
+            if self.state_frequency and sys_step % self.state_frequency == 0:
                 self.trajectories[idx].write_state(
                     substate, sys_step, **self.state_kwargs
                 )
@@ -333,9 +333,60 @@ class TrajectoryReporter:
                 # Write properties to this trajectory
                 if props:
                     all_state_props.update(props)
-                    if self.filenames is not None:
-                        self.trajectories[idx].write_arrays(props, sys_step)
+                    self.trajectories[idx].write_arrays(props, sys_step)
             all_props.append(all_state_props)
+
+        return all_props
+
+    def _extract_props_batched(
+        self,
+        state: SimState,
+        step: int | list[int],
+        model: ModelInterface | None = None,
+    ) -> list[dict[str, torch.Tensor]]:
+        """Extract properties from a batched state without splitting into SimStates.
+
+        Args:
+            state (SimState): Batched system state.
+            step (int | list[int]): Current simulation step per system.
+            model (ModelInterface, optional): Model used for simulation.
+
+        Returns:
+            list[dict[str, torch.Tensor]]: Property dictionaries, one per system.
+        """
+        n_sys = state.n_systems
+        n_atoms = getattr(
+            state,
+            "n_atoms",
+            state.system_idx.shape[0],
+        )
+        sizes = getattr(
+            state,
+            "n_atoms_per_system",
+            torch.bincount(state.system_idx, minlength=n_sys),
+        ).tolist()
+        all_props: list[dict[str, torch.Tensor]] = [{} for _ in range(n_sys)]
+
+        for frequency, calculators in self.prop_calculators.items():
+            if frequency == 0:
+                continue
+            for prop_name, prop_fn in calculators.items():
+                result = prop_fn(state, model)
+                if result.dim() == 0:
+                    result = result.unsqueeze(0)
+
+                # infer per-atom vs per-system from shape
+                if result.shape[0] == n_atoms:
+                    splits = torch.split(result, sizes)
+                elif result.shape[0] == n_sys:
+                    splits = [result[i : i + 1] for i in range(n_sys)]
+                else:
+                    splits = [result.clone() for _ in range(n_sys)]
+
+                for idx in range(n_sys):
+                    sys_step = step[idx] if isinstance(step, list) else step
+                    if sys_step % frequency == 0:
+                        all_props[idx][prop_name] = splits[idx]
 
         return all_props
 
