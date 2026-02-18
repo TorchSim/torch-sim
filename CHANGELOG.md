@@ -3,6 +3,36 @@
 
 ## Unreleased
 
+## v0.5.2
+
+This release adds batched L-BFGS and BFGS optimizers, a FixSymmetry constraint, performance improvements to `ts.static` and `ts.optimize` through improved batching, and an MD progress bar. It also includes several bug fixes and quality-of-life improvements.
+
+### 🎉 New Features
+* Implement batched L-BFGS and BFGS optimizers by @abhijeetgangan in [#365](https://github.com/TorchSim/torch-sim/pull/365)
+* Add FixSymmetry constraint by @danielzuegner in [#438](https://github.com/TorchSim/torch-sim/pull/438)
+* Enable MD progress bar by @danielzuegner in [#448](https://github.com/TorchSim/torch-sim/pull/448)
+* Implement `SimState.wrap_positions` using `pbc_wrap_batched` by @Praagnya in [#350](https://github.com/TorchSim/torch-sim/pull/350)
+
+### 🚀 Performance
+* Accelerated `ts.static` + added scaling scripts by @falletta in [#427](https://github.com/TorchSim/torch-sim/pull/427)
+* Accelerated `ts.optimize` by batching Frechet Cell Filter by @falletta in [#439](https://github.com/TorchSim/torch-sim/pull/439)
+* Accelerated `TrajectoryReporter` when trajectory output is disabled by @falletta in [#441](https://github.com/TorchSim/torch-sim/pull/441)
+* Vectorize atom index computation in L-BFGS optimizer by @falletta in [#444](https://github.com/TorchSim/torch-sim/pull/444)
+
+### 🛠 Enhancements
+* Add cumulative strain guard to FixSymmetry by @janosh in [#447](https://github.com/TorchSim/torch-sim/pull/447)
+* Move SPS to a helper method and add documentation by @CompRhys in [#455](https://github.com/TorchSim/torch-sim/pull/455)
+* Testing utils for external model posture by @CompRhys in [#433](https://github.com/TorchSim/torch-sim/pull/433)
+
+### 🐛 Bug Fixes
+* Fix constraint `atom_idx` not remapped on reordered slice by @falletta in [#457](https://github.com/TorchSim/torch-sim/pull/457)
+* Fix L-BFGS history consistency for state updates by @falletta in [#443](https://github.com/TorchSim/torch-sim/pull/443)
+* Handle wrapping correctly for default neighborlist by @abhijeetgangan in [#436](https://github.com/TorchSim/torch-sim/pull/436)
+
+### 🧹 House-Keeping
+* Bump pre-commit hooks and fix ruff lint errors by @janosh in [#442](https://github.com/TorchSim/torch-sim/pull/442)
+* Make GraphPES tests less flaky by @CompRhys in [#446](https://github.com/TorchSim/torch-sim/pull/446)
+
 ## v0.5.1
 
 This release adds several new features including constraints support for molecular dynamics and optimization, trajectory appending capabilities, and a batch cell list implementation. It also includes improvements to integrator initialization, temperature handling, and numerous bug fixes.
