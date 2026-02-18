@@ -909,6 +909,33 @@ def test_atom_indexed_constraint_update_and_select() -> None:
     assert sub_constraint is None
 
 
+def test_constraint_atom_idx_remapped_on_reordered_slice(
+    mixed_double_sim_state: ts.SimState,
+) -> None:
+    """Slicing a batched state with reversed system order must remap constraint
+    atom_idx so the constraint targets the same physical atoms in the new ordering.
+    """
+    state = mixed_double_sim_state
+    n_sys0 = (state.system_idx == 0).sum().item()
+    fix_global_idx = n_sys0 + 1  # second atom of system 1
+    state.constraints = [FixAtoms(atom_idx=torch.tensor([fix_global_idx]))]
+
+    # Reverse system order: system 1's atoms come first in the new ordering,
+    # so the fixed atom (second of old system 1) lands at new index 1.
+    sliced = state[[1, 0]]
+
+    constraint = sliced.constraints[0]
+    assert isinstance(constraint, FixAtoms)
+
+    assert constraint.atom_idx.item() == 1
+
+    forces = torch.ones(sliced.n_atoms, 3, dtype=DTYPE)
+    constraint.adjust_forces(sliced, forces)
+    assert torch.all(forces[1] == 0.0)
+    assert torch.all(forces[:1] == 1.0)
+    assert torch.all(forces[2:] == 1.0)
+
+
 def test_merge_constraints(mixed_double_sim_state: ts.SimState) -> None:
     """Test merge_constraints combines constraints from multiple systems."""
     # Split the double system state
