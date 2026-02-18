@@ -799,10 +799,10 @@ def _filter_attrs_by_index(
     # Remap constraint atom_idx to account for reordering by atom_indices
     atom_remap = torch.empty(state.n_atoms, dtype=torch.long, device=state.device)
     atom_remap[atom_indices] = torch.arange(len(atom_indices), device=state.device)
-    dense_to_reordered = atom_remap[torch.where(atom_mask)[0]]
+    new_atom_idx = atom_remap[torch.where(atom_mask)[0]]
     for c in filtered_attrs["_constraints"]:
         if hasattr(c, "atom_idx") and isinstance(c.atom_idx, torch.Tensor):
-            c.atom_idx = dense_to_reordered[c.atom_idx]
+            c.atom_idx = new_atom_idx[c.atom_idx]
 
     # Build inverse map for system_idx remapping (old index -> new position)
     if len(system_indices) == 0:
