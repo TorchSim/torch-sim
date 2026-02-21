@@ -12,9 +12,11 @@ try:
     from duecredit import Doi, due
 except ImportError:
 
-    def dcite(_doi: str, _description: str, *, path: str | None = None) -> Callable:
+    def dcite(
+        doi: str, description: str | None = None, *, path: str | None = None
+    ) -> Callable:
         """Return a no-op decorator when duecredit is unavailable."""
-        del path
+        del doi, description, path
         return _noop_decorator
 else:
 
