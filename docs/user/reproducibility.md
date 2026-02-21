@@ -67,17 +67,6 @@ state = ts.integrate(
 In practice, exact reproducibility also depends on hardware, driver/library versions,
 and precision choices.
 
-### Known limitation: V-Rescale thermostat
-
-The NVT V-Rescale thermostat (`nvt_vrescale`) uses `torch.distributions.Gamma` to
-sample stochastic kinetic-energy rescaling factors. PyTorch distributions do not
-currently accept a `torch.Generator`, so this sampling falls back to the global RNG
-and is **not** controlled by `state.rng`. All other random draws in the Langevin and
-C-Rescale integrators are fully seeded.
-
-This is tracked upstream in
-[pytorch/pytorch#175478](https://github.com/pytorch/pytorch/issues/175478).
-
 ## Seeding stochastic integrators
 
 Set `rng` on the state before calling any init function. You can pass an integer seed

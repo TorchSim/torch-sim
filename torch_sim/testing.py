@@ -160,19 +160,35 @@ def make_sio2_sim_state(
     return ts.io.atoms_to_state(atoms, device, dtype)
 
 
-def _rattle_sim_state(sim_state: ts.SimState, seed: int = 3) -> ts.SimState:
-    """Apply Weibull-distributed random displacements to positions."""
+def _rattle_sim_state(
+    sim_state: ts.SimState,
+    seed: int | None = None,
+    scale: float = 0.1,
+    concentration: float = 1.0,
+) -> ts.SimState:
+    """Apply Weibull-distributed random displacements to positions.
+
+    Uses the state's ``rng`` (seeded with *seed*) so no global RNG state is touched.
+    """
     sim_state = sim_state.clone()
-    rng_state = torch.random.get_rng_state()
-    try:
-        torch.manual_seed(seed)
-        weibull = torch.distributions.weibull.Weibull(scale=0.1, concentration=1)
-        rnd = torch.randn_like(sim_state.positions)
-        rnd = rnd / torch.norm(rnd, dim=-1, keepdim=True)
-        shifts = weibull.sample(rnd.shape).to(device=sim_state.positions.device) * rnd
-        sim_state.positions = sim_state.positions + shifts
-    finally:
-        torch.random.set_rng_state(rng_state)
+    if seed is not None:
+        sim_state.rng = seed
+    rng = sim_state.rng
+
+    rnd = torch.randn(
+        sim_state.positions.shape,
+        device=sim_state.device,
+        dtype=sim_state.dtype,
+        generator=rng,
+    )
+    rnd = rnd / torch.norm(rnd, dim=-1, keepdim=True)
+
+    # Weibull via inverse CDF: X = scale * (-ln(U))^(1/concentration)
+    u = torch.rand(
+        rnd.shape, device=sim_state.device, dtype=sim_state.dtype, generator=rng
+    )
+    weibull_samples = scale * (-torch.log(u)) ** (1.0 / concentration)
+    sim_state.positions = sim_state.positions + weibull_samples * rnd
     return sim_state
 
 

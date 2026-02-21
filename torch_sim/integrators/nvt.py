@@ -543,8 +543,8 @@ def _vrescale_update(
     # Generate random numbers
     rng = state.rng
     r1 = torch.randn(n_systems, device=device, dtype=dtype, generator=rng)
-    # Sample Gamma((dof - 1)/2, 1/2) = \sum_2^{dof} X_i^2 where X_i ~ N(0,1)
-    r2 = torch.distributions.Gamma((dof - 1) / 2, torch.ones_like(dof) / 2).sample()
+    # Sample Gamma((dof - 1)/2, 1/2) via _standard_gamma so we can seed it
+    r2 = torch._standard_gamma((dof - 1) / 2, generator=rng) * 2  # noqa: SLF001
 
     # Calculate scaling coefficients
     c1 = torch.exp(-dt_tensor / tau_tensor)
