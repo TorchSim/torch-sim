@@ -13,6 +13,7 @@ from torch_sim.state import (
     _normalize_system_indices,
     _pop_states,
     _slice_state,
+    coerce_prng,
     get_attrs_for_scope,
 )
 
@@ -923,3 +924,41 @@ def test_rng_split_preserves(si_sim_state: SimState) -> None:
     assert len(parts) == 2
     for part in parts:
         assert isinstance(part.rng, torch.Generator)
+
+
+def test_coerce_prng_none() -> None:
+    """None seed creates an unseeded Generator."""
+    gen = coerce_prng(None, device=DEVICE)
+    assert isinstance(gen, torch.Generator)
+
+
+def test_coerce_prng_int_seed() -> None:
+    """Int seed creates a deterministically-seeded Generator."""
+    g1 = coerce_prng(42, device=DEVICE)
+    g2 = coerce_prng(42, device=DEVICE)
+    r1 = torch.randn(5, generator=g1)
+    r2 = torch.randn(5, generator=g2)
+    assert torch.equal(r1, r2)
+
+
+def test_coerce_prng_different_seeds_diverge() -> None:
+    """Different int seeds produce different random streams."""
+    g1 = coerce_prng(1, device=DEVICE)
+    g2 = coerce_prng(2, device=DEVICE)
+    r1 = torch.randn(5, generator=g1)
+    r2 = torch.randn(5, generator=g2)
+    assert not torch.equal(r1, r2)
+
+
+def test_coerce_prng_generator_passthrough() -> None:
+    """Passing a Generator returns the exact same object."""
+    gen = torch.Generator()
+    gen.manual_seed(7)
+    result = coerce_prng(gen, device=DEVICE)
+    assert result is gen
+
+
+def test_coerce_prng_default_no_arg() -> None:
+    """Calling with no argument (default None) returns a Generator."""
+    gen = coerce_prng(None, device=DEVICE)
+    assert isinstance(gen, torch.Generator)

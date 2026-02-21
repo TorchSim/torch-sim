@@ -3,9 +3,10 @@ import torch
 
 import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
-from torch_sim.integrators import coerce_prng, initialize_momenta
+from torch_sim.integrators import initialize_momenta
 from torch_sim.integrators.npt import _compute_cell_force
 from torch_sim.models.lennard_jones import LennardJonesModel
+from torch_sim.state import coerce_prng
 from torch_sim.units import MetalUnits
 
 

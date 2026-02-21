@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 import torch
 
 import torch_sim as ts
-from torch_sim.typing import StateLike
+from torch_sim.typing import PRNGLike, StateLike
 
 
 if TYPE_CHECKING:
@@ -24,6 +24,31 @@ if TYPE_CHECKING:
     from pymatgen.core import Structure
 
 from torch_sim.constraints import Constraint, merge_constraints, validate_constraints
+
+
+def coerce_prng(rng: PRNGLike, device: torch.device) -> torch.Generator:
+    """Coerce an int seed or existing Generator into a ``torch.Generator``.
+
+    Args:
+        rng: An integer seed, an existing ``torch.Generator``, or ``None``
+            (uses a non-deterministic seed).
+        device: Device for the generator.
+
+    Returns:
+        A ``torch.Generator`` ready for use.
+    """
+    if isinstance(rng, torch.Generator):
+        return rng.to(device)
+
+    if isinstance(rng, int):
+        gen = torch.Generator(device=device)
+        gen.manual_seed(rng)
+        return gen
+
+    if rng is None:
+        return torch.Generator(device=device)
+
+    raise ValueError(f"Invalid rng type: {type(rng)}")
 
 
 @dataclass
@@ -122,16 +147,9 @@ class SimState:
         On first access, if no generator has been assigned, a new
         ``torch.Generator`` is created on the same device as the state.
         Assign ``None`` to reset, or assign a seeded ``torch.Generator``
-        or an ``int`` seed for reproducibility
-        (e.g. ``state.rng = 42`` or ``state.rng = ts.coerce_prng(42)``).
+        or an ``int`` seed for reproducibility.
         """
-        if self._rng is None:
-            self._rng = torch.Generator(device=self.device)
-        elif isinstance(self._rng, int):
-            seed = self._rng
-            self._rng = torch.Generator(device=self.device)
-            self._rng.manual_seed(seed)
-        return self._rng
+        return coerce_prng(self._rng, self.device)
 
     @rng.setter
     def rng(self, value: int | torch.Generator | None) -> None:

@@ -11,34 +11,6 @@ from torch_sim.state import SimState
 from torch_sim.units import MetalUnits
 
 
-# Type alias accepted by coerce_prng
-PRNGKeyLike = int | torch.Generator | None
-
-
-def coerce_prng(
-    seed: PRNGKeyLike = None,
-    *,
-    device: torch.device | str = "cpu",
-) -> torch.Generator:
-    """Coerce an int seed or existing Generator into a ``torch.Generator``.
-
-    Args:
-        seed: An integer seed, an existing ``torch.Generator``, or ``None``
-            (uses a non-deterministic seed).
-        device: Device for the generator when creating a new one.
-            Ignored when *seed* is already a ``torch.Generator``.
-
-    Returns:
-        A ``torch.Generator`` ready for use.
-    """
-    if isinstance(seed, torch.Generator):
-        return seed
-    gen = torch.Generator(device=torch.device(device))
-    if seed is not None:
-        gen.manual_seed(seed)
-    return gen
-
-
 @dataclass(kw_only=True)
 class MDState(SimState):
     """State information for molecular dynamics simulations.
