@@ -38,7 +38,11 @@ def coerce_prng(rng: PRNGLike, device: torch.device) -> torch.Generator:
         A ``torch.Generator`` ready for use.
     """
     if isinstance(rng, torch.Generator):
-        return rng.to(device)
+        if rng.device == device:
+            return rng
+        new = torch.Generator(device=device)
+        new.set_state(rng.get_state())
+        return new
 
     if isinstance(rng, int):
         gen = torch.Generator(device=device)
@@ -149,7 +153,8 @@ class SimState:
         Assign ``None`` to reset, or assign a seeded ``torch.Generator``
         or an ``int`` seed for reproducibility.
         """
-        return coerce_prng(self._rng, self.device)
+        self._rng = coerce_prng(self._rng, self.device)
+        return self._rng
 
     @rng.setter
     def rng(self, value: int | torch.Generator | None) -> None:
@@ -780,6 +785,8 @@ def _state_to_device[T: SimState](
     for attr_name, attr_value in attrs.items():
         if isinstance(attr_value, torch.Tensor):
             attrs[attr_name] = attr_value.to(device=device)
+        elif isinstance(attr_value, torch.Generator):
+            attrs[attr_name] = coerce_prng(attr_value, device)
 
     if dtype is not None:
         attrs["positions"] = attrs["positions"].to(dtype=dtype)

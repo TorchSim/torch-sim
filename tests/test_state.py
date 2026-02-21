@@ -962,3 +962,13 @@ def test_coerce_prng_default_no_arg() -> None:
     """Calling with no argument (default None) returns a Generator."""
     gen = coerce_prng(None, device=DEVICE)
     assert isinstance(gen, torch.Generator)
+
+
+def test_rng_setter_int_advances_state(si_sim_state: SimState) -> None:
+    """Setting rng to an int must store a Generator so its state advances."""
+    state = si_sim_state.clone()
+    state.rng = 99
+    # Two consecutive draws should differ because the Generator state advances
+    r1 = torch.randn(5, generator=state.rng)
+    r2 = torch.randn(5, generator=state.rng)
+    assert not torch.equal(r1, r2)
