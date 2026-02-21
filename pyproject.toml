@@ -30,7 +30,7 @@ dependencies = [
     "h5py>=3.12.1",
     "nvalchemi-toolkit-ops>=0.2.0",
     "numpy>=1.26,<3",
-    "tables>=3.10.2",
+    "tables>=3.10.2,<3.11",
     "torch>=2",
     "tqdm>=4.67",
 ]
