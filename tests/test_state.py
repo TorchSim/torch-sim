@@ -789,7 +789,7 @@ def test_rng_lazy_init(si_sim_state: SimState) -> None:
 
 
 def test_rng_int_seed_via_constructor() -> None:
-    """Passing an int _rng to SimState coerces it to a Generator in __post_init__."""
+    """Passing an int _rng to SimState is lazily coerced on first .rng access."""
     state = SimState(
         positions=torch.randn(2, 3),
         masses=torch.ones(2),
@@ -798,7 +798,6 @@ def test_rng_int_seed_via_constructor() -> None:
         atomic_numbers=torch.ones(2, dtype=torch.int),
         _rng=42,
     )
-    assert isinstance(state._rng, torch.Generator)  # noqa: SLF001
     assert isinstance(state.rng, torch.Generator)
 
 

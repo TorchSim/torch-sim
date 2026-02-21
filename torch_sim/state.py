@@ -162,12 +162,6 @@ class SimState:
 
     def __post_init__(self) -> None:  # noqa: C901
         """Initialize the SimState and validate the arguments."""
-        # Coerce _rng: accept int seed, torch.Generator, or None
-        if isinstance(self._rng, int):
-            seed = self._rng
-            self._rng = torch.Generator(device=self.device)
-            self._rng.manual_seed(seed)
-
         # Check that positions, masses and atomic numbers have compatible shapes
         shapes = [
             getattr(self, attr).shape[0]
