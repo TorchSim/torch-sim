@@ -6,7 +6,7 @@ import torch
 
 from torch_sim.integrators.md import (
     MDState,
-    calculate_momenta,
+    initialize_momenta,
     momentum_step,
     position_step,
 )
@@ -20,7 +20,6 @@ def nve_init(
     model: ModelInterface,
     *,
     kT: torch.Tensor,
-    seed: int | None = None,
     **_kwargs: Any,
 ) -> MDState:
     """Initialize an NVE state from input data.
@@ -29,6 +28,8 @@ def nve_init(
     energies and forces, and sampling momenta from a Maxwell-Boltzmann distribution
     at the specified temperature.
 
+    To seed the RNG set ``state.rng = seed`` before calling.
+
     Args:
         model: Neural network model that computes energies and forces.
             Must return a dict with 'energy' and 'forces' keys.
@@ -36,7 +37,6 @@ def nve_init(
             masses, cell, pbc, and other required state variables
         kT: Temperature in energy units for initializing momenta,
             scalar or with shape [n_systems]
-        seed: Random seed for reproducibility
 
     Returns:
         MDState: Initialized state for NVE integration containing positions,
@@ -54,7 +54,9 @@ def nve_init(
     momenta = getattr(
         state,
         "momenta",
-        calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
+        initialize_momenta(
+            state.positions, state.masses, state.system_idx, kT, state.rng
+        ),
     )
 
     return MDState.from_state(

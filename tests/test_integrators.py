@@ -3,14 +3,14 @@ import torch
 
 import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
-from torch_sim.integrators import calculate_momenta
+from torch_sim.integrators import coerce_prng, initialize_momenta
 from torch_sim.integrators.npt import _compute_cell_force
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.units import MetalUnits
 
 
-def test_calculate_momenta_basic():
-    """Test basic functionality of calculate_momenta."""
+def test_initialize_momenta_basic():
+    """Test basic functionality of initialize_momenta."""
     seed = 42
 
     # Create test inputs for 3 systems with 2 atoms each
@@ -23,7 +23,8 @@ def test_calculate_momenta_basic():
     kT = torch.tensor([0.1, 0.2, 0.3, 0.4], dtype=DTYPE, device=DEVICE)
 
     # Run the function
-    momenta = calculate_momenta(positions, masses, system_idx, kT, seed=seed)
+    gen = coerce_prng(seed, device=DEVICE)
+    momenta = initialize_momenta(positions, masses, system_idx, kT, generator=gen)
 
     # Basic checks
     assert momenta.shape == positions.shape
@@ -40,8 +41,8 @@ def test_calculate_momenta_basic():
         )
 
 
-def test_calculate_momenta_single_atoms():
-    """Test that calculate_momenta preserves momentum for systems with single atoms."""
+def test_initialize_momenta_single_atoms():
+    """Test that initialize_momenta preserves momentum for systems with single atoms."""
     seed = 42
 
     # Create test inputs with some systems having single atoms
@@ -59,7 +60,8 @@ def test_calculate_momenta_single_atoms():
     ) * torch.sqrt(masses * kT[system_idx]).unsqueeze(-1)
 
     # Run the function
-    momenta = calculate_momenta(positions, masses, system_idx, kT, seed=seed)
+    gen = coerce_prng(seed, device=DEVICE)
+    momenta = initialize_momenta(positions, masses, system_idx, kT, generator=gen)
 
     # Check that single-atom systems have unchanged momenta
     for sys_idx in (0, 2, 3):  # Single atom systems
@@ -89,6 +91,7 @@ def test_npt_langevin(
     b_tau = 1 / (1000 * dt)
 
     # Initialize integrator using new direct API
+    ar_double_sim_state.rng = 42
     state = ts.npt_langevin_init(
         state=ar_double_sim_state,
         model=lj_model,
@@ -97,7 +100,6 @@ def test_npt_langevin(
         alpha=alpha,
         cell_alpha=cell_alpha,
         b_tau=b_tau,
-        seed=42,
     )
 
     # Run dynamics for several steps
@@ -164,6 +166,7 @@ def test_npt_langevin_multi_kt(
     b_tau = 1 / (1000 * dt)
 
     # Initialize integrator using new direct API
+    ar_double_sim_state.rng = 42
     state = ts.npt_langevin_init(
         state=ar_double_sim_state,
         model=lj_model,
@@ -172,7 +175,6 @@ def test_npt_langevin_multi_kt(
         alpha=alpha,
         cell_alpha=cell_alpha,
         b_tau=b_tau,
-        seed=42,
     )
 
     # Run dynamics for several steps
@@ -216,9 +218,8 @@ def test_nvt_langevin(ar_double_sim_state: ts.SimState, lj_model: LennardJonesMo
     kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
 
     # Initialize integrator
-    state = ts.nvt_langevin_init(
-        state=ar_double_sim_state, model=lj_model, kT=kT, seed=42
-    )
+    ar_double_sim_state.rng = 42
+    state = ts.nvt_langevin_init(state=ar_double_sim_state, model=lj_model, kT=kT)
     energies = []
     temperatures = []
     for _step in range(n_steps):
@@ -272,9 +273,8 @@ def test_nvt_langevin_multi_kt(
     kT = torch.tensor([300, 10_000], dtype=DTYPE) * MetalUnits.temperature
 
     # Initialize integrator
-    state = ts.nvt_langevin_init(
-        state=ar_double_sim_state, model=lj_model, kT=kT, seed=42
-    )
+    ar_double_sim_state.rng = 42
+    state = ts.nvt_langevin_init(state=ar_double_sim_state, model=lj_model, kT=kT)
     energies = []
     temperatures = []
     for _step in range(n_steps):
@@ -310,8 +310,9 @@ def test_nvt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJone
     kT = torch.tensor(300, dtype=dtype) * MetalUnits.temperature
 
     # Run dynamics for several steps
+    ar_double_sim_state.rng = 42
     state = ts.nvt_nose_hoover_init(
-        state=ar_double_sim_state, model=lj_model, dt=dt, kT=kT, seed=42
+        state=ar_double_sim_state, model=lj_model, dt=dt, kT=kT
     )
     energies = []
     temperatures = []
@@ -394,9 +395,9 @@ def test_nvt_nose_hoover_multi_equivalent_to_single(
     initial_momenta = []
     # Run dynamics for several steps
     for i in range(mixed_double_sim_state.n_systems):
-        state = ts.nvt_nose_hoover_init(
-            state=mixed_double_sim_state[i], model=lj_model, dt=dt, kT=kT, seed=42
-        )
+        sub_state = mixed_double_sim_state[i]
+        sub_state.rng = 42
+        state = ts.nvt_nose_hoover_init(state=sub_state, model=lj_model, dt=dt, kT=kT)
         initial_momenta.append(state.momenta.clone())
         for _step in range(n_steps):
             state = ts.nvt_nose_hoover_step(
@@ -414,12 +415,12 @@ def test_nvt_nose_hoover_multi_equivalent_to_single(
 
     initial_momenta_tensor = torch.concat(initial_momenta)
     final_temperatures = torch.concat(final_temperatures)
+    mixed_double_sim_state.rng = 42
     state = ts.nvt_nose_hoover_init(
         state=mixed_double_sim_state,
         model=lj_model,
         dt=dt,
         kT=kT,
-        seed=42,
         momenta=initial_momenta_tensor,
     )
     for _step in range(n_steps):
@@ -442,8 +443,9 @@ def test_nvt_nose_hoover_multi_kt(
     kT = torch.tensor([300, 10_000], dtype=dtype) * MetalUnits.temperature
 
     # Run dynamics for several steps
+    ar_double_sim_state.rng = 42
     state = ts.nvt_nose_hoover_init(
-        state=ar_double_sim_state, model=lj_model, dt=dt, kT=kT, seed=42
+        state=ar_double_sim_state, model=lj_model, dt=dt, kT=kT
     )
     energies = []
     temperatures = []
@@ -491,9 +493,8 @@ def test_nvt_vrescale(ar_double_sim_state: ts.SimState, lj_model: LennardJonesMo
     kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
 
     # Initialize integrator
-    state = ts.nvt_vrescale_init(
-        state=ar_double_sim_state, model=lj_model, kT=kT, seed=42
-    )
+    ar_double_sim_state.rng = 42
+    state = ts.nvt_vrescale_init(state=ar_double_sim_state, model=lj_model, kT=kT)
     energies = []
     temperatures = []
     for _step in range(n_steps):
@@ -550,6 +551,7 @@ def test_npt_anisotropic_crescale(
     isothermal_compressibility = torch.tensor(1e-4, dtype=DTYPE)
 
     # Initialize integrator using new direct API
+    ar_double_sim_state.rng = 42
     state = ts.npt_crescale_init(
         state=ar_double_sim_state,
         model=lj_model,
@@ -557,7 +559,6 @@ def test_npt_anisotropic_crescale(
         kT=kT,
         tau_p=tau_p,
         isothermal_compressibility=isothermal_compressibility,
-        seed=42,
     )
 
     # Run dynamics for several steps
@@ -623,6 +624,7 @@ def test_npt_isotropic_crescale(
     isothermal_compressibility = torch.tensor(1e-4, dtype=DTYPE)
 
     # Initialize integrator using new direct API
+    ar_double_sim_state.rng = 42
     state = ts.npt_crescale_init(
         state=ar_double_sim_state,
         model=lj_model,
@@ -630,7 +632,6 @@ def test_npt_isotropic_crescale(
         kT=kT,
         tau_p=tau_p,
         isothermal_compressibility=isothermal_compressibility,
-        seed=42,
     )
 
     # Run dynamics for several steps
@@ -693,13 +694,13 @@ def test_npt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJone
     external_pressure = torch.tensor(0.0, dtype=dtype) * MetalUnits.pressure
 
     # Run dynamics for several steps
+    ar_double_sim_state.rng = 42
     state = ts.npt_nose_hoover_init(
         state=ar_double_sim_state,
         model=lj_model,
         dt=dt,
         kT=kT,
         external_pressure=external_pressure,
-        seed=42,
     )
     energies = []
     temperatures = []
@@ -784,13 +785,14 @@ def test_npt_nose_hoover_multi_equivalent_to_single(
     initial_momenta = []
     # Run dynamics for several steps
     for i in range(mixed_double_sim_state.n_systems):
+        sub_state = mixed_double_sim_state[i]
+        sub_state.rng = 42
         state = ts.npt_nose_hoover_init(
-            state=mixed_double_sim_state[i],
+            state=sub_state,
             model=lj_model,
             dt=dt,
             kT=kT,
             external_pressure=external_pressure,
-            seed=42,
         )
         initial_momenta.append(state.momenta.clone())
         for _step in range(n_steps):
@@ -810,13 +812,13 @@ def test_npt_nose_hoover_multi_equivalent_to_single(
 
     initial_momenta_tensor = torch.concat(initial_momenta)
     final_temperatures = torch.concat(final_temperatures)
+    mixed_double_sim_state.rng = 42
     state = ts.npt_nose_hoover_init(
         state=mixed_double_sim_state,
         model=lj_model,
         dt=dt,
         kT=kT,
         external_pressure=external_pressure,
-        seed=42,
         momenta=initial_momenta_tensor,
     )
     for _step in range(n_steps):
@@ -846,13 +848,13 @@ def test_npt_nose_hoover_multi_kt(
     external_pressure = torch.tensor(0.0, dtype=dtype) * MetalUnits.pressure
 
     # Run dynamics for several steps
+    ar_double_sim_state.rng = 42
     state = ts.npt_nose_hoover_init(
         state=ar_double_sim_state,
         model=lj_model,
         dt=dt,
         kT=kT,
         external_pressure=external_pressure,
-        seed=42,
     )
     energies = []
     temperatures = []
@@ -906,7 +908,8 @@ def test_nve(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
     kT = torch.tensor(100.0, dtype=DTYPE) * MetalUnits.temperature
 
     # Initialize integrator
-    state = ts.nve_init(state=ar_double_sim_state, model=lj_model, kT=kT, seed=42)
+    ar_double_sim_state.rng = 42
+    state = ts.nve_init(state=ar_double_sim_state, model=lj_model, kT=kT)
 
     # Run dynamics for several steps
     energies = []
@@ -951,7 +954,7 @@ def test_compare_single_vs_batched_integrators(
 
         # Initialize momenta (even if zero) and get forces
         state = ts.nve_init(
-            state=state, model=lj_model, kT=kT, seed=42
+            state=state, model=lj_model, kT=kT
         )  # kT is ignored if momenta are set below
         # Ensure momenta start at zero AFTER init which might randomize them based on kT
         state.momenta = torch.zeros_like(state.momenta)  # Start from rest
@@ -1012,3 +1015,35 @@ def test_compute_cell_force_atoms_per_system():
 
     # Force ratio should match atom ratio (8:1) with the fix
     assert abs(force_ratio - 8.0) / 8.0 < 0.1
+
+
+# ---------------------------------------------------------------------------
+# Reproducibility tests
+# ---------------------------------------------------------------------------
+
+
+def test_nvt_langevin_reproducibility(
+    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
+):
+    """Two runs with the same prng seed must produce identical trajectories."""
+    n_steps = 10
+    dt = torch.tensor(0.001, dtype=DTYPE)
+    kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
+
+    def _run(seed: int) -> tuple[torch.Tensor, torch.Tensor]:
+        ar_double_sim_state.rng = seed
+        state = ts.nvt_langevin_init(state=ar_double_sim_state, model=lj_model, kT=kT)
+        for _ in range(n_steps):
+            state = ts.nvt_langevin_step(state=state, model=lj_model, dt=dt, kT=kT)
+        return state.positions.clone(), state.momenta.clone()
+
+    pos_a, mom_a = _run(123)
+    pos_b, mom_b = _run(123)
+
+    torch.testing.assert_close(pos_a, pos_b)
+    torch.testing.assert_close(mom_a, mom_b)
+
+    # Different seeds should diverge
+    pos_c, mom_c = _run(456)
+    assert not torch.allclose(pos_a, pos_c)
+    assert not torch.allclose(mom_a, mom_c)

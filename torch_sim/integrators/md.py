@@ -11,6 +11,34 @@ from torch_sim.state import SimState
 from torch_sim.units import MetalUnits
 
 
+# Type alias accepted by coerce_prng
+PRNGKeyLike = int | torch.Generator | None
+
+
+def coerce_prng(
+    seed: PRNGKeyLike = None,
+    *,
+    device: torch.device | str = "cpu",
+) -> torch.Generator:
+    """Coerce an int seed or existing Generator into a ``torch.Generator``.
+
+    Args:
+        seed: An integer seed, an existing ``torch.Generator``, or ``None``
+            (uses a non-deterministic seed).
+        device: Device for the generator when creating a new one.
+            Ignored when *seed* is already a ``torch.Generator``.
+
+    Returns:
+        A ``torch.Generator`` ready for use.
+    """
+    if isinstance(seed, torch.Generator):
+        return seed
+    gen = torch.Generator(device=torch.device(device))
+    if seed is not None:
+        gen.manual_seed(seed)
+    return gen
+
+
 @dataclass(kw_only=True)
 class MDState(SimState):
     """State information for molecular dynamics simulations.
@@ -30,6 +58,10 @@ class MDState(SimState):
         momenta (torch.Tensor): Particle momenta [n_particles, n_dim]
         energy (torch.Tensor): Potential energy of the system [n_systems]
         forces (torch.Tensor): Forces on particles [n_particles, n_dim]
+        rng (torch.Generator): RNG used by stochastic integrators (lazily
+            initialised via the ``rng`` property on ``SimState``).  Stored on
+            the state so that the random stream advances consistently across
+            steps and can be serialised for reproducibility.
 
     Properties:
         velocities (torch.Tensor): Particle velocities [n_particles, n_dim]
@@ -89,12 +121,12 @@ class MDState(SimState):
         )
 
 
-def calculate_momenta(
+def initialize_momenta(
     positions: torch.Tensor,
     masses: torch.Tensor,
     system_idx: torch.Tensor,
     kT: float | torch.Tensor,
-    seed: int | None = None,
+    generator: torch.Generator | None = None,
 ) -> torch.Tensor:
     """Initialize particle momenta based on temperature.
 
@@ -107,17 +139,13 @@ def calculate_momenta(
         masses (torch.Tensor): Particle masses [n_particles]
         system_idx (torch.Tensor): System indices [n_particles]
         kT (torch.Tensor): Temperature in energy units [n_systems]
-        seed (int, optional): Random seed for reproducibility. Defaults to None.
+        generator: Optional ``torch.Generator`` for reproducibility.
 
     Returns:
         torch.Tensor: Initialized momenta [n_particles, n_dim]
     """
     device = positions.device
     dtype = positions.dtype
-
-    generator = torch.Generator(device=device)
-    if seed is not None:
-        generator.manual_seed(seed)
 
     if isinstance(kT, torch.Tensor) and len(kT.shape) > 0:
         # kT is a tensor with shape (n_systems,)

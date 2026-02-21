@@ -104,6 +104,8 @@ class SimState:
         @property
         def spin(self) -> torch.Tensor: ...  # noqa: D102
 
+    _rng: int | torch.Generator | None = field(default=None, repr=False)
+
     _atom_attributes: ClassVar[set[str]] = {
         "positions",
         "masses",
@@ -111,10 +113,38 @@ class SimState:
         "system_idx",
     }
     _system_attributes: ClassVar[set[str]] = {"cell", "charge", "spin"}
-    _global_attributes: ClassVar[set[str]] = {"pbc"}
+    _global_attributes: ClassVar[set[str]] = {"pbc", "_rng"}
+
+    @property
+    def rng(self) -> torch.Generator:
+        """Lazily-initialised per-batch PRNG.
+
+        On first access, if no generator has been assigned, a new
+        ``torch.Generator`` is created on the same device as the state.
+        Assign ``None`` to reset, or assign a seeded ``torch.Generator``
+        or an ``int`` seed for reproducibility
+        (e.g. ``state.rng = 42`` or ``state.rng = ts.coerce_prng(42)``).
+        """
+        if self._rng is None:
+            self._rng = torch.Generator(device=self.device)
+        elif isinstance(self._rng, int):
+            seed = self._rng
+            self._rng = torch.Generator(device=self.device)
+            self._rng.manual_seed(seed)
+        return self._rng
+
+    @rng.setter
+    def rng(self, value: int | torch.Generator | None) -> None:
+        self._rng = value
 
     def __post_init__(self) -> None:  # noqa: C901
         """Initialize the SimState and validate the arguments."""
+        # Coerce _rng: accept int seed, torch.Generator, or None
+        if isinstance(self._rng, int):
+            seed = self._rng
+            self._rng = torch.Generator(device=self.device)
+            self._rng.manual_seed(seed)
+
         # Check that positions, masses and atomic numbers have compatible shapes
         shapes = [
             getattr(self, attr).shape[0]
@@ -371,6 +401,17 @@ class SimState:
             raise ValueError("Degrees of freedom cannot be zero or negative")
         return dof_per_system
 
+    @staticmethod
+    def _clone_attr(value: object) -> object:
+        """Clone a single attribute value, handling torch.Generator specially."""
+        if isinstance(value, torch.Tensor):
+            return value.clone()
+        if isinstance(value, torch.Generator):
+            new = torch.Generator(device=value.device)
+            new.set_state(value.get_state())
+            return new
+        return copy.deepcopy(value)
+
     def clone(self) -> Self:
         """Create a deep copy of the SimState.
 
@@ -380,13 +421,7 @@ class SimState:
         Returns:
             SimState: A new SimState object with the same properties as the original
         """
-        attrs = {}
-        for attr_name, attr_value in self.attributes.items():
-            if isinstance(attr_value, torch.Tensor):
-                attrs[attr_name] = attr_value.clone()
-            else:
-                attrs[attr_name] = copy.deepcopy(attr_value)
-
+        attrs = {name: self._clone_attr(val) for name, val in self.attributes.items()}
         return type(self)(**attrs)
 
     @classmethod
@@ -417,10 +452,7 @@ class SimState:
         attrs = {}
         for attr_name, attr_value in state.attributes.items():
             if attr_name in cls._get_all_attributes():
-                if isinstance(attr_value, torch.Tensor):
-                    attrs[attr_name] = attr_value.clone()
-                else:
-                    attrs[attr_name] = copy.deepcopy(attr_value)
+                attrs[attr_name] = cls._clone_attr(attr_value)
 
         # Add/override with additional attributes
         attrs.update(additional_attrs)

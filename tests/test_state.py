@@ -30,7 +30,7 @@ def test_get_attrs_for_scope(si_sim_state: SimState) -> None:
     per_system_attrs = dict(get_attrs_for_scope(si_sim_state, "per-system"))
     assert set(per_system_attrs) == {"cell", "charge", "spin"}
     global_attrs = dict(get_attrs_for_scope(si_sim_state, "global"))
-    assert set(global_attrs) == {"pbc"}
+    assert set(global_attrs) == {"pbc", "_rng"}
 
 
 def test_all_attributes_must_be_specified_in_scopes() -> None:
@@ -772,3 +772,154 @@ def test_wrap_positions_batched(si_double_sim_state: SimState) -> None:
         state.positions[mask] = state.positions[mask] + lattice_shift
     wrapped = state.wrap_positions
     assert torch.allclose(wrapped, original_positions, atol=1e-5)
+
+
+# ── rng property tests ──────────────────────────────────────────────────────
+
+
+def test_rng_lazy_init(si_sim_state: SimState) -> None:
+    """rng property creates a Generator on first access when _rng is None."""
+    state = si_sim_state.clone()
+    state.rng = None
+    assert state._rng is None  # noqa: SLF001
+    gen = state.rng
+    assert isinstance(gen, torch.Generator)
+    assert gen.device == state.device
+
+
+def test_rng_int_seed_via_constructor() -> None:
+    """Passing an int _rng to SimState coerces it to a Generator in __post_init__."""
+    state = SimState(
+        positions=torch.randn(2, 3),
+        masses=torch.ones(2),
+        cell=torch.eye(3).unsqueeze(0),
+        pbc=True,
+        atomic_numbers=torch.ones(2, dtype=torch.int),
+        _rng=42,
+    )
+    assert isinstance(state._rng, torch.Generator)  # noqa: SLF001
+    assert isinstance(state.rng, torch.Generator)
+
+
+def test_rng_int_seed_via_property(si_sim_state: SimState) -> None:
+    """Setting rng to an int via the property coerces on next access."""
+    state = si_sim_state.clone()
+    state.rng = 123
+    gen = state.rng
+    assert isinstance(gen, torch.Generator)
+
+
+def test_rng_generator_passthrough(si_sim_state: SimState) -> None:
+    """Setting rng to a Generator stores it directly."""
+    state = si_sim_state.clone()
+    gen = torch.Generator(device=state.device)
+    gen.manual_seed(7)
+    state.rng = gen
+    assert state.rng is gen
+
+
+def test_rng_none_resets(si_sim_state: SimState) -> None:
+    """Setting rng = None resets; next access lazily re-initialises."""
+    state = si_sim_state.clone()
+    state.rng = 42
+    first_gen = state.rng
+    state.rng = None
+    second_gen = state.rng
+    assert isinstance(second_gen, torch.Generator)
+    assert second_gen is not first_gen
+
+
+def test_rng_int_seed_reproducible() -> None:
+    """Same int seed produces the same random sequence."""
+
+    def _make_state(seed: int) -> SimState:
+        return SimState(
+            positions=torch.randn(4, 3),
+            masses=torch.ones(4),
+            cell=torch.eye(3).unsqueeze(0),
+            pbc=True,
+            atomic_numbers=torch.ones(4, dtype=torch.int),
+            _rng=seed,
+        )
+
+    s1 = _make_state(99)
+    s2 = _make_state(99)
+    r1 = torch.randn(5, generator=s1.rng)
+    r2 = torch.randn(5, generator=s2.rng)
+    assert torch.equal(r1, r2)
+
+
+def test_rng_clone_independent(si_sim_state: SimState) -> None:
+    """Cloned state has an independent Generator with the same state."""
+    state = si_sim_state.clone()
+    state.rng = 42
+    clone = state.clone()
+
+    assert torch.equal(state.rng.get_state(), clone.rng.get_state())
+    assert clone.rng is not state.rng
+
+    # Drawing from one does not affect the other
+    torch.randn(3, generator=state.rng)
+    assert not torch.equal(state.rng.get_state(), clone.rng.get_state())
+
+
+def test_rng_clone_none_preserved(si_sim_state: SimState) -> None:
+    """Cloning a state with _rng=None keeps it None on the clone."""
+    state = si_sim_state.clone()
+    state.rng = None
+    clone = state.clone()
+    assert clone._rng is None  # noqa: SLF001
+
+
+def test_rng_from_state_mdstate(si_sim_state: SimState) -> None:
+    """MDState.from_state copies the rng from the source SimState."""
+    state = si_sim_state.clone()
+    state.rng = 42
+    original_rng_state = state.rng.get_state().clone()
+
+    md = MDState.from_state(
+        state,
+        momenta=torch.zeros_like(state.positions),
+        energy=torch.zeros(state.n_systems, device=state.device),
+        forces=torch.zeros_like(state.positions),
+    )
+    assert isinstance(md.rng, torch.Generator)
+    assert torch.equal(md.rng.get_state(), original_rng_state)
+    assert md.rng is not state.rng
+
+
+def test_rng_mdstate_inherits_lazy_init() -> None:
+    """MDState without explicit _rng still lazily initialises via the property."""
+    md = MDState(
+        positions=torch.randn(2, 3),
+        masses=torch.ones(2),
+        cell=torch.eye(3).unsqueeze(0),
+        pbc=True,
+        atomic_numbers=torch.ones(2, dtype=torch.int),
+        momenta=torch.zeros(2, 3),
+        energy=torch.zeros(1),
+        forces=torch.zeros(2, 3),
+    )
+    assert md._rng is None  # noqa: SLF001
+    gen = md.rng
+    assert isinstance(gen, torch.Generator)
+
+
+def test_rng_concat_takes_first(si_sim_state: SimState) -> None:
+    """concatenate_states takes rng from the first state."""
+    s1 = si_sim_state.clone()
+    s2 = si_sim_state.clone()
+    s1.rng = 11
+    s2.rng = 22
+    combined = ts.concatenate_states([s1, s2])
+    assert torch.equal(combined.rng.get_state(), s1.rng.get_state())
+
+
+def test_rng_split_preserves(si_sim_state: SimState) -> None:
+    """Splitting a batched state shares the same rng value to each piece."""
+    batched = ts.concatenate_states([si_sim_state, si_sim_state])
+    batched.rng = 77
+    parts = batched.split()
+    assert len(parts) == 2
+    for part in parts:
+        assert isinstance(part.rng, torch.Generator)

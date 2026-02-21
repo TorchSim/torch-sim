@@ -1311,9 +1311,7 @@ def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJon
     kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
 
     # Same cell
-    state = ts.nvt_langevin_init(
-        state=ar_double_sim_state, model=lj_model, kT=kT, seed=42
-    )
+    state = ts.nvt_langevin_init(state=ar_double_sim_state, model=lj_model, kT=kT)
     state.positions = ft.pbc_wrap_batched(state.positions, state.cell, state.system_idx)
     positions = [state.positions.detach().clone()]
     for _step in range(n_steps):
@@ -1335,9 +1333,7 @@ def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJon
     assert torch.allclose(unwrapped_positions, positions, atol=1e-4)
 
     # Different cell
-    state = ts.npt_langevin_init(
-        state=ar_double_sim_state, model=lj_model, kT=kT, seed=42, dt=dt
-    )
+    state = ts.npt_langevin_init(state=ar_double_sim_state, model=lj_model, kT=kT, dt=dt)
     state.positions = ft.pbc_wrap_batched(state.positions, state.cell, state.system_idx)
     positions = [state.positions.detach().clone()]
     cells = [state.cell.detach().clone()]

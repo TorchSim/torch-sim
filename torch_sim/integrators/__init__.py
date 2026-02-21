@@ -68,7 +68,15 @@ from typing import Any, Final
 
 import torch_sim as ts
 
-from .md import MDState, calculate_momenta, momentum_step, position_step, velocity_verlet
+from .md import (
+    MDState,
+    PRNGKeyLike,
+    coerce_prng,
+    initialize_momenta,
+    momentum_step,
+    position_step,
+    velocity_verlet,
+)
 from .npt import (
     NPTLangevinState,
     NPTNoseHooverState,

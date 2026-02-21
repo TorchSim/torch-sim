@@ -100,7 +100,7 @@ def test_integrate_double_nvt(
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
-        init_kwargs=dict(seed=481516),
+        init_kwargs={},
     )
 
     assert isinstance(final_state, SimState)
@@ -120,7 +120,7 @@ def test_integrate_double_nvt_multiple_temperatures(
         n_steps=n_steps,
         temperature=[100.0, 200.0],  # K
         timestep=0.001,  # ps
-        init_kwargs=dict(seed=481516),
+        init_kwargs={},
     )
 
     batcher = ts.autobatching.BinningAutoBatcher(
@@ -136,7 +136,7 @@ def test_integrate_double_nvt_multiple_temperatures(
         temperature=[100.0, 200.0],  # K
         timestep=0.001,  # ps
         autobatcher=batcher,
-        init_kwargs=dict(seed=481516),
+        init_kwargs={},
     )
 
     # Temperature tensor with correct shape (n_steps, n_systems)
@@ -148,7 +148,7 @@ def test_integrate_double_nvt_multiple_temperatures(
         temperature=torch.tensor([100.0, 200.0])[None, :].repeat(n_steps, 1),
         timestep=0.001,  # ps
         autobatcher=batcher,
-        init_kwargs=dict(seed=481516),
+        init_kwargs={},
     )
 
     # Temperature tensor with incorrect shape (n_systems, n_steps)
@@ -161,7 +161,7 @@ def test_integrate_double_nvt_multiple_temperatures(
             temperature=torch.tensor([100.0, 200.0])[None, :].repeat(n_steps, 1).T,  # K
             timestep=0.001,  # ps
             autobatcher=batcher,
-            init_kwargs=dict(seed=481516),
+            init_kwargs={},
         )
 
 
