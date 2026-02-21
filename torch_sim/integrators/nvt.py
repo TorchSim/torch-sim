@@ -6,6 +6,7 @@ from typing import Any
 import torch
 
 import torch_sim as ts
+from torch_sim._duecredit import dcite
 from torch_sim.integrators.md import (
     MDState,
     NoseHooverChain,
@@ -126,6 +127,10 @@ def nvt_langevin_init(
     )
 
 
+@dcite(
+    "10.1098/rspa.2016.0138",
+    "BAOAB Langevin integration and geodesic splitting (Leimkuhler and Matthews, 2016).",
+)
 def nvt_langevin_step(
     state: MDState,
     model: ModelInterface,
@@ -321,6 +326,13 @@ def nvt_nose_hoover_init(
     )
 
 
+@dcite(
+    "10.1080/00268979600100761",
+    (
+        "Explicit reversible Nosé-Hoover chain integrators for extended systems "
+        "(Martyna et al., 1996)."
+    ),
+)
 def nvt_nose_hoover_step(
     state: NVTNoseHooverState,
     model: ModelInterface,
@@ -600,6 +612,10 @@ def nvt_vrescale_init(
     )
 
 
+@dcite(
+    "10.1063/1.2408420",
+    "Canonical sampling through stochastic velocity rescaling (Bussi et al., 2007).",
+)
 def nvt_vrescale_step(
     model: ModelInterface,
     state: NVTVRescaleState,

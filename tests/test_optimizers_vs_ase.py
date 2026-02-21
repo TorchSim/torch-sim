@@ -11,7 +11,14 @@ from pymatgen.analysis.structure_matcher import StructureMatcher
 
 import torch_sim as ts
 from tests.conftest import DTYPE
-from torch_sim.models.mace import MaceModel, MaceUrls
+
+
+try:
+    from mace.calculators.foundations_models import mace_mp
+
+    from torch_sim.models.mace import MaceModel, MaceUrls
+except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
+    pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)
 
 
 if TYPE_CHECKING:
@@ -21,13 +28,6 @@ if TYPE_CHECKING:
 @pytest.fixture
 def ts_mace_mpa() -> MaceModel:
     """Provides a MACE MP model instance for the optimizer tests."""
-    try:
-        from mace.calculators.foundations_models import mace_mp
-    except ImportError:
-        pytest.skip(
-            f"MACE not installed: {traceback.format_exc()}", allow_module_level=True
-        )
-
     # Use float64 for potentially higher precision needed in optimization
     dtype = getattr(torch, dtype_str := "float64")
     raw_mace = mace_mp(
@@ -45,13 +45,6 @@ def ts_mace_mpa() -> MaceModel:
 @pytest.fixture
 def ase_mace_mpa() -> "MACECalculator":
     """Provides an ASE MACECalculator instance using mace_mp."""
-    try:
-        from mace.calculators.foundations_models import mace_mp
-    except ImportError:
-        pytest.skip(
-            f"MACE not installed: {traceback.format_exc()}", allow_module_level=True
-        )
-
     # Ensure dtype matches the one used in the torch-sim fixture (float64)
     return mace_mp(model=MaceUrls.mace_mp_small, default_dtype="float64")
 

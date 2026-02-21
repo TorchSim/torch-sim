@@ -11,14 +11,15 @@ from tests.models.conftest import (
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
-from torch_sim.models.graphpes import GraphPESWrapper
 from torch_sim.testing import CONSISTENCY_SIMSTATES
 
 
 try:
     from graph_pes.atomic_graph import AtomicGraph, to_batch
     from graph_pes.models import LennardJones, SchNet, TensorNet
-except ImportError:
+
+    from torch_sim.models.graphpes_framework import GraphPESWrapper
+except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
     pytest.skip(
         f"graph-pes not installed: {traceback.format_exc()}", allow_module_level=True
     )

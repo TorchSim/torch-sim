@@ -8,6 +8,7 @@ from typing import Any
 import torch
 
 import torch_sim as ts
+from torch_sim._duecredit import dcite
 from torch_sim.integrators.md import (
     MDState,
     NoseHooverChain,
@@ -628,6 +629,13 @@ def npt_langevin_init(
     )
 
 
+@dcite(
+    "10.1063/1.4901303",
+    (
+        "Constant pressure and temperature discrete-time Langevin molecular dynamics "
+        "(Grønbech-Jensen and Farago, 2014)."
+    ),
+)
 def npt_langevin_step(
     state: NPTLangevinState,
     model: ModelInterface,
@@ -1432,6 +1440,13 @@ def npt_nose_hoover_init(
     )
 
 
+@dcite(
+    "10.1080/00268979600100761",
+    (
+        "Explicit reversible Nosé-Hoover extended-system NPT dynamics "
+        "(Martyna et al., 1996)."
+    ),
+)
 def npt_nose_hoover_step(
     state: NPTNoseHooverState,
     model: ModelInterface,
@@ -1963,6 +1978,14 @@ def _crescale_isotropic_barostat_step(
     return state
 
 
+@dcite(
+    "10.1063/5.0020514",
+    "Pressure control using stochastic cell rescaling (Bernetti and Bussi, 2020).",
+)
+@dcite(
+    "10.3390/app12031139",
+    "Anisotropic stochastic cell rescaling for solids (Del Tatto et al., 2022).",
+)
 def npt_crescale_anisotropic_step(
     state: NPTCRescaleState,
     model: ModelInterface,
@@ -2031,6 +2054,14 @@ def npt_crescale_anisotropic_step(
     return _vrescale_update(state, tau, kT, dt / 2)
 
 
+@dcite(
+    "10.1063/5.0020514",
+    "Pressure control using stochastic cell rescaling (Bernetti and Bussi, 2020).",
+)
+@dcite(
+    "10.3390/app12031139",
+    "Anisotropic stochastic cell rescaling for solids (Del Tatto et al., 2022).",
+)
 def npt_crescale_independent_lengths_step(
     state: NPTCRescaleState,
     model: ModelInterface,
@@ -2099,6 +2130,14 @@ def npt_crescale_independent_lengths_step(
     return _vrescale_update(state, tau, kT, dt / 2)
 
 
+@dcite(
+    "10.1063/5.0020514",
+    "Pressure control using stochastic cell rescaling (Bernetti and Bussi, 2020).",
+)
+@dcite(
+    "10.3390/app12031139",
+    "Anisotropic stochastic cell rescaling for solids (Del Tatto et al., 2022).",
+)
 def npt_crescale_average_anisotropic_step(
     state: NPTCRescaleState,
     model: ModelInterface,
@@ -2168,6 +2207,10 @@ def npt_crescale_average_anisotropic_step(
     return _vrescale_update(state, tau, kT, dt / 2)
 
 
+@dcite(
+    "10.1063/5.0020514",
+    "Pressure control using stochastic cell rescaling (Bernetti and Bussi, 2020).",
+)
 def npt_crescale_isotropic_step(
     state: NPTCRescaleState,
     model: ModelInterface,

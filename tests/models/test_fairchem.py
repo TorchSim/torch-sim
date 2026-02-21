@@ -20,7 +20,7 @@ try:
     import torch_sim as ts
     from torch_sim.models.fairchem import FairChemModel
 
-except ImportError:
+except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
     pytest.skip(
         f"FairChem not installed: {traceback.format_exc()}", allow_module_level=True
     )

@@ -6,6 +6,8 @@ from typing import Final
 
 import torch
 
+from torch_sim._duecredit import dcite
+
 
 @torch.jit.script
 def torch_divmod(a: torch.Tensor, b: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -25,6 +27,13 @@ def torch_divmod(a: torch.Tensor, b: torch.Tensor) -> tuple[torch.Tensor, torch.
     return d, m
 
 
+@dcite(
+    "10.1137/080716426",
+    (
+        "Frechet derivative of the matrix exponential via scaling-Pade-squaring "
+        "(Al-Mohy and Higham, 2009)."
+    ),
+)
 def expm_frechet(  # noqa: C901
     A: torch.Tensor,
     E: torch.Tensor,
@@ -612,6 +621,13 @@ def _process_matrix_log_case(
     return result
 
 
+@dcite(
+    "10.1007/s10659-008-9169-x",
+    (
+        "Closed-form logarithm of 3x3 real matrices by eigenvalue structure "
+        "(Cardoso and Leite, 2009)."
+    ),
+)
 def _matrix_log_33(T: torch.Tensor, dtype: torch.dtype = torch.float64) -> torch.Tensor:
     """Compute the logarithm of 3x3 matrix T based on its eigenvalue structure.
 
