@@ -141,4 +141,17 @@ TorchSim is released under an [MIT license](LICENSE).
 
 If you use TorchSim in your research, please cite our [publication](https://iopscience.iop.org/article/10.1088/3050-287X/ae1799).
 
+```bibtex
+@article{cohen2025torchsim,
+  title={TorchSim: An efficient atomistic simulation engine in PyTorch},
+  author={Cohen, Orion and Riebesell, Janosh and Goodall, Rhys and Kolluru, Adeesh and Falletta, Stefano and Krause, Joseph and Colindres, Jorge and Ceder, Gerbrand and Gangan, Abhijeet S},
+  journal={AI for Science},
+  volume={1},
+  number={2},
+  pages={025003},
+  year={2025},
+  publisher={IOP Publishing}
+}
+```
+
 We aim to recognize all [duecredit](https://github.com/duecredit/duecredit) for the decades of work that TorchSim builds on top of, an automated list of references can be obtained for the package by running `DUECREDIT_ENABLE=yes uv run --with . --extra docs --extra test python -m duecredit <(printf 'import pytest\nraise SystemExit(pytest.main(["-q"]))\n')`. This list is incomplete and we welcome PRs to help improve our citation coverage.
