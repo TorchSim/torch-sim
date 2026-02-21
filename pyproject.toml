@@ -39,7 +39,6 @@ dependencies = [
 test = [
     "ase>=3.26",
     "phonopy>=2.37.0",
-    "platformdirs>=4.0.0",
     "psutil>=7.0.0",
     "pymatgen>=2025.6.14",
     "pytest-cov>=6",
@@ -60,11 +59,11 @@ fairchem = ["fairchem-core>=2.7", "scipy<1.17.0"]
 docs = [
     "autodoc_pydantic==2.2.0",
     "furo==2024.8.6",
-    "ipython==8.34.0",
     "ipykernel==6.30.1",
+    "ipython==8.34.0",
     "jsonschema[format]",
-    "jupyterlab==4.3.4",
     "jupyter-core==5.8.1",
+    "jupyterlab==4.3.4",
     "jupytext==1.16.7",
     "myst_parser==4.0.0",
     "nbsphinx>=0.9.7",
@@ -148,6 +147,14 @@ conflicts = [
     ],
     [
         { extra = "fairchem" },
+        { extra = "graphpes" },
+    ],
+    [
+        { extra = "fairchem" },
+        { extra = "mace" },
+    ],
+    [
+        { extra = "fairchem" },
         { extra = "mace" },
     ],
     [
@@ -156,19 +163,11 @@ conflicts = [
     ],
     [
         { extra = "graphpes" },
-        { extra = "sevenn" },
-    ],
-    [
-        { extra = "graphpes" },
-        { extra = "fairchem" },
-    ],
-    [
-        { extra = "graphpes" },
         { extra = "nequip" },
     ],
     [
-        { extra = "fairchem" },
-        { extra = "mace" },
+        { extra = "graphpes" },
+        { extra = "sevenn" },
     ],
     [
         { extra = "mace" },
@@ -185,15 +184,13 @@ conflicts = [
 ]
 
 [dependency-groups]
-dev = ["prek>=0.2.0", "ty>=0.0.1a20"]
+dev = ["prek>=0.2.13", "ty>=0.0.11"]
 
 [tool.ty.rules]
-# TODO: Unable to work with **kwargs: https://github.com/astral-sh/ty/issues/247
-missing-argument = "ignore"
+unused-ignore-comment = "warn"
 
 [[tool.ty.overrides]]
 include = ["tests/models/**/*.py", "torch_sim/models/**/*.py"]
 
-# TODO would be nice to only ignore unresolved model imports but fail on all other packages
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"

@@ -1,8 +1,3 @@
-ci:
-  autoupdate_schedule: quarterly
-
-default_stages: [pre-commit]
-
 default_install_hook_types: [pre-commit, commit-msg]
 
 repos:
@@ -40,3 +35,12 @@ repos:
         # MD041: first line in a file should be a top-level heading
         # MD034: bare URL used
         args: [--disable, MD013, MD033, MD041, MD034, '--']
+
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty check
+        entry: ty check
+        language: python
+        types: [python]
+        additional_dependencies: [ty, torch, ase, mace-torch]
