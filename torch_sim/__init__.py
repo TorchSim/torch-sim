@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 from importlib.metadata import version
 
-import torch_sim as ts
+import torch_sim._duecredit
 from torch_sim import (
     autobatching,
     constraints,
@@ -100,3 +100,5 @@ ROOT = os.path.dirname(PKG_DIR)
 SCRIPTS_DIR = f"{ROOT}/examples"
 
 __version__ = version("torch-sim-atomistic")
+
+import torch_sim._citations  # noqa: E402

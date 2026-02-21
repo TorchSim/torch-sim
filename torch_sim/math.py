@@ -6,6 +6,8 @@ from typing import Final
 
 import torch
 
+from torch_sim._duecredit import dcite
+
 
 @torch.jit.script
 def torch_divmod(a: torch.Tensor, b: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -38,25 +40,18 @@ def expm_frechet(  # noqa: C901
 
     Method notes:
         - ``SPS`` uses scaling-Pade-squaring for the matrix exponential and its
-          Frechet derivative.
-        - ``blockEnlarge`` uses the block matrix identity
+          Frechet derivative. See :func:`expm_frechet_sps`.
+        - ``BE`` uses the block matrix identity
           exp([[A, E], [0, A]]) = [[exp(A), L_exp(A, E)], [0, exp(A)]].
-
-    References:
-        - Awad H. Al-Mohy and Nicholas J. Higham (2009), "Computing the Frechet
-          Derivative of the Matrix Exponential, with an Application to Condition
-          Number Estimation", SIAM J. Matrix Anal. Appl. 30(4):1639-1657.
-          https://doi.org/10.1137/080716426
-        - Nicholas J. Higham (2008), "Functions of Matrices: Theory and
-          Computation", SIAM. (See the Frechet derivative block-matrix identity.)
+          See :func:`expm_frechet_block_enlarge`.
 
     Args:
         A: (B, 3, 3) or (3, 3) tensor. Matrix of which to take the matrix exponential.
         E: (B, 3, 3) or (3, 3) tensor. Matrix direction in which to take the Frechet
             derivative. Must have same shape as A.
         method: str, optional. Choice of algorithm. Should be one of
-            - `SPS` (default)
-            - `blockEnlarge`
+            - `SPS` - Scaling-Pade-squaring (default)
+            - `BE` - Block-enlarge
         check_finite: bool, optional. Whether to check that the input matrix contains
             only finite numbers. Disabling may give a performance gain, but may result
             in problems (crashes, non-termination) if the inputs do contain
@@ -86,7 +81,7 @@ def expm_frechet(  # noqa: C901
     if method is None:
         method = "SPS"
 
-    if method == "blockEnlarge":
+    if method in ["BE", "blockEnlarge"]:  # "blockEnlarge" is deprecated
         if A.dim() != 3 or A.shape[1] != A.shape[2]:
             raise ValueError("expected A to be (B, N, N)")
         return expm_frechet_block_enlarge(A, E)
@@ -108,14 +103,19 @@ def matrix_exp(A: torch.Tensor) -> torch.Tensor:
     return torch.matrix_exp(A)
 
 
+@dcite(
+    "10.1137/080716426",
+)
 def expm_frechet_sps(
     A: torch.Tensor, E: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """SPS helper for Frechet derivative of exp(A) on 3x3 matrices.
+    """Scaling-Pade-squaring helper for Frechet derivative of exp(A) on 3x3 matrices.
 
-    SPS = scaling-Pade-squaring. This implementation follows the approach in:
-    Awad H. Al-Mohy and Nicholas J. Higham (2009), SIAM J. Matrix Anal.
-    Appl. 30(4):1639-1657. https://doi.org/10.1137/080716426
+    References:
+        - Awad H. Al-Mohy and Nicholas J. Higham (2009), "Computing the Fréchet
+        Derivative of the Matrix Exponential, with an Application to Condition
+        Number Estimation", SIAM J. Matrix Anal. Appl. 30(4):1639-1657.
+        https://doi.org/10.1137/080716426
     """
     # Handle unbatched 3x3 input by adding batch dimension
     unbatched = A.dim() == 2
@@ -191,6 +191,7 @@ def expm_frechet_sps(
     return R, L
 
 
+@dcite("10.1137/1.9780898717778")
 def expm_frechet_block_enlarge(
     A: torch.Tensor, E: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -612,6 +613,9 @@ def _process_matrix_log_case(
     return result
 
 
+@dcite(
+    "10.1007/s10659-008-9169-x",
+)
 def _matrix_log_33(T: torch.Tensor, dtype: torch.dtype = torch.float64) -> torch.Tensor:
     """Compute the logarithm of 3x3 matrix T based on its eigenvalue structure.
 

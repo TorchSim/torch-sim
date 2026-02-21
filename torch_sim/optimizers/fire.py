@@ -6,6 +6,7 @@ import torch
 
 import torch_sim as ts
 import torch_sim.math as fm
+from torch_sim._duecredit import dcite
 from torch_sim.optimizers import cell_filters
 from torch_sim.state import SimState
 from torch_sim.typing import StateDict
@@ -21,6 +22,9 @@ if TYPE_CHECKING:
     )
 
 
+@dcite(
+    "10.1103/PhysRevLett.97.170201",
+)
 def fire_init(
     state: SimState | StateDict,
     model: "ModelInterface",
