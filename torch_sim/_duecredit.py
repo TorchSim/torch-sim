@@ -18,9 +18,13 @@ except ImportError:
         return _noop_decorator
 else:
 
-    def dcite(doi: str, description: str, *, path: str | None = None) -> Callable:
+    def dcite(
+        doi: str, description: str | None = None, *, path: str | None = None
+    ) -> Callable:
         """Create a duecredit decorator from a DOI and description."""
-        kwargs: dict[str, Any] = {"description": description}
+        kwargs: dict[str, Any] = (
+            {"description": description} if description is not None else {}
+        )
         if path is not None:
             kwargs["path"] = path
         return due.dcite(Doi(doi), **kwargs)

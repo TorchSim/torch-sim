@@ -24,10 +24,6 @@ if TYPE_CHECKING:
 
 @dcite(
     "10.1103/PhysRevLett.97.170201",
-    (
-        "Fast Inertial Relaxation Engine (FIRE) structural optimization "
-        "(Bitzek et al., 2006)."
-    ),
 )
 def fire_init(
     state: SimState | StateDict,
