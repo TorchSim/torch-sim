@@ -44,12 +44,12 @@ before running your script.
 ## Deterministic vs stochastic integrators in TorchSim
 
 - `ts.Integrator.nvt_langevin` and `ts.Integrator.npt_langevin` include stochastic
-  terms by design.
+  terms by design. When seeded via `state.rng`, they produce identical trajectories.
 - `ts.Integrator.nvt_nose_hoover` and `ts.Integrator.nve` are deterministic at the
-  algorithmic level.
+  algorithmic level and require no seeding.
 
-If you want to compare run-to-run determinism in TorchSim, use a deterministic
-integrator such as Nosé-Hoover:
+For the simplest path to reproducibility, use a deterministic integrator such as
+Nosé-Hoover:
 
 ```python
 import torch_sim as ts
@@ -66,6 +66,17 @@ state = ts.integrate(
 
 In practice, exact reproducibility also depends on hardware, driver/library versions,
 and precision choices.
+
+### Known limitation: V-Rescale thermostat
+
+The NVT V-Rescale thermostat (`nvt_vrescale`) uses `torch.distributions.Gamma` to
+sample stochastic kinetic-energy rescaling factors. PyTorch distributions do not
+currently accept a `torch.Generator`, so this sampling falls back to the global RNG
+and is **not** controlled by `state.rng`. All other random draws in the Langevin and
+C-Rescale integrators are fully seeded.
+
+This is tracked upstream in
+[pytorch/pytorch#175478](https://github.com/pytorch/pytorch/issues/175478).
 
 ## Seeding stochastic integrators
 

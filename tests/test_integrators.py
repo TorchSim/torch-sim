@@ -85,8 +85,8 @@ def test_npt_langevin(
 ) -> None:
     n_steps = 200
     dt = torch.tensor(0.001, dtype=DTYPE)
-    kT = torch.tensor(100.0, dtype=DTYPE) * MetalUnits.temperature
-    external_pressure = torch.tensor(0.0, dtype=DTYPE) * MetalUnits.pressure
+    kT = torch.tensor(300.0, dtype=DTYPE) * MetalUnits.temperature
+    external_pressure = torch.tensor(10.0, dtype=DTYPE) * MetalUnits.pressure
     alpha = 40 * dt
     cell_alpha = alpha
     b_tau = 1 / (1000 * dt)
@@ -546,8 +546,8 @@ def test_npt_anisotropic_crescale(
 ) -> None:
     n_steps = 200
     dt = torch.tensor(0.001, dtype=DTYPE)
-    kT = torch.tensor(100.0, dtype=DTYPE) * MetalUnits.temperature
-    external_pressure = torch.tensor(0.0, dtype=DTYPE) * MetalUnits.pressure
+    kT = torch.tensor(300.0, dtype=DTYPE) * MetalUnits.temperature
+    external_pressure = torch.tensor(10.0, dtype=DTYPE) * MetalUnits.pressure
     tau_p = torch.tensor(0.1, dtype=DTYPE)
     isothermal_compressibility = torch.tensor(1e-4, dtype=DTYPE)
 
@@ -619,8 +619,8 @@ def test_npt_isotropic_crescale(
 ) -> None:
     n_steps = 200
     dt = torch.tensor(0.001, dtype=DTYPE)
-    kT = torch.tensor(100.0, dtype=DTYPE) * MetalUnits.temperature
-    external_pressure = torch.tensor(0.0, dtype=DTYPE) * MetalUnits.pressure
+    kT = torch.tensor(300.0, dtype=DTYPE) * MetalUnits.temperature
+    external_pressure = torch.tensor(10.0, dtype=DTYPE) * MetalUnits.pressure
     tau_p = torch.tensor(0.1, dtype=DTYPE)
     isothermal_compressibility = torch.tensor(1e-4, dtype=DTYPE)
 
@@ -906,7 +906,7 @@ def test_npt_nose_hoover_multi_kt(
 def test_nve(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
     n_steps = 100
     dt = torch.tensor(0.001, dtype=DTYPE)
-    kT = torch.tensor(100.0, dtype=DTYPE) * MetalUnits.temperature
+    kT = torch.tensor(300.0, dtype=DTYPE) * MetalUnits.temperature
 
     # Initialize integrator
     ar_double_sim_state.rng = 42
@@ -1048,3 +1048,52 @@ def test_nvt_langevin_reproducibility(
     pos_c, mom_c = _run(456)
     assert not torch.allclose(pos_a, pos_c)
     assert not torch.allclose(mom_a, mom_c)
+
+
+def test_npt_langevin_reproducibility(
+    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
+):
+    """Two runs with the same seed must produce identical NPT Langevin trajectories."""
+    n_steps = 20
+    dt = torch.tensor(0.001, dtype=DTYPE)
+    kT = torch.tensor(300.0, dtype=DTYPE) * MetalUnits.temperature
+    external_pressure = torch.tensor(10, dtype=DTYPE) * MetalUnits.pressure
+    alpha = 40 * dt
+    cell_alpha = alpha
+    b_tau = dt  # make this very small to ensure the barostat is active
+
+    def _run(seed: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        ar_double_sim_state.rng = seed
+        # NOTE: this init function clones the state so we can use the same fixture
+        # for all the runs without concern.
+        state = ts.npt_langevin_init(
+            state=ar_double_sim_state,
+            model=lj_model,
+            dt=dt,
+            kT=kT,
+            alpha=alpha,
+            cell_alpha=cell_alpha,
+            b_tau=b_tau,
+        )
+        for _ in range(n_steps):
+            state = ts.npt_langevin_step(
+                state=state,
+                model=lj_model,
+                dt=dt,
+                kT=kT,
+                external_pressure=external_pressure,
+            )
+        return state.positions.clone(), state.momenta.clone(), state.cell.clone()
+
+    pos_a, mom_a, cell_a = _run(123)
+    pos_b, mom_b, cell_b = _run(123)
+
+    torch.testing.assert_close(pos_a, pos_b)
+    torch.testing.assert_close(mom_a, mom_b)
+    torch.testing.assert_close(cell_a, cell_b)
+
+    # Different seeds should diverge
+    pos_c, mom_c, cell_c = _run(456)
+    assert not torch.allclose(pos_a, pos_c)
+    assert not torch.allclose(mom_a, mom_c)
+    assert not torch.allclose(cell_a, cell_c)
