@@ -19,6 +19,10 @@ from torch_sim.optimizers.state import BFGSState, FireState, LBFGSState, OptimSt
 from torch_sim.state import SimState
 
 
+# Maximum |log(F)| for Frechet deformation gradient to prevent matrix_exp overflow
+MAX_LOG_DEFORM = 2.0
+
+
 def _setup_cell_factor(
     state: SimState,
     cell_factor: float | torch.Tensor | None,
@@ -339,6 +343,10 @@ def compute_cell_forces[T: AnyCellState](
         deform_grad_log = fm.matrix_log_33(
             cur_deform_grad, sim_dtype=cur_deform_grad.dtype
         )
+        # Clamp to the same limit used in lbfgs_step to prevent NaN from
+        # propagating into expm_frechet. Systems hitting the clamp have
+        # diverging cells; their cell forces will be approximate but finite.
+        deform_grad_log = deform_grad_log.clamp(-MAX_LOG_DEFORM, MAX_LOG_DEFORM)
         frechet_method = getattr(state, "frechet_method", None)
         cell_forces = _frechet_cell_forces(
             deform_grad_log, ucf_cell_grad, frechet_method=frechet_method
