@@ -175,6 +175,7 @@ def _rattle_sim_state(
         sim_state.rng = seed
     rng = sim_state.rng
 
+    # Sample Directions on the unit sphere to displace atoms
     rnd = torch.randn(
         sim_state.positions.shape,
         device=sim_state.device,
@@ -183,12 +184,16 @@ def _rattle_sim_state(
     )
     rnd = rnd / torch.norm(rnd, dim=-1, keepdim=True)
 
+    # Sample magnitudes from Weibull distribution so large displacements are less likely
     # Weibull via inverse CDF: X = scale * (-ln(U))^(1/concentration)
     u = torch.rand(
-        rnd.shape, device=sim_state.device, dtype=sim_state.dtype, generator=rng
+        rnd.shape[0],
+        device=sim_state.device,
+        dtype=sim_state.dtype,
+        generator=rng,
     )
     weibull_samples = scale * (-torch.log(u)) ** (1.0 / concentration)
-    sim_state.positions = sim_state.positions + weibull_samples * rnd
+    sim_state.positions = sim_state.positions + weibull_samples.unsqueeze(-1) * rnd
     return sim_state
 
 
