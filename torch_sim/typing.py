@@ -48,3 +48,6 @@ StateLike = Union[
     list["PhonopyAtoms"],
     "SimState",
 ]
+
+# Type alias accepted by coerce_prng
+PRNGLike = int | torch.Generator | None

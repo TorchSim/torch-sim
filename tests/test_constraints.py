@@ -30,7 +30,6 @@ def test_fix_com(ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesMode
         state=ar_supercell_sim_state,
         model=lj_model,
         kT=torch.tensor(10.0, dtype=DTYPE),
-        seed=42,
     )
     ar_supercell_md_state.set_constrained_momenta(
         torch.randn_like(ar_supercell_md_state.momenta) * 0.1
@@ -70,7 +69,6 @@ def test_fix_atoms(ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesMo
         state=ar_supercell_sim_state,
         model=lj_model,
         kT=torch.tensor(10.0, dtype=DTYPE),
-        seed=42,
     )
     ar_supercell_md_state.set_constrained_momenta(
         torch.randn_like(ar_supercell_md_state.momenta) * 0.1
@@ -94,7 +92,7 @@ def test_fix_com_nvt_langevin(cu_sim_state: ts.SimState, lj_model: LennardJonesM
         cu_sim_state.get_number_of_degrees_of_freedom(), dofs_before - 3
     )
 
-    state = ts.nvt_langevin_init(state=cu_sim_state, model=lj_model, kT=kT, seed=42)
+    state = ts.nvt_langevin_init(state=cu_sim_state, model=lj_model, kT=kT)
     positions = []
     system_masses = torch.zeros((state.n_systems, 1), dtype=DTYPE).scatter_add_(
         0,
@@ -138,7 +136,7 @@ def test_fix_atoms_nvt_langevin(cu_sim_state: ts.SimState, lj_model: LennardJone
     assert torch.allclose(
         cu_sim_state.get_number_of_degrees_of_freedom(), dofs_before - torch.tensor([6])
     )
-    state = ts.nvt_langevin_init(state=cu_sim_state, model=lj_model, kT=kT, seed=42)
+    state = ts.nvt_langevin_init(state=cu_sim_state, model=lj_model, kT=kT)
     positions = []
     temperatures = []
     for _step in range(n_steps):
@@ -582,7 +580,7 @@ def test_integrators_with_constraints(
 
     # Run integration
     if integrator == "nve":
-        state = ts.nve_init(cu_sim_state, lj_model, kT=kT, seed=42)
+        state = ts.nve_init(cu_sim_state, lj_model, kT=kT)
         for _ in range(n_steps):
             state = ts.nve_step(state, lj_model, dt=dt)
     elif integrator == "nvt_nose_hoover":
@@ -590,7 +588,7 @@ def test_integrators_with_constraints(
         for _ in range(n_steps):
             state = ts.nvt_nose_hoover_step(state, lj_model, dt=dt, kT=kT)
     elif integrator == "npt_langevin":
-        state = ts.npt_langevin_init(cu_sim_state, lj_model, kT=kT, seed=42, dt=dt)
+        state = ts.npt_langevin_init(cu_sim_state, lj_model, kT=kT, dt=dt)
         for _ in range(n_steps):
             state = ts.npt_langevin_step(
                 state,
@@ -644,7 +642,6 @@ def test_multiple_constraints_and_dof(
         cu_sim_state,
         lj_model,
         kT=torch.tensor(300.0, dtype=DTYPE) * MetalUnits.temperature,
-        seed=42,
     )
     for _ in range(200):
         state = ts.nvt_langevin_step(
@@ -757,7 +754,7 @@ def test_constraints_with_non_pbc(lj_model: LennardJonesModel) -> None:
     initial = get_centers_of_mass(
         state.positions, state.masses, state.system_idx, state.n_systems
     )
-    md_state = ts.nve_init(state, lj_model, kT=torch.tensor(100.0, dtype=DTYPE), seed=42)
+    md_state = ts.nve_init(state, lj_model, kT=torch.tensor(100.0, dtype=DTYPE))
     for _ in range(100):
         md_state = ts.nve_step(md_state, lj_model, dt=torch.tensor(0.001, dtype=DTYPE))
     final = get_centers_of_mass(
@@ -815,7 +812,6 @@ def test_temperature_with_constrained_dof(
         cu_sim_state,
         lj_model,
         kT=torch.tensor(target, dtype=DTYPE) * MetalUnits.temperature,
-        seed=42,
     )
     temps = []
     for _ in range(4000):
