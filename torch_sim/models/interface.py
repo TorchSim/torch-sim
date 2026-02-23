@@ -200,7 +200,7 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         This validator creates small test systems (silicon and iron) for validation.
         It tests both single and multi-batch processing capabilities.
     """
-    from ase.build import bulk
+    from ase.build import bulk, molecule
 
     for attr in ("dtype", "device", "compute_stress", "compute_forces"):
         if not hasattr(model, attr):
@@ -229,6 +229,8 @@ def validate_model_outputs(  # noqa: C901, PLR0915
     og_cell = sim_state.cell.clone()
     og_system_idx = sim_state.system_idx.clone()
     og_atomic_nums = sim_state.atomic_numbers.clone()
+    og_charge = sim_state.charge.clone()
+    og_spin = sim_state.spin.clone()
 
     model_output = model.forward(sim_state)
 
@@ -241,6 +243,10 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         raise ValueError(f"{og_system_idx=} != {sim_state.system_idx=}")
     if not torch.allclose(og_atomic_nums, sim_state.atomic_numbers):
         raise ValueError(f"{og_atomic_nums=} != {sim_state.atomic_numbers=}")
+    if not torch.allclose(og_charge, sim_state.charge):
+        raise ValueError(f"{og_charge=} != {sim_state.charge=}")
+    if not torch.allclose(og_spin, sim_state.spin):
+        raise ValueError(f"{og_spin=} != {sim_state.spin=}")
 
     # assert model output has the correct keys
     if "energy" not in model_output:
@@ -300,3 +306,43 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         raise ValueError(f"{fe_model_output['forces'].shape=} != (12, 3)")
     if stress_computed and fe_model_output["stress"].shape != (1, 3, 3):
         raise ValueError(f"{fe_model_output['stress'].shape=} != (1, 3, 3)")
+
+    # Test that models can handle non-zero charge and spin
+    benzene_atoms = molecule("C6H6")
+    benzene_atoms.info["charge"] = 1.0
+    benzene_atoms.info["spin"] = 1.0
+    charged_state = ts.io.atoms_to_state([benzene_atoms], device, dtype)
+
+    # Ensure state has charge/spin before testing model
+    if charged_state.charge is None or charged_state.spin is None:
+        raise ValueError(
+            "atoms_to_state did not extract charge/spin. "
+            "Cannot test model charge/spin handling."
+        )
+
+    # Test that model can handle charge/spin without crashing
+    og_charged_charge = charged_state.charge.clone()
+    og_charged_spin = charged_state.spin.clone()
+    try:
+        charged_output = model.forward(charged_state)
+    except Exception as e:
+        raise ValueError(
+            "Model failed to handle non-zero charge/spin. "
+            "Models must be able to process states with charge and spin values. "
+        ) from e
+
+    # Verify model didn't mutate charge/spin
+    if not torch.allclose(og_charged_charge, charged_state.charge):
+        raise ValueError(
+            f"Model mutated charge: {og_charged_charge=} != {charged_state.charge=}"
+        )
+    if not torch.allclose(og_charged_spin, charged_state.spin):
+        raise ValueError(
+            f"Model mutated spin: {og_charged_spin=} != {charged_state.spin=}"
+        )
+    # Verify output shape is still correct
+    if charged_output["energy"].shape != (1,):
+        raise ValueError(
+            f"energy shape incorrect with charge/spin: "
+            f"{charged_output['energy'].shape=} != (1,)"
+        )

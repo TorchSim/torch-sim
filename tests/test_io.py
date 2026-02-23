@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 import torch
 from ase import Atoms
+from ase.build import molecule
 from phonopy.structure.atoms import PhonopyAtoms
 from pymatgen.core import Structure
 
@@ -88,6 +89,69 @@ def test_multiple_atoms_to_state(si_atoms: Atoms) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("charge", "spin", "expected_charge", "expected_spin"),
+    [
+        (1.0, 1.0, 1.0, 1.0),  # Non-zero charge and spin
+        (0.0, 0.0, 0.0, 0.0),  # Explicit zero charge and spin
+        (None, None, 0.0, 0.0),  # No charge/spin set, defaults to zero
+    ],
+)
+def test_atoms_to_state_with_charge_spin(
+    charge: float | None,
+    spin: float | None,
+    expected_charge: float,
+    expected_spin: float,
+) -> None:
+    """Test conversion from ASE Atoms with charge and spin to state tensors."""
+    mol = molecule("H2O")
+    if charge is not None:
+        mol.info["charge"] = charge
+    if spin is not None:
+        mol.info["spin"] = spin
+
+    state = ts.io.atoms_to_state([mol], DEVICE, DTYPE)
+
+    # Check basic properties
+    assert isinstance(state, SimState)
+    assert state.charge is not None
+    assert state.spin is not None
+    assert state.charge.shape == (1,)
+    assert state.spin.shape == (1,)
+    assert state.charge[0].item() == expected_charge
+    assert state.spin[0].item() == expected_spin
+
+
+def test_multiple_atoms_to_state_with_charge_spin() -> None:
+    """Test conversion from multiple ASE Atoms with different charge/spin values."""
+    mol1 = molecule("H2O")
+    mol1.info["charge"] = 1.0
+    mol1.info["spin"] = 1.0
+
+    mol2 = molecule("CH4")
+    mol2.info["charge"] = -1.0
+    mol2.info["spin"] = 0.0
+
+    mol3 = molecule("NH3")
+    mol3.info["charge"] = 0.0
+    mol3.info["spin"] = 2.0
+
+    state = ts.io.atoms_to_state([mol1, mol2, mol3], DEVICE, DTYPE)
+
+    # Check basic properties
+    assert isinstance(state, SimState)
+    assert state.charge is not None
+    assert state.spin is not None
+    assert state.charge.shape == (3,)
+    assert state.spin.shape == (3,)
+    assert state.charge[0].item() == 1.0
+    assert state.charge[1].item() == -1.0
+    assert state.charge[2].item() == 0.0
+    assert state.spin[0].item() == 1.0
+    assert state.spin[1].item() == 0.0
+    assert state.spin[2].item() == 2.0
+
+
 def test_state_to_structure(ar_supercell_sim_state: SimState) -> None:
     """Test conversion from state tensors to list of pymatgen Structure."""
     structures = ts.io.state_to_structures(ar_supercell_sim_state)
@@ -112,6 +176,23 @@ def test_state_to_atoms(ar_supercell_sim_state: SimState) -> None:
     assert len(atoms) == 1
     assert isinstance(atoms[0], Atoms)
     assert len(atoms[0]) == 32
+
+
+def test_state_to_atoms_with_charge_spin() -> None:
+    """Test conversion from state with charge/spin to ASE Atoms preserves charge/spin."""
+    mol = molecule("H2O")
+    mol.info["charge"] = 1.0
+    mol.info["spin"] = 1.0
+
+    state = ts.io.atoms_to_state([mol], DEVICE, DTYPE)
+    atoms = ts.io.state_to_atoms(state)
+
+    assert len(atoms) == 1
+    assert isinstance(atoms[0], Atoms)
+    assert "charge" in atoms[0].info
+    assert "spin" in atoms[0].info
+    assert atoms[0].info["charge"] == 1
+    assert atoms[0].info["spin"] == 1
 
 
 def test_state_to_multiple_atoms(ar_double_sim_state: SimState) -> None:
@@ -253,6 +334,9 @@ def test_state_round_trip(
         # since both use their own isotope masses based on species,
         # not the ones in the state
         assert torch.allclose(sim_state.masses, round_trip_state.masses)
+        # Check charge/spin round trip
+        assert torch.allclose(sim_state.charge, round_trip_state.charge)
+        assert torch.allclose(sim_state.spin, round_trip_state.spin)
 
 
 def test_state_to_atoms_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
