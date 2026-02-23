@@ -22,9 +22,7 @@ if TYPE_CHECKING:
     )
 
 
-@dcite(
-    "10.1103/PhysRevLett.97.170201",
-)
+@dcite("10.1103/PhysRevLett.97.170201")
 def fire_init(
     state: SimState | StateDict,
     model: "ModelInterface",

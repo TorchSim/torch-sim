@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
 @dcite(
     "10.1088/1361-648X/aa680e",
+    description="ASE: Atomic Simulation Environment",
     path="ase",
 )
 def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
@@ -92,6 +93,7 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
 
 @dcite(
     "10.1016/j.commatsci.2012.10.028",
+    description="pymatgen: Python Materials Genomics",
     path="pymatgen",
 )
 def state_to_structures(state: "ts.SimState") -> list["Structure"]:
@@ -151,10 +153,12 @@ def state_to_structures(state: "ts.SimState") -> list["Structure"]:
 
 @dcite(
     "10.1088/1361-648X/aa680e",
+    description="ASE: Atomic Simulation Environment",
     path="ase",
 )
 @dcite(
     "10.1016/j.scriptamat.2015.07.021",
+    description="Phonopy: harmonic and quasi-harmonic phonon calculationss",
     path="phonopy",
 )
 def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
@@ -207,6 +211,7 @@ def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
 
 @dcite(
     "10.1088/1361-648X/aa680e",
+    description="ASE: Atomic Simulation Environment",
     path="ase",
 )
 def atoms_to_state(
@@ -288,6 +293,7 @@ def atoms_to_state(
 
 @dcite(
     "10.1016/j.commatsci.2012.10.028",
+    description="pymatgen: Python Materials Genomics",
     path="pymatgen",
 )
 def structures_to_state(
@@ -364,6 +370,7 @@ def structures_to_state(
 
 @dcite(
     "10.1016/j.scriptamat.2015.07.021",
+    description="Phonopy: harmonic and quasi-harmonic phonon calculationss",
     path="phonopy",
 )
 def phonopy_to_state(

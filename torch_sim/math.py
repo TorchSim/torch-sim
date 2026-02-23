@@ -103,9 +103,7 @@ def matrix_exp(A: torch.Tensor) -> torch.Tensor:
     return torch.matrix_exp(A)
 
 
-@dcite(
-    "10.1137/080716426",
-)
+@dcite("10.1137/080716426")
 def expm_frechet_sps(
     A: torch.Tensor, E: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -613,9 +611,7 @@ def _process_matrix_log_case(
     return result
 
 
-@dcite(
-    "10.1007/s10659-008-9169-x",
-)
+@dcite("10.1007/s10659-008-9169-x")
 def _matrix_log_33(T: torch.Tensor, dtype: torch.dtype = torch.float64) -> torch.Tensor:
     """Compute the logarithm of 3x3 matrix T based on its eigenvalue structure.
 

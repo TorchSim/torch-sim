@@ -313,15 +313,9 @@ SUZUKI_YOSHIDA_WEIGHTS = {
 }
 
 
-@dcite(
-    "10.1063/1.463940",
-)
-@dcite(
-    "10.2183/pjab.69.161",
-)
-@dcite(
-    "10.1016/0375-9601(90)90092-3",
-)
+@dcite("10.1063/1.463940")
+@dcite("10.2183/pjab.69.161")
+@dcite("10.1016/0375-9601(90)90092-3")
 def construct_nose_hoover_chain(  # noqa: C901 PLR0915
     dt: torch.Tensor,
     chain_length: int,
