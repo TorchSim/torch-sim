@@ -35,12 +35,9 @@ class TestExtras:
         )
         assert torch.equal(state.tags, tags)
 
-    def test_getattr_missing_returns_none_and_warns(self, cu_sim_state: ts.SimState):
-        with pytest.warns(
-            UserWarning, match="Accessing optional extra 'nonexistent_key'"
-        ):
-            val = cu_sim_state.nonexistent_key
-        assert val is None
+    def test_getattr_missing_raises_attribute_error(self, cu_sim_state: ts.SimState):
+        with pytest.raises(AttributeError, match="nonexistent_key"):
+            _ = cu_sim_state.nonexistent_key
 
     def test_set_extras(self, cu_sim_state: ts.SimState):
         field = torch.randn(cu_sim_state.n_systems, 3, device=cu_sim_state.device)
@@ -146,19 +143,6 @@ class TestExtras:
                 atomic_numbers=torch.tensor([1, 1], dtype=torch.int),
                 _system_extras={"cell": torch.zeros(1, 3)},
             )
-
-    def test_optional_extras_return_none_and_warn(self, cu_sim_state: ts.SimState):
-        with pytest.warns(
-            UserWarning, match="Accessing optional extra 'external_E_field'"
-        ):
-            val = cu_sim_state.external_E_field
-        assert val is None
-
-    def test_arbitrary_extras_return_none_and_warn(self, cu_sim_state: ts.SimState):
-        # Even unknown fields now return None + warning for extensibility
-        with pytest.warns(UserWarning, match="Accessing optional extra 'random_field'"):
-            val = cu_sim_state.random_field
-        assert val is None
 
 
 def test_system_extras_atoms_roundtrip():

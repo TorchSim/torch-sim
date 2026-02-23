@@ -7,7 +7,6 @@ operations and conversion to/from various atomistic formats.
 import copy
 import importlib
 import typing
-import warnings
 from collections import defaultdict
 from collections.abc import Generator, Sequence
 from dataclasses import dataclass, field
@@ -232,16 +231,11 @@ class SimState:
             if name in extras:
                 return extras[name]
 
-        # Any public attribute that's not found is treated as a missing extra
-        # to ensure that new models can define their own optional extras without
-        # modifying the core state definition.
-        warnings.warn(
-            f"Accessing optional extra '{name}' which is not set on this state. "
-            "Returning None.",
-            category=UserWarning,
-            stacklevel=2,
+        # Raise AttributeError so that Python's getattr(obj, name, default),
+        # hasattr(obj, name), and other descriptor-protocol machinery work correctly.
+        raise AttributeError(
+            f"'{type(self).__name__}' has no attribute or extra '{name}'"
         )
-        return None
 
     @property
     def system_extras(self) -> dict[str, torch.Tensor]:
