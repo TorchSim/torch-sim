@@ -258,10 +258,7 @@ def random_packed_structure(
     # Extract number of atoms for each element from composition
     element_counts = [int(i) for i in composition.as_dict().values()]
 
-    # Set up reproducible random number generator
-    generator = torch.Generator(device=device)
-    if seed is not None:
-        generator.manual_seed(seed)
+    generator = ts.state.coerce_prng(seed, device)
 
     log = []
     # Generate initial random positions in fractional coordinates
@@ -298,6 +295,7 @@ def random_packed_structure(
             atomic_numbers=atomic_numbers,
             cell=cell,
             pbc=True,
+            _rng=generator,
         )
         state = ts.fire_init(state, model)
         print(f"Initial energy: {state.energy.item():.4f}")
@@ -385,9 +383,7 @@ def random_packed_structure_multi(
     print(f"Creating structure with {N_atoms} atoms: {element_dict}")
 
     # Set up random number generator with optional seed for reproducibility
-    generator = torch.Generator(device=device)
-    if seed is not None:
-        generator.manual_seed(seed)
+    generator = ts.state.coerce_prng(seed, device)
 
     # Generate initial random positions in fractional coordinates [0,1]
     positions = torch.rand((N_atoms, 3), device=device, dtype=dtype, generator=generator)
@@ -422,6 +418,7 @@ def random_packed_structure_multi(
             atomic_numbers=atomic_numbers,
             cell=cell,
             pbc=True,
+            _rng=generator,
         )
         # Set up FIRE optimizer with unit masses for all atoms
         state = ts.fire_init(state_dict, model)
