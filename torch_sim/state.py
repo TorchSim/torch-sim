@@ -7,6 +7,7 @@ operations and conversion to/from various atomistic formats.
 import copy
 import importlib
 import typing
+import warnings
 from collections import defaultdict
 from collections.abc import Generator, Sequence
 from dataclasses import dataclass, field
@@ -92,6 +93,8 @@ class SimState:
     spin: torch.Tensor | None = field(default=None)
     system_idx: torch.Tensor | None = field(default=None)
     _constraints: list["Constraint"] = field(default_factory=lambda: [])  # noqa: PIE807
+    _system_extras: dict[str, torch.Tensor] = field(default_factory=dict)
+    _atom_extras: dict[str, torch.Tensor] = field(default_factory=dict)
 
     if TYPE_CHECKING:
 
@@ -183,6 +186,29 @@ class SimState:
         if len(set(devices.values())) > 1:
             raise ValueError("All tensors must be on the same device")
 
+        # Validate extras shapes and prevent shadowing
+        all_attrs = self._get_all_attributes()
+        for key, val in self._system_extras.items():
+            if key in all_attrs or hasattr(type(self), key):
+                raise ValueError(f"System extra '{key}' shadows an existing attribute")
+            if not isinstance(val, torch.Tensor):
+                raise TypeError(f"System extra '{key}' must be a torch.Tensor")
+            if val.shape[0] != n_systems:
+                raise ValueError(
+                    f"System extra '{key}' leading dim must be "
+                    f"n_systems={n_systems}, got {val.shape[0]}"
+                )
+        for key, val in self._atom_extras.items():
+            if key in all_attrs or hasattr(type(self), key):
+                raise ValueError(f"Atom extra '{key}' shadows an existing attribute")
+            if not isinstance(val, torch.Tensor):
+                raise TypeError(f"Atom extra '{key}' must be a torch.Tensor")
+            if val.shape[0] != self.n_atoms:
+                raise ValueError(
+                    f"Atom extra '{key}' leading dim must be "
+                    f"n_atoms={self.n_atoms}, got {val.shape[0]}"
+                )
+
     @classmethod
     def _get_all_attributes(cls) -> set[str]:
         """Get all attributes of the SimState."""
@@ -190,8 +216,76 @@ class SimState:
             cls._atom_attributes
             | cls._system_attributes
             | cls._global_attributes
-            | {"_constraints"}
+            | {"_constraints", "_system_extras", "_atom_extras"}
         )
+
+    def __getattr__(self, name: str) -> Any:
+        """Allow attribute-style access to extras dict entries."""
+        # Guard: don't look up private attrs in extras (avoids recursion during init)
+        if name.startswith("_"):
+            raise AttributeError(name)
+        for extras_attr in ("_system_extras", "_atom_extras"):
+            try:
+                extras = object.__getattribute__(self, extras_attr)
+            except AttributeError:
+                continue
+            if name in extras:
+                return extras[name]
+
+        # Any public attribute that's not found is treated as a missing extra
+        # to ensure that new models can define their own optional extras without
+        # modifying the core state definition.
+        warnings.warn(
+            f"Accessing optional extra '{name}' which is not set on this state. "
+            "Returning None.",
+            category=UserWarning,
+            stacklevel=2,
+        )
+        return None
+
+    @property
+    def system_extras(self) -> dict[str, torch.Tensor]:
+        """Get the system extras."""
+        return self._system_extras
+
+    @property
+    def atom_extras(self) -> dict[str, torch.Tensor]:
+        """Get the atom extras."""
+        return self._atom_extras
+
+    def set_extras(
+        self,
+        key: str,
+        value: torch.Tensor,
+        scope: Literal["per-system", "per-atom"],
+    ) -> None:
+        """Set an extras tensor with explicit scope and shape validation."""
+        if key in self._get_all_attributes() or hasattr(type(self), key):
+            raise ValueError(
+                f"Cannot set extra '{key}' because it shadows an existing attribute"
+            )
+        if not isinstance(value, torch.Tensor):
+            raise TypeError(f"Extras value must be a torch.Tensor, got {type(value)}")
+        if scope == "per-system":
+            if value.shape[0] != self.n_systems:
+                raise ValueError(
+                    f"System extras {key} leading dim must be "
+                    f"n_systems={self.n_systems}, got {value.shape[0]}"
+                )
+            self._system_extras[key] = value
+        elif scope == "per-atom":
+            if value.shape[0] != self.n_atoms:
+                raise ValueError(
+                    f"Atom extras {key} leading dim must be "
+                    f"n_atoms={self.n_atoms}, got {value.shape[0]}"
+                )
+            self._atom_extras[key] = value
+        else:
+            raise ValueError(f"scope must be 'per-system' or 'per-atom', got {scope!r}")
+
+    def has_extras(self, key: str) -> bool:
+        """Check if an extras key exists."""
+        return key in self._system_extras or key in self._atom_extras
 
     @property
     def wrap_positions(self) -> torch.Tensor:
@@ -731,11 +825,25 @@ def _state_to_device[T: SimState](
         if isinstance(attr_value, torch.Tensor):
             attrs[attr_name] = attr_value.to(device=device)
 
+    for extras_key in ("_system_extras", "_atom_extras"):
+        if extras_key in attrs and isinstance(attrs[extras_key], dict):
+            attrs[extras_key] = {
+                k: v.to(device=device) for k, v in attrs[extras_key].items()
+            }
+
     if dtype is not None:
         attrs["positions"] = attrs["positions"].to(dtype=dtype)
         attrs["masses"] = attrs["masses"].to(dtype=dtype)
         attrs["cell"] = attrs["cell"].to(dtype=dtype)
         attrs["atomic_numbers"] = attrs["atomic_numbers"].to(dtype=torch.int)
+
+        # Update floating point extras to new dtype
+        for extras_key in ("_system_extras", "_atom_extras"):
+            if extras_key in attrs and isinstance(attrs[extras_key], dict):
+                attrs[extras_key] = {
+                    k: v.to(dtype=dtype) if v.is_floating_point() else v
+                    for k, v in attrs[extras_key].items()
+                }
     return type(state)(**attrs)
 
 
@@ -823,6 +931,13 @@ def _filter_attrs_by_index(
             val[system_indices] if isinstance(val, torch.Tensor) else val
         )
 
+    filtered_attrs["_system_extras"] = {
+        key: val[system_indices] for key, val in state.system_extras.items()
+    }
+    filtered_attrs["_atom_extras"] = {
+        key: val[atom_indices] for key, val in state.atom_extras.items()
+    }
+
     return filtered_attrs
 
 
@@ -855,6 +970,14 @@ def _split_state[T: SimState](state: T) -> list[T]:
 
     global_attrs = dict(get_attrs_for_scope(state, "global"))
 
+    split_system_extras: dict[str, list[torch.Tensor]] = {}
+    for key, val in state._system_extras.items():  # noqa: SLF001
+        split_system_extras[key] = list(torch.split(val, 1, dim=0))
+
+    split_atom_extras: dict[str, list[torch.Tensor]] = {}
+    for key, val in state._atom_extras.items():  # noqa: SLF001
+        split_atom_extras[key] = list(torch.split(val, system_sizes, dim=0))
+
     # Create a state for each system
     states: list[T] = []
     n_systems = len(system_sizes)
@@ -881,6 +1004,12 @@ def _split_state[T: SimState](state: T) -> list[T]:
             **per_system_dict,
             # Add the global attributes
             **global_attrs,
+            "_system_extras": {
+                key: split_system_extras[key][sys_idx] for key in split_system_extras
+            },
+            "_atom_extras": {
+                key: split_atom_extras[key][sys_idx] for key in split_atom_extras
+            },
         }
 
         atom_idx = torch.arange(cumsum_atoms[sys_idx], cumsum_atoms[sys_idx + 1])
@@ -1025,6 +1154,8 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
     # Pre-allocate lists for tensors to concatenate
     per_atom_tensors = defaultdict(list)
     per_system_tensors = defaultdict(list)
+    system_extras_tensors: dict[str, list[torch.Tensor]] = defaultdict(list)
+    atom_extras_tensors: dict[str, list[torch.Tensor]] = defaultdict(list)
     new_system_indices = []
     system_offset = 0
     num_atoms_per_state = []
@@ -1045,6 +1176,12 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
         # Collect per-system properties
         for prop, val in get_attrs_for_scope(state, "per-system"):
             per_system_tensors[prop].append(val)
+
+        # Collect extras
+        for key, val in state.system_extras.items():
+            system_extras_tensors[key].append(val)
+        for key, val in state.atom_extras.items():
+            atom_extras_tensors[key].append(val)
 
         # Update system indices
         num_systems = state.n_systems
@@ -1115,6 +1252,14 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
 
     # Concatenate system indices
     concatenated["system_idx"] = torch.cat(new_system_indices)
+
+    # Concatenate extras
+    concatenated["_system_extras"] = {
+        key: torch.cat(tensors, dim=0) for key, tensors in system_extras_tensors.items()
+    }
+    concatenated["_atom_extras"] = {
+        key: torch.cat(tensors, dim=0) for key, tensors in atom_extras_tensors.items()
+    }
 
     # Merge constraints
     constraint_lists = [state.constraints for state in states]

@@ -86,6 +86,14 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
         if spin is not None:
             atoms.info["spin"] = int(spin[sys_idx].item())
 
+        # Write system extras to atoms.info
+        for key, val in state.system_extras.items():
+            atoms.info[key] = val[sys_idx].detach().cpu().numpy()
+
+        # Write atom extras to atoms.arrays
+        for key, val in state.atom_extras.items():
+            atoms.arrays[key] = val[mask].detach().cpu().numpy()
+
         atoms_list.append(atoms)
 
     return atoms_list
@@ -218,6 +226,8 @@ def atoms_to_state(
     atoms: "Atoms | list[Atoms]",
     device: torch.device | None = None,
     dtype: torch.dtype | None = None,
+    system_extras_keys: list[str] | None = None,
+    atom_extras_keys: list[str] | None = None,
 ) -> "ts.SimState":
     """Convert an ASE Atoms object or list of Atoms objects to a SimState.
 
@@ -226,6 +236,10 @@ def atoms_to_state(
         device (torch.device): Device to create tensors on
         dtype (torch.dtype): Data type for tensors (typically torch.float32 or
             torch.float64)
+        system_extras_keys (list[str]): Optional list of keys to read from atoms.info
+            into _system_extras
+        atom_extras_keys (list[str]): Optional list of keys to read from atoms.arrays
+            into _atom_extras
 
     Returns:
         SimState: TorchSim SimState object.
@@ -279,6 +293,24 @@ def atoms_to_state(
         [at.info.get("spin", 0.0) for at in atoms_list], dtype=dtype, device=device
     )
 
+    _system_extras: dict[str, torch.Tensor] = {}
+    if system_extras_keys:
+        for key in system_extras_keys:
+            vals = [at.info.get(key) for at in atoms_list]
+            if all(v is not None for v in vals):
+                _system_extras[key] = torch.tensor(
+                    np.stack(vals), dtype=dtype, device=device
+                )
+
+    _atom_extras: dict[str, torch.Tensor] = {}
+    if atom_extras_keys:
+        for key in atom_extras_keys:
+            arrays = [at.arrays.get(key) for at in atoms_list]
+            if all(a is not None for a in arrays):
+                _atom_extras[key] = torch.tensor(
+                    np.concatenate(arrays), dtype=dtype, device=device
+                )
+
     return ts.SimState(
         positions=positions,
         masses=masses,
@@ -288,6 +320,8 @@ def atoms_to_state(
         system_idx=system_idx,
         charge=charge,
         spin=spin,
+        _system_extras=_system_extras,
+        _atom_extras=_atom_extras,
     )
 
 
