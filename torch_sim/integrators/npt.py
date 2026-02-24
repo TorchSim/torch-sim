@@ -2300,7 +2300,7 @@ def npt_crescale_init(
     kT = torch.as_tensor(kT, device=device, dtype=dtype)
 
     # Set default values if not provided
-    tau_p = torch.as_tensor(tau_p or 5000 * dt, device=device, dtype=dtype)  # (eV/A^3)^-1
+    tau_p = torch.as_tensor(tau_p or 5000 * dt, device=device, dtype=dtype)  # 5ps for dt=1fs
     isothermal_compressibility = torch.as_tensor(
         isothermal_compressibility or 1e-1,
         device=device,
