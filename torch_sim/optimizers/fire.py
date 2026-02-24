@@ -99,9 +99,12 @@ def fire_init(
             cell_state.cell_forces.shape, torch.nan, **tensor_args
         )
 
+        cell_state.store_model_extras(model_output)
         return cell_state
     # Create regular FireState without cell optimization
-    return FireState.from_state(state, **fire_attrs)
+    fire_state = FireState.from_state(state, **fire_attrs)
+    fire_state.store_model_extras(model_output)
+    return fire_state
 
 
 def fire_step(
@@ -214,6 +217,7 @@ def _vv_fire_step[T: "FireState | CellFireState"](  # noqa: PLR0915
     state.energy = model_output["energy"]
     if "stress" in model_output:
         state.stress = model_output["stress"]
+    state.store_model_extras(model_output)
 
     # Update cell forces
     if isinstance(state, CellFireState):
@@ -463,6 +467,7 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
     state.energy = model_output["energy"]
     if "stress" in model_output:
         state.stress = model_output["stress"]
+    state.store_model_extras(model_output)
 
     # Update cell forces
     if isinstance(state, CellFireState):

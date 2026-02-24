@@ -26,6 +26,10 @@ if TYPE_CHECKING:
 from torch_sim.constraints import Constraint, merge_constraints, validate_constraints
 
 
+# Canonical model output keys that are handled explicitly by integrators/runners
+_CANONICAL_MODEL_KEYS = frozenset({"energy", "forces", "stress"})
+
+
 @dataclass
 class SimState:
     """State representation for atomistic systems with batched operations support.
@@ -280,6 +284,36 @@ class SimState:
     def has_extras(self, key: str) -> bool:
         """Check if an extras key exists."""
         return key in self._system_extras or key in self._atom_extras
+
+    def store_model_extras(self, model_output: dict[str, torch.Tensor]) -> None:
+        """Store non-canonical model outputs into state extras (in-place).
+
+        Any key in *model_output* that is not in ``{"energy", "forces", "stress"}``
+        is classified by its leading dimension:
+
+        * ``n_atoms``  → stored in ``_atom_extras``
+        * ``n_systems`` → stored in ``_system_extras``
+        * otherwise     → skipped (ambiguity or scalar)
+
+        When ``n_atoms == n_systems`` (single-atom system), the tensor is stored as
+        per-atom by convention.
+
+        Args:
+            model_output: Full dict returned by ``model.forward()``.
+        """
+        n_atoms = self.n_atoms
+        n_systems = self.n_systems
+
+        for key, val in model_output.items():
+            if key in _CANONICAL_MODEL_KEYS:
+                continue
+            if not isinstance(val, torch.Tensor) or val.ndim == 0:
+                continue
+            leading = val.shape[0]
+            if leading == n_atoms:
+                self._atom_extras[key] = val
+            elif leading == n_systems:
+                self._system_extras[key] = val
 
     @property
     def wrap_positions(self) -> torch.Tensor:

@@ -144,6 +144,58 @@ class TestExtras:
                 _system_extras={"cell": torch.zeros(1, 3)},
             )
 
+    # store_model_extras
+    def test_store_model_extras_canonical_keys_not_stored(
+        self, si_double_sim_state: ts.SimState
+    ):
+        """Canonical keys (energy, forces, stress) must not land in extras."""
+        state = si_double_sim_state.clone()
+        state.store_model_extras(
+            {
+                "energy": torch.randn(state.n_systems),
+                "forces": torch.randn(state.n_atoms, 3),
+                "stress": torch.randn(state.n_systems, 3, 3),
+            }
+        )
+        assert not state._system_extras  # noqa: SLF001
+        assert not state._atom_extras  # noqa: SLF001
+
+    def test_store_model_extras_per_system(self, si_double_sim_state: ts.SimState):
+        """Tensors with leading dim == n_systems go into system_extras."""
+        state = si_double_sim_state.clone()
+        dipole = torch.randn(state.n_systems, 3)
+        state.store_model_extras(
+            {"energy": torch.randn(state.n_systems), "dipole": dipole}
+        )
+        assert torch.equal(state.dipole, dipole)
+
+    def test_store_model_extras_per_atom(self, si_double_sim_state: ts.SimState):
+        """Tensors with leading dim == n_atoms go into atom_extras."""
+        state = si_double_sim_state.clone()
+        charges = torch.randn(state.n_atoms)
+        density = torch.randn(state.n_atoms, 8)
+        state.store_model_extras(
+            {
+                "energy": torch.randn(state.n_systems),
+                "charges": charges,
+                "density_coefficients": density,
+            }
+        )
+        assert torch.equal(state.charges, charges)
+        assert state.density_coefficients.shape == (state.n_atoms, 8)
+
+    def test_store_model_extras_skips_scalars(self, si_double_sim_state: ts.SimState):
+        """0-d tensors and non-Tensor values are silently ignored."""
+        state = si_double_sim_state.clone()
+        state.store_model_extras(
+            {
+                "scalar": torch.tensor(3.14),
+                "string": "not a tensor",
+            }
+        )
+        assert not state.has_extras("scalar")
+        assert not state.has_extras("string")
+
 
 def test_system_extras_atoms_roundtrip():
     state = ts.SimState(

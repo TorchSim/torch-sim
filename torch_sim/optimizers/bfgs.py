@@ -206,6 +206,7 @@ def bfgs_init(
         cell_state.prev_cell_positions = cell_state.cell_positions.clone()  # [S, 3, 3]
         cell_state.prev_cell_forces = cell_state.cell_forces.clone()  # [S, 3, 3]
 
+        cell_state.store_model_extras(model_output)
         return cell_state
 
     # Position-only Hessian: 3*global_max_atoms x 3*global_max_atoms
@@ -237,7 +238,9 @@ def bfgs_init(
         "_constraints": state.constraints,  # preserve constraints
     }
 
-    return BFGSState(**common_args)
+    bfgs_state = BFGSState(**common_args)
+    bfgs_state.store_model_extras(model_output)
+    return bfgs_state
 
 
 def bfgs_step(  # noqa: C901, PLR0915
@@ -541,6 +544,7 @@ def bfgs_step(  # noqa: C901, PLR0915
     state.energy = model_output["energy"]  # [S]
     if "stress" in model_output:
         state.stress = model_output["stress"]  # [S, 3, 3]
+    state.store_model_extras(model_output)
 
     # Update cell forces for next step
     # Update cell forces for cell state: [S, 3, 3]
