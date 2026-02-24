@@ -15,7 +15,7 @@ from torch_sim.integrators.md import (
     construct_nose_hoover_chain,
     momentum_step,
     position_step,
-    velocity_verlet,
+    velocity_verlet_step,
 )
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
@@ -369,7 +369,7 @@ def nvt_nose_hoover_step(
     state.set_constrained_momenta(momenta)
 
     # Full velocity Verlet step
-    state = velocity_verlet(state=state, dt=dt, model=model)
+    state = velocity_verlet_step(state=state, dt=dt, model=model)
 
     # Update chain kinetic energy per system
     KE = ts.calc_kinetic_energy(
@@ -658,4 +658,4 @@ def nvt_vrescale_step(
     state = _vrescale_update(state, tau, kT, dt)
 
     # Perform velocity Verlet step
-    return velocity_verlet(state=state, dt=dt, model=model)
+    return velocity_verlet_step(state=state, dt=dt, model=model)

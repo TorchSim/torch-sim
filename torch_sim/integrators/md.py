@@ -1,5 +1,6 @@
 """Core molecular dynamics state and operations."""
 
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -194,7 +195,7 @@ def position_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
     return state
 
 
-def velocity_verlet[T: MDState](
+def velocity_verlet_step[T: MDState](
     state: T, dt: float | torch.Tensor, model: ModelInterface
 ) -> T:
     """Perform one complete velocity Verlet integration step.
@@ -230,6 +231,18 @@ def velocity_verlet[T: MDState](
     state.energy = model_output["energy"]
     state.forces = model_output["forces"]
     return momentum_step(state, dt_2)
+
+
+def velocity_verlet[T: MDState](
+    state: T, dt: float | torch.Tensor, model: ModelInterface
+) -> T:
+    """Deprecated alias for velocity_verlet_step."""
+    warnings.warn(
+        "velocity_verlet is deprecated. Use velocity_verlet_step instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return velocity_verlet_step(state=state, dt=dt, model=model)
 
 
 @dataclass
