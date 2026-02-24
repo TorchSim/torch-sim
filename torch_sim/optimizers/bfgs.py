@@ -83,8 +83,8 @@ def bfgs_init(
     state: SimState | StateDict,
     model: "ModelInterface",
     *,
-    max_step: float = 0.2,
-    alpha: float = 70.0,
+    max_step: float | torch.Tensor = 0.2,
+    alpha: float | torch.Tensor = 70.0,
     cell_filter: "CellFilter | CellFilterFuncs | None" = None,
     **filter_kwargs: Any,
 ) -> "BFGSState | CellBFGSState":
@@ -130,17 +130,23 @@ def bfgs_init(
     forces = model_output["forces"]  # [N, 3]
     stress = model_output.get("stress")  # [S, 3, 3] or None
 
-    alpha_t = torch.full((n_systems,), alpha, **tensor_args)  # [S]
-    max_step_t = torch.full((n_systems,), max_step, **tensor_args)  # [S]
+    alpha_t = torch.as_tensor(alpha, **tensor_args)
+    if alpha_t.ndim == 0:
+        alpha_t = alpha_t.expand(n_systems)
+
+    max_step_t = torch.as_tensor(max_step, **tensor_args)
+    if max_step_t.ndim == 0:
+        max_step_t = max_step_t.expand(n_systems)
+
     n_iter = torch.zeros((n_systems,), device=model.device, dtype=torch.int32)  # [S]
 
     if cell_filter is not None:
         # Extended Hessian: (3*global_max_atoms + 9) x (3*global_max_atoms + 9)
         # The extra 9 DOFs are for cell parameters (3x3 matrix flattened)
         dim = 3 * global_max_atoms + (3 * 3)  # D_ext
-        hessian = (
-            torch.eye(dim, **tensor_args).unsqueeze(0).repeat(n_systems, 1, 1) * alpha
-        )  # [S, D_ext, D_ext]
+        hessian = torch.eye(dim, **tensor_args).unsqueeze(0).repeat(
+            n_systems, 1, 1
+        ) * alpha_t.view(n_systems, 1, 1)  # [S, D_ext, D_ext]
 
         cell_filter_funcs = init_fn, _step_fn = ts.get_cell_filter(cell_filter)
 
@@ -210,9 +216,9 @@ def bfgs_init(
 
     # Position-only Hessian: 3*global_max_atoms x 3*global_max_atoms
     dim = 3 * global_max_atoms  # D
-    hessian = (
-        torch.eye(dim, **tensor_args).unsqueeze(0).repeat(n_systems, 1, 1) * alpha
-    )  # [S, D, D]
+    hessian = torch.eye(dim, **tensor_args).unsqueeze(0).repeat(
+        n_systems, 1, 1
+    ) * alpha_t.view(n_systems, 1, 1)  # [S, D, D]
 
     common_args = {
         "positions": state.positions.clone(),  # [N, 3]

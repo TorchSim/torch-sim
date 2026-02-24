@@ -437,8 +437,8 @@ def _npt_langevin_velocity_step(
 
 def _compute_cell_force(
     state: NPTLangevinState,
-    external_pressure: torch.Tensor,
-    kT: torch.Tensor,
+    external_pressure: float | torch.Tensor,
+    kT: float | torch.Tensor,
 ) -> torch.Tensor:
     """Compute forces on the cell for NPT dynamics.
 
@@ -458,14 +458,12 @@ def _compute_cell_force(
         torch.Tensor: Force acting on the cell [n_systems, n_dim, n_dim]
     """
     # Convert external_pressure to tensor if it's not already one
-    if not isinstance(external_pressure, torch.Tensor):
-        external_pressure = torch.tensor(
-            external_pressure, device=state.device, dtype=state.dtype
-        )
+    external_pressure = torch.as_tensor(
+        external_pressure, device=state.device, dtype=state.dtype
+    )
 
     # Convert kT to tensor if it's not already one
-    if not isinstance(kT, torch.Tensor):
-        kT = torch.tensor(kT, device=state.device, dtype=state.dtype)
+    kT = torch.as_tensor(kT, device=state.device, dtype=state.dtype)
 
     # Get current volumes for each batch
     volumes = torch.linalg.det(state.cell)  # shape: (n_systems,)
@@ -634,9 +632,9 @@ def npt_langevin_step(
     state: NPTLangevinState,
     model: ModelInterface,
     *,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
-    external_pressure: torch.Tensor,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
+    external_pressure: float | torch.Tensor,
 ) -> NPTLangevinState:
     """Perform one complete NPT Langevin dynamics integration step.
 
@@ -667,14 +665,10 @@ def npt_langevin_step(
     device, dtype = model.device, model.dtype
 
     # Convert any scalar parameters to tensors with batch dimension if needed
-    if isinstance(state.alpha, float):
-        state.alpha = torch.tensor(state.alpha, device=device, dtype=dtype)
-    if isinstance(kT, float):
-        kT = torch.tensor(kT, device=device, dtype=dtype)
-    if isinstance(state.cell_alpha, float):
-        state.cell_alpha = torch.tensor(state.cell_alpha, device=device, dtype=dtype)
-    if isinstance(dt, float):
-        dt = torch.tensor(dt, device=device, dtype=dtype)
+    state.alpha = torch.as_tensor(state.alpha, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+    state.cell_alpha = torch.as_tensor(state.cell_alpha, device=device, dtype=dtype)
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
 
     # Make sure parameters have batch dimension if they're scalars
     batch_kT = kT.expand(state.n_systems) if kT.ndim == 0 else kT
@@ -925,8 +919,7 @@ def _npt_nose_hoover_update_cell_mass(
     _n_particles, dim = state.positions.shape
 
     # Convert kT to tensor if it's not already one
-    if not isinstance(kT, torch.Tensor):
-        kT = torch.tensor(kT, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
 
     # Handle both scalar and batched kT
     kT_system = kT.expand(state.n_systems) if kT.ndim == 0 else kT
@@ -1274,13 +1267,13 @@ def npt_nose_hoover_init(
     state: SimState | StateDict,
     model: ModelInterface,
     *,
-    kT: torch.Tensor,
-    dt: torch.Tensor,
+    kT: float | torch.Tensor,
+    dt: float | torch.Tensor,
     chain_length: int = 3,
     chain_steps: int = 2,
     sy_steps: int = 3,
-    t_tau: torch.Tensor | None = None,
-    b_tau: torch.Tensor | None = None,
+    t_tau: float | torch.Tensor | None = None,
+    b_tau: float | torch.Tensor | None = None,
     seed: int | None = None,
     **kwargs: Any,
 ) -> NPTNoseHooverState:
@@ -1327,15 +1320,15 @@ def npt_nose_hoover_init(
         - All cell properties are properly initialized with batch dimensions
     """
     device, dtype = model.device, model.dtype
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
 
     # Initialize the NPT Nose-Hoover state
     # Thermostat relaxation time
-    if t_tau is None:
-        t_tau = 100 * dt
+    t_tau = torch.as_tensor(t_tau or 100 * dt, device=device, dtype=dtype)
 
     # Barostat relaxation time
-    if b_tau is None:
-        b_tau = 1000 * dt
+    b_tau = torch.as_tensor(b_tau or 1000 * dt, device=device, dtype=dtype)
 
     # Setup thermostats with appropriate timescales
     barostat_fns = construct_nose_hoover_chain(
@@ -1358,8 +1351,7 @@ def npt_nose_hoover_init(
     cell_momentum = torch.zeros(n_systems, 1, device=device, dtype=dtype)
 
     # Convert kT to tensor if it's not already one
-    if not isinstance(kT, torch.Tensor):
-        kT = torch.tensor(kT, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
 
     # Handle both scalar and batched kT
     kT_system = kT.expand(n_systems) if kT.ndim == 0 else kT
@@ -1439,9 +1431,9 @@ def npt_nose_hoover_step(
     state: NPTNoseHooverState,
     model: ModelInterface,
     *,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
-    external_pressure: torch.Tensor,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
+    external_pressure: float | torch.Tensor,
 ) -> NPTNoseHooverState:
     """Perform a complete NPT integration step with Nose-Hoover chain thermostats.
     If the center of mass motion is removed initially, it remains removed throughout
@@ -1465,6 +1457,9 @@ def npt_nose_hoover_step(
         NPTNoseHooverState: Updated state after complete integration step
     """
     device, dtype = model.device, model.dtype
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+    external_pressure = torch.as_tensor(external_pressure, device=device, dtype=dtype)
 
     # Unpack state variables for clarity
     barostat = state.barostat
@@ -1972,10 +1967,10 @@ def npt_crescale_anisotropic_step(
     state: NPTCRescaleState,
     model: ModelInterface,
     *,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
-    external_pressure: torch.Tensor,
-    tau: torch.Tensor | None = None,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
+    external_pressure: float | torch.Tensor,
+    tau: float | torch.Tensor | None = None,
 ) -> NPTCRescaleState:
     """Perform one NPT integration step with cell rescaling barostat.
 
@@ -2013,9 +2008,14 @@ def npt_crescale_anisotropic_step(
     Returns:
         NPTCRescaleState: Updated state after one integration step
     """
+    device, dtype = model.device, model.dtype
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+    external_pressure = torch.as_tensor(external_pressure, device=device, dtype=dtype)
+
     # Note: would probably be better to have tau in NVTCRescaleState
-    if tau is None:
-        tau = 100 * dt
+    tau = torch.as_tensor(tau or 100 * dt, device=device, dtype=dtype)
+
     state = _vrescale_update(state, tau, kT, dt / 2)
 
     state = momentum_step(state, dt / 2)
@@ -2042,10 +2042,10 @@ def npt_crescale_independent_lengths_step(
     state: NPTCRescaleState,
     model: ModelInterface,
     *,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
-    external_pressure: torch.Tensor,
-    tau: torch.Tensor | None = None,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
+    external_pressure: float | torch.Tensor,
+    tau: float | torch.Tensor | None = None,
 ) -> NPTCRescaleState:
     """Perform one NPT integration step with cell rescaling barostat.
 
@@ -2083,9 +2083,14 @@ def npt_crescale_independent_lengths_step(
     Returns:
         NPTCRescaleState: Updated state after one integration step
     """
+    device, dtype = model.device, model.dtype
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+    external_pressure = torch.as_tensor(external_pressure, device=device, dtype=dtype)
+
     # Note: would probably be better to have tau in NVTCRescaleState
-    if tau is None:
-        tau = 100 * dt
+    tau = torch.as_tensor(tau or 100 * dt, device=device, dtype=dtype)
+
     state = _vrescale_update(state, tau, kT, dt / 2)
 
     state = momentum_step(state, dt / 2)
@@ -2112,10 +2117,10 @@ def npt_crescale_average_anisotropic_step(
     state: NPTCRescaleState,
     model: ModelInterface,
     *,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
-    external_pressure: torch.Tensor,
-    tau: torch.Tensor | None = None,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
+    external_pressure: float | torch.Tensor,
+    tau: float | torch.Tensor | None = None,
 ) -> NPTCRescaleState:
     """Perform one NPT integration step with cell rescaling barostat.
 
@@ -2154,9 +2159,14 @@ def npt_crescale_average_anisotropic_step(
     Returns:
         NPTCRescaleState: Updated state after one integration step
     """
+    device, dtype = model.device, model.dtype
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+    external_pressure = torch.as_tensor(external_pressure, device=device, dtype=dtype)
+
     # Note: would probably be better to have tau in NVTCRescaleState
-    if tau is None:
-        tau = 100 * dt
+    tau = torch.as_tensor(tau or 100 * dt, device=device, dtype=dtype)
+
     state = _vrescale_update(state, tau, kT, dt / 2)
 
     state = momentum_step(state, dt / 2)
@@ -2182,10 +2192,10 @@ def npt_crescale_isotropic_step(
     state: NPTCRescaleState,
     model: ModelInterface,
     *,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
-    external_pressure: torch.Tensor,
-    tau: torch.Tensor | None = None,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
+    external_pressure: float | torch.Tensor,
+    tau: float | torch.Tensor | None = None,
 ) -> NPTCRescaleState:
     """Perform one NPT integration step with cell rescaling barostat.
 
@@ -2226,9 +2236,14 @@ def npt_crescale_isotropic_step(
     Returns:
         NPTCRescaleState: Updated state after one integration step
     """
+    device, dtype = model.device, model.dtype
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+    external_pressure = torch.as_tensor(external_pressure, device=device, dtype=dtype)
+
     # Note: would probably be better to have tau in NVTCRescaleState
-    if tau is None:
-        tau = 100 * dt
+    tau = torch.as_tensor(tau or 100 * dt, device=device, dtype=dtype)
+
     state = _vrescale_update(state, tau, kT, dt / 2)
 
     state = momentum_step(state, dt / 2)
@@ -2253,10 +2268,10 @@ def npt_crescale_init(
     state: SimState | StateDict,
     model: ModelInterface,
     *,
-    kT: torch.Tensor,
-    dt: torch.Tensor,
-    tau_p: torch.Tensor | None = None,
-    isothermal_compressibility: torch.Tensor | None = None,
+    kT: float | torch.Tensor,
+    dt: float | torch.Tensor,
+    tau_p: float | torch.Tensor | None = None,
+    isothermal_compressibility: float | torch.Tensor | None = None,
     seed: int | None = None,
 ) -> NPTCRescaleState:
     """Initialize the NPT cell rescaling state.
@@ -2280,25 +2295,22 @@ def npt_crescale_init(
     """
     device, dtype = model.device, model.dtype
 
-    # Set default values if not provided
-    if tau_p is None:
-        tau_p = 5000 * dt  # 5ps for dt=1fs
-    if isothermal_compressibility is None:
-        isothermal_compressibility = 1e-1  # (eV/A^3)^-1
-
     # Convert all parameters to tensors with correct device and dtype
-    tau_p = torch.as_tensor(tau_p, device=device, dtype=dtype)
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+
+    # Set default values if not provided
+    tau_p = torch.as_tensor(tau_p or 5000 * dt, device=device, dtype=dtype)  # (eV/A^3)^-1
     isothermal_compressibility = torch.as_tensor(
-        isothermal_compressibility, device=device, dtype=dtype
+        isothermal_compressibility or 1e-1,
+        device=device,
+        dtype=dtype,  # (eV/A^3)^-1
     )
+
     if tau_p.ndim == 0:
         tau_p = tau_p.expand(state.n_systems)
     if isothermal_compressibility.ndim == 0:
         isothermal_compressibility = isothermal_compressibility.expand(state.n_systems)
-    if isinstance(dt, float):
-        dt = torch.tensor(dt, device=device, dtype=dtype)
-    if isinstance(kT, float):
-        kT = torch.tensor(kT, device=device, dtype=dtype)
 
     if not isinstance(state, SimState):
         state = SimState(**state)

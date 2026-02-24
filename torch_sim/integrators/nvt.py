@@ -171,14 +171,9 @@ def nvt_langevin_step(
     """
     device, dtype = model.device, model.dtype
 
-    if gamma is None:
-        gamma = 1 / (100 * dt)
-
-    if isinstance(gamma, float):
-        gamma = torch.tensor(gamma, device=device, dtype=dtype)
-
-    if isinstance(dt, float):
-        dt = torch.tensor(dt, device=device, dtype=dtype)
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+    gamma = torch.as_tensor(gamma or 1 / (100 * dt), device=device, dtype=dtype)
 
     state = momentum_step(state, dt / 2)
     state = position_step(state, dt / 2)
@@ -246,9 +241,9 @@ def nvt_nose_hoover_init(
     state: SimState | StateDict,
     model: ModelInterface,
     *,
-    kT: torch.Tensor,
-    dt: torch.Tensor,
-    tau: torch.Tensor | None = None,
+    kT: float | torch.Tensor,
+    dt: float | torch.Tensor,
+    tau: float | torch.Tensor | None = None,
     chain_length: int = 3,
     chain_steps: int = 3,
     sy_steps: int = 3,
@@ -284,8 +279,10 @@ def nvt_nose_hoover_init(
         - Chain variables evolve to maintain target temperature
         - Time-reversible when integrated with appropriate algorithms
     """
-    if tau is None:  # Set default tau if not provided
-        tau = dt * 100.0
+    device, dtype = model.device, model.dtype
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+    tau = torch.as_tensor(tau or dt * 100.0, device=device, dtype=dtype)
 
     # Create thermostat functions
     chain_fns = construct_nose_hoover_chain(dt, chain_length, chain_steps, sy_steps, tau)
@@ -328,8 +325,8 @@ def nvt_nose_hoover_step(
     state: NVTNoseHooverState,
     model: ModelInterface,
     *,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
 ) -> NVTNoseHooverState:
     """Perform one complete Nose-Hoover chain integration step.
 
@@ -356,6 +353,10 @@ def nvt_nose_hoover_step(
         4. Update chain kinetic energy
         5. Second half-step of chain evolution
     """
+    device, dtype = model.device, model.dtype
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+
     # Get chain functions from state
     chain_fns = state._chain_fns  # noqa: SLF001
     chain = state.chain
@@ -649,12 +650,9 @@ def nvt_vrescale_step(
     if tau is None:
         tau = 100 * dt
 
-    if isinstance(tau, float):
-        tau = torch.tensor(tau, device=device, dtype=dtype)
-    if isinstance(dt, float):
-        dt = torch.tensor(dt, device=device, dtype=dtype)
-    if isinstance(kT, float):
-        kT = torch.tensor(kT, device=device, dtype=dtype)
+    tau = torch.as_tensor(tau, device=device, dtype=dtype)
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
 
     # Apply V-Rescale rescaling
     state = _vrescale_update(state, tau, kT, dt)

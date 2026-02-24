@@ -19,7 +19,7 @@ def nve_init(
     state: SimState | StateDict,
     model: ModelInterface,
     *,
-    kT: torch.Tensor,
+    kT: float | torch.Tensor,
     seed: int | None = None,
     **_kwargs: Any,
 ) -> MDState:
@@ -66,7 +66,7 @@ def nve_init(
 
 
 def nve_step(
-    state: MDState, model: ModelInterface, *, dt: torch.Tensor, **_kwargs: Any
+    state: MDState, model: ModelInterface, *, dt: float | torch.Tensor, **_kwargs: Any
 ) -> MDState:
     """Perform one complete NVE (microcanonical) integration step.
 
@@ -93,6 +93,7 @@ def nve_step(
         - Handles periodic boundary conditions if enabled in state
         - Symplectic integrator preserving phase space volume
     """
+    dt = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
     state = momentum_step(state, dt / 2)
     state = position_step(state, dt)
 

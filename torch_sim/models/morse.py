@@ -152,9 +152,9 @@ class MorseModel(ModelInterface):
 
     def __init__(
         self,
-        sigma: float = 1.0,
-        epsilon: float = 5.0,
-        alpha: float = 5.0,
+        sigma: float | torch.Tensor = 1.0,
+        epsilon: float | torch.Tensor = 5.0,
+        alpha: float | torch.Tensor = 5.0,
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
@@ -163,7 +163,7 @@ class MorseModel(ModelInterface):
         per_atom_energies: bool = False,
         per_atom_stresses: bool = False,
         use_neighbor_list: bool = True,
-        cutoff: float | None = None,
+        cutoff: float | torch.Tensor | None = None,
     ) -> None:
         """Initialize the Morse potential calculator.
 
@@ -219,12 +219,12 @@ class MorseModel(ModelInterface):
         self._per_atom_stresses = per_atom_stresses
         self.use_neighbor_list = use_neighbor_list
         # Convert parameters to tensors
-        self.sigma = torch.tensor(sigma, dtype=self.dtype, device=self.device)
-        self.cutoff = torch.tensor(
+        self.sigma = torch.as_tensor(sigma, dtype=self.dtype, device=self.device)
+        self.cutoff = torch.as_tensor(
             cutoff or 2.5 * sigma, dtype=self.dtype, device=self.device
         )
-        self.epsilon = torch.tensor(epsilon, dtype=self.dtype, device=self.device)
-        self.alpha = torch.tensor(alpha, dtype=self.dtype, device=self.device)
+        self.epsilon = torch.as_tensor(epsilon, dtype=self.dtype, device=self.device)
+        self.alpha = torch.as_tensor(alpha, dtype=self.dtype, device=self.device)
 
     def unbatched_forward(
         self, state: ts.SimState | StateDict

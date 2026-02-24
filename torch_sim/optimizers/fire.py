@@ -27,8 +27,8 @@ def fire_init(
     state: SimState | StateDict,
     model: "ModelInterface",
     *,
-    dt_start: float = 0.1,
-    alpha_start: float = 0.1,
+    dt_start: float | torch.Tensor = 0.1,
+    alpha_start: float | torch.Tensor = 0.1,
     fire_flavor: "FireFlavor" = "ase_fire",
     cell_filter: "CellFilter | CellFilterFuncs | None" = None,
     **filter_kwargs: Any,
@@ -74,14 +74,23 @@ def fire_init(
     forces = model_output["forces"]
     stress = model_output.get("stress")
 
+    # Setup initial parameters
+    dt_start_t = torch.as_tensor(dt_start, **tensor_args)
+    if dt_start_t.ndim == 0:
+        dt_start_t = dt_start_t.expand(n_systems)
+
+    alpha_start_t = torch.as_tensor(alpha_start, **tensor_args)
+    if alpha_start_t.ndim == 0:
+        alpha_start_t = alpha_start_t.expand(n_systems)
+
     # FIRE-specific additional attributes
     fire_attrs = {
         "forces": forces,
         "energy": energy,
         "stress": stress,
         "velocities": torch.full(state.positions.shape, torch.nan, **tensor_args),
-        "dt": torch.full((n_systems,), dt_start, **tensor_args),
-        "alpha": torch.full((n_systems,), alpha_start, **tensor_args),
+        "dt": dt_start_t,
+        "alpha": alpha_start_t,
         "n_pos": torch.zeros((n_systems,), device=model.device, dtype=torch.int32),
     }
 
@@ -108,13 +117,13 @@ def fire_step(
     state: "FireState | CellFireState",
     model: "ModelInterface",
     *,
-    dt_max: float = 1.0,
-    n_min: int = 5,
-    f_inc: float = 1.1,
-    f_dec: float = 0.5,
-    alpha_start: float = 0.1,
-    f_alpha: float = 0.99,
-    max_step: float = 0.2,
+    dt_max: float | torch.Tensor = 1.0,
+    n_min: int | torch.Tensor = 5,
+    f_inc: float | torch.Tensor = 1.1,
+    f_dec: float | torch.Tensor = 0.5,
+    alpha_start: float | torch.Tensor = 0.1,
+    f_alpha: float | torch.Tensor = 0.99,
+    max_step: float | torch.Tensor = 0.2,
     fire_flavor: "FireFlavor" = "ase_fire",
 ) -> "FireState | CellFireState":
     """Perform one FIRE optimization step.

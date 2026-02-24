@@ -181,9 +181,9 @@ class SoftSphereModel(ModelInterface):
 
     def __init__(
         self,
-        sigma: float = 1.0,
-        epsilon: float = 1.0,
-        alpha: float = 2.0,
+        sigma: float | torch.Tensor = 1.0,
+        epsilon: float | torch.Tensor = 1.0,
+        alpha: float | torch.Tensor = 2.0,
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
@@ -192,7 +192,7 @@ class SoftSphereModel(ModelInterface):
         per_atom_energies: bool = False,
         per_atom_stresses: bool = False,
         use_neighbor_list: bool = True,
-        cutoff: float | None = None,
+        cutoff: float | torch.Tensor | None = None,
     ) -> None:
         """Initialize the soft sphere model.
 
@@ -244,10 +244,10 @@ class SoftSphereModel(ModelInterface):
         self.use_neighbor_list = use_neighbor_list
 
         # Convert interaction parameters to tensors with proper dtype/device
-        self.sigma = torch.tensor(sigma, dtype=dtype, device=self.device)
-        self.cutoff = torch.tensor(cutoff or sigma, dtype=dtype, device=self.device)
-        self.epsilon = torch.tensor(epsilon, dtype=dtype, device=self.device)
-        self.alpha = torch.tensor(alpha, dtype=dtype, device=self.device)
+        self.sigma = torch.as_tensor(sigma, dtype=dtype, device=self.device)
+        self.cutoff = torch.as_tensor(cutoff or sigma, dtype=dtype, device=self.device)
+        self.epsilon = torch.as_tensor(epsilon, dtype=dtype, device=self.device)
+        self.alpha = torch.as_tensor(alpha, dtype=dtype, device=self.device)
 
     def unbatched_forward(self, state: ts.SimState) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single unbatched system.
