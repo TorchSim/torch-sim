@@ -111,8 +111,8 @@ def lbfgs_init(
     state: SimState | StateDict,
     model: "ModelInterface",
     *,
-    step_size: float = 0.1,
-    alpha: float | None = None,
+    step_size: float | torch.Tensor = 0.1,
+    alpha: float | torch.Tensor | None = None,
     cell_filter: "CellFilter | CellFilterFuncs | None" = None,
     **filter_kwargs: Any,
 ) -> "LBFGSState | CellLBFGSState":
@@ -185,8 +185,13 @@ def lbfgs_init(
     )  # [S, 0, M, 3]
 
     # Alpha tensor: 0.0 means dynamic, >0 means fixed
-    alpha_val = 0.0 if alpha is None else alpha
-    alpha_tensor = torch.full((n_systems,), alpha_val, **tensor_args)  # [S]
+    alpha_tensor = torch.as_tensor(alpha or 0.0, **tensor_args)
+    if alpha_tensor.ndim == 0:
+        alpha_tensor = alpha_tensor.expand(n_systems)
+
+    step_size_tensor = torch.as_tensor(step_size, **tensor_args)
+    if step_size_tensor.ndim == 0:
+        step_size_tensor = step_size_tensor.expand(n_systems)
 
     common_args = {
         # Copy SimState attributes
@@ -208,7 +213,7 @@ def lbfgs_init(
         "prev_positions": state.positions.clone(),  # [N, 3]
         "s_history": s_history,  # [S, 0, M, 3]
         "y_history": y_history,  # [S, 0, M, 3]
-        "step_size": torch.full((n_systems,), step_size, **tensor_args),  # [S]
+        "step_size": step_size_tensor,  # [S]
         "alpha": alpha_tensor,  # [S]
         "n_iter": torch.zeros((n_systems,), device=model.device, dtype=torch.int32),
         "max_atoms": max_atoms,  # [S] atoms per system for padding
@@ -275,7 +280,7 @@ def lbfgs_step(  # noqa: PLR0915, C901
     model: "ModelInterface",
     *,
     max_history: int = 20,
-    max_step: float = 0.2,
+    max_step: float | torch.Tensor = 0.2,
     curvature_eps: float = 1e-12,
 ) -> "LBFGSState | CellLBFGSState":
     r"""Advance one L-BFGS iteration using the two-loop recursion.

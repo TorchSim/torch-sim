@@ -18,6 +18,7 @@ import numpy as np
 import torch
 
 import torch_sim as ts
+from torch_sim._duecredit import dcite
 
 
 if TYPE_CHECKING:
@@ -26,6 +27,11 @@ if TYPE_CHECKING:
     from pymatgen.core import Structure
 
 
+@dcite(
+    "10.1088/1361-648X/aa680e",
+    description="ASE: Atomic Simulation Environment",
+    path="ase",
+)
 def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
     """Convert a SimState to a list of ASE Atoms objects.
 
@@ -85,6 +91,11 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
     return atoms_list
 
 
+@dcite(
+    "10.1016/j.commatsci.2012.10.028",
+    description="pymatgen: Python Materials Genomics",
+    path="pymatgen",
+)
 def state_to_structures(state: "ts.SimState") -> list["Structure"]:
     """Convert a SimState to a list of Pymatgen Structure objects.
 
@@ -140,6 +151,16 @@ def state_to_structures(state: "ts.SimState") -> list["Structure"]:
     return structures
 
 
+@dcite(
+    "10.1088/1361-648X/aa680e",
+    description="ASE: Atomic Simulation Environment",
+    path="ase",
+)
+@dcite(
+    "10.1016/j.scriptamat.2015.07.021",
+    description="Phonopy: harmonic and quasi-harmonic phonon calculationss",
+    path="phonopy",
+)
 def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
     """Convert a SimState to a list of PhonopyAtoms objects.
 
@@ -188,6 +209,11 @@ def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
     return phonopy_atoms_list
 
 
+@dcite(
+    "10.1088/1361-648X/aa680e",
+    description="ASE: Atomic Simulation Environment",
+    path="ase",
+)
 def atoms_to_state(
     atoms: "Atoms | list[Atoms]",
     device: torch.device | None = None,
@@ -265,6 +291,11 @@ def atoms_to_state(
     )
 
 
+@dcite(
+    "10.1016/j.commatsci.2012.10.028",
+    description="pymatgen: Python Materials Genomics",
+    path="pymatgen",
+)
 def structures_to_state(
     structure: "Structure | list[Structure]",
     device: torch.device | None = None,
@@ -337,6 +368,11 @@ def structures_to_state(
     )
 
 
+@dcite(
+    "10.1016/j.scriptamat.2015.07.021",
+    description="Phonopy: harmonic and quasi-harmonic phonon calculationss",
+    path="phonopy",
+)
 def phonopy_to_state(
     phonopy_atoms: "PhonopyAtoms | list[PhonopyAtoms]",
     device: torch.device | None = None,

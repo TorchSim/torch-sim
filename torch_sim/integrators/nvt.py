@@ -6,6 +6,7 @@ from typing import Any
 import torch
 
 import torch_sim as ts
+from torch_sim._duecredit import dcite
 from torch_sim.integrators.md import (
     MDState,
     NoseHooverChain,
@@ -14,7 +15,7 @@ from torch_sim.integrators.md import (
     initialize_momenta,
     momentum_step,
     position_step,
-    velocity_verlet,
+    velocity_verlet_step,
 )
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
@@ -134,6 +135,7 @@ def nvt_langevin_init(
     )
 
 
+@dcite("10.1098/rspa.2016.0138")
 def nvt_langevin_step(
     state: MDState,
     model: ModelInterface,
@@ -177,14 +179,9 @@ def nvt_langevin_step(
     """
     device, dtype = model.device, model.dtype
 
-    if gamma is None:
-        gamma = 1 / (100 * dt)
-
-    if isinstance(gamma, float):
-        gamma = torch.tensor(gamma, device=device, dtype=dtype)
-
-    if isinstance(dt, float):
-        dt = torch.tensor(dt, device=device, dtype=dtype)
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+    gamma = torch.as_tensor(gamma or 1 / (100 * dt), device=device, dtype=dtype)
 
     state = momentum_step(state, dt / 2)
     state = position_step(state, dt / 2)
@@ -252,9 +249,9 @@ def nvt_nose_hoover_init(
     state: SimState | StateDict,
     model: ModelInterface,
     *,
-    kT: torch.Tensor,
-    dt: torch.Tensor,
-    tau: torch.Tensor | None = None,
+    kT: float | torch.Tensor,
+    dt: float | torch.Tensor,
+    tau: float | torch.Tensor | None = None,
     chain_length: int = 3,
     chain_steps: int = 3,
     sy_steps: int = 3,
@@ -290,8 +287,10 @@ def nvt_nose_hoover_init(
         - Chain variables evolve to maintain target temperature
         - Time-reversible when integrated with appropriate algorithms
     """
-    if tau is None:  # Set default tau if not provided
-        tau = dt * 100.0
+    device, dtype = model.device, model.dtype
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+    tau = torch.as_tensor(tau or dt * 100.0, device=device, dtype=dtype)
 
     # Create thermostat functions
     chain_fns = construct_nose_hoover_chain(dt, chain_length, chain_steps, sy_steps, tau)
@@ -331,12 +330,13 @@ def nvt_nose_hoover_init(
     )
 
 
+@dcite("10.1080/00268979600100761")
 def nvt_nose_hoover_step(
     state: NVTNoseHooverState,
     model: ModelInterface,
     *,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
 ) -> NVTNoseHooverState:
     """Perform one complete Nose-Hoover chain integration step.
 
@@ -363,6 +363,10 @@ def nvt_nose_hoover_step(
         4. Update chain kinetic energy
         5. Second half-step of chain evolution
     """
+    device, dtype = model.device, model.dtype
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+
     # Get chain functions from state
     chain_fns = state._chain_fns  # noqa: SLF001
     chain = state.chain
@@ -375,7 +379,7 @@ def nvt_nose_hoover_step(
     state.set_constrained_momenta(momenta)
 
     # Full velocity Verlet step
-    state = velocity_verlet(state=state, dt=dt, model=model)
+    state = velocity_verlet_step(state=state, dt=dt, model=model)
 
     # Update chain kinetic energy per system
     KE = ts.calc_kinetic_energy(
@@ -613,6 +617,7 @@ def nvt_vrescale_init(
     )
 
 
+@dcite("10.1063/1.2408420")
 def nvt_vrescale_step(
     model: ModelInterface,
     state: NVTVRescaleState,
@@ -657,15 +662,12 @@ def nvt_vrescale_step(
     if tau is None:
         tau = 100 * dt
 
-    if isinstance(tau, float):
-        tau = torch.tensor(tau, device=device, dtype=dtype)
-    if isinstance(dt, float):
-        dt = torch.tensor(dt, device=device, dtype=dtype)
-    if isinstance(kT, float):
-        kT = torch.tensor(kT, device=device, dtype=dtype)
+    tau = torch.as_tensor(tau, device=device, dtype=dtype)
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
 
     # Apply V-Rescale rescaling
     state = _vrescale_update(state, tau, kT, dt)
 
     # Perform velocity Verlet step
-    return velocity_verlet(state=state, dt=dt, model=model)
+    return velocity_verlet_step(state=state, dt=dt, model=model)

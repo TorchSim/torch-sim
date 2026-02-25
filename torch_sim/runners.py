@@ -183,35 +183,18 @@ def _normalize_temperature_tensor(
         torch.Tensor: Normalized temperature tensor
     """
     # ---- Step 1: Convert to tensor ----
-    if isinstance(temperature, (float, int)):
-        return torch.full(
-            (n_steps,),
-            float(temperature),
-            dtype=initial_state.dtype,
-            device=initial_state.device,
-        )
-
-    # Convert list or tensor input to tensor
-    if isinstance(temperature, list):
-        temps = torch.tensor(
-            temperature, dtype=initial_state.dtype, device=initial_state.device
-        )
-    elif isinstance(temperature, torch.Tensor):
-        temps = temperature.to(dtype=initial_state.dtype, device=initial_state.device)
-    else:
-        raise TypeError(
-            f"Invalid temperature type: {type(temperature).__name__}. "
-            "Must be float, int, list, or torch.Tensor."
-        )
+    temps = torch.as_tensor(
+        temperature, dtype=initial_state.dtype, device=initial_state.device
+    )
 
     # ---- Step 2: Determine how to broadcast ----
     temps = torch.atleast_1d(temps)
     if temps.ndim > 2:
         raise ValueError(f"Temperature tensor must be 1D or 2D, got shape {temps.shape}.")
 
-    if temps.shape[0] == 1:
-        # A single value in a 1-element list/tensor
-        return temps.repeat(n_steps)
+    if temps.numel() == 1:
+        # A single value
+        return temps.expand(n_steps)
 
     if initial_state.n_systems == n_steps:
         warnings.warn(
@@ -313,7 +296,7 @@ def integrate[T: SimState](  # noqa: C901
     dtype, device = initial_state.dtype, initial_state.device
     kTs = _normalize_temperature_tensor(temperature, n_steps, initial_state)
     kTs = kTs * unit_system.temperature
-    dt = torch.tensor(timestep * unit_system.time, dtype=dtype, device=device)
+    dt = torch.as_tensor(timestep * unit_system.time, dtype=dtype, device=device)
 
     # Handle both string names and direct function tuples
     if isinstance(integrator, Integrator):

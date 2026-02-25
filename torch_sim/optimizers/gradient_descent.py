@@ -96,8 +96,9 @@ def gradient_descent_step(
     device, dtype = model.device, model.dtype
 
     # Get per-atom learning rates
-    if isinstance(pos_lr, (int, float)):
-        pos_lr = torch.full((state.n_systems,), pos_lr, device=device, dtype=dtype)
+    pos_lr = torch.as_tensor(pos_lr, device=device, dtype=dtype)
+    if pos_lr.ndim == 0:
+        pos_lr = pos_lr.expand(state.n_systems)
     atom_lr = pos_lr[state.system_idx].unsqueeze(-1)
 
     # Update atomic positions

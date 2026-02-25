@@ -467,24 +467,31 @@ def test_vesin_nl_edge_cases() -> None:
             assert len(mapping[0]) > 0  # Should find neighbors
 
 
-def test_torchsim_nl_availability() -> None:
+def test_vesin_nl_availability() -> None:
     """Test that availability flags are correctly set."""
     assert isinstance(neighbors.VESIN_AVAILABLE, bool)
+
+    assert callable(neighbors.vesin_nl)
+    assert callable(neighbors.vesin_nl_ts)
+
+    if not neighbors.VESIN_AVAILABLE:
+        with pytest.raises(ImportError, match="Vesin is not installed"):
+            neighbors.vesin_nl()
+        with pytest.raises(ImportError, match="Vesin is not installed"):
+            neighbors.vesin_nl_ts()
+
+
+def test_alchemiops_nl_availability() -> None:
     assert isinstance(neighbors.ALCHEMIOPS_AVAILABLE, bool)
 
-    if neighbors.VESIN_AVAILABLE:
-        assert neighbors.VesinNeighborList is not None
-        assert neighbors.VesinNeighborListTorch is not None
-    else:
-        assert neighbors.VesinNeighborList is None
-        assert neighbors.VesinNeighborListTorch is None
+    assert callable(neighbors.alchemiops_nl_n2)
+    assert callable(neighbors.alchemiops_nl_cell_list)
 
-    if neighbors.ALCHEMIOPS_AVAILABLE:
-        assert neighbors.alchemiops_nl_n2 is not None
-        assert neighbors.alchemiops_nl_cell_list is not None
-    else:
-        assert neighbors.alchemiops_nl_n2 is None
-        assert neighbors.alchemiops_nl_cell_list is None
+    if not neighbors.ALCHEMIOPS_AVAILABLE:
+        with pytest.raises(ImportError, match="nvalchemiops is not installed"):
+            neighbors.alchemiops_nl_n2()
+        with pytest.raises(ImportError, match="nvalchemiops is not installed"):
+            neighbors.alchemiops_nl_cell_list()
 
 
 @pytest.mark.skipif(

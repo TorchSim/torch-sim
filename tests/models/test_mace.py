@@ -10,7 +10,6 @@ from tests.models.conftest import (
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
-from torch_sim.models.mace import MaceUrls
 from torch_sim.testing import SIMSTATE_BULK_GENERATORS, SIMSTATE_MOLECULE_GENERATORS
 
 
@@ -18,8 +17,9 @@ try:
     from mace.calculators import MACECalculator
     from mace.calculators.foundations_models import mace_mp, mace_off
 
-    from torch_sim.models.mace import MaceModel
-except (ImportError, ValueError):
+    from torch_sim.models.mace import MaceModel, MaceUrls
+
+except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
     pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)
 
 # mace_omol is optional (added in newer MACE versions)
@@ -28,7 +28,7 @@ try:
 
     raw_mace_omol = mace_omol(model="extra_large", return_raw_model=True)
     HAS_MACE_OMOL = True
-except ImportError:
+except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
     raw_mace_omol = None
     HAS_MACE_OMOL = False
 

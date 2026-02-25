@@ -10,7 +10,6 @@ from tests.models.conftest import (
     make_validate_model_outputs_test,
 )
 from torch_sim import SimState
-from torch_sim.models.orb import cell_to_cellpar
 from torch_sim.testing import SIMSTATE_GENERATORS
 
 
@@ -18,7 +17,8 @@ try:
     from orb_models.forcefield import pretrained
     from orb_models.forcefield.calculator import ORBCalculator
 
-    from torch_sim.models.orb import OrbModel
+    from torch_sim.models.orb import OrbModel, cell_to_cellpar
+
 except ImportError:
     pytest.skip(f"ORB not installed: {traceback.format_exc()}", allow_module_level=True)
 
@@ -83,7 +83,7 @@ test_validate_direct_model_outputs = make_validate_model_outputs_test(
 def test_cell_to_cellpar(ti_sim_state: SimState) -> None:
     assert np.allclose(
         ase_c2p(ti_sim_state.row_vector_cell.squeeze()),
-        cell_to_cellpar(ti_sim_state.row_vector_cell.squeeze(0)).cpu().numpy(),
+        cell_to_cellpar(ti_sim_state.row_vector_cell.squeeze(0)).detach().cpu().numpy(),
     )
     assert np.allclose(
         ase_c2p(ti_sim_state.row_vector_cell.squeeze(), radians=True),

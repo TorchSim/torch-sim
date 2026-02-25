@@ -40,3 +40,6 @@ uv.lock
 
 # IDE
 .vscode/
+
+# duecredit
+.duecredit.p
