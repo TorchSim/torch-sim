@@ -288,3 +288,33 @@ def test_fairchem_charge_spin(charge: float, spin: float) -> None:
     # Verify outputs are finite
     assert torch.isfinite(result["energy"]).all()
     assert torch.isfinite(result["forces"]).all()
+
+
+# TODO: we should perhaps put something like this inside `validate_model_outputs`
+# the question is how we can do this with creating a circular dependency
+@pytest.mark.skipif(
+    get_token() is None, reason="Requires HuggingFace authentication for UMA model access"
+)
+def test_fairchem_single_step_relax(rattled_si_sim_state: ts.SimState) -> None:
+    """Test a single optimization step with FairChemModel.
+
+    This verifies that the model works correctly with optimizers, particularly
+    that it doesn't have issues with the computational graph (e.g., missing
+    .detach() calls).
+    """
+    model = FairChemModel(model="uma-s-1", task_name="omat", device=DEVICE)
+    state = rattled_si_sim_state.to(device=DEVICE, dtype=DTYPE)
+
+    # Initialize FIRE optimizer
+    opt_state = ts.fire_init(state, model)
+    initial_positions = opt_state.positions.clone()
+    _initial_energy = opt_state.energy.item()
+
+    # Run exactly one step
+    opt_state = ts.fire_step(opt_state, model)
+
+    # Verify positions changed
+    assert not torch.allclose(opt_state.positions, initial_positions)
+    # Verify energy is still available and finite
+    assert torch.isfinite(opt_state.energy).all()
+    assert isinstance(opt_state.energy.item(), float)

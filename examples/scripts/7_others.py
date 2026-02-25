@@ -187,7 +187,7 @@ time_steps = np.arange(window_size)
 time = time_steps * correlation_dt * timestep * 1000  # Convert to fs
 
 if vacf_calc.vacf is not None:
-    vacf_data = vacf_calc.vacf.cpu().numpy()
+    vacf_data = vacf_calc.vacf.detach().cpu().numpy()
     print("\nVACF calculation complete:")
     print(f"  Number of windows averaged: {vacf_calc._window_count}")  # noqa: SLF001
     print(f"  VACF at t=0: {vacf_data[0]:.4f}")

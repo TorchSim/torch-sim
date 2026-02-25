@@ -213,7 +213,7 @@ bulk_modulus, shear_modulus, poisson_ratio, pugh_ratio = (
 
 # Print results
 print("\nElastic tensor (GPa):")
-elastic_tensor_np = elastic_tensor.cpu().numpy()
+elastic_tensor_np = elastic_tensor.detach().cpu().numpy()
 for row in elastic_tensor_np:
     print("  " + "  ".join(f"{val:10.4f}" for val in row))
 

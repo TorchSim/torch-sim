@@ -514,7 +514,7 @@ def test_get_subcells_with_composition_restrictions(
 
     # Check that all candidates match the requested compositions
     for ids, _, _ in candidates:
-        subcell_species = [species[int(i)] for i in ids.cpu().numpy()]
+        subcell_species = [species[int(i)] for i in ids.detach().cpu().numpy()]
         comp = Composition("".join(subcell_species)).reduced_formula
         assert comp in restrict_to_compositions, (
             f"Found composition {comp} not in {restrict_to_compositions}"

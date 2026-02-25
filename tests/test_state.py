@@ -702,7 +702,7 @@ def test_state_set_cell(ti_sim_state: SimState) -> None:
     )
     ase_atoms = ti_sim_state.to_atoms()[0]
     ti_sim_state.set_cell(new_cell, scale_atoms=True)
-    ase_atoms.set_cell(new_cell[0].T.cpu().numpy(), scale_atoms=True)
+    ase_atoms.set_cell(new_cell[0].T.detach().cpu().numpy(), scale_atoms=True)
     assert torch.allclose(
         ti_sim_state.positions.cpu(), torch.from_numpy(ase_atoms.positions)
     )
@@ -715,7 +715,7 @@ def test_state_set_cell(ti_sim_state: SimState) -> None:
     new_cell = M @ ti_sim_state.cell
     ase_atoms = ti_sim_state.to_atoms()[0]
     ti_sim_state.set_cell(new_cell, scale_atoms=True)
-    ase_atoms.set_cell(new_cell[0].T.cpu().numpy(), scale_atoms=True)
+    ase_atoms.set_cell(new_cell[0].T.detach().cpu().numpy(), scale_atoms=True)
     assert torch.allclose(
         ti_sim_state.positions.cpu(), torch.from_numpy(ase_atoms.positions)
     )
