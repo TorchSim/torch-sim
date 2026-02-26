@@ -270,9 +270,12 @@ def lbfgs_init(
         cell_state.prev_cell_positions = cell_state.cell_positions.clone()  # [S, 3, 3]
         cell_state.prev_cell_forces = cell_state.cell_forces.clone()  # [S, 3, 3]
 
+        cell_state.store_model_extras(model_output)
         return cell_state
 
-    return LBFGSState(**common_args)
+    lbfgs_state = LBFGSState(**common_args)
+    lbfgs_state.store_model_extras(model_output)
+    return lbfgs_state
 
 
 def lbfgs_step(  # noqa: PLR0915, C901
@@ -534,6 +537,7 @@ def lbfgs_step(  # noqa: PLR0915, C901
     new_forces = model_output["forces"]  # [N, 3]
     new_energy = model_output["energy"]  # [S]
     new_stress = model_output.get("stress")  # [S, 3, 3] or None
+    state.store_model_extras(model_output)
 
     # Update cell forces for next step: [S, 3, 3]
     if is_cell_state:

@@ -368,6 +368,13 @@ class MaceModel(ModelInterface):
             if stress is not None:
                 results["stress"] = stress.detach()
 
+        # Propagate additional model outputs (e.g. dipole, charges, etc.)
+        for key, val in out.items():
+            if key not in ("energy", "forces", "stress") and isinstance(
+                val, torch.Tensor
+            ):
+                results[key] = val.detach()
+
         return results
 
 

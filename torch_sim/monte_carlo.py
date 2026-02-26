@@ -205,7 +205,7 @@ def swap_mc_init(
     """
     model_output = model(state)
 
-    return SwapMCState(
+    mc_state = SwapMCState(
         positions=state.positions,
         masses=state.masses,
         cell=state.cell,
@@ -216,6 +216,8 @@ def swap_mc_init(
         last_permutation=torch.arange(state.n_atoms, device=state.device),
         _constraints=state.constraints,
     )
+    mc_state.store_model_extras(model_output)
+    return mc_state
 
 
 def swap_mc_step(
@@ -275,5 +277,6 @@ def swap_mc_step(
 
     state.energy = torch.where(accepted, energies_new, energies_old)
     state.last_permutation = permutation[reverse_rejected_swaps].clone()
+    state.store_model_extras(model_output)
 
     return state

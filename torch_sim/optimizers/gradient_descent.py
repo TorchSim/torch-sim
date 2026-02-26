@@ -57,6 +57,8 @@ def gradient_descent_init(
         "stress": stress,
     }
 
+    state.store_model_extras(model_output)
+
     if cell_filter is not None:  # Create cell optimization state
         cell_filter_funcs = init_fn, _step_fn = ts.get_cell_filter(cell_filter)
         optim_attrs["reference_cell"] = state.cell.clone()
@@ -116,6 +118,7 @@ def gradient_descent_step(
     state.energy = model_output["energy"]
     if "stress" in model_output:
         state.stress = model_output["stress"]
+    state.store_model_extras(model_output)
 
     # Update cell forces
     if isinstance(state, CellOptimState):
