@@ -102,7 +102,7 @@ def test_calculate_scaling_metric(si_sim_state: ts.SimState) -> None:
     expected = si_sim_state.n_atoms * (si_sim_state.n_atoms / volume.item())
     assert pytest.approx(density_metric[0], rel=1e-5) == expected
 
-    # Test invalid metric
+    # Test invalid metric (intentionally pass invalid value to test error handling)
     with pytest.raises(ValueError, match="Invalid metric"):
         calculate_memory_scalers(si_sim_state, "invalid_metric")
 
@@ -120,9 +120,16 @@ def test_calculate_scaling_metric_non_periodic(benzene_sim_state: ts.SimState) -
         benzene_sim_state.positions.max(dim=0).values
         - benzene_sim_state.positions.min(dim=0).values
     ).clone()
-    for i, p in enumerate(benzene_sim_state.pbc):
+    pbc = benzene_sim_state.pbc
+    if isinstance(pbc, torch.Tensor):
+        pbc_tensor = pbc
+    elif isinstance(pbc, bool):
+        pbc_tensor = torch.tensor([pbc] * 3, device=benzene_sim_state.device)
+    else:
+        pbc_tensor = torch.tensor(pbc, device=benzene_sim_state.device)
+    for idx, p in enumerate(pbc_tensor):
         if not p:
-            bbox[i] += 2.0
+            bbox[idx] += 2.0
     assert pytest.approx(n_atoms_x_density_metric[0], rel=1e-5) == (
         benzene_sim_state.n_atoms**2 / (bbox.prod().item() / 1000)
     )
@@ -136,14 +143,15 @@ def test_split_state(si_double_sim_state: ts.SimState) -> None:
     assert len(split_states) == 2
 
     # Check each state has the correct properties
-    for state in enumerate(split_states):
-        assert state[1].n_systems == 1
+    for _idx, split_state in enumerate(split_states):
+        assert split_state.n_systems == 1
+        assert split_state.system_idx is not None
         assert torch.all(
-            state[1].system_idx == 0
+            split_state.system_idx == 0
         )  # Each split state should have system indices reset to 0
-        assert state[1].n_atoms == si_double_sim_state.n_atoms // 2
-        assert state[1].positions.shape[0] == si_double_sim_state.n_atoms // 2
-        assert state[1].cell.shape[0] == 1
+        assert split_state.n_atoms == si_double_sim_state.n_atoms // 2
+        assert split_state.positions.shape[0] == si_double_sim_state.n_atoms // 2
+        assert split_state.cell.shape[0] == 1
 
 
 def test_binning_auto_batcher(
@@ -497,6 +505,7 @@ def test_in_flight_with_fire(
     batcher.load_states(fire_states)
 
     def convergence_fn(state: ts.FireState) -> torch.Tensor:
+        assert state.system_idx is not None
         system_wise_max_force = torch.zeros(
             state.n_systems, device=state.device, dtype=torch.float64
         )
@@ -647,6 +656,7 @@ def test_in_flight_with_bfgs(
     batcher.load_states(bfgs_states)
 
     def convergence_fn(state: ts.BFGSState) -> torch.Tensor:
+        assert state.system_idx is not None
         system_wise_max_force = torch.zeros(
             state.n_systems, device=state.device, dtype=torch.float64
         )
@@ -735,6 +745,7 @@ def test_in_flight_with_lbfgs(
     batcher.load_states(lbfgs_states)
 
     def convergence_fn(state: ts.LBFGSState) -> torch.Tensor:
+        assert state.system_idx is not None
         system_wise_max_force = torch.zeros(
             state.n_systems, device=state.device, dtype=torch.float64
         )

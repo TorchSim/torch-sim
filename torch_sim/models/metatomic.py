@@ -120,9 +120,14 @@ class MetatomicModel(ModelInterface):
                 "The model must have an `energy` output to be used in TorchSim."
             )
 
-        self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        if isinstance(self._device, str):
-            self._device = torch.device(self._device)
+        resolved_device: torch.device
+        if device is None:
+            resolved_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif isinstance(device, str):
+            resolved_device = torch.device(device)
+        else:
+            resolved_device = device
+        self._device = resolved_device
         if self._device.type not in self._model.capabilities().supported_devices:
             raise ValueError(
                 f"Model does not support device {self._device}. Supported devices: "
@@ -142,7 +147,9 @@ class MetatomicModel(ModelInterface):
             outputs={"energy": ModelOutput(quantity="energy", unit="eV", per_atom=False)},
         )
 
-    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:  # noqa: C901, PLR0915
+    def forward(  # noqa: C901, PLR0915
+        self, state: ts.SimState | StateDict, **_kwargs: Any
+    ) -> dict[str, torch.Tensor]:
         """Compute energies, forces, and stresses for the given atomic systems.
 
         Processes the provided state information and computes energies, forces, and
@@ -153,6 +160,7 @@ class MetatomicModel(ModelInterface):
             state (SimState | StateDict): State object containing positions, cell,
                 and other system information. Can be either a SimState object or a
                 dictionary with the relevant fields.
+            **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
             dict[str, torch.Tensor]: Computed properties:
@@ -161,11 +169,18 @@ class MetatomicModel(ModelInterface):
                 - 'stress': System stresses with shape [n_systems, 3, 3] if
                     compute_stress=True
         """
-        sim_state = (
-            state
-            if isinstance(state, ts.SimState)
-            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
-        )
+        if isinstance(state, ts.SimState):
+            sim_state = state
+        else:
+            positions = state["positions"]
+            sim_state = ts.SimState(
+                positions=positions,
+                masses=torch.ones_like(positions),
+                cell=state["cell"],
+                pbc=state.get("pbc", True),
+                atomic_numbers=state["atomic_numbers"],
+                system_idx=state.get("system_idx"),
+            )
 
         # Input validation is already done inside the forward method of the
         # AtomisticModel class, so we don't need to do it again here.

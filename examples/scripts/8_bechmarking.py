@@ -52,7 +52,7 @@ def load_mace_model(device: torch.device) -> MaceModel:
         device=str(device),
     )
     return MaceModel(
-        model=typing.cast("torch.nn.Module", loaded_model),
+        model=loaded_model,
         device=device,
         compute_forces=True,
         compute_stress=True,

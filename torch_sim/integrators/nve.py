@@ -19,7 +19,8 @@ def nve_init(
     state: SimState | StateDict,
     model: ModelInterface,
     *,
-    kT: float | torch.Tensor,
+    kT: torch.Tensor,
+    seed: int | None = None,
     **_kwargs: Any,
 ) -> MDState:
     """Initialize an NVE state from input data.
@@ -28,8 +29,6 @@ def nve_init(
     energies and forces, and sampling momenta from a Maxwell-Boltzmann distribution
     at the specified temperature.
 
-    To seed the RNG set ``state.rng = seed`` before calling.
-
     Args:
         model: Neural network model that computes energies and forces.
             Must return a dict with 'energy' and 'forces' keys.
@@ -37,6 +36,7 @@ def nve_init(
             masses, cell, pbc, and other required state variables
         kT: Temperature in energy units for initializing momenta,
             scalar or with shape [n_systems]
+        seed: Random seed for reproducibility
 
     Returns:
         MDState: Initialized state for NVE integration containing positions,
@@ -47,15 +47,34 @@ def nve_init(
         - Time integration error scales as O(dt²)
     """
     if not isinstance(state, SimState):
-        state = SimState(**state)
+        state_dict = state
+        state = SimState(
+            positions=state_dict["positions"],
+            masses=state_dict["masses"],
+            cell=state_dict["cell"],
+            pbc=state_dict["pbc"],
+            atomic_numbers=state_dict["atomic_numbers"],
+            system_idx=state_dict["system_idx"],
+        )
 
     model_output = model(state)
 
+    system_idx = state.system_idx
+    if system_idx is None:
+        raise ValueError("system_idx cannot be None for NVE integration")
+    init_rng = state.rng
+    if seed is not None:
+        init_rng = torch.Generator(device=state.device)
+        init_rng.manual_seed(seed)
     momenta = getattr(
         state,
         "momenta",
         initialize_momenta(
-            state.positions, state.masses, state.system_idx, kT, state.rng
+            state.positions,
+            state.masses,
+            system_idx,
+            kT,
+            init_rng,
         ),
     )
 
@@ -68,7 +87,7 @@ def nve_init(
 
 
 def nve_step(
-    state: MDState, model: ModelInterface, *, dt: float | torch.Tensor, **_kwargs: Any
+    state: MDState, model: ModelInterface, *, dt: torch.Tensor, **_kwargs: Any
 ) -> MDState:
     """Perform one complete NVE (microcanonical) integration step.
 
@@ -95,7 +114,6 @@ def nve_step(
         - Handles periodic boundary conditions if enabled in state
         - Symplectic integrator preserving phase space volume
     """
-    dt = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
     state = momentum_step(state, dt / 2)
     state = position_step(state, dt)
 

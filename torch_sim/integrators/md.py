@@ -152,6 +152,30 @@ def initialize_momenta(
     )
 
 
+def calculate_momenta(
+    positions: torch.Tensor,
+    masses: torch.Tensor,
+    system_idx: torch.Tensor,
+    kT: float | torch.Tensor,
+    seed: int | torch.Generator | None = None,
+) -> torch.Tensor:
+    """Initialize momenta from a seed or generator for reproducibility."""
+    generator: torch.Generator | None = None
+    if isinstance(seed, torch.Generator):
+        generator = seed
+    elif seed is not None:
+        generator = torch.Generator(device=positions.device)
+        generator.manual_seed(seed)
+
+    return initialize_momenta(
+        positions=positions,
+        masses=masses,
+        system_idx=system_idx,
+        kT=kT,
+        generator=generator,
+    )
+
+
 def momentum_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
     """Update particle momenta using current forces.
 
@@ -506,11 +530,16 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
         Returns:
             Tuple of (rescaled momenta, updated chain state)
         """
+        dt_tensor = (
+            dt
+            if isinstance(dt, torch.Tensor)
+            else torch.tensor(dt, device=P.device, dtype=P.dtype)
+        )
         if chain_steps == 1 and sy_steps == 1:
-            P, state, _ = substep_fn(dt, P, state, kT, system_idx)
+            P, state, _ = substep_fn(dt_tensor, P, state, kT, system_idx)
             return P, state
 
-        delta = dt / chain_steps
+        delta = dt_tensor / chain_steps
         weights = SUZUKI_YOSHIDA_WEIGHTS[sy_steps]
 
         for step in range(chain_steps * sy_steps):

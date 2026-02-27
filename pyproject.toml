@@ -28,8 +28,8 @@ classifiers = [
 requires-python = ">=3.12"
 dependencies = [
     "h5py>=3.12.1",
-    "nvalchemi-toolkit-ops>=0.2.0",
     "numpy>=1.26,<3",
+    "nvalchemi-toolkit-ops>=0.2.0",
     "tables>=3.10.2,<3.11",
     "torch>=2",
     "tqdm>=4.67",
@@ -37,14 +37,18 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
-    "torch-sim-atomistic[io,symmetry]",
+    "ase>=3.26",
+    "moyopy>=0.3",
+    "phonopy>=2.37.0",
     "platformdirs>=4.0.0",
     "psutil>=7.0.0",
+    "pymatgen>=2025.6.14",
     "pytest-cov>=6",
     "pytest>=8",
+    "spglib>=2.6",
 ]
 io = ["ase>=3.26", "phonopy>=2.37.0", "pymatgen>=2025.6.14"]
-symmetry = ["moyopy>=0.3", "spglib>=2.6"]
+symmetry = ["moyopy>=0.3"]
 mace = ["mace-torch>=0.3.14"]
 mattersim = ["mattersim>=0.1.2"]
 metatomic = ["metatomic-torch>=0.1.3", "metatrain[pet]>=2025.12"]
@@ -55,13 +59,12 @@ nequip = ["nequip>=0.16.2"]
 fairchem = ["fairchem-core>=2.7", "scipy<1.17.0"]
 docs = [
     "autodoc_pydantic==2.2.0",
-    "duecredit>=0.11",
     "furo==2024.8.6",
-    "ipython==8.34.0",
     "ipykernel==6.30.1",
+    "ipython==8.34.0",
     "jsonschema[format]",
-    "jupyterlab==4.3.4",
     "jupyter-core==5.8.1",
+    "jupyterlab==4.3.4",
     "jupytext==1.16.7",
     "myst_parser==4.0.0",
     "nbsphinx>=0.9.7",
@@ -145,6 +148,14 @@ conflicts = [
     ],
     [
         { extra = "fairchem" },
+        { extra = "graphpes" },
+    ],
+    [
+        { extra = "fairchem" },
+        { extra = "mace" },
+    ],
+    [
+        { extra = "fairchem" },
         { extra = "mace" },
     ],
     [
@@ -153,19 +164,11 @@ conflicts = [
     ],
     [
         { extra = "graphpes" },
-        { extra = "sevenn" },
-    ],
-    [
-        { extra = "graphpes" },
-        { extra = "fairchem" },
-    ],
-    [
-        { extra = "graphpes" },
         { extra = "nequip" },
     ],
     [
-        { extra = "fairchem" },
-        { extra = "mace" },
+        { extra = "graphpes" },
+        { extra = "sevenn" },
     ],
     [
         { extra = "mace" },
@@ -182,15 +185,57 @@ conflicts = [
 ]
 
 [dependency-groups]
-dev = ["prek>=0.2.0", "ty>=0.0.1a20"]
+dev = ["prek>=0.2.13", "ty>=0.0.1a25"]
 
 [tool.ty.rules]
-# TODO: Unable to work with **kwargs: https://github.com/astral-sh/ty/issues/247
-missing-argument = "ignore"
+unused-ignore-comment = "warn"
 
 [[tool.ty.overrides]]
 include = ["tests/models/**/*.py", "torch_sim/models/**/*.py"]
 
-# TODO would be nice to only ignore unresolved model imports but fail on all other packages
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"
+
+[[tool.ty.overrides]]
+include = ["tests/**/*.py"]
+
+[tool.ty.overrides.rules]
+deprecated = "ignore"
+invalid-argument-type = "ignore"
+invalid-assignment = "ignore"
+no-matching-overload = "ignore"
+not-subscriptable = "ignore"
+possibly-missing-attribute = "ignore"
+unresolved-attribute = "ignore"
+unresolved-import = "ignore"
+unsupported-operator = "ignore"
+
+[[tool.ty.overrides]]
+include = ["docs/**/*.py", "examples/**/*.py"]
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
+
+[[tool.ty.overrides]]
+include = [
+    "torch_sim/autobatching.py",
+    "torch_sim/constraints.py",
+    "torch_sim/integrators/**/*.py",
+    "torch_sim/io.py",
+    "torch_sim/monte_carlo.py",
+    "torch_sim/neighbors/**/*.py",
+    "torch_sim/properties/correlations.py",
+    "torch_sim/runners.py",
+    "torch_sim/state.py",
+    "torch_sim/symmetrize.py",
+    "torch_sim/trajectory.py",
+    "torch_sim/typing.py",
+    "torch_sim/workflows/**/*.py",
+]
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
+unsupported-operator = "ignore"
+
+[[tool.ty.overrides]]
+include = ["torch_sim/neighbors/alchemiops.py"]
+[tool.ty.overrides.rules]
+call-non-callable = "ignore"

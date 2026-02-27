@@ -73,7 +73,7 @@ def _configure_batches_iterator(
     model: ModelInterface,
     *,
     autobatcher: BinningAutoBatcher | bool,
-) -> BinningAutoBatcher | list[tuple[SimState, list[int]]]:
+) -> BinningAutoBatcher[SimState] | list[tuple[SimState, list[int]]]:
     """Create a batches iterator for the integrate function.
 
     Args:
@@ -86,7 +86,7 @@ def _configure_batches_iterator(
     """
     # load and properly configure the autobatcher
     if autobatcher is True:
-        autobatcher = BinningAutoBatcher(
+        autobatcher = BinningAutoBatcher[SimState](
             model=model,
             max_memory_padding=0.9,
         )
@@ -145,7 +145,7 @@ def _determine_initial_step_for_integrate(
 def _determine_initial_step_for_optimize(
     trajectory_reporter: TrajectoryReporter | None,
     state: SimState,
-) -> torch.LongTensor:
+) -> torch.Tensor:
     """Determine the initial steps for resuming optimization from trajectory files.
 
     Args:
@@ -154,10 +154,10 @@ def _determine_initial_step_for_optimize(
         state (SimState): The state being optimized
 
     Returns:
-        torch.LongTensor: Tensor of initial steps for each system (1 if not resuming,
+        torch.Tensor: Tensor of initial steps for each system (1 if not resuming,
             otherwise last_step + 1 for each system)
     """
-    initial_step: torch.LongTensor = torch.full(
+    initial_step: torch.Tensor = torch.full(
         size=(state.n_systems,), fill_value=1, dtype=torch.long, device=state.device
     )
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
@@ -387,8 +387,8 @@ def integrate[T: SimState](  # noqa: C901
         trajectory_reporter.finish()
 
     if isinstance(batch_iterator, BinningAutoBatcher):
-        reordered_states = batch_iterator.restore_original_order(final_states)
-        return ts.concatenate_states(reordered_states)
+        reordered = batch_iterator.restore_original_order(final_states)  # ty: ignore[invalid-argument-type]
+        return ts.concatenate_states(reordered)  # ty: ignore[invalid-argument-type]
 
     return state
 
@@ -683,7 +683,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
                 )
                 break
 
-        convergence_tensor = convergence_fn(state, last_energy)
+        convergence_tensor = convergence_fn(state, last_energy)  # ty: ignore[invalid-argument-type]
         # Mark states that exceeded max steps as converged to remove them from batch
         convergence_tensor = (
             convergence_tensor | exceeded_max_steps[autobatcher.current_idx]
@@ -696,10 +696,13 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         trajectory_reporter.finish()
 
     if autobatcher:
-        final_states = autobatcher.restore_original_order(all_converged_states)
-        return ts.concatenate_states(final_states)
+        final_states_ordered = autobatcher.restore_original_order(all_converged_states)
+        return ts.concatenate_states(final_states_ordered)
 
-    return state  # type: ignore[return-value]
+    # Unreachable: _configure_in_flight_autobatcher always returns InFlightAutoBatcher
+    raise RuntimeError(
+        "autobatcher is always truthy after _configure_in_flight_autobatcher"
+    )
 
 
 def static(
@@ -747,12 +750,13 @@ def static(
     if model.compute_stress:
         properties.append("stress")
     if isinstance(trajectory_reporter, dict):
-        trajectory_reporter = copy.deepcopy(trajectory_reporter)
-        trajectory_reporter["state_kwargs"] = {
+        traj_dict = dict(copy.deepcopy(trajectory_reporter))
+        traj_dict["state_kwargs"] = {
             "variable_atomic_numbers": True,
             "variable_masses": True,
             "save_forces": model.compute_forces,
         }
+        trajectory_reporter = traj_dict
     trajectory_reporter = _configure_reporter(
         trajectory_reporter or dict(filenames=None),
         properties=properties,
@@ -815,7 +819,7 @@ def static(
 
     if isinstance(batch_iterator, BinningAutoBatcher):
         # reorder properties to match original order of states
-        original_indices = list(chain.from_iterable(batch_iterator.index_bins))
+        original_indices = list(chain.from_iterable(batch_iterator.index_bins))  # ty: ignore[invalid-argument-type]
         indexed_props = list(zip(original_indices, all_props, strict=True))
         return [prop for _, prop in sorted(indexed_props, key=lambda x: x[0])]
 

@@ -264,6 +264,18 @@ def test_vesin_nl_float32() -> None:
     assert mapping.shape[1] > 0
 
 
+def _minimal_neighbor_list_inputs(
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Create minimal valid tensor inputs for neighbor-list API smoke checks."""
+    positions = torch.zeros((1, 3), dtype=torch.float32, device=device)
+    cell = torch.eye(3, dtype=torch.float32, device=device)
+    pbc = torch.tensor([False, False, False], dtype=torch.bool, device=device)
+    cutoff = torch.tensor(1.0, dtype=torch.float32, device=device)
+    system_idx = torch.zeros(1, dtype=torch.long, device=device)
+    return positions, cell, pbc, cutoff, system_idx
+
+
 def test_vesin_nl_availability() -> None:
     """Test that availability flags are correctly set."""
     assert isinstance(neighbors.VESIN_AVAILABLE, bool)
@@ -272,23 +284,26 @@ def test_vesin_nl_availability() -> None:
     assert callable(neighbors.vesin_nl_ts)
 
     if not neighbors.VESIN_AVAILABLE:
+        positions, cell, pbc, cutoff, system_idx = _minimal_neighbor_list_inputs(DEVICE)
         with pytest.raises(ImportError, match="Vesin is not installed"):
-            neighbors.vesin_nl()
+            neighbors.vesin_nl(positions, cell, pbc, cutoff, system_idx)
         with pytest.raises(ImportError, match="Vesin is not installed"):
-            neighbors.vesin_nl_ts()
+            neighbors.vesin_nl_ts(positions, cell, pbc, cutoff, system_idx)
 
 
 def test_alchemiops_nl_availability() -> None:
+    """Test that alchemiops optional dependency flags and errors are consistent."""
     assert isinstance(neighbors.ALCHEMIOPS_AVAILABLE, bool)
 
     assert callable(neighbors.alchemiops_nl_n2)
     assert callable(neighbors.alchemiops_nl_cell_list)
 
     if not neighbors.ALCHEMIOPS_AVAILABLE:
+        positions, cell, pbc, cutoff, system_idx = _minimal_neighbor_list_inputs(DEVICE)
         with pytest.raises(ImportError, match="nvalchemiops is not installed"):
-            neighbors.alchemiops_nl_n2()
+            neighbors.alchemiops_nl_n2(positions, cell, pbc, cutoff, system_idx)
         with pytest.raises(ImportError, match="nvalchemiops is not installed"):
-            neighbors.alchemiops_nl_cell_list()
+            neighbors.alchemiops_nl_cell_list(positions, cell, pbc, cutoff, system_idx)
 
 
 def test_fallback_when_alchemiops_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:

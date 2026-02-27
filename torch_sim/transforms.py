@@ -5,7 +5,7 @@ boundary conditions in molecular simulations, including matrix inversions and
 general PBC wrapping.
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from functools import wraps
 
 import torch
@@ -498,9 +498,10 @@ def get_cell_shift_idx(num_repeats: torch.Tensor, dtype: _dtype) -> torch.Tensor
     """
     reps = []
     for ii in range(3):
+        n_rep = int(num_repeats[ii].item())
         r1 = torch.arange(
-            -num_repeats[ii],
-            num_repeats[ii] + 1,
+            -n_rep,
+            n_rep + 1,
             device=num_repeats.device,
             dtype=dtype,
         )
@@ -599,11 +600,14 @@ def _calculate_n2_lattice_shifts(
     num_repeats = get_number_of_cell_repeats(cutoff, cell, pbc)  # (n_systems, 3)
     # take the max across all systems so a single shift set covers everything
     S_max = num_repeats.max(dim=0).values  # (3,)
+    repeat_x = int(S_max[0].item())
+    repeat_y = int(S_max[1].item())
+    repeat_z = int(S_max[2].item())
 
     return torch.cartesian_prod(
-        torch.arange(-S_max[0], S_max[0] + 1, device=cell.device, dtype=cell.dtype),
-        torch.arange(-S_max[1], S_max[1] + 1, device=cell.device, dtype=cell.dtype),
-        torch.arange(-S_max[2], S_max[2] + 1, device=cell.device, dtype=cell.dtype),
+        torch.arange(-repeat_x, repeat_x + 1, device=cell.device, dtype=torch.long),
+        torch.arange(-repeat_y, repeat_y + 1, device=cell.device, dtype=torch.long),
+        torch.arange(-repeat_z, repeat_z + 1, device=cell.device, dtype=torch.long),
     )  # (n_shifts, 3)
 
 
@@ -1148,7 +1152,7 @@ def multiplicative_isotropic_cutoff(
 
 def high_precision_sum(
     x: torch.Tensor,
-    dim: int | Iterable[int] | None = None,
+    dim: int | tuple[int, ...] | list[int] | None = None,
     *,
     keepdim: bool = False,
 ) -> torch.Tensor:
@@ -1180,7 +1184,10 @@ def high_precision_sum(
         high_precision_dtype = torch.int64
 
     # Cast to high precision, sum, and cast back to original dtype
-    return torch.sum(x.to(high_precision_dtype), dim=dim, keepdim=keepdim).to(x.dtype)
+    x_high = x.to(high_precision_dtype)
+    if dim is None:
+        return torch.sum(x_high).to(x.dtype)
+    return torch.sum(x_high, dim=dim, keepdim=keepdim).to(x.dtype)
 
 
 def safe_mask(

@@ -83,8 +83,8 @@ def bfgs_init(
     state: SimState | StateDict,
     model: "ModelInterface",
     *,
-    max_step: float | torch.Tensor = 0.2,
-    alpha: float | torch.Tensor = 70.0,
+    max_step: float = 0.2,
+    alpha: float = 70.0,
     cell_filter: "CellFilter | CellFilterFuncs | None" = None,
     **filter_kwargs: Any,
 ) -> "BFGSState | CellBFGSState":
@@ -112,10 +112,11 @@ def bfgs_init(
     """
     from torch_sim.optimizers import BFGSState, CellBFGSState
 
-    tensor_args = {"device": model.device, "dtype": model.dtype}
+    device: torch.device = model.device
+    dtype: torch.dtype = model.dtype
 
     if not isinstance(state, SimState):
-        state = SimState(**state)
+        state = SimState(**state)  # ty: ignore[invalid-argument-type]
 
     n_systems = state.n_systems  # S
 
@@ -123,30 +124,30 @@ def bfgs_init(
     global_max_atoms = int(counts.max().item()) if len(counts) > 0 else 0  # M
     # Per-system max_atoms for padding/unpadding support
     max_atoms = counts.clone()  # [S] - each system's atom count
-    atom_idx = _get_atom_indices_per_system(state.system_idx, n_systems)  # [N]
+    system_idx = state.system_idx
+    if system_idx is None:
+        raise RuntimeError("system_idx is set by SimState.__post_init__")
+    atom_idx = _get_atom_indices_per_system(system_idx, n_systems)  # [N]
 
     model_output = model(state)
     energy = model_output["energy"]  # [S]
     forces = model_output["forces"]  # [N, 3]
     stress = model_output.get("stress")  # [S, 3, 3] or None
 
-    alpha_t = torch.as_tensor(alpha, **tensor_args)
-    if alpha_t.ndim == 0:
-        alpha_t = alpha_t.expand(n_systems)
-
-    max_step_t = torch.as_tensor(max_step, **tensor_args)
-    if max_step_t.ndim == 0:
-        max_step_t = max_step_t.expand(n_systems)
-
+    alpha_t = torch.full((n_systems,), alpha, device=device, dtype=dtype)  # [S]
+    max_step_t = torch.full((n_systems,), max_step, device=device, dtype=dtype)  # [S]
     n_iter = torch.zeros((n_systems,), device=model.device, dtype=torch.int32)  # [S]
 
     if cell_filter is not None:
         # Extended Hessian: (3*global_max_atoms + 9) x (3*global_max_atoms + 9)
         # The extra 9 DOFs are for cell parameters (3x3 matrix flattened)
         dim = 3 * global_max_atoms + (3 * 3)  # D_ext
-        hessian = torch.eye(dim, **tensor_args).unsqueeze(0).repeat(
-            n_systems, 1, 1
-        ) * alpha_t.view(n_systems, 1, 1)  # [S, D_ext, D_ext]
+        hessian = (
+            torch.eye(dim, device=device, dtype=dtype)
+            .unsqueeze(0)
+            .repeat(n_systems, 1, 1)
+            * alpha
+        )  # [S, D_ext, D_ext]
 
         cell_filter_funcs = init_fn, _step_fn = ts.get_cell_filter(cell_filter)
 
@@ -164,7 +165,7 @@ def bfgs_init(
         # Initial fractional positions = solve(deform_grad, positions) = positions
         # cur_deform_grad[system_idx]: [N, 3, 3], positions: [N, 3]
         frac_positions = torch.linalg.solve(
-            cur_deform_grad[state.system_idx],  # [N, 3, 3]
+            cur_deform_grad[system_idx],  # [N, 3, 3]
             state.positions.unsqueeze(-1),  # [N, 3, 1]
         ).squeeze(-1)  # [N, 3]
 
@@ -172,7 +173,7 @@ def bfgs_init(
         # forces: [N, 3], cur_deform_grad[system_idx]: [N, 3, 3] -> [N, 3]
         scaled_forces = torch.bmm(
             forces.unsqueeze(1),  # [N, 1, 3]
-            cur_deform_grad[state.system_idx],  # [N, 3, 3]
+            cur_deform_grad[system_idx],  # [N, 3, 3]
         ).squeeze(1)
 
         common_args = {
@@ -193,7 +194,7 @@ def bfgs_init(
             "n_iter": n_iter,  # [S]
             "atom_idx_in_system": atom_idx,  # [N]
             "max_atoms": max_atoms,  # scalar M
-            "system_idx": state.system_idx.clone(),  # [N]
+            "system_idx": system_idx.clone(),  # [N]
             "pbc": state.pbc,  # [S, 3]
             "reference_cell": reference_cell,  # [S, 3, 3]
             "cell_filter": cell_filter_funcs,
@@ -202,7 +203,7 @@ def bfgs_init(
             "_constraints": state.constraints,  # preserve constraints
         }
 
-        cell_state = CellBFGSState(**common_args)
+        cell_state = CellBFGSState(**common_args)  # ty: ignore[invalid-argument-type]
 
         # Initialize cell-specific attributes (cell_positions, cell_forces, etc.)
         # After init: cell_positions [S, 3, 3], cell_forces [S, 3, 3], cell_factor [S]
@@ -216,9 +217,10 @@ def bfgs_init(
 
     # Position-only Hessian: 3*global_max_atoms x 3*global_max_atoms
     dim = 3 * global_max_atoms  # D
-    hessian = torch.eye(dim, **tensor_args).unsqueeze(0).repeat(
-        n_systems, 1, 1
-    ) * alpha_t.view(n_systems, 1, 1)  # [S, D, D]
+    hessian = (
+        torch.eye(dim, device=device, dtype=dtype).unsqueeze(0).repeat(n_systems, 1, 1)
+        * alpha
+    )  # [S, D, D]
 
     common_args = {
         "positions": state.positions.clone(),  # [N, 3]
@@ -236,14 +238,14 @@ def bfgs_init(
         "n_iter": n_iter,  # [S]
         "atom_idx_in_system": atom_idx,  # [N]
         "max_atoms": max_atoms,  # scalar M
-        "system_idx": state.system_idx.clone(),  # [N]
+        "system_idx": system_idx.clone(),  # [N]
         "pbc": state.pbc,  # [S, 3]
         "charge": state.charge,  # preserve charge
         "spin": state.spin,  # preserve spin
         "_constraints": state.constraints,  # preserve constraints
     }
 
-    return BFGSState(**common_args)
+    return BFGSState(**common_args)  # ty: ignore[invalid-argument-type]
 
 
 def bfgs_step(  # noqa: C901, PLR0915
@@ -278,30 +280,34 @@ def bfgs_step(  # noqa: C901, PLR0915
     # Note (AG): eps kept same as ASE's BFGS.
     eps = 1e-7
     is_cell_state = isinstance(state, CellBFGSState)
+    state_sys_idx = state.system_idx
+    if state_sys_idx is None:
+        raise RuntimeError("system_idx is set by SimState.__post_init__")
 
     # Derive global_max_atoms from hessian shape
     hessian_dim = state.hessian.shape[1]
     global_max_atoms = (hessian_dim - 9) // 3 if is_cell_state else hessian_dim // 3
 
-    if is_cell_state:
+    if isinstance(state, CellBFGSState):
+        cell_state: CellBFGSState = state
         # Get current deformation gradient
         # reference_cell.mT: [S, 3, 3], row_vector_cell: [S, 3, 3]
         cur_deform_grad = cell_filters.deform_grad(
-            state.reference_cell.mT, state.row_vector_cell
+            cell_state.reference_cell.mT, cell_state.row_vector_cell
         )  # [S, 3, 3]
 
         # Transform forces to scaled coordinates
         # forces: [N, 3], cur_deform_grad[system_idx]: [N, 3, 3]
         forces_scaled = torch.bmm(
-            state.forces.unsqueeze(1),  # [N, 1, 3]
-            cur_deform_grad[state.system_idx],  # [N, 3, 3]
+            cell_state.forces.unsqueeze(1),  # [N, 1, 3]
+            cur_deform_grad[state_sys_idx],  # [N, 3, 3]
         ).squeeze(1)  # [N, 3]
 
         # Current fractional positions
         # positions: [N, 3] -> frac_positions: [N, 3]
         frac_positions = torch.linalg.solve(
-            cur_deform_grad[state.system_idx],  # [N, 3, 3]
-            state.positions.unsqueeze(-1),  # [N, 3, 1]
+            cur_deform_grad[state_sys_idx],  # [N, 3, 3]
+            cell_state.positions.unsqueeze(-1),  # [N, 3, 1]
         ).squeeze(-1)  # [N, 3]
 
         # Pack into dense tensors [N, 3] -> [S, M, 3] -> [S, D]
@@ -310,41 +316,49 @@ def bfgs_step(  # noqa: C901, PLR0915
         # Note (AG): Optimization potential here.
         forces_new = _pad_to_dense(
             forces_scaled,  # [N, 3]
-            state.system_idx,
-            state.atom_idx_in_system,
-            state.n_systems,
+            state_sys_idx,
+            cell_state.atom_idx_in_system,
+            cell_state.n_systems,
             global_max_atoms,
-        ).reshape(state.n_systems, -1)  # [S, D]
+        ).reshape(cell_state.n_systems, -1)  # [S, D]
 
         forces_old = _pad_to_dense(
-            state.prev_forces,  # [N, 3]
-            state.system_idx,
-            state.atom_idx_in_system,
-            state.n_systems,
+            cell_state.prev_forces,  # [N, 3]
+            state_sys_idx,
+            cell_state.atom_idx_in_system,
+            cell_state.n_systems,
             global_max_atoms,
-        ).reshape(state.n_systems, -1)  # [S, D]
+        ).reshape(cell_state.n_systems, -1)  # [S, D]
 
         pos_new = _pad_to_dense(
             frac_positions,  # [N, 3]
-            state.system_idx,
-            state.atom_idx_in_system,
-            state.n_systems,
+            state_sys_idx,
+            cell_state.atom_idx_in_system,
+            cell_state.n_systems,
             global_max_atoms,
-        ).reshape(state.n_systems, -1)  # [S, D]
+        ).reshape(cell_state.n_systems, -1)  # [S, D]
 
         pos_old = _pad_to_dense(
-            state.prev_positions,  # [N, 3]
-            state.system_idx,
-            state.atom_idx_in_system,
-            state.n_systems,
+            cell_state.prev_positions,  # [N, 3]
+            state_sys_idx,
+            cell_state.atom_idx_in_system,
+            cell_state.n_systems,
             global_max_atoms,
-        ).reshape(state.n_systems, -1)  # [S, D]
+        ).reshape(cell_state.n_systems, -1)  # [S, D]
 
         # Extend with cell DOFs: [S, 3, 3] -> [S, 9]
-        cell_pos_new = state.cell_positions.reshape(state.n_systems, 9)  # [S, 9]
-        cell_forces_new = state.cell_forces.reshape(state.n_systems, 9)  # [S, 9]
-        cell_pos_old = state.prev_cell_positions.reshape(state.n_systems, 9)  # [S, 9]
-        cell_forces_old = state.prev_cell_forces.reshape(state.n_systems, 9)  # [S, 9]
+        cell_pos_new = cell_state.cell_positions.reshape(
+            cell_state.n_systems, 9
+        )  # [S, 9]
+        cell_forces_new = cell_state.cell_forces.reshape(
+            cell_state.n_systems, 9
+        )  # [S, 9]
+        cell_pos_old = cell_state.prev_cell_positions.reshape(
+            cell_state.n_systems, 9
+        )  # [S, 9]
+        cell_forces_old = cell_state.prev_cell_forces.reshape(
+            cell_state.n_systems, 9
+        )  # [S, 9]
 
         # Concatenate: extended = [positions, cell_positions]
         # [S, D] + [S, 9] -> [S, D_ext]
@@ -358,7 +372,7 @@ def bfgs_step(  # noqa: C901, PLR0915
         # Pack into dense tensors [N, 3] -> [S, M, 3] -> [S, D]
         forces_new = _pad_to_dense(
             state.forces,  # [N, 3]
-            state.system_idx,
+            state_sys_idx,
             state.atom_idx_in_system,
             state.n_systems,
             global_max_atoms,
@@ -366,7 +380,7 @@ def bfgs_step(  # noqa: C901, PLR0915
 
         forces_old = _pad_to_dense(
             state.prev_forces,  # [N, 3]
-            state.system_idx,
+            state_sys_idx,
             state.atom_idx_in_system,
             state.n_systems,
             global_max_atoms,
@@ -374,7 +388,7 @@ def bfgs_step(  # noqa: C901, PLR0915
 
         pos_new = _pad_to_dense(
             state.positions,  # [N, 3]
-            state.system_idx,
+            state_sys_idx,
             state.atom_idx_in_system,
             state.n_systems,
             global_max_atoms,
@@ -382,7 +396,7 @@ def bfgs_step(  # noqa: C901, PLR0915
 
         pos_old = _pad_to_dense(
             state.prev_positions,  # [N, 3]
-            state.system_idx,
+            state_sys_idx,
             state.atom_idx_in_system,
             state.n_systems,
             global_max_atoms,
@@ -488,54 +502,57 @@ def bfgs_step(  # noqa: C901, PLR0915
 
     # Unpack dense step to flat: [S, M, 3] -> [N, 3]
     flat_step = step_pos.view(state.n_systems, global_max_atoms, 3)[
-        state.system_idx, state.atom_idx_in_system
+        state_sys_idx, state.atom_idx_in_system
     ]  # [N, 3]
 
     # Save previous state for next Hessian update
     # For cell state: store fractional positions and scaled forces (ASE convention)
-    if is_cell_state:
-        state.prev_positions = frac_positions.clone()  # [N, 3] (fractional)
-        state.prev_forces = forces_scaled.clone()  # [N, 3] (scaled)
-        state.prev_cell_positions = state.cell_positions.clone()  # [S, 3, 3]
-        state.prev_cell_forces = state.cell_forces.clone()  # [S, 3, 3]
+    if isinstance(state, CellBFGSState):
+        cell_state = state
+        cell_state.prev_positions = frac_positions.clone()  # [N, 3] (fractional)
+        cell_state.prev_forces = forces_scaled.clone()  # [N, 3] (scaled)
+        cell_state.prev_cell_positions = cell_state.cell_positions.clone()  # [S, 3, 3]
+        cell_state.prev_cell_forces = cell_state.cell_forces.clone()  # [S, 3, 3]
 
         # Apply cell step: [S, 9] -> [S, 3, 3]
-        dr_cell = step_cell.view(state.n_systems, 3, 3)  # [S, 3, 3]
-        cell_positions_new = state.cell_positions + dr_cell  # [S, 3, 3]
-        state.cell_positions = cell_positions_new  # [S, 3, 3]
+        dr_cell = step_cell.view(cell_state.n_systems, 3, 3)  # [S, 3, 3]
+        cell_positions_new = cell_state.cell_positions + dr_cell  # [S, 3, 3]
+        cell_state.cell_positions = cell_positions_new  # [S, 3, 3]
 
         # Determine if Frechet filter
-        init_fn, _step_fn = state.cell_filter
+        init_fn, _step_fn = cell_state.cell_filter
         is_frechet = init_fn is frechet_cell_filter_init
 
         if is_frechet:
             # Frechet: deform_grad = exp(cell_positions / cell_factor)
-            cell_factor_reshaped = state.cell_factor.view(state.n_systems, 1, 1)
+            cell_factor_reshaped = cell_state.cell_factor.view(cell_state.n_systems, 1, 1)
             deform_grad_log_new = cell_positions_new / cell_factor_reshaped  # [S, 3, 3]
             deform_grad_new = torch.matrix_exp(deform_grad_log_new)  # [S, 3, 3]
         else:
             # UnitCell: deform_grad = cell_positions / cell_factor
-            cell_factor_expanded = state.cell_factor.expand(state.n_systems, 3, 1)
+            cell_factor_expanded = cell_state.cell_factor.expand(
+                cell_state.n_systems, 3, 1
+            )
             deform_grad_new = cell_positions_new / cell_factor_expanded  # [S, 3, 3]
 
         # Update cell: new_cell = reference_cell @ deform_grad^T
         # reference_cell.mT: [S, 3, 3], deform_grad_new: [S, 3, 3]
-        state.row_vector_cell = torch.bmm(
-            state.reference_cell.mT, deform_grad_new.transpose(-2, -1)
+        cell_state.row_vector_cell = torch.bmm(
+            cell_state.reference_cell.mT, deform_grad_new.transpose(-2, -1)
         )  # [S, 3, 3]
 
         # Apply position step in fractional space, then convert to Cartesian
         new_frac = frac_positions + flat_step  # [N, 3]
 
         new_deform_grad = cell_filters.deform_grad(
-            state.reference_cell.mT, state.row_vector_cell
+            cell_state.reference_cell.mT, cell_state.row_vector_cell
         )  # [S, 3, 3]
         # new_positions = new_frac @ deform_grad^T
         new_positions = torch.bmm(
             new_frac.unsqueeze(1),  # [N, 1, 3]
-            new_deform_grad[state.system_idx].transpose(-2, -1),  # [N, 3, 3]
+            new_deform_grad[state_sys_idx].transpose(-2, -1),  # [N, 3, 3]
         ).squeeze(1)  # [N, 3]
-        state.set_constrained_positions(new_positions)  # [N, 3]
+        cell_state.set_constrained_positions(new_positions)  # [N, 3]
     else:
         state.prev_positions = state.positions.clone()  # [N, 3]
         state.prev_forces = state.forces.clone()  # [N, 3]
@@ -550,7 +567,7 @@ def bfgs_step(  # noqa: C901, PLR0915
 
     # Update cell forces for next step
     # Update cell forces for cell state: [S, 3, 3]
-    if is_cell_state:
+    if isinstance(state, CellBFGSState):
         cell_filters.compute_cell_forces(model_output, state)
 
     state.n_iter += 1

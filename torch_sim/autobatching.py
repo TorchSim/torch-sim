@@ -32,17 +32,15 @@ from torch_sim.state import SimState
 from torch_sim.typing import MemoryScaling
 
 
-def to_constant_volume_bins[  # noqa: C901, PLR0915
-    T: dict[int, float] | list[float] | list[tuple[T, ...]]
-](
-    items: T,
+def to_constant_volume_bins(  # noqa: C901, PLR0915
+    items: dict[int, float] | list[Any],
     max_volume: float,
     *,
     weight_pos: int | None = None,
-    key: Callable[[T], float] | None = None,
+    key: Callable[[Any], float] | None = None,
     lower_bound: float | None = None,
     upper_bound: float | None = None,
-) -> list[T]:
+) -> list[Any]:
     """Distribute items into bins of fixed maximum volume.
 
     Groups items into the minimum number of bins possible while ensuring each bin's
@@ -84,7 +82,7 @@ def to_constant_volume_bins[  # noqa: C901, PLR0915
         return [lst[n] for n in ndx]
 
     def _argmax_bins(lst: list[float]) -> int:
-        return max(range(len(lst)), key=lst.__getitem__)
+        return max(range(len(lst)), key=lambda idx: lst[idx])
 
     def _rev_argsort_bins(lst: list[float]) -> list[int]:
         return sorted(range(len(lst)), key=lambda i: -lst[i])
@@ -100,7 +98,7 @@ def to_constant_volume_bins[  # noqa: C901, PLR0915
 
     if not isinstance(items, dict) and key:
         new_dict = dict(enumerate(items))
-        items = {idx: key(val) for idx, val in enumerate(items)}  # type: ignore[invalid-assignment]
+        items = {idx: key(val) for idx, val in enumerate(items)}
         is_tuple_list = True
     else:
         is_tuple_list = False
@@ -149,7 +147,7 @@ def to_constant_volume_bins[  # noqa: C901, PLR0915
     # iterate through the weight list, starting with heaviest
     for item, weight in enumerate(weights):
         if isinstance(items, dict):
-            key = keys[item]
+            item_key = keys[item]
 
         # find candidate bins where the weight might fit
         candidate_bins = list(
@@ -181,9 +179,14 @@ def to_constant_volume_bins[  # noqa: C901, PLR0915
 
         # put it in
         if isinstance(items, dict):
-            bins[b][key] = weight
+            bin_ = bins[b]
+            if isinstance(bin_, dict):
+                bin_[item_key] = weight
         else:
-            bins[b].append(weight)
+            bin_ = bins[b]
+            if not isinstance(bin_, list):
+                raise TypeError("bins contain lists when items is not dict")
+            bin_.append(weight)
 
         # increase weight sum of the bin and continue with
         # next item
@@ -363,7 +366,12 @@ def calculate_memory_scalers(
     if memory_scales_with == "n_atoms":
         return state.n_atoms_per_system.tolist()
     if memory_scales_with == "n_atoms_x_density":
-        if state.n_systems > 1 and state.pbc.all().item():  # vectorized path
+        pbc_any = (
+            state.pbc.all().item()
+            if torch.is_tensor(state.pbc)
+            else (state.pbc if isinstance(state.pbc, bool) else any(state.pbc))
+        )
+        if state.n_systems > 1 and pbc_any:  # vectorized path
             n_atoms = state.n_atoms_per_system.to(state.volume.dtype)
             volume = torch.abs(state.volume) / 1000  # A^3 -> nm^3
             return torch.where(volume > 0, n_atoms * n_atoms / volume, n_atoms).tolist()
@@ -371,11 +379,23 @@ def calculate_memory_scalers(
         scalers = []
         for i in range(state.n_systems):
             s = state[i]
-            if all(s.pbc):
+            pbc_all = (
+                s.pbc
+                if isinstance(s.pbc, bool)
+                else (
+                    all(s.pbc) if isinstance(s.pbc, (list, tuple)) else s.pbc.all().item()
+                )
+            )
+            if pbc_all:
                 volume = torch.abs(torch.linalg.det(s.cell[0])) / 1000
             else:
                 bbox = s.positions.max(dim=0).values - s.positions.min(dim=0).values
-                for j, periodic in enumerate(s.pbc):
+                pbc_iter: tuple[bool, ...] | list[bool] = (
+                    (s.pbc,) * 3
+                    if isinstance(s.pbc, bool)
+                    else (s.pbc.tolist() if torch.is_tensor(s.pbc) else s.pbc)
+                )
+                for j, periodic in enumerate(pbc_iter):
                     if not periodic:
                         bbox[j] += 2.0
                 volume = bbox.prod() / 1000
@@ -813,7 +833,7 @@ class InFlightAutoBatcher[T: SimState]:
         self.max_memory_padding = max_memory_padding
         self.oom_error_message = oom_error_message
 
-    def load_states(self, states: Sequence[T] | Iterator[T] | T) -> None:
+    def load_states(self, states: Sequence[T] | Iterator[T] | T) -> float | None:
         """Load new states into the batcher.
 
         Processes the input states, computes memory scaling metrics for each,
@@ -848,10 +868,7 @@ class InFlightAutoBatcher[T: SimState]:
         """
         if isinstance(states, SimState):
             states = states.split()
-        if isinstance(states, list | tuple):
-            states = iter(states)
-
-        self.states_iterator = states
+        self.states_iterator = iter(states)
 
         self.current_scalers = []
         self.current_idx = []
@@ -971,7 +988,7 @@ class InFlightAutoBatcher[T: SimState]:
 
     def next_batch(  # noqa: C901
         self, updated_state: T | None, convergence_tensor: torch.Tensor | None
-    ) -> tuple[T, list[T]]:
+    ) -> tuple[T | None, list[T]]:
         """Get the next batch of states based on convergence.
 
         Removes converged states from the batch, adds new states if possible,
@@ -1060,7 +1077,7 @@ class InFlightAutoBatcher[T: SimState]:
 
         # there are no states left to run, return the completed states
         if not self.current_idx:
-            return None, completed_states  # type: ignore[invalid-return-type]
+            return None, completed_states
 
         # concatenate remaining state with next states
         if updated_state.n_systems > 0:

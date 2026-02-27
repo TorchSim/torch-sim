@@ -266,6 +266,8 @@ def test_fairchem_charge_spin(charge: float, spin: float) -> None:
     state = ts.io.atoms_to_state([mol], device=DEVICE, dtype=DTYPE)
 
     # Verify charge/spin were extracted correctly
+    assert state.charge is not None
+    assert state.spin is not None
     assert state.charge[0].item() == charge
     assert state.spin[0].item() == spin
 

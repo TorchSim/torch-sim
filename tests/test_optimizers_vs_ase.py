@@ -50,7 +50,7 @@ def ase_mace_mpa() -> "MACECalculator":
 
 
 def _compare_ase_and_ts_states(
-    state: ts.FireState,
+    state: ts.SimState,  # Has .energy and .forces when from optimizer
     filtered_ase_atoms: FrechetCellFilter | UnitCellFilter,
     tolerances: dict[str, float],
     current_test_id: str,
@@ -74,9 +74,12 @@ def _compare_ase_and_ts_states(
     final_ase_energy = final_ase_atoms.get_potential_energy()
     ase_forces_raw = final_ase_atoms.get_forces()
     final_ase_forces_max = torch.norm(
-        torch.tensor(ase_forces_raw, **tensor_kwargs), dim=-1
+        torch.tensor(ase_forces_raw, **tensor_kwargs),
+        dim=-1,
     ).max()
-    ts_state = ts.io.atoms_to_state(final_ase_atoms, **tensor_kwargs)
+    ts_state = ts.io.atoms_to_state(
+        final_ase_atoms, device=tensor_kwargs["device"], dtype=tensor_kwargs["dtype"]
+    )
     ase_structure = ts.io.state_to_structures(ts_state)[0]
 
     # Compare energies
@@ -610,7 +613,7 @@ def test_lbfgs_vs_ase_parametrized(
     )[0]
     ase_atoms.calc = ase_mace_mpa
     filtered_ase_atoms = ase_filter_cls(ase_atoms)
-    ase_optimizer = ASE_LBFGS(filtered_ase_atoms, logfile=None, alpha=70.0, damping=1.0)
+    ase_optimizer = ASE_LBFGS(filtered_ase_atoms, logfile="-", alpha=70.0, damping=1.0)
 
     convergence_fn = ts.generate_force_convergence_fn(
         force_tol=force_tol, include_cell_forces=True

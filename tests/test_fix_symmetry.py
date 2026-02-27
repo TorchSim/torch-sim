@@ -13,8 +13,10 @@ from pymatgen.io.ase import AseAtomsAdaptor
 
 import torch_sim as ts
 from torch_sim.constraints import FixCom, FixSymmetry
+from torch_sim.models.interface import ModelInterface
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.symmetrize import get_symmetry_datasets
+from torch_sim.typing import StateDict
 
 
 pytest.importorskip("moyopy")
@@ -36,7 +38,9 @@ def _make_p6bar() -> Atoms:
     structure = Structure.from_spacegroup(
         sg=174, lattice=lattice, species=["Si"], coords=[[0.3, 0.1, 0.25]]
     )
-    return AseAtomsAdaptor.get_atoms(structure)
+    atoms = AseAtomsAdaptor.get_atoms(structure)
+    assert isinstance(atoms, Atoms)
+    return atoms
 
 
 def make_structure(name: str) -> Atoms:
@@ -83,7 +87,7 @@ def model() -> LennardJonesModel:
     )
 
 
-class NoisyModelWrapper:
+class NoisyModelWrapper(ModelInterface):
     """Wrapper that adds noise to forces and stress."""
 
     model: LennardJonesModel
@@ -91,21 +95,20 @@ class NoisyModelWrapper:
     noise_scale: float
 
     def __init__(self, model: LennardJonesModel, noise_scale: float = 1e-4) -> None:
+        super().__init__()
         self.model = model
         self.rng = np.random.default_rng(seed=1)
         self.noise_scale = noise_scale
+        self._device = model.device
+        self._dtype = model.dtype
+        self._compute_stress = model.compute_stress
+        self._compute_forces = model.compute_forces
 
-    @property
-    def device(self) -> torch.device:
-        return self.model.device
-
-    @property
-    def dtype(self) -> torch.dtype:
-        return self.model.dtype
-
-    def __call__(self, state: ts.SimState) -> dict[str, torch.Tensor]:
+    def forward(
+        self, state: ts.SimState | StateDict, **kwargs: object
+    ) -> dict[str, torch.Tensor]:
         """Forward pass with added noise."""
-        results = self.model(state)
+        results = self.model(state, **kwargs)
         for key in ("forces", "stress"):
             if key in results:
                 noise = torch.tensor(
@@ -140,7 +143,7 @@ def p6bar_both_constraints() -> tuple[ts.SimState, FixSymmetry, Atoms, ASEFixSym
 
 def run_optimization_check_symmetry(
     state: ts.SimState,
-    model: LennardJonesModel | NoisyModelWrapper,
+    model: ModelInterface,
     constraint: FixSymmetry | None = None,
     *,
     adjust_cell: bool = True,
@@ -279,6 +282,7 @@ class TestFixSymmetryCreation:
         assert not torch.allclose(new_cell, orig_cell * 1.5, atol=1e-6)
         # Per-step clamp limits single-step strain to 0.25
         identity = torch.eye(3, dtype=DTYPE)
+        assert constraint.reference_cells is not None
         ref_cell = constraint.reference_cells[0]
         strain = torch.linalg.solve(ref_cell, new_cell[0].mT) - identity
         assert torch.abs(strain).max().item() <= 0.25 + 1e-6
@@ -442,7 +446,9 @@ class TestFixSymmetryMergeSelectReindex:
         s1.constraints = [FixCom(system_idx=torch.tensor([0, 1]))]
         s2.constraints = [FixCom(system_idx=torch.tensor([0, 1]))]
         combined = ts.concatenate_states([s1, s2])
-        assert combined.constraints[0].system_idx.tolist() == [0, 1, 2, 3]
+        first_constraint = combined.constraints[0]
+        assert isinstance(first_constraint, FixCom)
+        assert first_constraint.system_idx.tolist() == [0, 1, 2, 3]
 
     def test_concatenate_states_with_fix_symmetry(self) -> None:
         """FixSymmetry survives concatenate_states and still symmetrizes correctly."""

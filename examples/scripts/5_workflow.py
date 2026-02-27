@@ -109,6 +109,8 @@ print("\nStarting optimization with autobatching...")
 batch_count = 0
 while (result := batcher.next_batch(state, convergence_tensor))[0] is not None:
     state, completed_states = result
+    if state is None:
+        raise RuntimeError("Expected in-flight batch state to be available")
     batch_count += 1
     print(f"Batch {batch_count}: Optimizing {state.n_systems} structures")
 

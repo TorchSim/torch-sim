@@ -35,7 +35,7 @@ except ImportError as exc:
     warnings.warn(f"GraphPES import failed: {traceback.format_exc()}", stacklevel=2)
     PropertyKey = str
 
-    class GraphPESWrapper(ModelInterface):  # type: ignore[reportRedeclaration]
+    class GraphPESWrapper(ModelInterface):
         """GraphPESModel wrapper for torch-sim.
 
         This class is a placeholder for the GraphPESWrapper class.
@@ -46,12 +46,23 @@ except ImportError as exc:
             """Dummy init for type checking."""
             raise err
 
-    class AtomicGraph:  # type: ignore[reportRedeclaration]  # noqa: D101
+    class AtomicGraph:  # noqa: D101
         def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: D107,ARG002
             raise ImportError("graph_pes must be installed to use this model.")
 
-    class GraphPESModel(torch.nn.Module):  # type: ignore[reportRedeclaration]  # noqa: D101
+    class GraphPESModel(torch.nn.Module):  # noqa: D101
         pass
+
+
+def _pbc_to_tensor(
+    *, pbc: torch.Tensor | list[bool] | bool, device: torch.device
+) -> torch.Tensor:
+    """Convert pbc to Tensor for APIs that require it."""
+    if isinstance(pbc, torch.Tensor):
+        return pbc
+    if isinstance(pbc, bool):
+        return torch.tensor([pbc] * 3, dtype=torch.bool, device=device)
+    return torch.tensor(pbc, dtype=torch.bool, device=device)
 
 
 def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGraph:
@@ -65,6 +76,7 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
         AtomicGraph object representing the batched structures
     """
     graphs = []
+    pbc_t = _pbc_to_tensor(pbc=state.pbc, device=state.device)
 
     for sys_idx in range(state.n_systems):
         system_mask = state.system_idx == sys_idx
@@ -79,7 +91,7 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
         # Create system_idx for this single system (all atoms belong to system 0)
         system_idx_single = torch.zeros(R.shape[0], dtype=torch.long, device=R.device)
         nl, _system_mapping, shifts = torchsim_nl(
-            R, cell, state.pbc, cutoff + 1e-5, system_idx_single
+            R, cell, pbc_t, cutoff + 1e-5, system_idx_single
         )
 
         atomic_graph = AtomicGraph(
@@ -167,14 +179,18 @@ class GraphPESWrapper(ModelInterface):
         if self.compute_stress:
             self._properties.append("stress")
 
-        if self._gp_model.cutoff.item() < 0.5:
+        cutoff_val = self._gp_model.cutoff
+        if isinstance(cutoff_val, torch.Tensor) and cutoff_val.item() < 0.5:
             self._memory_scales_with = "n_atoms"
 
-    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(
+        self, state: ts.SimState | StateDict, **_kwargs: object
+    ) -> dict[str, torch.Tensor]:
         """Forward pass for the GraphPESWrapper.
 
         Args:
             state: SimState object containing atomic positions, cell, and atomic numbers
+            **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
             Dictionary containing the computed energies, forces, and stresses
@@ -183,5 +199,8 @@ class GraphPESWrapper(ModelInterface):
         if not isinstance(state, ts.SimState):
             state = ts.SimState(**state)  # type: ignore[arg-type]
 
-        atomic_graph = state_to_atomic_graph(state, self._gp_model.cutoff)
+        cutoff = self._gp_model.cutoff
+        if not isinstance(cutoff, torch.Tensor):
+            raise TypeError("GraphPES model cutoff must be a tensor")
+        atomic_graph = state_to_atomic_graph(state, cutoff)
         return self._gp_model.predict(atomic_graph, self._properties)  # type: ignore[return-value]

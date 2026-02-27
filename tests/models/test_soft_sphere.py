@@ -14,17 +14,24 @@ def models(
     fe_supercell_sim_state: ts.SimState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create both neighbor list and direct calculators."""
-    calc_params = {
-        "sigma": 3.405,  # Å, typical for Ar
-        "epsilon": 0.0104,  # eV, typical for Ar
-        "alpha": 2.0,
-        "dtype": torch.float64,
-        "compute_forces": True,
-        "compute_stress": True,
-    }
-
-    model_nl = ss.SoftSphereModel(use_neighbor_list=True, **calc_params)
-    model_direct = ss.SoftSphereModel(use_neighbor_list=False, **calc_params)
+    model_nl = ss.SoftSphereModel(
+        use_neighbor_list=True,
+        sigma=3.405,
+        epsilon=0.0104,
+        alpha=2.0,
+        dtype=torch.float64,
+        compute_forces=True,
+        compute_stress=True,
+    )
+    model_direct = ss.SoftSphereModel(
+        use_neighbor_list=False,
+        sigma=3.405,
+        epsilon=0.0104,
+        alpha=2.0,
+        dtype=torch.float64,
+        compute_forces=True,
+        compute_stress=True,
+    )
 
     return model_nl(fe_supercell_sim_state), model_direct(fe_supercell_sim_state)
 
@@ -34,19 +41,28 @@ def models_with_per_atom(
     fe_supercell_sim_state: ts.SimState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create calculators with per-atom properties enabled."""
-    calc_params = {
-        "sigma": 3.405,  # Å, typical for Ar
-        "epsilon": 0.0104,  # eV, typical for Ar
-        "alpha": 2.0,
-        "dtype": torch.float64,
-        "compute_forces": True,
-        "compute_stress": True,
-        "per_atom_energies": True,
-        "per_atom_stresses": True,
-    }
-
-    model_nl = ss.SoftSphereModel(use_neighbor_list=True, **calc_params)
-    model_direct = ss.SoftSphereModel(use_neighbor_list=False, **calc_params)
+    model_nl = ss.SoftSphereModel(
+        use_neighbor_list=True,
+        sigma=3.405,
+        epsilon=0.0104,
+        alpha=2.0,
+        dtype=torch.float64,
+        compute_forces=True,
+        compute_stress=True,
+        per_atom_energies=True,
+        per_atom_stresses=True,
+    )
+    model_direct = ss.SoftSphereModel(
+        use_neighbor_list=False,
+        sigma=3.405,
+        epsilon=0.0104,
+        alpha=2.0,
+        dtype=torch.float64,
+        compute_forces=True,
+        compute_stress=True,
+        per_atom_energies=True,
+        per_atom_stresses=True,
+    )
 
     return model_nl(fe_supercell_sim_state), model_direct(fe_supercell_sim_state)
 
@@ -113,17 +129,24 @@ def test_stress_tensor_symmetry(
 
 def test_validate_model_outputs() -> None:
     """Test that the model outputs are valid."""
-    model_params = {
-        "sigma": 3.405,  # Å, typical for Ar
-        "epsilon": 0.0104,  # eV, typical for Ar
-        "alpha": 2.0,
-        "dtype": torch.float64,
-        "compute_forces": True,
-        "compute_stress": True,
-    }
-
-    model_nl = ss.SoftSphereModel(use_neighbor_list=True, **model_params)
-    model_direct = ss.SoftSphereModel(use_neighbor_list=False, **model_params)
+    model_nl = ss.SoftSphereModel(
+        use_neighbor_list=True,
+        sigma=3.405,
+        epsilon=0.0104,
+        alpha=2.0,
+        dtype=torch.float64,
+        compute_forces=True,
+        compute_stress=True,
+    )
+    model_direct = ss.SoftSphereModel(
+        use_neighbor_list=False,
+        sigma=3.405,
+        epsilon=0.0104,
+        alpha=2.0,
+        dtype=torch.float64,
+        compute_forces=True,
+        compute_stress=True,
+    )
     for out in (model_nl, model_direct):
         validate_model_outputs(out, DEVICE, torch.float64)
 
@@ -199,8 +222,7 @@ def test_model_initialization_custom_params(
     param_name: str, param_value: float, expected_dtype: torch.dtype
 ) -> None:
     """Test initialization with custom parameters."""
-    params = {param_name: param_value, "dtype": expected_dtype}
-    model = ss.SoftSphereModel(**params)
+    model = ss.SoftSphereModel(**{param_name: param_value, "dtype": expected_dtype})
 
     param_tensor = getattr(model, param_name)
     assert torch.allclose(param_tensor, torch.tensor(param_value, dtype=expected_dtype))

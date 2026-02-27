@@ -168,12 +168,14 @@ def _rattle_sim_state(
 ) -> ts.SimState:
     """Apply Weibull-distributed random displacements to positions.
 
-    Uses the state's ``rng`` (seeded with *seed*) so no global RNG state is touched.
+    Uses a local torch generator (seeded with *seed*) so no global RNG state is touched.
     """
     sim_state = sim_state.clone()
+    rng = torch.Generator(device=sim_state.device)
     if seed is not None:
-        sim_state.rng = seed
-    rng = sim_state.rng
+        rng.manual_seed(seed)
+    else:
+        rng.seed()
 
     # Sample Directions on the unit sphere to displace atoms
     rnd = torch.randn(

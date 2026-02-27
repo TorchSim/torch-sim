@@ -124,8 +124,11 @@ class ParticleLifeModel(ModelInterface):
             cutoff or 2.5 * sigma, dtype=self.dtype, device=self.device
         )
         self.epsilon = torch.tensor(epsilon, dtype=self.dtype, device=self.device)
+        self.beta = torch.tensor(0.3, dtype=self.dtype, device=self.device)
 
-    def unbatched_forward(self, state: ts.SimState) -> dict[str, torch.Tensor]:
+    def unbatched_forward(
+        self, state: ts.SimState | StateDict
+    ) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single unbatched system.
 
         Internal implementation that processes a single, non-batched simulation state.
@@ -139,12 +142,30 @@ class ParticleLifeModel(ModelInterface):
         Returns:
             A dictionary containing the energy, forces, and stresses
         """
-        if isinstance(state, dict):
-            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        if not isinstance(state, ts.SimState):
+            state_dict = state
+            positions_in = state_dict["positions"]
+            state = ts.SimState(
+                positions=positions_in,
+                masses=torch.ones_like(positions_in),
+                cell=state_dict["cell"],
+                pbc=state_dict.get("pbc", True),
+                atomic_numbers=state_dict["atomic_numbers"],
+                system_idx=state_dict.get("system_idx"),
+            )
 
         positions = state.positions
         cell = state.row_vector_cell
         pbc = state.pbc
+        pbc_tensor: torch.Tensor = (
+            pbc
+            if isinstance(pbc, torch.Tensor)
+            else torch.tensor(
+                pbc if isinstance(pbc, list) else [pbc] * 3,
+                dtype=torch.bool,
+                device=self.device,
+            )
+        )
 
         if cell.dim() == 3:  # Check if there is an extra batch dimension
             cell = cell.squeeze(0)  # Squeeze the first dimension
@@ -158,8 +179,8 @@ class ParticleLifeModel(ModelInterface):
 
         # Wrap positions into the unit cell
         wrapped_positions = (
-            ts.transforms.pbc_wrap_batched(positions, state.cell, system_idx, pbc)
-            if pbc.any()
+            ts.transforms.pbc_wrap_batched(positions, state.cell, system_idx, pbc_tensor)
+            if pbc_tensor.any()
             else positions
         )
 
@@ -167,7 +188,7 @@ class ParticleLifeModel(ModelInterface):
             mapping, _, shifts_idx = torchsim_nl(
                 positions=wrapped_positions,
                 cell=cell,
-                pbc=pbc,
+                pbc=pbc_tensor,
                 cutoff=self.cutoff,
                 system_idx=system_idx,
             )
@@ -175,7 +196,7 @@ class ParticleLifeModel(ModelInterface):
             dr_vec, distances = transforms.get_pair_displacements(
                 positions=wrapped_positions,
                 cell=cell,
-                pbc=pbc,
+                pbc=pbc_tensor,
                 pairs=(mapping[0], mapping[1]),
                 shifts=shifts_idx,
             )
@@ -184,7 +205,7 @@ class ParticleLifeModel(ModelInterface):
             dr_vec, distances = transforms.get_pair_displacements(
                 positions=wrapped_positions,
                 cell=cell,
-                pbc=pbc,
+                pbc=pbc_tensor,
             )
             # Mask out self-interactions
             mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)
@@ -202,7 +223,9 @@ class ParticleLifeModel(ModelInterface):
         mask = distances < self.cutoff
 
         # Initialize results with total energy (sum/2 to avoid double counting)
-        results = {"energy": 0.0}
+        results: dict[str, torch.Tensor] = {
+            "energy": torch.tensor(0.0, dtype=self.dtype, device=self.device),
+        }
 
         # Calculate forces and apply cutoff
         pair_forces = asymmetric_particle_pair_force_jit(
@@ -222,7 +245,9 @@ class ParticleLifeModel(ModelInterface):
 
         return results
 
-    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(
+        self, state: ts.SimState | StateDict, **_kwargs: object
+    ) -> dict[str, torch.Tensor]:
         """Compute particle life energies and forces for a system.
 
         Main entry point for particle life calculations that handles batched states by
@@ -232,6 +257,7 @@ class ParticleLifeModel(ModelInterface):
             state: Input state containing atomic positions, cell vectors, and other
                 system information. Can be a SimState object or a dictionary with the
                 same keys.
+            **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
             dict[str, torch.Tensor]: Computed properties:
@@ -248,11 +274,18 @@ class ParticleLifeModel(ModelInterface):
         Raises:
             ValueError: If batch cannot be inferred for multi-cell systems.
         """
-        sim_state = (
-            state
-            if isinstance(state, ts.SimState)
-            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
-        )
+        if isinstance(state, ts.SimState):
+            sim_state = state
+        else:
+            positions_in = state["positions"]
+            sim_state = ts.SimState(
+                positions=positions_in,
+                masses=torch.ones_like(positions_in),
+                cell=state["cell"],
+                pbc=state.get("pbc", True),
+                atomic_numbers=state["atomic_numbers"],
+                system_idx=state.get("system_idx"),
+            )
 
         if sim_state.system_idx is None and sim_state.cell.shape[0] > 1:
             raise ValueError(
