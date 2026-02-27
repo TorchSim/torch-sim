@@ -6,6 +6,7 @@ import pytest
 import torch
 from ase import Atoms
 from ase.geometry import wrap_positions as ase_wrap_positions
+from ase.neighborlist import neighbor_list
 
 import torch_sim as ts
 import torch_sim.transforms as ft
@@ -462,6 +463,9 @@ def test_pbc_wrap_batched_preserves_relative_positions(
 
         # Calculate pairwise distances before wrapping
         atoms_in_batch = torch.sum(system_idx_mask).item()
+        if not isinstance(atoms_in_batch, int):
+            raise TypeError(f"atoms_in_batch is not an integer: {atoms_in_batch}")
+
         for n_atoms in range(atoms_in_batch - 1):
             for j in range(n_atoms + 1, atoms_in_batch):
                 # Get the indices of atoms i and j in this batch
@@ -1237,45 +1241,24 @@ def test_linked_cell_basic() -> None:
     assert found, "Expected atoms 0 and 1 to be neighbors"
 
 
-def _ase_naive_reference(
-    atoms: Atoms, cutoff: float, *, self_interaction: bool
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Get reference neighbor pairs from ASE for comparison with build_naive_neighborhood.
-
-    Returns sorted distances for all candidate pairs (no strict cutoff filtering beyond
-    what ASE applies).
-    """
-    from ase.neighborlist import neighbor_list
-
-    idx_i, idx_j, shifts, dist = neighbor_list(
-        quantities="ijSd",
-        a=atoms,
-        cutoff=cutoff,
-        self_interaction=self_interaction,
-        max_nbins=1e6,
-    )
-    return idx_i, idx_j, shifts, dist
-
-
 @pytest.mark.parametrize(
     "pbc_val",
     [
+        [False, False, False],
         [True, False, False],
         [False, True, False],
         [False, False, True],
         [True, True, False],
         [True, False, True],
         [False, True, True],
+        [True, True, True],
     ],
 )
 @pytest.mark.parametrize("self_interaction", [True, False])
 def test_build_naive_neighborhood_mixed_pbc(
     *, self_interaction: bool, pbc_val: list[bool], ar_atoms: Atoms
 ) -> None:
-    """Test build_naive_neighborhood with mixed PBC per axis within a single system.
-
-    This covers the gap where pbc=[True, False, True] etc. was never tested.
-    """
+    """Test build_naive_neighborhood with mixed PBC per axis within a single system."""
     atoms = ar_atoms.copy()
     atoms.pbc = pbc_val
     cutoff = 3.0
@@ -1296,17 +1279,18 @@ def test_build_naive_neighborhood_mixed_pbc(
     diff = positions[mapping[1]] - positions[mapping[0]] + cart_shifts
     dists = torch.linalg.norm(diff, dim=-1).numpy()
 
-    # Compare with ASE
-    _, _, _, dist_ref = _ase_naive_reference(
-        atoms, cutoff, self_interaction=self_interaction
+    # Exact match against ASE
+    *_, dist_ref = neighbor_list(
+        quantities="ijSd",
+        a=atoms,
+        cutoff=cutoff,
+        self_interaction=self_interaction,
+        max_nbins=1e6,
     )
-    dist_ref_sorted = np.sort(dist_ref)
-    dists_sorted = np.sort(dists)
-
-    # Our pairs must be a superset of ASE's
-    assert len(dists_sorted) >= len(dist_ref_sorted), (
-        f"pbc={pbc_val}: got {len(dists_sorted)} pairs, "
-        f"expected at least {len(dist_ref_sorted)}"
+    np.testing.assert_array_equal(
+        np.sort(dists),
+        np.sort(dist_ref),
+        err_msg=f"pbc={pbc_val}: distances do not match ASE reference",
     )
 
     # Verify no shifts along non-periodic axes

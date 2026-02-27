@@ -5,20 +5,47 @@ fallback based on available dependencies. The API supports both single-system
 and batched (multi-system) calculations.
 
 Available Implementations:
-    - Primitive: Pure PyTorch implementation (always available)
-    - Vesin: High-performance neighbor lists (optional, requires vesin package)
-    - Batched: Optimized for multiple systems (torch_nl_n2, torch_nl_linked_cell)
+    - torch_nl: Pure PyTorch implementations (always available)
+        - torch_nl_n2: Vectorized O(N²) naive approach
+        - torch_nl_linked_cell: O(N) linked-cell approach
+    - Vesin: High-performance neighbor lists
+        (optional, CPU ONLY, requires vesin package)
+    - Alchemiops: NVIDIA CUDA-accelerated neighbor lists
+        (optional, GPU ONLY, requires alchemiops package)
 
-Default Neighbor Lists:
-    The module automatically selects the best available implementation:
-    - For single systems: vesin_nl (if available) or standard_nl (fallback)
-    - For batched systems: torch_nl_linked_cell (always available)
+Default Neighbor List (torchsim_nl):
+    Automatically selects the best available implementation:
+    - Priority: alchemiops > vesin > torch_nl_linked_cell
 """
 
 import torch
 
-from torch_sim.neighbors.standard import primitive_neighbor_list, standard_nl
+# NOTE: import errors are handled in the alchemiops and vesin modules
+from torch_sim.neighbors.alchemiops import (
+    ALCHEMIOPS_AVAILABLE,
+    alchemiops_nl_cell_list,
+    alchemiops_nl_n2,
+)
 from torch_sim.neighbors.torch_nl import strict_nl, torch_nl_linked_cell, torch_nl_n2
+from torch_sim.neighbors.vesin import (
+    VESIN_AVAILABLE,
+    VesinNeighborList,
+    VesinNeighborListTorch,
+    vesin_nl,
+    vesin_nl_ts,
+)
+
+
+# Set default neighbor list based on what's available (priority order)
+if ALCHEMIOPS_AVAILABLE:
+    # Alchemiops is fastest on NVIDIA GPUs
+    default_batched_nl = alchemiops_nl_n2
+elif VESIN_AVAILABLE:
+    # Vesin is good fallback
+    default_batched_nl = vesin_nl_ts  # Still use native for batched
+else:
+    # Pure PyTorch fallback
+    default_batched_nl = torch_nl_linked_cell
 
 
 def _normalize_inputs(
@@ -53,46 +80,6 @@ def _normalize_inputs(
         pbc = pbc.contiguous()
 
     return cell, pbc
-
-
-# Try to import Alchemiops implementations (NVIDIA CUDA acceleration)
-try:
-    from torch_sim.neighbors.alchemiops import (
-        ALCHEMIOPS_AVAILABLE,
-        alchemiops_nl_cell_list,
-        alchemiops_nl_n2,
-    )
-except ImportError:
-    ALCHEMIOPS_AVAILABLE = False
-    alchemiops_nl_n2 = None  # type: ignore[assignment]
-    alchemiops_nl_cell_list = None  # type: ignore[assignment]
-
-# Try to import Vesin implementations
-try:
-    from torch_sim.neighbors.vesin import (
-        VESIN_AVAILABLE,
-        VesinNeighborList,
-        VesinNeighborListTorch,
-        vesin_nl,
-        vesin_nl_ts,
-    )
-except ImportError:
-    VESIN_AVAILABLE = False
-    VesinNeighborList = None  # type: ignore[assignment,misc]
-    VesinNeighborListTorch = None  # type: ignore[assignment,misc]
-    vesin_nl = None  # type: ignore[assignment]
-    vesin_nl_ts = None  # type: ignore[assignment]
-
-# Set default neighbor list based on what's available (priority order)
-if ALCHEMIOPS_AVAILABLE:
-    # Alchemiops is fastest on NVIDIA GPUs
-    default_batched_nl = alchemiops_nl_n2
-elif VESIN_AVAILABLE:
-    # Vesin is good fallback
-    default_batched_nl = vesin_nl_ts  # Still use native for batched
-else:
-    # Pure PyTorch fallback
-    default_batched_nl = torch_nl_linked_cell
 
 
 def torchsim_nl(
@@ -153,8 +140,6 @@ __all__ = [
     "alchemiops_nl_cell_list",
     "alchemiops_nl_n2",
     "default_batched_nl",
-    "primitive_neighbor_list",
-    "standard_nl",
     "strict_nl",
     "torch_nl_linked_cell",
     "torch_nl_n2",

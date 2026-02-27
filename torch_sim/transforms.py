@@ -650,7 +650,7 @@ def build_naive_neighborhood(
 
     References:
         - https://github.com/venkatkapil24/batch_nl: inspired the use of `pad_sequence`
-          to vectorize a previous implementation that used a loop to pad the positions.
+          to vectorize a previous implementation that used a loop to iterate over systems.
     """
     device = positions.device
     dtype = positions.dtype
