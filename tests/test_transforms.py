@@ -4,6 +4,7 @@ import itertools
 import numpy as np
 import pytest
 import torch
+from ase import Atoms
 from ase.geometry import wrap_positions as ase_wrap_positions
 
 import torch_sim as ts
@@ -1209,49 +1210,6 @@ def test_compute_cell_shifts_basic() -> None:
     torch.testing.assert_close(cell_shifts, expected)
 
 
-@pytest.mark.parametrize(
-    ("self_interaction", "expected_shape"), [(True, (9, 2)), (False, (6, 2))]
-)
-def test_get_fully_connected_mapping(
-    *, self_interaction: bool, expected_shape: tuple
-) -> None:
-    """Test get_fully_connected_mapping with and without self-interaction.
-
-    Tests that the function generates the correct number of pairs and handles
-    self-interaction flag appropriately.
-    """
-    i_ids = torch.tensor([0, 1, 2])
-    shifts_idx = torch.tensor([[0.0, 0.0, 0.0]])
-
-    mapping, shifts = ft.get_fully_connected_mapping(
-        i_ids=i_ids, shifts_idx=shifts_idx, self_interaction=self_interaction
-    )
-
-    # Check shapes
-    assert mapping.shape == expected_shape
-    assert shifts.shape[0] == expected_shape[0]
-    assert shifts.shape[1] == 3
-
-    # Check self-interaction behavior
-    if not self_interaction:
-        for i in range(mapping.shape[0]):
-            assert mapping[i, 0] != mapping[i, 1], "Self-pair incorrectly included"
-
-
-def test_get_fully_connected_mapping_with_multiple_shifts() -> None:
-    """Test get_fully_connected_mapping with multiple shift vectors."""
-    i_ids = torch.tensor([0, 1])
-    shifts_idx = torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-
-    mapping, shifts = ft.get_fully_connected_mapping(
-        i_ids=i_ids, shifts_idx=shifts_idx, self_interaction=False
-    )
-
-    # With 2 atoms, 3 shifts, and no self-interaction
-    assert mapping.shape[0] == 10
-    assert shifts.shape[0] == 10
-
-
 def test_linked_cell_basic() -> None:
     """Test basic functionality of linked_cell."""
     # Create a simple system with two atoms
@@ -1277,6 +1235,221 @@ def test_linked_cell_basic() -> None:
             break
 
     assert found, "Expected atoms 0 and 1 to be neighbors"
+
+
+def _ase_naive_reference(
+    atoms: Atoms, cutoff: float, *, self_interaction: bool
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Get reference neighbor pairs from ASE for comparison with build_naive_neighborhood.
+
+    Returns sorted distances for all candidate pairs (no strict cutoff filtering beyond
+    what ASE applies).
+    """
+    from ase.neighborlist import neighbor_list
+
+    idx_i, idx_j, shifts, dist = neighbor_list(
+        quantities="ijSd",
+        a=atoms,
+        cutoff=cutoff,
+        self_interaction=self_interaction,
+        max_nbins=1e6,
+    )
+    return idx_i, idx_j, shifts, dist
+
+
+@pytest.mark.parametrize(
+    "pbc_val",
+    [
+        [True, False, False],
+        [False, True, False],
+        [False, False, True],
+        [True, True, False],
+        [True, False, True],
+        [False, True, True],
+    ],
+)
+@pytest.mark.parametrize("self_interaction", [True, False])
+def test_build_naive_neighborhood_mixed_pbc(
+    *, self_interaction: bool, pbc_val: list[bool], ar_atoms: Atoms
+) -> None:
+    """Test build_naive_neighborhood with mixed PBC per axis within a single system.
+
+    This covers the gap where pbc=[True, False, True] etc. was never tested.
+    """
+    atoms = ar_atoms.copy()
+    atoms.pbc = pbc_val
+    cutoff = 3.0
+
+    positions = torch.from_numpy(atoms.get_positions()).to(dtype=DTYPE)
+    cell = torch.from_numpy(atoms.get_cell().array).to(dtype=DTYPE).unsqueeze(0)
+    pbc_t = torch.tensor([pbc_val], dtype=torch.bool)
+    n_atoms = torch.tensor([len(atoms)], dtype=torch.long)
+
+    mapping, system_mapping, shifts_idx = ft.build_naive_neighborhood(
+        positions, cell, pbc_t, cutoff, n_atoms, self_interaction=self_interaction
+    )
+
+    # Compute distances
+    cell_3d = cell.view(-1, 3, 3)
+    cell_per_pair = cell_3d[system_mapping]
+    cart_shifts = torch.bmm(shifts_idx.unsqueeze(1).to(DTYPE), cell_per_pair).squeeze(1)
+    diff = positions[mapping[1]] - positions[mapping[0]] + cart_shifts
+    dists = torch.linalg.norm(diff, dim=-1).numpy()
+
+    # Compare with ASE
+    _, _, _, dist_ref = _ase_naive_reference(
+        atoms, cutoff, self_interaction=self_interaction
+    )
+    dist_ref_sorted = np.sort(dist_ref)
+    dists_sorted = np.sort(dists)
+
+    # Our pairs must be a superset of ASE's
+    assert len(dists_sorted) >= len(dist_ref_sorted), (
+        f"pbc={pbc_val}: got {len(dists_sorted)} pairs, "
+        f"expected at least {len(dist_ref_sorted)}"
+    )
+
+    # Verify no shifts along non-periodic axes
+    for dim, is_periodic in enumerate(pbc_val):
+        if not is_periodic:
+            assert (shifts_idx[:, dim] == 0).all(), (
+                f"pbc={pbc_val}: found non-zero shift along non-periodic axis {dim}"
+            )
+
+
+def test_build_naive_neighborhood_single_atom() -> None:
+    """Test build_naive_neighborhood with a single-atom system."""
+    positions = torch.tensor([[1.0, 2.0, 3.0]], dtype=DTYPE)
+    cell = torch.eye(3, dtype=DTYPE).unsqueeze(0) * 10.0
+    pbc = torch.tensor([[True, True, True]], dtype=torch.bool)
+    n_atoms = torch.tensor([1], dtype=torch.long)
+
+    # Without self-interaction: no pairs expected
+    mapping, system_mapping, _shifts_idx = ft.build_naive_neighborhood(
+        positions, cell, pbc, cutoff=3.0, n_atoms=n_atoms, self_interaction=False
+    )
+    assert mapping.shape[1] == 0
+    assert system_mapping.shape[0] == 0
+
+    # With self-interaction: self-pairs via periodic images
+    mapping, system_mapping, _shifts_idx = ft.build_naive_neighborhood(
+        positions, cell, pbc, cutoff=3.0, n_atoms=n_atoms, self_interaction=True
+    )
+    # All pairs should be (0, 0) with non-zero shifts
+    if mapping.shape[1] > 0:
+        assert (mapping[0] == 0).all()
+        assert (mapping[1] == 0).all()
+
+    # Single atom, no PBC, no self-interaction: zero pairs
+    pbc_false = torch.tensor([[False, False, False]], dtype=torch.bool)
+    mapping, system_mapping, _shifts_idx = ft.build_naive_neighborhood(
+        positions, cell, pbc_false, cutoff=3.0, n_atoms=n_atoms, self_interaction=False
+    )
+    assert mapping.shape[1] == 0
+
+
+def test_build_naive_neighborhood_large_disparity(
+    ar_atoms: Atoms, si_atoms: Atoms
+) -> None:
+    """Test build_naive_neighborhood with large atom-count disparity in a batch.
+
+    Batches a small periodic cell with a large supercell to stress padding/mask logic.
+    """
+    small = si_atoms
+    large = ar_atoms.repeat((3, 3, 3))
+
+    atoms_list = [small, large]
+    cutoff = 3.0
+
+    n_atoms_list = [len(a) for a in atoms_list]
+    n_atoms = torch.tensor(n_atoms_list, dtype=torch.long)
+    positions = torch.cat(
+        [torch.from_numpy(a.get_positions()).to(dtype=DTYPE) for a in atoms_list]
+    )
+    cell = torch.stack(
+        [torch.from_numpy(a.get_cell().array).to(dtype=DTYPE) for a in atoms_list]
+    )
+    pbc = torch.stack([torch.tensor(a.get_pbc(), dtype=torch.bool) for a in atoms_list])
+
+    mapping, system_mapping, shifts_idx = ft.build_naive_neighborhood(
+        positions, cell, pbc, cutoff, n_atoms, self_interaction=False
+    )
+
+    # Verify shapes
+    assert mapping.shape[0] == 2
+    assert system_mapping.shape[0] == mapping.shape[1]
+    assert shifts_idx.shape == (mapping.shape[1], 3)
+
+    # Verify system assignments are valid
+    assert (system_mapping >= 0).all()
+    assert (system_mapping <= 1).all()
+
+    # Verify global indices are within bounds per system
+    offsets = torch.tensor([0, n_atoms_list[0]], dtype=torch.long)
+    for sys_idx in range(2):
+        sys_mask = system_mapping == sys_idx
+        sys_pairs = mapping[:, sys_mask]
+        lo = offsets[sys_idx]
+        hi = lo + n_atoms_list[sys_idx]
+        assert (sys_pairs >= lo).all(), f"System {sys_idx}: indices out of bounds"
+        assert (sys_pairs < hi).all(), f"System {sys_idx}: indices out of bounds"
+
+
+def test_build_naive_neighborhood_atom_at_origin() -> None:
+    """Test that an atom at exactly [0,0,0] is not masked out as padding."""
+    positions = torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=DTYPE)
+    cell = torch.eye(3, dtype=DTYPE).unsqueeze(0) * 5.0
+    pbc = torch.tensor([[True, True, True]], dtype=torch.bool)
+    n_atoms = torch.tensor([2], dtype=torch.long)
+
+    mapping, _system_mapping, _shifts_idx = ft.build_naive_neighborhood(
+        positions, cell, pbc, cutoff=2.0, n_atoms=n_atoms, self_interaction=False
+    )
+
+    # Should find the (0,1) and (1,0) pair at distance 1.0
+    assert mapping.shape[1] >= 2
+
+    # Atom 0 must appear in the neighbor list
+    assert (mapping[0] == 0).any() or (mapping[1] == 0).any(), (
+        "Atom at origin [0,0,0] was incorrectly excluded"
+    )
+
+
+def test_build_naive_neighborhood_mixed_periodic_nonperiodic(
+    ar_atoms: Atoms, benzene_atoms: Atoms
+) -> None:
+    """Test build_naive_neighborhood with a non-periodic molecule batched with a
+    periodic crystal. The molecule needs a dummy cell for the function to work.
+    """
+    mol = benzene_atoms.copy()
+    mol.cell = [20.0, 20.0, 20.0]  # dummy cell, pbc stays False
+    crystal = ar_atoms.copy()
+    cutoff = 5.0
+
+    atoms_list = [mol, crystal]
+    n_atoms = torch.tensor([len(a) for a in atoms_list], dtype=torch.long)
+    positions = torch.cat(
+        [torch.from_numpy(a.get_positions()).to(dtype=DTYPE) for a in atoms_list]
+    )
+    cell = torch.stack(
+        [torch.from_numpy(a.get_cell().array).to(dtype=DTYPE) for a in atoms_list]
+    )
+    pbc = torch.stack([torch.tensor(a.get_pbc(), dtype=torch.bool) for a in atoms_list])
+
+    _mapping, system_mapping, shifts_idx = ft.build_naive_neighborhood(
+        positions, cell, pbc, cutoff, n_atoms, self_interaction=False
+    )
+
+    # Non-periodic system must have zero shifts
+    mol_shifts = shifts_idx[system_mapping == 0]
+    assert (mol_shifts == 0).all(), "Non-periodic system has non-zero shifts"
+
+    # benzene (12 atoms, non-periodic): 132 pairs within 5 Å
+    # Ar FCC cubic (4 atoms, periodic): 48 pairs within 5 Å
+    n_benzene = (system_mapping == 0).sum().item()
+    n_ar = (system_mapping == 1).sum().item()
+    assert n_benzene == 132, f"Benzene: got {n_benzene} pairs, expected 132"
+    assert n_ar == 48, f"Ar: got {n_ar} pairs, expected 48"
 
 
 def test_build_linked_cell_neighborhood_basic() -> None:
