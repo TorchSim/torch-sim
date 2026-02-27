@@ -440,8 +440,7 @@ final_results = ts.static(
 print(f"Static returns {len(final_results)} results, one for each system")
 print(f"Matches the number of systems? {len(final_results) == len(systems)}")
 print(f"len(final_results): {len(final_results)}")
-if len(final_results) != len(systems):
-    raise RuntimeError(f"Expected {len(systems)} results, got {len(final_results)}")
+assert len(final_results) == len(systems)
 
 cu_results = final_results[0]
 print(

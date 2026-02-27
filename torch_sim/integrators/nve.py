@@ -6,7 +6,7 @@ import torch
 
 from torch_sim.integrators.md import (
     MDState,
-    initialize_momenta,
+    calculate_momenta,
     momentum_step,
     position_step,
 )
@@ -47,34 +47,22 @@ def nve_init(
         - Time integration error scales as O(dt²)
     """
     if not isinstance(state, SimState):
-        state_dict = state
-        state = SimState(
-            positions=state_dict["positions"],
-            masses=state_dict["masses"],
-            cell=state_dict["cell"],
-            pbc=state_dict["pbc"],
-            atomic_numbers=state_dict["atomic_numbers"],
-            system_idx=state_dict["system_idx"],
-        )
+        state = SimState(**state)  # ty: ignore[invalid-argument-type]
 
     model_output = model(state)
 
     system_idx = state.system_idx
     if system_idx is None:
         raise ValueError("system_idx cannot be None for NVE integration")
-    init_rng = state.rng
-    if seed is not None:
-        init_rng = torch.Generator(device=state.device)
-        init_rng.manual_seed(seed)
     momenta = getattr(
         state,
         "momenta",
-        initialize_momenta(
+        calculate_momenta(
             state.positions,
             state.masses,
             system_idx,
             kT,
-            init_rng,
+            seed if seed is not None else state.rng,
         ),
     )
 

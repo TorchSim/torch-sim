@@ -9,29 +9,31 @@ from tests.conftest import DEVICE
 from torch_sim.models.interface import validate_model_outputs
 
 
+def _make_soft_sphere_model(
+    *, use_neighbor_list: bool, with_per_atom: bool = False
+) -> ss.SoftSphereModel:
+    """Create a SoftSphereModel with common test defaults."""
+    model_kwargs: dict[str, float | bool | torch.dtype] = {
+        "sigma": 3.405,  # Å, typical for Ar
+        "epsilon": 0.0104,  # eV, typical for Ar
+        "alpha": 2.0,
+        "dtype": torch.float64,
+        "compute_forces": True,
+        "compute_stress": True,
+    }
+    if with_per_atom:
+        model_kwargs["per_atom_energies"] = True
+        model_kwargs["per_atom_stresses"] = True
+    return ss.SoftSphereModel(use_neighbor_list=use_neighbor_list, **model_kwargs)
+
+
 @pytest.fixture
 def models(
     fe_supercell_sim_state: ts.SimState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create both neighbor list and direct calculators."""
-    model_nl = ss.SoftSphereModel(
-        use_neighbor_list=True,
-        sigma=3.405,
-        epsilon=0.0104,
-        alpha=2.0,
-        dtype=torch.float64,
-        compute_forces=True,
-        compute_stress=True,
-    )
-    model_direct = ss.SoftSphereModel(
-        use_neighbor_list=False,
-        sigma=3.405,
-        epsilon=0.0104,
-        alpha=2.0,
-        dtype=torch.float64,
-        compute_forces=True,
-        compute_stress=True,
-    )
+    model_nl = _make_soft_sphere_model(use_neighbor_list=True)
+    model_direct = _make_soft_sphere_model(use_neighbor_list=False)
 
     return model_nl(fe_supercell_sim_state), model_direct(fe_supercell_sim_state)
 
@@ -41,28 +43,8 @@ def models_with_per_atom(
     fe_supercell_sim_state: ts.SimState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create calculators with per-atom properties enabled."""
-    model_nl = ss.SoftSphereModel(
-        use_neighbor_list=True,
-        sigma=3.405,
-        epsilon=0.0104,
-        alpha=2.0,
-        dtype=torch.float64,
-        compute_forces=True,
-        compute_stress=True,
-        per_atom_energies=True,
-        per_atom_stresses=True,
-    )
-    model_direct = ss.SoftSphereModel(
-        use_neighbor_list=False,
-        sigma=3.405,
-        epsilon=0.0104,
-        alpha=2.0,
-        dtype=torch.float64,
-        compute_forces=True,
-        compute_stress=True,
-        per_atom_energies=True,
-        per_atom_stresses=True,
-    )
+    model_nl = _make_soft_sphere_model(use_neighbor_list=True, with_per_atom=True)
+    model_direct = _make_soft_sphere_model(use_neighbor_list=False, with_per_atom=True)
 
     return model_nl(fe_supercell_sim_state), model_direct(fe_supercell_sim_state)
 
@@ -129,24 +111,8 @@ def test_stress_tensor_symmetry(
 
 def test_validate_model_outputs() -> None:
     """Test that the model outputs are valid."""
-    model_nl = ss.SoftSphereModel(
-        use_neighbor_list=True,
-        sigma=3.405,
-        epsilon=0.0104,
-        alpha=2.0,
-        dtype=torch.float64,
-        compute_forces=True,
-        compute_stress=True,
-    )
-    model_direct = ss.SoftSphereModel(
-        use_neighbor_list=False,
-        sigma=3.405,
-        epsilon=0.0104,
-        alpha=2.0,
-        dtype=torch.float64,
-        compute_forces=True,
-        compute_stress=True,
-    )
+    model_nl = _make_soft_sphere_model(use_neighbor_list=True)
+    model_direct = _make_soft_sphere_model(use_neighbor_list=False)
     for out in (model_nl, model_direct):
         validate_model_outputs(out, DEVICE, torch.float64)
 

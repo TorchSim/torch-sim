@@ -125,27 +125,17 @@ def models(
     """Create both neighbor list and direct calculators with Copper parameters."""
     # Parameters for Copper (Cu) using Morse potential
     # Values from: https://doi.org/10.1016/j.commatsci.2004.12.069
+    model_kwargs: dict[str, float | bool | torch.dtype] = {
+        "sigma": 2.55,  # Å, equilibrium distance
+        "epsilon": 0.436,  # eV, dissociation energy
+        "alpha": 1.359,  # Å^-1, controls potential well width
+        "dtype": torch.float64,
+        "compute_forces": True,
+        "compute_stress": True,
+    }
     cutoff = 2.5 * 2.55  # Similar scaling as LJ cutoff
-    model_nl = MorseModel(
-        use_neighbor_list=True,
-        cutoff=cutoff,
-        sigma=2.55,
-        epsilon=0.436,
-        alpha=1.359,
-        dtype=torch.float64,
-        compute_forces=True,
-        compute_stress=True,
-    )
-    model_direct = MorseModel(
-        use_neighbor_list=False,
-        cutoff=cutoff,
-        sigma=2.55,
-        epsilon=0.436,
-        alpha=1.359,
-        dtype=torch.float64,
-        compute_forces=True,
-        compute_stress=True,
-    )
+    model_nl = MorseModel(use_neighbor_list=True, cutoff=cutoff, **model_kwargs)
+    model_direct = MorseModel(use_neighbor_list=False, cutoff=cutoff, **model_kwargs)
 
     state = dict(
         positions=cu_fcc_system[0],

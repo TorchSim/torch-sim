@@ -574,15 +574,7 @@ def npt_langevin_init(
     dt = torch.as_tensor(dt, device=device, dtype=dtype)
 
     if not isinstance(state, SimState):
-        state_dict = state
-        state = SimState(
-            positions=state_dict["positions"],
-            masses=state_dict["masses"],
-            cell=state_dict["cell"],
-            pbc=state_dict["pbc"],
-            atomic_numbers=state_dict["atomic_numbers"],
-            system_idx=state_dict["system_idx"],
-        )
+        state = SimState(**state)  # ty: ignore[invalid-argument-type]
 
     if alpha.ndim == 0:
         alpha = alpha.expand(state.n_systems)
@@ -1377,15 +1369,7 @@ def npt_nose_hoover_init(
     )
 
     if not isinstance(state, SimState):
-        state_dict = state
-        state = SimState(
-            positions=state_dict["positions"],
-            masses=state_dict["masses"],
-            cell=state_dict["cell"],
-            pbc=state_dict["pbc"],
-            atomic_numbers=state_dict["atomic_numbers"],
-            system_idx=state_dict["system_idx"],
-        )
+        state = SimState(**state)  # ty: ignore[invalid-argument-type]
 
     _n_particles, dim = state.positions.shape
     n_systems = state.n_systems
@@ -2334,17 +2318,8 @@ def npt_crescale_init(
         1e-1 if isothermal_compressibility is None else isothermal_compressibility
     )  # (eV/A^3)^-1
 
-    # Convert state to SimState first so we can access n_systems
     if not isinstance(state, SimState):
-        state_dict = state
-        state = SimState(
-            positions=state_dict["positions"],
-            masses=state_dict["masses"],
-            cell=state_dict["cell"],
-            pbc=state_dict["pbc"],
-            atomic_numbers=state_dict["atomic_numbers"],
-            system_idx=state_dict["system_idx"],
-        )
+        state = SimState(**state)  # ty: ignore[invalid-argument-type]
 
     # Convert all parameters to tensors with correct device and dtype
     tau_p = torch.as_tensor(tau_p, device=device, dtype=dtype)

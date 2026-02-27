@@ -33,6 +33,13 @@ import torch_sim as ts
 from torch_sim.models.mace import MaceModel, MaceUrls
 
 
+def require_not_none[T](value: T | None, message: str) -> T:
+    """Return value or raise RuntimeError when missing."""
+    if value is None:
+        raise RuntimeError(message)
+    return value
+
+
 # Set device and data type
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float32
@@ -134,9 +141,7 @@ ph.run_mesh(mesh)
 ph.run_total_dos()
 
 # Get DOS data
-dos = ph.total_dos
-if dos is None:
-    raise RuntimeError("Phonopy total_dos not computed")
+dos = require_not_none(ph.total_dos, "Phonopy total_dos not computed")
 freq_points = dos.frequency_points
 dos_values = dos.dos
 if freq_points is None or dos_values is None:
@@ -205,9 +210,9 @@ try:
             import pymatviz as pmv
 
             print("\nGenerating phonon DOS plot...")
-            total_dos = ph.total_dos
-            if total_dos is None:
-                raise RuntimeError("Phonopy total_dos not available for plotting")
+            total_dos = require_not_none(
+                ph.total_dos, "Phonopy total_dos not available for plotting"
+            )
             fig_dos = pmv.phonon_dos(total_dos)
             fig_dos.update_traces(line_width=3)
             fig_dos.update_layout(
@@ -221,9 +226,9 @@ try:
 
             print("Generating phonon band structure plot...")
             ph.auto_band_structure(plot=False)
-            band_structure = ph.band_structure
-            if band_structure is None:
-                raise RuntimeError("Phonopy band_structure not available for plotting")
+            band_structure = require_not_none(
+                ph.band_structure, "Phonopy band_structure not available for plotting"
+            )
             fig_bands = pmv.phonon_bands(
                 band_structure,
                 line_kwargs={"width": 3},
