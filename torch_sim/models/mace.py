@@ -29,6 +29,7 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
+from torch_sim.state import pbc_to_tensor
 from torch_sim.typing import StateDict
 
 
@@ -103,7 +104,7 @@ class MaceModel(ModelInterface):
 
     def __init__(
         self,
-        model: str | Path | torch.nn.Module | Any | None = None,
+        model: str | Path | torch.nn.Module | None = None,
         *,
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float64,
@@ -314,16 +315,7 @@ class MaceModel(ModelInterface):
             self.setup_from_system_idx(sim_state.atomic_numbers, system_idx)
 
         # Wrap positions into the unit cell
-        pbc_val = sim_state.pbc
-        pbc_t = (
-            pbc_val
-            if isinstance(pbc_val, torch.Tensor)
-            else torch.tensor(
-                [pbc_val] * 3 if isinstance(pbc_val, bool) else pbc_val,
-                dtype=torch.bool,
-                device=sim_state.device,
-            )
-        )
+        pbc_t = pbc_to_tensor(sim_state.pbc, sim_state.device)
         wrapped_positions = (
             ts.transforms.pbc_wrap_batched(
                 sim_state.positions,

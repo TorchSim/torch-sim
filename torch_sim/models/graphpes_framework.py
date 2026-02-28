@@ -23,7 +23,7 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import ensure_sim_state
+from torch_sim.state import ensure_sim_state, pbc_to_tensor
 from torch_sim.typing import StateDict
 
 
@@ -55,17 +55,6 @@ except ImportError as exc:
         pass
 
 
-def _pbc_to_tensor(
-    *, pbc: torch.Tensor | list[bool] | bool, device: torch.device
-) -> torch.Tensor:
-    """Convert pbc to Tensor for APIs that require it."""
-    if isinstance(pbc, torch.Tensor):
-        return pbc
-    if isinstance(pbc, bool):
-        return torch.tensor([pbc] * 3, dtype=torch.bool, device=device)
-    return torch.tensor(pbc, dtype=torch.bool, device=device)
-
-
 def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGraph:
     """Convert a SimState object into an AtomicGraph object.
 
@@ -77,7 +66,7 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
         AtomicGraph object representing the batched structures
     """
     graphs = []
-    pbc_t = _pbc_to_tensor(pbc=state.pbc, device=state.device)
+    pbc_t = pbc_to_tensor(state.pbc, state.device)
 
     for sys_idx in range(state.n_systems):
         system_mask = state.system_idx == sys_idx

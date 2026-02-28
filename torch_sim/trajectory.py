@@ -785,9 +785,15 @@ class TorchSimTrajectory:
 
         data_node = self._file.get_node(where="/data/", name=name)
         steps_node = self._file.get_node(where="/steps/", name=name)
-        if isinstance(data_node, tables.EArray) and isinstance(steps_node, tables.EArray):
-            data_node.append(data)
-            steps_node.append(steps)
+        if not isinstance(data_node, tables.EArray) or not isinstance(
+            steps_node, tables.EArray
+        ):
+            raise TypeError(
+                f"Expected EArray nodes for '{name}', got "
+                f"data={type(data_node).__name__}, steps={type(steps_node).__name__}"
+            )
+        data_node.append(data)
+        steps_node.append(steps)
 
     def get_array(
         self,

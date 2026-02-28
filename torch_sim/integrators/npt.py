@@ -1857,7 +1857,6 @@ def _crescale_independent_lengths_barostat_step(
     ).unsqueeze(-1)
 
     # Update positions and momenta (barostat + half momentum step)
-    system_idx = require_system_idx(state.system_idx)
     state.positions = rscaling[system_idx] * state.positions + (rscaling + 1 / rscaling)[
         system_idx
     ] * state.momenta * dt / (2 * state.masses.unsqueeze(-1))

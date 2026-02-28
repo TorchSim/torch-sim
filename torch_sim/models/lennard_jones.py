@@ -30,7 +30,7 @@ import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import ensure_sim_state
+from torch_sim.state import ensure_sim_state, pbc_to_tensor
 from torch_sim.typing import StateDict
 
 
@@ -258,16 +258,7 @@ class LennardJonesModel(ModelInterface):
         positions = state.positions
         cell = state.row_vector_cell
         cell = cell.squeeze()
-        pbc_val = state.pbc
-        pbc = (
-            pbc_val
-            if isinstance(pbc_val, torch.Tensor)
-            else torch.tensor(
-                [pbc_val] * 3 if isinstance(pbc_val, bool) else pbc_val,
-                dtype=torch.bool,
-                device=state.device,
-            )
-        )
+        pbc = pbc_to_tensor(state.pbc, state.device)
 
         # Ensure system_idx exists (create if None for single system)
         system_idx = (

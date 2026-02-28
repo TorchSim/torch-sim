@@ -52,6 +52,18 @@ def require_system_idx(system_idx: torch.Tensor | None) -> torch.Tensor:
     return system_idx
 
 
+def pbc_to_tensor(
+    pbc: torch.Tensor | list[bool] | bool,  # noqa: FBT001
+    device: torch.device,
+) -> torch.Tensor:
+    """Convert pbc (bool, list[bool], or Tensor) to a bool Tensor on device."""
+    if isinstance(pbc, torch.Tensor):
+        return pbc
+    if isinstance(pbc, bool):
+        return torch.tensor([pbc] * 3, dtype=torch.bool, device=device)
+    return torch.tensor(pbc, dtype=torch.bool, device=device)
+
+
 def ensure_sim_state(state: "SimState | StateDict") -> "SimState":
     """Return a SimState from either SimState or StateDict input."""
     if isinstance(state, SimState):

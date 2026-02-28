@@ -31,6 +31,7 @@ import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
+from torch_sim.state import pbc_to_tensor
 from torch_sim.typing import StateDict
 
 
@@ -271,16 +272,7 @@ class MorseModel(ModelInterface):
         positions = sim_state.positions
         cell = sim_state.row_vector_cell
         cell = cell.squeeze()
-        pbc = sim_state.pbc
-        pbc_tensor: torch.Tensor = (
-            pbc
-            if isinstance(pbc, torch.Tensor)
-            else torch.tensor(
-                pbc if isinstance(pbc, list) else [pbc] * 3,
-                dtype=torch.bool,
-                device=self.device,
-            )
-        )
+        pbc_tensor = pbc_to_tensor(sim_state.pbc, self.device)
 
         # Ensure system_idx exists (create if None for single system)
         system_idx = (

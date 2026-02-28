@@ -6,6 +6,7 @@ import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
+from torch_sim.state import pbc_to_tensor
 from torch_sim.typing import StateDict
 
 
@@ -96,6 +97,7 @@ class ParticleLifeModel(ModelInterface):
         self,
         sigma: float = 1.0,
         epsilon: float = 1.0,
+        beta: float = 0.3,
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
@@ -106,7 +108,21 @@ class ParticleLifeModel(ModelInterface):
         use_neighbor_list: bool = True,
         cutoff: float | None = None,
     ) -> None:
-        """Initialize the calculator."""
+        """Initialize the calculator.
+
+        Args:
+            sigma: Outer radius of the interaction.
+            epsilon: Interaction scale.
+            beta: Inner radius of the interaction.
+            device: Device for computation.
+            dtype: Data type for tensors.
+            compute_forces: Whether to compute forces.
+            compute_stress: Whether to compute stress tensor.
+            per_atom_energies: Whether to compute per-atom energies.
+            per_atom_stresses: Whether to compute per-atom stresses.
+            use_neighbor_list: Whether to use neighbor list optimization.
+            cutoff: Interaction cutoff distance. Defaults to 2.5 * sigma.
+        """
         super().__init__()
         self._device = device or torch.device("cpu")
         self._dtype = dtype
@@ -124,7 +140,7 @@ class ParticleLifeModel(ModelInterface):
             cutoff or 2.5 * sigma, dtype=self.dtype, device=self.device
         )
         self.epsilon = torch.tensor(epsilon, dtype=self.dtype, device=self.device)
-        self.beta = torch.tensor(0.3, dtype=self.dtype, device=self.device)
+        self.beta = torch.tensor(beta, dtype=self.dtype, device=self.device)
 
     def unbatched_forward(
         self, state: ts.SimState | StateDict
@@ -156,16 +172,7 @@ class ParticleLifeModel(ModelInterface):
 
         positions = state.positions
         cell = state.row_vector_cell
-        pbc = state.pbc
-        pbc_tensor: torch.Tensor = (
-            pbc
-            if isinstance(pbc, torch.Tensor)
-            else torch.tensor(
-                pbc if isinstance(pbc, list) else [pbc] * 3,
-                dtype=torch.bool,
-                device=self.device,
-            )
-        )
+        pbc_tensor = pbc_to_tensor(state.pbc, self.device)
 
         if cell.dim() == 3:  # Check if there is an extra batch dimension
             cell = cell.squeeze(0)  # Squeeze the first dimension
