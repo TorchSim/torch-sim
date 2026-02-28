@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 import torch
 
 import torch_sim as ts
-from torch_sim.typing import PRNGLike, StateLike
+from torch_sim.typing import PRNGLike, StateDict, StateLike
 
 
 if TYPE_CHECKING:
@@ -43,6 +43,20 @@ def coerce_prng(rng: PRNGLike, device: torch.device) -> torch.Generator:
         return torch.Generator(device=device)
 
     raise ValueError(f"Invalid rng type: {type(rng)}")
+
+
+def require_system_idx(system_idx: torch.Tensor | None) -> torch.Tensor:
+    """Return non-null system indices or raise with a clear invariant message."""
+    if system_idx is None:
+        raise RuntimeError("system_idx is set by SimState.__post_init__")
+    return system_idx
+
+
+def ensure_sim_state(state: "SimState | StateDict") -> "SimState":
+    """Return a SimState from either SimState or StateDict input."""
+    if isinstance(state, SimState):
+        return state
+    return SimState(**state)  # ty: ignore[invalid-argument-type]
 
 
 @dataclass

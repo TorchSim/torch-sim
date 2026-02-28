@@ -18,7 +18,7 @@ import torch
 import torch_sim as ts
 from torch_sim.optimizers import cell_filters
 from torch_sim.optimizers.cell_filters import frechet_cell_filter_init
-from torch_sim.state import SimState
+from torch_sim.state import SimState, ensure_sim_state, require_system_idx
 from torch_sim.typing import StateDict
 
 
@@ -160,13 +160,10 @@ def lbfgs_init(
     device: torch.device = model.device
     dtype: torch.dtype = model.dtype
 
-    if not isinstance(state, SimState):
-        state = SimState(**state)  # ty: ignore[invalid-argument-type]
+    state = ensure_sim_state(state)
 
     n_systems = state.n_systems  # S
-    system_idx = state.system_idx
-    if system_idx is None:
-        raise RuntimeError("system_idx is set by SimState.__post_init__")
+    system_idx = require_system_idx(state.system_idx)
 
     # Compute max atoms per system for per-system history storage
     counts = state.n_atoms_per_system  # [S]
@@ -328,9 +325,7 @@ def lbfgs_step(  # noqa: PLR0915, C901
     device, dtype = model.device, model.dtype
     eps = 1e-8 if dtype == torch.float32 else 1e-16
     n_systems = state.n_systems  # S
-    state_sys_idx = state.system_idx
-    if state_sys_idx is None:
-        raise RuntimeError("system_idx is set by SimState.__post_init__")
+    state_sys_idx = require_system_idx(state.system_idx)
 
     # Derive max_atoms from history shape: [S, H, M, 3] or [S, H, M_ext, 3]
     history_dim = state.s_history.shape[2]  # M or M_ext

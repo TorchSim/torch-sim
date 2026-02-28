@@ -30,6 +30,7 @@ import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
+from torch_sim.state import ensure_sim_state
 from torch_sim.typing import StateDict
 
 
@@ -252,8 +253,7 @@ class LennardJonesModel(ModelInterface):
 
             The implementation applies cutoff distance to both approaches for consistency.
         """
-        if not isinstance(state, ts.SimState):
-            state = ts.SimState(**state)
+        state = ensure_sim_state(state)
 
         positions = state.positions
         cell = state.row_vector_cell

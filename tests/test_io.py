@@ -46,10 +46,9 @@ def test_multiple_structures_to_state(si_structure: Structure) -> None:
     assert state.positions.shape == (16, 3)
     assert state.masses.shape == (16,)
     assert state.cell.shape == (2, 3, 3)
-    assert isinstance(state.pbc, torch.Tensor)
     assert torch.all(state.pbc)
-    assert state.system_idx is not None
     assert state.atomic_numbers.shape == (16,)
+    assert state.system_idx is not None
     assert state.system_idx.shape == (16,)
     assert torch.all(
         state.system_idx
@@ -66,10 +65,9 @@ def test_single_atoms_to_state(si_atoms: Atoms) -> None:
     assert state.positions.shape == (8, 3)
     assert state.masses.shape == (8,)
     assert state.cell.shape == (1, 3, 3)
-    assert isinstance(state.pbc, torch.Tensor)
     assert torch.all(state.pbc)
-    assert state.system_idx is not None
     assert state.atomic_numbers.shape == (8,)
+    assert state.system_idx is not None
     assert state.system_idx.shape == (8,)
     assert torch.all(state.system_idx == 0)
 
@@ -83,10 +81,9 @@ def test_multiple_atoms_to_state(si_atoms: Atoms) -> None:
     assert state.positions.shape == (16, 3)
     assert state.masses.shape == (16,)
     assert state.cell.shape == (2, 3, 3)
-    assert isinstance(state.pbc, torch.Tensor)
     assert torch.all(state.pbc)
-    assert state.system_idx is not None
     assert state.atomic_numbers.shape == (16,)
+    assert state.system_idx is not None
     assert state.system_idx.shape == (16,)
     assert torch.all(
         state.system_idx
@@ -177,10 +174,9 @@ def test_multiple_phonopy_to_state(si_phonopy_atoms: Any) -> None:
     assert state.positions.shape == (16, 3)
     assert state.masses.shape == (16,)
     assert state.cell.shape == (2, 3, 3)
-    assert isinstance(state.pbc, torch.Tensor)
     assert torch.all(state.pbc)
-    assert state.system_idx is not None
     assert state.atomic_numbers.shape == (16,)
+    assert state.system_idx is not None
     assert state.system_idx.shape == (16,)
     assert torch.all(
         state.system_idx

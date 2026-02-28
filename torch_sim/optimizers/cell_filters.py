@@ -16,7 +16,7 @@ import torch
 import torch_sim.math as fm
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers.state import BFGSState, FireState, LBFGSState, OptimState
-from torch_sim.state import SimState
+from torch_sim.state import SimState, require_system_idx
 
 
 def _setup_cell_factor(
@@ -30,7 +30,7 @@ def _setup_cell_factor(
 
     if cell_factor is None:
         # Count atoms per system
-        _, counts = torch.unique(state.system_idx, return_counts=True)
+        _, counts = torch.unique(require_system_idx(state.system_idx), return_counts=True)
         cell_factor_tensor = counts.to(dtype=dtype)
     else:
         cell_factor_tensor = torch.as_tensor(cell_factor, device=device, dtype=dtype)
@@ -55,9 +55,7 @@ def _setup_pressure(
 
 def _compute_cell_masses(state: SimState) -> torch.Tensor:
     """Compute cell masses by summing atomic masses per system."""
-    system_idx = state.system_idx
-    if system_idx is None:
-        raise RuntimeError("system_idx is set by SimState.__post_init__")
+    system_idx = require_system_idx(state.system_idx)
     system_counts = torch.bincount(system_idx)
     cell_masses = torch.segment_reduce(state.masses, reduce="sum", lengths=system_counts)
     return cell_masses.unsqueeze(-1).expand(-1, 3)

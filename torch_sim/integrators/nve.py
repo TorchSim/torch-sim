@@ -11,7 +11,7 @@ from torch_sim.integrators.md import (
     position_step,
 )
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState
+from torch_sim.state import SimState, ensure_sim_state
 from torch_sim.typing import StateDict
 
 
@@ -46,8 +46,7 @@ def nve_init(
         - Initial velocities sampled from Maxwell-Boltzmann distribution
         - Time integration error scales as O(dt²)
     """
-    if not isinstance(state, SimState):
-        state = SimState(**state)  # ty: ignore[invalid-argument-type]
+    state = ensure_sim_state(state)
 
     model_output = model(state)
 

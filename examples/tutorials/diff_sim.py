@@ -47,11 +47,11 @@ def draw_system(
     R: torch.Tensor, box_size: float, marker_size: float, color: list[float] | None = None
 ):
     """Draw a system of particles on the plot."""
-    if color == None:
+    if color is None:
         color = [64 / 256] * 3
     ms = marker_size / box_size
 
-    R = torch.tensor(R)
+    R = torch.as_tensor(R)
 
     marker_style: dict[str, str | int | float | list[float]] = dict(
         linestyle="none",

@@ -6,7 +6,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.optimizers import cell_filters
-from torch_sim.state import SimState
+from torch_sim.state import SimState, ensure_sim_state
 from torch_sim.typing import StateDict
 
 
@@ -41,8 +41,7 @@ def gradient_descent_init(
     # Import here to avoid circular imports
     from torch_sim.optimizers import CellOptimState, OptimState
 
-    if not isinstance(state, SimState):
-        state = SimState(**state)  # ty: ignore[invalid-argument-type]
+    state = ensure_sim_state(state)
 
     # Get initial forces and energy from model
     model_output = model(state)

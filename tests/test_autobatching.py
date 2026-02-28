@@ -120,13 +120,11 @@ def test_calculate_scaling_metric_non_periodic(benzene_sim_state: ts.SimState) -
         benzene_sim_state.positions.max(dim=0).values
         - benzene_sim_state.positions.min(dim=0).values
     ).clone()
-    pbc = benzene_sim_state.pbc
-    if isinstance(pbc, torch.Tensor):
-        pbc_tensor = pbc
-    elif isinstance(pbc, bool):
-        pbc_tensor = torch.tensor([pbc] * 3, device=benzene_sim_state.device)
-    else:
-        pbc_tensor = torch.tensor(pbc, device=benzene_sim_state.device)
+    pbc_tensor = torch.as_tensor(
+        benzene_sim_state.pbc, device=benzene_sim_state.device, dtype=torch.bool
+    )
+    if pbc_tensor.ndim == 0:
+        pbc_tensor = pbc_tensor.repeat(3)
     for idx, p in enumerate(pbc_tensor):
         if not p:
             bbox[idx] += 2.0
@@ -143,7 +141,7 @@ def test_split_state(si_double_sim_state: ts.SimState) -> None:
     assert len(split_states) == 2
 
     # Check each state has the correct properties
-    for _idx, split_state in enumerate(split_states):
+    for split_state in split_states:
         assert split_state.n_systems == 1
         assert split_state.system_idx is not None
         assert torch.all(

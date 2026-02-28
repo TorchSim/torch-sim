@@ -7,7 +7,7 @@ import torch
 import torch_sim as ts
 import torch_sim.math as fm
 from torch_sim.optimizers import cell_filters
-from torch_sim.state import SimState
+from torch_sim.state import SimState, ensure_sim_state, require_system_idx
 from torch_sim.typing import StateDict
 
 
@@ -62,8 +62,7 @@ def fire_init(
     device: torch.device = model.device
     dtype: torch.dtype = model.dtype
 
-    if not isinstance(state, SimState):
-        state = SimState(**state)  # ty: ignore[invalid-argument-type]
+    state = ensure_sim_state(state)
 
     n_systems = state.n_systems
 
@@ -186,9 +185,7 @@ def _vv_fire_step[T: "FireState | CellFireState"](  # noqa: PLR0915
     from torch_sim.optimizers import CellFireState
 
     n_systems, device, dtype = state.n_systems, state.device, state.dtype
-    state_sys_idx = state.system_idx
-    if state_sys_idx is None:
-        raise RuntimeError("system_idx is set by SimState.__post_init__")
+    state_sys_idx = require_system_idx(state.system_idx)
 
     # Initialize velocities if NaN
     nan_velocities = state.velocities.isnan().any(dim=1)
@@ -302,9 +299,7 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
     from torch_sim.optimizers import CellFireState
 
     n_systems, device, dtype = state.n_systems, state.device, state.dtype
-    state_sys_idx = state.system_idx
-    if state_sys_idx is None:
-        raise RuntimeError("system_idx is set by SimState.__post_init__")
+    state_sys_idx = require_system_idx(state.system_idx)
 
     # Initialize velocities if NaN
     nan_velocities = state.velocities.isnan().any(dim=1)

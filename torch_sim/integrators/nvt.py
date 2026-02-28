@@ -17,16 +17,8 @@ from torch_sim.integrators.md import (
     velocity_verlet,
 )
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState
+from torch_sim.state import SimState, ensure_sim_state, require_system_idx
 from torch_sim.typing import StateDict
-
-
-def _require_system_idx(state: SimState) -> torch.Tensor:
-    """Return system_idx, raising if None (for type narrowing)."""
-    system_idx = state.system_idx
-    if system_idx is None:
-        raise ValueError("system_idx cannot be None for NVT integration")
-    return system_idx
 
 
 def _ou_step(
@@ -127,8 +119,7 @@ def nvt_langevin_init(
         at the specified temperature. This provides a proper thermal initial
         state for the subsequent Langevin dynamics.
     """
-    if not isinstance(state, SimState):
-        state = SimState(**state)  # ty: ignore[invalid-argument-type]
+    state = ensure_sim_state(state)
 
     model_output = model(state)
 
@@ -315,8 +306,7 @@ def nvt_nose_hoover_init(
 
     # Create thermostat functions
     chain_fns = construct_nose_hoover_chain(dt, chain_length, chain_steps, sy_steps, tau)
-    if not isinstance(state, SimState):
-        state = SimState(**state)  # ty: ignore[invalid-argument-type]
+    state = ensure_sim_state(state)
 
     atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
@@ -398,7 +388,7 @@ def nvt_nose_hoover_step(
     chain = chain_fns.update_mass(chain, kT)
 
     # First half-step of chain evolution
-    system_idx = _require_system_idx(state)
+    system_idx = require_system_idx(state.system_idx)
     momenta, chain = chain_fns.half_step(state.momenta, chain, kT, system_idx)
     state.set_constrained_momenta(momenta)
 
@@ -450,7 +440,7 @@ def nvt_nose_hoover_invariant(
     """
     # Calculate system energy terms per system
     e_pot = state.energy
-    system_idx = _require_system_idx(state)
+    system_idx = require_system_idx(state.system_idx)
     e_kin = ts.calc_kinetic_energy(
         masses=state.masses, momenta=state.momenta, system_idx=system_idx
     )
@@ -583,7 +573,7 @@ def _vrescale_update[T: MDState](
     lam = torch.sqrt(scale)
 
     # Apply scaling to momenta - map from system to atom indices
-    system_idx = _require_system_idx(state)
+    system_idx = require_system_idx(state.system_idx)
     state.momenta = state.momenta * lam[system_idx].unsqueeze(-1)
     return state
 
@@ -621,8 +611,7 @@ def nvt_vrescale_init(
         at the specified temperature. The V-Rescale thermostat provides proper
         canonical sampling through stochastic velocity rescaling.
     """
-    if not isinstance(state, SimState):
-        state = SimState(**state)  # ty: ignore[invalid-argument-type]
+    state = ensure_sim_state(state)
 
     model_output = model(state)
 

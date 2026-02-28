@@ -154,18 +154,11 @@ def test_concatenate_two_si_states(
     assert concatenated.system_idx.shape == si_double_sim_state.system_idx.shape
 
     # Check system indices
+    tensor_args = dict(dtype=torch.int64, device=si_sim_state.device)
     expected_system_indices = torch.cat(
         [
-            torch.zeros(
-                si_sim_state.n_atoms,
-                dtype=torch.int64,
-                device=si_sim_state.device,
-            ),
-            torch.ones(
-                si_sim_state.n_atoms,
-                dtype=torch.int64,
-                device=si_sim_state.device,
-            ),
+            torch.zeros(si_sim_state.n_atoms, **tensor_args),
+            torch.ones(si_sim_state.n_atoms, **tensor_args),
         ]
     )
     assert torch.all(concatenated.system_idx == expected_system_indices)
@@ -803,8 +796,8 @@ def test_rng_int_seed_via_constructor() -> None:
         cell=torch.eye(3).unsqueeze(0),
         pbc=True,
         atomic_numbers=torch.ones(2, dtype=torch.int),
+        _rng=42,
     )
-    state.rng = 42
     assert isinstance(state.rng, torch.Generator)
 
 
@@ -840,15 +833,14 @@ def test_rng_int_seed_reproducible() -> None:
     """Same int seed produces the same random sequence."""
 
     def _make_state(seed: int) -> SimState:
-        state = SimState(
+        return SimState(
             positions=torch.randn(4, 3),
             masses=torch.ones(4),
             cell=torch.eye(3).unsqueeze(0),
             pbc=True,
             atomic_numbers=torch.ones(4, dtype=torch.int),
+            _rng=seed,
         )
-        state.rng = seed
-        return state
 
     s1 = _make_state(99)
     s2 = _make_state(99)

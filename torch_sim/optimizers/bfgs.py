@@ -21,7 +21,7 @@ import torch
 import torch_sim as ts
 from torch_sim.optimizers import cell_filters
 from torch_sim.optimizers.cell_filters import frechet_cell_filter_init
-from torch_sim.state import SimState
+from torch_sim.state import SimState, ensure_sim_state, require_system_idx
 from torch_sim.typing import StateDict
 
 
@@ -115,8 +115,7 @@ def bfgs_init(
     device: torch.device = model.device
     dtype: torch.dtype = model.dtype
 
-    if not isinstance(state, SimState):
-        state = SimState(**state)  # ty: ignore[invalid-argument-type]
+    state = ensure_sim_state(state)
 
     n_systems = state.n_systems  # S
 
@@ -124,9 +123,7 @@ def bfgs_init(
     global_max_atoms = int(counts.max().item()) if len(counts) > 0 else 0  # M
     # Per-system max_atoms for padding/unpadding support
     max_atoms = counts.clone()  # [S] - each system's atom count
-    system_idx = state.system_idx
-    if system_idx is None:
-        raise RuntimeError("system_idx is set by SimState.__post_init__")
+    system_idx = require_system_idx(state.system_idx)
     atom_idx = _get_atom_indices_per_system(system_idx, n_systems)  # [N]
 
     model_output = model(state)
@@ -280,9 +277,7 @@ def bfgs_step(  # noqa: C901, PLR0915
     # Note (AG): eps kept same as ASE's BFGS.
     eps = 1e-7
     is_cell_state = isinstance(state, CellBFGSState)
-    state_sys_idx = state.system_idx
-    if state_sys_idx is None:
-        raise RuntimeError("system_idx is set by SimState.__post_init__")
+    state_sys_idx = require_system_idx(state.system_idx)
 
     # Derive global_max_atoms from hessian shape
     hessian_dim = state.hessian.shape[1]

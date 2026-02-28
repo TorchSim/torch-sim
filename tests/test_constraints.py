@@ -19,6 +19,20 @@ from torch_sim.transforms import get_centers_of_mass
 from torch_sim.units import MetalUnits
 
 
+def _run_quasi_newton(
+    state: ts.SimState, model: ModelInterface, optimizer: str, max_steps: int = 500
+) -> ts.SimState:
+    """Run BFGS/LBFGS until energy change converges or max steps reached."""
+    step_fn = ts.bfgs_step if optimizer == "bfgs" else ts.lbfgs_step
+    energies = [1000, state.energy.item()]
+    for _ in range(max_steps):
+        if abs(energies[-2] - energies[-1]) <= 1e-6:
+            break
+        state = step_fn(state=state, model=model)
+        energies.append(state.energy.item())
+    return state
+
+
 def test_fix_com(ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesModel):
     """Test adjustment of positions and momenta with FixCom constraint."""
     ar_supercell_sim_state.constraints = [FixCom([0])]
@@ -179,45 +193,46 @@ def test_state_manipulation_with_constraints(ar_double_sim_state: ts.SimState):
     assert len(concatenated_state.constraints) == 2
 
     # Verify FixAtoms constraint indices are correctly mapped
-    first_fix_atoms = first_system.constraints[0]
-    assert isinstance(first_fix_atoms, FixAtoms)
-    assert torch.all(first_fix_atoms.atom_idx == torch.tensor([0, 1]))
-    concat_fix_atoms = concatenated_state.constraints[0]
-    assert isinstance(concat_fix_atoms, FixAtoms)
-    assert torch.all(concat_fix_atoms.atom_idx == torch.tensor([0, 1, 32, 33]))
+    assert isinstance(first_system.constraints[0], FixAtoms)
+    assert torch.all(first_system.constraints[0].atom_idx == torch.tensor([0, 1]))
+    assert isinstance(concatenated_state.constraints[0], FixAtoms)
+    assert torch.all(
+        concatenated_state.constraints[0].atom_idx == torch.tensor([0, 1, 32, 33])
+    )
 
     # Verify FixCom constraint system masks
-    concat_fix_com = concatenated_state.constraints[1]
-    assert isinstance(concat_fix_com, FixCom)
-    assert torch.all(concat_fix_com.system_idx == torch.tensor([0, 1, 2]))
+    assert isinstance(concatenated_state.constraints[1], FixCom)
+    assert torch.all(
+        concatenated_state.constraints[1].system_idx == torch.tensor([0, 1, 2])
+    )
 
     # Test constraint propagation after splitting concatenated state
     split_systems = concatenated_state.split()
     assert len(split_systems[0].constraints) == 2
-    split0_fix_atoms = split_systems[0].constraints[0]
-    assert isinstance(split0_fix_atoms, FixAtoms)
-    assert torch.all(split0_fix_atoms.atom_idx == torch.tensor([0, 1]))
-    split1_fix_atoms = split_systems[1].constraints[0]
-    assert isinstance(split1_fix_atoms, FixAtoms)
-    assert torch.all(split1_fix_atoms.atom_idx == torch.tensor([0, 1]))
+    assert isinstance(split_systems[0].constraints[0], FixAtoms)
+    assert torch.all(split_systems[0].constraints[0].atom_idx == torch.tensor([0, 1]))
+    assert isinstance(split_systems[1].constraints[0], FixAtoms)
+    assert torch.all(split_systems[1].constraints[0].atom_idx == torch.tensor([0, 1]))
     assert len(split_systems[2].constraints) == 1
 
     # Test constraint manipulation with different configurations
     ar_double_sim_state.constraints = []
     ar_double_sim_state.constraints = [FixCom([0, 1])]
     isolated_system = ar_double_sim_state[0]
-    isolated_fix_com = isolated_system.constraints[0]
-    assert isinstance(isolated_fix_com, FixCom)
-    assert torch.all(isolated_fix_com.system_idx == torch.tensor([0], dtype=torch.long))
+    assert isinstance(isolated_system.constraints[0], FixCom)
+    assert torch.all(
+        isolated_system.constraints[0].system_idx == torch.tensor([0], dtype=torch.long)
+    )
 
     # Test concatenation with mixed constraint states
     isolated_system.constraints = []
     mixed_concatenated_state = ts.concatenate_states(
         [isolated_system, ar_double_sim_state, isolated_system]
     )
-    mixed_fix_com = mixed_concatenated_state.constraints[0]
-    assert isinstance(mixed_fix_com, FixCom)
-    assert torch.all(mixed_fix_com.system_idx == torch.tensor([1, 2]))
+    assert isinstance(mixed_concatenated_state.constraints[0], FixCom)
+    assert torch.all(
+        mixed_concatenated_state.constraints[0].system_idx == torch.tensor([1, 2])
+    )
 
 
 def test_fix_com_gradient_descent_optimization(
@@ -421,24 +436,13 @@ def test_fix_atoms_bfgs_lbfgs_optimization(
     current_sim_state.constraints = [FixAtoms(atom_idx=indices)]
 
     # Initialize optimizer
-    if optimizer == "bfgs":
-        state = ts.bfgs_init(current_sim_state, lj_model)
-        initial_position = state.positions[indices].clone()
-        energies = [1000, state.energy.item()]
-        for _ in range(500):
-            if abs(energies[-2] - energies[-1]) <= 1e-6:
-                break
-            state = ts.bfgs_step(state=state, model=lj_model)
-            energies.append(state.energy.item())
-    else:
-        state = ts.lbfgs_init(current_sim_state, lj_model)
-        initial_position = state.positions[indices].clone()
-        energies = [1000, state.energy.item()]
-        for _ in range(500):
-            if abs(energies[-2] - energies[-1]) <= 1e-6:
-                break
-            state = ts.lbfgs_step(state=state, model=lj_model)
-            energies.append(state.energy.item())
+    state = (
+        ts.bfgs_init(current_sim_state, lj_model)
+        if optimizer == "bfgs"
+        else ts.lbfgs_init(current_sim_state, lj_model)
+    )
+    initial_position = state.positions[indices].clone()
+    state = _run_quasi_newton(state, lj_model, optimizer)
 
     final_position = state.positions[indices]
     assert torch.allclose(final_position, initial_position, atol=1e-5)
@@ -468,34 +472,18 @@ def test_fix_com_bfgs_lbfgs_optimization(
     current_sim_state.constraints = [FixCom([0])]
 
     # Initialize optimizer
-    if optimizer == "bfgs":
-        state = ts.bfgs_init(current_sim_state, lj_model)
-        initial_com = get_centers_of_mass(
-            positions=state.positions,
-            masses=state.masses,
-            system_idx=state.system_idx,
-            n_systems=state.n_systems,
-        )
-        energies = [1000, state.energy.item()]
-        for _ in range(500):
-            if abs(energies[-2] - energies[-1]) <= 1e-6:
-                break
-            state = ts.bfgs_step(state=state, model=lj_model)
-            energies.append(state.energy.item())
-    else:
-        state = ts.lbfgs_init(current_sim_state, lj_model)
-        initial_com = get_centers_of_mass(
-            positions=state.positions,
-            masses=state.masses,
-            system_idx=state.system_idx,
-            n_systems=state.n_systems,
-        )
-        energies = [1000, state.energy.item()]
-        for _ in range(500):
-            if abs(energies[-2] - energies[-1]) <= 1e-6:
-                break
-            state = ts.lbfgs_step(state=state, model=lj_model)
-            energies.append(state.energy.item())
+    state = (
+        ts.bfgs_init(current_sim_state, lj_model)
+        if optimizer == "bfgs"
+        else ts.lbfgs_init(current_sim_state, lj_model)
+    )
+    initial_com = get_centers_of_mass(
+        positions=state.positions,
+        masses=state.masses,
+        system_idx=state.system_idx,
+        n_systems=state.n_systems,
+    )
+    state = _run_quasi_newton(state, lj_model, optimizer)
 
     final_com = get_centers_of_mass(
         positions=state.positions,
