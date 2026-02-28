@@ -133,6 +133,29 @@ def test_calculate_scaling_metric_non_periodic(benzene_sim_state: ts.SimState) -
     )
 
 
+def test_calculate_scaling_metric_mixed_pbc_uses_per_system_path(
+    si_double_sim_state: ts.SimState,
+) -> None:
+    """Mixed PBC in list form should not use vectorized periodic volume path."""
+    mixed_pbc_state = ts.SimState.from_state(si_double_sim_state, pbc=[True, False, True])
+    metric_values = calculate_memory_scalers(mixed_pbc_state, "n_atoms_x_density")
+    expected_values: list[float] = []
+    for split_state in mixed_pbc_state.split():
+        bbox = (
+            split_state.positions.max(dim=0).values
+            - split_state.positions.min(dim=0).values
+        ).clone()
+        pbc_flags = [True, False, True]
+        for axis_idx, is_periodic in enumerate(pbc_flags):
+            if not is_periodic:
+                bbox[axis_idx] += 2.0
+        volume = bbox.prod() / 1000
+        expected_values.append(
+            split_state.n_atoms * (split_state.n_atoms / volume.item())
+        )
+    assert metric_values == pytest.approx(expected_values, rel=1e-5)
+
+
 def test_split_state(si_double_sim_state: ts.SimState) -> None:
     """Test splitting a batched state into individual states."""
     split_states = si_double_sim_state.split()

@@ -366,12 +366,13 @@ def calculate_memory_scalers(
     if memory_scales_with == "n_atoms":
         return state.n_atoms_per_system.tolist()
     if memory_scales_with == "n_atoms_x_density":
-        pbc_any = (
+        pbc_all = (
             state.pbc.all().item()
             if torch.is_tensor(state.pbc)
-            else (state.pbc if isinstance(state.pbc, bool) else any(state.pbc))
+            else (state.pbc if isinstance(state.pbc, bool) else all(state.pbc))
         )
-        if state.n_systems > 1 and pbc_any:  # vectorized path
+        if state.n_systems > 1 and pbc_all:
+            # Vectorized volume only valid when all axes periodic
             n_atoms = state.n_atoms_per_system.to(state.volume.dtype)
             volume = torch.abs(state.volume) / 1000  # A^3 -> nm^3
             return torch.where(volume > 0, n_atoms * n_atoms / volume, n_atoms).tolist()

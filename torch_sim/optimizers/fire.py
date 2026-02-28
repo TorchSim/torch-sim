@@ -6,6 +6,7 @@ import torch
 
 import torch_sim as ts
 import torch_sim.math as fm
+from torch_sim._duecredit import dcite
 from torch_sim.optimizers import cell_filters
 from torch_sim.state import SimState, ensure_sim_state, require_system_idx
 from torch_sim.typing import StateDict
@@ -21,12 +22,13 @@ if TYPE_CHECKING:
     )
 
 
+@dcite("10.1103/PhysRevLett.97.170201")
 def fire_init(
     state: SimState | StateDict,
     model: "ModelInterface",
     *,
-    dt_start: float = 0.1,
-    alpha_start: float = 0.1,
+    dt_start: float | torch.Tensor = 0.1,
+    alpha_start: float | torch.Tensor = 0.1,
     fire_flavor: "FireFlavor" = "ase_fire",
     cell_filter: "CellFilter | CellFilterFuncs | None" = None,
     **filter_kwargs: Any,
@@ -61,7 +63,6 @@ def fire_init(
 
     device: torch.device = model.device
     dtype: torch.dtype = model.dtype
-
     state = ensure_sim_state(state)
 
     n_systems = state.n_systems
@@ -72,6 +73,15 @@ def fire_init(
     forces = model_output["forces"]
     stress = model_output.get("stress")
 
+    # Setup initial parameters
+    dt_start_t = torch.as_tensor(dt_start, device=device, dtype=dtype)
+    if dt_start_t.ndim == 0:
+        dt_start_t = dt_start_t.expand(n_systems)
+
+    alpha_start_t = torch.as_tensor(alpha_start, device=device, dtype=dtype)
+    if alpha_start_t.ndim == 0:
+        alpha_start_t = alpha_start_t.expand(n_systems)
+
     # FIRE-specific additional attributes
     fire_attrs = {
         "forces": forces,
@@ -80,8 +90,8 @@ def fire_init(
         "velocities": torch.full(
             state.positions.shape, torch.nan, device=device, dtype=dtype
         ),
-        "dt": torch.full((n_systems,), dt_start, device=device, dtype=dtype),
-        "alpha": torch.full((n_systems,), alpha_start, device=device, dtype=dtype),
+        "dt": dt_start_t,
+        "alpha": alpha_start_t,
         "n_pos": torch.zeros((n_systems,), device=model.device, dtype=torch.int32),
     }
 
@@ -108,13 +118,13 @@ def fire_step(
     state: "FireState | CellFireState",
     model: "ModelInterface",
     *,
-    dt_max: float = 1.0,
-    n_min: int = 5,
-    f_inc: float = 1.1,
-    f_dec: float = 0.5,
-    alpha_start: float = 0.1,
-    f_alpha: float = 0.99,
-    max_step: float = 0.2,
+    dt_max: float | torch.Tensor = 1.0,
+    n_min: int | torch.Tensor = 5,
+    f_inc: float | torch.Tensor = 1.1,
+    f_dec: float | torch.Tensor = 0.5,
+    alpha_start: float | torch.Tensor = 0.1,
+    f_alpha: float | torch.Tensor = 0.99,
+    max_step: float | torch.Tensor = 0.2,
     fire_flavor: "FireFlavor" = "ase_fire",
 ) -> "FireState | CellFireState":
     """Perform one FIRE optimization step.
@@ -143,27 +153,24 @@ def fire_step(
     device, dtype = model.device, model.dtype
     eps = 1e-8 if dtype == torch.float32 else 1e-16
 
-    # Setup parameters (convert to tensors for step functions)
-    params_tuple = tuple(
+    # Setup parameters
+    dt_max, alpha_start, f_inc, f_dec, f_alpha, n_min, max_step = (
         torch.as_tensor(p, device=device, dtype=dtype)
         for p in (dt_max, alpha_start, f_inc, f_dec, f_alpha, n_min, max_step)
-    )
-    dt_max_t, alpha_start_t, f_inc_t, f_dec_t, f_alpha_t, n_min_t, max_step_t = (
-        params_tuple
     )
 
     step_func_kwargs = dict(
         model=model,
-        dt_max=dt_max_t,
-        n_min=n_min_t,
-        f_inc=f_inc_t,
-        f_dec=f_dec_t,
-        alpha_start=alpha_start_t,
-        f_alpha=f_alpha_t,
+        dt_max=dt_max,
+        n_min=n_min,
+        f_inc=f_inc,
+        f_dec=f_dec,
+        alpha_start=alpha_start,
+        f_alpha=f_alpha,
         eps=eps,
     )
     if fire_flavor == ase_fire_key:
-        step_func_kwargs["max_step"] = max_step_t
+        step_func_kwargs["max_step"] = max_step
 
     step_func = {vv_fire_key: _vv_fire_step, ase_fire_key: _ase_fire_step}[fire_flavor]
     return step_func(state, **step_func_kwargs)  # ty: ignore[invalid-argument-type]

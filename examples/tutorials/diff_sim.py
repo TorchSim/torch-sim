@@ -34,7 +34,7 @@ and perform meta-optimization to find the optimal diameter.
 
 
 # %%
-def finalize_plot(shape: tuple[int, int] = (1, 1)):
+def finalize_plot(shape: tuple[int, int] = (1, 1)) -> None:
     """Finalize the plot by setting the size and layout."""
     plt.gcf().set_size_inches(
         shape[0] * 1.5 * plt.gcf().get_size_inches()[1],
@@ -45,13 +45,13 @@ def finalize_plot(shape: tuple[int, int] = (1, 1)):
 
 def draw_system(
     R: torch.Tensor, box_size: float, marker_size: float, color: list[float] | None = None
-):
+) -> None:
     """Draw a system of particles on the plot."""
     if color is None:
         color = [64 / 256] * 3
     ms = marker_size / box_size
 
-    R = torch.as_tensor(R)
+    R = torch.tensor(R)
 
     marker_style: dict[str, str | int | float | list[float]] = dict(
         linestyle="none",
