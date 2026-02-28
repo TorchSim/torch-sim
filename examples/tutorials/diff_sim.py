@@ -34,7 +34,7 @@ and perform meta-optimization to find the optimal diameter.
 
 
 # %%
-def finalize_plot(shape: tuple[int, int] = (1, 1)):
+def finalize_plot(shape: tuple[int, int] = (1, 1)) -> None:
     """Finalize the plot by setting the size and layout."""
     plt.gcf().set_size_inches(
         shape[0] * 1.5 * plt.gcf().get_size_inches()[1],
@@ -45,35 +45,40 @@ def finalize_plot(shape: tuple[int, int] = (1, 1)):
 
 def draw_system(
     R: torch.Tensor, box_size: float, marker_size: float, color: list[float] | None = None
-):
+) -> None:
     """Draw a system of particles on the plot."""
-    if color == None:
+    if color is None:
         color = [64 / 256] * 3
     ms = marker_size / box_size
 
-    R = torch.tensor(R)
+    positions = torch.as_tensor(R).detach().cpu()
+    x_coords = positions[:, 0].numpy()
+    y_coords = positions[:, 1].numpy()
 
-    marker_style = dict(
-        linestyle="none",
-        markeredgewidth=3,
-        marker="o",
-        markersize=ms,
-        color=color,
-        fillstyle="none",
-    )
-
-    plt.plot(R[:, 0], R[:, 1], **marker_style)
-    plt.plot(R[:, 0] + box_size, R[:, 1], **marker_style)
-    plt.plot(R[:, 0], R[:, 1] + box_size, **marker_style)
-    plt.plot(R[:, 0] + box_size, R[:, 1] + box_size, **marker_style)
-    plt.plot(R[:, 0] - box_size, R[:, 1], **marker_style)
-    plt.plot(R[:, 0], R[:, 1] - box_size, **marker_style)
-    plt.plot(R[:, 0] - box_size, R[:, 1] - box_size, **marker_style)
+    for x_offset, y_offset in (
+        (0.0, 0.0),
+        (box_size, 0.0),
+        (0.0, box_size),
+        (box_size, box_size),
+        (-box_size, 0.0),
+        (0.0, -box_size),
+        (-box_size, -box_size),
+    ):
+        plt.plot(
+            x_coords + x_offset,
+            y_coords + y_offset,
+            linestyle="none",
+            markeredgewidth=3,
+            marker="o",
+            markersize=float(ms),
+            color=color,
+            fillstyle="none",
+        )
 
     plt.xlim([0, box_size])
     plt.ylim([0, box_size])
     plt.axis("off")
-    plt.gca().set_facecolor([1, 1, 1])
+    plt.gca().set_facecolor((1, 1, 1))
 
 
 # %% [markdown]
@@ -250,7 +255,7 @@ class SoftSphereMultiModel(torch.nn.Module):
         # Initialize results with total energy (divide by 2 to avoid double counting)
         potential_energy = pair_energies.sum() / 2
 
-        grad_outputs: list[torch.Tensor | None] = [
+        grad_outputs: list[torch.Tensor] = [
             torch.ones_like(
                 potential_energy,
             )
@@ -291,11 +296,11 @@ class GDState(BaseState):
 
 def gradient_descent(
     model: torch.nn.Module, *, lr: torch.Tensor | float = 0.01
-) -> tuple[Callable[[dict[str, torch.Tensor]], GDState], Callable[[GDState], GDState]]:
+) -> tuple[Callable[[BaseState], GDState], Callable[[GDState], GDState]]:
     """Initialize a gradient descent optimization."""
 
     def gd_init(
-        state: dict[str, torch.Tensor],
+        state: BaseState,
     ) -> GDState:
         """Initialize the gradient descent optimization state."""
 
@@ -313,7 +318,7 @@ def gradient_descent(
             species=state.species,
         )
 
-    def gd_step(state: GDState, lr: torch.Tensor = lr) -> GDState:
+    def gd_step(state: GDState, lr: torch.Tensor | float = lr) -> GDState:
         """Perform one gradient descent optimization step to update the
         atomic positions. The cell is not optimized."""
 
@@ -384,7 +389,7 @@ def simulation(
     R = torch.rand(N, 3) * box_size
 
     # Minimize to the nearest minimum.
-    init_fn, apply_fn = gradient_descent(model, lr=0.1)
+    init_fn, apply_fn = gradient_descent(model, lr=0.1)  # ty: ignore[invalid-argument-type]
 
     custom_state = BaseState(
         positions=R,
@@ -406,15 +411,15 @@ def simulation(
 plt.subplot(1, 2, 1)
 
 box_size, raft_energy, bubble_positions = simulation(torch.tensor(1.0))
-draw_system(bubble_positions, box_size, markersize)
-finalize_plot((0.5, 0.5))
+draw_system(bubble_positions, float(box_size), float(markersize))
+finalize_plot((1, 1))
 
 plt.subplot(1, 2, 2)
 
 box_size, raft_energy, bubble_positions = simulation(torch.tensor(0.8))
-draw_system(bubble_positions[:N_2], box_size, 0.8 * markersize)
-draw_system(bubble_positions[N_2:], box_size, markersize)
-finalize_plot((2.0, 1))
+draw_system(bubble_positions[:N_2], float(box_size), 0.8 * markersize)
+draw_system(bubble_positions[N_2:], float(box_size), float(markersize))
+finalize_plot((2, 1))
 # %% [markdown]
 """
 ## Forward simulation for different diameters and seeds.
@@ -433,8 +438,8 @@ for i, d in enumerate(diameters):
         bubble_positions_tensor[i, j] = bubble_positions
     print(f"Finished simulation for diameter {d}, final energy: {raft_energy.detach()}")
 # %%
-U_mean = torch.mean(raft_energy_tensor, axis=1)
-U_std = torch.std(raft_energy_tensor, axis=1)
+U_mean = torch.mean(raft_energy_tensor, dim=1)
+U_std = torch.std(raft_energy_tensor, dim=1)
 plt.plot(diameters.detach().numpy(), U_mean, linewidth=3)
 plt.fill_between(diameters.detach().numpy(), U_mean + U_std, U_mean - U_std, alpha=0.4)
 
@@ -450,18 +455,18 @@ for i, d in enumerate(diameters):
     color = [c, 0, 1 - c]
     draw_system(
         bubble_positions_tensor[i, 0, :N_2].detach().numpy(),
-        box_size_tensor[i, 0].detach().numpy(),
-        d * ms,
+        float(box_size_tensor[i, 0]),
+        float(d * ms),
         color=color,
     )
     draw_system(
         bubble_positions_tensor[i, 0, N_2:].detach().numpy(),
-        box_size_tensor[i, 0].detach().numpy(),
-        ms,
+        float(box_size_tensor[i, 0]),
+        float(ms),
         color=color,
     )
 
-finalize_plot((2.5, 1))
+finalize_plot((2, 1))
 
 # %% [markdown]
 """
@@ -485,12 +490,17 @@ def short_simulation(
     # Minimize to the nearest minimum.
     init_fn, apply_fn = gradient_descent(model, lr=0.1)
 
-    custom_state = BaseState(positions=R, cell=cell, species=species, pbc=True)
+    custom_state = BaseState(
+        positions=R,
+        cell=cell,
+        species=species,
+        pbc=torch.tensor([True, True, True], dtype=torch.bool),
+    )
     state = init_fn(custom_state)
     for i in range(short_simulation_steps):
         state = apply_fn(state)
 
-    grad_outputs: list[torch.Tensor | None] = [
+    grad_outputs: list[torch.Tensor] = [
         torch.ones_like(
             diameter,
         )
@@ -518,8 +528,8 @@ for i, d in enumerate(diameters):
 # %%
 plt.subplot(2, 1, 1)
 dU_dD = dU_dD.detach()
-dU_mean = torch.mean(dU_dD, axis=1)
-dU_std = torch.std(dU_dD, axis=1)
+dU_mean = torch.mean(dU_dD, dim=1)
+dU_std = torch.std(dU_dD, dim=1)
 plt.plot(diameters.detach().numpy(), dU_mean, linewidth=3)
 plt.fill_between(
     diameters.detach().numpy(), dU_mean + dU_std, dU_mean - dU_std, alpha=0.4
@@ -538,4 +548,4 @@ plt.xlim([0.4, 1.0])
 plt.xlabel(r"$D$", fontsize=20)
 plt.ylabel(r"$U$", fontsize=20)
 
-finalize_plot((1.25, 1))
+finalize_plot((1, 1))

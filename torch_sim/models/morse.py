@@ -31,6 +31,7 @@ import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
+from torch_sim.state import pbc_to_tensor
 from torch_sim.typing import StateDict
 
 
@@ -152,9 +153,9 @@ class MorseModel(ModelInterface):
 
     def __init__(
         self,
-        sigma: float = 1.0,
-        epsilon: float = 5.0,
-        alpha: float = 5.0,
+        sigma: float | torch.Tensor = 1.0,
+        epsilon: float | torch.Tensor = 5.0,
+        alpha: float | torch.Tensor = 5.0,
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
         *,  # Force keyword-only arguments
@@ -163,7 +164,7 @@ class MorseModel(ModelInterface):
         per_atom_energies: bool = False,
         per_atom_stresses: bool = False,
         use_neighbor_list: bool = True,
-        cutoff: float | None = None,
+        cutoff: float | torch.Tensor | None = None,
     ) -> None:
         """Initialize the Morse potential calculator.
 
@@ -219,14 +220,14 @@ class MorseModel(ModelInterface):
         self._per_atom_stresses = per_atom_stresses
         self.use_neighbor_list = use_neighbor_list
         # Convert parameters to tensors
-        self.sigma = torch.tensor(sigma, dtype=self.dtype, device=self.device)
-        self.cutoff = torch.tensor(
+        self.sigma = torch.as_tensor(sigma, dtype=self.dtype, device=self.device)
+        self.cutoff = torch.as_tensor(
             cutoff or 2.5 * sigma, dtype=self.dtype, device=self.device
         )
-        self.epsilon = torch.tensor(epsilon, dtype=self.dtype, device=self.device)
-        self.alpha = torch.tensor(alpha, dtype=self.dtype, device=self.device)
+        self.epsilon = torch.as_tensor(epsilon, dtype=self.dtype, device=self.device)
+        self.alpha = torch.as_tensor(alpha, dtype=self.dtype, device=self.device)
 
-    def unbatched_forward(
+    def unbatched_forward(  # noqa: PLR0915
         self, state: ts.SimState | StateDict
     ) -> dict[str, torch.Tensor]:
         """Compute Morse potential properties for a single unbatched system.
@@ -255,16 +256,23 @@ class MorseModel(ModelInterface):
             This method can work with both neighbor list and full pairwise calculations.
             In both cases, interactions are truncated at the cutoff distance.
         """
-        sim_state = (
-            state
-            if isinstance(state, ts.SimState)
-            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
-        )
+        if isinstance(state, ts.SimState):
+            sim_state = state
+        else:
+            positions_in = state["positions"]
+            sim_state = ts.SimState(
+                positions=positions_in,
+                masses=torch.ones_like(positions_in),
+                cell=state["cell"],
+                pbc=state.get("pbc", True),
+                atomic_numbers=state["atomic_numbers"],
+                system_idx=state.get("system_idx"),
+            )
 
         positions = sim_state.positions
         cell = sim_state.row_vector_cell
         cell = cell.squeeze()
-        pbc = sim_state.pbc
+        pbc_tensor = pbc_to_tensor(sim_state.pbc, self.device)
 
         # Ensure system_idx exists (create if None for single system)
         system_idx = (
@@ -275,8 +283,10 @@ class MorseModel(ModelInterface):
 
         # Wrap positions into the unit cell
         wrapped_positions = (
-            ts.transforms.pbc_wrap_batched(positions, sim_state.cell, system_idx, pbc)
-            if pbc.any()
+            ts.transforms.pbc_wrap_batched(
+                positions, sim_state.cell, system_idx, pbc_tensor
+            )
+            if pbc_tensor.any()
             else positions
         )
 
@@ -284,7 +294,7 @@ class MorseModel(ModelInterface):
             mapping, _, shifts_idx = torchsim_nl(
                 positions=wrapped_positions,
                 cell=cell,
-                pbc=pbc,
+                pbc=pbc_tensor,
                 cutoff=self.cutoff,
                 system_idx=system_idx,
             )
@@ -292,7 +302,7 @@ class MorseModel(ModelInterface):
             dr_vec, distances = transforms.get_pair_displacements(
                 positions=wrapped_positions,
                 cell=cell,
-                pbc=pbc,
+                pbc=pbc_tensor,
                 pairs=(mapping[0], mapping[1]),
                 shifts=shifts_idx,
             )
@@ -300,7 +310,7 @@ class MorseModel(ModelInterface):
             dr_vec, distances = transforms.get_pair_displacements(
                 positions=wrapped_positions,
                 cell=cell,
-                pbc=pbc,
+                pbc=pbc_tensor,
             )
             mask = torch.eye(
                 wrapped_positions.shape[0], dtype=torch.bool, device=self.device
@@ -362,7 +372,9 @@ class MorseModel(ModelInterface):
 
         return results
 
-    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(
+        self, state: ts.SimState | StateDict, **_kwargs: object
+    ) -> dict[str, torch.Tensor]:
         """Compute Morse potential energies, forces, and stresses for a system.
 
         Main entry point for Morse potential calculations that handles batched states
@@ -372,6 +384,7 @@ class MorseModel(ModelInterface):
             state (SimState | StateDict): Input state containing atomic positions,
                 cell vectors, and other system information. Can be a SimState object
                 or a dictionary with the same keys.
+            **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
             dict[str, torch.Tensor]: Computed properties:
@@ -395,11 +408,18 @@ class MorseModel(ModelInterface):
             forces = results["forces"]  # Shape: [n_atoms, 3]
             ```
         """
-        sim_state = (
-            state
-            if isinstance(state, ts.SimState)
-            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
-        )
+        if isinstance(state, ts.SimState):
+            sim_state = state
+        else:
+            positions_in = state["positions"]
+            sim_state = ts.SimState(
+                positions=positions_in,
+                masses=torch.ones_like(positions_in),
+                cell=state["cell"],
+                pbc=state.get("pbc", True),
+                atomic_numbers=state["atomic_numbers"],
+                system_idx=state.get("system_idx"),
+            )
 
         if sim_state.system_idx is None and sim_state.cell.shape[0] > 1:
             raise ValueError(

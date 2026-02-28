@@ -245,6 +245,7 @@ all_converged_states, convergence_tensor = [], None
 while (result := batcher.next_batch(fire_state, convergence_tensor))[0] is not None:
     # collect the converged states
     fire_state, converged_states = result
+    assert fire_state is not None
     all_converged_states.extend(converged_states)
 
     # optimize the batch, we stagger the steps to avoid state processing overhead
@@ -264,7 +265,8 @@ final_states = batcher.restore_original_order(all_converged_states)
 # Verify all states were processed
 assert len(final_states) == total_states
 
-# Note that the fire_state has been modified in place
+# Note that the fire_state has been modified in place (from last loop iteration)
+assert fire_state is not None
 assert fire_state.n_systems == 0
 
 

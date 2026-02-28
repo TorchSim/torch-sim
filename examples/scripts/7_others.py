@@ -45,7 +45,10 @@ atoms_list = [
 
 state = ts.io.atoms_to_state(atoms_list, device=torch.device("cpu"), dtype=torch.float32)
 pos, cell, pbc = state.positions, state.cell, state.pbc
-system_idx, n_atoms = state.system_idx, state.n_atoms
+system_idx = state.system_idx
+if system_idx is None:
+    raise RuntimeError("Batched state must have system_idx")
+n_atoms = state.n_atoms
 cutoff = torch.tensor(4.0, dtype=pos.dtype)
 self_interaction = False
 
@@ -187,7 +190,7 @@ time_steps = np.arange(window_size)
 time = time_steps * correlation_dt * timestep * 1000  # Convert to fs
 
 if vacf_calc.vacf is not None:
-    vacf_data = vacf_calc.vacf.cpu().numpy()
+    vacf_data = vacf_calc.vacf.detach().cpu().numpy()
     print("\nVACF calculation complete:")
     print(f"  Number of windows averaged: {vacf_calc._window_count}")  # noqa: SLF001
     print(f"  VACF at t=0: {vacf_data[0]:.4f}")

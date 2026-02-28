@@ -14,7 +14,8 @@ try:
     from orb_models.forcefield import pretrained
     from orb_models.forcefield.inference.calculator import ORBCalculator
 
-    from torch_sim.models.orb import OrbModel
+    from torch_sim.models.orb import OrbModel, cell_to_cellpar
+
 except ImportError:
     pytest.skip(f"ORB not installed: {traceback.format_exc()}", allow_module_level=True)
 

@@ -16,7 +16,7 @@ import torch
 import torch_sim.math as fm
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers.state import BFGSState, FireState, LBFGSState, OptimState
-from torch_sim.state import SimState
+from torch_sim.state import SimState, require_system_idx
 
 
 def _setup_cell_factor(
@@ -30,14 +30,13 @@ def _setup_cell_factor(
 
     if cell_factor is None:
         # Count atoms per system
-        _, counts = torch.unique(state.system_idx, return_counts=True)
+        _, counts = torch.unique(require_system_idx(state.system_idx), return_counts=True)
         cell_factor_tensor = counts.to(dtype=dtype)
-    elif isinstance(cell_factor, (int, float)):
-        cell_factor_tensor = torch.full(
-            (n_systems,), cell_factor, device=device, dtype=dtype
-        )
     else:
-        cell_factor_tensor = torch.tensor(cell_factor, device=device, dtype=dtype)
+        cell_factor_tensor = torch.as_tensor(cell_factor, device=device, dtype=dtype)
+        if cell_factor_tensor.ndim == 0:
+            cell_factor_tensor = cell_factor_tensor.expand(n_systems)
+
         if (n_cft := cell_factor_tensor.numel()) != n_systems:
             raise ValueError(
                 f"cell_factor tensor must have {n_systems} elements, got {n_cft}"
@@ -56,7 +55,8 @@ def _setup_pressure(
 
 def _compute_cell_masses(state: SimState) -> torch.Tensor:
     """Compute cell masses by summing atomic masses per system."""
-    system_counts = torch.bincount(state.system_idx)
+    system_idx = require_system_idx(state.system_idx)
+    system_counts = torch.bincount(system_idx)
     cell_masses = torch.segment_reduce(state.masses, reduce="sum", lengths=system_counts)
     return cell_masses.unsqueeze(-1).expand(-1, 3)
 
@@ -254,10 +254,9 @@ class CellFilter(StrEnum):
 # Filter type definitions for convenience
 def unit_cell_step[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) -> None:
     """Update cell using unit cell approach."""
-    if isinstance(cell_lr, (int, float)):
-        cell_lr = torch.full(
-            (state.n_systems,), cell_lr, device=state.device, dtype=state.dtype
-        )
+    cell_lr = torch.as_tensor(cell_lr, device=state.device, dtype=state.dtype)
+    if cell_lr.ndim == 0:
+        cell_lr = cell_lr.expand(state.n_systems)
 
     # Get current deformation gradient
     cur_deform_grad = deform_grad(state.reference_cell.mT, state.row_vector_cell)
@@ -284,10 +283,9 @@ def unit_cell_step[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) -> 
 
 def frechet_cell_step[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) -> None:
     """Update cell using frechet approach."""
-    if isinstance(cell_lr, (int, float)):
-        cell_lr = torch.full(
-            (state.n_systems,), cell_lr, device=state.device, dtype=state.dtype
-        )
+    cell_lr = torch.as_tensor(cell_lr, device=state.device, dtype=state.dtype)
+    if cell_lr.ndim == 0:
+        cell_lr = cell_lr.expand(state.n_systems)
     cell_wise_lr = cell_lr.view(state.n_systems, 1, 1)
 
     # Compute cell step and update cell positions in log space

@@ -23,6 +23,18 @@ from torch_sim.optimizers import FireState
 from torch_sim.quantities import get_pressure
 
 
+def _make_torch_generator(
+    seed: int | None, device: torch.device | None
+) -> torch.Generator:
+    """Create a local torch random number generator for deterministic sampling."""
+    generator = torch.Generator() if device is None else torch.Generator(device=device)
+    if seed is not None:
+        generator.manual_seed(seed)
+    else:
+        generator.seed()
+    return generator
+
+
 def min_distance(
     positions: torch.Tensor,
     cell: torch.Tensor,
@@ -211,7 +223,7 @@ def random_packed_structure(
     composition: Composition,
     cell: torch.Tensor,
     *,
-    seed: int = 42,
+    seed: int | None = 42,
     diameter: float | None = None,
     auto_diameter: bool = False,
     max_iter: int = 100,
@@ -258,10 +270,7 @@ def random_packed_structure(
     # Extract number of atoms for each element from composition
     element_counts = [int(i) for i in composition.as_dict().values()]
 
-    # Set up reproducible random number generator
-    generator = torch.Generator(device=device)
-    if seed is not None:
-        generator.manual_seed(seed)
+    generator = _make_torch_generator(seed, device)
 
     log = []
     # Generate initial random positions in fractional coordinates
@@ -307,7 +316,7 @@ def random_packed_structure(
             if min_distance(state.positions, cell, distance_tolerance) > diameter * 0.95:
                 break
 
-            log.append(state.positions.cpu().numpy())
+            log.append(state.positions.detach().cpu().numpy())
 
             state = ts.fire_step(state, model)
 
@@ -320,7 +329,7 @@ def random_packed_structure_multi(
     composition: Composition,
     cell: torch.Tensor,
     *,
-    seed: int = 42,
+    seed: int | None = 42,
     diameter_matrix: torch.Tensor | None = None,
     auto_diameter: bool = False,
     max_iter: int = 100,
@@ -385,9 +394,7 @@ def random_packed_structure_multi(
     print(f"Creating structure with {N_atoms} atoms: {element_dict}")
 
     # Set up random number generator with optional seed for reproducibility
-    generator = torch.Generator(device=device)
-    if seed is not None:
-        generator.manual_seed(seed)
+    generator = _make_torch_generator(seed, device)
 
     # Generate initial random positions in fractional coordinates [0,1]
     positions = torch.rand((N_atoms, 3), device=device, dtype=dtype, generator=generator)
@@ -395,7 +402,10 @@ def random_packed_structure_multi(
     # If auto_diameter enabled, calculate species-specific diameter matrix
     if auto_diameter:
         diameter_matrix = get_diameter_matrix(composition, device=device, dtype=dtype)
-        print(f"Using random pack diameter matrix:\n{diameter_matrix.cpu().numpy()}")
+        print(
+            f"Using random pack diameter matrix:\n"
+            f"{diameter_matrix.detach().cpu().numpy()}"
+        )
 
     # Perform overlap minimization if diameter matrix is specified
     if diameter_matrix is not None:
@@ -611,7 +621,7 @@ def get_subcells_to_crystallize(
                 # Apply composition restrictions if specified
                 if restrict_to_compositions:
                     subcell_comp = Composition(
-                        "".join(species_array[ids.cpu().numpy()])
+                        "".join(species_array[ids.detach().cpu().numpy()])
                     ).reduced_formula
                     if subcell_comp not in restrict_to_compositions:
                         continue
@@ -657,7 +667,7 @@ def subcells_to_structures(
 
         # Get species for these atoms and convert tensor indices to list/numpy array
         # before indexing species list
-        subcell_species = [species[int(i)] for i in ids.cpu().numpy()]
+        subcell_species = [species[int(i)] for i in ids.detach().cpu().numpy()]
 
         list_subcells.append((new_frac_pos, new_cell, subcell_species))
 

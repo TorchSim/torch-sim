@@ -11,7 +11,7 @@ from torch_sim.integrators.md import (
     position_step,
 )
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState
+from torch_sim.state import SimState, ensure_sim_state
 from torch_sim.typing import StateDict
 
 
@@ -19,7 +19,7 @@ def nve_init(
     state: SimState | StateDict,
     model: ModelInterface,
     *,
-    kT: torch.Tensor,
+    kT: float | torch.Tensor,
     seed: int | None = None,
     **_kwargs: Any,
 ) -> MDState:
@@ -46,15 +46,23 @@ def nve_init(
         - Initial velocities sampled from Maxwell-Boltzmann distribution
         - Time integration error scales as O(dt²)
     """
-    if not isinstance(state, SimState):
-        state = SimState(**state)
+    state = ensure_sim_state(state)
 
     model_output = model(state)
 
+    system_idx = state.system_idx
+    if system_idx is None:
+        raise ValueError("system_idx cannot be None for NVE integration")
     momenta = getattr(
         state,
         "momenta",
-        calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
+        calculate_momenta(
+            state.positions,
+            state.masses,
+            system_idx,
+            kT,
+            seed if seed is not None else state.rng,
+        ),
     )
 
     return MDState.from_state(
@@ -66,7 +74,7 @@ def nve_init(
 
 
 def nve_step(
-    state: MDState, model: ModelInterface, *, dt: torch.Tensor, **_kwargs: Any
+    state: MDState, model: ModelInterface, *, dt: float | torch.Tensor, **_kwargs: Any
 ) -> MDState:
     """Perform one complete NVE (microcanonical) integration step.
 
@@ -93,6 +101,7 @@ def nve_step(
         - Handles periodic boundary conditions if enabled in state
         - Symplectic integrator preserving phase space volume
     """
+    dt = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
     state = momentum_step(state, dt / 2)
     state = position_step(state, dt)
 
