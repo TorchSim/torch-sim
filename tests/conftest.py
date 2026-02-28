@@ -36,7 +36,7 @@ for _name in SIMSTATE_GENERATORS:
 def lj_model() -> LennardJonesModel:
     """Create a Lennard-Jones model with reasonable parameters for Ar."""
     return LennardJonesModel(
-        use_neighbor_list=True,
+        disable_neighbor_list=False,
         sigma=3.405,
         epsilon=0.0104,
         device=DEVICE,

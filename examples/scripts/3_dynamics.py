@@ -94,7 +94,7 @@ state = ts.SimState(
 
 # Initialize the Lennard-Jones model
 lj_model = LennardJonesModel(
-    use_neighbor_list=False,
+    disable_neighbor_list=True,
     sigma=3.405,
     epsilon=0.0104,
     cutoff=2.5 * 3.405,

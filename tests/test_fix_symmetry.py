@@ -74,7 +74,7 @@ def model() -> LennardJonesModel:
         sigma=1.0,
         epsilon=0.05,
         cutoff=6.0,
-        use_neighbor_list=False,
+        disable_neighbor_list=True,
         compute_stress=True,
         dtype=DTYPE,
     )

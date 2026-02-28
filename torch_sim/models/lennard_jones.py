@@ -24,6 +24,8 @@ Example::
     forces = output["forces"]
 """
 
+from collections.abc import Callable
+
 import torch
 
 import torch_sim as ts
@@ -138,7 +140,8 @@ class LennardJonesModel(ModelInterface):
         compute_stress (bool): Whether to compute stress tensor.
         per_atom_energies (bool): Whether to compute per-atom energy decomposition.
         per_atom_stresses (bool): Whether to compute per-atom stress decomposition.
-        use_neighbor_list (bool): Whether to use neighbor list optimization.
+        disable_neighbor_list (bool): Whether to disable neighbor-list acceleration.
+        neighbor_list_fn (Callable): Function used to construct neighbor lists.
 
     Example::
 
@@ -166,7 +169,8 @@ class LennardJonesModel(ModelInterface):
         compute_stress: bool = False,
         per_atom_energies: bool = False,
         per_atom_stresses: bool = False,
-        use_neighbor_list: bool = True,
+        disable_neighbor_list: bool = False,
+        neighbor_list_fn: Callable = torchsim_nl,
         cutoff: float | None = None,
     ) -> None:
         """Initialize the Lennard-Jones potential calculator.
@@ -189,8 +193,10 @@ class LennardJonesModel(ModelInterface):
                 Defaults to False.
             per_atom_stresses (bool): Whether to compute per-atom stress decomposition.
                 Defaults to False.
-            use_neighbor_list (bool): Whether to use a neighbor list for optimization.
-                Significantly faster for large systems. Defaults to True.
+            disable_neighbor_list (bool): Whether to disable neighbor-list acceleration
+                and use direct full-pair computations instead. Defaults to False.
+            neighbor_list_fn (Callable): Batched neighbor-list function to use when
+                neighbor lists are enabled. Defaults to torchsim_nl.
             cutoff (float | None): Cutoff distance for interactions in distance units.
                 If None, uses 2.5*sigma. Defaults to None.
 
@@ -214,7 +220,8 @@ class LennardJonesModel(ModelInterface):
         self._compute_stress = compute_stress
         self.per_atom_energies = per_atom_energies
         self.per_atom_stresses = per_atom_stresses
-        self.use_neighbor_list = use_neighbor_list
+        self.disable_neighbor_list = disable_neighbor_list
+        self.neighbor_list_fn = neighbor_list_fn
 
         # Convert parameters to tensors
         self.sigma = torch.tensor(sigma, dtype=dtype, device=self.device)
@@ -274,8 +281,8 @@ class LennardJonesModel(ModelInterface):
             else positions
         )
 
-        if self.use_neighbor_list:
-            mapping, _, shifts_idx = torchsim_nl(
+        if not self.disable_neighbor_list:
+            mapping, _, shifts_idx = self.neighbor_list_fn(
                 positions=wrapped_positions,
                 cell=cell,
                 pbc=pbc,
@@ -439,5 +446,144 @@ class LennardJonesModel(ModelInterface):
         for key in ("forces", "energies", "stresses"):
             if key in properties:
                 results[key] = torch.cat([out[key] for out in outputs], dim=0)
+
+        return results
+
+
+class BatchedLennardJones(LennardJonesModel):
+    """Vectorized Lennard-Jones model for batched systems.
+
+    This class computes Lennard-Jones energies, forces, and stresses for all systems in
+    a batch in one pass, avoiding Python loops over systems in the model forward path.
+    """
+
+    def forward(  # noqa: PLR0915
+        self, state: ts.SimState | StateDict, **_kwargs: object
+    ) -> dict[str, torch.Tensor]:
+        """Compute Lennard-Jones properties with batched tensor operations."""
+        if isinstance(state, ts.SimState):
+            sim_state = state
+        else:
+            state_dict: StateDict = state
+            positions = state_dict["positions"]
+            sim_state = ts.SimState(
+                positions=positions,
+                masses=torch.ones_like(positions),
+                cell=state_dict["cell"],
+                pbc=state_dict["pbc"],
+                atomic_numbers=state_dict["atomic_numbers"],
+                system_idx=state_dict.get("system_idx"),
+            )
+
+        if sim_state.system_idx is None and sim_state.cell.shape[0] > 1:
+            raise ValueError("System can only be inferred for batch size 1.")
+
+        positions = sim_state.positions
+        row_cell = sim_state.row_vector_cell
+        pbc = pbc_to_tensor(sim_state.pbc, sim_state.device)
+
+        system_idx = (
+            sim_state.system_idx
+            if sim_state.system_idx is not None
+            else torch.zeros(positions.shape[0], dtype=torch.long, device=self.device)
+        )
+
+        wrapped_positions = (
+            ts.transforms.pbc_wrap_batched(positions, sim_state.cell, system_idx, pbc)
+            if pbc.any()
+            else positions
+        )
+
+        if pbc.ndim == 1:
+            pbc_batched = pbc.unsqueeze(0).expand(sim_state.n_systems, -1)
+        else:
+            pbc_batched = pbc
+
+        if not self.disable_neighbor_list:
+            mapping, system_mapping, shifts_idx = self.neighbor_list_fn(
+                positions=wrapped_positions,
+                cell=row_cell,
+                pbc=pbc_batched,
+                cutoff=self.cutoff,
+                system_idx=system_idx,
+            )
+        else:
+            n_atoms_per_system = sim_state.n_atoms_per_system
+            mapping, system_mapping, shifts_idx = transforms.build_naive_neighborhood(
+                positions=wrapped_positions,
+                cell=row_cell,
+                pbc=pbc_batched,
+                cutoff=float(self.cutoff.item()),
+                n_atoms=n_atoms_per_system,
+                self_interaction=False,
+            )
+
+        cell_shifts = transforms.compute_cell_shifts(row_cell, shifts_idx, system_mapping)
+        dr_vec = (
+            wrapped_positions[mapping[1]] - wrapped_positions[mapping[0]] + cell_shifts
+        )
+        distances = dr_vec.norm(dim=1)
+
+        cutoff_mask = distances < self.cutoff
+        pair_energies = lennard_jones_pair(
+            distances, sigma=self.sigma, epsilon=self.epsilon
+        )
+        pair_energies = torch.where(
+            cutoff_mask, pair_energies, torch.zeros_like(pair_energies)
+        )
+
+        n_systems = sim_state.n_systems
+        results: dict[str, torch.Tensor] = {}
+        energy = torch.zeros(n_systems, dtype=self.dtype, device=self.device)
+        energy.index_add_(0, system_mapping, 0.5 * pair_energies)
+        results["energy"] = energy
+
+        if self.per_atom_energies:
+            atom_energies = torch.zeros(
+                positions.shape[0], dtype=self.dtype, device=self.device
+            )
+            atom_energies.index_add_(0, mapping[0], 0.5 * pair_energies)
+            atom_energies.index_add_(0, mapping[1], 0.5 * pair_energies)
+            results["energies"] = atom_energies
+
+        if self.compute_forces or self.compute_stress:
+            pair_forces = lennard_jones_pair_force(
+                distances, sigma=self.sigma, epsilon=self.epsilon
+            )
+            pair_forces = torch.where(
+                cutoff_mask, pair_forces, torch.zeros_like(pair_forces)
+            )
+            safe_distances = torch.where(
+                distances > 0, distances, torch.ones_like(distances)
+            )
+            force_vectors = (pair_forces / safe_distances)[:, None] * dr_vec
+
+            if self.compute_forces:
+                forces = torch.zeros_like(positions)
+                forces.index_add_(0, mapping[0], -force_vectors)
+                forces.index_add_(0, mapping[1], force_vectors)
+                results["forces"] = forces
+
+            if self.compute_stress:
+                stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
+                volumes = torch.abs(torch.linalg.det(row_cell))
+                stress = torch.zeros(
+                    (n_systems, 3, 3),
+                    dtype=self.dtype,
+                    device=self.device,
+                )
+                stress.index_add_(0, system_mapping, -stress_per_pair)
+                results["stress"] = stress / volumes[:, None, None]
+
+                if self.per_atom_stresses:
+                    atom_stresses = torch.zeros(
+                        (positions.shape[0], 3, 3),
+                        dtype=self.dtype,
+                        device=self.device,
+                    )
+                    atom_stresses.index_add_(0, mapping[0], -0.5 * stress_per_pair)
+                    atom_stresses.index_add_(0, mapping[1], -0.5 * stress_per_pair)
+                    atom_volumes = volumes[system_idx]
+                    results["stresses"] = atom_stresses / atom_volumes[:, None, None]
 
         return results

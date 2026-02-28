@@ -76,7 +76,7 @@ atomic_numbers = torch.full((positions.shape[0],), 18, device=device, dtype=torc
 #  - epsilon: depth of potential well (0.0104 eV for Ar)
 #  - cutoff: distance beyond which interactions are ignored (typically 2.5*sigma)
 lj_model = LennardJonesModel(
-    use_neighbor_list=True,
+    disable_neighbor_list=False,
     cutoff=2.5 * 3.405,
     sigma=3.405,
     epsilon=0.0104,

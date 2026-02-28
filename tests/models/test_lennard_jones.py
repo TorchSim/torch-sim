@@ -1,13 +1,17 @@
 """Cheap integration tests ensuring different parts of TorchSim work together."""
 
+from collections.abc import Callable
+
 import pytest
 import torch
 from ase.build import bulk
 
 import torch_sim as ts
 from tests.conftest import DEVICE
+from torch_sim import neighbors
 from torch_sim.models.interface import validate_model_outputs
 from torch_sim.models.lennard_jones import (
+    BatchedLennardJones,
     LennardJonesModel,
     lennard_jones_pair,
     lennard_jones_pair_force,
@@ -159,9 +163,13 @@ def models(
         "per_atom_stresses": True,
     }
     cutoff = 2.5 * 3.405  # Standard LJ cutoff * sigma
-    model_nl = LennardJonesModel(use_neighbor_list=True, cutoff=cutoff, **model_kwargs)
+    model_nl = LennardJonesModel(
+        disable_neighbor_list=False,
+        cutoff=cutoff,
+        **model_kwargs,
+    )
     model_direct = LennardJonesModel(
-        use_neighbor_list=False,
+        disable_neighbor_list=True,
         cutoff=cutoff,
         **model_kwargs,
     )
@@ -169,6 +177,28 @@ def models(
     return model_nl(ar_supercell_sim_state_large), model_direct(
         ar_supercell_sim_state_large
     )
+
+
+@pytest.fixture
+def standard_vs_batched_models(
+    ar_supercell_sim_state_large: ts.SimState,
+) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+    """Create standard and batched Lennard-Jones outputs for parity checks."""
+    model_kwargs: dict[str, float | bool | torch.dtype | torch.device] = {
+        "sigma": 3.405,
+        "epsilon": 0.0104,
+        "dtype": torch.float64,
+        "device": DEVICE,
+        "compute_forces": True,
+        "compute_stress": True,
+        "per_atom_energies": True,
+        "per_atom_stresses": True,
+        "disable_neighbor_list": False,
+    }
+    cutoff = 2.5 * 3.405
+    standard = LennardJonesModel(cutoff=cutoff, **model_kwargs)
+    batched = BatchedLennardJones(cutoff=cutoff, **model_kwargs)
+    return standard(ar_supercell_sim_state_large), batched(ar_supercell_sim_state_large)
 
 
 def test_energy_match(
@@ -212,6 +242,48 @@ def test_per_atom_stress_match(
     assert torch.allclose(results_nl["stresses"], results_direct["stresses"], rtol=1e-10)
 
 
+@pytest.mark.parametrize(
+    "key",
+    [("energy",), ("energies",), ("forces",), ("stress",), ("stresses",)],
+)
+def test_batched_lj_matches_standard(
+    standard_vs_batched_models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
+    key: str,
+) -> None:
+    """Test that the batched implementation matches LennardJonesModel outputs."""
+    standard_out, batched_out = standard_vs_batched_models
+    torch.testing.assert_close(
+        batched_out[key], standard_out[key], rtol=1e-10, atol=1e-10
+    )
+
+
+def test_batched_lj_multi_system_matches_standard(
+    ar_double_sim_state: ts.SimState,
+) -> None:
+    """Test batched multi-system output shape and value parity with standard model."""
+    model_kwargs: dict[str, float | bool | torch.dtype | torch.device] = {
+        "sigma": 3.405,
+        "epsilon": 0.0104,
+        "dtype": torch.float64,
+        "device": DEVICE,
+        "compute_forces": True,
+        "compute_stress": True,
+        "disable_neighbor_list": False,
+    }
+    cutoff = 2.5 * 3.405
+    standard = LennardJonesModel(cutoff=cutoff, **model_kwargs)
+    batched = BatchedLennardJones(cutoff=cutoff, **model_kwargs)
+
+    standard_out = standard(ar_double_sim_state)
+    batched_out = batched(ar_double_sim_state)
+
+    assert batched_out["energy"].shape == (ar_double_sim_state.n_systems,)
+    for key in ("energy", "forces", "stress"):
+        torch.testing.assert_close(
+            batched_out[key], standard_out[key], rtol=1e-10, atol=1e-10
+        )
+
+
 def test_force_conservation(
     models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
 ) -> None:
@@ -220,6 +292,47 @@ def test_force_conservation(
     assert torch.allclose(
         results_nl["forces"].sum(dim=0), torch.zeros(3, dtype=torch.float64), atol=1e-10
     )
+
+
+@pytest.mark.parametrize("model_cls", [(LennardJonesModel,), (BatchedLennardJones,)])
+@pytest.mark.parametrize(
+    "neighbor_list_fn",
+    [(neighbors.torch_nl_linked_cell,), (neighbors.torch_nl_n2,)],
+)
+def test_custom_neighbor_list_fn_matches_default(
+    model_cls: type[LennardJonesModel],
+    neighbor_list_fn: Callable[..., tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+    ar_supercell_sim_state_large: ts.SimState,
+) -> None:
+    """Test that custom neighbor-list implementations match default behavior."""
+    model_kwargs: dict[str, float | bool | torch.dtype | torch.device] = {
+        "sigma": 3.405,
+        "epsilon": 0.0104,
+        "dtype": torch.float64,
+        "device": DEVICE,
+        "compute_forces": True,
+        "compute_stress": True,
+        "disable_neighbor_list": False,
+    }
+    cutoff = 2.5 * 3.405
+    default_model = model_cls(
+        cutoff=cutoff,
+        neighbor_list_fn=neighbors.torchsim_nl,
+        **model_kwargs,
+    )
+    custom_model = model_cls(
+        cutoff=cutoff,
+        neighbor_list_fn=neighbor_list_fn,
+        **model_kwargs,
+    )
+
+    default_out = default_model(ar_supercell_sim_state_large)
+    custom_out = custom_model(ar_supercell_sim_state_large)
+
+    for key in ("energy", "forces", "stress"):
+        torch.testing.assert_close(
+            custom_out[key], default_out[key], rtol=1e-10, atol=1e-10
+        )
 
 
 def test_stress_tensor_symmetry(
@@ -269,7 +382,7 @@ def test_unwrapped_positions_consistency() -> None:
         device=DEVICE,
         compute_forces=True,
         compute_stress=True,
-        use_neighbor_list=True,
+        disable_neighbor_list=False,
     )
 
     # Compute results
