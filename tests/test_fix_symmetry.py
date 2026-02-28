@@ -10,6 +10,7 @@ from ase.spacegroup.symmetrize import refine_symmetry as ase_refine_symmetry
 from ase.stress import full_3x3_to_voigt_6_stress, voigt_6_to_full_3x3_stress
 from pymatgen.core import Lattice, Structure
 from pymatgen.io.ase import AseAtomsAdaptor, MSONAtoms
+from pymatgen.io.ase import Atoms as PymatgenAtoms
 
 import torch_sim as ts
 from torch_sim.constraints import FixCom, FixSymmetry
@@ -32,7 +33,7 @@ CPU = torch.device("cpu")
 # === Structure helpers ===
 
 
-def _make_p6bar() -> Atoms | MSONAtoms:
+def _make_p6bar() -> Atoms | MSONAtoms | PymatgenAtoms:
     """Create P-6 (space group 174) structure."""
     lattice = Lattice.hexagonal(a=3.0, c=5.0)
     structure = Structure.from_spacegroup(
