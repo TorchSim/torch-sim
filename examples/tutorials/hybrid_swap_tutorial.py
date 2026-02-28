@@ -161,14 +161,14 @@ n_steps = 100
 for step in range(n_steps):
     if step % 10 == 0:  # Attempt swap Monte Carlo move
         hybrid_state = ts.swap_mc_step(
-            state=hybrid_state,  # ty: ignore[invalid-argument-type]
+            state=hybrid_state,
             model=mace_model,
             kT=kT,
             rng=rng,
         )
     else:  # Perform MD step
         hybrid_state = ts.nvt_langevin_step(
-            state=hybrid_state,  # ty: ignore[invalid-argument-type]
+            state=hybrid_state,
             model=mace_model,
             dt=0.002,
             kT=kT,

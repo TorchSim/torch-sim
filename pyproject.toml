@@ -200,15 +200,10 @@ unresolved-import = "ignore"
 include = ["tests/**/*.py"]
 
 [tool.ty.overrides.rules]
-deprecated = "ignore"
 invalid-argument-type = "ignore"
-invalid-assignment = "ignore"
 no-matching-overload = "ignore"
-not-subscriptable = "ignore"
-possibly-missing-attribute = "ignore"
 unresolved-attribute = "ignore"
 unresolved-import = "ignore"
-unsupported-operator = "ignore"
 
 [[tool.ty.overrides]]
 include = ["docs/**/*.py", "examples/**/*.py"]

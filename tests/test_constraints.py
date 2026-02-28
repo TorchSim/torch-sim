@@ -129,9 +129,11 @@ def test_fix_com_nvt_langevin(cu_sim_state: ts.SimState, lj_model: LennardJonesM
 
     traj_positions = torch.stack(positions)
 
+    system_idx = state.system_idx
+    assert system_idx is not None
     coms = torch.zeros((n_steps, state.n_systems, 3), dtype=DTYPE).scatter_add_(
         1,
-        state.system_idx[None, :, None].expand(n_steps, -1, 3),
+        system_idx[None, :, None].expand(n_steps, -1, 3),
         state.masses.unsqueeze(-1) * traj_positions,
     )
     coms /= system_masses
