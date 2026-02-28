@@ -244,7 +244,7 @@ def test_per_atom_stress_match(
 
 @pytest.mark.parametrize(
     "key",
-    [("energy",), ("energies",), ("forces",), ("stress",), ("stresses",)],
+    ["energy", "energies", "forces", "stress", "stresses"],
 )
 def test_batched_lj_matches_standard(
     standard_vs_batched_models: tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]],
@@ -294,10 +294,10 @@ def test_force_conservation(
     )
 
 
-@pytest.mark.parametrize("model_cls", [(LennardJonesModel,), (BatchedLennardJones,)])
+@pytest.mark.parametrize("model_cls", [LennardJonesModel, BatchedLennardJones])
 @pytest.mark.parametrize(
     "neighbor_list_fn",
-    [(neighbors.torch_nl_linked_cell,), (neighbors.torch_nl_n2,)],
+    [neighbors.torch_nl_linked_cell, neighbors.torch_nl_n2],
 )
 def test_custom_neighbor_list_fn_matches_default(
     model_cls: type[LennardJonesModel],
