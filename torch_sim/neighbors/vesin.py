@@ -12,20 +12,11 @@ import torch
 try:
     from vesin import NeighborList as VesinNeighborList
     from vesin.torch import NeighborList as VesinNeighborListTorch
-
-    VESIN_AVAILABLE = True
 except ImportError:
-    VESIN_AVAILABLE = False
     VesinNeighborList = None
     VesinNeighborListTorch = None
 
-__all__ = [
-    "VESIN_AVAILABLE",
-    "VesinNeighborList",
-    "VesinNeighborListTorch",
-    "vesin_nl",
-    "vesin_nl_ts",
-]
+VESIN_AVAILABLE = VesinNeighborList is not None
 
 
 if VESIN_AVAILABLE:
@@ -78,9 +69,7 @@ if VESIN_AVAILABLE:
         from torch_sim.neighbors import _normalize_inputs
 
         if VesinNeighborListTorch is None:
-            raise RuntimeError(
-                "VesinNeighborListTorch unavailable despite VESIN_AVAILABLE"
-            )
+            raise RuntimeError("vesin package is not installed")
         device = positions.device
         dtype = positions.dtype
         n_systems = int(system_idx.max().item()) + 1
@@ -205,7 +194,7 @@ if VESIN_AVAILABLE:
         from torch_sim.neighbors import _normalize_inputs
 
         if VesinNeighborList is None:
-            raise RuntimeError("VesinNeighborList unavailable despite VESIN_AVAILABLE")
+            raise RuntimeError("vesin package is not installed")
         device = positions.device
         dtype = positions.dtype
         n_systems = int(system_idx.max().item()) + 1

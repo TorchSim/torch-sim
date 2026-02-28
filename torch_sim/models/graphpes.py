@@ -5,7 +5,7 @@ This module is deprecated. Please use the ts.models.graphpes_framework module in
 
 import warnings
 
-from .graphpes_framework import AtomicGraph, GraphPESModel, GraphPESWrapper
+from .graphpes_framework import AtomicGraph, GraphPESModel, GraphPESWrapper  # noqa: F401
 
 
 warnings.warn(
@@ -14,9 +14,3 @@ warnings.warn(
     DeprecationWarning,
     stacklevel=2,
 )
-
-__all__ = [
-    "AtomicGraph",
-    "GraphPESModel",
-    "GraphPESWrapper",
-]
