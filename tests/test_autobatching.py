@@ -145,8 +145,8 @@ def test_calculate_scaling_metric_mixed_pbc_uses_per_system_path(
             split_state.positions.max(dim=0).values
             - split_state.positions.min(dim=0).values
         ).clone()
-        pbc_flags = [True, False, True]
-        for axis_idx, is_periodic in enumerate(pbc_flags):
+        split_state_pbc = torch.as_tensor(split_state.pbc, dtype=torch.bool).tolist()
+        for axis_idx, is_periodic in enumerate(split_state_pbc):
             if not is_periodic:
                 bbox[axis_idx] += 2.0
         volume = bbox.prod() / 1000

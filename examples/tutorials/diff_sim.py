@@ -51,24 +51,29 @@ def draw_system(
         color = [64 / 256] * 3
     ms = marker_size / box_size
 
-    R = torch.tensor(R)
+    positions = torch.as_tensor(R).detach().cpu()
+    x_coords = positions[:, 0].numpy()
+    y_coords = positions[:, 1].numpy()
 
-    marker_style: dict[str, str | int | float | list[float]] = dict(
-        linestyle="none",
-        markeredgewidth=3,
-        marker="o",
-        markersize=float(ms),
-        color=color,
-        fillstyle="none",
-    )
-
-    plt.plot(R[:, 0], R[:, 1], **marker_style)  # ty: ignore[invalid-argument-type]
-    plt.plot(R[:, 0] + box_size, R[:, 1], **marker_style)  # ty: ignore[invalid-argument-type]
-    plt.plot(R[:, 0], R[:, 1] + box_size, **marker_style)  # ty: ignore[invalid-argument-type]
-    plt.plot(R[:, 0] + box_size, R[:, 1] + box_size, **marker_style)  # ty: ignore[invalid-argument-type]
-    plt.plot(R[:, 0] - box_size, R[:, 1], **marker_style)  # ty: ignore[invalid-argument-type]
-    plt.plot(R[:, 0], R[:, 1] - box_size, **marker_style)  # ty: ignore[invalid-argument-type]
-    plt.plot(R[:, 0] - box_size, R[:, 1] - box_size, **marker_style)  # ty: ignore[invalid-argument-type]
+    for x_offset, y_offset in (
+        (0.0, 0.0),
+        (box_size, 0.0),
+        (0.0, box_size),
+        (box_size, box_size),
+        (-box_size, 0.0),
+        (0.0, -box_size),
+        (-box_size, -box_size),
+    ):
+        plt.plot(
+            x_coords + x_offset,
+            y_coords + y_offset,
+            linestyle="none",
+            markeredgewidth=3,
+            marker="o",
+            markersize=float(ms),
+            color=color,
+            fillstyle="none",
+        )
 
     plt.xlim([0, box_size])
     plt.ylim([0, box_size])

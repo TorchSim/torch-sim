@@ -1216,6 +1216,8 @@ def initialize_state(  # noqa: C901, PLR0911
         return system.clone().to(device, dtype)
 
     if isinstance(system, list | tuple):
+        if len(system) == 0:
+            raise ValueError("Cannot initialize state from an empty list.")
         states = [s for s in system if isinstance(s, SimState)]
         if len(states) == len(system) and not all(s.n_systems == 1 for s in states):
             raise ValueError(

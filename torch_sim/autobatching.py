@@ -378,29 +378,38 @@ def calculate_memory_scalers(
             return torch.where(volume > 0, n_atoms * n_atoms / volume, n_atoms).tolist()
         # per-system path (non-periodic or single system)
         scalers = []
-        for i in range(state.n_systems):
-            s = state[i]
-            pbc_all = (
-                s.pbc
-                if isinstance(s.pbc, bool)
+        for system_idx in range(state.n_systems):
+            system_state = state[system_idx]
+            system_pbc_all = (
+                system_state.pbc
+                if isinstance(system_state.pbc, bool)
                 else (
-                    all(s.pbc) if isinstance(s.pbc, (list, tuple)) else s.pbc.all().item()
+                    all(system_state.pbc)
+                    if isinstance(system_state.pbc, (list, tuple))
+                    else system_state.pbc.all().item()
                 )
             )
-            if pbc_all:
-                volume = torch.abs(torch.linalg.det(s.cell[0])) / 1000
+            if system_pbc_all:
+                volume = torch.abs(torch.linalg.det(system_state.cell[0])) / 1000
             else:
-                bbox = s.positions.max(dim=0).values - s.positions.min(dim=0).values
-                pbc_iter: tuple[bool, ...] | list[bool] = (
-                    (s.pbc,) * 3
-                    if isinstance(s.pbc, bool)
-                    else (s.pbc.tolist() if torch.is_tensor(s.pbc) else s.pbc)
+                bbox = (
+                    system_state.positions.max(dim=0).values
+                    - system_state.positions.min(dim=0).values
                 )
-                for j, periodic in enumerate(pbc_iter):
+                pbc_iter: tuple[bool, ...] | list[bool] = (
+                    (system_state.pbc,) * 3
+                    if isinstance(system_state.pbc, bool)
+                    else (
+                        system_state.pbc.tolist()
+                        if torch.is_tensor(system_state.pbc)
+                        else system_state.pbc
+                    )
+                )
+                for axis_idx, periodic in enumerate(pbc_iter):
                     if not periodic:
-                        bbox[j] += 2.0
+                        bbox[axis_idx] += 2.0
                 volume = bbox.prod() / 1000
-            scalers.append(s.n_atoms * (s.n_atoms / volume.item()))
+            scalers.append(system_state.n_atoms * (system_state.n_atoms / volume.item()))
         return scalers
     raise ValueError(
         f"Invalid metric: {memory_scales_with}, must be one of {get_args(MemoryScaling)}"

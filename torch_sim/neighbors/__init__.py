@@ -11,8 +11,7 @@ Available Implementations:
 
 Default Neighbor Lists:
     The module automatically selects the best available implementation:
-    - For single systems: vesin_nl (if available) or standard_nl (fallback)
-    - For batched systems: torch_nl_linked_cell (always available)
+    - Priority: alchemiops_nl_n2 > vesin_nl_ts > torch_nl_linked_cell
 """
 
 import torch

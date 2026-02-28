@@ -2082,10 +2082,10 @@ def npt_crescale_independent_lengths_step(
     state: NPTCRescaleState,
     model: ModelInterface,
     *,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
-    external_pressure: torch.Tensor,
-    tau: torch.Tensor | None = None,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
+    external_pressure: float | torch.Tensor,
+    tau: float | torch.Tensor | None = None,
 ) -> NPTCRescaleState:
     """Perform one NPT integration step with cell rescaling barostat.
 
@@ -2123,15 +2123,24 @@ def npt_crescale_independent_lengths_step(
     Returns:
         NPTCRescaleState: Updated state after one integration step
     """
-    # Note: would probably be better to have tau in NVTCRescaleState
-    if tau is None:
-        tau = 100 * dt
-    state = _vrescale_update(state, tau, kT, dt / 2)
+    device, dtype = state.device, state.dtype
+    dt_tensor = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT_tensor = torch.as_tensor(kT, device=device, dtype=dtype)
+    external_pressure_tensor = torch.as_tensor(
+        external_pressure, device=device, dtype=dtype
+    )
+    tau_tensor = torch.as_tensor(
+        100 * dt_tensor if tau is None else tau, device=device, dtype=dtype
+    )
 
-    state = momentum_step(state, dt / 2)
+    state = _vrescale_update(state, tau_tensor, kT_tensor, dt_tensor / 2)
+
+    state = momentum_step(state, dt_tensor / 2)
 
     # Barostat step
-    state = _crescale_independent_lengths_barostat_step(state, kT, dt, external_pressure)
+    state = _crescale_independent_lengths_barostat_step(
+        state, kT_tensor, dt_tensor, external_pressure_tensor
+    )
 
     # Forces
     model_output = model(state)
@@ -2140,20 +2149,20 @@ def npt_crescale_independent_lengths_step(
     state.stress = model_output["stress"]
 
     # Final momentum step
-    state = momentum_step(state, dt / 2)
+    state = momentum_step(state, dt_tensor / 2)
 
     # Final thermostat step
-    return _vrescale_update(state, tau, kT, dt / 2)
+    return _vrescale_update(state, tau_tensor, kT_tensor, dt_tensor / 2)
 
 
 def npt_crescale_average_anisotropic_step(
     state: NPTCRescaleState,
     model: ModelInterface,
     *,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
-    external_pressure: torch.Tensor,
-    tau: torch.Tensor | None = None,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
+    external_pressure: float | torch.Tensor,
+    tau: float | torch.Tensor | None = None,
 ) -> NPTCRescaleState:
     """Perform one NPT integration step with cell rescaling barostat.
 
@@ -2192,15 +2201,24 @@ def npt_crescale_average_anisotropic_step(
     Returns:
         NPTCRescaleState: Updated state after one integration step
     """
-    # Note: would probably be better to have tau in NVTCRescaleState
-    if tau is None:
-        tau = 100 * dt
-    state = _vrescale_update(state, tau, kT, dt / 2)
+    device, dtype = state.device, state.dtype
+    dt_tensor = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT_tensor = torch.as_tensor(kT, device=device, dtype=dtype)
+    external_pressure_tensor = torch.as_tensor(
+        external_pressure, device=device, dtype=dtype
+    )
+    tau_tensor = torch.as_tensor(
+        100 * dt_tensor if tau is None else tau, device=device, dtype=dtype
+    )
 
-    state = momentum_step(state, dt / 2)
+    state = _vrescale_update(state, tau_tensor, kT_tensor, dt_tensor / 2)
+
+    state = momentum_step(state, dt_tensor / 2)
 
     # Barostat step
-    state = _crescale_average_anisotropic_barostat_step(state, kT, dt, external_pressure)
+    state = _crescale_average_anisotropic_barostat_step(
+        state, kT_tensor, dt_tensor, external_pressure_tensor
+    )
 
     # Forces
     model_output = model(state)
@@ -2209,20 +2227,20 @@ def npt_crescale_average_anisotropic_step(
     state.stress = model_output["stress"]
 
     # Final momentum step
-    state = momentum_step(state, dt / 2)
+    state = momentum_step(state, dt_tensor / 2)
 
     # Final thermostat step
-    return _vrescale_update(state, tau, kT, dt / 2)
+    return _vrescale_update(state, tau_tensor, kT_tensor, dt_tensor / 2)
 
 
 def npt_crescale_isotropic_step(
     state: NPTCRescaleState,
     model: ModelInterface,
     *,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
-    external_pressure: torch.Tensor,
-    tau: torch.Tensor | None = None,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
+    external_pressure: float | torch.Tensor,
+    tau: float | torch.Tensor | None = None,
 ) -> NPTCRescaleState:
     """Perform one NPT integration step with cell rescaling barostat.
 
@@ -2263,15 +2281,23 @@ def npt_crescale_isotropic_step(
     Returns:
         NPTCRescaleState: Updated state after one integration step
     """
-    # Note: would probably be better to have tau in NVTCRescaleState
-    if tau is None:
-        tau = 100 * dt
-    state = _vrescale_update(state, tau, kT, dt / 2)
+    device, dtype = state.device, state.dtype
+    dt_tensor = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT_tensor = torch.as_tensor(kT, device=device, dtype=dtype)
+    external_pressure_tensor = torch.as_tensor(
+        external_pressure, device=device, dtype=dtype
+    )
+    tau_tensor = torch.as_tensor(
+        100 * dt_tensor if tau is None else tau, device=device, dtype=dtype
+    )
+    state = _vrescale_update(state, tau_tensor, kT_tensor, dt_tensor / 2)
 
-    state = momentum_step(state, dt / 2)
+    state = momentum_step(state, dt_tensor / 2)
 
     # Barostat step
-    state = _crescale_isotropic_barostat_step(state, kT, dt, external_pressure)
+    state = _crescale_isotropic_barostat_step(
+        state, kT_tensor, dt_tensor, external_pressure_tensor
+    )
 
     # Forces
     model_output = model(state)
@@ -2280,20 +2306,20 @@ def npt_crescale_isotropic_step(
     state.stress = model_output["stress"]
 
     # Final momentum step
-    state = momentum_step(state, dt / 2)
+    state = momentum_step(state, dt_tensor / 2)
 
     # Final thermostat step
-    return _vrescale_update(state, tau, kT, dt / 2)
+    return _vrescale_update(state, tau_tensor, kT_tensor, dt_tensor / 2)
 
 
 def npt_crescale_init(
     state: SimState | StateDict,
     model: ModelInterface,
     *,
-    kT: torch.Tensor,
-    dt: torch.Tensor,
-    tau_p: torch.Tensor | None = None,
-    isothermal_compressibility: torch.Tensor | None = None,
+    kT: float | torch.Tensor,
+    dt: float | torch.Tensor,
+    tau_p: float | torch.Tensor | None = None,
+    isothermal_compressibility: float | torch.Tensor | None = None,
     seed: int | None = None,
 ) -> NPTCRescaleState:
     """Initialize the NPT cell rescaling state.
@@ -2333,10 +2359,8 @@ def npt_crescale_init(
         tau_p = tau_p.expand(state.n_systems)
     if isothermal_compressibility.ndim == 0:
         isothermal_compressibility = isothermal_compressibility.expand(state.n_systems)
-    if isinstance(dt, float):
-        dt = torch.tensor(dt, device=device, dtype=dtype)
-    if isinstance(kT, float):
-        kT = torch.tensor(kT, device=device, dtype=dtype)
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
 
     # Get model output to initialize forces and stress
     model_output = model(state)
