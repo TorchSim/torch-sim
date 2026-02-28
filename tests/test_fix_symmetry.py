@@ -6,11 +6,9 @@ import torch
 from ase import Atoms
 from ase.build import bulk
 from ase.constraints import FixSymmetry as ASEFixSymmetry
+from ase.spacegroup import crystal
 from ase.spacegroup.symmetrize import refine_symmetry as ase_refine_symmetry
 from ase.stress import full_3x3_to_voigt_6_stress, voigt_6_to_full_3x3_stress
-from pymatgen.core import Lattice, Structure
-from pymatgen.io.ase import AseAtomsAdaptor, MSONAtoms
-from pymatgen.io.ase import Atoms as PymatgenAtoms
 
 import torch_sim as ts
 from torch_sim.constraints import FixCom, FixSymmetry
@@ -33,15 +31,6 @@ CPU = torch.device("cpu")
 # === Structure helpers ===
 
 
-def _make_p6bar() -> Atoms | MSONAtoms | PymatgenAtoms:
-    """Create P-6 (space group 174) structure."""
-    lattice = Lattice.hexagonal(a=3.0, c=5.0)
-    structure = Structure.from_spacegroup(
-        sg=174, lattice=lattice, species=["Si"], coords=[[0.3, 0.1, 0.25]]
-    )
-    return AseAtomsAdaptor.get_atoms(structure)
-
-
 def make_structure(name: str) -> Atoms:
     """Create a test structure by name (fcc/hcp/diamond/bcc/p6bar + _rotated suffix)."""
     base = name.replace("_rotated", "")
@@ -50,7 +39,12 @@ def make_structure(name: str) -> Atoms:
         "hcp": lambda: bulk("Ti", "hcp", a=2.95, c=4.68),
         "diamond": lambda: bulk("Si", "diamond", a=5.43),
         "bcc": lambda: bulk("Al", "bcc", a=2 / np.sqrt(3), cubic=True),
-        "p6bar": _make_p6bar,
+        "p6bar": lambda: crystal(
+            "Si",
+            [(0.3, 0.1, 0.25)],
+            spacegroup=174,
+            cellpar=[3.0, 3.0, 5.0, 90, 90, 120],
+        ),
     }
     atoms = builders[base]()
     if "_rotated" in name:
