@@ -157,8 +157,11 @@ def test_calculate_scaling_metric_mixed_pbc_uses_per_system_path(
 
 
 @pytest.mark.parametrize("items", [[], {}])
-def test_to_constant_volume_bins_empty_input(items: list | dict) -> None:
-    """to_constant_volume_bins returns empty bins for empty input."""
+def test_to_constant_volume_bins_empty_input(
+    items: list[Any] | dict[int, float],
+) -> None:
+    """to_constant_volume_bins returns empty bins for empty list/dict input."""
+    # Dict input is part of the public API and used by BinningAutoBatcher.
     bins = to_constant_volume_bins(items, max_volume=1.0)
     assert bins == []
 

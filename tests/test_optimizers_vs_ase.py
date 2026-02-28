@@ -558,7 +558,7 @@ def test_lbfgs_vs_ase_parametrized(
     )[0]
     ase_atoms.calc = ase_mace_mpa
     filtered_ase_atoms = ase_filter_cls(ase_atoms)
-    ase_optimizer = ASE_LBFGS(filtered_ase_atoms, logfile="-", alpha=70.0, damping=1.0)
+    ase_optimizer = ASE_LBFGS(filtered_ase_atoms, logfile=None, alpha=70.0, damping=1.0)
 
     convergence_fn = ts.generate_force_convergence_fn(
         force_tol=force_tol, include_cell_forces=True

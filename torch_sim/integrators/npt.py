@@ -2080,15 +2080,17 @@ def npt_crescale_anisotropic_step(
     Returns:
         NPTCRescaleState: Updated state after one integration step
     """
-    # Note: would probably be better to have tau in NVTCRescaleState
-    if tau is None:
-        tau = 100 * dt
-    state = _vrescale_update(state, tau, kT, dt / 2)
+    dt_tensor, kT_tensor, external_pressure_tensor, tau_tensor = (
+        _coerce_crescale_step_inputs(state, dt, kT, external_pressure, tau)
+    )
+    state = _vrescale_update(state, tau_tensor, kT_tensor, dt_tensor / 2)
 
-    state = momentum_step(state, dt / 2)
+    state = momentum_step(state, dt_tensor / 2)
 
     # Barostat step
-    state = _crescale_anisotropic_barostat_step(state, kT, dt, external_pressure)
+    state = _crescale_anisotropic_barostat_step(
+        state, kT_tensor, dt_tensor, external_pressure_tensor
+    )
 
     # Forces
     model_output = model(state)
@@ -2097,10 +2099,10 @@ def npt_crescale_anisotropic_step(
     state.stress = model_output["stress"]
 
     # Final momentum step
-    state = momentum_step(state, dt / 2)
+    state = momentum_step(state, dt_tensor / 2)
 
     # Final thermostat step
-    return _vrescale_update(state, tau, kT, dt / 2)
+    return _vrescale_update(state, tau_tensor, kT_tensor, dt_tensor / 2)
 
 
 def npt_crescale_independent_lengths_step(
