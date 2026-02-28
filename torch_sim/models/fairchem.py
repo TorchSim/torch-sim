@@ -19,6 +19,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
+from torch_sim.state import pbc_to_tensor
 
 
 try:
@@ -131,9 +132,14 @@ class FairChemModel(ModelInterface):
 
         # Create efficient batch predictor for fast inference
         if model in pretrained_mlip.available_models:
-            if model_cache_dir and model_cache_dir.exists():
+            cache_dir: str | Path | None = model_cache_dir
+            if (
+                cache_dir is not None
+                and isinstance(cache_dir, Path)
+                and cache_dir.exists()
+            ):
                 self.predictor = pretrained_mlip.get_predict_unit(
-                    model, device=device_str, cache_dir=model_cache_dir
+                    model, device=device_str, cache_dir=cache_dir
                 )
             else:
                 self.predictor = pretrained_mlip.get_predict_unit(
@@ -164,13 +170,16 @@ class FairChemModel(ModelInterface):
         """Return the device where the model is located."""
         return self._device
 
-    def forward(self, state: ts.SimState | StateDict) -> dict:
+    def forward(
+        self, state: ts.SimState | StateDict, **_kwargs: object
+    ) -> dict[str, torch.Tensor]:
         """Compute energies, forces, and other properties.
 
         Args:
             state (SimState | StateDict): State object containing positions, cells,
                 atomic numbers, and other system information. If a dictionary is provided,
                 it will be converted to a SimState.
+            **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
             dict: Dictionary of model predictions, which may include:
@@ -178,24 +187,37 @@ class FairChemModel(ModelInterface):
                 - forces (torch.Tensor): Forces with shape [n_atoms, 3]
                 - stress (torch.Tensor): Stress tensor with shape [batch_size, 3, 3]
         """
-        sim_state = (
-            state
-            if isinstance(state, ts.SimState)
-            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
-        )
+        if isinstance(state, ts.SimState):
+            sim_state = state
+        else:
+            state_dict: StateDict = state
+            sim_state = ts.SimState(
+                positions=state_dict["positions"],
+                masses=torch.ones_like(state_dict["positions"]),
+                cell=state_dict["cell"],
+                pbc=state_dict["pbc"],
+                atomic_numbers=state_dict["atomic_numbers"],
+                system_idx=state_dict.get("system_idx"),
+            )
 
         if sim_state.device != self._device:
             sim_state = sim_state.to(self._device)
 
         # Ensure system_idx has integer dtype (SimState guarantees presence)
-        if sim_state.system_idx.dtype != torch.int64:
-            sim_state.system_idx = sim_state.system_idx.to(dtype=torch.int64)
+        system_idx = sim_state.system_idx
+        if system_idx is None:
+            raise ValueError("SimState must have system_idx for FairChemModel")
+        if system_idx.dtype != torch.int64:
+            sim_state.system_idx = system_idx.to(dtype=torch.int64)
+            system_idx = sim_state.system_idx
 
         # Convert SimState to AtomicData objects for efficient batch processing
         from ase import Atoms
 
-        n_atoms = torch.bincount(sim_state.system_idx)
+        n_atoms = torch.bincount(system_idx)
         atomic_data_list = []
+
+        pbc_np = pbc_to_tensor(sim_state.pbc, sim_state.device).cpu().numpy()
 
         for idx, (n, c) in enumerate(
             zip(n_atoms, torch.cumsum(n_atoms, dim=0), strict=False)
@@ -203,9 +225,8 @@ class FairChemModel(ModelInterface):
             # Extract system data
             positions = sim_state.positions[c - n : c].detach().cpu().numpy()
             atomic_nums = sim_state.atomic_numbers[c - n : c].detach().cpu().numpy()
-            pbc = sim_state.pbc.detach().cpu().numpy()
             cell = (
-                sim_state.row_vector_cell[idx].detach().cpu().numpy()
+                sim_state.row_vector_cell[idx].cpu().numpy()
                 if sim_state.row_vector_cell is not None
                 else None
             )
@@ -215,11 +236,13 @@ class FairChemModel(ModelInterface):
                 numbers=atomic_nums,
                 positions=positions,
                 cell=cell,
-                pbc=pbc if cell is not None else False,
+                pbc=pbc_np if cell is not None else False,
             )
 
-            atoms.info["charge"] = sim_state.charge[idx].item()
-            atoms.info["spin"] = sim_state.spin[idx].item()
+            charge = sim_state.charge
+            spin = sim_state.spin
+            atoms.info["charge"] = charge[idx].item() if charge is not None else 0.0
+            atoms.info["spin"] = spin[idx].item() if spin is not None else 0.0
 
             # Convert ASE Atoms to AtomicData (task_name only applies to UMA models)
             # r_data_keys must be passed for charge/spin to be read from atoms.info

@@ -182,7 +182,7 @@ print("\n" + "=" * 70)
 print("SECTION 5: Batched Integration with Trajectory Reporting")
 print("=" * 70)
 
-systems = (si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell)
+systems = [si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell]
 
 filenames = [f"tmp/batch_traj_{i}.h5md" for i in range(len(systems))]
 batch_reporter = TrajectoryReporter(

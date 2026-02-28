@@ -149,7 +149,7 @@ def models(
     ar_supercell_sim_state_large: ts.SimState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create both neighbor list and direct models with Argon parameters."""
-    calc_params = {
+    model_kwargs: dict[str, float | bool | torch.dtype] = {
         "sigma": 3.405,  # Å, typical for Ar
         "epsilon": 0.0104,  # eV, typical for Ar
         "dtype": torch.float64,
@@ -158,11 +158,12 @@ def models(
         "per_atom_energies": True,
         "per_atom_stresses": True,
     }
-
     cutoff = 2.5 * 3.405  # Standard LJ cutoff * sigma
-    model_nl = LennardJonesModel(use_neighbor_list=True, cutoff=cutoff, **calc_params)
+    model_nl = LennardJonesModel(use_neighbor_list=True, cutoff=cutoff, **model_kwargs)
     model_direct = LennardJonesModel(
-        use_neighbor_list=False, cutoff=cutoff, **calc_params
+        use_neighbor_list=False,
+        cutoff=cutoff,
+        **model_kwargs,
     )
 
     return model_nl(ar_supercell_sim_state_large), model_direct(
@@ -257,13 +258,7 @@ def test_unwrapped_positions_consistency() -> None:
     # Shift some atoms by -1 cell vector in y direction
     positions_unwrapped[n_atoms // 4 : n_atoms // 2] -= cell[1]
 
-    state_unwrapped = ts.SimState(
-        positions=positions_unwrapped,
-        masses=state_wrapped.masses,
-        cell=state_wrapped.cell,
-        pbc=state_wrapped.pbc,
-        atomic_numbers=state_wrapped.atomic_numbers,
-    )
+    state_unwrapped = ts.SimState.from_state(state_wrapped, positions=positions_unwrapped)
 
     # Create model
     model = LennardJonesModel(

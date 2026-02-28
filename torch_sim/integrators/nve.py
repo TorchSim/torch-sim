@@ -6,12 +6,12 @@ import torch
 
 from torch_sim.integrators.md import (
     MDState,
-    initialize_momenta,
+    calculate_momenta,
     momentum_step,
     position_step,
 )
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState
+from torch_sim.state import SimState, ensure_sim_state
 from torch_sim.typing import StateDict
 
 
@@ -20,6 +20,7 @@ def nve_init(
     model: ModelInterface,
     *,
     kT: float | torch.Tensor,
+    seed: int | None = None,
     **_kwargs: Any,
 ) -> MDState:
     """Initialize an NVE state from input data.
@@ -28,8 +29,6 @@ def nve_init(
     energies and forces, and sampling momenta from a Maxwell-Boltzmann distribution
     at the specified temperature.
 
-    To seed the RNG set ``state.rng = seed`` before calling.
-
     Args:
         model: Neural network model that computes energies and forces.
             Must return a dict with 'energy' and 'forces' keys.
@@ -37,6 +36,7 @@ def nve_init(
             masses, cell, pbc, and other required state variables
         kT: Temperature in energy units for initializing momenta,
             scalar or with shape [n_systems]
+        seed: Random seed for reproducibility
 
     Returns:
         MDState: Initialized state for NVE integration containing positions,
@@ -46,16 +46,22 @@ def nve_init(
         - Initial velocities sampled from Maxwell-Boltzmann distribution
         - Time integration error scales as O(dt²)
     """
-    if not isinstance(state, SimState):
-        state = SimState(**state)
+    state = ensure_sim_state(state)
 
     model_output = model(state)
 
+    system_idx = state.system_idx
+    if system_idx is None:
+        raise ValueError("system_idx cannot be None for NVE integration")
     momenta = getattr(
         state,
         "momenta",
-        initialize_momenta(
-            state.positions, state.masses, state.system_idx, kT, state.rng
+        calculate_momenta(
+            state.positions,
+            state.masses,
+            system_idx,
+            kT,
+            seed if seed is not None else state.rng,
         ),
     )
 

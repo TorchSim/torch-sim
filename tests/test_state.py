@@ -361,6 +361,33 @@ def test_initialize_state_from_phonopy_atoms(si_phonopy_atoms: "PhonopyAtoms") -
     assert state.cell.shape[1:] == si_phonopy_atoms.cell.shape
 
 
+@pytest.mark.parametrize(
+    ("input_kind", "error_pattern"),
+    [
+        ("empty", "empty list"),
+        ("mixed", "All items in list must be of the same type"),
+    ],
+)
+def test_initialize_state_invalid_inputs_raise(
+    input_kind: str,
+    error_pattern: str,
+    request: pytest.FixtureRequest,
+) -> None:
+    """initialize_state rejects invalid list inputs with clear errors."""
+    if input_kind == "empty":
+        system_input: list = []
+    elif input_kind == "mixed":
+        system_input = [
+            request.getfixturevalue("si_atoms"),
+            request.getfixturevalue("si_structure"),
+        ]
+    else:
+        raise ValueError(f"Unsupported {input_kind=}")
+
+    with pytest.raises(ValueError, match=error_pattern):
+        ts.initialize_state(system_input, DEVICE, torch.float64)
+
+
 def test_state_pop_method(
     si_sim_state: SimState,
     ar_supercell_sim_state: SimState,

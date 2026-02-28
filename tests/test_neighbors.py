@@ -129,7 +129,7 @@ def molecule_atoms_set() -> list:
 @pytest.mark.parametrize("self_interaction", [True, False])
 @pytest.mark.parametrize(
     "nl_implementation",
-    [neighbors.torch_nl_n2, neighbors.torch_nl_linked_cell]
+    [neighbors.torch_nl_n2, neighbors.torch_nl_linked_cell, neighbors.standard_nl]
     + ([neighbors.vesin_nl, neighbors.vesin_nl_ts] if neighbors.VESIN_AVAILABLE else [])
     + (
         [neighbors.alchemiops_nl_n2, neighbors.alchemiops_nl_cell_list]
@@ -209,13 +209,16 @@ def test_neighbor_list_implementations(
     assert mapping.shape[1] == mapping_ref.shape[1], (
         f"Pair count mismatch: got {mapping.shape[1]}, expected {mapping_ref.shape[1]}"
     )
+    # Ensure pair/system mapping stays consistent in batched mode.
+    assert torch.equal(batch[mapping[0]], batch[mapping[1]])
+    assert torch.equal(batch[mapping[0]], mapping_system)
 
 
 @pytest.mark.parametrize("self_interaction", [True, False])
 @pytest.mark.parametrize("pbc_val", [True, False])
 @pytest.mark.parametrize(
     "nl_implementation",
-    [neighbors.torch_nl_n2, neighbors.torch_nl_linked_cell]
+    [neighbors.torch_nl_n2, neighbors.torch_nl_linked_cell, neighbors.standard_nl]
     + ([neighbors.vesin_nl, neighbors.vesin_nl_ts] if neighbors.VESIN_AVAILABLE else [])
     + (
         [neighbors.alchemiops_nl_n2, neighbors.alchemiops_nl_cell_list]
@@ -264,6 +267,18 @@ def test_vesin_nl_float32() -> None:
     assert mapping.shape[1] > 0
 
 
+def _minimal_neighbor_list_inputs(
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Create minimal valid tensor inputs for neighbor-list API smoke checks."""
+    positions = torch.zeros((1, 3), dtype=torch.float32, device=device)
+    cell = torch.eye(3, dtype=torch.float32, device=device)
+    pbc = torch.tensor([False, False, False], dtype=torch.bool, device=device)
+    cutoff = torch.tensor(1.0, dtype=torch.float32, device=device)
+    system_idx = torch.zeros(1, dtype=torch.long, device=device)
+    return positions, cell, pbc, cutoff, system_idx
+
+
 def test_vesin_nl_availability() -> None:
     """Test that availability flags are correctly set."""
     assert isinstance(neighbors.VESIN_AVAILABLE, bool)
@@ -272,23 +287,26 @@ def test_vesin_nl_availability() -> None:
     assert callable(neighbors.vesin_nl_ts)
 
     if not neighbors.VESIN_AVAILABLE:
+        positions, cell, pbc, cutoff, system_idx = _minimal_neighbor_list_inputs(DEVICE)
         with pytest.raises(ImportError, match="Vesin is not installed"):
-            neighbors.vesin_nl()
+            neighbors.vesin_nl(positions, cell, pbc, cutoff, system_idx)
         with pytest.raises(ImportError, match="Vesin is not installed"):
-            neighbors.vesin_nl_ts()
+            neighbors.vesin_nl_ts(positions, cell, pbc, cutoff, system_idx)
 
 
 def test_alchemiops_nl_availability() -> None:
+    """Test that alchemiops optional dependency flags and errors are consistent."""
     assert isinstance(neighbors.ALCHEMIOPS_AVAILABLE, bool)
 
     assert callable(neighbors.alchemiops_nl_n2)
     assert callable(neighbors.alchemiops_nl_cell_list)
 
     if not neighbors.ALCHEMIOPS_AVAILABLE:
+        positions, cell, pbc, cutoff, system_idx = _minimal_neighbor_list_inputs(DEVICE)
         with pytest.raises(ImportError, match="nvalchemiops is not installed"):
-            neighbors.alchemiops_nl_n2()
+            neighbors.alchemiops_nl_n2(positions, cell, pbc, cutoff, system_idx)
         with pytest.raises(ImportError, match="nvalchemiops is not installed"):
-            neighbors.alchemiops_nl_cell_list()
+            neighbors.alchemiops_nl_cell_list(positions, cell, pbc, cutoff, system_idx)
 
 
 def test_fallback_when_alchemiops_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -404,6 +422,55 @@ def test_torchsim_nl_fallback_when_vesin_unavailable(
     torch.testing.assert_close(mapping_torchsim, mapping_expected)
     torch.testing.assert_close(shifts_torchsim, shifts_expected)
     torch.testing.assert_close(sys_map_ts, sys_map_exp)
+
+
+def _no_neighbor_inputs() -> tuple[
+    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
+]:
+    """Build a simple no-neighbor system."""
+    positions = torch.tensor(
+        [[0.0, 0.0, 0.0], [10.0, 10.0, 10.0]],
+        device=DEVICE,
+        dtype=DTYPE,
+    )
+    cell = torch.eye(3, device=DEVICE, dtype=DTYPE) * 20.0
+    pbc = torch.tensor([False, False, False], device=DEVICE)
+    cutoff = torch.tensor(1.0, device=DEVICE, dtype=DTYPE)
+    return positions, cell, pbc, cutoff
+
+
+@pytest.mark.parametrize("neighbor_impl", ["standard", "primitive"])
+def test_neighbor_list_no_neighbors_returns_empty(neighbor_impl: str) -> None:
+    """Neighbor list implementations return empty outputs for no-neighbor inputs."""
+    positions, cell, pbc, cutoff = _no_neighbor_inputs()
+
+    if neighbor_impl == "standard":
+        system_idx = torch.zeros(2, dtype=torch.long, device=DEVICE)
+        mapping, system_map, shifts = neighbors.standard_nl(
+            positions=positions,
+            cell=cell,
+            pbc=pbc,
+            cutoff=cutoff,
+            system_idx=system_idx,
+        )
+        assert mapping.shape == (2, 0)
+        assert system_map.shape == (0,)
+    elif neighbor_impl == "primitive":
+        idx_i, idx_j, shifts = neighbors.primitive_neighbor_list(
+            quantities="ijS",
+            pbc=pbc,
+            cell=cell,
+            positions=positions,
+            cutoff=cutoff,
+            device=DEVICE,
+            dtype=DTYPE,
+            self_interaction=False,
+        )
+        assert idx_i.shape == (0,)
+        assert idx_j.shape == (0,)
+    else:
+        raise ValueError(f"Unsupported {neighbor_impl=}")
+    assert shifts.shape == (0, 3)
 
 
 def test_strict_nl_edge_cases() -> None:

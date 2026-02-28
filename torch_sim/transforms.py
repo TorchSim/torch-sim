@@ -5,13 +5,12 @@ boundary conditions in molecular simulations, including matrix inversions and
 general PBC wrapping.
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from functools import wraps
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.types import _dtype
-from typing_extensions import deprecated
 
 
 def get_fractional_coordinates(
@@ -110,50 +109,6 @@ def inverse_box(box: torch.Tensor) -> torch.Tensor:
     if box.ndim == 2:
         return torch.linalg.inv(box)
     raise ValueError(f"Box must be either: a scalar, a vector, or a matrix. Found {box}.")
-
-
-@deprecated("Use wrap_positions instead")
-def pbc_wrap_general(
-    positions: torch.Tensor, lattice_vectors: torch.Tensor
-) -> torch.Tensor:
-    """Apply periodic boundary conditions using lattice
-        vector transformation method.
-
-    This implementation follows the general matrix-based approach for
-    periodic boundary conditions in arbitrary triclinic cells:
-    1. Transform positions to fractional coordinates using B = A^(-1)
-    2. Wrap fractional coordinates to [0,1) using modulo
-    3. Transform back to real space using A
-
-    Args:
-        positions (torch.Tensor): Tensor of shape (..., d)
-            containing particle positions in real space.
-        lattice_vectors (torch.Tensor): Tensor of shape (d, d) containing
-            lattice vectors as columns (A matrix in the equations).
-
-    Returns:
-        torch.Tensor: Wrapped positions in real space with same shape as input positions.
-    """
-    # Validate inputs
-    if not torch.is_floating_point(positions) or not torch.is_floating_point(
-        lattice_vectors
-    ):
-        raise TypeError("Positions and lattice vectors must be floating point tensors.")
-
-    if lattice_vectors.ndim != 2 or lattice_vectors.shape[0] != lattice_vectors.shape[1]:
-        raise ValueError("Lattice vectors must be a square matrix.")
-
-    if positions.shape[-1] != lattice_vectors.shape[0]:
-        raise ValueError("Position dimensionality must match lattice vectors.")
-
-    # Transform to fractional coordinates: f = Br
-    frac_coords = positions @ torch.linalg.inv(lattice_vectors).T
-
-    # Wrap to reference cell [0,1) using modulo
-    wrapped_frac = frac_coords % 1.0
-
-    # Transform back to real space: r_row_wrapped = wrapped_f_row @ M_row
-    return wrapped_frac @ lattice_vectors.T
 
 
 def pbc_wrap_batched(
@@ -498,9 +453,10 @@ def get_cell_shift_idx(num_repeats: torch.Tensor, dtype: _dtype) -> torch.Tensor
     """
     reps = []
     for ii in range(3):
+        n_rep = int(num_repeats[ii].item())
         r1 = torch.arange(
-            -num_repeats[ii],
-            num_repeats[ii] + 1,
+            -n_rep,
+            n_rep + 1,
             device=num_repeats.device,
             dtype=dtype,
         )
@@ -599,11 +555,14 @@ def _calculate_n2_lattice_shifts(
     num_repeats = get_number_of_cell_repeats(cutoff, cell, pbc)  # (n_systems, 3)
     # take the max across all systems so a single shift set covers everything
     S_max = num_repeats.max(dim=0).values  # (3,)
+    repeat_x = int(S_max[0].item())
+    repeat_y = int(S_max[1].item())
+    repeat_z = int(S_max[2].item())
 
     return torch.cartesian_prod(
-        torch.arange(-S_max[0], S_max[0] + 1, device=cell.device, dtype=cell.dtype),
-        torch.arange(-S_max[1], S_max[1] + 1, device=cell.device, dtype=cell.dtype),
-        torch.arange(-S_max[2], S_max[2] + 1, device=cell.device, dtype=cell.dtype),
+        torch.arange(-repeat_x, repeat_x + 1, device=cell.device, dtype=torch.long),
+        torch.arange(-repeat_y, repeat_y + 1, device=cell.device, dtype=torch.long),
+        torch.arange(-repeat_z, repeat_z + 1, device=cell.device, dtype=torch.long),
     )  # (n_shifts, 3)
 
 
@@ -1148,7 +1107,7 @@ def multiplicative_isotropic_cutoff(
 
 def high_precision_sum(
     x: torch.Tensor,
-    dim: int | Iterable[int] | None = None,
+    dim: int | tuple[int, ...] | list[int] | None = None,
     *,
     keepdim: bool = False,
 ) -> torch.Tensor:
@@ -1180,7 +1139,10 @@ def high_precision_sum(
         high_precision_dtype = torch.int64
 
     # Cast to high precision, sum, and cast back to original dtype
-    return torch.sum(x.to(high_precision_dtype), dim=dim, keepdim=keepdim).to(x.dtype)
+    x_high = x.to(high_precision_dtype)
+    if dim is None:
+        return torch.sum(x_high).to(x.dtype)
+    return torch.sum(x_high, dim=dim, keepdim=keepdim).to(x.dtype)
 
 
 def safe_mask(

@@ -138,7 +138,7 @@ class Constraint(ABC):
 
     @classmethod
     @abstractmethod
-    def merge(cls, constraints: list[Self]) -> Self:
+    def merge(cls, constraints: list[Constraint]) -> Self:
         """Merge multiple already-reindexed constraints into one.
 
         Constraints must have global (absolute) indices — call ``reindex``
@@ -258,9 +258,16 @@ class AtomConstraint(Constraint):
         return type(self)(self.atom_idx + atom_offset)
 
     @classmethod
-    def merge(cls, constraints: list[Self]) -> Self:
+    def merge(cls, constraints: list[Constraint]) -> Self:
         """Merge by concatenating already-reindexed atom indices."""
-        return cls(torch.cat([c.atom_idx for c in constraints]))
+        atom_constraints = [
+            constraint for constraint in constraints if isinstance(constraint, cls)
+        ]
+        if not atom_constraints:
+            raise ValueError(
+                f"{cls.__name__}.merge requires at least one {cls.__name__}."
+            )
+        return cls(torch.cat([constraint.atom_idx for constraint in atom_constraints]))
 
 
 class SystemConstraint(Constraint):
@@ -289,8 +296,7 @@ class SystemConstraint(Constraint):
         if system_idx is not None and system_mask is not None:
             raise ValueError("Provide either system_idx or system_mask, not both.")
         if system_mask is not None:
-            system_idx = torch.as_tensor(system_idx)
-            system_idx = torch.where(system_mask)[0]
+            system_idx = torch.where(torch.as_tensor(system_mask))[0]
 
         # Convert to tensor if needed
         system_idx = torch.as_tensor(system_idx)
@@ -349,13 +355,22 @@ class SystemConstraint(Constraint):
         return type(self)(self.system_idx + system_offset)
 
     @classmethod
-    def merge(cls, constraints: list[Self]) -> Self:
+    def merge(cls, constraints: list[Constraint]) -> Self:
         """Merge by concatenating already-reindexed system indices."""
-        return cls(torch.cat([c.system_idx for c in constraints]))
+        system_constraints = [
+            constraint for constraint in constraints if isinstance(constraint, cls)
+        ]
+        if not system_constraints:
+            raise ValueError(
+                f"{cls.__name__}.merge requires at least one {cls.__name__}."
+            )
+        return cls(
+            torch.cat([constraint.system_idx for constraint in system_constraints])
+        )
 
 
 def merge_constraints(
-    constraint_lists: list[list[AtomConstraint | SystemConstraint]],
+    constraint_lists: list[list[Constraint]],
     num_atoms_per_state: torch.Tensor,
     num_systems_per_state: torch.Tensor | None = None,
 ) -> list[Constraint]:
@@ -434,8 +449,11 @@ class FixAtoms(AtomConstraint):
         Returns:
             Number of degrees of freedom removed (3 * number of fixed atoms)
         """
+        sys_idx = state.system_idx
+        if sys_idx is None:
+            raise ValueError("FixAtoms requires system_idx to be set")
         fixed_atoms_system_idx = torch.bincount(
-            state.system_idx[self.atom_idx], minlength=state.n_systems
+            sys_idx[self.atom_idx], minlength=state.n_systems
         )
         return 3 * fixed_atoms_system_idx
 
@@ -506,21 +524,24 @@ class FixCom(SystemConstraint):
             state: Current simulation state
             new_positions: Proposed positions to be adjusted in-place
         """
+        if state.system_idx is None:
+            raise ValueError("FixCom requires state with system_idx")
+        system_idx = state.system_idx
         dtype = state.positions.dtype
         system_mass = torch.zeros(state.n_systems, dtype=dtype).scatter_add_(
-            0, state.system_idx, state.masses
+            0, system_idx, state.masses
         )
         if self.coms is None:
             self.coms = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
                 0,
-                state.system_idx.unsqueeze(-1).expand(-1, 3),
+                system_idx.unsqueeze(-1).expand(-1, 3),
                 state.masses.unsqueeze(-1) * state.positions,
             )
             self.coms /= system_mass.unsqueeze(-1)
 
         new_com = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
             0,
-            state.system_idx.unsqueeze(-1).expand(-1, 3),
+            system_idx.unsqueeze(-1).expand(-1, 3),
             state.masses.unsqueeze(-1) * new_positions,
         )
         new_com /= system_mass.unsqueeze(-1)
@@ -528,7 +549,7 @@ class FixCom(SystemConstraint):
         displacement[self.system_idx] = (
             -new_com[self.system_idx] + self.coms[self.system_idx]
         )
-        new_positions += displacement[state.system_idx]
+        new_positions += displacement[system_idx]
 
     def adjust_momenta(self, state: SimState, momenta: torch.Tensor) -> None:
         """Remove center of mass velocity from momenta.
@@ -537,20 +558,23 @@ class FixCom(SystemConstraint):
             state: Current simulation state
             momenta: Momenta to be adjusted in-place
         """
+        if state.system_idx is None:
+            raise ValueError("FixCom requires state with system_idx")
+        system_idx = state.system_idx
         # Compute center of mass momenta
         dtype = momenta.dtype
         com_momenta = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
             0,
-            state.system_idx.unsqueeze(-1).expand(-1, 3),
+            system_idx.unsqueeze(-1).expand(-1, 3),
             momenta,
         )
         system_mass = torch.zeros(state.n_systems, dtype=dtype).scatter_add_(
-            0, state.system_idx, state.masses
+            0, system_idx, state.masses
         )
         velocity_com = com_momenta / system_mass.unsqueeze(-1)
         velocity_change = torch.zeros(state.n_systems, 3, dtype=dtype)
         velocity_change[self.system_idx] = velocity_com[self.system_idx]
-        momenta -= velocity_change[state.system_idx] * state.masses.unsqueeze(-1)
+        momenta -= velocity_change[system_idx] * state.masses.unsqueeze(-1)
 
     def adjust_forces(self, state: SimState, forces: torch.Tensor) -> None:
         """Remove net force to prevent center of mass acceleration.
@@ -562,21 +586,24 @@ class FixCom(SystemConstraint):
             state: Current simulation state
             forces: Forces to be adjusted in-place
         """
+        if state.system_idx is None:
+            raise ValueError("FixCom requires state with system_idx")
+        system_idx = state.system_idx
         dtype = state.positions.dtype
         system_square_mass = torch.zeros(state.n_systems, dtype=dtype).scatter_add_(
             0,
-            state.system_idx,
+            system_idx,
             torch.square(state.masses),
         )
         lmd = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
             0,
-            state.system_idx.unsqueeze(-1).expand(-1, 3),
+            system_idx.unsqueeze(-1).expand(-1, 3),
             forces * state.masses.unsqueeze(-1),
         )
         lmd /= system_square_mass.unsqueeze(-1)
         forces_change = torch.zeros(state.n_systems, 3, dtype=dtype)
         forces_change[self.system_idx] = lmd[self.system_idx]
-        forces -= forces_change[state.system_idx] * state.masses.unsqueeze(-1)
+        forces -= forces_change[system_idx] * state.masses.unsqueeze(-1)
 
     def __repr__(self) -> str:
         """String representation of the constraint."""
@@ -600,14 +627,16 @@ def count_degrees_of_freedom(
         Total number of degrees of freedom
     """
     # Start with unconstrained DOF
-    total_dof = state.n_atoms * 3
+    total_dof: int | torch.Tensor = state.n_atoms * 3
 
-    # Subtract DOF removed by constraints
+    # Subtract DOF removed by constraints (get_removed_dof returns per-system tensor)
     if constraints is not None:
         for constraint in constraints:
-            total_dof -= constraint.get_removed_dof(state)
+            removed = constraint.get_removed_dof(state)
+            total_dof = total_dof - removed.sum()
 
-    return max(0, total_dof)  # Ensure non-negative
+    result = max(0, total_dof)
+    return int(result.item()) if isinstance(result, torch.Tensor) else result
 
 
 def check_no_index_out_of_bounds(
@@ -848,7 +877,7 @@ class FixSymmetry(SystemConstraint):
             rots = self.rotations[ci].to(dtype=dtype)
             stress[si] = symmetrize_rank2(state.row_vector_cell[si], stress[si], rots)
 
-    def adjust_cell(self, state: SimState, new_cell: torch.Tensor) -> None:
+    def adjust_cell(self, state: SimState, cell: torch.Tensor) -> None:
         """Symmetrize cell deformation gradient in-place.
 
         Computes ``F = inv(cell) @ new_cell_row``, symmetrizes ``F - I`` as a
@@ -861,7 +890,7 @@ class FixSymmetry(SystemConstraint):
 
         Args:
             state: Current simulation state.
-            new_cell: Cell tensor (n_systems, 3, 3) in column vector convention.
+            cell: Cell tensor (n_systems, 3, 3) in column vector convention.
 
         Raises:
             RuntimeError: If deformation gradient contains NaN or Inf.
@@ -874,7 +903,7 @@ class FixSymmetry(SystemConstraint):
         identity = torch.eye(3, device=state.device, dtype=state.dtype)
         for ci, si in enumerate(self.system_idx):
             cur_cell = state.row_vector_cell[si]
-            new_row = new_cell[si].mT  # column → row convention
+            new_row = cell[si].mT  # column → row convention
 
             # Per-step deformation: clamp large steps to avoid ill-conditioned
             # symmetrization while still making progress. The cumulative strain
@@ -905,7 +934,7 @@ class FixSymmetry(SystemConstraint):
                     scale = self.max_cumulative_strain / max_cumulative
                     proposed_cell = ref_cell @ (cumulative_strain * scale + identity)
 
-            new_cell[si] = proposed_cell.mT  # back to column convention
+            cell[si] = proposed_cell.mT  # back to column convention
 
     def _symmetrize_rank1(self, state: SimState, vectors: torch.Tensor) -> None:
         """Symmetrize a rank-1 tensor in-place for each constrained system."""
@@ -941,35 +970,40 @@ class FixSymmetry(SystemConstraint):
         )
 
     @classmethod
-    def merge(cls, constraints: list[Self]) -> Self:
+    def merge(cls, constraints: list[Constraint]) -> Self:
         """Merge by concatenating rotations, symm_maps, and system indices."""
-        if not constraints:
+        fix_sym_constraints = [c for c in constraints if isinstance(c, FixSymmetry)]
+        if not fix_sym_constraints:
             raise ValueError("Cannot merge empty constraint list")
         if any(
-            c.do_adjust_positions != constraints[0].do_adjust_positions
-            or c.do_adjust_cell != constraints[0].do_adjust_cell
-            or c.max_cumulative_strain != constraints[0].max_cumulative_strain
-            for c in constraints[1:]
+            c.do_adjust_positions != fix_sym_constraints[0].do_adjust_positions
+            or c.do_adjust_cell != fix_sym_constraints[0].do_adjust_cell
+            or c.max_cumulative_strain != fix_sym_constraints[0].max_cumulative_strain
+            for c in fix_sym_constraints[1:]
         ):
             raise ValueError(
                 "Cannot merge FixSymmetry constraints with different "
                 "adjust_positions/adjust_cell/max_cumulative_strain settings"
             )
-        rotations = [r for c in constraints for r in c.rotations]
-        symm_maps = [s for c in constraints for s in c.symm_maps]
-        system_idx = torch.cat([c.system_idx for c in constraints])
+        rotations = [r for c in fix_sym_constraints for r in c.rotations]
+        symm_maps = [s for c in fix_sym_constraints for s in c.symm_maps]
+        system_idx = torch.cat([c.system_idx for c in fix_sym_constraints])
         # Merge reference cells if all constraints have them
         ref_cells = None
-        if all(c.reference_cells is not None for c in constraints):
-            ref_cells = [rc for c in constraints for rc in c.reference_cells]
+        if all(c.reference_cells is not None for c in fix_sym_constraints):
+            ref_cells = []
+            for c in fix_sym_constraints:
+                refs = c.reference_cells
+                if refs is not None:
+                    ref_cells.extend(refs)
         return cls(
             rotations,
             symm_maps,
             system_idx=system_idx,
-            adjust_positions=constraints[0].do_adjust_positions,
-            adjust_cell=constraints[0].do_adjust_cell,
+            adjust_positions=fix_sym_constraints[0].do_adjust_positions,
+            adjust_cell=fix_sym_constraints[0].do_adjust_cell,
             reference_cells=ref_cells,
-            max_cumulative_strain=constraints[0].max_cumulative_strain,
+            max_cumulative_strain=fix_sym_constraints[0].max_cumulative_strain,
         )
 
     def select_constraint(

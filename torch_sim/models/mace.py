@@ -29,6 +29,7 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
+from torch_sim.state import pbc_to_tensor
 from torch_sim.typing import StateDict
 
 
@@ -174,12 +175,11 @@ class MaceModel(ModelInterface):
 
         # Set model properties
         self.r_max = self.model.r_max
-        self.z_table = utils.AtomicNumberTable(
-            [int(z) for z in self.model.atomic_numbers]
-        )
-        self.model.atomic_numbers = (
-            self.model.atomic_numbers.detach().clone().to(device=self.device)
-        )
+        atomic_nums = self.model.atomic_numbers
+        if not isinstance(atomic_nums, torch.Tensor):
+            raise TypeError("MACE model atomic_numbers must be a tensor")
+        self.z_table = utils.AtomicNumberTable([int(z) for z in atomic_nums])
+        self.model.atomic_numbers = atomic_nums.detach().clone().to(device=self.device)
 
         # Store flag to track if atomic numbers were provided at init
         self.atomic_numbers_in_init = atomic_numbers is not None
@@ -212,12 +212,13 @@ class MaceModel(ModelInterface):
         self.system_idx = system_idx
 
         # Determine number of systems and atoms per system
-        self.n_systems = system_idx.max().item() + 1
+        n_systems_int = int(system_idx.max().item()) + 1
+        self.n_systems = n_systems_int
 
         # Create ptr tensor for system boundaries
         self.n_atoms_per_system = []
         ptr = [0]
-        for sys_idx in range(self.n_systems):
+        for sys_idx in range(n_systems_int):
             system_mask = system_idx == sys_idx
             n_atoms = system_mask.sum().item()
             self.n_atoms_per_system.append(n_atoms)
@@ -240,7 +241,7 @@ class MaceModel(ModelInterface):
         )
 
     def forward(  # noqa: C901
-        self, state: ts.SimState | StateDict
+        self, state: ts.SimState | StateDict, **_kwargs: object
     ) -> dict[str, torch.Tensor]:
         """Compute energies, forces, and stresses for the given atomic systems.
 
@@ -252,6 +253,7 @@ class MaceModel(ModelInterface):
             state (SimState | StateDict): State object containing positions, cell,
                 and other system information. Can be either a SimState object or a
                 dictionary with the relevant fields.
+            **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
             dict[str, torch.Tensor]: Computed properties:
@@ -265,11 +267,19 @@ class MaceModel(ModelInterface):
                 or in the forward pass, or if provided in both places.
             ValueError: If system indices are not provided when needed.
         """
-        sim_state = (
-            state
-            if isinstance(state, ts.SimState)
-            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
-        )
+        if isinstance(state, ts.SimState):
+            sim_state = state
+        else:
+            state_dict: StateDict = state
+            positions = state_dict["positions"]
+            sim_state = ts.SimState(
+                positions=positions,
+                masses=torch.ones_like(positions),
+                cell=state_dict["cell"],
+                pbc=state_dict["pbc"],
+                atomic_numbers=state_dict["atomic_numbers"],
+                system_idx=state_dict.get("system_idx"),
+            )
 
         # Handle input validation for atomic numbers
         if sim_state.atomic_numbers is None and not self.atomic_numbers_in_init:
@@ -289,6 +299,10 @@ class MaceModel(ModelInterface):
                 )
             sim_state.system_idx = self.system_idx
 
+        system_idx = sim_state.system_idx
+        if system_idx is None:
+            raise ValueError("system_idx required for MaceModel forward")
+
         # Update system_idx information if new atomic numbers are provided
         if (
             sim_state.atomic_numbers is not None
@@ -298,17 +312,18 @@ class MaceModel(ModelInterface):
                 getattr(self, "atomic_numbers", torch.zeros(0, device=self.device)),
             )
         ):
-            self.setup_from_system_idx(sim_state.atomic_numbers, sim_state.system_idx)
+            self.setup_from_system_idx(sim_state.atomic_numbers, system_idx)
 
         # Wrap positions into the unit cell
+        pbc_t = pbc_to_tensor(sim_state.pbc, sim_state.device)
         wrapped_positions = (
             ts.transforms.pbc_wrap_batched(
                 sim_state.positions,
                 sim_state.cell,
-                sim_state.system_idx,
-                sim_state.pbc,
+                system_idx,
+                pbc_t,
             )
-            if sim_state.pbc.any()
+            if pbc_t.any()
             else sim_state.positions
         )
 
@@ -316,9 +331,9 @@ class MaceModel(ModelInterface):
         edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
             wrapped_positions,
             sim_state.row_vector_cell,
-            sim_state.pbc,
+            pbc_t,
             self.r_max,
-            sim_state.system_idx,
+            system_idx,
         )
         # Convert unit cell shift indices to Cartesian shifts
         shifts = ts.transforms.compute_cell_shifts(
@@ -329,7 +344,7 @@ class MaceModel(ModelInterface):
         data_dict = dict(
             ptr=self.ptr,
             node_attrs=self.node_attrs,
-            batch=sim_state.system_idx,
+            batch=system_idx,
             pbc=sim_state.pbc,
             cell=sim_state.row_vector_cell,
             positions=wrapped_positions,
@@ -354,7 +369,7 @@ class MaceModel(ModelInterface):
         if energy is not None:
             results["energy"] = energy.detach()
         else:
-            results["energy"] = torch.zeros(self.n_systems, device=self.device)
+            results["energy"] = torch.zeros(int(self.n_systems), device=self.device)
 
         # Process forces
         if self.compute_forces:

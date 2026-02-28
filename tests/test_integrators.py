@@ -770,6 +770,29 @@ def test_npt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJone
     assert pos_diff > 0.0001  # Systems should remain separated
 
 
+def test_npt_nose_hoover_step_accepts_float_inputs(
+    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
+) -> None:
+    """npt_nose_hoover_step accepts float dt/kT/external_pressure inputs."""
+    state = ts.npt_nose_hoover_init(
+        state=ar_double_sim_state,
+        model=lj_model,
+        dt=0.001,
+        kT=300 * MetalUnits.temperature,
+        external_pressure=0.0 * MetalUnits.pressure,
+    )
+
+    next_state = ts.npt_nose_hoover_step(
+        state=state,
+        model=lj_model,
+        dt=0.001,
+        kT=300 * MetalUnits.temperature,
+        external_pressure=0.0 * MetalUnits.pressure,
+    )
+    assert next_state.positions.shape == state.positions.shape
+    assert next_state.momenta.shape == state.momenta.shape
+
+
 def test_npt_nose_hoover_multi_equivalent_to_single(
     mixed_double_sim_state: ts.SimState, lj_model: LennardJonesModel
 ):

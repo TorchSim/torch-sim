@@ -112,7 +112,8 @@ def test_fairchem_mixed_pbc_forward_raises(
     eqv2_oc20_model_pbc: FairChemV1Model, si_sim_state: ts.SimState
 ) -> None:
     """Test that calling forward with a SimState that has mixed PBC raises ValueError."""
-    mixed_pbc_state = si_sim_state.clone()
-    mixed_pbc_state.pbc = torch.tensor([True, False, True], dtype=torch.bool)
+    mixed_pbc_state = ts.SimState.from_state(
+        si_sim_state, pbc=torch.tensor([True, False, True], dtype=torch.bool)
+    )
     with pytest.raises(ValueError, match="FairChemV1Model does not support mixed PBC"):
         eqv2_oc20_model_pbc(mixed_pbc_state)
