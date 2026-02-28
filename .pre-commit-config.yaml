@@ -43,4 +43,5 @@ repos:
         entry: ty check
         language: python
         types: [python]
+        pass_filenames: false
         additional_dependencies: [ty, torch, ase, mace-torch]

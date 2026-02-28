@@ -6,6 +6,7 @@ from typing import Any
 import torch
 
 import torch_sim as ts
+from torch_sim._duecredit import dcite
 from torch_sim.integrators.md import (
     MDState,
     NoseHooverChain,
@@ -145,6 +146,7 @@ def nvt_langevin_init(
     )
 
 
+@dcite("10.1098/rspa.2016.0138")
 def nvt_langevin_step(
     state: MDState,
     model: ModelInterface,
@@ -196,6 +198,9 @@ def nvt_langevin_step(
 
     if isinstance(dt, float):
         dt = torch.tensor(dt, device=device, dtype=dtype)
+
+    if isinstance(kT, float):
+        kT = torch.tensor(kT, device=device, dtype=dtype)
 
     state = momentum_step(state, dt / 2)
     state = position_step(state, dt / 2)
@@ -263,9 +268,9 @@ def nvt_nose_hoover_init(
     state: SimState | StateDict,
     model: ModelInterface,
     *,
-    kT: torch.Tensor,
-    dt: torch.Tensor,
-    tau: torch.Tensor | None = None,
+    kT: float | torch.Tensor,
+    dt: float | torch.Tensor,
+    tau: float | torch.Tensor | None = None,
     chain_length: int = 3,
     chain_steps: int = 3,
     sy_steps: int = 3,
@@ -348,12 +353,13 @@ def nvt_nose_hoover_init(
     )
 
 
+@dcite("10.1080/00268979600100761")
 def nvt_nose_hoover_step(
     state: NVTNoseHooverState,
     model: ModelInterface,
     *,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
 ) -> NVTNoseHooverState:
     """Perform one complete Nose-Hoover chain integration step.
 
@@ -383,6 +389,9 @@ def nvt_nose_hoover_step(
     # Get chain functions from state
     chain_fns = state._chain_fns  # noqa: SLF001
     chain = state.chain
+
+    dt = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
+    kT = torch.as_tensor(kT, device=state.device, dtype=state.dtype)
 
     # Update chain masses based on target temperature
     chain = chain_fns.update_mass(chain, kT)
@@ -638,6 +647,7 @@ def nvt_vrescale_init(
     )
 
 
+@dcite("10.1063/1.2408420")
 def nvt_vrescale_step(
     model: ModelInterface,
     state: NVTVRescaleState,

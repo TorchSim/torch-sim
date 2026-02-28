@@ -8,6 +8,7 @@ from typing import Any
 import torch
 
 import torch_sim as ts
+from torch_sim._duecredit import dcite
 from torch_sim.integrators.md import (
     MDState,
     NoseHooverChain,
@@ -441,8 +442,8 @@ def _npt_langevin_velocity_step(
 
 def _compute_cell_force(
     state: NPTLangevinState,
-    external_pressure: torch.Tensor,
-    kT: torch.Tensor,
+    external_pressure: float | torch.Tensor,
+    kT: float | torch.Tensor,
 ) -> torch.Tensor:
     """Compute forces on the cell for NPT dynamics.
 
@@ -641,6 +642,7 @@ def npt_langevin_init(
     )
 
 
+@dcite("10.1063/1.4901303")
 def npt_langevin_step(
     state: NPTLangevinState,
     model: ModelInterface,
@@ -1465,6 +1467,7 @@ def npt_nose_hoover_init(
     )
 
 
+@dcite("10.1080/00268979600100761")
 def npt_nose_hoover_step(
     state: NPTNoseHooverState,
     model: ModelInterface,
@@ -1721,15 +1724,10 @@ def batch_matrix_vector(
 
 def _crescale_anisotropic_barostat_step(
     state: NPTCRescaleState,
-    kT: float | torch.Tensor,
-    dt: float | torch.Tensor,
-    external_pressure: float | torch.Tensor,
+    kT: torch.Tensor,
+    dt: torch.Tensor,
+    external_pressure: torch.Tensor,
 ) -> NPTCRescaleState:
-    kT_tensor = torch.as_tensor(kT, device=state.device, dtype=state.dtype)
-    dt_tensor = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
-    external_pressure_tensor = torch.as_tensor(
-        external_pressure, device=state.device, dtype=state.dtype
-    )
     volume = torch.det(state.cell)  # shape: (n_systems,)
     system_idx = require_system_idx(state.system_idx)
     P_int = ts.quantities.compute_instantaneous_pressure_tensor(
@@ -1742,17 +1740,15 @@ def _crescale_anisotropic_barostat_step(
     sqrt_vol = torch.sqrt(volume)
     trace_P_int = torch.einsum("bii->b", P_int)
     prefactor_random = torch.sqrt(
-        kT_tensor * state.isothermal_compressibility * dt_tensor / (4 * state.tau_p)
+        kT * state.isothermal_compressibility * dt / (4 * state.tau_p)
     )
     prefactor = state.isothermal_compressibility * sqrt_vol / (2 * state.tau_p)
     change_sqrt_vol = -prefactor * (
-        external_pressure_tensor - trace_P_int / 3 - kT_tensor / (2 * volume)
-    ) * dt_tensor / 2 + prefactor_random * _randn_for_state(state, sqrt_vol.shape)
+        external_pressure - trace_P_int / 3 - kT / (2 * volume)
+    ) * dt / 2 + prefactor_random * _randn_for_state(state, sqrt_vol.shape)
     new_sqrt_volume = sqrt_vol + change_sqrt_vol
     ## Step 2: compute deformation matrix
-    random_coeff = (
-        2 * state.isothermal_compressibility * kT_tensor * dt_tensor / (3 * state.tau_p)
-    )
+    random_coeff = 2 * state.isothermal_compressibility * kT * dt / (3 * state.tau_p)
     prefactor_random_matrix = torch.sqrt(random_coeff) / new_sqrt_volume
     a_tilde = -(state.isothermal_compressibility / (3 * state.tau_p))[:, None, None] * (
         P_int
@@ -1776,14 +1772,14 @@ def _crescale_anisotropic_barostat_step(
         3, device=state.positions.device, dtype=state.positions.dtype
     ).expand_as(random_matrix)
     deformation_matrix = torch.matrix_exp(
-        a_tilde * dt_tensor + prefactor_random_matrix[:, None, None] * random_matrix_tilde
+        a_tilde * dt + prefactor_random_matrix[:, None, None] * random_matrix_tilde
     )
     deformation_matrix = rotate_gram_schmidt(deformation_matrix)
 
     ## Step 3: propagate sqrt(volume) for dt/2
     new_sqrt_volume += -prefactor * (
-        external_pressure_tensor - trace_P_int / 3 - kT_tensor / (2 * volume)
-    ) * dt_tensor / 2 + prefactor_random * _randn_for_state(state, sqrt_vol.shape)
+        external_pressure - trace_P_int / 3 - kT / (2 * volume)
+    ) * dt / 2 + prefactor_random * _randn_for_state(state, sqrt_vol.shape)
     rscaling = deformation_matrix * torch.pow((new_sqrt_volume / sqrt_vol), 2 / 3).view(
         -1, 1, 1
     )
@@ -1792,9 +1788,9 @@ def _crescale_anisotropic_barostat_step(
     # Update positions and momenta (barostat + half momentum step)
     state.positions = batch_matrix_vector(
         rscaling[system_idx], state.positions
-    ) + batch_matrix_vector(
-        (vscaling + rscaling)[system_idx], state.momenta
-    ) * dt_tensor / (2 * state.masses.unsqueeze(-1))
+    ) + batch_matrix_vector((vscaling + rscaling)[system_idx], state.momenta) * dt / (
+        2 * state.masses.unsqueeze(-1)
+    )
     state.momenta = batch_matrix_vector(vscaling[system_idx], state.momenta)
     state.cell = rscaling.mT @ state.cell
     return state
@@ -2034,6 +2030,8 @@ def _coerce_crescale_step_inputs(
     return dt_tensor, kT_tensor, external_pressure_tensor, tau_tensor
 
 
+@dcite("10.1063/5.0020514")
+@dcite("10.3390/app12031139")
 def npt_crescale_anisotropic_step(
     state: NPTCRescaleState,
     model: ModelInterface,
@@ -2104,6 +2102,8 @@ def npt_crescale_anisotropic_step(
     return _vrescale_update(state, tau_tensor, kT_tensor, dt_tensor / 2)
 
 
+@dcite("10.1063/5.0020514")
+@dcite("10.3390/app12031139")
 def npt_crescale_independent_lengths_step(
     state: NPTCRescaleState,
     model: ModelInterface,
@@ -2175,6 +2175,8 @@ def npt_crescale_independent_lengths_step(
     return _vrescale_update(state, tau_tensor, kT_tensor, dt_tensor / 2)
 
 
+@dcite("10.1063/5.0020514")
+@dcite("10.3390/app12031139")
 def npt_crescale_average_anisotropic_step(
     state: NPTCRescaleState,
     model: ModelInterface,
@@ -2247,6 +2249,7 @@ def npt_crescale_average_anisotropic_step(
     return _vrescale_update(state, tau_tensor, kT_tensor, dt_tensor / 2)
 
 
+@dcite("10.1063/5.0020514")
 def npt_crescale_isotropic_step(
     state: NPTCRescaleState,
     model: ModelInterface,

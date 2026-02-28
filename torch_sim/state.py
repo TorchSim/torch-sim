@@ -26,7 +26,15 @@ from torch_sim.constraints import Constraint, merge_constraints, validate_constr
 
 
 def coerce_prng(rng: PRNGLike, device: torch.device) -> torch.Generator:
-    """Coerce an int seed or existing Generator into a ``torch.Generator``."""
+    """Coerce an int seed or existing Generator into a ``torch.Generator``.
+
+    Args:
+        rng: An int seed, an existing ``torch.Generator``, or None for unseeded.
+        device: Target device for the returned generator.
+
+    Returns:
+        A ``torch.Generator`` on *device*.
+    """
     if isinstance(rng, torch.Generator):
         if rng.device == device:
             return rng
@@ -243,23 +251,14 @@ class SimState:
         """Atomic positions wrapped according to periodic boundary conditions if pbc=True,
         otherwise returns unwrapped positions with shape (n_atoms, 3).
         """
-        pbc_any = (
-            self.pbc.any().item()
-            if torch.is_tensor(self.pbc)
-            else (self.pbc if isinstance(self.pbc, bool) else any(self.pbc))
-        )
-        if not pbc_any:
+        pbc_t = pbc_to_tensor(self.pbc, self.device)
+        if not pbc_t.any():
             return self.positions
         system_idx = self.system_idx
         if system_idx is None:
             raise ValueError("system_idx cannot be None for PBC wrapping")
-        pbc_arg: torch.Tensor | bool = (
-            self.pbc
-            if isinstance(self.pbc, (bool, torch.Tensor))
-            else torch.tensor(self.pbc, dtype=torch.bool, device=self.device)
-        )
         return ts.transforms.pbc_wrap_batched(
-            self.positions, self.cell, system_idx, pbc_arg
+            self.positions, self.cell, system_idx, pbc_t
         )
 
     @property
