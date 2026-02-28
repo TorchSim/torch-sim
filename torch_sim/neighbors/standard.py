@@ -159,7 +159,7 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
         scaled_positions_ic = positions
     elif use_scaled_positions:
         scaled_positions_ic = positions
-        positions = torch.dot(scaled_positions_ic, cell)
+        positions = torch.matmul(scaled_positions_ic, cell)
     else:
         scaled_positions_ic = torch.linalg.solve(cell.T, positions.T).T
 
@@ -175,7 +175,8 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
                 bin_index_ic[:, c], n_bins_c[c]
             )
         else:
-            bin_index_ic[:, c] = torch.clip(bin_index_ic[:, c], 0, n_bins_c[c] - 1)
+            max_bin = int((n_bins_c[c] - 1).item())
+            bin_index_ic[:, c] = torch.clip(bin_index_ic[:, c], 0, max_bin)
 
     # Convert Cartesian bin index to unique scalar bin index.
     bin_index_i = bin_index_ic[:, 0] + n_bins_c[0] * (
@@ -194,7 +195,10 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     # homogeneous, i.e. has the same size *max_n_atoms_per_bin* for all bins.
     # The list is padded with -1 values.
     atoms_in_bin_ba = -torch.ones(
-        n_bins.item(), max_n_atoms_per_bin.item(), dtype=torch.long, device=device
+        int(n_bins.item()),
+        int(max_n_atoms_per_bin.item()),
+        dtype=torch.long,
+        device=device,
     )
     for bin_cnt in range(int(max_n_atoms_per_bin.item())):
         # Create a mask array that identifies the first atom of each bin.
@@ -227,9 +231,10 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     # atom_pairs_pn_np = np.indices(
     #     (max_n_atoms_per_bin, max_n_atoms_per_bin), dtype=int
     # ).reshape(2, -1)
+    max_atoms_int = int(max_n_atoms_per_bin.item())
     atom_pairs_pn = torch.cartesian_prod(
-        torch.arange(max_n_atoms_per_bin, device=device),
-        torch.arange(max_n_atoms_per_bin, device=device),
+        torch.arange(max_atoms_int, device=device),
+        torch.arange(max_atoms_int, device=device),
     )
     atom_pairs_pn = atom_pairs_pn.T.reshape(2, -1)
 
@@ -245,9 +250,9 @@ def primitive_neighbor_list(  # noqa: C901, PLR0915
     # that each bin contains exactly max_n_atoms_per_bin atoms. We then throw
     # out pairs involving pad atoms with atom index -1 below.
     binz_xyz, biny_xyz, binx_xyz = torch.meshgrid(
-        torch.arange(n_bins_c[2], device=device),
-        torch.arange(n_bins_c[1], device=device),
-        torch.arange(n_bins_c[0], device=device),
+        torch.arange(int(n_bins_c[2].item()), device=device),
+        torch.arange(int(n_bins_c[1].item()), device=device),
+        torch.arange(int(n_bins_c[0].item()), device=device),
         indexing="ij",
     )
     # The memory layout of binx_xyz, biny_xyz, binz_xyz is such that computing
@@ -458,15 +463,13 @@ def standard_nl(
 
     device = positions.device
     dtype = positions.dtype
-    n_systems = system_idx.max().item() + 1
+    n_systems = int(system_idx.max().item()) + 1
     cell, pbc = _normalize_inputs(cell, pbc, n_systems)
 
     # Process each system's neighbor list separately
     edge_indices = []
     shifts_idx_list = []
     system_mapping_list = []
-    offset = 0
-
     for sys_idx in range(n_systems):
         system_mask = system_idx == sys_idx
         n_atoms_in_system = system_mask.sum().item()
@@ -497,16 +500,15 @@ def standard_nl(
         edge_idx = torch.stack((i, j), dim=0).to(dtype=torch.long)
         shifts = S.to(dtype=dtype)
 
-        # Adjust indices for the global atom indexing
-        edge_idx = edge_idx + offset
+        # Map local per-system indices back to global atom indices.
+        atom_indices_global = torch.where(system_mask)[0]
+        edge_idx = atom_indices_global[edge_idx]
 
         edge_indices.append(edge_idx)
         shifts_idx_list.append(shifts)
         system_mapping_list.append(
             torch.full((edge_idx.shape[1],), sys_idx, dtype=torch.long, device=device)
         )
-
-        offset += n_atoms_in_system
 
     # Combine all neighbor lists
     if len(edge_indices) == 0:

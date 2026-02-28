@@ -73,7 +73,7 @@ def _configure_batches_iterator(
     model: ModelInterface,
     *,
     autobatcher: BinningAutoBatcher | bool,
-) -> BinningAutoBatcher | list[tuple[SimState, list[int]]]:
+) -> BinningAutoBatcher[SimState] | list[tuple[SimState, list[int]]]:
     """Create a batches iterator for the integrate function.
 
     Args:
@@ -86,7 +86,7 @@ def _configure_batches_iterator(
     """
     # load and properly configure the autobatcher
     if autobatcher is True:
-        autobatcher = BinningAutoBatcher(
+        autobatcher = BinningAutoBatcher[SimState](
             model=model,
             max_memory_padding=0.9,
         )
@@ -145,7 +145,7 @@ def _determine_initial_step_for_integrate(
 def _determine_initial_step_for_optimize(
     trajectory_reporter: TrajectoryReporter | None,
     state: SimState,
-) -> torch.LongTensor:
+) -> torch.Tensor:
     """Determine the initial steps for resuming optimization from trajectory files.
 
     Args:
@@ -154,10 +154,10 @@ def _determine_initial_step_for_optimize(
         state (SimState): The state being optimized
 
     Returns:
-        torch.LongTensor: Tensor of initial steps for each system (1 if not resuming,
+        torch.Tensor: Tensor of initial steps for each system (1 if not resuming,
             otherwise last_step + 1 for each system)
     """
-    initial_step: torch.LongTensor = torch.full(
+    initial_step: torch.Tensor = torch.full(
         size=(state.n_systems,), fill_value=1, dtype=torch.long, device=state.device
     )
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
@@ -183,35 +183,18 @@ def _normalize_temperature_tensor(
         torch.Tensor: Normalized temperature tensor
     """
     # ---- Step 1: Convert to tensor ----
-    if isinstance(temperature, (float, int)):
-        return torch.full(
-            (n_steps,),
-            float(temperature),
-            dtype=initial_state.dtype,
-            device=initial_state.device,
-        )
-
-    # Convert list or tensor input to tensor
-    if isinstance(temperature, list):
-        temps = torch.tensor(
-            temperature, dtype=initial_state.dtype, device=initial_state.device
-        )
-    elif isinstance(temperature, torch.Tensor):
-        temps = temperature.to(dtype=initial_state.dtype, device=initial_state.device)
-    else:
-        raise TypeError(
-            f"Invalid temperature type: {type(temperature).__name__}. "
-            "Must be float, int, list, or torch.Tensor."
-        )
+    temps = torch.as_tensor(
+        temperature, dtype=initial_state.dtype, device=initial_state.device
+    )
 
     # ---- Step 2: Determine how to broadcast ----
     temps = torch.atleast_1d(temps)
     if temps.ndim > 2:
         raise ValueError(f"Temperature tensor must be 1D or 2D, got shape {temps.shape}.")
 
-    if temps.shape[0] == 1:
-        # A single value in a 1-element list/tensor
-        return temps.repeat(n_steps)
+    if temps.numel() == 1:
+        # A single value
+        return temps.expand(n_steps)
 
     if initial_state.n_systems == n_steps:
         warnings.warn(
@@ -313,7 +296,7 @@ def integrate[T: SimState](  # noqa: C901
     dtype, device = initial_state.dtype, initial_state.device
     kTs = _normalize_temperature_tensor(temperature, n_steps, initial_state)
     kTs = kTs * unit_system.temperature
-    dt = torch.tensor(timestep * unit_system.time, dtype=dtype, device=device)
+    dt = torch.as_tensor(timestep * unit_system.time, dtype=dtype, device=device)
 
     # Handle both string names and direct function tuples
     if isinstance(integrator, Integrator):
@@ -404,8 +387,8 @@ def integrate[T: SimState](  # noqa: C901
         trajectory_reporter.finish()
 
     if isinstance(batch_iterator, BinningAutoBatcher):
-        reordered_states = batch_iterator.restore_original_order(final_states)
-        return ts.concatenate_states(reordered_states)
+        reordered = batch_iterator.restore_original_order(final_states)  # ty: ignore[invalid-argument-type]
+        return ts.concatenate_states(reordered)  # ty: ignore[invalid-argument-type]
 
     return state
 
@@ -549,6 +532,8 @@ def generate_energy_convergence_fn[T: MDState | OptimState](
             torch.Tensor: Boolean tensor of shape (n_systems,) indicating
                 convergence status for each system.
         """
+        if last_energy is None:
+            return torch.zeros(state.n_systems, dtype=torch.bool, device=state.device)
         return torch.abs(state.energy - last_energy) < energy_tol
 
     return convergence_fn
@@ -700,7 +685,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
                 )
                 break
 
-        convergence_tensor = convergence_fn(state, last_energy)
+        convergence_tensor = convergence_fn(state, last_energy)  # ty: ignore[invalid-argument-type]
         # Mark states that exceeded max steps as converged to remove them from batch
         convergence_tensor = (
             convergence_tensor | exceeded_max_steps[autobatcher.current_idx]
@@ -713,10 +698,13 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         trajectory_reporter.finish()
 
     if autobatcher:
-        final_states = autobatcher.restore_original_order(all_converged_states)
-        return ts.concatenate_states(final_states)
+        final_states_ordered = autobatcher.restore_original_order(all_converged_states)
+        return ts.concatenate_states(final_states_ordered)
 
-    return state  # type: ignore[return-value]
+    # Unreachable: _configure_in_flight_autobatcher always returns InFlightAutoBatcher
+    raise RuntimeError(
+        "autobatcher is always truthy after _configure_in_flight_autobatcher"
+    )
 
 
 def static(
@@ -764,12 +752,13 @@ def static(
     if model.compute_stress:
         properties.append("stress")
     if isinstance(trajectory_reporter, dict):
-        trajectory_reporter = copy.deepcopy(trajectory_reporter)
-        trajectory_reporter["state_kwargs"] = {
+        traj_dict = dict(copy.deepcopy(trajectory_reporter))
+        traj_dict["state_kwargs"] = {
             "variable_atomic_numbers": True,
             "variable_masses": True,
             "save_forces": model.compute_forces,
         }
+        trajectory_reporter = traj_dict
     trajectory_reporter = _configure_reporter(
         trajectory_reporter or dict(filenames=None),
         properties=properties,
@@ -832,7 +821,7 @@ def static(
 
     if isinstance(batch_iterator, BinningAutoBatcher):
         # reorder properties to match original order of states
-        original_indices = list(chain.from_iterable(batch_iterator.index_bins))
+        original_indices = list(chain.from_iterable(batch_iterator.index_bins))  # ty: ignore[invalid-argument-type]
         indexed_props = list(zip(original_indices, all_props, strict=True))
         return [prop for _, prop in sorted(indexed_props, key=lambda x: x[0])]
 

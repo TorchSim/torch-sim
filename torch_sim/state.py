@@ -5,7 +5,6 @@ operations and conversion to/from various atomistic formats.
 """
 
 import copy
-import importlib
 import typing
 from collections import defaultdict
 from collections.abc import Generator, Sequence
@@ -15,7 +14,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 import torch
 
 import torch_sim as ts
-from torch_sim.typing import StateLike
+from torch_sim.typing import PRNGLike, StateDict, StateLike
 
 
 if TYPE_CHECKING:
@@ -24,6 +23,60 @@ if TYPE_CHECKING:
     from pymatgen.core import Structure
 
 from torch_sim.constraints import Constraint, merge_constraints, validate_constraints
+
+
+def coerce_prng(rng: PRNGLike, device: torch.device) -> torch.Generator:
+    """Coerce an int seed or existing Generator into a ``torch.Generator``.
+
+    Args:
+        rng: An int seed, an existing ``torch.Generator``, or None for unseeded.
+        device: Target device for the returned generator.
+
+    Returns:
+        A ``torch.Generator`` on *device*.
+    """
+    if isinstance(rng, torch.Generator):
+        if rng.device == device:
+            return rng
+        new_generator = torch.Generator(device=device)
+        new_generator.set_state(rng.get_state())
+        return new_generator
+
+    if isinstance(rng, int):
+        generator = torch.Generator(device=device)
+        generator.manual_seed(rng)
+        return generator
+
+    if rng is None:
+        return torch.Generator(device=device)
+
+    raise ValueError(f"Invalid rng type: {type(rng)}")
+
+
+def require_system_idx(system_idx: torch.Tensor | None) -> torch.Tensor:
+    """Return non-null system indices or raise with a clear invariant message."""
+    if system_idx is None:
+        raise RuntimeError("system_idx is set by SimState.__post_init__")
+    return system_idx
+
+
+def pbc_to_tensor(
+    pbc: torch.Tensor | list[bool] | bool,  # noqa: FBT001
+    device: torch.device,
+) -> torch.Tensor:
+    """Convert pbc (bool, list[bool], or Tensor) to a bool Tensor on device."""
+    if isinstance(pbc, torch.Tensor):
+        return pbc
+    if isinstance(pbc, bool):
+        return torch.tensor([pbc] * 3, dtype=torch.bool, device=device)
+    return torch.tensor(pbc, dtype=torch.bool, device=device)
+
+
+def ensure_sim_state(state: "SimState | StateDict") -> "SimState":
+    """Return a SimState from either SimState or StateDict input."""
+    if isinstance(state, SimState):
+        return state
+    return SimState(**state)  # ty: ignore[invalid-argument-type]
 
 
 @dataclass
@@ -92,17 +145,7 @@ class SimState:
     spin: torch.Tensor | None = field(default=None)
     system_idx: torch.Tensor | None = field(default=None)
     _constraints: list["Constraint"] = field(default_factory=lambda: [])  # noqa: PIE807
-
-    if TYPE_CHECKING:
-
-        @property
-        def system_idx(self) -> torch.Tensor: ...  # noqa: D102
-        @property
-        def pbc(self) -> torch.Tensor: ...  # noqa: D102
-        @property
-        def charge(self) -> torch.Tensor: ...  # noqa: D102
-        @property
-        def spin(self) -> torch.Tensor: ...  # noqa: D102
+    _rng: int | torch.Generator | None = field(default=None, repr=False)
 
     _atom_attributes: ClassVar[set[str]] = {
         "positions",
@@ -111,7 +154,17 @@ class SimState:
         "system_idx",
     }
     _system_attributes: ClassVar[set[str]] = {"cell", "charge", "spin"}
-    _global_attributes: ClassVar[set[str]] = {"pbc"}
+    _global_attributes: ClassVar[set[str]] = {"pbc", "_rng"}
+
+    @property
+    def rng(self) -> torch.Generator:
+        """Lazily initialized per-state RNG on the state's device."""
+        self._rng = coerce_prng(self._rng, self.device)
+        return self._rng
+
+    @rng.setter
+    def rng(self, value: int | torch.Generator | None) -> None:
+        self._rng = value
 
     def __post_init__(self) -> None:  # noqa: C901
         """Initialize the SimState and validate the arguments."""
@@ -198,10 +251,14 @@ class SimState:
         """Atomic positions wrapped according to periodic boundary conditions if pbc=True,
         otherwise returns unwrapped positions with shape (n_atoms, 3).
         """
-        if not self.pbc.any():
+        pbc_t = pbc_to_tensor(self.pbc, self.device)
+        if not pbc_t.any():
             return self.positions
+        system_idx = self.system_idx
+        if system_idx is None:
+            raise ValueError("system_idx cannot be None for PBC wrapping")
         return ts.transforms.pbc_wrap_batched(
-            self.positions, self.cell, self.system_idx, self.pbc
+            self.positions, self.cell, system_idx, pbc_t
         )
 
     @property
@@ -222,6 +279,8 @@ class SimState:
     @property
     def n_atoms_per_system(self) -> torch.Tensor:
         """Number of atoms per system."""
+        if self.system_idx is None:
+            return torch.tensor([self.positions.shape[0]], device=self.positions.device)
         return self.system_idx.bincount()
 
     @property
@@ -235,7 +294,7 @@ class SimState:
         return torch.det(self.cell)
 
     @property
-    def attributes(self) -> dict[str, torch.Tensor]:
+    def attributes(self) -> dict[str, Any]:
         """Get all public attributes of the state."""
         return {attr: getattr(self, attr) for attr in self._get_all_attributes()}
 
@@ -371,6 +430,17 @@ class SimState:
             raise ValueError("Degrees of freedom cannot be zero or negative")
         return dof_per_system
 
+    @staticmethod
+    def _clone_attr(value: object) -> object:
+        """Clone one attribute value, preserving RNG generator state."""
+        if isinstance(value, torch.Tensor):
+            return value.clone()
+        if isinstance(value, torch.Generator):
+            cloned_generator = torch.Generator(device=value.device)
+            cloned_generator.set_state(value.get_state())
+            return cloned_generator
+        return copy.deepcopy(value)
+
     def clone(self) -> Self:
         """Create a deep copy of the SimState.
 
@@ -380,13 +450,10 @@ class SimState:
         Returns:
             SimState: A new SimState object with the same properties as the original
         """
-        attrs = {}
-        for attr_name, attr_value in self.attributes.items():
-            if isinstance(attr_value, torch.Tensor):
-                attrs[attr_name] = attr_value.clone()
-            else:
-                attrs[attr_name] = copy.deepcopy(attr_value)
-
+        attrs: dict[str, Any] = {
+            attr_name: self._clone_attr(attr_value)
+            for attr_name, attr_value in self.attributes.items()
+        }
         return type(self)(**attrs)
 
     @classmethod
@@ -417,10 +484,7 @@ class SimState:
         attrs = {}
         for attr_name, attr_value in state.attributes.items():
             if attr_name in cls._get_all_attributes():
-                if isinstance(attr_value, torch.Tensor):
-                    attrs[attr_name] = attr_value.clone()
-                else:
-                    attrs[attr_name] = copy.deepcopy(attr_value)
+                attrs[attr_name] = cls._clone_attr(attr_value)
 
         # Add/override with additional attributes
         attrs.update(additional_attrs)
@@ -730,6 +794,8 @@ def _state_to_device[T: SimState](
     for attr_name, attr_value in attrs.items():
         if isinstance(attr_value, torch.Tensor):
             attrs[attr_name] = attr_value.to(device=device)
+        elif isinstance(attr_value, torch.Generator):
+            attrs[attr_name] = coerce_prng(attr_value, device)
 
     if dtype is not None:
         attrs["positions"] = attrs["positions"].to(dtype=dtype)
@@ -802,15 +868,14 @@ def _filter_attrs_by_index(
     new_atom_idx = atom_remap[torch.where(atom_mask)[0]]
     for c in filtered_attrs["_constraints"]:
         if hasattr(c, "atom_idx") and isinstance(c.atom_idx, torch.Tensor):
-            c.atom_idx = new_atom_idx[c.atom_idx]
+            c.atom_idx = new_atom_idx[c.atom_idx]  # ty: ignore[invalid-assignment]
 
     # Build inverse map for system_idx remapping (old index -> new position)
     if len(system_indices) == 0:
         inv = torch.empty(0, device=state.device, dtype=torch.long)
     else:
-        inv = torch.empty(
-            system_indices.max().item() + 1, device=state.device, dtype=torch.long
-        )
+        max_idx = int(system_indices.max().item()) + 1
+        inv = torch.empty(max_idx, device=state.device, dtype=torch.long)
         inv[system_indices] = torch.arange(len(system_indices), device=state.device)
 
     for name, val in get_attrs_for_scope(state, "per-atom"):
@@ -883,15 +948,17 @@ def _split_state[T: SimState](state: T) -> list[T]:
             **global_attrs,
         }
 
-        atom_idx = torch.arange(cumsum_atoms[sys_idx], cumsum_atoms[sys_idx + 1])
-        new_constraints = [
-            new_constraint
-            for constraint in state.constraints
-            if (new_constraint := constraint.select_sub_constraint(atom_idx, sys_idx))
-        ]
+        start_idx = int(cumsum_atoms[sys_idx].item())
+        end_idx = int(cumsum_atoms[sys_idx + 1].item())
+        atom_idx = torch.arange(start_idx, end_idx, device=state.device)
+        new_constraints: list[Constraint] = []
+        for constraint in state.constraints:
+            sub = constraint.select_sub_constraint(atom_idx, sys_idx)
+            if sub is not None:
+                new_constraints.append(sub)
 
         system_attrs["_constraints"] = new_constraints
-        states.append(type(state)(**system_attrs))  # type: ignore[invalid-argument-type]
+        states.append(type(state)(**system_attrs))  # ty: ignore[invalid-argument-type]
 
     return states
 
@@ -922,9 +989,12 @@ def _pop_states[T: SimState](
         pop_indices = torch.tensor(pop_indices, device=state.device, dtype=torch.int64)
 
     # Derive keep/pop atom and system indices
+    system_idx = state.system_idx
+    if system_idx is None:
+        raise ValueError("system_idx cannot be None")
     all_systems = torch.arange(state.n_systems, device=state.device)
     keep_system_indices = all_systems[~torch.isin(all_systems, pop_indices)]
-    pop_atom_mask = torch.isin(state.system_idx, pop_indices)
+    pop_atom_mask = torch.isin(system_idx, pop_indices)
     keep_atom_indices = torch.where(~pop_atom_mask)[0]
     pop_atom_indices = torch.where(pop_atom_mask)[0]
 
@@ -933,10 +1003,10 @@ def _pop_states[T: SimState](
     pop_attrs = _filter_attrs_by_index(state, pop_atom_indices, pop_indices)
 
     # Create the keep state
-    keep_state: T = type(state)(**keep_attrs)  # type: ignore[assignment]
+    keep_state: T = type(state)(**keep_attrs)
 
     # Create and split the pop state
-    pop_state: T = type(state)(**pop_attrs)  # type: ignore[assignment]
+    pop_state: T = type(state)(**pop_attrs)
     pop_states = _split_state(pop_state)
 
     return keep_state, pop_states
@@ -981,7 +1051,7 @@ def _slice_state[T: SimState](state: T, system_indices: list[int] | torch.Tensor
     )
 
     filtered_attrs = _filter_attrs_by_index(state, atom_indices, system_indices)
-    return type(state)(**filtered_attrs)  # type: ignore[invalid-return-type]
+    return type(state)(**filtered_attrs)
 
 
 def concatenate_states[T: SimState](  # noqa: C901, PLR0915
@@ -1048,7 +1118,8 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
 
         # Update system indices
         num_systems = state.n_systems
-        new_indices = state.system_idx + system_offset
+        system_idx = require_system_idx(state.system_idx)
+        new_indices = system_idx + system_offset
         new_system_indices.append(new_indices)
         num_atoms_per_state.append(state.n_atoms)
 
@@ -1129,7 +1200,7 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
     return state_class(**concatenated, _constraints=constraints)
 
 
-def initialize_state(
+def initialize_state(  # noqa: C901, PLR0911
     system: StateLike,
     device: torch.device | None = None,
     dtype: torch.dtype | None = None,
@@ -1156,34 +1227,66 @@ def initialize_state(
     if isinstance(system, SimState):
         return system.clone().to(device, dtype)
 
-    if isinstance(system, list | tuple) and all(isinstance(s, SimState) for s in system):
-        if not all(state.n_systems == 1 for state in system):
+    if isinstance(system, list | tuple):
+        if len(system) == 0:
+            raise ValueError("Cannot initialize state from an empty list.")
+        states = [s for s in system if isinstance(s, SimState)]
+        if len(states) == len(system) and not all(s.n_systems == 1 for s in states):
             raise ValueError(
                 "When providing a list of states, to the initialize_state function, "
                 "all states must have n_systems == 1. To fix this, you can split the "
                 "states into individual states with the split_state function."
             )
-        return ts.concatenate_states(system)
+        if len(states) == len(system):
+            return ts.concatenate_states(states)
 
-    converters = [
-        ("pymatgen.core", "Structure", ts.io.structures_to_state),
-        ("ase", "Atoms", ts.io.atoms_to_state),
-        ("phonopy.structure.atoms", "PhonopyAtoms", ts.io.phonopy_to_state),
-    ]
+    # Try each converter (runtime imports for type narrowing)
+    try:
+        from pymatgen.core import Structure
 
-    # Try each converter
-    for module_path, class_name, converter_func in converters:
-        try:
-            module = importlib.import_module(module_path)
-            cls = getattr(module, class_name)
+        if isinstance(system, Structure):
+            return ts.io.structures_to_state(system, device, dtype)
+        if (
+            isinstance(system, list | tuple)
+            and system
+            and all(isinstance(s, Structure) for s in system)
+        ):
+            struct_list: list[Structure] = [s for s in system if isinstance(s, Structure)]
+            return ts.io.structures_to_state(struct_list, device, dtype)
+    except ImportError:
+        pass
 
-            if isinstance(system, cls) or (
-                isinstance(system, list | tuple)
-                and all(isinstance(s, cls) for s in system)
-            ):
-                return converter_func(system, device, dtype)
-        except ImportError:
-            continue
+    try:
+        from ase import Atoms
+
+        if isinstance(system, Atoms):
+            return ts.io.atoms_to_state(system, device, dtype)
+        if (
+            isinstance(system, list | tuple)
+            and system
+            and all(isinstance(s, Atoms) for s in system)
+        ):
+            atoms_list: list[Atoms] = [s for s in system if isinstance(s, Atoms)]
+            return ts.io.atoms_to_state(atoms_list, device, dtype)
+    except ImportError:
+        pass
+
+    try:
+        from phonopy.structure.atoms import PhonopyAtoms
+
+        if isinstance(system, PhonopyAtoms):
+            return ts.io.phonopy_to_state(system, device, dtype)
+        if (
+            isinstance(system, list | tuple)
+            and system
+            and all(isinstance(s, PhonopyAtoms) for s in system)
+        ):
+            phonopy_list: list[PhonopyAtoms] = [
+                s for s in system if isinstance(s, PhonopyAtoms)
+            ]
+            return ts.io.phonopy_to_state(phonopy_list, device, dtype)
+    except ImportError:
+        pass
 
     # remaining code just for informative error
     all_same_type = (

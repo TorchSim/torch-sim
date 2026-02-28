@@ -57,7 +57,7 @@ class TestHeatFlux:
 
         # Heat flux parts should cancel out
         expected = torch.zeros(3, device=flux.device)
-        assert_allclose(flux.cpu().numpy(), expected.cpu().numpy())
+        assert_allclose(flux.detach().cpu().numpy(), expected.detach().cpu().numpy())
 
     def test_unbatched_virial_only(
         self, mock_simple_system: dict[str, torch.Tensor]
@@ -73,7 +73,7 @@ class TestHeatFlux:
         )
 
         expected = -torch.tensor([1.0, 4.0, 9.0], device=virial.device)
-        assert_allclose(virial.cpu().numpy(), expected.cpu().numpy())
+        assert_allclose(virial.detach().cpu().numpy(), expected.detach().cpu().numpy())
 
     def test_batched_calculation(self) -> None:
         """Test heat flux calculation with batched data."""
@@ -107,7 +107,7 @@ class TestHeatFlux:
 
         # Each batch should cancel heat flux parts
         expected = torch.zeros((2, 3), device=DEVICE)
-        assert_allclose(flux.cpu().numpy(), expected.cpu().numpy())
+        assert_allclose(flux.detach().cpu().numpy(), expected.detach().cpu().numpy())
 
     def test_centroid_stress(self) -> None:
         """Test heat flux with centroid stress formulation."""
@@ -130,7 +130,7 @@ class TestHeatFlux:
 
         # Heatflux should be [-1,-1,-1]
         expected = torch.full((3,), -1.0, device=DEVICE)
-        assert_allclose(flux.cpu().numpy(), expected.cpu().numpy())
+        assert_allclose(flux.detach().cpu().numpy(), expected.detach().cpu().numpy())
 
     def test_momenta_input(self) -> None:
         """Test heat flux calculation using momenta instead."""
@@ -149,7 +149,7 @@ class TestHeatFlux:
 
         # Heat flux terms should cancel out
         expected = torch.zeros(3, device=DEVICE)
-        assert_allclose(flux.cpu().numpy(), expected.cpu().numpy())
+        assert_allclose(flux.detach().cpu().numpy(), expected.detach().cpu().numpy())
 
 
 @pytest.fixture

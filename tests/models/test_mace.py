@@ -135,9 +135,11 @@ def test_mace_charge_spin(
     benzene_sim_state: ts.SimState, charge: float, spin: float
 ) -> None:
     """Test that MaceModel correctly handles charge and spin from atoms.info."""
-    # Convert to SimState (should extract charge/spin)
-    benzene_sim_state.charge = torch.tensor([charge], device=DEVICE, dtype=DTYPE)
-    benzene_sim_state.spin = torch.tensor([spin], device=DEVICE, dtype=DTYPE)
+    benzene_sim_state = ts.SimState.from_state(
+        benzene_sim_state,
+        charge=torch.tensor([charge], device=DEVICE, dtype=DTYPE),
+        spin=torch.tensor([spin], device=DEVICE, dtype=DTYPE),
+    )
 
     # Verify charge/spin were extracted correctly
     if charge != 0.0:

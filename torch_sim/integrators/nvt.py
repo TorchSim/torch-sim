@@ -15,10 +15,10 @@ from torch_sim.integrators.md import (
     construct_nose_hoover_chain,
     momentum_step,
     position_step,
-    velocity_verlet,
+    velocity_verlet_step,
 )
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState
+from torch_sim.state import SimState, ensure_sim_state, require_system_idx
 from torch_sim.typing import StateDict
 
 
@@ -55,7 +55,13 @@ def _ou_step(
           p(t+dt) = c1*p(t) + c2*sqrt(m)*N(0,1)
           where c1 = exp(-gamma*dt) and c2 = sqrt(kT*(1-c1²))
     """
-    c1 = torch.exp(-gamma * dt)
+    gamma_dt = -gamma * dt
+    exp_arg = (
+        gamma_dt
+        if isinstance(gamma_dt, torch.Tensor)
+        else torch.tensor(gamma_dt, device=state.device, dtype=state.dtype)
+    )
+    c1 = torch.exp(exp_arg)
 
     if isinstance(kT, torch.Tensor) and len(kT.shape) > 0:
         # kT is a tensor with shape (n_systems,)
@@ -68,7 +74,12 @@ def _ou_step(
     c2 = torch.sqrt(kT * (1 - torch.square(c1))).unsqueeze(-1)
 
     # Generate random noise from normal distribution
-    noise = torch.randn_like(state.momenta, device=state.device, dtype=state.dtype)
+    noise = torch.randn(
+        state.momenta.shape,
+        device=state.device,
+        dtype=state.dtype,
+        generator=state.rng,
+    )
     new_momenta = (
         c1.unsqueeze(-1) * state.momenta
         + c2 * torch.sqrt(state.masses).unsqueeze(-1) * noise
@@ -109,15 +120,23 @@ def nvt_langevin_init(
         at the specified temperature. This provides a proper thermal initial
         state for the subsequent Langevin dynamics.
     """
-    if not isinstance(state, SimState):
-        state = SimState(**state)
+    state = ensure_sim_state(state)
 
     model_output = model(state)
 
+    system_idx = state.system_idx
+    if system_idx is None:
+        raise ValueError("system_idx cannot be None for NVT integration")
     momenta = getattr(
         state,
         "momenta",
-        calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
+        calculate_momenta(
+            state.positions,
+            state.masses,
+            system_idx,
+            kT,
+            seed if seed is not None else state.rng,
+        ),
     )
     return MDState.from_state(
         state,
@@ -179,6 +198,9 @@ def nvt_langevin_step(
 
     if isinstance(dt, float):
         dt = torch.tensor(dt, device=device, dtype=dtype)
+
+    if isinstance(kT, float):
+        kT = torch.tensor(kT, device=device, dtype=dtype)
 
     state = momentum_step(state, dt / 2)
     state = position_step(state, dt / 2)
@@ -246,9 +268,9 @@ def nvt_nose_hoover_init(
     state: SimState | StateDict,
     model: ModelInterface,
     *,
-    kT: torch.Tensor,
-    dt: torch.Tensor,
-    tau: torch.Tensor | None = None,
+    kT: float | torch.Tensor,
+    dt: float | torch.Tensor,
+    tau: float | torch.Tensor | None = None,
     chain_length: int = 3,
     chain_steps: int = 3,
     sy_steps: int = 3,
@@ -289,24 +311,32 @@ def nvt_nose_hoover_init(
 
     # Create thermostat functions
     chain_fns = construct_nose_hoover_chain(dt, chain_length, chain_steps, sy_steps, tau)
-    if not isinstance(state, SimState):
-        state = SimState(**state)
+    state = ensure_sim_state(state)
 
     atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
+    system_idx = state.system_idx
+    if system_idx is None:
+        raise ValueError("system_idx cannot be None for NVT integration")
     model_output = model(state)
     momenta = kwargs.get(
         "momenta",
-        calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
+        calculate_momenta(
+            state.positions,
+            state.masses,
+            system_idx,
+            kT,
+            seed if seed is not None else state.rng,
+        ),
     )
 
     # Calculate initial kinetic energy per system
     KE = ts.calc_kinetic_energy(
-        masses=state.masses, momenta=momenta, system_idx=state.system_idx
+        masses=state.masses, momenta=momenta, system_idx=system_idx
     )
 
     # Calculate degrees of freedom per system
-    n_atoms_per_system = torch.bincount(state.system_idx)
+    n_atoms_per_system = torch.bincount(system_idx)
     dof_per_system = (
         n_atoms_per_system * state.positions.shape[-1]
     )  # n_atoms * n_dimensions
@@ -328,8 +358,8 @@ def nvt_nose_hoover_step(
     state: NVTNoseHooverState,
     model: ModelInterface,
     *,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
 ) -> NVTNoseHooverState:
     """Perform one complete Nose-Hoover chain integration step.
 
@@ -360,24 +390,28 @@ def nvt_nose_hoover_step(
     chain_fns = state._chain_fns  # noqa: SLF001
     chain = state.chain
 
+    dt = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
+    kT = torch.as_tensor(kT, device=state.device, dtype=state.dtype)
+
     # Update chain masses based on target temperature
     chain = chain_fns.update_mass(chain, kT)
 
     # First half-step of chain evolution
-    momenta, chain = chain_fns.half_step(state.momenta, chain, kT, state.system_idx)
+    system_idx = require_system_idx(state.system_idx)
+    momenta, chain = chain_fns.half_step(state.momenta, chain, kT, system_idx)
     state.set_constrained_momenta(momenta)
 
     # Full velocity Verlet step
-    state = velocity_verlet(state=state, dt=dt, model=model)
+    state = velocity_verlet_step(state=state, dt=dt, model=model)
 
     # Update chain kinetic energy per system
     KE = ts.calc_kinetic_energy(
-        masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        masses=state.masses, momenta=state.momenta, system_idx=system_idx
     )
     chain.kinetic_energy = KE
 
     # Second half-step of chain evolution
-    momenta, chain = chain_fns.half_step(state.momenta, chain, kT, state.system_idx)
+    momenta, chain = chain_fns.half_step(state.momenta, chain, kT, system_idx)
     state.set_constrained_momenta(momenta)
     state.chain = chain
 
@@ -415,12 +449,13 @@ def nvt_nose_hoover_invariant(
     """
     # Calculate system energy terms per system
     e_pot = state.energy
+    system_idx = require_system_idx(state.system_idx)
     e_kin = ts.calc_kinetic_energy(
-        masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        masses=state.masses, momenta=state.momenta, system_idx=system_idx
     )
 
     # Get system degrees of freedom per system
-    n_atoms_per_system = torch.bincount(state.system_idx)
+    n_atoms_per_system = torch.bincount(system_idx)
     dof = n_atoms_per_system * state.positions.shape[-1]  # n_atoms * n_dimensions
 
     # Start with system energy
@@ -489,12 +524,12 @@ class NVTVRescaleState(MDState):
         return super().get_number_of_degrees_of_freedom() - 3
 
 
-def _vrescale_update(
-    state: MDState,
+def _vrescale_update[T: MDState](
+    state: T,
     tau: float | torch.Tensor,
     kT: float | torch.Tensor,
     dt: float | torch.Tensor,
-) -> MDState:
+) -> T:
     """Update the momentum by a scaling factor as described by Eq.A7 Bussi et al.
 
     Note that we don't implement the optimize code from Bussi, which won't be useful
@@ -534,9 +569,9 @@ def _vrescale_update(
     KE_new = dof * kT_tensor / 2
 
     # Generate random numbers
-    r1 = torch.randn(n_systems, device=device, dtype=dtype)
-    # Sample Gamma((dof - 1)/2, 1/2) = \sum_2^{dof} X_i^2 where X_i ~ N(0,1)
-    r2 = torch.distributions.Gamma((dof - 1) / 2, torch.ones_like(dof) / 2).sample()
+    r1 = torch.randn(n_systems, device=device, dtype=dtype, generator=state.rng)
+    # Sample Gamma((dof - 1)/2, 1/2) via _standard_gamma to preserve seeded RNG.
+    r2 = torch._standard_gamma((dof - 1) / 2, generator=state.rng) * 2  # noqa: SLF001
 
     # Calculate scaling coefficients
     c1 = torch.exp(-dt_tensor / tau_tensor)
@@ -547,7 +582,8 @@ def _vrescale_update(
     lam = torch.sqrt(scale)
 
     # Apply scaling to momenta - map from system to atom indices
-    state.momenta = state.momenta * lam[state.system_idx].unsqueeze(-1)
+    system_idx = require_system_idx(state.system_idx)
+    state.momenta = state.momenta * lam[system_idx].unsqueeze(-1)
     return state
 
 
@@ -584,15 +620,23 @@ def nvt_vrescale_init(
         at the specified temperature. The V-Rescale thermostat provides proper
         canonical sampling through stochastic velocity rescaling.
     """
-    if not isinstance(state, SimState):
-        state = SimState(**state)
+    state = ensure_sim_state(state)
 
     model_output = model(state)
 
+    system_idx = state.system_idx
+    if system_idx is None:
+        raise ValueError("system_idx cannot be None for NVT integration")
     momenta = getattr(
         state,
         "momenta",
-        calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
+        calculate_momenta(
+            state.positions,
+            state.masses,
+            system_idx,
+            kT,
+            seed if seed is not None else state.rng,
+        ),
     )
 
     return NVTVRescaleState.from_state(
@@ -659,5 +703,4 @@ def nvt_vrescale_step(
     # Apply V-Rescale rescaling
     state = _vrescale_update(state, tau, kT, dt)
 
-    # Perform velocity Verlet step
-    return velocity_verlet(state=state, dt=dt, model=model)
+    return velocity_verlet_step(state=state, dt=dt, model=model)

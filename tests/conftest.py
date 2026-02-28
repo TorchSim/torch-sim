@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -16,7 +17,7 @@ DEVICE = torch.device("cpu")
 DTYPE = torch.float64
 
 
-def _make_simstate_fixture(name: str) -> pytest.fixture:
+def _make_simstate_fixture(name: str) -> Callable[[], ts.SimState]:
     """Create a pytest fixture for a sim_state generator."""
 
     @pytest.fixture(name=name)

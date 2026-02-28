@@ -46,7 +46,7 @@ def _disable_duecredit(exc: Exception) -> None:
 
 
 try:
-    from duecredit import BibTeX, Doi, Text, Url, due
+    from duecredit import BibTeX, Doi, Text, Url, due  # type: ignore[unresolved-import]
 except Exception as e:  # noqa: BLE001
     if not isinstance(e, ImportError):
         _disable_duecredit(e)

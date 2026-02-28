@@ -888,7 +888,9 @@ def test_cell_optimizer_init_cell_factor_none(
     # Ensure n_systems > 0 for cell_factor calculation from counts
     assert ar_supercell_sim_state.n_systems > 0
     assert isinstance(opt_state, expected_state_type)
-    _, counts = torch.unique(ar_supercell_sim_state.system_idx, return_counts=True)
+    system_idx = ar_supercell_sim_state.system_idx
+    assert system_idx is not None
+    _, counts = torch.unique(system_idx, return_counts=True)
     expected_cf_tensor = counts.to(dtype=lj_model.dtype).view(-1, 1, 1)
 
     # Check cell_factor is stored in cell_state for new API
@@ -1091,9 +1093,8 @@ def test_optimizer_batch_consistency(
             current_e_indiv = opt_state_indiv.energy
             steps_indiv += 1
             if steps_indiv > 1000:
-                raise ValueError(
-                    f"Individual opt for {filter_func.name} did not converge"
-                )
+                filter_name = filter_func.name if filter_func else "position-only"
+                raise ValueError(f"Individual opt for {filter_name} did not converge")
         final_individual_states.append(opt_state_indiv)
 
     # Batched optimization
@@ -1121,7 +1122,8 @@ def test_optimizer_batch_consistency(
         e_current_batch = batch_opt_state.energy.clone()
         steps_batch += 1
         if steps_batch > 1000:
-            raise ValueError(f"Batched opt for {filter_func.name} did not converge")
+            filter_name = filter_func.name if filter_func else "position-only"
+            raise ValueError(f"Batched opt for {filter_name} did not converge")
 
     individual_final_energies = [s.energy.item() for s in final_individual_states]
     for idx, indiv_energy in enumerate(individual_final_energies):

@@ -28,8 +28,10 @@ class TestExpmFrechet:
         A = torch.from_numpy(A).to(device=device)
         E = torch.from_numpy(E).to(device=device)
         observed_expm, observed_frechet = fm.expm_frechet(A, E)
-        assert_allclose(expected_expm, observed_expm.cpu().numpy(), atol=1e-14)
-        assert_allclose(expected_frechet, observed_frechet.cpu().numpy(), atol=1e-14)
+        assert_allclose(expected_expm, observed_expm.detach().cpu().numpy(), atol=1e-14)
+        assert_allclose(
+            expected_frechet, observed_frechet.detach().cpu().numpy(), atol=1e-14
+        )
 
     def test_small_norm_expm_frechet(self):
         """Test matrices with small norms."""
@@ -41,8 +43,10 @@ class TestExpmFrechet:
         A = torch.from_numpy(A).to(device=device, dtype=DTYPE)
         E = torch.from_numpy(E).to(device=device, dtype=DTYPE)
         observed_expm, observed_frechet = fm.expm_frechet(A, E)
-        assert_allclose(expected_expm, observed_expm.cpu().numpy(), atol=1e-14)
-        assert_allclose(expected_frechet, observed_frechet.cpu().numpy(), atol=1e-14)
+        assert_allclose(expected_expm, observed_expm.detach().cpu().numpy(), atol=1e-14)
+        assert_allclose(
+            expected_frechet, observed_frechet.detach().cpu().numpy(), atol=1e-14
+        )
 
     def test_fuzz(self):
         """Test with a variety of random 3x3 inputs to ensure robustness."""
@@ -61,8 +65,12 @@ class TestExpmFrechet:
             A = torch.from_numpy(A).to(device=device, dtype=DTYPE)
             E = torch.from_numpy(E).to(device=device, dtype=DTYPE)
             observed_expm, observed_frechet = fm.expm_frechet(A, E)
-            assert_allclose(expected_expm, observed_expm.cpu().numpy(), atol=5e-8)
-            assert_allclose(expected_frechet, observed_frechet.cpu().numpy(), atol=1e-7)
+            assert_allclose(
+                expected_expm, observed_expm.detach().cpu().numpy(), atol=5e-8
+            )
+            assert_allclose(
+                expected_frechet, observed_frechet.detach().cpu().numpy(), atol=1e-7
+            )
 
     def test_problematic_matrix(self):
         """Test a specific matrix that previously uncovered a bug."""
@@ -79,8 +87,8 @@ class TestExpmFrechet:
         blockEnlarge_expm, blockEnlarge_frechet = fm.expm_frechet(
             A.unsqueeze(0), E.unsqueeze(0), method="blockEnlarge"
         )
-        assert_allclose(sps_expm, blockEnlarge_expm[0].cpu().numpy())
-        assert_allclose(sps_frechet, blockEnlarge_frechet[0].cpu().numpy())
+        assert_allclose(sps_expm, blockEnlarge_expm[0].detach().cpu().numpy())
+        assert_allclose(sps_frechet, blockEnlarge_frechet[0].detach().cpu().numpy())
 
     def test_medium_matrix(self):
         """Test with a medium-sized matrix to compare performance between methods."""
@@ -96,8 +104,8 @@ class TestExpmFrechet:
         blockEnlarge_expm, blockEnlarge_frechet = fm.expm_frechet(
             A.unsqueeze(0), E.unsqueeze(0), method="blockEnlarge"
         )
-        assert_allclose(sps_expm, blockEnlarge_expm[0].cpu().numpy())
-        assert_allclose(sps_frechet, blockEnlarge_frechet[0].cpu().numpy())
+        assert_allclose(sps_expm, blockEnlarge_expm[0].detach().cpu().numpy())
+        assert_allclose(sps_frechet, blockEnlarge_frechet[0].detach().cpu().numpy())
 
 
 class TestExpmFrechetTorch:
@@ -341,7 +349,7 @@ class TestLogM33:
         n = 3
         M = torch.randn(n, n, dtype=DTYPE, device=device)
         M_logm = fm.matrix_log_33(M)
-        scipy_logm = scipy.linalg.logm(M.cpu().numpy())
+        scipy_logm = scipy.linalg.logm(M.detach().cpu().numpy())
         torch.testing.assert_close(
             M_logm, torch.tensor(scipy_logm, dtype=DTYPE, device=device)
         )
@@ -360,7 +368,7 @@ class TestLogM33:
             device=device,
         )
         M_logm = fm._matrix_log_33(M)
-        scipy_logm = scipy.linalg.logm(M.cpu().numpy())
+        scipy_logm = scipy.linalg.logm(M.detach().cpu().numpy())
         torch.testing.assert_close(
             M_logm, torch.tensor(scipy_logm, dtype=DTYPE, device=device)
         )

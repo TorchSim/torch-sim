@@ -69,7 +69,10 @@ def corr_calc() -> CorrelationCalculator:
     def velocity_getter(state: MockState) -> torch.Tensor:
         return state.velocities
 
-    properties = {"velocity": velocity_getter}
+    # MockState has .velocities; CorrelationCalculator expects SimState
+    properties: dict[str, Callable[[MockState], torch.Tensor]] = {
+        "velocity": velocity_getter,
+    }
 
     return CorrelationCalculator(
         window_size=window_size,

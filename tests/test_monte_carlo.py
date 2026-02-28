@@ -51,6 +51,7 @@ def test_generate_swaps(batched_diverse_state: ts.SimState, *, use_generator: bo
 
     # System consistency
     system_idx = batched_diverse_state.system_idx
+    assert system_idx is not None
     assert torch.all(system_idx[swaps[:, 0]] == system_idx[swaps[:, 1]])
 
     # Different atomic numbers
@@ -90,6 +91,7 @@ def test_swaps_to_permutation(batched_diverse_state: ts.SimState, *, n_swaps: in
 
     # Test permutation preserves system assignments
     original_system = batched_diverse_state.system_idx
+    assert original_system is not None
     assert torch.all(original_system == original_system[permutation])
 
 
@@ -178,6 +180,8 @@ def test_monte_carlo_integration(
         assert isinstance(mc_state, SwapMCState)
 
     # Verify conservation properties
+    assert mc_state.system_idx is not None
+    assert batched_diverse_state.system_idx is not None
     assert torch.all(mc_state.system_idx == batched_diverse_state.system_idx)
     for sys_idx in torch.unique(mc_state.system_idx):
         orig_mask = batched_diverse_state.system_idx == sys_idx

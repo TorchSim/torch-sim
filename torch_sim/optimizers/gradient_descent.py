@@ -6,7 +6,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.optimizers import cell_filters
-from torch_sim.state import SimState
+from torch_sim.state import SimState, ensure_sim_state
 from torch_sim.typing import StateDict
 
 
@@ -41,8 +41,7 @@ def gradient_descent_init(
     # Import here to avoid circular imports
     from torch_sim.optimizers import CellOptimState, OptimState
 
-    if not isinstance(state, SimState):
-        state = SimState(**state)
+    state = ensure_sim_state(state)
 
     # Get initial forces and energy from model
     model_output = model(state)
@@ -96,8 +95,9 @@ def gradient_descent_step(
     device, dtype = model.device, model.dtype
 
     # Get per-atom learning rates
-    if isinstance(pos_lr, (int, float)):
-        pos_lr = torch.full((state.n_systems,), pos_lr, device=device, dtype=dtype)
+    pos_lr = torch.as_tensor(pos_lr, device=device, dtype=dtype)
+    if pos_lr.ndim == 0:
+        pos_lr = pos_lr.expand(state.n_systems)
     atom_lr = pos_lr[state.system_idx].unsqueeze(-1)
 
     # Update atomic positions

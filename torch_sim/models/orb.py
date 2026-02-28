@@ -26,6 +26,7 @@ import torch
 import torch_sim as ts
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
+from torch_sim.state import pbc_to_tensor
 
 
 try:
@@ -130,7 +131,12 @@ def state_to_atom_graphs(  # noqa: PLR0915
         system_config = SystemConfig(radius=6.0, max_num_neighbors=20)
 
     # Handle batch information if present
-    n_node = torch.bincount(state.system_idx)
+    system_idx = state.system_idx
+    if system_idx is None:
+        system_idx = torch.zeros(
+            state.positions.shape[0], dtype=torch.long, device=state.device
+        )
+    n_node = torch.bincount(system_idx)
 
     # Set default dtype if not provided
     output_dtype = torch.get_default_dtype() if output_dtype is None else output_dtype
@@ -165,24 +171,32 @@ def state_to_atom_graphs(  # noqa: PLR0915
     atomic_numbers_embedding = atom_type_embedding.to(output_dtype)
 
     # Wrap positions into the central cell if needed
-    if wrap and (torch.any(row_vector_cell != 0) and torch.any(state.pbc)):
+    pbc_for_any = (
+        state.pbc
+        if isinstance(state.pbc, torch.Tensor)
+        else torch.tensor(
+            state.pbc if isinstance(state.pbc, list) else [state.pbc] * 3,
+            dtype=torch.bool,
+        )
+    )
+    if wrap and torch.any(row_vector_cell != 0).item() and torch.any(pbc_for_any).item():
         positions = feat_util.batch_map_to_pbc_cell(positions, row_vector_cell, n_node)
 
-    n_systems = state.system_idx.max().item() + 1
+    n_systems_int = int(system_idx.max().item()) + 1
 
     # Prepare lists to collect data from each system
     all_edges: list[torch.Tensor] = []
     all_vectors: list[torch.Tensor] = []
     all_unit_shifts: list[torch.Tensor] = []
-    num_edges: list[torch.Tensor] = []
+    num_edges: list[int] = []
     node_feats_list: list[dict[str, torch.Tensor]] = []
     edge_feats_list: list[dict[str, torch.Tensor]] = []
     graph_feats_list: list[dict[str, torch.Tensor]] = []
 
     # Process each system in a single loop
     offset = 0
-    for sys_idx in range(n_systems):
-        system_mask = state.system_idx == sys_idx
+    for sys_idx in range(n_systems_int):
+        system_mask = system_idx == sys_idx
         positions_per_system = positions[system_mask]
         atomic_numbers_per_system = atomic_numbers[system_mask]
         atomic_numbers_embedding_per_system = atomic_numbers_embedding[system_mask]
@@ -225,15 +239,16 @@ def state_to_atom_graphs(  # noqa: PLR0915
             "unit_shifts": unit_shifts,
         }
 
-        graph_feats = {
+        pbc_tensor = pbc_to_tensor(pbc, positions_per_system.device)
+        graph_feats: dict[str, torch.Tensor] = {
             "cell": cell_per_system,
-            "pbc": pbc,
+            "pbc": pbc_tensor,
             "lattice": lattice_per_system.to(device=positions_per_system.device),
         }
 
         # Add batch dimension to non-scalar graph features
         graph_feats = {
-            k: v.unsqueeze(0) if v.numel() > 1 else v for k, v in graph_feats.items()
+            k: (v.unsqueeze(0) if v.numel() > 1 else v) for k, v in graph_feats.items()
         }
 
         node_feats_list.append(node_feats)
@@ -337,11 +352,14 @@ class OrbModel(ModelInterface):
         """
         super().__init__()
 
-        self._device = device or torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
-        if isinstance(self._device, str):
-            self._device = torch.device(self._device)
+        resolved_device: torch.device
+        if device is None:
+            resolved_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif isinstance(device, str):
+            resolved_device = torch.device(device)
+        else:
+            resolved_device = device
+        self._device = resolved_device
 
         self._dtype = dtype
         self._compute_stress = compute_stress
@@ -386,7 +404,9 @@ class OrbModel(ModelInterface):
         if self.conservative:
             self.implemented_properties.extend(["forces", "stress"])
 
-    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(
+        self, state: ts.SimState | StateDict, **_kwargs: object
+    ) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by the model,
@@ -396,6 +416,7 @@ class OrbModel(ModelInterface):
             state (SimState | StateDict): State object containing positions, cells,
                 atomic numbers, and other system information. If a dictionary is provided,
                 it will be converted to a SimState.
+            **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
             dict: Model predictions, which may include:
@@ -408,11 +429,18 @@ class OrbModel(ModelInterface):
             The state is automatically transferred to the model's device if needed.
             All output tensors are detached from the computation graph.
         """
-        sim_state = (
-            state
-            if isinstance(state, ts.SimState)
-            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
-        )
+        if isinstance(state, ts.SimState):
+            sim_state = state
+        else:
+            positions_in = state["positions"]
+            sim_state = ts.SimState(
+                positions=positions_in,
+                masses=torch.ones_like(positions_in),
+                cell=state["cell"],
+                pbc=state.get("pbc", True),
+                atomic_numbers=state["atomic_numbers"],
+                system_idx=state.get("system_idx"),
+            )
 
         if sim_state.device != self._device:
             sim_state = sim_state.to(self._device)
