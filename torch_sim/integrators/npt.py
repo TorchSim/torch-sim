@@ -1469,9 +1469,9 @@ def npt_nose_hoover_step(
     state: NPTNoseHooverState,
     model: ModelInterface,
     *,
-    dt: torch.Tensor,
-    kT: torch.Tensor,
-    external_pressure: torch.Tensor,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
+    external_pressure: float | torch.Tensor,
 ) -> NPTNoseHooverState:
     """Perform a complete NPT integration step with Nose-Hoover chain thermostats.
     If the center of mass motion is removed initially, it remains removed throughout
@@ -1487,35 +1487,40 @@ def npt_nose_hoover_step(
     Args:
         model (ModelInterface): Model to compute forces and energies
         state (NPTNoseHooverState): Current system state
-        dt (torch.Tensor): Integration timestep
-        kT (torch.Tensor): Target temperature
-        external_pressure (torch.Tensor): Target external pressure
+        dt (float | torch.Tensor): Integration timestep
+        kT (float | torch.Tensor): Target temperature
+        external_pressure (float | torch.Tensor): Target external pressure
 
     Returns:
         NPTNoseHooverState: Updated state after complete integration step
     """
     device, dtype = model.device, model.dtype
+    dt_tensor = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT_tensor = torch.as_tensor(kT, device=device, dtype=dtype)
+    external_pressure_tensor = torch.as_tensor(
+        external_pressure, device=device, dtype=dtype
+    )
 
     # Unpack state variables for clarity
     barostat = state.barostat
     thermostat = state.thermostat
 
     # Update mass parameters
-    state.barostat = state.barostat_fns.update_mass(barostat, kT)
-    state.thermostat = state.thermostat_fns.update_mass(thermostat, kT)
-    state = _npt_nose_hoover_update_cell_mass(state, kT, device, dtype)
+    state.barostat = state.barostat_fns.update_mass(barostat, kT_tensor)
+    state.thermostat = state.thermostat_fns.update_mass(thermostat, kT_tensor)
+    state = _npt_nose_hoover_update_cell_mass(state, kT_tensor, device, dtype)
 
     # First half step of thermostat chains
     cell_system_idx = torch.arange(state.n_systems, device=device)
     state.cell_momentum, state.barostat = state.barostat_fns.half_step(
-        state.cell_momentum, state.barostat, kT, cell_system_idx
+        state.cell_momentum, state.barostat, kT_tensor, cell_system_idx
     )
     state.momenta, state.thermostat = state.thermostat_fns.half_step(
-        state.momenta, state.thermostat, kT, state.system_idx
+        state.momenta, state.thermostat, kT_tensor, state.system_idx
     )
 
     # Perform inner NPT step
-    state = _npt_nose_hoover_inner_step(state, model, dt, external_pressure)
+    state = _npt_nose_hoover_inner_step(state, model, dt_tensor, external_pressure_tensor)
 
     # Update kinetic energies for thermostats
     KE = ts.calc_kinetic_energy(
@@ -1528,10 +1533,10 @@ def npt_nose_hoover_step(
 
     # Second half step of thermostat chains
     state.momenta, state.thermostat = state.thermostat_fns.half_step(
-        state.momenta, state.thermostat, kT, state.system_idx
+        state.momenta, state.thermostat, kT_tensor, state.system_idx
     )
     state.cell_momentum, state.barostat = state.barostat_fns.half_step(
-        state.cell_momentum, state.barostat, kT, cell_system_idx
+        state.cell_momentum, state.barostat, kT_tensor, cell_system_idx
     )
     return state
 
@@ -1771,14 +1776,14 @@ def _crescale_anisotropic_barostat_step(
         3, device=state.positions.device, dtype=state.positions.dtype
     ).expand_as(random_matrix)
     deformation_matrix = torch.matrix_exp(
-        a_tilde * dt + prefactor_random_matrix[:, None, None] * random_matrix_tilde
+        a_tilde * dt_tensor + prefactor_random_matrix[:, None, None] * random_matrix_tilde
     )
     deformation_matrix = rotate_gram_schmidt(deformation_matrix)
 
     ## Step 3: propagate sqrt(volume) for dt/2
     new_sqrt_volume += -prefactor * (
-        external_pressure - trace_P_int / 3 - kT / (2 * volume)
-    ) * dt / 2 + prefactor_random * _randn_for_state(state, sqrt_vol.shape)
+        external_pressure_tensor - trace_P_int / 3 - kT_tensor / (2 * volume)
+    ) * dt_tensor / 2 + prefactor_random * _randn_for_state(state, sqrt_vol.shape)
     rscaling = deformation_matrix * torch.pow((new_sqrt_volume / sqrt_vol), 2 / 3).view(
         -1, 1, 1
     )
@@ -1787,9 +1792,9 @@ def _crescale_anisotropic_barostat_step(
     # Update positions and momenta (barostat + half momentum step)
     state.positions = batch_matrix_vector(
         rscaling[system_idx], state.positions
-    ) + batch_matrix_vector((vscaling + rscaling)[system_idx], state.momenta) * dt / (
-        2 * state.masses.unsqueeze(-1)
-    )
+    ) + batch_matrix_vector(
+        (vscaling + rscaling)[system_idx], state.momenta
+    ) * dt_tensor / (2 * state.masses.unsqueeze(-1))
     state.momenta = batch_matrix_vector(vscaling[system_idx], state.momenta)
     state.cell = rscaling.mT @ state.cell
     return state
@@ -2010,6 +2015,26 @@ def _crescale_isotropic_barostat_step(
     return state
 
 
+def _coerce_crescale_step_inputs(
+    state: NPTCRescaleState,
+    dt: float | torch.Tensor,
+    kT: float | torch.Tensor,
+    external_pressure: float | torch.Tensor,
+    tau: float | torch.Tensor | None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Normalize scalar-or-tensor C-rescale step parameters to state tensors."""
+    device, dtype = state.device, state.dtype
+    dt_tensor = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT_tensor = torch.as_tensor(kT, device=device, dtype=dtype)
+    external_pressure_tensor = torch.as_tensor(
+        external_pressure, device=device, dtype=dtype
+    )
+    tau_tensor = torch.as_tensor(
+        100 * dt_tensor if tau is None else tau, device=device, dtype=dtype
+    )
+    return dt_tensor, kT_tensor, external_pressure_tensor, tau_tensor
+
+
 def npt_crescale_anisotropic_step(
     state: NPTCRescaleState,
     model: ModelInterface,
@@ -2123,14 +2148,8 @@ def npt_crescale_independent_lengths_step(
     Returns:
         NPTCRescaleState: Updated state after one integration step
     """
-    device, dtype = state.device, state.dtype
-    dt_tensor = torch.as_tensor(dt, device=device, dtype=dtype)
-    kT_tensor = torch.as_tensor(kT, device=device, dtype=dtype)
-    external_pressure_tensor = torch.as_tensor(
-        external_pressure, device=device, dtype=dtype
-    )
-    tau_tensor = torch.as_tensor(
-        100 * dt_tensor if tau is None else tau, device=device, dtype=dtype
+    dt_tensor, kT_tensor, external_pressure_tensor, tau_tensor = (
+        _coerce_crescale_step_inputs(state, dt, kT, external_pressure, tau)
     )
 
     state = _vrescale_update(state, tau_tensor, kT_tensor, dt_tensor / 2)
@@ -2201,14 +2220,8 @@ def npt_crescale_average_anisotropic_step(
     Returns:
         NPTCRescaleState: Updated state after one integration step
     """
-    device, dtype = state.device, state.dtype
-    dt_tensor = torch.as_tensor(dt, device=device, dtype=dtype)
-    kT_tensor = torch.as_tensor(kT, device=device, dtype=dtype)
-    external_pressure_tensor = torch.as_tensor(
-        external_pressure, device=device, dtype=dtype
-    )
-    tau_tensor = torch.as_tensor(
-        100 * dt_tensor if tau is None else tau, device=device, dtype=dtype
+    dt_tensor, kT_tensor, external_pressure_tensor, tau_tensor = (
+        _coerce_crescale_step_inputs(state, dt, kT, external_pressure, tau)
     )
 
     state = _vrescale_update(state, tau_tensor, kT_tensor, dt_tensor / 2)
@@ -2281,14 +2294,8 @@ def npt_crescale_isotropic_step(
     Returns:
         NPTCRescaleState: Updated state after one integration step
     """
-    device, dtype = state.device, state.dtype
-    dt_tensor = torch.as_tensor(dt, device=device, dtype=dtype)
-    kT_tensor = torch.as_tensor(kT, device=device, dtype=dtype)
-    external_pressure_tensor = torch.as_tensor(
-        external_pressure, device=device, dtype=dtype
-    )
-    tau_tensor = torch.as_tensor(
-        100 * dt_tensor if tau is None else tau, device=device, dtype=dtype
+    dt_tensor, kT_tensor, external_pressure_tensor, tau_tensor = (
+        _coerce_crescale_step_inputs(state, dt, kT, external_pressure, tau)
     )
     state = _vrescale_update(state, tau_tensor, kT_tensor, dt_tensor / 2)
 

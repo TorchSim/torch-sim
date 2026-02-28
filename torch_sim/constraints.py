@@ -260,8 +260,14 @@ class AtomConstraint(Constraint):
     @classmethod
     def merge(cls, constraints: list[Constraint]) -> Self:
         """Merge by concatenating already-reindexed atom indices."""
-        atom_constraints = [c for c in constraints if isinstance(c, AtomConstraint)]
-        return cls(torch.cat([c.atom_idx for c in atom_constraints]))
+        atom_constraints = [
+            constraint for constraint in constraints if isinstance(constraint, cls)
+        ]
+        if not atom_constraints:
+            raise ValueError(
+                f"{cls.__name__}.merge requires at least one {cls.__name__}."
+            )
+        return cls(torch.cat([constraint.atom_idx for constraint in atom_constraints]))
 
 
 class SystemConstraint(Constraint):
@@ -351,8 +357,16 @@ class SystemConstraint(Constraint):
     @classmethod
     def merge(cls, constraints: list[Constraint]) -> Self:
         """Merge by concatenating already-reindexed system indices."""
-        system_constraints = [c for c in constraints if isinstance(c, SystemConstraint)]
-        return cls(torch.cat([c.system_idx for c in system_constraints]))
+        system_constraints = [
+            constraint for constraint in constraints if isinstance(constraint, cls)
+        ]
+        if not system_constraints:
+            raise ValueError(
+                f"{cls.__name__}.merge requires at least one {cls.__name__}."
+            )
+        return cls(
+            torch.cat([constraint.system_idx for constraint in system_constraints])
+        )
 
 
 def merge_constraints(

@@ -156,6 +156,13 @@ def test_calculate_scaling_metric_mixed_pbc_uses_per_system_path(
     assert metric_values == pytest.approx(expected_values, rel=1e-5)
 
 
+@pytest.mark.parametrize("items", [[], {}])
+def test_to_constant_volume_bins_empty_input(items: list | dict) -> None:
+    """to_constant_volume_bins returns empty bins for empty input."""
+    bins = to_constant_volume_bins(items, max_volume=1.0)
+    assert bins == []
+
+
 def test_split_state(si_double_sim_state: ts.SimState) -> None:
     """Test splitting a batched state into individual states."""
     split_states = si_double_sim_state.split()

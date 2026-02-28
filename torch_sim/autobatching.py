@@ -78,7 +78,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
             or if lower_bound >= upper_bound.
     """
 
-    def _get_bins(lst: list[float], ndx: list[int]) -> list[float]:
+    def _get_bins[T](lst: list[T], ndx: list[int]) -> list[T]:
         return [lst[n] for n in ndx]
 
     def _argmax_bins(lst: list[float]) -> int:
@@ -88,9 +88,11 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
         return sorted(range(len(lst)), key=lambda i: -lst[i])
 
     if not hasattr(items, "__len__"):
-        raise TypeError("d must be iterable")
+        raise TypeError("items must be iterable")
+    if len(items) == 0:
+        return []
 
-    if not isinstance(items, dict) and hasattr(items[0], "__len__"):
+    if not isinstance(items, dict) and len(items) > 0 and hasattr(items[0], "__len__"):
         if weight_pos is not None:
             key = lambda x: x[weight_pos]  # noqa: E731
         if key is None:
@@ -105,9 +107,8 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
 
     if isinstance(items, dict):
         # get keys and values (weights)
-        keys_vals = items.items()
-        keys = [k for k, v in keys_vals]
-        vals = [v for k, v in keys_vals]
+        keys = list(items)
+        vals = list(items.values())
 
         # sort weights decreasingly
         n_dcs = _rev_argsort_bins(vals)
@@ -115,7 +116,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
         weights = _get_bins(vals, n_dcs)
         keys = _get_bins(keys, n_dcs)
 
-        bins = [{}]
+        bins = [[]] if is_tuple_list else [{}]
     else:
         weights = sorted(items, key=lambda x: -x)
         bins = [[]]
@@ -154,8 +155,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
             filter(lambda i: weight_sum[i] + weight <= max_volume, range(len(weight_sum)))
         )
 
-        # if there are candidates where it fits
-        if len(candidate_bins) > 0:
+        if candidate_bins:  # if there are candidates where it fits
             # find the fullest bin where this item fits and assign it
             candidate_index = _argmax_bins(_get_bins(weight_sum, candidate_bins))
             b = candidate_bins[candidate_index]
@@ -169,7 +169,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
             b = len(weight_sum)
             weight_sum.append(0.0)
             if isinstance(items, dict):
-                bins.append({})
+                bins.append([] if is_tuple_list else {})
             else:
                 bins.append([])
 
@@ -180,7 +180,11 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
         # put it in
         if isinstance(items, dict):
             bin_ = bins[b]
-            if isinstance(bin_, dict):
+            if is_tuple_list:
+                if not isinstance(bin_, list):
+                    raise TypeError("bins contain lists when tuple-list mode is used")
+                bin_.append(item_key)
+            elif isinstance(bin_, dict):
                 bin_[item_key] = weight
         else:
             bin_ = bins[b]
@@ -194,12 +198,7 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
 
     if not is_tuple_list:
         return bins
-    new_bins = []
-    for bin_idx in range(len(bins)):
-        new_bins.append([])
-        for _key in bins[bin_idx]:
-            new_bins[bin_idx].append(new_dict[_key])
-    return new_bins
+    return [[new_dict[item_key] for item_key in bin_keys] for bin_keys in bins]
 
 
 def measure_model_memory_forward(state: SimState, model: ModelInterface) -> float:

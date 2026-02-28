@@ -1045,3 +1045,20 @@ def test_merge_constraints(mixed_double_sim_state: ts.SimState) -> None:
         [0, 1, 2 + n_atoms_s1, 3 + n_atoms_s1, 0 + n_atoms_s1 + n_atoms_s2]
     )
     assert torch.all(fix_atoms.atom_idx == expected_atom_indices)
+
+
+@pytest.mark.parametrize(
+    ("merge_cls", "constraints"),
+    [
+        (FixAtoms, []),
+        (FixCom, []),
+        (FixAtoms, [FixCom([0])]),
+        (FixCom, [FixAtoms(atom_idx=[0])]),
+    ],
+)
+def test_constraint_merge_rejects_empty_or_wrong_type(
+    merge_cls: type[Constraint], constraints: list[Constraint]
+) -> None:
+    """Constraint.merge raises clear ValueError on empty or mismatched inputs."""
+    with pytest.raises(ValueError, match="requires at least one"):
+        merge_cls.merge(constraints)
