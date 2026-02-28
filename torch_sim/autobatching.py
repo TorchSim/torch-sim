@@ -904,7 +904,7 @@ class InFlightAutoBatcher[T: SimState]:
         new_states: list[T] = []
         for state in self.states_iterator:
             metric = calculate_memory_scalers(state, self.memory_scales_with)[0]
-            if metric > self.max_memory_scaler:
+            if metric > self.max_memory_scaler:  # ty: ignore[unsupported-operator]
                 raise ValueError(
                     f"State {metric=} is greater than max_metric {self.max_memory_scaler}"
                     ", please set a larger max_metric or run smaller systems metric."

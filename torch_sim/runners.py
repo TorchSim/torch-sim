@@ -532,6 +532,8 @@ def generate_energy_convergence_fn[T: MDState | OptimState](
             torch.Tensor: Boolean tensor of shape (n_systems,) indicating
                 convergence status for each system.
         """
+        if last_energy is None:
+            return torch.zeros(state.n_systems, dtype=torch.bool, device=state.device)
         return torch.abs(state.energy - last_energy) < energy_tol
 
     return convergence_fn

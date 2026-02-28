@@ -191,7 +191,19 @@ dev = ["prek>=0.3.4", "ty>=0.0.19"]
 unused-ignore-comment = "warn"
 
 [[tool.ty.overrides]]
-include = ["tests/models/**/*.py", "torch_sim/models/**/*.py"]
+include = [
+    "tests/models/**/*.py",
+    "torch_sim/constraints.py",
+    "torch_sim/io.py",
+    "torch_sim/models/**/*.py",
+    "torch_sim/neighbors/alchemiops.py",
+    "torch_sim/neighbors/vesin.py",
+    "torch_sim/state.py",
+    "torch_sim/symmetrize.py",
+    "torch_sim/trajectory.py",
+    "torch_sim/typing.py",
+    "torch_sim/workflows/**/*.py",
+]
 
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"
@@ -210,25 +222,6 @@ include = ["docs/**/*.py", "examples/**/*.py"]
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"
 
-[[tool.ty.overrides]]
-include = [
-    "torch_sim/autobatching.py",
-    "torch_sim/constraints.py",
-    "torch_sim/integrators/**/*.py",
-    "torch_sim/io.py",
-    "torch_sim/monte_carlo.py",
-    "torch_sim/neighbors/**/*.py",
-    "torch_sim/properties/correlations.py",
-    "torch_sim/runners.py",
-    "torch_sim/state.py",
-    "torch_sim/symmetrize.py",
-    "torch_sim/trajectory.py",
-    "torch_sim/typing.py",
-    "torch_sim/workflows/**/*.py",
-]
-[tool.ty.overrides.rules]
-unresolved-import = "ignore"
-unsupported-operator = "ignore"
 
 [[tool.ty.overrides]]
 include = ["torch_sim/neighbors/alchemiops.py"]

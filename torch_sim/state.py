@@ -1118,7 +1118,8 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
 
         # Update system indices
         num_systems = state.n_systems
-        new_indices = state.system_idx + system_offset
+        system_idx = require_system_idx(state.system_idx)
+        new_indices = system_idx + system_offset
         new_system_indices.append(new_indices)
         num_atoms_per_state.append(state.n_atoms)
 
