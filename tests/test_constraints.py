@@ -658,6 +658,7 @@ def test_multiple_constraints_and_dof(
     )
     assert torch.allclose(final_com, initial_com, atol=1e-5)
 
+
 @pytest.mark.parametrize(
     ("cell_filter", "fire_flavor"),
     [
