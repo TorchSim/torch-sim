@@ -20,8 +20,8 @@ jobs:
         version:
           - { python: '3.12', resolution: highest }
           - { python: '3.12', resolution: lowest-direct }
-          - { python: '3.13', resolution: highest }
-          - { python: '3.13', resolution: lowest-direct }
+          - { python: '3.14', resolution: highest }
+          - { python: '3.14', resolution: lowest-direct }
     runs-on: ${{ matrix.os }}
 
     steps:
