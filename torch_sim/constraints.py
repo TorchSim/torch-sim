@@ -613,28 +613,74 @@ class FixCom(SystemConstraint):
 def count_degrees_of_freedom(
     state: SimState, constraints: list[Constraint] | None = None
 ) -> torch.Tensor:
-    """Count the total degrees of freedom in a system with constraints.
+    """Count per-system degrees of freedom with compatibility checks.
 
-    This function calculates the total number of degrees of freedom by starting
-    with the unconstrained count (n_atoms * 3) and subtracting the degrees of
-    freedom removed by each constraint.
+    This helper computes one DOF value per system. When ``constraints`` are
+    supplied explicitly, it validates that they are compatible with ``state``
+    before counting.
 
     Args:
         state: Simulation state
-        constraints: List of active constraints (optional)
+        constraints: Optional constraints to evaluate. If ``None``, uses
+            ``state.constraints``.
 
     Returns:
         Degrees of freedom per system as a tensor of shape (n_systems,)
     """
-    # Start with unconstrained DOF per system
-    total_dof = 3 * state.n_atoms_per_system
+    constraints_to_count = state.constraints if constraints is None else constraints
+    if constraints is not None:
+        _validate_constraints_for_dof(state, constraints_to_count)
+    return torch.clamp(_dof_per_system(state, constraints_to_count), min=0)
 
-    # Subtract DOF removed by constraints
+
+def _dof_per_system(
+    state: SimState, constraints: list[Constraint] | None = None
+) -> torch.Tensor:
+    """Compute unconstrained-minus-removed DOF per system."""
+    dof_per_system = 3 * state.n_atoms_per_system
     if constraints is not None:
         for constraint in constraints:
-            total_dof -= constraint.get_removed_dof(state)
+            dof_per_system -= constraint.get_removed_dof(state)
+    return dof_per_system
 
-    return torch.clamp(total_dof, min=0)
+
+def _validate_constraints_for_dof(state: SimState, constraints: list[Constraint]) -> None:
+    """Validate that constraints can be safely used for DOF counting.
+
+    Args:
+        state: Simulation state used for counting.
+        constraints: Constraints to validate against ``state``.
+
+    Raises:
+        ValueError: If constraints are incompatible with the state or return
+            malformed DOF removal tensors.
+    """
+    validate_constraints(constraints, state)
+    expected_shape = (state.n_systems,)
+    for constraint in constraints:
+        removed_dof = constraint.get_removed_dof(state)
+        constraint_name = type(constraint).__name__
+        if not isinstance(removed_dof, torch.Tensor):
+            raise TypeError(
+                f"{constraint_name}.get_removed_dof must return torch.Tensor, "
+                f"got {type(removed_dof)}"
+            )
+        if removed_dof.device != state.device:
+            raise ValueError(
+                f"{constraint_name}.get_removed_dof must return tensor on "
+                f"device {state.device}, got {removed_dof.device}"
+            )
+        if removed_dof.shape != expected_shape:
+            raise ValueError(
+                f"{constraint_name}.get_removed_dof must return shape "
+                f"{expected_shape}, got {tuple(removed_dof.shape)}"
+            )
+        if not torch.isfinite(removed_dof).all():
+            raise ValueError(
+                f"{constraint_name}.get_removed_dof contains non-finite values"
+            )
+        if (removed_dof < 0).any():
+            raise ValueError(f"{constraint_name}.get_removed_dof must be non-negative")
 
 
 def check_no_index_out_of_bounds(

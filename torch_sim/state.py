@@ -22,7 +22,12 @@ if TYPE_CHECKING:
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure
 
-from torch_sim.constraints import Constraint, merge_constraints, validate_constraints
+from torch_sim.constraints import (
+    Constraint,
+    _dof_per_system,
+    merge_constraints,
+    validate_constraints,
+)
 
 
 def coerce_prng(rng: PRNGLike, device: torch.device) -> torch.Generator:
@@ -415,17 +420,13 @@ class SimState:
             torch.Tensor: Number of degrees of freedom per system, with shape
                 (n_systems,). Each system starts with 3 * n_atoms_per_system degrees
                 of freedom, minus any degrees removed by constraints.
+
+        Raises:
+            ValueError: If any system has zero or negative degrees of freedom.
+                This strict behavior is used by simulation routines that require
+                physically valid DOF.
         """
-        # Start with unconstrained DOF: 3 degrees per atom
-        dof_per_system = 3 * self.n_atoms_per_system
-
-        # Subtract DOF removed by constraints
-        if self.constraints is not None:
-            for constraint in self.constraints:
-                removed_dof = constraint.get_removed_dof(self)
-                dof_per_system -= removed_dof
-
-        # Ensure non-negative DOF
+        dof_per_system = _dof_per_system(self, self.constraints)
         if (dof_per_system <= 0).any():
             raise ValueError("Degrees of freedom cannot be zero or negative")
         return dof_per_system
