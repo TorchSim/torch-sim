@@ -112,7 +112,8 @@ kT = torch.tensor(80 * Units.temperature, device=device, dtype=dtype)
 dt = torch.tensor(0.001 * Units.time, device=device, dtype=dtype)
 
 # Initialize NVE integrator
-state = ts.nve_init(state=state, model=lj_model, kT=kT, seed=1)
+state.rng = 1
+state = ts.nve_init(state=state, model=lj_model, kT=kT)
 
 # Run NVE simulation
 for step in range(N_steps):
@@ -178,7 +179,8 @@ kT = torch.tensor(1000 * Units.temperature, device=device, dtype=dtype)  # 1000 
 dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # 2 fs
 
 # Initialize NVE integrator
-state = ts.nve_init(state=state, model=mace_model, kT=kT, seed=1)
+state.rng = 1
+state = ts.nve_init(state=state, model=mace_model, kT=kT)
 
 # Run MD simulation
 print("\nStarting NVE molecular dynamics simulation...")
@@ -222,7 +224,8 @@ kT = torch.tensor(1000 * Units.temperature, device=device, dtype=dtype)  # 1000 
 gamma = torch.tensor(10 / Units.time, device=device, dtype=dtype)  # ps^-1
 
 # Initialize NVT Langevin integrator
-state = ts.nvt_langevin_init(model=mace_model, state=state, kT=kT, seed=1)
+state.rng = 1
+state = ts.nvt_langevin_init(model=mace_model, state=state, kT=kT)
 
 print("\nStarting NVT Langevin simulation...")
 for step in range(N_steps):

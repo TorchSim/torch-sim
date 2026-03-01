@@ -11,8 +11,8 @@ from torch_sim.integrators.md import (
     MDState,
     NoseHooverChain,
     NoseHooverChainFns,
-    calculate_momenta,
     construct_nose_hoover_chain,
+    initialize_momenta,
     momentum_step,
     position_step,
     velocity_verlet_step,
@@ -93,7 +93,6 @@ def nvt_langevin_init(
     model: ModelInterface,
     *,
     kT: float | torch.Tensor,
-    seed: int | None = None,
     **_kwargs: Any,
 ) -> MDState:
     """Initialize an NVT state from input data for Langevin dynamics.
@@ -102,6 +101,8 @@ def nvt_langevin_init(
     energies and forces, and sampling momenta from a Maxwell-Boltzmann distribution
     at the specified temperature.
 
+    To seed the RNG set ``state.rng = seed`` before calling.
+
     Args:
         model: Neural network model that computes energies and forces.
             Must return a dict with 'energy' and 'forces' keys.
@@ -109,7 +110,6 @@ def nvt_langevin_init(
             masses, cell, pbc, and other required state vars
         kT: Temperature in energy units for initializing momenta,
             either scalar or with shape [n_systems]
-        seed: Random seed for reproducibility
 
     Returns:
         MDState: Initialized state for NVT integration containing positions,
@@ -130,12 +130,12 @@ def nvt_langevin_init(
     momenta = getattr(
         state,
         "momenta",
-        calculate_momenta(
+        initialize_momenta(
             state.positions,
             state.masses,
             system_idx,
             kT,
-            seed if seed is not None else state.rng,
+            state.rng,
         ),
     )
     return MDState.from_state(
@@ -190,28 +190,21 @@ def nvt_langevin_step(
     """
     device, dtype = model.device, model.dtype
 
-    if gamma is None:
-        gamma = 1 / (100 * dt)
+    dt_tensor = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT_tensor = torch.as_tensor(kT, device=device, dtype=dtype)
+    gamma_val = (1 / (100 * dt_tensor)) if gamma is None else gamma
+    gamma_tensor = torch.as_tensor(gamma_val, device=device, dtype=dtype)
 
-    if isinstance(gamma, float):
-        gamma = torch.tensor(gamma, device=device, dtype=dtype)
-
-    if isinstance(dt, float):
-        dt = torch.tensor(dt, device=device, dtype=dtype)
-
-    if isinstance(kT, float):
-        kT = torch.tensor(kT, device=device, dtype=dtype)
-
-    state = momentum_step(state, dt / 2)
-    state = position_step(state, dt / 2)
-    state = _ou_step(state, dt, kT, gamma)
-    state = position_step(state, dt / 2)
+    state = momentum_step(state, dt_tensor / 2)
+    state = position_step(state, dt_tensor / 2)
+    state = _ou_step(state, dt_tensor, kT_tensor, gamma_tensor)
+    state = position_step(state, dt_tensor / 2)
 
     model_output = model(state)
     state.energy = model_output["energy"]
     state.forces = model_output["forces"]
 
-    return momentum_step(state, dt / 2)
+    return momentum_step(state, dt_tensor / 2)
 
 
 @dataclass(kw_only=True)
@@ -274,7 +267,6 @@ def nvt_nose_hoover_init(
     chain_length: int = 3,
     chain_steps: int = 3,
     sy_steps: int = 3,
-    seed: int | None = None,
     **kwargs: Any,
 ) -> NVTNoseHooverState:
     """Initialize the NVT Nose-Hoover state.
@@ -283,6 +275,8 @@ def nvt_nose_hoover_init(
     thermostat. The Nose-Hoover chain provides deterministic temperature control by
     coupling the system to a chain of thermostats. The integration scheme is
     time-reversible and conserves an extended energy quantity.
+
+    To seed the RNG set ``state.rng = seed`` before calling.
 
     Args:
         state: Initial system state as SimState or dict
@@ -293,7 +287,6 @@ def nvt_nose_hoover_init(
         chain_length: Number of thermostats in Nose-Hoover chain (default: 3)
         chain_steps: Number of chain integration substeps (default: 3)
         sy_steps: Number of Suzuki-Yoshida steps - must be 1, 3, 5, or 7 (default: 3)
-        seed: Random seed for momenta initialization
         **kwargs: Additional state variables
 
     Returns:
@@ -306,12 +299,17 @@ def nvt_nose_hoover_init(
         - Chain variables evolve to maintain target temperature
         - Time-reversible when integrated with appropriate algorithms
     """
-    if tau is None:  # Set default tau if not provided
-        tau = dt * 100.0
+    state = ensure_sim_state(state)
+    dt_tensor = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
+    kT_tensor = torch.as_tensor(kT, device=state.device, dtype=state.dtype)
+    tau_tensor = torch.as_tensor(
+        100.0 * dt_tensor if tau is None else tau, device=state.device, dtype=state.dtype
+    )
 
     # Create thermostat functions
-    chain_fns = construct_nose_hoover_chain(dt, chain_length, chain_steps, sy_steps, tau)
-    state = ensure_sim_state(state)
+    chain_fns = construct_nose_hoover_chain(
+        dt_tensor, chain_length, chain_steps, sy_steps, tau_tensor
+    )
 
     atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
@@ -321,12 +319,8 @@ def nvt_nose_hoover_init(
     model_output = model(state)
     momenta = kwargs.get(
         "momenta",
-        calculate_momenta(
-            state.positions,
-            state.masses,
-            system_idx,
-            kT,
-            seed if seed is not None else state.rng,
+        initialize_momenta(
+            state.positions, state.masses, system_idx, kT_tensor, state.rng
         ),
     )
 
@@ -348,7 +342,7 @@ def nvt_nose_hoover_init(
         energy=model_output["energy"],
         forces=model_output["forces"],
         atomic_numbers=atomic_numbers,
-        chain=chain_fns.initialize(dof_per_system, KE, kT),
+        chain=chain_fns.initialize(dof_per_system, KE, kT_tensor),
         _chain_fns=chain_fns,
     )
 
@@ -592,7 +586,6 @@ def nvt_vrescale_init(
     model: ModelInterface,
     *,
     kT: float | torch.Tensor,
-    seed: int | None = None,
     **_kwargs: Any,
 ) -> NVTVRescaleState:
     """Initialize an NVT state from input data for velocity rescaling dynamics.
@@ -602,6 +595,8 @@ def nvt_vrescale_init(
     samples from the canonical ensemble by rescaling velocities with an
     appropriately chosen random factor.
 
+    To seed the RNG set ``state.rng = seed`` before calling.
+
     Args:
         model: Neural network model that computes energies and forces.
             Must return a dict with 'energy' and 'forces' keys.
@@ -609,7 +604,6 @@ def nvt_vrescale_init(
             masses, cell, pbc, and other required state vars
         kT: Temperature in energy units for initializing momenta,
             either scalar or with shape [n_systems]
-        seed: Random seed for reproducibility
 
     Returns:
         MDState: Initialized state for NVT integration containing positions,
@@ -630,12 +624,12 @@ def nvt_vrescale_init(
     momenta = getattr(
         state,
         "momenta",
-        calculate_momenta(
+        initialize_momenta(
             state.positions,
             state.masses,
             system_idx,
             kT,
-            seed if seed is not None else state.rng,
+            state.rng,
         ),
     )
 
@@ -672,7 +666,6 @@ def nvt_vrescale_step(
             with shape [n_systems]
         tau: Thermostat relaxation time controlling the coupling strength,
             either scalar or with shape [n_systems]. Defaults to 100*dt.
-        seed: Random seed for reproducibility
 
     Returns:
         MDState: Updated state after one complete V-Rescale step with new positions,
@@ -690,15 +683,9 @@ def nvt_vrescale_step(
     """
     device, dtype = model.device, model.dtype
 
-    if tau is None:
-        tau = 100 * dt
-
-    if isinstance(tau, float):
-        tau = torch.tensor(tau, device=device, dtype=dtype)
-    if isinstance(dt, float):
-        dt = torch.tensor(dt, device=device, dtype=dtype)
-    if isinstance(kT, float):
-        kT = torch.tensor(kT, device=device, dtype=dtype)
+    tau = torch.as_tensor(100 * dt if tau is None else tau, device=device, dtype=dtype)
+    dt = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
 
     # Apply V-Rescale rescaling
     state = _vrescale_update(state, tau, kT, dt)

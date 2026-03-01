@@ -152,30 +152,6 @@ def initialize_momenta(
     )
 
 
-def calculate_momenta(
-    positions: torch.Tensor,
-    masses: torch.Tensor,
-    system_idx: torch.Tensor,
-    kT: float | torch.Tensor,
-    seed: int | torch.Generator | None = None,
-) -> torch.Tensor:
-    """Initialize momenta from a seed or generator for reproducibility."""
-    generator: torch.Generator | None = None
-    if isinstance(seed, torch.Generator):
-        generator = seed
-    elif seed is not None:
-        generator = torch.Generator(device=positions.device)
-        generator.manual_seed(seed)
-
-    return initialize_momenta(
-        positions=positions,
-        masses=masses,
-        system_idx=system_idx,
-        kT=kT,
-        generator=generator,
-    )
-
-
 def momentum_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
     """Update particle momenta using current forces.
 

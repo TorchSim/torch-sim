@@ -13,8 +13,8 @@ from torch_sim.integrators.md import (
     MDState,
     NoseHooverChain,
     NoseHooverChainFns,
-    calculate_momenta,
     construct_nose_hoover_chain,
+    initialize_momenta,
     momentum_step,
 )
 from torch_sim.integrators.nvt import _vrescale_update
@@ -462,15 +462,10 @@ def _compute_cell_force(
     Returns:
         torch.Tensor: Force acting on the cell [n_systems, n_dim, n_dim]
     """
-    # Convert external_pressure to tensor if it's not already one
-    if not isinstance(external_pressure, torch.Tensor):
-        external_pressure = torch.tensor(
-            external_pressure, device=state.device, dtype=state.dtype
-        )
-
-    # Convert kT to tensor if it's not already one
-    if not isinstance(kT, torch.Tensor):
-        kT = torch.tensor(kT, device=state.device, dtype=state.dtype)
+    external_pressure = torch.as_tensor(
+        external_pressure, device=state.device, dtype=state.dtype
+    )
+    kT = torch.as_tensor(kT, device=state.device, dtype=state.dtype)
 
     # Get current volumes for each batch
     volumes = torch.linalg.det(state.cell)  # shape: (n_systems,)
@@ -515,7 +510,6 @@ def npt_langevin_init(
     alpha: float | torch.Tensor | None = None,
     cell_alpha: float | torch.Tensor | None = None,
     b_tau: float | torch.Tensor | None = None,
-    seed: int | None = None,
     **_kwargs: Any,
 ) -> NPTLangevinState:
     """Initialize an NPT Langevin state from input data.
@@ -524,6 +518,8 @@ def npt_langevin_init(
     setting up all necessary variables including particle velocities,
     cell parameters, and barostat variables. It computes initial forces
     and stress using the provided model.
+
+    To seed the RNG set ``state.rng = seed`` before calling.
 
     Args:
         model (ModelInterface): Neural network model that computes energies, forces,
@@ -540,7 +536,6 @@ def npt_langevin_init(
         b_tau (torch.Tensor, optional): Barostat time constant controlling how quickly
             the system responds to pressure differences, either scalar or shape
             [n_systems]. Defaults to 1/(1000*dt).
-        seed (int, optional): Random seed for reproducibility. Defaults to None.
 
     Returns:
         NPTLangevinState: Initialized state for NPT Langevin integration containing
@@ -585,12 +580,12 @@ def npt_langevin_init(
     momenta = getattr(
         state,
         "momenta",
-        calculate_momenta(
+        initialize_momenta(
             state.positions,
             state.masses,
             system_idx,
             kT,
-            seed if seed is not None else state.rng,
+            state.rng,
         ),
     )
 
@@ -681,11 +676,9 @@ def npt_langevin_step(
     device, dtype = model.device, model.dtype
 
     # Convert any scalar parameters to tensors with batch dimension if needed
-    if isinstance(state.alpha, float):
-        state.alpha = torch.tensor(state.alpha, device=device, dtype=dtype)
+    state.alpha = torch.as_tensor(state.alpha, device=device, dtype=dtype)
     kT_tensor = torch.as_tensor(kT, device=device, dtype=dtype)
-    if isinstance(state.cell_alpha, float):
-        state.cell_alpha = torch.tensor(state.cell_alpha, device=device, dtype=dtype)
+    state.cell_alpha = torch.as_tensor(state.cell_alpha, device=device, dtype=dtype)
     dt_tensor = torch.as_tensor(dt, device=device, dtype=dtype)
     external_pressure_tensor = torch.as_tensor(
         external_pressure, device=device, dtype=dtype
@@ -1307,7 +1300,6 @@ def npt_nose_hoover_init(
     sy_steps: int = 3,
     t_tau: float | torch.Tensor | None = None,
     b_tau: float | torch.Tensor | None = None,
-    seed: int | None = None,
     **kwargs: Any,
 ) -> NPTNoseHooverState:
     """Initialize the NPT Nose-Hoover state.
@@ -1316,6 +1308,8 @@ def npt_nose_hoover_init(
     chain thermostats for both temperature and pressure control. It sets up the
     system with appropriate initial conditions including particle positions, momenta,
     cell variables, and thermostat chains.
+
+    To seed the RNG set ``state.rng = seed`` before calling.
 
     Args:
         model (ModelInterface): Model to compute forces and energies
@@ -1331,7 +1325,6 @@ def npt_nose_hoover_init(
             equilibrates. Defaults to 100*dt
         b_tau: Barostat relaxation time. Controls how quickly pressure equilibrates.
             Defaults to 1000*dt
-        seed: Random seed for momenta initialization. Used for reproducible runs
         **kwargs: Additional state variables like atomic_numbers or
             pre-initialized momenta
 
@@ -1352,26 +1345,24 @@ def npt_nose_hoover_init(
         - Cell dynamics use logarithmic coordinates for volume updates
         - All cell properties are properly initialized with batch dimensions
     """
-    device, dtype = model.device, model.dtype
-
-    # Initialize the NPT Nose-Hoover state
-    # Thermostat relaxation time
-    if t_tau is None:
-        t_tau = 100 * dt
-
-    # Barostat relaxation time
-    if b_tau is None:
-        b_tau = 1000 * dt
+    state = ensure_sim_state(state)
+    device, dtype = state.device, state.dtype
+    dt_tensor = torch.as_tensor(dt, device=device, dtype=dtype)
+    kT_tensor = torch.as_tensor(kT, device=device, dtype=dtype)
+    t_tau_tensor = torch.as_tensor(
+        100 * dt_tensor if t_tau is None else t_tau, device=device, dtype=dtype
+    )
+    b_tau_tensor = torch.as_tensor(
+        1000 * dt_tensor if b_tau is None else b_tau, device=device, dtype=dtype
+    )
 
     # Setup thermostats with appropriate timescales
     barostat_fns = construct_nose_hoover_chain(
-        dt, chain_length, chain_steps, sy_steps, b_tau
+        dt_tensor, chain_length, chain_steps, sy_steps, b_tau_tensor
     )
     thermostat_fns = construct_nose_hoover_chain(
-        dt, chain_length, chain_steps, sy_steps, t_tau
+        dt_tensor, chain_length, chain_steps, sy_steps, t_tau_tensor
     )
-
-    state = ensure_sim_state(state)
 
     _n_particles, dim = state.positions.shape
     n_systems = state.n_systems
@@ -1382,17 +1373,12 @@ def npt_nose_hoover_init(
     cell_position = torch.zeros(n_systems, device=device, dtype=dtype)
     cell_momentum = torch.zeros(n_systems, 1, device=device, dtype=dtype)
 
-    # Convert kT to tensor if it's not already one
-    if not isinstance(kT, torch.Tensor):
-        kT = torch.tensor(kT, device=device, dtype=dtype)
-
     # Handle both scalar and batched kT
-    kT_system = kT.expand(n_systems) if kT.ndim == 0 else kT
+    kT_system = kT_tensor.expand(n_systems) if kT_tensor.ndim == 0 else kT_tensor
 
     # Calculate cell masses for each system
     system_idx = require_system_idx(state.system_idx)
     n_atoms_per_system = torch.bincount(system_idx, minlength=n_systems)
-    b_tau_tensor = torch.as_tensor(b_tau, device=device, dtype=dtype)
     cell_mass = dim * (n_atoms_per_system + 1) * kT_system * torch.square(b_tau_tensor)
     cell_mass = cell_mass.to(device=device, dtype=dtype)
 
@@ -1403,12 +1389,12 @@ def npt_nose_hoover_init(
     # Initialize momenta
     momenta = kwargs.get(
         "momenta",
-        calculate_momenta(
+        initialize_momenta(
             state.positions,
             state.masses,
             system_idx,
-            kT,
-            seed if seed is not None else state.rng,
+            kT_tensor,
+            state.rng,
         ),
     )
 
@@ -1460,8 +1446,8 @@ def npt_nose_hoover_init(
         cell_position=cell_position,
         cell_momentum=cell_momentum,
         cell_mass=cell_mass,
-        barostat=barostat_fns.initialize(dof_barostat, KE_cell, kT),
-        thermostat=thermostat_fns.initialize(dof_per_system, KE_thermostat, kT),
+        barostat=barostat_fns.initialize(dof_barostat, KE_cell, kT_tensor),
+        thermostat=thermostat_fns.initialize(dof_per_system, KE_thermostat, kT_tensor),
         barostat_fns=barostat_fns,
         thermostat_fns=thermostat_fns,
     )
@@ -2331,7 +2317,6 @@ def npt_crescale_init(
     dt: float | torch.Tensor,
     tau_p: float | torch.Tensor | None = None,
     isothermal_compressibility: float | torch.Tensor | None = None,
-    seed: int | None = None,
 ) -> NPTCRescaleState:
     """Initialize the NPT cell rescaling state.
 
@@ -2342,6 +2327,8 @@ def npt_crescale_init(
     Only allow isotropic external stress, but can run both isotropic and
     anisotropic cell rescaling.
 
+    To seed the RNG set ``state.rng = seed`` before calling.
+
     Args:
         state: Initial system state as MDState or dict containing positions, masses,
             cell, and PBC information
@@ -2350,7 +2337,6 @@ def npt_crescale_init(
         dt: Integration timestep
         tau_p: Barostat relaxation time. Controls how quickly pressure equilibrates.
         isothermal_compressibility: Isothermal compressibility of the system.
-        seed: Random seed for momenta initialization.
     """
     device, dtype = model.device, model.dtype
 
@@ -2381,12 +2367,12 @@ def npt_crescale_init(
     momenta = getattr(
         state,
         "momenta",
-        calculate_momenta(
+        initialize_momenta(
             state.positions,
             state.masses,
             system_idx,
             kT,
-            seed if seed is not None else state.rng,
+            state.rng,
         ),
     )
 
