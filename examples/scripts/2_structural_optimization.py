@@ -84,7 +84,6 @@ masses = torch.full((positions.shape[0],), 39.948, device=device, dtype=dtype)
 
 # Initialize the Lennard-Jones model
 lj_model = LennardJonesModel(
-    disable_neighbor_list=True,
     sigma=3.405,
     epsilon=0.0104,
     cutoff=2.5 * 3.405,
