@@ -3,7 +3,7 @@
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import torch
 
@@ -75,22 +75,6 @@ class NPTLangevinState(MDState):
     cell_positions: torch.Tensor
     cell_velocities: torch.Tensor
     cell_masses: torch.Tensor
-
-    if TYPE_CHECKING:
-
-        def __init__(  # noqa: D107
-            self,
-            *,
-            stress: torch.Tensor,
-            alpha: torch.Tensor,
-            cell_alpha: torch.Tensor,
-            b_tau: torch.Tensor,
-            reference_cell: torch.Tensor,
-            cell_positions: torch.Tensor,
-            cell_velocities: torch.Tensor,
-            cell_masses: torch.Tensor,
-            **kwargs: Any,
-        ) -> None: ...
 
     _system_attributes = MDState._system_attributes | {  # noqa: SLF001
         "stress",

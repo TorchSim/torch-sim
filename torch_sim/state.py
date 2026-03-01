@@ -78,7 +78,7 @@ def ensure_sim_state(state: "SimState | StateDict") -> "SimState":
     """Return a SimState from either SimState or StateDict input."""
     if isinstance(state, SimState):
         return state
-    return SimState(**state)  # ty: ignore[invalid-argument-type]
+    return SimState(**state)
 
 
 @dataclass(kw_only=True)
@@ -141,22 +141,13 @@ class SimState:
     positions: torch.Tensor
     masses: torch.Tensor
     cell: torch.Tensor
-    pbc: torch.Tensor | list[bool] | bool = field()
+    pbc: torch.Tensor  # coerced from bool/list[bool] by __setattr__
     atomic_numbers: torch.Tensor
     charge: torch.Tensor | None = field(default=None)
     spin: torch.Tensor | None = field(default=None)
-    system_idx: torch.Tensor | None = field(default=None)
+    system_idx: torch.Tensor = field(default=None)  # type: ignore[assignment]  # coerced from None by __setattr__
     _constraints: list["Constraint"] = field(default_factory=lambda: [])  # noqa: PIE807
     _rng: PRNGLike = field(default=None, repr=False)
-
-    _atom_attributes: ClassVar[set[str]] = {
-        "positions",
-        "masses",
-        "atomic_numbers",
-        "system_idx",
-    }
-    _system_attributes: ClassVar[set[str]] = {"cell", "charge", "spin"}
-    _global_attributes: ClassVar[set[str]] = {"pbc", "_rng"}
 
     if TYPE_CHECKING:
 
@@ -173,8 +164,16 @@ class SimState:
             system_idx: torch.Tensor | None = None,
             _constraints: list[Constraint] | None = None,
             _rng: PRNGLike = None,
-            **kwargs: Any,
         ) -> None: ...
+
+    _atom_attributes: ClassVar[set[str]] = {
+        "positions",
+        "masses",
+        "atomic_numbers",
+        "system_idx",
+    }
+    _system_attributes: ClassVar[set[str]] = {"cell", "charge", "spin"}
+    _global_attributes: ClassVar[set[str]] = {"pbc", "_rng"}
 
     @property
     def rng(self) -> torch.Generator:
@@ -185,6 +184,24 @@ class SimState:
     @rng.setter
     def rng(self, value: PRNGLike) -> None:
         self._rng = value
+
+    def __setattr__(self, name: str, value: object) -> None:
+        """Coerce pbc and system_idx on every assignment."""
+        if name == "pbc" and not isinstance(value, torch.Tensor):
+            if isinstance(value, bool):
+                value = [value] * 3
+            value = torch.tensor(value, dtype=torch.bool, device=self.device)
+        elif name == "system_idx":
+            if value is None:
+                if hasattr(self, "positions"):
+                    value = torch.zeros(
+                        self.n_atoms, device=self.device, dtype=torch.int64
+                    )
+            elif isinstance(value, torch.Tensor):
+                _, counts = torch.unique_consecutive(value, return_counts=True)
+                if not torch.all(counts == torch.bincount(value)):
+                    raise ValueError("System indices must be unique consecutive integers")
+        super().__setattr__(name, value)
 
     def __post_init__(self) -> None:  # noqa: C901
         """Initialize the SimState and validate the arguments."""
@@ -200,17 +217,12 @@ class SimState:
                 f"masses {shapes[1]}, atomic_numbers {shapes[2]}"
             )
 
-        # Convert pbc to tensor if needed (setter handles conversion)
-        pbc_value = self.__dict__.get("pbc")
-        if pbc_value is not None and not isinstance(pbc_value, torch.Tensor):
-            self.pbc = pbc_value
+        # Coerce pbc (triggers __setattr__)
+        self.pbc = self.pbc
 
-        # Initialize system_idx if needed (setter handles creation and validation)
-        system_idx_value = self.__dict__.get("system_idx")
-        system_idx_was_none = system_idx_value is None or isinstance(
-            system_idx_value, property
-        )
-        self.system_idx = system_idx_value  # Setter handles None -> default creation
+        # Coerce system_idx (triggers __setattr__ which handles None)
+        system_idx_was_none = self.system_idx is None
+        self.system_idx = self.system_idx
 
         # Get n_systems from system_idx (now guaranteed to be non-None)
         system_idx = self.system_idx
@@ -255,54 +267,6 @@ class SimState:
         }
         if len(set(devices.values())) > 1:
             raise ValueError("All tensors must be on the same device")
-
-    @property
-    def system_idx(self) -> torch.Tensor:  # noqa: F811  ty: ignore[invalid-assignment]
-        """System indices - guaranteed to be non-None after __post_init__."""
-        # After __post_init__, system_idx is never None
-        result: torch.Tensor = self.__dict__["system_idx"]
-        return result
-
-    @system_idx.setter
-    def system_idx(self, value: torch.Tensor | None) -> None:
-        """Set system indices, creating default if None and validating if provided."""
-        if value is None or isinstance(value, property):
-            # Create default system_idx if not provided
-            if hasattr(self, "positions") and hasattr(self, "device"):
-                value = torch.zeros(self.n_atoms, device=self.device, dtype=torch.int64)
-            else:
-                # Will be set in __post_init__ when device is available
-                self.__dict__["system_idx"] = None
-                return
-        else:
-            # Validate that system indices are unique consecutive integers
-            _, counts = torch.unique_consecutive(value, return_counts=True)
-            if not torch.all(counts == torch.bincount(value)):
-                raise ValueError("System indices must be unique consecutive integers")
-        self.__dict__["system_idx"] = value
-
-    @property
-    def pbc(self) -> torch.Tensor:  # noqa: F811  ty: ignore[invalid-assignment]
-        """Periodic boundary conditions.
-
-        Guaranteed to be torch.Tensor after __post_init__.
-        """
-        # After __post_init__, pbc is always a torch.Tensor
-        result: torch.Tensor = self.__dict__["pbc"]
-        return result
-
-    @pbc.setter
-    def pbc(self, value: torch.Tensor | list[bool] | bool) -> None:
-        """Set periodic boundary conditions, converting bool/list to tensor if needed."""
-        if isinstance(value, property):
-            raise ValueError("pbc is required and must be provided")  # noqa: TRY004
-        if isinstance(value, bool):
-            value = [value] * 3
-        if not isinstance(value, torch.Tensor):
-            # Device should be available after positions are set
-            device = self.device
-            value = torch.tensor(value, dtype=torch.bool, device=device)
-        self.__dict__["pbc"] = value
 
     @classmethod
     def _get_all_attributes(cls) -> set[str]:

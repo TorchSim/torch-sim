@@ -45,7 +45,8 @@ atoms_list = [
 
 state = ts.io.atoms_to_state(atoms_list, device=torch.device("cpu"), dtype=torch.float32)
 pos, cell, pbc = state.positions, state.cell, state.pbc
-system_idx, n_atoms = state.system_idx, state.n_atoms
+system_idx = state.system_idx
+n_atoms = state.n_atoms
 cutoff = torch.tensor(4.0, dtype=pos.dtype)
 self_interaction = False
 

@@ -23,10 +23,9 @@ from typing import Any
 
 import torch
 
-import torch_sim as ts
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import pbc_to_tensor
+from torch_sim.state import SimState, ensure_sim_state, pbc_to_tensor
 
 
 try:
@@ -91,7 +90,7 @@ def cell_to_cellpar(
 
 
 def state_to_atom_graphs(  # noqa: PLR0915
-    state: ts.SimState,
+    state: SimState,
     *,
     wrap: bool = True,
     edge_method: EdgeCreationMethod | None = None,
@@ -400,7 +399,7 @@ class OrbModel(ModelInterface):
             self.implemented_properties.extend(["forces", "stress"])
 
     def forward(
-        self, state: ts.SimState | StateDict, **_kwargs: object
+        self, state: SimState | StateDict, **_kwargs: object
     ) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
@@ -424,18 +423,7 @@ class OrbModel(ModelInterface):
             The state is automatically transferred to the model's device if needed.
             All output tensors are detached from the computation graph.
         """
-        if isinstance(state, ts.SimState):
-            sim_state = state
-        else:
-            positions_in = state["positions"]
-            sim_state = ts.SimState(
-                positions=positions_in,
-                masses=torch.ones_like(positions_in),
-                cell=state["cell"],
-                pbc=state.get("pbc", True),
-                atomic_numbers=state["atomic_numbers"],
-                system_idx=state.get("system_idx"),
-            )
+        sim_state = ensure_sim_state(state)
 
         if sim_state.device != self._device:
             sim_state = sim_state.to(self._device)
