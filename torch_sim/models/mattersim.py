@@ -74,11 +74,14 @@ class MatterSimModel(ModelInterface):
         """
         super().__init__()
 
-        self._device = device or torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
-        if isinstance(self._device, str):
-            self._device = torch.device(self._device)
+        resolved_device: torch.device
+        if device is None:
+            resolved_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif isinstance(device, str):
+            resolved_device = torch.device(device)
+        else:
+            resolved_device = device
+        self._device = resolved_device
 
         self._dtype = dtype or torch.float32
         self._memory_scales_with = "n_atoms_x_density"  # should be density^2 bc triplets
@@ -110,7 +113,9 @@ class MatterSimModel(ModelInterface):
             "stress",
         ]
 
-    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(
+        self, state: ts.SimState | StateDict, **_kwargs: Any
+    ) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by the model,
@@ -120,6 +125,7 @@ class MatterSimModel(ModelInterface):
             state (SimState | StateDict): State object containing positions, cells,
                 atomic numbers, and other system information. If a dictionary is provided,
                 it will be converted to a SimState.
+            **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
             dict: Model predictions, which may include:
@@ -132,11 +138,18 @@ class MatterSimModel(ModelInterface):
             The state is automatically transferred to the model's device if needed.
             All output tensors are detached from the computation graph.
         """
-        sim_state = (
-            state
-            if isinstance(state, ts.SimState)
-            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
-        )
+        if isinstance(state, ts.SimState):
+            sim_state = state
+        else:
+            positions = state["positions"]
+            sim_state = ts.SimState(
+                positions=positions,
+                masses=torch.ones_like(positions),
+                cell=state["cell"],
+                pbc=state.get("pbc", True),
+                atomic_numbers=state["atomic_numbers"],
+                system_idx=state.get("system_idx"),
+            )
 
         if sim_state.device != self._device:
             sim_state = sim_state.to(self._device)

@@ -208,14 +208,14 @@ def validate_model_outputs(  # noqa: C901, PLR0915
 
     try:
         if not model.compute_stress:
-            model.compute_stress = True  # type: ignore[unresolved-attribute]
+            model.compute_stress = True
         stress_computed = True
     except NotImplementedError:
         stress_computed = False
 
     try:
         if not model.compute_forces:
-            model.compute_forces = True  # type: ignore[unresolved-attribute]
+            model.compute_forces = True
         force_computed = True
     except NotImplementedError:
         force_computed = False
@@ -227,7 +227,10 @@ def validate_model_outputs(  # noqa: C901, PLR0915
 
     og_positions = sim_state.positions.clone()
     og_cell = sim_state.cell.clone()
-    og_system_idx = sim_state.system_idx.clone()
+    system_idx = sim_state.system_idx
+    if system_idx is None:
+        raise ValueError("validate_model_outputs requires state with system_idx")
+    og_system_idx = system_idx.clone()
     og_atomic_nums = sim_state.atomic_numbers.clone()
 
     model_output = model.forward(sim_state)
@@ -237,7 +240,7 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         raise ValueError(f"{og_positions=} != {sim_state.positions=}")
     if not torch.allclose(og_cell, sim_state.cell):
         raise ValueError(f"{og_cell=} != {sim_state.cell=}")
-    if not torch.allclose(og_system_idx, sim_state.system_idx):
+    if not torch.allclose(og_system_idx, system_idx):
         raise ValueError(f"{og_system_idx=} != {sim_state.system_idx=}")
     if not torch.allclose(og_atomic_nums, sim_state.atomic_numbers):
         raise ValueError(f"{og_atomic_nums=} != {sim_state.atomic_numbers=}")

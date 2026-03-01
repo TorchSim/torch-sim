@@ -46,7 +46,7 @@ except ImportError as exc:
             raise err
 
 
-def _validate(model: AtomGraphSequential, modal: str) -> None:
+def _validate(model: AtomGraphSequential, modal: str | None) -> None:
     if not model.type_map:
         raise ValueError("type_map is missing")
 
@@ -114,11 +114,14 @@ class SevenNetModel(ModelInterface):
         """
         super().__init__()
 
-        self._device = device or torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
-        if isinstance(self._device, str):
-            self._device = torch.device(self._device)
+        resolved_device: torch.device
+        if device is None:
+            resolved_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif isinstance(device, str):
+            resolved_device = torch.device(device)
+        else:
+            resolved_device = device
+        self._device = resolved_device
 
         if dtype is not torch.float32:
             warnings.warn(
@@ -157,7 +160,9 @@ class SevenNetModel(ModelInterface):
 
         self.implemented_properties = ["energy", "forces", "stress"]
 
-    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(  # noqa: PLR0915
+        self, state: ts.SimState | StateDict, **_kwargs: object
+    ) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by the model,
@@ -167,6 +172,7 @@ class SevenNetModel(ModelInterface):
             state (SimState | StateDict): State object containing positions, cells,
                 atomic numbers, and other system information. If a dictionary is provided,
                 it will be converted to a SimState.
+            **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
             dict: Model predictions, which may include:
@@ -179,11 +185,18 @@ class SevenNetModel(ModelInterface):
             The state is automatically transferred to the model's device if needed.
             All output tensors are detached from the computation graph.
         """
-        sim_state = (
-            state
-            if isinstance(state, ts.SimState)
-            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
-        )
+        if isinstance(state, ts.SimState):
+            sim_state = state
+        else:
+            positions_in = state["positions"]
+            sim_state = ts.SimState(
+                positions=positions_in,
+                masses=torch.ones_like(positions_in),
+                cell=state["cell"],
+                pbc=state.get("pbc", True),
+                atomic_numbers=state["atomic_numbers"],
+                system_idx=state.get("system_idx"),
+            )
 
         if sim_state.device != self._device:
             sim_state = sim_state.to(self._device)
@@ -192,17 +205,24 @@ class SevenNetModel(ModelInterface):
         sim_state = sim_state.clone()
 
         # Batched neighbor list using linked-cell algorithm with row-vector cell
-        n_systems = sim_state.system_idx.max().item() + 1
+        system_idx = sim_state.system_idx
+        if system_idx is None:
+            system_idx = torch.zeros(
+                sim_state.positions.shape[0],
+                dtype=torch.long,
+                device=sim_state.device,
+            )
+        n_systems = int(system_idx.max().item()) + 1
         edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
             sim_state.positions,
             sim_state.row_vector_cell,
             sim_state.pbc,
             self.cutoff,
-            sim_state.system_idx,
+            system_idx,
         )
 
         # Build per-system SevenNet AtomGraphData by slicing the global NL
-        n_atoms_per_system = sim_state.system_idx.bincount()
+        n_atoms_per_system = system_idx.bincount()
         stride = torch.cat(
             (
                 torch.tensor([0], device=self.device, dtype=torch.long),
@@ -250,8 +270,9 @@ class SevenNetModel(ModelInterface):
         batched_data.to(self.device)
 
         if isinstance(self.model, torch_script_type):
+            type_map = self.model.type_map
             batched_data[key.NODE_FEATURE] = torch.tensor(
-                [self.type_map[z.item()] for z in data[key.NODE_FEATURE]],
+                [type_map[z.item()] for z in data[key.NODE_FEATURE]],
                 dtype=torch.int64,
                 device=self.device,
             )
@@ -270,7 +291,7 @@ class SevenNetModel(ModelInterface):
             results["energy"] = energy.detach()
         else:
             results["energy"] = torch.zeros(
-                sim_state.system_idx.max().item() + 1, device=self.device
+                n_systems, device=self.device, dtype=self._dtype
             )
 
         forces = output[key.PRED_FORCE]

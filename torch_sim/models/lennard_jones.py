@@ -30,6 +30,7 @@ import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
+from torch_sim.state import ensure_sim_state, pbc_to_tensor
 from torch_sim.typing import StateDict
 
 
@@ -252,13 +253,12 @@ class LennardJonesModel(ModelInterface):
 
             The implementation applies cutoff distance to both approaches for consistency.
         """
-        if not isinstance(state, ts.SimState):
-            state = ts.SimState(**state)
+        state = ensure_sim_state(state)
 
         positions = state.positions
         cell = state.row_vector_cell
         cell = cell.squeeze()
-        pbc = state.pbc
+        pbc = pbc_to_tensor(state.pbc, state.device)
 
         # Ensure system_idx exists (create if None for single system)
         system_idx = (
@@ -366,7 +366,9 @@ class LennardJonesModel(ModelInterface):
 
         return results
 
-    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(
+        self, state: ts.SimState | StateDict, **_kwargs: object
+    ) -> dict[str, torch.Tensor]:
         """Compute Lennard-Jones energies, forces, and stresses for a system.
 
         Main entry point for Lennard-Jones calculations that handles batched states by
@@ -376,6 +378,7 @@ class LennardJonesModel(ModelInterface):
             state (SimState | StateDict): Input state containing atomic positions,
                 cell vectors, and other system information. Can be a SimState object
                 or a dictionary with the same keys.
+            **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
             dict[str, torch.Tensor]: Computed properties:
@@ -404,11 +407,19 @@ class LennardJonesModel(ModelInterface):
             energies = results["energies"]  # Shape: [n_atoms]
             stresses = results["stresses"]  # Shape: [n_atoms, 3, 3]
         """
-        sim_state = (
-            state
-            if isinstance(state, ts.SimState)
-            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
-        )
+        if isinstance(state, ts.SimState):
+            sim_state = state
+        else:
+            state_dict: StateDict = state
+            positions = state_dict["positions"]
+            sim_state = ts.SimState(
+                positions=positions,
+                masses=torch.ones_like(positions),
+                cell=state_dict["cell"],
+                pbc=state_dict["pbc"],
+                atomic_numbers=state_dict["atomic_numbers"],
+                system_idx=state_dict.get("system_idx"),
+            )
 
         if sim_state.system_idx is None and sim_state.cell.shape[0] > 1:
             raise ValueError("System can only be inferred for batch size 1.")

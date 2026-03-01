@@ -12,20 +12,11 @@ import torch
 try:
     from vesin import NeighborList as VesinNeighborList
     from vesin.torch import NeighborList as VesinNeighborListTorch
-
-    VESIN_AVAILABLE = True
 except ImportError:
-    VESIN_AVAILABLE = False
-    VesinNeighborList = None  # type: ignore[assignment, misc]
-    VesinNeighborListTorch = None  # type: ignore[assignment, misc]
+    VesinNeighborList = None
+    VesinNeighborListTorch = None
 
-__all__ = [
-    "VESIN_AVAILABLE",
-    "VesinNeighborList",
-    "VesinNeighborListTorch",
-    "vesin_nl",
-    "vesin_nl_ts",
-]
+VESIN_AVAILABLE = VesinNeighborList is not None
 
 
 if VESIN_AVAILABLE:
@@ -77,9 +68,11 @@ if VESIN_AVAILABLE:
         """
         from torch_sim.neighbors import _normalize_inputs
 
+        if VesinNeighborListTorch is None:
+            raise RuntimeError("vesin package is not installed")
         device = positions.device
         dtype = positions.dtype
-        n_systems = system_idx.max().item() + 1
+        n_systems = int(system_idx.max().item()) + 1
         cell, pbc = _normalize_inputs(cell, pbc, n_systems)
 
         # Process each system's neighbor list separately
@@ -200,9 +193,11 @@ if VESIN_AVAILABLE:
         """
         from torch_sim.neighbors import _normalize_inputs
 
+        if VesinNeighborList is None:
+            raise RuntimeError("vesin package is not installed")
         device = positions.device
         dtype = positions.dtype
-        n_systems = system_idx.max().item() + 1
+        n_systems = int(system_idx.max().item()) + 1
         cell, pbc = _normalize_inputs(cell, pbc, n_systems)
 
         # Process each system's neighbor list separately
@@ -283,14 +278,14 @@ if VESIN_AVAILABLE:
 
 else:
     # Provide stub functions that raise informative errors
-    def vesin_nl_ts(  # type: ignore[misc]
+    def vesin_nl_ts(
         *args,  # noqa: ARG001
         **kwargs,  # noqa: ARG001
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Stub function when Vesin is not available."""
         raise ImportError("Vesin is not installed. Install it with: pip install vesin")
 
-    def vesin_nl(  # type: ignore[misc]
+    def vesin_nl(
         *args,  # noqa: ARG001
         **kwargs,  # noqa: ARG001
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

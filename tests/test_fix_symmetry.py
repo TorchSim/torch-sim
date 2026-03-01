@@ -6,15 +6,16 @@ import torch
 from ase import Atoms
 from ase.build import bulk
 from ase.constraints import FixSymmetry as ASEFixSymmetry
+from ase.spacegroup import crystal
 from ase.spacegroup.symmetrize import refine_symmetry as ase_refine_symmetry
 from ase.stress import full_3x3_to_voigt_6_stress, voigt_6_to_full_3x3_stress
-from pymatgen.core import Lattice, Structure
-from pymatgen.io.ase import AseAtomsAdaptor
 
 import torch_sim as ts
 from torch_sim.constraints import FixCom, FixSymmetry
+from torch_sim.models.interface import ModelInterface
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.symmetrize import get_symmetry_datasets
+from torch_sim.typing import StateDict
 
 
 pytest.importorskip("moyopy")
@@ -30,15 +31,6 @@ CPU = torch.device("cpu")
 # === Structure helpers ===
 
 
-def _make_p6bar() -> Atoms:
-    """Create P-6 (space group 174) structure."""
-    lattice = Lattice.hexagonal(a=3.0, c=5.0)
-    structure = Structure.from_spacegroup(
-        sg=174, lattice=lattice, species=["Si"], coords=[[0.3, 0.1, 0.25]]
-    )
-    return AseAtomsAdaptor.get_atoms(structure)
-
-
 def make_structure(name: str) -> Atoms:
     """Create a test structure by name (fcc/hcp/diamond/bcc/p6bar + _rotated suffix)."""
     base = name.replace("_rotated", "")
@@ -47,7 +39,12 @@ def make_structure(name: str) -> Atoms:
         "hcp": lambda: bulk("Ti", "hcp", a=2.95, c=4.68),
         "diamond": lambda: bulk("Si", "diamond", a=5.43),
         "bcc": lambda: bulk("Al", "bcc", a=2 / np.sqrt(3), cubic=True),
-        "p6bar": _make_p6bar,
+        "p6bar": lambda: crystal(
+            "Si",
+            [(0.3, 0.1, 0.25)],
+            spacegroup=174,
+            cellpar=[3.0, 3.0, 5.0, 90, 90, 120],
+        ),
     }
     atoms = builders[base]()
     if "_rotated" in name:
@@ -83,7 +80,7 @@ def model() -> LennardJonesModel:
     )
 
 
-class NoisyModelWrapper:
+class NoisyModelWrapper(ModelInterface):
     """Wrapper that adds noise to forces and stress."""
 
     model: LennardJonesModel
@@ -91,21 +88,20 @@ class NoisyModelWrapper:
     noise_scale: float
 
     def __init__(self, model: LennardJonesModel, noise_scale: float = 1e-4) -> None:
+        super().__init__()
         self.model = model
         self.rng = np.random.default_rng(seed=1)
         self.noise_scale = noise_scale
+        self._device = model.device
+        self._dtype = model.dtype
+        self._compute_stress = model.compute_stress
+        self._compute_forces = model.compute_forces
 
-    @property
-    def device(self) -> torch.device:
-        return self.model.device
-
-    @property
-    def dtype(self) -> torch.dtype:
-        return self.model.dtype
-
-    def __call__(self, state: ts.SimState) -> dict[str, torch.Tensor]:
+    def forward(
+        self, state: ts.SimState | StateDict, **kwargs: object
+    ) -> dict[str, torch.Tensor]:
         """Forward pass with added noise."""
-        results = self.model(state)
+        results = self.model(state, **kwargs)
         for key in ("forces", "stress"):
             if key in results:
                 noise = torch.tensor(
@@ -140,7 +136,7 @@ def p6bar_both_constraints() -> tuple[ts.SimState, FixSymmetry, Atoms, ASEFixSym
 
 def run_optimization_check_symmetry(
     state: ts.SimState,
-    model: LennardJonesModel | NoisyModelWrapper,
+    model: ModelInterface,
     constraint: FixSymmetry | None = None,
     *,
     adjust_cell: bool = True,
@@ -279,6 +275,7 @@ class TestFixSymmetryCreation:
         assert not torch.allclose(new_cell, orig_cell * 1.5, atol=1e-6)
         # Per-step clamp limits single-step strain to 0.25
         identity = torch.eye(3, dtype=DTYPE)
+        assert constraint.reference_cells is not None
         ref_cell = constraint.reference_cells[0]
         strain = torch.linalg.solve(ref_cell, new_cell[0].mT) - identity
         assert torch.abs(strain).max().item() <= 0.25 + 1e-6
@@ -442,7 +439,9 @@ class TestFixSymmetryMergeSelectReindex:
         s1.constraints = [FixCom(system_idx=torch.tensor([0, 1]))]
         s2.constraints = [FixCom(system_idx=torch.tensor([0, 1]))]
         combined = ts.concatenate_states([s1, s2])
-        assert combined.constraints[0].system_idx.tolist() == [0, 1, 2, 3]
+        first_constraint = combined.constraints[0]
+        assert isinstance(first_constraint, FixCom)
+        assert first_constraint.system_idx.tolist() == [0, 1, 2, 3]
 
     def test_concatenate_states_with_fix_symmetry(self) -> None:
         """FixSymmetry survives concatenate_states and still symmetrizes correctly."""
@@ -530,9 +529,9 @@ def test_build_symmetry_map_chunked_matches_vectorized() -> None:
 
     old_threshold = sym_mod._SYMM_MAP_CHUNK_THRESHOLD  # noqa: SLF001
     try:
-        sym_mod._SYMM_MAP_CHUNK_THRESHOLD = len(state.positions) + 1  # noqa: SLF001
+        sym_mod._SYMM_MAP_CHUNK_THRESHOLD = len(state.positions) + 1  # noqa: SLF001  # ty: ignore[invalid-assignment]
         vectorized = build_symmetry_map(rotations, translations, frac)
-        sym_mod._SYMM_MAP_CHUNK_THRESHOLD = 0  # noqa: SLF001
+        sym_mod._SYMM_MAP_CHUNK_THRESHOLD = 0  # noqa: SLF001  # ty: ignore[invalid-assignment]
         chunked = build_symmetry_map(rotations, translations, frac)
     finally:
         sym_mod._SYMM_MAP_CHUNK_THRESHOLD = old_threshold  # noqa: SLF001
