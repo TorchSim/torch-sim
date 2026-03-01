@@ -29,7 +29,7 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import SimState
+from torch_sim.state import SimState, pbc_to_tensor, require_system_idx
 from torch_sim.typing import MemoryScaling
 
 
@@ -328,21 +328,12 @@ def determine_max_batch_size(
 def _n_edges_scalers(state: SimState, cutoff: float) -> list[float]:
     """Return per-system edge counts from the neighbor list as memory scalers."""
     cutoff_tensor = torch.tensor(cutoff, dtype=state.dtype, device=state.device)
-    system_idx = state.system_idx
-    if system_idx is None:
-        system_idx = torch.zeros(state.n_atoms, dtype=torch.long, device=state.device)
-    pbc = state.pbc
-    if not torch.is_tensor(pbc):
-        pbc_list = [pbc] * 3 if isinstance(pbc, bool) else list(pbc)
-        pbc = torch.tensor(pbc_list, dtype=torch.bool, device=state.device)
-    if pbc.ndim == 1 and state.n_systems > 1:
-        pbc = pbc.unsqueeze(0).expand(state.n_systems, -1)
     _, system_mapping, _ = torchsim_nl(
         positions=state.positions,
         cell=state.cell,
-        pbc=pbc,
+        pbc=pbc_to_tensor(state.pbc, state.device),
         cutoff=cutoff_tensor,
-        system_idx=system_idx,
+        system_idx=require_system_idx(state.system_idx),
     )
     return system_mapping.bincount(minlength=state.n_systems).float().tolist()
 
