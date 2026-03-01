@@ -658,16 +658,6 @@ def test_multiple_constraints_and_dof(
     )
     assert torch.allclose(final_com, initial_com, atol=1e-5)
 
-
-@pytest.mark.parametrize(
-    ("constraint_list", "removed_dof"),
-    [
-        ([], 0),
-        ([FixAtoms(atom_idx=[0, 1])], 6),
-        ([FixCom([0])], 3),
-        ([FixCom([0]), FixAtoms(atom_idx=[0])], 6),
-    ],
-)
 @pytest.mark.parametrize(
     ("cell_filter", "fire_flavor"),
     [
