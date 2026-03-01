@@ -7,6 +7,7 @@ import torch_sim as ts
 from torch_sim.autobatching import (
     BinningAutoBatcher,
     InFlightAutoBatcher,
+    _n_edges_scalers,
     calculate_memory_scalers,
     determine_max_batch_size,
     to_constant_volume_bins,
@@ -154,6 +155,33 @@ def test_calculate_scaling_metric_mixed_pbc_uses_per_system_path(
             split_state.n_atoms * (split_state.n_atoms / volume.item())
         )
     assert metric_values == pytest.approx(expected_values, rel=1e-5)
+
+
+def test_n_edges_scalers_periodic(si_sim_state: ts.SimState) -> None:
+    """n_edges scalers for a single periodic system have correct shape and type."""
+    result = _n_edges_scalers(si_sim_state, cutoff=5.0)
+    assert isinstance(result, list)
+    assert len(result) == si_sim_state.n_systems
+    assert all(isinstance(v, float) for v in result)
+    assert all(v >= 0 for v in result)
+
+
+def test_n_edges_scalers_non_periodic(benzene_sim_state: ts.SimState) -> None:
+    """n_edges scalers for a non-periodic (molecular) system have correct shape/type."""
+    result = _n_edges_scalers(benzene_sim_state, cutoff=5.0)
+    assert isinstance(result, list)
+    assert len(result) == benzene_sim_state.n_systems
+    assert all(isinstance(v, float) for v in result)
+    assert all(v >= 0 for v in result)
+
+
+def test_n_edges_scalers_batched(ar_double_sim_state: ts.SimState) -> None:
+    """n_edges scalers for a batched state return one value per system."""
+    result = _n_edges_scalers(ar_double_sim_state, cutoff=5.0)
+    assert isinstance(result, list)
+    assert len(result) == ar_double_sim_state.n_systems
+    assert all(isinstance(v, float) for v in result)
+    assert all(v >= 0 for v in result)
 
 
 @pytest.mark.parametrize("items", [[], {}])

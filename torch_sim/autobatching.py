@@ -28,6 +28,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
+from torch_sim.neighbors import torchsim_nl
 from torch_sim.state import SimState
 from torch_sim.typing import MemoryScaling
 
@@ -326,8 +327,6 @@ def determine_max_batch_size(
 
 def _n_edges_scalers(state: SimState, cutoff: float) -> list[float]:
     """Return per-system edge counts from the neighbor list as memory scalers."""
-    from torch_sim.neighbors import torchsim_nl
-
     cutoff_tensor = torch.tensor(cutoff, dtype=state.dtype, device=state.device)
     system_idx = state.system_idx
     if system_idx is None:
@@ -345,7 +344,7 @@ def _n_edges_scalers(state: SimState, cutoff: float) -> list[float]:
         cutoff=cutoff_tensor,
         system_idx=system_idx,
     )
-    return system_mapping.bincount(minlength=state.n_systems).tolist()
+    return system_mapping.bincount(minlength=state.n_systems).float().tolist()
 
 
 def calculate_memory_scalers(
@@ -374,7 +373,8 @@ def calculate_memory_scalers(
             that have a fixed number of neighbors. "n_atoms_x_density" uses atom count
             multiplied by number density and is better for models with radial cutoffs.
             "n_edges" computes the actual neighbor list edge count, which is the most
-            accurate metric for molecular systems. Defaults to "n_atoms_x_density".
+            accurate metric overall but more expensive to compute than the alternatives;
+            strongly recommended for molecular systems. Defaults to "n_atoms_x_density".
         cutoff (float): Neighbor list cutoff distance in Angstroms. Only used when
             memory_scales_with="n_edges". Should match the model's cutoff for best
             accuracy. Defaults to 7.0.
@@ -576,7 +576,8 @@ class BinningAutoBatcher[T: SimState]:
                 use for estimating memory requirements:
                 - "n_atoms": Uses only atom count
                 - "n_atoms_x_density": Uses atom count multiplied by number density
-                - "n_edges": Uses actual neighbor list edge count (best for molecules)
+                - "n_edges": Uses actual neighbor list edge count; most accurate overall
+                  but more expensive; strongly recommended for molecular systems
                 Defaults to "n_atoms_x_density".
             cutoff (float): Neighbor list cutoff in Angstroms. Only used when
                 memory_scales_with="n_edges". Should match the model's cutoff.
@@ -862,7 +863,8 @@ class InFlightAutoBatcher[T: SimState]:
                 use for estimating memory requirements:
                 - "n_atoms": Uses only atom count
                 - "n_atoms_x_density": Uses atom count multiplied by number density
-                - "n_edges": Uses actual neighbor list edge count (best for molecules)
+                - "n_edges": Uses actual neighbor list edge count; most accurate overall
+                  but more expensive; strongly recommended for molecular systems
                 Defaults to "n_atoms_x_density".
             cutoff (float): Neighbor list cutoff in Angstroms. Only used when
                 memory_scales_with="n_edges". Should match the model's cutoff.
