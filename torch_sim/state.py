@@ -62,18 +62,6 @@ def require_system_idx(system_idx: torch.Tensor | None) -> torch.Tensor:
     return system_idx
 
 
-def pbc_to_tensor(
-    pbc: torch.Tensor | list[bool] | bool,  # noqa: FBT001
-    device: torch.device,
-) -> torch.Tensor:
-    """Convert pbc (bool, list[bool], or Tensor) to a bool Tensor on device."""
-    if isinstance(pbc, torch.Tensor):
-        return pbc
-    if isinstance(pbc, bool):
-        return torch.tensor([pbc] * 3, dtype=torch.bool, device=device)
-    return torch.tensor(pbc, dtype=torch.bool, device=device)
-
-
 def ensure_sim_state(state: "SimState | StateDict") -> "SimState":
     """Return a SimState from either SimState or StateDict input."""
     if isinstance(state, SimState):
@@ -275,11 +263,10 @@ class SimState:
         """Atomic positions wrapped according to periodic boundary conditions if pbc=True,
         otherwise returns unwrapped positions with shape (n_atoms, 3).
         """
-        pbc_t = pbc_to_tensor(self.pbc, self.device)
-        if not pbc_t.any():
+        if not self.pbc.any():
             return self.positions
         return ts.transforms.pbc_wrap_batched(
-            self.positions, self.cell, self.system_idx, pbc_t
+            self.positions, self.cell, self.system_idx, self.pbc
         )
 
     @property

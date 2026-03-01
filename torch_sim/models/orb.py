@@ -25,7 +25,7 @@ import torch
 
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, ensure_sim_state, pbc_to_tensor
+from torch_sim.state import SimState, ensure_sim_state
 
 
 try:
@@ -233,10 +233,9 @@ def state_to_atom_graphs(  # noqa: PLR0915
             "unit_shifts": unit_shifts,
         }
 
-        pbc_tensor = pbc_to_tensor(pbc, positions_per_system.device)
         graph_feats: dict[str, torch.Tensor] = {
             "cell": cell_per_system,
-            "pbc": pbc_tensor,
+            "pbc": pbc,
             "lattice": lattice_per_system.to(device=positions_per_system.device),
         }
 

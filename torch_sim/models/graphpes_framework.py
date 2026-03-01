@@ -23,7 +23,7 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import ensure_sim_state, pbc_to_tensor
+from torch_sim.state import ensure_sim_state
 from torch_sim.typing import StateDict
 
 
@@ -66,7 +66,6 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
         AtomicGraph object representing the batched structures
     """
     graphs = []
-    pbc_t = pbc_to_tensor(state.pbc, state.device)
 
     for sys_idx in range(state.n_systems):
         system_mask = state.system_idx == sys_idx
@@ -81,7 +80,7 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
         # Create system_idx for this single system (all atoms belong to system 0)
         system_idx_single = torch.zeros(R.shape[0], dtype=torch.long, device=R.device)
         nl, _system_mapping, shifts = torchsim_nl(
-            R, cell, pbc_t, cutoff + 1e-5, system_idx_single
+            R, cell, state.pbc, cutoff + 1e-5, system_idx_single
         )
 
         atomic_graph = AtomicGraph(

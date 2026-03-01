@@ -18,7 +18,7 @@ from typing import Any
 import torch
 
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, ensure_sim_state, pbc_to_tensor
+from torch_sim.state import SimState, ensure_sim_state
 
 
 try:
@@ -201,7 +201,7 @@ class FairChemModel(ModelInterface):
         n_atoms = torch.bincount(sim_state.system_idx)
         atomic_data_list = []
 
-        pbc_np = pbc_to_tensor(sim_state.pbc, sim_state.device).cpu().numpy()
+        pbc_np = sim_state.pbc.detach().cpu().numpy()
 
         for idx, (n, c) in enumerate(
             zip(n_atoms, torch.cumsum(n_atoms, dim=0), strict=False)
