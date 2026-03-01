@@ -88,9 +88,16 @@ lj_model = LennardJonesModel(
     per_atom_stresses=True,
 )
 
+# Masses for Argon (39.948 amu)
+masses = torch.full((positions.shape[0],), 39.948, device=device, dtype=dtype)
+
 # State dict
 state = dict(
-    positions=positions, cell=cell.unsqueeze(0), atomic_numbers=atomic_numbers, pbc=True
+    positions=positions,
+    masses=masses,
+    cell=cell.unsqueeze(0),
+    atomic_numbers=atomic_numbers,
+    pbc=True,
 )
 
 # Run the simulation and get results
@@ -163,10 +170,14 @@ print(f"Cell: {cell.shape}")
 print(f"Atomic numbers: {atomic_numbers.shape}")
 print(f"System indices: {system_idx.shape}")
 
+# Masses for Silicon (28.085 amu)
+masses_si = torch.full((positions.shape[0],), 28.085, device=device, dtype=dtype)
+
 # Now we can pass them to the model
 results = batched_model(
     dict(
         positions=positions,
+        masses=masses_si,
         cell=cell,
         atomic_numbers=atomic_numbers,
         system_idx=system_idx,
