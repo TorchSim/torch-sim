@@ -610,35 +610,6 @@ class FixCom(SystemConstraint):
         return f"FixCom(system_idx={self.system_idx})"
 
 
-def count_degrees_of_freedom(
-    state: SimState, constraints: list[Constraint] | None = None
-) -> int:
-    """Count the total degrees of freedom in a system with constraints.
-
-    This function calculates the total number of degrees of freedom by starting
-    with the unconstrained count (n_atoms * 3) and subtracting the degrees of
-    freedom removed by each constraint.
-
-    Args:
-        state: Simulation state
-        constraints: List of active constraints (optional)
-
-    Returns:
-        Total number of degrees of freedom
-    """
-    # Start with unconstrained DOF
-    total_dof: int | torch.Tensor = state.n_atoms * 3
-
-    # Subtract DOF removed by constraints (get_removed_dof returns per-system tensor)
-    if constraints is not None:
-        for constraint in constraints:
-            removed = constraint.get_removed_dof(state)
-            total_dof = total_dof - removed.sum()
-
-    result = max(0, total_dof)
-    return int(result.item()) if isinstance(result, torch.Tensor) else result
-
-
 def check_no_index_out_of_bounds(
     indices: torch.Tensor, max_state_indices: int, constraint_name: str
 ) -> None:

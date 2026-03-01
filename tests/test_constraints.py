@@ -9,7 +9,6 @@ from torch_sim.constraints import (
     Constraint,
     FixAtoms,
     FixCom,
-    count_degrees_of_freedom,
     merge_constraints,
     validate_constraints,
 )
@@ -669,39 +668,6 @@ def test_multiple_constraints_and_dof(
         ([FixCom([0]), FixAtoms(atom_idx=[0])], 6),
     ],
 )
-def test_count_degrees_of_freedom_single_system(
-    cu_sim_state: ts.SimState, constraint_list: list[Constraint], removed_dof: int
-) -> None:
-    """count_degrees_of_freedom returns expected scalar for one system."""
-    total_dof = 3 * cu_sim_state.n_atoms
-    computed_dof = count_degrees_of_freedom(cu_sim_state, constraint_list)
-    assert computed_dof == total_dof - removed_dof
-
-
-def test_count_degrees_of_freedom_multi_system_sum(
-    mixed_double_sim_state: ts.SimState,
-) -> None:
-    """count_degrees_of_freedom correctly sums removed dof across systems."""
-    n_atoms_in_first_system = int(mixed_double_sim_state.n_atoms_per_system[0].item())
-    constraint_list: list[Constraint] = [
-        FixCom([0, 1]),
-        FixAtoms(atom_idx=[0, n_atoms_in_first_system]),
-    ]
-    total_dof = 3 * mixed_double_sim_state.n_atoms
-    computed_dof = count_degrees_of_freedom(mixed_double_sim_state, constraint_list)
-    assert computed_dof == total_dof - 12
-
-
-def test_count_degrees_of_freedom_clamped_to_zero(
-    cu_sim_state: ts.SimState,
-) -> None:
-    """count_degrees_of_freedom never returns a negative value."""
-    all_atom_indices = torch.arange(cu_sim_state.n_atoms, device=cu_sim_state.device)
-    constraint_list: list[Constraint] = [FixAtoms(atom_idx=all_atom_indices), FixCom([0])]
-    computed_dof = count_degrees_of_freedom(cu_sim_state, constraint_list)
-    assert computed_dof == 0
-
-
 @pytest.mark.parametrize(
     ("cell_filter", "fire_flavor"),
     [
