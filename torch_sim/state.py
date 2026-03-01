@@ -217,16 +217,8 @@ class SimState:
                 f"masses {shapes[1]}, atomic_numbers {shapes[2]}"
             )
 
-        # Coerce pbc (triggers __setattr__)
-        self.pbc = self.pbc
-
-        # Coerce system_idx (triggers __setattr__ which handles None)
-        system_idx_was_none = self.system_idx is None
-        self.system_idx = self.system_idx
-
         # Get n_systems from system_idx (now guaranteed to be non-None)
-        system_idx = self.system_idx
-        _, counts = torch.unique_consecutive(system_idx, return_counts=True)
+        _, counts = torch.unique_consecutive(self.system_idx, return_counts=True)
         n_systems = len(counts)
 
         if self.constraints:
@@ -241,7 +233,7 @@ class SimState:
         elif self.spin.shape[0] != n_systems:
             raise ValueError(f"Spin must have shape (n_systems={n_systems},)")
 
-        if self.cell.ndim != 3 and system_idx_was_none:
+        if self.cell.ndim != 3:
             self.cell = self.cell.unsqueeze(0)
 
         if self.cell.shape[-2:] != (3, 3):

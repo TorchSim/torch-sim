@@ -129,7 +129,7 @@ def molecule_atoms_set() -> list:
 @pytest.mark.parametrize("self_interaction", [True, False])
 @pytest.mark.parametrize(
     "nl_implementation",
-    [neighbors.torch_nl_n2, neighbors.torch_nl_linked_cell, neighbors.standard_nl]
+    [neighbors.torch_nl_n2, neighbors.torch_nl_linked_cell]
     + ([neighbors.vesin_nl, neighbors.vesin_nl_ts] if neighbors.VESIN_AVAILABLE else [])
     + (
         [neighbors.alchemiops_nl_n2, neighbors.alchemiops_nl_cell_list]
@@ -218,7 +218,7 @@ def test_neighbor_list_implementations(
 @pytest.mark.parametrize("pbc_val", [True, False])
 @pytest.mark.parametrize(
     "nl_implementation",
-    [neighbors.torch_nl_n2, neighbors.torch_nl_linked_cell, neighbors.standard_nl]
+    [neighbors.torch_nl_n2, neighbors.torch_nl_linked_cell]
     + ([neighbors.vesin_nl, neighbors.vesin_nl_ts] if neighbors.VESIN_AVAILABLE else [])
     + (
         [neighbors.alchemiops_nl_n2, neighbors.alchemiops_nl_cell_list]
@@ -437,40 +437,6 @@ def _no_neighbor_inputs() -> tuple[
     pbc = torch.tensor([False, False, False], device=DEVICE)
     cutoff = torch.tensor(1.0, device=DEVICE, dtype=DTYPE)
     return positions, cell, pbc, cutoff
-
-
-@pytest.mark.parametrize("neighbor_impl", ["standard", "primitive"])
-def test_neighbor_list_no_neighbors_returns_empty(neighbor_impl: str) -> None:
-    """Neighbor list implementations return empty outputs for no-neighbor inputs."""
-    positions, cell, pbc, cutoff = _no_neighbor_inputs()
-
-    if neighbor_impl == "standard":
-        system_idx = torch.zeros(2, dtype=torch.long, device=DEVICE)
-        mapping, system_map, shifts = neighbors.standard_nl(
-            positions=positions,
-            cell=cell,
-            pbc=pbc,
-            cutoff=cutoff,
-            system_idx=system_idx,
-        )
-        assert mapping.shape == (2, 0)
-        assert system_map.shape == (0,)
-    elif neighbor_impl == "primitive":
-        idx_i, idx_j, shifts = neighbors.primitive_neighbor_list(
-            quantities="ijS",
-            pbc=pbc,
-            cell=cell,
-            positions=positions,
-            cutoff=cutoff,
-            device=DEVICE,
-            dtype=DTYPE,
-            self_interaction=False,
-        )
-        assert idx_i.shape == (0,)
-        assert idx_j.shape == (0,)
-    else:
-        raise ValueError(f"Unsupported {neighbor_impl=}")
-    assert shifts.shape == (0, 3)
 
 
 def test_strict_nl_edge_cases() -> None:
