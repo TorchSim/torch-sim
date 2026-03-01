@@ -19,7 +19,7 @@ from torch_sim.integrators.md import (
 )
 from torch_sim.integrators.nvt import _vrescale_update
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, ensure_sim_state, require_system_idx
+from torch_sim.state import SimState, ensure_sim_state
 from torch_sim.typing import StateDict
 
 
@@ -702,8 +702,7 @@ def npt_langevin_step(
 
     # Update barostat mass based on current temperature
     # This ensures proper coupling between system and barostat
-    system_idx = require_system_idx(state.system_idx)
-    n_atoms_per_system = torch.bincount(system_idx)
+    n_atoms_per_system = torch.bincount(state.system_idx)
     state.cell_masses = (n_atoms_per_system + 1) * batch_kT * torch.square(state.b_tau)
 
     # Compute model output for current state
@@ -958,8 +957,7 @@ def _npt_nose_hoover_update_cell_mass(
     kT_system = kT.expand(state.n_systems) if kT.ndim == 0 else kT
 
     # Calculate cell masses for each system
-    system_idx = require_system_idx(state.system_idx)
-    n_atoms_per_system = torch.bincount(system_idx, minlength=state.n_systems)
+    n_atoms_per_system = torch.bincount(state.system_idx, minlength=state.n_systems)
     cell_mass = (
         dim * (n_atoms_per_system + 1) * kT_system * torch.square(state.barostat.tau)
     )
@@ -1233,8 +1231,7 @@ def _npt_nose_hoover_inner_step(
     model_output = model(state)
 
     # First half step: Update momenta
-    system_idx = require_system_idx(state.system_idx)
-    n_atoms_per_system = torch.bincount(system_idx, minlength=state.n_systems)
+    n_atoms_per_system = torch.bincount(state.system_idx, minlength=state.n_systems)
     alpha = 1 + 1 / n_atoms_per_system  # [n_systems]
 
     cell_force_val = _npt_nose_hoover_compute_cell_force(
@@ -1245,7 +1242,7 @@ def _npt_nose_hoover_inner_step(
         masses=masses,
         stress=model_output["stress"],
         external_pressure=external_pressure,
-        system_idx=system_idx,
+        system_idx=state.system_idx,
     )
 
     # Update cell momentum and particle momenta
@@ -1386,8 +1383,7 @@ def npt_nose_hoover_init(
     kT_system = kT_tensor.expand(n_systems) if kT_tensor.ndim == 0 else kT_tensor
 
     # Calculate cell masses for each system
-    system_idx = require_system_idx(state.system_idx)
-    n_atoms_per_system = torch.bincount(system_idx, minlength=n_systems)
+    n_atoms_per_system = torch.bincount(state.system_idx, minlength=n_systems)
     cell_mass = dim * (n_atoms_per_system + 1) * kT_system * torch.square(b_tau_tensor)
     cell_mass = cell_mass.to(device=device, dtype=dtype)
 
@@ -1401,7 +1397,7 @@ def npt_nose_hoover_init(
         initialize_momenta(
             state.positions,
             state.masses,
-            system_idx,
+            state.system_idx,
             kT_tensor,
             state.rng,
         ),

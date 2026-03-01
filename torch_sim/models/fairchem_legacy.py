@@ -31,7 +31,6 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import require_system_idx
 
 
 if typing.TYPE_CHECKING:
@@ -440,10 +439,9 @@ class FairChemV1Model(ModelInterface):
                 "FairChemV1Model requires model and state PBC to match."
             )
 
-        system_idx = require_system_idx(sim_state.system_idx)
-        natoms = torch.bincount(system_idx)
+        natoms = torch.bincount(sim_state.system_idx)
         fixed = torch.zeros(
-            (system_idx.size(0), int(natoms.sum().item())), dtype=torch.int
+            (sim_state.system_idx.size(0), int(natoms.sum().item())), dtype=torch.int
         )
         data_list = []
         for idx, (n, c) in enumerate(

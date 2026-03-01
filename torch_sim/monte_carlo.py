@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, require_system_idx
+from torch_sim.state import SimState
 
 
 @dataclass(kw_only=True)
@@ -86,24 +86,16 @@ def generate_swaps(state: SimState, rng: torch.Generator | None = None) -> torch
         torch.Tensor: A tensor of proposed swaps with shape [n_systems, 2],
             where each row contains indices of atoms to be swapped
     """
-    if state.system_idx is None:
-        raise ValueError("propose_swaps requires state with system_idx")
-    system = state.system_idx
     atomic_numbers = state.atomic_numbers
 
-    system_lengths = system.bincount()
-
-    # change system_lengths to system
-    system = torch.repeat_interleave(
-        torch.arange(len(system_lengths), device=system.device), system_lengths
-    )
+    system_lengths = state.system_idx.bincount()
 
     # Create ragged weights tensor without loops
     max_length = torch.max(system_lengths).item()
     n_systems = len(system_lengths)
 
     # Create a range tensor for each system
-    range_tensor = torch.arange(int(max_length), device=system.device).expand(
+    range_tensor = torch.arange(int(max_length), device=state.device).expand(
         n_systems, int(max_length)
     )
 
@@ -288,8 +280,7 @@ def swap_mc_step(
 
     permutation = swaps_to_permutation(swaps, state.n_atoms)
 
-    system_idx = require_system_idx(state.system_idx)
-    if not torch.all(system_idx == system_idx[permutation]):
+    if not torch.all(state.system_idx == state.system_idx[permutation]):
         raise ValueError("Swaps must be between atoms in the same system")
 
     energies_old = state.energy.clone()

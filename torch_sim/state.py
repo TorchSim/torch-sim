@@ -322,9 +322,8 @@ class SimState:
         pbc_t = pbc_to_tensor(self.pbc, self.device)
         if not pbc_t.any():
             return self.positions
-        system_idx = require_system_idx(self.system_idx)
         return ts.transforms.pbc_wrap_batched(
-            self.positions, self.cell, system_idx, pbc_t
+            self.positions, self.cell, self.system_idx, pbc_t
         )
 
     @property
@@ -1053,10 +1052,9 @@ def _pop_states[T: SimState](
         pop_indices = torch.tensor(pop_indices, device=state.device, dtype=torch.int64)
 
     # Derive keep/pop atom and system indices
-    system_idx = require_system_idx(state.system_idx)
     all_systems = torch.arange(state.n_systems, device=state.device)
     keep_system_indices = all_systems[~torch.isin(all_systems, pop_indices)]
-    pop_atom_mask = torch.isin(system_idx, pop_indices)
+    pop_atom_mask = torch.isin(state.system_idx, pop_indices)
     keep_atom_indices = torch.where(~pop_atom_mask)[0]
     pop_atom_indices = torch.where(pop_atom_mask)[0]
 
@@ -1180,8 +1178,7 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
 
         # Update system indices
         num_systems = state.n_systems
-        system_idx = require_system_idx(state.system_idx)
-        new_indices = system_idx + system_offset
+        new_indices = state.system_idx + system_offset
         new_system_indices.append(new_indices)
         num_atoms_per_state.append(state.n_atoms)
 

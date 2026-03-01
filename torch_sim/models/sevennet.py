@@ -13,7 +13,6 @@ import torch_sim as ts
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import require_system_idx
 
 
 if TYPE_CHECKING:
@@ -206,18 +205,17 @@ class SevenNetModel(ModelInterface):
         sim_state = sim_state.clone()
 
         # Batched neighbor list using linked-cell algorithm with row-vector cell
-        system_idx = require_system_idx(sim_state.system_idx)
-        n_systems = int(system_idx.max().item()) + 1
+        n_systems = int(sim_state.system_idx.max().item()) + 1
         edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
             sim_state.positions,
             sim_state.row_vector_cell,
             sim_state.pbc,
             self.cutoff,
-            system_idx,
+            sim_state.system_idx,
         )
 
         # Build per-system SevenNet AtomGraphData by slicing the global NL
-        n_atoms_per_system = system_idx.bincount()
+        n_atoms_per_system = sim_state.system_idx.bincount()
         stride = torch.cat(
             (
                 torch.tensor([0], device=self.device, dtype=torch.long),

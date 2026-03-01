@@ -26,7 +26,7 @@ import torch
 import torch_sim as ts
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import pbc_to_tensor, require_system_idx
+from torch_sim.state import pbc_to_tensor
 
 
 try:
@@ -131,8 +131,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
         system_config = SystemConfig(radius=6.0, max_num_neighbors=20)
 
     # Handle batch information if present
-    system_idx = require_system_idx(state.system_idx)
-    n_node = torch.bincount(system_idx)
+    n_node = torch.bincount(state.system_idx)
 
     # Set default dtype if not provided
     output_dtype = torch.get_default_dtype() if output_dtype is None else output_dtype
@@ -178,7 +177,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
     if wrap and torch.any(row_vector_cell != 0).item() and torch.any(pbc_for_any).item():
         positions = feat_util.batch_map_to_pbc_cell(positions, row_vector_cell, n_node)
 
-    n_systems_int = int(system_idx.max().item()) + 1
+    n_systems_int = int(state.system_idx.max().item()) + 1
 
     # Prepare lists to collect data from each system
     all_edges: list[torch.Tensor] = []
@@ -192,7 +191,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
     # Process each system in a single loop
     offset = 0
     for sys_idx in range(n_systems_int):
-        system_mask = system_idx == sys_idx
+        system_mask = state.system_idx == sys_idx
         positions_per_system = positions[system_mask]
         atomic_numbers_per_system = atomic_numbers[system_mask]
         atomic_numbers_embedding_per_system = atomic_numbers_embedding[system_mask]
