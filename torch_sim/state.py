@@ -5,6 +5,7 @@ operations and conversion to/from various atomistic formats.
 """
 
 import copy
+import importlib
 import typing
 from collections import defaultdict
 from collections.abc import Generator, Sequence
@@ -12,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 
 import torch
+from torch._prims_common import DeviceLikeType
 
 import torch_sim as ts
 from torch_sim.typing import PRNGLike, StateDict, StateLike
@@ -25,7 +27,7 @@ if TYPE_CHECKING:
 from torch_sim.constraints import Constraint, merge_constraints, validate_constraints
 
 
-def coerce_prng(rng: PRNGLike, device: torch.device) -> torch.Generator:
+def coerce_prng(rng: PRNGLike, device: DeviceLikeType | None) -> torch.Generator:
     """Coerce an int seed or existing Generator into a ``torch.Generator``.
 
     Args:
@@ -79,7 +81,7 @@ def ensure_sim_state(state: "SimState | StateDict") -> "SimState":
     return SimState(**state)  # ty: ignore[invalid-argument-type]
 
 
-@dataclass
+@dataclass(kw_only=True)
 class SimState:
     """State representation for atomistic systems with batched operations support.
 
@@ -139,13 +141,13 @@ class SimState:
     positions: torch.Tensor
     masses: torch.Tensor
     cell: torch.Tensor
-    pbc: torch.Tensor | list[bool] | bool
+    pbc: torch.Tensor | list[bool] | bool = field()
     atomic_numbers: torch.Tensor
     charge: torch.Tensor | None = field(default=None)
     spin: torch.Tensor | None = field(default=None)
     system_idx: torch.Tensor | None = field(default=None)
     _constraints: list["Constraint"] = field(default_factory=lambda: [])  # noqa: PIE807
-    _rng: int | torch.Generator | None = field(default=None, repr=False)
+    _rng: PRNGLike = field(default=None, repr=False)
 
     _atom_attributes: ClassVar[set[str]] = {
         "positions",
@@ -156,6 +158,24 @@ class SimState:
     _system_attributes: ClassVar[set[str]] = {"cell", "charge", "spin"}
     _global_attributes: ClassVar[set[str]] = {"pbc", "_rng"}
 
+    if TYPE_CHECKING:
+
+        def __init__(  # noqa: D107
+            self,
+            *,
+            positions: torch.Tensor,
+            masses: torch.Tensor,
+            cell: torch.Tensor,
+            pbc: torch.Tensor | list[bool] | bool,
+            atomic_numbers: torch.Tensor,
+            charge: torch.Tensor | None = None,
+            spin: torch.Tensor | None = None,
+            system_idx: torch.Tensor | None = None,
+            _constraints: list[Constraint] | None = None,
+            _rng: PRNGLike = None,
+            **kwargs: Any,
+        ) -> None: ...
+
     @property
     def rng(self) -> torch.Generator:
         """Lazily initialized per-state RNG on the state's device."""
@@ -163,7 +183,7 @@ class SimState:
         return self._rng
 
     @rng.setter
-    def rng(self, value: int | torch.Generator | None) -> None:
+    def rng(self, value: PRNGLike) -> None:
         self._rng = value
 
     def __post_init__(self) -> None:  # noqa: C901
@@ -180,22 +200,22 @@ class SimState:
                 f"masses {shapes[1]}, atomic_numbers {shapes[2]}"
             )
 
-        if isinstance(self.pbc, bool):
-            self.pbc = [self.pbc] * 3
-        if not isinstance(self.pbc, torch.Tensor):
-            self.pbc = torch.tensor(self.pbc, dtype=torch.bool, device=self.device)
+        # Convert pbc to tensor if needed (setter handles conversion)
+        pbc_value = self.__dict__.get("pbc")
+        if pbc_value is not None and not isinstance(pbc_value, torch.Tensor):
+            self.pbc = pbc_value
 
-        initial_system_idx = self.system_idx
-        if initial_system_idx is None:
-            self.system_idx = torch.zeros(
-                self.n_atoms, device=self.device, dtype=torch.int64
-            )
-            n_systems = 1
-        else:  # assert that system indices are unique consecutive integers
-            _, counts = torch.unique_consecutive(initial_system_idx, return_counts=True)
-            n_systems = len(counts)
-            if not torch.all(counts == torch.bincount(initial_system_idx)):
-                raise ValueError("System indices must be unique consecutive integers")
+        # Initialize system_idx if needed (setter handles creation and validation)
+        system_idx_value = self.__dict__.get("system_idx")
+        system_idx_was_none = system_idx_value is None or isinstance(
+            system_idx_value, property
+        )
+        self.system_idx = system_idx_value  # Setter handles None -> default creation
+
+        # Get n_systems from system_idx (now guaranteed to be non-None)
+        system_idx = self.system_idx
+        _, counts = torch.unique_consecutive(system_idx, return_counts=True)
+        n_systems = len(counts)
 
         if self.constraints:
             validate_constraints(self.constraints, state=self)
@@ -209,7 +229,7 @@ class SimState:
         elif self.spin.shape[0] != n_systems:
             raise ValueError(f"Spin must have shape (n_systems={n_systems},)")
 
-        if self.cell.ndim != 3 and initial_system_idx is None:
+        if self.cell.ndim != 3 and system_idx_was_none:
             self.cell = self.cell.unsqueeze(0)
 
         if self.cell.shape[-2:] != (3, 3):
@@ -236,6 +256,54 @@ class SimState:
         if len(set(devices.values())) > 1:
             raise ValueError("All tensors must be on the same device")
 
+    @property
+    def system_idx(self) -> torch.Tensor:  # noqa: F811  ty: ignore[invalid-assignment]
+        """System indices - guaranteed to be non-None after __post_init__."""
+        # After __post_init__, system_idx is never None
+        result: torch.Tensor = self.__dict__["system_idx"]
+        return result
+
+    @system_idx.setter
+    def system_idx(self, value: torch.Tensor | None) -> None:
+        """Set system indices, creating default if None and validating if provided."""
+        if value is None or isinstance(value, property):
+            # Create default system_idx if not provided
+            if hasattr(self, "positions") and hasattr(self, "device"):
+                value = torch.zeros(self.n_atoms, device=self.device, dtype=torch.int64)
+            else:
+                # Will be set in __post_init__ when device is available
+                self.__dict__["system_idx"] = None
+                return
+        else:
+            # Validate that system indices are unique consecutive integers
+            _, counts = torch.unique_consecutive(value, return_counts=True)
+            if not torch.all(counts == torch.bincount(value)):
+                raise ValueError("System indices must be unique consecutive integers")
+        self.__dict__["system_idx"] = value
+
+    @property
+    def pbc(self) -> torch.Tensor:  # noqa: F811  ty: ignore[invalid-assignment]
+        """Periodic boundary conditions.
+
+        Guaranteed to be torch.Tensor after __post_init__.
+        """
+        # After __post_init__, pbc is always a torch.Tensor
+        result: torch.Tensor = self.__dict__["pbc"]
+        return result
+
+    @pbc.setter
+    def pbc(self, value: torch.Tensor | list[bool] | bool) -> None:
+        """Set periodic boundary conditions, converting bool/list to tensor if needed."""
+        if isinstance(value, property):
+            raise ValueError("pbc is required and must be provided")  # noqa: TRY004
+        if isinstance(value, bool):
+            value = [value] * 3
+        if not isinstance(value, torch.Tensor):
+            # Device should be available after positions are set
+            device = self.device
+            value = torch.tensor(value, dtype=torch.bool, device=device)
+        self.__dict__["pbc"] = value
+
     @classmethod
     def _get_all_attributes(cls) -> set[str]:
         """Get all attributes of the SimState."""
@@ -254,9 +322,7 @@ class SimState:
         pbc_t = pbc_to_tensor(self.pbc, self.device)
         if not pbc_t.any():
             return self.positions
-        system_idx = self.system_idx
-        if system_idx is None:
-            raise ValueError("system_idx cannot be None for PBC wrapping")
+        system_idx = require_system_idx(self.system_idx)
         return ts.transforms.pbc_wrap_batched(
             self.positions, self.cell, system_idx, pbc_t
         )
@@ -279,8 +345,6 @@ class SimState:
     @property
     def n_atoms_per_system(self) -> torch.Tensor:
         """Number of atoms per system."""
-        if self.system_idx is None:
-            return torch.tensor([self.positions.shape[0]], device=self.positions.device)
         return self.system_idx.bincount()
 
     @property
@@ -989,9 +1053,7 @@ def _pop_states[T: SimState](
         pop_indices = torch.tensor(pop_indices, device=state.device, dtype=torch.int64)
 
     # Derive keep/pop atom and system indices
-    system_idx = state.system_idx
-    if system_idx is None:
-        raise ValueError("system_idx cannot be None")
+    system_idx = require_system_idx(state.system_idx)
     all_systems = torch.arange(state.n_systems, device=state.device)
     keep_system_indices = all_systems[~torch.isin(all_systems, pop_indices)]
     pop_atom_mask = torch.isin(system_idx, pop_indices)
@@ -1200,7 +1262,7 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
     return state_class(**concatenated, _constraints=constraints)
 
 
-def initialize_state(  # noqa: C901, PLR0911
+def initialize_state(
     system: StateLike,
     device: torch.device | None = None,
     dtype: torch.dtype | None = None,
@@ -1227,66 +1289,35 @@ def initialize_state(  # noqa: C901, PLR0911
     if isinstance(system, SimState):
         return system.clone().to(device, dtype)
 
-    if isinstance(system, list | tuple):
-        if len(system) == 0:
-            raise ValueError("Cannot initialize state from an empty list.")
-        states = [s for s in system if isinstance(s, SimState)]
-        if len(states) == len(system) and not all(s.n_systems == 1 for s in states):
+    if isinstance(system, list | tuple) and all(isinstance(s, SimState) for s in system):
+        system: list[SimState] = typing.cast("list[SimState]", system)
+        if not all(state.n_systems == 1 for state in system):
             raise ValueError(
                 "When providing a list of states, to the initialize_state function, "
                 "all states must have n_systems == 1. To fix this, you can split the "
                 "states into individual states with the split_state function."
             )
-        if len(states) == len(system):
-            return ts.concatenate_states(states)
+        return ts.concatenate_states(system)
 
-    # Try each converter (runtime imports for type narrowing)
-    try:
-        from pymatgen.core import Structure
+    converters = [
+        ("pymatgen.core", "Structure", ts.io.structures_to_state),
+        ("ase", "Atoms", ts.io.atoms_to_state),
+        ("phonopy.structure.atoms", "PhonopyAtoms", ts.io.phonopy_to_state),
+    ]
 
-        if isinstance(system, Structure):
-            return ts.io.structures_to_state(system, device, dtype)
-        if (
-            isinstance(system, list | tuple)
-            and system
-            and all(isinstance(s, Structure) for s in system)
-        ):
-            struct_list: list[Structure] = [s for s in system if isinstance(s, Structure)]
-            return ts.io.structures_to_state(struct_list, device, dtype)
-    except ImportError:
-        pass
+    # Try each converter
+    for module_path, class_name, converter_func in converters:
+        try:
+            module = importlib.import_module(module_path)
+            cls = getattr(module, class_name)
 
-    try:
-        from ase import Atoms
-
-        if isinstance(system, Atoms):
-            return ts.io.atoms_to_state(system, device, dtype)
-        if (
-            isinstance(system, list | tuple)
-            and system
-            and all(isinstance(s, Atoms) for s in system)
-        ):
-            atoms_list: list[Atoms] = [s for s in system if isinstance(s, Atoms)]
-            return ts.io.atoms_to_state(atoms_list, device, dtype)
-    except ImportError:
-        pass
-
-    try:
-        from phonopy.structure.atoms import PhonopyAtoms
-
-        if isinstance(system, PhonopyAtoms):
-            return ts.io.phonopy_to_state(system, device, dtype)
-        if (
-            isinstance(system, list | tuple)
-            and system
-            and all(isinstance(s, PhonopyAtoms) for s in system)
-        ):
-            phonopy_list: list[PhonopyAtoms] = [
-                s for s in system if isinstance(s, PhonopyAtoms)
-            ]
-            return ts.io.phonopy_to_state(phonopy_list, device, dtype)
-    except ImportError:
-        pass
+            if isinstance(system, cls) or (
+                isinstance(system, list | tuple)
+                and all(isinstance(s, cls) for s in system)
+            ):
+                return converter_func(system, device, dtype)
+        except ImportError:
+            continue
 
     # remaining code just for informative error
     all_same_type = (

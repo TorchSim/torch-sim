@@ -26,7 +26,7 @@ import torch
 import torch_sim as ts
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import pbc_to_tensor
+from torch_sim.state import pbc_to_tensor, require_system_idx
 
 
 try:
@@ -131,11 +131,7 @@ def state_to_atom_graphs(  # noqa: PLR0915
         system_config = SystemConfig(radius=6.0, max_num_neighbors=20)
 
     # Handle batch information if present
-    system_idx = state.system_idx
-    if system_idx is None:
-        system_idx = torch.zeros(
-            state.positions.shape[0], dtype=torch.long, device=state.device
-        )
+    system_idx = require_system_idx(state.system_idx)
     n_node = torch.bincount(system_idx)
 
     # Set default dtype if not provided

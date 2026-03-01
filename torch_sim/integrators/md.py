@@ -3,6 +3,7 @@
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -47,6 +48,17 @@ class MDState(SimState):
     momenta: torch.Tensor
     energy: torch.Tensor
     forces: torch.Tensor
+
+    if TYPE_CHECKING:
+
+        def __init__(  # noqa: D107
+            self,
+            *,
+            momenta: torch.Tensor,
+            energy: torch.Tensor,
+            forces: torch.Tensor,
+            **kwargs: Any,
+        ) -> None: ...
 
     _atom_attributes = (
         SimState._atom_attributes | {"momenta", "forces"}  # noqa: SLF001

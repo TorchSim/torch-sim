@@ -29,7 +29,7 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import pbc_to_tensor
+from torch_sim.state import ensure_sim_state, require_system_idx
 from torch_sim.typing import StateDict
 
 
@@ -186,12 +186,7 @@ class MaceModel(ModelInterface):
 
         # Set up system_idx information if atomic numbers are provided
         if atomic_numbers is not None:
-            if system_idx is None:
-                # If system_idx is not provided, assume all atoms belong to same system
-                system_idx = torch.zeros(
-                    len(atomic_numbers), dtype=torch.long, device=self.device
-                )
-
+            system_idx = require_system_idx(system_idx)
             self.setup_from_system_idx(atomic_numbers, system_idx)
 
     def setup_from_system_idx(
@@ -267,92 +262,75 @@ class MaceModel(ModelInterface):
                 or in the forward pass, or if provided in both places.
             ValueError: If system indices are not provided when needed.
         """
-        if isinstance(state, ts.SimState):
-            sim_state = state
-        else:
-            state_dict: StateDict = state
-            positions = state_dict["positions"]
-            sim_state = ts.SimState(
-                positions=positions,
-                masses=torch.ones_like(positions),
-                cell=state_dict["cell"],
-                pbc=state_dict["pbc"],
-                atomic_numbers=state_dict["atomic_numbers"],
-                system_idx=state_dict.get("system_idx"),
-            )
+        state = ensure_sim_state(state)
 
         # Handle input validation for atomic numbers
-        if sim_state.atomic_numbers is None and not self.atomic_numbers_in_init:
+        if state.atomic_numbers is None and not self.atomic_numbers_in_init:
             raise ValueError(
                 "Atomic numbers must be provided in either the constructor or forward."
             )
-        if sim_state.atomic_numbers is not None and self.atomic_numbers_in_init:
+        if state.atomic_numbers is not None and self.atomic_numbers_in_init:
             raise ValueError(
                 "Atomic numbers cannot be provided in both the constructor and forward."
             )
 
         # Use system_idx from init if not provided
-        if sim_state.system_idx is None:
+        if state.system_idx is None:
             if not hasattr(self, "system_idx"):
                 raise ValueError(
                     "System indices must be provided if not set during initialization"
                 )
-            sim_state.system_idx = self.system_idx
-
-        system_idx = sim_state.system_idx
-        if system_idx is None:
-            raise ValueError("system_idx required for MaceModel forward")
+            state.system_idx = self.system_idx
 
         # Update system_idx information if new atomic numbers are provided
         if (
-            sim_state.atomic_numbers is not None
+            state.atomic_numbers is not None
             and not self.atomic_numbers_in_init
             and not torch.equal(
-                sim_state.atomic_numbers,
+                state.atomic_numbers,
                 getattr(self, "atomic_numbers", torch.zeros(0, device=self.device)),
             )
         ):
-            self.setup_from_system_idx(sim_state.atomic_numbers, system_idx)
+            self.setup_from_system_idx(state.atomic_numbers, state.system_idx)
 
         # Wrap positions into the unit cell
-        pbc_t = pbc_to_tensor(sim_state.pbc, sim_state.device)
         wrapped_positions = (
             ts.transforms.pbc_wrap_batched(
-                sim_state.positions,
-                sim_state.cell,
-                system_idx,
-                pbc_t,
+                state.positions,
+                state.cell,
+                state.system_idx,
+                state.pbc,
             )
-            if pbc_t.any()
-            else sim_state.positions
+            if state.pbc.any()
+            else state.positions
         )
 
         # Batched neighbor list using linked-cell algorithm
         edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
             wrapped_positions,
-            sim_state.row_vector_cell,
-            pbc_t,
+            state.row_vector_cell,
+            state.pbc,
             self.r_max,
-            system_idx,
+            state.system_idx,
         )
         # Convert unit cell shift indices to Cartesian shifts
         shifts = ts.transforms.compute_cell_shifts(
-            sim_state.row_vector_cell, unit_shifts, mapping_system
+            state.row_vector_cell, unit_shifts, mapping_system
         )
 
         # Build data dict for MACE model
         data_dict = dict(
             ptr=self.ptr,
             node_attrs=self.node_attrs,
-            batch=system_idx,
-            pbc=sim_state.pbc,
-            cell=sim_state.row_vector_cell,
+            batch=state.system_idx,
+            pbc=state.pbc,
+            cell=state.row_vector_cell,
             positions=wrapped_positions,
             edge_index=edge_index,
             unit_shifts=unit_shifts,
             shifts=shifts,
-            total_charge=sim_state.charge,
-            total_spin=sim_state.spin,
+            total_charge=state.charge,
+            total_spin=state.spin,
         )
 
         # Get model output
@@ -369,7 +347,7 @@ class MaceModel(ModelInterface):
         if energy is not None:
             results["energy"] = energy.detach()
         else:
-            results["energy"] = torch.zeros(int(self.n_systems), device=self.device)
+            results["energy"] = torch.zeros(self.n_systems, device=self.device)
 
         # Process forces
         if self.compute_forces:

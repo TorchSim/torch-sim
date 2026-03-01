@@ -517,6 +517,8 @@ class BinningAutoBatcher[T: SimState]:
         ordered_final_states = batcher.restore_original_order(final_states)
     """
 
+    index_bins: list[list[int]]
+
     def __init__(
         self,
         model: ModelInterface,
@@ -619,11 +621,11 @@ class BinningAutoBatcher[T: SimState]:
             )
 
         self.index_to_scaler = dict(enumerate(self.memory_scalers))
-        self.index_bins = to_constant_volume_bins(
+        index_bins = to_constant_volume_bins(
             self.index_to_scaler, max_volume=self.max_memory_scaler
         )  # list[dict[original_index: int, memory_scale:float]]
         # Convert to list of lists of indices
-        self.index_bins = [list(batch.keys()) for batch in self.index_bins]
+        self.index_bins = [list(batch.keys()) for batch in index_bins]
         self.batched_states = [[batched[index_bin]] for index_bin in self.index_bins]
         self.current_state_bin = 0
 

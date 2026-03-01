@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from torch_sim.state import require_system_idx
 from torch_sim.units import MetalUnits
 
 
@@ -333,9 +334,7 @@ def system_wise_max_force[T: MDState | OptimState](state: T) -> torch.Tensor:
     Returns:
         torch.Tensor: Maximum forces per system
     """
-    system_idx = state.system_idx
-    if system_idx is None:
-        raise ValueError("system_idx is required for system_wise_max_force")
+    system_idx = require_system_idx(state.system_idx)
     system_wise_max_force = torch.zeros(
         state.n_systems, device=state.device, dtype=state.dtype
     )

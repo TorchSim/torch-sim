@@ -13,6 +13,7 @@ import torch_sim as ts
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
+from torch_sim.state import require_system_idx
 
 
 if TYPE_CHECKING:
@@ -205,13 +206,7 @@ class SevenNetModel(ModelInterface):
         sim_state = sim_state.clone()
 
         # Batched neighbor list using linked-cell algorithm with row-vector cell
-        system_idx = sim_state.system_idx
-        if system_idx is None:
-            system_idx = torch.zeros(
-                sim_state.positions.shape[0],
-                dtype=torch.long,
-                device=sim_state.device,
-            )
+        system_idx = require_system_idx(sim_state.system_idx)
         n_systems = int(system_idx.max().item()) + 1
         edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
             sim_state.positions,

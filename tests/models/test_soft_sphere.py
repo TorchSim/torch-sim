@@ -231,10 +231,8 @@ def test_model_dtype(dtype: torch.dtype) -> None:
 
 def test_multispecies_initialization_defaults() -> None:
     """Test initialization of multi-species model with defaults."""
-    # Create with minimal parameters
-    species = torch.tensor([0, 1], dtype=torch.long)
     dtype = torch.float32
-    model = ss.SoftSphereMultiModel(species=species, dtype=dtype)
+    model = ss.SoftSphereMultiModel(n_species=2, dtype=dtype)
 
     # Check matrices are created with defaults
     assert model.sigma_matrix.shape == (2, 2)
@@ -253,13 +251,12 @@ def test_multispecies_initialization_defaults() -> None:
 
 def test_multispecies_initialization_custom() -> None:
     """Test initialization of multi-species model with custom parameters."""
-    species = torch.tensor([0, 1], dtype=torch.long)
     sigma_matrix = torch.tensor([[1.0, 1.5], [1.5, 2.0]], dtype=torch.float64)
     epsilon_matrix = torch.tensor([[1.0, 0.5], [0.5, 1.5]], dtype=torch.float64)
     alpha_matrix = torch.tensor([[2.0, 3.0], [3.0, 4.0]], dtype=torch.float64)
 
     model = ss.SoftSphereMultiModel(
-        species=species,
+        n_species=2,
         sigma_matrix=sigma_matrix,
         epsilon_matrix=epsilon_matrix,
         alpha_matrix=alpha_matrix,
@@ -278,8 +275,6 @@ def test_multispecies_initialization_custom() -> None:
 
 def test_multispecies_matrix_validation() -> None:
     """Test validation of parameter matrices."""
-    species = torch.tensor([0, 1, 2], dtype=torch.long)  # 3 unique species
-
     # Create incorrect-sized matrices (2x2 instead of 3x3)
     sigma_matrix = torch.tensor([[1.0, 1.5], [1.5, 2.0]])
     epsilon_matrix = torch.tensor([[1.0, 0.5], [0.5, 1.5]])
@@ -287,7 +282,7 @@ def test_multispecies_matrix_validation() -> None:
     # Should raise ValueError due to matrix size mismatch
     with pytest.raises(ValueError, match="sigma_matrix must have shape"):
         ss.SoftSphereMultiModel(
-            species=species,
+            n_species=3,
             sigma_matrix=sigma_matrix,
             epsilon_matrix=epsilon_matrix,
         )
@@ -303,13 +298,11 @@ def test_multispecies_matrix_validation() -> None:
 )
 def test_matrix_symmetry_validation(matrix_name: str, matrix: torch.Tensor) -> None:
     """Test that parameter matrices are validated for symmetry."""
-    species = torch.tensor([0, 1], dtype=torch.long)
-
     # Create symmetric matrices for the other parameters
     symmetric_matrix = torch.tensor([[1.0, 1.5], [1.5, 2.0]])
 
     params = {
-        "species": species,
+        "n_species": 2,
         "sigma_matrix": symmetric_matrix,
         "epsilon_matrix": symmetric_matrix,
         "alpha_matrix": symmetric_matrix,
@@ -325,11 +318,9 @@ def test_matrix_symmetry_validation(matrix_name: str, matrix: torch.Tensor) -> N
 
 def test_multispecies_cutoff_default() -> None:
     """Test that the default cutoff is the maximum sigma value."""
-    # Create model with varying sigma values
-    species = torch.tensor([0, 1, 2], dtype=torch.long)
     sigma_matrix = torch.tensor([[1.0, 1.5, 2.0], [1.5, 2.0, 2.5], [2.0, 2.5, 3.0]])
 
-    model = ss.SoftSphereMultiModel(species=species, sigma_matrix=sigma_matrix)
+    model = ss.SoftSphereMultiModel(n_species=3, sigma_matrix=sigma_matrix)
 
     # Cutoff should default to max value in sigma_matrix
     assert model.cutoff.item() == 3.0
@@ -350,9 +341,7 @@ def test_multispecies_cutoff_default() -> None:
 )
 def test_multispecies_model_flags(*, flag_name: str, flag_value: bool) -> None:
     """Test flags of the SoftSphereMultiModel."""
-    species = torch.tensor([0, 1], dtype=torch.long)
-
-    model = ss.SoftSphereMultiModel(species=species, **{flag_name: flag_value})
+    model = ss.SoftSphereMultiModel(n_species=2, **{flag_name: flag_value})
 
     # For SoftSphereMultiModel, we don't need to convert attribute names
     # as it uses public attribute names for all flags
