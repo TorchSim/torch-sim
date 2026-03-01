@@ -17,7 +17,6 @@ Examples:
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import torch
 
@@ -41,30 +40,6 @@ class SwapMCState(SimState):
 
     energy: torch.Tensor
     last_permutation: torch.Tensor
-
-    if TYPE_CHECKING:
-        from torch_sim.constraints import Constraint
-
-        # Base SimState parameters (see SimState.__init__ in TYPE_CHECKING block)
-        # Subclasses should copy the base signature and add their own parameters
-        def __init__(  # noqa: D107
-            self,
-            *,
-            # Base SimState parameters
-            positions: torch.Tensor,
-            masses: torch.Tensor,
-            cell: torch.Tensor,
-            pbc: torch.Tensor | list[bool] | bool,
-            atomic_numbers: torch.Tensor,
-            charge: torch.Tensor | None = None,
-            spin: torch.Tensor | None = None,
-            system_idx: torch.Tensor | None = None,
-            _constraints: list[Constraint] | None = None,
-            _rng: int | torch.Generator | None = None,
-            # SwapMCState-specific parameters
-            energy: torch.Tensor,
-            last_permutation: torch.Tensor,
-        ) -> None: ...
 
     _atom_attributes = SimState._atom_attributes | {"last_permutation"}  # noqa: SLF001
     _system_attributes = SimState._system_attributes | {"energy"}  # noqa: SLF001
