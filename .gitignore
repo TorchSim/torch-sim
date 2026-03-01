@@ -43,3 +43,6 @@ uv.lock
 
 # duecredit
 .duecredit.p
+
+# ignore local users potential agent files/plans
+.agents/
