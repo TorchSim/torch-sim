@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from torch_sim.state import SimState
 
 
-MemoryScaling = Literal["n_atoms_x_density", "n_atoms"]
+MemoryScaling = Literal["n_atoms_x_density", "n_atoms", "n_edges"]
 StateKey = Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "system_idx"]
 StateDict = dict[StateKey, torch.Tensor]
 
