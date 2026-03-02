@@ -37,7 +37,7 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import SimState, ensure_sim_state, pbc_to_tensor
+from torch_sim.state import SimState, ensure_sim_state
 from torch_sim.transforms import compute_cell_shifts, pbc_wrap_batched
 
 
@@ -318,7 +318,7 @@ def _prepare_pairs(
 
     positions = sim_state.positions
     row_cell = sim_state.row_vector_cell
-    pbc = pbc_to_tensor(sim_state.pbc, sim_state.device)
+    pbc = sim_state.pbc
     atomic_numbers = sim_state.atomic_numbers
 
     system_idx = (
