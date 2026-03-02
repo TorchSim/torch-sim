@@ -44,4 +44,4 @@ repos:
         language: python
         types: [python]
         pass_filenames: false
-        additional_dependencies: [ty, torch, ase, mace-torch]
+        additional_dependencies: [ty, torch, ase, mace-torch>=0.3.15]

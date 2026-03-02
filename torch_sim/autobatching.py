@@ -20,6 +20,7 @@ Notes:
     model architectures and GPU configurations.
 """
 
+import logging
 from collections.abc import Callable, Iterator, Sequence
 from itertools import chain
 from typing import Any, get_args
@@ -30,6 +31,9 @@ import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 from torch_sim.typing import MemoryScaling
+
+
+logger = logging.getLogger(__name__)
 
 
 def to_constant_volume_bins(  # noqa: C901, PLR0915
@@ -606,6 +610,7 @@ class BinningAutoBatcher[T: SimState]:
                 oom_error_message=self.oom_error_message,
             )
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
+            logger.debug("Estimated max memory scaler: %.3g", self.max_memory_scaler)
 
         # verify that no systems are too large
         max_metric_value = max(self.memory_scalers)
@@ -627,6 +632,12 @@ class BinningAutoBatcher[T: SimState]:
         self.batched_states = [[batched[index_bin]] for index_bin in self.index_bins]
         self.current_state_bin = 0
 
+        logger.info(
+            "BinningAutoBatcher: %d systems → %d batch(es), max_memory_scaler=%.3g",
+            len(self.memory_scalers),
+            len(self.index_bins),
+            self.max_memory_scaler,
+        )
         return self.max_memory_scaler
 
     def next_batch(self) -> tuple[T | None, list[int]]:
@@ -992,7 +1003,15 @@ class InFlightAutoBatcher[T: SimState]:
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
             newer_states = self._get_next_states()
             all_states.extend(newer_states)
+            logger.debug(
+                "InFlightAutoBatcher: estimated max_memory_scaler=%.3g",
+                self.max_memory_scaler,
+            )
 
+        logger.info(
+            "InFlightAutoBatcher: starting with %d system(s) in first batch",
+            len(all_states),
+        )
         return ts.concatenate_states(all_states)
 
     def next_batch(  # noqa: C901
