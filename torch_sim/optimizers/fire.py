@@ -72,11 +72,13 @@ def fire_init(
     # Setup initial parameters
     dt_start_t = torch.as_tensor(dt_start, device=device, dtype=dtype)
     if dt_start_t.ndim == 0:
-        dt_start_t = dt_start_t.expand(n_systems)
+        # NOTE: clone needed as this is overwritten/assigned later by a masked_fill
+        dt_start_t = dt_start_t.expand(n_systems).clone()
 
     alpha_start_t = torch.as_tensor(alpha_start, device=device, dtype=dtype)
     if alpha_start_t.ndim == 0:
-        alpha_start_t = alpha_start_t.expand(n_systems)
+        # NOTE: clone needed as this is overwritten/assigned later by a masked_fill
+        alpha_start_t = alpha_start_t.expand(n_systems).clone()
 
     # FIRE-specific additional attributes
     fire_attrs = {

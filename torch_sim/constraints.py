@@ -10,6 +10,7 @@ and positions during MD simulations.
 
 from __future__ import annotations
 
+import logging
 import math
 import warnings
 from abc import ABC, abstractmethod
@@ -17,6 +18,8 @@ from typing import TYPE_CHECKING, Self
 
 import torch
 
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from torch_sim.state import SimState
@@ -694,22 +697,22 @@ def validate_constraints(constraints: list[Constraint], state: SimState) -> None
         all_indices = torch.cat([c.atom_idx for c in indexed_constraints])
         unique_indices = torch.unique(all_indices)
         if len(unique_indices) < len(all_indices):
-            warnings.warn(
+            msg = (
                 "Multiple constraints are acting on the same atoms. "
-                "This may lead to unexpected behavior.",
-                UserWarning,
-                stacklevel=3,
+                "This may lead to unexpected behavior."
             )
+            warnings.warn(msg, UserWarning, stacklevel=3)
+            logger.warning(msg)
 
     # Warn about COM constraint with fixed atoms
     if has_com_constraint and indexed_constraints:
-        warnings.warn(
+        msg = (
             "Using FixCom together with other constraints may lead to "
             "unexpected behavior. The center of mass constraint is applied "
-            "to all atoms, including those that may be constrained by other means.",
-            UserWarning,
-            stacklevel=3,
+            "to all atoms, including those that may be constrained by other means."
         )
+        warnings.warn(msg, UserWarning, stacklevel=3)
+        logger.warning(msg)
 
 
 class FixSymmetry(SystemConstraint):
