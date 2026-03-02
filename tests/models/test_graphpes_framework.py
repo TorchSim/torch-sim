@@ -21,8 +21,8 @@ try:
     from torch_sim.models.graphpes_framework import GraphPESWrapper
 except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
     pytest.skip(
-        f"graph-pes not installed: {traceback.format_exc()}",
-        allow_module_level=True,  # ty:ignore[too-many-positional-arguments]
+        f"graph-pes not installed: {traceback.format_exc()}",  # ty:ignore[too-many-positional-arguments]
+        allow_module_level=True,
     )
 
 DTYPE = torch.float32
