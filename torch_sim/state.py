@@ -16,7 +16,7 @@ import torch
 from torch._prims_common import DeviceLikeType
 
 import torch_sim as ts
-from torch_sim.typing import PRNGLike, StateDict, StateLike
+from torch_sim.typing import PRNGLike, StateLike
 
 
 if TYPE_CHECKING:
@@ -60,13 +60,6 @@ def require_system_idx(system_idx: torch.Tensor | None) -> torch.Tensor:
     if system_idx is None:
         raise RuntimeError("system_idx is set by SimState.__post_init__")
     return system_idx
-
-
-def ensure_sim_state(state: "SimState | StateDict") -> "SimState":
-    """Return a SimState from either SimState or StateDict input."""
-    if isinstance(state, SimState):
-        return state
-    return SimState(**state)
 
 
 @dataclass(kw_only=True)

@@ -32,7 +32,7 @@ import torch
 
 import torch_sim as ts
 from torch_sim.state import SimState
-from torch_sim.typing import MemoryScaling, StateDict
+from torch_sim.typing import MemoryScaling
 
 
 class ModelInterface(torch.nn.Module, ABC):
@@ -133,7 +133,7 @@ class ModelInterface(torch.nn.Module, ABC):
         return getattr(self, "_memory_scales_with", "n_atoms_x_density")
 
     @abstractmethod
-    def forward(self, state: SimState | StateDict, **kwargs) -> dict[str, torch.Tensor]:
+    def forward(self, state: SimState, **kwargs) -> dict[str, torch.Tensor]:
         """Calculate energies, forces, and stresses for a atomistic system.
 
         This is the main computational method that all model implementations must provide.
@@ -141,13 +141,11 @@ class ModelInterface(torch.nn.Module, ABC):
         containing computed physical properties.
 
         Args:
-            state (SimState | StateDict): Simulation state or state dictionary. The state
-                dictionary is dependent on the model but typically must contain the
-                following keys:
-                - "positions": Atomic positions with shape [n_atoms, 3]
-                - "cell": Unit cell vectors with shape [n_systems, 3, 3]
-                - "system_idx": System indices for each atom with shape [n_atoms]
-                - "atomic_numbers": Atomic numbers with shape [n_atoms] (optional)
+            state (SimState): Simulation state containing:
+                - positions: Atomic positions with shape [n_atoms, 3]
+                - cell: Unit cell vectors with shape [n_systems, 3, 3]
+                - system_idx: System indices for each atom with shape [n_atoms]
+                - atomic_numbers: Atomic numbers with shape [n_atoms] (optional)
             **kwargs: Additional model-specific parameters.
 
         Returns:

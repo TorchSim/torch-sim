@@ -23,8 +23,7 @@ from torch_sim.optimizers.cell_filters import (
     frechet_cell_filter_init,
 )
 from torch_sim.optimizers.state import LBFGSState
-from torch_sim.state import SimState, ensure_sim_state
-from torch_sim.typing import StateDict
+from torch_sim.state import SimState
 
 
 if TYPE_CHECKING:
@@ -112,7 +111,7 @@ def _per_system_vdot(
 
 
 def lbfgs_init(
-    state: SimState | StateDict,
+    state: SimState,
     model: "ModelInterface",
     *,
     step_size: float | torch.Tensor = 0.1,
@@ -133,7 +132,7 @@ def lbfgs_init(
         M_ext = M + 3 (extended with cell DOFs per system)
 
     Args:
-        state: Input state as SimState object or state parameter dict
+        state: Input SimState
         model: Model that computes energies, forces, and optionally stress
         step_size: Fixed per-system step length (damping factor).
             If using ASE mode (fixed alpha), set this to 1.0 (or your damping).
@@ -161,7 +160,6 @@ def lbfgs_init(
     """
     device, dtype = model.device, model.dtype
 
-    state = ensure_sim_state(state)
     n_systems = state.n_systems  # S
 
     # Compute max atoms per system for per-system history storage

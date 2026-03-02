@@ -48,5 +48,3 @@ StateLike = Union[
 PRNGLike = int | torch.Generator | None
 
 MemoryScaling = Literal["n_atoms_x_density", "n_atoms"]
-StateKey = Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "system_idx"]
-StateDict = dict

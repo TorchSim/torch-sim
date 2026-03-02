@@ -8,8 +8,7 @@ import torch_sim as ts
 import torch_sim.math as tsm
 from torch_sim._duecredit import dcite
 from torch_sim.optimizers import CellFireState, cell_filters
-from torch_sim.state import SimState, ensure_sim_state
-from torch_sim.typing import StateDict
+from torch_sim.state import SimState
 
 
 if TYPE_CHECKING:
@@ -20,7 +19,7 @@ if TYPE_CHECKING:
 
 @dcite("10.1103/PhysRevLett.97.170201")
 def fire_init(
-    state: SimState | StateDict,
+    state: SimState,
     model: "ModelInterface",
     *,
     dt_start: float | torch.Tensor = 0.1,
@@ -36,7 +35,7 @@ def fire_init(
 
     Args:
         model: Model that computes energies, forces, and optionally stress
-        state: Input state as SimState object or state parameter dict
+        state: Input SimState
         dt_start: Initial timestep per system
         alpha_start: Initial mixing parameter per system
         fire_flavor: Optimization flavor ("vv_fire" or "ase_fire")
@@ -59,7 +58,6 @@ def fire_init(
 
     device: torch.device = model.device
     dtype: torch.dtype = model.dtype
-    state = ensure_sim_state(state)
 
     n_systems = state.n_systems
 

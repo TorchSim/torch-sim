@@ -31,8 +31,6 @@ import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import ensure_sim_state
-from torch_sim.typing import StateDict
 
 
 DEFAULT_SIGMA = 1.0
@@ -227,9 +225,7 @@ class MorseModel(ModelInterface):
         self.epsilon = torch.as_tensor(epsilon, dtype=self.dtype, device=self.device)
         self.alpha = torch.as_tensor(alpha, dtype=self.dtype, device=self.device)
 
-    def unbatched_forward(
-        self, state: ts.SimState | StateDict
-    ) -> dict[str, torch.Tensor]:
+    def unbatched_forward(self, state: ts.SimState) -> dict[str, torch.Tensor]:
         """Compute Morse potential properties for a single unbatched system.
 
         Internal implementation that processes a single, non-batched simulation state.
@@ -237,9 +233,8 @@ class MorseModel(ModelInterface):
         neighbor list construction, distance calculations, and property computation.
 
         Args:
-            state (SimState | StateDict): Single, non-batched simulation state or
-                equivalent dictionary containing atomic positions, cell vectors,
-                and other system information.
+            state (SimState): Single, non-batched simulation state containing atomic
+                positions, cell vectors, and other system information.
 
         Returns:
             dict[str, torch.Tensor]: Computed properties:
@@ -256,7 +251,6 @@ class MorseModel(ModelInterface):
             This method can work with both neighbor list and full pairwise calculations.
             In both cases, interactions are truncated at the cutoff distance.
         """
-        state = ensure_sim_state(state)
         positions = state.positions
         cell = state.row_vector_cell
         cell = cell.squeeze()
@@ -351,18 +345,15 @@ class MorseModel(ModelInterface):
 
         return results
 
-    def forward(
-        self, state: ts.SimState | StateDict, **_kwargs: object
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState, **_kwargs: object) -> dict[str, torch.Tensor]:
         """Compute Morse potential energies, forces, and stresses for a system.
 
         Main entry point for Morse potential calculations that handles batched states
         by dispatching each batch to the unbatched implementation and combining results.
 
         Args:
-            state (SimState | StateDict): Input state containing atomic positions,
-                cell vectors, and other system information. Can be a SimState object
-                or a dictionary with the same keys.
+            state (SimState): Input state containing atomic positions, cell vectors,
+                and other system information.
             **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
@@ -387,8 +378,6 @@ class MorseModel(ModelInterface):
             forces = results["forces"]  # Shape: [n_atoms, 3]
             ```
         """
-        state = ensure_sim_state(state)
-
         outputs = [self.unbatched_forward(state[i]) for i in range(state.n_systems)]
         properties = outputs[0]
 

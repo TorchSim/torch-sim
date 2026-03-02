@@ -30,11 +30,10 @@ from typing import Any
 import torch
 
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, ensure_sim_state
 
 
 if typing.TYPE_CHECKING:
-    from torch_sim.typing import StateDict
+    from torch_sim.state import SimState
 
 
 def _validate_fairchem_version() -> None:
@@ -363,7 +362,7 @@ class FairChemV1Model(ModelInterface):
             print("Unable to load checkpoint!")
 
     def forward(  # noqa: C901
-        self, state: SimState | StateDict, **_kwargs: object
+        self, state: SimState, **_kwargs: object
     ) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
@@ -371,9 +370,8 @@ class FairChemV1Model(ModelInterface):
         such as energy, forces, and stresses.
 
         Args:
-            state (SimState | StateDict): State object containing positions, cells,
-                atomic numbers, and other system information. If a dictionary is provided,
-                it will be converted to a SimState.
+            state (SimState): State object containing positions, cells, atomic numbers,
+                and other system information.
             **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
@@ -387,7 +385,7 @@ class FairChemV1Model(ModelInterface):
             The state is automatically transferred to the model's device if needed.
             All output tensors are detached from the computation graph.
         """
-        sim_state = ensure_sim_state(state)
+        sim_state = state
 
         if sim_state.device != self._device:
             sim_state = sim_state.to(self._device)

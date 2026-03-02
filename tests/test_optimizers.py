@@ -1,6 +1,5 @@
 import copy
 from collections.abc import Callable
-from dataclasses import fields
 from functools import partial
 from typing import Any, get_args
 
@@ -572,13 +571,9 @@ def test_simple_optimizer_init_with_dict(
     ar_supercell_sim_state: SimState,
     lj_model: ModelInterface,
 ) -> None:
-    """Test simple optimizer init_fn with a SimState dictionary."""
-    state_dict = {
-        field.name: getattr(ar_supercell_sim_state, field.name)
-        for field in fields(ar_supercell_sim_state)
-    }
+    """Test simple optimizer init_fn with a SimState."""
     init_fn, _ = ts.OPTIM_REGISTRY[optimizer_fn]
-    opt_state = init_fn(model=lj_model, state=state_dict)
+    opt_state = init_fn(model=lj_model, state=ar_supercell_sim_state)
     assert isinstance(opt_state, expected_state_type)
     assert opt_state.energy is not None
     assert opt_state.forces is not None
@@ -822,15 +817,11 @@ def test_cell_optimizer_init_with_dict_and_cell_factor(
     ar_supercell_sim_state: SimState,
     lj_model: ModelInterface,
 ) -> None:
-    """Test cell optimizer init_fn with dict state and explicit cell_factor."""
-    state_dict = {
-        f.name: getattr(ar_supercell_sim_state, f.name)
-        for f in fields(ar_supercell_sim_state)
-    }
+    """Test cell optimizer init_fn with explicit cell_factor."""
     init_fn, _ = ts.OPTIM_REGISTRY[optimizer_fn]
     opt_state = init_fn(
         model=lj_model,
-        state=state_dict,
+        state=ar_supercell_sim_state,
         cell_factor=cell_factor_val,
         cell_filter=cell_filter,
     )

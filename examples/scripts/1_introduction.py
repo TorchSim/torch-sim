@@ -16,6 +16,7 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
+import torch_sim as ts
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.models.mace import MaceModel, MaceUrls
 
@@ -90,8 +91,8 @@ lj_model = LennardJonesModel(
 # Masses for Argon (39.948 amu)
 masses = torch.full((positions.shape[0],), 39.948, device=device, dtype=dtype)
 
-# State dict
-state = dict(
+# SimState
+state = ts.SimState(
     positions=positions,
     masses=masses,
     cell=cell.unsqueeze(0),
@@ -174,7 +175,7 @@ masses_si = torch.full((positions.shape[0],), 28.085, device=device, dtype=dtype
 
 # Now we can pass them to the model
 results = batched_model(
-    dict(
+    ts.SimState(
         positions=positions,
         masses=masses_si,
         cell=cell,

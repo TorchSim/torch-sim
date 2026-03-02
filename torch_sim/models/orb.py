@@ -25,7 +25,6 @@ import torch
 
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, ensure_sim_state
 
 
 try:
@@ -55,7 +54,7 @@ if typing.TYPE_CHECKING:
     from orb_models.forcefield.direct_regressor import DirectForcefieldRegressor
     from orb_models.forcefield.featurization_utilities import EdgeCreationMethod
 
-    from torch_sim.typing import StateDict
+    from torch_sim.state import SimState
 
 
 def cell_to_cellpar(
@@ -397,18 +396,15 @@ class OrbModel(ModelInterface):
         if self.conservative:
             self.implemented_properties.extend(["forces", "stress"])
 
-    def forward(
-        self, state: SimState | StateDict, **_kwargs: object
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: SimState, **_kwargs: object) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by the model,
         such as energy, forces, and stresses.
 
         Args:
-            state (SimState | StateDict): State object containing positions, cells,
-                atomic numbers, and other system information. If a dictionary is provided,
-                it will be converted to a SimState.
+            state (SimState): State object containing positions, cells, atomic numbers,
+                and other system information.
             **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
@@ -422,7 +418,7 @@ class OrbModel(ModelInterface):
             The state is automatically transferred to the model's device if needed.
             All output tensors are detached from the computation graph.
         """
-        sim_state = ensure_sim_state(state)
+        sim_state = state
 
         if sim_state.device != self._device:
             sim_state = sim_state.to(self._device)

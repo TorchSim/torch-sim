@@ -18,7 +18,6 @@ from typing import Any
 import torch
 
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, ensure_sim_state
 
 
 try:
@@ -45,7 +44,7 @@ except ImportError as exc:
 if typing.TYPE_CHECKING:
     from collections.abc import Callable
 
-    from torch_sim.typing import StateDict
+    from torch_sim.state import SimState
 
 
 class FairChemModel(ModelInterface):
@@ -169,15 +168,12 @@ class FairChemModel(ModelInterface):
         """Return the device where the model is located."""
         return self._device
 
-    def forward(
-        self, state: SimState | StateDict, **_kwargs: object
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: SimState, **_kwargs: object) -> dict[str, torch.Tensor]:
         """Compute energies, forces, and other properties.
 
         Args:
-            state (SimState | StateDict): State object containing positions, cells,
-                atomic numbers, and other system information. If a dictionary is provided,
-                it will be converted to a SimState.
+            state (SimState): State object containing positions, cells, atomic numbers,
+                and other system information.
             **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
@@ -186,7 +182,7 @@ class FairChemModel(ModelInterface):
                 - forces (torch.Tensor): Forces with shape [n_atoms, 3]
                 - stress (torch.Tensor): Stress tensor with shape [batch_size, 3, 3]
         """
-        sim_state = ensure_sim_state(state)
+        sim_state = state
 
         if sim_state.device != self._device:
             sim_state = sim_state.to(self._device)

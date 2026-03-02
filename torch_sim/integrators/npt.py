@@ -19,8 +19,7 @@ from torch_sim.integrators.md import (
 )
 from torch_sim.integrators.nvt import _vrescale_update
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, ensure_sim_state
-from torch_sim.typing import StateDict
+from torch_sim.state import SimState
 
 
 def _randn_for_state(state: MDState, shape: torch.Size | tuple[int, ...]) -> torch.Tensor:
@@ -502,7 +501,7 @@ def _compute_cell_force(
 
 
 def npt_langevin_init(
-    state: SimState | StateDict,
+    state: SimState,
     model: ModelInterface,
     *,
     kT: float | torch.Tensor,
@@ -524,8 +523,7 @@ def npt_langevin_init(
     Args:
         model (ModelInterface): Neural network model that computes energies, forces,
             and stress. Must return a dict with 'energy', 'forces', and 'stress' keys.
-        state (MDState | StateDict): Either a MDState object or a dictionary
-            containing positions, masses, cell, pbc
+        state (SimState): SimState containing positions, masses, cell, pbc
         kT (torch.Tensor): Target temperature in energy units, either scalar or
             with shape [n_systems]
         dt (torch.Tensor): Integration timestep, either scalar or shape [n_systems]
@@ -560,8 +558,6 @@ def npt_langevin_init(
     b_tau = torch.as_tensor(b_tau, device=device, dtype=dtype)
     kT = torch.as_tensor(kT, device=device, dtype=dtype)
     dt = torch.as_tensor(dt, device=device, dtype=dtype)
-
-    state = ensure_sim_state(state)
 
     if alpha.ndim == 0:
         alpha = alpha.expand(state.n_systems)
@@ -1280,7 +1276,7 @@ def _npt_nose_hoover_inner_step(
 
 
 def npt_nose_hoover_init(
-    state: SimState | StateDict,
+    state: SimState,
     model: ModelInterface,
     *,
     kT: float | torch.Tensor,
@@ -1303,7 +1299,7 @@ def npt_nose_hoover_init(
 
     Args:
         model (ModelInterface): Model to compute forces and energies
-        state: Initial system state as MDState or dict containing positions, masses,
+        state: Initial system state as SimState containing positions, masses,
             cell, and PBC information
         kT: Target temperature in energy units
         external_pressure: Target external pressure
@@ -1335,7 +1331,6 @@ def npt_nose_hoover_init(
         - Cell dynamics use logarithmic coordinates for volume updates
         - All cell properties are properly initialized with batch dimensions
     """
-    state = ensure_sim_state(state)
     device, dtype = state.device, state.dtype
     dt_tensor = torch.as_tensor(dt, device=device, dtype=dtype)
     kT_tensor = torch.as_tensor(kT, device=device, dtype=dtype)
@@ -2301,7 +2296,7 @@ def npt_crescale_isotropic_step(
 
 
 def npt_crescale_init(
-    state: SimState | StateDict,
+    state: SimState,
     model: ModelInterface,
     *,
     kT: float | torch.Tensor,
@@ -2321,7 +2316,7 @@ def npt_crescale_init(
     To seed the RNG set ``state.rng = seed`` before calling.
 
     Args:
-        state: Initial system state as MDState or dict containing positions, masses,
+        state: Initial system state as SimState containing positions, masses,
             cell, and PBC information
         model (ModelInterface): Model to compute forces and energies
         kT: Target temperature in energy units
@@ -2330,7 +2325,6 @@ def npt_crescale_init(
         isothermal_compressibility: Isothermal compressibility of the system.
     """
     device, dtype = model.device, model.dtype
-    state = ensure_sim_state(state)
 
     # Convert all parameters to tensors with correct device and dtype
     dt = torch.as_tensor(dt, device=device, dtype=dtype)

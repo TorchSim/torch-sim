@@ -23,8 +23,6 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import ensure_sim_state
-from torch_sim.typing import StateDict
 
 
 try:
@@ -172,9 +170,7 @@ class GraphPESWrapper(ModelInterface):
         if isinstance(cutoff_val, torch.Tensor) and cutoff_val.item() < 0.5:
             self._memory_scales_with = "n_atoms"
 
-    def forward(
-        self, state: ts.SimState | StateDict, **_kwargs: object
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState, **_kwargs: object) -> dict[str, torch.Tensor]:
         """Forward pass for the GraphPESWrapper.
 
         Args:
@@ -185,8 +181,6 @@ class GraphPESWrapper(ModelInterface):
             Dictionary containing the computed energies, forces, and stresses
             (where applicable)
         """
-        state = ensure_sim_state(state)
-
         cutoff = self._gp_model.cutoff
         if not isinstance(cutoff, torch.Tensor):
             raise TypeError("GraphPES model cutoff must be a tensor")

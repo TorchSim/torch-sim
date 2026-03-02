@@ -32,8 +32,6 @@ import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import ensure_sim_state
-from torch_sim.typing import StateDict
 
 
 DEFAULT_SIGMA = 1.0
@@ -251,8 +249,6 @@ class UnbatchedLennardJonesModel(ModelInterface):
         Notes:
             Neighbor lists are always used to construct interacting pairs.
         """
-        state = ensure_sim_state(state)
-
         positions = state.positions
         cell = state.row_vector_cell
         cell = cell.squeeze()
@@ -344,18 +340,15 @@ class UnbatchedLennardJonesModel(ModelInterface):
 
         return results
 
-    def forward(
-        self, state: ts.SimState | StateDict, **_kwargs: object
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState, **_kwargs: object) -> dict[str, torch.Tensor]:
         """Compute Lennard-Jones energies, forces, and stresses for a system.
 
         Main entry point for Lennard-Jones calculations that handles batched states by
         dispatching each system to the unbatched implementation and combining results.
 
         Args:
-            state (SimState | StateDict): Input state containing atomic positions,
-                cell vectors, and other system information. Can be a SimState object
-                or a dictionary with the same keys.
+            state (SimState): Input state containing atomic positions, cell vectors,
+                and other system information.
             **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
@@ -385,19 +378,7 @@ class UnbatchedLennardJonesModel(ModelInterface):
             energies = results["energies"]  # Shape: [n_atoms]
             stresses = results["stresses"]  # Shape: [n_atoms, 3, 3]
         """
-        if isinstance(state, ts.SimState):
-            sim_state = state
-        else:
-            state_dict: StateDict = state
-            positions = state_dict["positions"]
-            sim_state = ts.SimState(
-                positions=positions,
-                masses=torch.ones_like(positions),
-                cell=state_dict["cell"],
-                pbc=state_dict["pbc"],
-                atomic_numbers=state_dict["atomic_numbers"],
-                system_idx=state_dict.get("system_idx"),
-            )
+        sim_state = state
 
         if sim_state.system_idx is None and sim_state.cell.shape[0] > 1:
             raise ValueError("System can only be inferred for batch size 1.")
@@ -430,22 +411,10 @@ class LennardJonesModel(UnbatchedLennardJonesModel):
     """
 
     def forward(  # noqa: PLR0915
-        self, state: ts.SimState | StateDict, **_kwargs: object
+        self, state: ts.SimState, **_kwargs: object
     ) -> dict[str, torch.Tensor]:
         """Compute Lennard-Jones properties with batched tensor operations."""
-        if isinstance(state, ts.SimState):
-            sim_state = state
-        else:
-            state_dict: StateDict = state
-            positions = state_dict["positions"]
-            sim_state = ts.SimState(
-                positions=positions,
-                masses=torch.ones_like(positions),
-                cell=state_dict["cell"],
-                pbc=state_dict["pbc"],
-                atomic_numbers=state_dict["atomic_numbers"],
-                system_idx=state_dict.get("system_idx"),
-            )
+        sim_state = state
 
         if sim_state.system_idx is None and sim_state.cell.shape[0] > 1:
             raise ValueError("System can only be inferred for batch size 1.")
