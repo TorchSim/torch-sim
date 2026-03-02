@@ -30,7 +30,7 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import SimState, pbc_to_tensor, require_system_idx
+from torch_sim.state import SimState
 from torch_sim.typing import MemoryScaling
 
 
@@ -342,9 +342,9 @@ def _n_edges_scalers(state: SimState, cutoff: float) -> list[float]:
     _, system_mapping, _ = torchsim_nl(
         positions=state.positions,
         cell=state.cell,
-        pbc=pbc_to_tensor(state.pbc, state.device),
+        pbc=state.pbc,
         cutoff=cutoff_tensor,
-        system_idx=require_system_idx(state.system_idx),
+        system_idx=state.system_idx,
     )
     return system_mapping.bincount(minlength=state.n_systems).float().tolist()
 
@@ -557,6 +557,8 @@ class BinningAutoBatcher[T: SimState]:
         ordered_final_states = batcher.restore_original_order(final_states)
     """
 
+    index_bins: list[list[int]]
+
     def __init__(
         self,
         model: ModelInterface,
@@ -669,11 +671,11 @@ class BinningAutoBatcher[T: SimState]:
             )
 
         self.index_to_scaler = dict(enumerate(self.memory_scalers))
-        self.index_bins = to_constant_volume_bins(
+        index_bins = to_constant_volume_bins(
             self.index_to_scaler, max_volume=self.max_memory_scaler
         )  # list[dict[original_index: int, memory_scale:float]]
         # Convert to list of lists of indices
-        self.index_bins = [list(batch.keys()) for batch in self.index_bins]
+        self.index_bins = [list(batch.keys()) for batch in index_bins]
         self.batched_states = [[batched[index_bin]] for index_bin in self.index_bins]
         self.current_state_bin = 0
 

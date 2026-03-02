@@ -508,11 +508,7 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
         Returns:
             Tuple of (rescaled momenta, updated chain state)
         """
-        dt_tensor = (
-            dt
-            if isinstance(dt, torch.Tensor)
-            else torch.tensor(dt, device=P.device, dtype=P.dtype)
-        )
+        dt_tensor = torch.as_tensor(dt, device=P.device, dtype=P.dtype)
         if chain_steps == 1 and sy_steps == 1:
             P, state, _ = substep_fn(dt_tensor, P, state, kT, system_idx)
             return P, state

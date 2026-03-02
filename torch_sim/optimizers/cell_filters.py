@@ -13,10 +13,10 @@ from typing import Any
 
 import torch
 
-import torch_sim.math as fm
+import torch_sim.math as tsm
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers.state import BFGSState, FireState, LBFGSState, OptimState
-from torch_sim.state import SimState, require_system_idx
+from torch_sim.state import SimState
 
 
 def _setup_cell_factor(
@@ -30,7 +30,7 @@ def _setup_cell_factor(
 
     if cell_factor is None:
         # Count atoms per system
-        _, counts = torch.unique(require_system_idx(state.system_idx), return_counts=True)
+        _, counts = torch.unique(state.system_idx, return_counts=True)
         cell_factor_tensor = counts.to(dtype=dtype)
     else:
         cell_factor_tensor = torch.as_tensor(cell_factor, device=device, dtype=dtype)
@@ -55,8 +55,7 @@ def _setup_pressure(
 
 def _compute_cell_masses(state: SimState) -> torch.Tensor:
     """Compute cell masses by summing atomic masses per system."""
-    system_idx = require_system_idx(state.system_idx)
-    system_counts = torch.bincount(system_idx)
+    system_counts = torch.bincount(state.system_idx)
     cell_masses = torch.segment_reduce(state.masses, reduce="sum", lengths=system_counts)
     return cell_masses.unsqueeze(-1).expand(-1, 3)
 
@@ -130,7 +129,7 @@ def _frechet_cell_forces(
     # Batch Frechet derivatives over systems and directions
     A_batch = deform_grad_log.unsqueeze(1).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
     E_batch = directions.unsqueeze(0).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
-    _, expm_derivs_batch = fm.expm_frechet(A_batch, E_batch, method=frechet_method)
+    _, expm_derivs_batch = tsm.expm_frechet(A_batch, E_batch, method=frechet_method)
     expm_derivs = expm_derivs_batch.reshape(n_systems, 9, 3, 3)
 
     # Contract Frechet derivatives with the cell gradient
@@ -334,7 +333,7 @@ def compute_cell_forces[T: AnyCellState](
         )
 
         # Map gradient back to log-space via Frechet derivative of matrix exp
-        deform_grad_log = fm.matrix_log_33(
+        deform_grad_log = tsm.matrix_log_33(
             cur_deform_grad, sim_dtype=cur_deform_grad.dtype
         )
         frechet_method = getattr(state, "frechet_method", None)

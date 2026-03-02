@@ -17,9 +17,8 @@ from typing import Any
 
 import torch
 
-import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import pbc_to_tensor
+from torch_sim.state import SimState, ensure_sim_state
 
 
 try:
@@ -171,7 +170,7 @@ class FairChemModel(ModelInterface):
         return self._device
 
     def forward(
-        self, state: ts.SimState | StateDict, **_kwargs: object
+        self, state: SimState | StateDict, **_kwargs: object
     ) -> dict[str, torch.Tensor]:
         """Compute energies, forces, and other properties.
 
@@ -187,37 +186,22 @@ class FairChemModel(ModelInterface):
                 - forces (torch.Tensor): Forces with shape [n_atoms, 3]
                 - stress (torch.Tensor): Stress tensor with shape [batch_size, 3, 3]
         """
-        if isinstance(state, ts.SimState):
-            sim_state = state
-        else:
-            state_dict: StateDict = state
-            sim_state = ts.SimState(
-                positions=state_dict["positions"],
-                masses=torch.ones_like(state_dict["positions"]),
-                cell=state_dict["cell"],
-                pbc=state_dict["pbc"],
-                atomic_numbers=state_dict["atomic_numbers"],
-                system_idx=state_dict.get("system_idx"),
-            )
+        sim_state = ensure_sim_state(state)
 
         if sim_state.device != self._device:
             sim_state = sim_state.to(self._device)
 
         # Ensure system_idx has integer dtype (SimState guarantees presence)
-        system_idx = sim_state.system_idx
-        if system_idx is None:
-            raise ValueError("SimState must have system_idx for FairChemModel")
-        if system_idx.dtype != torch.int64:
-            sim_state.system_idx = system_idx.to(dtype=torch.int64)
-            system_idx = sim_state.system_idx
+        if sim_state.system_idx.dtype != torch.int64:
+            sim_state.system_idx = sim_state.system_idx.to(dtype=torch.int64)
 
         # Convert SimState to AtomicData objects for efficient batch processing
         from ase import Atoms
 
-        n_atoms = torch.bincount(system_idx)
+        n_atoms = torch.bincount(sim_state.system_idx)
         atomic_data_list = []
 
-        pbc_np = pbc_to_tensor(sim_state.pbc, sim_state.device).cpu().numpy()
+        pbc_np = sim_state.pbc.detach().cpu().numpy()
 
         for idx, (n, c) in enumerate(
             zip(n_atoms, torch.cumsum(n_atoms, dim=0), strict=False)
@@ -226,7 +210,7 @@ class FairChemModel(ModelInterface):
             positions = sim_state.positions[c - n : c].detach().cpu().numpy()
             atomic_nums = sim_state.atomic_numbers[c - n : c].detach().cpu().numpy()
             cell = (
-                sim_state.row_vector_cell[idx].cpu().numpy()
+                sim_state.row_vector_cell[idx].detach().cpu().numpy()
                 if sim_state.row_vector_cell is not None
                 else None
             )

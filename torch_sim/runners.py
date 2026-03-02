@@ -524,7 +524,7 @@ def generate_force_convergence_fn[T: MDState | FireState](
 
 def generate_energy_convergence_fn[T: MDState | OptimState](
     energy_tol: float = 1e-3,
-) -> Callable[[T, torch.Tensor | None], torch.Tensor]:
+) -> Callable[[T, torch.Tensor], torch.Tensor]:
     """Generate an energy-based convergence function for the convergence_fn argument
     of the optimize function.
 
@@ -536,15 +536,13 @@ def generate_energy_convergence_fn[T: MDState | OptimState](
             a state and last energy and returns a systemwise boolean function.
     """
 
-    def convergence_fn(state: T, last_energy: torch.Tensor | None = None) -> torch.Tensor:
+    def convergence_fn(state: T, last_energy: torch.Tensor) -> torch.Tensor:
         """Check if the system has converged.
 
         Returns:
             torch.Tensor: Boolean tensor of shape (n_systems,) indicating
                 convergence status for each system.
         """
-        if last_energy is None:
-            return torch.zeros(state.n_systems, dtype=torch.bool, device=state.device)
         return torch.abs(state.energy - last_energy) < energy_tol
 
     return convergence_fn
@@ -555,7 +553,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     model: ModelInterface,
     *,
     optimizer: Optimizer | tuple[Callable[..., T], Callable[..., T]],
-    convergence_fn: Callable[[T, torch.Tensor | None], torch.Tensor] | None = None,
+    convergence_fn: Callable[[T, torch.Tensor], torch.Tensor] | None = None,
     max_steps: int = 10_000,
     steps_between_swaps: int = 5,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
@@ -703,7 +701,9 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
                 logger.warning(msg)
                 break
 
-        convergence_tensor = convergence_fn(state, last_energy)  # ty: ignore[invalid-argument-type]
+        if last_energy is None:
+            raise ValueError("last_energy cannot be None")
+        convergence_tensor = convergence_fn(state, last_energy)  # ty:ignore[invalid-argument-type]
         # Mark states that exceeded max steps as converged to remove them from batch
         convergence_tensor = (
             convergence_tensor | exceeded_max_steps[autobatcher.current_idx]
@@ -842,7 +842,7 @@ def static(
 
     if isinstance(batch_iterator, BinningAutoBatcher):
         # reorder properties to match original order of states
-        original_indices = list(chain.from_iterable(batch_iterator.index_bins))  # ty: ignore[invalid-argument-type]
+        original_indices = list(chain.from_iterable(batch_iterator.index_bins))
         indexed_props = list(zip(original_indices, all_props, strict=True))
         return [prop for _, prop in sorted(indexed_props, key=lambda x: x[0])]
 
