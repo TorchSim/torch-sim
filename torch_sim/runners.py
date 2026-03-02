@@ -699,7 +699,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
                     stacklevel=2,
                 )
                 logger.warning(
-                    "optimize: all systems reached max_steps=%d without converging",
+                    "optimize: all systems in batch reached max_steps=%d without converging",
                     max_steps,
                 )
                 break
