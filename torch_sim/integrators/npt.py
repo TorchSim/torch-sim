@@ -1,5 +1,6 @@
 """Implementations of NPT integrators."""
 
+import logging
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -20,6 +21,9 @@ from torch_sim.integrators.md import (
 from torch_sim.integrators.nvt import _vrescale_update
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
+
+
+logger = logging.getLogger(__name__)
 
 
 def _randn_for_state(state: MDState, shape: torch.Size | tuple[int, ...]) -> torch.Tensor:
@@ -605,13 +609,13 @@ def npt_langevin_init(
 
     if state.constraints:
         # warn if constraints are present
-        warnings.warn(
+        msg = (
             "Constraints are present in the system. "
             "Make sure they are compatible with NPT Langevin dynamics."
-            "We recommend not using constraints with NPT dynamics for now.",
-            UserWarning,
-            stacklevel=3,
+            "We recommend not using constraints with NPT dynamics for now."
         )
+        warnings.warn(msg, UserWarning, stacklevel=3)
+        logger.warning(msg)
 
     # Create the initial state
     return NPTLangevinState.from_state(
@@ -1411,13 +1415,13 @@ def npt_nose_hoover_init(
 
     if state.constraints:
         # warn if constraints are present
-        warnings.warn(
+        msg = (
             "Constraints are present in the system. "
             "Make sure they are compatible with NPT Nosé Hoover dynamics."
-            "We recommend not using constraints with NPT dynamics for now.",
-            UserWarning,
-            stacklevel=3,
+            "We recommend not using constraints with NPT dynamics for now."
         )
+        warnings.warn(msg, UserWarning, stacklevel=3)
+        logger.warning(msg)
 
     # Create initial state
     return NPTNoseHooverState.from_state(

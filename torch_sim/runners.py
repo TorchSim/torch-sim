@@ -197,11 +197,13 @@ def _normalize_temperature_tensor(
         return temps.expand(n_steps)
 
     if initial_state.n_systems == n_steps:
-        warnings.warn(
+        msg = (
             "n_systems is equal to n_steps. Interpreting temperature array of length "
-            "n_systems as temperatures for each system, broadcasted over steps.",
-            stacklevel=2,
+            "n_systems as temperatures for each system, broadcasted over steps."
         )
+        warnings.warn(msg, stacklevel=2)
+        logger.warning(msg)
+        return temps.expand(n_steps)
 
     if temps.shape[0] == initial_state.n_systems:
         if temps.ndim == 2:
@@ -293,6 +295,12 @@ def integrate[T: SimState](  # noqa: C901
     unit_system = UnitSystem.metal
 
     initial_state: SimState = ts.initialize_state(system, model.device, model.dtype)
+    logger.info(
+        "integrate: n_systems=%d, n_steps=%d, integrator=%s",
+        initial_state.n_systems,
+        n_steps,
+        integrator,
+    )
     dtype, device = initial_state.dtype, initial_state.device
     kTs = _normalize_temperature_tensor(temperature, n_steps, initial_state)
     kTs = kTs * unit_system.temperature
@@ -388,8 +396,11 @@ def integrate[T: SimState](  # noqa: C901
 
     if isinstance(batch_iterator, BinningAutoBatcher):
         reordered = batch_iterator.restore_original_order(final_states)  # ty: ignore[invalid-argument-type]
-        return ts.concatenate_states(reordered)  # ty: ignore[invalid-argument-type]
+        result = ts.concatenate_states(reordered)  # ty: ignore[invalid-argument-type]
+        logger.info("integrate: complete, %d systems returned", result.n_systems)
+        return result
 
+    logger.info("integrate: complete")
     return state
 
 
@@ -589,6 +600,12 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         convergence_fn = generate_energy_convergence_fn(energy_tol=1e-3)
 
     initial_state = ts.initialize_state(system, model.device, model.dtype)
+    logger.info(
+        "optimize: n_systems=%d, max_steps=%d, optimizer=%s",
+        initial_state.n_systems,
+        max_steps,
+        optimizer,
+    )
     if isinstance(optimizer, Optimizer):
         init_fn, step_fn = OPTIM_REGISTRY[optimizer]
     elif (
@@ -677,10 +694,11 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             step[autobatcher.current_idx] += 1
             exceeded_max_steps = step > max_steps
             if exceeded_max_steps.all():
-                warnings.warn(
-                    f"All systems have reached the maximum number of steps: {max_steps}.",
-                    stacklevel=2,
+                msg = (
+                    f"All systems have reached the maximum number of steps: {max_steps}."
                 )
+                warnings.warn(msg, stacklevel=2)
+                logger.warning(msg)
                 break
 
         if last_energy is None:
@@ -699,7 +717,9 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
 
     if autobatcher:
         final_states_ordered = autobatcher.restore_original_order(all_converged_states)
-        return ts.concatenate_states(final_states_ordered)
+        result = ts.concatenate_states(final_states_ordered)
+        logger.info("optimize: complete, %d systems returned", result.n_systems)
+        return result
 
     # Unreachable: _configure_in_flight_autobatcher always returns InFlightAutoBatcher
     raise RuntimeError(
@@ -744,6 +764,7 @@ def static(
         list[dict[str, torch.Tensor]]: Maps of property names to tensors for all batches
     """
     state: SimState = ts.initialize_state(system, model.device, model.dtype)
+    logger.info("static: n_systems=%d", state.n_systems)
 
     batch_iterator = _configure_batches_iterator(state, model, autobatcher=autobatcher)
     properties = ["potential_energy"]
