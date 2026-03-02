@@ -28,9 +28,10 @@ classifiers = [
 requires-python = ">=3.12"
 dependencies = [
     "h5py>=3.12.1",
-    "numpy>=1.26,<3",
+    "numpy>=1.26,<3; python_version < '3.13'",
+    "numpy>=2,<3; python_version >= '3.13'",
     "nvalchemi-toolkit-ops>=0.2.0",
-    "tables>=3.10.2,<3.11",
+    "tables>=3.11.1",
     "torch>=2",
     "tqdm>=4.67",
 ]
