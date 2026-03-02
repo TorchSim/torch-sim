@@ -197,11 +197,13 @@ def _normalize_temperature_tensor(
         return temps.expand(n_steps)
 
     if initial_state.n_systems == n_steps:
-        warnings.warn(
+        msg = (
             "n_systems is equal to n_steps. Interpreting temperature array of length "
-            "n_systems as temperatures for each system, broadcasted over steps.",
-            stacklevel=2,
+            "n_systems as temperatures for each system, broadcasted over steps."
         )
+        warnings.warn(msg, stacklevel=2)
+        logger.warning(msg)
+        return temps.expand(n_steps)
 
     if temps.shape[0] == initial_state.n_systems:
         if temps.ndim == 2:
@@ -694,14 +696,11 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             step[autobatcher.current_idx] += 1
             exceeded_max_steps = step > max_steps
             if exceeded_max_steps.all():
-                warnings.warn(
-                    f"All systems have reached the maximum number of steps: {max_steps}.",
-                    stacklevel=2,
+                msg = (
+                    f"All systems have reached the maximum number of steps: {max_steps}."
                 )
-                logger.warning(
-                    "optimize: all systems in batch reached max_steps=%d without converging",
-                    max_steps,
-                )
+                warnings.warn(msg, stacklevel=2)
+                logger.warning(msg)
                 break
 
         convergence_tensor = convergence_fn(state, last_energy)  # ty: ignore[invalid-argument-type]
