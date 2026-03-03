@@ -284,5 +284,5 @@ def test_no_retain_graph_frees_graph(si_double_sim_state: ts.SimState) -> None:
         retain_graph=False,
     )
     out = model(si_double_sim_state)
-    with pytest.raises(RuntimeError, match="Trying to backward through the graph"):
+    with pytest.raises(RuntimeError, match="does not require grad"):
         torch.autograd.grad(out["energy"].sum(), eps)

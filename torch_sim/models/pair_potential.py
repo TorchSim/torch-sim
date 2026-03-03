@@ -414,6 +414,9 @@ class PairPotentialModel(ModelInterface):
                 )
             )
 
+        if not self.retain_graph:
+            results = {k: v.detach() for k, v in results.items()}
+
         return results
 
 
