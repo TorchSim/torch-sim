@@ -38,9 +38,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
-    "ase>=3.26",
-    "moyopy>=0.3",
-    "phonopy>=2.37.0",
+    "torch-sim-atomistic[io,symmetry]",
     "platformdirs>=4.0.0",
     "psutil>=7.0.0",
     "pymatgen>=2025.6.14",
