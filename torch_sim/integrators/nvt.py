@@ -18,7 +18,7 @@ from torch_sim.integrators.md import (
     velocity_verlet_step,
 )
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, ensure_sim_state, require_system_idx
+from torch_sim.state import SimState, ensure_sim_state
 from torch_sim.typing import StateDict
 
 
@@ -56,11 +56,7 @@ def _ou_step(
           where c1 = exp(-gamma*dt) and c2 = sqrt(kT*(1-c1²))
     """
     gamma_dt = -gamma * dt
-    exp_arg = (
-        gamma_dt
-        if isinstance(gamma_dt, torch.Tensor)
-        else torch.tensor(gamma_dt, device=state.device, dtype=state.dtype)
-    )
+    exp_arg = torch.as_tensor(gamma_dt, device=state.device, dtype=state.dtype)
     c1 = torch.exp(exp_arg)
 
     if isinstance(kT, torch.Tensor) and len(kT.shape) > 0:
@@ -124,16 +120,13 @@ def nvt_langevin_init(
 
     model_output = model(state)
 
-    system_idx = state.system_idx
-    if system_idx is None:
-        raise ValueError("system_idx cannot be None for NVT integration")
     momenta = getattr(
         state,
         "momenta",
         initialize_momenta(
             state.positions,
             state.masses,
-            system_idx,
+            state.system_idx,
             kT,
             state.rng,
         ),
@@ -313,24 +306,21 @@ def nvt_nose_hoover_init(
 
     atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
-    system_idx = state.system_idx
-    if system_idx is None:
-        raise ValueError("system_idx cannot be None for NVT integration")
     model_output = model(state)
     momenta = kwargs.get(
         "momenta",
         initialize_momenta(
-            state.positions, state.masses, system_idx, kT_tensor, state.rng
+            state.positions, state.masses, state.system_idx, kT_tensor, state.rng
         ),
     )
 
     # Calculate initial kinetic energy per system
     KE = ts.calc_kinetic_energy(
-        masses=state.masses, momenta=momenta, system_idx=system_idx
+        masses=state.masses, momenta=momenta, system_idx=state.system_idx
     )
 
     # Calculate degrees of freedom per system
-    n_atoms_per_system = torch.bincount(system_idx)
+    n_atoms_per_system = torch.bincount(state.system_idx)
     dof_per_system = (
         n_atoms_per_system * state.positions.shape[-1]
     )  # n_atoms * n_dimensions
@@ -391,8 +381,7 @@ def nvt_nose_hoover_step(
     chain = chain_fns.update_mass(chain, kT)
 
     # First half-step of chain evolution
-    system_idx = require_system_idx(state.system_idx)
-    momenta, chain = chain_fns.half_step(state.momenta, chain, kT, system_idx)
+    momenta, chain = chain_fns.half_step(state.momenta, chain, kT, state.system_idx)
     state.set_constrained_momenta(momenta)
 
     # Full velocity Verlet step
@@ -400,12 +389,12 @@ def nvt_nose_hoover_step(
 
     # Update chain kinetic energy per system
     KE = ts.calc_kinetic_energy(
-        masses=state.masses, momenta=state.momenta, system_idx=system_idx
+        masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
     )
     chain.kinetic_energy = KE
 
     # Second half-step of chain evolution
-    momenta, chain = chain_fns.half_step(state.momenta, chain, kT, system_idx)
+    momenta, chain = chain_fns.half_step(state.momenta, chain, kT, state.system_idx)
     state.set_constrained_momenta(momenta)
     state.chain = chain
 
@@ -443,13 +432,12 @@ def nvt_nose_hoover_invariant(
     """
     # Calculate system energy terms per system
     e_pot = state.energy
-    system_idx = require_system_idx(state.system_idx)
     e_kin = ts.calc_kinetic_energy(
-        masses=state.masses, momenta=state.momenta, system_idx=system_idx
+        masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
     )
 
     # Get system degrees of freedom per system
-    n_atoms_per_system = torch.bincount(system_idx)
+    n_atoms_per_system = torch.bincount(state.system_idx)
     dof = n_atoms_per_system * state.positions.shape[-1]  # n_atoms * n_dimensions
 
     # Start with system energy
@@ -563,9 +551,10 @@ def _vrescale_update[T: MDState](
     KE_new = dof * kT_tensor / 2
 
     # Generate random numbers
-    r1 = torch.randn(n_systems, device=device, dtype=dtype, generator=state.rng)
-    # Sample Gamma((dof - 1)/2, 1/2) via _standard_gamma to preserve seeded RNG.
-    r2 = torch._standard_gamma((dof - 1) / 2, generator=state.rng) * 2  # noqa: SLF001
+    rng = state.rng
+    r1 = torch.randn(n_systems, device=device, dtype=dtype, generator=rng)
+    # Sample Gamma((dof - 1)/2, 1/2) via _standard_gamma so we can seed it
+    r2 = torch._standard_gamma((dof - 1) / 2, generator=rng) * 2  # noqa: SLF001
 
     # Calculate scaling coefficients
     c1 = torch.exp(-dt_tensor / tau_tensor)
@@ -576,8 +565,7 @@ def _vrescale_update[T: MDState](
     lam = torch.sqrt(scale)
 
     # Apply scaling to momenta - map from system to atom indices
-    system_idx = require_system_idx(state.system_idx)
-    state.momenta = state.momenta * lam[system_idx].unsqueeze(-1)
+    state.momenta = state.momenta * lam[state.system_idx].unsqueeze(-1)
     return state
 
 
@@ -618,16 +606,13 @@ def nvt_vrescale_init(
 
     model_output = model(state)
 
-    system_idx = state.system_idx
-    if system_idx is None:
-        raise ValueError("system_idx cannot be None for NVT integration")
     momenta = getattr(
         state,
         "momenta",
         initialize_momenta(
             state.positions,
             state.masses,
-            system_idx,
+            state.system_idx,
             kT,
             state.rng,
         ),
@@ -690,4 +675,5 @@ def nvt_vrescale_step(
     # Apply V-Rescale rescaling
     state = _vrescale_update(state, tau, kT, dt)
 
+    # Perform velocity Verlet step
     return velocity_verlet_step(state=state, dt=dt, model=model)

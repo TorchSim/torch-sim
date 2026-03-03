@@ -130,13 +130,13 @@ md_state = ts.nvt_langevin_init(state=state, model=mace_model, kT=kT)
 # Initialize swap Monte Carlo state
 swap_state = ts.swap_mc_init(state=md_state, model=mace_model)
 
-# Create hybrid state combining both (HybridSwapMCState is both MDState and SwapMCState)
-# Note: md_state.attributes typed as dict[str, Tensor] but includes _constraints: list
-attrs: dict = dict(md_state.attributes)
-attrs["last_permutation"] = torch.arange(
-    md_state.n_atoms, device=md_state.device, dtype=torch.long
+# Create hybrid state combining both
+hybrid_state = HybridSwapMCState(
+    **md_state.attributes,
+    last_permutation=torch.arange(
+        md_state.n_atoms, device=md_state.device, dtype=torch.long
+    ),
 )
-hybrid_state = HybridSwapMCState(**attrs)
 
 
 # %% [markdown]
@@ -162,17 +162,11 @@ n_steps = 100
 for step in range(n_steps):
     if step % 10 == 0:  # Attempt swap Monte Carlo move
         hybrid_state = ts.swap_mc_step(
-            state=hybrid_state,
-            model=mace_model,
-            kT=kT,
-            rng=rng,
+            state=hybrid_state, model=mace_model, kT=kT, rng=rng
         )
     else:  # Perform MD step
         hybrid_state = ts.nvt_langevin_step(
-            state=hybrid_state,
-            model=mace_model,
-            dt=0.002,
-            kT=kT,
+            state=hybrid_state, model=mace_model, dt=0.002, kT=kT
         )
 
     if step % 20 == 0:

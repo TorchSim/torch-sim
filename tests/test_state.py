@@ -7,6 +7,11 @@ import torch
 import torch_sim as ts
 from tests.conftest import DEVICE
 from torch_sim.integrators import MDState
+from torch_sim.integrators.md import NoseHooverChain, NoseHooverChainFns
+from torch_sim.integrators.npt import NPTLangevinState, NPTNoseHooverState
+from torch_sim.integrators.nvt import NVTNoseHooverState, NVTVRescaleState
+from torch_sim.monte_carlo import SwapMCState
+from torch_sim.optimizers.state import BFGSState, FireState, LBFGSState, OptimState
 from torch_sim.state import (
     DeformGradMixin,
     SimState,
@@ -998,3 +1003,206 @@ def test_rng_setter_int_advances_state(si_sim_state: SimState) -> None:
     r1 = torch.randn(5, generator=state.rng)
     r2 = torch.randn(5, generator=state.rng)
     assert not torch.equal(r1, r2)
+
+
+# --- Subclass instantiation tests (verify pbc/system_idx coercion is inherited) ---
+
+BASE_KWARGS: dict = dict(
+    positions=torch.randn(4, 3),
+    masses=torch.ones(4),
+    cell=torch.eye(3),
+    atomic_numbers=torch.ones(4, dtype=torch.int),
+)
+
+
+def _check_coercion(state: SimState) -> None:
+    """Assert pbc is a bool tensor and system_idx is a non-None tensor."""
+    assert isinstance(state.pbc, torch.Tensor)
+    assert state.pbc.dtype == torch.bool
+    assert isinstance(state.system_idx, torch.Tensor)
+
+
+@pytest.mark.parametrize("pbc", [True, False, [True, True, False]])
+def test_simstate_instantiation(pbc: bool | list[bool]) -> None:  # noqa: FBT001
+    """SimState accepts bool/list pbc and None system_idx."""
+    state = SimState(**BASE_KWARGS, pbc=pbc)
+    _check_coercion(state)
+
+
+@pytest.mark.parametrize("pbc", [True, [True, True, False]])
+def test_mdstate_instantiation(pbc: bool | list[bool]) -> None:  # noqa: FBT001
+    """MDState inherits pbc/system_idx coercion."""
+    state = MDState(
+        **BASE_KWARGS,
+        pbc=pbc,
+        momenta=torch.zeros(4, 3),
+        energy=torch.zeros(1),
+        forces=torch.zeros(4, 3),
+    )
+    _check_coercion(state)
+
+
+def test_nvtvrscalestate_instantiation() -> None:
+    """NVTVRescaleState (no extra fields beyond MDState) inherits coercion."""
+    state = NVTVRescaleState(
+        **BASE_KWARGS,
+        pbc=True,
+        momenta=torch.zeros(4, 3),
+        energy=torch.zeros(1),
+        forces=torch.zeros(4, 3),
+    )
+    _check_coercion(state)
+
+
+def test_nptlangevinstate_instantiation() -> None:
+    """NPTLangevinState inherits pbc/system_idx coercion."""
+    state = NPTLangevinState(
+        **BASE_KWARGS,
+        pbc=True,
+        momenta=torch.zeros(4, 3),
+        energy=torch.zeros(1),
+        forces=torch.zeros(4, 3),
+        stress=torch.zeros(1, 3, 3),
+        alpha=torch.ones(1),
+        cell_alpha=torch.ones(1),
+        b_tau=torch.ones(1),
+        reference_cell=torch.eye(3).unsqueeze(0),
+        cell_positions=torch.zeros(1, 3, 3),
+        cell_velocities=torch.zeros(1, 3, 3),
+        cell_masses=torch.ones(1),
+    )
+    _check_coercion(state)
+
+
+def test_optimstate_instantiation() -> None:
+    """OptimState inherits pbc/system_idx coercion."""
+    state = OptimState(
+        **BASE_KWARGS,
+        pbc=[True, True, False],
+        forces=torch.zeros(4, 3),
+        energy=torch.zeros(1),
+        stress=torch.zeros(1, 3, 3),
+    )
+    _check_coercion(state)
+
+
+def test_firestate_instantiation() -> None:
+    """FireState inherits pbc/system_idx coercion."""
+    state = FireState(
+        **BASE_KWARGS,
+        pbc=True,
+        forces=torch.zeros(4, 3),
+        energy=torch.zeros(1),
+        stress=torch.zeros(1, 3, 3),
+        velocities=torch.zeros(4, 3),
+        dt=torch.tensor([0.01]),
+        alpha=torch.tensor([0.1]),
+        n_pos=torch.tensor([0]),
+    )
+    _check_coercion(state)
+
+
+def test_swapmc_instantiation() -> None:
+    """SwapMCState inherits pbc/system_idx coercion."""
+    state = SwapMCState(
+        **BASE_KWARGS,
+        pbc=True,
+        energy=torch.zeros(1),
+        last_permutation=torch.arange(4),
+    )
+    _check_coercion(state)
+
+
+def _make_nhc(n_systems: int = 1, chain_length: int = 3) -> NoseHooverChain:
+    return NoseHooverChain(
+        positions=torch.zeros(n_systems, chain_length),
+        momenta=torch.zeros(n_systems, chain_length),
+        masses=torch.ones(n_systems, chain_length),
+        tau=torch.ones(n_systems),
+        kinetic_energy=torch.zeros(n_systems),
+        degrees_of_freedom=torch.tensor([9.0] * n_systems),
+    )
+
+
+def _make_nhc_fns() -> NoseHooverChainFns:
+    return NoseHooverChainFns(
+        initialize=lambda *a, **kw: None,  # noqa: ARG005
+        half_step=lambda *a, **kw: None,  # noqa: ARG005
+        update_mass=lambda *a, **kw: None,  # noqa: ARG005
+    )
+
+
+def test_nvtnosehooverstate_instantiation() -> None:
+    """NVTNoseHooverState inherits pbc/system_idx coercion."""
+    state = NVTNoseHooverState(
+        **BASE_KWARGS,
+        pbc=True,
+        momenta=torch.zeros(4, 3),
+        energy=torch.zeros(1),
+        forces=torch.zeros(4, 3),
+        chain=_make_nhc(),
+        _chain_fns=_make_nhc_fns(),
+    )
+    _check_coercion(state)
+
+
+def test_nptnosehooverstate_instantiation() -> None:
+    """NPTNoseHooverState inherits pbc/system_idx coercion."""
+    state = NPTNoseHooverState(
+        **BASE_KWARGS,
+        pbc=True,
+        momenta=torch.zeros(4, 3),
+        energy=torch.zeros(1),
+        forces=torch.zeros(4, 3),
+        reference_cell=torch.eye(3).unsqueeze(0),
+        cell_position=torch.zeros(1),
+        cell_momentum=torch.zeros(1),
+        cell_mass=torch.ones(1),
+        thermostat=_make_nhc(),
+        thermostat_fns=_make_nhc_fns(),
+        barostat=_make_nhc(),
+        barostat_fns=_make_nhc_fns(),
+    )
+    _check_coercion(state)
+
+
+def test_bfgsstate_instantiation() -> None:
+    """BFGSState inherits pbc/system_idx coercion."""
+    n_atoms, n_dim = 4, 3
+    state = BFGSState(
+        **BASE_KWARGS,
+        pbc=True,
+        forces=torch.zeros(n_atoms, n_dim),
+        energy=torch.zeros(1),
+        stress=torch.zeros(1, n_dim, n_dim),
+        hessian=torch.eye(n_atoms * n_dim).unsqueeze(0),
+        prev_forces=torch.zeros(n_atoms, n_dim),
+        prev_positions=torch.zeros(n_atoms, n_dim),
+        alpha=torch.ones(1),
+        max_step=torch.tensor([0.2]),
+        n_iter=torch.zeros(1, dtype=torch.int32),
+        atom_idx_in_system=torch.arange(n_atoms),
+        max_atoms=torch.tensor([n_atoms]),
+    )
+    _check_coercion(state)
+
+
+def test_lbfgsstate_instantiation() -> None:
+    """LBFGSState inherits pbc/system_idx coercion."""
+    n_atoms, n_dim, history = 4, 3, 5
+    state = LBFGSState(
+        **BASE_KWARGS,
+        pbc=True,
+        forces=torch.zeros(n_atoms, n_dim),
+        energy=torch.zeros(1),
+        stress=torch.zeros(1, n_dim, n_dim),
+        prev_forces=torch.zeros(n_atoms, n_dim),
+        prev_positions=torch.zeros(n_atoms, n_dim),
+        s_history=torch.zeros(1, history, n_atoms, n_dim),
+        y_history=torch.zeros(1, history, n_atoms, n_dim),
+        step_size=torch.tensor([0.1]),
+        alpha=torch.ones(1),
+        n_iter=torch.zeros(1, dtype=torch.int32),
+        max_atoms=torch.tensor([n_atoms]),
+    )
+    _check_coercion(state)

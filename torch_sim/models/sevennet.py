@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-import torch_sim as ts
 from torch_sim.elastic import voigt_6_to_full_3x3_stress
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
+from torch_sim.state import SimState, ensure_sim_state
 
 
 if TYPE_CHECKING:
@@ -160,8 +160,8 @@ class SevenNetModel(ModelInterface):
 
         self.implemented_properties = ["energy", "forces", "stress"]
 
-    def forward(  # noqa: PLR0915
-        self, state: ts.SimState | StateDict, **_kwargs: object
+    def forward(
+        self, state: SimState | StateDict, **_kwargs: object
     ) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
@@ -185,18 +185,7 @@ class SevenNetModel(ModelInterface):
             The state is automatically transferred to the model's device if needed.
             All output tensors are detached from the computation graph.
         """
-        if isinstance(state, ts.SimState):
-            sim_state = state
-        else:
-            positions_in = state["positions"]
-            sim_state = ts.SimState(
-                positions=positions_in,
-                masses=torch.ones_like(positions_in),
-                cell=state["cell"],
-                pbc=state.get("pbc", True),
-                atomic_numbers=state["atomic_numbers"],
-                system_idx=state.get("system_idx"),
-            )
+        sim_state = ensure_sim_state(state)
 
         if sim_state.device != self._device:
             sim_state = sim_state.to(self._device)
@@ -205,24 +194,17 @@ class SevenNetModel(ModelInterface):
         sim_state = sim_state.clone()
 
         # Batched neighbor list using linked-cell algorithm with row-vector cell
-        system_idx = sim_state.system_idx
-        if system_idx is None:
-            system_idx = torch.zeros(
-                sim_state.positions.shape[0],
-                dtype=torch.long,
-                device=sim_state.device,
-            )
-        n_systems = int(system_idx.max().item()) + 1
+        n_systems = int(sim_state.system_idx.max().item()) + 1
         edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
             sim_state.positions,
             sim_state.row_vector_cell,
             sim_state.pbc,
             self.cutoff,
-            system_idx,
+            sim_state.system_idx,
         )
 
         # Build per-system SevenNet AtomGraphData by slicing the global NL
-        n_atoms_per_system = system_idx.bincount()
+        n_atoms_per_system = sim_state.system_idx.bincount()
         stride = torch.cat(
             (
                 torch.tensor([0], device=self.device, dtype=torch.long),

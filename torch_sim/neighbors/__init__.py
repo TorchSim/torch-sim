@@ -16,10 +16,6 @@ Default Neighbor Lists:
 
 import torch
 
-from torch_sim.neighbors.standard import (
-    primitive_neighbor_list as primitive_neighbor_list,
-)
-from torch_sim.neighbors.standard import standard_nl as standard_nl
 from torch_sim.neighbors.torch_nl import strict_nl as strict_nl
 from torch_sim.neighbors.torch_nl import torch_nl_linked_cell
 from torch_sim.neighbors.torch_nl import torch_nl_n2 as torch_nl_n2

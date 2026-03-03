@@ -228,8 +228,6 @@ def validate_model_outputs(  # noqa: C901, PLR0915
     og_positions = sim_state.positions.clone()
     og_cell = sim_state.cell.clone()
     system_idx = sim_state.system_idx
-    if system_idx is None:
-        raise ValueError("validate_model_outputs requires state with system_idx")
     og_system_idx = system_idx.clone()
     og_atomic_nums = sim_state.atomic_numbers.clone()
 

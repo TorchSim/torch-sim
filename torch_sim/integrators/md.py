@@ -1,5 +1,6 @@
 """Core molecular dynamics state and operations."""
 
+import logging
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -11,6 +12,9 @@ from torch_sim.models.interface import ModelInterface
 from torch_sim.quantities import calc_kT
 from torch_sim.state import SimState
 from torch_sim.units import MetalUnits
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True)
@@ -236,11 +240,9 @@ def velocity_verlet[T: MDState](
     state: T, dt: float | torch.Tensor, model: ModelInterface
 ) -> T:
     """Deprecated alias for velocity_verlet_step."""
-    warnings.warn(
-        "velocity_verlet is deprecated. Use velocity_verlet_step instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
+    msg = "velocity_verlet is deprecated. Use velocity_verlet_step instead."
+    warnings.warn(msg, DeprecationWarning, stacklevel=2)
+    logger.warning(msg)
     return velocity_verlet_step(state=state, dt=dt, model=model)
 
 
@@ -506,11 +508,7 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
         Returns:
             Tuple of (rescaled momenta, updated chain state)
         """
-        dt_tensor = (
-            dt
-            if isinstance(dt, torch.Tensor)
-            else torch.tensor(dt, device=P.device, dtype=P.dtype)
-        )
+        dt_tensor = torch.as_tensor(dt, device=P.device, dtype=P.dtype)
         if chain_steps == 1 and sy_steps == 1:
             P, state, _ = substep_fn(dt_tensor, P, state, kT, system_idx)
             return P, state

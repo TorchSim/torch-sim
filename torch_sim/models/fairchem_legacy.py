@@ -29,8 +29,8 @@ from typing import Any
 
 import torch
 
-import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
+from torch_sim.state import SimState, ensure_sim_state
 
 
 if typing.TYPE_CHECKING:
@@ -77,13 +77,6 @@ except ImportError as exc:
 
 if typing.TYPE_CHECKING:
     from collections.abc import Callable
-
-
-def _is_state_dict(
-    state: ts.SimState | StateDict,
-) -> typing.TypeGuard[StateDict]:
-    """Type guard for StateDict."""
-    return isinstance(state, dict)
 
 
 _DTYPE_DICT = {
@@ -370,7 +363,7 @@ class FairChemV1Model(ModelInterface):
             print("Unable to load checkpoint!")
 
     def forward(  # noqa: C901
-        self, state: ts.SimState | StateDict, **_kwargs: object
+        self, state: SimState | StateDict, **_kwargs: object
     ) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
@@ -394,22 +387,7 @@ class FairChemV1Model(ModelInterface):
             The state is automatically transferred to the model's device if needed.
             All output tensors are detached from the computation graph.
         """
-        if _is_state_dict(state):
-            positions = state["positions"]
-            sim_state: ts.SimState = ts.SimState(
-                positions=positions,
-                masses=torch.ones_like(positions),
-                cell=state["cell"],
-                pbc=state["pbc"],
-                atomic_numbers=state["atomic_numbers"],
-                system_idx=state.get("system_idx"),
-            )
-        else:
-            if not isinstance(state, ts.SimState):
-                raise TypeError(
-                    f"Expected SimState or StateDict-like input, got {type(state)}"
-                )
-            sim_state = state
+        sim_state = ensure_sim_state(state)
 
         if sim_state.device != self._device:
             sim_state = sim_state.to(self._device)
@@ -439,12 +417,9 @@ class FairChemV1Model(ModelInterface):
                 "FairChemV1Model requires model and state PBC to match."
             )
 
-        system_idx = sim_state.system_idx
-        if system_idx is None:
-            raise ValueError("FairChemV1Model requires state.system_idx")
-        natoms = torch.bincount(system_idx)
+        natoms = torch.bincount(sim_state.system_idx)
         fixed = torch.zeros(
-            (system_idx.size(0), int(natoms.sum().item())), dtype=torch.int
+            (sim_state.system_idx.size(0), int(natoms.sum().item())), dtype=torch.int
         )
         data_list = []
         for idx, (n, c) in enumerate(

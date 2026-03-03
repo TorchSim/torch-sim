@@ -3,6 +3,7 @@
 import pytest
 import torch
 
+import torch_sim as ts
 from torch_sim.models.morse import MorseModel, morse_pair, morse_pair_force
 
 
@@ -78,49 +79,8 @@ def test_morse_alpha_effect() -> None:
 
 
 @pytest.fixture
-def cu_fcc_system() -> tuple[torch.Tensor, torch.Tensor]:
-    """Create a NxNxN FCC crystal system for Copper with random displacements."""
-    # FCC conventional cell basis positions (in fractional coordinates)
-    basis = torch.tensor(
-        [
-            [0.0, 0.0, 0.0],  # corner
-            [0.0, 0.5, 0.5],  # face center
-            [0.5, 0.0, 0.5],  # face center
-            [0.5, 0.5, 0.0],  # face center
-        ],
-        dtype=torch.float64,
-    )
-
-    # Lattice constant for Copper
-    a_len = 3.61  # Å
-    N = 4
-    # Create NxNxN supercell
-    positions = []
-    for x in range(N):
-        for y in range(N):
-            for z in range(N):
-                offset = torch.tensor([x, y, z], dtype=torch.float64)
-                for b in basis:
-                    # Convert fractional to cartesian coordinates
-                    pos = (b + offset) * a_len
-                    positions.append(pos)
-
-    # Stack all positions into a single tensor
-    positions = torch.stack(positions)
-
-    # Create the cell tensor (cubic cell)
-    cell = torch.eye(3, dtype=torch.float64) * (N * a_len)
-
-    # Add random displacements (0.1 Å)
-    torch.manual_seed(42)
-    positions += 0.1 * torch.randn_like(positions)
-
-    return positions, cell
-
-
-@pytest.fixture
 def models(
-    cu_fcc_system: tuple[torch.Tensor, torch.Tensor],
+    cu_supercell_sim_state: ts.SimState,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create both neighbor list and direct calculators with Copper parameters."""
     # Parameters for Copper (Cu) using Morse potential
@@ -137,13 +97,7 @@ def models(
     model_nl = MorseModel(use_neighbor_list=True, cutoff=cutoff, **model_kwargs)
     model_direct = MorseModel(use_neighbor_list=False, cutoff=cutoff, **model_kwargs)
 
-    state = dict(
-        positions=cu_fcc_system[0],
-        cell=cu_fcc_system[1].unsqueeze(0),
-        atomic_numbers=torch.ones(len(cu_fcc_system[0]), dtype=torch.int32),
-        pbc=True,
-    )
-    return model_nl(state), model_direct(state)
+    return model_nl(cu_supercell_sim_state), model_direct(cu_supercell_sim_state)
 
 
 def test_energy_match(

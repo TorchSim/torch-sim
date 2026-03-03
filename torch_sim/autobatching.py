@@ -20,6 +20,7 @@ Notes:
     model architectures and GPU configurations.
 """
 
+import logging
 from collections.abc import Callable, Iterator, Sequence
 from itertools import chain
 from typing import Any, get_args
@@ -29,8 +30,11 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import SimState, pbc_to_tensor, require_system_idx
+from torch_sim.state import SimState
 from torch_sim.typing import MemoryScaling
+
+
+logger = logging.getLogger(__name__)
 
 
 def to_constant_volume_bins(  # noqa: C901, PLR0915
@@ -317,10 +321,17 @@ def determine_max_batch_size(
             # Check if any of the OOM error messages match
             for msg in oom_error_message:
                 if msg in exc_str:
-                    return sizes[max(0, sys_idx - 2)]
+                    safe_size = sizes[max(0, sys_idx - 2)]
+                    logger.debug(
+                        "OOM at %d systems (%d atoms), returning safe batch size %d",
+                        n_systems,
+                        concat_state.n_atoms,
+                        safe_size,
+                    )
+                    return safe_size
 
-            # No OOM message matched - re-raise the error
-            raise
+                # No OOM message matched - re-raise the error
+                raise
 
     return sizes[-1]
 
@@ -331,9 +342,9 @@ def _n_edges_scalers(state: SimState, cutoff: float) -> list[float]:
     _, system_mapping, _ = torchsim_nl(
         positions=state.positions,
         cell=state.cell,
-        pbc=pbc_to_tensor(state.pbc, state.device),
+        pbc=state.pbc,
         cutoff=cutoff_tensor,
-        system_idx=require_system_idx(state.system_idx),
+        system_idx=state.system_idx,
     )
     return system_mapping.bincount(minlength=state.n_systems).float().tolist()
 
@@ -546,6 +557,8 @@ class BinningAutoBatcher[T: SimState]:
         ordered_final_states = batcher.restore_original_order(final_states)
     """
 
+    index_bins: list[list[int]]
+
     def __init__(
         self,
         model: ModelInterface,
@@ -644,6 +657,7 @@ class BinningAutoBatcher[T: SimState]:
                 oom_error_message=self.oom_error_message,
             )
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
+            logger.debug("Estimated max memory scaler: %.3g", self.max_memory_scaler)
 
         # verify that no systems are too large
         max_metric_value = max(self.memory_scalers)
@@ -657,14 +671,20 @@ class BinningAutoBatcher[T: SimState]:
             )
 
         self.index_to_scaler = dict(enumerate(self.memory_scalers))
-        self.index_bins = to_constant_volume_bins(
+        index_bins = to_constant_volume_bins(
             self.index_to_scaler, max_volume=self.max_memory_scaler
         )  # list[dict[original_index: int, memory_scale:float]]
         # Convert to list of lists of indices
-        self.index_bins = [list(batch.keys()) for batch in self.index_bins]
+        self.index_bins = [list(batch.keys()) for batch in index_bins]
         self.batched_states = [[batched[index_bin]] for index_bin in self.index_bins]
         self.current_state_bin = 0
 
+        logger.info(
+            "BinningAutoBatcher: %d systems → %d batch(es), max_memory_scaler=%.3g",
+            len(self.memory_scalers),
+            len(self.index_bins),
+            self.max_memory_scaler,
+        )
         return self.max_memory_scaler
 
     def next_batch(self) -> tuple[T | None, list[int]]:
@@ -698,6 +718,17 @@ class BinningAutoBatcher[T: SimState]:
                 else []
             )
             self.current_state_bin += 1
+            remaining = len(self.batched_states) - self.current_state_bin
+            logger.info(
+                (
+                    "BinningAutoBatcher: returning batch %d/%d with %d system(s), "
+                    "%d batch(es) remaining"
+                ),
+                self.current_state_bin,
+                len(self.batched_states),
+                state.n_systems,
+                remaining,
+            )
             return state, indices
         return None, []
 
@@ -1039,7 +1070,15 @@ class InFlightAutoBatcher[T: SimState]:
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
             newer_states = self._get_next_states()
             all_states.extend(newer_states)
+            logger.debug(
+                "InFlightAutoBatcher: estimated max_memory_scaler=%.3g",
+                self.max_memory_scaler,
+            )
 
+        logger.info(
+            "InFlightAutoBatcher: starting with %d system(s) in first batch",
+            len(all_states),
+        )
         return ts.concatenate_states(all_states)
 
     def next_batch(  # noqa: C901
@@ -1130,6 +1169,12 @@ class InFlightAutoBatcher[T: SimState]:
 
         self._delete_old_states(completed_idx)
         next_states = self._get_next_states()
+
+        logger.info(
+            "InFlightAutoBatcher: %d state(s) completed, %d state(s) remaining in batch",
+            len(completed_states),
+            len(self.current_idx),
+        )
 
         # there are no states left to run, return the completed states
         if not self.current_idx:

@@ -104,6 +104,7 @@ ignore = [
     "EM102",   # Exception must not use an f-string literal, assign to variable first
     "ERA001",  # Found commented-out code
     "FIX002",  # Line contains TODO, consider resolving the issue
+    "G004",    # Logging statement uses f-string -> TODO refactor for performance
     "N803",    # Variable name should be lowercase
     "N806",    # Uppercase letters in variable names
     "PLC0415", # import should be at the top-level of a file

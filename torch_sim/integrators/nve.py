@@ -50,16 +50,13 @@ def nve_init(
 
     model_output = model(state)
 
-    system_idx = state.system_idx
-    if system_idx is None:
-        raise ValueError("system_idx cannot be None for NVE integration")
     momenta = getattr(
         state,
         "momenta",
         initialize_momenta(
             state.positions,
             state.masses,
-            system_idx,
+            state.system_idx,
             kT,
             state.rng,
         ),
