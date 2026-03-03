@@ -119,7 +119,7 @@ def soft_sphere_pair_force(
     """
 
     def fn(dr: torch.Tensor) -> torch.Tensor:
-        return (-epsilon / sigma) * (1.0 - (dr / sigma)).pow(alpha - 1)
+        return (epsilon / sigma) * (1.0 - (dr / sigma)).pow(alpha - 1)
 
     # Create mask for distances within cutoff i.e sigma
     mask = dr < sigma
@@ -359,9 +359,8 @@ class SoftSphereModel(ModelInterface):
             if self.compute_forces:
                 # Compute atomic forces by accumulating pair contributions
                 forces = torch.zeros_like(positions)
-                # Add force contributions (f_ij on j, -f_ij on i)
-                forces.index_add_(0, mapping[0], force_vectors)
-                forces.index_add_(0, mapping[1], -force_vectors)
+                forces.index_add_(0, mapping[0], -force_vectors)
+                forces.index_add_(0, mapping[1], force_vectors)
                 results["forces"] = forces
 
             if self.compute_stress and cell is not None:
@@ -773,9 +772,8 @@ class SoftSphereMultiModel(ModelInterface):
             if self.compute_forces:
                 # Compute atomic forces by accumulating pair contributions
                 forces = torch.zeros_like(positions)
-                # Add force contributions (f_ij on j, -f_ij on i)
-                forces.index_add_(0, mapping[0], force_vectors)
-                forces.index_add_(0, mapping[1], -force_vectors)
+                forces.index_add_(0, mapping[0], -force_vectors)
+                forces.index_add_(0, mapping[1], force_vectors)
                 results["forces"] = forces
 
             if self.compute_stress and cell is not None:
