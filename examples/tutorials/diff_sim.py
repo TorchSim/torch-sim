@@ -159,7 +159,8 @@ def simulation(
         neighbor_list_fn=torch_nl_n2,
         retain_graph=True,
     )
-    model = typing.cast(SoftSphereMultiModel, torch.compile(model))
+    # Use aot_eager backend as Inductor has issues with scatter operations (index_add/scatter_add)
+    model = typing.cast(SoftSphereMultiModel, torch.compile(model, backend="aot_eager"))
     torch.manual_seed(seed)
     R = torch.rand(N, 3) * box_size
     state = SimState(

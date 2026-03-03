@@ -195,7 +195,7 @@ def _virial_stress(
     volumes = torch.abs(torch.linalg.det(row_cell))
     stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
     stress = torch.zeros((n_systems, 3, 3), dtype=dtype, device=device)
-    stress.index_add_(0, system_mapping, -stress_per_pair)
+    stress = stress.index_add(0, system_mapping, -stress_per_pair)
     stress = stress / volumes[:, None, None]
     return stress, stress_per_pair, volumes
 
@@ -234,8 +234,8 @@ def _accumulate_stress(
         w = 1.0 if half else 0.5
         n_atoms = positions.shape[0]
         atom_stresses = torch.zeros((n_atoms, 3, 3), dtype=dtype, device=device)
-        atom_stresses.index_add_(0, mapping[0], -w * stress_per_pair)
-        atom_stresses.index_add_(0, mapping[1], -w * stress_per_pair)
+        atom_stresses = atom_stresses.index_add(0, mapping[0], -w * stress_per_pair)
+        atom_stresses = atom_stresses.index_add(0, mapping[1], -w * stress_per_pair)
         out["stresses"] = atom_stresses / volumes[system_idx, None, None]
 
     return out
@@ -361,15 +361,15 @@ class PairPotentialModel(ModelInterface):
 
         results: dict[str, torch.Tensor] = {}
         energy = torch.zeros(n_systems, dtype=self._dtype, device=self._device)
-        energy.index_add_(0, system_mapping, ew * pair_energies)
+        energy = energy.index_add(0, system_mapping, ew * pair_energies)
         results["energy"] = energy
 
         if self.per_atom_energies:
             atom_energies = torch.zeros(
                 positions.shape[0], dtype=self._dtype, device=self._device
             )
-            atom_energies.index_add_(0, mapping[0], ew * pair_energies)
-            atom_energies.index_add_(0, mapping[1], ew * pair_energies)
+            atom_energies = atom_energies.index_add(0, mapping[0], ew * pair_energies)
+            atom_energies = atom_energies.index_add(0, mapping[1], ew * pair_energies)
             results["energies"] = atom_energies
 
         if need_grad:
@@ -387,13 +387,13 @@ class PairPotentialModel(ModelInterface):
                 forces = torch.zeros_like(positions)
                 if half:
                     # Half list: each pair once → apply Newton's third law explicitly.
-                    forces.index_add_(0, mapping[0], -force_vectors)
-                    forces.index_add_(0, mapping[1], force_vectors)
+                    forces = forces.index_add(0, mapping[0], -force_vectors)
+                    forces = forces.index_add(0, mapping[1], force_vectors)
                 else:
                     # Full list: atom i appears as mapping[0] for every i→j pair,
                     # covering all its neighbors.  mapping[1] accumulation would
                     # double-count, so we only accumulate on the source atom.
-                    forces.index_add_(0, mapping[0], -force_vectors)
+                    forces = forces.index_add(0, mapping[0], -force_vectors)
                 results["forces"] = forces
 
         if self._compute_stress:
@@ -524,8 +524,8 @@ class PairForcesModel(ModelInterface):
         force_vectors = (pair_forces / safe_dist)[:, None] * dr_vec
 
         forces = torch.zeros_like(positions)
-        forces.index_add_(0, mapping[0], -force_vectors)
-        forces.index_add_(0, mapping[1], force_vectors)
+        forces = forces.index_add(0, mapping[0], -force_vectors)
+        forces = forces.index_add(0, mapping[1], force_vectors)
 
         results: dict[str, torch.Tensor] = {
             "energy": torch.zeros(n_systems, dtype=self._dtype, device=self._device),
