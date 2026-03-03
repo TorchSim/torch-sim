@@ -126,7 +126,7 @@ def test_multi_soft_sphere_bad_matrix_shape_raises() -> None:
 
 def test_multispecies_initialization_defaults() -> None:
     """Multi-species model initializes with default parameters."""
-    model = SoftSphereMultiModel(n_species=2, dtype=torch.float32)
+    model = SoftSphereMultiModel(atomic_numbers=torch.tensor([0, 1]), dtype=torch.float32)
     assert model.sigma_matrix.shape == (2, 2)
     assert model.epsilon_matrix.shape == (2, 2)
     assert model.alpha_matrix.shape == (2, 2)
@@ -139,7 +139,7 @@ def test_multispecies_initialization_custom() -> None:
     alpha_matrix = torch.tensor([[2.0, 3.0], [3.0, 4.0]], dtype=torch.float64)
 
     model = SoftSphereMultiModel(
-        n_species=2,
+        atomic_numbers=torch.tensor([0, 1]),
         sigma_matrix=sigma_matrix,
         epsilon_matrix=epsilon_matrix,
         alpha_matrix=alpha_matrix,
@@ -160,7 +160,7 @@ def test_multispecies_matrix_validation() -> None:
 
     with pytest.raises(ValueError, match="sigma_matrix must have shape"):
         SoftSphereMultiModel(
-            n_species=3,
+            atomic_numbers=torch.tensor([0, 1, 2]),
             sigma_matrix=sigma_matrix,
             epsilon_matrix=epsilon_matrix,
         )
@@ -178,7 +178,7 @@ def test_matrix_symmetry_validation(matrix_name: str, matrix: torch.Tensor) -> N
     """Parameter matrices are validated for symmetry."""
     symmetric_matrix = torch.tensor([[1.0, 1.5], [1.5, 2.0]])
     params = {
-        "n_species": 2,
+        "atomic_numbers": torch.tensor([0, 1]),
         "sigma_matrix": symmetric_matrix,
         "epsilon_matrix": symmetric_matrix,
         "alpha_matrix": symmetric_matrix,
@@ -192,18 +192,19 @@ def test_matrix_symmetry_validation(matrix_name: str, matrix: torch.Tensor) -> N
 def test_multispecies_cutoff_default() -> None:
     """Default cutoff is the maximum sigma value."""
     sigma_matrix = torch.tensor([[1.0, 1.5, 2.0], [1.5, 2.0, 2.5], [2.0, 2.5, 3.0]])
-    model = SoftSphereMultiModel(n_species=3, sigma_matrix=sigma_matrix)
+    model = SoftSphereMultiModel(
+        atomic_numbers=torch.tensor([0, 1, 2]), sigma_matrix=sigma_matrix
+    )
     assert model.cutoff.item() == 3.0
 
 
 def test_multispecies_evaluation() -> None:
     """Multi-species model evaluates without error on a small system."""
-    n_species = 2
     sigma_matrix = torch.tensor([[1.0, 0.8], [0.8, 0.6]], dtype=torch.float64)
     epsilon_matrix = torch.tensor([[1.0, 0.5], [0.5, 2.0]], dtype=torch.float64)
 
     model = SoftSphereMultiModel(
-        n_species=n_species,
+        atomic_numbers=torch.tensor([0, 1]),
         sigma_matrix=sigma_matrix,
         epsilon_matrix=epsilon_matrix,
         dtype=torch.float64,

@@ -274,6 +274,7 @@ class PairPotentialModel(ModelInterface):
         per_atom_stresses: bool = False,
         neighbor_list_fn: Callable = torchsim_nl,
         reduce_to_half_list: bool = False,
+        retain_graph: bool = False,
     ) -> None:
         """Initialize the pair potential model.
 
@@ -293,6 +294,10 @@ class PairPotentialModel(ModelInterface):
                 before computing interactions. Halves pair operations and makes
                 accumulation patterns unambiguous. Only valid for symmetric pair
                 functions; do not use for asymmetric interactions. Defaults to False.
+            retain_graph: If True, keep the computation graph after computing forces
+                so that the energy can still be differentiated w.r.t. model parameters
+                (e.g. for differentiable simulation / meta-optimization).
+                Defaults to False.
         """
         super().__init__()
         self._device = device or torch.device("cpu")
@@ -305,6 +310,7 @@ class PairPotentialModel(ModelInterface):
         self.neighbor_list_fn = neighbor_list_fn
         self.cutoff = torch.tensor(cutoff, dtype=dtype, device=self._device)
         self.reduce_to_half_list = reduce_to_half_list
+        self.retain_graph = retain_graph
 
     def forward(
         self, state: SimState | StateDict, **_kwargs: object
@@ -371,6 +377,7 @@ class PairPotentialModel(ModelInterface):
                 pair_energies.sum(),
                 dist_for_grad,
                 create_graph=False,
+                retain_graph=self.retain_graph,
             )
             safe_dist = torch.where(distances > 0, distances, torch.ones_like(distances))
             # force_vectors = -dV/dr * r̂_ij: positive (repulsive) pushes j away from i.

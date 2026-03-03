@@ -14,7 +14,7 @@ Example::
 
     # For multiple species with different interaction parameters
     multi_model = SoftSphereMultiModel(
-        n_species=2,
+        atomic_numbers=torch.tensor([18, 36]),
         sigma_matrix=torch.tensor([[1.0, 0.8], [0.8, 0.6]]),
         epsilon_matrix=torch.tensor([[1.0, 0.5], [0.5, 2.0]]),
     )
@@ -32,14 +32,13 @@ from torch_sim.models.pair_potential import PairPotentialModel
 from torch_sim.neighbors import torchsim_nl
 
 
-@torch.jit.script
 def soft_sphere_pair(
     dr: torch.Tensor,
     zi: torch.Tensor,  # noqa: ARG001
     zj: torch.Tensor,  # noqa: ARG001
-    sigma: float = 1.0,
-    epsilon: float = 1.0,
-    alpha: float = 2.0,
+    sigma: torch.Tensor | float = 1.0,
+    epsilon: torch.Tensor | float = 1.0,
+    alpha: torch.Tensor | float = 2.0,
 ) -> torch.Tensor:
     """Soft-sphere repulsive pair energy (zero beyond sigma).
 
@@ -60,14 +59,13 @@ def soft_sphere_pair(
     return torch.where(dr < sigma, energy, torch.zeros_like(energy))
 
 
-@torch.jit.script
 def soft_sphere_pair_force(
     dr: torch.Tensor,
     zi: torch.Tensor,  # noqa: ARG001
     zj: torch.Tensor,  # noqa: ARG001
-    sigma: float = 1.0,
-    epsilon: float = 1.0,
-    alpha: float = 2.0,
+    sigma: torch.Tensor | float = 1.0,
+    epsilon: torch.Tensor | float = 1.0,
+    alpha: torch.Tensor | float = 2.0,
 ) -> torch.Tensor:
     """Soft-sphere pair force (negative gradient of energy).
 
@@ -126,12 +124,6 @@ class MultiSoftSpherePairFn(torch.nn.Module):
                 to 2.0 for all pairs. Shape: [n_species, n_species].
         """
         super().__init__()
-        self.z_to_idx: torch.Tensor
-        self.atomic_numbers: torch.Tensor
-        self.sigma_matrix: torch.Tensor
-        self.epsilon_matrix: torch.Tensor
-        self.alpha_matrix: torch.Tensor
-
         n = len(atomic_numbers)
         if sigma_matrix.shape != (n, n):
             raise ValueError(f"sigma_matrix must have shape ({n}, {n})")
@@ -141,17 +133,16 @@ class MultiSoftSpherePairFn(torch.nn.Module):
             raise ValueError(f"alpha_matrix must have shape ({n}, {n})")
 
         self.register_buffer("atomic_numbers", atomic_numbers)
-        self.register_buffer("sigma_matrix", sigma_matrix)
-        self.register_buffer("epsilon_matrix", epsilon_matrix)
-        self.register_buffer(
-            "alpha_matrix",
-            alpha_matrix if alpha_matrix is not None else torch.full((n, n), 2.0),
+        self.sigma_matrix = sigma_matrix
+        self.epsilon_matrix = epsilon_matrix
+        self.alpha_matrix = (
+            alpha_matrix if alpha_matrix is not None else torch.full((n, n), 2.0)
         )
-        # Build a lookup table: atomic_number -> species index
         max_z = int(atomic_numbers.max().item()) + 1
         z_to_idx = torch.full((max_z,), -1, dtype=torch.long)
         for idx, z in enumerate(atomic_numbers.tolist()):
             z_to_idx[int(z)] = idx
+        self.z_to_idx: torch.Tensor
         self.register_buffer("z_to_idx", z_to_idx)
 
     def forward(
@@ -213,6 +204,7 @@ class SoftSphereModel(PairPotentialModel):
         neighbor_list_fn: Callable = torchsim_nl,
         use_neighbor_list: bool = True,  # noqa: ARG002
         cutoff: float | None = None,
+        retain_graph: bool = False,
     ) -> None:
         """Initialize the soft sphere model.
 
@@ -229,6 +221,7 @@ class SoftSphereModel(PairPotentialModel):
             neighbor_list_fn: Neighbor-list constructor. Defaults to torchsim_nl.
             use_neighbor_list: Accepted for backward compatibility (ignored).
             cutoff: Interaction cutoff. Defaults to sigma.
+            retain_graph: Keep computation graph for differentiable simulation.
         """
         self.sigma = sigma
         self.epsilon = epsilon
@@ -248,6 +241,7 @@ class SoftSphereModel(PairPotentialModel):
             per_atom_stresses=per_atom_stresses,
             neighbor_list_fn=neighbor_list_fn,
             reduce_to_half_list=True,
+            retain_graph=retain_graph,
         )
 
 
@@ -260,7 +254,7 @@ class SoftSphereMultiModel(PairPotentialModel):
     Example::
 
         model = SoftSphereMultiModel(
-            n_species=2,
+            atomic_numbers=torch.tensor([18, 36]),
             sigma_matrix=torch.tensor([[1.0, 0.8], [0.8, 0.6]]),
             epsilon_matrix=torch.tensor([[1.0, 0.5], [0.5, 2.0]]),
             compute_forces=True,
@@ -270,7 +264,7 @@ class SoftSphereMultiModel(PairPotentialModel):
 
     def __init__(
         self,
-        n_species: int,
+        atomic_numbers: torch.Tensor,
         sigma_matrix: torch.Tensor | None = None,
         epsilon_matrix: torch.Tensor | None = None,
         alpha_matrix: torch.Tensor | None = None,
@@ -285,11 +279,14 @@ class SoftSphereMultiModel(PairPotentialModel):
         use_neighbor_list: bool = True,
         neighbor_list_fn: Callable = torchsim_nl,
         cutoff: float | None = None,
+        retain_graph: bool = False,
     ) -> None:
         """Initialize the multi-species soft sphere model.
 
         Args:
-            n_species: Number of particle types.
+            atomic_numbers: Atomic numbers of atoms in the system. May contain
+                duplicates; only the sorted unique values are used to define
+                species and determine matrix dimensions.
             sigma_matrix: Symmetric matrix of interaction diameters.
                 Shape [n_species, n_species]. Defaults to 1.0 for all pairs.
             epsilon_matrix: Symmetric matrix of energy scales.
@@ -308,11 +305,14 @@ class SoftSphereMultiModel(PairPotentialModel):
                 is always used internally). Defaults to True.
             neighbor_list_fn: Neighbor-list constructor. Defaults to torchsim_nl.
             cutoff: Interaction cutoff. Defaults to max of sigma_matrix.
-            reduce_to_half_list: Use half neighbor list. Defaults to False.
+            retain_graph: Keep computation graph for differentiable simulation.
         """
         self.pbc = torch.tensor([pbc] * 3) if isinstance(pbc, bool) else pbc
-        self.n_species = n_species
         self.use_neighbor_list = use_neighbor_list
+
+        unique_z = torch.unique(atomic_numbers).sort().values.long()
+        n_species = len(unique_z)
+        self.n_species = n_species
 
         _device = device or torch.device("cpu")
         default_sigma = DEFAULT_SIGMA.to(device=_device, dtype=dtype)
@@ -353,14 +353,10 @@ class SoftSphereMultiModel(PairPotentialModel):
             if not torch.allclose(matrix, matrix.T):
                 raise ValueError(f"{matrix_name} is not symmetric")
 
-        _cutoff = cutoff or float(self.sigma_matrix.max())
+        _cutoff = cutoff or float(self.sigma_matrix.detach().max())
 
-        # Build the species-aware pair function using atomic_numbers as species indices.
-        # We create a lookup mapping species_idx (0..n_species-1) → itself,
-        # so atomic_numbers in the SimState must be 0..n_species-1.
-        atomic_numbers = torch.arange(n_species, dtype=torch.long, device=_device)
         pair_fn = MultiSoftSpherePairFn(
-            atomic_numbers=atomic_numbers,
+            atomic_numbers=unique_z.to(device=_device),
             sigma_matrix=self.sigma_matrix,
             epsilon_matrix=self.epsilon_matrix,
             alpha_matrix=self.alpha_matrix,
@@ -377,4 +373,5 @@ class SoftSphereMultiModel(PairPotentialModel):
             per_atom_stresses=per_atom_stresses,
             neighbor_list_fn=neighbor_list_fn,
             reduce_to_half_list=True,
+            retain_graph=retain_graph,
         )

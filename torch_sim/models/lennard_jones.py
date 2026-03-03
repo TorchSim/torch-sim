@@ -20,13 +20,12 @@ from torch_sim.models.pair_potential import PairPotentialModel
 from torch_sim.neighbors import torchsim_nl
 
 
-@torch.jit.script
 def lennard_jones_pair(
     dr: torch.Tensor,
     zi: torch.Tensor,  # noqa: ARG001
     zj: torch.Tensor,  # noqa: ARG001
-    sigma: float = 1.0,
-    epsilon: float = 1.0,
+    sigma: torch.Tensor | float = 1.0,
+    epsilon: torch.Tensor | float = 1.0,
 ) -> torch.Tensor:
     """Lennard-Jones 12-6 pair energy.
 
@@ -48,11 +47,10 @@ def lennard_jones_pair(
     return torch.where(dr > 0, energy, torch.zeros_like(energy))
 
 
-@torch.jit.script
 def lennard_jones_pair_force(
     dr: torch.Tensor,
-    sigma: float = 1.0,
-    epsilon: float = 1.0,
+    sigma: torch.Tensor | float = 1.0,
+    epsilon: torch.Tensor | float = 1.0,
 ) -> torch.Tensor:
     """Lennard-Jones 12-6 pair force (negative gradient of energy).
 
@@ -104,6 +102,7 @@ class LennardJonesModel(PairPotentialModel):
         per_atom_stresses: bool = False,
         neighbor_list_fn: Callable = torchsim_nl,
         cutoff: float | None = None,
+        retain_graph: bool = False,
     ) -> None:
         """Initialize the Lennard-Jones model.
 
@@ -118,6 +117,7 @@ class LennardJonesModel(PairPotentialModel):
             per_atom_stresses: Whether to return per-atom stresses. Defaults to False.
             neighbor_list_fn: Neighbor-list constructor. Defaults to torchsim_nl.
             cutoff: Interaction cutoff. Defaults to 2.5 * sigma.
+            retain_graph: Keep computation graph for differentiable simulation.
         """
         self.sigma = sigma
         self.epsilon = epsilon
@@ -133,6 +133,7 @@ class LennardJonesModel(PairPotentialModel):
             per_atom_stresses=per_atom_stresses,
             neighbor_list_fn=neighbor_list_fn,
             reduce_to_half_list=True,
+            retain_graph=retain_graph,
         )
 
 

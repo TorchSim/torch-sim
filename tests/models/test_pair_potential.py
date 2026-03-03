@@ -18,6 +18,7 @@ from torch_sim.models.pair_potential import (
 )
 from torch_sim.models.particle_life import particle_life_pair_force
 from torch_sim.models.soft_sphere import soft_sphere_pair
+from torch_sim.neighbors import torch_nl_n2
 
 
 # Argon LJ parameters
@@ -247,3 +248,41 @@ def test_unwrapped_positions_consistency() -> None:
         torch.testing.assert_close(
             results_wrapped[key], results_unwrapped[key], rtol=1e-10, atol=1e-10
         )
+
+
+def test_retain_graph_allows_param_grad(si_double_sim_state: ts.SimState) -> None:
+    """With retain_graph=True, energy graph survives force computation so we can
+    differentiate energy w.r.t. model parameters (e.g. sigma_matrix)."""
+    eps = torch.tensor(0.01, dtype=DTYPE, requires_grad=True)
+    pair_fn = functools.partial(lennard_jones_pair, sigma=LJ_SIGMA, epsilon=eps)
+    model = PairPotentialModel(
+        pair_fn=pair_fn,
+        cutoff=LJ_CUTOFF,
+        dtype=DTYPE,
+        compute_forces=True,
+        neighbor_list_fn=torch_nl_n2,
+        retain_graph=True,
+    )
+    out = model(si_double_sim_state)
+    assert out["forces"] is not None
+    (grad,) = torch.autograd.grad(out["energy"].sum(), eps)
+    assert grad.shape == eps.shape
+    assert grad.abs() > 0
+
+
+def test_no_retain_graph_frees_graph(si_double_sim_state: ts.SimState) -> None:
+    """Without retain_graph, differentiating energy w.r.t. parameters after force
+    computation raises because the graph has been freed."""
+    eps = torch.tensor(0.01, dtype=DTYPE, requires_grad=True)
+    pair_fn = functools.partial(lennard_jones_pair, sigma=LJ_SIGMA, epsilon=eps)
+    model = PairPotentialModel(
+        pair_fn=pair_fn,
+        cutoff=LJ_CUTOFF,
+        dtype=DTYPE,
+        compute_forces=True,
+        neighbor_list_fn=torch_nl_n2,
+        retain_graph=False,
+    )
+    out = model(si_double_sim_state)
+    with pytest.raises(RuntimeError, match="Trying to backward through the graph"):
+        torch.autograd.grad(out["energy"].sum(), eps)

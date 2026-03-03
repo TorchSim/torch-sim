@@ -21,14 +21,13 @@ from torch_sim.models.pair_potential import PairForcesModel
 from torch_sim.neighbors import torchsim_nl
 
 
-@torch.jit.script
 def particle_life_pair_force(
     dr: torch.Tensor,
     zi: torch.Tensor,  # noqa: ARG001
     zj: torch.Tensor,  # noqa: ARG001
-    A: float = 1.0,
-    beta: float = 0.3,
-    sigma: float = 1.0,
+    A: torch.Tensor | float = 1.0,
+    beta: torch.Tensor | float = 0.3,
+    sigma: torch.Tensor | float = 1.0,
 ) -> torch.Tensor:
     """Asymmetric particle-life scalar force magnitude.
 

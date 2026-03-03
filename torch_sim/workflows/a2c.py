@@ -282,7 +282,6 @@ def random_packed_structure(
             device=device,
             dtype=dtype,
             compute_forces=True,
-            use_neighbor_list=True,
         )
 
         # Dummy atomic numbers
@@ -402,15 +401,12 @@ def random_packed_structure_multi(
         # Convert fractional to cartesian coordinates
         positions_cart = torch.matmul(positions, cell)
 
-        # Initialize multi-species soft sphere potential calculator
-        n_species = len(element_counts)
         model = SoftSphereMultiModel(
-            n_species=n_species,
+            atomic_numbers=species_idx,
             sigma_matrix=diameter_matrix,
             device=device,
             dtype=dtype,
             compute_forces=True,
-            use_neighbor_list=True,
         )
 
         state_dict = ts.SimState(
