@@ -58,7 +58,7 @@ jobs:
         os: [ubuntu-latest, macos-14]
         version:
           - { python: '3.12', resolution: lowest-direct }
-          - { python: '3.13', resolution: highest }
+          - { python: '3.14', resolution: highest }
         model:
           - { name: fairchem, test_path: "tests/models/test_fairchem.py" }
           - { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
@@ -71,35 +71,35 @@ jobs:
           - { name: nequip, test_path: "tests/models/test_nequip_framework.py" }
           - { name: orb, test_path: "tests/models/test_orb.py" }
           - { name: sevenn, test_path: "tests/models/test_sevennet.py" }
-        exclude:
-          - version: { python: '3.13', resolution: lowest-direct }
-            model: { name: orb, test_path: 'tests/models/test_orb.py' }
-          - version: { python: '3.13', resolution: highest }
-            model: { name: orb, test_path: 'tests/models/test_orb.py' }
-          - version: { python: '3.13', resolution: lowest-direct }
-            model:
-              {
-                name: fairchem-legacy,
-                test_path: 'tests/models/test_fairchem_legacy.py',
-              }
-          - version: { python: '3.13', resolution: highest }
-            model:
-              {
-                name: fairchem-legacy,
-                test_path: 'tests/models/test_fairchem_legacy.py',
-              }
-          - version: { python: '3.13', resolution: lowest-direct }
-            model:
-              {
-                name: nequip,
-                test_path: 'tests/models/test_nequip_framework.py',
-              }
-          - version: { python: '3.13', resolution: highest }
-            model:
-              {
-                name: nequip,
-                test_path: 'tests/models/test_nequip_framework.py',
-              }
+        # exclude:
+        #   - version: { python: '3.14', resolution: lowest-direct }
+        #     model: { name: orb, test_path: 'tests/models/test_orb.py' }
+        #   - version: { python: '3.14', resolution: highest }
+        #     model: { name: orb, test_path: 'tests/models/test_orb.py' }
+        #   - version: { python: '3.14', resolution: lowest-direct }
+        #     model:
+        #       {
+        #         name: fairchem-legacy,
+        #         test_path: 'tests/models/test_fairchem_legacy.py',
+        #       }
+        #   - version: { python: '3.14', resolution: highest }
+        #     model:
+        #       {
+        #         name: fairchem-legacy,
+        #         test_path: 'tests/models/test_fairchem_legacy.py',
+        #       }
+        #   - version: { python: '3.14', resolution: lowest-direct }
+        #     model:
+        #       {
+        #         name: nequip,
+        #         test_path: 'tests/models/test_nequip_framework.py',
+        #       }
+        #   - version: { python: '3.14', resolution: highest }
+        #     model:
+        #       {
+        #         name: nequip,
+        #         test_path: 'tests/models/test_nequip_framework.py',
+        #       }
     runs-on: ${{ matrix.os }}
 
     steps:
