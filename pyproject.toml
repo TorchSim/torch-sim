@@ -112,6 +112,7 @@ ignore = [
     "PLR2004", # Magic value used in comparison, consider replacing {value} with a constant variable
     "PLW2901", # Outer for loop variable overwritten by inner assignment target
     "PTH",     # flake8-use-pathlib
+    "RUF002",  # Greek letters are discouraged
     "S301",    # pickle and modules that wrap it can be unsafe, possible security issue
     "S311",    # Standard pseudo-random generators are not suitable for cryptographic purposes
     "SIM105",  # Use contextlib.suppress instead of try-except-pass

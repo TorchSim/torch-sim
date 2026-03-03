@@ -13,7 +13,7 @@ from ase.stress import full_3x3_to_voigt_6_stress, voigt_6_to_full_3x3_stress
 import torch_sim as ts
 from torch_sim.constraints import FixCom, FixSymmetry
 from torch_sim.models.interface import ModelInterface
-from torch_sim.models.lennard_jones import UnbatchedLennardJonesModel
+from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.symmetrize import get_symmetry_datasets
 from torch_sim.typing import StateDict
 
@@ -68,9 +68,9 @@ def make_structure(name: str) -> Atoms:
 
 
 @pytest.fixture
-def model() -> UnbatchedLennardJonesModel:
+def model() -> LennardJonesModel:
     """LJ model for testing."""
-    return UnbatchedLennardJonesModel(
+    return LennardJonesModel(
         sigma=1.0,
         epsilon=0.05,
         cutoff=6.0,
@@ -82,13 +82,13 @@ def model() -> UnbatchedLennardJonesModel:
 class NoisyModelWrapper(ModelInterface):
     """Wrapper that adds noise to forces and stress."""
 
-    model: UnbatchedLennardJonesModel
+    model: LennardJonesModel
     rng: np.random.Generator
     noise_scale: float
 
     def __init__(
         self,
-        model: UnbatchedLennardJonesModel,
+        model: LennardJonesModel,
         noise_scale: float = 1e-4,
     ) -> None:
         super().__init__()
@@ -117,7 +117,7 @@ class NoisyModelWrapper(ModelInterface):
 
 
 @pytest.fixture
-def noisy_lj_model(model: UnbatchedLennardJonesModel) -> NoisyModelWrapper:
+def noisy_lj_model(model: LennardJonesModel) -> NoisyModelWrapper:
     """LJ model with noise added to forces/stress."""
     return NoisyModelWrapper(model)
 
@@ -584,7 +584,7 @@ class TestFixSymmetryWithOptimization:
     @pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
     def test_cell_filter_preserves_symmetry(
         self,
-        model: UnbatchedLennardJonesModel,
+        model: LennardJonesModel,
         cell_filter: ts.CellFilter,
     ) -> None:
         """Cell filters with FixSymmetry preserve symmetry."""

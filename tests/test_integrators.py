@@ -1041,11 +1041,6 @@ def test_compute_cell_force_atoms_per_system():
     assert abs(force_ratio - 8.0) / 8.0 < 0.1
 
 
-# ---------------------------------------------------------------------------
-# Reproducibility tests
-# ---------------------------------------------------------------------------
-
-
 def test_nvt_langevin_reproducibility(
     ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
 ):
