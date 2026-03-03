@@ -7,6 +7,7 @@ import torch_sim as ts
 from torch_sim.autobatching import (
     BinningAutoBatcher,
     InFlightAutoBatcher,
+    _n_edges_scalers,
     calculate_memory_scalers,
     determine_max_batch_size,
     to_constant_volume_bins,
@@ -156,6 +157,33 @@ def test_calculate_scaling_metric_mixed_pbc_uses_per_system_path(
     assert metric_values == pytest.approx(expected_values, rel=1e-5)
 
 
+def test_n_edges_scalers_periodic(si_sim_state: ts.SimState) -> None:
+    """n_edges scalers for a single periodic system have correct shape and type."""
+    result = _n_edges_scalers(si_sim_state, cutoff=5.0)
+    assert isinstance(result, list)
+    assert len(result) == si_sim_state.n_systems
+    assert all(isinstance(v, float) for v in result)
+    assert all(v >= 0 for v in result)
+
+
+def test_n_edges_scalers_non_periodic(benzene_sim_state: ts.SimState) -> None:
+    """n_edges scalers for a non-periodic (molecular) system have correct shape/type."""
+    result = _n_edges_scalers(benzene_sim_state, cutoff=5.0)
+    assert isinstance(result, list)
+    assert len(result) == benzene_sim_state.n_systems
+    assert all(isinstance(v, float) for v in result)
+    assert all(v >= 0 for v in result)
+
+
+def test_n_edges_scalers_batched(ar_double_sim_state: ts.SimState) -> None:
+    """n_edges scalers for a batched state return one value per system."""
+    result = _n_edges_scalers(ar_double_sim_state, cutoff=5.0)
+    assert isinstance(result, list)
+    assert len(result) == ar_double_sim_state.n_systems
+    assert all(isinstance(v, float) for v in result)
+    assert all(v >= 0 for v in result)
+
+
 @pytest.mark.parametrize("items", [[], {}])
 def test_to_constant_volume_bins_empty_input(
     items: list[Any] | dict[int, float],
@@ -222,6 +250,38 @@ def test_binning_auto_batcher(
     assert restored_states[1].n_atoms == states[1].n_atoms
 
     # Check atomic numbers to verify the correct order
+    assert torch.all(restored_states[0].atomic_numbers == states[0].atomic_numbers)
+    assert torch.all(restored_states[1].atomic_numbers == states[1].atomic_numbers)
+
+
+def test_binning_auto_batcher_n_edges(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    """Test BinningAutoBatcher with n_edges memory metric."""
+    states = [si_sim_state, fe_supercell_sim_state]
+    cutoff = 5.0
+
+    # Pre-compute scalers to set a meaningful max_memory_scaler
+    scalers = [_n_edges_scalers(s, cutoff)[0] for s in states]
+
+    batcher = BinningAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_edges",
+        cutoff=cutoff,
+        max_memory_scaler=sum(scalers) + 1,
+    )
+    batcher.load_states(states)
+
+    assert len(batcher.memory_scalers) == len(states)
+    assert all(isinstance(v, float) for v in batcher.memory_scalers)
+    assert batcher.memory_scalers == scalers
+
+    batches = [batch for batch, _ in batcher]
+    restored_states = batcher.restore_original_order(batches)
+
+    assert len(restored_states) == len(states)
     assert torch.all(restored_states[0].atomic_numbers == states[0].atomic_numbers)
     assert torch.all(restored_states[1].atomic_numbers == states[1].atomic_numbers)
 

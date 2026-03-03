@@ -36,7 +36,6 @@ for _name in SIMSTATE_GENERATORS:
 def lj_model() -> LennardJonesModel:
     """Create a Lennard-Jones model with reasonable parameters for Ar."""
     return LennardJonesModel(
-        use_neighbor_list=True,
         sigma=3.405,
         epsilon=0.0104,
         device=DEVICE,
@@ -110,6 +109,16 @@ def si_phonopy_atoms() -> Any:
         symbols=species,
         pbc=True,
     )
+
+
+@pytest.fixture
+def cu_supercell_sim_state() -> ts.SimState:
+    """Create a 4x4x4 FCC Copper supercell with small random displacements."""
+    atoms = bulk("Cu", "fcc", a=3.61, cubic=True).repeat([4, 4, 4])
+    state = ts.io.atoms_to_state(atoms, DEVICE, DTYPE)
+    torch.manual_seed(42)
+    state.positions = state.positions + 0.1 * torch.randn_like(state.positions)
+    return state
 
 
 @pytest.fixture

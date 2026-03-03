@@ -35,7 +35,11 @@ If you'd like to execute the scripts or examples locally, you can run them with:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # pick any of the examples
-uv run --with . examples/2_Structural_optimization/2.3_MACE_FIRE.py
-uv run --with . examples/3_Dynamics/3.3_MACE_NVE_cueq.py
-uv run --with . examples/4_High_level_api/4.1_high_level_api.py
+uv run --with . examples/scripts/1_introduction.py
+uv run --with . examples/scripts/2_structural_optimization.py
+uv run --with . examples/scripts/3_dynamics.py
+uv run --with . examples/scripts/4_high_level_api.py
+
+# or any of the tutorials
+uv run --with . examples/tutorials/diff_sim.py
 ```

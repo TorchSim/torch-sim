@@ -20,7 +20,7 @@ except ImportError as exc:
 
     from torch_sim.models.interface import ModelInterface
 
-    class SevenNetModel(ModelInterface):  # type: ignore[no-redef]
+    class SevenNetModel(ModelInterface):
         """Dummy SevenNet model wrapper for torch-sim to enable safe imports.
 
         NOTE: This class is a placeholder when `sevenn` is not installed.

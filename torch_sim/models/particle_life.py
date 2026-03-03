@@ -6,7 +6,6 @@ import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import pbc_to_tensor
 from torch_sim.typing import StateDict
 
 
@@ -172,7 +171,6 @@ class ParticleLifeModel(ModelInterface):
 
         positions = state.positions
         cell = state.row_vector_cell
-        pbc_tensor = pbc_to_tensor(state.pbc, self.device)
 
         if cell.dim() == 3:  # Check if there is an extra batch dimension
             cell = cell.squeeze(0)  # Squeeze the first dimension
@@ -186,8 +184,8 @@ class ParticleLifeModel(ModelInterface):
 
         # Wrap positions into the unit cell
         wrapped_positions = (
-            ts.transforms.pbc_wrap_batched(positions, state.cell, system_idx, pbc_tensor)
-            if pbc_tensor.any()
+            ts.transforms.pbc_wrap_batched(positions, state.cell, system_idx, state.pbc)
+            if state.pbc.any()
             else positions
         )
 
@@ -195,7 +193,7 @@ class ParticleLifeModel(ModelInterface):
             mapping, _, shifts_idx = torchsim_nl(
                 positions=wrapped_positions,
                 cell=cell,
-                pbc=pbc_tensor,
+                pbc=state.pbc,
                 cutoff=self.cutoff,
                 system_idx=system_idx,
             )
@@ -203,7 +201,7 @@ class ParticleLifeModel(ModelInterface):
             dr_vec, distances = transforms.get_pair_displacements(
                 positions=wrapped_positions,
                 cell=cell,
-                pbc=pbc_tensor,
+                pbc=state.pbc,
                 pairs=(mapping[0], mapping[1]),
                 shifts=shifts_idx,
             )
@@ -212,7 +210,7 @@ class ParticleLifeModel(ModelInterface):
             dr_vec, distances = transforms.get_pair_displacements(
                 positions=wrapped_positions,
                 cell=cell,
-                pbc=pbc_tensor,
+                pbc=state.pbc,
             )
             # Mask out self-interactions
             mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)

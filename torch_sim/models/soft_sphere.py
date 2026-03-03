@@ -47,7 +47,7 @@ import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import pbc_to_tensor
+from torch_sim.state import ensure_sim_state
 from torch_sim.typing import StateDict
 
 
@@ -121,7 +121,7 @@ def soft_sphere_pair_force(
     """
 
     def fn(dr: torch.Tensor) -> torch.Tensor:
-        return (-epsilon / sigma) * (1.0 - (dr / sigma)).pow(alpha - 1)
+        return (epsilon / sigma) * (1.0 - (dr / sigma)).pow(alpha - 1)
 
     # Create mask for distances within cutoff i.e sigma
     mask = dr < sigma
@@ -277,22 +277,11 @@ class SoftSphereModel(ModelInterface):
             The soft sphere potential is purely repulsive, and forces are truncated at
             the cutoff distance.
         """
-        if not isinstance(state, ts.SimState):
-            state_dict = state
-            positions_in = state_dict["positions"]
-            state = ts.SimState(
-                positions=positions_in,
-                masses=torch.ones_like(positions_in),
-                cell=state_dict["cell"],
-                pbc=state_dict.get("pbc", True),
-                atomic_numbers=state_dict["atomic_numbers"],
-                system_idx=state_dict.get("system_idx"),
-            )
-
+        state = ensure_sim_state(state)
         positions = state.positions
         cell = state.row_vector_cell
         cell = cell.squeeze()
-        pbc_tensor = pbc_to_tensor(state.pbc, self.device)
+        pbc = state.pbc
 
         # Ensure system_idx exists (create if None for single system)
         system_idx = (
@@ -303,8 +292,8 @@ class SoftSphereModel(ModelInterface):
 
         # Wrap positions into the unit cell
         wrapped_positions = (
-            ts.transforms.pbc_wrap_batched(positions, state.cell, system_idx, pbc_tensor)
-            if pbc_tensor.any()
+            ts.transforms.pbc_wrap_batched(positions, state.cell, system_idx, pbc)
+            if pbc.any()
             else positions
         )
 
@@ -312,7 +301,7 @@ class SoftSphereModel(ModelInterface):
             mapping, _, shifts_idx = torchsim_nl(
                 positions=wrapped_positions,
                 cell=cell,
-                pbc=pbc_tensor,
+                pbc=pbc,
                 cutoff=self.cutoff,
                 system_idx=system_idx,
             )
@@ -320,7 +309,7 @@ class SoftSphereModel(ModelInterface):
             dr_vec, distances = transforms.get_pair_displacements(
                 positions=wrapped_positions,
                 cell=cell,
-                pbc=pbc_tensor,
+                pbc=pbc,
                 pairs=(mapping[0], mapping[1]),
                 shifts=shifts_idx,
             )
@@ -330,7 +319,7 @@ class SoftSphereModel(ModelInterface):
             dr_vec, distances = transforms.get_pair_displacements(
                 positions=wrapped_positions,
                 cell=cell,
-                pbc=pbc_tensor,
+                pbc=pbc,
             )
             # Remove self-interactions and apply cutoff
             mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)
@@ -373,9 +362,8 @@ class SoftSphereModel(ModelInterface):
             if self.compute_forces:
                 # Compute atomic forces by accumulating pair contributions
                 forces = torch.zeros_like(positions)
-                # Add force contributions (f_ij on j, -f_ij on i)
-                forces.index_add_(0, mapping[0], force_vectors)
-                forces.index_add_(0, mapping[1], -force_vectors)
+                forces.index_add_(0, mapping[0], -force_vectors)
+                forces.index_add_(0, mapping[1], force_vectors)
                 results["forces"] = forces
 
             if self.compute_stress and cell is not None:
@@ -397,7 +385,7 @@ class SoftSphereModel(ModelInterface):
         return results
 
     def forward(
-        self, state: ts.SimState | StateDict, **_kwargs: object
+        self, state: ts.SimState | StateDict, **_kwargs
     ) -> dict[str, torch.Tensor]:
         """Compute soft sphere potential energies, forces, and stresses for a system.
 
@@ -433,28 +421,15 @@ class SoftSphereModel(ModelInterface):
             forces = results["forces"]  # Shape: [n_atoms, 3]
             ```
         """
-        if isinstance(state, ts.SimState):
-            sim_state = state
-        else:
-            positions_in = state["positions"]
-            sim_state = ts.SimState(
-                positions=positions_in,
-                masses=torch.ones_like(positions_in),
-                cell=state["cell"],
-                pbc=state.get("pbc", True),
-                atomic_numbers=state["atomic_numbers"],
-                system_idx=state.get("system_idx"),
-            )
+        state = ensure_sim_state(state)
 
         # Handle System indices if not provided
-        if sim_state.system_idx is None and sim_state.cell.shape[0] > 1:
+        if state.system_idx is None and state.cell.shape[0] > 1:
             raise ValueError(
                 "system_idx can only be inferred if there is only one system"
             )
 
-        outputs = [
-            self.unbatched_forward(sim_state[i]) for i in range(sim_state.n_systems)
-        ]
+        outputs = [self.unbatched_forward(state[i]) for i in range(state.n_systems)]
         properties = outputs[0]
 
         # Combine results
@@ -535,7 +510,7 @@ class SoftSphereMultiModel(ModelInterface):
 
     def __init__(
         self,
-        species: torch.Tensor | None = None,
+        n_species: int,
         sigma_matrix: torch.Tensor | None = None,
         epsilon_matrix: torch.Tensor | None = None,
         alpha_matrix: torch.Tensor | None = None,
@@ -556,9 +531,7 @@ class SoftSphereMultiModel(ModelInterface):
         different interaction parameters.
 
         Args:
-            species (torch.Tensor | None): Particle type indices, shape [n_particles].
-                Each value should be an integer in range [0, n_types-1]. If None,
-                assumes all particles are the same type (0). Defaults to None.
+            n_species (int): Number of particle types.
             sigma_matrix (torch.Tensor | None): Matrix of distance parameters for
                 each pair of types. Shape [n_types, n_types]. If None, uses default
                 value 1.0 for all pairs. Defaults to None.
@@ -638,9 +611,7 @@ class SoftSphereMultiModel(ModelInterface):
         self.per_atom_stresses = per_atom_stresses
         self.use_neighbor_list = use_neighbor_list
 
-        # Store species list and determine number of unique species
-        self.species = species
-        n_species = len(torch.unique(species))
+        self.n_species = n_species
 
         # Initialize parameter matrices with defaults if not provided
         default_sigma = DEFAULT_SIGMA.to(device=self.device, dtype=self.dtype)
@@ -689,10 +660,9 @@ class SoftSphereMultiModel(ModelInterface):
             cutoff or float(self.sigma_matrix.max()), dtype=dtype, device=device
         )
 
-    def unbatched_forward(  # noqa: PLR0915
+    def unbatched_forward(
         self,
         state: ts.SimState,
-        species: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single unbatched system with multiple
         species.
@@ -703,10 +673,8 @@ class SoftSphereMultiModel(ModelInterface):
 
         Args:
             state (SimState): Single, non-batched simulation state containing atomic
-                positions, cell vectors, and other system information.
-            species (torch.Tensor | None): Optional species indices to override the
-                ones provided during initialization. Shape: [n_particles]. If None,
-                uses the species defined at initialization. Defaults to None.
+                positions, cell vectors, and other system information. Species indices
+                are read from ``state.atomic_numbers``.
 
         Returns:
             dict[str, torch.Tensor]: Computed properties:
@@ -726,29 +694,13 @@ class SoftSphereMultiModel(ModelInterface):
             particles, it looks up the appropriate parameters based on the species
             of the two particles.
         """
-        # Convert inputs to proper device/dtype and handle species
-        if not isinstance(state, ts.SimState):
-            state_dict = state
-            state = ts.SimState(
-                positions=state_dict["positions"],
-                masses=state_dict.get("masses", torch.ones_like(state_dict["positions"])),
-                cell=state_dict["cell"],
-                pbc=state_dict.get("pbc", True),
-                atomic_numbers=state_dict["atomic_numbers"],
-                system_idx=state_dict.get("system_idx"),
-            )
+        state = ensure_sim_state(state)
 
-        if species is not None:
-            species_tensor = species.to(device=self.device, dtype=torch.long)
-        else:
-            species_tensor = self.species
-        if species_tensor is None:
-            raise ValueError("species must be provided at init or as argument")
+        species_idx = state.atomic_numbers.to(device=self.device, dtype=torch.long)
 
         positions = state.positions
         cell = state.row_vector_cell
         cell = cell.squeeze()
-        species_idx = species_tensor
 
         # Compute neighbor list or full distance matrix
         if self.use_neighbor_list:
@@ -830,9 +782,8 @@ class SoftSphereMultiModel(ModelInterface):
             if self.compute_forces:
                 # Compute atomic forces by accumulating pair contributions
                 forces = torch.zeros_like(positions)
-                # Add force contributions (f_ij on j, -f_ij on i)
-                forces.index_add_(0, mapping[0], force_vectors)
-                forces.index_add_(0, mapping[1], -force_vectors)
+                forces.index_add_(0, mapping[0], -force_vectors)
+                forces.index_add_(0, mapping[1], force_vectors)
                 results["forces"] = forces
 
             if self.compute_stress and cell is not None:
@@ -854,7 +805,7 @@ class SoftSphereMultiModel(ModelInterface):
         return results
 
     def forward(
-        self, state: ts.SimState | StateDict, **_kwargs: object
+        self, state: ts.SimState | StateDict, **_kwargs
     ) -> dict[str, torch.Tensor]:
         """Compute soft sphere potential properties for multi-component systems.
 
@@ -901,25 +852,9 @@ class SoftSphereMultiModel(ModelInterface):
             This method requires species information either provided during initialization
             or included in the state object's metadata.
         """
-        if not isinstance(state, ts.SimState):
-            state_dict: StateDict = state
-            positions_in = state_dict["positions"]
-            state = ts.SimState(
-                positions=positions_in,
-                masses=state_dict.get("masses", torch.ones_like(positions_in)),
-                cell=state_dict["cell"],
-                pbc=self.pbc,
-                atomic_numbers=state_dict.get(
-                    "atomic_numbers",
-                    torch.zeros(
-                        positions_in.shape[0],
-                        dtype=torch.long,
-                        device=positions_in.device,
-                    ),
-                ),
-                system_idx=state_dict.get("system_idx"),
-            )
-        elif state.pbc != self.pbc:
+        state = ensure_sim_state(state)
+
+        if state.pbc != self.pbc:
             raise ValueError("PBC mismatch between model and state")
 
         # Handle system indices if not provided

@@ -10,6 +10,7 @@ and positions during MD simulations.
 
 from __future__ import annotations
 
+import logging
 import math
 import warnings
 from abc import ABC, abstractmethod
@@ -17,6 +18,8 @@ from typing import TYPE_CHECKING, Self
 
 import torch
 
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from torch_sim.state import SimState
@@ -612,7 +615,7 @@ class FixCom(SystemConstraint):
 
 def count_degrees_of_freedom(
     state: SimState, constraints: list[Constraint] | None = None
-) -> int:
+) -> torch.Tensor:
     """Count the total degrees of freedom in a system with constraints.
 
     This function calculates the total number of degrees of freedom by starting
@@ -624,19 +627,17 @@ def count_degrees_of_freedom(
         constraints: List of active constraints (optional)
 
     Returns:
-        Total number of degrees of freedom
+        Degrees of freedom per system as a tensor of shape (n_systems,)
     """
-    # Start with unconstrained DOF
-    total_dof: int | torch.Tensor = state.n_atoms * 3
+    # Start with unconstrained DOF per system
+    total_dof = 3 * state.n_atoms_per_system
 
-    # Subtract DOF removed by constraints (get_removed_dof returns per-system tensor)
+    # Subtract DOF removed by constraints
     if constraints is not None:
         for constraint in constraints:
-            removed = constraint.get_removed_dof(state)
-            total_dof = total_dof - removed.sum()
+            total_dof -= constraint.get_removed_dof(state)
 
-    result = max(0, total_dof)
-    return int(result.item()) if isinstance(result, torch.Tensor) else result
+    return torch.clamp(total_dof, min=0)
 
 
 def check_no_index_out_of_bounds(
@@ -696,22 +697,22 @@ def validate_constraints(constraints: list[Constraint], state: SimState) -> None
         all_indices = torch.cat([c.atom_idx for c in indexed_constraints])
         unique_indices = torch.unique(all_indices)
         if len(unique_indices) < len(all_indices):
-            warnings.warn(
+            msg = (
                 "Multiple constraints are acting on the same atoms. "
-                "This may lead to unexpected behavior.",
-                UserWarning,
-                stacklevel=3,
+                "This may lead to unexpected behavior."
             )
+            warnings.warn(msg, UserWarning, stacklevel=3)
+            logger.warning(msg)
 
     # Warn about COM constraint with fixed atoms
     if has_com_constraint and indexed_constraints:
-        warnings.warn(
+        msg = (
             "Using FixCom together with other constraints may lead to "
             "unexpected behavior. The center of mass constraint is applied "
-            "to all atoms, including those that may be constrained by other means.",
-            UserWarning,
-            stacklevel=3,
+            "to all atoms, including those that may be constrained by other means."
         )
+        warnings.warn(msg, UserWarning, stacklevel=3)
+        logger.warning(msg)
 
 
 class FixSymmetry(SystemConstraint):
