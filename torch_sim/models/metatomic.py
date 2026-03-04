@@ -21,7 +21,6 @@ import vesin.metatomic
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.typing import StateDict
 
 
 try:
@@ -148,7 +147,7 @@ class MetatomicModel(ModelInterface):
         )
 
     def forward(  # noqa: C901, PLR0915
-        self, state: ts.SimState | StateDict, **_kwargs: Any
+        self, state: ts.SimState, **_kwargs: Any
     ) -> dict[str, torch.Tensor]:
         """Compute energies, forces, and stresses for the given atomic systems.
 
@@ -157,9 +156,8 @@ class MetatomicModel(ModelInterface):
         multiple systems as well as constructing the necessary neighbor lists.
 
         Args:
-            state (SimState | StateDict): State object containing positions, cell,
-                and other system information. Can be either a SimState object or a
-                dictionary with the relevant fields.
+            state (SimState): State object containing positions, cell, and other
+                system information.
             **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
@@ -169,18 +167,7 @@ class MetatomicModel(ModelInterface):
                 - 'stress': System stresses with shape [n_systems, 3, 3] if
                     compute_stress=True
         """
-        if isinstance(state, ts.SimState):
-            sim_state = state
-        else:
-            positions = state["positions"]
-            sim_state = ts.SimState(
-                positions=positions,
-                masses=torch.ones_like(positions),
-                cell=state["cell"],
-                pbc=state.get("pbc", True),
-                atomic_numbers=state["atomic_numbers"],
-                system_idx=state.get("system_idx"),
-            )
+        sim_state = state
 
         # Input validation is already done inside the forward method of the
         # AtomisticModel class, so we don't need to do it again here.
@@ -250,7 +237,7 @@ class MetatomicModel(ModelInterface):
         )
 
         results: dict[str, torch.Tensor] = {}
-        results["energy"] = model_outputs["energy"].block().values.detach().squeeze(-1)
+        results["energy"] = model_outputs["energy"].block().values.squeeze(-1)
 
         # Compute forces and/or stresses if requested
         tensors_for_autograd = []
@@ -299,4 +286,4 @@ class MetatomicModel(ModelInterface):
             else:
                 results["stress"] = torch.empty_like(cell)
 
-        return results
+        return {k: v.detach() for k, v in results.items()}

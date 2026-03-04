@@ -43,3 +43,6 @@ uv.lock
 
 # duecredit
 .duecredit.p
+
+# agents
+.agents/

@@ -6,8 +6,6 @@ import torch_sim as ts
 from torch_sim import transforms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import pbc_to_tensor
-from torch_sim.typing import StateDict
 
 
 DEFAULT_BETA = torch.tensor(0.3)
@@ -142,9 +140,7 @@ class ParticleLifeModel(ModelInterface):
         self.epsilon = torch.tensor(epsilon, dtype=self.dtype, device=self.device)
         self.beta = torch.tensor(beta, dtype=self.dtype, device=self.device)
 
-    def unbatched_forward(
-        self, state: ts.SimState | StateDict
-    ) -> dict[str, torch.Tensor]:
+    def unbatched_forward(self, state: ts.SimState) -> dict[str, torch.Tensor]:
         """Compute energies and forces for a single unbatched system.
 
         Internal implementation that processes a single, non-batched simulation state.
@@ -158,21 +154,8 @@ class ParticleLifeModel(ModelInterface):
         Returns:
             A dictionary containing the energy, forces, and stresses
         """
-        if not isinstance(state, ts.SimState):
-            state_dict = state
-            positions_in = state_dict["positions"]
-            state = ts.SimState(
-                positions=positions_in,
-                masses=torch.ones_like(positions_in),
-                cell=state_dict["cell"],
-                pbc=state_dict.get("pbc", True),
-                atomic_numbers=state_dict["atomic_numbers"],
-                system_idx=state_dict.get("system_idx"),
-            )
-
         positions = state.positions
         cell = state.row_vector_cell
-        pbc_tensor = pbc_to_tensor(state.pbc, self.device)
 
         if cell.dim() == 3:  # Check if there is an extra batch dimension
             cell = cell.squeeze(0)  # Squeeze the first dimension
@@ -186,8 +169,8 @@ class ParticleLifeModel(ModelInterface):
 
         # Wrap positions into the unit cell
         wrapped_positions = (
-            ts.transforms.pbc_wrap_batched(positions, state.cell, system_idx, pbc_tensor)
-            if pbc_tensor.any()
+            ts.transforms.pbc_wrap_batched(positions, state.cell, system_idx, state.pbc)
+            if state.pbc.any()
             else positions
         )
 
@@ -195,7 +178,7 @@ class ParticleLifeModel(ModelInterface):
             mapping, _, shifts_idx = torchsim_nl(
                 positions=wrapped_positions,
                 cell=cell,
-                pbc=pbc_tensor,
+                pbc=state.pbc,
                 cutoff=self.cutoff,
                 system_idx=system_idx,
             )
@@ -203,7 +186,7 @@ class ParticleLifeModel(ModelInterface):
             dr_vec, distances = transforms.get_pair_displacements(
                 positions=wrapped_positions,
                 cell=cell,
-                pbc=pbc_tensor,
+                pbc=state.pbc,
                 pairs=(mapping[0], mapping[1]),
                 shifts=shifts_idx,
             )
@@ -212,7 +195,7 @@ class ParticleLifeModel(ModelInterface):
             dr_vec, distances = transforms.get_pair_displacements(
                 positions=wrapped_positions,
                 cell=cell,
-                pbc=pbc_tensor,
+                pbc=state.pbc,
             )
             # Mask out self-interactions
             mask = torch.eye(positions.shape[0], dtype=torch.bool, device=self.device)
@@ -252,9 +235,7 @@ class ParticleLifeModel(ModelInterface):
 
         return results
 
-    def forward(
-        self, state: ts.SimState | StateDict, **_kwargs: object
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState, **_kwargs: object) -> dict[str, torch.Tensor]:
         """Compute particle life energies and forces for a system.
 
         Main entry point for particle life calculations that handles batched states by
@@ -281,18 +262,7 @@ class ParticleLifeModel(ModelInterface):
         Raises:
             ValueError: If batch cannot be inferred for multi-cell systems.
         """
-        if isinstance(state, ts.SimState):
-            sim_state = state
-        else:
-            positions_in = state["positions"]
-            sim_state = ts.SimState(
-                positions=positions_in,
-                masses=torch.ones_like(positions_in),
-                cell=state["cell"],
-                pbc=state.get("pbc", True),
-                atomic_numbers=state["atomic_numbers"],
-                system_idx=state.get("system_idx"),
-            )
+        sim_state = state
 
         if sim_state.system_idx is None and sim_state.cell.shape[0] > 1:
             raise ValueError(

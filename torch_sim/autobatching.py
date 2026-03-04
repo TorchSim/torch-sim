@@ -20,6 +20,7 @@ Notes:
     model architectures and GPU configurations.
 """
 
+import logging
 from collections.abc import Callable, Iterator, Sequence
 from itertools import chain
 from typing import Any, get_args
@@ -28,8 +29,12 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
+from torch_sim.neighbors import torchsim_nl
 from torch_sim.state import SimState
 from torch_sim.typing import MemoryScaling
+
+
+logger = logging.getLogger(__name__)
 
 
 def to_constant_volume_bins(  # noqa: C901, PLR0915
@@ -316,23 +321,46 @@ def determine_max_batch_size(
             # Check if any of the OOM error messages match
             for msg in oom_error_message:
                 if msg in exc_str:
-                    return sizes[max(0, sys_idx - 2)]
+                    safe_size = sizes[max(0, sys_idx - 2)]
+                    logger.debug(
+                        "OOM at %d systems (%d atoms), returning safe batch size %d",
+                        n_systems,
+                        concat_state.n_atoms,
+                        safe_size,
+                    )
+                    return safe_size
 
-            # No OOM message matched - re-raise the error
-            raise
+                # No OOM message matched - re-raise the error
+                raise
 
     return sizes[-1]
+
+
+def _n_edges_scalers(state: SimState, cutoff: float) -> list[float]:
+    """Return per-system edge counts from the neighbor list as memory scalers."""
+    cutoff_tensor = torch.tensor(cutoff, dtype=state.dtype, device=state.device)
+    _, system_mapping, _ = torchsim_nl(
+        positions=state.positions,
+        cell=state.cell,
+        pbc=state.pbc,
+        cutoff=cutoff_tensor,
+        system_idx=state.system_idx,
+    )
+    return system_mapping.bincount(minlength=state.n_systems).float().tolist()
 
 
 def calculate_memory_scalers(
     state: SimState,
     memory_scales_with: MemoryScaling = "n_atoms_x_density",
+    cutoff: float = 6.0,
 ) -> list[float]:
     """Calculate a metric that estimates memory requirements for each system in a state.
 
     Provides different scaling metrics that correlate with memory usage.
     Models with radial neighbor cutoffs generally scale with "n_atoms_x_density",
     while models with a fixed number of neighbors scale with "n_atoms".
+    For molecular systems, "n_edges" gives the most accurate estimate by computing
+    the actual neighbor list edge count using the provided cutoff.
     The choice of metric can significantly impact the accuracy of memory requirement
     estimations for different types of simulation systems.
 
@@ -342,11 +370,16 @@ def calculate_memory_scalers(
     Args:
         state (SimState): State to calculate metric for, with shape information
             specific to the SimState instance.
-        memory_scales_with ("n_atoms_x_density" | "n_atoms"): Type of metric
-            to use. "n_atoms" uses only atom count and is suitable for models that
-            have a fixed number of neighbors. "n_atoms_x_density" uses atom count
-            multiplied by number density and is better for models with radial cutoffs
-            Defaults to "n_atoms_x_density".
+        memory_scales_with ("n_atoms_x_density" | "n_atoms" | "n_edges"): Type of
+            metric to use. "n_atoms" uses only atom count and is suitable for models
+            that have a fixed number of neighbors. "n_atoms_x_density" uses atom count
+            multiplied by number density and is better for models with radial cutoffs.
+            "n_edges" computes the actual neighbor list edge count, which is the most
+            accurate metric overall but more expensive to compute than the alternatives;
+            strongly recommended for molecular systems. Defaults to "n_atoms_x_density".
+        cutoff (float): Neighbor list cutoff distance in Angstroms. Only used when
+            memory_scales_with="n_edges". Should match the model's cutoff for best
+            accuracy. Defaults to 7.0.
 
     Returns:
         list[float]: Calculated metric value for each system.
@@ -361,6 +394,11 @@ def calculate_memory_scalers(
 
         # Calculate memory scaling factor based on atom count and density
         metrics = calculate_memory_scalers(state, memory_scales_with="n_atoms_x_density")
+
+        # Calculate memory scaling factor based on actual neighbor list edge count
+        metrics = calculate_memory_scalers(
+            state, memory_scales_with="n_edges", cutoff=5.0
+        )
     """
     if memory_scales_with == "n_atoms":
         return state.n_atoms_per_system.tolist()
@@ -410,6 +448,8 @@ def calculate_memory_scalers(
                 volume = bbox.prod() / 1000
             scalers.append(system_state.n_atoms * (system_state.n_atoms / volume.item()))
         return scalers
+    if memory_scales_with == "n_edges":
+        return _n_edges_scalers(state, cutoff)
     raise ValueError(
         f"Invalid metric: {memory_scales_with}, must be one of {get_args(MemoryScaling)}"
     )
@@ -517,11 +557,14 @@ class BinningAutoBatcher[T: SimState]:
         ordered_final_states = batcher.restore_original_order(final_states)
     """
 
+    index_bins: list[list[int]]
+
     def __init__(
         self,
         model: ModelInterface,
         *,
         memory_scales_with: MemoryScaling = "n_atoms_x_density",
+        cutoff: float = 6.0,
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         memory_scaling_factor: float = 1.6,
@@ -533,11 +576,16 @@ class BinningAutoBatcher[T: SimState]:
         Args:
             model (ModelInterface): Model to batch for, used to estimate memory
                 requirements.
-            memory_scales_with ("n_atoms" | "n_atoms_x_density"): Metric to use
-                for estimating memory requirements:
+            memory_scales_with ("n_atoms" | "n_atoms_x_density" | "n_edges"): Metric to
+                use for estimating memory requirements:
                 - "n_atoms": Uses only atom count
                 - "n_atoms_x_density": Uses atom count multiplied by number density
+                - "n_edges": Uses actual neighbor list edge count; most accurate overall
+                  but more expensive; strongly recommended for molecular systems
                 Defaults to "n_atoms_x_density".
+            cutoff (float): Neighbor list cutoff in Angstroms. Only used when
+                memory_scales_with="n_edges". Should match the model's cutoff.
+                Defaults to 7.0.
             max_memory_scaler (float | None): Maximum metric value allowed per system. If
                 None, will be automatically estimated. Defaults to None.
             max_atoms_to_try (int): Maximum number of atoms to try when estimating
@@ -555,6 +603,7 @@ class BinningAutoBatcher[T: SimState]:
         self.max_memory_scaler = max_memory_scaler
         self.max_atoms_to_try = max_atoms_to_try
         self.memory_scales_with = memory_scales_with
+        self.cutoff = cutoff
         self.model = model
         self.memory_scaling_factor = memory_scaling_factor
         self.max_memory_padding = max_memory_padding
@@ -595,7 +644,9 @@ class BinningAutoBatcher[T: SimState]:
         batched = (
             states if isinstance(states, SimState) else ts.concatenate_states(states)
         )
-        self.memory_scalers = calculate_memory_scalers(batched, self.memory_scales_with)
+        self.memory_scalers = calculate_memory_scalers(
+            batched, self.memory_scales_with, self.cutoff
+        )
         if not self.max_memory_scaler:
             self.max_memory_scaler = estimate_max_memory_scaler(
                 batched,
@@ -606,6 +657,7 @@ class BinningAutoBatcher[T: SimState]:
                 oom_error_message=self.oom_error_message,
             )
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
+            logger.debug("Estimated max memory scaler: %.3g", self.max_memory_scaler)
 
         # verify that no systems are too large
         max_metric_value = max(self.memory_scalers)
@@ -619,14 +671,20 @@ class BinningAutoBatcher[T: SimState]:
             )
 
         self.index_to_scaler = dict(enumerate(self.memory_scalers))
-        self.index_bins = to_constant_volume_bins(
+        index_bins = to_constant_volume_bins(
             self.index_to_scaler, max_volume=self.max_memory_scaler
         )  # list[dict[original_index: int, memory_scale:float]]
         # Convert to list of lists of indices
-        self.index_bins = [list(batch.keys()) for batch in self.index_bins]
+        self.index_bins = [list(batch.keys()) for batch in index_bins]
         self.batched_states = [[batched[index_bin]] for index_bin in self.index_bins]
         self.current_state_bin = 0
 
+        logger.info(
+            "BinningAutoBatcher: %d systems → %d batch(es), max_memory_scaler=%.3g",
+            len(self.memory_scalers),
+            len(self.index_bins),
+            self.max_memory_scaler,
+        )
         return self.max_memory_scaler
 
     def next_batch(self) -> tuple[T | None, list[int]]:
@@ -660,6 +718,17 @@ class BinningAutoBatcher[T: SimState]:
                 else []
             )
             self.current_state_bin += 1
+            remaining = len(self.batched_states) - self.current_state_bin
+            logger.info(
+                (
+                    "BinningAutoBatcher: returning batch %d/%d with %d system(s), "
+                    "%d batch(es) remaining"
+                ),
+                self.current_state_bin,
+                len(self.batched_states),
+                state.n_systems,
+                remaining,
+            )
             return state, indices
         return None, []
 
@@ -799,6 +868,7 @@ class InFlightAutoBatcher[T: SimState]:
         model: ModelInterface,
         *,
         memory_scales_with: MemoryScaling = "n_atoms_x_density",
+        cutoff: float = 6.0,
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         memory_scaling_factor: float = 1.6,
@@ -811,11 +881,16 @@ class InFlightAutoBatcher[T: SimState]:
         Args:
             model (ModelInterface): Model to batch for, used to estimate memory
                 requirements.
-            memory_scales_with ("n_atoms" | "n_atoms_x_density"): Metric to use
-                for estimating memory requirements:
+            memory_scales_with ("n_atoms" | "n_atoms_x_density" | "n_edges"): Metric to
+                use for estimating memory requirements:
                 - "n_atoms": Uses only atom count
                 - "n_atoms_x_density": Uses atom count multiplied by number density
+                - "n_edges": Uses actual neighbor list edge count; most accurate overall
+                  but more expensive; strongly recommended for molecular systems
                 Defaults to "n_atoms_x_density".
+            cutoff (float): Neighbor list cutoff in Angstroms. Only used when
+                memory_scales_with="n_edges". Should match the model's cutoff.
+                Defaults to 7.0.
             max_memory_scaler (float | None): Maximum metric value allowed per system.
                 If None, will be automatically estimated. Defaults to None.
             max_atoms_to_try (int): Maximum number of atoms to try when estimating
@@ -835,6 +910,7 @@ class InFlightAutoBatcher[T: SimState]:
         """
         self.model = model
         self.memory_scales_with = memory_scales_with
+        self.cutoff = cutoff
         self.max_memory_scaler = max_memory_scaler or None
         self.max_atoms_to_try = max_atoms_to_try
         self.memory_scaling_factor = memory_scaling_factor
@@ -903,7 +979,9 @@ class InFlightAutoBatcher[T: SimState]:
         new_idx: list[int] = []
         new_states: list[T] = []
         for state in self.states_iterator:
-            metric = calculate_memory_scalers(state, self.memory_scales_with)[0]
+            metric = calculate_memory_scalers(
+                state, self.memory_scales_with, self.cutoff
+            )[0]
             if metric > self.max_memory_scaler:  # ty: ignore[unsupported-operator]
                 raise ValueError(
                     f"State {metric=} is greater than max_metric {self.max_memory_scaler}"
@@ -992,7 +1070,15 @@ class InFlightAutoBatcher[T: SimState]:
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
             newer_states = self._get_next_states()
             all_states.extend(newer_states)
+            logger.debug(
+                "InFlightAutoBatcher: estimated max_memory_scaler=%.3g",
+                self.max_memory_scaler,
+            )
 
+        logger.info(
+            "InFlightAutoBatcher: starting with %d system(s) in first batch",
+            len(all_states),
+        )
         return ts.concatenate_states(all_states)
 
     def next_batch(  # noqa: C901
@@ -1083,6 +1169,12 @@ class InFlightAutoBatcher[T: SimState]:
 
         self._delete_old_states(completed_idx)
         next_states = self._get_next_states()
+
+        logger.info(
+            "InFlightAutoBatcher: %d state(s) completed, %d state(s) remaining in batch",
+            len(completed_states),
+            len(self.current_idx),
+        )
 
         # there are no states left to run, return the completed states
         if not self.current_idx:

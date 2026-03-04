@@ -333,13 +333,10 @@ def system_wise_max_force[T: MDState | OptimState](state: T) -> torch.Tensor:
     Returns:
         torch.Tensor: Maximum forces per system
     """
-    system_idx = state.system_idx
-    if system_idx is None:
-        raise ValueError("system_idx is required for system_wise_max_force")
     system_wise_max_force = torch.zeros(
         state.n_systems, device=state.device, dtype=state.dtype
     )
     max_forces = state.forces.norm(dim=1)
     return system_wise_max_force.scatter_reduce(
-        dim=0, index=system_idx, src=max_forces, reduce="amax"
+        dim=0, index=state.system_idx, src=max_forces, reduce="amax"
     )

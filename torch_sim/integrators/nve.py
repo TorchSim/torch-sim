@@ -6,21 +6,19 @@ import torch
 
 from torch_sim.integrators.md import (
     MDState,
-    calculate_momenta,
+    initialize_momenta,
     momentum_step,
     position_step,
 )
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, ensure_sim_state
-from torch_sim.typing import StateDict
+from torch_sim.state import SimState
 
 
 def nve_init(
-    state: SimState | StateDict,
+    state: SimState,
     model: ModelInterface,
     *,
     kT: float | torch.Tensor,
-    seed: int | None = None,
     **_kwargs: Any,
 ) -> MDState:
     """Initialize an NVE state from input data.
@@ -29,14 +27,15 @@ def nve_init(
     energies and forces, and sampling momenta from a Maxwell-Boltzmann distribution
     at the specified temperature.
 
+    To seed the RNG set ``state.rng = seed`` before calling.
+
     Args:
         model: Neural network model that computes energies and forces.
             Must return a dict with 'energy' and 'forces' keys.
-        state: Either a SimState object or a dictionary containing positions,
-            masses, cell, pbc, and other required state variables
+        state: SimState containing positions, masses, cell, pbc, and other
+            required state variables
         kT: Temperature in energy units for initializing momenta,
             scalar or with shape [n_systems]
-        seed: Random seed for reproducibility
 
     Returns:
         MDState: Initialized state for NVE integration containing positions,
@@ -46,22 +45,17 @@ def nve_init(
         - Initial velocities sampled from Maxwell-Boltzmann distribution
         - Time integration error scales as O(dt²)
     """
-    state = ensure_sim_state(state)
-
     model_output = model(state)
 
-    system_idx = state.system_idx
-    if system_idx is None:
-        raise ValueError("system_idx cannot be None for NVE integration")
     momenta = getattr(
         state,
         "momenta",
-        calculate_momenta(
+        initialize_momenta(
             state.positions,
             state.masses,
-            system_idx,
+            state.system_idx,
             kT,
-            seed if seed is not None else state.rng,
+            state.rng,
         ),
     )
 

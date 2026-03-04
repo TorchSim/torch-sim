@@ -24,7 +24,7 @@ except ImportError as exc:
 
     from torch_sim.models.interface import ModelInterface
 
-    class OrbModel(ModelInterface):  # type: ignore[no-redef]
+    class OrbModel(ModelInterface):
         """ORB model wrapper for torch-sim.
 
         NOTE: This class is a placeholder when orb-models is not installed.

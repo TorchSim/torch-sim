@@ -17,7 +17,7 @@ try:
     from torch_sim.models.orb import OrbModel
 
 except ImportError:
-    pytest.skip(f"ORB not installed: {traceback.format_exc()}", allow_module_level=True)
+    pytest.skip(f"ORB not installed: {traceback.format_exc()}", allow_module_level=True)  # ty:ignore[too-many-positional-arguments]
 
 
 @pytest.fixture

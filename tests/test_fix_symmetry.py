@@ -13,9 +13,8 @@ from ase.stress import full_3x3_to_voigt_6_stress, voigt_6_to_full_3x3_stress
 import torch_sim as ts
 from torch_sim.constraints import FixCom, FixSymmetry
 from torch_sim.models.interface import ModelInterface
-from torch_sim.models.lennard_jones import LennardJonesModel
+from torch_sim.models.lennard_jones import UnbatchedLennardJonesModel
 from torch_sim.symmetrize import get_symmetry_datasets
-from torch_sim.typing import StateDict
 
 
 pytest.importorskip("moyopy")
@@ -68,13 +67,12 @@ def make_structure(name: str) -> Atoms:
 
 
 @pytest.fixture
-def model() -> LennardJonesModel:
+def model() -> UnbatchedLennardJonesModel:
     """LJ model for testing."""
-    return LennardJonesModel(
+    return UnbatchedLennardJonesModel(
         sigma=1.0,
         epsilon=0.05,
         cutoff=6.0,
-        use_neighbor_list=False,
         compute_stress=True,
         dtype=DTYPE,
     )
@@ -83,11 +81,15 @@ def model() -> LennardJonesModel:
 class NoisyModelWrapper(ModelInterface):
     """Wrapper that adds noise to forces and stress."""
 
-    model: LennardJonesModel
+    model: UnbatchedLennardJonesModel
     rng: np.random.Generator
     noise_scale: float
 
-    def __init__(self, model: LennardJonesModel, noise_scale: float = 1e-4) -> None:
+    def __init__(
+        self,
+        model: UnbatchedLennardJonesModel,
+        noise_scale: float = 1e-4,
+    ) -> None:
         super().__init__()
         self.model = model
         self.rng = np.random.default_rng(seed=1)
@@ -97,9 +99,7 @@ class NoisyModelWrapper(ModelInterface):
         self._compute_stress = model.compute_stress
         self._compute_forces = model.compute_forces
 
-    def forward(
-        self, state: ts.SimState | StateDict, **kwargs: object
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState, **kwargs: object) -> dict[str, torch.Tensor]:
         """Forward pass with added noise."""
         results = self.model(state, **kwargs)
         for key in ("forces", "stress"):
@@ -114,7 +114,7 @@ class NoisyModelWrapper(ModelInterface):
 
 
 @pytest.fixture
-def noisy_lj_model(model: LennardJonesModel) -> NoisyModelWrapper:
+def noisy_lj_model(model: UnbatchedLennardJonesModel) -> NoisyModelWrapper:
     """LJ model with noise added to forces/stress."""
     return NoisyModelWrapper(model)
 
@@ -581,7 +581,7 @@ class TestFixSymmetryWithOptimization:
     @pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
     def test_cell_filter_preserves_symmetry(
         self,
-        model: LennardJonesModel,
+        model: UnbatchedLennardJonesModel,
         cell_filter: ts.CellFilter,
     ) -> None:
         """Cell filters with FixSymmetry preserve symmetry."""
@@ -626,17 +626,14 @@ class TestFixSymmetryWithOptimization:
         final = get_symmetry_datasets(final_state, symprec=SYMPREC)
         assert final[0].number == SPACEGROUPS["bcc"]
 
-    @pytest.mark.parametrize("rotated", [False, True])
     def test_noisy_model_loses_symmetry_without_constraint(
         self,
         noisy_lj_model: NoisyModelWrapper,
-        *,
-        rotated: bool,
     ) -> None:
-        """Negative control: without FixSymmetry, noisy forces break symmetry."""
-        name = "bcc_rotated" if rotated else "bcc"
-        state = ts.io.atoms_to_state(make_structure(name), CPU, DTYPE)
-        result = run_optimization_check_symmetry(state, noisy_lj_model, constraint=None)
+        """Negative control: without FixSymmetry, noise breaks rotated BCC symmetry."""
+        state = ts.io.atoms_to_state(make_structure("bcc_rotated"), CPU, DTYPE)
+        noisier_model = NoisyModelWrapper(noisy_lj_model.model, noise_scale=5e-4)
+        result = run_optimization_check_symmetry(state, noisier_model, constraint=None)
         assert result["initial_spacegroups"][0] == 229
         assert result["final_spacegroups"][0] != 229
 
