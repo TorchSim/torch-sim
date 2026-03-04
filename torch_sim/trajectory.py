@@ -197,6 +197,8 @@ class TrajectoryReporter:
         # we set to "a" mode temporarily (read mode is unaffected).
         _mode = self.trajectory_kwargs.get("mode", "w")
         self.trajectory_kwargs["mode"] = "a" if _mode in ["a", "w"] else "r"
+        for traj in self.trajectories:
+            traj.close()
         self.trajectories = [
             TorchSimTrajectory(
                 filename=filename,
