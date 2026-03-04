@@ -449,9 +449,9 @@ class FairChemV1Model(ModelInterface):
             _pred = predictions[key]
             if key in self._reshaped_props:
                 _pred = _pred.reshape(self._reshaped_props.get(key)).squeeze()
-            results[key] = _pred.detach()
+            results[key] = _pred
 
         results["energy"] = results["energy"].squeeze(dim=1)
         if results.get("stress") is not None and len(results["stress"].shape) == 2:
             results["stress"] = results["stress"].unsqueeze(dim=0)
-        return results
+        return {k: v.detach() for k, v in results.items()}

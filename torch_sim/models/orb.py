@@ -453,11 +453,11 @@ class OrbModel(ModelInterface):
             if not model_has_direct_heads and prop == "stress":
                 continue
             _property = "energy" if prop == "free_energy" else prop
-            results[prop] = predictions[_property].detach()
+            results[prop] = predictions[_property]
 
         if self.conservative:
-            results["forces"] = results[self.model.grad_forces_name].detach()
-            results["stress"] = results[self.model.grad_stress_name].detach()
+            results["forces"] = results[self.model.grad_forces_name]
+            results["stress"] = results[self.model.grad_stress_name]
 
         if "stress" in results and results["stress"].shape[-1] == 6:
             # NOTE: atleast_2d needed because orb internally gets rid of the batch
@@ -466,4 +466,4 @@ class OrbModel(ModelInterface):
                 torch.atleast_2d(results["stress"])
             )
 
-        return results
+        return {k: v.detach() for k, v in results.items()}

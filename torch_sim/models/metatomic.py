@@ -237,7 +237,7 @@ class MetatomicModel(ModelInterface):
         )
 
         results: dict[str, torch.Tensor] = {}
-        results["energy"] = model_outputs["energy"].block().values.detach().squeeze(-1)
+        results["energy"] = model_outputs["energy"].block().values.squeeze(-1)
 
         # Compute forces and/or stresses if requested
         tensors_for_autograd = []
@@ -277,13 +277,13 @@ class MetatomicModel(ModelInterface):
         # Concatenate/stack forces and stresses
         if self._compute_forces:
             if len(results_by_system["forces"]) > 0:
-                results["forces"] = torch.cat(results_by_system["forces"]).detach()
+                results["forces"] = torch.cat(results_by_system["forces"])
             else:
                 results["forces"] = torch.empty_like(positions)
         if self._compute_stress:
             if len(results_by_system["stress"]) > 0:
-                results["stress"] = torch.stack(results_by_system["stress"]).detach()
+                results["stress"] = torch.stack(results_by_system["stress"])
             else:
                 results["stress"] = torch.empty_like(cell)
 
-        return results
+        return {k: v.detach() for k, v in results.items()}

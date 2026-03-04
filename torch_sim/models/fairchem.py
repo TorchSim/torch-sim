@@ -243,15 +243,15 @@ class FairChemModel(ModelInterface):
 
         # Convert predictions to torch-sim format
         results: dict[str, torch.Tensor] = {}
-        results["energy"] = predictions["energy"].detach().to(dtype=self._dtype)
-        results["forces"] = predictions["forces"].detach().to(dtype=self._dtype)
+        results["energy"] = predictions["energy"].to(dtype=self._dtype)
+        results["forces"] = predictions["forces"].to(dtype=self._dtype)
 
         # Handle stress if requested and available
         if self._compute_stress and "stress" in predictions:
-            stress = predictions["stress"].detach().to(dtype=self._dtype)
+            stress = predictions["stress"].to(dtype=self._dtype)
             # Ensure stress has correct shape [batch_size, 3, 3]
             if stress.dim() == 2 and stress.shape[0] == len(atomic_data_list):
                 stress = stress.view(-1, 3, 3)
             results["stress"] = stress
 
-        return results
+        return {k: v.detach() for k, v in results.items()}
