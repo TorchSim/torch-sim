@@ -425,10 +425,10 @@ class FairChemV1Model(ModelInterface):
         ):
             data_list.append(
                 Data(
-                    pos=sim_state.positions[c - n : c].clone(),
-                    cell=sim_state.row_vector_cell[idx, None].clone(),
-                    atomic_numbers=sim_state.atomic_numbers[c - n : c].clone(),
-                    fixed=fixed[c - n : c].clone(),
+                    pos=sim_state.positions[c - n : c].detach().clone(),
+                    cell=sim_state.row_vector_cell[idx, None].detach().clone(),
+                    atomic_numbers=sim_state.atomic_numbers[c - n : c].detach().clone(),
+                    fixed=fixed[c - n : c].detach().clone(),
                     natoms=n,
                     pbc=sim_state.pbc,
                 )

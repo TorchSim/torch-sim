@@ -185,4 +185,5 @@ class GraphPESWrapper(ModelInterface):
         if not isinstance(cutoff, torch.Tensor):
             raise TypeError("GraphPES model cutoff must be a tensor")
         atomic_graph = state_to_atomic_graph(state, cutoff)
-        return self._gp_model.predict(atomic_graph, self._properties)  # type: ignore[return-value]
+        preds = self._gp_model.predict(atomic_graph, self._properties)
+        return {k: v.detach() for k, v in preds.items()}  # type: ignore[return-value]

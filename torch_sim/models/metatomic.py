@@ -277,12 +277,12 @@ class MetatomicModel(ModelInterface):
         # Concatenate/stack forces and stresses
         if self._compute_forces:
             if len(results_by_system["forces"]) > 0:
-                results["forces"] = torch.cat(results_by_system["forces"])
+                results["forces"] = torch.cat(results_by_system["forces"]).detach()
             else:
                 results["forces"] = torch.empty_like(positions)
         if self._compute_stress:
             if len(results_by_system["stress"]) > 0:
-                results["stress"] = torch.stack(results_by_system["stress"])
+                results["stress"] = torch.stack(results_by_system["stress"]).detach()
             else:
                 results["stress"] = torch.empty_like(cell)
 
