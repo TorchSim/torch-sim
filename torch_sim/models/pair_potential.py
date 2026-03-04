@@ -225,13 +225,14 @@ def _accumulate_stress(
         dtype,
         device,
     )
-    stress_scale = 2.0 if half else 1.0
+    stress_scale = 1.0 if half else 0.5
     out: dict[str, torch.Tensor] = {"stress": stress * stress_scale}
 
     if per_atom:
-        # Half list: each pair once → weight 1.0 per endpoint.
-        # Full list: each pair twice (i→j and j→i) → weight 0.5 per endpoint.
-        w = 1.0 if half else 0.5
+        # Each endpoint (i and j) gets half the pair's contribution.
+        # Half list: each unique pair appears once → w = 0.5.
+        # Full list: each unique pair appears twice → w = 0.25.
+        w = 0.5 if half else 0.25
         n_atoms = positions.shape[0]
         atom_stresses = torch.zeros((n_atoms, 3, 3), dtype=dtype, device=device)
         atom_stresses = atom_stresses.index_add(0, mapping[0], -w * stress_per_pair)

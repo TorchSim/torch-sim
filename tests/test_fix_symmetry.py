@@ -93,7 +93,6 @@ class NoisyModelWrapper(ModelInterface):
     ) -> None:
         super().__init__()
         self.model = model
-        self.rng = np.random.default_rng(seed=1)
         self.noise_scale = noise_scale
         self._device = model.device
         self._dtype = model.dtype
@@ -107,11 +106,7 @@ class NoisyModelWrapper(ModelInterface):
         results = self.model(state, **kwargs)
         for key in ("forces", "stress"):
             if key in results:
-                noise = torch.tensor(
-                    self.rng.normal(size=results[key].shape),
-                    dtype=results[key].dtype,
-                    device=results[key].device,
-                )
+                noise = torch.randn(results[key].shape, generator=state.rng)
                 results[key] = results[key] + self.noise_scale * noise
         return results
 

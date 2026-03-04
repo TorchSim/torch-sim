@@ -1037,25 +1037,26 @@ def test_optimizer_batch_consistency(
     lj_model: ModelInterface,
 ) -> None:
     """Test batched optimizer is consistent with individual optimizations."""
-    generator = torch.Generator(device=ar_supercell_sim_state.device)
-
     # Create two distinct initial states by cloning and perturbing
     state1_orig = ar_supercell_sim_state.clone()
+    state1_orig.rng = 0
 
     # Apply identical perturbations to state1_orig
     # for state_item in [state1_orig, state2_orig]: # Old loop structure
-    generator.manual_seed(43)  # Reset seed for positions
     state1_orig.positions += (
         torch.randn(
-            state1_orig.positions.shape, device=state1_orig.device, generator=generator
+            state1_orig.positions.shape,
+            device=state1_orig.device,
+            generator=state1_orig.rng,
         )
         * 0.1
     )
     if filter_func:
-        generator.manual_seed(44)  # Reset seed for cell
         state1_orig.cell += (
             torch.randn(
-                state1_orig.cell.shape, device=state1_orig.device, generator=generator
+                state1_orig.cell.shape,
+                device=state1_orig.device,
+                generator=state1_orig.rng,
             )
             * 0.01
         )
