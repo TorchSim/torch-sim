@@ -716,6 +716,78 @@ def test_fire_vv_negative_power_branch(
 
 
 @pytest.mark.parametrize("fire_flavor", get_args(FireFlavor))
+@pytest.mark.parametrize("cell_filter", [None, ts.CellFilter.frechet])
+def test_fire_nan_velocities_dont_affect_other_systems(
+    ar_supercell_sim_state: SimState,
+    lj_model: ModelInterface,
+    fire_flavor: "FireFlavor",
+    cell_filter: "ts.CellFilter | None",
+) -> None:
+    """Injecting NaN velocities into one system must not alter another's trajectory.
+
+    Regression: _ase_fire_step used ``if nan_velocities.any()`` to skip force
+    transformation AND FIRE mixing for ALL systems. When the InFlightAutoBatcher
+    swaps in a new state (NaN velocities from fire_init), retained systems got
+    skipped FIRE mixing and untransformed forces. This test clones a state,
+    injects NaN into one copy's system 1, and verifies system 0 is identical.
+    """
+    state_a = copy.deepcopy(ar_supercell_sim_state)
+    state_b = copy.deepcopy(ar_supercell_sim_state)
+    multi = ts.concatenate_states([state_a, state_b])
+
+    init_kwargs: dict = {"fire_flavor": fire_flavor}
+    if cell_filter is not None:
+        multi.cell = multi.cell * 0.85
+        multi.positions = multi.positions * 0.85
+        init_kwargs["cell_filter"] = cell_filter
+
+    state = ts.fire_init(state=multi, model=lj_model, **init_kwargs)
+
+    # Evolve 10 steps so system 0 has non-trivial FIRE state (dt, alpha, n_pos)
+    for _ in range(10):
+        state = ts.fire_step(state=state, model=lj_model)
+
+    # Clone, then inject NaN into system 1 of one copy
+    state_clean = copy.deepcopy(state)
+    state_mixed = copy.deepcopy(state)
+
+    sys1_atoms = state_mixed.system_idx == 1
+    state_mixed.velocities[sys1_atoms] = torch.full_like(
+        state_mixed.velocities[sys1_atoms], torch.nan
+    )
+    if cell_filter is not None:
+        state_mixed.cell_velocities[1] = torch.full_like(
+            state_mixed.cell_velocities[1], torch.nan
+        )
+
+    # One step each
+    state_clean = ts.fire_step(state=state_clean, model=lj_model)
+    state_mixed = ts.fire_step(state=state_mixed, model=lj_model)
+
+    # System 0 must be identical regardless of system 1's NaN velocities
+    sys0 = state_clean.system_idx == 0
+    assert torch.equal(state_mixed.positions[sys0], state_clean.positions[sys0]), (
+        "System 0 positions differ when system 1 has NaN velocities"
+    )
+    assert torch.equal(state_mixed.velocities[sys0], state_clean.velocities[sys0]), (
+        "System 0 velocities differ when system 1 has NaN velocities"
+    )
+    assert state_mixed.dt[0] == state_clean.dt[0], (
+        "System 0 dt differs when system 1 has NaN velocities"
+    )
+    assert state_mixed.alpha[0] == state_clean.alpha[0], (
+        "System 0 alpha differs when system 1 has NaN velocities"
+    )
+    assert state_mixed.n_pos[0] == state_clean.n_pos[0], (
+        "System 0 n_pos differs when system 1 has NaN velocities"
+    )
+    if cell_filter is not None:
+        assert torch.equal(state_mixed.cell[0], state_clean.cell[0]), (
+            "System 0 cell differs when system 1 has NaN velocities"
+        )
+
+
+@pytest.mark.parametrize("fire_flavor", get_args(FireFlavor))
 def test_unit_cell_fire_optimization(
     ar_supercell_sim_state: SimState, lj_model: ModelInterface, fire_flavor: FireFlavor
 ) -> None:
