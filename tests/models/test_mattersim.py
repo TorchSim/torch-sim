@@ -1,5 +1,3 @@
-# codespell-ignore: convertor
-
 import traceback
 
 import ase.spacegroup
