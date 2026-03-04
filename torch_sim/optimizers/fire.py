@@ -190,14 +190,10 @@ def _vv_fire_step[T: "FireState | CellFireState"](
     # Initialize velocities if NaN
     nan_velocities = state.velocities.isnan().any(dim=1)
     if nan_velocities.any():
-        state.velocities[nan_velocities] = torch.zeros_like(
-            state.positions[nan_velocities]
-        )
-        if isinstance(state, CellFireState):  # update velocities to zero if NaN
-            nan_cell_velocities = state.cell_velocities.isnan().any(dim=(1, 2))
-            state.cell_velocities[nan_cell_velocities] = torch.zeros_like(
-                state.cell_positions[nan_cell_velocities]
-            )
+        state.velocities[nan_velocities] = 0
+        if isinstance(state, CellFireState):
+            nan_cell_vel = state.cell_velocities.isnan().any(dim=(1, 2))
+            state.cell_velocities[nan_cell_vel] = 0
 
     alpha_start_system = torch.full(
         (n_systems,), alpha_start.item(), device=device, dtype=dtype
@@ -302,31 +298,15 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
 
     n_systems, device, dtype = state.n_systems, state.device, state.dtype
 
-    # Zero out NaN velocities (sentinel from fire_init for first-step detection).
-    # Track per-system so we can skip FIRE mixing only for newly initialized
-    # systems while still transforming forces for retained systems. Without this,
-    # autobatcher state swaps cause all systems to get untransformed forces and
-    # no velocity mixing, destabilizing cell optimization with FixSymmetry.
+    # Per-atom NaN detection before zeroing: needed to decide whether to skip
+    # FIRE mixing (all NaN = first step) vs run it (partial NaN = autobatcher swap).
     nan_velocities = state.velocities.isnan().any(dim=1)
-    has_nan = nan_velocities.any()
-    if has_nan:
-        state.velocities[nan_velocities] = torch.zeros_like(
-            state.velocities[nan_velocities]
-        )
-        if isinstance(state, CellFireState):
-            nan_cell_velocities = state.cell_velocities.isnan().any(dim=(1, 2))
-            state.cell_velocities[nan_cell_velocities] = torch.zeros_like(
-                state.cell_velocities[nan_cell_velocities]
-            )
+    state.velocities.nan_to_num_(nan=0.0)
+    if isinstance(state, CellFireState):
+        state.cell_velocities.nan_to_num_(nan=0.0)
 
-    # Skip FIRE mixing entirely when ALL systems are new (first step, matches ASE).
-    # When only SOME atoms have NaN (autobatcher added new systems), we must still
-    # run force transformation and FIRE mixing for retained systems.
-    all_nan = has_nan and nan_velocities.all()
-
-    if all_nan:
-        # First step: all velocities were NaN → zero. Use raw forces and skip
-        # FIRE mixing (ASE-compatible: ASE also skips mixing when v is None).
+    if nan_velocities.all():
+        # First step: all NaN → zero. Use raw forces, skip FIRE mixing (matches ASE).
         forces = state.forces
     else:
         alpha_start_system = torch.full(

@@ -716,7 +716,7 @@ def test_fire_vv_negative_power_branch(
 
 
 @pytest.mark.parametrize("fire_flavor", get_args(FireFlavor))
-@pytest.mark.parametrize("cell_filter", [None, ts.CellFilter.frechet])
+@pytest.mark.parametrize("cell_filter", [None, ts.CellFilter.unit, ts.CellFilter.frechet])
 def test_fire_nan_velocities_dont_affect_other_systems(
     ar_supercell_sim_state: SimState,
     lj_model: ModelInterface,
@@ -731,11 +731,11 @@ def test_fire_nan_velocities_dont_affect_other_systems(
     skipped FIRE mixing and untransformed forces. This test clones a state,
     injects NaN into one copy's system 1, and verifies system 0 is identical.
     """
-    state_a = copy.deepcopy(ar_supercell_sim_state)
-    state_b = copy.deepcopy(ar_supercell_sim_state)
-    multi = ts.concatenate_states([state_a, state_b])
+    multi = ts.concatenate_states(
+        [ar_supercell_sim_state, copy.deepcopy(ar_supercell_sim_state)]
+    )
 
-    init_kwargs: dict = {"fire_flavor": fire_flavor}
+    init_kwargs: dict[str, Any] = {"fire_flavor": fire_flavor}
     if cell_filter is not None:
         multi.cell = multi.cell * 0.85
         multi.positions = multi.positions * 0.85
@@ -752,13 +752,9 @@ def test_fire_nan_velocities_dont_affect_other_systems(
     state_mixed = copy.deepcopy(state)
 
     sys1_atoms = state_mixed.system_idx == 1
-    state_mixed.velocities[sys1_atoms] = torch.full_like(
-        state_mixed.velocities[sys1_atoms], torch.nan
-    )
+    state_mixed.velocities[sys1_atoms] = float("nan")
     if cell_filter is not None:
-        state_mixed.cell_velocities[1] = torch.full_like(
-            state_mixed.cell_velocities[1], torch.nan
-        )
+        state_mixed.cell_velocities[1] = float("nan")
 
     # One step each
     state_clean = ts.fire_step(state=state_clean, model=lj_model)
