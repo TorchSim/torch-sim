@@ -852,8 +852,6 @@ class FixSymmetry(SystemConstraint):
             reference_cells=reference_cells,
         )
 
-    # === Symmetrization hooks ===
-
     def adjust_forces(self, state: SimState, forces: torch.Tensor) -> None:
         """Symmetrize forces according to crystal symmetry."""
         self._symmetrize_rank1(state, forces)
@@ -951,8 +949,6 @@ class FixSymmetry(SystemConstraint):
                 self.rotations[ci].to(dtype=dtype),
                 self.symm_maps[ci],
             )
-
-    # === Constraint interface ===
 
     def get_removed_dof(self, state: SimState) -> torch.Tensor:
         """Returns zero - constrains direction, not DOF count."""
