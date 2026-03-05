@@ -168,8 +168,45 @@ class ModelInterface(torch.nn.Module, ABC):
         """
 
 
+def _check_output_detached(
+    output: dict[str, torch.Tensor], model: ModelInterface
+) -> None:
+    """Check that output tensors match the model's graph retention setting.
+
+    When ``retain_graph`` is absent or ``False``, all tensors must be detached.
+    When ``retain_graph`` is ``True``, all tensors must have ``requires_grad``.
+
+    Args:
+        output: Model output dictionary mapping keys to tensors.
+        model: The model that produced the output.
+
+    Raises:
+        ValueError: If tensors are not detached when ``retain_graph`` is
+            ``False``, or lack gradients when ``retain_graph`` is ``True``.
+    """
+    retain_graph = getattr(model, "retain_graph", False)
+    for key, tensor in output.items():
+        if not isinstance(tensor, torch.Tensor):
+            continue
+        if retain_graph and not tensor.requires_grad:
+            raise ValueError(
+                f"Output tensor '{key}' does not have gradients but model.retain_graph "
+                "is True. Ensure the tensor is part of the computation graph."
+            )
+        if not retain_graph and tensor.requires_grad:
+            raise ValueError(
+                f"Output tensor '{key}' is not detached from the computation graph. "
+                "Call .detach() on the tensor before returning it, or set "
+                "model.retain_graph = True if graph retention is intentional."
+            )
+
+
 def validate_model_outputs(  # noqa: C901, PLR0915
-    model: ModelInterface, device: torch.device, dtype: torch.dtype
+    model: ModelInterface,
+    device: torch.device,
+    dtype: torch.dtype,
+    *,
+    check_detached: bool = False,
 ) -> None:
     """Validate the outputs of a model implementation against the interface requirements.
 
@@ -181,6 +218,10 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         model (ModelInterface): Model implementation to validate.
         device (torch.device): Device to run the validation tests on.
         dtype (torch.dtype): Data type to use for validation tensors.
+        check_detached (bool): If ``True``, assert that all output tensors are
+            detached from the autograd graph, unless the model has a
+            ``retain_graph`` attribute set to ``True``. Defaults to ``False`` so
+            that external callers are not immediately broken.
 
     Raises:
         AssertionError: If the model doesn't conform to the required interface,
@@ -229,7 +270,15 @@ def validate_model_outputs(  # noqa: C901, PLR0915
     og_system_idx = system_idx.clone()
     og_atomic_nums = sim_state.atomic_numbers.clone()
 
+    if check_detached and hasattr(model, "retain_graph"):
+        model.__dict__["retain_graph"] = True
+        _check_output_detached(model.forward(sim_state), model)
+        model.__dict__["retain_graph"] = False
+
     model_output = model.forward(sim_state)
+
+    if check_detached:
+        _check_output_detached(model_output, model)
 
     # assert model did not mutate the input
     if not torch.allclose(og_positions, sim_state.positions):

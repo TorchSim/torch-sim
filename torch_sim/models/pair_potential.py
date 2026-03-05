@@ -608,7 +608,7 @@ class PairPotentialModel(ModelInterface):
                 )
             )
 
-        return results
+        return {k: v.detach() for k, v in results.items()}
 
 
 class PairForcesModel(ModelInterface):
