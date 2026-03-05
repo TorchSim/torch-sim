@@ -704,13 +704,65 @@ def test_count_degrees_of_freedom_multi_system_sum(
     _assert_dof_per_system(mixed_double_sim_state, constraint_list, expected_dof)
 
 
-def test_count_degrees_of_freedom_clamped_to_zero(
+def test_count_degrees_of_freedom_partial_system_constraint(
+    mixed_double_sim_state: ts.SimState,
+) -> None:
+    """count_degrees_of_freedom only changes systems targeted by a constraint."""
+    total_dof_per_system = 3 * mixed_double_sim_state.n_atoms_per_system
+    constraint_list: list[Constraint] = [FixCom([0])]
+    expected_dof = total_dof_per_system.clone()
+    expected_dof[0] -= 3
+    _assert_dof_per_system(mixed_double_sim_state, constraint_list, expected_dof.tolist())
+
+
+def test_count_degrees_of_freedom_matches_sim_state_method(
+    mixed_double_sim_state: ts.SimState,
+) -> None:
+    """DOF helper and SimState method agree for strictly positive DOF."""
+    n_atoms_in_first_system = int(mixed_double_sim_state.n_atoms_per_system[0].item())
+    constraint_list: list[Constraint] = [FixAtoms(atom_idx=[0, n_atoms_in_first_system])]
+    mixed_double_sim_state.constraints = constraint_list
+    dof_from_method = mixed_double_sim_state.get_number_of_degrees_of_freedom()
+    dof_from_helper = count_degrees_of_freedom(mixed_double_sim_state, constraint_list)
+    assert torch.equal(dof_from_method, dof_from_helper)
+
+
+def test_count_degrees_of_freedom_none_constraints_returns_unconstrained(
+    mixed_double_sim_state: ts.SimState,
+) -> None:
+    """Omitting constraints returns unconstrained DOF (3 * n_atoms_per_system)."""
+    expected_dof = 3 * mixed_double_sim_state.n_atoms_per_system
+    dof = count_degrees_of_freedom(mixed_double_sim_state)
+    assert torch.equal(dof, expected_dof)
+
+
+def test_count_degrees_of_freedom_helper_clamps_but_state_method_raises(
     cu_sim_state: ts.SimState,
 ) -> None:
-    """count_degrees_of_freedom clamps per-system values at zero."""
+    """Helper clamps zero DOF while SimState method rejects non-positive DOF."""
     all_atom_indices = torch.arange(cu_sim_state.n_atoms, device=cu_sim_state.device)
     constraint_list: list[Constraint] = [FixAtoms(atom_idx=all_atom_indices), FixCom([0])]
     _assert_dof_per_system(cu_sim_state, constraint_list, [0])
+
+    cu_sim_state.constraints = constraint_list
+    with pytest.raises(ValueError, match="Degrees of freedom cannot be zero or negative"):
+        cu_sim_state.get_number_of_degrees_of_freedom()
+
+
+@pytest.mark.parametrize(
+    "invalid_constraints",
+    [
+        [FixAtoms(atom_idx=[999])],
+        [FixCom([999])],
+    ],
+)
+def test_count_degrees_of_freedom_rejects_out_of_bounds_constraint(
+    cu_sim_state: ts.SimState,
+    invalid_constraints: list[Constraint],
+) -> None:
+    """count_degrees_of_freedom rejects constraints with out-of-bounds indices."""
+    with pytest.raises(ValueError, match=r"has indices up to.*only has.*atoms"):
+        count_degrees_of_freedom(cu_sim_state, invalid_constraints)
 
 
 @pytest.mark.parametrize(

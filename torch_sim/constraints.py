@@ -616,28 +616,35 @@ class FixCom(SystemConstraint):
 def count_degrees_of_freedom(
     state: SimState, constraints: list[Constraint] | None = None
 ) -> torch.Tensor:
-    """Count the total degrees of freedom in a system with constraints.
+    """Count per-system degrees of freedom with compatibility checks.
 
-    This function calculates the total number of degrees of freedom by starting
-    with the unconstrained count (n_atoms * 3) and subtracting the degrees of
-    freedom removed by each constraint.
+    This helper computes one DOF value per system. When ``constraints`` are
+    supplied, it validates that they are compatible with ``state`` before
+    counting.
 
     Args:
         state: Simulation state
-        constraints: List of active constraints (optional)
+        constraints: Constraints to evaluate. If ``None``, returns unconstrained
+            DOF (3 * n_atoms_per_system). Use ``state.get_number_of_degrees_of_freedom()``
+            to count with state-attached constraints.
 
     Returns:
         Degrees of freedom per system as a tensor of shape (n_systems,)
     """
-    # Start with unconstrained DOF per system
-    total_dof = 3 * state.n_atoms_per_system
+    if constraints is not None:
+        validate_constraints(constraints, state)
+    return torch.clamp(_dof_per_system(state, constraints), min=0)
 
-    # Subtract DOF removed by constraints
+
+def _dof_per_system(
+    state: SimState, constraints: list[Constraint] | None = None
+) -> torch.Tensor:
+    """Compute unconstrained-minus-removed DOF per system."""
+    dof_per_system = 3 * state.n_atoms_per_system
     if constraints is not None:
         for constraint in constraints:
-            total_dof -= constraint.get_removed_dof(state)
-
-    return torch.clamp(total_dof, min=0)
+            dof_per_system -= constraint.get_removed_dof(state)
+    return dof_per_system
 
 
 def check_no_index_out_of_bounds(
