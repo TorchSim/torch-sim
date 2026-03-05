@@ -1,4 +1,4 @@
-# ruff: noqa: RUF002, RUF003, PLC2401
+# ruff: noqa: RUF003, PLC2401
 """Calculation of elastic properties of crystals.
 
 Primary Sources and References for Crystal Elasticity.

@@ -974,9 +974,7 @@ def test_generate_force_convergence_fn(
 
         if has_cell_forces:
             state.cell_forces = torch.randn(
-                ar_supercell_sim_state.n_systems,
-                3,
-                3,
+                *(ar_supercell_sim_state.n_systems, 3, 3),
                 device=ar_supercell_sim_state.device,
                 dtype=ar_supercell_sim_state.dtype,
             )

@@ -29,6 +29,7 @@ Notes:
 
 import copy
 import inspect
+import logging
 import pathlib
 import warnings
 from collections.abc import Callable, Mapping, Sequence
@@ -42,6 +43,8 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ase import Atoms
@@ -183,6 +186,7 @@ class TrajectoryReporter:
             ValueError: If filenames are not unique
         """
         self.finish()
+        self.trajectories = []  # drop refs so HDF5 finalizes before new opens
 
         filenames = (
             [filenames] if isinstance(filenames, (str, pathlib.Path)) else list(filenames)
@@ -521,12 +525,6 @@ class TorchSimTrajectory:
         else:
             compression = None
 
-        # TODO FIX THIS
-        if hasattr(tables, "file") and (
-            handles := tables.file._open_files.get_handlers_by_name(str(filename))
-        ):
-            list(handles)[-1].close()
-
         # create parent directory if it doesn't exist
         filename.parent.mkdir(parents=True, exist_ok=True)
         self._file = tables.open_file(str(filename), mode=mode, filters=compression)
@@ -547,11 +545,12 @@ class TorchSimTrajectory:
                 self.get_steps(name)[-1] > self.last_step for name in self.array_registry
             )
             if inconsistent_step:
-                warnings.warn(
+                msg = (
                     "Inconsistent last steps detected in trajectory arrays. "
-                    "Truncating all arrays to the `positions` array's last step.",
-                    stacklevel=2,
+                    "Truncating all arrays to the `positions` array's last step."
                 )
+                warnings.warn(msg, UserWarning, stacklevel=2)
+                logger.warning(msg)
                 self.truncate_to_step(self.last_step)
 
     def _initialize_header(self, metadata: dict[str, str] | None = None) -> None:

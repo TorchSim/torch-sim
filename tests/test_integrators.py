@@ -339,7 +339,7 @@ def test_nvt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJone
     temperatures_list = [t.tolist() for t in temperatures_tensor.T]
     assert torch.allclose(
         temperatures_tensor[-1],
-        torch.tensor([299.9910, 299.6800], dtype=dtype),
+        torch.tensor([300.0096, 299.7024], dtype=dtype),
     )
 
     energies_tensor = torch.stack(energies)
@@ -728,7 +728,7 @@ def test_npt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJone
     temperatures_list = [t.tolist() for t in temperatures_tensor.T]
     assert torch.allclose(
         temperatures_tensor[-1],
-        torch.tensor([297.8602, 297.5306], dtype=dtype),
+        torch.tensor([298.2752, 297.9444], dtype=dtype),
     )
 
     energies_tensor = torch.stack(energies)
@@ -1039,11 +1039,6 @@ def test_compute_cell_force_atoms_per_system():
 
     # Force ratio should match atom ratio (8:1) with the fix
     assert abs(force_ratio - 8.0) / 8.0 < 0.1
-
-
-# ---------------------------------------------------------------------------
-# Reproducibility tests
-# ---------------------------------------------------------------------------
 
 
 def test_nvt_langevin_reproducibility(

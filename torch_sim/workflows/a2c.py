@@ -23,18 +23,6 @@ from torch_sim.optimizers import FireState
 from torch_sim.quantities import get_pressure
 
 
-def _make_torch_generator(
-    seed: int | None, device: torch.device | None
-) -> torch.Generator:
-    """Create a local torch random number generator for deterministic sampling."""
-    generator = torch.Generator() if device is None else torch.Generator(device=device)
-    if seed is not None:
-        generator.manual_seed(seed)
-    else:
-        generator.seed()
-    return generator
-
-
 def min_distance(
     positions: torch.Tensor,
     cell: torch.Tensor,
@@ -223,7 +211,7 @@ def random_packed_structure(
     composition: Composition,
     cell: torch.Tensor,
     *,
-    seed: int | None = 42,
+    seed: int = 42,
     diameter: float | None = None,
     auto_diameter: bool = False,
     max_iter: int = 100,
@@ -270,7 +258,7 @@ def random_packed_structure(
     # Extract number of atoms for each element from composition
     element_counts = [int(i) for i in composition.as_dict().values()]
 
-    generator = _make_torch_generator(seed, device)
+    generator = ts.state.coerce_prng(seed, device)
 
     log = []
     # Generate initial random positions in fractional coordinates
@@ -294,7 +282,6 @@ def random_packed_structure(
             device=device,
             dtype=dtype,
             compute_forces=True,
-            use_neighbor_list=True,
         )
 
         # Dummy atomic numbers
@@ -307,6 +294,7 @@ def random_packed_structure(
             atomic_numbers=atomic_numbers,
             cell=cell,
             pbc=True,
+            _rng=generator,
         )
         state = ts.fire_init(state, model)
         print(f"Initial energy: {state.energy.item():.4f}")
@@ -329,7 +317,7 @@ def random_packed_structure_multi(
     composition: Composition,
     cell: torch.Tensor,
     *,
-    seed: int | None = 42,
+    seed: int = 42,
     diameter_matrix: torch.Tensor | None = None,
     auto_diameter: bool = False,
     max_iter: int = 100,
@@ -394,7 +382,7 @@ def random_packed_structure_multi(
     print(f"Creating structure with {N_atoms} atoms: {element_dict}")
 
     # Set up random number generator with optional seed for reproducibility
-    generator = _make_torch_generator(seed, device)
+    generator = ts.state.coerce_prng(seed, device)
 
     # Generate initial random positions in fractional coordinates [0,1]
     positions = torch.rand((N_atoms, 3), device=device, dtype=dtype, generator=generator)
@@ -413,25 +401,21 @@ def random_packed_structure_multi(
         # Convert fractional to cartesian coordinates
         positions_cart = torch.matmul(positions, cell)
 
-        # Initialize multi-species soft sphere potential calculator
         model = SoftSphereMultiModel(
-            species=species_idx,
+            atomic_numbers=species_idx,
             sigma_matrix=diameter_matrix,
             device=device,
             dtype=dtype,
             compute_forces=True,
-            use_neighbor_list=True,
         )
-
-        # Dummy atomic numbers
-        atomic_numbers = torch.ones_like(positions_cart, device=device, dtype=torch.int)
 
         state_dict = ts.SimState(
             positions=positions_cart,
             masses=torch.ones(N_atoms, device=device, dtype=dtype),
-            atomic_numbers=atomic_numbers,
+            atomic_numbers=species_idx,  # species indices used as atomic_numbers
             cell=cell,
             pbc=True,
+            _rng=generator,
         )
         # Set up FIRE optimizer with unit masses for all atoms
         state = ts.fire_init(state_dict, model)

@@ -44,5 +44,8 @@ uv.lock
 # duecredit
 .duecredit.p
 
-# ignore local users potential agent files/plans
+# agents
 .agents/
+
+# treemap html file
+docs/_static/torch-sim-pkg-treemap.html

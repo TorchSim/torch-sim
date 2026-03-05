@@ -79,6 +79,8 @@ def make_validate_model_outputs_test(
     model_fixture_name: str,
     device: torch.device = DEVICE,
     dtype: torch.dtype = DTYPE,
+    *,
+    check_detached: bool = True,
 ):
     """Factory function to create model output validation tests.
 
@@ -86,13 +88,15 @@ def make_validate_model_outputs_test(
         model_fixture_name: Name of the model fixture to validate
         device: Device to run validation on
         dtype: Data type to use for validation
+        check_detached: Whether to assert output tensors are detached from the
+            autograd graph (skipped for models with ``retain_graph=True``).
     """
     from torch_sim.models.interface import validate_model_outputs
 
     def test_model_output_validation(request: pytest.FixtureRequest) -> None:
         """Test that a model implementation follows the ModelInterface contract."""
         model: ModelInterface = request.getfixturevalue(model_fixture_name)
-        validate_model_outputs(model, device, dtype)
+        validate_model_outputs(model, device, dtype, check_detached=check_detached)
 
     test_model_output_validation.__name__ = f"test_{model_fixture_name}_output_validation"
     return test_model_output_validation

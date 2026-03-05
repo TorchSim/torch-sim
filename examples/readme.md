@@ -37,4 +37,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # pick any of the examples
 uv run --with . examples/scripts/1_introduction.py
 uv run --with . examples/scripts/2_structural_optimization.py
+uv run --with . examples/scripts/3_dynamics.py
+uv run --with . examples/scripts/4_high_level_api.py
+
+# or any of the tutorials
+uv run --with . examples/tutorials/diff_sim.py
 ```
