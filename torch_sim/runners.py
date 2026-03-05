@@ -629,6 +629,10 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     if isinstance(initial_state, OptimState):
         state = initial_state
     else:
+        logger.info(
+            "optimize: initializing optimizer state via chunked apply "
+            "(BinningAutoBatcher); InFlightAutoBatcher will be used for optimization"
+        )
         state = _chunked_apply(
             init_fn,
             initial_state,
