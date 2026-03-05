@@ -1178,7 +1178,7 @@ def test_optimizer_batch_consistency(
     # Converge when all batch energies have converged
     while not torch.allclose(e_current_batch, e_prev_batch, atol=1e-6):
         e_prev_batch = e_current_batch.clone()
-        batch_opt_state = step_fn_batch(model=lj_model, state=batch_opt_state)
+        batch_opt_state = step_fn_batch(model=lj_model, state=batch_opt_state, dt_max=0.3)
         e_current_batch = batch_opt_state.energy.clone()
         steps_batch += 1
         if steps_batch > 1000:
