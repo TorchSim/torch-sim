@@ -46,3 +46,6 @@ uv.lock
 
 # agents
 .agents/
+
+# treemap html file
+docs/_static/torch-sim-pkg-treemap.html
