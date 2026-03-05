@@ -15,7 +15,6 @@ from torch_sim.constraints import FixCom, FixSymmetry
 from torch_sim.models.interface import ModelInterface
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.symmetrize import get_symmetry_datasets
-from torch_sim.typing import StateDict
 
 
 pytest.importorskip("moyopy")
@@ -99,9 +98,7 @@ class NoisyModelWrapper(ModelInterface):
         self._compute_stress = model.compute_stress
         self._compute_forces = model.compute_forces
 
-    def forward(
-        self, state: ts.SimState | StateDict, **kwargs: object
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState, **kwargs: object) -> dict[str, torch.Tensor]:
         """Forward pass with added noise."""
         results = self.model(state, **kwargs)
         for key in ("forces", "stress"):

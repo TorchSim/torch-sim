@@ -185,3 +185,20 @@ jobs:
             uv pip install huggingface_hub --system
           fi
           uv run --with . ${{ matrix.example }}
+
+  all-required-pass:
+    if: always()
+    needs: [test-core, test-examples]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all required jobs passed
+        run: |
+          if [[ "${{ needs.test-core.result }}" != "success" ]]; then
+            echo "test-core failed or was cancelled"
+            exit 1
+          fi
+          if [[ "${{ needs.test-examples.result }}" != "success" ]]; then
+            echo "test-examples failed or was cancelled"
+            exit 1
+          fi
+          echo "All required jobs passed"

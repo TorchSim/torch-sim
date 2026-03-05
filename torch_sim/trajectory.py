@@ -186,6 +186,7 @@ class TrajectoryReporter:
             ValueError: If filenames are not unique
         """
         self.finish()
+        self.trajectories = []  # drop refs so HDF5 finalizes before new opens
 
         filenames = (
             [filenames] if isinstance(filenames, (str, pathlib.Path)) else list(filenames)
@@ -523,12 +524,6 @@ class TorchSimTrajectory:
             compression = tables.Filters(complib="zlib", shuffle=True, complevel=1)
         else:
             compression = None
-
-        # TODO FIX THIS
-        if hasattr(tables, "file") and (
-            handles := tables.file._open_files.get_handlers_by_name(str(filename))
-        ):
-            list(handles)[-1].close()
 
         # create parent directory if it doesn't exist
         filename.parent.mkdir(parents=True, exist_ok=True)

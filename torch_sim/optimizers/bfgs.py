@@ -21,8 +21,7 @@ import torch
 import torch_sim as ts
 from torch_sim.optimizers import cell_filters
 from torch_sim.optimizers.cell_filters import CellBFGSState, frechet_cell_filter_init
-from torch_sim.state import SimState, ensure_sim_state
-from torch_sim.typing import StateDict
+from torch_sim.state import SimState
 
 
 if TYPE_CHECKING:
@@ -82,7 +81,7 @@ def _pad_to_dense(
 
 
 def bfgs_init(
-    state: SimState | StateDict,
+    state: SimState,
     model: "ModelInterface",
     *,
     max_step: float | torch.Tensor = 0.2,
@@ -116,8 +115,6 @@ def bfgs_init(
 
     device: torch.device = model.device
     dtype: torch.dtype = model.dtype
-
-    state = ensure_sim_state(state)
 
     n_systems = state.n_systems  # S
 

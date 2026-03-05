@@ -29,8 +29,6 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import ensure_sim_state
-from torch_sim.typing import StateDict
 
 
 try:
@@ -232,7 +230,7 @@ class MaceModel(ModelInterface):
         )
 
     def forward(  # noqa: C901
-        self, state: ts.SimState | StateDict, **_kwargs: object
+        self, state: ts.SimState, **_kwargs: object
     ) -> dict[str, torch.Tensor]:
         """Compute energies, forces, and stresses for the given atomic systems.
 
@@ -241,9 +239,8 @@ class MaceModel(ModelInterface):
         multiple systems and constructs the necessary neighbor lists.
 
         Args:
-            state (SimState | StateDict): State object containing positions, cell,
-                and other system information. Can be either a SimState object or a
-                dictionary with the relevant fields.
+            state (SimState): State object containing positions, cell, and other
+                system information.
             **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
@@ -258,8 +255,6 @@ class MaceModel(ModelInterface):
                 or in the forward pass, or if provided in both places.
             ValueError: If system indices are not provided when needed.
         """
-        state = ensure_sim_state(state)
-
         if self.atomic_numbers_in_init:
             if state.positions.shape[0] != self.atomic_numbers.shape[0]:
                 raise ValueError(

@@ -35,14 +35,13 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import SimState, ensure_sim_state
 from torch_sim.transforms import compute_cell_shifts, pbc_wrap_batched
 
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from torch_sim.typing import StateDict
+    from torch_sim.state import SimState
 
 
 def full_to_half_list(
@@ -90,7 +89,7 @@ def full_to_half_list(
 
 
 def _prepare_pairs(
-    state: SimState | StateDict,
+    state: SimState,
     *,
     cutoff: torch.Tensor,
     neighbor_list_fn: Callable,
@@ -110,7 +109,7 @@ def _prepare_pairs(
     int,  # n_systems
 ]:
     """Unpack state, build neighbor list, compute pair vectors and distances."""
-    sim_state = ensure_sim_state(state)
+    sim_state = state
 
     positions = sim_state.positions
     row_cell = sim_state.row_vector_cell
@@ -313,13 +312,11 @@ class PairPotentialModel(ModelInterface):
         self.reduce_to_half_list = reduce_to_half_list
         self.retain_graph = retain_graph
 
-    def forward(
-        self, state: SimState | StateDict, **_kwargs: object
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: SimState, **_kwargs: object) -> dict[str, torch.Tensor]:
         """Compute pair-potential properties with batched tensor operations.
 
         Args:
-            state: Simulation state or equivalent state dict.
+            state: Simulation state.
             **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
@@ -482,13 +479,11 @@ class PairForcesModel(ModelInterface):
         self.cutoff = torch.tensor(cutoff, dtype=dtype, device=self._device)
         self.reduce_to_half_list = reduce_to_half_list
 
-    def forward(
-        self, state: SimState | StateDict, **_kwargs: object
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, state: SimState, **_kwargs: object) -> dict[str, torch.Tensor]:
         """Compute forces from a direct pair force function.
 
         Args:
-            state: Simulation state or equivalent state dict.
+            state: Simulation state.
             **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:

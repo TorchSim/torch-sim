@@ -18,8 +18,7 @@ from torch_sim.integrators.md import (
     velocity_verlet_step,
 )
 from torch_sim.models.interface import ModelInterface
-from torch_sim.state import SimState, ensure_sim_state
-from torch_sim.typing import StateDict
+from torch_sim.state import SimState
 
 
 def _ou_step(
@@ -85,7 +84,7 @@ def _ou_step(
 
 
 def nvt_langevin_init(
-    state: SimState | StateDict,
+    state: SimState,
     model: ModelInterface,
     *,
     kT: float | torch.Tensor,
@@ -102,8 +101,8 @@ def nvt_langevin_init(
     Args:
         model: Neural network model that computes energies and forces.
             Must return a dict with 'energy' and 'forces' keys.
-        state: Either a SimState object or a dictionary containing positions,
-            masses, cell, pbc, and other required state vars
+        state: SimState containing positions, masses, cell, pbc, and other
+            required state vars
         kT: Temperature in energy units for initializing momenta,
             either scalar or with shape [n_systems]
 
@@ -116,8 +115,6 @@ def nvt_langevin_init(
         at the specified temperature. This provides a proper thermal initial
         state for the subsequent Langevin dynamics.
     """
-    state = ensure_sim_state(state)
-
     model_output = model(state)
 
     momenta = getattr(
@@ -251,7 +248,7 @@ class NVTNoseHooverState(MDState):
 
 
 def nvt_nose_hoover_init(
-    state: SimState | StateDict,
+    state: SimState,
     model: ModelInterface,
     *,
     kT: float | torch.Tensor,
@@ -272,7 +269,7 @@ def nvt_nose_hoover_init(
     To seed the RNG set ``state.rng = seed`` before calling.
 
     Args:
-        state: Initial system state as SimState or dict
+        state: Initial system state as SimState
         model: Neural network model that computes energies and forces
         kT: Target temperature in energy units
         dt: Integration timestep
@@ -292,7 +289,6 @@ def nvt_nose_hoover_init(
         - Chain variables evolve to maintain target temperature
         - Time-reversible when integrated with appropriate algorithms
     """
-    state = ensure_sim_state(state)
     dt_tensor = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
     kT_tensor = torch.as_tensor(kT, device=state.device, dtype=state.dtype)
     tau_tensor = torch.as_tensor(
@@ -570,7 +566,7 @@ def _vrescale_update[T: MDState](
 
 
 def nvt_vrescale_init(
-    state: SimState | StateDict,
+    state: SimState,
     model: ModelInterface,
     *,
     kT: float | torch.Tensor,
@@ -588,8 +584,8 @@ def nvt_vrescale_init(
     Args:
         model: Neural network model that computes energies and forces.
             Must return a dict with 'energy' and 'forces' keys.
-        state: Either a SimState object or a dictionary containing positions,
-            masses, cell, pbc, and other required state vars
+        state: SimState containing positions, masses, cell, pbc, and other
+            required state vars
         kT: Temperature in energy units for initializing momenta,
             either scalar or with shape [n_systems]
 
@@ -602,8 +598,6 @@ def nvt_vrescale_init(
         at the specified temperature. The V-Rescale thermostat provides proper
         canonical sampling through stochastic velocity rescaling.
     """
-    state = ensure_sim_state(state)
-
     model_output = model(state)
 
     momenta = getattr(

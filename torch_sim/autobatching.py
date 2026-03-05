@@ -352,7 +352,7 @@ def _n_edges_scalers(state: SimState, cutoff: float) -> list[float]:
 def calculate_memory_scalers(
     state: SimState,
     memory_scales_with: MemoryScaling = "n_atoms_x_density",
-    cutoff: float = 7.0,
+    cutoff: float = 6.0,
 ) -> list[float]:
     """Calculate a metric that estimates memory requirements for each system in a state.
 
@@ -564,7 +564,7 @@ class BinningAutoBatcher[T: SimState]:
         model: ModelInterface,
         *,
         memory_scales_with: MemoryScaling = "n_atoms_x_density",
-        cutoff: float = 7.0,
+        cutoff: float = 6.0,
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         memory_scaling_factor: float = 1.6,
@@ -868,7 +868,7 @@ class InFlightAutoBatcher[T: SimState]:
         model: ModelInterface,
         *,
         memory_scales_with: MemoryScaling = "n_atoms_x_density",
-        cutoff: float = 7.0,
+        cutoff: float = 6.0,
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         memory_scaling_factor: float = 1.6,

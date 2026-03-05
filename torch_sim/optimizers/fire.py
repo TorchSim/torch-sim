@@ -8,8 +8,7 @@ import torch_sim as ts
 import torch_sim.math as tsm
 from torch_sim._duecredit import dcite
 from torch_sim.optimizers import CellFireState, cell_filters
-from torch_sim.state import SimState, ensure_sim_state
-from torch_sim.typing import StateDict
+from torch_sim.state import SimState
 
 
 if TYPE_CHECKING:
@@ -20,7 +19,7 @@ if TYPE_CHECKING:
 
 @dcite("10.1103/PhysRevLett.97.170201")
 def fire_init(
-    state: SimState | StateDict,
+    state: SimState,
     model: "ModelInterface",
     *,
     dt_start: float | torch.Tensor = 0.1,
@@ -36,7 +35,7 @@ def fire_init(
 
     Args:
         model: Model that computes energies, forces, and optionally stress
-        state: Input state as SimState object or state parameter dict
+        state: Input SimState
         dt_start: Initial timestep per system
         alpha_start: Initial mixing parameter per system
         fire_flavor: Optimization flavor ("vv_fire" or "ase_fire")
@@ -59,7 +58,6 @@ def fire_init(
 
     device: torch.device = model.device
     dtype: torch.dtype = model.dtype
-    state = ensure_sim_state(state)
 
     n_systems = state.n_systems
 
@@ -192,14 +190,10 @@ def _vv_fire_step[T: "FireState | CellFireState"](
     # Initialize velocities if NaN
     nan_velocities = state.velocities.isnan().any(dim=1)
     if nan_velocities.any():
-        state.velocities[nan_velocities] = torch.zeros_like(
-            state.positions[nan_velocities]
-        )
-        if isinstance(state, CellFireState):  # update velocities to zero if NaN
-            nan_cell_velocities = state.cell_velocities.isnan().any(dim=(1, 2))
-            state.cell_velocities[nan_cell_velocities] = torch.zeros_like(
-                state.cell_positions[nan_cell_velocities]
-            )
+        state.velocities[nan_velocities] = 0
+        if isinstance(state, CellFireState):
+            nan_cell_vel = state.cell_velocities.isnan().any(dim=(1, 2))
+            state.cell_velocities[nan_cell_vel] = 0
 
     alpha_start_system = torch.full(
         (n_systems,), alpha_start.item(), device=device, dtype=dtype
@@ -304,18 +298,16 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
 
     n_systems, device, dtype = state.n_systems, state.device, state.dtype
 
-    # Initialize velocities if NaN
+    # Per-atom NaN detection before zeroing: needed to decide whether to skip
+    # FIRE mixing (all NaN = first step) vs run it (partial NaN = autobatcher swap).
     nan_velocities = state.velocities.isnan().any(dim=1)
-    if nan_velocities.any():
-        state.velocities[nan_velocities] = torch.zeros_like(
-            state.velocities[nan_velocities]
-        )
+    state.velocities.nan_to_num_(nan=0.0)
+    if isinstance(state, CellFireState):
+        state.cell_velocities.nan_to_num_(nan=0.0)
+
+    if nan_velocities.all():
+        # First step: all NaN → zero. Use raw forces, skip FIRE mixing (matches ASE).
         forces = state.forces
-        if isinstance(state, CellFireState):
-            nan_cell_velocities = state.cell_velocities.isnan().any(dim=(1, 2))
-            state.cell_velocities[nan_cell_velocities] = torch.zeros_like(
-                state.cell_velocities[nan_cell_velocities]
-            )
     else:
         alpha_start_system = torch.full(
             (n_systems,), alpha_start.item(), device=device, dtype=dtype
@@ -323,7 +315,6 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
 
         # Transform forces for cell optimization
         if isinstance(state, CellFireState):
-            # Get deformation gradient for force transformation
             cur_deform_grad = cell_filters.deform_grad(
                 state.row_vector_cell,
                 getattr(state, "reference_row_vector_cell", state.row_vector_cell),
@@ -334,7 +325,7 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
         else:
             forces = state.forces
 
-        # Calculate power
+        # Calculate power (newly zeroed systems will have power=0 → neg_mask)
         system_power = tsm.batched_vdot(forces, state.velocities, state.system_idx)
         if isinstance(state, CellFireState):
             system_power += (state.cell_forces * state.cell_velocities).sum(dim=(1, 2))
