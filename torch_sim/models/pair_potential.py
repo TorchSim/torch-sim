@@ -9,21 +9,60 @@ It also provides :class:`PairForcesModel` for potentials defined directly as for
 (e.g. the asymmetric particle-life interaction) that cannot be expressed as the
 gradient of a scalar energy.
 
-Concrete pair functions live in their respective model modules:
+The pair function signature required by :class:`PairPotentialModel` is:
+``pair_fn(distances, atomic_numbers_i, atomic_numbers_j) -> pair_energies``,
+where all arguments are 1-D tensors of length n_pairs and the return value is a
+1-D tensor of pair energies. Additional parameters (e.g., ``sigma``, ``epsilon``)
+can be bound using :func:`functools.partial`.
 
-* :func:`~torch_sim.models.lennard_jones.lennard_jones_pair`
-* :func:`~torch_sim.models.morse.morse_pair`
-* :func:`~torch_sim.models.soft_sphere.soft_sphere_pair`
-* :func:`~torch_sim.models.particle_life.particle_life_pair_force`
+Notes:
+    - The ``cutoff`` parameter determines the neighbor list construction range.
+      Pairs beyond the cutoff are excluded from energy/force calculations. If your
+      potential has its own natural cutoff (e.g., WCA potential), ensure the model's
+      ``cutoff`` is at least as large.
+    - The ``atomic_numbers_i`` and ``atomic_numbers_j`` arguments are provided for
+      type-dependent potentials, but can be ignored (e.g., with ``# noqa: ARG001``)
+      for type-independent potentials like Lennard-Jones.
+    - The ``dtype`` of the SimState must match the model's ``dtype``. The model will
+      raise a ``TypeError`` if they don't match.
+    - Use ``reduce_to_half_list=True`` for symmetric potentials to halve computation
+      time. Only use ``False`` for asymmetric interactions or when you need the
+      full neighbor list for other purposes.
+
 
 Example::
 
-    from torch_sim.models.lennard_jones import lennard_jones_pair
     from torch_sim.models.pair_potential import PairPotentialModel
+    from torch_sim import io
+    from ase.build import bulk
     import functools
+    import torch
 
-    fn = functools.partial(lennard_jones_pair, sigma=1.0, epsilon=1.0)
-    model = PairPotentialModel(pair_fn=fn, cutoff=2.5)
+
+    def bmhtf_pair(dr, zi, zj, A, B, C, D, sigma):
+        # Born-Meyer-Huggins-Tosi-Fumi (BMHTF) potential for ionic crystals
+        # V(r) = A * exp(B * (sigma - r)) - C/r^6 - D/r^8
+        exp_term = A * torch.exp(B * (sigma - dr))
+        r6_term = C / dr.pow(6)
+        r8_term = D / dr.pow(8)
+        energy = exp_term - r6_term - r8_term
+        return torch.where(dr > 0, energy, torch.zeros_like(energy))
+
+
+    # Na-Cl interaction parameters
+    fn = functools.partial(
+        bmhtf_pair,
+        A=20.3548,
+        B=3.1546,
+        C=674.4793,
+        D=837.0770,
+        sigma=2.755,
+    )
+    model = PairPotentialModel(pair_fn=fn, cutoff=10.0)
+
+    # Create NaCl structure using ASE
+    nacl_atoms = bulk("NaCl", "rocksalt", a=5.64)
+    sim_state = io.atoms_to_state(nacl_atoms, device=torch.device("cpu"))
     results = model(sim_state)
 """
 
@@ -248,7 +287,10 @@ class PairPotentialModel(ModelInterface):
     callable of the form ``pair_fn(distances, atomic_numbers_i, atomic_numbers_j) ->
     pair_energies``, where all arguments are 1-D tensors of length n_pairs and the
     return value is a 1-D tensor of pair energies.  Forces are obtained analytically
-    via autograd.
+    via autograd by differentiating the energy with respect to positions.
+
+    When stress is computed, it uses the virial formula: σ = -1/V Σ_{ij} r_ij ⊗ f_ij,
+    where r_ij is the pair displacement vector and f_ij is the force vector.
 
     Example::
 
@@ -264,10 +306,10 @@ class PairPotentialModel(ModelInterface):
     def __init__(
         self,
         pair_fn: Callable,
+        *,
         cutoff: float,
         device: torch.device | None = None,
-        dtype: torch.dtype = torch.float32,
-        *,
+        dtype: torch.dtype = torch.float64,
         compute_forces: bool = True,
         compute_stress: bool = False,
         per_atom_energies: bool = False,
@@ -323,7 +365,17 @@ class PairPotentialModel(ModelInterface):
             dict with keys ``"energy"`` (shape ``[n_systems]``), optionally
             ``"forces"`` (``[n_atoms, 3]``), ``"stress"`` (``[n_systems, 3, 3]``),
             ``"energies"`` (``[n_atoms]``), ``"stresses"`` (``[n_atoms, 3, 3]``).
+
+        Raises:
+            TypeError: If the SimState's dtype does not match the model's dtype.
         """
+        if state.dtype != self._dtype:
+            raise TypeError(
+                f"SimState dtype {state.dtype} does not match model dtype {self._dtype}. "
+                f"Either set the model dtype to {state.dtype} or convert the SimState "
+                f"to {self._dtype} using sim_state.to(dtype={self._dtype})."
+            )
+        dtype = self._dtype
         half = self.reduce_to_half_list
         (
             positions,
@@ -358,13 +410,13 @@ class PairPotentialModel(ModelInterface):
         ew = 1.0 if half else 0.5
 
         results: dict[str, torch.Tensor] = {}
-        energy = torch.zeros(n_systems, dtype=self._dtype, device=self._device)
+        energy = torch.zeros(n_systems, dtype=dtype, device=self._device)
         energy = energy.index_add(0, system_mapping, ew * pair_energies)
         results["energy"] = energy
 
         if self.per_atom_energies:
             atom_energies = torch.zeros(
-                positions.shape[0], dtype=self._dtype, device=self._device
+                positions.shape[0], dtype=dtype, device=self._device
             )
             atom_energies = atom_energies.index_add(0, mapping[0], ew * pair_energies)
             atom_energies = atom_energies.index_add(0, mapping[1], ew * pair_energies)
@@ -405,7 +457,7 @@ class PairPotentialModel(ModelInterface):
                     force_vectors,
                     row_cell,
                     n_systems,
-                    self._dtype,
+                    dtype,
                     self._device,
                     half=half,
                     per_atom=self.per_atom_stresses,
@@ -429,6 +481,13 @@ class PairForcesModel(ModelInterface):
     Forces are accumulated as:
         F_i += -f_ij * r̂_ij,  F_j += +f_ij * r̂_ij
 
+    Note:
+        Unlike :class:`PairPotentialModel`, this class does not compute energies
+        (returns zeros) since there is no underlying energy function. Use
+        :class:`PairPotentialModel` when your interaction can be expressed as an
+        energy function, as it provides automatic force computation via autograd
+        and is generally more efficient.
+
     Example::
 
         from torch_sim.models.particle_life import particle_life_pair_force
@@ -443,10 +502,10 @@ class PairForcesModel(ModelInterface):
     def __init__(
         self,
         force_fn: Callable,
+        *,
         cutoff: float,
         device: torch.device | None = None,
-        dtype: torch.dtype = torch.float32,
-        *,
+        dtype: torch.dtype = torch.float64,
         compute_stress: bool = False,
         per_atom_stresses: bool = False,
         neighbor_list_fn: Callable = torchsim_nl,
@@ -491,7 +550,17 @@ class PairForcesModel(ModelInterface):
             ``"forces"`` (shape ``[n_atoms, 3]``), and optionally ``"stress"``
             (shape ``[n_systems, 3, 3]``) and ``"stresses"``
             (shape ``[n_atoms, 3, 3]``).
+
+        Raises:
+            TypeError: If the SimState's dtype does not match the model's dtype.
         """
+        if state.dtype != self._dtype:
+            raise TypeError(
+                f"SimState dtype {state.dtype} does not match model dtype {self._dtype}. "
+                f"Either set the model dtype to {state.dtype} or convert the SimState "
+                f"to {self._dtype} using sim_state.to(dtype={self._dtype})."
+            )
+        dtype = self._dtype
         half = self.reduce_to_half_list
         (
             positions,
@@ -524,7 +593,7 @@ class PairForcesModel(ModelInterface):
         forces = forces.index_add(0, mapping[1], force_vectors)
 
         results: dict[str, torch.Tensor] = {
-            "energy": torch.zeros(n_systems, dtype=self._dtype, device=self._device),
+            "energy": torch.zeros(n_systems, dtype=dtype, device=self._device),
             "forces": forces,
         }
 
@@ -539,7 +608,7 @@ class PairForcesModel(ModelInterface):
                     force_vectors,
                     row_cell,
                     n_systems,
-                    self._dtype,
+                    dtype,
                     self._device,
                     half=half,
                     per_atom=self.per_atom_stresses,

@@ -1,4 +1,4 @@
-"""Tests for the soft sphere pair functions and multi-species models."""
+"""Tests for the soft sphere pair functions, wrapped model, and multi-species models."""
 
 import pytest
 import torch
@@ -6,6 +6,7 @@ import torch
 import torch_sim as ts
 from torch_sim.models.soft_sphere import (
     MultiSoftSpherePairFn,
+    SoftSphereModel,
     SoftSphereMultiModel,
     soft_sphere_pair,
 )
@@ -228,3 +229,45 @@ def test_multispecies_evaluation() -> None:
     assert "energy" in results
     assert "forces" in results
     assert "stress" in results
+
+
+def test_soft_sphere_model_evaluation(si_double_sim_state: ts.SimState) -> None:
+    """SoftSphereModel (wrapped PairPotentialModel) evaluates correctly."""
+    model = SoftSphereModel(
+        sigma=5.0,
+        epsilon=0.0104,
+        alpha=2.0,
+        cutoff=5.0,
+        dtype=torch.float64,
+        compute_forces=True,
+        compute_stress=True,
+    )
+    results = model(si_double_sim_state)
+    assert "energy" in results
+    assert "forces" in results
+    assert "stress" in results
+    assert results["energy"].shape == (si_double_sim_state.n_systems,)
+    assert results["forces"].shape == (si_double_sim_state.n_atoms, 3)
+    assert results["stress"].shape == (si_double_sim_state.n_systems, 3, 3)
+
+
+def test_soft_sphere_model_force_conservation(
+    si_double_sim_state: ts.SimState,
+) -> None:
+    """SoftSphereModel forces sum to zero (Newton's third law)."""
+    model = SoftSphereModel(
+        sigma=5.0,
+        epsilon=0.0104,
+        alpha=2.0,
+        cutoff=5.0,
+        dtype=torch.float64,
+        compute_forces=True,
+    )
+    results = model(si_double_sim_state)
+    for sys_idx in range(si_double_sim_state.n_systems):
+        mask = si_double_sim_state.system_idx == sys_idx
+        assert torch.allclose(
+            results["forces"][mask].sum(dim=0),
+            torch.zeros(3, dtype=torch.float64),
+            atol=1e-10,
+        )

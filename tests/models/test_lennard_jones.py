@@ -1,8 +1,13 @@
-"""Tests for the Lennard-Jones pair functions."""
+"""Tests for the Lennard-Jones pair functions and wrapped model."""
 
 import torch
 
-from torch_sim.models.lennard_jones import lennard_jones_pair, lennard_jones_pair_force
+import torch_sim as ts
+from torch_sim.models.lennard_jones import (
+    LennardJonesModel,
+    lennard_jones_pair,
+    lennard_jones_pair_force,
+)
 
 
 def _dummy_z(n: int) -> torch.Tensor:
@@ -90,3 +95,43 @@ def test_lennard_jones_force_energy_consistency() -> None:
     force_from_grad = -torch.autograd.grad(energy.sum(), dr, create_graph=True)[0]
 
     torch.testing.assert_close(force_direct, force_from_grad, rtol=1e-4, atol=1e-4)
+
+
+def test_lennard_jones_model_evaluation(si_double_sim_state: ts.SimState) -> None:
+    """LennardJonesModel (wrapped PairPotentialModel) evaluates correctly."""
+    model = LennardJonesModel(
+        sigma=3.405,
+        epsilon=0.0104,
+        cutoff=2.5 * 3.405,
+        dtype=torch.float64,
+        compute_forces=True,
+        compute_stress=True,
+    )
+    results = model(si_double_sim_state)
+    assert "energy" in results
+    assert "forces" in results
+    assert "stress" in results
+    assert results["energy"].shape == (si_double_sim_state.n_systems,)
+    assert results["forces"].shape == (si_double_sim_state.n_atoms, 3)
+    assert results["stress"].shape == (si_double_sim_state.n_systems, 3, 3)
+
+
+def test_lennard_jones_model_force_conservation(
+    si_double_sim_state: ts.SimState,
+) -> None:
+    """LennardJonesModel forces sum to zero (Newton's third law)."""
+    model = LennardJonesModel(
+        sigma=3.405,
+        epsilon=0.0104,
+        cutoff=2.5 * 3.405,
+        dtype=torch.float64,
+        compute_forces=True,
+    )
+    results = model(si_double_sim_state)
+    for sys_idx in range(si_double_sim_state.n_systems):
+        mask = si_double_sim_state.system_idx == sys_idx
+        assert torch.allclose(
+            results["forces"][mask].sum(dim=0),
+            torch.zeros(3, dtype=torch.float64),
+            atol=1e-10,
+        )

@@ -78,7 +78,7 @@ class ParticleLifeModel(PairForcesModel):
         epsilon: float = 1.0,
         beta: float = 0.3,
         device: torch.device | None = None,
-        dtype: torch.dtype = torch.float32,
+        dtype: torch.dtype = torch.float64,
         *,
         compute_stress: bool = False,
         per_atom_stresses: bool = False,

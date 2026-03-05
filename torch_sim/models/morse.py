@@ -99,7 +99,7 @@ class MorseModel(PairPotentialModel):
         epsilon: float = 5.0,
         alpha: float = 5.0,
         device: torch.device | None = None,
-        dtype: torch.dtype = torch.float32,
+        dtype: torch.dtype = torch.float64,
         *,
         compute_forces: bool = True,
         compute_stress: bool = False,

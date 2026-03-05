@@ -1,8 +1,9 @@
-"""Tests for the Morse pair functions."""
+"""Tests for the Morse pair functions and wrapped model."""
 
 import torch
 
-from torch_sim.models.morse import morse_pair, morse_pair_force
+import torch_sim as ts
+from torch_sim.models.morse import MorseModel, morse_pair, morse_pair_force
 
 
 def _dummy_z(n: int) -> torch.Tensor:
@@ -72,3 +73,43 @@ def test_morse_alpha_effect() -> None:
         return dr[mask].max() - dr[mask].min()
 
     assert get_well_width(energy2) < get_well_width(energy1)
+
+
+def test_morse_model_evaluation(si_double_sim_state: ts.SimState) -> None:
+    """MorseModel (wrapped PairPotentialModel) evaluates correctly."""
+    model = MorseModel(
+        sigma=2.55,
+        epsilon=0.436,
+        alpha=1.359,
+        cutoff=6.0,
+        dtype=torch.float64,
+        compute_forces=True,
+        compute_stress=True,
+    )
+    results = model(si_double_sim_state)
+    assert "energy" in results
+    assert "forces" in results
+    assert "stress" in results
+    assert results["energy"].shape == (si_double_sim_state.n_systems,)
+    assert results["forces"].shape == (si_double_sim_state.n_atoms, 3)
+    assert results["stress"].shape == (si_double_sim_state.n_systems, 3, 3)
+
+
+def test_morse_model_force_conservation(si_double_sim_state: ts.SimState) -> None:
+    """MorseModel forces sum to zero (Newton's third law)."""
+    model = MorseModel(
+        sigma=2.55,
+        epsilon=0.436,
+        alpha=1.359,
+        cutoff=6.0,
+        dtype=torch.float64,
+        compute_forces=True,
+    )
+    results = model(si_double_sim_state)
+    for sys_idx in range(si_double_sim_state.n_systems):
+        mask = si_double_sim_state.system_idx == sys_idx
+        assert torch.allclose(
+            results["forces"][mask].sum(dim=0),
+            torch.zeros(3, dtype=torch.float64),
+            atol=1e-10,
+        )

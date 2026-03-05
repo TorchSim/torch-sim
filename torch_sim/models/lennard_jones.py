@@ -94,7 +94,7 @@ class LennardJonesModel(PairPotentialModel):
         sigma: float = 1.0,
         epsilon: float = 1.0,
         device: torch.device | None = None,
-        dtype: torch.dtype = torch.float32,
+        dtype: torch.dtype = torch.float64,
         *,
         compute_forces: bool = True,
         compute_stress: bool = False,
