@@ -19,6 +19,13 @@ try:
     class OrbModel(OrbTorchSimModel):
         """ORB model wrapper for torch-sim."""
 
+        def forward(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            """Run forward pass, detaching outputs unless retain_graph is True."""
+            output = super().forward(*args, **kwargs)
+            return {  # detach tensors as energy is not detached by default
+                k: v.detach() if hasattr(v, "detach") else v for k, v in output.items()
+            }
+
 except ImportError as exc:
     warnings.warn(f"Orb import failed: {traceback.format_exc()}", stacklevel=2)
 
