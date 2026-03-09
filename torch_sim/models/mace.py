@@ -75,6 +75,7 @@ else:
             system_idx: torch.Tensor | None = None,
             enable_oeq: bool = False,
             compile_mode: str | None = None,
+            **kwargs: Any,
         ) -> None:
             """Initialize the MACE model for energy and force calculations.
 
@@ -105,6 +106,7 @@ else:
                     False.
                 compile_mode: PyTorch compilation mode (e.g., "reduce-overhead").
                     Defaults to None (no compilation).
+                **kwargs: Additional keyword arguments to pass to the MACE model.
 
             Raises:
                 TypeError: If model is neither a path nor a torch.nn.Module.
@@ -121,6 +123,7 @@ else:
                 compile_mode=compile_mode,
                 atomic_numbers=atomic_numbers,
                 system_idx=system_idx,
+                **kwargs,
             )
 
 
