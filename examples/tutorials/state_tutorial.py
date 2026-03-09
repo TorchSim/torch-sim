@@ -1,7 +1,8 @@
 # %%
 # /// script
 # dependencies = [
-#     "torch_sim_atomistic[mace, io]"
+#     "torch_sim_atomistic[mace, io]",
+#     "mace-torch @ git+https://github.com/ACEsuit/mace.git@develop",
 # ]
 # ///
 

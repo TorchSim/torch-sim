@@ -9,7 +9,10 @@ This script demonstrates the high-level API for:
 """
 
 # /// script
-# dependencies = ["torch-sim-atomistic[mace] @ .", "pymatgen>=2025.2.18"]
+# dependencies = [
+#     "torch_sim_atomistic[mace, io]",
+#     "mace-torch @ git+https://github.com/ACEsuit/mace.git@develop",
+# ]
 # ///
 
 import os

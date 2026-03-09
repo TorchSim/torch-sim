@@ -15,37 +15,23 @@ from torch_sim.testing import SIMSTATE_BULK_GENERATORS, SIMSTATE_MOLECULE_GENERA
 
 try:
     from mace.calculators import MACECalculator
-    from mace.calculators.foundations_models import mace_mp, mace_off
+    from mace.calculators.foundations_models import mace_mp, mace_off, mace_omol
 
     from torch_sim.models.mace import MaceModel
 
 except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
     pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)  # ty:ignore[too-many-positional-arguments]
 
-# mace_omol is optional (added in newer MACE versions)
-try:
-    from mace.calculators.foundations_models import mace_omol
-
-    raw_mace_omol = mace_omol(model="extra_large", return_raw_model=True)
-    HAS_MACE_OMOL = True
-except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
-    raw_mace_omol = None
-    HAS_MACE_OMOL = False
-
-MACE_MP_SMALL_URL = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mace_agnesi_small.model"
-MACE_OFF_SMALL_URL = "https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model?raw=true"
-
-raw_mace_mp = mace_mp(model=MACE_MP_SMALL_URL, return_raw_model=True)
-raw_mace_off = mace_off(model=MACE_OFF_SMALL_URL, return_raw_model=True)
+raw_mace_omol = mace_omol(model="extra_large", return_raw_model=True)
+raw_mace_mp = mace_mp(model="small", return_raw_model=True)
+raw_mace_off = mace_off(model="small", return_raw_model=True)
 DTYPE = torch.float64
 
 
 @pytest.fixture
 def ase_mace_calculator() -> MACECalculator:
     dtype = str(DTYPE).removeprefix("torch.")
-    return mace_mp(
-        model=MACE_MP_SMALL_URL, device="cpu", default_dtype=dtype, dispersion=False
-    )
+    return mace_mp(model="small", device="cpu", default_dtype=dtype, dispersion=False)
 
 
 @pytest.fixture
@@ -84,7 +70,7 @@ def test_mace_dtype_working(si_atoms: Atoms, dtype: torch.dtype) -> None:
 @pytest.fixture
 def ase_mace_off_calculator() -> MACECalculator:
     return mace_off(
-        model=MACE_OFF_SMALL_URL,
+        model="small",
         device=str(DEVICE),
         default_dtype=str(DTYPE).removeprefix("torch."),
         dispersion=False,
@@ -117,7 +103,6 @@ def test_mace_off_dtype_working(
     model.forward(benzene_sim_state.to(DEVICE, dtype))
 
 
-@pytest.mark.skipif(not HAS_MACE_OMOL, reason="mace_omol not available")
 @pytest.mark.parametrize(
     ("charge", "spin"),
     [

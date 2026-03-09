@@ -12,12 +12,11 @@ Visualization is disabled in CI mode.
 
 # /// script
 # dependencies = [
-#     "torch-sim-atomistic[mace] @ .",
-#     "phonopy>=2.35",
+#     "torch_sim_atomistic[mace, io]",
+#     "mace-torch @ git+https://github.com/ACEsuit/mace.git@develop",
 #     "pymatviz>=0.17.1",
 #     "plotly>=6.3.0",
 #     "seekpath",
-#     "ase",
 # ]
 # ///
 
@@ -32,9 +31,6 @@ from phonopy import Phonopy
 import torch_sim as ts
 from torch_sim.models.mace import MaceModel
 from torch_sim.telemetry import configure_logging, get_logger
-
-
-MACE_MPA_MEDIUM_URL = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 
 
 configure_logging(log_file="6_phonons.log")
@@ -63,7 +59,7 @@ log.info("SECTION 1: Structure Relaxation")
 
 # Load the MACE model
 loaded_model = mace_mp(
-    model=MACE_MPA_MEDIUM_URL,
+    model="medium",
     return_raw_model=True,
     default_dtype=str(dtype).removeprefix("torch."),
     device=str(device),

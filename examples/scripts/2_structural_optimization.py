@@ -8,7 +8,10 @@ This script demonstrates structural optimization techniques with:
 """
 
 # /// script
-# dependencies = ["scipy>=1.15", "torch-sim-atomistic[mace] @ ."]
+# dependencies = [
+#     "torch_sim_atomistic[mace, io]",
+#     "mace-torch @ git+https://github.com/ACEsuit/mace.git@develop",
+# ]
 # ///
 
 import itertools
@@ -24,9 +27,6 @@ from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.models.mace import MaceModel
 from torch_sim.telemetry import configure_logging, get_logger
 from torch_sim.units import UnitConversion
-
-
-MACE_MPA_MEDIUM_URL = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 
 
 configure_logging(log_file="2_structural_optimization.log")
@@ -136,7 +136,7 @@ log.info("SECTION 2: Batched MACE FIRE - Positions Only")
 
 # Load MACE model
 loaded_model = mace_mp(
-    model=MACE_MPA_MEDIUM_URL,
+    model="medium",
     return_raw_model=True,
     default_dtype=str(dtype).removeprefix("torch."),
     device=str(device),

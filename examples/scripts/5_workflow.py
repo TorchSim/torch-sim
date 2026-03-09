@@ -7,7 +7,11 @@ This script demonstrates:
 """
 
 # /// script
-# dependencies = ["torch-sim-atomistic[mace] @ .", "matbench-discovery>=1.3.1"]
+# dependencies = [
+#     "torch_sim_atomistic[mace, io]",
+#     "mace-torch @ git+https://github.com/ACEsuit/mace.git@develop",
+#     "matbench-discovery>=1.3.1",
+# ]
 # ///
 
 import os
@@ -22,9 +26,6 @@ import torch_sim as ts
 from torch_sim.elastic import get_bravais_type
 from torch_sim.models.mace import MaceModel
 from torch_sim.telemetry import configure_logging, get_logger
-
-
-MACE_MPA_MEDIUM_URL = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 
 
 configure_logging(log_file="5_workflow.log")
@@ -49,7 +50,7 @@ log.info("SECTION 1: In-Flight Autobatching Workflow")
 
 
 log.info("Loading MACE model...")
-mace = mace_mp(model=MACE_MPA_MEDIUM_URL, return_raw_model=True)
+mace = mace_mp(model="medium", return_raw_model=True)
 mace_model = MaceModel(
     model=mace,
     device=device,
@@ -158,7 +159,7 @@ log.info("SECTION 2: Elastic Constants Calculation")
 dtype_elastic = torch.float64
 
 loaded_model = mace_mp(
-    model=MACE_MPA_MEDIUM_URL,
+    model="medium",
     enable_cueq=False,
     device=str(device),
     default_dtype=str(dtype_elastic).removeprefix("torch."),

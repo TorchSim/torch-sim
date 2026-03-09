@@ -8,7 +8,9 @@ This script demonstrates:
 """
 
 # /// script
-# dependencies = ["ase>=3.26", "scipy>=1.15", "matplotlib", "numpy"]
+# dependencies = [
+#     "torch_sim_atomistic[io]",
+# ]
 # ///
 
 import os

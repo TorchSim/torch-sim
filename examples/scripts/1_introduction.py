@@ -6,7 +6,10 @@ This script demonstrates the fundamental usage of TorchSim with:
 """
 
 # /// script
-# dependencies = ["scipy>=1.15", "torch-sim-atomistic[mace] @ ."]
+# dependencies = [
+#     "torch_sim_atomistic[mace, io]",
+#     "mace-torch @ git+https://github.com/ACEsuit/mace.git@develop",
+# ]
 # ///
 
 import itertools
@@ -123,9 +126,8 @@ log.info("SECTION 2: MACE Model with Batched Input")
 
 
 # Load the raw model from the downloaded model
-MACE_MPA_MEDIUM_URL = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 loaded_model = mace_mp(
-    model=MACE_MPA_MEDIUM_URL,
+    model="medium",
     return_raw_model=True,
     default_dtype=str(dtype).removeprefix("torch."),
     device=str(device),
