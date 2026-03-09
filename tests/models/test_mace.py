@@ -17,7 +17,7 @@ try:
     from mace.calculators import MACECalculator
     from mace.calculators.foundations_models import mace_mp, mace_off
 
-    from torch_sim.models.mace import MaceModel, MaceUrls
+    from torch_sim.models.mace import MaceModel
 
 except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
     pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)  # ty:ignore[too-many-positional-arguments]
@@ -32,8 +32,11 @@ except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
     raw_mace_omol = None
     HAS_MACE_OMOL = False
 
-raw_mace_mp = mace_mp(model=MaceUrls.mace_mp_small, return_raw_model=True)
-raw_mace_off = mace_off(model=MaceUrls.mace_off_small, return_raw_model=True)
+MACE_MP_SMALL_URL = "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b/mace_agnesi_small.model"
+MACE_OFF_SMALL_URL = "https://github.com/ACEsuit/mace-off/blob/main/mace_off23/MACE-OFF23_small.model?raw=true"
+
+raw_mace_mp = mace_mp(model=MACE_MP_SMALL_URL, return_raw_model=True)
+raw_mace_off = mace_off(model=MACE_OFF_SMALL_URL, return_raw_model=True)
 DTYPE = torch.float64
 
 
@@ -41,7 +44,7 @@ DTYPE = torch.float64
 def ase_mace_calculator() -> MACECalculator:
     dtype = str(DTYPE).removeprefix("torch.")
     return mace_mp(
-        model=MaceUrls.mace_mp_small, device="cpu", default_dtype=dtype, dispersion=False
+        model=MACE_MP_SMALL_URL, device="cpu", default_dtype=dtype, dispersion=False
     )
 
 
@@ -81,7 +84,7 @@ def test_mace_dtype_working(si_atoms: Atoms, dtype: torch.dtype) -> None:
 @pytest.fixture
 def ase_mace_off_calculator() -> MACECalculator:
     return mace_off(
-        model=MaceUrls.mace_off_small,
+        model=MACE_OFF_SMALL_URL,
         device=str(DEVICE),
         default_dtype=str(DTYPE).removeprefix("torch."),
         dispersion=False,
@@ -112,13 +115,6 @@ def test_mace_off_dtype_working(
 ) -> None:
     model = MaceModel(model=raw_mace_off, device=DEVICE, dtype=dtype, compute_forces=True)
     model.forward(benzene_sim_state.to(DEVICE, dtype))
-
-
-def test_mace_urls_enum() -> None:
-    assert len(MaceUrls) > 2
-    for key in MaceUrls:
-        assert key.value.startswith("https://github.com/ACEsuit/mace-")
-        assert key.value.endswith((".model", ".model?raw=true"))
 
 
 @pytest.mark.skipif(not HAS_MACE_OMOL, reason="mace_omol not available")
