@@ -1,6 +1,6 @@
 # %%
 # /// script
-# dependencies = ["torch_sim_atomistic[mace]"]
+# dependencies = ["torch-sim-atomistic[mace] @ ."]
 # ///
 
 
@@ -60,11 +60,13 @@ Then we can initialize the MaceModel class with the raw model.
 
 # %%
 from mace.calculators.foundations_models import mace_mp
-from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.models.mace import MaceModel
+
+MACE_MPA_MEDIUM_URL = "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model"
 
 # load mace_mp using the mace package
 loaded_model = mace_mp(
-    model=MaceUrls.mace_mpa_medium,
+    model=MACE_MPA_MEDIUM_URL,
     return_raw_model=True,
     default_dtype=str(dtype).removeprefix("torch."),
     device=str(device),

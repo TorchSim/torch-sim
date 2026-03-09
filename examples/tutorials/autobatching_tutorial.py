@@ -1,6 +1,6 @@
 # %%
 # /// script
-# dependencies = ["torch_sim_atomistic[mace]"]
+# dependencies = ["torch-sim-atomistic[mace] @ ."]
 # ///
 
 
