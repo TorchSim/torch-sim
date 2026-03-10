@@ -1154,6 +1154,7 @@ def test_nptnosehooverstate_instantiation() -> None:
         momenta=torch.zeros(4, 3),
         energy=torch.zeros(1),
         forces=torch.zeros(4, 3),
+        stress=torch.zeros(1, 3, 3),
         reference_cell=torch.eye(3).unsqueeze(0),
         cell_position=torch.zeros(1),
         cell_momentum=torch.zeros(1),
