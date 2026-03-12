@@ -11,10 +11,15 @@ import torch
 
 try:
     from vesin import NeighborList as VesinNeighborList
-    from vesin.torch import NeighborList as VesinNeighborListTorch
 except ImportError:
     VesinNeighborList = None
-    VesinNeighborListTorch = None
+
+# Try to import torch version (may not exist in all vesin versions)
+try:
+    from vesin.torch import NeighborList as VesinNeighborListTorch
+except ImportError:
+    # vesin.torch may not exist - use regular NeighborList for torch compatibility
+    VesinNeighborListTorch = VesinNeighborList
 
 VESIN_AVAILABLE = VesinNeighborList is not None
 

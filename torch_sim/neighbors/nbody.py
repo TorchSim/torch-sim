@@ -1,8 +1,8 @@
 """Pure-PyTorch triplet and quadruplet interaction index builders.
 
 All functions use only standard PyTorch ops (argsort, bincount, repeat_interleave,
-boolean masking, etc.) so they are compatible with ``torch.jit.script``,
-``torch.compile``, and AOTInductor — no ``torch_scatter`` or ``torch_sparse``.
+boolean masking, etc.) and are compatible with ``torch.jit.script``.
+No ``torch_scatter`` or ``torch_sparse`` dependencies.
 
 Typical usage::
 
@@ -141,8 +141,7 @@ def build_mixed_triplets(
     edge_index_in: torch.Tensor,
     edge_index_out: torch.Tensor,
     n_atoms: int,
-    *,
-    to_outedge: bool = False,
+    to_outedge: bool = False,  # noqa: FBT001, FBT002
     cell_offsets_in: torch.Tensor | None = None,
     cell_offsets_out: torch.Tensor | None = None,
 ) -> dict[str, torch.Tensor]:
@@ -232,7 +231,7 @@ def build_quadruplets(
     n_atoms: int,
     main_cell_offsets: torch.Tensor,
     qint_cell_offsets: torch.Tensor,
-) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
+) -> dict[str, torch.Tensor]:
     """Build quadruplet interaction indices ``d→b→a←c`` from two edge sets.
 
     Combines an input triplet set ``d→b→a`` (edges from ``main_graph``
@@ -251,18 +250,27 @@ def build_quadruplets(
         qint_cell_offsets: ``[n_qint_edges, 3]`` cell offsets for qint graph.
 
     Returns:
-        Dict with keys:
+        Dict with keys (for quadruplet ``d→b→a←c``):
 
-        - ``"triplet_in"`` — dict from :func:`build_mixed_triplets` for ``d→b→a``.
-        - ``"triplet_out"`` — dict from :func:`build_mixed_triplets` for ``c→a←b``.
-        - ``"quad_out"`` — main-edge indices of output edge ``c→a``, shape
-          ``[n_quads]``.
-        - ``"trip_in_to_quad"`` — maps input-triplet index → quadruplet, shape
-          ``[n_quads]``.
-        - ``"trip_out_to_quad"`` — maps output-triplet index → quadruplet, shape
-          ``[n_quads]``.
-        - ``"quad_out_agg"`` — per-segment local index for aggregation, shape
-          ``[n_quads]``.
+        - ``"main_edge_d_to_b"`` — main graph edge indices for ``d→b`` edges,
+          shape ``[n_trip_in]``. Indices into ``main_edge_index``.
+        - ``"qint_edge_b_to_a"`` — qint graph edge indices for ``b→a`` edges
+          (intermediate), shape ``[n_trip_in]``. Indices into ``qint_edge_index``.
+        - ``"qint_edge_b_to_a_agg"`` — aggregation indices for ``b→a`` edges,
+          shape ``[n_trip_in]``.
+        - ``"main_edge_c_to_a"`` — main graph edge indices for ``c→a`` edges,
+          shape ``[n_trip_out]``. Indices into ``main_edge_index``.
+        - ``"main_edge_c_to_a_agg"`` — aggregation indices for ``c→a`` edges,
+          shape ``[n_trip_out]``.
+        - ``"quad_main_edge_c_to_a"`` — main graph edge indices for ``c→a`` edges
+          for each quadruplet, shape ``[n_quads]``. Indices into
+          ``main_edge_index``.
+        - ``"trip_in_to_quad"`` — maps input-triplet index → quadruplet index,
+          shape ``[n_quads]``.
+        - ``"trip_out_to_quad"`` — maps output-triplet index → quadruplet index,
+          shape ``[n_quads]``.
+        - ``"quad_main_edge_agg"`` — per-segment local index for aggregation,
+          shape ``[n_quads]``.
     """
     src_main = main_edge_index[0]
     n_main_edges = src_main.size(0)
@@ -309,7 +317,6 @@ def build_quadruplets(
     # Expand input-triplet side: for each intermediate edge in `inter_edge`,
     # gather all input triplets belonging to that edge.
     # Build CSR of input triplets grouped by their intermediate (qint) edge
-    ti_out = triplet_in["trip_out"]  # sorted by construction
     csr_ti = torch.zeros(n_qint_edges + 1, dtype=torch.long, device=device)
     csr_ti[1:] = n_trip_in_per_inter.cumsum(0)
 
@@ -341,10 +348,22 @@ def build_quadruplets(
     quad_out_agg = _inner_idx(quad_out, n_main_edges)
 
     return {
-        "triplet_in": triplet_in,
-        "triplet_out": triplet_out,
-        "quad_out": quad_out,
+        # d→b edge indices into main_edge_index
+        "main_edge_d_to_b": triplet_in["trip_in"],
+        # b→a edge indices into qint_edge_index (intermediate)
+        "qint_edge_b_to_a": triplet_in["trip_out"],
+        # aggregation index for b→a edges
+        "qint_edge_b_to_a_agg": triplet_in["trip_out_agg"],
+        # c→a edge indices into main_edge_index
+        "main_edge_c_to_a": triplet_out["trip_out"],
+        # aggregation index for c→a edges
+        "main_edge_c_to_a_agg": triplet_out["trip_out_agg"],
+        # c→a edge indices for each quadruplet
+        "quad_main_edge_c_to_a": quad_out,
+        # maps input-triplet index → quadruplet index
         "trip_in_to_quad": trip_in_to_quad,
+        # maps output-triplet index → quadruplet index
         "trip_out_to_quad": trip_out_to_quad,
-        "quad_out_agg": quad_out_agg,
+        # per-segment local index for aggregation
+        "quad_main_edge_agg": quad_out_agg,
     }
