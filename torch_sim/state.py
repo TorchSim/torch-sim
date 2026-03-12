@@ -878,6 +878,18 @@ def _filter_attrs_by_index(
         inv = torch.empty(max_idx, device=state.device, dtype=torch.long)
         inv[system_indices] = torch.arange(len(system_indices), device=state.device)
 
+    # Remap constraint system_idx to account for reordering by system_indices.
+    # select_constraint uses a boolean mask which always produces indices in
+    # ascending order of the original systems.  When system_indices is not
+    # sorted (e.g. [3, 1, 4]), the constraint's system_idx must be remapped so
+    # per-system data (e.g. FixSymmetry rotations) is applied to the correct
+    # output system.
+    sorted_kept = torch.where(system_mask)[0]
+    new_system_idx = inv[sorted_kept]
+    for c in filtered_attrs["_constraints"]:
+        if hasattr(c, "system_idx") and isinstance(c.system_idx, torch.Tensor):
+            c.system_idx = new_system_idx[c.system_idx]
+
     for name, val in get_attrs_for_scope(state, "per-atom"):
         filtered_attrs[name] = (
             inv[val[atom_indices]] if name == "system_idx" else val[atom_indices]
