@@ -14,7 +14,9 @@ from torch_sim.units import MetalUnits
 
 
 try:
-    from mattersim.datasets.utils.convertor import GraphConvertor
+    from mattersim.datasets.utils.convertor import (  # codespell:ignore convertor
+        GraphConvertor,
+    )
     from mattersim.forcefield.potential import batch_to_dict
     from torch_geometric.loader.dataloader import Collater
 
@@ -35,8 +37,6 @@ except ImportError as exc:
 
 if TYPE_CHECKING:
     from mattersim.forcefield import Potential
-
-    from torch_sim.typing import StateDict
 
 
 class MatterSimModel(ModelInterface):
@@ -74,11 +74,14 @@ class MatterSimModel(ModelInterface):
         """
         super().__init__()
 
-        self._device = device or torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
-        if isinstance(self._device, str):
-            self._device = torch.device(self._device)
+        resolved_device: torch.device
+        if device is None:
+            resolved_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif isinstance(device, str):
+            resolved_device = torch.device(device)
+        else:
+            resolved_device = device
+        self._device = resolved_device
 
         self._dtype = dtype or torch.float32
         self._memory_scales_with = "n_atoms_x_density"  # should be density^2 bc triplets
@@ -97,7 +100,7 @@ class MatterSimModel(ModelInterface):
         self.two_body_cutoff = model_args["cutoff"]
         self.three_body_cutoff = model_args["threebody_cutoff"]
 
-        self.convertor = GraphConvertor(
+        self.convertor = GraphConvertor(  # codespell:ignore convertor
             model_type="m3gnet",
             twobody_cutoff=self.two_body_cutoff,
             has_threebody=True,
@@ -110,16 +113,16 @@ class MatterSimModel(ModelInterface):
             "stress",
         ]
 
-    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState, **_kwargs: Any) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by the model,
         such as energy, forces, and stresses.
 
         Args:
-            state (SimState | StateDict): State object containing positions, cells,
-                atomic numbers, and other system information. If a dictionary is provided,
-                it will be converted to a SimState.
+            state (SimState): State object containing positions, cells, atomic numbers,
+                and other system information.
+            **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
             dict: Model predictions, which may include:
@@ -132,17 +135,14 @@ class MatterSimModel(ModelInterface):
             The state is automatically transferred to the model's device if needed.
             All output tensors are detached from the computation graph.
         """
-        sim_state = (
-            state
-            if isinstance(state, ts.SimState)
-            else ts.SimState(**state, masses=torch.ones_like(state["positions"]))
-        )
+        sim_state = state
 
         if sim_state.device != self._device:
             sim_state = sim_state.to(self._device)
 
         atoms_list = ts.io.state_to_atoms(sim_state)
-        data_list = [self.convertor.convert(atoms) for atoms in atoms_list]
+        convert = self.convertor.convert  # codespell:ignore convertor
+        data_list = [convert(atoms) for atoms in atoms_list]
         batched_data = Collater([], follow_batch=None, exclude_keys=None)(data_list)
         batched_data.to(self._device)
         output = self.model.forward(

@@ -18,7 +18,11 @@ from pymatgen.io.ase import AseAtomsAdaptor
 
 import torch_sim as ts
 from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.telemetry import configure_logging, get_logger
 
+
+configure_logging(log_file="8_bechmarking.log")
+log = get_logger(name="8_bechmarking")
 
 SMOKE_TEST = os.getenv("CI") is not None
 
@@ -52,7 +56,7 @@ def load_mace_model(device: torch.device) -> MaceModel:
         device=str(device),
     )
     return MaceModel(
-        model=typing.cast("torch.nn.Module", loaded_model),
+        model=loaded_model,
         device=device,
         compute_forces=True,
         compute_stress=True,
@@ -84,7 +88,7 @@ def run_torchsim_static(
             torch.cuda.synchronize()
         elapsed = time.perf_counter() - t0
         times.append(elapsed)
-        print(f"  n={n} static_time={elapsed:.6f}s")
+        log.info(f"  n={n} static_time={elapsed:.6f}s")
     return times
 
 
@@ -126,7 +130,7 @@ def run_torchsim_relax(
             torch.cuda.synchronize()
         elapsed = time.perf_counter() - t0
         times.append(elapsed)
-        print(f"  n={n} relax_{RELAX_STEPS}_time={elapsed:.6f}s")
+        log.info(f"  n={n} relax_{RELAX_STEPS}_time={elapsed:.6f}s")
     return times
 
 
@@ -160,7 +164,7 @@ def run_torchsim_nve(
             torch.cuda.synchronize()
         elapsed = time.perf_counter() - t0
         times.append(elapsed)
-        print(f"  n={n} nve_time={elapsed:.6f}s")
+        log.info(f"  n={n} nve_time={elapsed:.6f}s")
     return times
 
 
@@ -194,7 +198,7 @@ def run_torchsim_nvt(
             torch.cuda.synchronize()
         elapsed = time.perf_counter() - t0
         times.append(elapsed)
-        print(f"  n={n} nvt_time={elapsed:.6f}s")
+        log.info(f"  n={n} nvt_time={elapsed:.6f}s")
     return times
 
 
@@ -206,14 +210,14 @@ base_structure = AseAtomsAdaptor.get_structure(atoms=mgo_ase)
 model = load_mace_model(device)
 
 # Run all benchmarks
-print("=== Static benchmark ===")
+log.info("=== Static benchmark ===")
 static_times = run_torchsim_static(N_STRUCTURES_STATIC, base_structure, model, device)
 
-print("\n=== Relax benchmark ===")
+log.info("=== Relax benchmark ===")
 relax_times = run_torchsim_relax(N_STRUCTURES_RELAX, base_structure, model, device)
 
-print("\n=== NVE benchmark ===")
+log.info("=== NVE benchmark ===")
 nve_times = run_torchsim_nve(N_STRUCTURES_NVE, base_structure, model, device)
 
-print("\n=== NVT benchmark ===")
+log.info("=== NVT benchmark ===")
 nvt_times = run_torchsim_nvt(N_STRUCTURES_NVT, base_structure, model, device)

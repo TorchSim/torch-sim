@@ -22,8 +22,12 @@ from mace.calculators.foundations_models import mace_mp
 import torch_sim as ts
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.telemetry import configure_logging, get_logger
 from torch_sim.units import MetalUnits as Units
 
+
+configure_logging(log_file="3_dynamics.log")
+log = get_logger(name="3_dynamics")
 
 # Set up the device and data type
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -48,9 +52,9 @@ generator.manual_seed(42)
 # ============================================================================
 # SECTION 1: Lennard-Jones NVE (Microcanonical Ensemble)
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 1: Lennard-Jones NVE Simulation")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 1: Lennard-Jones NVE Simulation")
+log.info("=" * 70)
 
 # Create face-centered cubic (FCC) Argon
 a_len = 5.26  # Lattice constant
@@ -94,7 +98,6 @@ state = ts.SimState(
 
 # Initialize the Lennard-Jones model
 lj_model = LennardJonesModel(
-    use_neighbor_list=False,
     sigma=3.405,
     epsilon=0.0104,
     cutoff=2.5 * 3.405,
@@ -112,7 +115,8 @@ kT = torch.tensor(80 * Units.temperature, device=device, dtype=dtype)
 dt = torch.tensor(0.001 * Units.time, device=device, dtype=dtype)
 
 # Initialize NVE integrator
-state = ts.nve_init(state=state, model=lj_model, kT=kT, seed=1)
+state.rng = 1
+state = ts.nve_init(state=state, model=lj_model, kT=kT)
 
 # Run NVE simulation
 for step in range(N_steps):
@@ -121,7 +125,7 @@ for step in range(N_steps):
         total_energy = state.energy + ts.calc_kinetic_energy(
             masses=state.masses, momenta=state.momenta
         )
-        print(f"Step {step}: Total energy: {total_energy.item():.4f} eV")
+        log.info(f"Step {step}: Total energy: {total_energy.item():.4f} eV")
 
     # Update state using NVE integrator
     state = ts.nve_step(state=state, model=lj_model, dt=dt)
@@ -129,15 +133,15 @@ for step in range(N_steps):
 final_total_energy = state.energy + ts.calc_kinetic_energy(
     masses=state.masses, momenta=state.momenta
 )
-print(f"Final total energy: {final_total_energy.item():.4f} eV")
+log.info(f"Final total energy: {final_total_energy.item():.4f} eV")
 
 
 # ============================================================================
 # SECTION 2: MACE NVE Simulation
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 2: MACE NVE Simulation")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 2: MACE NVE Simulation")
+log.info("=" * 70)
 
 # Load MACE model
 loaded_model = mace_mp(
@@ -178,31 +182,32 @@ kT = torch.tensor(1000 * Units.temperature, device=device, dtype=dtype)  # 1000 
 dt = torch.tensor(0.002 * Units.time, device=device, dtype=dtype)  # 2 fs
 
 # Initialize NVE integrator
-state = ts.nve_init(state=state, model=mace_model, kT=kT, seed=1)
+state.rng = 1
+state = ts.nve_init(state=state, model=mace_model, kT=kT)
 
 # Run MD simulation
-print("\nStarting NVE molecular dynamics simulation...")
+log.info("Starting NVE molecular dynamics simulation...")
 start_time = time.perf_counter()
 for step in range(N_steps):
     total_energy = state.energy + ts.calc_kinetic_energy(
         masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
     )
     if step % 100 == 0:
-        print(f"Step {step}: Total energy: {total_energy.item():.4f} eV")
+        log.info(f"Step {step}: Total energy: {total_energy.item():.4f} eV")
     state = ts.nve_step(state=state, model=mace_model, dt=dt)
 end_time = time.perf_counter()
 
-print("\nSimulation complete!")
-print(f"Time taken: {end_time - start_time:.2f} seconds")
-print(f"Average time per step: {(end_time - start_time) / N_steps:.4f} seconds")
+log.info("Simulation complete!")
+log.info(f"Time taken: {end_time - start_time:.2f} seconds")
+log.info(f"Average time per step: {(end_time - start_time) / N_steps:.4f} seconds")
 
 
 # ============================================================================
 # SECTION 3: MACE NVT Langevin Simulation
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 3: MACE NVT Langevin Simulation")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 3: MACE NVT Langevin Simulation")
+log.info("=" * 70)
 
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
@@ -222,9 +227,10 @@ kT = torch.tensor(1000 * Units.temperature, device=device, dtype=dtype)  # 1000 
 gamma = torch.tensor(10 / Units.time, device=device, dtype=dtype)  # ps^-1
 
 # Initialize NVT Langevin integrator
-state = ts.nvt_langevin_init(model=mace_model, state=state, kT=kT, seed=1)
+state.rng = 1
+state = ts.nvt_langevin_init(model=mace_model, state=state, kT=kT)
 
-print("\nStarting NVT Langevin simulation...")
+log.info("Starting NVT Langevin simulation...")
 for step in range(N_steps):
     if step % 100 == 0:
         temp = (
@@ -233,22 +239,22 @@ for step in range(N_steps):
             )
             / Units.temperature
         )
-        print(f"Step {step}: Temperature: {temp.item():.4f} K")
+        log.info(f"Step {step}: Temperature: {temp.item():.4f} K")
     state = ts.nvt_langevin_step(state=state, model=mace_model, dt=dt, kT=kT, gamma=gamma)
 
 final_temp = (
     ts.calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
     / Units.temperature
 )
-print(f"Final temperature: {final_temp.item():.4f} K")
+log.info(f"Final temperature: {final_temp.item():.4f} K")
 
 
 # ============================================================================
 # SECTION 4: MACE NVT Nose-Hoover Simulation
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 4: MACE NVT Nose-Hoover Simulation")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 4: MACE NVT Nose-Hoover Simulation")
+log.info("=" * 70)
 
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
@@ -263,7 +269,7 @@ kT = torch.tensor(1000 * Units.temperature, device=device, dtype=dtype)  # 1000 
 
 state = ts.nvt_nose_hoover_init(state=state, model=mace_model, kT=kT, dt=dt)
 
-print("\nStarting NVT Nose-Hoover simulation...")
+log.info("Starting NVT Nose-Hoover simulation...")
 for step in range(N_steps):
     if step % 100 == 0:
         temp = (
@@ -273,7 +279,7 @@ for step in range(N_steps):
             / Units.temperature
         )
         invariant = float(ts.nvt_nose_hoover_invariant(state, kT=kT))
-        print(
+        log.info(
             f"Step {step}: Temperature: {temp.item():.4f} K, Invariant: {invariant:.4f}"
         )
     state = ts.nvt_nose_hoover_step(state=state, model=mace_model, dt=dt, kT=kT)
@@ -282,15 +288,15 @@ final_temp = (
     ts.calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
     / Units.temperature
 )
-print(f"Final temperature: {final_temp.item():.4f} K")
+log.info(f"Final temperature: {final_temp.item():.4f} K")
 
 
 # ============================================================================
 # SECTION 5: MACE NPT Nose-Hoover Simulation
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 5: MACE NPT Nose-Hoover Simulation")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 5: MACE NPT Nose-Hoover Simulation")
+log.info("=" * 70)
 
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
@@ -321,7 +327,7 @@ state = ts.npt_nose_hoover_init(
     state=state, model=mace_model_stress, kT=kT, dt=torch.tensor(dt)
 )
 
-print("\nRunning NVT equilibration phase...")
+log.info("Running NVT equilibration phase...")
 for step in range(N_steps_nvt):
     if step % 100 == 0:
         temp = (
@@ -333,7 +339,7 @@ for step in range(N_steps_nvt):
         invariant = float(
             ts.npt_nose_hoover_invariant(state, kT=kT, external_pressure=target_pressure)
         )
-        print(
+        log.info(
             f"Step {step}: Temperature: {temp.item():.4f} K, Invariant: {invariant:.4f}"
         )
     state = ts.npt_nose_hoover_step(
@@ -349,7 +355,7 @@ state = ts.npt_nose_hoover_init(
     state=state, model=mace_model_stress, kT=kT, dt=torch.tensor(dt)
 )
 
-print("\nRunning NPT simulation...")
+log.info("Running NPT simulation...")
 for step in range(N_steps_npt):
     if step % 100 == 0:
         temp = (
@@ -368,7 +374,7 @@ for step in range(N_steps_npt):
         )
         pressure = float(ts.get_pressure(stress, e_kin, volume))
         xx, yy, zz = torch.diag(state.current_cell[0])
-        print(
+        log.info(
             f"Step {step}: Temperature: {temp.item():.4f} K, Invariant: {invariant:.4f}, "
             f"Pressure: {pressure:.4f} eV/Å³, "
             f"Cell: [{xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}]"
@@ -385,7 +391,7 @@ final_temp = (
     ts.calc_kT(masses=state.masses, momenta=state.momenta, system_idx=state.system_idx)
     / Units.temperature
 )
-print(f"Final temperature: {final_temp.item():.4f} K")
+log.info(f"Final temperature: {final_temp.item():.4f} K")
 
 final_stress = mace_model_stress(state)["stress"]
 final_volume = torch.det(state.current_cell)
@@ -396,8 +402,8 @@ final_pressure = ts.get_pressure(
     ),
     final_volume,
 )
-print(f"Final pressure: {final_pressure.item():.4f} eV/Å³")
+log.info(f"Final pressure: {final_pressure.item():.4f} eV/Å³")
 
-print("\n" + "=" * 70)
-print("Molecular dynamics examples completed!")
-print("=" * 70)
+log.info("=" * 70)
+log.info("Molecular dynamics examples completed!")
+log.info("=" * 70)

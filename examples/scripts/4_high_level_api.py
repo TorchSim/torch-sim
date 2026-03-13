@@ -23,9 +23,13 @@ from pymatgen.core import Structure
 import torch_sim as ts
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.models.mace import MaceModel
+from torch_sim.telemetry import configure_logging, get_logger
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 from torch_sim.units import MetalUnits
 
+
+configure_logging(log_file="4_high_level_api.log")
+log = get_logger(name="4_high_level_api")
 
 SMOKE_TEST = os.getenv("CI") is not None
 
@@ -35,9 +39,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # ============================================================================
 # SECTION 1: Basic Integration with Lennard-Jones
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 1: Basic Integration with Lennard-Jones")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 1: Basic Integration with Lennard-Jones")
+log.info("=" * 70)
 
 lj_model = LennardJonesModel(
     sigma=2.0,  # Å, typical for Si-Si interaction
@@ -58,16 +62,16 @@ final_state = ts.integrate(
 )
 final_atoms = ts.io.state_to_atoms(final_state)
 
-print(f"Final energy: {final_state.energy.item():.4f} eV")
-print(f"Final atoms: {len(final_atoms)} atoms")
+log.info(f"Final energy: {final_state.energy.item():.4f} eV")
+log.info(f"Final atoms: {len(final_atoms)} atoms")
 
 
 # ============================================================================
 # SECTION 2: Integration with Trajectory Logging
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 2: Integration with Trajectory Logging")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 2: Integration with Trajectory Logging")
+log.info("=" * 70)
 
 trajectory_file = "tmp/lj_trajectory.h5md"
 
@@ -109,17 +113,17 @@ with TorchSimTrajectory(trajectory_file) as traj:
     )
     final_atoms = traj.get_atoms(-1)
 
-print(f"Final energy from trajectory: {final_energy:.4f} eV")
-print(f"Number of kinetic energy samples: {len(kinetic_energies)}")
-print(f"Number of potential energy samples: {len(potential_energies)}")
+log.info(f"Final energy from trajectory: {final_energy:.4f} eV")
+log.info(f"Number of kinetic energy samples: {len(kinetic_energies)}")
+log.info(f"Number of potential energy samples: {len(potential_energies)}")
 
 
 # ============================================================================
 # SECTION 3: MACE Model with High-Level API
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 3: MACE Model with High-Level API")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 3: MACE Model with High-Level API")
+log.info("=" * 70)
 
 mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(
@@ -146,15 +150,15 @@ final_state = ts.integrate(
 )
 final_atoms = ts.io.state_to_atoms(final_state)
 
-print(f"Final energy: {final_state.energy.item():.4f} eV")
+log.info(f"Final energy: {final_state.energy.item():.4f} eV")
 
 
 # ============================================================================
 # SECTION 4: Batched Integration
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 4: Batched Integration")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 4: Batched Integration")
+log.info("=" * 70)
 
 fe_atoms = bulk("Fe", "fcc", a=5.26, cubic=True)
 fe_atoms_supercell = fe_atoms.repeat([2, 2, 2])
@@ -171,18 +175,18 @@ final_state = ts.integrate(
 final_atoms = ts.io.state_to_atoms(final_state)
 final_fe_atoms_supercell = final_atoms[3]
 
-print(f"Number of systems: {len(final_atoms)}")
-print(f"Final energies: {[e.item() for e in final_state.energy]} eV")
+log.info(f"Number of systems: {len(final_atoms)}")
+log.info(f"Final energies: {[e.item() for e in final_state.energy]} eV")
 
 
 # ============================================================================
 # SECTION 5: Batched Integration with Trajectory Reporting
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 5: Batched Integration with Trajectory Reporting")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 5: Batched Integration with Trajectory Reporting")
+log.info("=" * 70)
 
-systems = (si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell)
+systems = [si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell]
 
 filenames = [f"tmp/batch_traj_{i}.h5md" for i in range(len(systems))]
 batch_reporter = TrajectoryReporter(
@@ -207,15 +211,15 @@ for filename in filenames:
         final_energy = traj.get_array("potential_energy")[-1]
         final_energies_per_atom.append(final_energy / len(traj.get_atoms(-1)))
 
-print(f"Final energies per atom: {final_energies_per_atom}")
+log.info(f"Final energies per atom: {final_energies_per_atom}")
 
 
 # ============================================================================
 # SECTION 6: Structure Optimization
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 6: Structure Optimization")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 6: Structure Optimization")
+log.info("=" * 70)
 
 final_state = ts.optimize(
     system=systems,
@@ -225,7 +229,7 @@ final_state = ts.optimize(
     init_kwargs=dict(cell_filter=ts.CellFilter.unit),
 )
 
-print(f"Final optimized energies: {[e.item() for e in final_state.energy]} eV")
+log.info(f"Final optimized energies: {[e.item() for e in final_state.energy]} eV")
 
 # Add perturbations
 rng = np.random.default_rng()
@@ -236,9 +240,9 @@ for system in systems:
 # ============================================================================
 # SECTION 7: Optimization with Custom Convergence Criteria
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 7: Optimization with Custom Convergence")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 7: Optimization with Custom Convergence")
+log.info("=" * 70)
 
 final_state = ts.optimize(
     system=systems,
@@ -251,15 +255,15 @@ final_state = ts.optimize(
     init_kwargs=dict(cell_filter=ts.CellFilter.unit),
 )
 
-print(f"Final converged energies: {[e.item() for e in final_state.energy]} eV")
+log.info(f"Final converged energies: {[e.item() for e in final_state.energy]} eV")
 
 
 # ============================================================================
 # SECTION 8: Pymatgen Structure Support
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 8: Pymatgen Structure Support")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 8: Pymatgen Structure Support")
+log.info("=" * 70)
 
 lattice = [[5.43, 0, 0], [0, 5.43, 0], [0, 0, 5.43]]
 species = ["Si"] * 8
@@ -285,9 +289,9 @@ final_state = ts.integrate(
 )
 final_structure = ts.io.state_to_structures(final_state)
 
-print(f"Final structure type: {type(final_structure)}")
-print(f"Final energy: {final_state.energy.item():.4f} eV")
+log.info(f"Final structure type: {type(final_structure)}")
+log.info(f"Final energy: {final_state.energy.item():.4f} eV")
 
-print("\n" + "=" * 70)
-print("High-level API examples completed!")
-print("=" * 70)
+log.info("=" * 70)
+log.info("High-level API examples completed!")
+log.info("=" * 70)

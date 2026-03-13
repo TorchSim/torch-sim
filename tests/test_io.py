@@ -48,6 +48,7 @@ def test_multiple_structures_to_state(si_structure: Structure) -> None:
     assert state.cell.shape == (2, 3, 3)
     assert torch.all(state.pbc)
     assert state.atomic_numbers.shape == (16,)
+    assert state.system_idx is not None
     assert state.system_idx.shape == (16,)
     assert torch.all(
         state.system_idx
@@ -66,6 +67,7 @@ def test_single_atoms_to_state(si_atoms: Atoms) -> None:
     assert state.cell.shape == (1, 3, 3)
     assert torch.all(state.pbc)
     assert state.atomic_numbers.shape == (8,)
+    assert state.system_idx is not None
     assert state.system_idx.shape == (8,)
     assert torch.all(state.system_idx == 0)
 
@@ -81,6 +83,7 @@ def test_multiple_atoms_to_state(si_atoms: Atoms) -> None:
     assert state.cell.shape == (2, 3, 3)
     assert torch.all(state.pbc)
     assert state.atomic_numbers.shape == (16,)
+    assert state.system_idx is not None
     assert state.system_idx.shape == (16,)
     assert torch.all(
         state.system_idx
@@ -173,6 +176,7 @@ def test_multiple_phonopy_to_state(si_phonopy_atoms: Any) -> None:
     assert state.cell.shape == (2, 3, 3)
     assert torch.all(state.pbc)
     assert state.atomic_numbers.shape == (16,)
+    assert state.system_idx is not None
     assert state.system_idx.shape == (16,)
     assert torch.all(
         state.system_idx
@@ -232,6 +236,7 @@ def test_state_round_trip(
     # Get the sim_state fixture dynamically using the name
     sim_state: SimState = request.getfixturevalue(sim_state_name)
     to_format_fn, from_format_fn = conversion_functions
+    assert sim_state.system_idx is not None
     uniq_systems = torch.unique(sim_state.system_idx)
 
     # Convert to intermediate format
@@ -242,6 +247,7 @@ def test_state_round_trip(
     round_trip_state: SimState = from_format_fn(intermediate_format, DEVICE, DTYPE)
 
     # Check that all properties match
+    assert round_trip_state.system_idx is not None
     assert torch.allclose(sim_state.positions, round_trip_state.positions)
     assert torch.allclose(sim_state.cell, round_trip_state.cell)
     assert torch.all(sim_state.atomic_numbers == round_trip_state.atomic_numbers)
@@ -262,7 +268,7 @@ def test_state_to_atoms_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(
         ImportError, match="ASE is required for state_to_atoms conversion"
     ):
-        ts.io.state_to_atoms(None)  # type: ignore[arg-type]
+        ts.io.state_to_atoms(None)
 
 
 def test_state_to_phonopy_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -273,7 +279,7 @@ def test_state_to_phonopy_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(
         ImportError, match="Phonopy is required for state_to_phonopy conversion"
     ):
-        ts.io.state_to_phonopy(None)  # type: ignore[arg-type]
+        ts.io.state_to_phonopy(None)
 
 
 def test_state_to_structures_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -284,7 +290,7 @@ def test_state_to_structures_importerror(monkeypatch: pytest.MonkeyPatch) -> Non
     with pytest.raises(
         ImportError, match="Pymatgen is required for state_to_structures conversion"
     ):
-        ts.io.state_to_structures(None)  # type: ignore[arg-type]
+        ts.io.state_to_structures(None)
 
 
 def test_atoms_to_state_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -294,7 +300,7 @@ def test_atoms_to_state_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(
         ImportError, match="ASE is required for atoms_to_state conversion"
     ):
-        ts.io.atoms_to_state(None, None, None)  # type: ignore[arg-type]
+        ts.io.atoms_to_state(None, None, None)
 
 
 def test_phonopy_to_state_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -305,7 +311,7 @@ def test_phonopy_to_state_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(
         ImportError, match="Phonopy is required for phonopy_to_state conversion"
     ):
-        ts.io.phonopy_to_state(None, None, None)  # type: ignore[arg-type]
+        ts.io.phonopy_to_state(None, None, None)
 
 
 def test_structures_to_state_importerror(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -316,4 +322,4 @@ def test_structures_to_state_importerror(monkeypatch: pytest.MonkeyPatch) -> Non
     with pytest.raises(
         ImportError, match="Pymatgen is required for structures_to_state conversion"
     ):
-        ts.io.structures_to_state(None, None, None)  # type: ignore[arg-type]
+        ts.io.structures_to_state(None, None, None)

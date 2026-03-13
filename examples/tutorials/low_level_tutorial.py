@@ -67,7 +67,7 @@ loaded_model = mace_mp(
     model=MaceUrls.mace_mpa_medium,
     return_raw_model=True,
     default_dtype=str(dtype).removeprefix("torch."),
-    device=device,
+    device=str(device),
 )
 
 # wrap the mace_mp model in the MaceModel class

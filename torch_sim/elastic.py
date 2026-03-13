@@ -1,4 +1,4 @@
-# ruff: noqa: RUF002, RUF003, PLC2401
+# ruff: noqa: RUF003, PLC2401
 """Calculation of elastic properties of crystals.
 
 Primary Sources and References for Crystal Elasticity.
@@ -730,7 +730,9 @@ def get_elementary_deformations(
         BravaisType.triclinic: DeformationRule([0, 1, 2, 3, 4, 5], triclinic_symmetry),
     }
 
-    # Get deformation rules for this Bravais lattice
+    # Get deformation rules for this Bravais lattice (default to triclinic if None)
+    if bravais_type is None:
+        bravais_type = BravaisType.triclinic
     rule = deformation_rules[bravais_type]
     allowed_axes = rule.axes
 

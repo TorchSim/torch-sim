@@ -61,27 +61,23 @@ def generate_swaps(state: SimState, rng: torch.Generator | None = None) -> torch
         torch.Tensor: A tensor of proposed swaps with shape [n_systems, 2],
             where each row contains indices of atoms to be swapped
     """
-    system = state.system_idx
     atomic_numbers = state.atomic_numbers
 
-    system_lengths = system.bincount()
-
-    # change system_lengths to system
-    system = torch.repeat_interleave(
-        torch.arange(len(system_lengths), device=system.device), system_lengths
-    )
+    system_lengths = state.system_idx.bincount()
 
     # Create ragged weights tensor without loops
     max_length = torch.max(system_lengths).item()
     n_systems = len(system_lengths)
 
     # Create a range tensor for each system
-    range_tensor = torch.arange(max_length, device=system.device).expand(
-        n_systems, max_length
+    range_tensor = torch.arange(int(max_length), device=state.device).expand(
+        n_systems, int(max_length)
     )
 
     # Create a mask where values are less than the max system length
-    system_lengths_expanded = system_lengths.unsqueeze(1).expand(n_systems, max_length)
+    system_lengths_expanded = system_lengths.unsqueeze(1).expand(
+        n_systems, int(max_length)
+    )
     weights = (range_tensor < system_lengths_expanded).float()
 
     first_index = torch.multinomial(weights, 1, replacement=False, generator=rng)
@@ -91,7 +87,7 @@ def generate_swaps(state: SimState, rng: torch.Generator | None = None) -> torch
 
     for sys_idx in range(n_systems):
         # Get global index of selected atom
-        first_idx = first_index[sys_idx, 0].item() + system_starts[sys_idx].item()
+        first_idx = int(first_index[sys_idx, 0].item() + system_starts[sys_idx].item())
         first_type = atomic_numbers[first_idx]
 
         # Get indices of atoms in this system

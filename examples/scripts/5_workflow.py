@@ -21,6 +21,11 @@ from mace.calculators.foundations_models import mace_mp
 import torch_sim as ts
 from torch_sim.elastic import get_bravais_type
 from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.telemetry import configure_logging, get_logger
+
+
+configure_logging(log_file="5_workflow.log")
+log = get_logger(name="5_workflow")
 
 
 # Set device
@@ -30,17 +35,17 @@ device = torch.device(
 )
 dtype = torch.float32
 
-print(f"Running on device: {device}")
+log.info(f"Running on device: {device}")
 
 
 # ============================================================================
 # SECTION 1: In-Flight Autobatching Workflow
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 1: In-Flight Autobatching Workflow")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 1: In-Flight Autobatching Workflow")
+log.info("=" * 70)
 
-print("Loading MACE model...")
+log.info("Loading MACE model...")
 mace = mace_mp(model=MaceUrls.mace_mpa_medium, return_raw_model=True)
 mace_model = MaceModel(
     model=mace,
@@ -61,12 +66,12 @@ if not SMOKE_TEST:
         from matbench_discovery.data import DataFiles, ase_atoms_from_zip
 
         n_structures_to_relax = 100
-        print(f"Loading {n_structures_to_relax:,} structures from WBM dataset...")
+        log.info(f"Loading {n_structures_to_relax:,} structures from WBM dataset...")
         ase_atoms_list = ase_atoms_from_zip(
             DataFiles.wbm_initial_atoms.path, limit=n_structures_to_relax
         )
     except ImportError:
-        print("matbench_discovery not available, using synthetic structures...")
+        log.info("matbench_discovery not available, using synthetic structures...")
         n_structures_to_relax = 10
         ase_atoms_list = []
         for _ in range(n_structures_to_relax):
@@ -75,7 +80,7 @@ if not SMOKE_TEST:
             ase_atoms_list.append(atoms)
 else:
     n_structures_to_relax = 2
-    print(f"Loading {n_structures_to_relax:,} test structures...")
+    log.info(f"Loading {n_structures_to_relax:,} test structures...")
     al_atoms = bulk("Al", "hcp", a=4.05)
     al_atoms.positions += 0.1 * prng.normal(size=al_atoms.positions.shape)
     fe_atoms = bulk("Fe", "bcc", a=2.86).repeat((2, 2, 2))
@@ -105,16 +110,18 @@ start_time = time.perf_counter()
 batcher.load_states(fire_states)
 all_completed_states, convergence_tensor, state = [], None, None
 
-print("\nStarting optimization with autobatching...")
+log.info("Starting optimization with autobatching...")
 batch_count = 0
 while (result := batcher.next_batch(state, convergence_tensor))[0] is not None:
     state, completed_states = result
+    if state is None:
+        raise RuntimeError("Expected in-flight batch state to be available")
     batch_count += 1
-    print(f"Batch {batch_count}: Optimizing {state.n_systems} structures")
+    log.info(f"Batch {batch_count}: Optimizing {state.n_systems} structures")
 
     all_completed_states.extend(completed_states)
     if all_completed_states:
-        print(f"Total completed structures: {len(all_completed_states)}")
+        log.info(f"Total completed structures: {len(all_completed_states)}")
 
     # Run optimization steps for this batch
     for _step in range(10):
@@ -129,18 +136,20 @@ all_completed_states.extend(result[1])
 end_time = time.perf_counter()
 total_time = end_time - start_time
 
-print("\nOptimization complete!")
-print(f"Total completed structures: {len(all_completed_states)}")
-print(f"Total time: {total_time:.2f} seconds")
-print(f"Average time per structure: {total_time / len(all_completed_states):.2f} seconds")
+log.info("Optimization complete!")
+log.info(f"Total completed structures: {len(all_completed_states)}")
+log.info(f"Total time: {total_time:.2f} seconds")
+log.info(
+    f"Average time per structure: {total_time / len(all_completed_states):.2f} seconds"
+)
 
 
 # ============================================================================
 # SECTION 2: Elastic Constants Calculation
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 2: Elastic Constants Calculation")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 2: Elastic Constants Calculation")
+log.info("=" * 70)
 
 # Use higher precision for elastic constants
 dtype_elastic = torch.float64
@@ -174,31 +183,31 @@ state = ts.fire_init(
     state=state, model=model, scalar_pressure=0.0, cell_filter=ts.CellFilter.frechet
 )
 
-print("\nRelaxing structure...")
+log.info("Relaxing structure...")
 unit_conv = ts.units.UnitConversion
 for step in range(300):
     pressure = -torch.trace(state.stress.squeeze()) / 3 * unit_conv.eV_per_Ang3_to_GPa
     current_fmax = torch.max(torch.abs(state.forces.squeeze()))
 
     if step % 50 == 0:
-        print(
+        log.info(
             f"Step {step}, Energy: {state.energy.item():.4f} eV, "
             f"Pressure: {pressure.item():.4f} GPa, "
             f"Fmax: {current_fmax.item():.4f} eV/Å"
         )
 
     if current_fmax < fmax and abs(pressure) < 1e-2:
-        print(f"Converged at step {step}")
+        log.info(f"Converged at step {step}")
         break
 
     state = ts.fire_step(state=state, model=model)
 
 # Get bravais type
 bravais_type = get_bravais_type(state)
-print(f"\nBravais lattice type: {bravais_type}")
+log.info(f"Bravais lattice type: {bravais_type}")
 
 # Calculate elastic tensor
-print("\nCalculating elastic tensor...")
+log.info("Calculating elastic tensor...")
 elastic_tensor = ts.elastic.calculate_elastic_tensor(
     state=state, model=model, bravais_type=bravais_type
 )
@@ -212,21 +221,21 @@ bulk_modulus, shear_modulus, poisson_ratio, pugh_ratio = (
 )
 
 # Print results
-print("\nElastic tensor (GPa):")
-elastic_tensor_np = elastic_tensor.cpu().numpy()
+log.info("Elastic tensor (GPa):")
+elastic_tensor_np = elastic_tensor.detach().cpu().numpy()
 for row in elastic_tensor_np:
-    print("  " + "  ".join(f"{val:10.4f}" for val in row))
+    log.info("  ".join(f"{val:10.4f}" for val in row))
 
-print("\nElastic moduli:")
-print(f"  Bulk modulus (GPa): {bulk_modulus:.4f}")
-print(f"  Shear modulus (GPa): {shear_modulus:.4f}")
-print(f"  Poisson's ratio: {poisson_ratio:.4f}")
-print(f"  Pugh's ratio (K/G): {pugh_ratio:.4f}")
+log.info("Elastic moduli:")
+log.info(f"  Bulk modulus (GPa): {bulk_modulus:.4f}")
+log.info(f"  Shear modulus (GPa): {shear_modulus:.4f}")
+log.info(f"  Poisson's ratio: {poisson_ratio:.4f}")
+log.info(f"  Pugh's ratio (K/G): {pugh_ratio:.4f}")
 
 # Interpret Pugh's ratio
 material_type = "ductile" if pugh_ratio > 1.75 else "brittle"
-print(f"  Material behavior: {material_type}")
+log.info(f"  Material behavior: {material_type}")
 
-print("\n" + "=" * 70)
-print("Workflow examples completed!")
-print("=" * 70)
+log.info("=" * 70)
+log.info("Workflow examples completed!")
+log.info("=" * 70)

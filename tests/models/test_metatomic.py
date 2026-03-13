@@ -18,7 +18,8 @@ try:
     from torch_sim.models.metatomic import MetatomicModel
 except ImportError:
     pytest.skip(
-        f"metatomic not installed: {traceback.format_exc()}", allow_module_level=True
+        f"metatomic not installed: {traceback.format_exc()}",  # ty:ignore[too-many-positional-arguments]
+        allow_module_level=True,
     )
 
 

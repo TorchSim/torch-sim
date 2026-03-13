@@ -20,15 +20,16 @@ import torch
 
 import torch_sim as ts
 from torch_sim.optimizers import cell_filters
-from torch_sim.optimizers.cell_filters import frechet_cell_filter_init
+from torch_sim.optimizers.cell_filters import CellBFGSState, frechet_cell_filter_init
 from torch_sim.state import SimState
-from torch_sim.typing import StateDict
 
 
 if TYPE_CHECKING:
     from torch_sim.models.interface import ModelInterface
-    from torch_sim.optimizers import BFGSState, CellBFGSState
     from torch_sim.optimizers.cell_filters import CellFilter, CellFilterFuncs
+    from torch_sim.optimizers.state import BFGSState
+
+BFGS_EPS = 1e-7  # eps kept same as ASE's BFGS.
 
 
 def _get_atom_indices_per_system(
@@ -80,11 +81,11 @@ def _pad_to_dense(
 
 
 def bfgs_init(
-    state: SimState | StateDict,
+    state: SimState,
     model: "ModelInterface",
     *,
-    max_step: float = 0.2,
-    alpha: float = 70.0,
+    max_step: float | torch.Tensor = 0.2,
+    alpha: float | torch.Tensor = 70.0,
     cell_filter: "CellFilter | CellFilterFuncs | None" = None,
     **filter_kwargs: Any,
 ) -> "BFGSState | CellBFGSState":
@@ -112,10 +113,8 @@ def bfgs_init(
     """
     from torch_sim.optimizers import BFGSState, CellBFGSState
 
-    tensor_args = {"device": model.device, "dtype": model.dtype}
-
-    if not isinstance(state, SimState):
-        state = SimState(**state)
+    device: torch.device = model.device
+    dtype: torch.dtype = model.dtype
 
     n_systems = state.n_systems  # S
 
@@ -130,17 +129,23 @@ def bfgs_init(
     forces = model_output["forces"]  # [N, 3]
     stress = model_output.get("stress")  # [S, 3, 3] or None
 
-    alpha_t = torch.full((n_systems,), alpha, **tensor_args)  # [S]
-    max_step_t = torch.full((n_systems,), max_step, **tensor_args)  # [S]
+    alpha_t = torch.as_tensor(alpha, device=device, dtype=dtype)
+    if alpha_t.ndim == 0:
+        alpha_t = alpha_t.expand(n_systems)
+
+    max_step_t = torch.as_tensor(max_step, device=device, dtype=dtype)
+    if max_step_t.ndim == 0:
+        max_step_t = max_step_t.expand(n_systems)
+
     n_iter = torch.zeros((n_systems,), device=model.device, dtype=torch.int32)  # [S]
 
     if cell_filter is not None:
         # Extended Hessian: (3*global_max_atoms + 9) x (3*global_max_atoms + 9)
         # The extra 9 DOFs are for cell parameters (3x3 matrix flattened)
         dim = 3 * global_max_atoms + (3 * 3)  # D_ext
-        hessian = (
-            torch.eye(dim, **tensor_args).unsqueeze(0).repeat(n_systems, 1, 1) * alpha
-        )  # [S, D_ext, D_ext]
+        hessian = torch.eye(dim, device=device, dtype=dtype).unsqueeze(0).repeat(
+            n_systems, 1, 1
+        ) * alpha_t.view(n_systems, 1, 1)  # [S, D_ext, D_ext]
 
         cell_filter_funcs = init_fn, _step_fn = ts.get_cell_filter(cell_filter)
 
@@ -196,7 +201,7 @@ def bfgs_init(
             "_constraints": state.constraints,  # preserve constraints
         }
 
-        cell_state = CellBFGSState(**common_args)
+        cell_state = CellBFGSState(**common_args)  # ty: ignore[invalid-argument-type]
 
         # Initialize cell-specific attributes (cell_positions, cell_forces, etc.)
         # After init: cell_positions [S, 3, 3], cell_forces [S, 3, 3], cell_factor [S]
@@ -210,9 +215,9 @@ def bfgs_init(
 
     # Position-only Hessian: 3*global_max_atoms x 3*global_max_atoms
     dim = 3 * global_max_atoms  # D
-    hessian = (
-        torch.eye(dim, **tensor_args).unsqueeze(0).repeat(n_systems, 1, 1) * alpha
-    )  # [S, D, D]
+    hessian = torch.eye(dim, device=device, dtype=dtype).unsqueeze(0).repeat(
+        n_systems, 1, 1
+    ) * alpha_t.view(n_systems, 1, 1)  # [S, D, D]
 
     common_args = {
         "positions": state.positions.clone(),  # [N, 3]
@@ -237,7 +242,7 @@ def bfgs_init(
         "_constraints": state.constraints,  # preserve constraints
     }
 
-    return BFGSState(**common_args)
+    return BFGSState(**common_args)  # ty: ignore[invalid-argument-type]
 
 
 def bfgs_step(  # noqa: C901, PLR0915
@@ -267,17 +272,13 @@ def bfgs_step(  # noqa: C901, PLR0915
     Returns:
         Updated state
     """
-    from torch_sim.optimizers import CellBFGSState
-
-    # Note (AG): eps kept same as ASE's BFGS.
-    eps = 1e-7
-    is_cell_state = isinstance(state, CellBFGSState)
-
     # Derive global_max_atoms from hessian shape
     hessian_dim = state.hessian.shape[1]
-    global_max_atoms = (hessian_dim - 9) // 3 if is_cell_state else hessian_dim // 3
+    global_max_atoms = (
+        (hessian_dim - 9) // 3 if isinstance(state, CellBFGSState) else hessian_dim // 3
+    )
 
-    if is_cell_state:
+    if isinstance(state, CellBFGSState):
         # Get current deformation gradient
         # reference_cell.mT: [S, 3, 3], row_vector_cell: [S, 3, 3]
         cur_deform_grad = cell_filters.deform_grad(
@@ -389,7 +390,7 @@ def bfgs_step(  # noqa: C901, PLR0915
 
     # Identify systems with significant movement
     max_disp = torch.max(torch.abs(dpos), dim=1).values  # [S]
-    update_mask = max_disp >= eps  # [S] bool
+    update_mask = max_disp >= BFGS_EPS  # [S] bool
 
     # Update Hessian for active systems (BFGS update formula)
     if update_mask.any():
@@ -431,7 +432,7 @@ def bfgs_step(  # noqa: C901, PLR0915
     unique_sizes = state.max_atoms.unique()
 
     for size in unique_sizes:
-        actual_dim = int(3 * size.item()) + (9 if is_cell_state else 0)
+        actual_dim = int(3 * size.item()) + (9 if isinstance(state, CellBFGSState) else 0)
         mask = state.max_atoms == size  # [S] bool - systems with this size
 
         # Extract actual-sized Hessians and forces for this group
@@ -452,7 +453,7 @@ def bfgs_step(  # noqa: C901, PLR0915
 
     # Split step into position and cell components
     atom_dim = 3 * global_max_atoms  # D
-    if is_cell_state:
+    if isinstance(state, CellBFGSState):
         step_pos = step_dense[:, :atom_dim]  # [S, D]
         step_cell = step_dense[:, atom_dim:]  # [S, 9]
     else:
@@ -462,7 +463,7 @@ def bfgs_step(  # noqa: C901, PLR0915
     step_atoms = step_pos.view(state.n_systems, global_max_atoms, 3)  # [S, M, 3]
     atom_norms = torch.norm(step_atoms, dim=2)  # [S, M]
 
-    if is_cell_state:
+    if isinstance(state, CellBFGSState):
         step_cell_reshaped = step_cell.view(state.n_systems, 3, 3)  # [S, 3, 3]
         cell_norms = torch.norm(step_cell_reshaped, dim=2)  # [S, 3]
         all_norms = torch.cat([atom_norms, cell_norms], dim=1)  # [S, M+3]
@@ -477,7 +478,7 @@ def bfgs_step(  # noqa: C901, PLR0915
     )
 
     step_pos = step_pos * scale.unsqueeze(1)  # [S, D]
-    if is_cell_state:
+    if isinstance(state, CellBFGSState):
         step_cell = step_cell * scale.unsqueeze(1)  # [S, 9]
 
     # Unpack dense step to flat: [S, M, 3] -> [N, 3]
@@ -487,7 +488,7 @@ def bfgs_step(  # noqa: C901, PLR0915
 
     # Save previous state for next Hessian update
     # For cell state: store fractional positions and scaled forces (ASE convention)
-    if is_cell_state:
+    if isinstance(state, CellBFGSState):
         state.prev_positions = frac_positions.clone()  # [N, 3] (fractional)
         state.prev_forces = forces_scaled.clone()  # [N, 3] (scaled)
         state.prev_cell_positions = state.cell_positions.clone()  # [S, 3, 3]
@@ -544,7 +545,7 @@ def bfgs_step(  # noqa: C901, PLR0915
 
     # Update cell forces for next step
     # Update cell forces for cell state: [S, 3, 3]
-    if is_cell_state:
+    if isinstance(state, CellBFGSState):
         cell_filters.compute_cell_forces(model_output, state)
 
     state.n_iter += 1

@@ -9,6 +9,7 @@ from torch_sim.constraints import (
     Constraint,
     FixAtoms,
     FixCom,
+    count_degrees_of_freedom,
     merge_constraints,
     validate_constraints,
 )
@@ -17,6 +18,20 @@ from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.optimizers import FireFlavor
 from torch_sim.transforms import get_centers_of_mass
 from torch_sim.units import MetalUnits
+
+
+def _run_quasi_newton(
+    state: ts.SimState, model: ModelInterface, optimizer: str, max_steps: int = 500
+) -> ts.SimState:
+    """Run BFGS/LBFGS until energy change converges or max steps reached."""
+    step_fn = ts.bfgs_step if optimizer == "bfgs" else ts.lbfgs_step
+    energies = [1000, state.energy.item()]
+    for _ in range(max_steps):
+        if abs(energies[-2] - energies[-1]) <= 1e-6:
+            break
+        state = step_fn(state=state, model=model)
+        energies.append(state.energy.item())
+    return state
 
 
 def test_fix_com(ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesModel):
@@ -30,7 +45,6 @@ def test_fix_com(ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesMode
         state=ar_supercell_sim_state,
         model=lj_model,
         kT=torch.tensor(10.0, dtype=DTYPE),
-        seed=42,
     )
     ar_supercell_md_state.set_constrained_momenta(
         torch.randn_like(ar_supercell_md_state.momenta) * 0.1
@@ -70,7 +84,6 @@ def test_fix_atoms(ar_supercell_sim_state: ts.SimState, lj_model: LennardJonesMo
         state=ar_supercell_sim_state,
         model=lj_model,
         kT=torch.tensor(10.0, dtype=DTYPE),
-        seed=42,
     )
     ar_supercell_md_state.set_constrained_momenta(
         torch.randn_like(ar_supercell_md_state.momenta) * 0.1
@@ -94,7 +107,7 @@ def test_fix_com_nvt_langevin(cu_sim_state: ts.SimState, lj_model: LennardJonesM
         cu_sim_state.get_number_of_degrees_of_freedom(), dofs_before - 3
     )
 
-    state = ts.nvt_langevin_init(state=cu_sim_state, model=lj_model, kT=kT, seed=42)
+    state = ts.nvt_langevin_init(state=cu_sim_state, model=lj_model, kT=kT)
     positions = []
     system_masses = torch.zeros((state.n_systems, 1), dtype=DTYPE).scatter_add_(
         0,
@@ -116,9 +129,11 @@ def test_fix_com_nvt_langevin(cu_sim_state: ts.SimState, lj_model: LennardJonesM
 
     traj_positions = torch.stack(positions)
 
+    system_idx = state.system_idx
+    assert system_idx is not None
     coms = torch.zeros((n_steps, state.n_systems, 3), dtype=DTYPE).scatter_add_(
         1,
-        state.system_idx[None, :, None].expand(n_steps, -1, 3),
+        system_idx[None, :, None].expand(n_steps, -1, 3),
         state.masses.unsqueeze(-1) * traj_positions,
     )
     coms /= system_masses
@@ -138,7 +153,7 @@ def test_fix_atoms_nvt_langevin(cu_sim_state: ts.SimState, lj_model: LennardJone
     assert torch.allclose(
         cu_sim_state.get_number_of_degrees_of_freedom(), dofs_before - torch.tensor([6])
     )
-    state = ts.nvt_langevin_init(state=cu_sim_state, model=lj_model, kT=kT, seed=42)
+    state = ts.nvt_langevin_init(state=cu_sim_state, model=lj_model, kT=kT)
     positions = []
     temperatures = []
     for _step in range(n_steps):
@@ -181,12 +196,15 @@ def test_state_manipulation_with_constraints(ar_double_sim_state: ts.SimState):
     assert len(concatenated_state.constraints) == 2
 
     # Verify FixAtoms constraint indices are correctly mapped
+    assert isinstance(first_system.constraints[0], FixAtoms)
     assert torch.all(first_system.constraints[0].atom_idx == torch.tensor([0, 1]))
+    assert isinstance(concatenated_state.constraints[0], FixAtoms)
     assert torch.all(
         concatenated_state.constraints[0].atom_idx == torch.tensor([0, 1, 32, 33])
     )
 
     # Verify FixCom constraint system masks
+    assert isinstance(concatenated_state.constraints[1], FixCom)
     assert torch.all(
         concatenated_state.constraints[1].system_idx == torch.tensor([0, 1, 2])
     )
@@ -194,7 +212,9 @@ def test_state_manipulation_with_constraints(ar_double_sim_state: ts.SimState):
     # Test constraint propagation after splitting concatenated state
     split_systems = concatenated_state.split()
     assert len(split_systems[0].constraints) == 2
+    assert isinstance(split_systems[0].constraints[0], FixAtoms)
     assert torch.all(split_systems[0].constraints[0].atom_idx == torch.tensor([0, 1]))
+    assert isinstance(split_systems[1].constraints[0], FixAtoms)
     assert torch.all(split_systems[1].constraints[0].atom_idx == torch.tensor([0, 1]))
     assert len(split_systems[2].constraints) == 1
 
@@ -202,6 +222,7 @@ def test_state_manipulation_with_constraints(ar_double_sim_state: ts.SimState):
     ar_double_sim_state.constraints = []
     ar_double_sim_state.constraints = [FixCom([0, 1])]
     isolated_system = ar_double_sim_state[0]
+    assert isinstance(isolated_system.constraints[0], FixCom)
     assert torch.all(
         isolated_system.constraints[0].system_idx == torch.tensor([0], dtype=torch.long)
     )
@@ -211,6 +232,7 @@ def test_state_manipulation_with_constraints(ar_double_sim_state: ts.SimState):
     mixed_concatenated_state = ts.concatenate_states(
         [isolated_system, ar_double_sim_state, isolated_system]
     )
+    assert isinstance(mixed_concatenated_state.constraints[0], FixCom)
     assert torch.all(
         mixed_concatenated_state.constraints[0].system_idx == torch.tensor([1, 2])
     )
@@ -417,26 +439,15 @@ def test_fix_atoms_bfgs_lbfgs_optimization(
     current_sim_state.constraints = [FixAtoms(atom_idx=indices)]
 
     # Initialize optimizer
-    if optimizer == "bfgs":
-        state = ts.bfgs_init(current_sim_state, lj_model)
-        step_fn = ts.bfgs_step
-    else:
-        state = ts.lbfgs_init(current_sim_state, lj_model)
-        step_fn = ts.lbfgs_step
-
+    state = (
+        ts.bfgs_init(current_sim_state, lj_model)
+        if optimizer == "bfgs"
+        else ts.lbfgs_init(current_sim_state, lj_model)
+    )
     initial_position = state.positions[indices].clone()
-
-    # Run optimization
-    energies = [1000, state.energy.item()]
-    max_steps = 500
-    steps_taken = 0
-    while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
-        state = step_fn(state=state, model=lj_model)
-        energies.append(state.energy.item())
-        steps_taken += 1
+    state = _run_quasi_newton(state, lj_model, optimizer)
 
     final_position = state.positions[indices]
-
     assert torch.allclose(final_position, initial_position, atol=1e-5)
 
 
@@ -464,28 +475,18 @@ def test_fix_com_bfgs_lbfgs_optimization(
     current_sim_state.constraints = [FixCom([0])]
 
     # Initialize optimizer
-    if optimizer == "bfgs":
-        state = ts.bfgs_init(current_sim_state, lj_model)
-        step_fn = ts.bfgs_step
-    else:
-        state = ts.lbfgs_init(current_sim_state, lj_model)
-        step_fn = ts.lbfgs_step
-
+    state = (
+        ts.bfgs_init(current_sim_state, lj_model)
+        if optimizer == "bfgs"
+        else ts.lbfgs_init(current_sim_state, lj_model)
+    )
     initial_com = get_centers_of_mass(
         positions=state.positions,
         masses=state.masses,
         system_idx=state.system_idx,
         n_systems=state.n_systems,
     )
-
-    # Run optimization
-    energies = [1000, state.energy.item()]
-    max_steps = 500
-    steps_taken = 0
-    while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
-        state = step_fn(state=state, model=lj_model)
-        energies.append(state.energy.item())
-        steps_taken += 1
+    state = _run_quasi_newton(state, lj_model, optimizer)
 
     final_com = get_centers_of_mass(
         positions=state.positions,
@@ -582,7 +583,7 @@ def test_integrators_with_constraints(
 
     # Run integration
     if integrator == "nve":
-        state = ts.nve_init(cu_sim_state, lj_model, kT=kT, seed=42)
+        state = ts.nve_init(cu_sim_state, lj_model, kT=kT)
         for _ in range(n_steps):
             state = ts.nve_step(state, lj_model, dt=dt)
     elif integrator == "nvt_nose_hoover":
@@ -590,7 +591,7 @@ def test_integrators_with_constraints(
         for _ in range(n_steps):
             state = ts.nvt_nose_hoover_step(state, lj_model, dt=dt, kT=kT)
     elif integrator == "npt_langevin":
-        state = ts.npt_langevin_init(cu_sim_state, lj_model, kT=kT, seed=42, dt=dt)
+        state = ts.npt_langevin_init(cu_sim_state, lj_model, kT=kT, dt=dt)
         for _ in range(n_steps):
             state = ts.npt_langevin_step(
                 state,
@@ -644,7 +645,6 @@ def test_multiple_constraints_and_dof(
         cu_sim_state,
         lj_model,
         kT=torch.tensor(300.0, dtype=DTYPE) * MetalUnits.temperature,
-        seed=42,
     )
     for _ in range(200):
         state = ts.nvt_langevin_step(
@@ -660,6 +660,111 @@ def test_multiple_constraints_and_dof(
     assert torch.allclose(final_com, initial_com, atol=1e-5)
 
 
+def _assert_dof_per_system(
+    state: ts.SimState, constraint_list: list[Constraint], expected_dof: list[int]
+) -> None:
+    """Assert per-system DOF values for a given state and constraint list."""
+    computed_dof = count_degrees_of_freedom(state, constraint_list)
+    expected_dof_tensor = torch.tensor(
+        expected_dof,
+        device=state.device,
+        dtype=state.n_atoms_per_system.dtype,
+    )
+    assert torch.equal(computed_dof, expected_dof_tensor)
+
+
+@pytest.mark.parametrize(
+    ("constraint_list", "removed_dof"),
+    [
+        ([], 0),
+        ([FixAtoms(atom_idx=[0, 1])], 6),
+        ([FixCom([0])], 3),
+        ([FixCom([0]), FixAtoms(atom_idx=[0])], 6),
+    ],
+)
+def test_count_degrees_of_freedom_single_system(
+    cu_sim_state: ts.SimState, constraint_list: list[Constraint], removed_dof: int
+) -> None:
+    """count_degrees_of_freedom returns per-system tensor for one system."""
+    total_dof = 3 * cu_sim_state.n_atoms
+    _assert_dof_per_system(cu_sim_state, constraint_list, [total_dof - removed_dof])
+
+
+def test_count_degrees_of_freedom_multi_system_sum(
+    mixed_double_sim_state: ts.SimState,
+) -> None:
+    """count_degrees_of_freedom returns per-system dof for multi-system states."""
+    n_atoms_in_first_system = int(mixed_double_sim_state.n_atoms_per_system[0].item())
+    constraint_list: list[Constraint] = [
+        FixCom([0, 1]),
+        FixAtoms(atom_idx=[0, n_atoms_in_first_system]),
+    ]
+    total_dof_per_system = 3 * mixed_double_sim_state.n_atoms_per_system
+    expected_dof = (total_dof_per_system - 6).tolist()
+    _assert_dof_per_system(mixed_double_sim_state, constraint_list, expected_dof)
+
+
+def test_count_degrees_of_freedom_partial_system_constraint(
+    mixed_double_sim_state: ts.SimState,
+) -> None:
+    """count_degrees_of_freedom only changes systems targeted by a constraint."""
+    total_dof_per_system = 3 * mixed_double_sim_state.n_atoms_per_system
+    constraint_list: list[Constraint] = [FixCom([0])]
+    expected_dof = total_dof_per_system.clone()
+    expected_dof[0] -= 3
+    _assert_dof_per_system(mixed_double_sim_state, constraint_list, expected_dof.tolist())
+
+
+def test_count_degrees_of_freedom_matches_sim_state_method(
+    mixed_double_sim_state: ts.SimState,
+) -> None:
+    """DOF helper and SimState method agree for strictly positive DOF."""
+    n_atoms_in_first_system = int(mixed_double_sim_state.n_atoms_per_system[0].item())
+    constraint_list: list[Constraint] = [FixAtoms(atom_idx=[0, n_atoms_in_first_system])]
+    mixed_double_sim_state.constraints = constraint_list
+    dof_from_method = mixed_double_sim_state.get_number_of_degrees_of_freedom()
+    dof_from_helper = count_degrees_of_freedom(mixed_double_sim_state, constraint_list)
+    assert torch.equal(dof_from_method, dof_from_helper)
+
+
+def test_count_degrees_of_freedom_none_constraints_returns_unconstrained(
+    mixed_double_sim_state: ts.SimState,
+) -> None:
+    """Omitting constraints returns unconstrained DOF (3 * n_atoms_per_system)."""
+    expected_dof = 3 * mixed_double_sim_state.n_atoms_per_system
+    dof = count_degrees_of_freedom(mixed_double_sim_state)
+    assert torch.equal(dof, expected_dof)
+
+
+def test_count_degrees_of_freedom_helper_clamps_but_state_method_raises(
+    cu_sim_state: ts.SimState,
+) -> None:
+    """Helper clamps zero DOF while SimState method rejects non-positive DOF."""
+    all_atom_indices = torch.arange(cu_sim_state.n_atoms, device=cu_sim_state.device)
+    constraint_list: list[Constraint] = [FixAtoms(atom_idx=all_atom_indices), FixCom([0])]
+    _assert_dof_per_system(cu_sim_state, constraint_list, [0])
+
+    cu_sim_state.constraints = constraint_list
+    with pytest.raises(ValueError, match="Degrees of freedom cannot be zero or negative"):
+        cu_sim_state.get_number_of_degrees_of_freedom()
+
+
+@pytest.mark.parametrize(
+    "invalid_constraints",
+    [
+        [FixAtoms(atom_idx=[999])],
+        [FixCom([999])],
+    ],
+)
+def test_count_degrees_of_freedom_rejects_out_of_bounds_constraint(
+    cu_sim_state: ts.SimState,
+    invalid_constraints: list[Constraint],
+) -> None:
+    """count_degrees_of_freedom rejects constraints with out-of-bounds indices."""
+    with pytest.raises(ValueError, match=r"has indices up to.*only has.*atoms"):
+        count_degrees_of_freedom(cu_sim_state, invalid_constraints)
+
+
 @pytest.mark.parametrize(
     ("cell_filter", "fire_flavor"),
     [
@@ -671,7 +776,7 @@ def test_multiple_constraints_and_dof(
 def test_cell_optimization_with_constraints(
     ar_supercell_sim_state: ts.SimState,
     lj_model: LennardJonesModel,
-    cell_filter: str,
+    cell_filter: ts.CellFilter,
     fire_flavor: FireFlavor,
 ) -> None:
     """Test cell filters work with constraints."""
@@ -704,7 +809,7 @@ def test_cell_optimization_with_constraints(
 def test_cell_optimization_with_constraints_bfgs_lbfgs(
     ar_supercell_sim_state: ts.SimState,
     lj_model: LennardJonesModel,
-    cell_filter: str,
+    cell_filter: ts.CellFilter,
     optimizer: str,
 ) -> None:
     """Test cell filters work with constraints for BFGS/LBFGS."""
@@ -715,15 +820,16 @@ def test_cell_optimization_with_constraints_bfgs_lbfgs(
 
     if optimizer == "bfgs":
         state = ts.bfgs_init(ar_supercell_sim_state, lj_model, cell_filter=cell_filter)
-        step_fn = ts.bfgs_step
+        for _ in range(50):
+            state = ts.bfgs_step(state, lj_model)
+            if state.forces.abs().max() < 0.05:
+                break
     else:
         state = ts.lbfgs_init(ar_supercell_sim_state, lj_model, cell_filter=cell_filter)
-        step_fn = ts.lbfgs_step
-
-    for _ in range(50):
-        state = step_fn(state, lj_model)
-        if state.forces.abs().max() < 0.05:
-            break
+        for _ in range(50):
+            state = ts.lbfgs_step(state, lj_model)
+            if state.forces.abs().max() < 0.05:
+                break
     assert len(state.constraints) > 0
 
 
@@ -757,7 +863,7 @@ def test_constraints_with_non_pbc(lj_model: LennardJonesModel) -> None:
     initial = get_centers_of_mass(
         state.positions, state.masses, state.system_idx, state.n_systems
     )
-    md_state = ts.nve_init(state, lj_model, kT=torch.tensor(100.0, dtype=DTYPE), seed=42)
+    md_state = ts.nve_init(state, lj_model, kT=torch.tensor(100.0, dtype=DTYPE))
     for _ in range(100):
         md_state = ts.nve_step(md_state, lj_model, dt=torch.tensor(0.001, dtype=DTYPE))
     final = get_centers_of_mass(
@@ -815,7 +921,6 @@ def test_temperature_with_constrained_dof(
         cu_sim_state,
         lj_model,
         kT=torch.tensor(target, dtype=DTYPE) * MetalUnits.temperature,
-        seed=42,
     )
     temps = []
     for _ in range(4000):
@@ -909,6 +1014,34 @@ def test_atom_indexed_constraint_update_and_select() -> None:
     assert sub_constraint is None
 
 
+def test_constraint_atom_idx_remapped_on_reordered_slice(
+    mixed_double_sim_state: ts.SimState,
+) -> None:
+    """Slicing a batched state with reversed system order must remap constraint
+    atom_idx so the constraint targets the same physical atoms in the new ordering.
+    """
+    state = mixed_double_sim_state
+    n_sys0 = state.n_atoms_per_system[0].item()
+    fix_global_idx = n_sys0 + 1  # second atom of system 1
+    state.constraints = [FixAtoms(atom_idx=torch.tensor([fix_global_idx]))]
+
+    # Reverse system order: system 1's atoms come first in the new ordering,
+    # so the fixed atom (second of old system 1) lands at new index 1.
+    sliced = state[[1, 0]]
+    expected_atom_idx = 1
+
+    constraint = sliced.constraints[0]
+    assert isinstance(constraint, FixAtoms)
+
+    assert constraint.atom_idx.item() == expected_atom_idx
+
+    forces = torch.ones(sliced.n_atoms, 3, dtype=DTYPE)
+    constraint.adjust_forces(sliced, forces)
+    assert torch.all(forces[expected_atom_idx] == 0.0)
+    assert torch.all(forces[:expected_atom_idx] == 1.0)
+    assert torch.all(forces[expected_atom_idx + 1 :] == 1.0)
+
+
 def test_merge_constraints(mixed_double_sim_state: ts.SimState) -> None:
     """Test merge_constraints combines constraints from multiple systems."""
     # Split the double system state
@@ -977,3 +1110,20 @@ def test_merge_constraints(mixed_double_sim_state: ts.SimState) -> None:
         [0, 1, 2 + n_atoms_s1, 3 + n_atoms_s1, 0 + n_atoms_s1 + n_atoms_s2]
     )
     assert torch.all(fix_atoms.atom_idx == expected_atom_indices)
+
+
+@pytest.mark.parametrize(
+    ("merge_cls", "constraints"),
+    [
+        (FixAtoms, []),
+        (FixCom, []),
+        (FixAtoms, [FixCom([0])]),
+        (FixCom, [FixAtoms(atom_idx=[0])]),
+    ],
+)
+def test_constraint_merge_rejects_empty_or_wrong_type(
+    merge_cls: type[Constraint], constraints: list[Constraint]
+) -> None:
+    """Constraint.merge raises clear ValueError on empty or mismatched inputs."""
+    with pytest.raises(ValueError, match="requires at least one"):
+        merge_cls.merge(constraints)

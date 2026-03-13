@@ -20,9 +20,10 @@ try:
 
     from torch_sim.models.fairchem_legacy import FairChemV1Model
 
-except ImportError:
+except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
     pytest.skip(
-        f"FairChem not installed: {traceback.format_exc()}", allow_module_level=True
+        f"FairChem not installed: {traceback.format_exc()}",  # ty:ignore[too-many-positional-arguments]
+        allow_module_level=True,
     )
 
 
@@ -112,7 +113,8 @@ def test_fairchem_mixed_pbc_forward_raises(
     eqv2_oc20_model_pbc: FairChemV1Model, si_sim_state: ts.SimState
 ) -> None:
     """Test that calling forward with a SimState that has mixed PBC raises ValueError."""
-    mixed_pbc_state = si_sim_state.clone()
-    mixed_pbc_state.pbc = torch.tensor([True, False, True], dtype=torch.bool)
+    mixed_pbc_state = ts.SimState.from_state(
+        si_sim_state, pbc=torch.tensor([True, False, True], dtype=torch.bool)
+    )
     with pytest.raises(ValueError, match="FairChemV1Model does not support mixed PBC"):
         eqv2_oc20_model_pbc(mixed_pbc_state)

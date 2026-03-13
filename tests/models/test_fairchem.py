@@ -20,16 +20,17 @@ try:
     import torch_sim as ts
     from torch_sim.models.fairchem import FairChemModel
 
-except ImportError:
+except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
     pytest.skip(
-        f"FairChem not installed: {traceback.format_exc()}", allow_module_level=True
+        f"FairChem not installed: {traceback.format_exc()}",  # ty:ignore[too-many-positional-arguments]
+        allow_module_level=True,
     )
 
 
 @pytest.fixture
 def eqv2_uma_model_pbc() -> FairChemModel:
     """UMA model for periodic boundary condition systems."""
-    return FairChemModel(model="uma-s-1", task_name="omat", device=DEVICE)
+    return FairChemModel(model="uma-s-1p1", task_name="omat", device=DEVICE)
 
 
 @pytest.mark.skipif(
@@ -39,7 +40,7 @@ def eqv2_uma_model_pbc() -> FairChemModel:
 def test_task_initialization(task_name: str) -> None:
     """Test that different UMA task names work correctly."""
     model = FairChemModel(
-        model="uma-s-1", task_name=task_name, device=torch.device("cpu")
+        model="uma-s-1p1", task_name=task_name, device=torch.device("cpu")
     )
     assert model.task_name
     assert str(model.task_name.value) == task_name
@@ -76,7 +77,7 @@ def test_homogeneous_batching(task_name: str, systems_func: Callable) -> None:
         for mol in systems:
             mol.info |= {"charge": 0, "spin": 1}
 
-    model = FairChemModel(model="uma-s-1", task_name=task_name, device=DEVICE)
+    model = FairChemModel(model="uma-s-1p1", task_name=task_name, device=DEVICE)
     state = ts.io.atoms_to_state(systems, device=DEVICE, dtype=DTYPE)
     results = model(state)
 
@@ -108,7 +109,7 @@ def test_heterogeneous_tasks() -> None:
             systems[0].info |= {"charge": 0, "spin": 1}
 
         model = FairChemModel(
-            model="uma-s-1",
+            model="uma-s-1p1",
             task_name=task_name,
             device=DEVICE,
         )
@@ -149,7 +150,7 @@ def test_batch_size_variations(systems_func: Callable, expected_count: int) -> N
     """Test batching with different numbers and sizes of systems."""
     systems = systems_func()
 
-    model = FairChemModel(model="uma-s-1", task_name="omat", device=DEVICE)
+    model = FairChemModel(model="uma-s-1p1", task_name="omat", device=DEVICE)
     state = ts.io.atoms_to_state(systems, device=DEVICE, dtype=DTYPE)
     results = model(state)
 
@@ -169,7 +170,7 @@ def test_stress_computation(*, compute_stress: bool) -> None:
     systems = [bulk("Si", "diamond", a=5.43), bulk("Al", "fcc", a=4.05)]
 
     model = FairChemModel(
-        model="uma-s-1",
+        model="uma-s-1p1",
         task_name="omat",
         device=DEVICE,
         compute_stress=compute_stress,
@@ -190,7 +191,7 @@ def test_stress_computation(*, compute_stress: bool) -> None:
 )
 def test_device_consistency() -> None:
     """Test device consistency between model and data."""
-    model = FairChemModel(model="uma-s-1", task_name="omat", device=DEVICE)
+    model = FairChemModel(model="uma-s-1p1", task_name="omat", device=DEVICE)
     system = bulk("Si", "diamond", a=5.43)
     state = ts.io.atoms_to_state([system], device=DEVICE, dtype=DTYPE)
 
@@ -204,7 +205,7 @@ def test_device_consistency() -> None:
 )
 def test_empty_batch_error() -> None:
     """Test that empty batches raise appropriate errors."""
-    model = FairChemModel(model="uma-s-1", task_name="omat", device=torch.device("cpu"))
+    model = FairChemModel(model="uma-s-1p1", task_name="omat", device=torch.device("cpu"))
     with pytest.raises((ValueError, RuntimeError, IndexError)):
         model(ts.io.atoms_to_state([], device=torch.device("cpu"), dtype=torch.float32))
 
@@ -214,7 +215,7 @@ def test_empty_batch_error() -> None:
 )
 def test_load_from_checkpoint_path() -> None:
     """Test loading model from a saved checkpoint file path."""
-    checkpoint_path = pretrained_checkpoint_path_from_name("uma-s-1")
+    checkpoint_path = pretrained_checkpoint_path_from_name("uma-s-1p1")
     loaded_model = FairChemModel(
         model=str(checkpoint_path), task_name="omat", device=DEVICE
     )
@@ -266,12 +267,14 @@ def test_fairchem_charge_spin(charge: float, spin: float) -> None:
     state = ts.io.atoms_to_state([mol], device=DEVICE, dtype=DTYPE)
 
     # Verify charge/spin were extracted correctly
+    assert state.charge is not None
+    assert state.spin is not None
     assert state.charge[0].item() == charge
     assert state.spin[0].item() == spin
 
     # Create model with UMA omol task (supports charge/spin for molecules)
     model = FairChemModel(
-        model="uma-s-1",
+        model="uma-s-1p1",
         task_name="omol",
         device=DEVICE,
     )
@@ -288,3 +291,33 @@ def test_fairchem_charge_spin(charge: float, spin: float) -> None:
     # Verify outputs are finite
     assert torch.isfinite(result["energy"]).all()
     assert torch.isfinite(result["forces"]).all()
+
+
+# TODO: we should perhaps put something like this inside `validate_model_outputs`
+# the question is how we can do this with creating a circular dependency
+@pytest.mark.skipif(
+    get_token() is None, reason="Requires HuggingFace authentication for UMA model access"
+)
+def test_fairchem_single_step_relax(rattled_si_sim_state: ts.SimState) -> None:
+    """Test a single optimization step with FairChemModel.
+
+    This verifies that the model works correctly with optimizers, particularly
+    that it doesn't have issues with the computational graph (e.g., missing
+    .detach() calls).
+    """
+    model = FairChemModel(model="uma-s-1p1", task_name="omat", device=DEVICE)
+    state = rattled_si_sim_state.to(device=DEVICE, dtype=DTYPE)
+
+    # Initialize FIRE optimizer
+    opt_state = ts.fire_init(state, model)
+    initial_positions = opt_state.positions.clone()
+    _initial_energy = opt_state.energy.item()
+
+    # Run exactly one step
+    opt_state = ts.fire_step(opt_state, model)
+
+    # Verify positions changed
+    assert not torch.allclose(opt_state.positions, initial_positions)
+    # Verify energy is still available and finite
+    assert torch.isfinite(opt_state.energy).all()
+    assert isinstance(opt_state.energy.item(), float)

@@ -1,5 +1,3 @@
-# codespell-ignore: convertor
-
 import traceback
 
 import ase.spacegroup
@@ -19,9 +17,10 @@ try:
 
     from torch_sim.models.mattersim import MatterSimModel
 
-except ImportError:
+except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
     pytest.skip(
-        f"mattersim not installed: {traceback.format_exc()}", allow_module_level=True
+        f"mattersim not installed: {traceback.format_exc()}",  # ty:ignore[too-many-positional-arguments]
+        allow_module_level=True,
     )
 
 

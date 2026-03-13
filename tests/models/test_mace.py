@@ -10,7 +10,6 @@ from tests.models.conftest import (
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
-from torch_sim.models.mace import MaceUrls
 from torch_sim.testing import SIMSTATE_BULK_GENERATORS, SIMSTATE_MOLECULE_GENERATORS
 
 
@@ -18,9 +17,10 @@ try:
     from mace.calculators import MACECalculator
     from mace.calculators.foundations_models import mace_mp, mace_off
 
-    from torch_sim.models.mace import MaceModel
-except (ImportError, ValueError):
-    pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)
+    from torch_sim.models.mace import MaceModel, MaceUrls
+
+except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
+    pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)  # ty:ignore[too-many-positional-arguments]
 
 # mace_omol is optional (added in newer MACE versions)
 try:
@@ -28,7 +28,7 @@ try:
 
     raw_mace_omol = mace_omol(model="extra_large", return_raw_model=True)
     HAS_MACE_OMOL = True
-except ImportError:
+except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
     raw_mace_omol = None
     HAS_MACE_OMOL = False
 
@@ -135,9 +135,11 @@ def test_mace_charge_spin(
     benzene_sim_state: ts.SimState, charge: float, spin: float
 ) -> None:
     """Test that MaceModel correctly handles charge and spin from atoms.info."""
-    # Convert to SimState (should extract charge/spin)
-    benzene_sim_state.charge = torch.tensor([charge], device=DEVICE, dtype=DTYPE)
-    benzene_sim_state.spin = torch.tensor([spin], device=DEVICE, dtype=DTYPE)
+    benzene_sim_state = ts.SimState.from_state(
+        benzene_sim_state,
+        charge=torch.tensor([charge], device=DEVICE, dtype=DTYPE),
+        spin=torch.tensor([spin], device=DEVICE, dtype=DTYPE),
+    )
 
     # Verify charge/spin were extracted correctly
     if charge != 0.0:

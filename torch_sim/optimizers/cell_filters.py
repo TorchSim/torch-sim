@@ -13,7 +13,7 @@ from typing import Any
 
 import torch
 
-import torch_sim.math as fm
+import torch_sim.math as tsm
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers.state import BFGSState, FireState, LBFGSState, OptimState
 from torch_sim.state import SimState
@@ -36,12 +36,11 @@ def _setup_cell_factor(
         # Count atoms per system
         _, counts = torch.unique(state.system_idx, return_counts=True)
         cell_factor_tensor = counts.to(dtype=dtype)
-    elif isinstance(cell_factor, (int, float)):
-        cell_factor_tensor = torch.full(
-            (n_systems,), cell_factor, device=device, dtype=dtype
-        )
     else:
-        cell_factor_tensor = torch.tensor(cell_factor, device=device, dtype=dtype)
+        cell_factor_tensor = torch.as_tensor(cell_factor, device=device, dtype=dtype)
+        if cell_factor_tensor.ndim == 0:
+            cell_factor_tensor = cell_factor_tensor.expand(n_systems)
+
         if (n_cft := cell_factor_tensor.numel()) != n_systems:
             raise ValueError(
                 f"cell_factor tensor must have {n_systems} elements, got {n_cft}"
@@ -134,7 +133,7 @@ def _frechet_cell_forces(
     # Batch Frechet derivatives over systems and directions
     A_batch = deform_grad_log.unsqueeze(1).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
     E_batch = directions.unsqueeze(0).expand(n_systems, 9, 3, 3).reshape(-1, 3, 3)
-    _, expm_derivs_batch = fm.expm_frechet(A_batch, E_batch, method=frechet_method)
+    _, expm_derivs_batch = tsm.expm_frechet(A_batch, E_batch, method=frechet_method)
     expm_derivs = expm_derivs_batch.reshape(n_systems, 9, 3, 3)
 
     # Contract Frechet derivatives with the cell gradient
@@ -258,10 +257,9 @@ class CellFilter(StrEnum):
 # Filter type definitions for convenience
 def unit_cell_step[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) -> None:
     """Update cell using unit cell approach."""
-    if isinstance(cell_lr, (int, float)):
-        cell_lr = torch.full(
-            (state.n_systems,), cell_lr, device=state.device, dtype=state.dtype
-        )
+    cell_lr = torch.as_tensor(cell_lr, device=state.device, dtype=state.dtype)
+    if cell_lr.ndim == 0:
+        cell_lr = cell_lr.expand(state.n_systems)
 
     # Get current deformation gradient
     cur_deform_grad = deform_grad(state.reference_cell.mT, state.row_vector_cell)
@@ -288,10 +286,9 @@ def unit_cell_step[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) -> 
 
 def frechet_cell_step[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) -> None:
     """Update cell using frechet approach."""
-    if isinstance(cell_lr, (int, float)):
-        cell_lr = torch.full(
-            (state.n_systems,), cell_lr, device=state.device, dtype=state.dtype
-        )
+    cell_lr = torch.as_tensor(cell_lr, device=state.device, dtype=state.dtype)
+    if cell_lr.ndim == 0:
+        cell_lr = cell_lr.expand(state.n_systems)
     cell_wise_lr = cell_lr.view(state.n_systems, 1, 1)
 
     # Compute cell step and update cell positions in log space
@@ -340,7 +337,7 @@ def compute_cell_forces[T: AnyCellState](
         )
 
         # Map gradient back to log-space via Frechet derivative of matrix exp
-        deform_grad_log = fm.matrix_log_33(
+        deform_grad_log = tsm.matrix_log_33(
             cur_deform_grad, sim_dtype=cur_deform_grad.dtype
         )
         # Clamp to the same limit used in lbfgs_step to prevent NaN from

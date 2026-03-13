@@ -40,3 +40,12 @@ uv.lock
 
 # IDE
 .vscode/
+
+# duecredit
+.duecredit.p
+
+# agents
+.agents/
+
+# treemap html file
+docs/_static/torch-sim-pkg-treemap.html

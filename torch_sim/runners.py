@@ -73,7 +73,7 @@ def _configure_batches_iterator(
     model: ModelInterface,
     *,
     autobatcher: BinningAutoBatcher | bool,
-) -> BinningAutoBatcher | list[tuple[SimState, list[int]]]:
+) -> BinningAutoBatcher[SimState] | list[tuple[SimState, list[int]]]:
     """Create a batches iterator for the integrate function.
 
     Args:
@@ -86,7 +86,7 @@ def _configure_batches_iterator(
     """
     # load and properly configure the autobatcher
     if autobatcher is True:
-        autobatcher = BinningAutoBatcher(
+        autobatcher = BinningAutoBatcher[SimState](
             model=model,
             max_memory_padding=0.9,
         )
@@ -145,7 +145,7 @@ def _determine_initial_step_for_integrate(
 def _determine_initial_step_for_optimize(
     trajectory_reporter: TrajectoryReporter | None,
     state: SimState,
-) -> torch.LongTensor:
+) -> torch.Tensor:
     """Determine the initial steps for resuming optimization from trajectory files.
 
     Args:
@@ -154,10 +154,10 @@ def _determine_initial_step_for_optimize(
         state (SimState): The state being optimized
 
     Returns:
-        torch.LongTensor: Tensor of initial steps for each system (1 if not resuming,
+        torch.Tensor: Tensor of initial steps for each system (1 if not resuming,
             otherwise last_step + 1 for each system)
     """
-    initial_step: torch.LongTensor = torch.full(
+    initial_step: torch.Tensor = torch.full(
         size=(state.n_systems,), fill_value=1, dtype=torch.long, device=state.device
     )
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
@@ -183,42 +183,27 @@ def _normalize_temperature_tensor(
         torch.Tensor: Normalized temperature tensor
     """
     # ---- Step 1: Convert to tensor ----
-    if isinstance(temperature, (float, int)):
-        return torch.full(
-            (n_steps,),
-            float(temperature),
-            dtype=initial_state.dtype,
-            device=initial_state.device,
-        )
-
-    # Convert list or tensor input to tensor
-    if isinstance(temperature, list):
-        temps = torch.tensor(
-            temperature, dtype=initial_state.dtype, device=initial_state.device
-        )
-    elif isinstance(temperature, torch.Tensor):
-        temps = temperature.to(dtype=initial_state.dtype, device=initial_state.device)
-    else:
-        raise TypeError(
-            f"Invalid temperature type: {type(temperature).__name__}. "
-            "Must be float, int, list, or torch.Tensor."
-        )
+    temps = torch.as_tensor(
+        temperature, dtype=initial_state.dtype, device=initial_state.device
+    )
 
     # ---- Step 2: Determine how to broadcast ----
     temps = torch.atleast_1d(temps)
     if temps.ndim > 2:
         raise ValueError(f"Temperature tensor must be 1D or 2D, got shape {temps.shape}.")
 
-    if temps.shape[0] == 1:
-        # A single value in a 1-element list/tensor
-        return temps.repeat(n_steps)
+    if temps.numel() == 1:
+        # A single value
+        return temps.expand(n_steps)
 
     if initial_state.n_systems == n_steps:
-        warnings.warn(
+        msg = (
             "n_systems is equal to n_steps. Interpreting temperature array of length "
-            "n_systems as temperatures for each system, broadcasted over steps.",
-            stacklevel=2,
+            "n_systems as temperatures for each system, broadcasted over steps."
         )
+        warnings.warn(msg, stacklevel=2)
+        logger.warning(msg)
+        return temps.expand(n_steps)
 
     if temps.shape[0] == initial_state.n_systems:
         if temps.ndim == 2:
@@ -310,10 +295,16 @@ def integrate[T: SimState](  # noqa: C901
     unit_system = UnitSystem.metal
 
     initial_state: SimState = ts.initialize_state(system, model.device, model.dtype)
+    logger.info(
+        "integrate: n_systems=%d, n_steps=%d, integrator=%s",
+        initial_state.n_systems,
+        n_steps,
+        integrator,
+    )
     dtype, device = initial_state.dtype, initial_state.device
     kTs = _normalize_temperature_tensor(temperature, n_steps, initial_state)
     kTs = kTs * unit_system.temperature
-    dt = torch.tensor(timestep * unit_system.time, dtype=dtype, device=device)
+    dt = torch.as_tensor(timestep * unit_system.time, dtype=dtype, device=device)
 
     # Handle both string names and direct function tuples
     if isinstance(integrator, Integrator):
@@ -404,9 +395,12 @@ def integrate[T: SimState](  # noqa: C901
         trajectory_reporter.finish()
 
     if isinstance(batch_iterator, BinningAutoBatcher):
-        reordered_states = batch_iterator.restore_original_order(final_states)
-        return ts.concatenate_states(reordered_states)
+        reordered = batch_iterator.restore_original_order(final_states)  # ty: ignore[invalid-argument-type]
+        result = ts.concatenate_states(reordered)  # ty: ignore[invalid-argument-type]
+        logger.info("integrate: complete, %d systems returned", result.n_systems)
+        return result
 
+    logger.info("integrate: complete")
     return state
 
 
@@ -530,7 +524,7 @@ def generate_force_convergence_fn[T: MDState | FireState](
 
 def generate_energy_convergence_fn[T: MDState | OptimState](
     energy_tol: float = 1e-3,
-) -> Callable[[T, torch.Tensor | None], torch.Tensor]:
+) -> Callable[[T, torch.Tensor], torch.Tensor]:
     """Generate an energy-based convergence function for the convergence_fn argument
     of the optimize function.
 
@@ -542,7 +536,7 @@ def generate_energy_convergence_fn[T: MDState | OptimState](
             a state and last energy and returns a systemwise boolean function.
     """
 
-    def convergence_fn(state: T, last_energy: torch.Tensor | None = None) -> torch.Tensor:
+    def convergence_fn(state: T, last_energy: torch.Tensor) -> torch.Tensor:
         """Check if the system has converged.
 
         Returns:
@@ -559,7 +553,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     model: ModelInterface,
     *,
     optimizer: Optimizer | tuple[Callable[..., T], Callable[..., T]],
-    convergence_fn: Callable[[T, torch.Tensor | None], torch.Tensor] | None = None,
+    convergence_fn: Callable[[T, torch.Tensor], torch.Tensor] | None = None,
     max_steps: int = 10_000,
     steps_between_swaps: int = 5,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
@@ -606,6 +600,12 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         convergence_fn = generate_energy_convergence_fn(energy_tol=1e-3)
 
     initial_state = ts.initialize_state(system, model.device, model.dtype)
+    logger.info(
+        "optimize: n_systems=%d, max_steps=%d, optimizer=%s",
+        initial_state.n_systems,
+        max_steps,
+        optimizer,
+    )
     if isinstance(optimizer, Optimizer):
         init_fn, step_fn = OPTIM_REGISTRY[optimizer]
     elif (
@@ -629,6 +629,10 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     if isinstance(initial_state, OptimState):
         state = initial_state
     else:
+        logger.info(
+            "optimize: initializing optimizer state via chunked apply "
+            "(BinningAutoBatcher); InFlightAutoBatcher will be used for optimization"
+        )
         state = _chunked_apply(
             init_fn,
             initial_state,
@@ -694,13 +698,16 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             step[autobatcher.current_idx] += 1
             exceeded_max_steps = step > max_steps
             if exceeded_max_steps.all():
-                warnings.warn(
-                    f"All systems have reached the maximum number of steps: {max_steps}.",
-                    stacklevel=2,
+                msg = (
+                    f"All systems have reached the maximum number of steps: {max_steps}."
                 )
+                warnings.warn(msg, stacklevel=2)
+                logger.warning(msg)
                 break
 
-        convergence_tensor = convergence_fn(state, last_energy)
+        if last_energy is None:
+            raise ValueError("last_energy cannot be None")
+        convergence_tensor = convergence_fn(state, last_energy)  # ty:ignore[invalid-argument-type]
         # Mark states that exceeded max steps as converged to remove them from batch
         convergence_tensor = (
             convergence_tensor | exceeded_max_steps[autobatcher.current_idx]
@@ -713,10 +720,15 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         trajectory_reporter.finish()
 
     if autobatcher:
-        final_states = autobatcher.restore_original_order(all_converged_states)
-        return ts.concatenate_states(final_states)
+        final_states_ordered = autobatcher.restore_original_order(all_converged_states)
+        result = ts.concatenate_states(final_states_ordered)
+        logger.info("optimize: complete, %d systems returned", result.n_systems)
+        return result
 
-    return state  # type: ignore[return-value]
+    # Unreachable: _configure_in_flight_autobatcher always returns InFlightAutoBatcher
+    raise RuntimeError(
+        "autobatcher is always truthy after _configure_in_flight_autobatcher"
+    )
 
 
 def static(
@@ -756,6 +768,7 @@ def static(
         list[dict[str, torch.Tensor]]: Maps of property names to tensors for all batches
     """
     state: SimState = ts.initialize_state(system, model.device, model.dtype)
+    logger.info("static: n_systems=%d", state.n_systems)
 
     batch_iterator = _configure_batches_iterator(state, model, autobatcher=autobatcher)
     properties = ["potential_energy"]
@@ -764,12 +777,13 @@ def static(
     if model.compute_stress:
         properties.append("stress")
     if isinstance(trajectory_reporter, dict):
-        trajectory_reporter = copy.deepcopy(trajectory_reporter)
-        trajectory_reporter["state_kwargs"] = {
+        traj_dict = dict(copy.deepcopy(trajectory_reporter))
+        traj_dict["state_kwargs"] = {
             "variable_atomic_numbers": True,
             "variable_masses": True,
             "save_forces": model.compute_forces,
         }
+        trajectory_reporter = traj_dict
     trajectory_reporter = _configure_reporter(
         trajectory_reporter or dict(filenames=None),
         properties=properties,

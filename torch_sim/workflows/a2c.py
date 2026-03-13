@@ -258,10 +258,7 @@ def random_packed_structure(
     # Extract number of atoms for each element from composition
     element_counts = [int(i) for i in composition.as_dict().values()]
 
-    # Set up reproducible random number generator
-    generator = torch.Generator(device=device)
-    if seed is not None:
-        generator.manual_seed(seed)
+    generator = ts.state.coerce_prng(seed, device)
 
     log = []
     # Generate initial random positions in fractional coordinates
@@ -285,7 +282,6 @@ def random_packed_structure(
             device=device,
             dtype=dtype,
             compute_forces=True,
-            use_neighbor_list=True,
         )
 
         # Dummy atomic numbers
@@ -298,6 +294,7 @@ def random_packed_structure(
             atomic_numbers=atomic_numbers,
             cell=cell,
             pbc=True,
+            _rng=generator,
         )
         state = ts.fire_init(state, model)
         print(f"Initial energy: {state.energy.item():.4f}")
@@ -307,7 +304,7 @@ def random_packed_structure(
             if min_distance(state.positions, cell, distance_tolerance) > diameter * 0.95:
                 break
 
-            log.append(state.positions.cpu().numpy())
+            log.append(state.positions.detach().cpu().numpy())
 
             state = ts.fire_step(state, model)
 
@@ -385,9 +382,7 @@ def random_packed_structure_multi(
     print(f"Creating structure with {N_atoms} atoms: {element_dict}")
 
     # Set up random number generator with optional seed for reproducibility
-    generator = torch.Generator(device=device)
-    if seed is not None:
-        generator.manual_seed(seed)
+    generator = ts.state.coerce_prng(seed, device)
 
     # Generate initial random positions in fractional coordinates [0,1]
     positions = torch.rand((N_atoms, 3), device=device, dtype=dtype, generator=generator)
@@ -395,7 +390,10 @@ def random_packed_structure_multi(
     # If auto_diameter enabled, calculate species-specific diameter matrix
     if auto_diameter:
         diameter_matrix = get_diameter_matrix(composition, device=device, dtype=dtype)
-        print(f"Using random pack diameter matrix:\n{diameter_matrix.cpu().numpy()}")
+        print(
+            f"Using random pack diameter matrix:\n"
+            f"{diameter_matrix.detach().cpu().numpy()}"
+        )
 
     # Perform overlap minimization if diameter matrix is specified
     if diameter_matrix is not None:
@@ -403,25 +401,21 @@ def random_packed_structure_multi(
         # Convert fractional to cartesian coordinates
         positions_cart = torch.matmul(positions, cell)
 
-        # Initialize multi-species soft sphere potential calculator
         model = SoftSphereMultiModel(
-            species=species_idx,
+            atomic_numbers=species_idx,
             sigma_matrix=diameter_matrix,
             device=device,
             dtype=dtype,
             compute_forces=True,
-            use_neighbor_list=True,
         )
-
-        # Dummy atomic numbers
-        atomic_numbers = torch.ones_like(positions_cart, device=device, dtype=torch.int)
 
         state_dict = ts.SimState(
             positions=positions_cart,
             masses=torch.ones(N_atoms, device=device, dtype=dtype),
-            atomic_numbers=atomic_numbers,
+            atomic_numbers=species_idx,  # species indices used as atomic_numbers
             cell=cell,
             pbc=True,
+            _rng=generator,
         )
         # Set up FIRE optimizer with unit masses for all atoms
         state = ts.fire_init(state_dict, model)
@@ -611,7 +605,7 @@ def get_subcells_to_crystallize(
                 # Apply composition restrictions if specified
                 if restrict_to_compositions:
                     subcell_comp = Composition(
-                        "".join(species_array[ids.cpu().numpy()])
+                        "".join(species_array[ids.detach().cpu().numpy()])
                     ).reduced_formula
                     if subcell_comp not in restrict_to_compositions:
                         continue
@@ -657,7 +651,7 @@ def subcells_to_structures(
 
         # Get species for these atoms and convert tensor indices to list/numpy array
         # before indexing species list
-        subcell_species = [species[int(i)] for i in ids.cpu().numpy()]
+        subcell_species = [species[int(i)] for i in ids.detach().cpu().numpy()]
 
         list_subcells.append((new_frac_pos, new_cell, subcell_species))
 

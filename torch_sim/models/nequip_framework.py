@@ -9,7 +9,7 @@ References:
 
 import traceback
 import warnings
-from typing import Any
+from typing import Any, Self
 
 
 try:
@@ -25,20 +25,25 @@ try:
         """
 
 except ImportError as exc:
+    _nequip_import_error = exc  # capture before except block ends (exc is deleted)
     warnings.warn(f"NequIP import failed: {traceback.format_exc()}", stacklevel=2)
 
     from torch_sim.models.interface import ModelInterface
 
-    class NequIPFrameworkModel(ModelInterface):  # type: ignore[no-redef]
+    class NequIPFrameworkModel(ModelInterface):
         """NequIP model framework wrapper for torch-sim.
 
         NOTE:This class is a placeholder when NequIP is not installed.
         It raises an ImportError if accessed.
         """
 
-        def __init__(self, err: ImportError = exc, *_args: Any, **_kwargs: Any) -> None:
+        def __init__(
+            self, err: ImportError = _nequip_import_error, *_args: Any, **_kwargs: Any
+        ) -> None:
             """Dummy init for type checking."""
             raise err
 
-
-__all__ = ["NequIPFrameworkModel"]
+        @classmethod
+        def from_compiled_model(cls, _path: Any, *_args: Any, **_kwargs: Any) -> Self:
+            """Dummy classmethod for type checking when NequIP is not installed."""
+            raise _nequip_import_error

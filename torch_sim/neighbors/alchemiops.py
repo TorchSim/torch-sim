@@ -9,22 +9,19 @@ nvalchemiops is available at: https://github.com/NVIDIA/nvalchemiops
 import torch
 
 
+_batch_naive_neighbor_list: object | None = None
+_batch_cell_list: object | None = None
+
+
 try:
-    from nvalchemiops.neighborlist import batch_cell_list, batch_naive_neighbor_list
-    from nvalchemiops.neighborlist.neighbor_utils import estimate_max_neighbors
+    from nvalchemiops.neighborlist import batch_cell_list as _batch_cell_list
+    from nvalchemiops.neighborlist import (
+        batch_naive_neighbor_list as _batch_naive_neighbor_list,
+    )
 
     ALCHEMIOPS_AVAILABLE = True
 except ImportError:
     ALCHEMIOPS_AVAILABLE = False
-    batch_naive_neighbor_list = None  # type: ignore[assignment]
-    batch_cell_list = None  # type: ignore[assignment]
-    estimate_max_neighbors = None  # type: ignore[assignment, name-defined]
-
-__all__ = [
-    "ALCHEMIOPS_AVAILABLE",
-    "alchemiops_nl_cell_list",
-    "alchemiops_nl_n2",
-]
 
 
 if ALCHEMIOPS_AVAILABLE:
@@ -53,11 +50,13 @@ if ALCHEMIOPS_AVAILABLE:
         from torch_sim.neighbors import _normalize_inputs
 
         r_max = cutoff.item() if isinstance(cutoff, torch.Tensor) else cutoff
-        n_systems = system_idx.max().item() + 1
+        n_systems = int(system_idx.max().item()) + 1
         cell, pbc = _normalize_inputs(cell, pbc, n_systems)
 
         # Call alchemiops neighbor list
-        res = batch_naive_neighbor_list(
+        if _batch_naive_neighbor_list is None:
+            raise RuntimeError("nvalchemiops neighbor list is unavailable")
+        res = _batch_naive_neighbor_list(
             positions=positions,
             cutoff=r_max,
             batch_idx=system_idx.to(torch.int32),
@@ -67,10 +66,11 @@ if ALCHEMIOPS_AVAILABLE:
         )
 
         # Parse results: (neighbor_list, neighbor_ptr[, neighbor_list_shifts])
-        if len(res) == 3:  # type: ignore[arg-type]
-            mapping, _, shifts_idx = res  # type: ignore[misc]
+        if len(res) == 3:
+            mapping = res[0]
+            shifts_idx = res[2]
         else:
-            mapping, _ = res  # type: ignore[misc]
+            mapping = res[0]
             shifts_idx = torch.zeros(
                 (mapping.shape[1], 3), dtype=positions.dtype, device=positions.device
             )
@@ -124,7 +124,7 @@ if ALCHEMIOPS_AVAILABLE:
         from torch_sim.neighbors import _normalize_inputs
 
         r_max = cutoff.item() if isinstance(cutoff, torch.Tensor) else cutoff
-        n_systems = system_idx.max().item() + 1
+        n_systems = int(system_idx.max().item()) + 1
         cell, pbc = _normalize_inputs(cell, pbc, n_systems)
 
         # For non-periodic systems with zero cells, use a nominal identity cell
@@ -139,7 +139,9 @@ if ALCHEMIOPS_AVAILABLE:
             cell[needs_nominal_cell] = identity
 
         # Call alchemiops cell list
-        res = batch_cell_list(
+        if _batch_cell_list is None:
+            raise RuntimeError("nvalchemiops cell list is unavailable")
+        res = _batch_cell_list(
             positions=positions,
             cutoff=r_max,
             batch_idx=system_idx.to(torch.int32),
@@ -149,10 +151,11 @@ if ALCHEMIOPS_AVAILABLE:
         )
 
         # Parse results: (neighbor_list, neighbor_ptr[, neighbor_list_shifts])
-        if len(res) == 3:  # type: ignore[arg-type]
-            mapping, _, shifts_idx = res  # type: ignore[misc]
+        if len(res) == 3:
+            mapping = res[0]
+            shifts_idx = res[2]
         else:
-            mapping, _ = res  # type: ignore[misc]
+            mapping = res[0]
             shifts_idx = torch.zeros(
                 (mapping.shape[1], 3), dtype=positions.dtype, device=positions.device
             )
@@ -184,7 +187,7 @@ if ALCHEMIOPS_AVAILABLE:
 
 else:
     # Provide stub functions that raise informative errors
-    def alchemiops_nl_n2(  # type: ignore[misc]
+    def alchemiops_nl_n2(
         *args,  # noqa: ARG001
         **kwargs,  # noqa: ARG001
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -193,7 +196,7 @@ else:
             "nvalchemiops is not installed. Install it with: pip install nvalchemiops"
         )
 
-    def alchemiops_nl_cell_list(  # type: ignore[misc]
+    def alchemiops_nl_cell_list(
         *args,  # noqa: ARG001
         **kwargs,  # noqa: ARG001
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

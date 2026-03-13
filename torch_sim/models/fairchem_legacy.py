@@ -29,8 +29,11 @@ from typing import Any
 
 import torch
 
-import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
+
+
+if typing.TYPE_CHECKING:
+    from torch_sim.state import SimState
 
 
 def _validate_fairchem_version() -> None:
@@ -74,7 +77,6 @@ except ImportError as exc:
 if typing.TYPE_CHECKING:
     from collections.abc import Callable
 
-    from torch_sim.typing import StateDict
 
 _DTYPE_DICT = {
     torch.float16: "float16",
@@ -231,6 +233,8 @@ class FairChemV1Model(ModelInterface):
                 config["dataset"] = config["dataset"].get("train", None)
         else:
             # Loads the config from the checkpoint directly (always on CPU).
+            if model is None:
+                raise ValueError("model must be provided when config_yml is not set")
             checkpoint = torch.load(model, map_location=torch.device("cpu"))
             config = checkpoint["config"]
 
@@ -358,17 +362,17 @@ class FairChemV1Model(ModelInterface):
             print("Unable to load checkpoint!")
 
     def forward(  # noqa: C901
-        self, state: ts.SimState | StateDict
-    ) -> dict:
+        self, state: SimState, **_kwargs: object
+    ) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by the model,
         such as energy, forces, and stresses.
 
         Args:
-            state (SimState | StateDict): State object containing positions, cells,
-                atomic numbers, and other system information. If a dictionary is provided,
-                it will be converted to a SimState.
+            state (SimState): State object containing positions, cells, atomic numbers,
+                and other system information.
+            **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
             dict: Dictionary of model predictions, which may include:
@@ -381,25 +385,26 @@ class FairChemV1Model(ModelInterface):
             The state is automatically transferred to the model's device if needed.
             All output tensors are detached from the computation graph.
         """
-        if isinstance(state, dict):
-            state = ts.SimState(**state, masses=torch.ones_like(state["positions"]))
+        sim_state = state
 
-        if state.device != self._device:
-            state = state.to(self._device)
+        if sim_state.device != self._device:
+            sim_state = sim_state.to(self._device)
 
-        if state.system_idx is None:
-            state.system_idx = torch.zeros(state.positions.shape[0], dtype=torch.int)
+        if sim_state.system_idx is None:
+            sim_state.system_idx = torch.zeros(
+                sim_state.positions.shape[0], dtype=torch.int
+            )
 
         # Extract uniform PBC value from state (validate it's uniform)
-        if isinstance(state.pbc, torch.Tensor):
-            if not torch.all(state.pbc == state.pbc[0]):
+        if isinstance(sim_state.pbc, torch.Tensor):
+            if not torch.all(sim_state.pbc == sim_state.pbc[0]):
                 raise ValueError(
                     "FairChemV1Model does not support mixed PBC "
-                    f"(got state.pbc={state.pbc.tolist()})"
+                    f"(got state.pbc={sim_state.pbc.tolist()})"
                 )
-            state_pbc_bool = bool(state.pbc[0].item())
+            state_pbc_bool = bool(sim_state.pbc[0].item())
         else:
-            state_pbc_bool = bool(state.pbc)
+            state_pbc_bool = bool(sim_state.pbc)
 
         model_pbc_bool = bool(self.pbc[0].item())
 
@@ -410,20 +415,22 @@ class FairChemV1Model(ModelInterface):
                 "FairChemV1Model requires model and state PBC to match."
             )
 
-        natoms = torch.bincount(state.system_idx)
-        fixed = torch.zeros((state.system_idx.size(0), natoms.sum()), dtype=torch.int)
+        natoms = torch.bincount(sim_state.system_idx)
+        fixed = torch.zeros(
+            (sim_state.system_idx.size(0), int(natoms.sum().item())), dtype=torch.int
+        )
         data_list = []
-        for i, (n, c) in enumerate(
+        for idx, (n, c) in enumerate(
             zip(natoms, torch.cumsum(natoms, dim=0), strict=False)
         ):
             data_list.append(
                 Data(
-                    pos=state.positions[c - n : c].clone(),
-                    cell=state.row_vector_cell[i, None].clone(),
-                    atomic_numbers=state.atomic_numbers[c - n : c].clone(),
-                    fixed=fixed[c - n : c].clone(),
+                    pos=sim_state.positions[c - n : c].detach().clone(),
+                    cell=sim_state.row_vector_cell[idx, None].detach().clone(),
+                    atomic_numbers=sim_state.atomic_numbers[c - n : c].detach().clone(),
+                    fixed=fixed[c - n : c].detach().clone(),
                     natoms=n,
-                    pbc=state.pbc,
+                    pbc=sim_state.pbc,
                 )
             )
         self.data_object = Batch.from_data_list(data_list)
@@ -442,9 +449,9 @@ class FairChemV1Model(ModelInterface):
             _pred = predictions[key]
             if key in self._reshaped_props:
                 _pred = _pred.reshape(self._reshaped_props.get(key)).squeeze()
-            results[key] = _pred.detach()
+            results[key] = _pred
 
         results["energy"] = results["energy"].squeeze(dim=1)
         if results.get("stress") is not None and len(results["stress"].shape) == 2:
             results["stress"] = results["stress"].unsqueeze(dim=0)
-        return results
+        return {k: v.detach() for k, v in results.items()}

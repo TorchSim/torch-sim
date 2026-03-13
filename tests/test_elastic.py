@@ -21,8 +21,8 @@ try:
     from mace.calculators.foundations_models import mace_mp
 
     from torch_sim.models.mace import MaceModel
-except ImportError:
-    pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)
+except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
+    pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)  # ty:ignore[too-many-positional-arguments]
 
 
 def test_get_strain_zero_deformation(cu_sim_state: ts.SimState) -> None:

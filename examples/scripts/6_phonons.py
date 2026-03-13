@@ -31,6 +31,18 @@ from phonopy import Phonopy
 
 import torch_sim as ts
 from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.telemetry import configure_logging, get_logger
+
+
+configure_logging(log_file="6_phonons.log")
+log = get_logger(name="6_phonons")
+
+
+def require_not_none[T](value: T | None, message: str) -> T:
+    """Return value or raise RuntimeError when missing."""
+    if value is None:
+        raise RuntimeError(message)
+    return value
 
 
 # Set device and data type
@@ -42,9 +54,9 @@ SMOKE_TEST = os.getenv("CI") is not None
 # ============================================================================
 # SECTION 1: Structure Relaxation for Phonons
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 1: Structure Relaxation")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 1: Structure Relaxation")
+log.info("=" * 70)
 
 # Load the MACE model
 loaded_model = mace_mp(
@@ -72,7 +84,7 @@ model = MaceModel(
 )
 
 # Relax the structure
-print("Relaxing structure...")
+log.info("Relaxing structure...")
 final_state = ts.optimize(
     system=struct,
     model=model,
@@ -85,32 +97,32 @@ final_state = ts.optimize(
     ),
 )
 
-print(f"Relaxation complete. Final energy: {final_state.energy.item():.4f} eV")
+log.info(f"Relaxation complete. Final energy: {final_state.energy.item():.4f} eV")
 
 
 # ============================================================================
 # SECTION 2: Phonon DOS Calculation
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 2: Phonon DOS Calculation")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 2: Phonon DOS Calculation")
+log.info("=" * 70)
 
 # Convert state to Phonopy atoms
 atoms = ts.io.state_to_phonopy(final_state)[0]
 ph = Phonopy(atoms, supercell_matrix)
 
 # Generate displaced supercells for force constant calculation
-print(f"Generating displacements (distance = {displ} Å)...")
+log.info(f"Generating displacements (distance = {displ} Å)...")
 ph.generate_displacements(distance=displ)
 supercells = ph.supercells_with_displacements
 
 if supercells is None:
     raise ValueError("No supercells generated - check Phonopy settings")
 
-print(f"Number of displaced supercells: {len(supercells)}")
+log.info(f"Number of displaced supercells: {len(supercells)}")
 
 # Convert PhonopyAtoms to batched state for efficient computation
-print("Calculating forces for displaced structures (batched)...")
+log.info("Calculating forces for displaced structures (batched)...")
 state = ts.io.phonopy_to_state(supercells, device, dtype)
 results = model(state)
 
@@ -124,37 +136,39 @@ for n_atoms in n_atoms_per_supercell:
     start_idx = end_idx
 
 # Produce force constants from forces
-print("Producing force constants...")
+log.info("Producing force constants...")
 ph.forces = force_sets
 ph.produce_force_constants()
 
 # Calculate phonon DOS
-print(f"Calculating phonon DOS with mesh {mesh}...")
+log.info(f"Calculating phonon DOS with mesh {mesh}...")
 ph.run_mesh(mesh)
 ph.run_total_dos()
 
 # Get DOS data
-dos = ph.total_dos
+dos = require_not_none(ph.total_dos, "Phonopy total_dos not computed")
 freq_points = dos.frequency_points
 dos_values = dos.dos
+if freq_points is None or dos_values is None:
+    raise RuntimeError("Phonopy total_dos has missing frequency_points or dos arrays")
 
-print("\nPhonon DOS calculated:")
-print(f"  Frequency range: {freq_points.min():.3f} to {freq_points.max():.3f} THz")
-print(f"  DOS values range: {dos_values.min():.6f} to {dos_values.max():.6f}")
+log.info("Phonon DOS calculated:")
+log.info(f"  Frequency range: {freq_points.min():.3f} to {freq_points.max():.3f} THz")
+log.info(f"  DOS values range: {dos_values.min():.6f} to {dos_values.max():.6f}")
 
 # Check for imaginary modes (negative frequencies)
 if freq_points.min() < -0.1:
-    print("  WARNING: Imaginary modes detected (freq < -0.1 THz)")
+    log.info("  WARNING: Imaginary modes detected (freq < -0.1 THz)")
 else:
-    print("  No imaginary modes detected (all frequencies > -0.1 THz)")
+    log.info("  No imaginary modes detected (all frequencies > -0.1 THz)")
 
 
 # ============================================================================
 # SECTION 3: Phonon Band Structure Calculation
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 3: Phonon Band Structure Calculation")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 3: Phonon Band Structure Calculation")
+log.info("=" * 70)
 
 try:
     import seekpath
@@ -170,7 +184,7 @@ try:
     )
 
     # Get high-symmetry path using seekpath
-    print("Finding high-symmetry path...")
+    log.info("Finding high-symmetry path...")
     seekpath_data = seekpath.get_path(
         (ase_atoms.cell, ase_atoms.get_scaled_positions(), ase_atoms.numbers)
     )
@@ -186,22 +200,25 @@ try:
     n_points = 51  # Points per segment
     q_pts, connections = get_band_qpoints_and_path_connections(path, npoints=n_points)
 
-    print(f"Calculating phonon band structure ({len(q_pts)} q-points)...")
+    log.info(f"Calculating phonon band structure ({len(q_pts)} q-points)...")
     ph.run_band_structure(q_pts, path_connections=connections)
 
     # Get band structure data
     bands_dict = ph.get_band_structure_dict()
-    print("\nPhonon band structure calculated:")
-    print(f"  Number of paths: {len(bands_dict['frequencies'])}")
-    print(f"  Number of bands: {len(bands_dict['frequencies'][0][0])}")
+    log.info("Phonon band structure calculated:")
+    log.info(f"  Number of paths: {len(bands_dict['frequencies'])}")
+    log.info(f"  Number of bands: {len(bands_dict['frequencies'][0][0])}")
 
     # Visualize if not in CI mode
     if not SMOKE_TEST:
         try:
             import pymatviz as pmv
 
-            print("\nGenerating phonon DOS plot...")
-            fig_dos = pmv.phonon_dos(ph.total_dos)
+            log.info("Generating phonon DOS plot...")
+            total_dos = require_not_none(
+                ph.total_dos, "Phonopy total_dos not available for plotting"
+            )
+            fig_dos = pmv.phonon_dos(total_dos)
             fig_dos.update_traces(line_width=3)
             fig_dos.update_layout(
                 xaxis_title="Frequency (THz)",
@@ -212,10 +229,13 @@ try:
             )
             fig_dos.show()
 
-            print("Generating phonon band structure plot...")
+            log.info("Generating phonon band structure plot...")
             ph.auto_band_structure(plot=False)
+            band_structure = require_not_none(
+                ph.band_structure, "Phonopy band_structure not available for plotting"
+            )
             fig_bands = pmv.phonon_bands(
-                ph.band_structure,
+                band_structure,
                 line_kwargs={"width": 3},
             )
             fig_bands.update_layout(
@@ -228,28 +248,28 @@ try:
             fig_bands.show()
 
         except ImportError:
-            print("pymatviz not available, skipping visualization")
+            log.info("pymatviz not available, skipping visualization")
     else:
-        print("Skipping visualization in CI mode")
+        log.info("Skipping visualization in CI mode")
 
 except ImportError as e:
-    print(f"Skipping band structure calculation: {e}")
-    print("Install seekpath for band structure calculations")
+    log.info(f"Skipping band structure calculation: {e}")
+    log.info("Install seekpath for band structure calculations")
 
 
 # ============================================================================
 # SECTION 4: Summary
 # ============================================================================
-print("\n" + "=" * 70)
-print("Summary")
-print("=" * 70)
-print("Structure: Silicon (diamond)")
-print("Supercell: 2x2x2")
-print(f"Number of displaced structures: {len(supercells)}")
-print("Batched force calculation: Yes")
-print("Phonon DOS calculated: Yes")
-print(f"Frequency range: {freq_points.min():.3f} to {freq_points.max():.3f} THz")
+log.info("=" * 70)
+log.info("Summary")
+log.info("=" * 70)
+log.info("Structure: Silicon (diamond)")
+log.info("Supercell: 2x2x2")
+log.info(f"Number of displaced structures: {len(supercells)}")
+log.info("Batched force calculation: Yes")
+log.info("Phonon DOS calculated: Yes")
+log.info(f"Frequency range: {freq_points.min():.3f} to {freq_points.max():.3f} THz")
 
-print("\n" + "=" * 70)
-print("Phonon calculation examples completed!")
-print("=" * 70)
+log.info("=" * 70)
+log.info("Phonon calculation examples completed!")
+log.info("=" * 70)

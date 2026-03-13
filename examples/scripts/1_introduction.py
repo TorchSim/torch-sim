@@ -16,9 +16,14 @@ import torch
 from ase.build import bulk
 from mace.calculators.foundations_models import mace_mp
 
+import torch_sim as ts
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.telemetry import configure_logging, get_logger
 
+
+configure_logging(log_file="1_introduction.log")
+log = get_logger(name="1_introduction")
 
 # Set up the device and data type
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -28,9 +33,9 @@ dtype = torch.float32
 # ============================================================================
 # SECTION 1: Lennard-Jones Model - Simple Classical Potential
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 1: Lennard-Jones Model")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 1: Lennard-Jones Model")
+log.info("=" * 70)
 
 # Create face-centered cubic (FCC) Argon
 # 5.26 Å is a typical lattice constant for Ar
@@ -76,7 +81,6 @@ atomic_numbers = torch.full((positions.shape[0],), 18, device=device, dtype=torc
 #  - epsilon: depth of potential well (0.0104 eV for Ar)
 #  - cutoff: distance beyond which interactions are ignored (typically 2.5*sigma)
 lj_model = LennardJonesModel(
-    use_neighbor_list=True,
     cutoff=2.5 * 3.405,
     sigma=3.405,
     epsilon=0.0104,
@@ -88,28 +92,35 @@ lj_model = LennardJonesModel(
     per_atom_stresses=True,
 )
 
-# State dict
-state = dict(
-    positions=positions, cell=cell.unsqueeze(0), atomic_numbers=atomic_numbers, pbc=True
+# Masses for Argon (39.948 amu)
+masses = torch.full((positions.shape[0],), 39.948, device=device, dtype=dtype)
+
+# SimState
+state = ts.SimState(
+    positions=positions,
+    masses=masses,
+    cell=cell.unsqueeze(0),
+    atomic_numbers=atomic_numbers,
+    pbc=True,
 )
 
 # Run the simulation and get results
 results = lj_model(state)
 
 # Print the results
-print(f"Energy: {results['energy']}")
-print(f"Forces shape: {results['forces'].shape}")
-print(f"Stress shape: {results['stress'].shape}")
-print(f"Per-atom energies shape: {results['energies'].shape}")
-print(f"Per-atom stresses shape: {results['stresses'].shape}")
+log.info(f"Energy: {results['energy']}")
+log.info(f"Forces shape: {results['forces'].shape}")
+log.info(f"Stress shape: {results['stress'].shape}")
+log.info(f"Per-atom energies shape: {results['energies'].shape}")
+log.info(f"Per-atom stresses shape: {results['stresses'].shape}")
 
 
 # ============================================================================
 # SECTION 2: MACE Model - Machine Learning Potential (Batched)
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 2: MACE Model with Batched Input")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 2: MACE Model with Batched Input")
+log.info("=" * 70)
 
 # Load the raw model from the downloaded model
 loaded_model = mace_mp(
@@ -158,15 +169,19 @@ system_idx = torch.repeat_interleave(
 )
 
 # You can see their shapes are as expected
-print(f"Positions: {positions.shape}")
-print(f"Cell: {cell.shape}")
-print(f"Atomic numbers: {atomic_numbers.shape}")
-print(f"System indices: {system_idx.shape}")
+log.info(f"Positions: {positions.shape}")
+log.info(f"Cell: {cell.shape}")
+log.info(f"Atomic numbers: {atomic_numbers.shape}")
+log.info(f"System indices: {system_idx.shape}")
+
+# Masses for Silicon (28.085 amu)
+masses_si = torch.full((positions.shape[0],), 28.085, device=device, dtype=dtype)
 
 # Now we can pass them to the model
 results = batched_model(
-    dict(
+    ts.SimState(
         positions=positions,
+        masses=masses_si,
         cell=cell,
         atomic_numbers=atomic_numbers,
         system_idx=system_idx,
@@ -175,13 +190,13 @@ results = batched_model(
 )
 
 # The energy has shape (n_systems,) as the structures in a batch
-print(f"Energy shape: {results['energy'].shape}")
+log.info(f"Energy shape: {results['energy'].shape}")
 
 # The forces have shape (n_atoms, 3) same as positions
-print(f"Forces shape: {results['forces'].shape}")
+log.info(f"Forces shape: {results['forces'].shape}")
 
 # The stress has shape (n_systems, 3, 3) same as cell
-print(f"Stress shape: {results['stress'].shape}")
+log.info(f"Stress shape: {results['stress'].shape}")
 
 # Check if the energy, forces, and stress are the same for the Si system across batches
 # Each system has 64 atoms (2x2x2 supercell of 8-atom Si diamond)
@@ -194,10 +209,10 @@ forces_diff = torch.max(
 )
 stress_diff = torch.max(torch.abs(results["stress"][0] - results["stress"][1]))
 
-print(f"\nMax energy difference: {energy_diff}")
-print(f"Max forces difference: {forces_diff}")
-print(f"Max stress difference: {stress_diff}")
+log.info(f"Max energy difference: {energy_diff}")
+log.info(f"Max forces difference: {forces_diff}")
+log.info(f"Max stress difference: {stress_diff}")
 
-print("\n" + "=" * 70)
-print("Introduction examples completed!")
-print("=" * 70)
+log.info("=" * 70)
+log.info("Introduction examples completed!")
+log.info("=" * 70)

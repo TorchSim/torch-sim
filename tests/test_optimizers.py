@@ -1,7 +1,6 @@
 import copy
 import warnings
 from collections.abc import Callable
-from dataclasses import fields
 from functools import partial
 from typing import Any, get_args
 
@@ -573,13 +572,9 @@ def test_simple_optimizer_init_with_dict(
     ar_supercell_sim_state: SimState,
     lj_model: ModelInterface,
 ) -> None:
-    """Test simple optimizer init_fn with a SimState dictionary."""
-    state_dict = {
-        field.name: getattr(ar_supercell_sim_state, field.name)
-        for field in fields(ar_supercell_sim_state)
-    }
+    """Test simple optimizer init_fn with a SimState."""
     init_fn, _ = ts.OPTIM_REGISTRY[optimizer_fn]
-    opt_state = init_fn(model=lj_model, state=state_dict)
+    opt_state = init_fn(model=lj_model, state=ar_supercell_sim_state)
     assert isinstance(opt_state, expected_state_type)
     assert opt_state.energy is not None
     assert opt_state.forces is not None
@@ -722,6 +717,74 @@ def test_fire_vv_negative_power_branch(
 
 
 @pytest.mark.parametrize("fire_flavor", get_args(FireFlavor))
+@pytest.mark.parametrize("cell_filter", [None, ts.CellFilter.unit, ts.CellFilter.frechet])
+def test_fire_nan_velocities_dont_affect_other_systems(
+    ar_supercell_sim_state: SimState,
+    lj_model: ModelInterface,
+    fire_flavor: "FireFlavor",
+    cell_filter: "ts.CellFilter | None",
+) -> None:
+    """Injecting NaN velocities into one system must not alter another's trajectory.
+
+    Regression: _ase_fire_step used ``if nan_velocities.any()`` to skip force
+    transformation AND FIRE mixing for ALL systems. When the InFlightAutoBatcher
+    swaps in a new state (NaN velocities from fire_init), retained systems got
+    skipped FIRE mixing and untransformed forces. This test clones a state,
+    injects NaN into one copy's system 1, and verifies system 0 is identical.
+    """
+    multi = ts.concatenate_states(
+        [ar_supercell_sim_state, copy.deepcopy(ar_supercell_sim_state)]
+    )
+
+    init_kwargs: dict[str, Any] = {"fire_flavor": fire_flavor}
+    if cell_filter is not None:
+        multi.cell = multi.cell * 0.85
+        multi.positions = multi.positions * 0.85
+        init_kwargs["cell_filter"] = cell_filter
+
+    state = ts.fire_init(state=multi, model=lj_model, **init_kwargs)
+
+    # Evolve 10 steps so system 0 has non-trivial FIRE state (dt, alpha, n_pos)
+    for _ in range(10):
+        state = ts.fire_step(state=state, model=lj_model)
+
+    # Clone, then inject NaN into system 1 of one copy
+    state_clean = copy.deepcopy(state)
+    state_mixed = copy.deepcopy(state)
+
+    sys1_atoms = state_mixed.system_idx == 1
+    state_mixed.velocities[sys1_atoms] = float("nan")
+    if cell_filter is not None:
+        state_mixed.cell_velocities[1] = float("nan")
+
+    # One step each
+    state_clean = ts.fire_step(state=state_clean, model=lj_model)
+    state_mixed = ts.fire_step(state=state_mixed, model=lj_model)
+
+    # System 0 must be identical regardless of system 1's NaN velocities
+    sys0 = state_clean.system_idx == 0
+    assert torch.equal(state_mixed.positions[sys0], state_clean.positions[sys0]), (
+        "System 0 positions differ when system 1 has NaN velocities"
+    )
+    assert torch.equal(state_mixed.velocities[sys0], state_clean.velocities[sys0]), (
+        "System 0 velocities differ when system 1 has NaN velocities"
+    )
+    assert state_mixed.dt[0] == state_clean.dt[0], (
+        "System 0 dt differs when system 1 has NaN velocities"
+    )
+    assert state_mixed.alpha[0] == state_clean.alpha[0], (
+        "System 0 alpha differs when system 1 has NaN velocities"
+    )
+    assert state_mixed.n_pos[0] == state_clean.n_pos[0], (
+        "System 0 n_pos differs when system 1 has NaN velocities"
+    )
+    if cell_filter is not None:
+        assert torch.equal(state_mixed.cell[0], state_clean.cell[0]), (
+            "System 0 cell differs when system 1 has NaN velocities"
+        )
+
+
+@pytest.mark.parametrize("fire_flavor", get_args(FireFlavor))
 def test_unit_cell_fire_optimization(
     ar_supercell_sim_state: SimState, lj_model: ModelInterface, fire_flavor: FireFlavor
 ) -> None:
@@ -823,15 +886,11 @@ def test_cell_optimizer_init_with_dict_and_cell_factor(
     ar_supercell_sim_state: SimState,
     lj_model: ModelInterface,
 ) -> None:
-    """Test cell optimizer init_fn with dict state and explicit cell_factor."""
-    state_dict = {
-        f.name: getattr(ar_supercell_sim_state, f.name)
-        for f in fields(ar_supercell_sim_state)
-    }
+    """Test cell optimizer init_fn with explicit cell_factor."""
     init_fn, _ = ts.OPTIM_REGISTRY[optimizer_fn]
     opt_state = init_fn(
         model=lj_model,
-        state=state_dict,
+        state=ar_supercell_sim_state,
         cell_factor=cell_factor_val,
         cell_filter=cell_filter,
     )
@@ -889,7 +948,9 @@ def test_cell_optimizer_init_cell_factor_none(
     # Ensure n_systems > 0 for cell_factor calculation from counts
     assert ar_supercell_sim_state.n_systems > 0
     assert isinstance(opt_state, expected_state_type)
-    _, counts = torch.unique(ar_supercell_sim_state.system_idx, return_counts=True)
+    system_idx = ar_supercell_sim_state.system_idx
+    assert system_idx is not None
+    _, counts = torch.unique(system_idx, return_counts=True)
     expected_cf_tensor = counts.to(dtype=lj_model.dtype).view(-1, 1, 1)
 
     # Check cell_factor is stored in cell_state for new API
@@ -1087,25 +1148,26 @@ def test_optimizer_batch_consistency(
     lj_model: ModelInterface,
 ) -> None:
     """Test batched optimizer is consistent with individual optimizations."""
-    generator = torch.Generator(device=ar_supercell_sim_state.device)
-
     # Create two distinct initial states by cloning and perturbing
     state1_orig = ar_supercell_sim_state.clone()
+    state1_orig.rng = 0
 
     # Apply identical perturbations to state1_orig
     # for state_item in [state1_orig, state2_orig]: # Old loop structure
-    generator.manual_seed(43)  # Reset seed for positions
     state1_orig.positions += (
         torch.randn(
-            state1_orig.positions.shape, device=state1_orig.device, generator=generator
+            state1_orig.positions.shape,
+            device=state1_orig.device,
+            generator=state1_orig.rng,
         )
         * 0.1
     )
     if filter_func:
-        generator.manual_seed(44)  # Reset seed for cell
         state1_orig.cell += (
             torch.randn(
-                state1_orig.cell.shape, device=state1_orig.device, generator=generator
+                state1_orig.cell.shape,
+                device=state1_orig.device,
+                generator=state1_orig.rng,
             )
             * 0.01
         )
@@ -1143,9 +1205,8 @@ def test_optimizer_batch_consistency(
             current_e_indiv = opt_state_indiv.energy
             steps_indiv += 1
             if steps_indiv > 1000:
-                raise ValueError(
-                    f"Individual opt for {filter_func.name} did not converge"
-                )
+                filter_name = filter_func.name if filter_func else "position-only"
+                raise ValueError(f"Individual opt for {filter_name} did not converge")
         final_individual_states.append(opt_state_indiv)
 
     # Batched optimization
@@ -1169,11 +1230,12 @@ def test_optimizer_batch_consistency(
     # Converge when all batch energies have converged
     while not torch.allclose(e_current_batch, e_prev_batch, atol=1e-6):
         e_prev_batch = e_current_batch.clone()
-        batch_opt_state = step_fn_batch(model=lj_model, state=batch_opt_state)
+        batch_opt_state = step_fn_batch(model=lj_model, state=batch_opt_state, dt_max=0.3)
         e_current_batch = batch_opt_state.energy.clone()
         steps_batch += 1
         if steps_batch > 1000:
-            raise ValueError(f"Batched opt for {filter_func.name} did not converge")
+            filter_name = filter_func.name if filter_func else "position-only"
+            raise ValueError(f"Batched opt for {filter_name} did not converge")
 
     individual_final_energies = [s.energy.item() for s in final_individual_states]
     for idx, indiv_energy in enumerate(individual_final_energies):

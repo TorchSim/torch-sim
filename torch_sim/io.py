@@ -18,6 +18,7 @@ import numpy as np
 import torch
 
 import torch_sim as ts
+from torch_sim._duecredit import dcite
 
 
 if TYPE_CHECKING:
@@ -26,6 +27,11 @@ if TYPE_CHECKING:
     from pymatgen.core import Structure
 
 
+@dcite(
+    "10.1088/1361-648X/aa680e",
+    description="ASE: Atomic Simulation Environment",
+    path="ase",
+)
 def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
     """Convert a SimState to a list of ASE Atoms objects.
 
@@ -53,12 +59,20 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
     positions = state.positions.detach().cpu().numpy()
     cell = state.cell.detach().cpu().numpy()  # Shape: (n_systems, 3, 3)
     atomic_numbers = state.atomic_numbers.detach().cpu().numpy()
-    system_indices = state.system_idx.detach().cpu().numpy()
-    pbc = state.pbc.detach().cpu().numpy()
+    system_indices = (
+        state.system_idx.detach().cpu().numpy()
+        if state.system_idx is not None
+        else np.zeros(state.positions.shape[0], dtype=np.int64)
+    )
+    pbc_np = (
+        state.pbc.detach().cpu().numpy()
+        if torch.is_tensor(state.pbc)
+        else np.array([state.pbc] * 3 if isinstance(state.pbc, bool) else state.pbc)
+    )
 
     # Extract charge and spin if available (per-system attributes)
-    charge = state.charge.detach().cpu().numpy()
-    spin = state.spin.detach().cpu().numpy()
+    charge = state.charge.detach().cpu().numpy() if state.charge is not None else None
+    spin = state.spin.detach().cpu().numpy() if state.spin is not None else None
 
     atoms_list = []
     for sys_idx in np.unique(system_indices):
@@ -70,8 +84,11 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
         # Convert atomic numbers to chemical symbols
         symbols = [chemical_symbols[z] for z in system_numbers]
 
+        pbc_for_sys = (
+            tuple(pbc_np[sys_idx].tolist()) if pbc_np.ndim > 1 else tuple(pbc_np.tolist())
+        )
         atoms = Atoms(
-            symbols=symbols, positions=system_positions, cell=system_cell, pbc=pbc
+            symbols=symbols, positions=system_positions, cell=system_cell, pbc=pbc_for_sys
         )
 
         # Preserve charge and spin in atoms.info (as integers for FairChem compatibility)
@@ -85,6 +102,11 @@ def state_to_atoms(state: "ts.SimState") -> list["Atoms"]:
     return atoms_list
 
 
+@dcite(
+    "10.1016/j.commatsci.2012.10.028",
+    description="pymatgen: Python Materials Genomics",
+    path="pymatgen",
+)
 def state_to_structures(state: "ts.SimState") -> list["Structure"]:
     """Convert a SimState to a list of Pymatgen Structure objects.
 
@@ -112,7 +134,11 @@ def state_to_structures(state: "ts.SimState") -> list["Structure"]:
     positions = state.positions.detach().cpu().numpy()
     cell = state.cell.detach().cpu().numpy()  # Shape: (n_systems, 3, 3)
     atomic_numbers = state.atomic_numbers.detach().cpu().numpy()
-    system_indices = state.system_idx.detach().cpu().numpy()
+    system_indices = (
+        state.system_idx.detach().cpu().numpy()
+        if state.system_idx is not None
+        else np.zeros(state.positions.shape[0], dtype=np.int64)
+    )
 
     # Get unique system indices and counts
     uniq_systems = np.unique(system_indices)
@@ -129,8 +155,15 @@ def state_to_structures(state: "ts.SimState") -> list["Structure"]:
         species = [Element.from_Z(z) for z in system_numbers]
 
         # Create structure for this system
+        if torch.is_tensor(state.pbc):
+            pbc_tup = tuple(state.pbc.tolist())
+        elif isinstance(state.pbc, bool):
+            pbc_tup = (state.pbc, state.pbc, state.pbc)
+        else:
+            pbc_tup = (bool(state.pbc[0]), bool(state.pbc[1]), bool(state.pbc[2]))
+        pbc_tup = (pbc_tup[0], pbc_tup[1], pbc_tup[2])  # ensure tuple[bool, bool, bool]
         struct = Structure(
-            lattice=Lattice(system_cell, pbc=(state.pbc.tolist())),
+            lattice=Lattice(system_cell, pbc=pbc_tup),
             species=species,
             coords=system_positions,
             coords_are_cartesian=True,
@@ -140,6 +173,16 @@ def state_to_structures(state: "ts.SimState") -> list["Structure"]:
     return structures
 
 
+@dcite(
+    "10.1088/1361-648X/aa680e",
+    description="ASE: Atomic Simulation Environment",
+    path="ase",
+)
+@dcite(
+    "10.1016/j.scriptamat.2015.07.021",
+    description="Phonopy: harmonic and quasi-harmonic phonon calculationss",
+    path="phonopy",
+)
 def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
     """Convert a SimState to a list of PhonopyAtoms objects.
 
@@ -166,7 +209,11 @@ def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
     positions = state.positions.detach().cpu().numpy()
     cell = state.cell.detach().cpu().numpy()  # Shape: (n_systems, 3, 3)
     atomic_numbers = state.atomic_numbers.detach().cpu().numpy()
-    system_indices = state.system_idx.detach().cpu().numpy()
+    system_indices = (
+        state.system_idx.detach().cpu().numpy()
+        if state.system_idx is not None
+        else np.zeros(state.positions.shape[0], dtype=np.int64)
+    )
 
     phonopy_atoms_list: list[PhonopyAtoms] = []
     for sys_idx in np.unique(system_indices):
@@ -188,6 +235,11 @@ def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
     return phonopy_atoms_list
 
 
+@dcite(
+    "10.1088/1361-648X/aa680e",
+    description="ASE: Atomic Simulation Environment",
+    path="ase",
+)
 def atoms_to_state(
     atoms: "Atoms | list[Atoms]",
     device: torch.device | None = None,
@@ -265,6 +317,11 @@ def atoms_to_state(
     )
 
 
+@dcite(
+    "10.1016/j.commatsci.2012.10.028",
+    description="pymatgen: Python Materials Genomics",
+    path="pymatgen",
+)
 def structures_to_state(
     structure: "Structure | list[Structure]",
     device: torch.device | None = None,
@@ -327,16 +384,25 @@ def structures_to_state(
     if not all(tuple(s.pbc) == tuple(struct_list[0].pbc) for s in struct_list[1:]):
         raise ValueError("All systems must have the same periodic boundary conditions")
 
+    pbc_struct = struct_list[0].pbc
+    pbc_state: torch.Tensor | list[bool] | bool = (
+        list(pbc_struct) if isinstance(pbc_struct, (list, tuple)) else pbc_struct
+    )
     return ts.SimState(
         positions=positions,
         masses=masses,
         cell=cell,
-        pbc=struct_list[0].pbc,
+        pbc=pbc_state,
         atomic_numbers=atomic_numbers,
         system_idx=system_idx,
     )
 
 
+@dcite(
+    "10.1016/j.scriptamat.2015.07.021",
+    description="Phonopy: harmonic and quasi-harmonic phonon calculationss",
+    path="phonopy",
+)
 def phonopy_to_state(
     phonopy_atoms: "PhonopyAtoms | list[PhonopyAtoms]",
     device: torch.device | None = None,
@@ -373,12 +439,15 @@ def phonopy_to_state(
     )
 
     # Stack all properties in one go
-    kwargs = {"dtype": dtype, "device": device}
     positions = torch.tensor(
-        np.concatenate([at.positions for at in phonopy_atoms_list]), **kwargs
+        np.concatenate([at.positions for at in phonopy_atoms_list]),
+        dtype=dtype,
+        device=device,
     )
     masses = torch.tensor(
-        np.concatenate([at.masses for at in phonopy_atoms_list]), **kwargs
+        np.concatenate([at.masses for at in phonopy_atoms_list]),
+        dtype=dtype,
+        device=device,
     )
     atomic_numbers = torch.tensor(
         np.concatenate([a.numbers for a in phonopy_atoms_list]),
@@ -386,11 +455,16 @@ def phonopy_to_state(
         device=device,
     )
     cell = torch.tensor(
-        np.stack([at.cell.T for at in phonopy_atoms_list]), dtype=dtype, device=device
+        np.stack([at.cell.T for at in phonopy_atoms_list]),
+        dtype=dtype,
+        device=device,
     )
 
     # Create system indices using repeat_interleave
-    atoms_per_system = torch.tensor([len(at) for at in phonopy_atoms_list], device=device)
+    atoms_per_system = torch.tensor(
+        [len(at) for at in phonopy_atoms_list],
+        device=device,
+    )
     system_idx = torch.repeat_interleave(
         torch.arange(len(phonopy_atoms_list), device=device), atoms_per_system
     )

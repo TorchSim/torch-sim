@@ -14,11 +14,6 @@ if TYPE_CHECKING:
     from torch_sim.state import SimState
 
 
-MemoryScaling = Literal["n_atoms_x_density", "n_atoms"]
-StateKey = Literal["positions", "masses", "cell", "pbc", "atomic_numbers", "system_idx"]
-StateDict = dict[StateKey, torch.Tensor]
-
-
 class BravaisType(StrEnum):
     """Enumeration of the seven Bravais lattice types in 3D crystals.
 
@@ -48,3 +43,8 @@ StateLike = Union[
     list["PhonopyAtoms"],
     "SimState",
 ]
+
+# Type alias accepted by coerce_prng
+PRNGLike = int | torch.Generator | None
+
+MemoryScaling = Literal["n_atoms_x_density", "n_atoms"]

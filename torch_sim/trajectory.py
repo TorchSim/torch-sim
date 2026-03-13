@@ -29,6 +29,7 @@ Notes:
 
 import copy
 import inspect
+import logging
 import pathlib
 import warnings
 from collections.abc import Callable, Mapping, Sequence
@@ -42,6 +43,8 @@ import torch
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
 
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ase import Atoms
@@ -183,6 +186,7 @@ class TrajectoryReporter:
             ValueError: If filenames are not unique
         """
         self.finish()
+        self.trajectories = []  # drop refs so HDF5 finalizes before new opens
 
         filenames = (
             [filenames] if isinstance(filenames, (str, pathlib.Path)) else list(filenames)
@@ -354,6 +358,8 @@ class TrajectoryReporter:
         Returns:
             list[dict[str, torch.Tensor]]: Property dictionaries, one per system.
         """
+        if state.system_idx is None:
+            raise ValueError("_extract_props_batched requires state with system_idx")
         n_sys = state.n_systems
         n_atoms = getattr(
             state,
@@ -519,12 +525,6 @@ class TorchSimTrajectory:
         else:
             compression = None
 
-        # TODO FIX THIS
-        if hasattr(tables, "file") and (
-            handles := tables.file._open_files.get_handlers_by_name(str(filename))
-        ):
-            list(handles)[-1].close()
-
         # create parent directory if it doesn't exist
         filename.parent.mkdir(parents=True, exist_ok=True)
         self._file = tables.open_file(str(filename), mode=mode, filters=compression)
@@ -545,11 +545,12 @@ class TorchSimTrajectory:
                 self.get_steps(name)[-1] > self.last_step for name in self.array_registry
             )
             if inconsistent_step:
-                warnings.warn(
+                msg = (
                     "Inconsistent last steps detected in trajectory arrays. "
-                    "Truncating all arrays to the `positions` array's last step.",
-                    stacklevel=2,
+                    "Truncating all arrays to the `positions` array's last step."
                 )
+                warnings.warn(msg, UserWarning, stacklevel=2)
+                logger.warning(msg)
                 self.truncate_to_step(self.last_step)
 
     def _initialize_header(self, metadata: dict[str, str] | None = None) -> None:
@@ -580,6 +581,8 @@ class TorchSimTrajectory:
         for validation of subsequent write operations.
         """
         for node in self._file.list_nodes("/data/"):
+            if not isinstance(node, tables.Array):
+                continue
             name = node.name
             dtype = node.dtype
             shape = tuple(int(ix) for ix in node.shape)[1:]
@@ -650,7 +653,7 @@ class TorchSimTrajectory:
 
             if pad_first_dim:
                 # pad 1st dim of array with 1
-                array = array[np.newaxis, ...]
+                array = np.expand_dims(array, axis=0)
 
             if name not in self.array_registry:
                 self._initialize_array(name, array)
@@ -779,8 +782,17 @@ class TorchSimTrajectory:
                 f"{data.shape[0]} for array {name}"
             )
 
-        self._file.get_node(where="/data/", name=name).append(data)
-        self._file.get_node(where="/steps/", name=name).append(steps)
+        data_node = self._file.get_node(where="/data/", name=name)
+        steps_node = self._file.get_node(where="/steps/", name=name)
+        if not isinstance(data_node, tables.EArray) or not isinstance(
+            steps_node, tables.EArray
+        ):
+            raise TypeError(
+                f"Expected EArray nodes for '{name}', got "
+                f"data={type(data_node).__name__}, steps={type(steps_node).__name__}"
+            )
+        data_node.append(data)
+        steps_node.append(steps)
 
     def get_array(
         self,
@@ -808,9 +820,10 @@ class TorchSimTrajectory:
         if name not in self.array_registry:
             raise ValueError(f"Array {name} not found in registry")
 
-        return self._file.root.data.__getitem__(name).read(
-            start=start, stop=stop, step=step
-        )
+        node = self._file.root.data.__getitem__(name)
+        if isinstance(node, tables.Array):
+            return node.read(start=start, stop=stop, step=step)
+        raise ValueError(f"Array node {name} has no read method")
 
     def get_steps(
         self,
@@ -829,7 +842,10 @@ class TorchSimTrajectory:
         Returns:
             np.ndarray: Array of step numbers with shape [n_selected_frames]
         """
-        return self._file.get_node("/steps/", name=name).read()
+        steps_node = self._file.get_node("/steps/", name=name)
+        if isinstance(steps_node, tables.Array):
+            return steps_node.read()
+        raise ValueError(f"Steps node {name} has no read method")
 
     @property
     def last_step(self) -> int | None:
@@ -854,6 +870,8 @@ class TorchSimTrajectory:
         # summarize arrays and steps in the file
         summary = ["Arrays in file:"]
         for node in self._file.list_nodes("/data/"):
+            if not isinstance(node, tables.Array):
+                continue
             shape_ints = tuple(int(ix) for ix in node.shape)
             steps = shape_ints[0]
             shape = shape_ints[1:]
@@ -957,7 +975,13 @@ class TorchSimTrajectory:
             self.write_arrays({"atomic_numbers": state[0].atomic_numbers}, 0)
 
         if "pbc" not in self.array_registry:
-            self.write_global_array("pbc", state[0].pbc)
+            pbc_val = state[0].pbc
+            pbc_arr = (
+                pbc_val
+                if torch.is_tensor(pbc_val)
+                else torch.tensor([pbc_val] * 3 if isinstance(pbc_val, bool) else pbc_val)
+            )
+            self.write_global_array("pbc", pbc_arr)
 
         # Write all arrays to file
         self.write_arrays(data, steps)
@@ -1219,6 +1243,8 @@ class TorchSimTrajectory:
             raise ValueError(f"Step must be larger than 0. Got {step=}")
         for name in self.array_registry:
             steps_node = self._file.get_node("/steps/", name=name)
+            if not isinstance(steps_node, tables.EArray):
+                continue
             steps_data = steps_node.read()
             if set(steps_data) == {0}:
                 continue  # skip global arrays
@@ -1228,7 +1254,8 @@ class TorchSimTrajectory:
             length = indices[-1] + 1  # +1 because we want to include this index
 
             data_node = self._file.get_node("/data/", name=name)
-            data_node.truncate(length)
-            steps_node.truncate(length)
+            if isinstance(data_node, tables.EArray):
+                data_node.truncate(length)
+                steps_node.truncate(length)
 
         self.flush()

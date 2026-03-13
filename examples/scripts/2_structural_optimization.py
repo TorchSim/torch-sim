@@ -22,8 +22,12 @@ from mace.calculators.foundations_models import mace_mp
 import torch_sim as ts
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.telemetry import configure_logging, get_logger
 from torch_sim.units import UnitConversion
 
+
+configure_logging(log_file="2_structural_optimization.log")
+log = get_logger(name="2_structural_optimization")
 
 # Set up the device and data type
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -37,9 +41,9 @@ N_steps = 10 if SMOKE_TEST else 500
 # ============================================================================
 # SECTION 1: Lennard-Jones FIRE Optimization
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 1: Lennard-Jones FIRE Optimization")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 1: Lennard-Jones FIRE Optimization")
+log.info("=" * 70)
 
 # Set up the random number generator
 generator = torch.Generator(device=device)
@@ -84,7 +88,6 @@ masses = torch.full((positions.shape[0],), 39.948, device=device, dtype=dtype)
 
 # Initialize the Lennard-Jones model
 lj_model = LennardJonesModel(
-    use_neighbor_list=False,
     sigma=3.405,
     epsilon=0.0104,
     cutoff=2.5 * 3.405,
@@ -112,21 +115,21 @@ state = ts.fire_init(state=state, model=lj_model, dt_start=0.005)
 # Run optimization
 for step in range(N_steps):
     if step % 100 == 0:
-        print(f"Step {step}: Potential energy: {state.energy[0].item()} eV")
+        log.info(f"Step {step}: Potential energy: {state.energy[0].item()} eV")
     state = ts.fire_step(state=state, model=lj_model, dt_max=0.01)
 
-print(f"Initial energy: {results['energy'][0].item()} eV")
-print(f"Final energy: {state.energy[0].item()} eV")
-print(f"Initial max force: {torch.max(torch.abs(results['forces'][0])).item()} eV/Å")
-print(f"Final max force: {torch.max(torch.abs(state.forces[0])).item()} eV/Å")
+log.info(f"Initial energy: {results['energy'][0].item()} eV")
+log.info(f"Final energy: {state.energy[0].item()} eV")
+log.info(f"Initial max force: {torch.max(torch.abs(results['forces'][0])).item()} eV/Å")
+log.info(f"Final max force: {torch.max(torch.abs(state.forces[0])).item()} eV/Å")
 
 
 # ============================================================================
 # SECTION 2: Batched MACE FIRE Optimization (Atomic Positions Only)
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 2: Batched MACE FIRE - Positions Only")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 2: Batched MACE FIRE - Positions Only")
+log.info("=" * 70)
 
 # Load MACE model
 loaded_model = mace_mp(
@@ -151,9 +154,9 @@ fe_dc.positions += 0.2 * rng.standard_normal(fe_dc.positions.shape)
 
 atoms_list = [si_dc, cu_dc, fe_dc]
 
-print(f"Silicon atoms: {len(si_dc)}")
-print(f"Copper atoms: {len(cu_dc)}")
-print(f"Iron atoms: {len(fe_dc)}")
+log.info(f"Silicon atoms: {len(si_dc)}")
+log.info(f"Copper atoms: {len(cu_dc)}")
+log.info(f"Iron atoms: {len(fe_dc)}")
 
 # Create batched model
 model = MaceModel(
@@ -172,23 +175,23 @@ results = model(state)
 # Initialize FIRE optimizer
 state = ts.fire_init(state=state, model=model, dt_start=0.005)
 
-print("\nRunning FIRE:")
+log.info("Running FIRE:")
 for step in range(N_steps):
     if step % 20 == 0:
-        print(f"Step {step}, Energy: {[energy.item() for energy in state.energy]}")
+        log.info(f"Step {step}, Energy: {[energy.item() for energy in state.energy]}")
 
     state = ts.fire_step(state=state, model=model, dt_max=0.01)
 
-print(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
-print(f"Final energies: {[energy.item() for energy in state.energy]} eV")
+log.info(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
+log.info(f"Final energies: {[energy.item() for energy in state.energy]} eV")
 
 
 # ============================================================================
 # SECTION 3: Batched MACE Gradient Descent Optimization
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 3: Batched MACE Gradient Descent")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 3: Batched MACE Gradient Descent")
+log.info("=" * 70)
 
 # Reset structures with new perturbations
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
@@ -206,22 +209,22 @@ results = model(state)
 learning_rate = 0.01
 state = ts.gradient_descent_init(state=state, model=model)
 
-print("\nRunning batched gradient descent:")
+log.info("Running batched gradient descent:")
 for step in range(N_steps):
     if step % 10 == 0:
-        print(f"Step {step}, Energy: {[res.item() for res in state.energy]} eV")
+        log.info(f"Step {step}, Energy: {[res.item() for res in state.energy]} eV")
     state = ts.gradient_descent_step(state=state, model=model, pos_lr=learning_rate)
 
-print(f"Initial energies: {[res.item() for res in results['energy']]} eV")
-print(f"Final energies: {[res.item() for res in state.energy]} eV")
+log.info(f"Initial energies: {[res.item() for res in results['energy']]} eV")
+log.info(f"Final energies: {[res.item() for res in state.energy]} eV")
 
 
 # ============================================================================
 # SECTION 4: Unit Cell Filter with Gradient Descent
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 4: Unit Cell Filter with Gradient Descent")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 4: Unit Cell Filter with Gradient Descent")
+log.info("=" * 70)
 
 # Recreate structures with perturbations
 si_dc = bulk("Si", "diamond", a=5.21, cubic=True).repeat((2, 2, 2))
@@ -252,14 +255,14 @@ state = ts.gradient_descent_init(
     scalar_pressure=0.0,
 )
 
-print("\nRunning batched unit cell gradient descent:")
+log.info("Running batched unit cell gradient descent:")
 for step in range(N_steps):
     if step % 20 == 0:
         P1 = -torch.trace(state.stress[0]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P2 = -torch.trace(state.stress[1]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P3 = -torch.trace(state.stress[2]) * UnitConversion.eV_per_Ang3_to_GPa / 3
 
-        print(
+        log.info(
             f"Step {step}, Energy: {[energy.item() for energy in state.energy]}, "
             f"P1={P1:.4f} GPa, P2={P2:.4f} GPa, P3={P3:.4f} GPa"
         )
@@ -268,16 +271,16 @@ for step in range(N_steps):
         state=state, model=model, pos_lr=pos_lr, cell_lr=cell_lr
     )
 
-print(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
-print(f"Final energies: {[energy.item() for energy in state.energy]} eV")
+log.info(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
+log.info(f"Final energies: {[energy.item() for energy in state.energy]} eV")
 
 
 # ============================================================================
 # SECTION 5: Unit Cell Filter with FIRE
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 5: Unit Cell Filter with FIRE")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 5: Unit Cell Filter with FIRE")
+log.info("=" * 70)
 
 # Recreate structures with perturbations
 si_dc = bulk("Si", "diamond", a=5.21, cubic=True).repeat((2, 2, 2))
@@ -306,30 +309,30 @@ state = ts.fire_init(
     scalar_pressure=0.0,
 )
 
-print("\nRunning batched unit cell FIRE:")
+log.info("Running batched unit cell FIRE:")
 for step in range(N_steps):
     if step % 20 == 0:
         P1 = -torch.trace(state.stress[0]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P2 = -torch.trace(state.stress[1]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P3 = -torch.trace(state.stress[2]) * UnitConversion.eV_per_Ang3_to_GPa / 3
 
-        print(
+        log.info(
             f"Step {step}, Energy: {[energy.item() for energy in state.energy]}, "
             f"P1={P1:.4f} GPa, P2={P2:.4f} GPa, P3={P3:.4f} GPa"
         )
 
     state = ts.fire_step(state=state, model=model)
 
-print(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
-print(f"Final energies: {[energy.item() for energy in state.energy]} eV")
+log.info(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
+log.info(f"Final energies: {[energy.item() for energy in state.energy]} eV")
 
 
 # ============================================================================
 # SECTION 6: Frechet Cell Filter with FIRE
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 6: Frechet Cell Filter with FIRE")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 6: Frechet Cell Filter with FIRE")
+log.info("=" * 70)
 
 # Recreate structures with perturbations
 si_dc = bulk("Si", "diamond", a=5.21, cubic=True).repeat((2, 2, 2))
@@ -358,22 +361,22 @@ state = ts.fire_init(
     scalar_pressure=0.0,
 )
 
-print("\nRunning batched frechet cell filter with FIRE:")
+log.info("Running batched frechet cell filter with FIRE:")
 for step in range(N_steps):
     if step % 20 == 0:
         P1 = -torch.trace(state.stress[0]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P2 = -torch.trace(state.stress[1]) * UnitConversion.eV_per_Ang3_to_GPa / 3
         P3 = -torch.trace(state.stress[2]) * UnitConversion.eV_per_Ang3_to_GPa / 3
 
-        print(
+        log.info(
             f"Step {step}, Energy: {[energy.item() for energy in state.energy]}, "
             f"P1={P1:.4f} GPa, P2={P2:.4f} GPa, P3={P3:.4f} GPa"
         )
 
     state = ts.fire_step(state=state, model=model)
 
-print(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
-print(f"Final energies: {[energy.item() for energy in state.energy]} eV")
+log.info(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
+log.info(f"Final energies: {[energy.item() for energy in state.energy]} eV")
 
 initial_pressure = [
     -torch.trace(stress).item() * UnitConversion.eV_per_Ang3_to_GPa / 3
@@ -383,15 +386,15 @@ final_pressure = [
     -torch.trace(stress).item() * UnitConversion.eV_per_Ang3_to_GPa / 3
     for stress in state.stress
 ]
-print(f"Initial pressure: {initial_pressure} GPa")
-print(f"Final pressure: {final_pressure} GPa")
+log.info(f"Initial pressure: {initial_pressure} GPa")
+log.info(f"Final pressure: {final_pressure} GPa")
 
 # ============================================================================
 # SECTION 7: Batched MACE L-BFGS
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 7: Batched MACE L-BFGS")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 7: Batched MACE L-BFGS")
+log.info("=" * 70)
 
 # Recreate structures with perturbations
 si_dc = bulk("Si", "diamond", a=5.21).repeat((2, 2, 2))
@@ -409,22 +412,22 @@ state = ts.io.atoms_to_state(atoms_list, device=device, dtype=dtype)
 results = model(state)
 state = ts.lbfgs_init(state=state, model=model, alpha=70.0, step_size=1.0)
 
-print("\nRunning L-BFGS:")
+log.info("Running L-BFGS:")
 for step in range(N_steps):
     if step % 20 == 0:
-        print(f"Step {step}, Energy: {[energy.item() for energy in state.energy]}")
+        log.info(f"Step {step}, Energy: {[energy.item() for energy in state.energy]}")
     state = ts.lbfgs_step(state=state, model=model, max_history=100)
 
-print(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
-print(f"Final energies: {[energy.item() for energy in state.energy]} eV")
+log.info(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
+log.info(f"Final energies: {[energy.item() for energy in state.energy]} eV")
 
 
 # ============================================================================
 # SECTION 8: Batched MACE BFGS
 # ============================================================================
-print("\n" + "=" * 70)
-print("SECTION 8: Batched MACE BFGS")
-print("=" * 70)
+log.info("=" * 70)
+log.info("SECTION 8: Batched MACE BFGS")
+log.info("=" * 70)
 
 # Recreate structures with perturbations
 si_dc = bulk("Si", "diamond", a=5.21).repeat((2, 2, 2))
@@ -442,16 +445,16 @@ state = ts.io.atoms_to_state(atoms_list, device=device, dtype=dtype)
 results = model(state)
 state = ts.bfgs_init(state=state, model=model, alpha=70.0)
 
-print("\nRunning BFGS:")
+log.info("Running BFGS:")
 for step in range(N_steps):
     if step % 20 == 0:
-        print(f"Step {step}, Energy: {[energy.item() for energy in state.energy]}")
+        log.info(f"Step {step}, Energy: {[energy.item() for energy in state.energy]}")
     state = ts.bfgs_step(state=state, model=model)
 
-print(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
-print(f"Final energies: {[energy.item() for energy in state.energy]} eV")
+log.info(f"Initial energies: {[energy.item() for energy in results['energy']]} eV")
+log.info(f"Final energies: {[energy.item() for energy in state.energy]} eV")
 
 
-print("\n" + "=" * 70)
-print("Structural optimization examples completed!")
-print("=" * 70)
+log.info("=" * 70)
+log.info("Structural optimization examples completed!")
+log.info("=" * 70)

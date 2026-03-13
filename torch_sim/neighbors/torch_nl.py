@@ -10,6 +10,10 @@ The API follows the batched convention used in MACE and other models:
 - mapping: [2, n_neighbors] - pairs of atom indices
 - system_mapping: [n_neighbors] - which system each neighbor pair belongs to
 - shifts_idx: [n_neighbors, 3] - periodic shift indices
+
+References:
+    - https://github.com/felixmusil/torch_nl
+    - https://github.com/venkatkapil24/batch_nl
 """
 
 import torch
@@ -168,6 +172,9 @@ def torch_nl_n2(
 
     References:
         - https://github.com/felixmusil/torch_nl
+        - https://github.com/venkatkapil24/batch_nl: inspired the use of `pad_sequence`
+          to vectorize a previous implementation that used a loop to iterate over systems
+          inside the `build_naive_neighborhood` function.
     """
     n_systems = system_idx.max().item() + 1
     cell, pbc = _normalize_inputs_jit(cell, pbc, n_systems)

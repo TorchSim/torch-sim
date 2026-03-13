@@ -23,7 +23,6 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.typing import StateDict
 
 
 try:
@@ -35,7 +34,7 @@ except ImportError as exc:
     warnings.warn(f"GraphPES import failed: {traceback.format_exc()}", stacklevel=2)
     PropertyKey = str
 
-    class GraphPESWrapper(ModelInterface):  # type: ignore[reportRedeclaration]
+    class GraphPESWrapper(ModelInterface):
         """GraphPESModel wrapper for torch-sim.
 
         This class is a placeholder for the GraphPESWrapper class.
@@ -46,11 +45,11 @@ except ImportError as exc:
             """Dummy init for type checking."""
             raise err
 
-    class AtomicGraph:  # type: ignore[reportRedeclaration]  # noqa: D101
+    class AtomicGraph:  # noqa: D101
         def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: D107,ARG002
             raise ImportError("graph_pes must be installed to use this model.")
 
-    class GraphPESModel(torch.nn.Module):  # type: ignore[reportRedeclaration]  # noqa: D101
+    class GraphPESModel(torch.nn.Module):  # noqa: D101
         pass
 
 
@@ -167,21 +166,24 @@ class GraphPESWrapper(ModelInterface):
         if self.compute_stress:
             self._properties.append("stress")
 
-        if self._gp_model.cutoff.item() < 0.5:
+        cutoff_val = self._gp_model.cutoff
+        if isinstance(cutoff_val, torch.Tensor) and cutoff_val.item() < 0.5:
             self._memory_scales_with = "n_atoms"
 
-    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState, **_kwargs: object) -> dict[str, torch.Tensor]:
         """Forward pass for the GraphPESWrapper.
 
         Args:
             state: SimState object containing atomic positions, cell, and atomic numbers
+            **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
             Dictionary containing the computed energies, forces, and stresses
             (where applicable)
         """
-        if not isinstance(state, ts.SimState):
-            state = ts.SimState(**state)  # type: ignore[arg-type]
-
-        atomic_graph = state_to_atomic_graph(state, self._gp_model.cutoff)
-        return self._gp_model.predict(atomic_graph, self._properties)  # type: ignore[return-value]
+        cutoff = self._gp_model.cutoff
+        if not isinstance(cutoff, torch.Tensor):
+            raise TypeError("GraphPES model cutoff must be a tensor")
+        atomic_graph = state_to_atomic_graph(state, cutoff)
+        preds = self._gp_model.predict(atomic_graph, self._properties)  # ty: ignore[call-non-callable]
+        return {k: v.detach() for k, v in preds.items()}
