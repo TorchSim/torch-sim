@@ -67,29 +67,33 @@ except ImportError:
     alchemiops_nl_n2 = None  # type: ignore[assignment]
     alchemiops_nl_cell_list = None  # type: ignore[assignment]
 
-# Try to import Vesin implementations
+# Try to import Vesin standard implementation
 try:
-    from torch_sim.neighbors.vesin import (
-        VESIN_AVAILABLE,
-        VesinNeighborList,
-        VesinNeighborListTorch,
-        vesin_nl,
-        vesin_nl_ts,
-    )
+    from torch_sim.neighbors.vesin import VESIN_AVAILABLE, vesin_nl
 except ImportError:
-    VESIN_AVAILABLE = False
-    VesinNeighborList = None
-    VesinNeighborListTorch = None
+    VESIN_AVAILABLE = False  # type: ignore[assignment]
     vesin_nl = None  # type: ignore[assignment]
+
+# Try to import Vesin TorchScript implementation
+try:
+    from torch_sim.neighbors.vesin import VESIN_TS_AVAILABLE, vesin_nl_ts
+except ImportError:
+    VESIN_TS_AVAILABLE = False
     vesin_nl_ts = None  # type: ignore[assignment]
 
 # Set default neighbor list based on what's available (priority order)
 if ALCHEMIOPS_AVAILABLE:
     # Alchemiops is fastest on NVIDIA GPUs
+    # TODO: why default to n2? we should document the cross-over point
     default_batched_nl = alchemiops_nl_n2
+elif VESIN_TS_AVAILABLE:
+    # Vesin TorchScript is good fallback
+    # Uses for-loop but comparable performance to native
+    default_batched_nl = vesin_nl_ts
 elif VESIN_AVAILABLE:
-    # Vesin is good fallback
-    default_batched_nl = vesin_nl_ts  # Still use native for batched
+    # Vesin standard is good fallback
+    # Also uses for-loop but cannot be used in TorchScript
+    default_batched_nl = vesin_nl
 else:
     # Pure PyTorch fallback
     default_batched_nl = torch_nl_linked_cell
@@ -134,12 +138,4 @@ def torchsim_nl(
         - Accepts both single-system [3, 3] or batched [n_systems, 3, 3] cell formats
         - Accepts both single [3] or batched [n_systems, 3] PBC formats
     """
-    if ALCHEMIOPS_AVAILABLE:
-        return alchemiops_nl_n2(
-            positions, cell, pbc, cutoff, system_idx, self_interaction
-        )
-    if VESIN_AVAILABLE:
-        return vesin_nl_ts(positions, cell, pbc, cutoff, system_idx, self_interaction)
-    return torch_nl_linked_cell(
-        positions, cell, pbc, cutoff, system_idx, self_interaction
-    )
+    return default_batched_nl(positions, cell, pbc, cutoff, system_idx, self_interaction)
