@@ -6,6 +6,7 @@ Filters encapsulate the logic for computing cell forces and updating cell parame
 during optimization.
 """
 
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -19,8 +20,44 @@ from torch_sim.optimizers.state import BFGSState, FireState, LBFGSState, OptimSt
 from torch_sim.state import SimState
 
 
-# Maximum |log(F)| for Frechet deformation gradient to prevent matrix_exp overflow
 MAX_LOG_DEFORM = 2.0
+
+
+def _clamp_deform_grad_log(
+    deform_grad_log: torch.Tensor,
+    cell_positions: torch.Tensor,
+    cell_factor_reshaped: torch.Tensor,
+    *,
+    max_log_deform: float = MAX_LOG_DEFORM,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Clamp log-space deformation gradient to prevent matrix_exp overflow.
+
+    When cell_positions grow unbounded (from diverging structures or extreme
+    steps), matrix_exp overflows to Inf/NaN. This clamps the log-space values
+    and writes back the clamped cell_positions so they don't re-accumulate.
+
+    Args:
+        deform_grad_log: Log of the deformation gradient, shape (S, 3, 3).
+        cell_positions: Current cell positions in log space, shape (S, 3, 3).
+        cell_factor_reshaped: Cell factor broadcast to (S, 1, 1).
+        max_log_deform: Maximum absolute value for log-space entries.
+
+    Returns:
+        Tuple of (clamped deform_grad_log, clamped cell_positions).
+    """
+    exceeds = deform_grad_log.abs() > max_log_deform
+    if exceeds.any():
+        n_clamped = int(exceeds.any(dim=(-2, -1)).sum().item())
+        warnings.warn(
+            f"Clamping log-space deformation gradient for {n_clamped} "
+            f"system(s) to [-{max_log_deform}, {max_log_deform}] "
+            f"(max |log(F)| = {deform_grad_log.abs().max().item():.2f}). "
+            f"This prevents matrix_exp overflow from diverging cell optimization.",
+            stacklevel=3,
+        )
+        deform_grad_log = deform_grad_log.clamp(-max_log_deform, max_log_deform)
+        cell_positions = deform_grad_log * cell_factor_reshaped
+    return deform_grad_log, cell_positions
 
 
 def _setup_cell_factor(
@@ -298,6 +335,9 @@ def frechet_cell_step[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) 
     # Convert from log space to deformation gradient
     cell_factor_reshaped = state.cell_factor.view(state.n_systems, 1, 1)
     deform_grad_log_new = cell_positions_new / cell_factor_reshaped
+    deform_grad_log_new, cell_positions_new = _clamp_deform_grad_log(
+        deform_grad_log_new, cell_positions_new, cell_factor_reshaped
+    )
     deform_grad_new = torch.matrix_exp(deform_grad_log_new)
 
     # Update cell from new deformation gradient

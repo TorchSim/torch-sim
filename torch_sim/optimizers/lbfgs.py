@@ -11,15 +11,14 @@ The prev_forces and prev_positions are stored in the scaled/fractional space to 
 ASE's behavior exactly.
 """
 
-import warnings
 from typing import TYPE_CHECKING, Any
 
 import torch
 
 import torch_sim as ts
 from torch_sim.optimizers.cell_filters import (
-    MAX_LOG_DEFORM,
     CellLBFGSState,
+    _clamp_deform_grad_log,
     compute_cell_forces,
     deform_grad,
     frechet_cell_filter_init,
@@ -497,33 +496,9 @@ def lbfgs_step(  # noqa: PLR0915, C901
             # Frechet: deform_grad = exp(cell_positions / cell_factor)
             cell_factor_reshaped = state.cell_factor.view(n_systems, 1, 1)
             deform_grad_log_new = cell_positions_new / cell_factor_reshaped  # [S, 3, 3]
-
-            # Clamp log-space deformation to prevent matrix_exp overflow.
-            # Without this, cumulative LBFGS steps can push cell_positions to
-            # extreme values, causing matrix_exp to overflow to Inf/NaN.
-            # The NaN then propagates to the cell and positions, crashing
-            # matrix_log_33 in the next compute_cell_forces call and killing
-            # the entire batched optimization.
-            # exp(2) ≈ 7.4x strain per axis — structures deforming beyond
-            # this from their reference cell are diverging.
-            exceeds = deform_grad_log_new.abs() > MAX_LOG_DEFORM
-            if exceeds.any():
-                n_clamped = int(exceeds.any(dim=(-2, -1)).sum().item())
-                warnings.warn(
-                    f"Clamping log-space deformation gradient for {n_clamped} "
-                    f"system(s) to [-{MAX_LOG_DEFORM}, {MAX_LOG_DEFORM}] "
-                    f"(max |log(F)| = "
-                    f"{deform_grad_log_new.abs().max().item():.2f}). "
-                    f"This prevents matrix_exp overflow from diverging cell "
-                    f"optimization.",
-                    stacklevel=2,
-                )
-                deform_grad_log_new = deform_grad_log_new.clamp(
-                    -MAX_LOG_DEFORM, MAX_LOG_DEFORM
-                )
-                # Write back clamped values to cell_positions
-                cell_positions_new = deform_grad_log_new * cell_factor_reshaped
-
+            deform_grad_log_new, cell_positions_new = _clamp_deform_grad_log(
+                deform_grad_log_new, cell_positions_new, cell_factor_reshaped
+            )
             deform_grad_new = torch.matrix_exp(deform_grad_log_new)  # [S, 3, 3]
         else:
             # UnitCell: deform_grad = cell_positions / cell_factor

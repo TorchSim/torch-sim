@@ -20,7 +20,11 @@ import torch
 
 import torch_sim as ts
 from torch_sim.optimizers import cell_filters
-from torch_sim.optimizers.cell_filters import CellBFGSState, frechet_cell_filter_init
+from torch_sim.optimizers.cell_filters import (
+    CellBFGSState,
+    _clamp_deform_grad_log,
+    frechet_cell_filter_init,
+)
 from torch_sim.state import SimState
 
 
@@ -507,6 +511,10 @@ def bfgs_step(  # noqa: C901, PLR0915
             # Frechet: deform_grad = exp(cell_positions / cell_factor)
             cell_factor_reshaped = state.cell_factor.view(state.n_systems, 1, 1)
             deform_grad_log_new = cell_positions_new / cell_factor_reshaped  # [S, 3, 3]
+            deform_grad_log_new, cell_positions_new = _clamp_deform_grad_log(
+                deform_grad_log_new, cell_positions_new, cell_factor_reshaped
+            )
+            state.cell_positions = cell_positions_new  # [S, 3, 3]
             deform_grad_new = torch.matrix_exp(deform_grad_log_new)  # [S, 3, 3]
         else:
             # UnitCell: deform_grad = cell_positions / cell_factor
