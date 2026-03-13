@@ -55,7 +55,7 @@ orb = ["orb-models>=0.6.0"]
 sevenn = ["sevenn[torchsim]>=0.12.1"]
 graphpes = ["graph-pes>=0.1", "mace-torch>=0.3.12"]
 nequip = ["nequip>=0.17.0"]
-fairchem = ["fairchem-core @ git+https://github.com/facebookresearch/fairchem.git@main"]
+fairchem = ["fairchem-core @ git+https://github.com/facebookresearch/fairchem.git@main#subdirectory=packages/fairchem-core"]
 docs = [
     "autodoc_pydantic==2.2.0",
     "furo==2024.8.6",
