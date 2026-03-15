@@ -4,7 +4,7 @@
 # /// script
 # dependencies = [
 #     "torch_sim_atomistic[mace, test]",
-#     "mace-torch @ git+https://github.com/ACEsuit/mace.git@develop",
+#     "mace-torch @ git+https://github.com/CompRhys/mace.git@main",
 # ]
 # ///
 

@@ -11,7 +11,7 @@ This script demonstrates the high-level API for:
 # /// script
 # dependencies = [
 #     "torch_sim_atomistic[mace, io]",
-#     "mace-torch @ git+https://github.com/ACEsuit/mace.git@develop",
+#     "mace-torch @ git+https://github.com/CompRhys/mace.git@main",
 # ]
 # ///
 

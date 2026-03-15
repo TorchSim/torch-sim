@@ -10,7 +10,7 @@ This script demonstrates structural optimization techniques with:
 # /// script
 # dependencies = [
 #     "torch_sim_atomistic[mace, io]",
-#     "mace-torch @ git+https://github.com/ACEsuit/mace.git@develop",
+#     "mace-torch @ git+https://github.com/CompRhys/mace.git@main",
 # ]
 # ///
 
