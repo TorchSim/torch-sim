@@ -764,6 +764,7 @@ class NPTNoseHooverState(MDState):
         positions (torch.Tensor): Particle positions with shape [n_particles, n_dims]
         momenta (torch.Tensor): Particle momenta with shape [n_particles, n_dims]
         forces (torch.Tensor): Forces on particles with shape [n_particles, n_dims]
+        stress (torch.Tensor): Stress tensor with shape [n_systems, n_dims, n_dims]
         masses (torch.Tensor): Particle masses with shape [n_particles]
         reference_cell (torch.Tensor): Reference simulation cell matrix with shape
             [n_systems, n_dimensions, n_dimensions]. Used to measure relative volume
@@ -796,6 +797,9 @@ class NPTNoseHooverState(MDState):
         - All cell-related properties now support batch dimensions
     """
 
+    # System state variables
+    stress: torch.Tensor
+
     # Cell variables - now with batch dimensions
     reference_cell: torch.Tensor  # [n_systems, 3, 3]
     cell_position: torch.Tensor  # [n_systems]
@@ -811,6 +815,7 @@ class NPTNoseHooverState(MDState):
     barostat_fns: NoseHooverChainFns
 
     _system_attributes = MDState._system_attributes | {  # noqa: SLF001
+        "stress",
         "reference_cell",
         "cell_position",
         "cell_momentum",
@@ -1245,6 +1250,7 @@ def _npt_nose_hoover_inner_step(
     cell = volume_to_cell(volume)
 
     # Update particle positions and forces
+    state.set_constrained_momenta(momenta)
     positions = _npt_nose_hoover_exp_iL1(state, state.velocities, cell_velocities, dt)
     state.set_constrained_positions(positions)
     state.cell = cell
@@ -1270,6 +1276,7 @@ def _npt_nose_hoover_inner_step(
     state.set_constrained_positions(positions)
     state.set_constrained_momenta(momenta)
     state.forces = model_output["forces"]
+    state.stress = model_output["stress"]
     state.energy = model_output["energy"]
     state.cell_position = cell_position
     state.cell_momentum = cell_momentum
@@ -1411,6 +1418,7 @@ def npt_nose_hoover_init(
     model_output = model(state)
     forces = model_output["forces"]
     energy = model_output["energy"]
+    stress = model_output["stress"]
 
     if state.constraints:
         # warn if constraints are present
@@ -1428,6 +1436,7 @@ def npt_nose_hoover_init(
         momenta=momenta,
         energy=energy,
         forces=forces,
+        stress=stress,
         atomic_numbers=atomic_numbers,
         reference_cell=reference_cell,
         cell_position=cell_position,
