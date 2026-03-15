@@ -1225,8 +1225,6 @@ def initialize_state(
 
     if isinstance(system, list | tuple) and all(isinstance(s, SimState) for s in system):
         system: list[SimState] = typing.cast("list[SimState]", system)
-        if len(system) == 0:
-            raise ValueError("Cannot initialize state from an empty list.")
         return ts.concatenate_states(system)
 
     converters = [
