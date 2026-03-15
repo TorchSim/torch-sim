@@ -27,7 +27,7 @@ from torch_sim.neighbors import torchsim_nl
 
 try:
     from graph_pes import AtomicGraph, GraphPESModel
-    from graph_pes.atomic_graph import PropertyKey, to_batch
+    from graph_pes.atomic_graph import PropertyKey
     from graph_pes.models import load_model
 
 except ImportError as exc:
@@ -63,40 +63,38 @@ def state_to_atomic_graph(state: ts.SimState, cutoff: torch.Tensor) -> AtomicGra
     Returns:
         AtomicGraph object representing the batched structures
     """
-    graphs = []
-
-    for sys_idx in range(state.n_systems):
-        system_mask = state.system_idx == sys_idx
-        R = state.positions[system_mask]
-        Z = state.atomic_numbers[system_mask]
-        cell = state.row_vector_cell[sys_idx]
-        # graph-pes models internally trim the neighbor list to the
-        # model's cutoff value. To ensure no strange edge effects whereby
-        # edges that are exactly `cutoff` long are included/excluded,
-        # we bump cutoff + 1e-5 up slightly
-
-        # Create system_idx for this single system (all atoms belong to system 0)
-        system_idx_single = torch.zeros(R.shape[0], dtype=torch.long, device=R.device)
-        nl, _system_mapping, shifts = torchsim_nl(
-            R, cell, state.pbc, cutoff + 1e-5, system_idx_single
-        )
-
-        atomic_graph = AtomicGraph(
-            Z=Z.long(),
-            R=R,
-            cell=cell,
-            neighbour_list=nl.long(),
-            neighbour_cell_offsets=shifts,
-            properties={},
-            cutoff=cutoff.item(),
-            other={
-                "total_charge": torch.tensor(0.0).to(state.device),
-                "total_spin": torch.tensor(0.0).to(state.device),
-            },
-        )
-        graphs.append(atomic_graph)
-
-    return to_batch(graphs)
+    # graph-pes models internally trim the neighbor list to the
+    # model's cutoff value. To ensure no strange edge effects whereby
+    # edges that are exactly `cutoff` long are included/excluded,
+    # we bump cutoff + 1e-5 up slightly
+    nl, _system_mapping, shifts = torchsim_nl(
+        state.positions,
+        state.row_vector_cell,
+        state.pbc,
+        cutoff + 1e-5,
+        state.system_idx,
+    )
+    n_atoms_per_system = torch.bincount(state.system_idx)
+    ptr = torch.zeros(state.n_systems + 1, dtype=torch.long, device=state.device)
+    ptr[1:] = n_atoms_per_system.cumsum(dim=0)
+    n_sys = state.n_systems
+    total_charge = torch.zeros(n_sys, device=state.device)
+    total_spin = torch.zeros(n_sys, device=state.device)
+    return AtomicGraph(
+        Z=state.atomic_numbers.long(),
+        R=state.positions,
+        cell=state.row_vector_cell,
+        neighbour_list=nl.long(),
+        neighbour_cell_offsets=shifts,
+        properties={},
+        cutoff=cutoff.item(),
+        other={
+            "total_charge": total_charge,
+            "total_spin": total_spin,
+        },
+        batch=state.system_idx,
+        ptr=ptr,
+    )
 
 
 class GraphPESWrapper(ModelInterface):
