@@ -8,6 +8,7 @@ import torch_sim as ts
 import torch_sim.math as tsm
 from torch_sim._duecredit import dcite
 from torch_sim.optimizers import CellFireState, cell_filters
+from torch_sim.optimizers.cell_filters import _clamp_deform_grad_log
 from torch_sim.state import SimState
 
 
@@ -428,6 +429,10 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
             if is_frechet:  # Frechet: convert from log space to deformation gradient
                 cell_factor_reshaped = state.cell_factor.view(state.n_systems, 1, 1)
                 deform_grad_log_new = cell_positions_new / cell_factor_reshaped
+                deform_grad_log_new, cell_positions_new = _clamp_deform_grad_log(
+                    deform_grad_log_new, cell_positions_new, cell_factor_reshaped
+                )
+                state.cell_positions = cell_positions_new
                 deform_grad_new = torch.matrix_exp(deform_grad_log_new)
             else:  # Unit cell: positions are scaled deformation gradient
                 cell_factor_expanded = state.cell_factor.expand(state.n_systems, 3, 1)
