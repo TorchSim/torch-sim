@@ -110,6 +110,10 @@ class HybridSwapMCState(SwapMCState, MDState):
         ts.SwapMCState._system_attributes | MDState._system_attributes  # noqa: SLF001
     )
 
+    def __post_init__(self) -> None:
+        """Initialize HybridSwapMCState and ensure last_permutation is set."""
+        super().__post_init__()
+
 
 # %% [markdown]
 """
@@ -130,16 +134,8 @@ kT = 1000 * MetalUnits.temperature
 state.rng = 42
 md_state = ts.nvt_langevin_init(state=state, model=mace_model, kT=kT)
 
-# Initialize swap Monte Carlo state
-swap_state = ts.swap_mc_init(state=md_state, model=mace_model)
-
-# Create hybrid state combining both
-hybrid_state = HybridSwapMCState(
-    **md_state.attributes,
-    last_permutation=torch.arange(
-        md_state.n_atoms, device=md_state.device, dtype=torch.long
-    ),
-)
+# Create hybrid state from MD state
+hybrid_state = HybridSwapMCState(**md_state.attributes)
 
 
 # %% [markdown]
