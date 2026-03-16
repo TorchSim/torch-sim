@@ -28,6 +28,9 @@ docs/reference/torch_sim.*
 *.hdf5
 *.traj
 
+# ignore torch.save outputs
+*.pt
+
 # coverage
 coverage.xml
 .coverage*

@@ -574,17 +574,15 @@ def npt_langevin_init(
     model_output = model(state)
 
     # Initialize momenta if not provided
-    momenta = getattr(
-        state,
-        "momenta",
-        initialize_momenta(
+    momenta = getattr(state, "momenta", None)
+    if momenta is None:
+        momenta = initialize_momenta(
             state.positions,
             state.masses,
             state.system_idx,
             kT,
             state.rng,
-        ),
-    )
+        )
 
     # Initialize cell parameters
     reference_cell = state.cell.clone()
@@ -1382,16 +1380,17 @@ def npt_nose_hoover_init(
     KE_cell = (cell_momentum.squeeze(-1) ** 2) / (2 * cell_mass)
 
     # Initialize momenta
-    momenta = kwargs.get(
-        "momenta",
-        initialize_momenta(
+    momenta = kwargs.get("momenta")
+    if momenta is None:
+        momenta = getattr(state, "momenta", None)
+    if momenta is None:
+        momenta = initialize_momenta(
             state.positions,
             state.masses,
             state.system_idx,
             kT_tensor,
             state.rng,
-        ),
-    )
+        )
 
     # Compute total DOF for thermostat initialization and a zero KE placeholder
     dof_per_system = torch.bincount(state.system_idx, minlength=n_systems) * dim
@@ -2362,17 +2361,15 @@ def npt_crescale_init(
     model_output = model(state)
 
     # Initialize momenta if not provided
-    momenta = getattr(
-        state,
-        "momenta",
-        initialize_momenta(
+    momenta = getattr(state, "momenta", None)
+    if momenta is None:
+        momenta = initialize_momenta(
             state.positions,
             state.masses,
             state.system_idx,
             kT,
             state.rng,
-        ),
-    )
+        )
 
     # Create the initial state
     return NPTCRescaleState.from_state(

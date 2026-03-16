@@ -117,17 +117,15 @@ def nvt_langevin_init(
     """
     model_output = model(state)
 
-    momenta = getattr(
-        state,
-        "momenta",
-        initialize_momenta(
+    momenta = getattr(state, "momenta", None)
+    if momenta is None:
+        momenta = initialize_momenta(
             state.positions,
             state.masses,
             state.system_idx,
             kT,
             state.rng,
-        ),
-    )
+        )
     return MDState.from_state(
         state,
         momenta=momenta,
@@ -303,12 +301,13 @@ def nvt_nose_hoover_init(
     atomic_numbers = kwargs.get("atomic_numbers", state.atomic_numbers)
 
     model_output = model(state)
-    momenta = kwargs.get(
-        "momenta",
-        initialize_momenta(
+    momenta = kwargs.get("momenta")
+    if momenta is None:
+        momenta = getattr(state, "momenta", None)
+    if momenta is None:
+        momenta = initialize_momenta(
             state.positions, state.masses, state.system_idx, kT_tensor, state.rng
-        ),
-    )
+        )
 
     # Calculate initial kinetic energy per system
     KE = ts.calc_kinetic_energy(
@@ -600,17 +599,15 @@ def nvt_vrescale_init(
     """
     model_output = model(state)
 
-    momenta = getattr(
-        state,
-        "momenta",
-        initialize_momenta(
+    momenta = getattr(state, "momenta", None)
+    if momenta is None:
+        momenta = initialize_momenta(
             state.positions,
             state.masses,
             state.system_idx,
             kT,
             state.rng,
-        ),
-    )
+        )
 
     return NVTVRescaleState.from_state(
         state,

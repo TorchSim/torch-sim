@@ -191,6 +191,26 @@ def test_monte_carlo_integration(
         assert torch.all(orig_counts == result_counts)
 
 
+def test_swap_mc_state_default_last_permutation(
+    batched_diverse_state: ts.SimState,
+) -> None:
+    """Test that SwapMCState initializes last_permutation to identity if not provided."""
+    from torch_sim.monte_carlo import SwapMCState
+
+    state = SwapMCState(
+        positions=batched_diverse_state.positions,
+        masses=batched_diverse_state.masses,
+        cell=batched_diverse_state.cell,
+        pbc=batched_diverse_state.pbc,
+        atomic_numbers=batched_diverse_state.atomic_numbers,
+        system_idx=batched_diverse_state.system_idx,
+        energy=torch.zeros(batched_diverse_state.n_systems),
+    )
+    assert state.last_permutation is not None
+    expected_identity = torch.arange(batched_diverse_state.n_atoms, device=DEVICE)
+    assert torch.equal(state.last_permutation, expected_identity)
+
+
 def test_swap_mc_state_attributes():
     """Test SwapMCState class structure and inheritance."""
     from torch_sim.state import SimState

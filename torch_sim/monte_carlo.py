@@ -16,12 +16,21 @@ Examples:
     ...     mc_state = ts.swap_mc_step(model, mc_state, kT=0.1 * units.energy)
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.state import SimState
+
+
+# Sentinel value for uninitialized last_permutation
+_UNINITIALIZED_PERMUTATION = torch.empty(0, dtype=torch.long)
+
+
+def _create_uninitialized_permutation() -> torch.Tensor:
+    """Create a sentinel tensor for uninitialized last_permutation."""
+    return _UNINITIALIZED_PERMUTATION.clone()
 
 
 @dataclass(kw_only=True)
@@ -35,14 +44,27 @@ class SwapMCState(SimState):
     Attributes:
         energy (torch.Tensor): Energy of the system with shape [batch_size]
         last_permutation (torch.Tensor): Last permutation applied to the system,
-            with shape [n_atoms], tracking the moves made for analysis or reversal
+            with shape [n_atoms], tracking the moves made for analysis or reversal.
+            If not provided, will be initialized to identity permutation
+            (torch.arange(n_atoms)) in __post_init__.
     """
 
     energy: torch.Tensor
-    last_permutation: torch.Tensor
+    last_permutation: torch.Tensor = field(
+        default_factory=_create_uninitialized_permutation
+    )
 
     _atom_attributes = SimState._atom_attributes | {"last_permutation"}  # noqa: SLF001
     _system_attributes = SimState._system_attributes | {"energy"}  # noqa: SLF001
+
+    def __post_init__(self) -> None:
+        """Initialize SwapMCState and set default last_permutation if needed."""
+        super().__post_init__()
+        # Check if last_permutation is the sentinel (empty tensor)
+        if self.last_permutation.numel() == 0:
+            self.last_permutation = torch.arange(
+                self.n_atoms, device=self.device, dtype=torch.long
+            )
 
 
 def generate_swaps(state: SimState, rng: torch.Generator | None = None) -> torch.Tensor:
@@ -209,7 +231,6 @@ def swap_mc_init(
         atomic_numbers=state.atomic_numbers,
         system_idx=state.system_idx,
         energy=model_output["energy"],
-        last_permutation=torch.arange(state.n_atoms, device=state.device),
         _constraints=state.constraints,
     )
 

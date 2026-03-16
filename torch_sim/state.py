@@ -1225,12 +1225,6 @@ def initialize_state(
 
     if isinstance(system, list | tuple) and all(isinstance(s, SimState) for s in system):
         system: list[SimState] = typing.cast("list[SimState]", system)
-        if not all(state.n_systems == 1 for state in system):
-            raise ValueError(
-                "When providing a list of states, to the initialize_state function, "
-                "all states must have n_systems == 1. To fix this, you can split the "
-                "states into individual states with the split_state function."
-            )
         return ts.concatenate_states(system)
 
     converters = [

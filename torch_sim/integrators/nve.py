@@ -47,17 +47,15 @@ def nve_init(
     """
     model_output = model(state)
 
-    momenta = getattr(
-        state,
-        "momenta",
-        initialize_momenta(
+    momenta = getattr(state, "momenta", None)
+    if momenta is None:
+        momenta = initialize_momenta(
             state.positions,
             state.masses,
             state.system_idx,
             kT,
             state.rng,
-        ),
-    )
+        )
 
     return MDState.from_state(
         state,
