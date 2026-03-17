@@ -1183,3 +1183,29 @@ def test_fix_symmetry_system_idx_remapped_on_reordered_slice(
     ci_for_output1 = si_to_ci[1]
     assert torch.equal(c.rotations[ci_for_output1], rot0)
     assert torch.equal(c.reference_cells[ci_for_output1], ref0)
+
+
+def test_fix_com_system_idx_remapped_on_reordered_slice(
+    mixed_double_sim_state: ts.SimState,
+) -> None:
+    """Slicing with reversed system order must remap FixCom's system_idx
+    so it still targets the correct output systems.
+    """
+    state = mixed_double_sim_state  # 2 systems
+
+    # Constrain only system 0
+    state.constraints = [FixCom(system_idx=torch.tensor([0]))]
+
+    # Reverse system order: old system 0 becomes output system 1
+    sliced = state[[1, 0]]
+    assert len(sliced.constraints) == 1
+    c = sliced.constraints[0]
+    assert isinstance(c, FixCom)
+    assert c.system_idx.tolist() == [1]
+
+    # Constrain both systems and verify both are remapped
+    state.constraints = [FixCom(system_idx=torch.tensor([0, 1]))]
+    sliced = state[[1, 0]]
+    c = sliced.constraints[0]
+    assert isinstance(c, FixCom)
+    assert sorted(c.system_idx.tolist()) == [0, 1]

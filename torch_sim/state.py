@@ -856,11 +856,13 @@ def _filter_attrs_by_index(
     atom_remap = torch.empty(state.n_atoms, dtype=torch.long, device=state.device)
     atom_remap[atom_indices] = torch.arange(len(atom_indices), device=state.device)
     if len(system_indices) == 0:
-        inv = torch.empty(0, device=state.device, dtype=torch.long)
+        system_remap = torch.empty(0, device=state.device, dtype=torch.long)
     else:
         max_idx = int(system_indices.max().item()) + 1
-        inv = torch.empty(max_idx, device=state.device, dtype=torch.long)
-        inv[system_indices] = torch.arange(len(system_indices), device=state.device)
+        system_remap = torch.empty(max_idx, device=state.device, dtype=torch.long)
+        system_remap[system_indices] = torch.arange(
+            len(system_indices), device=state.device
+        )
 
     # select_constraint uses boolean masks (which lose ordering), so we must
     # remap constraint atom_idx / system_idx afterward to match the actual
@@ -875,7 +877,7 @@ def _filter_attrs_by_index(
         if (c := con.select_constraint(atom_mask, system_mask))
     ]
     new_atom_idx = atom_remap[torch.where(atom_mask)[0]]
-    new_system_idx = inv[torch.where(system_mask)[0]]
+    new_system_idx = system_remap[torch.where(system_mask)[0]]
     for c in filtered_attrs["_constraints"]:
         if hasattr(c, "atom_idx") and isinstance(c.atom_idx, torch.Tensor):
             c.atom_idx = new_atom_idx[c.atom_idx]  # ty: ignore[invalid-assignment]
@@ -884,7 +886,7 @@ def _filter_attrs_by_index(
 
     for name, val in get_attrs_for_scope(state, "per-atom"):
         filtered_attrs[name] = (
-            inv[val[atom_indices]] if name == "system_idx" else val[atom_indices]
+            system_remap[val[atom_indices]] if name == "system_idx" else val[atom_indices]
         )
 
     for name, val in get_attrs_for_scope(state, "per-system"):
