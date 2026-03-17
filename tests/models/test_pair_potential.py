@@ -199,7 +199,9 @@ def test_autograd_force_fn_matches_potential_model(
     out_pp = model_pp(sim_state)
     out_pf = model_pf(sim_state)
 
-    assert (out_pp["forces"] != 0.0).any()
+    assert (out_pp["forces"] != 0.0).any(), (
+        "All force components are exactly zero - no gradient propagated"
+    )
 
     for key in ("forces", "stress", "stresses"):
         torch.testing.assert_close(out_pp[key], out_pf[key], rtol=1e-5, atol=1e-6)
