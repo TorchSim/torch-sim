@@ -13,6 +13,8 @@ from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.testing import SIMSTATE_GENERATORS
 
 
+torch.set_num_threads(4)
+
 DEVICE = torch.device("cpu")
 DTYPE = torch.float64
 

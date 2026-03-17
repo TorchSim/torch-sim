@@ -15,7 +15,7 @@ NVT:
     - Nosé-Hoover thermostat integrator :func:`nvt.nvt_nose_hoover_step` from [3]
 NPT:
     - Langevin barostat integrator :func:`npt.npt_langevin_step` [4, 5]
-    - Nosé-Hoover barostat integrator :func:`npt.npt_nose_hoover_step` from [3]
+    - Nosé-Hoover barostat integrator :func:`npt.npt_nose_hoover_step` from [10]
     - Isotropic C-Rescale barostat integrator :func:`npt.npt_crescale_isotropic_step`
     from [6, 8, 9]
     - C-Rescale barostat integrator :func:`npt.npt_crescale_anisotropic_step`
@@ -44,6 +44,9 @@ References:
     [8] Bussi Anisotropic C-Rescale SimpleMD implementation:
         https://github.com/bussilab/crescale/blob/master/simplemd_anisotropic/simplemd.cpp
     [9] Supplementary Information for [6].
+    [10]Tuckerman, Mark E., et al. "A Liouville-operator derived measure-preserving
+        integrator for molecular dynamics simulations in the isothermal-isobaric
+        ensemble." Journal of Physics A: Mathematical and General 39.19 (2006): 5629-5651.
 
 
 Examples:
