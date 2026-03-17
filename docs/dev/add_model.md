@@ -1,36 +1,20 @@
 # Adding New Models
 
-## How to add a new model to TorchSim
+We welcome new model integrations into the TorchSim ecosystem. Our preferred pattern is that developers implement the bulk of the TorchSim integration in their own model repository or package, and then TorchSim provides a thin wrapper or re-export for convenience. This keeps the model-specific logic close to the model itself while still making the integration easy to discover from `torch_sim.models`.
 
-We welcome the addition of new models to `torch_sim`. We want
-easy batched simulations to be available to the whole community
-of MLIP developers and users.
+If you want TorchSim to expose your model, the recommended steps are:
 
-1. Open a PR or an issue to get feedback. We are happy to take a look,
-even if you haven't finished your implementation yet.
+1. Open a PR or issue early. We are happy to review incomplete work and discuss the best integration shape.
+2. Prefer implementing the real integration in the upstream model package. The TorchSim-side file in `torch_sim/models` should ideally be a small wrapper or re-export, similar to other external integrations.
+3. If some logic must live in TorchSim, keep it minimal and well-contained. The implementation should still follow the `torch_sim.models.interface.ModelInterface` contract.
+4. Add model tests using `make_validate_model_outputs_test` and, where appropriate, `make_model_calculator_consistency_test`. See the existing model tests for examples.
+5. Update `.github/workflows/test.yml` and `.github/workflows/model-tests.json` so the model installs and tests correctly in CI.
+6. Re-export the model from `torch_sim.models.__init__.py` using the existing `try`/`except ImportError` pattern.
+7. Update `docs/conf.py` so the docs can build without requiring the optional model dependency.
 
-1. Create a new model file in `torch_sim/models`. It should inherit
-from `torch_sim.models.interface.ModelInterface` and `torch.nn.module`.
+Optional follow-up work:
 
-1. Add `torch_sim.models.tests.make_validate_model_outputs_test` and
-`torch_sim.models.tests.make_model_calculator_consistency_test` as
-models tests. See any of the other model tests for examples.
+1. Add a tutorial or example showing how to use the model with TorchSim.
+2. Update `.github/workflows/docs.yml` if the documentation build needs to exercise that integration.
 
-1. Update `test.yml` to include proper installation and
-testing of the relevant model.
-
-1. Pull the model import up to `torch_sim.models` by adding import to
-`torch_sim.models.__init__.py` in try except clause.
-
-1. Update `docs/conf.py` to include model in `autodoc_mock_imports = [...]`
-
-## Optional
-
-1. Write a tutorial or example showing off your model.
-
-1. Update the `.github/workflows/docs.yml` to ensure your model
-is being correctly included in the documentation.
-
-We are also happy for developers to implement model interfaces in their
-own codebases. Steps 1 & 2 should still be followed to ensure the model
-implementation is compatible with the rest of TorchSim.
+We are also happy for developers to keep the entire integration in their own repository without adding a wrapper in TorchSim. But when TorchSim does expose a model, we prefer the bulk of the logic to live upstream and the TorchSim wrapper to stay thin.

@@ -60,34 +60,36 @@ jobs:
           - { python: '3.12', resolution: lowest-direct }
           - { python: '3.14', resolution: highest }
         model:
-          - { name: fairchem, test_path: "tests/models/test_fairchem.py" }
-          - { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
-          - { name: graphpes, test_path: "tests/models/test_graphpes_framework.py" }
-          - { name: mace, test_path: "tests/models/test_mace.py" }
-          - { name: mace, test_path: "tests/test_elastic.py" }
-          - { name: mace, test_path: "tests/test_optimizers_vs_ase.py" }
-          - { name: mattersim, test_path: "tests/models/test_mattersim.py" }
-          - { name: metatomic, test_path: "tests/models/test_metatomic.py" }
-          - { name: nequip, test_path: "tests/models/test_nequip_framework.py" }
-          - { name: orb, test_path: "tests/models/test_orb.py" }
-          - { name: sevenn, test_path: "tests/models/test_sevennet.py" }
+          - { name: fairchem, test_path: 'tests/models/test_fairchem.py', external_package: fairchem }
+          - { name: fairchem-legacy, test_path: 'tests/models/test_fairchem_legacy.py', external_package: '' }
+          - { name: graphpes, test_path: 'tests/models/test_graphpes_framework.py', external_package: graph_pes }
+          - { name: mace, test_path: 'tests/models/test_mace.py', external_package: mace }
+          - { name: mace, test_path: 'tests/test_elastic.py', external_package: mace }
+          - { name: mace, test_path: 'tests/test_optimizers_vs_ase.py', external_package: mace }
+          - { name: mattersim, test_path: 'tests/models/test_mattersim.py', external_package: mattersim }
+          - { name: metatomic, test_path: 'tests/models/test_metatomic.py', external_package: metatomic }
+          - { name: nequip, test_path: 'tests/models/test_nequip_framework.py', external_package: nequip }
+          - { name: orb, test_path: 'tests/models/test_orb.py', external_package: orb_models }
+          - { name: sevenn, test_path: 'tests/models/test_sevennet.py', external_package: sevenn }
         exclude:
           - version: { python: '3.14', resolution: highest }
-            model: { name: orb, test_path: 'tests/models/test_orb.py' }
+            model: { name: orb, test_path: 'tests/models/test_orb.py', external_package: orb_models }
           - version: { python: '3.14', resolution: highest }
-            model: { name: fairchem, test_path: 'tests/models/test_fairchem.py'}
+            model: { name: fairchem, test_path: 'tests/models/test_fairchem.py', external_package: fairchem }
           - version: { python: '3.14', resolution: highest }
-            model: { name: fairchem-legacy, test_path: 'tests/models/test_fairchem_legacy.py'}
+            model: { name: fairchem-legacy, test_path: 'tests/models/test_fairchem_legacy.py', external_package: '' }
           - version: { python: '3.14', resolution: highest }
-            model: { name: nequip, test_path: 'tests/models/test_nequip_framework.py'}
+            model: { name: nequip, test_path: 'tests/models/test_nequip_framework.py', external_package: nequip }
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Check out fairchem repository
-        if: ${{ matrix.model.name == 'fairchem-legacy' }}
+        if: matrix.model.name == 'fairchem-legacy'
         uses: actions/checkout@v4
         with:
           repository: FAIR-Chem/fairchem
@@ -107,7 +109,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Install legacy fairchem repository and dependencies
-        if: ${{ matrix.model.name == 'fairchem-legacy' }}
+        if: matrix.model.name == 'fairchem-legacy'
         run: |
           if [ -f fairchem-repo/packages/requirements.txt ]; then
             uv pip install -r fairchem-repo/packages/requirements.txt --system
@@ -121,14 +123,32 @@ jobs:
           uv pip install "ase>=3.26" "phonopy>=2.37.0" "psutil>=7.0.0" "pymatgen>=2025.6.14" "pytest-cov>=6" "pytest>=8" --resolution=${{ matrix.version.resolution }} --system
 
       - name: Install torch_sim with model dependencies
-        if: ${{ matrix.model.name != 'fairchem-legacy' }}
+        if: matrix.model.name != 'fairchem-legacy'
         run: |
-          # setuptools <82 provides pkg_resources needed by mattersim and fairchem (via torchtnt).
-          # setuptools 82+ removed pkg_resources. Remove pin once those packages migrate.
           uv pip install -e ".[test,${{ matrix.model.name }}]" "setuptools>=70,<82" --resolution=${{ matrix.version.resolution }} --system
 
+      - name: Check if model is affected by changes
+        id: check_affected
+        if: github.event_name == 'pull_request'
+        run: |
+          args=(
+            --base "${{ github.event.pull_request.base.sha }}"
+            --head "${{ github.sha }}"
+            --test-path "${{ matrix.model.test_path }}"
+          )
+          if [ -n "${{ matrix.model.external_package }}" ]; then
+            args+=(--external-package "${{ matrix.model.external_package }}")
+          fi
+          if python .github/scripts/check_model_affected.py "${args[@]}"; then
+            echo "affected=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "affected=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run ${{ matrix.model.test_path }} tests
-        if: ${{ !contains(matrix.model.name, 'fairchem') || github.event.pull_request.head.repo.fork == false }}
+        if: >-
+          (github.event_name != 'pull_request' || steps.check_affected.outputs.affected == 'true')
+          && (!contains(matrix.model.name, 'fairchem') || github.event.pull_request.head.repo.fork == false)
         env:
           HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
         run: |
@@ -138,6 +158,9 @@ jobs:
           pytest -vv -ra -rs --cov=torch_sim --cov-report=xml ${{ matrix.model.test_path }}
 
       - name: Upload coverage to Codecov
+        if: >-
+          (github.event_name != 'pull_request' || steps.check_affected.outputs.affected == 'true')
+          && (!contains(matrix.model.name, 'fairchem') || github.event.pull_request.head.repo.fork == false)
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
