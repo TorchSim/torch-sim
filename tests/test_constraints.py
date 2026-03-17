@@ -1177,6 +1177,7 @@ def test_fix_symmetry_system_idx_remapped_on_reordered_slice(
     # Output system 0 = old system 1 → should use rot1
     ci_for_output0 = si_to_ci[0]
     assert torch.equal(c.rotations[ci_for_output0], rot1)
+    assert c.reference_cells is not None
     assert torch.equal(c.reference_cells[ci_for_output0], ref1)
 
     # Output system 1 = old system 0 → should use rot0

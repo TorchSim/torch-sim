@@ -882,7 +882,7 @@ def _filter_attrs_by_index(
         if hasattr(c, "atom_idx") and isinstance(c.atom_idx, torch.Tensor):
             c.atom_idx = new_atom_idx[c.atom_idx]  # ty: ignore[invalid-assignment]
         if hasattr(c, "system_idx") and isinstance(c.system_idx, torch.Tensor):
-            c.system_idx = new_system_idx[c.system_idx]
+            c.system_idx = new_system_idx[c.system_idx]  # ty: ignore[invalid-assignment]
 
     for name, val in get_attrs_for_scope(state, "per-atom"):
         filtered_attrs[name] = (
