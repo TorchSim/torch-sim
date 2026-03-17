@@ -23,13 +23,13 @@ except (ImportError, ModuleNotFoundError):
 
 @pytest.fixture(scope="session")
 def nequix_model() -> NequixModel:
-    return NequixModel("nequix-oam-1", device=DEVICE, dtype=DTYPE, use_kernel=False)
+    return NequixModel("nequix-mp-1", device=DEVICE, dtype=DTYPE, use_kernel=False)
 
 
 @pytest.fixture(scope="session")
 def nequix_calculator() -> NequixCalculator:
     return NequixCalculator(
-        "nequix-oam-1",
+        "nequix-mp-1",
         device=DEVICE,
         backend="torch",
         use_compile=False,
@@ -42,7 +42,7 @@ test_nequix_consistency = make_model_calculator_consistency_test(
     model_fixture_name="nequix_model",
     calculator_fixture_name="nequix_calculator",
     sim_state_names=tuple(SIMSTATE_BULK_GENERATORS.keys()),
-    energy_atol=5e-5,
+    force_atol=5e-5,
     dtype=DTYPE,
     device=DEVICE,
 )
