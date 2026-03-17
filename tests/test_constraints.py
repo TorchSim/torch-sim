@@ -9,6 +9,7 @@ from torch_sim.constraints import (
     Constraint,
     FixAtoms,
     FixCom,
+    FixSymmetry,
     count_degrees_of_freedom,
     merge_constraints,
     validate_constraints,
@@ -1127,3 +1128,85 @@ def test_constraint_merge_rejects_empty_or_wrong_type(
     """Constraint.merge raises clear ValueError on empty or mismatched inputs."""
     with pytest.raises(ValueError, match="requires at least one"):
         merge_cls.merge(constraints)
+
+
+def test_fix_symmetry_system_idx_remapped_on_reordered_slice(
+    mixed_double_sim_state: ts.SimState,
+) -> None:
+    """Slicing with reversed system order must remap FixSymmetry so each
+    system's rotations/symm_maps/reference_cells stay paired with the
+    correct output system.
+    """
+    state = mixed_double_sim_state  # 2 systems
+
+    # Create distinct per-system rotation tensors so we can verify mapping
+    rot0 = torch.eye(3, dtype=DTYPE).unsqueeze(0)  # identity, (1, 3, 3)
+    rot1 = -torch.eye(3, dtype=DTYPE).unsqueeze(0)  # -identity, (1, 3, 3)
+
+    n0 = int(state.n_atoms_per_system[0].item())
+    n1 = int(state.n_atoms_per_system[1].item())
+
+    smap0 = torch.arange(n0).unsqueeze(0)  # (1, n0)
+    smap1 = torch.arange(n1).unsqueeze(0)  # (1, n1)
+
+    ref0 = state.row_vector_cell[0].clone()
+    ref1 = state.row_vector_cell[1].clone()
+
+    state.constraints = [
+        FixSymmetry(
+            rotations=[rot0, rot1],
+            symm_maps=[smap0, smap1],
+            system_idx=torch.tensor([0, 1]),
+            reference_cells=[ref0, ref1],
+        )
+    ]
+
+    # Reverse system order
+    sliced = state[[1, 0]]
+    assert len(sliced.constraints) == 1
+    c = sliced.constraints[0]
+    assert isinstance(c, FixSymmetry)
+
+    # In the output state, system 0 is old system 1 and system 1 is old
+    # system 0. The constraint's rotations list is still [rot0, rot1] (mask
+    # order), but system_idx should be remapped so ci=0 (rot0) points to
+    # output system 1 (old 0) and ci=1 (rot1) points to output system 0
+    # (old 1).
+    si_to_ci = {si.item(): ci for ci, si in enumerate(c.system_idx)}
+
+    # Output system 0 = old system 1 → should use rot1
+    ci_for_output0 = si_to_ci[0]
+    assert torch.equal(c.rotations[ci_for_output0], rot1)
+    assert c.reference_cells is not None
+    assert torch.equal(c.reference_cells[ci_for_output0], ref1)
+
+    # Output system 1 = old system 0 → should use rot0
+    ci_for_output1 = si_to_ci[1]
+    assert torch.equal(c.rotations[ci_for_output1], rot0)
+    assert torch.equal(c.reference_cells[ci_for_output1], ref0)
+
+
+def test_fix_com_system_idx_remapped_on_reordered_slice(
+    mixed_double_sim_state: ts.SimState,
+) -> None:
+    """Slicing with reversed system order must remap FixCom's system_idx
+    so it still targets the correct output systems.
+    """
+    state = mixed_double_sim_state  # 2 systems
+
+    # Constrain only system 0
+    state.constraints = [FixCom(system_idx=torch.tensor([0]))]
+
+    # Reverse system order: old system 0 becomes output system 1
+    sliced = state[[1, 0]]
+    assert len(sliced.constraints) == 1
+    c = sliced.constraints[0]
+    assert isinstance(c, FixCom)
+    assert c.system_idx.tolist() == [1]
+
+    # Constrain both systems and verify both are remapped
+    state.constraints = [FixCom(system_idx=torch.tensor([0, 1]))]
+    sliced = state[[1, 0]]
+    c = sliced.constraints[0]
+    assert isinstance(c, FixCom)
+    assert sorted(c.system_idx.tolist()) == [0, 1]

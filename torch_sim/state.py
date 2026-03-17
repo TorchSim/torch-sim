@@ -851,7 +851,22 @@ def _filter_attrs_by_index(
     """
     filtered_attrs = dict(get_attrs_for_scope(state, "global"))
 
-    # Constraints need boolean masks
+    # Build inverse maps: old index → new position in the output.
+    # These are used for both constraint remapping and per-atom system_idx.
+    atom_remap = torch.empty(state.n_atoms, dtype=torch.long, device=state.device)
+    atom_remap[atom_indices] = torch.arange(len(atom_indices), device=state.device)
+    if len(system_indices) == 0:
+        system_remap = torch.empty(0, device=state.device, dtype=torch.long)
+    else:
+        max_idx = int(system_indices.max().item()) + 1
+        system_remap = torch.empty(max_idx, device=state.device, dtype=torch.long)
+        system_remap[system_indices] = torch.arange(
+            len(system_indices), device=state.device
+        )
+
+    # select_constraint uses boolean masks (which lose ordering), so we must
+    # remap constraint atom_idx / system_idx afterward to match the actual
+    # output order given by atom_indices / system_indices.
     atom_mask = torch.zeros(state.n_atoms, dtype=torch.bool, device=state.device)
     atom_mask[atom_indices] = True
     system_mask = torch.zeros(state.n_systems, dtype=torch.bool, device=state.device)
@@ -861,26 +876,17 @@ def _filter_attrs_by_index(
         for con in copy.deepcopy(state.constraints)
         if (c := con.select_constraint(atom_mask, system_mask))
     ]
-
-    # Remap constraint atom_idx to account for reordering by atom_indices
-    atom_remap = torch.empty(state.n_atoms, dtype=torch.long, device=state.device)
-    atom_remap[atom_indices] = torch.arange(len(atom_indices), device=state.device)
     new_atom_idx = atom_remap[torch.where(atom_mask)[0]]
+    new_system_idx = system_remap[torch.where(system_mask)[0]]
     for c in filtered_attrs["_constraints"]:
         if hasattr(c, "atom_idx") and isinstance(c.atom_idx, torch.Tensor):
             c.atom_idx = new_atom_idx[c.atom_idx]  # ty: ignore[invalid-assignment]
-
-    # Build inverse map for system_idx remapping (old index -> new position)
-    if len(system_indices) == 0:
-        inv = torch.empty(0, device=state.device, dtype=torch.long)
-    else:
-        max_idx = int(system_indices.max().item()) + 1
-        inv = torch.empty(max_idx, device=state.device, dtype=torch.long)
-        inv[system_indices] = torch.arange(len(system_indices), device=state.device)
+        if hasattr(c, "system_idx") and isinstance(c.system_idx, torch.Tensor):
+            c.system_idx = new_system_idx[c.system_idx]  # ty: ignore[invalid-assignment]
 
     for name, val in get_attrs_for_scope(state, "per-atom"):
         filtered_attrs[name] = (
-            inv[val[atom_indices]] if name == "system_idx" else val[atom_indices]
+            system_remap[val[atom_indices]] if name == "system_idx" else val[atom_indices]
         )
 
     for name, val in get_attrs_for_scope(state, "per-system"):
