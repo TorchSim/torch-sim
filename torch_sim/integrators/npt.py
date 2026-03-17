@@ -32,7 +32,28 @@ def _randn_for_state(state: MDState, shape: torch.Size | tuple[int, ...]) -> tor
 
 
 @dataclass(kw_only=True)
-class NPTLangevinState(MDState):
+class NPTState(MDState):
+    """State information for an NPT system.
+
+    This class extends MDState with the stress tensor needed for
+    constant-pressure simulations. Integrator-specific NPT states
+    (e.g., NPTLangevinState, NPTNoseHooverState) inherit from this
+    class and add their own auxiliary variables.
+
+    Attributes:
+        stress (torch.Tensor): Stress tensor [n_systems, n_dim, n_dim]
+    """
+
+    # System state variables
+    stress: torch.Tensor
+
+    _system_attributes = MDState._system_attributes | {  # noqa: SLF001
+        "stress",
+    }
+
+
+@dataclass(kw_only=True)
+class NPTLangevinState(NPTState):
     """State information for an NPT system with Langevin dynamics.
 
     This class represents the complete state of a molecular system being integrated
@@ -66,9 +87,6 @@ class NPTLangevinState(MDState):
         dtype (torch.dtype): Data type of tensors
     """
 
-    # System state variables
-    stress: torch.Tensor
-
     alpha: torch.Tensor
     cell_alpha: torch.Tensor
     b_tau: torch.Tensor
@@ -79,8 +97,7 @@ class NPTLangevinState(MDState):
     cell_velocities: torch.Tensor
     cell_masses: torch.Tensor
 
-    _system_attributes = MDState._system_attributes | {  # noqa: SLF001
-        "stress",
+    _system_attributes = NPTState._system_attributes | {  # noqa: SLF001
         "cell_positions",
         "cell_velocities",
         "cell_masses",
@@ -748,7 +765,7 @@ def npt_langevin_step(
 
 
 @dataclass(kw_only=True)
-class NPTNoseHooverState(MDState):
+class NPTNoseHooverState(NPTState):
     """State information for an NPT system with Nose-Hoover chain thermostats.
 
     This class represents the complete state of a molecular system being integrated
@@ -797,9 +814,6 @@ class NPTNoseHooverState(MDState):
         - All cell-related properties now support batch dimensions
     """
 
-    # System state variables
-    stress: torch.Tensor
-
     # Cell variables - now with batch dimensions
     reference_cell: torch.Tensor  # [n_systems, 3, 3]
     cell_position: torch.Tensor  # [n_systems]
@@ -814,14 +828,13 @@ class NPTNoseHooverState(MDState):
     barostat: NoseHooverChain
     barostat_fns: NoseHooverChainFns
 
-    _system_attributes = MDState._system_attributes | {  # noqa: SLF001
-        "stress",
+    _system_attributes = NPTState._system_attributes | {  # noqa: SLF001
         "reference_cell",
         "cell_position",
         "cell_momentum",
         "cell_mass",
     }
-    _global_attributes = MDState._global_attributes | {  # noqa: SLF001
+    _global_attributes = NPTState._global_attributes | {  # noqa: SLF001
         "thermostat",
         "barostat",
         "thermostat_fns",
@@ -1623,20 +1636,17 @@ def npt_nose_hoover_invariant(
 
 
 @dataclass(kw_only=True)
-class NPTCRescaleState(MDState):
+class NPTCRescaleState(NPTState):
     """State for NPT ensemble with cell rescaling barostat.
 
-    This class extends the MDState to include variables and properties
+    This class extends the NPTState to include variables and properties
     specific to the NPT ensemble with a cell rescaling barostat.
     """
 
-    # System state variables
-    stress: torch.Tensor
     isothermal_compressibility: torch.Tensor  # shape: [n_systems]
     tau_p: torch.Tensor  # shape: [n_systems]
 
-    _system_attributes = MDState._system_attributes | {  # noqa: SLF001
-        "stress",
+    _system_attributes = NPTState._system_attributes | {  # noqa: SLF001
         "isothermal_compressibility",
         "tau_p",
     }
