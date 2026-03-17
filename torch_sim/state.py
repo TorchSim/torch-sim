@@ -883,7 +883,11 @@ def _split_state[T: SimState](state: T) -> list[T]:
             **global_attrs,
         }
 
-        atom_idx = torch.arange(cumsum_atoms[sys_idx], cumsum_atoms[sys_idx + 1])
+        atom_idx = torch.arange(
+            cumsum_atoms[sys_idx].item(),
+            cumsum_atoms[sys_idx + 1].item(),
+            device=state.device,
+        )
         new_constraints = [
             new_constraint
             for constraint in state.constraints
