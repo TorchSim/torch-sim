@@ -1450,6 +1450,7 @@ def npt_nose_hoover_init(
 
 
 @dcite("10.1080/00268979600100761")
+@dcite("10.1088/0305-4470/39/19/S18")
 def npt_nose_hoover_step(
     state: NPTNoseHooverState,
     model: ModelInterface,
