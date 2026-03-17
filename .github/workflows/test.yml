@@ -69,6 +69,7 @@ jobs:
           - { name: mattersim, test_path: "tests/models/test_mattersim.py" }
           - { name: metatomic, test_path: "tests/models/test_metatomic.py" }
           - { name: nequip, test_path: "tests/models/test_nequip_framework.py" }
+          - { name: nequix, test_path: "tests/models/test_nequix.py" }
           - { name: orb, test_path: "tests/models/test_orb.py" }
           - { name: sevenn, test_path: "tests/models/test_sevennet.py" }
         exclude:
