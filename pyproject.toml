@@ -55,6 +55,7 @@ orb = ["orb-models>=0.6.0"]
 sevenn = ["sevenn[torchsim]>=0.12.1"]
 graphpes = ["graph-pes>=0.1", "mace-torch>=0.3.12"]
 nequip = ["nequip>=0.17.0"]
+nequix = ["nequix[torch-sim]>=0.4.4"]
 fairchem = ["fairchem-core>=2.7", "scipy<1.17.0"]
 docs = [
     "autodoc_pydantic==2.2.0",
@@ -169,6 +170,10 @@ conflicts = [
     ],
     [
         { extra = "graphpes" },
+        { extra = "nequix" },
+    ],
+    [
+        { extra = "graphpes" },
         { extra = "sevenn" },
     ],
     [
@@ -178,6 +183,10 @@ conflicts = [
     [
         { extra = "mace" },
         { extra = "nequip" },
+    ],
+    [
+        { extra = "mace" },
+        { extra = "nequix" },
     ],
     [
         { extra = "mace" },
