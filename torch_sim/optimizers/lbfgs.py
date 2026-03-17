@@ -18,6 +18,7 @@ import torch
 import torch_sim as ts
 from torch_sim.optimizers.cell_filters import (
     CellLBFGSState,
+    _clamp_deform_grad_log,
     compute_cell_forces,
     deform_grad,
     frechet_cell_filter_init,
@@ -486,7 +487,6 @@ def lbfgs_step(  # noqa: PLR0915, C901
         # Apply cell step
         dr_cell = step_cell  # [S, 3, 3]
         cell_positions_new = state.cell_positions + dr_cell  # [S, 3, 3]
-        state.cell_positions = cell_positions_new  # [S, 3, 3]
 
         # Determine if Frechet filter
         init_fn, _step_fn = state.cell_filter
@@ -496,11 +496,16 @@ def lbfgs_step(  # noqa: PLR0915, C901
             # Frechet: deform_grad = exp(cell_positions / cell_factor)
             cell_factor_reshaped = state.cell_factor.view(n_systems, 1, 1)
             deform_grad_log_new = cell_positions_new / cell_factor_reshaped  # [S, 3, 3]
+            deform_grad_log_new, cell_positions_new = _clamp_deform_grad_log(
+                deform_grad_log_new, cell_positions_new, cell_factor_reshaped
+            )
             deform_grad_new = torch.matrix_exp(deform_grad_log_new)  # [S, 3, 3]
         else:
             # UnitCell: deform_grad = cell_positions / cell_factor
             cell_factor_expanded = state.cell_factor.expand(n_systems, 3, 1)
             deform_grad_new = cell_positions_new / cell_factor_expanded  # [S, 3, 3]
+
+        state.cell_positions = cell_positions_new  # [S, 3, 3]
 
         # Update cell: new_cell = reference_cell @ deform_grad^T
         # Use set_constrained_cell to apply cell constraints (e.g. FixSymmetry)

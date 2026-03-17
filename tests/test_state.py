@@ -348,6 +348,35 @@ def test_initialize_state_from_state(ar_supercell_sim_state: SimState) -> None:
     assert state.cell.shape == ar_supercell_sim_state.cell.shape
 
 
+def test_initialize_state_from_list_of_states_with_multiple_systems(
+    si_double_sim_state: SimState, fe_supercell_sim_state: SimState
+) -> None:
+    """Test initialize_state with list of states that have n_systems > 1."""
+    # This should work now that we've removed the arbitrary n_systems == 1 constraint
+    concatenated = ts.initialize_state([si_double_sim_state, fe_supercell_sim_state])
+
+    # Should have 3 systems total (2 from si_double + 1 from fe)
+    assert concatenated.n_systems == 3
+    assert concatenated.cell.shape[0] == 3
+
+    # Check system indices are correct
+    fe_atoms = fe_supercell_sim_state.n_atoms
+    expected_system_indices = torch.cat(
+        [
+            si_double_sim_state.system_idx,
+            torch.full(
+                (fe_atoms,), 2, dtype=torch.int64, device=fe_supercell_sim_state.device
+            ),
+        ]
+    )
+    assert torch.all(concatenated.system_idx == expected_system_indices)
+
+    # Verify we can slice back to original states
+    assert torch.allclose(concatenated[0].positions, si_double_sim_state[0].positions)
+    assert torch.allclose(concatenated[1].positions, si_double_sim_state[1].positions)
+    assert torch.allclose(concatenated[2].positions, fe_supercell_sim_state.positions)
+
+
 def test_initialize_state_from_atoms(si_atoms: "Atoms") -> None:
     """Test conversion from ASE Atoms to SimState."""
     state = ts.initialize_state([si_atoms], DEVICE, torch.float64)
@@ -1154,6 +1183,7 @@ def test_nptnosehooverstate_instantiation() -> None:
         momenta=torch.zeros(4, 3),
         energy=torch.zeros(1),
         forces=torch.zeros(4, 3),
+        stress=torch.zeros(1, 3, 3),
         reference_cell=torch.eye(3).unsqueeze(0),
         cell_position=torch.zeros(1),
         cell_momentum=torch.zeros(1),

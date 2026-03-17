@@ -574,17 +574,15 @@ def npt_langevin_init(
     model_output = model(state)
 
     # Initialize momenta if not provided
-    momenta = getattr(
-        state,
-        "momenta",
-        initialize_momenta(
+    momenta = getattr(state, "momenta", None)
+    if momenta is None:
+        momenta = initialize_momenta(
             state.positions,
             state.masses,
             state.system_idx,
             kT,
             state.rng,
-        ),
-    )
+        )
 
     # Initialize cell parameters
     reference_cell = state.cell.clone()
@@ -766,6 +764,7 @@ class NPTNoseHooverState(MDState):
         positions (torch.Tensor): Particle positions with shape [n_particles, n_dims]
         momenta (torch.Tensor): Particle momenta with shape [n_particles, n_dims]
         forces (torch.Tensor): Forces on particles with shape [n_particles, n_dims]
+        stress (torch.Tensor): Stress tensor with shape [n_systems, n_dims, n_dims]
         masses (torch.Tensor): Particle masses with shape [n_particles]
         reference_cell (torch.Tensor): Reference simulation cell matrix with shape
             [n_systems, n_dimensions, n_dimensions]. Used to measure relative volume
@@ -798,6 +797,9 @@ class NPTNoseHooverState(MDState):
         - All cell-related properties now support batch dimensions
     """
 
+    # System state variables
+    stress: torch.Tensor
+
     # Cell variables - now with batch dimensions
     reference_cell: torch.Tensor  # [n_systems, 3, 3]
     cell_position: torch.Tensor  # [n_systems]
@@ -813,6 +815,7 @@ class NPTNoseHooverState(MDState):
     barostat_fns: NoseHooverChainFns
 
     _system_attributes = MDState._system_attributes | {  # noqa: SLF001
+        "stress",
         "reference_cell",
         "cell_position",
         "cell_momentum",
@@ -1247,6 +1250,7 @@ def _npt_nose_hoover_inner_step(
     cell = volume_to_cell(volume)
 
     # Update particle positions and forces
+    state.set_constrained_momenta(momenta)
     positions = _npt_nose_hoover_exp_iL1(state, state.velocities, cell_velocities, dt)
     state.set_constrained_positions(positions)
     state.cell = cell
@@ -1272,6 +1276,7 @@ def _npt_nose_hoover_inner_step(
     state.set_constrained_positions(positions)
     state.set_constrained_momenta(momenta)
     state.forces = model_output["forces"]
+    state.stress = model_output["stress"]
     state.energy = model_output["energy"]
     state.cell_position = cell_position
     state.cell_momentum = cell_momentum
@@ -1375,16 +1380,17 @@ def npt_nose_hoover_init(
     KE_cell = (cell_momentum.squeeze(-1) ** 2) / (2 * cell_mass)
 
     # Initialize momenta
-    momenta = kwargs.get(
-        "momenta",
-        initialize_momenta(
+    momenta = kwargs.get("momenta")
+    if momenta is None:
+        momenta = getattr(state, "momenta", None)
+    if momenta is None:
+        momenta = initialize_momenta(
             state.positions,
             state.masses,
             state.system_idx,
             kT_tensor,
             state.rng,
-        ),
-    )
+        )
 
     # Compute total DOF for thermostat initialization and a zero KE placeholder
     dof_per_system = torch.bincount(state.system_idx, minlength=n_systems) * dim
@@ -1412,6 +1418,7 @@ def npt_nose_hoover_init(
     model_output = model(state)
     forces = model_output["forces"]
     energy = model_output["energy"]
+    stress = model_output["stress"]
 
     if state.constraints:
         # warn if constraints are present
@@ -1429,6 +1436,7 @@ def npt_nose_hoover_init(
         momenta=momenta,
         energy=energy,
         forces=forces,
+        stress=stress,
         atomic_numbers=atomic_numbers,
         reference_cell=reference_cell,
         cell_position=cell_position,
@@ -2353,17 +2361,15 @@ def npt_crescale_init(
     model_output = model(state)
 
     # Initialize momenta if not provided
-    momenta = getattr(
-        state,
-        "momenta",
-        initialize_momenta(
+    momenta = getattr(state, "momenta", None)
+    if momenta is None:
+        momenta = initialize_momenta(
             state.positions,
             state.masses,
             state.system_idx,
             kT,
             state.rng,
-        ),
-    )
+        )
 
     # Create the initial state
     return NPTCRescaleState.from_state(
