@@ -109,7 +109,6 @@ def si_phonopy_atoms() -> Any:
         cell=lattice,
         scaled_positions=coords,
         symbols=species,
-        pbc=True,
     )
 
 
