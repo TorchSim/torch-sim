@@ -642,6 +642,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             memory_scales_with=autobatcher.memory_scales_with,
             max_atoms_to_try=autobatcher.max_atoms_to_try,
             oom_error_message=autobatcher.oom_error_message,
+            max_memory_padding=autobatcher.max_memory_padding,
         )
     autobatcher.load_states(state)
     if trajectory_reporter is not None:
