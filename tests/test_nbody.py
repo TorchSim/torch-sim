@@ -358,9 +358,9 @@ def test_build_quadruplets_exact_torsion() -> None:
 
     result = build_quadruplets(main, qint, n_atoms, main_cell, qint_cell)
 
-    assert len(result["quad_main_edge_c_to_a"]) == 1
+    assert len(result["quad_c_to_a_edge"]) == 1
     # The single c→a edge is e5 (index 5), arriving at atom 2
-    assert result["quad_main_edge_c_to_a"][0].item() == 5
+    assert result["quad_c_to_a_edge"][0].item() == 5
     assert main[1, 5].item() == 2  # sanity: e5 targets atom 2
     # trip_in_to_quad[0] points into triplet_in["trip_in"]; d→b edge must target atom 1
     ti = build_mixed_triplets(
@@ -371,7 +371,7 @@ def test_build_quadruplets_exact_torsion() -> None:
         cell_offsets_in=main_cell,
         cell_offsets_out=qint_cell,
     )
-    d_to_b = ti["trip_in"][result["trip_in_to_quad"][0].item()]
+    d_to_b = ti["trip_in"][result["quad_d_to_b_trip_idx"][0].item()]
     assert main[1, d_to_b].item() == 1
 
 
@@ -411,8 +411,8 @@ def test_build_quadruplets_multi_input_triplets() -> None:
     # c≠d filter: c=src(e2)=5; d=src(e0)=0 → 5≠0 ✓; d=src(e1)=2 → 5≠2 ✓. All 2 survive.
     result = build_quadruplets(main, qint, n_atoms, main_cell, qint_cell)
 
-    assert len(result["quad_main_edge_c_to_a"]) == 2
-    assert (main[1][result["quad_main_edge_c_to_a"]] == 4).all()
+    assert len(result["quad_c_to_a_edge"]) == 2
+    assert (main[1][result["quad_c_to_a_edge"]] == 4).all()
     ti = build_mixed_triplets(
         main,
         qint,
@@ -421,25 +421,25 @@ def test_build_quadruplets_multi_input_triplets() -> None:
         cell_offsets_in=main_cell,
         cell_offsets_out=qint_cell,
     )
-    d_to_b = ti["trip_in"][result["trip_in_to_quad"]]
+    d_to_b = ti["trip_in"][result["quad_d_to_b_trip_idx"]]
     assert (main[1][d_to_b] == 1).all()
 
 
 def test_build_quadruplets_empty() -> None:
     """Disconnected main and qint graphs produce zero quadruplets."""
     main_edge_index = torch.tensor([[0], [1]])
-    qint_edge_index = torch.tensor([[2], [3]])
+    internal_edge_index = torch.tensor([[2], [3]])
     n_atoms = 4
     result = build_quadruplets(
         main_edge_index,
-        qint_edge_index,
+        internal_edge_index,
         n_atoms,
         torch.zeros(1, 3),
         torch.zeros(1, 3),
     )
-    assert len(result["quad_main_edge_c_to_a"]) == 0
-    assert len(result["trip_in_to_quad"]) == 0
-    assert len(result["trip_out_to_quad"]) == 0
+    assert len(result["quad_c_to_a_edge"]) == 0
+    assert len(result["quad_d_to_b_trip_idx"]) == 0
+    assert len(result["quad_c_to_a_trip_idx"]) == 0
 
 
 def test_build_quadruplets_cd_same_atom_different_cell() -> None:
@@ -467,7 +467,7 @@ def test_build_quadruplets_cd_same_atom_different_cell() -> None:
     qint_cell = torch.zeros(1, 3)
 
     result = build_quadruplets(main, qint, n_atoms, main_cell, qint_cell)
-    assert len(result["quad_main_edge_c_to_a"]) == 1
+    assert len(result["quad_c_to_a_edge"]) == 1
 
 
 @pytest.mark.parametrize(
@@ -493,20 +493,24 @@ def test_build_quadruplets_device(device: str) -> None:
     """Test that build_quadruplets works on different devices."""
     dev = torch.device(device)
     main_edge_index = torch.tensor([[0, 1, 1], [1, 2, 3]], device=dev)
-    qint_edge_index = torch.tensor([[1], [2]], device=dev)
+    internal_edge_index = torch.tensor([[1], [2]], device=dev)
     n_atoms = 4
 
     main_cell_offsets = torch.zeros(3, 3, device=dev)
-    qint_cell_offsets = torch.zeros(1, 3, device=dev)
+    internal_cell_offsets = torch.zeros(1, 3, device=dev)
 
     result = build_quadruplets(
-        main_edge_index, qint_edge_index, n_atoms, main_cell_offsets, qint_cell_offsets
+        main_edge_index,
+        internal_edge_index,
+        n_atoms,
+        main_cell_offsets,
+        internal_cell_offsets,
     )
 
-    assert result["quad_main_edge_c_to_a"].device == dev
-    assert result["trip_in_to_quad"].device == dev
-    assert result["main_edge_d_to_b"].device == dev
-    assert result["main_edge_c_to_a"].device == dev
+    assert result["quad_c_to_a_edge"].device == dev
+    assert result["quad_d_to_b_trip_idx"].device == dev
+    assert result["d_to_b_edge"].device == dev
+    assert result["c_to_a_edge"].device == dev
 
 
 def test_build_triplets_jit_script() -> None:
@@ -568,39 +572,47 @@ def test_build_mixed_triplets_jit_script() -> None:
 def test_build_quadruplets_jit_script() -> None:
     """Test that build_quadruplets can be JIT compiled."""
     main_edge_index = torch.tensor([[0, 2, 1, 1], [1, 1, 3, 4]])
-    qint_edge_index = torch.tensor([[1], [3]])
+    internal_edge_index = torch.tensor([[1], [3]])
     n_atoms = 5
     main_cell_offsets = torch.zeros(4, 3)
-    qint_cell_offsets = torch.zeros(1, 3)
+    internal_cell_offsets = torch.zeros(1, 3)
 
     compiled_fn = torch.jit.script(build_quadruplets)
 
     # Run compiled version
     result_compiled = compiled_fn(
-        main_edge_index, qint_edge_index, n_atoms, main_cell_offsets, qint_cell_offsets
+        main_edge_index,
+        internal_edge_index,
+        n_atoms,
+        main_cell_offsets,
+        internal_cell_offsets,
     )
 
     # Run original version
     result_original = build_quadruplets(
-        main_edge_index, qint_edge_index, n_atoms, main_cell_offsets, qint_cell_offsets
+        main_edge_index,
+        internal_edge_index,
+        n_atoms,
+        main_cell_offsets,
+        internal_cell_offsets,
     )
 
     # Results should match
     torch.testing.assert_close(
-        result_compiled["main_edge_d_to_b"], result_original["main_edge_d_to_b"]
+        result_compiled["d_to_b_edge"], result_original["d_to_b_edge"]
     )
     torch.testing.assert_close(
-        result_compiled["qint_edge_b_to_a"], result_original["qint_edge_b_to_a"]
+        result_compiled["b_to_a_edge"], result_original["b_to_a_edge"]
     )
     torch.testing.assert_close(
-        result_compiled["main_edge_c_to_a"], result_original["main_edge_c_to_a"]
+        result_compiled["c_to_a_edge"], result_original["c_to_a_edge"]
     )
     torch.testing.assert_close(
-        result_compiled["quad_main_edge_c_to_a"], result_original["quad_main_edge_c_to_a"]
+        result_compiled["quad_c_to_a_edge"], result_original["quad_c_to_a_edge"]
     )
     torch.testing.assert_close(
-        result_compiled["trip_in_to_quad"], result_original["trip_in_to_quad"]
+        result_compiled["quad_d_to_b_trip_idx"], result_original["quad_d_to_b_trip_idx"]
     )
     torch.testing.assert_close(
-        result_compiled["trip_out_to_quad"], result_original["trip_out_to_quad"]
+        result_compiled["quad_c_to_a_trip_idx"], result_original["quad_c_to_a_trip_idx"]
     )
