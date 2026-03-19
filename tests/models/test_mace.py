@@ -20,7 +20,7 @@ try:
     from torch_sim.models.mace import MaceModel, MaceUrls
 
 except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
-    pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)  # ty:ignore[too-many-positional-arguments]
+    pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)
 
 # mace_omol is optional (added in newer MACE versions)
 try:

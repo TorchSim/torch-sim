@@ -20,7 +20,7 @@ try:
 
 except ImportError:
     pytest.skip(
-        f"sevenn not installed: {traceback.format_exc()}",  # ty:ignore[too-many-positional-arguments]
+        f"sevenn not installed: {traceback.format_exc()}",
         allow_module_level=True,
     )
 
