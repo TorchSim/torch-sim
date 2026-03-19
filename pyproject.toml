@@ -56,6 +56,7 @@ sevenn = ["sevenn[torchsim]>=0.12.1"]
 graphpes = ["graph-pes>=0.1", "mace-torch>=0.3.12"]
 nequip = ["nequip>=0.17.0"]
 nequix = ["nequix[torch-sim]>=0.4.5"]
+deepmd = ["deepmd-kit[torch]>=3"]
 fairchem = ["fairchem-core>=2.7", "scipy<1.17.0"]
 docs = [
     "autodoc_pydantic==2.2.0",
