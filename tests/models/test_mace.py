@@ -64,6 +64,10 @@ test_mace_consistency = make_model_calculator_consistency_test(
     dtype=DTYPE,
 )
 
+test_mace_model_outputs = make_validate_model_outputs_test(
+    model_fixture_name="ts_mace_model", device=DEVICE, dtype=DTYPE
+)
+
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_mace_dtype_working(si_atoms: Atoms, dtype: torch.dtype) -> None:
@@ -99,10 +103,6 @@ test_mace_off_consistency = make_model_calculator_consistency_test(
     calculator_fixture_name="ase_mace_off_calculator",
     sim_state_names=tuple(SIMSTATE_MOLECULE_GENERATORS.keys()),
     dtype=DTYPE,
-)
-
-test_mace_off_model_outputs = make_validate_model_outputs_test(
-    model_fixture_name="ts_mace_model", dtype=DTYPE
 )
 
 
