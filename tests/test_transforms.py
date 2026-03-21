@@ -355,6 +355,66 @@ def test_pbc_wrap_batched_preserves_relative_positions(
                 assert torch.allclose(orig_vec, wrapped_vec, atol=1e-6)
 
 
+def test_pbc_wrap_batched_and_get_lattice_shifts() -> None:
+    """Test that wrapping returns correct positions and integer lattice shifts."""
+    cell1 = torch.tensor(
+        [[3.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 3.0]],
+        dtype=torch.float64,
+        device=DEVICE,
+    )
+    cell2 = torch.tensor(
+        [[2.0, 0.5, 0.0], [0.0, 2.0, 0.0], [0.0, 0.3, 2.0]],
+        dtype=torch.float64,
+        device=DEVICE,
+    )
+    cell = torch.stack([cell1, cell2])
+    pbc = torch.tensor([[True, True, True], [True, True, True]], device=DEVICE)
+    positions = torch.tensor(
+        [[4.0, -1.0, 7.5], [3.0, 2.5, 4.5]],
+        dtype=torch.float64,
+        device=DEVICE,
+    )
+    system_idx = torch.tensor([0, 1], device=DEVICE)
+    wrapped, shifts = tst.pbc_wrap_batched_and_get_lattice_shifts(
+        positions, cell, system_idx, pbc
+    )
+    assert wrapped.shape == positions.shape
+    assert shifts.shape == positions.shape
+    reconstructed = wrapped + (shifts.unsqueeze(-1) * cell[system_idx]).sum(dim=1)
+    torch.testing.assert_close(reconstructed, positions, atol=1e-10, rtol=0.0)
+    assert (shifts[0] != 0).any(), "expected non-zero shifts for displaced atom"
+
+
+def test_pbc_wrap_batched_and_get_lattice_shifts_singular_cell() -> None:
+    """Singular cells and non-periodic systems are left unchanged."""
+    cell = torch.zeros(1, 3, 3, dtype=torch.float64, device=DEVICE)
+    pbc = torch.tensor([[True, True, True]], device=DEVICE)
+    positions = torch.tensor([[5.0, 5.0, 5.0]], dtype=torch.float64, device=DEVICE)
+    system_idx = torch.tensor([0], device=DEVICE)
+    wrapped, shifts = tst.pbc_wrap_batched_and_get_lattice_shifts(
+        positions, cell, system_idx, pbc
+    )
+    torch.testing.assert_close(wrapped, positions)
+    assert (shifts == 0).all()
+
+
+def test_pbc_wrap_batched_and_get_lattice_shifts_non_periodic() -> None:
+    """Non-periodic axes should not be wrapped."""
+    cell = torch.eye(3, dtype=torch.float64, device=DEVICE).unsqueeze(0) * 2.0
+    pbc = torch.tensor([[True, False, True]], device=DEVICE)
+    positions = torch.tensor([[3.0, 5.0, 5.0]], dtype=torch.float64, device=DEVICE)
+    system_idx = torch.tensor([0], device=DEVICE)
+    wrapped, shifts = tst.pbc_wrap_batched_and_get_lattice_shifts(
+        positions, cell, system_idx, pbc
+    )
+    assert wrapped[0, 0] == 1.0, "periodic x should wrap 3.0 -> 1.0 in cell=2"
+    assert wrapped[0, 1] == 5.0, "non-periodic y should stay at 5.0"
+    assert wrapped[0, 2] == 1.0, "periodic z should wrap 5.0 -> 1.0 in cell=2"
+    assert shifts[0, 0] == 1, "x shift should be 1 (floor(3.0/2.0))"
+    assert shifts[0, 1] == 0, "non-periodic y shift should be 0"
+    assert shifts[0, 2] == 2, "z shift should be 2 (floor(5.0/2.0))"
+
+
 def test_safe_mask_basic() -> None:
     """Test basic functionality of safe_mask with log function.
 

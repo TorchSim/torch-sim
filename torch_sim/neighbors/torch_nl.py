@@ -127,14 +127,15 @@ def torch_nl_n2(
     """Compute the neighbor list for a set of atomic structures using a
     naive neighbor search before applying a strict `cutoff`.
 
-    The atomic positions `pos` should be wrapped inside their respective unit cells.
-
     This implementation uses a naive O(N²) neighbor search which can be slow for
     large systems but is simple and works reliably for small to medium systems.
 
+    Positions are wrapped into the primary cell internally for the search; the
+    returned ``shifts_idx`` are corrected so they remain valid for the **original**
+    (unwrapped) input positions. The input tensor is never modified.
+
     Args:
-        positions (torch.Tensor [n_atom, 3]): A tensor containing the positions
-            of atoms wrapped inside their respective unit cells.
+        positions (torch.Tensor [n_atom, 3]): Cartesian positions (may be unwrapped).
         cell (torch.Tensor [n_systems, 3, 3]): Unit cell vectors.
         pbc (torch.Tensor [n_systems, 3] bool):
             A tensor indicating the periodic boundary conditions to apply.
@@ -149,43 +150,31 @@ def torch_nl_n2(
     Returns:
         tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
             mapping (torch.Tensor [2, n_neighbors]):
-                A tensor containing the indices of the neighbor list for the given
-                positions array. `mapping[0]` corresponds to the central atom indices,
-                and `mapping[1]` corresponds to the neighbor atom indices.
+                Pairs of atom indices; ``mapping[0]`` are central atoms,
+                ``mapping[1]`` are neighbors.
             system_mapping (torch.Tensor [n_neighbors]):
-                A tensor mapping the neighbor atoms to their respective structures.
+                System assignment for each pair.
             shifts_idx (torch.Tensor [n_neighbors, 3]):
-                A tensor containing the cell shift indices used to reconstruct the
-                neighbor atom positions.
-
-    Example:
-        >>> # Create a batched system with 2 structures
-        >>> positions = torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [5.0, 5.0, 5.0]])
-        >>> cell = torch.eye(3).repeat(2, 1) * 10.0  # Two cells
-        >>> pbc = torch.tensor([[True, True, True], [True, True, True]])
-        >>> cutoff = torch.tensor(2.0)
-        >>> # First 2 atoms in system 0, last in system 1
-        >>> system_idx = torch.tensor([0, 0, 1])
-        >>> mapping, sys_map, shifts = torch_nl_n2(
-        ...     positions, cell, pbc, cutoff, system_idx
-        ... )
+                Cell shift indices valid for the **original** input positions.
 
     References:
         - https://github.com/felixmusil/torch_nl
-        - https://github.com/venkatkapil24/batch_nl: inspired the use of `pad_sequence`
-          to vectorize a previous implementation that used a loop to iterate over systems
-          inside the `build_naive_neighborhood` function.
+        - https://github.com/venkatkapil24/batch_nl
     """
     n_systems = system_idx.max().item() + 1
     cell, pbc = _normalize_inputs_jit(cell, pbc, n_systems)
+    wrapped, wrap_shifts = transforms.pbc_wrap_batched_and_get_lattice_shifts(
+        positions, cell, system_idx, pbc
+    )
 
     n_atoms = torch.bincount(system_idx)
     mapping, system_mapping, shifts_idx = transforms.build_naive_neighborhood(
-        positions, cell, pbc, cutoff.item(), n_atoms, self_interaction
+        wrapped, cell, pbc, cutoff.item(), n_atoms, self_interaction
     )
     mapping, mapping_system, shifts_idx = strict_nl(
-        cutoff.item(), positions, cell, mapping, system_mapping, shifts_idx
+        cutoff.item(), wrapped, cell, mapping, system_mapping, shifts_idx
     )
+    shifts_idx = shifts_idx + wrap_shifts[mapping[0]] - wrap_shifts[mapping[1]]
     return mapping, mapping_system, shifts_idx
 
 
@@ -200,15 +189,16 @@ def torch_nl_linked_cell(
     """Compute the neighbor list for a set of atomic structures using the linked
     cell algorithm before applying a strict `cutoff`.
 
-    The atomic positions `pos` should be wrapped inside their respective unit cells.
+    Positions are wrapped into the primary cell internally for the search; the
+    returned ``shifts_idx`` are corrected so they remain valid for the **original**
+    (unwrapped) input positions. The input tensor is never modified.
 
     This is the recommended default for batched neighbor list calculations as it
     provides good performance for systems of various sizes using the linked cell
     algorithm which has O(N) complexity.
 
     Args:
-        positions (torch.Tensor [n_atom, 3]): A tensor containing the positions
-            of atoms wrapped inside their respective unit cells.
+        positions (torch.Tensor [n_atom, 3]): Cartesian positions (may be unwrapped).
         cell (torch.Tensor [n_systems, 3, 3]): Unit cell vectors.
         pbc (torch.Tensor [n_systems, 3] bool):
             A tensor indicating the periodic boundary conditions to apply.
@@ -222,41 +212,29 @@ def torch_nl_linked_cell(
 
     Returns:
         tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-            A tuple containing:
-                - mapping (torch.Tensor [2, n_neighbors]):
-                    A tensor containing the indices of the neighbor list for the given
-                    positions array. `mapping[0]` corresponds to the central atom
-                    indices, and `mapping[1]` corresponds to the neighbor atom indices.
-                - system_mapping (torch.Tensor [n_neighbors]):
-                    A tensor mapping the neighbor atoms to their respective structures.
-                - shifts_idx (torch.Tensor [n_neighbors, 3]):
-                    A tensor containing the cell shift indices used to reconstruct the
-                    neighbor atom positions.
-
-    Example:
-        >>> # Create a batched system with 2 structures
-        >>> positions = torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [5.0, 5.0, 5.0]])
-        >>> cell = torch.eye(3).repeat(2, 1) * 10.0  # Two cells
-        >>> pbc = torch.tensor([[True, True, True], [True, True, True]])
-        >>> cutoff = torch.tensor(2.0)
-        >>> # First 2 atoms in system 0, last in system 1
-        >>> system_idx = torch.tensor([0, 0, 1])
-        >>> mapping, sys_map, shifts = torch_nl_linked_cell(
-        ...     positions, cell, pbc, cutoff, system_idx
-        ... )
+            mapping (torch.Tensor [2, n_neighbors]):
+                Pairs of atom indices; ``mapping[0]`` are central atoms,
+                ``mapping[1]`` are neighbors.
+            system_mapping (torch.Tensor [n_neighbors]):
+                System assignment for each pair.
+            shifts_idx (torch.Tensor [n_neighbors, 3]):
+                Cell shift indices valid for the **original** input positions.
 
     References:
         - https://github.com/felixmusil/torch_nl
     """
     n_systems = system_idx.max().item() + 1
     cell, pbc = _normalize_inputs_jit(cell, pbc, n_systems)
+    wrapped, wrap_shifts = transforms.pbc_wrap_batched_and_get_lattice_shifts(
+        positions, cell, system_idx, pbc
+    )
 
     n_atoms = torch.bincount(system_idx)
     mapping, system_mapping, shifts_idx = transforms.build_linked_cell_neighborhood(
-        positions, cell, pbc, cutoff.item(), n_atoms, self_interaction
+        wrapped, cell, pbc, cutoff.item(), n_atoms, self_interaction
     )
-
     mapping, mapping_system, shifts_idx = strict_nl(
-        cutoff.item(), positions, cell, mapping, system_mapping, shifts_idx
+        cutoff.item(), wrapped, cell, mapping, system_mapping, shifts_idx
     )
+    shifts_idx = shifts_idx + wrap_shifts[mapping[0]] - wrap_shifts[mapping[1]]
     return mapping, mapping_system, shifts_idx
