@@ -42,7 +42,7 @@ import torch
 
 
 TEMPERATURE = 300.0
-MAX_ATOMS = {"mace": 5000, "fairchem": 2000}
+MAX_ATOMS = {"mace": 5000}
 
 
 def parse_args() -> argparse.Namespace:
@@ -52,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        choices=["mace", "fairchem"],
+        choices=["mace"],
         default="mace",
         help="Model to use.",
     )
@@ -230,14 +230,21 @@ def load_model(
     """
     dtype_str = str(dtype).split(".")[-1]
     if model_type == "mace":
-        from mace.calculators import MACECalculator
+        from mace.calculators.foundations_models import (
+            download_mace_mp_checkpoint,
+            mace_mp,
+        )
 
         from torch_sim.models.mace import MaceModel, MaceUrls
 
         path = model_path or MaceUrls.mace_mp_small
-        model = MaceModel(model=path, device=device, dtype=dtype, enable_cueq=False)
-        calculator = MACECalculator(
-            model_paths=path, device=str(device), default_dtype=dtype_str
+        local_path = download_mace_mp_checkpoint(path)
+        model = MaceModel(model=local_path, device=device, dtype=dtype, enable_cueq=False)
+        calculator = mace_mp(
+            model=local_path,
+            device=str(device),
+            default_dtype=dtype_str,
+            dispersion=False,
         )
         return model, calculator, "n_atoms_x_density"
 

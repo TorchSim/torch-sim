@@ -144,15 +144,22 @@ def load_model(
 ) -> tuple[Any, Any]:
     """Return (torchsim_model, ase_calculator)."""
     if model_type == "mace":
-        from mace.calculators import MACECalculator
+        from mace.calculators.foundations_models import (
+            download_mace_mp_checkpoint,
+            mace_mp,
+        )
 
         from torch_sim.models.mace import MaceModel, MaceUrls
 
         path = model_path or MaceUrls.mace_mp_small
+        local_path = download_mace_mp_checkpoint(path)
         dtype_str = str(dtype).split(".")[-1]
-        model = MaceModel(model=path, device=device, dtype=dtype, enable_cueq=False)
-        calculator = MACECalculator(
-            model_paths=path, device=str(device), default_dtype=dtype_str
+        model = MaceModel(model=local_path, device=device, dtype=dtype, enable_cueq=False)
+        calculator = mace_mp(
+            model=local_path,
+            device=str(device),
+            default_dtype=dtype_str,
+            dispersion=False,
         )
 
     else:
