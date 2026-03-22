@@ -27,11 +27,11 @@ def _import_nvalchemiops_batch_neighbors() -> tuple[object, object] | None:
         from nvalchemiops.torch.neighbors.batch_naive import (
             batch_naive_neighbor_list as bnl,
         )
-    except ImportError:
+    except (ImportError, RuntimeError):
         try:
             from nvalchemiops.neighborlist import batch_cell_list as bcl
             from nvalchemiops.neighborlist import batch_naive_neighbor_list as bnl
-        except ImportError:
+        except (ImportError, RuntimeError):
             return None
     return bcl, bnl
 
