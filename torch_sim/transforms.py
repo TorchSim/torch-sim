@@ -184,19 +184,26 @@ def pbc_wrap_batched_and_get_lattice_shifts(
     if not active.any():
         return positions.clone(), torch.zeros_like(positions, dtype=cell.dtype)
 
-    B = torch.zeros_like(cell)
+    # Get the inverse cell for each atom based on its system index
+    B = torch.zeros_like(cell)  # Shape: (n_systems, 3, 3)
     B[active] = torch.linalg.inv(cell_T[active])
-    B_per_atom = B[system_idx]
+    B_per_atom = B[system_idx]  # Shape: (n_atoms, 3, 3)
+
+    # Transform to fractional coordinates: f = B·r
+    # For each atom, multiply its position by its system's inverse cell matrix
     frac = torch.bmm(B_per_atom, positions.unsqueeze(2)).squeeze(2)
 
     pbc_per_atom = pbc[system_idx]
     active_per_atom = active[system_idx].unsqueeze(1)
     pbc_mask = pbc_per_atom & active_per_atom
 
+    # Wrap to reference cell [0,1) using floor
     int_shifts = torch.where(pbc_mask, torch.floor(frac), torch.zeros_like(frac))
     wrapped_frac = frac - int_shifts
 
-    cell_per_atom = cell_T[system_idx]
+    # Transform back to real space: r = A·f
+    # For each atom, multiply its wrapped fractional coords by its system's cell matrix
+    cell_per_atom = cell_T[system_idx]  # Shape: (n_atoms, 3, 3)
     wrapped_pos = torch.bmm(cell_per_atom, wrapped_frac.unsqueeze(2)).squeeze(2)
     out = torch.where(active_per_atom, wrapped_pos, positions)
     shifts = torch.where(active_per_atom, int_shifts, torch.zeros_like(int_shifts))
