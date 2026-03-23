@@ -1181,7 +1181,7 @@ def _npt_nose_hoover_compute_cell_force(
     # Compute force on cell coordinate per system
     # F = alpha * KE - dU/dV - P*V*d
     return (
-        (alpha * KE_per_system)
+        (alpha * 2 * KE_per_system)
         - (internal_pressure * volume)
         - (external_pressure * volume * dim)
     )
@@ -1226,11 +1226,9 @@ def _npt_nose_hoover_inner_step(
     volume, volume_to_cell = _npt_nose_hoover_cell_info(state)
     cell = volume_to_cell(volume)
 
-    # Get model output
-    state.cell = cell
-    model_output = model(state)
-
     # First half step: Update momenta
+    # Reuse forces/stress from previous step (positions and cell unchanged;
+    # NHC chain half-steps only scale momenta/cell_momentum, not geometry)
     n_atoms_per_system = torch.bincount(state.system_idx, minlength=state.n_systems)
     alpha = 1 + 1 / n_atoms_per_system  # [n_systems]
 
@@ -1240,7 +1238,7 @@ def _npt_nose_hoover_inner_step(
         positions=positions,
         momenta=momenta,
         masses=masses,
-        stress=model_output["stress"],
+        stress=state.stress,
         external_pressure=external_pressure,
         system_idx=state.system_idx,
     )
@@ -1406,7 +1404,7 @@ def npt_nose_hoover_init(
         )
 
     # Compute total DOF for thermostat initialization and a zero KE placeholder
-    dof_per_system = torch.bincount(state.system_idx, minlength=n_systems) * dim
+    dof_per_system = torch.bincount(state.system_idx, minlength=n_systems) * dim - dim
     KE_thermostat = ts.calc_kinetic_energy(
         masses=state.masses, momenta=momenta, system_idx=state.system_idx
     )
@@ -1613,7 +1611,8 @@ def npt_nose_hoover_invariant(
 
     # Calculate degrees of freedom per system
     n_atoms_per_system = torch.bincount(state.system_idx, minlength=state.n_systems)
-    dof_per_system = n_atoms_per_system * state.positions.shape[-1]  # n_atoms * n_dim
+    dim = state.positions.shape[-1]
+    dof_per_system = n_atoms_per_system * dim - dim  # 3N - 3 (COM correction)
 
     # Initialize total energy with PE + KE
     e_tot = e_pot + e_kin_per_system
