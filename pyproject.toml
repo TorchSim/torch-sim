@@ -45,6 +45,7 @@ test = [
     "pytest-cov>=6",
     "pytest>=8",
     "spglib>=2.6",
+    "vesin[torch]>=0.5.3",
 ]
 vesin = ["vesin[torch]>=0.5.3"]
 io = ["ase>=3.26", "phonopy>=2.37.0", "pymatgen>=2025.6.14"]

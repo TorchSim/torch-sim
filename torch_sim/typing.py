@@ -47,4 +47,4 @@ StateLike = Union[
 # Type alias accepted by coerce_prng
 PRNGLike = int | torch.Generator | None
 
-MemoryScaling = Literal["n_atoms_x_density", "n_atoms"]
+MemoryScaling = Literal["n_atoms_x_density", "n_atoms", "n_edges"]
