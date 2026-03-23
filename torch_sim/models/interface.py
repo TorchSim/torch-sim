@@ -35,6 +35,9 @@ from torch_sim.state import SimState
 from torch_sim.typing import MemoryScaling
 
 
+VALIDATE_ATOL = 1e-4
+
+
 class ModelInterface(torch.nn.Module, ABC):
     """Abstract base class for all simulation models in TorchSim.
 
@@ -307,21 +310,21 @@ def validate_model_outputs(  # noqa: C901, PLR0915
     if stress_computed and model_output["stress"].shape != (3, 3, 3):
         raise ValueError(f"{model_output['stress'].shape=} != (3, 3, 3)")
 
+    # Test single Si system output shapes (8 atoms)
     si_state = ts.io.atoms_to_state([si_atoms], device, dtype)
 
     si_model_output = model.forward(si_state)
     if not torch.allclose(
-        si_model_output["energy"], model_output["energy"][0], atol=1e-3
+        si_model_output["energy"], model_output["energy"][0], atol=VALIDATE_ATOL
     ):
         raise ValueError(f"{si_model_output['energy']=} != {model_output['energy'][0]=}")
     if not torch.allclose(
         forces := si_model_output["forces"],
         expected_forces := model_output["forces"][: si_state.n_atoms],
-        atol=1e-3,
+        atol=VALIDATE_ATOL,
     ):
         raise ValueError(f"{forces=} != {expected_forces=}")
 
-    # Test single Si system output shapes (8 atoms)
     if si_model_output["energy"].shape != (1,):
         raise ValueError(f"{si_model_output['energy'].shape=} != (1,)")
     if force_computed and si_model_output["forces"].shape != (8, 3):
@@ -329,10 +332,11 @@ def validate_model_outputs(  # noqa: C901, PLR0915
     if stress_computed and si_model_output["stress"].shape != (1, 3, 3):
         raise ValueError(f"{si_model_output['stress'].shape=} != (1, 3, 3)")
 
+    # Test single Mg system output shapes (12 atoms)
     mg_state = ts.io.atoms_to_state([mg_atoms], device, dtype)
     mg_model_output = model.forward(mg_state)
     if not torch.allclose(
-        mg_model_output["energy"], model_output["energy"][1], atol=1e-3
+        mg_model_output["energy"], model_output["energy"][1], atol=VALIDATE_ATOL
     ):
         raise ValueError(f"{mg_model_output['energy']=} != {model_output['energy'][1]=}")
     mg_n = mg_state.n_atoms
@@ -340,11 +344,10 @@ def validate_model_outputs(  # noqa: C901, PLR0915
     if not torch.allclose(
         forces := mg_model_output["forces"],
         expected_forces := model_output["forces"][mg_slice],
-        atol=1e-3,
+        atol=VALIDATE_ATOL,
     ):
         raise ValueError(f"{forces=} != {expected_forces=}")
 
-    # Test single Mg system output shapes (12 atoms)
     if mg_model_output["energy"].shape != (1,):
         raise ValueError(f"{mg_model_output['energy'].shape=} != (1,)")
     if force_computed and mg_model_output["forces"].shape != (12, 3):
@@ -352,16 +355,18 @@ def validate_model_outputs(  # noqa: C901, PLR0915
     if stress_computed and mg_model_output["stress"].shape != (1, 3, 3):
         raise ValueError(f"{mg_model_output['stress'].shape=} != (1, 3, 3)")
 
+    # Test single Fe system output shapes (1 atom)
+    # This catches that models do not squeeze away singleton dimensions.
     fe_state = ts.io.atoms_to_state([fe_atoms], device, dtype)
     fe_model_output = model.forward(fe_state)
     if not torch.allclose(
-        fe_model_output["energy"], model_output["energy"][2], atol=1e-3
+        fe_model_output["energy"], model_output["energy"][2], atol=VALIDATE_ATOL
     ):
         raise ValueError(f"{fe_model_output['energy']=} != {model_output['energy'][2]=}")
     if not torch.allclose(
         forces := fe_model_output["forces"],
         expected_forces := model_output["forces"][si_state.n_atoms + mg_n :],
-        atol=1e-3,
+        atol=VALIDATE_ATOL,
     ):
         raise ValueError(f"{forces=} != {expected_forces=}")
 
@@ -371,3 +376,34 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         raise ValueError(f"{fe_model_output['forces'].shape=} != (1, 3)")
     if stress_computed and fe_model_output["stress"].shape != (1, 3, 3):
         raise ValueError(f"{fe_model_output['stress'].shape=} != (1, 3, 3)")
+
+    # Translating one atom by a full lattice vector should not change outputs.
+    # This catches models that fail to apply periodic boundary conditions.
+    shifted_state = si_state.clone()
+    lattice_vec = shifted_state.cell[0, :, 0]  # column convention
+    shifted_state.positions[0] = shifted_state.positions[0] + lattice_vec
+    shifted_output = model.forward(shifted_state)
+    if not torch.allclose(
+        shifted_output["energy"], si_model_output["energy"], atol=VALIDATE_ATOL
+    ):
+        raise ValueError(
+            "Energy changed after translating an atom by a lattice "
+            f"vector: {shifted_output['energy']=} != "
+            f"{si_model_output['energy']=}"
+        )
+    if force_computed and not torch.allclose(
+        shifted_output["forces"], si_model_output["forces"], atol=VALIDATE_ATOL
+    ):
+        raise ValueError(
+            "Forces changed after translating an atom by a lattice "
+            "vector: max diff = "
+            f"{(shifted_output['forces'] - si_model_output['forces']).abs().max()}"
+        )
+    if stress_computed and not torch.allclose(
+        shifted_output["stress"], si_model_output["stress"], atol=VALIDATE_ATOL
+    ):
+        raise ValueError(
+            "Stress changed after translating an atom by a lattice "
+            "vector: max diff = "
+            f"{(shifted_output['stress'] - si_model_output['stress']).abs().max()}"
+        )
