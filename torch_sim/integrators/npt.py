@@ -1179,7 +1179,7 @@ def _npt_nose_hoover_compute_cell_force(
         internal_pressure = torch.trace(stress).unsqueeze(0).expand(n_systems)
 
     # Compute force on cell coordinate per system
-    # F = alpha * KE - dU/dV - P*V*d
+    # F = alpha * (2 * KE) - dU/dV - P*V*d
     return (
         (alpha * 2 * KE_per_system)
         - (internal_pressure * volume)
