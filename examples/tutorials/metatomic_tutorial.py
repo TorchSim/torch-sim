@@ -24,7 +24,7 @@ device is chosen automatically.)
 # %%
 from torch_sim.models.metatomic import MetatomicModel
 
-model = MetatomicModel("pet-mad")
+model = MetatomicModel("pet-mad")  # type: ignore[arg-type]
 
 # %% [markdown]
 """
