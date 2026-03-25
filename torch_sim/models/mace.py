@@ -48,6 +48,10 @@ except (ImportError, ModuleNotFoundError) as exc:
             """Dummy init for type checking."""
             raise err
 
+        def forward(self, *_args: Any, **_kwargs: Any) -> Any:
+            """Unreachable — __init__ always raises."""
+            raise NotImplementedError
+
 
 def to_one_hot(
     indices: torch.Tensor, num_classes: int, dtype: torch.dtype
