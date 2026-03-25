@@ -192,22 +192,10 @@ def lbfgs_init(
     if step_size_tensor.ndim == 0:
         step_size_tensor = step_size_tensor.expand(n_systems)
 
-    common_args = {
-        # Copy SimState attributes
-        "positions": state.positions.clone(),  # [N, 3]
-        "masses": state.masses.clone(),  # [N]
-        "cell": state.cell.clone(),  # [S, 3, 3]
-        "atomic_numbers": state.atomic_numbers.clone(),  # [N]
-        "system_idx": state.system_idx.clone(),  # [N]
-        "pbc": state.pbc,  # [S, 3]
-        "charge": state.charge,  # preserve charge
-        "spin": state.spin,  # preserve spin
-        "_constraints": state.constraints,  # preserve constraints
-        # Optimization state
+    lbfgs_attrs = {
         "forces": forces,  # [N, 3]
         "energy": energy,  # [S]
         "stress": stress,  # [S, 3, 3] or None
-        # L-BFGS specific state
         "prev_forces": forces.clone(),  # [N, 3]
         "prev_positions": state.positions.clone(),  # [N, 3]
         "s_history": s_history,  # [S, 0, M, 3]
@@ -227,41 +215,35 @@ def lbfgs_init(
         reference_cell = state.cell.clone()  # [S, 3, 3]
         cur_deform_grad = deform_grad(reference_cell.mT, state.cell.mT)  # [S, 3, 3]
 
-        # Initial fractional positions = positions
-        # cur_deform_grad[system_idx]: [N, 3, 3], positions: [N, 3] -> [N, 3]
         frac_positions = torch.linalg.solve(
             cur_deform_grad[state.system_idx],  # [N, 3, 3]
             state.positions.unsqueeze(-1),  # [N, 3, 1]
         ).squeeze(-1)  # [N, 3]
 
-        # Initial scaled forces = forces @ deform_grad = forces
-        # forces: [N, 3], cur_deform_grad[system_idx]: [N, 3, 3] -> [N, 3]
         scaled_forces = torch.bmm(
             forces.unsqueeze(1),  # [N, 1, 3]
             cur_deform_grad[state.system_idx],  # [N, 3, 3]
         ).squeeze(1)  # [N, 3]
 
-        common_args["reference_cell"] = reference_cell  # [S, 3, 3]
-        common_args["cell_filter"] = cell_filter_funcs
-        # Store fractional positions and scaled forces for ASE compatibility
-        common_args["prev_positions"] = frac_positions  # [N, 3]
-        common_args["prev_forces"] = scaled_forces  # [N, 3]
+        lbfgs_attrs["reference_cell"] = reference_cell  # [S, 3, 3]
+        lbfgs_attrs["cell_filter"] = cell_filter_funcs
+        lbfgs_attrs["prev_positions"] = frac_positions  # [N, 3] (fractional)
+        lbfgs_attrs["prev_forces"] = scaled_forces  # [N, 3] (scaled)
 
         # Extended per-system history includes cell DOFs (3 "virtual atoms" per system)
-        # History shape: [S, H, M+3, 3] where M = global_max_atoms
         extended_size_per_system = global_max_atoms + 3  # M_ext = M + 3
-        common_args["s_history"] = torch.zeros(
+        lbfgs_attrs["s_history"] = torch.zeros(
             (n_systems, 0, extended_size_per_system, 3),
             device=device,
             dtype=dtype,
         )  # [S, 0, M_ext, 3]
-        common_args["y_history"] = torch.zeros(
+        lbfgs_attrs["y_history"] = torch.zeros(
             (n_systems, 0, extended_size_per_system, 3),
             device=device,
             dtype=dtype,
         )  # [S, 0, M_ext, 3]
 
-        cell_state = CellLBFGSState(**common_args)  # ty: ignore[invalid-argument-type]
+        cell_state = CellLBFGSState.from_state(state, **lbfgs_attrs)
 
         # Initialize cell-specific attributes
         # After init: cell_positions [S, 3, 3], cell_forces [S, 3, 3], cell_factor [S]
@@ -271,9 +253,12 @@ def lbfgs_init(
         cell_state.prev_cell_positions = cell_state.cell_positions.clone()  # [S, 3, 3]
         cell_state.prev_cell_forces = cell_state.cell_forces.clone()  # [S, 3, 3]
 
+        cell_state.store_model_extras(model_output)
         return cell_state
 
-    return LBFGSState(**common_args)  # ty: ignore[invalid-argument-type]
+    lbfgs_state = LBFGSState.from_state(state, **lbfgs_attrs)
+    lbfgs_state.store_model_extras(model_output)
+    return lbfgs_state
 
 
 def lbfgs_step(  # noqa: PLR0915, C901
@@ -536,6 +521,7 @@ def lbfgs_step(  # noqa: PLR0915, C901
     new_forces = model_output["forces"]  # [N, 3]
     new_energy = model_output["energy"]  # [S]
     new_stress = model_output.get("stress")  # [S, 3, 3] or None
+    state.store_model_extras(model_output)
 
     # Update cell forces for next step: [S, 3, 3]
     if isinstance(state, CellLBFGSState):

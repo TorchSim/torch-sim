@@ -25,13 +25,13 @@ from torch_sim.optimizers.cell_filters import (
     _clamp_deform_grad_log,
     frechet_cell_filter_init,
 )
+from torch_sim.optimizers.state import BFGSState
 from torch_sim.state import SimState
 
 
 if TYPE_CHECKING:
     from torch_sim.models.interface import ModelInterface
     from torch_sim.optimizers.cell_filters import CellFilter, CellFilterFuncs
-    from torch_sim.optimizers.state import BFGSState
 
 BFGS_EPS = 1e-7  # eps kept same as ASE's BFGS.
 
@@ -115,8 +115,6 @@ def bfgs_init(
     Returns:
         BFGSState or CellBFGSState if cell_filter is provided
     """
-    from torch_sim.optimizers import BFGSState, CellBFGSState
-
     device: torch.device = model.device
     dtype: torch.dtype = model.dtype
 
@@ -143,6 +141,19 @@ def bfgs_init(
 
     n_iter = torch.zeros((n_systems,), device=model.device, dtype=torch.int32)  # [S]
 
+    bfgs_attrs = {
+        "forces": forces,  # [N, 3]
+        "energy": energy,  # [S]
+        "stress": stress,  # [S, 3, 3] or None
+        "prev_forces": forces.clone(),  # [N, 3]
+        "prev_positions": state.positions.clone(),  # [N, 3]
+        "alpha": alpha_t,  # [S]
+        "max_step": max_step_t,  # [S]
+        "n_iter": n_iter,  # [S]
+        "atom_idx_in_system": atom_idx,  # [N]
+        "max_atoms": max_atoms,  # [S]
+    }
+
     if cell_filter is not None:
         # Extended Hessian: (3*global_max_atoms + 9) x (3*global_max_atoms + 9)
         # The extra 9 DOFs are for cell parameters (3x3 matrix flattened)
@@ -153,59 +164,31 @@ def bfgs_init(
 
         cell_filter_funcs = init_fn, _step_fn = ts.get_cell_filter(cell_filter)
 
-        # Note (AG): At initialization, deform_grad is identity, so we have:
-        # fractional = Cartesian / cell and scaled forces = forces @ I = forces
-        # For ASE compatibility, we need to store prev_positions as fractional coords
-        # and prev_forces as scaled forces
-
-        # Get initial deform_grad (identity at start since reference_cell = current_cell)
+        # At initialization, deform_grad is identity, so fractional = Cartesian
+        # and scaled forces = forces. For ASE compatibility, store prev_positions
+        # as fractional coords and prev_forces as scaled forces.
         reference_cell = state.cell.clone()  # [S, 3, 3]
         cur_deform_grad = cell_filters.deform_grad(
             reference_cell.mT, state.cell.mT
         )  # [S, 3, 3]
 
-        # Initial fractional positions = solve(deform_grad, positions) = positions
-        # cur_deform_grad[system_idx]: [N, 3, 3], positions: [N, 3]
         frac_positions = torch.linalg.solve(
             cur_deform_grad[state.system_idx],  # [N, 3, 3]
             state.positions.unsqueeze(-1),  # [N, 3, 1]
         ).squeeze(-1)  # [N, 3]
 
-        # Initial scaled forces = forces @ deform_grad = forces
-        # forces: [N, 3], cur_deform_grad[system_idx]: [N, 3, 3] -> [N, 3]
         scaled_forces = torch.bmm(
             forces.unsqueeze(1),  # [N, 1, 3]
             cur_deform_grad[state.system_idx],  # [N, 3, 3]
         ).squeeze(1)
 
-        common_args = {
-            "positions": state.positions.clone(),  # [N, 3]
-            "masses": state.masses.clone(),  # [N]
-            "cell": state.cell.clone(),  # [S, 3, 3]
-            "atomic_numbers": state.atomic_numbers.clone(),  # [N]
-            "forces": forces,  # [N, 3]
-            "energy": energy,  # [S]
-            "stress": stress,  # [S, 3, 3] or None
-            "hessian": hessian,  # [S, D_ext, D_ext]
-            # Note (AG): Store fractional positions and scaled forces
-            # for ASE compatibility
-            "prev_forces": scaled_forces,  # [N, 3] (scaled)
-            "prev_positions": frac_positions,  # [N, 3] (fractional)
-            "alpha": alpha_t,  # [S]
-            "max_step": max_step_t,  # [S]
-            "n_iter": n_iter,  # [S]
-            "atom_idx_in_system": atom_idx,  # [N]
-            "max_atoms": max_atoms,  # scalar M
-            "system_idx": state.system_idx.clone(),  # [N]
-            "pbc": state.pbc,  # [S, 3]
-            "reference_cell": reference_cell,  # [S, 3, 3]
-            "cell_filter": cell_filter_funcs,
-            "charge": state.charge,  # preserve charge
-            "spin": state.spin,  # preserve spin
-            "_constraints": state.constraints,  # preserve constraints
-        }
+        bfgs_attrs["hessian"] = hessian  # [S, D_ext, D_ext]
+        bfgs_attrs["prev_forces"] = scaled_forces  # [N, 3] (scaled)
+        bfgs_attrs["prev_positions"] = frac_positions  # [N, 3] (fractional)
+        bfgs_attrs["reference_cell"] = reference_cell  # [S, 3, 3]
+        bfgs_attrs["cell_filter"] = cell_filter_funcs
 
-        cell_state = CellBFGSState(**common_args)  # ty: ignore[invalid-argument-type]
+        cell_state = CellBFGSState.from_state(state, **bfgs_attrs)
 
         # Initialize cell-specific attributes (cell_positions, cell_forces, etc.)
         # After init: cell_positions [S, 3, 3], cell_forces [S, 3, 3], cell_factor [S]
@@ -215,6 +198,7 @@ def bfgs_init(
         cell_state.prev_cell_positions = cell_state.cell_positions.clone()  # [S, 3, 3]
         cell_state.prev_cell_forces = cell_state.cell_forces.clone()  # [S, 3, 3]
 
+        cell_state.store_model_extras(model_output)
         return cell_state
 
     # Position-only Hessian: 3*global_max_atoms x 3*global_max_atoms
@@ -222,31 +206,11 @@ def bfgs_init(
     hessian = torch.eye(dim, device=device, dtype=dtype).unsqueeze(0).repeat(
         n_systems, 1, 1
     ) * alpha_t.view(n_systems, 1, 1)  # [S, D, D]
+    bfgs_attrs["hessian"] = hessian  # [S, D, D]
 
-    common_args = {
-        "positions": state.positions.clone(),  # [N, 3]
-        "masses": state.masses.clone(),  # [N]
-        "cell": state.cell.clone(),  # [S, 3, 3]
-        "atomic_numbers": state.atomic_numbers.clone(),  # [N]
-        "forces": forces,  # [N, 3]
-        "energy": energy,  # [S]
-        "stress": stress,  # [S, 3, 3] or None
-        "hessian": hessian,  # [S, D, D]
-        "prev_forces": forces.clone(),  # [N, 3]
-        "prev_positions": state.positions.clone(),  # [N, 3]
-        "alpha": alpha_t,  # [S]
-        "max_step": max_step_t,  # [S]
-        "n_iter": n_iter,  # [S]
-        "atom_idx_in_system": atom_idx,  # [N]
-        "max_atoms": max_atoms,  # scalar M
-        "system_idx": state.system_idx.clone(),  # [N]
-        "pbc": state.pbc,  # [S, 3]
-        "charge": state.charge,  # preserve charge
-        "spin": state.spin,  # preserve spin
-        "_constraints": state.constraints,  # preserve constraints
-    }
-
-    return BFGSState(**common_args)  # ty: ignore[invalid-argument-type]
+    bfgs_state = BFGSState.from_state(state, **bfgs_attrs)
+    bfgs_state.store_model_extras(model_output)
+    return bfgs_state
 
 
 def bfgs_step(  # noqa: C901, PLR0915
@@ -550,6 +514,7 @@ def bfgs_step(  # noqa: C901, PLR0915
     state.energy = model_output["energy"]  # [S]
     if "stress" in model_output:
         state.stress = model_output["stress"]  # [S, 3, 3]
+    state.store_model_extras(model_output)
 
     # Update cell forces for next step
     # Update cell forces for cell state: [S, 3, 3]

@@ -233,6 +233,7 @@ def velocity_verlet_step[T: MDState](
 
     state.energy = model_output["energy"]
     state.forces = model_output["forces"]
+    state.store_model_extras(model_output)
     return momentum_step(state, dt_2)
 
 

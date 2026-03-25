@@ -57,12 +57,14 @@ def nve_init(
             state.rng,
         )
 
-    return MDState.from_state(
+    md_state = MDState.from_state(
         state,
         momenta=momenta,
         energy=model_output["energy"],
         forces=model_output["forces"],
     )
+    md_state.store_model_extras(model_output)
+    return md_state
 
 
 def nve_step(
@@ -100,5 +102,6 @@ def nve_step(
     model_output = model(state)
     state.energy = model_output["energy"]
     state.forces = model_output["forces"]
+    state.store_model_extras(model_output)
 
     return momentum_step(state, dt / 2)
