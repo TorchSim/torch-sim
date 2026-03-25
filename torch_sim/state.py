@@ -72,9 +72,6 @@ def require_system_idx(system_idx: torch.Tensor | None) -> torch.Tensor:
     return system_idx
 
 
-_EXTRAS_COMPAT_KEYS = frozenset({"charge", "spin"})
-
-
 def _wrap_init_for_extras(cls: type) -> None:
     """Wrap a dataclass __init__ to route unknown kwargs into _system_extras."""
     original_init = cls.__init__
@@ -202,17 +199,20 @@ class SimState:
     def __setattr__(self, name: str, value: object) -> None:  # noqa: C901
         """Coerce pbc and system_idx on every assignment.
 
-        Routes charge/spin writes to _system_extras for backward compatibility.
+        Routes writes to existing extras keys back into their extras dict.
         """
-        if name in _EXTRAS_COMPAT_KEYS:
-            try:
-                extras = object.__getattribute__(self, "_system_extras")
-            except AttributeError:
-                extras = {}
-                super().__setattr__("_system_extras", extras)
-            if value is not None:
-                extras[name] = value
-            return
+        if not name.startswith("_"):
+            for extras_attr in ("_system_extras", "_atom_extras"):
+                try:
+                    extras = object.__getattribute__(self, extras_attr)
+                except AttributeError:
+                    continue
+                if name in extras:
+                    if value is not None:
+                        extras[name] = value
+                    else:
+                        del extras[name]
+                    return
         if name == "pbc" and not isinstance(value, torch.Tensor):
             if isinstance(value, bool):
                 value = [value] * 3
@@ -249,15 +249,6 @@ class SimState:
 
         if self.constraints:
             validate_constraints(self.constraints, state=self)
-
-        if "charge" not in self._system_extras:
-            self._system_extras["charge"] = torch.zeros(
-                n_systems, device=self.device, dtype=self.dtype
-            )
-        if "spin" not in self._system_extras:
-            self._system_extras["spin"] = torch.zeros(
-                n_systems, device=self.device, dtype=self.dtype
-            )
 
         if self.cell.ndim != 3:
             self.cell = self.cell.unsqueeze(0)
