@@ -75,9 +75,6 @@ jobs:
           - version: { python: '3.14', resolution: highest }
             model: { name: orb, test_path: 'tests/models/test_orb.py' }
           - version: { python: '3.14', resolution: highest }
-            model: { name: fairchem, test_path: 'tests/models/test_fairchem.py'}
-          - version: { python: '3.14', resolution: highest }
-          - version: { python: '3.14', resolution: highest }
             model: { name: nequip, test_path: 'tests/models/test_nequip_framework.py'}
     runs-on: ${{ matrix.os }}
 
