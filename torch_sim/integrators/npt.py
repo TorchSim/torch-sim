@@ -1227,11 +1227,10 @@ def _npt_nose_hoover_inner_step(
     cell = volume_to_cell(volume)
 
     # First half step: Update momenta
-    # Reuse forces/stress from previous step (positions and cell unchanged;
-    # NHC chain half-steps only scale momenta/cell_momentum, not geometry)
-    n_atoms_per_system = torch.bincount(state.system_idx, minlength=state.n_systems)
-    alpha = 1 + 1 / n_atoms_per_system  # [n_systems]
+    # alpha = 1 + dim / degrees_of_freedom (3 * natoms - 3)
+    alpha = 1 + 3 / state.get_number_of_degrees_of_freedom()  # [n_systems]
 
+    # Reuse stress from previous step since positions and cell unchanged
     cell_force_val = _npt_nose_hoover_compute_cell_force(
         alpha=alpha,
         volume=volume,
@@ -1404,7 +1403,8 @@ def npt_nose_hoover_init(
         )
 
     # Compute total DOF for thermostat initialization and a zero KE placeholder
-    dof_per_system = torch.bincount(state.system_idx, minlength=n_systems) * dim - dim
+    dof_per_system = state.get_number_of_degrees_of_freedom() - 3
+
     KE_thermostat = ts.calc_kinetic_energy(
         masses=state.masses, momenta=momenta, system_idx=state.system_idx
     )
@@ -1610,14 +1610,12 @@ def npt_nose_hoover_invariant(
     )
 
     # Calculate degrees of freedom per system
-    n_atoms_per_system = torch.bincount(state.system_idx, minlength=state.n_systems)
-    dim = state.positions.shape[-1]
-    dof_per_system = n_atoms_per_system * dim - dim  # 3N - 3 (COM correction)
+    dof_per_system = state.get_number_of_degrees_of_freedom()
 
     # Initialize total energy with PE + KE
     e_tot = e_pot + e_kin_per_system
 
-    # Add thermostat chain contributions (batched per system, DOF = n_atoms * 3)
+    # Add thermostat chain contributions (batched per system, DOF = 3 * n_atoms - 3)
     e_tot += _compute_chain_energy(state.thermostat, kT, e_tot, dof_per_system)
 
     # Add barostat chain contributions (batched per system, DOF = 1)
