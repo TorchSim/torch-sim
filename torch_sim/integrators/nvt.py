@@ -316,8 +316,6 @@ def nvt_nose_hoover_init(
 
     # Calculate degrees of freedom per system (subtract 3 for COM motion,
     # matching LAMMPS compute_temp which uses dof = 3N - 3)
-    n_atoms_per_system = torch.bincount(state.system_idx)
-    dim = state.positions.shape[-1]
     dof_per_system = state.get_number_of_degrees_of_freedom() - 3
 
     # Initialize state
