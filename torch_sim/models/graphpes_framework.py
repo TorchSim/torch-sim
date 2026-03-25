@@ -45,6 +45,10 @@ except ImportError as exc:
             """Dummy init for type checking."""
             raise err
 
+        def forward(self, *_args: Any, **_kwargs: Any) -> Any:
+            """Unreachable — __init__ always raises."""
+            raise NotImplementedError
+
     class AtomicGraph:  # noqa: D101
         def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: D107,ARG002
             raise ImportError("graph_pes must be installed to use this model.")

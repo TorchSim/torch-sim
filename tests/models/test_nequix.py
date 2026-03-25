@@ -16,7 +16,7 @@ try:
     from torch_sim.models.nequix import NequixModel
 except (ImportError, ModuleNotFoundError):
     pytest.skip(
-        f"nequix not installed: {traceback.format_exc()}",  # ty:ignore[too-many-positional-arguments]
+        f"nequix not installed: {traceback.format_exc()}",
         allow_module_level=True,
     )
 
