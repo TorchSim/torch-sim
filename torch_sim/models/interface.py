@@ -381,7 +381,7 @@ def validate_model_outputs(  # noqa: C901, PLR0915
     # This catches models that fail to apply periodic boundary conditions.
     shifted_state = si_state.clone()
     lattice_vec = shifted_state.cell[0, :, 0]  # column convention
-    shifted_state.positions[0] = shifted_state.positions[0] + lattice_vec
+    shifted_state.positions[0] = shifted_state.positions[0] + 3 * lattice_vec
     shifted_output = model.forward(shifted_state)
     if not torch.allclose(
         shifted_output["energy"], si_model_output["energy"], atol=VALIDATE_ATOL
