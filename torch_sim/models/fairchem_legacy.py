@@ -73,6 +73,10 @@ except ImportError as exc:
             """Dummy init for type checking."""
             raise err
 
+        def forward(self, *_args: Any, **_kwargs: Any) -> Any:
+            """Unreachable — __init__ always raises."""
+            raise NotImplementedError
+
 
 if typing.TYPE_CHECKING:
     from collections.abc import Callable
