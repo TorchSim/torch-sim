@@ -304,8 +304,8 @@ class MaceModel(ModelInterface):
             edge_index=edge_index,
             unit_shifts=unit_shifts,
             shifts=shifts,
-            total_charge=state.charge,
-            total_spin=state.spin,
+            total_charge=getattr(state, "charge", None),
+            total_spin=getattr(state, "spin", None),
         )
 
         # Get model output

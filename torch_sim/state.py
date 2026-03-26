@@ -974,6 +974,11 @@ def get_attrs_for_scope(
     for attr_name in attr_names:
         yield attr_name, getattr(state, attr_name)
 
+    if scope == "per-system":
+        yield from state._system_extras.items()  # noqa: SLF001
+    elif scope == "per-atom":
+        yield from state._atom_extras.items()  # noqa: SLF001
+
 
 def _filter_attrs_by_index(
     state: SimState,
@@ -1029,11 +1034,15 @@ def _filter_attrs_by_index(
             c.system_idx = new_system_idx[c.system_idx]  # ty: ignore[invalid-assignment]
 
     for name, val in get_attrs_for_scope(state, "per-atom"):
+        if name in state.atom_extras:
+            continue
         filtered_attrs[name] = (
             system_remap[val[atom_indices]] if name == "system_idx" else val[atom_indices]
         )
 
     for name, val in get_attrs_for_scope(state, "per-system"):
+        if name in state.system_extras:
+            continue
         filtered_attrs[name] = (
             val[system_indices] if isinstance(val, torch.Tensor) else val
         )
@@ -1065,11 +1074,14 @@ def _split_state[T: SimState](state: T) -> list[T]:
 
     split_per_atom = {}
     for attr_name, attr_value in get_attrs_for_scope(state, "per-atom"):
-        if attr_name != "system_idx":
-            split_per_atom[attr_name] = torch.split(attr_value, system_sizes, dim=0)
+        if attr_name == "system_idx" or attr_name in state.atom_extras:
+            continue
+        split_per_atom[attr_name] = torch.split(attr_value, system_sizes, dim=0)
 
     split_per_system = {}
     for attr_name, attr_value in get_attrs_for_scope(state, "per-system"):
+        if attr_name in state.system_extras:
+            continue
         if isinstance(attr_value, torch.Tensor):
             split_per_system[attr_name] = torch.split(attr_value, 1, dim=0)
         else:  # Non-tensor attributes are replicated for each split
@@ -1277,13 +1289,15 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
 
         # Collect per-atom properties
         for prop, val in get_attrs_for_scope(state, "per-atom"):
-            if prop == "system_idx":
+            if prop == "system_idx" or prop in state.atom_extras:
                 # skip system_idx, it will be handled below
                 continue
             per_atom_tensors[prop].append(val)
 
         # Collect per-system properties
         for prop, val in get_attrs_for_scope(state, "per-system"):
+            if prop in state.system_extras:
+                continue
             per_system_tensors[prop].append(val)
 
         # Collect extras

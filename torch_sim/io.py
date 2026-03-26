@@ -95,16 +95,22 @@ def state_to_atoms(
 
         # Write system extras to atoms.info
         # charge/spin stored as int scalars for FairChem compatibility
-        if system_extras_keys is not None:
-            for key in system_extras_keys:
-                val = state.system_extras[key][sys_idx].detach().cpu().numpy()
-                atoms.info[key] = val
+        _sys_keys = (
+            system_extras_keys
+            if system_extras_keys is not None
+            else list(state.system_extras)
+        )
+        for key in _sys_keys:
+            val = state.system_extras[key][sys_idx].detach().cpu().numpy()
+            atoms.info[key] = val
 
         # Write atom extras to atoms.arrays
-        if atom_extras_keys is not None:
-            for key in atom_extras_keys:
-                val = state.atom_extras[key][mask].detach().cpu().numpy()
-                atoms.arrays[key] = val
+        _atom_keys = (
+            atom_extras_keys if atom_extras_keys is not None else list(state.atom_extras)
+        )
+        for key in _atom_keys:
+            val = state.atom_extras[key][mask].detach().cpu().numpy()
+            atoms.arrays[key] = val
 
         atoms_list.append(atoms)
 
@@ -314,8 +320,16 @@ def atoms_to_state(
         raise ValueError("All systems must have the same periodic boundary conditions")
 
     _system_extras: dict[str, torch.Tensor] = {}
+
+    # charge and spin always default to 0 for backward compatibility
+    for key in ("charge", "spin"):
+        vals = np.array([float(at.info.get(key, 0.0)) for at in atoms_list])
+        _system_extras[key] = torch.tensor(vals, dtype=dtype, device=device)
+
     if system_extras_keys:
         for key in system_extras_keys:
+            if key in _system_extras:
+                continue
             vals = [at.info.get(key) for at in atoms_list]
             non_none_vals = [v for v in vals if v is not None]
             if len(non_none_vals) == len(vals):
