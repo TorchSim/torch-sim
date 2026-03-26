@@ -680,6 +680,8 @@ def get_cart_deformed_cell(state: SimState, axis: int = 0, size: float = 1.0) ->
         masses=state.masses,
         pbc=state.pbc,
         atomic_numbers=state.atomic_numbers,
+        _system_extras=state._system_extras,
+        _atom_extras=state._atom_extras,
     )
 
 

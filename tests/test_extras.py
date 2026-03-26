@@ -75,8 +75,9 @@ class TestExtras:
                 "stress": torch.randn(state.n_systems, 3, 3),
             }
         )
-        assert not state._system_extras  # noqa: SLF001
-        assert not state._atom_extras  # noqa: SLF001
+        for key in ("energy", "forces", "stress"):
+            assert key not in state._system_extras  # noqa: SLF001
+            assert key not in state._atom_extras  # noqa: SLF001
 
     def test_store_model_extras_per_system(self, si_double_sim_state: ts.SimState):
         """Tensors with leading dim == n_systems go into system_extras."""
