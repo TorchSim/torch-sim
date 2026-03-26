@@ -722,13 +722,9 @@ class SimState:
 
         Also enforce all of child classes's attributes are specified in _atom_attributes,
         _system_attributes, or _global_attributes.
-
-        Also wraps __init__ to pop deprecated charge/spin kwargs and route them
-        to _system_extras for backward compatibility.
         """
         cls._assert_no_tensor_attributes_can_be_none()
         cls._assert_all_attributes_have_defined_scope()
-        _wrap_init_for_extras(cls)
         super().__init_subclass__(**kwargs)
 
     @classmethod
