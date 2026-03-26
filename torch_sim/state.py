@@ -323,6 +323,8 @@ class SimState:
             if name in extras:
                 return extras[name]
 
+        # Raise AttributeError so that Python's getattr(obj, name, default),
+        # hasattr(obj, name), and other descriptor-protocol machinery work correctly.
         raise AttributeError(
             f"'{type(self).__name__}' has no attribute or extra '{name}'"
         )
@@ -601,6 +603,8 @@ class SimState:
             if attr_name in cls._get_all_attributes():
                 attrs[attr_name] = cls._clone_attr(attr_value)
 
+        # Route additional_attrs: known attrs go directly, unknown tensor attrs
+        # go to _system_extras (backward compat for charge/spin and extensibility)
         all_known = cls._get_all_attributes()
         for key, val in additional_attrs.items():
             if key in all_known:
@@ -1286,6 +1290,7 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
         # Collect per-atom properties
         for prop, val in get_attrs_for_scope(state, "per-atom"):
             if prop == "system_idx" or prop in state.atom_extras:
+                # skip system_idx, it will be handled below
                 continue
             per_atom_tensors[prop].append(val)
 

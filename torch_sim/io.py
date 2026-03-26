@@ -94,6 +94,7 @@ def state_to_atoms(
         )
 
         # Write system extras to atoms.info
+        # charge/spin stored as int scalars for FairChem compatibility
         _sys_keys = (
             system_extras_keys
             if system_extras_keys is not None
