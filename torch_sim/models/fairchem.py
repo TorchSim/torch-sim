@@ -223,8 +223,8 @@ class FairChemModel(ModelInterface):
                 pbc=pbc_np if cell is not None else False,
             )
 
-            charge = sim_state.charge
-            spin = sim_state.spin
+            charge = getattr(sim_state, "charge", None)
+            spin = getattr(sim_state, "spin", None)
             atoms.info["charge"] = charge[idx].item() if charge is not None else 0.0
             atoms.info["spin"] = spin[idx].item() if spin is not None else 0.0
 
