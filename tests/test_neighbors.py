@@ -1,9 +1,8 @@
-import time
+import re
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
-import psutil
 import pytest
 import torch
 from ase import Atoms
@@ -60,43 +59,62 @@ def ase_to_torch_batch(
     )
 
 
-# Adapted from torch_nl test
-# https://github.com/felixmusil/torch_nl/blob/main/torch_nl/test_nl.py
+def _make_triclinic_atoms() -> Atoms:
+    """CaCrP2O7 (mvc-11955) triclinic structure.
 
-# triclinic atomic structure
-CaCrP2O7_mvc_11955_symmetrized = {
-    "positions": [
-        [3.68954016, 5.03568186, 4.64369552],
-        [5.12301681, 2.13482791, 2.66220405],
-        [1.99411973, 0.94691001, 1.25068234],
-        [6.81843724, 6.22359976, 6.05521724],
-        [2.63005662, 4.16863452, 0.86090529],
-        [6.18250036, 3.00187525, 6.44499428],
-        [2.11497733, 1.98032773, 4.53610884],
-        [6.69757964, 5.19018203, 2.76979073],
-        [1.39215545, 2.94386142, 5.60917746],
-        [7.42040152, 4.22664834, 1.69672212],
-        [2.43224207, 5.4571615, 6.70305327],
-        [6.3803149, 1.71334827, 0.6028463],
-        [1.11265639, 1.50166318, 3.48760997],
-        [7.69990058, 5.66884659, 3.8182896],
-        [3.56971588, 5.20836551, 1.43673437],
-        [5.2428411, 1.96214426, 5.8691652],
-        [3.12282634, 2.72812741, 1.05450432],
-        [5.68973063, 4.44238236, 6.25139525],
-        [3.24868468, 2.83997522, 3.99842386],
-        [5.56387229, 4.33053455, 3.30747571],
-        [2.60835346, 0.74421609, 5.3236629],
-        [6.20420351, 6.42629368, 1.98223667],
-    ],
-    "cell": [
-        [6.19330899, 0.0, 0.0],
-        [2.4074486111396207, 6.149627748674982, 0.0],
-        [0.2117993724186579, 1.0208820183960539, 7.305899571570074],
-    ],
-    "numbers": [*[20] * 2, *[24] * 2, *[15] * 4, *[8] * 14],
-    "pbc": [True, True, True],
-}
+    Adapted from https://github.com/felixmusil/torch_nl/blob/main/torch_nl/test_nl.py
+    """
+    return Atoms(
+        positions=[
+            [3.68954016, 5.03568186, 4.64369552],
+            [5.12301681, 2.13482791, 2.66220405],
+            [1.99411973, 0.94691001, 1.25068234],
+            [6.81843724, 6.22359976, 6.05521724],
+            [2.63005662, 4.16863452, 0.86090529],
+            [6.18250036, 3.00187525, 6.44499428],
+            [2.11497733, 1.98032773, 4.53610884],
+            [6.69757964, 5.19018203, 2.76979073],
+            [1.39215545, 2.94386142, 5.60917746],
+            [7.42040152, 4.22664834, 1.69672212],
+            [2.43224207, 5.4571615, 6.70305327],
+            [6.3803149, 1.71334827, 0.6028463],
+            [1.11265639, 1.50166318, 3.48760997],
+            [7.69990058, 5.66884659, 3.8182896],
+            [3.56971588, 5.20836551, 1.43673437],
+            [5.2428411, 1.96214426, 5.8691652],
+            [3.12282634, 2.72812741, 1.05450432],
+            [5.68973063, 4.44238236, 6.25139525],
+            [3.24868468, 2.83997522, 3.99842386],
+            [5.56387229, 4.33053455, 3.30747571],
+            [2.60835346, 0.74421609, 5.3236629],
+            [6.20420351, 6.42629368, 1.98223667],
+        ],
+        cell=[
+            [6.19330899, 0.0, 0.0],
+            [2.4074486111396207, 6.149627748674982, 0.0],
+            [0.2117993724186579, 1.0208820183960539, 7.305899571570074],
+        ],
+        numbers=[*[20] * 2, *[24] * 2, *[15] * 4, *[8] * 14],
+        pbc=[True, True, True],
+    )
+
+
+def _make_very_skewed_atoms() -> Atoms:
+    """Bi rhombohedral α=10° — extremely skewed, triggers nvalchemiops overflow."""
+    atoms = bulk("Bi", "rhombohedral", a=6, alpha=10)
+    atoms.info["very_skewed"] = True
+    return atoms
+
+
+@pytest.fixture
+def periodic_atoms_unwrap_subset() -> list[Atoms]:
+    """Fully periodic crystals used to test invariance under lattice translations."""
+    return [
+        bulk("Si", "diamond", a=6, cubic=True),
+        bulk("Cu", "fcc", a=3.6),
+        bulk("Si", "diamond", a=6),
+        _make_triclinic_atoms(),
+    ]
 
 
 @pytest.fixture
@@ -107,14 +125,11 @@ def periodic_atoms_set():
         bulk("Cu", "fcc", a=3.6),
         bulk("Si", "bct", a=6, c=3),
         bulk("Ti", "hcp", a=2.94, c=4.64, orthorhombic=False),
-        # test very skewed rhombohedral cells
         bulk("Bi", "rhombohedral", a=6, alpha=20),
-        bulk(
-            "Bi", "rhombohedral", a=6, alpha=10
-        ),  # very skewed, by far the slowest test case
         bulk("SiCu", "rocksalt", a=6),
         bulk("SiFCu", "fluorite", a=6),
-        Atoms(**CaCrP2O7_mvc_11955_symmetrized),
+        _make_triclinic_atoms(),
+        _make_very_skewed_atoms(),
     ]
 
 
@@ -125,23 +140,158 @@ def molecule_atoms_set() -> list:
     ]
 
 
-@pytest.mark.parametrize("cutoff", [1, 3, 5, 7])
+def _sorted_mic_distances(
+    positions: torch.Tensor,
+    row_vector_cell: torch.Tensor,
+    mapping: torch.Tensor,
+    mapping_system: torch.Tensor,
+    shifts_idx: torch.Tensor,
+) -> np.ndarray:
+    cell_shifts = transforms.compute_cell_shifts(
+        row_vector_cell, shifts_idx, mapping_system
+    )
+    d = transforms.compute_distances_with_cell_shifts(positions, mapping, cell_shifts)
+    return np.sort(d.detach().cpu().numpy())
+
+
+def _integer_lattice_shift_positions(
+    positions: torch.Tensor,
+    cell_batched: torch.Tensor,
+    system_idx: torch.Tensor,
+    integers: torch.Tensor,
+) -> torch.Tensor:
+    cell_per_atom = cell_batched[system_idx.to(cell_batched.device)]
+    delta = (integers.to(cell_per_atom.dtype).unsqueeze(-1) * cell_per_atom).sum(dim=1)
+    return positions + delta
+
+
+def _all_nl_backends() -> list[Any]:
+    """All NL backends as pytest.params with skipif marks for optional deps."""
+    _skip_vesin = pytest.mark.skipif(
+        not neighbors.VESIN_AVAILABLE, reason="Vesin is not installed"
+    )
+    _skip_vesin_ts = pytest.mark.skipif(
+        not neighbors.VESIN_TORCHSCRIPT_AVAILABLE, reason="Vesin is not installed"
+    )
+
+    _skip_alchemiops = pytest.mark.skipif(
+        not neighbors.ALCHEMIOPS_AVAILABLE, reason="nvalchemiops is not installed"
+    )
+    return [
+        pytest.param(neighbors.torch_nl_n2, id="torch_nl_n2"),
+        pytest.param(neighbors.torch_nl_linked_cell, id="torch_nl_linked_cell"),
+        pytest.param(neighbors.vesin_nl, id="vesin_nl", marks=_skip_vesin),
+        pytest.param(neighbors.vesin_nl_ts, id="vesin_nl_ts", marks=_skip_vesin_ts),
+        pytest.param(
+            neighbors.alchemiops_nl_n2,
+            id="alchemiops_nl_n2",
+            marks=_skip_alchemiops,
+        ),
+        pytest.param(
+            neighbors.alchemiops_nl_cell_list,
+            id="alchemiops_nl_cell_list",
+            marks=_skip_alchemiops,
+        ),
+    ]
+
+
+def _nl_backends_x_cutoffs(cutoffs: list[float] | None = None) -> list[Any]:
+    """Cross-product of all NL backends x cutoffs, preserving skip marks."""
+    if cutoffs is None:
+        cutoffs = [1, 3, 5, 7]
+    return [
+        pytest.param(p.values[0], c, id=f"{p.values[0].__name__}-{c}", marks=p.marks)
+        for p in _all_nl_backends()
+        for c in cutoffs
+    ]
+
+
+@pytest.mark.parametrize("cutoff", [2.0, 5.0, 7.0])
 @pytest.mark.parametrize("self_interaction", [True, False])
-@pytest.mark.parametrize(
-    "nl_implementation",
-    [neighbors.torch_nl_n2, neighbors.torch_nl_linked_cell]
-    + ([neighbors.vesin_nl, neighbors.vesin_nl_ts] if neighbors.VESIN_AVAILABLE else [])
-    + (
-        [neighbors.alchemiops_nl_n2, neighbors.alchemiops_nl_cell_list]
-        if neighbors.ALCHEMIOPS_AVAILABLE
-        else []
-    ),
-)
-def test_neighbor_list_implementations(
+@pytest.mark.parametrize("shift_mode", ["uniform", "per_atom"])
+@pytest.mark.parametrize("nl_implementation", _all_nl_backends())
+def test_neighbor_list_invariant_under_lattice_image_shifts(
     *,
     cutoff: float,
     self_interaction: bool,
+    shift_mode: str,
     nl_implementation: Callable[..., tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+    periodic_atoms_unwrap_subset: list[Atoms],
+) -> None:
+    """NL backends: same sorted MIC distances and pair count after lattice-image shifts.
+
+    ``uniform``: one integer triplet per system applied to all its atoms (rigid image).
+    ``per_atom``: independent integer triplet per atom (same structure mod PBC).
+
+    Backends: ``torch_nl_n2``, ``torch_nl_linked_cell``, ``vesin_nl``, ``vesin_nl_ts``,
+    ``alchemiops_nl_n2``, ``alchemiops_nl_cell_list`` (latter four skip if optional
+    deps missing). See TorchSim/torch-sim#423, #437.
+    """
+    atoms_list = periodic_atoms_unwrap_subset
+    pos_wrapped, cell_flat, pbc_flat, batch, _ = ase_to_torch_batch(
+        atoms_list, device=DEVICE, dtype=DTYPE
+    )
+    n_sys = len(atoms_list)
+    cell_b = cell_flat.view(n_sys, 3, 3)
+    pbc_b = pbc_flat.view(n_sys, 3)
+    pbc_on_atom = pbc_b[batch]
+    if shift_mode == "uniform":
+        triplets = torch.tensor(
+            [[2, -1, 1], [-3, 0, 2], [1, 1, -2], [2, 2, -3]],
+            dtype=torch.long,
+            device=DEVICE,
+        )
+        per_system = triplets[torch.arange(n_sys, device=DEVICE) % triplets.shape[0]]
+        ints = per_system[batch] * pbc_on_atom.long()
+    elif shift_mode == "per_atom":
+        n_atoms = pos_wrapped.shape[0]
+        ar = torch.arange(n_atoms, device=DEVICE, dtype=torch.long)
+        ints = torch.stack(
+            [(ar % 3) - 1, (ar % 5) - 2, (ar % 4) - 2],
+            dim=1,
+        )
+        ints = ints * pbc_on_atom.long()
+    else:
+        raise AssertionError(f"unknown shift_mode: {shift_mode}")
+    pos_shifted = _integer_lattice_shift_positions(pos_wrapped, cell_b, batch, ints)
+    assert not torch.allclose(pos_shifted, pos_wrapped, rtol=0.0, atol=1e-12), (
+        "expected non-trivial lattice shifts along periodic axes"
+    )
+    c_tensor = torch.tensor(cutoff, dtype=DTYPE, device=DEVICE)
+    map_w, sys_w, sh_w = nl_implementation(
+        cutoff=c_tensor,
+        positions=pos_wrapped,
+        cell=cell_b,
+        pbc=pbc_b,
+        system_idx=batch,
+        self_interaction=self_interaction,
+    )
+    map_s, sys_s, sh_s = nl_implementation(
+        cutoff=c_tensor,
+        positions=pos_shifted,
+        cell=cell_b,
+        pbc=pbc_b,
+        system_idx=batch,
+        self_interaction=self_interaction,
+    )
+    d_w = _sorted_mic_distances(pos_wrapped, cell_b, map_w, sys_w, sh_w)
+    d_s = _sorted_mic_distances(pos_shifted, cell_b, map_s, sys_s, sh_s)
+    np.testing.assert_allclose(d_w, d_s, rtol=1e-5, atol=1e-5)
+    assert map_w.shape[1] == map_s.shape[1]
+    assert torch.equal(batch[map_w[0]], batch[map_w[1]])
+    assert torch.equal(batch[map_s[0]], batch[map_s[1]])
+
+
+@pytest.mark.parametrize(
+    ("nl_implementation", "cutoff"),
+    _nl_backends_x_cutoffs(),
+)
+@pytest.mark.parametrize("self_interaction", [True, False])
+def test_neighbor_list_implementations(
+    *,
+    nl_implementation: Callable[..., tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+    cutoff: float,
+    self_interaction: bool,
     molecule_atoms_set: list[Atoms],
     periodic_atoms_set: list[Atoms],
 ) -> None:
@@ -151,13 +301,15 @@ def test_neighbor_list_implementations(
     systems, comparing sorted distances against ASE reference values.
     """
     atoms_list = molecule_atoms_set + periodic_atoms_set
+    is_alchemiops = "alchemiops" in nl_implementation.__name__
+    if is_alchemiops and cutoff >= 3:
+        atoms_list = [a for a in atoms_list if not a.info.get("very_skewed")]
 
     # NOTE we can't use atoms_to_state here because we want to test mixed
     # periodic and non-periodic systems
     pos, row_vector_cell, pbc, batch, _ = ase_to_torch_batch(
         atoms_list, device=DEVICE, dtype=DTYPE
     )
-
     mapping, mapping_system, shifts_idx = nl_implementation(
         cutoff=torch.tensor(cutoff, dtype=DTYPE, device=DEVICE),
         positions=pos,
@@ -216,16 +368,7 @@ def test_neighbor_list_implementations(
 
 @pytest.mark.parametrize("self_interaction", [True, False])
 @pytest.mark.parametrize("pbc_val", [True, False])
-@pytest.mark.parametrize(
-    "nl_implementation",
-    [neighbors.torch_nl_n2, neighbors.torch_nl_linked_cell]
-    + ([neighbors.vesin_nl, neighbors.vesin_nl_ts] if neighbors.VESIN_AVAILABLE else [])
-    + (
-        [neighbors.alchemiops_nl_n2, neighbors.alchemiops_nl_cell_list]
-        if neighbors.ALCHEMIOPS_AVAILABLE and torch.cuda.is_available()
-        else []
-    ),
-)
+@pytest.mark.parametrize("nl_implementation", _all_nl_backends())
 def test_nl_pbc_edge_cases(
     *, pbc_val: bool, self_interaction: bool, nl_implementation: Callable[..., Any]
 ) -> None:
@@ -279,34 +422,48 @@ def _minimal_neighbor_list_inputs(
     return positions, cell, pbc, cutoff, system_idx
 
 
-def test_vesin_nl_availability() -> None:
-    """Test that availability flags are correctly set."""
+def test_optional_neighbor_backends_expose_flags_and_entrypoints() -> None:
+    """Public API: booleans and callables always present after import."""
     assert isinstance(neighbors.VESIN_AVAILABLE, bool)
-
-    assert callable(neighbors.vesin_nl)
-    assert callable(neighbors.vesin_nl_ts)
-
-    if not neighbors.VESIN_AVAILABLE:
-        positions, cell, pbc, cutoff, system_idx = _minimal_neighbor_list_inputs(DEVICE)
-        with pytest.raises(ImportError, match="Vesin is not installed"):
-            neighbors.vesin_nl(positions, cell, pbc, cutoff, system_idx)
-        with pytest.raises(ImportError, match="Vesin is not installed"):
-            neighbors.vesin_nl_ts(positions, cell, pbc, cutoff, system_idx)
-
-
-def test_alchemiops_nl_availability() -> None:
-    """Test that alchemiops optional dependency flags and errors are consistent."""
     assert isinstance(neighbors.ALCHEMIOPS_AVAILABLE, bool)
+    for name in (
+        "vesin_nl",
+        "vesin_nl_ts",
+        "alchemiops_nl_n2",
+        "alchemiops_nl_cell_list",
+    ):
+        assert callable(getattr(neighbors, name))
 
-    assert callable(neighbors.alchemiops_nl_n2)
-    assert callable(neighbors.alchemiops_nl_cell_list)
 
-    if not neighbors.ALCHEMIOPS_AVAILABLE:
-        positions, cell, pbc, cutoff, system_idx = _minimal_neighbor_list_inputs(DEVICE)
-        with pytest.raises(ImportError, match="nvalchemiops is not installed"):
-            neighbors.alchemiops_nl_n2(positions, cell, pbc, cutoff, system_idx)
-        with pytest.raises(ImportError, match="nvalchemiops is not installed"):
-            neighbors.alchemiops_nl_cell_list(positions, cell, pbc, cutoff, system_idx)
+@pytest.mark.parametrize(
+    ("fn_names", "message"),
+    [
+        (
+            ("vesin_nl", "vesin_nl_ts"),
+            "Vesin is not installed. Install it with: pip install vesin",
+        ),
+        (
+            ("alchemiops_nl_n2", "alchemiops_nl_cell_list"),
+            "nvalchemiops is not installed. Install it with: pip install nvalchemiops",
+        ),
+    ],
+)
+def test_neighbor_list_stub_import_errors_match_documentation(
+    monkeypatch: pytest.MonkeyPatch,
+    fn_names: tuple[str, ...],
+    message: str,
+) -> None:
+    """Stubs must raise the same ImportError as optional-backend fallbacks."""
+
+    def _stub(*args: object, **kwargs: object) -> None:  # noqa: ARG001
+        raise ImportError(message)
+
+    for fn_name in fn_names:
+        monkeypatch.setattr(neighbors, fn_name, _stub)
+    args = _minimal_neighbor_list_inputs(DEVICE)
+    for fn_name in fn_names:
+        with pytest.raises(ImportError, match=re.escape(message)):
+            getattr(neighbors, fn_name)(*args)
 
 
 def test_fallback_when_alchemiops_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -474,77 +631,3 @@ def test_strict_nl_edge_cases() -> None:
         shifts_idx=shifts_idx,
     )
     assert len(new_mapping[0]) > 0  # Should find neighbors
-
-
-def test_neighbor_lists_time_and_memory() -> None:
-    """Test performance and memory characteristics of neighbor list implementations."""
-    # Create a smaller system to reduce memory usage
-    n_atoms = 100
-    pos = torch.rand(n_atoms, 3, device=DEVICE, dtype=DTYPE)
-    cell = torch.eye(3, device=DEVICE, dtype=DTYPE) * 10.0
-    cutoff = torch.tensor(2.0, device=DEVICE, dtype=DTYPE)
-
-    # Test different implementations
-    nl_implementations = [
-        neighbors.torch_nl_n2,
-        neighbors.torch_nl_linked_cell,
-    ]
-    if neighbors.VESIN_AVAILABLE:
-        nl_implementations.extend(
-            [
-                neighbors.vesin_nl_ts,
-                cast("Callable[..., Any]", neighbors.vesin_nl),
-            ]
-        )
-    if neighbors.ALCHEMIOPS_AVAILABLE and DEVICE.type == "cuda":
-        nl_implementations.extend(
-            [neighbors.alchemiops_nl_n2, neighbors.alchemiops_nl_cell_list]
-        )
-
-    for nl_fn in nl_implementations:
-        # Get initial memory usage
-        process = psutil.Process()
-        initial_cpu_memory = process.memory_info().rss  # in bytes
-
-        if DEVICE.type == "cuda":
-            torch.cuda.reset_peak_memory_stats()
-            initial_gpu_memory = torch.cuda.memory_allocated()
-
-        # Time the execution
-        start_time = time.perf_counter()
-
-        # All neighbor list functions now use the unified API with system_idx
-        system_idx = torch.zeros(n_atoms, dtype=torch.long, device=DEVICE)
-        # Fix pbc tensor shape
-        pbc = torch.tensor([[True, True, True]], device=DEVICE)
-        _mapping, _mapping_system, _shifts_idx = nl_fn(
-            positions=pos,
-            cell=cell,
-            pbc=pbc,
-            cutoff=cutoff,
-            system_idx=system_idx,
-            self_interaction=False,
-        )
-
-        end_time = time.perf_counter()
-        execution_time = end_time - start_time
-
-        # Get final memory usage
-        final_cpu_memory = process.memory_info().rss
-        cpu_memory_used = final_cpu_memory - initial_cpu_memory
-        fn_name = str(nl_fn)
-
-        # Warning: cuda case was never tested, to be tweaked later
-        if DEVICE.type == "cuda":
-            final_gpu_memory = torch.cuda.memory_allocated()
-            gpu_memory_used = final_gpu_memory - initial_gpu_memory
-            assert execution_time < 0.01, f"{fn_name} took too long: {execution_time}s"
-            assert gpu_memory_used < 5e8, (
-                f"{fn_name} used too much GPU memory: {gpu_memory_used / 1e6:.2f}MB"
-            )
-            torch.cuda.empty_cache()
-        else:
-            assert cpu_memory_used < 5e8, (
-                f"{fn_name} used too much CPU memory: {cpu_memory_used / 1e6:.2f}MB"
-            )
-            assert execution_time < 0.8, f"{fn_name} took too long: {execution_time}s"

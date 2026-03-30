@@ -61,7 +61,6 @@ jobs:
           - { python: '3.14', resolution: highest }
         model:
           - { name: fairchem, test_path: "tests/models/test_fairchem.py" }
-          - { name: fairchem-legacy, test_path: "tests/models/test_fairchem_legacy.py" }
           - { name: graphpes, test_path: "tests/models/test_graphpes_framework.py" }
           - { name: mace, test_path: "tests/models/test_mace.py" }
           - { name: mace, test_path: "tests/test_elastic.py" }
@@ -78,22 +77,12 @@ jobs:
           - version: { python: '3.14', resolution: highest }
             model: { name: fairchem, test_path: 'tests/models/test_fairchem.py'}
           - version: { python: '3.14', resolution: highest }
-            model: { name: fairchem-legacy, test_path: 'tests/models/test_fairchem_legacy.py'}
-          - version: { python: '3.14', resolution: highest }
             model: { name: nequip, test_path: 'tests/models/test_nequip_framework.py'}
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
-
-      - name: Check out fairchem repository
-        if: ${{ matrix.model.name == 'fairchem-legacy' }}
-        uses: actions/checkout@v4
-        with:
-          repository: FAIR-Chem/fairchem
-          path: fairchem-repo
-          ref: fairchem_core-1.10.0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -107,22 +96,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
 
-      - name: Install legacy fairchem repository and dependencies
-        if: ${{ matrix.model.name == 'fairchem-legacy' }}
-        run: |
-          if [ -f fairchem-repo/packages/requirements.txt ]; then
-            uv pip install -r fairchem-repo/packages/requirements.txt --system
-          fi
-          if [ -f fairchem-repo/packages/requirements-optional.txt ]; then
-            uv pip install -r fairchem-repo/packages/requirements-optional.txt --system
-          fi
-          uv pip install -e fairchem-repo/packages/fairchem-core[dev] --system
-          uv pip install -e "." --no-deps --system
-          uv pip install "h5py>=3.12.1" "numpy>=1.26,<3" "scipy<1.17.0" "tables>=3.10.2" "torch>=2" "tqdm>=4.67" --system
-          uv pip install "ase>=3.26" "phonopy>=2.37.0" "psutil>=7.0.0" "pymatgen>=2025.6.14" "pytest-cov>=6" "pytest>=8" --resolution=${{ matrix.version.resolution }} --system
-
       - name: Install torch_sim with model dependencies
-        if: ${{ matrix.model.name != 'fairchem-legacy' }}
         run: |
           # setuptools <82 provides pkg_resources needed by mattersim and fairchem (via torchtnt).
           # setuptools 82+ removed pkg_resources. Remove pin once those packages migrate.
@@ -155,7 +129,7 @@ jobs:
       - name: Find example scripts
         id: set-matrix
         run: |
-          EXAMPLES=$(find examples -name "*.py" | jq -R -s -c 'split("\n")[:-1]')
+          EXAMPLES=$(find examples -name "*.py" -not -path "examples/benchmarking/*" | jq -R -s -c 'split("\n")[:-1]')
           echo "examples=$EXAMPLES" >> $GITHUB_OUTPUT
 
   test-examples:

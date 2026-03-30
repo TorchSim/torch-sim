@@ -1,11 +1,17 @@
-"""Scaling benchmarks for static, relax, NVE, and NVT."""
-
-# %%
 # /// script
+# requires-python = ">=3.11"
 # dependencies = [
-#     "torch_sim_atomistic[mace,test]"
+#   "ase",
+#   "pymatgen",
 # ]
 # ///
+"""Scaling benchmarks for static, relax, NVE, and NVT.
+
+Example:
+    uv run --with ".[mace]" examples/benchmarking/scaling.py
+"""
+
+# %%
 
 import os
 import time
@@ -41,6 +47,7 @@ else:
     N_STRUCTURES_RELAX = [1, 10, 100, 500]
     N_STRUCTURES_NVE = [1, 10, 100, 500]
     N_STRUCTURES_NVT = [1, 10, 100, 500]
+
 RELAX_STEPS = 10
 MD_STEPS = 10
 MAX_MEMORY_SCALER = 400_000

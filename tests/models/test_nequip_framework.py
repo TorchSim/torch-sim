@@ -19,7 +19,7 @@ try:
     from torch_sim.models.nequip_framework import NequIPFrameworkModel
 except (ImportError, ModuleNotFoundError):
     pytest.skip(
-        f"nequip not installed: {traceback.format_exc()}",  # ty:ignore[too-many-positional-arguments]
+        f"nequip not installed: {traceback.format_exc()}",
         allow_module_level=True,
     )
 

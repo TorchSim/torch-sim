@@ -139,43 +139,75 @@ def pbc_wrap_batched(
     """
     if isinstance(pbc, bool):
         pbc = torch.tensor([pbc, pbc, pbc], dtype=torch.bool, device=positions.device)
-
-    # Validate inputs
     if not torch.is_floating_point(positions) or not torch.is_floating_point(cell):
         raise TypeError("Positions and lattice vectors must be floating point tensors.")
-
     if positions.shape[-1] != cell.shape[-1]:
         raise ValueError("Position dimensionality must match lattice vectors.")
-
-    # Get unique system indices and counts
     uniq_systems = torch.unique(system_idx)
     n_systems = len(uniq_systems)
-
     if n_systems != cell.shape[0]:
         raise ValueError(
             f"Number of unique systems ({n_systems}) doesn't "
             f"match number of cells ({cell.shape[0]})"
         )
+    pbc_batched = pbc.unsqueeze(0).expand(n_systems, -1)
+    wrapped, _ = pbc_wrap_batched_and_get_lattice_shifts(
+        positions, cell.mT, system_idx, pbc_batched
+    )
+    return wrapped
 
-    # Efficient approach without explicit loops
-    # Get the cell for each atom based on its system index
-    B = torch.linalg.inv(cell)  # Shape: (n_systems, 3, 3)
+
+def pbc_wrap_batched_and_get_lattice_shifts(
+    positions: torch.Tensor,
+    cell: torch.Tensor,
+    system_idx: torch.Tensor,
+    pbc: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Wrap Cartesian positions into the primary cell and return the applied shifts.
+
+    ``cell`` rows are lattice vectors (row-vector convention matching
+    ``compute_cell_shifts`` and the batched neighbor-list APIs). Fractional coordinates
+    use ``cell_col = cell[s].T`` so ``r = f @ cell[s]`` with ``f`` in ``[0, 1)`` on
+    periodic axes. Atoms in non-periodic systems or systems with singular cells are
+    left unchanged.
+
+    Returns ``(wrapped_positions, lattice_shifts)`` where ``lattice_shifts[i]`` is the
+    integer vector ``floor(frac_i)`` on periodic axes (zero elsewhere). The neighbor-list
+    code uses these to correct ``shifts_idx`` so they remain valid for the original
+    (unwrapped) input positions.
+    """
+    cell_T = cell.transpose(1, 2)
+    dets = torch.linalg.det(cell_T)
+    invertible = torch.isfinite(dets) & (dets.abs() > 1e-12)
+    active = pbc.any(dim=1) & invertible
+
+    if not active.any():
+        return positions.clone(), torch.zeros_like(positions, dtype=cell.dtype)
+
+    # Get the inverse cell for each atom based on its system index
+    B = torch.zeros_like(cell)  # Shape: (n_systems, 3, 3)
+    B[active] = torch.linalg.inv(cell_T[active])
     B_per_atom = B[system_idx]  # Shape: (n_atoms, 3, 3)
 
     # Transform to fractional coordinates: f = B·r
     # For each atom, multiply its position by its system's inverse cell matrix
-    frac_coords = torch.bmm(B_per_atom, positions.unsqueeze(2)).squeeze(2)
+    frac = torch.bmm(B_per_atom, positions.unsqueeze(2)).squeeze(2)
 
-    # Wrap to reference cell [0,1) using modulo
-    wrapped_frac = frac_coords.clone()
-    wrapped_frac[:, pbc] = frac_coords[:, pbc] % 1.0
+    pbc_per_atom = pbc[system_idx]
+    active_per_atom = active[system_idx].unsqueeze(1)
+    pbc_mask = pbc_per_atom & active_per_atom
+
+    # Wrap to reference cell [0,1) using floor
+    int_shifts = torch.where(pbc_mask, torch.floor(frac), torch.zeros_like(frac))
+    wrapped_frac = frac - int_shifts
 
     # Transform back to real space: r = A·f
-    # Get the cell for each atom based on its system index
-    cell_per_atom = cell[system_idx]  # Shape: (n_atoms, 3, 3)
-
     # For each atom, multiply its wrapped fractional coords by its system's cell matrix
-    return torch.bmm(cell_per_atom, wrapped_frac.unsqueeze(2)).squeeze(2)
+    cell_per_atom = cell_T[system_idx]  # Shape: (n_atoms, 3, 3)
+    wrapped_pos = torch.bmm(cell_per_atom, wrapped_frac.unsqueeze(2)).squeeze(2)
+    out = torch.where(active_per_atom, wrapped_pos, positions)
+    shifts = torch.where(active_per_atom, int_shifts, torch.zeros_like(int_shifts))
+    return out, shifts
 
 
 def minimum_image_displacement(

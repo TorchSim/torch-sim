@@ -22,7 +22,7 @@ try:
 
 except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
     pytest.skip(
-        f"FairChem not installed: {traceback.format_exc()}",  # ty:ignore[too-many-positional-arguments]
+        f"FairChem not installed: {traceback.format_exc()}",
         allow_module_level=True,
     )
 
