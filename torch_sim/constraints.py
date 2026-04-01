@@ -153,8 +153,8 @@ class Constraint(ABC):
 
     def to(
         self,
-        device: torch.device | None = None,
-        dtype: torch.dtype | None = None,
+        device: torch.device | None = None,  # noqa: ARG002
+        dtype: torch.dtype | None = None,  # noqa: ARG002
     ) -> Self:
         """Return a copy with all internal tensors moved to *device*/*dtype*.
 
