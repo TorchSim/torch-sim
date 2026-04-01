@@ -854,7 +854,7 @@ class FixSymmetry(SystemConstraint):
             adjust_positions: Whether to symmetrize position displacements.
             adjust_cell: Whether to symmetrize cell/stress adjustments.
             refine_symmetry_state: Whether to refine positions/cell to ideal values.
-            angle_tolerance: Angle tolerance in degrees for moyopy symmetry
+            angle_tolerance: Angle tolerance in radians for moyopy symmetry
                 detection. If None, moyopy uses its default behaviour.
         """
         try:
