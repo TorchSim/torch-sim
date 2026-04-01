@@ -793,14 +793,16 @@ def _state_to_device[T: SimState](
     attrs = state.attributes
     for attr_name, attr_value in attrs.items():
         if isinstance(attr_value, torch.Tensor):
-            attrs[attr_name] = attr_value.to(device=device)
+            if attr_value.is_floating_point() and dtype is not None:
+                # also move floating point attributes like forces, velocities, etc. to dtype.
+                attrs[attr_name] = attr_value.to(device=device, dtype=dtype)
+            else:
+                # non-floating attributes like system_idx keep their dtype.
+                attrs[attr_name] = attr_value.to(device=device)
         elif isinstance(attr_value, torch.Generator):
             attrs[attr_name] = coerce_prng(attr_value, device)
 
     if dtype is not None:
-        attrs["positions"] = attrs["positions"].to(dtype=dtype)
-        attrs["masses"] = attrs["masses"].to(dtype=dtype)
-        attrs["cell"] = attrs["cell"].to(dtype=dtype)
         attrs["atomic_numbers"] = attrs["atomic_numbers"].to(dtype=torch.int)
 
     if attrs.get("_constraints"):
