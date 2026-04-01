@@ -151,17 +151,17 @@ class Constraint(ABC):
             constraints: Constraints to merge (all same type, already reindexed)
         """
 
+    @abstractmethod
     def to(
         self,
-        device: torch.device | None = None,  # noqa: ARG002
-        dtype: torch.dtype | None = None,  # noqa: ARG002
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
     ) -> Self:
         """Return a copy with all internal tensors moved to *device*/*dtype*.
 
         Float tensors are cast to *dtype*; integer/bool tensors are only moved
-        to *device*.  Subclasses with tensor attributes must override this.
+        to *device*.
         """
-        return self
 
 
 def _cumsum_with_zero(tensor: torch.Tensor) -> torch.Tensor:
