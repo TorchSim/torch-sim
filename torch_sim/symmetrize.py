@@ -22,6 +22,7 @@ def _moyo_dataset(
     frac_pos: torch.Tensor,
     atomic_numbers: torch.Tensor,
     symprec: float = 1e-4,
+    angle_tolerance: float | None = None,
 ) -> MoyoDataset:
     """Get MoyoDataset from cell, fractional positions, and atomic numbers."""
     from moyopy import Cell, MoyoDataset
@@ -31,7 +32,7 @@ def _moyo_dataset(
         positions=frac_pos.detach().cpu().tolist(),
         numbers=atomic_numbers.detach().cpu().int().tolist(),
     )
-    return MoyoDataset(moyo_cell, symprec=symprec)
+    return MoyoDataset(moyo_cell, symprec=symprec, angle_tolerance=angle_tolerance)
 
 
 def _extract_symmetry_ops(
@@ -51,13 +52,19 @@ def _extract_symmetry_ops(
     return rotations, translations
 
 
-def get_symmetry_datasets(state: SimState, symprec: float = 1e-4) -> list[MoyoDataset]:
+def get_symmetry_datasets(
+    state: SimState,
+    symprec: float = 1e-4,
+    angle_tolerance: float | None = None,
+) -> list[MoyoDataset]:
     """Get MoyoDataset for each system in a SimState."""
     datasets = []
     for single in state.split():
         cell = single.row_vector_cell[0]
         frac = single.positions @ torch.linalg.inv(cell)
-        datasets.append(_moyo_dataset(cell, frac, single.atomic_numbers, symprec))
+        datasets.append(
+            _moyo_dataset(cell, frac, single.atomic_numbers, symprec, angle_tolerance)
+        )
     return datasets
 
 
@@ -105,6 +112,7 @@ def prep_symmetry(
     positions: torch.Tensor,
     atomic_numbers: torch.Tensor,
     symprec: float = 1e-4,
+    angle_tolerance: float | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Get symmetry rotations and atom mappings for a structure.
 
@@ -112,7 +120,7 @@ def prep_symmetry(
         (rotations, symm_map) with shapes (n_ops, 3, 3) and (n_ops, n_atoms).
     """
     frac_pos = positions @ torch.linalg.inv(cell)
-    dataset = _moyo_dataset(cell, frac_pos, atomic_numbers, symprec)
+    dataset = _moyo_dataset(cell, frac_pos, atomic_numbers, symprec, angle_tolerance)
     rotations, translations = _extract_symmetry_ops(dataset, cell.dtype, cell.device)
     return rotations, build_symmetry_map(rotations, translations, frac_pos)
 
@@ -122,6 +130,7 @@ def _refine_symmetry_impl(
     positions: torch.Tensor,
     atomic_numbers: torch.Tensor,
     symprec: float = 0.01,
+    angle_tolerance: float | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Core refinement returning all intermediate data for reuse.
 
@@ -130,7 +139,7 @@ def _refine_symmetry_impl(
     """
     dtype, device = cell.dtype, cell.device
     frac_pos = positions @ torch.linalg.inv(cell)
-    dataset = _moyo_dataset(cell, frac_pos, atomic_numbers, symprec)
+    dataset = _moyo_dataset(cell, frac_pos, atomic_numbers, symprec, angle_tolerance)
     rotations, translations = _extract_symmetry_ops(dataset, dtype, device)
     n_ops, n_atoms = rotations.shape[0], positions.shape[0]
 
@@ -165,6 +174,7 @@ def refine_symmetry(
     positions: torch.Tensor,
     atomic_numbers: torch.Tensor,
     symprec: float = 0.01,
+    angle_tolerance: float | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Symmetrize cell and positions according to the detected space group.
 
@@ -175,7 +185,7 @@ def refine_symmetry(
         (symmetrized_cell, symmetrized_positions) as row vectors.
     """
     new_cell, new_positions, _rotations, _translations = _refine_symmetry_impl(
-        cell, positions, atomic_numbers, symprec
+        cell, positions, atomic_numbers, symprec, angle_tolerance
     )
     return new_cell, new_positions
 
@@ -185,6 +195,7 @@ def refine_and_prep_symmetry(
     positions: torch.Tensor,
     atomic_numbers: torch.Tensor,
     symprec: float = 0.01,
+    angle_tolerance: float | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Refine symmetry and get ops/mappings in a single moyopy call.
 
@@ -195,7 +206,7 @@ def refine_and_prep_symmetry(
         (refined_cell, refined_positions, rotations, symm_map)
     """
     new_cell, new_positions, rotations, translations = _refine_symmetry_impl(
-        cell, positions, atomic_numbers, symprec
+        cell, positions, atomic_numbers, symprec, angle_tolerance
     )
     # Build symm_map on the final refined fractional coordinates
     refined_frac = new_positions @ torch.linalg.inv(new_cell)

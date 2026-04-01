@@ -151,6 +151,18 @@ class Constraint(ABC):
             constraints: Constraints to merge (all same type, already reindexed)
         """
 
+    def to(
+        self,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> Self:
+        """Return a copy with all internal tensors moved to *device*/*dtype*.
+
+        Float tensors are cast to *dtype*; integer/bool tensors are only moved
+        to *device*.  Subclasses with tensor attributes must override this.
+        """
+        return self
+
 
 def _cumsum_with_zero(tensor: torch.Tensor) -> torch.Tensor:
     """Cumulative sum with a leading zero, e.g. [3, 2, 4] -> [0, 3, 5, 9]."""
@@ -272,6 +284,14 @@ class AtomConstraint(Constraint):
             )
         return cls(torch.cat([constraint.atom_idx for constraint in atom_constraints]))
 
+    def to(
+        self,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,  # noqa: ARG002
+    ) -> Self:
+        """Return a copy with atom indices moved to *device*."""
+        return type(self)(self.atom_idx.to(device=device))
+
 
 class SystemConstraint(Constraint):
     """Base class for constraints that act on specific system indices.
@@ -370,6 +390,14 @@ class SystemConstraint(Constraint):
         return cls(
             torch.cat([constraint.system_idx for constraint in system_constraints])
         )
+
+    def to(
+        self,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,  # noqa: ARG002
+    ) -> Self:
+        """Return a copy with system indices moved to *device*."""
+        return type(self)(self.system_idx.to(device=device))
 
 
 def merge_constraints(
@@ -612,6 +640,17 @@ class FixCom(SystemConstraint):
         """String representation of the constraint."""
         return f"FixCom(system_idx={self.system_idx})"
 
+    def to(
+        self,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> Self:
+        """Return a copy with tensors moved to *device*/*dtype*."""
+        new = type(self)(self.system_idx.to(device=device))
+        if self.coms is not None:
+            new.coms = self.coms.to(device=device, dtype=dtype)
+        return new
+
 
 def count_degrees_of_freedom(
     state: SimState, constraints: list[Constraint] | None = None
@@ -801,6 +840,7 @@ class FixSymmetry(SystemConstraint):
         adjust_positions: bool = True,
         adjust_cell: bool = True,
         refine_symmetry_state: bool = True,
+        angle_tolerance: float | None = None,
     ) -> Self:
         """Create from SimState, optionally refining to ideal symmetry first.
 
@@ -814,6 +854,8 @@ class FixSymmetry(SystemConstraint):
             adjust_positions: Whether to symmetrize position displacements.
             adjust_cell: Whether to symmetrize cell/stress adjustments.
             refine_symmetry_state: Whether to refine positions/cell to ideal values.
+            angle_tolerance: Angle tolerance in degrees for moyopy symmetry
+                detection. If None, moyopy uses its default behaviour.
         """
         try:
             import moyopy  # noqa: F401
@@ -839,11 +881,15 @@ class FixSymmetry(SystemConstraint):
                     pos,
                     nums,
                     symprec=symprec,
+                    angle_tolerance=angle_tolerance,
                 )
                 state.cell[sys_idx] = cell.mT  # row→column vector convention
                 state.positions[start:end] = pos
             else:
-                rots, smap = prep_symmetry(cell, pos, nums, symprec=symprec)
+                rots, smap = prep_symmetry(
+                    cell, pos, nums, symprec=symprec,
+                    angle_tolerance=angle_tolerance,
+                )
 
             rotations.append(rots)
             symm_maps.append(smap)

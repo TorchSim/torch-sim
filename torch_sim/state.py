@@ -802,6 +802,12 @@ def _state_to_device[T: SimState](
         attrs["masses"] = attrs["masses"].to(dtype=dtype)
         attrs["cell"] = attrs["cell"].to(dtype=dtype)
         attrs["atomic_numbers"] = attrs["atomic_numbers"].to(dtype=torch.int)
+
+    if attrs.get("_constraints"):
+        attrs["_constraints"] = [
+            c.to(device=device, dtype=dtype) for c in attrs["_constraints"]
+        ]
+
     return type(state)(**attrs)
 
 
