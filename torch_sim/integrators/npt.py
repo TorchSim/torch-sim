@@ -704,11 +704,6 @@ def npt_langevin_step(
     n_atoms_per_system = torch.bincount(state.system_idx)
     state.cell_masses = (n_atoms_per_system + 1) * batch_kT * torch.square(state.b_tau)
 
-    # Compute model output for current state
-    model_output = model(state)
-    state.forces = model_output["forces"]
-    state.stress = model_output["stress"]
-
     # Store initial values for integration
     forces = state.forces
     F_p_n = _compute_cell_force(
