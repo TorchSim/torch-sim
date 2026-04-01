@@ -794,7 +794,7 @@ def _state_to_device[T: SimState](
     for attr_name, attr_value in attrs.items():
         if isinstance(attr_value, torch.Tensor):
             if attr_value.is_floating_point() and dtype is not None:
-                # also move floating point attributes like forces, velocities, etc. 
+                # also move floating point attributes like forces, velocities, etc.
                 # to dtype.
                 attrs[attr_name] = attr_value.to(device=device, dtype=dtype)
             else:
