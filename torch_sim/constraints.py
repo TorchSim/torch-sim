@@ -1019,6 +1019,26 @@ class FixSymmetry(SystemConstraint):
             max_cumulative_strain=self.max_cumulative_strain,
         )
 
+    def to(
+        self,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> Self:
+        """Return a copy with tensors moved to *device*/*dtype*."""
+        return type(self)(
+            [r.to(device=device, dtype=dtype) for r in self.rotations],
+            [s.to(device=device) for s in self.symm_maps],
+            self.system_idx.to(device=device),
+            adjust_positions=self.do_adjust_positions,
+            adjust_cell=self.do_adjust_cell,
+            reference_cells=(
+                [c.to(device=device, dtype=dtype) for c in self.reference_cells]
+                if self.reference_cells is not None
+                else None
+            ),
+            max_cumulative_strain=self.max_cumulative_strain,
+        )
+
     @classmethod
     def merge(cls, constraints: list[Constraint]) -> Self:
         """Merge by concatenating rotations, symm_maps, and system indices."""

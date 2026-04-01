@@ -1210,3 +1210,69 @@ def test_fix_com_system_idx_remapped_on_reordered_slice(
     c = sliced.constraints[0]
     assert isinstance(c, FixCom)
     assert sorted(c.system_idx.tolist()) == [0, 1]
+
+
+class TestConstraintToDeviceDtype:
+    """Test that state.to() propagates device/dtype to constraint tensors."""
+
+    def test_fix_atoms_dtype_propagation(
+        self, ar_supercell_sim_state: ts.SimState
+    ) -> None:
+        """FixAtoms indices should be moved to the new device by state.to()."""
+        indices = torch.tensor([0, 3, 5], dtype=torch.long)
+        ar_supercell_sim_state.constraints = [FixAtoms(atom_idx=indices)]
+        new_state = ar_supercell_sim_state.to(dtype=torch.float32)
+
+        c = new_state.constraints[0]
+        assert isinstance(c, FixAtoms)
+        assert torch.equal(c.atom_idx, indices)
+        # dtype change should not affect integer indices, but the constraint
+        # object must be a distinct copy
+        assert c is not ar_supercell_sim_state.constraints[0]
+
+    def test_fix_com_dtype_propagation(
+        self, ar_supercell_sim_state: ts.SimState
+    ) -> None:
+        """FixCom's cached coms tensor should follow state dtype changes."""
+        ar_supercell_sim_state.constraints = [FixCom([0])]
+        # Trigger lazy COM initialisation
+        ar_supercell_sim_state.set_constrained_positions(
+            ar_supercell_sim_state.positions.clone()
+        )
+        assert ar_supercell_sim_state.constraints[0].coms is not None
+
+        new_state = ar_supercell_sim_state.to(dtype=torch.float32)
+        c = new_state.constraints[0]
+        assert isinstance(c, FixCom)
+        assert c.coms is not None
+        assert c.coms.dtype == torch.float32
+
+    @pytest.mark.parametrize("target_dtype", [torch.float32, torch.float64])
+    def test_fix_symmetry_dtype_propagation(self, target_dtype: torch.dtype) -> None:
+        """FixSymmetry rotations and reference_cells must follow dtype changes."""
+        rotations = [torch.eye(3, dtype=torch.float64).unsqueeze(0)]
+        symm_maps = [torch.zeros(1, 2, dtype=torch.long)]
+        ref_cells = [torch.eye(3, dtype=torch.float64)]
+
+        state = ts.SimState(
+            positions=torch.zeros(2, 3, dtype=torch.float64),
+            masses=torch.ones(2, dtype=torch.float64),
+            cell=torch.eye(3, dtype=torch.float64).unsqueeze(0) * 5.0,
+            pbc=True,
+            atomic_numbers=torch.tensor([14, 14]),
+            system_idx=torch.zeros(2, dtype=torch.long),
+        )
+        state.constraints = [
+            FixSymmetry(rotations, symm_maps, reference_cells=ref_cells)
+        ]
+
+        new_state = state.to(dtype=target_dtype)
+        c = new_state.constraints[0]
+        assert isinstance(c, FixSymmetry)
+        assert c.rotations[0].dtype == target_dtype
+        assert c.reference_cells[0].dtype == target_dtype
+        # integer symm_maps must stay long
+        assert c.symm_maps[0].dtype == torch.long
+        # original constraint unchanged
+        orig = state.constraints[0]
+        assert orig.rotations[0].dtype == torch.float64
