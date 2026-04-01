@@ -887,7 +887,10 @@ class FixSymmetry(SystemConstraint):
                 state.positions[start:end] = pos
             else:
                 rots, smap = prep_symmetry(
-                    cell, pos, nums, symprec=symprec,
+                    cell,
+                    pos,
+                    nums,
+                    symprec=symprec,
                     angle_tolerance=angle_tolerance,
                 )
 

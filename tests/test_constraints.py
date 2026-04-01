@@ -1230,9 +1230,7 @@ class TestConstraintToDeviceDtype:
         # object must be a distinct copy
         assert c is not ar_supercell_sim_state.constraints[0]
 
-    def test_fix_com_dtype_propagation(
-        self, ar_supercell_sim_state: ts.SimState
-    ) -> None:
+    def test_fix_com_dtype_propagation(self, ar_supercell_sim_state: ts.SimState) -> None:
         """FixCom's cached coms tensor should follow state dtype changes."""
         ar_supercell_sim_state.constraints = [FixCom([0])]
         # Trigger lazy COM initialisation
@@ -1262,9 +1260,7 @@ class TestConstraintToDeviceDtype:
             atomic_numbers=torch.tensor([14, 14]),
             system_idx=torch.zeros(2, dtype=torch.long),
         )
-        state.constraints = [
-            FixSymmetry(rotations, symm_maps, reference_cells=ref_cells)
-        ]
+        state.constraints = [FixSymmetry(rotations, symm_maps, reference_cells=ref_cells)]
 
         new_state = state.to(dtype=target_dtype)
         c = new_state.constraints[0]
