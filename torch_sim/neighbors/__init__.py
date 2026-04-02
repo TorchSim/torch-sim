@@ -24,7 +24,7 @@ from torch_sim.neighbors.alchemiops import (
 from torch_sim.neighbors.torch_nl import strict_nl, torch_nl_linked_cell, torch_nl_n2
 from torch_sim.neighbors.vesin import (
     VESIN_AVAILABLE,
-    VESIN_TORCH_AVAILABLE,
+    VESIN_TORCHSCRIPT_AVAILABLE,
     vesin_nl,
     vesin_nl_ts,
 )
@@ -67,8 +67,9 @@ def _normalize_inputs(
 # Set default neighbor list based on what's available (priority order)
 if ALCHEMIOPS_AVAILABLE:
     # Alchemiops is fastest on NVIDIA GPUs
+    # TODO: why default to n2? we should document the cross-over point
     default_batched_nl = alchemiops_nl_n2
-elif VESIN_TORCH_AVAILABLE:
+elif VESIN_TORCHSCRIPT_AVAILABLE:
     default_batched_nl = vesin_nl_ts
 elif VESIN_AVAILABLE:
     default_batched_nl = vesin_nl
@@ -120,7 +121,7 @@ def torchsim_nl(
             positions, cell, pbc, cutoff, system_idx, self_interaction
         )
 
-    if VESIN_TORCH_AVAILABLE:
+    if VESIN_TORCHSCRIPT_AVAILABLE:
         return vesin_nl_ts(positions, cell, pbc, cutoff, system_idx, self_interaction)
 
     if VESIN_AVAILABLE:
@@ -135,7 +136,7 @@ __all__ = [
     "ALCHEMIOPS_AVAILABLE",
     "ALCHEMIOPS_TORCH_AVAILABLE",
     "VESIN_AVAILABLE",
-    "VESIN_TORCH_AVAILABLE",
+    "VESIN_TORCHSCRIPT_AVAILABLE",
     "alchemiops_nl_cell_list",
     "alchemiops_nl_n2",
     "strict_nl",
