@@ -1266,6 +1266,7 @@ class TestConstraintToDeviceDtype:
         c = new_state.constraints[0]
         assert isinstance(c, FixSymmetry)
         assert c.rotations[0].dtype == target_dtype
+        assert c.reference_cells is not None
         assert c.reference_cells[0].dtype == target_dtype
         # integer symm_maps must stay long
         assert c.symm_maps[0].dtype == torch.long
