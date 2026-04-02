@@ -666,23 +666,13 @@ def get_cart_deformed_cell(state: SimState, axis: int = 0, size: float = 1.0) ->
     else:  # axis == 5
         L[0, 1] += size  # xy shear
 
-    # Convert positions to fractional coordinates
-    old_inv = torch.linalg.inv(row_vector_cell)
-    frac_coords = torch.matmul(positions, old_inv)
+    frac_coords = torch.matmul(positions, torch.linalg.inv(row_vector_cell))
+    new_cell = torch.matmul(row_vector_cell, L)
 
-    # Apply transformation to cell and convert positions back to cartesian
-    row_vector_cell = torch.matmul(row_vector_cell, L)
-    new_positions = torch.matmul(frac_coords, row_vector_cell)
-
-    return SimState(
-        positions=new_positions,
-        cell=row_vector_cell.mT.unsqueeze(0),
-        masses=state.masses,
-        pbc=state.pbc,
-        atomic_numbers=state.atomic_numbers,
-        _system_extras=state._system_extras,
-        _atom_extras=state._atom_extras,
-    )
+    new_state = state.clone()
+    new_state.row_vector_cell = new_cell.unsqueeze(0)
+    new_state.positions = torch.matmul(frac_coords, new_cell)
+    return new_state
 
 
 def get_elementary_deformations(

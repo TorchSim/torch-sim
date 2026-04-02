@@ -255,7 +255,7 @@ def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
     description="ASE: Atomic Simulation Environment",
     path="ase",
 )
-def atoms_to_state(
+def atoms_to_state(  # noqa: C901
     atoms: "Atoms | list[Atoms]",
     device: torch.device | None = None,
     dtype: torch.dtype | None = None,
