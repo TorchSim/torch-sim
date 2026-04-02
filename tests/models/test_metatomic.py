@@ -12,9 +12,9 @@ from torch_sim.testing import SIMSTATE_GENERATORS
 
 
 try:
-    import requests
-    from metatomic.torch import AtomisticModel, load_atomistic_model
+    from metatomic.torch import AtomisticModel
     from metatomic_ase import MetatomicCalculator
+    from upet import get_upet
 
     from torch_sim.models.metatomic import MetatomicModel
 except ImportError:
@@ -25,33 +25,22 @@ except ImportError:
 
 
 @pytest.fixture
-def metatomic_module(tmp_path):
-    model_url = "https://huggingface.co/lab-cosmo/pet-mad/resolve/v1.1.0/models/pet-mad-v1.1.0.ckpt"
-    model_path = tmp_path / "pet-mad-v1.1.0.ckpt"
-    response = requests.get(model_url)
-    response.raise_for_status()
-    model_path.write_bytes(response.content)
-    return load_atomistic_model(model_path)
+def metatomic_module() -> AtomisticModel:
+    return get_upet(model="pet-mad")
 
 
 @pytest.fixture
 def metatomic_calculator(metatomic_module: AtomisticModel) -> MetatomicCalculator:
-    """Load a pretrained metatomic model for testing."""
     return MetatomicCalculator(model=metatomic_module, device=DEVICE)
 
 
 @pytest.fixture
 def metatomic_model(metatomic_module: AtomisticModel) -> MetatomicModel:
-    """Create an MetatomicModel wrapper for the pretrained model."""
     return MetatomicModel(model=metatomic_module, device=DEVICE)
 
 
 def test_metatomic_initialization() -> None:
-    """Test that the metatomic model initializes correctly."""
-    model = MetatomicModel(
-        model="pet-mad",
-        device=DEVICE,
-    )
+    model = MetatomicModel(model=get_upet(model="pet-mad"), device=DEVICE)
     assert model.device == DEVICE
     assert model.dtype == torch.float32
 
