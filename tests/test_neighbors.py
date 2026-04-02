@@ -171,7 +171,7 @@ def _all_nl_backends() -> list[Any]:
         not neighbors.VESIN_AVAILABLE, reason="Vesin is not installed"
     )
     _skip_vesin_ts = pytest.mark.skipif(
-        not neighbors.VESIN_TORCH_AVAILABLE, reason="Vesin is not installed"
+        not neighbors.VESIN_TORCHSCRIPT_AVAILABLE, reason="Vesin is not installed"
     )
 
     _skip_alchemiops = pytest.mark.skipif(

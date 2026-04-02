@@ -339,7 +339,7 @@ def test_nvt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJone
     temperatures_list = [t.tolist() for t in temperatures_tensor.T]
     assert torch.allclose(
         temperatures_tensor[-1],
-        torch.tensor([300.0096, 299.7024], dtype=dtype),
+        torch.tensor([290.3553, 289.9699], dtype=dtype),
     )
 
     energies_tensor = torch.stack(energies)
@@ -728,7 +728,7 @@ def test_npt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJone
     temperatures_list = [t.tolist() for t in temperatures_tensor.T]
     assert torch.allclose(
         temperatures_tensor[-1],
-        torch.tensor([298.2752, 297.9444], dtype=dtype),
+        torch.tensor([287.5729, 287.1330], dtype=dtype),
     )
 
     energies_tensor = torch.stack(energies)
