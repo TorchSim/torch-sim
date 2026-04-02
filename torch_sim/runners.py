@@ -751,7 +751,6 @@ def static(
     Args:
         system (StateLike): Input system to calculate properties for
         model (ModelInterface): Neural network model module
-        unit_system (UnitSystem): Unit system for energy and forces
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
             tracking trajectory. If a dict, will be passed to the TrajectoryReporter
             constructor and must include at least the "filenames" key. Any prop

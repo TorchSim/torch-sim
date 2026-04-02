@@ -283,9 +283,6 @@ class TrajectoryReporter:
             model (ModelInterface, optional): Model used for simulation.
                 Defaults to None. Must be provided if any prop_calculators
                 are provided.
-            write_to_file (bool, optional): Whether to write the state to the trajectory
-                files. Defaults to True. Should only be set to `False` if the props
-                are being collected separately.
 
         Returns:
             list[dict[str, torch.Tensor]]: Map of property names to tensors for each
@@ -835,9 +832,6 @@ class TorchSimTrajectory:
 
         Args:
             name (str): Name of the array
-            start (int, optional): Starting frame index. Defaults to None.
-            stop (int, optional): Ending frame index (exclusive). Defaults to None.
-            step (int, optional): Step size between frames. Defaults to 1.
 
         Returns:
             np.ndarray: Array of step numbers with shape [n_selected_frames]
