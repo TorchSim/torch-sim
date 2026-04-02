@@ -68,14 +68,35 @@ def nve_init(
 def nve_step(
     state: MDState, model: ModelInterface, *, dt: float | torch.Tensor, **_kwargs: Any
 ) -> MDState:
-    """Perform one complete NVE (microcanonical) integration step.
+    r"""Perform one complete NVE (microcanonical) integration step.
 
-    This function implements the velocity Verlet algorithm for NVE dynamics,
-    which provides energy-conserving time evolution. The integration sequence is:
-    1. Half momentum update using current forces
-    2. Full position update using updated momenta
-    3. Force update at new positions
-    4. Half momentum update using new forces
+    Implements the velocity Verlet algorithm for NVE dynamics, which provides
+    energy-conserving, time-reversible integration of Hamilton's equations of motion.
+
+    **Equations** (standard velocity Verlet):
+
+    .. math::
+
+        \mathbf{p}_i(t + \Delta t/2) &= \mathbf{p}_i(t)
+            + \frac{\Delta t}{2}\,\mathbf{F}_i(t) \\
+        \mathbf{r}_i(t + \Delta t) &= \mathbf{r}_i(t)
+            + \Delta t\,\frac{\mathbf{p}_i(t + \Delta t/2)}{m_i} \\
+        \mathbf{F}_i(t + \Delta t) &= -\nabla_{\mathbf{r}_i} U\bigl(
+            \mathbf{r}(t + \Delta t)\bigr) \\
+        \mathbf{p}_i(t + \Delta t) &= \mathbf{p}_i(t + \Delta t/2)
+            + \frac{\Delta t}{2}\,\mathbf{F}_i(t + \Delta t)
+
+    **Variable mapping (equation -> code):**
+
+    ============================================  ============================
+    Equation symbol                               Code variable
+    ============================================  ============================
+    :math:`\mathbf{r}_i`  (positions)             ``state.positions``
+    :math:`\mathbf{p}_i`  (momenta)               ``state.momenta``
+    :math:`m_i`           (masses)                ``state.masses``
+    :math:`\mathbf{F}_i`  (forces)                ``state.forces``
+    :math:`\Delta t`      (timestep)              ``dt``
+    ============================================  ============================
 
     Args:
         model: Neural network model that computes energies and forces.
@@ -88,10 +109,8 @@ def nve_step(
             momenta, forces, and energy
 
     Notes:
-        - Uses velocity Verlet algorithm for time reversible integration
+        - Symplectic, time-reversible integrator of second order accuracy O(dt^2)
         - Conserves energy in the absence of numerical errors
-        - Handles periodic boundary conditions if enabled in state
-        - Symplectic integrator preserving phase space volume
     """
     dt = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
     state = momentum_step(state, dt / 2)
