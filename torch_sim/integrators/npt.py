@@ -706,12 +706,6 @@ def npt_langevin_step(
     n_atoms_per_system = torch.bincount(state.system_idx)
     state.cell_masses = (n_atoms_per_system + 1) * batch_kT * torch.square(state.b_tau)
 
-    # Compute model output for current state
-    model_output = model(state)
-    state.forces = model_output["forces"]
-    state.stress = model_output["stress"]
-    state.store_model_extras(model_output)
-
     # Store initial values for integration
     forces = state.forces
     F_p_n = _compute_cell_force(
@@ -1183,9 +1177,9 @@ def _npt_nose_hoover_compute_cell_force(
         internal_pressure = torch.trace(stress).unsqueeze(0).expand(n_systems)
 
     # Compute force on cell coordinate per system
-    # F = alpha * KE - dU/dV - P*V*d
+    # F = alpha * (2 * KE) - dU/dV - P*V*d
     return (
-        (alpha * KE_per_system)
+        (alpha * 2 * KE_per_system)
         - (internal_pressure * volume)
         - (external_pressure * volume * dim)
     )
@@ -1230,21 +1224,18 @@ def _npt_nose_hoover_inner_step(
     volume, volume_to_cell = _npt_nose_hoover_cell_info(state)
     cell = volume_to_cell(volume)
 
-    # Get model output
-    state.cell = cell
-    model_output = model(state)
-
     # First half step: Update momenta
-    n_atoms_per_system = torch.bincount(state.system_idx, minlength=state.n_systems)
-    alpha = 1 + 1 / n_atoms_per_system  # [n_systems]
+    # alpha = 1 + dim / degrees_of_freedom (3 * natoms - 3)
+    alpha = 1 + 3 / state.get_number_of_degrees_of_freedom()  # [n_systems]
 
+    # Reuse stress from previous step since positions and cell unchanged
     cell_force_val = _npt_nose_hoover_compute_cell_force(
         alpha=alpha,
         volume=volume,
         positions=positions,
         momenta=momenta,
         masses=masses,
-        stress=model_output["stress"],
+        stress=state.stress,
         external_pressure=external_pressure,
         system_idx=state.system_idx,
     )
@@ -1411,7 +1402,8 @@ def npt_nose_hoover_init(
         )
 
     # Compute total DOF for thermostat initialization and a zero KE placeholder
-    dof_per_system = torch.bincount(state.system_idx, minlength=n_systems) * dim
+    dof_per_system = state.get_number_of_degrees_of_freedom() - 3
+
     KE_thermostat = ts.calc_kinetic_energy(
         masses=state.masses, momenta=momenta, system_idx=state.system_idx
     )
@@ -1619,13 +1611,12 @@ def npt_nose_hoover_invariant(
     )
 
     # Calculate degrees of freedom per system
-    n_atoms_per_system = torch.bincount(state.system_idx, minlength=state.n_systems)
-    dof_per_system = n_atoms_per_system * state.positions.shape[-1]  # n_atoms * n_dim
+    dof_per_system = state.get_number_of_degrees_of_freedom()
 
     # Initialize total energy with PE + KE
     e_tot = e_pot + e_kin_per_system
 
-    # Add thermostat chain contributions (batched per system, DOF = n_atoms * 3)
+    # Add thermostat chain contributions (batched per system, DOF = 3 * n_atoms - 3)
     e_tot += _compute_chain_energy(state.thermostat, kT, e_tot, dof_per_system)
 
     # Add barostat chain contributions (batched per system, DOF = 1)

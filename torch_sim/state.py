@@ -923,7 +923,13 @@ def _state_to_device[T: SimState](  # noqa: C901
     attrs = state.attributes
     for attr_name, attr_value in attrs.items():
         if isinstance(attr_value, torch.Tensor):
-            attrs[attr_name] = attr_value.to(device=device)
+            if attr_value.is_floating_point() and dtype is not None:
+                # also move floating point attributes like forces, velocities, etc.
+                # to dtype.
+                attrs[attr_name] = attr_value.to(device=device, dtype=dtype)
+            else:
+                # non-floating attributes like system_idx keep their dtype.
+                attrs[attr_name] = attr_value.to(device=device)
         elif isinstance(attr_value, torch.Generator):
             attrs[attr_name] = coerce_prng(attr_value, device)
 
@@ -934,9 +940,6 @@ def _state_to_device[T: SimState](  # noqa: C901
             }
 
     if dtype is not None:
-        attrs["positions"] = attrs["positions"].to(dtype=dtype)
-        attrs["masses"] = attrs["masses"].to(dtype=dtype)
-        attrs["cell"] = attrs["cell"].to(dtype=dtype)
         attrs["atomic_numbers"] = attrs["atomic_numbers"].to(dtype=torch.int)
 
         # Update floating point extras to new dtype
@@ -946,6 +949,12 @@ def _state_to_device[T: SimState](  # noqa: C901
                     k: v.to(dtype=dtype) if v.is_floating_point() else v
                     for k, v in attrs[extras_key].items()
                 }
+
+    if attrs.get("_constraints"):
+        attrs["_constraints"] = [
+            c.to(device=device, dtype=dtype) for c in attrs["_constraints"]
+        ]
+
     return type(state)(**attrs)
 
 
@@ -1057,7 +1066,7 @@ def _filter_attrs_by_index(
     return filtered_attrs
 
 
-def _split_state[T: SimState](state: T) -> list[T]:
+def _split_state[T: SimState](state: T) -> list[T]:  # noqa: C901
     """Split a SimState into a list of states, each containing a single system.
 
     Divides a multi-system state into individual single-system states, preserving
