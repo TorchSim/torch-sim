@@ -1096,8 +1096,8 @@ def test_nptlangevinstate_instantiation() -> None:
         cell_alpha=torch.ones(1),
         b_tau=torch.ones(1),
         reference_cell=torch.eye(3).unsqueeze(0),
-        cell_positions=torch.zeros(1, 3, 3),
-        cell_velocities=torch.zeros(1, 3, 3),
+        cell_positions=torch.zeros(1, 3),
+        cell_velocities=torch.zeros(1, 3),
         cell_masses=torch.ones(1),
     )
     _check_coercion(state)
