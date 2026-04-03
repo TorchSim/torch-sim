@@ -81,12 +81,15 @@ import torch_sim as ts
 from .md import MDState, initialize_momenta, momentum_step, position_step, velocity_verlet
 from .npt import (
     NPTLangevinState,
+    NPTLangevinStrainState,
     NPTNoseHooverState,
     npt_crescale_anisotropic_step,
     npt_crescale_init,
     npt_crescale_isotropic_step,
     npt_langevin_init,
     npt_langevin_step,
+    npt_langevin_strain_init,
+    npt_langevin_strain_step,
     npt_nose_hoover_init,
     npt_nose_hoover_invariant,
     npt_nose_hoover_step,
@@ -136,6 +139,7 @@ class Integrator(StrEnum):
     nvt_langevin = "nvt_langevin"
     nvt_nose_hoover = "nvt_nose_hoover"
     npt_langevin = "npt_langevin"
+    npt_langevin_strain = "npt_langevin_strain"
     npt_nose_hoover = "npt_nose_hoover"
     npt_isotropic_crescale = "npt_isotropic_crescale"
     npt_anisotropic_crescale = "npt_anisotropic_crescale"
@@ -175,6 +179,7 @@ INTEGRATOR_REGISTRY: Final[
     Integrator.nvt_langevin: (nvt_langevin_init, nvt_langevin_step),
     Integrator.nvt_nose_hoover: (nvt_nose_hoover_init, nvt_nose_hoover_step),
     Integrator.npt_langevin: (npt_langevin_init, npt_langevin_step),
+    Integrator.npt_langevin_strain: (npt_langevin_strain_init, npt_langevin_strain_step),
     Integrator.npt_nose_hoover: (npt_nose_hoover_init, npt_nose_hoover_step),
     Integrator.npt_isotropic_crescale: (npt_crescale_init, npt_crescale_isotropic_step),
     Integrator.npt_anisotropic_crescale: (
