@@ -15,6 +15,21 @@ from torch_sim.testing import SIMSTATE_GENERATORS
 
 torch.set_num_threads(4)
 
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--validation-plots",
+        action="store_true",
+        default=False,
+        help="Save physical validation plots to tests/physical_validation_data/plots/",
+    )
+    parser.addoption(
+        "--clean-validation-data",
+        action="store_true",
+        default=False,
+        help="Delete saved physical validation data before running tests",
+    )
+
 DEVICE = torch.device("cpu")
 DTYPE = torch.float64
 
