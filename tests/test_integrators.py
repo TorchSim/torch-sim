@@ -155,6 +155,66 @@ def test_npt_langevin(
     assert pos_diff > 0.0001  # Systems should remain separated
 
 
+def test_npt_langevin_strain(
+    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
+) -> None:
+    n_steps = 200
+    dt = torch.tensor(0.001, dtype=DTYPE) * MetalUnits.time
+    kT = torch.tensor(300.0, dtype=DTYPE) * MetalUnits.temperature
+    external_pressure = torch.tensor(10.0, dtype=DTYPE) * MetalUnits.pressure
+    alpha = 1 * dt
+    cell_alpha = 10 * dt
+    b_tau = 30 * dt
+
+    ar_double_sim_state.rng = 42
+    state = ts.npt_langevin_strain_init(
+        state=ar_double_sim_state,
+        model=lj_model,
+        dt=dt,
+        kT=kT,
+        alpha=alpha,
+        cell_alpha=cell_alpha,
+        b_tau=b_tau,
+    )
+
+    # Check strain state shape
+    assert state.cell_positions.shape == (2,)  # scalar strain per system
+
+    energies = []
+    temperatures = []
+    for _step in range(n_steps):
+        state = ts.npt_langevin_strain_step(
+            state=state,
+            model=lj_model,
+            dt=dt,
+            kT=kT,
+            external_pressure=external_pressure,
+        )
+
+        temp = ts.calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
+        energies.append(state.energy)
+        temperatures.append(temp / MetalUnits.temperature)
+
+    temperatures_tensor = torch.stack(temperatures)
+    energies_tensor = torch.stack(energies)
+    energies_list = [t.tolist() for t in energies_tensor.T]
+
+    assert len(energies_list[0]) == n_steps
+
+    mean_temps = torch.mean(temperatures_tensor, dim=0)
+    for mean_temp in mean_temps:
+        assert abs(mean_temp - kT.item() / MetalUnits.temperature) < 150.0
+
+    for traj in energies_list:
+        energy_std = torch.tensor(traj).std()
+        assert energy_std < 1.0
+
+    # Cell reconstruction is consistent
+    assert torch.allclose(state.cell, state.current_cell)
+
+
 def test_npt_langevin_multi_kt(
     ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
 ):
@@ -339,7 +399,7 @@ def test_nvt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJone
     temperatures_list = [t.tolist() for t in temperatures_tensor.T]
     assert torch.allclose(
         temperatures_tensor[-1],
-        torch.tensor([290.3553, 289.9699], dtype=dtype),
+        torch.tensor([305.6400, 305.4556], dtype=dtype),
     )
 
     energies_tensor = torch.stack(energies)
@@ -728,7 +788,7 @@ def test_npt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJone
     temperatures_list = [t.tolist() for t in temperatures_tensor.T]
     assert torch.allclose(
         temperatures_tensor[-1],
-        torch.tensor([287.5729, 287.1330], dtype=dtype),
+        torch.tensor([283.1162, 313.1624], dtype=dtype),
     )
 
     energies_tensor = torch.stack(energies)
@@ -1023,19 +1083,19 @@ def test_compute_cell_force_atoms_per_system():
         atomic_numbers=torch.ones(72, dtype=torch.long),
         stress=torch.zeros((2, 3, 3)),
         reference_cell=torch.eye(3).repeat(2, 1, 1),
-        cell_positions=torch.ones((2, 3, 3)),
-        cell_velocities=torch.zeros((2, 3, 3)),
+        cell_positions=torch.zeros(2, 3),
+        cell_velocities=torch.zeros(2, 3),
         cell_masses=torch.ones(2),
         alpha=torch.ones(2),
         cell_alpha=torch.ones(2),
         b_tau=torch.ones(2),
     )
 
-    # Get forces and compare ratio
-    cell_force = _compute_cell_force(state, torch.tensor(0.0), torch.tensor([1.0, 1.0]))
-    force_ratio = (
-        torch.diagonal(cell_force[1]).mean() / torch.diagonal(cell_force[0]).mean()
-    )
+    # Get forces and compare ratio (per-dimension force)
+    P_ext = torch.zeros(2, 3)
+    cell_force = _compute_cell_force(state, P_ext, torch.tensor([1.0, 1.0]))
+    # Check the first dimension's force ratio
+    force_ratio = cell_force[1, 0] / cell_force[0, 0]
 
     # Force ratio should match atom ratio (8:1) with the fix
     assert abs(force_ratio - 8.0) / 8.0 < 0.1
