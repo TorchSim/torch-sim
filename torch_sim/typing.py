@@ -14,6 +14,25 @@ if TYPE_CHECKING:
     from torch_sim.state import SimState
 
 
+class AtomExtras(StrEnum):
+    """Blessed names for per-atom :class:`~torch_sim.state.SimState` extras.
+
+    Stored in ``SimState._atom_extras``; leading dimension is ``n_atoms``.
+    """
+
+    SITE_CHARGES = "site_charges"
+
+
+class SystemExtras(StrEnum):
+    """Blessed names for per-system :class:`~torch_sim.state.SimState` extras.
+
+    Stored in ``SimState._system_extras``; leading dimension is ``n_systems``.
+    """
+
+    CHARGE = "charge"
+    SPIN = "spin"
+
+
 class BravaisType(StrEnum):
     """Enumeration of the seven Bravais lattice types in 3D crystals.
 
