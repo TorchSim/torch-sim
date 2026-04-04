@@ -49,10 +49,7 @@ if TYPE_CHECKING:
 
     from torch_sim.state import SimState
 
-_BOHR_TO_ANG = UnitConversion.Bohr_to_Ang
-_ANG_TO_BOHR = UnitConversion.Ang_to_Bohr
-_HARTREE_TO_EV = UnitConversion.Hartree_to_eV
-_FORCE_CONV = _HARTREE_TO_EV / _BOHR_TO_ANG  # Hartree/Bohr -> eV/Ang
+_FORCE_CONV = UnitConversion.Hartree_to_eV / UnitConversion.Bohr_to_Ang
 
 
 class D3DispersionModel(ModelInterface):
@@ -98,7 +95,7 @@ class D3DispersionModel(ModelInterface):
         *,
         s6: float = 1.0,
         d3_params: D3Parameters | None = None,
-        cutoff: float = 95.0 * _BOHR_TO_ANG,
+        cutoff: float = 95.0 * UnitConversion.Bohr_to_Ang,
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float64,
         compute_forces: bool = True,
@@ -147,8 +144,8 @@ class D3DispersionModel(ModelInterface):
         neighbor_ptr[1:] = (
             torch.bincount(edge_index[0], minlength=n_atoms).cumsum(0).to(torch.int32)
         )
-        positions_bohr = state.positions * _ANG_TO_BOHR
-        cell_bohr = state.row_vector_cell.contiguous() * _ANG_TO_BOHR
+        positions_bohr = state.positions * UnitConversion.Ang_to_Bohr
+        cell_bohr = state.row_vector_cell.contiguous() * UnitConversion.Ang_to_Bohr
         numbers = state.atomic_numbers.to(torch.int32)
         unit_shifts_int = unit_shifts.to(torch.int32)
         edge_index_int = edge_index.to(torch.int32)
@@ -170,12 +167,12 @@ class D3DispersionModel(ModelInterface):
         )
 
         results: dict[str, torch.Tensor] = {
-            "energy": (d3_out[0] * _HARTREE_TO_EV).to(self._dtype).detach(),
+            "energy": (d3_out[0] * UnitConversion.Hartree_to_eV).to(self._dtype).detach(),
             "forces": (d3_out[1] * _FORCE_CONV).to(self._dtype).detach(),
         }
         if self._compute_stress:
             # d3_out[3] is only defined if compute_virial is True
             volumes = state.volume.unsqueeze(-1).unsqueeze(-1)
-            stress = (d3_out[3] * _HARTREE_TO_EV) / volumes  # type: ignore[index]
+            stress = (d3_out[3] * UnitConversion.Hartree_to_eV) / volumes  # type: ignore[index]
             results["stress"] = stress.to(self._dtype).detach()
         return results
