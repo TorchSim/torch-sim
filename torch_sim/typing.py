@@ -20,7 +20,9 @@ class AtomExtras(StrEnum):
     Stored in ``SimState._atom_extras``; leading dimension is ``n_atoms``.
     """
 
-    SITE_CHARGES = "site_charges"
+    PARTIAL_CHARGES = "partial_charges"
+    BORN_EFFECTIVE_CHARGES = "born_effective_charges"
+    MAGNETIC_MOMENTS = "magnetic_moments"
 
 
 class SystemExtras(StrEnum):
@@ -29,8 +31,16 @@ class SystemExtras(StrEnum):
     Stored in ``SimState._system_extras``; leading dimension is ``n_systems``.
     """
 
-    CHARGE = "charge"
-    SPIN = "spin"
+    CHARGE = "charge"  # TOTAL_CHARGE preferred for less ambiguity with partial charges
+    SPIN = "spin"  # TOTAL_SPIN preferred
+    TOTAL_CHARGE = "total_charge"
+    TOTAL_SPIN = "total_spin"
+    EXTERNAL_E_FIELD = "external_E_field"
+    POLARIZABILITY = "polarizability"
+    TOTAL_POLARIZATION = "total_polarization"
+    EXTERNAL_H_FIELD = "external_H_field"
+    MAGNETIC_SUSCEPTIBILITY = "magnetic_susceptibility"
+    TOTAL_MAGNETIZATION = "total_magnetization"
 
 
 class BravaisType(StrEnum):
@@ -44,13 +54,13 @@ class BravaisType(StrEnum):
     which determine the number of independent elastic constants.
     """
 
-    cubic = "cubic"
-    hexagonal = "hexagonal"
-    trigonal = "trigonal"
-    tetragonal = "tetragonal"
-    orthorhombic = "orthorhombic"
-    monoclinic = "monoclinic"
-    triclinic = "triclinic"
+    CUBIC = "cubic"
+    HEXAGONAL = "hexagonal"
+    TRIGONAL = "trigonal"
+    TETRAGONAL = "tetragonal"
+    ORTHORHOMBIC = "orthorhombic"
+    MONOCLINIC = "monoclinic"
+    TRICLINIC = "triclinic"
 
 
 StateLike = Union[

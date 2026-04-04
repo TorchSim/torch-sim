@@ -221,7 +221,7 @@ def test_get_elementary_deformations_strain_consistency(
         n_deform=n_deform,
         max_strain_normal=max_strain_normal,
         max_strain_shear=max_strain_shear,
-        bravais_type=BravaisType.triclinic,  # Test all axes
+        bravais_type=BravaisType.TRICLINIC,  # Test all axes
     )
 
     # Should generate deformations for all 6 axes (triclinic)
@@ -271,12 +271,12 @@ def mace_model() -> MaceModel:
 @pytest.mark.parametrize(
     ("sim_state_name", "expected_bravais_type", "atol"),
     [
-        ("cu_sim_state", BravaisType.cubic, 2e-1),
-        ("mg_sim_state", BravaisType.hexagonal, 5e-1),
-        ("sb_sim_state", BravaisType.trigonal, 5e-1),
-        ("tio2_sim_state", BravaisType.tetragonal, 5e-1),
-        ("ga_sim_state", BravaisType.orthorhombic, 5e-1),
-        ("niti_sim_state", BravaisType.monoclinic, 5e-1),
+        ("cu_sim_state", BravaisType.CUBIC, 2e-1),
+        ("mg_sim_state", BravaisType.HEXAGONAL, 5e-1),
+        ("sb_sim_state", BravaisType.TRIGONAL, 5e-1),
+        ("tio2_sim_state", BravaisType.TETRAGONAL, 5e-1),
+        ("ga_sim_state", BravaisType.ORTHORHOMBIC, 5e-1),
+        ("niti_sim_state", BravaisType.MONOCLINIC, 5e-1),
     ],
 )
 def test_elastic_tensor_symmetries(
@@ -340,7 +340,7 @@ def test_elastic_tensor_symmetries(
     )
     C_triclinic = (
         calculate_elastic_tensor(
-            state=state, model=model, bravais_type=BravaisType.triclinic
+            state=state, model=model, bravais_type=BravaisType.TRICLINIC
         )
         * UnitConversion.eV_per_Ang3_to_GPa
     )
