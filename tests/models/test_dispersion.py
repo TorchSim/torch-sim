@@ -10,7 +10,8 @@ from tests.models.conftest import make_validate_model_outputs_test
 
 try:
     from nvalchemiops.torch.interactions.dispersion import D3Parameters
-    from torch_sim.models.d3 import D3DispersionModel
+
+    from torch_sim.models.dispersion import D3DispersionModel
 except (ImportError, OSError, RuntimeError):
     pytest.skip(
         f"nvalchemiops not installed: {traceback.format_exc()}",
