@@ -1464,8 +1464,12 @@ def test_optimizer_preserves_charge_spin(
     original_spin = torch.tensor(
         [6.0], device=ar_supercell_sim_state.device, dtype=ar_supercell_sim_state.dtype
     )
-    ar_supercell_sim_state.charge = original_charge.clone()
-    ar_supercell_sim_state.spin = original_spin.clone()
+
+    # NOTE the convenience method for setting extras is not used here because
+    # they are only available if the key is already in the extras dict. If not
+    # we need to set them explicitly.
+    ar_supercell_sim_state._system_extras["charge"] = original_charge.clone()  # noqa: SLF001
+    ar_supercell_sim_state._system_extras["spin"] = original_spin.clone()  # noqa: SLF001
 
     init_fn, step_fn = ts.OPTIM_REGISTRY[optimizer_fn]
     opt_state = init_fn(

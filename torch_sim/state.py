@@ -17,7 +17,7 @@ import torch
 from torch._prims_common import DeviceLikeType
 
 import torch_sim as ts
-from torch_sim.typing import PRNGLike, StateLike
+from torch_sim.typing import ExtrasMap, PRNGLike, StateLike
 
 
 if TYPE_CHECKING:
@@ -618,13 +618,24 @@ class SimState:
 
         return cls(**attrs)
 
-    def to_atoms(self) -> list["Atoms"]:
+    def to_atoms(
+        self,
+        *,
+        system_extras: ExtrasMap | None = None,
+        atom_extras: ExtrasMap | None = None,
+    ) -> list["Atoms"]:
         """Convert the SimState to a list of ASE Atoms objects.
 
+        Args:
+            system_extras: Map of ``{ts_key: ase_key}`` for system extras.
+            atom_extras: Map of ``{ts_key: ase_key}`` for atom extras.
+
         Returns:
-            list[Atoms]: A list of ASE Atoms objects, one per system
+            list[Atoms]: A list of ASE Atoms objects, one per system.
         """
-        return ts.io.state_to_atoms(self)
+        return ts.io.state_to_atoms(
+            self, system_extras=system_extras, atom_extras=atom_extras
+        )
 
     def to_structures(self) -> list["Structure"]:
         """Convert the SimState to a list of pymatgen Structure objects.

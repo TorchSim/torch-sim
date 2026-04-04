@@ -12,6 +12,8 @@ The module handles:
 * Batched conversions for multiple structures
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -26,6 +28,8 @@ if TYPE_CHECKING:
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure
 
+    from torch_sim.typing import ExtrasMap
+
 
 @dcite(
     "10.1088/1361-648X/aa680e",
@@ -33,27 +37,31 @@ if TYPE_CHECKING:
     path="ase",
 )
 def state_to_atoms(
-    state: "ts.SimState",
-    system_extras_keys: list[str] | None = None,
-    atom_extras_keys: list[str] | None = None,
-) -> list["Atoms"]:
+    state: ts.SimState,
+    *,
+    system_extras: ExtrasMap | None = None,
+    atom_extras: ExtrasMap | None = None,
+) -> list[Atoms]:
     """Convert a SimState to a list of ASE Atoms objects.
 
     Args:
-        state (SimState): Batched state containing positions, cell, and atomic numbers
-        system_extras_keys: Keys for per-system extras to include in atoms.info
-        atom_extras_keys: Keys for per-atom extras to include in atoms.arrays
+        state: Batched state containing positions, cell, and atomic numbers.
+        system_extras: Map of ``{ts_key: ase_key}`` controlling which
+            ``_system_extras`` entries are written to ``atoms.info``.
+            ``None`` (default) means no extras are written.
+        atom_extras: Map of ``{ts_key: ase_key}`` controlling which
+            ``_atom_extras`` entries are written to ``atoms.arrays``.
+            ``None`` (default) means no extras are written.
 
     Returns:
-        list[Atoms]: ASE Atoms objects, one per system
+        list[Atoms]: ASE Atoms objects, one per system.
 
     Raises:
-        ImportError: If ASE is not installed
+        ImportError: If ASE is not installed.
 
     Notes:
         - Output positions and cell will be in Å
         - Output masses will be in amu
-        - Charge and spin are preserved in atoms.info if present in the state
     """
     try:
         from ase import Atoms
@@ -93,24 +101,17 @@ def state_to_atoms(
             symbols=symbols, positions=system_positions, cell=system_cell, pbc=pbc_for_sys
         )
 
-        # Write system extras to atoms.info
-        # charge/spin stored as int scalars for FairChem compatibility
-        _sys_keys = (
-            system_extras_keys
-            if system_extras_keys is not None
-            else list(state.system_extras)
-        )
-        for key in _sys_keys:
-            val = state.system_extras[key][sys_idx].detach().cpu().numpy()
-            atoms.info[key] = val
+        if system_extras:
+            for ts_key, ase_key in system_extras.items():
+                if ts_key in state.system_extras:
+                    val = state.system_extras[ts_key][sys_idx].detach().cpu().numpy()
+                    atoms.info[ase_key] = val
 
-        # Write atom extras to atoms.arrays
-        _atom_keys = (
-            atom_extras_keys if atom_extras_keys is not None else list(state.atom_extras)
-        )
-        for key in _atom_keys:
-            val = state.atom_extras[key][mask].detach().cpu().numpy()
-            atoms.arrays[key] = val
+        if atom_extras:
+            for ts_key, ase_key in atom_extras.items():
+                if ts_key in state.atom_extras:
+                    val = state.atom_extras[ts_key][mask].detach().cpu().numpy()
+                    atoms.arrays[ase_key] = val
 
         atoms_list.append(atoms)
 
@@ -122,7 +123,7 @@ def state_to_atoms(
     description="pymatgen: Python Materials Genomics",
     path="pymatgen",
 )
-def state_to_structures(state: "ts.SimState") -> list["Structure"]:
+def state_to_structures(state: ts.SimState) -> list[Structure]:
     """Convert a SimState to a list of Pymatgen Structure objects.
 
     Args:
@@ -198,7 +199,7 @@ def state_to_structures(state: "ts.SimState") -> list["Structure"]:
     description="Phonopy: harmonic and quasi-harmonic phonon calculationss",
     path="phonopy",
 )
-def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
+def state_to_phonopy(state: ts.SimState) -> list[PhonopyAtoms]:
     """Convert a SimState to a list of PhonopyAtoms objects.
 
     Args:
@@ -255,31 +256,34 @@ def state_to_phonopy(state: "ts.SimState") -> list["PhonopyAtoms"]:
     description="ASE: Atomic Simulation Environment",
     path="ase",
 )
-def atoms_to_state(  # noqa: C901
-    atoms: "Atoms | list[Atoms]",
+def atoms_to_state(
+    atoms: Atoms | list[Atoms],
     device: torch.device | None = None,
     dtype: torch.dtype | None = None,
-    system_extras_keys: list[str] | None = None,
-    atom_extras_keys: list[str] | None = None,
-) -> "ts.SimState":
+    *,
+    system_extras: ExtrasMap | None = None,
+    atom_extras: ExtrasMap | None = None,
+) -> ts.SimState:
     """Convert an ASE Atoms object or list of Atoms objects to a SimState.
 
     Args:
-        atoms (Atoms | list[Atoms]): Single ASE Atoms object or list of Atoms objects
-        device (torch.device): Device to create tensors on
-        dtype (torch.dtype): Data type for tensors (typically torch.float32 or
-            torch.float64)
-        system_extras_keys (list[str]): Optional list of keys to read from atoms.info
-            into _system_extras
-        atom_extras_keys (list[str]): Optional list of keys to read from atoms.arrays
-            into _atom_extras
+        atoms: Single ASE Atoms object or list of Atoms objects.
+        device: Device to create tensors on.
+        dtype: Data type for tensors (typically ``torch.float32`` or
+            ``torch.float64``).
+        system_extras: Map of ``{ts_key: ase_key}`` controlling which
+            ``atoms.info`` entries are read into ``_system_extras``.
+            ``None`` (default) means no extras are read.
+        atom_extras: Map of ``{ts_key: ase_key}`` controlling which
+            ``atoms.arrays`` entries are read into ``_atom_extras``.
+            ``None`` (default) means no extras are read.
 
     Returns:
         SimState: TorchSim SimState object.
 
     Raises:
-        ImportError: If ASE is not installed
-        ValueError: If systems have inconsistent periodic boundary conditions
+        ImportError: If ASE is not installed.
+        ValueError: If systems have inconsistent periodic boundary conditions.
 
     Notes:
         - Input positions and cell should be in Å
@@ -320,31 +324,23 @@ def atoms_to_state(  # noqa: C901
         raise ValueError("All systems must have the same periodic boundary conditions")
 
     _system_extras: dict[str, torch.Tensor] = {}
-
-    # charge and spin always default to 0 for backward compatibility
-    for key in ("charge", "spin"):
-        vals = np.array([float(at.info.get(key, 0.0)) for at in atoms_list])
-        _system_extras[key] = torch.tensor(vals, dtype=dtype, device=device)
-
-    if system_extras_keys:
-        for key in system_extras_keys:
-            if key in _system_extras:
-                continue
-            vals = [at.info.get(key) for at in atoms_list]
-            non_none_vals = [v for v in vals if v is not None]
-            if len(non_none_vals) == len(vals):
-                _system_extras[key] = torch.tensor(
-                    np.stack(non_none_vals), dtype=dtype, device=device
+    if system_extras:
+        for ts_key, ase_key in system_extras.items():
+            vals = [at.info.get(ase_key) for at in atoms_list]
+            non_none = [v for v in vals if v is not None]
+            if len(non_none) == len(vals):
+                _system_extras[ts_key] = torch.tensor(
+                    np.array(non_none), dtype=dtype, device=device
                 )
 
     _atom_extras: dict[str, torch.Tensor] = {}
-    if atom_extras_keys:
-        for key in atom_extras_keys:
-            arrays = [at.arrays.get(key) for at in atoms_list]
-            non_none_arrays = [a for a in arrays if a is not None]
-            if len(non_none_arrays) == len(arrays):
-                _atom_extras[key] = torch.tensor(
-                    np.concatenate(non_none_arrays), dtype=dtype, device=device
+    if atom_extras:
+        for ts_key, ase_key in atom_extras.items():
+            arrays = [at.arrays.get(ase_key) for at in atoms_list]
+            non_none = [a for a in arrays if a is not None]
+            if len(non_none) == len(arrays):
+                _atom_extras[ts_key] = torch.tensor(
+                    np.concatenate(non_none), dtype=dtype, device=device
                 )
 
     return ts.SimState(
@@ -365,10 +361,10 @@ def atoms_to_state(  # noqa: C901
     path="pymatgen",
 )
 def structures_to_state(
-    structure: "Structure | list[Structure]",
+    structure: Structure | list[Structure],
     device: torch.device | None = None,
     dtype: torch.dtype | None = None,
-) -> "ts.SimState":
+) -> ts.SimState:
     """Create a SimState from pymatgen Structure(s).
 
     Args:
@@ -446,10 +442,10 @@ def structures_to_state(
     path="phonopy",
 )
 def phonopy_to_state(
-    phonopy_atoms: "PhonopyAtoms | list[PhonopyAtoms]",
+    phonopy_atoms: PhonopyAtoms | list[PhonopyAtoms],
     device: torch.device | None = None,
     dtype: torch.dtype | None = None,
-) -> "ts.SimState":
+) -> ts.SimState:
     """Create state tensors from a PhonopyAtoms object or list of PhonopyAtoms objects.
 
     Args:

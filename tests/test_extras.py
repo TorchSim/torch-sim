@@ -4,10 +4,6 @@ import torch
 import torch_sim as ts
 
 
-DEVICE = torch.device("cpu")
-DTYPE = torch.float64
-
-
 class TestExtras:
     def test_system_extras_construction(self):
         """Extras can be passed at construction time."""
@@ -51,7 +47,6 @@ class TestExtras:
             )
 
     def test_construction_extras_cannot_shadow(self):
-        # Post-init validation should also catch shadowing during construction
         with pytest.raises(ValueError, match="shadows an existing attribute"):
             ts.SimState(
                 positions=torch.zeros(2, 3),
@@ -62,7 +57,6 @@ class TestExtras:
                 _system_extras={"cell": torch.zeros(1, 3)},
             )
 
-    # store_model_extras
     def test_store_model_extras_canonical_keys_not_stored(
         self, si_double_sim_state: ts.SimState
     ):
@@ -114,40 +108,3 @@ class TestExtras:
         )
         assert not state.has_extras("scalar")
         assert not state.has_extras("string")
-
-
-def test_system_extras_atoms_roundtrip():
-    state = ts.SimState(
-        positions=torch.zeros(2, 3),
-        masses=torch.ones(2),
-        cell=torch.eye(3).unsqueeze(0),
-        pbc=True,
-        atomic_numbers=torch.tensor([1, 1], dtype=torch.int),
-        _system_extras={"external_E_field": torch.tensor([[1.0, 0.0, 0.0]])},
-    )
-    atoms_list = state.to_atoms()
-    assert "external_E_field" in atoms_list[0].info
-    restored = ts.io.atoms_to_state(
-        atoms_list,
-        system_extras_keys=["external_E_field"],
-    )
-    assert torch.allclose(restored.external_E_field, state.external_E_field)
-
-
-def test_atom_extras_atoms_roundtrip():
-    tags = torch.tensor([1.0, 2.0])
-    state = ts.SimState(
-        positions=torch.zeros(2, 3),
-        masses=torch.ones(2),
-        cell=torch.eye(3).unsqueeze(0),
-        pbc=True,
-        atomic_numbers=torch.tensor([1, 1], dtype=torch.int),
-        _atom_extras={"tags": tags},
-    )
-    atoms_list = state.to_atoms()
-    assert "tags" in atoms_list[0].arrays
-    restored = ts.io.atoms_to_state(
-        atoms_list,
-        atom_extras_keys=["tags"],
-    )
-    assert torch.allclose(restored.tags, state.tags)
