@@ -234,10 +234,14 @@ class SumModel(ModelInterface):
         self._compute_stress = all(m.compute_stress for m in models)
         self._compute_forces = all(m.compute_forces for m in models)
 
+    def _children(self) -> list[ModelInterface]:
+        """Return child models with proper typing for static analysis."""
+        return list(self.models.children())  # type: ignore[return-value]
+
     @ModelInterface.compute_stress.setter
     def compute_stress(self, value: bool) -> None:  # noqa: FBT001
         """Propagate ``compute_stress`` to all child models that support it."""
-        for m in self.models:
+        for m in self._children():
             try:
                 m.compute_stress = value
             except NotImplementedError:
@@ -248,7 +252,7 @@ class SumModel(ModelInterface):
     @ModelInterface.compute_forces.setter
     def compute_forces(self, value: bool) -> None:  # noqa: FBT001
         """Propagate ``compute_forces`` to all child models that support it."""
-        for m in self.models:
+        for m in self._children():
             try:
                 m.compute_forces = value
             except NotImplementedError:
@@ -259,19 +263,19 @@ class SumModel(ModelInterface):
     @property
     def retain_graph(self) -> bool:
         """Whether any child model retains the computation graph."""
-        return any(getattr(m, "retain_graph", False) for m in self.models)
+        return any(getattr(m, "retain_graph", False) for m in self._children())
 
     @retain_graph.setter
     def retain_graph(self, value: bool) -> None:
-        for m in self.models:
+        for m in self._children():
             if hasattr(m, "retain_graph"):
-                m.retain_graph = value
+                m.retain_graph = value  # type: ignore[union-attr]
 
     @property
     def memory_scales_with(self) -> MemoryScaling:
         """Most conservative memory-scaling among all child models."""
         best: MemoryScaling = "n_atoms"
-        for m in self.models:
+        for m in self._children():
             scaling = m.memory_scales_with
             if _MEMORY_SCALING_PRIORITY[scaling] > _MEMORY_SCALING_PRIORITY[best]:
                 best = scaling
@@ -292,7 +296,7 @@ class SumModel(ModelInterface):
             Combined output dictionary with summed tensors.
         """
         combined: dict[str, torch.Tensor] = {}
-        for model in self.models:
+        for model in self._children():
             output = model(state, **kwargs)
             for key, tensor in output.items():
                 if key in combined:

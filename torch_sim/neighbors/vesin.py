@@ -12,13 +12,13 @@ import torch
 try:
     from vesin import NeighborList as VesinNeighborList
 except ImportError:
-    VesinNeighborList = None  # type: ignore[assignment]
+    VesinNeighborList = None
 
 
 try:
     from vesin.torch import NeighborList as VesinNeighborListTorch
 except ImportError:
-    VesinNeighborListTorch = None  # ty:ignore[invalid-assignment]
+    VesinNeighborListTorch = None
 
 VESIN_AVAILABLE = VesinNeighborList is not None
 VESIN_TORCHSCRIPT_AVAILABLE = VesinNeighborListTorch is not None
