@@ -1009,7 +1009,7 @@ def linked_cell(  # noqa: PLR0915
     return neigh_atom, neigh_shift_idx
 
 
-def build_linked_cell_neighborhood(
+def build_linked_cell_neighborhood_serial(
     positions: torch.Tensor,
     cell: torch.Tensor,
     pbc: torch.Tensor,
@@ -1113,21 +1113,23 @@ def _build_linked_cell_images_batched(
     atom_mask: torch.Tensor,
     shifts_idx_unique: torch.Tensor,
     cell: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    pbc: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Build shifted images and validity mask for the batched linked-cell path."""
     n_structure, n_max = batch_pos.shape[:2]
     n_shifts = shifts_idx_unique.shape[0]
     cart_shifts = torch.matmul(shifts_idx_unique.to(batch_pos.dtype), cell)
+    shift_ok = ((shifts_idx_unique == 0).unsqueeze(0) | pbc.unsqueeze(1)).all(dim=-1)
     # Flatten the (shift, atom) grid into one image axis for later sorting/binning.
     images_flat = (batch_pos.unsqueeze(1) + cart_shifts.unsqueeze(2)).reshape(
         n_structure, n_shifts * n_max, 3
     )
     image_valid = (
-        atom_mask.unsqueeze(1)
+        (atom_mask.unsqueeze(1) & shift_ok.unsqueeze(-1))
         .expand(-1, n_shifts, -1)
         .reshape(n_structure, n_shifts * n_max)
     )
-    return cart_shifts, images_flat, image_valid
+    return cart_shifts, images_flat, image_valid, shift_ok
 
 
 def _bin_linked_cell_images_batched(
@@ -1136,6 +1138,7 @@ def _bin_linked_cell_images_batched(
     images_flat: torch.Tensor,
     image_valid: torch.Tensor,
     cart_shifts: torch.Tensor,
+    shift_ok: torch.Tensor,
     cutoff: float,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Assign shifted images to bins and build the per-bin image lookup table."""
@@ -1150,8 +1153,14 @@ def _bin_linked_cell_images_batched(
     pos_for_max = torch.where(
         atom_mask.unsqueeze(-1), batch_pos, torch.full_like(batch_pos, -big_val)
     )
-    b_min = pos_for_min.min(dim=1).values + cart_shifts.min(dim=1).values
-    b_max = pos_for_max.max(dim=1).values + cart_shifts.max(dim=1).values
+    shift_for_min = torch.where(
+        shift_ok.unsqueeze(-1), cart_shifts, torch.full_like(cart_shifts, big_val)
+    )
+    shift_for_max = torch.where(
+        shift_ok.unsqueeze(-1), cart_shifts, torch.full_like(cart_shifts, -big_val)
+    )
+    b_min = pos_for_min.min(dim=1).values + shift_for_min.min(dim=1).values
+    b_max = pos_for_max.max(dim=1).values + shift_for_max.max(dim=1).values
     # Rebuild the same cutoff-sized box construction used in the single-structure path.
     images_shifted = images_flat - b_min.unsqueeze(1) + 1e-5
     box_length = b_max - b_min + 1e-3
@@ -1302,11 +1311,11 @@ def build_linked_cell_neighborhood_batched(
     shifts_idx_unique = _calculate_n2_lattice_shifts(cell, pbc, cutoff)
     batch_pos, atom_mask, offsets = _pad_batched_positions(positions, n_atoms)
     # Mirror the main linked-cell stages: images -> bins -> candidates -> pairs.
-    cart_shifts, images_flat, image_valid = _build_linked_cell_images_batched(
-        batch_pos, atom_mask, shifts_idx_unique, cell
+    cart_shifts, images_flat, image_valid, shift_ok = _build_linked_cell_images_batched(
+        batch_pos, atom_mask, shifts_idx_unique, cell, pbc
     )
     bin_linear, bin_id_j, n_bins_s = _bin_linked_cell_images_batched(
-        batch_pos, atom_mask, images_flat, image_valid, cart_shifts, cutoff
+        batch_pos, atom_mask, images_flat, image_valid, cart_shifts, shift_ok, cutoff
     )
     candidates, candidate_valid, orig_start = _gather_linked_cell_candidates_batched(
         bin_linear, bin_id_j, atom_mask, n_bins_s, shifts_idx_unique
@@ -1320,6 +1329,34 @@ def build_linked_cell_neighborhood_batched(
         self_interaction=self_interaction,
     )
     return mapping, system_mapping, shift_out.to(shift_dtype)
+
+
+def build_linked_cell_neighborhood(
+    positions: torch.Tensor,
+    cell: torch.Tensor,
+    pbc: torch.Tensor,
+    cutoff: float,
+    n_atoms: torch.Tensor,
+    self_interaction: bool = False,  # noqa: FBT001, FBT002
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Backward-compatible alias for the batched linked-cell implementation."""
+    if cell.shape[0] == 1:
+        return build_linked_cell_neighborhood_serial(
+            positions,
+            cell,
+            pbc,
+            cutoff,
+            n_atoms,
+            self_interaction,
+        )
+    return build_linked_cell_neighborhood_batched(
+        positions,
+        cell,
+        pbc,
+        cutoff,
+        n_atoms,
+        self_interaction,
+    )
 
 
 def multiplicative_isotropic_cutoff(
