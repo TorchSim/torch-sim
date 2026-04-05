@@ -30,7 +30,7 @@ dependencies = [
     "h5py>=3.15.1",
     "numpy>=1.26,<3; python_version < '3.13'",
     "numpy>=2.3.2,<3; python_version >= '3.13'",
-    "nvalchemi-toolkit-ops>=0.3.0",
+    "nvalchemi-toolkit-ops[torch]>=0.3.0",
     "tables>=3.11.1",
     "torch>=2",
     "tqdm>=4.67",
@@ -41,22 +41,20 @@ test = [
     "torch-sim-atomistic[io,symmetry,vesin]",
     "platformdirs>=4.0.0",
     "psutil>=7.0.0",
-    "pymatgen>=2025.6.14",
     "pytest-cov>=6",
     "pytest>=8",
     "spglib>=2.6",
-    "vesin[torch]>=0.5.3",
 ]
 vesin = ["vesin[torch]>=0.5.3"]
 io = ["ase>=3.26", "phonopy>=2.37.0", "pymatgen>=2025.6.14"]
 symmetry = ["moyopy>=0.7.8"]
 mace = ["mace-torch>=0.3.15"]
-mattersim = ["mattersim>=0.1.2"]
-metatomic = ["metatomic-torch>=0.1.3", "metatrain[pet]>=2025.12"]
-orb = ["orb-models>=0.6.0"]
+mattersim = ["mattersim>=1.2.2"]
+metatomic = ["metatomic-torchsim>=0.1.1", "metatomic-ase>=0.1.0", "upet>=0.2.0"]
+orb = ["orb-models>=0.6.2"]
 sevenn = ["sevenn[torchsim]>=0.12.1"]
 graphpes = ["graph-pes>=0.1", "mace-torch>=0.3.12"]
-nequip = ["nequip>=0.17.0"]
+nequip = ["nequip>=0.17.1"]
 fairchem = ["fairchem-core @ git+https://github.com/facebookresearch/fairchem.git@main#subdirectory=packages/fairchem-core"]
 nequix = ["nequix[torch-sim]>=0.4.5"]
 docs = [
