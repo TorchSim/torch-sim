@@ -265,7 +265,7 @@ class SumModel(ModelInterface):
     @property
     def retain_graph(self) -> bool:
         """Whether any child model retains the computation graph."""
-        return any(getattr(m, "retain_graph", False) for m in self._children())
+        return all(getattr(m, "retain_graph", False) for m in self._children())
 
     @retain_graph.setter
     def retain_graph(self, value: bool) -> None:
