@@ -60,6 +60,10 @@ class D3DispersionModel(ModelInterface):
     metal units (Angstrom / eV); unit conversion to and from atomic units
     (Bohr / Hartree) is handled internally.
 
+    Functional-dependent BJ damping parameters (``a1``, ``a2``, ``s8``, ``s6``)
+    can be looked up from the canonical parameter table:
+    https://github.com/dftd3/simple-dftd3/blob/main/assets/parameters.toml
+
     Args:
         a1: BJ damping parameter (dimensionless, functional-dependent).
         a2: BJ damping parameter (in Bohr, functional-dependent).
@@ -156,7 +160,7 @@ class D3DispersionModel(ModelInterface):
             a2=self.a2,
             s8=self.s8,
             s6=self.s6,
-            d3_params=self.d3_params,  # type: ignore[arg-type]
+            d3_params=self.d3_params,
             neighbor_list=edge_index_int,
             neighbor_ptr=neighbor_ptr,
             cell=cell_bohr,
@@ -172,7 +176,8 @@ class D3DispersionModel(ModelInterface):
         }
         if self._compute_stress:
             # d3_out[3] is only defined if compute_virial is True
+            # we use [-1] to index it to avoid typing errors.
             volumes = state.volume.unsqueeze(-1).unsqueeze(-1)
-            stress = (d3_out[3] * UnitConversion.Hartree_to_eV) / volumes  # type: ignore[index]
+            stress = (d3_out[-1] * UnitConversion.Hartree_to_eV) / volumes
             results["stress"] = stress.to(self._dtype).detach()
         return results
