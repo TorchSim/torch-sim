@@ -8,17 +8,19 @@ Vesin is available at: https://github.com/Luthaf/vesin
 
 import torch
 
+from torch_sim.neighbors.utils import normalize_inputs
+
 
 try:
     from vesin import NeighborList as VesinNeighborList
 except ImportError:
-    VesinNeighborList = None  # type: ignore[assignment]
+    VesinNeighborList = None
 
 
 try:
     from vesin.torch import NeighborList as VesinNeighborListTorch
 except ImportError:
-    VesinNeighborListTorch = None  # ty:ignore[invalid-assignment]
+    VesinNeighborListTorch = None
 
 VESIN_AVAILABLE = VesinNeighborList is not None
 VESIN_TORCHSCRIPT_AVAILABLE = VesinNeighborListTorch is not None
@@ -70,8 +72,6 @@ if VESIN_AVAILABLE:
         References:
             - https://github.com/Luthaf/vesin
         """
-        from torch_sim.neighbors import _normalize_inputs
-
         if VesinNeighborList is None:
             raise RuntimeError(
                 "vesin is not installed. Install it with: [uv] pip install vesin"
@@ -79,7 +79,7 @@ if VESIN_AVAILABLE:
         device = positions.device
         dtype = positions.dtype
         n_systems = int(system_idx.max().item()) + 1
-        cell, pbc = _normalize_inputs(cell, pbc, n_systems)
+        cell, pbc = normalize_inputs(cell, pbc, n_systems)
 
         # Process each system's neighbor list separately
         edge_indices = []
@@ -214,14 +214,12 @@ if VESIN_TORCHSCRIPT_AVAILABLE:
         References:
               https://github.com/Luthaf/vesin
         """
-        from torch_sim.neighbors import _normalize_inputs
-
         if VesinNeighborListTorch is None:
             raise RuntimeError("vesin[torch] package is not installed")
         device = positions.device
         dtype = positions.dtype
         n_systems = int(system_idx.max().item()) + 1
-        cell, pbc = _normalize_inputs(cell, pbc, n_systems)
+        cell, pbc = normalize_inputs(cell, pbc, n_systems)
 
         # Process each system's neighbor list separately
         edge_indices = []

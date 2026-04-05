@@ -157,10 +157,10 @@ If you use TorchSim in your research, please cite our [publication](https://iops
 
 ## Due Credit
 
-We aim to recognize all [duecredit](https://github.com/duecredit/duecredit) for the decades of work that TorchSim builds on top of, an automated list of references can be obtained for the package by running `DUECREDIT_ENABLE=yes uv run --with . --extra docs --extra test python -m duecredit <(printf 'import pytest\nraise SystemExit(pytest.main(["-q"]))\n')`. This list is incomplete and we welcome PRs to help improve our citation coverage.
+We aim to recognize all [duecredit](https://github.com/duecredit/duecredit) for the decades of work that TorchSim builds on top of, an automated list of references can be obtained for the package by running `DUECREDIT_ENABLE=yes uv run --with-editable . --extra docs --extra test python -m duecredit <(printf 'import pytest\nraise SystemExit(pytest.main(["-q"]))\n')`. This list is incomplete and we welcome PRs to help improve our citation coverage.
 
 To collect citations for a specific tutorial run, for example autobatching, use:
 
 ```sh
-DUECREDIT_ENABLE=yes uv run --with . --extra docs --extra test python -m duecredit examples/tutorials/autobatching_tutorial.py
+DUECREDIT_ENABLE=yes uv run --with-editable . --extra docs --extra test python -m duecredit examples/tutorials/autobatching_tutorial.py
 ```

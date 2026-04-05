@@ -19,32 +19,7 @@ References:
 import torch
 
 from torch_sim import transforms
-
-
-@torch.jit.script
-def _normalize_inputs_jit(
-    cell: torch.Tensor, pbc: torch.Tensor, n_systems: int
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """JIT-compatible input normalization for torch_nl functions."""
-    # Normalize cell
-    if cell.ndim == 2:
-        if cell.shape[0] == 3:
-            cell = cell.unsqueeze(0).expand(n_systems, -1, -1).contiguous()
-        else:
-            cell = cell.reshape(n_systems, 3, 3).contiguous()
-    else:
-        cell = cell.contiguous()
-
-    # Normalize PBC
-    if pbc.ndim == 1:
-        if pbc.shape[0] == 3:
-            pbc = pbc.unsqueeze(0).expand(n_systems, -1).contiguous()
-        else:
-            pbc = pbc.reshape(n_systems, 3).contiguous()
-    else:
-        pbc = pbc.contiguous()
-
-    return cell, pbc
+from torch_sim.neighbors.utils import normalize_inputs
 
 
 def strict_nl(
@@ -162,7 +137,7 @@ def torch_nl_n2(
         - https://github.com/venkatkapil24/batch_nl
     """
     n_systems = system_idx.max().item() + 1
-    cell, pbc = _normalize_inputs_jit(cell, pbc, n_systems)
+    cell, pbc = normalize_inputs(cell, pbc, n_systems)
     wrapped, wrap_shifts = transforms.pbc_wrap_batched_and_get_lattice_shifts(
         positions, cell, system_idx, pbc
     )
@@ -224,7 +199,7 @@ def torch_nl_linked_cell(
         - https://github.com/felixmusil/torch_nl
     """
     n_systems = system_idx.max().item() + 1
-    cell, pbc = _normalize_inputs_jit(cell, pbc, n_systems)
+    cell, pbc = normalize_inputs(cell, pbc, n_systems)
     wrapped, wrap_shifts = transforms.pbc_wrap_batched_and_get_lattice_shifts(
         positions, cell, system_idx, pbc
     )
