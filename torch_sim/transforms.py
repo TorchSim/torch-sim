@@ -615,12 +615,6 @@ def _pad_batched_positions(
     return batch_positions, atom_mask, offsets
 
 
-def _neighbor_bin_shifts_3d(device: torch.device) -> torch.Tensor:
-    """Return the 27 neighboring 3D bin offsets."""
-    dd = torch.tensor([0, 1, -1], dtype=torch.long, device=device)
-    return torch.cartesian_prod(dd, dd, dd)
-
-
 def build_naive_neighborhood(
     positions: torch.Tensor,
     cell: torch.Tensor,
@@ -1087,6 +1081,12 @@ def build_linked_cell_neighborhood_serial(
     )
 
 
+def _neighbor_bin_shifts_3d(device: torch.device) -> torch.Tensor:
+    """Return the 27 neighboring 3D bin offsets."""
+    dd = torch.tensor([0, 1, -1], dtype=torch.long, device=device)
+    return torch.cartesian_prod(dd, dd, dd)
+
+
 def _within_bin_position(sorted_bin: torch.Tensor) -> torch.Tensor:
     """Compute within-bin position for a sorted bin index tensor.
 
@@ -1118,17 +1118,20 @@ def _build_linked_cell_images_batched(
     """Build shifted images and validity mask for the batched linked-cell path."""
     n_structure, n_max = batch_pos.shape[:2]
     n_shifts = shifts_idx_unique.shape[0]
-    cart_shifts = torch.matmul(shifts_idx_unique.to(batch_pos.dtype), cell)
+    cart_shifts = torch.matmul(
+        shifts_idx_unique.to(batch_pos.dtype), cell
+    )  # (n_systems, n_shifts, 3)
     shift_ok = ((shifts_idx_unique == 0).unsqueeze(0) | pbc.unsqueeze(1)).all(dim=-1)
+    # `shift_ok` is (n_systems, n_shifts): valid shared lattice shifts per system.
     # Flatten the (shift, atom) grid into one image axis for later sorting/binning.
     images_flat = (batch_pos.unsqueeze(1) + cart_shifts.unsqueeze(2)).reshape(
         n_structure, n_shifts * n_max, 3
-    )
+    )  # (n_systems, n_shifts * max_atoms, 3)
     image_valid = (
         (atom_mask.unsqueeze(1) & shift_ok.unsqueeze(-1))
         .expand(-1, n_shifts, -1)
         .reshape(n_structure, n_shifts * n_max)
-    )
+    )  # (n_systems, n_shifts * max_atoms)
     return cart_shifts, images_flat, image_valid, shift_ok
 
 
@@ -1167,8 +1170,8 @@ def _bin_linked_cell_images_batched(
     n_bins_s_per_sys = torch.maximum(
         torch.ceil(box_length / cutoff),
         torch.ones(n_structure, 3, device=device, dtype=dtype),
-    ).to(torch.long)
-    n_bins_s = n_bins_s_per_sys.max(dim=0).values
+    ).to(torch.long)  # (n_systems, 3)
+    n_bins_s = n_bins_s_per_sys.max(dim=0).values  # (3,)
     n_bins = int(n_bins_s.prod().item())
     box_diag_per_sys = n_bins_s_per_sys.to(dtype) * cutoff
     scaled_pos = images_shifted / box_diag_per_sys.unsqueeze(1)
@@ -1179,7 +1182,7 @@ def _bin_linked_cell_images_batched(
         min=torch.zeros(3, device=device, dtype=torch.long),
         max=(n_bins_s - 1),
     )
-    bin_linear = ravel_3d(bin_3d, n_bins_s)
+    bin_linear = ravel_3d(bin_3d, n_bins_s)  # (n_systems, n_shifts * max_atoms)
     # Sort-by-bin lets us scatter images into a dense (bin, slot) lookup table.
     safe_bin = torch.where(image_valid, bin_linear, torch.full_like(bin_linear, n_bins))
     sorted_bin, sorted_order = torch.sort(safe_bin, dim=1)
@@ -1206,7 +1209,9 @@ def _bin_linked_cell_images_batched(
         scatter_mask, sorted_order, torch.full_like(sorted_order, sentinel)
     )
     bin_id_j.scatter_(1, safe_target, src_vals)
-    bin_id_j = bin_id_j[:, : n_bins * max_apb].view(n_structure, n_bins, max_apb)
+    bin_id_j = bin_id_j[:, : n_bins * max_apb].view(
+        n_structure, n_bins, max_apb
+    )  # (n_systems, n_bins, max_atoms_per_bin)
     return bin_linear, bin_id_j, n_bins_s
 
 
@@ -1229,7 +1234,9 @@ def _gather_linked_cell_candidates_batched(
     n_nb = bin_shifts_27.shape[0]
     # Each central atom only needs images from its own bin and the 26 adjacent bins.
     i_bins_3d = unravel_3d(bin_index_i, n_bins_s)
-    neigh_bins_3d = i_bins_3d.unsqueeze(2) + bin_shifts_27.view(1, 1, n_nb, 3)
+    neigh_bins_3d = i_bins_3d.unsqueeze(2) + bin_shifts_27.view(
+        1, 1, n_nb, 3
+    )  # (n_systems, max_atoms, 27, 3)
     neigh_ok = ((neigh_bins_3d >= 0) & (neigh_bins_3d < n_bins_s.view(1, 1, 1, 3))).all(
         dim=-1
     ) & atom_mask.unsqueeze(2)
@@ -1242,9 +1249,13 @@ def _gather_linked_cell_candidates_batched(
     )
     gather_idx = (
         neigh_bins_lin.reshape(n_structure, -1).unsqueeze(-1).expand(-1, -1, max_apb)
-    )
-    candidates = bin_id_j.gather(1, gather_idx).reshape(n_structure, n_max, n_nb, max_apb)
-    candidate_valid = neigh_ok.unsqueeze(-1) & (candidates != sentinel)
+    )  # (n_systems, max_atoms * 27, max_atoms_per_bin)
+    candidates = bin_id_j.gather(1, gather_idx).reshape(
+        n_structure, n_max, n_nb, max_apb
+    )  # (n_systems, max_atoms, 27, max_atoms_per_bin)
+    candidate_valid = neigh_ok.unsqueeze(-1) & (
+        candidates != sentinel
+    )  # (n_systems, max_atoms, 27, max_atoms_per_bin)
     return (
         candidates.reshape(n_structure, n_max, n_nb * max_apb),
         candidate_valid.reshape(n_structure, n_max, n_nb * max_apb),
