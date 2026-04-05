@@ -19,7 +19,7 @@ References:
 import torch
 
 from torch_sim import transforms
-from torch_sim.neighbors.utils import normalize_inputs_jit
+from torch_sim.neighbors.utils import normalize_inputs
 
 
 def strict_nl(
@@ -137,7 +137,7 @@ def torch_nl_n2(
         - https://github.com/venkatkapil24/batch_nl
     """
     n_systems = system_idx.max().item() + 1
-    cell, pbc = normalize_inputs_jit(cell, pbc, n_systems)
+    cell, pbc = normalize_inputs(cell, pbc, n_systems)
     wrapped, wrap_shifts = transforms.pbc_wrap_batched_and_get_lattice_shifts(
         positions, cell, system_idx, pbc
     )
@@ -199,7 +199,7 @@ def torch_nl_linked_cell(
         - https://github.com/felixmusil/torch_nl
     """
     n_systems = system_idx.max().item() + 1
-    cell, pbc = normalize_inputs_jit(cell, pbc, n_systems)
+    cell, pbc = normalize_inputs(cell, pbc, n_systems)
     wrapped, wrap_shifts = transforms.pbc_wrap_batched_and_get_lattice_shifts(
         positions, cell, system_idx, pbc
     )

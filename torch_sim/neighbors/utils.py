@@ -1,3 +1,5 @@
+"""Utilities for neighbor list calculations."""
+
 import torch
 
 
@@ -30,6 +32,3 @@ def normalize_inputs(
     else:
         pbc = pbc.contiguous()
     return cell, pbc
-
-
-normalize_inputs_jit = normalize_inputs
