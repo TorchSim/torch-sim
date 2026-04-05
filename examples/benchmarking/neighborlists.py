@@ -14,7 +14,7 @@
 Directly times each torch-sim NL backend without any model evaluation.
 
 Example:
-    uv run --with . examples/benchmarking/neighborlists.py \
+    uv run --with-editable . examples/benchmarking/neighborlists.py \
         --source wbm --n-structures 100 --device cpu
 """
 
