@@ -10,6 +10,8 @@ nvalchemiops is available at: https://github.com/NVIDIA/nvalchemiops
 
 import torch
 
+from torch_sim.neighbors.utils import normalize_inputs
+
 
 _batch_naive_neighbor_list: object | None = None
 _batch_cell_list: object | None = None
@@ -64,13 +66,10 @@ if ALCHEMIOPS_AVAILABLE:
         Returns:
             (mapping, system_mapping, shifts_idx)
         """
-        from torch_sim.neighbors import _normalize_inputs
-
         r_max = cutoff.item() if isinstance(cutoff, torch.Tensor) else cutoff
         n_systems = int(system_idx.max().item()) + 1
-        cell, pbc = _normalize_inputs(cell, pbc, n_systems)
+        cell, pbc = normalize_inputs(cell, pbc, n_systems)
 
-        # Call alchemiops neighbor list
         if _batch_naive_neighbor_list is None:
             raise RuntimeError("nvalchemiops neighbor list is unavailable")
         res = _batch_naive_neighbor_list(
@@ -138,11 +137,9 @@ if ALCHEMIOPS_AVAILABLE:
         Returns:
             (mapping, system_mapping, shifts_idx)
         """
-        from torch_sim.neighbors import _normalize_inputs
-
         r_max = cutoff.item() if isinstance(cutoff, torch.Tensor) else cutoff
         n_systems = int(system_idx.max().item()) + 1
-        cell, pbc = _normalize_inputs(cell, pbc, n_systems)
+        cell, pbc = normalize_inputs(cell, pbc, n_systems)
 
         # For non-periodic systems with zero cells, use a nominal identity cell
         # to avoid division by zero in alchemiops warp kernels
