@@ -98,8 +98,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--n-repeats",
         type=int,
-        default=3,
-        help="Number of timed repetitions (median is reported).",
+        default=7,
+        help="Number of timed repetitions (trimmed mean excluding min/max is reported).",
     )
     parsed_args = parser.parse_args()
     if parsed_args.n_structures <= 0:
@@ -264,13 +264,15 @@ def _benchmark_backend(
             torch.cuda.synchronize()
         timings.append(time.perf_counter() - t0)
 
-    median_s = float(np.median(timings))
+    sorted_timings = sorted(timings)
+    trimmed = sorted_timings[1:-1] if len(sorted_timings) > 2 else sorted_timings
+    trimmed_mean_s = float(np.mean(trimmed))
     return {
         "nl_backend": backend,
         "n_pairs": int(mapping.shape[1]),
-        "median_nl_s": round(median_s, 6),
+        "trimmed_mean_nl_s": round(trimmed_mean_s, 6),
         "timings_s": [round(t, 6) for t in timings],
-        "atoms_per_s": round(n_atoms / median_s, 1) if median_s > 0 else 0,
+        "atoms_per_s": round(n_atoms / trimmed_mean_s, 1) if trimmed_mean_s > 0 else 0,
     }
 
 
