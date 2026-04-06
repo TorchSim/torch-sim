@@ -11,16 +11,38 @@ import traceback
 import warnings
 from typing import Any
 
+import torch
+
 
 try:
     from orb_models.forcefield.inference.orb_torchsim import OrbTorchSimModel
+
+    import torch_sim as ts
 
     # Re-export with backward-compatible name
     class OrbModel(OrbTorchSimModel):
         """ORB model wrapper for torch-sim."""
 
+        @staticmethod
+        def _normalize_charge_spin(state: "ts.SimState") -> "ts.SimState":
+            """Provide ORB's optional charge/spin inputs when they are missing."""
+            charge = getattr(state, "charge", None)
+            spin = getattr(state, "spin", None)
+            if charge is not None and spin is not None:
+                return state
+            zeros = torch.zeros(state.n_systems, device=state.device, dtype=state.dtype)
+            return ts.SimState.from_state(
+                state,
+                charge=charge if charge is not None else zeros,
+                spin=spin if spin is not None else zeros,
+            )
+
         def forward(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
             """Run forward pass, detaching outputs unless retain_graph is True."""
+            if args and isinstance(args[0], ts.SimState):
+                args = (self._normalize_charge_spin(args[0]), *args[1:])
+            elif isinstance(kwargs.get("state"), ts.SimState):
+                kwargs["state"] = self._normalize_charge_spin(kwargs["state"])
             output = super().forward(*args, **kwargs)
             return {  # detach tensors as energy is not detached by default
                 k: v.detach() if hasattr(v, "detach") else v for k, v in output.items()
