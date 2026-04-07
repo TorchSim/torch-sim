@@ -19,8 +19,6 @@ dist/
 docs_build/
 docs/reference/torch_sim.*
 
-# ipynb files
-*.ipynb
 
 # ignore trajectory files
 *.h5
@@ -38,6 +36,9 @@ coverage.xml
 # test cache (compiled models, etc.)
 tests/.cache/
 
+# physical validation data and plots
+tests/physical_validation_data/
+
 # env
 uv.lock
 
@@ -52,3 +53,11 @@ uv.lock
 
 # treemap html file
 docs/_static/torch-sim-pkg-treemap.html
+
+
+test_lj_model_performance/
+claude_integrator_tests/
+fast_integrator_tests2/
+fast_integrator_tests_batch/
+integrator_tests/
+titanium_phase_transition/
