@@ -19,6 +19,9 @@ dist/
 docs_build/
 docs/reference/torch_sim.*
 
+# ipynb files
+*.ipynb
+!docs/tutorials/integrator_tests_analysis.ipynb
 
 # ignore trajectory files
 *.h5
