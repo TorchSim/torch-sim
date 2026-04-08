@@ -539,9 +539,9 @@ def test_build_symmetry_map_chunked_matches_vectorized() -> None:
 
     old_threshold = sym_mod._SYMM_MAP_CHUNK_THRESHOLD  # noqa: SLF001
     try:
-        sym_mod._SYMM_MAP_CHUNK_THRESHOLD = len(state.positions) + 1  # noqa: SLF001  # ty: ignore[invalid-assignment]
+        sym_mod._SYMM_MAP_CHUNK_THRESHOLD = len(state.positions) + 1  # noqa: SLF001
         vectorized = build_symmetry_map(rotations, translations, frac)
-        sym_mod._SYMM_MAP_CHUNK_THRESHOLD = 0  # noqa: SLF001  # ty: ignore[invalid-assignment]
+        sym_mod._SYMM_MAP_CHUNK_THRESHOLD = 0  # noqa: SLF001
         chunked = build_symmetry_map(rotations, translations, frac)
     finally:
         sym_mod._SYMM_MAP_CHUNK_THRESHOLD = old_threshold  # noqa: SLF001

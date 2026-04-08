@@ -337,7 +337,9 @@ for step in range(N_steps_nvt):
             / Units.temperature
         )
         invariant = float(
-            ts.npt_nose_hoover_isotropic_invariant(state, kT=kT, external_pressure=target_pressure)
+            ts.npt_nose_hoover_isotropic_invariant(
+                state, kT=kT, external_pressure=target_pressure
+            )
         )
         log.info(
             f"Step {step}: Temperature: {temp.item():.4f} K, Invariant: {invariant:.4f}"
@@ -365,7 +367,9 @@ for step in range(N_steps_npt):
             / Units.temperature
         )
         invariant = float(
-            ts.npt_nose_hoover_isotropic_invariant(state, kT=kT, external_pressure=target_pressure)
+            ts.npt_nose_hoover_isotropic_invariant(
+                state, kT=kT, external_pressure=target_pressure
+            )
         )
         stress = mace_model_stress(state)["stress"]
         volume = torch.det(state.current_cell)

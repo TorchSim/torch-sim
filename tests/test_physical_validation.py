@@ -22,7 +22,8 @@ Tested integrators:
         - nvt_vrescale
 
     NPT:
-        - npt_langevin_anisotropic (independent per-dimension strain, like LAMMPS couple=none)
+        - npt_langevin_anisotropic (independent per-dimension strain,
+          like LAMMPS couple=none)
         - npt_langevin_isotropic (isotropic logarithmic strain)
         - npt_nose_hoover_isotropic
         - npt_crescale_isotropic
@@ -95,7 +96,7 @@ ENSEMBLE_SIGMA_THRESHOLD = 3.0
 DATA_DIR = Path(__file__).parent / "physical_validation_data"
 PLOTS_DIR = DATA_DIR / "plots"
 
-RunData = dict[str, NDArray[np.floating] | float | int]
+RunData = dict[str, NDArray[np.floating] | float | int | str]
 
 torch.set_num_threads(4)
 
@@ -113,7 +114,7 @@ def clean_validation_data() -> None:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-def _to_kT(temperature_K: float) -> float:
+def _to_kt(temperature_K: float) -> float:
     return temperature_K * float(MetalUnits.temperature)
 
 
@@ -198,7 +199,7 @@ def _run_nvt(
     seed: int = 42,
 ) -> RunData:
     """Run an NVT simulation with the specified integrator."""
-    kT = _to_kT(temperature)
+    kT = _to_kt(temperature)
     dt = _to_dt(timestep_ps)
     natoms = int(sim_state.positions.shape[0])
 
@@ -216,7 +217,7 @@ def _run_nvt(
         msg = f"Unknown NVT integrator: {integrator_name}"
         raise ValueError(msg)
 
-    def _step(s):
+    def _step(s: ts.SimState) -> ts.SimState:
         if integrator_name == "nvt_langevin":
             return ts.nvt_langevin_step(s, model, dt=dt, kT=kT, gamma=1 / (50 * dt))
         if integrator_name == "nvt_nose_hoover":
@@ -233,9 +234,7 @@ def _run_nvt(
     for i in range(n_steps):
         state = _step(state)
         if (i + 1) % log_every == 0:
-            ke = float(
-                ts.calc_kinetic_energy(masses=state.masses, momenta=state.momenta)
-            )
+            ke = float(ts.calc_kinetic_energy(masses=state.masses, momenta=state.momenta))
             pe = float(state.energy.sum())
             ke_list.append(ke)
             pe_list.append(pe)
@@ -261,7 +260,7 @@ def _run_nvt(
 # ---------------------------------------------------------------------------
 # Generic NPT runner
 # ---------------------------------------------------------------------------
-def _run_npt(
+def _run_npt(  # noqa: C901
     integrator_name: str,
     sim_state: ts.SimState,
     model: LennardJonesModel,
@@ -274,7 +273,7 @@ def _run_npt(
     seed: int = 42,
 ) -> RunData:
     """Run an NPT simulation with the specified integrator."""
-    kT = _to_kT(temperature)
+    kT = _to_kt(temperature)
     dt = torch.tensor(_to_dt(timestep_ps), device=DEVICE, dtype=DTYPE)
     ext_p = torch.tensor(external_pressure, device=DEVICE, dtype=DTYPE)
     natoms = int(sim_state.positions.shape[0])
@@ -285,28 +284,42 @@ def _run_npt(
     # Initialize (params matched to fast_integrator_tests_batch)
     if integrator_name == "npt_langevin_anisotropic":
         state = ts.npt_langevin_anisotropic_init(
-            sim_state, model, kT=kT, dt=dt,
-            alpha=1 / (5 * dt), cell_alpha=1 / (30 * dt), b_tau=300 * dt,
+            sim_state,
+            model,
+            kT=kT,
+            dt=dt,
+            alpha=1 / (5 * dt),
+            cell_alpha=1 / (30 * dt),
+            b_tau=300 * dt,
         )
     elif integrator_name == "npt_langevin_isotropic":
         state = ts.npt_langevin_isotropic_init(
-            sim_state, model, kT=kT, dt=dt,
-            alpha=1 / (5 * dt), cell_alpha=1 / (30 * dt), b_tau=300 * dt,
+            sim_state,
+            model,
+            kT=kT,
+            dt=dt,
+            alpha=1 / (5 * dt),
+            cell_alpha=1 / (30 * dt),
+            b_tau=300 * dt,
         )
     elif integrator_name == "npt_nose_hoover_isotropic":
         state = ts.npt_nose_hoover_isotropic_init(
-            sim_state, model, kT=kT, dt=dt,
-            t_tau=10 * dt, b_tau=100 * dt,
+            sim_state,
+            model,
+            kT=kT,
+            dt=dt,
+            t_tau=10 * dt,
+            b_tau=100 * dt,
         )
-    elif integrator_name == "npt_crescale_isotropic":
+    elif integrator_name in (
+        "npt_crescale_isotropic",
+        "npt_crescale_triclinic",
+    ):
         state = ts.npt_crescale_init(
-            sim_state, model, kT=kT, dt=dt,
-            tau_p=3 * dt,
-            isothermal_compressibility=1e-6 / MetalUnits.pressure,
-        )
-    elif integrator_name == "npt_crescale_triclinic":
-        state = ts.npt_crescale_init(
-            sim_state, model, kT=kT, dt=dt,
+            sim_state,
+            model,
+            kT=kT,
+            dt=dt,
             tau_p=3 * dt,
             isothermal_compressibility=1e-6 / MetalUnits.pressure,
         )
@@ -314,25 +327,47 @@ def _run_npt(
         msg = f"Unknown NPT integrator: {integrator_name}"
         raise ValueError(msg)
 
-    def _step(s):
+    def _step(s: ts.SimState) -> ts.SimState:
         if integrator_name == "npt_langevin_anisotropic":
             return ts.npt_langevin_anisotropic_step(
-                s, model, dt=dt, kT=kT, external_pressure=ext_p,
+                s,
+                model,
+                dt=dt,
+                kT=kT,
+                external_pressure=ext_p,
             )
         if integrator_name == "npt_langevin_isotropic":
             return ts.npt_langevin_isotropic_step(
-                s, model, dt=dt, kT=kT, external_pressure=ext_p,
+                s,
+                model,
+                dt=dt,
+                kT=kT,
+                external_pressure=ext_p,
             )
         if integrator_name == "npt_nose_hoover_isotropic":
             return ts.npt_nose_hoover_isotropic_step(
-                s, model, dt=dt, kT=kT, external_pressure=ext_p,
+                s,
+                model,
+                dt=dt,
+                kT=kT,
+                external_pressure=ext_p,
             )
         if integrator_name == "npt_crescale_triclinic":
             return npt_crescale_triclinic_average_step(
-                s, model, dt=dt, kT=kT, external_pressure=ext_p, tau=1 * dt,
+                s,
+                model,
+                dt=dt,
+                kT=kT,
+                external_pressure=ext_p,
+                tau=1 * dt,
             )
         return ts.npt_crescale_isotropic_step(
-            s, model, dt=dt, kT=kT, external_pressure=ext_p, tau=1 * dt,
+            s,
+            model,
+            dt=dt,
+            kT=kT,
+            external_pressure=ext_p,
+            tau=1 * dt,
         )
 
     # Equilibration
@@ -346,9 +381,7 @@ def _run_npt(
     for i in range(n_steps):
         state = _step(state)
         if (i + 1) % log_every == 0:
-            ke = float(
-                ts.calc_kinetic_energy(masses=state.masses, momenta=state.momenta)
-            )
+            ke = float(ts.calc_kinetic_energy(masses=state.masses, momenta=state.momenta))
             pe = float(state.energy.sum())
             cell = state.cell[0].detach().cpu().numpy()
             vol = float(np.abs(np.linalg.det(cell)))
@@ -455,11 +488,10 @@ def _build_npt_simulation_data(
 # Session fixture: cleanup saved data
 # ===========================================================================
 @pytest.fixture(autouse=True, scope="session")
-def _manage_validation_data(request):
+def _manage_validation_data(request: pytest.FixtureRequest) -> None:
     """Clean data directory if --clean-validation-data is set."""
     if request.config.getoption("--clean-validation-data", default=False):
         clean_validation_data()
-    yield
 
 
 # ===========================================================================
@@ -470,14 +502,20 @@ def _manage_validation_data(request):
     "integrator_name",
     ["nvt_langevin", "nvt_nose_hoover", "nvt_vrescale"],
 )
-def test_nvt_ke_distribution(integrator_name: str, request) -> None:
+def test_nvt_ke_distribution(
+    integrator_name: str, request: pytest.FixtureRequest
+) -> None:
     """Test that KE follows the Maxwell-Boltzmann distribution for NVT."""
     sim_state = _make_ar_supercell(repeat=(8, 8, 8))
     model = _make_lj_model()
     temperature = TEMPERATURES[1]
 
     run_data = _run_nvt(
-        integrator_name, sim_state, model, temperature=temperature, seed=42,
+        integrator_name,
+        sim_state,
+        model,
+        temperature=temperature,
+        seed=42,
     )
     _save_run_data(run_data, f"{integrator_name}_T{temperature:.1f}K_ke")
 
@@ -488,7 +526,10 @@ def test_nvt_ke_distribution(integrator_name: str, request) -> None:
     if plot_path:
         kwargs["filename"] = plot_path
     d_mean, d_width = physical_validation.kinetic_energy.distribution(
-        data, strict=False, verbosity=0, **kwargs,
+        data,
+        strict=False,
+        verbosity=0,
+        **kwargs,
     )
 
     if abs(d_mean) > KE_SIGMA_WARNING:
@@ -522,15 +563,21 @@ def test_nvt_ke_distribution(integrator_name: str, request) -> None:
         "npt_crescale_triclinic",
     ],
 )
-def test_npt_ke_distribution(integrator_name: str, request) -> None:
+def test_npt_ke_distribution(
+    integrator_name: str, request: pytest.FixtureRequest
+) -> None:
     """Test that KE follows the Maxwell-Boltzmann distribution for NPT."""
     sim_state = _make_ar_supercell(repeat=(8, 8, 8))
     model = _make_lj_model(compute_stress=True)
     temperature = TEMPERATURES[1]
 
     run_data = _run_npt(
-        integrator_name, sim_state, model,
-        temperature=temperature, external_pressure=EXTERNAL_PRESSURE, seed=42,
+        integrator_name,
+        sim_state,
+        model,
+        temperature=temperature,
+        external_pressure=EXTERNAL_PRESSURE,
+        seed=42,
     )
     _save_run_data(run_data, f"{integrator_name}_T{temperature:.1f}K_ke")
 
@@ -543,7 +590,10 @@ def test_npt_ke_distribution(integrator_name: str, request) -> None:
     if plot_path:
         kwargs["filename"] = plot_path
     d_mean, d_width = physical_validation.kinetic_energy.distribution(
-        data, strict=False, verbosity=0, **kwargs,
+        data,
+        strict=False,
+        verbosity=0,
+        **kwargs,
     )
 
     if abs(d_mean) > KE_SIGMA_WARNING:
@@ -574,7 +624,7 @@ def test_npt_ke_distribution(integrator_name: str, request) -> None:
     "integrator_name",
     ["nvt_langevin", "nvt_nose_hoover", "nvt_vrescale"],
 )
-def test_nvt_ensemble_check(integrator_name: str, request) -> None:
+def test_nvt_ensemble_check(integrator_name: str, request: pytest.FixtureRequest) -> None:
     """Test NVT ensemble validity at two temperatures."""
     sim_state = _make_ar_supercell(repeat=(8, 8, 8))
     model = _make_lj_model()
@@ -582,10 +632,18 @@ def test_nvt_ensemble_check(integrator_name: str, request) -> None:
     temp_low, temp_high = TEMPERATURES
 
     run_low = _run_nvt(
-        integrator_name, sim_state, model, temperature=temp_low, seed=42,
+        integrator_name,
+        sim_state,
+        model,
+        temperature=temp_low,
+        seed=42,
     )
     run_high = _run_nvt(
-        integrator_name, sim_state, model, temperature=temp_high, seed=123,
+        integrator_name,
+        sim_state,
+        model,
+        temperature=temp_high,
+        seed=123,
     )
     _save_run_data(run_low, f"{integrator_name}_T{temp_low:.1f}K_ens")
     _save_run_data(run_high, f"{integrator_name}_T{temp_high:.1f}K_ens")
@@ -598,7 +656,8 @@ def test_nvt_ensemble_check(integrator_name: str, request) -> None:
     if plot_path:
         kwargs["filename"] = plot_path
     quantiles = physical_validation.ensemble.check(
-        data_low, data_high,
+        data_low,
+        data_high,
         total_energy=True,
         data_is_uncorrelated=True,
         verbosity=0,
@@ -628,7 +687,7 @@ def test_nvt_ensemble_check(integrator_name: str, request) -> None:
         "npt_crescale_triclinic",
     ],
 )
-def test_npt_ensemble_check(integrator_name: str, request) -> None:
+def test_npt_ensemble_check(integrator_name: str, request: pytest.FixtureRequest) -> None:
     """Test NPT ensemble validity at two temperatures.
 
     Uses temperatures both in the solid phase (below LJ Ar melting point ~84K)
@@ -641,12 +700,20 @@ def test_npt_ensemble_check(integrator_name: str, request) -> None:
     temp_low, temp_high = TEMPERATURES
 
     run_low = _run_npt(
-        integrator_name, sim_state, model,
-        temperature=temp_low, external_pressure=EXTERNAL_PRESSURE, seed=42,
+        integrator_name,
+        sim_state,
+        model,
+        temperature=temp_low,
+        external_pressure=EXTERNAL_PRESSURE,
+        seed=42,
     )
     run_high = _run_npt(
-        integrator_name, sim_state, model,
-        temperature=temp_high, external_pressure=EXTERNAL_PRESSURE, seed=123,
+        integrator_name,
+        sim_state,
+        model,
+        temperature=temp_high,
+        external_pressure=EXTERNAL_PRESSURE,
+        seed=123,
     )
     _save_run_data(run_low, f"{integrator_name}_T{temp_low:.1f}K_ens")
     _save_run_data(run_high, f"{integrator_name}_T{temp_high:.1f}K_ens")
@@ -659,7 +726,8 @@ def test_npt_ensemble_check(integrator_name: str, request) -> None:
     if plot_path:
         kwargs["filename"] = plot_path
     quantiles = physical_validation.ensemble.check(
-        data_low, data_high,
+        data_low,
+        data_high,
         total_energy=True,
         data_is_uncorrelated=True,
         verbosity=0,
@@ -692,7 +760,9 @@ def test_npt_ensemble_check(integrator_name: str, request) -> None:
         "npt_crescale_triclinic",
     ],
 )
-def test_npt_pressure_ensemble_check(integrator_name: str, request) -> None:
+def test_npt_pressure_ensemble_check(
+    integrator_name: str, request: pytest.FixtureRequest
+) -> None:
     """Test NPT ensemble validity at two pressures (fixed temperature)."""
     sim_state = _make_ar_supercell(repeat=(8, 8, 8))
     model = _make_lj_model(compute_stress=True)
@@ -701,12 +771,20 @@ def test_npt_pressure_ensemble_check(integrator_name: str, request) -> None:
     p_high = PRESSURE_SWEEP_EVA3
 
     run_low = _run_npt(
-        integrator_name, sim_state, model,
-        temperature=PRESSURE_SWEEP_TEMP, external_pressure=p_low, seed=42,
+        integrator_name,
+        sim_state,
+        model,
+        temperature=PRESSURE_SWEEP_TEMP,
+        external_pressure=p_low,
+        seed=42,
     )
     run_high = _run_npt(
-        integrator_name, sim_state, model,
-        temperature=PRESSURE_SWEEP_TEMP, external_pressure=p_high, seed=123,
+        integrator_name,
+        sim_state,
+        model,
+        temperature=PRESSURE_SWEEP_TEMP,
+        external_pressure=p_high,
+        seed=123,
     )
     _save_run_data(
         run_low,
@@ -725,7 +803,8 @@ def test_npt_pressure_ensemble_check(integrator_name: str, request) -> None:
     if plot_path:
         kwargs["filename"] = plot_path
     quantiles = physical_validation.ensemble.check(
-        data_low, data_high,
+        data_low,
+        data_high,
         total_energy=True,
         data_is_uncorrelated=True,
         verbosity=0,
@@ -742,5 +821,3 @@ def test_npt_pressure_ensemble_check(integrator_name: str, request) -> None:
         assert abs(q) < ENSEMBLE_SIGMA_THRESHOLD, (
             f"[{integrator_name}] Pressure ensemble quantile {i} = {q:.2f} sigma"
         )
-
-

@@ -866,7 +866,9 @@ def test_npt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJone
         )
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
-        invariants.append(ts.npt_nose_hoover_isotropic_invariant(state, kT, external_pressure))
+        invariants.append(
+            ts.npt_nose_hoover_isotropic_invariant(state, kT, external_pressure)
+        )
 
     # Convert temperatures list to tensor
     temperatures_tensor = torch.stack(temperatures)
@@ -1043,7 +1045,9 @@ def test_npt_nose_hoover_multi_kt(
         )
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
-        invariants.append(ts.npt_nose_hoover_isotropic_invariant(state, kT, external_pressure))
+        invariants.append(
+            ts.npt_nose_hoover_isotropic_invariant(state, kT, external_pressure)
+        )
 
     # Convert temperatures list to tensor
     temperatures_tensor = torch.stack(temperatures)
@@ -1178,7 +1182,9 @@ def test_compute_cell_force_atoms_per_system():
 
     # Get forces and compare ratio (per-dimension force)
     P_ext = torch.zeros(2, 3)
-    cell_force = _npt_langevin_anisotropic_compute_cell_force(state, P_ext, torch.tensor([1.0, 1.0]))
+    cell_force = _npt_langevin_anisotropic_compute_cell_force(
+        state, P_ext, torch.tensor([1.0, 1.0])
+    )
     # Check the first dimension's force ratio
     force_ratio = cell_force[1, 0] / cell_force[0, 0]
 

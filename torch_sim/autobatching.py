@@ -174,9 +174,9 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
             b = len(weight_sum)
             weight_sum.append(0.0)
             if isinstance(items, dict):
-                bins.append([] if is_tuple_list else {})
+                bins.append([] if is_tuple_list else {})  # ty: ignore[invalid-argument-type]
             else:
-                bins.append([])
+                bins.append([])  # ty: ignore[invalid-argument-type]
 
         # if we are at the very first item, use the empty bin already open
         else:

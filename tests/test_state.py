@@ -8,7 +8,10 @@ import torch_sim as ts
 from tests.conftest import DEVICE
 from torch_sim.integrators import MDState
 from torch_sim.integrators.md import NoseHooverChain, NoseHooverChainFns
-from torch_sim.integrators.npt import NPTLangevinAnisotropicState, NPTNoseHooverIsotropicState
+from torch_sim.integrators.npt import (
+    NPTLangevinAnisotropicState,
+    NPTNoseHooverIsotropicState,
+)
 from torch_sim.integrators.nvt import NVTNoseHooverState, NVTVRescaleState
 from torch_sim.monte_carlo import SwapMCState
 from torch_sim.optimizers.state import BFGSState, FireState, LBFGSState, OptimState
