@@ -23,7 +23,7 @@ from mace.calculators.foundations_models import mace_mp
 from pymatgen.io.ase import AseAtomsAdaptor
 
 import torch_sim as ts
-from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.models.mace import MaceModel
 from torch_sim.telemetry import configure_logging, get_logger
 
 
@@ -57,7 +57,7 @@ MEMORY_SCALES_WITH = "n_atoms_x_density"
 def load_mace_model(device: torch.device) -> MaceModel:
     """Load MACE model for benchmarking."""
     loaded_model = mace_mp(
-        model=MaceUrls.mace_mpa_medium,
+        model="medium",
         return_raw_model=True,
         default_dtype="float64",
         device=str(device),
