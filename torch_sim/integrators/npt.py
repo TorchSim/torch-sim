@@ -4,7 +4,7 @@ import logging
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import torch
 
@@ -126,8 +126,8 @@ class NPTLangevinAnisotropicState(NPTState):
         return torch.linalg.det(self.cell)
 
 
-def _npt_langevin_anisotropic_beta(
-    state: NPTLangevinAnisotropicState,
+def _npt_langevin_particle_beta(
+    state: "NPTLangevinAnisotropicState | NPTLangevinIsotropicState",
     kT: torch.Tensor,
     dt: torch.Tensor,
 ) -> torch.Tensor:
@@ -135,10 +135,12 @@ def _npt_langevin_anisotropic_beta(
 
     This function generates the stochastic force term for the Langevin thermostat
     according to the fluctuation-dissipation theorem, ensuring proper thermal
-    sampling at the target temperature.
+    sampling at the target temperature. Only particle degrees of freedom are
+    involved (not cell DOFs), so it works for both isotropic and anisotropic
+    cell dynamics.
 
     Args:
-        state (NPTLangevinAnisotropicState): Current NPT state
+        state (NPTLangevinAnisotropicState | NPTLangevinIsotropicState): Current NPT state
         kT (torch.Tensor): Temperature in energy units, either scalar or
             shape [n_systems]
         dt (torch.Tensor): Integration timestep, either scalar or shape [n_systems]
@@ -306,19 +308,21 @@ def _npt_langevin_anisotropic_position_step(
     return state
 
 
-def _npt_langevin_anisotropic_velocity_step(
-    state: NPTLangevinAnisotropicState,
+def _npt_langevin_particle_velocity_step(
+    state: "NPTLangevinAnisotropicState | NPTLangevinIsotropicState",
     forces: torch.Tensor,
     dt: torch.Tensor,
     particle_beta: torch.Tensor,
-) -> NPTLangevinAnisotropicState:
+) -> "NPTLangevinAnisotropicState | NPTLangevinIsotropicState":
     """Update the particle velocities in NPT dynamics.
 
     This function updates particle velocities using a Langevin-type integrator,
     accounting for both deterministic forces and pre-generated thermal noise.
+    Only particle degrees of freedom are involved (not cell DOFs), so it works
+    for both isotropic and anisotropic cell dynamics.
 
     Args:
-        state (NPTLangevinAnisotropicState): Current NPT state
+        state (NPTLangevinAnisotropicState | NPTLangevinIsotropicState): Current NPT state
         forces: Forces on particles (from before position update)
         dt: Integration timestep, either scalar or with shape [n_systems]
         particle_beta (torch.Tensor): Pre-generated GJF noise term β for particle
@@ -326,7 +330,7 @@ def _npt_langevin_anisotropic_velocity_step(
             Shape [n_particles, n_dim]
 
     Returns:
-        NPTLangevinAnisotropicState: Updated state with new velocities
+        Updated state with new velocities (same type as input).
     """
     # Calculate denominator for update equations
     M_2 = 2 * state.masses  # shape: (n_atoms, 1)
@@ -591,7 +595,7 @@ def npt_langevin_anisotropic_step(
 
     # Generate GJF noise ONCE
     cell_beta = _npt_langevin_anisotropic_cell_beta(state, kT_tensor, dt_tensor)
-    particle_beta = _npt_langevin_anisotropic_beta(state, kT_tensor, dt_tensor)
+    particle_beta = _npt_langevin_particle_beta(state, kT_tensor, dt_tensor)
 
     # Step 1: Update per-dimension strain
     state = _npt_langevin_anisotropic_cell_position_step(
@@ -625,8 +629,9 @@ def npt_langevin_anisotropic_step(
     )
 
     # Step 4: Update particle velocities (uses SAME particle_beta)
-    return _npt_langevin_anisotropic_velocity_step(
-        state, forces, dt_tensor, particle_beta
+    return cast(
+        "NPTLangevinAnisotropicState",
+        _npt_langevin_particle_velocity_step(state, forces, dt_tensor, particle_beta),
     )
 
 
@@ -1044,7 +1049,7 @@ def npt_langevin_isotropic_step(
 
     # Generate GJF noise ONCE
     cell_beta = _npt_langevin_isotropic_cell_beta(state, kT_tensor, dt_tensor)
-    particle_beta = _npt_langevin_anisotropic_beta(state, kT_tensor, dt_tensor)
+    particle_beta = _npt_langevin_particle_beta(state, kT_tensor, dt_tensor)
 
     # Step 1: Update strain (cell position step)
     state = _npt_langevin_isotropic_cell_position_step(
@@ -1078,8 +1083,14 @@ def npt_langevin_isotropic_step(
     )
 
     # Step 4: Update particle velocities (uses SAME particle_beta)
-    return _npt_langevin_anisotropic_velocity_step(
-        state, forces, dt_tensor, particle_beta
+    return cast(
+        "NPTLangevinIsotropicState",
+        _npt_langevin_particle_velocity_step(
+            state,
+            forces,
+            dt_tensor,
+            particle_beta,
+        ),
     )
 
 
