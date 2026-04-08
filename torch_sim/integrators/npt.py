@@ -961,7 +961,7 @@ def npt_langevin_isotropic_init(
         warnings.warn(msg, UserWarning, stacklevel=3)
         logger.warning(msg)
 
-    return NPTLangevinIsotropicState.from_state(
+    npt_state = NPTLangevinIsotropicState.from_state(
         state,
         momenta=momenta,
         energy=model_output["energy"],
@@ -975,6 +975,8 @@ def npt_langevin_isotropic_init(
         cell_masses=cell_masses,
         cell_alpha=cell_alpha,
     )
+    npt_state.store_model_extras(model_output)
+    return npt_state
 
 
 @dcite("10.1063/1.4901303")
@@ -1073,6 +1075,7 @@ def npt_langevin_isotropic_step(
     state.energy = model_output["energy"]
     state.forces = model_output["forces"]
     state.stress = model_output["stress"]
+    state.store_model_extras(model_output)
 
     # Compute updated strain force
     F_eps_new = _compute_isotropic_cell_force(
