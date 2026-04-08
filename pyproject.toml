@@ -55,7 +55,6 @@ mattersim = ["mattersim>=0.1.2"]
 metatomic = ["metatomic-torch>=0.1.3", "metatrain[pet]>=2025.12"]
 orb = ["orb-models>=0.6.0"]
 sevenn = ["sevenn[torchsim]>=0.12.1"]
-graphpes = ["graph-pes>=0.1", "mace-torch>=0.3.12"]
 nequip = ["nequip>=0.17.0"]
 nequix = ["nequix[torch-sim]>=0.4.5"]
 fairchem = ["fairchem-core>=2.7", "scipy<1.17.0"]
@@ -148,35 +147,11 @@ testpaths = ["tests"]
 conflicts = [
     [
         { extra = "fairchem" },
-        { extra = "graphpes" },
-    ],
-    [
-        { extra = "fairchem" },
-        { extra = "graphpes" },
-    ],
-    [
-        { extra = "fairchem" },
         { extra = "mace" },
     ],
     [
         { extra = "fairchem" },
         { extra = "mace" },
-    ],
-    [
-        { extra = "graphpes" },
-        { extra = "mattersim" },
-    ],
-    [
-        { extra = "graphpes" },
-        { extra = "nequip" },
-    ],
-    [
-        { extra = "graphpes" },
-        { extra = "nequix" },
-    ],
-    [
-        { extra = "graphpes" },
-        { extra = "sevenn" },
     ],
     [
         { extra = "mace" },
