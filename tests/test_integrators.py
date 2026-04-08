@@ -4,7 +4,7 @@ import torch
 import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
 from torch_sim.integrators import initialize_momenta
-from torch_sim.integrators.npt import _compute_cell_force
+from torch_sim.integrators.npt import _npt_langevin_anisotropic_compute_cell_force
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.state import coerce_prng
 from torch_sim.units import MetalUnits
@@ -93,7 +93,7 @@ def test_npt_langevin(
 
     # Initialize integrator using new direct API
     ar_double_sim_state.rng = 42
-    state = ts.npt_langevin_init(
+    state = ts.npt_langevin_anisotropic_init(
         state=ar_double_sim_state,
         model=lj_model,
         dt=dt,
@@ -107,7 +107,7 @@ def test_npt_langevin(
     energies = []
     temperatures = []
     for _step in range(n_steps):
-        state = ts.npt_langevin_step(
+        state = ts.npt_langevin_anisotropic_step(
             state=state,
             model=lj_model,
             dt=dt,
@@ -155,7 +155,7 @@ def test_npt_langevin(
     assert pos_diff > 0.0001  # Systems should remain separated
 
 
-def test_npt_langevin_strain(
+def test_npt_langevin_isotropic(
     ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
 ) -> None:
     n_steps = 200
@@ -167,7 +167,7 @@ def test_npt_langevin_strain(
     b_tau = 30 * dt
 
     ar_double_sim_state.rng = 42
-    state = ts.npt_langevin_strain_init(
+    state = ts.npt_langevin_isotropic_init(
         state=ar_double_sim_state,
         model=lj_model,
         dt=dt,
@@ -183,7 +183,7 @@ def test_npt_langevin_strain(
     energies = []
     temperatures = []
     for _step in range(n_steps):
-        state = ts.npt_langevin_strain_step(
+        state = ts.npt_langevin_isotropic_step(
             state=state,
             model=lj_model,
             dt=dt,
@@ -228,7 +228,7 @@ def test_npt_langevin_multi_kt(
 
     # Initialize integrator using new direct API
     ar_double_sim_state.rng = 42
-    state = ts.npt_langevin_init(
+    state = ts.npt_langevin_anisotropic_init(
         state=ar_double_sim_state,
         model=lj_model,
         dt=dt,
@@ -242,7 +242,7 @@ def test_npt_langevin_multi_kt(
     energies = []
     temperatures = []
     for _step in range(n_steps):
-        state = ts.npt_langevin_step(
+        state = ts.npt_langevin_anisotropic_step(
             state=state,
             model=lj_model,
             dt=dt,
@@ -601,7 +601,7 @@ def test_nvt_vrescale(ar_double_sim_state: ts.SimState, lj_model: LennardJonesMo
     assert pos_diff > 0.0001  # Systems should remain separated
 
 
-def test_npt_anisotropic_crescale(
+def test_npt_crescale_triclinic(
     ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
 ) -> None:
     n_steps = 200
@@ -626,7 +626,7 @@ def test_npt_anisotropic_crescale(
     energies = []
     temperatures = []
     for _step in range(n_steps):
-        state = ts.npt_crescale_anisotropic_step(
+        state = ts.npt_crescale_triclinic_step(
             state=state,
             model=lj_model,
             dt=dt,
@@ -674,7 +674,92 @@ def test_npt_anisotropic_crescale(
     assert pos_diff > 0.0001  # Systems should remain separated
 
 
-def test_npt_isotropic_crescale(
+def test_npt_crescale_triclinic_shear(
+    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
+) -> None:
+    """Test anisotropic crescale with off-diagonal (shear) external stress."""
+    n_steps = 200
+    dt = torch.tensor(0.001, dtype=DTYPE)
+    kT = torch.tensor(300.0, dtype=DTYPE) * MetalUnits.temperature
+    tau_p = torch.tensor(0.1, dtype=DTYPE)
+    isothermal_compressibility = torch.tensor(1e-4, dtype=DTYPE)
+
+    # Full 3x3 external pressure tensor with shear components
+    p_hydro = 10.0 * MetalUnits.pressure
+    shear = 1.0 * MetalUnits.pressure
+    external_pressure = torch.tensor(
+        [
+            [p_hydro, shear, 0.0],
+            [shear, p_hydro, 0.0],
+            [0.0, 0.0, p_hydro],
+        ],
+        dtype=DTYPE,
+    )
+
+    # Initialize integrator
+    ar_double_sim_state.rng = 42
+    state = ts.npt_crescale_init(
+        state=ar_double_sim_state,
+        model=lj_model,
+        dt=dt,
+        kT=kT,
+        tau_p=tau_p,
+        isothermal_compressibility=isothermal_compressibility,
+    )
+
+    # Verify initial cell fields are stored
+    assert state.initial_cell is not None
+    assert state.initial_cell_inv is not None
+    assert state.initial_volume is not None
+
+    initial_cell = state.cell.clone()
+
+    # Run dynamics
+    energies = []
+    temperatures = []
+    for _step in range(n_steps):
+        state = ts.npt_crescale_triclinic_step(
+            state=state,
+            model=lj_model,
+            dt=dt,
+            kT=kT,
+            external_pressure=external_pressure,
+        )
+        temp = ts.calc_kT(
+            masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        )
+        energies.append(state.energy)
+        temperatures.append(temp / MetalUnits.temperature)
+
+    temperatures_tensor = torch.stack(temperatures)
+    energies_tensor = torch.stack(energies)
+
+    # Basic sanity checks
+    assert len(energies[0]) == state.n_systems
+
+    # Check temperature is roughly maintained
+    mean_temps = torch.mean(temperatures_tensor, dim=0)
+    for mean_temp in mean_temps:
+        assert abs(mean_temp - kT.item() / MetalUnits.temperature) < 150.0
+
+    # Check energy is stable
+    for traj in energies_tensor.T:
+        energy_std = traj.std()
+        assert energy_std < 1.0
+
+    # Verify cell has changed from initial (shear should deform the cell)
+    cell_change = torch.norm(state.cell - initial_cell)
+    assert cell_change > 1e-6, "Cell should have changed under shear stress"
+
+    # Verify the two systems remain distinct
+    n_atoms = 8
+    pos_diff = torch.norm(
+        state.positions[:n_atoms].mean(0) - state.positions[n_atoms:].mean(0)
+    )
+    assert pos_diff > 0.0001
+
+
+def test_npt_crescale_isotropic(
     ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
 ) -> None:
     n_steps = 200
@@ -756,7 +841,7 @@ def test_npt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJone
 
     # Run dynamics for several steps
     ar_double_sim_state.rng = 42
-    state = ts.npt_nose_hoover_init(
+    state = ts.npt_nose_hoover_isotropic_init(
         state=ar_double_sim_state,
         model=lj_model,
         dt=dt,
@@ -767,7 +852,7 @@ def test_npt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJone
     temperatures = []
     invariants = []
     for _step in range(n_steps):
-        state = ts.npt_nose_hoover_step(
+        state = ts.npt_nose_hoover_isotropic_step(
             state=state,
             model=lj_model,
             dt=dt,
@@ -781,7 +866,7 @@ def test_npt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJone
         )
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
-        invariants.append(ts.npt_nose_hoover_invariant(state, kT, external_pressure))
+        invariants.append(ts.npt_nose_hoover_isotropic_invariant(state, kT, external_pressure))
 
     # Convert temperatures list to tensor
     temperatures_tensor = torch.stack(temperatures)
@@ -833,8 +918,8 @@ def test_npt_nose_hoover(ar_double_sim_state: ts.SimState, lj_model: LennardJone
 def test_npt_nose_hoover_step_accepts_float_inputs(
     ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
 ) -> None:
-    """npt_nose_hoover_step accepts float dt/kT/external_pressure inputs."""
-    state = ts.npt_nose_hoover_init(
+    """npt_nose_hoover_isotropic_step accepts float dt/kT/external_pressure inputs."""
+    state = ts.npt_nose_hoover_isotropic_init(
         state=ar_double_sim_state,
         model=lj_model,
         dt=0.001,
@@ -842,7 +927,7 @@ def test_npt_nose_hoover_step_accepts_float_inputs(
         external_pressure=0.0 * MetalUnits.pressure,
     )
 
-    next_state = ts.npt_nose_hoover_step(
+    next_state = ts.npt_nose_hoover_isotropic_step(
         state=state,
         model=lj_model,
         dt=0.001,
@@ -871,7 +956,7 @@ def test_npt_nose_hoover_multi_equivalent_to_single(
     for i in range(mixed_double_sim_state.n_systems):
         sub_state = mixed_double_sim_state[i]
         sub_state.rng = 42
-        state = ts.npt_nose_hoover_init(
+        state = ts.npt_nose_hoover_isotropic_init(
             state=sub_state,
             model=lj_model,
             dt=dt,
@@ -880,7 +965,7 @@ def test_npt_nose_hoover_multi_equivalent_to_single(
         )
         initial_momenta.append(state.momenta.clone())
         for _step in range(n_steps):
-            state = ts.npt_nose_hoover_step(
+            state = ts.npt_nose_hoover_isotropic_step(
                 state=state,
                 model=lj_model,
                 dt=dt,
@@ -897,7 +982,7 @@ def test_npt_nose_hoover_multi_equivalent_to_single(
     initial_momenta_tensor = torch.concat(initial_momenta)
     final_temperatures = torch.concat(final_temperatures)
     mixed_double_sim_state.rng = 42
-    state = ts.npt_nose_hoover_init(
+    state = ts.npt_nose_hoover_isotropic_init(
         state=mixed_double_sim_state,
         model=lj_model,
         dt=dt,
@@ -906,7 +991,7 @@ def test_npt_nose_hoover_multi_equivalent_to_single(
         momenta=initial_momenta_tensor,
     )
     for _step in range(n_steps):
-        state = ts.npt_nose_hoover_step(
+        state = ts.npt_nose_hoover_isotropic_step(
             state=state,
             model=lj_model,
             dt=dt,
@@ -933,7 +1018,7 @@ def test_npt_nose_hoover_multi_kt(
 
     # Run dynamics for several steps
     ar_double_sim_state.rng = 42
-    state = ts.npt_nose_hoover_init(
+    state = ts.npt_nose_hoover_isotropic_init(
         state=ar_double_sim_state,
         model=lj_model,
         dt=dt,
@@ -944,7 +1029,7 @@ def test_npt_nose_hoover_multi_kt(
     temperatures = []
     invariants = []
     for _step in range(n_steps):
-        state = ts.npt_nose_hoover_step(
+        state = ts.npt_nose_hoover_isotropic_step(
             state=state,
             model=lj_model,
             dt=dt,
@@ -958,7 +1043,7 @@ def test_npt_nose_hoover_multi_kt(
         )
         energies.append(state.energy)
         temperatures.append(temp / MetalUnits.temperature)
-        invariants.append(ts.npt_nose_hoover_invariant(state, kT, external_pressure))
+        invariants.append(ts.npt_nose_hoover_isotropic_invariant(state, kT, external_pressure))
 
     # Convert temperatures list to tensor
     temperatures_tensor = torch.stack(temperatures)
@@ -1071,7 +1156,7 @@ def test_compute_cell_force_atoms_per_system():
     # Setup minimal state with two systems having 8:1 atom ratio
     s1, s2 = torch.zeros(8, dtype=torch.long), torch.ones(64, dtype=torch.long)
 
-    state = ts.NPTLangevinState(
+    state = ts.NPTLangevinAnisotropicState(
         positions=torch.zeros((72, 3)),
         momenta=torch.zeros((72, 3)),
         energy=torch.zeros(2),
@@ -1093,7 +1178,7 @@ def test_compute_cell_force_atoms_per_system():
 
     # Get forces and compare ratio (per-dimension force)
     P_ext = torch.zeros(2, 3)
-    cell_force = _compute_cell_force(state, P_ext, torch.tensor([1.0, 1.0]))
+    cell_force = _npt_langevin_anisotropic_compute_cell_force(state, P_ext, torch.tensor([1.0, 1.0]))
     # Check the first dimension's force ratio
     force_ratio = cell_force[1, 0] / cell_force[0, 0]
 
@@ -1144,7 +1229,7 @@ def test_npt_langevin_reproducibility(
         ar_double_sim_state.rng = seed
         # NOTE: this init function clones the state so we can use the same fixture
         # for all the runs without concern.
-        state = ts.npt_langevin_init(
+        state = ts.npt_langevin_anisotropic_init(
             state=ar_double_sim_state,
             model=lj_model,
             dt=dt,
@@ -1154,7 +1239,7 @@ def test_npt_langevin_reproducibility(
             b_tau=b_tau,
         )
         for _ in range(n_steps):
-            state = ts.npt_langevin_step(
+            state = ts.npt_langevin_anisotropic_step(
                 state=state,
                 model=lj_model,
                 dt=dt,

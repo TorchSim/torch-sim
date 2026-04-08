@@ -323,7 +323,7 @@ kT = torch.tensor(300 * Units.temperature, device=device, dtype=dtype)  # 300 K
 target_pressure = torch.tensor(0.0 * Units.pressure, device=device, dtype=dtype)  # 0 bar
 
 # Initialize NPT with NVT equilibration
-state = ts.npt_nose_hoover_init(
+state = ts.npt_nose_hoover_isotropic_init(
     state=state, model=mace_model_stress, kT=kT, dt=torch.tensor(dt)
 )
 
@@ -337,12 +337,12 @@ for step in range(N_steps_nvt):
             / Units.temperature
         )
         invariant = float(
-            ts.npt_nose_hoover_invariant(state, kT=kT, external_pressure=target_pressure)
+            ts.npt_nose_hoover_isotropic_invariant(state, kT=kT, external_pressure=target_pressure)
         )
         log.info(
             f"Step {step}: Temperature: {temp.item():.4f} K, Invariant: {invariant:.4f}"
         )
-    state = ts.npt_nose_hoover_step(
+    state = ts.npt_nose_hoover_isotropic_step(
         state=state,
         model=mace_model_stress,
         dt=torch.tensor(dt),
@@ -351,7 +351,7 @@ for step in range(N_steps_nvt):
     )
 
 # Reinitialize for NPT phase
-state = ts.npt_nose_hoover_init(
+state = ts.npt_nose_hoover_isotropic_init(
     state=state, model=mace_model_stress, kT=kT, dt=torch.tensor(dt)
 )
 
@@ -365,7 +365,7 @@ for step in range(N_steps_npt):
             / Units.temperature
         )
         invariant = float(
-            ts.npt_nose_hoover_invariant(state, kT=kT, external_pressure=target_pressure)
+            ts.npt_nose_hoover_isotropic_invariant(state, kT=kT, external_pressure=target_pressure)
         )
         stress = mace_model_stress(state)["stress"]
         volume = torch.det(state.current_cell)
@@ -379,7 +379,7 @@ for step in range(N_steps_npt):
             f"Pressure: {pressure:.4f} eV/Å³, "
             f"Cell: [{xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}]"
         )
-    state = ts.npt_nose_hoover_step(
+    state = ts.npt_nose_hoover_isotropic_step(
         state=state,
         model=mace_model_stress,
         dt=torch.tensor(dt),

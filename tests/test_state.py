@@ -8,7 +8,7 @@ import torch_sim as ts
 from tests.conftest import DEVICE
 from torch_sim.integrators import MDState
 from torch_sim.integrators.md import NoseHooverChain, NoseHooverChainFns
-from torch_sim.integrators.npt import NPTLangevinState, NPTNoseHooverState
+from torch_sim.integrators.npt import NPTLangevinAnisotropicState, NPTNoseHooverIsotropicState
 from torch_sim.integrators.nvt import NVTNoseHooverState, NVTVRescaleState
 from torch_sim.monte_carlo import SwapMCState
 from torch_sim.optimizers.state import BFGSState, FireState, LBFGSState, OptimState
@@ -1084,8 +1084,8 @@ def test_nvtvrscalestate_instantiation() -> None:
 
 
 def test_nptlangevinstate_instantiation() -> None:
-    """NPTLangevinState inherits pbc/system_idx coercion."""
-    state = NPTLangevinState(
+    """NPTLangevinAnisotropicState inherits pbc/system_idx coercion."""
+    state = NPTLangevinAnisotropicState(
         **BASE_KWARGS,
         pbc=True,
         momenta=torch.zeros(4, 3),
@@ -1176,8 +1176,8 @@ def test_nvtnosehooverstate_instantiation() -> None:
 
 
 def test_nptnosehooverstate_instantiation() -> None:
-    """NPTNoseHooverState inherits pbc/system_idx coercion."""
-    state = NPTNoseHooverState(
+    """NPTNoseHooverIsotropicState inherits pbc/system_idx coercion."""
+    state = NPTNoseHooverIsotropicState(
         **BASE_KWARGS,
         pbc=True,
         momenta=torch.zeros(4, 3),

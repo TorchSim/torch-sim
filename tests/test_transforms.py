@@ -1422,12 +1422,12 @@ def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJon
     assert torch.allclose(unwrapped_positions, positions, atol=1e-4)
 
     # Different cell
-    state = ts.npt_langevin_init(state=ar_double_sim_state, model=lj_model, kT=kT, dt=dt)
+    state = ts.npt_langevin_anisotropic_init(state=ar_double_sim_state, model=lj_model, kT=kT, dt=dt)
     state.positions = tst.pbc_wrap_batched(state.positions, state.cell, state.system_idx)
     positions = [state.positions.detach().clone()]
     cells = [state.cell.detach().clone()]
     for _step in range(n_steps):
-        state = ts.npt_langevin_step(
+        state = ts.npt_langevin_anisotropic_step(
             model=lj_model,
             state=state,
             dt=dt,

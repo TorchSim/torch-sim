@@ -38,7 +38,7 @@ class NPTState(MDState):
 
     This class extends MDState with the stress tensor needed for
     constant-pressure simulations. Integrator-specific NPT states
-    (e.g., NPTLangevinState, NPTNoseHooverState) inherit from this
+    (e.g., NPTLangevinAnisotropicState, NPTNoseHooverIsotropicState) inherit from this
     class and add their own auxiliary variables.
 
     Attributes:
@@ -54,7 +54,7 @@ class NPTState(MDState):
 
 
 @dataclass(kw_only=True)
-class NPTLangevinState(NPTState):
+class NPTLangevinAnisotropicState(NPTState):
     """State for NPT Langevin dynamics with independent per-dimension cell lengths.
 
     Each spatial dimension has its own logarithmic strain coordinate
@@ -126,8 +126,8 @@ class NPTLangevinState(NPTState):
         return torch.linalg.det(self.cell)
 
 
-def _npt_langevin_beta(
-    state: NPTLangevinState,
+def _npt_langevin_anisotropic_beta(
+    state: NPTLangevinAnisotropicState,
     kT: torch.Tensor,
     dt: torch.Tensor,
 ) -> torch.Tensor:
@@ -138,7 +138,7 @@ def _npt_langevin_beta(
     sampling at the target temperature.
 
     Args:
-        state (NPTLangevinState): Current NPT state
+        state (NPTLangevinAnisotropicState): Current NPT state
         kT (torch.Tensor): Temperature in energy units, either scalar or
             shape [n_systems]
         dt (torch.Tensor): Integration timestep, either scalar or shape [n_systems]
@@ -169,8 +169,8 @@ def _npt_langevin_beta(
     return prefactor.unsqueeze(-1) * noise
 
 
-def _npt_langevin_cell_beta(
-    state: NPTLangevinState,
+def _npt_langevin_anisotropic_cell_beta(
+    state: NPTLangevinAnisotropicState,
     kT: torch.Tensor,
     dt: torch.Tensor,
 ) -> torch.Tensor:
@@ -191,12 +191,12 @@ def _npt_langevin_cell_beta(
     return scaling.unsqueeze(-1) * noise
 
 
-def _npt_langevin_cell_position_step(
-    state: NPTLangevinState,
+def _npt_langevin_anisotropic_cell_position_step(
+    state: NPTLangevinAnisotropicState,
     dt: torch.Tensor,
     strain_force: torch.Tensor,
     cell_beta: torch.Tensor,
-) -> NPTLangevinState:
+) -> NPTLangevinAnisotropicState:
     """GJF position step for per-dimension strain εi.
 
     Args:
@@ -222,13 +222,13 @@ def _npt_langevin_cell_position_step(
     return state
 
 
-def _npt_langevin_cell_velocity_step(
-    state: NPTLangevinState,
+def _npt_langevin_anisotropic_cell_velocity_step(
+    state: NPTLangevinAnisotropicState,
     F_eps_n: torch.Tensor,
     dt: torch.Tensor,
     strain_force: torch.Tensor,
     cell_beta: torch.Tensor,
-) -> NPTLangevinState:
+) -> NPTLangevinAnisotropicState:
     """GJF velocity step for per-dimension strain εi.
 
     Args:
@@ -257,12 +257,12 @@ def _npt_langevin_cell_velocity_step(
     return state
 
 
-def _npt_langevin_position_step(
-    state: NPTLangevinState,
+def _npt_langevin_anisotropic_position_step(
+    state: NPTLangevinAnisotropicState,
     eps_old: torch.Tensor,
     dt: torch.Tensor,
     particle_beta: torch.Tensor,
-) -> NPTLangevinState:
+) -> NPTLangevinAnisotropicState:
     """Update particle positions with per-dimension strain scaling.
 
     Each component of position is scaled by exp(εi_new - εi_old).
@@ -306,19 +306,19 @@ def _npt_langevin_position_step(
     return state
 
 
-def _npt_langevin_velocity_step(
-    state: NPTLangevinState,
+def _npt_langevin_anisotropic_velocity_step(
+    state: NPTLangevinAnisotropicState,
     forces: torch.Tensor,
     dt: torch.Tensor,
     particle_beta: torch.Tensor,
-) -> NPTLangevinState:
+) -> NPTLangevinAnisotropicState:
     """Update the particle velocities in NPT dynamics.
 
     This function updates particle velocities using a Langevin-type integrator,
     accounting for both deterministic forces and pre-generated thermal noise.
 
     Args:
-        state (NPTLangevinState): Current NPT state
+        state (NPTLangevinAnisotropicState): Current NPT state
         forces: Forces on particles (from before position update)
         dt: Integration timestep, either scalar or with shape [n_systems]
         particle_beta (torch.Tensor): Pre-generated GJF noise term β for particle
@@ -326,7 +326,7 @@ def _npt_langevin_velocity_step(
             Shape [n_particles, n_dim]
 
     Returns:
-        NPTLangevinState: Updated state with new velocities
+        NPTLangevinAnisotropicState: Updated state with new velocities
     """
     # Calculate denominator for update equations
     M_2 = 2 * state.masses  # shape: (n_atoms, 1)
@@ -358,8 +358,8 @@ def _npt_langevin_velocity_step(
     return state
 
 
-def _compute_cell_force(
-    state: NPTLangevinState,
+def _npt_langevin_anisotropic_compute_cell_force(
+    state: NPTLangevinAnisotropicState,
     external_pressure: torch.Tensor,
     kT: torch.Tensor,
 ) -> torch.Tensor:
@@ -397,7 +397,7 @@ def _compute_cell_force(
     return volumes.unsqueeze(-1) * (P_diag - external_pressure)
 
 
-def npt_langevin_init(
+def npt_langevin_anisotropic_init(
     state: SimState,
     model: ModelInterface,
     *,
@@ -407,7 +407,7 @@ def npt_langevin_init(
     cell_alpha: float | torch.Tensor | None = None,
     b_tau: float | torch.Tensor | None = None,
     **_kwargs: Any,
-) -> NPTLangevinState:
+) -> NPTLangevinAnisotropicState:
     """Initialize NPT Langevin state with independent per-dimension cell lengths.
 
     Each spatial dimension gets its own strain DOF εi = ln(Li/Li0),
@@ -425,7 +425,7 @@ def npt_langevin_init(
         b_tau: Barostat time constant. Defaults to 300·dt.
 
     Returns:
-        NPTLangevinState with εi = 0 for all dimensions
+        NPTLangevinAnisotropicState with εi = 0 for all dimensions
     """
     device, dtype = model.device, model.dtype
 
@@ -481,7 +481,7 @@ def npt_langevin_init(
         warnings.warn(msg, UserWarning, stacklevel=3)
         logger.warning(msg)
 
-    return NPTLangevinState.from_state(
+    return NPTLangevinAnisotropicState.from_state(
         state,
         momenta=momenta,
         energy=model_output["energy"],
@@ -498,14 +498,14 @@ def npt_langevin_init(
 
 
 @dcite("10.1063/1.4901303")
-def npt_langevin_step(
-    state: NPTLangevinState,
+def npt_langevin_anisotropic_step(
+    state: NPTLangevinAnisotropicState,
     model: ModelInterface,
     *,
     dt: float | torch.Tensor,
     kT: float | torch.Tensor,
     external_pressure: float | torch.Tensor,
-) -> NPTLangevinState:
+) -> NPTLangevinAnisotropicState:
     r"""Perform one NPT Langevin step with independent per-dimension cell lengths.
 
     Implements constant-pressure Langevin dynamics based on Gronbech-Jensen &
@@ -547,7 +547,7 @@ def npt_langevin_step(
             shape [3] (per-dimension), or [n_systems, 3]
 
     Returns:
-        NPTLangevinState: Updated state
+        NPTLangevinAnisotropicState: Updated state
 
     References:
         .. [4] Gronbech-Jensen, N. & Farago, O. "Constant pressure and temperature
@@ -583,24 +583,28 @@ def npt_langevin_step(
     forces = state.forces
     eps_old = state.cell_positions.clone()
 
-    F_eps_n = _compute_cell_force(
+    F_eps_n = _npt_langevin_anisotropic_compute_cell_force(
         state=state,
         external_pressure=external_pressure_tensor,
         kT=kT_tensor,
     )
 
     # Generate GJF noise ONCE
-    cell_beta = _npt_langevin_cell_beta(state, kT_tensor, dt_tensor)
-    particle_beta = _npt_langevin_beta(state, kT_tensor, dt_tensor)
+    cell_beta = _npt_langevin_anisotropic_cell_beta(state, kT_tensor, dt_tensor)
+    particle_beta = _npt_langevin_anisotropic_beta(state, kT_tensor, dt_tensor)
 
     # Step 1: Update per-dimension strain
-    state = _npt_langevin_cell_position_step(state, dt_tensor, F_eps_n, cell_beta)
+    state = _npt_langevin_anisotropic_cell_position_step(
+        state, dt_tensor, F_eps_n, cell_beta
+    )
 
     # Reconstruct cell from updated strain
     state.cell = state.current_cell
 
     # Step 2: Update particle positions
-    state = _npt_langevin_position_step(state, eps_old, dt_tensor, particle_beta)
+    state = _npt_langevin_anisotropic_position_step(
+        state, eps_old, dt_tensor, particle_beta
+    )
 
     # Recompute model output
     model_output = model(state)
@@ -609,19 +613,21 @@ def npt_langevin_step(
     state.stress = model_output["stress"]
 
     # Updated strain force
-    F_eps_new = _compute_cell_force(
+    F_eps_new = _npt_langevin_anisotropic_compute_cell_force(
         state=state,
         external_pressure=external_pressure_tensor,
         kT=kT_tensor,
     )
 
     # Step 3: Update strain velocities (uses SAME cell_beta)
-    state = _npt_langevin_cell_velocity_step(
+    state = _npt_langevin_anisotropic_cell_velocity_step(
         state, F_eps_n, dt_tensor, F_eps_new, cell_beta
     )
 
     # Step 4: Update particle velocities (uses SAME particle_beta)
-    return _npt_langevin_velocity_step(state, forces, dt_tensor, particle_beta)
+    return _npt_langevin_anisotropic_velocity_step(
+        state, forces, dt_tensor, particle_beta
+    )
 
 
 # =============================================================================
@@ -630,7 +636,7 @@ def npt_langevin_step(
 
 
 @dataclass(kw_only=True)
-class NPTLangevinStrainState(NPTState):
+class NPTLangevinIsotropicState(NPTState):
     """State for NPT Langevin dynamics using logarithmic strain coordinate.
 
     The cell degree of freedom is the isotropic logarithmic strain
@@ -681,8 +687,8 @@ class NPTLangevinStrainState(NPTState):
         return V_0 * torch.exp(dim * self.cell_positions)
 
 
-def _compute_strain_cell_force(
-    state: NPTLangevinStrainState,
+def _compute_isotropic_cell_force(
+    state: NPTLangevinIsotropicState,
     external_pressure: float | torch.Tensor,
     kT: float | torch.Tensor,
 ) -> torch.Tensor:
@@ -729,8 +735,8 @@ def _compute_strain_cell_force(
     return dim * volumes * (P_avg - external_pressure)
 
 
-def _npt_langevin_strain_cell_beta(
-    state: NPTLangevinStrainState,
+def _npt_langevin_isotropic_cell_beta(
+    state: NPTLangevinIsotropicState,
     kT: torch.Tensor,
     dt: torch.Tensor,
 ) -> torch.Tensor:
@@ -746,12 +752,12 @@ def _npt_langevin_strain_cell_beta(
     return scaling * noise
 
 
-def _npt_langevin_strain_cell_position_step(
-    state: NPTLangevinStrainState,
+def _npt_langevin_isotropic_cell_position_step(
+    state: NPTLangevinIsotropicState,
     dt: torch.Tensor,
     strain_force: torch.Tensor,
     cell_beta: torch.Tensor,
-) -> NPTLangevinStrainState:
+) -> NPTLangevinIsotropicState:
     """GJF position step for the strain coordinate ε.
 
     ε_{n+1} = ε_n + b·dt·dε/dt + b·dt²·F_ε/(2Q) + b·dt·β/(2Q)
@@ -778,13 +784,13 @@ def _npt_langevin_strain_cell_position_step(
     return state
 
 
-def _npt_langevin_strain_cell_velocity_step(
-    state: NPTLangevinStrainState,
+def _npt_langevin_isotropic_cell_velocity_step(
+    state: NPTLangevinIsotropicState,
     F_eps_n: torch.Tensor,
     dt: torch.Tensor,
     strain_force: torch.Tensor,
     cell_beta: torch.Tensor,
-) -> NPTLangevinStrainState:
+) -> NPTLangevinIsotropicState:
     """GJF velocity step for the strain coordinate ε.
 
     dε/dt_{n+1} = a·dε/dt_n + dt/(2Q)·(a·F_ε^n + F_ε^{n+1}) + b·β/Q
@@ -815,12 +821,12 @@ def _npt_langevin_strain_cell_velocity_step(
     return state
 
 
-def _npt_langevin_strain_position_step(
-    state: NPTLangevinStrainState,
+def _npt_langevin_isotropic_position_step(
+    state: NPTLangevinIsotropicState,
     eps_old: torch.Tensor,
     dt: torch.Tensor,
     particle_beta: torch.Tensor,
-) -> NPTLangevinStrainState:
+) -> NPTLangevinIsotropicState:
     """Update particle positions accounting for strain change.
 
     Positions are scaled by exp(ε_new - ε_old) for the volume change,
@@ -865,7 +871,7 @@ def _npt_langevin_strain_position_step(
     return state
 
 
-def npt_langevin_strain_init(
+def npt_langevin_isotropic_init(
     state: SimState,
     model: ModelInterface,
     *,
@@ -875,7 +881,7 @@ def npt_langevin_strain_init(
     cell_alpha: float | torch.Tensor | None = None,
     b_tau: float | torch.Tensor | None = None,
     **_kwargs: Any,
-) -> NPTLangevinStrainState:
+) -> NPTLangevinIsotropicState:
     """Initialize an NPT Langevin state using logarithmic strain coordinate.
 
     The strain coordinate ε = (1/d)·ln(V/V₀) provides well-scaled dynamics
@@ -891,7 +897,7 @@ def npt_langevin_strain_init(
         b_tau: Barostat time constant. Defaults to 300·dt.
 
     Returns:
-        NPTLangevinStrainState: Initialized state with ε = 0
+        NPTLangevinIsotropicState: Initialized state with ε = 0
     """
     device, dtype = model.device, model.dtype
 
@@ -946,7 +952,7 @@ def npt_langevin_strain_init(
         warnings.warn(msg, UserWarning, stacklevel=3)
         logger.warning(msg)
 
-    return NPTLangevinStrainState.from_state(
+    return NPTLangevinIsotropicState.from_state(
         state,
         momenta=momenta,
         energy=model_output["energy"],
@@ -963,17 +969,17 @@ def npt_langevin_strain_init(
 
 
 @dcite("10.1063/1.4901303")
-def npt_langevin_strain_step(
-    state: NPTLangevinStrainState,
+def npt_langevin_isotropic_step(
+    state: NPTLangevinIsotropicState,
     model: ModelInterface,
     *,
     dt: float | torch.Tensor,
     kT: float | torch.Tensor,
     external_pressure: float | torch.Tensor,
-) -> NPTLangevinStrainState:
+) -> NPTLangevinIsotropicState:
     r"""Perform one NPT Langevin step using logarithmic strain coordinate.
 
-    Uses the same GJF integrator as :func:`npt_langevin_step` but with the
+    Uses the same GJF integrator as :func:`npt_langevin_anisotropic_step` but with the
     cell degree of freedom being the isotropic logarithmic strain
     :math:`\varepsilon = \frac{1}{d}\ln(V/V_0)` instead of the raw volume.
 
@@ -1008,7 +1014,7 @@ def npt_langevin_strain_step(
         external_pressure: Target pressure
 
     Returns:
-        NPTLangevinStrainState: Updated state
+        NPTLangevinIsotropicState: Updated state
     """
     device, dtype = model.device, model.dtype
 
@@ -1030,24 +1036,28 @@ def npt_langevin_strain_step(
     forces = state.forces
     eps_old = state.cell_positions.clone()
 
-    F_eps_n = _compute_strain_cell_force(
+    F_eps_n = _compute_isotropic_cell_force(
         state=state,
         external_pressure=external_pressure_tensor,
         kT=kT_tensor,
     )
 
     # Generate GJF noise ONCE
-    cell_beta = _npt_langevin_strain_cell_beta(state, kT_tensor, dt_tensor)
-    particle_beta = _npt_langevin_beta(state, kT_tensor, dt_tensor)
+    cell_beta = _npt_langevin_isotropic_cell_beta(state, kT_tensor, dt_tensor)
+    particle_beta = _npt_langevin_anisotropic_beta(state, kT_tensor, dt_tensor)
 
     # Step 1: Update strain (cell position step)
-    state = _npt_langevin_strain_cell_position_step(state, dt_tensor, F_eps_n, cell_beta)
+    state = _npt_langevin_isotropic_cell_position_step(
+        state, dt_tensor, F_eps_n, cell_beta
+    )
 
     # Reconstruct cell from updated strain
     state.cell = state.current_cell
 
     # Step 2: Update particle positions (with strain-based scaling)
-    state = _npt_langevin_strain_position_step(state, eps_old, dt_tensor, particle_beta)
+    state = _npt_langevin_isotropic_position_step(
+        state, eps_old, dt_tensor, particle_beta
+    )
 
     # Recompute model output
     model_output = model(state)
@@ -1056,23 +1066,25 @@ def npt_langevin_strain_step(
     state.stress = model_output["stress"]
 
     # Compute updated strain force
-    F_eps_new = _compute_strain_cell_force(
+    F_eps_new = _compute_isotropic_cell_force(
         state=state,
         external_pressure=external_pressure_tensor,
         kT=kT_tensor,
     )
 
     # Step 3: Update strain velocity (uses SAME cell_beta)
-    state = _npt_langevin_strain_cell_velocity_step(
+    state = _npt_langevin_isotropic_cell_velocity_step(
         state, F_eps_n, dt_tensor, F_eps_new, cell_beta
     )
 
     # Step 4: Update particle velocities (uses SAME particle_beta)
-    return _npt_langevin_velocity_step(state, forces, dt_tensor, particle_beta)
+    return _npt_langevin_anisotropic_velocity_step(
+        state, forces, dt_tensor, particle_beta
+    )
 
 
 @dataclass(kw_only=True)
-class NPTNoseHooverState(NPTState):
+class NPTNoseHooverIsotropicState(NPTState):
     """State information for an NPT system with Nose-Hoover chain thermostats.
 
     This class represents the complete state of a molecular system being integrated
@@ -1183,8 +1195,8 @@ class NPTNoseHooverState(NPTState):
         return dof - 3  # Subtract 3 degrees of freedom for center of mass motion
 
 
-def _npt_nose_hoover_cell_info(
-    state: NPTNoseHooverState,
+def _npt_nose_hoover_isotropic_cell_info(
+    state: NPTNoseHooverIsotropicState,
 ) -> tuple[torch.Tensor, Callable[[torch.Tensor], torch.Tensor]]:
     """Gets the current volume and a function to compute the cell from volume.
 
@@ -1193,7 +1205,7 @@ def _npt_nose_hoover_cell_info(
     integration algorithms that need to update the cell based on volume changes.
 
     Args:
-        state (NPTNoseHooverState): Current state of the NPT system
+        state (NPTNoseHooverIsotropicState): Current state of the NPT system
 
     Returns:
         tuple:
@@ -1229,12 +1241,12 @@ def _npt_nose_hoover_cell_info(
     return V, volume_to_cell
 
 
-def _npt_nose_hoover_update_cell_mass(
-    state: NPTNoseHooverState,
+def _npt_nose_hoover_isotropic_update_cell_mass(
+    state: NPTNoseHooverIsotropicState,
     kT: torch.Tensor,
     device: torch.device,
     dtype: torch.dtype,
-) -> NPTNoseHooverState:
+) -> NPTNoseHooverIsotropicState:
     """Update the cell mass parameter in an NPT simulation.
 
     This function updates the mass parameter associated with cell volume fluctuations
@@ -1243,14 +1255,14 @@ def _npt_nose_hoover_update_cell_mass(
     control.
 
     Args:
-        state (NPTNoseHooverState): Current state of the NPT system
+        state (NPTNoseHooverIsotropicState): Current state of the NPT system
         kT (torch.Tensor): Target temperature in energy units, either scalar or
             shape [n_systems]
         device (torch.device): Device for tensor operations
         dtype (torch.dtype): Data type for tensor operations
 
     Returns:
-        NPTNoseHooverState: Updated state with new cell mass
+        NPTNoseHooverIsotropicState: Updated state with new cell mass
 
     Notes:
         - Cell mass scales with system size (N+1) and dimensionality
@@ -1274,7 +1286,7 @@ def _npt_nose_hoover_update_cell_mass(
     return state
 
 
-def _npt_nose_hoover_sinhx_x(x: torch.Tensor) -> torch.Tensor:
+def _npt_nose_hoover_isotropic_sinhx_x(x: torch.Tensor) -> torch.Tensor:
     """Compute sinh(x)/x using Taylor series expansion near x=0.
 
     This function implements a Taylor series approximation of sinh(x)/x that is
@@ -1308,8 +1320,8 @@ def _npt_nose_hoover_sinhx_x(x: torch.Tensor) -> torch.Tensor:
     )
 
 
-def _npt_nose_hoover_exp_iL1(  # noqa: N802
-    state: NPTNoseHooverState,
+def _npt_nose_hoover_isotropic_exp_iL1(  # noqa: N802
+    state: NPTNoseHooverIsotropicState,
     velocities: torch.Tensor,
     cell_velocity: torch.Tensor,
     dt: torch.Tensor,
@@ -1326,7 +1338,7 @@ def _npt_nose_hoover_exp_iL1(  # noqa: N802
     where x = V_b * dt is the cell velocity term
 
     Args:
-        state (NPTNoseHooverState): Current simulation state
+        state (NPTNoseHooverIsotropicState): Current simulation state
         velocities (torch.Tensor): Particle velocities [n_particles, n_dimensions]
         cell_velocity (torch.Tensor): Cell velocity with shape [n_systems]
         dt (torch.Tensor): Integration timestep
@@ -1349,7 +1361,7 @@ def _npt_nose_hoover_exp_iL1(  # noqa: N802
     x_2 = x / 2  # [n_atoms]
 
     # Compute sinh(x/2)/(x/2) using stable Taylor series
-    sinh_term = _npt_nose_hoover_sinhx_x(x_2)  # [n_atoms]
+    sinh_term = _npt_nose_hoover_isotropic_sinhx_x(x_2)  # [n_atoms]
 
     # Expand dimensions for broadcasting with positions [n_atoms, 3]
     x_expanded = x.unsqueeze(-1)  # [n_atoms, 1]
@@ -1364,8 +1376,8 @@ def _npt_nose_hoover_exp_iL1(  # noqa: N802
     return state.positions + new_positions
 
 
-def _npt_nose_hoover_exp_iL2(  # noqa: N802
-    state: NPTNoseHooverState,
+def _npt_nose_hoover_isotropic_exp_iL2(  # noqa: N802
+    state: NPTNoseHooverIsotropicState,
     alpha: torch.Tensor,
     momenta: torch.Tensor,
     forces: torch.Tensor,
@@ -1383,7 +1395,7 @@ def _npt_nose_hoover_exp_iL2(  # noqa: N802
     where x = alpha * V_b * dt/2
 
     Args:
-        state (NPTNoseHooverState): Current simulation state for batch mapping
+        state (NPTNoseHooverIsotropicState): Current simulation state for batch mapping
         alpha (torch.Tensor): Cell scaling parameter with shape [n_systems]
         momenta (torch.Tensor): Current particle momenta [n_particles, n_dimensions]
         forces (torch.Tensor): Forces on particles [n_particles, n_dimensions]
@@ -1409,7 +1421,7 @@ def _npt_nose_hoover_exp_iL2(  # noqa: N802
     x_2 = x / 2  # [n_atoms]
 
     # Compute sinh(x/2)/(x/2) using stable Taylor series
-    sinh_term = _npt_nose_hoover_sinhx_x(x_2)  # [n_atoms]
+    sinh_term = _npt_nose_hoover_isotropic_sinhx_x(x_2)  # [n_atoms]
 
     # Expand dimensions for broadcasting with momenta [n_atoms, 3]
     x_expanded = x.unsqueeze(-1)  # [n_atoms, 1]
@@ -1422,7 +1434,7 @@ def _npt_nose_hoover_exp_iL2(  # noqa: N802
     )
 
 
-def _npt_nose_hoover_compute_cell_force(
+def _npt_nose_hoover_isotropic_compute_cell_force(
     alpha: torch.Tensor,
     volume: torch.Tensor,
     positions: torch.Tensor,
@@ -1494,12 +1506,12 @@ def _npt_nose_hoover_compute_cell_force(
     )
 
 
-def _npt_nose_hoover_inner_step(
-    state: NPTNoseHooverState,
+def _npt_nose_hoover_isotropic_inner_step(
+    state: NPTNoseHooverIsotropicState,
     model: ModelInterface,
     dt: torch.Tensor,
     external_pressure: torch.Tensor,
-) -> NPTNoseHooverState:
+) -> NPTNoseHooverIsotropicState:
     """Perform one inner step of NPT integration using velocity Verlet algorithm.
 
     This function implements a single integration step for NPT dynamics, including:
@@ -1510,12 +1522,12 @@ def _npt_nose_hoover_inner_step(
 
     Args:
         model (ModelInterface): Model to compute forces and energies
-        state (NPTNoseHooverState): Current system state
+        state (NPTNoseHooverIsotropicState): Current system state
         dt (torch.Tensor): Integration timestep
         external_pressure (torch.Tensor): Target external pressure
 
     Returns:
-        NPTNoseHooverState: Updated state after one integration step
+        NPTNoseHooverIsotropicState: Updated state after one integration step
     """
     # Get target pressure from kwargs or use default
     dt_2 = dt / 2
@@ -1530,7 +1542,7 @@ def _npt_nose_hoover_inner_step(
     cell_mass = state.cell_mass  # [n_systems]
 
     # Get current volume and cell function
-    volume, volume_to_cell = _npt_nose_hoover_cell_info(state)
+    volume, volume_to_cell = _npt_nose_hoover_isotropic_cell_info(state)
     cell = volume_to_cell(volume)
 
     # First half step: Update momenta
@@ -1538,7 +1550,7 @@ def _npt_nose_hoover_inner_step(
     alpha = 1 + 3 / state.get_number_of_degrees_of_freedom()  # [n_systems]
 
     # Reuse stress from previous step since positions and cell unchanged
-    cell_force_val = _npt_nose_hoover_compute_cell_force(
+    cell_force_val = _npt_nose_hoover_isotropic_compute_cell_force(
         alpha=alpha,
         volume=volume,
         positions=positions,
@@ -1552,7 +1564,7 @@ def _npt_nose_hoover_inner_step(
     # Update cell momentum and particle momenta
     cell_momentum = cell_momentum + dt_2 * cell_force_val.unsqueeze(-1)
     cell_velocities = cell_momentum.squeeze(-1) / cell_mass
-    momenta = _npt_nose_hoover_exp_iL2(
+    momenta = _npt_nose_hoover_isotropic_exp_iL2(
         state, alpha, momenta, forces, cell_velocities, dt_2
     )
 
@@ -1563,21 +1575,23 @@ def _npt_nose_hoover_inner_step(
     state.cell_position = cell_position
 
     # Get updated cell
-    volume, volume_to_cell = _npt_nose_hoover_cell_info(state)
+    volume, volume_to_cell = _npt_nose_hoover_isotropic_cell_info(state)
     cell = volume_to_cell(volume)
 
     # Update particle positions and forces
     state.set_constrained_momenta(momenta)
-    positions = _npt_nose_hoover_exp_iL1(state, state.velocities, cell_velocities, dt)
+    positions = _npt_nose_hoover_isotropic_exp_iL1(
+        state, state.velocities, cell_velocities, dt
+    )
     state.set_constrained_positions(positions)
     state.cell = cell
     model_output = model(state)
 
     # Second half step: Update momenta
-    momenta = _npt_nose_hoover_exp_iL2(
+    momenta = _npt_nose_hoover_isotropic_exp_iL2(
         state, alpha, momenta, model_output["forces"], cell_velocities, dt_2
     )
-    cell_force_val = _npt_nose_hoover_compute_cell_force(
+    cell_force_val = _npt_nose_hoover_isotropic_compute_cell_force(
         alpha=alpha,
         volume=volume,
         positions=positions,
@@ -1601,7 +1615,7 @@ def _npt_nose_hoover_inner_step(
     return state
 
 
-def npt_nose_hoover_init(
+def npt_nose_hoover_isotropic_init(
     state: SimState,
     model: ModelInterface,
     *,
@@ -1613,7 +1627,7 @@ def npt_nose_hoover_init(
     t_tau: float | torch.Tensor | None = None,
     b_tau: float | torch.Tensor | None = None,
     **kwargs: Any,
-) -> NPTNoseHooverState:
+) -> NPTNoseHooverIsotropicState:
     """Initialize the NPT Nose-Hoover state.
 
     This function initializes a state for NPT molecular dynamics with Nose-Hoover
@@ -1641,7 +1655,7 @@ def npt_nose_hoover_init(
             pre-initialized momenta
 
     Returns:
-        NPTNoseHooverState: Initialized state containing:
+        NPTNoseHooverIsotropicState: Initialized state containing:
             - Particle positions, momenta, forces
             - Cell position, momentum and mass (all with batch dimensions)
             - Reference cell matrix (with batch dimensions)
@@ -1749,7 +1763,7 @@ def npt_nose_hoover_init(
         logger.warning(msg)
 
     # Create initial state
-    return NPTNoseHooverState.from_state(
+    return NPTNoseHooverIsotropicState.from_state(
         state,
         momenta=momenta,
         energy=energy,
@@ -1769,14 +1783,14 @@ def npt_nose_hoover_init(
 
 @dcite("10.1080/00268979600100761")
 @dcite("10.1088/0305-4470/39/19/S18")
-def npt_nose_hoover_step(
-    state: NPTNoseHooverState,
+def npt_nose_hoover_isotropic_step(
+    state: NPTNoseHooverIsotropicState,
     model: ModelInterface,
     *,
     dt: float | torch.Tensor,
     kT: float | torch.Tensor,
     external_pressure: float | torch.Tensor,
-) -> NPTNoseHooverState:
+) -> NPTNoseHooverIsotropicState:
     r"""Perform a complete NPT integration step with Nose-Hoover chain thermostats.
 
     Implements the MTK (Martyna-Tobias-Klein) NPT scheme from Tuckerman et al.
@@ -1865,7 +1879,7 @@ def npt_nose_hoover_step(
         external_pressure: Target external pressure
 
     Returns:
-        NPTNoseHooverState: Updated state after complete integration step
+        NPTNoseHooverIsotropicState: Updated state after complete integration step
 
     References:
         .. [10] Tuckerman, M. E., et al. "A Liouville-operator derived
@@ -1888,7 +1902,7 @@ def npt_nose_hoover_step(
     # Update mass parameters
     state.barostat = state.barostat_fns.update_mass(barostat, kT_tensor)
     state.thermostat = state.thermostat_fns.update_mass(thermostat, kT_tensor)
-    state = _npt_nose_hoover_update_cell_mass(state, kT_tensor, device, dtype)
+    state = _npt_nose_hoover_isotropic_update_cell_mass(state, kT_tensor, device, dtype)
 
     # First half step of thermostat chains
     cell_system_idx = torch.arange(state.n_systems, device=device)
@@ -1900,7 +1914,9 @@ def npt_nose_hoover_step(
     )
 
     # Perform inner NPT step
-    state = _npt_nose_hoover_inner_step(state, model, dt_tensor, external_pressure_tensor)
+    state = _npt_nose_hoover_isotropic_inner_step(
+        state, model, dt_tensor, external_pressure_tensor
+    )
 
     # Update kinetic energies for thermostats
     KE = ts.calc_kinetic_energy(
@@ -1952,8 +1968,8 @@ def _compute_chain_energy(
     return chain_energy
 
 
-def npt_nose_hoover_invariant(
-    state: NPTNoseHooverState,
+def npt_nose_hoover_isotropic_invariant(
+    state: NPTNoseHooverIsotropicState,
     kT: torch.Tensor,
     external_pressure: torch.Tensor,
 ) -> torch.Tensor:
@@ -2026,10 +2042,16 @@ class NPTCRescaleState(NPTState):
 
     isothermal_compressibility: torch.Tensor  # shape: [n_systems]
     tau_p: torch.Tensor  # shape: [n_systems]
+    initial_cell: torch.Tensor  # shape: [n_systems, 3, 3]
+    initial_cell_inv: torch.Tensor  # shape: [n_systems, 3, 3]
+    initial_volume: torch.Tensor  # shape: [n_systems]
 
     _system_attributes = NPTState._system_attributes | {  # noqa: SLF001
         "isothermal_compressibility",
         "tau_p",
+        "initial_cell",
+        "initial_cell_inv",
+        "initial_volume",
     }
 
     def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
@@ -2094,7 +2116,48 @@ def batch_matrix_vector(
     return torch.matmul(matrices, vectors.unsqueeze(-1)).squeeze(-1)
 
 
-def _crescale_anisotropic_barostat_step(
+def _compute_deviatoric_correction(
+    cell: torch.Tensor,
+    volume: torch.Tensor,
+    initial_cell_inv: torch.Tensor,
+    initial_volume: torch.Tensor,
+    external_pressure_tensor: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Compute deviatoric pressure correction for non-hydrostatic external stress.
+
+    Follows the algorithm from Bussi's crescale reference implementation:
+    projects the deviatoric part of the external stress through the reference
+    cell frame.
+
+    Args:
+        cell: Current cell matrix, shape [n_systems, 3, 3]
+        volume: Current volume, shape [n_systems]
+        initial_cell_inv: Inverse of initial cell, shape [n_systems, 3, 3]
+        initial_volume: Initial volume, shape [n_systems]
+        external_pressure_tensor: Full external pressure tensor [n_systems, 3, 3]
+
+    Returns:
+        pressure_hydro: Hydrostatic pressure scalar [n_systems]
+        pressure_dev: Deviatoric pressure correction [n_systems, 3, 3]
+        trace_pressure_dev: Trace of pressure_dev [n_systems]
+    """
+    pressure_hydro = torch.einsum("bii->b", external_pressure_tensor) / 3
+    I = torch.eye(3, device=cell.device, dtype=cell.dtype)  # noqa: E741
+    stress_dev = external_pressure_tensor - pressure_hydro[:, None, None] * I.expand_as(
+        external_pressure_tensor
+    )
+    # Project to reference coordinates: sigma = V0 * h0_inv^T @ stress_dev @ h0_inv
+    sigma = initial_volume[:, None, None] * (
+        initial_cell_inv.transpose(-2, -1) @ stress_dev @ initial_cell_inv
+    )
+    # Symmetrize and project back: pressure_dev = h^T @ 0.5*(sigma+sigma^T) @ h / V
+    sigma_sym = 0.5 * (sigma + sigma.transpose(-2, -1))
+    pressure_dev = cell.transpose(-2, -1) @ sigma_sym @ cell / volume[:, None, None]
+    trace_pressure_dev = torch.einsum("bii->b", pressure_dev)
+    return pressure_hydro, pressure_dev, trace_pressure_dev
+
+
+def _crescale_triclinic_barostat_step(
     state: NPTCRescaleState,
     kT: torch.Tensor,
     dt: torch.Tensor,
@@ -2114,20 +2177,44 @@ def _crescale_anisotropic_barostat_step(
         kT * state.isothermal_compressibility * dt / (4 * state.tau_p)
     )
     prefactor = state.isothermal_compressibility * sqrt_vol / (2 * state.tau_p)
+
+    # Deviatoric correction for non-hydrostatic external stress
+    deviatoric = external_pressure.ndim >= 2
+    if deviatoric:
+        # Expand [3,3] -> [n_systems, 3, 3] if needed
+        ext_p_tensor = external_pressure
+        if ext_p_tensor.ndim == 2:
+            ext_p_tensor = ext_p_tensor.unsqueeze(0).expand(state.n_systems, -1, -1)
+        pressure_hydro, pressure_dev, trace_pressure_dev = _compute_deviatoric_correction(
+            cell=state.cell,
+            volume=volume,
+            initial_cell_inv=state.initial_cell_inv,
+            initial_volume=state.initial_volume,
+            external_pressure_tensor=ext_p_tensor,
+        )
+        effective_p_ext = pressure_hydro + trace_pressure_dev / 3
+    else:
+        effective_p_ext = external_pressure
+
+    ## Step 1: propagate sqrt(volume) for dt/2
     change_sqrt_vol = -prefactor * (
-        external_pressure - trace_P_int / 3 - kT / (2 * volume)
+        effective_p_ext - trace_P_int / 3 - kT / (2 * volume)
     ) * dt / 2 + prefactor_random * _randn_for_state(state, sqrt_vol.shape)
     new_sqrt_volume = sqrt_vol + change_sqrt_vol
+
     ## Step 2: compute deformation matrix
     random_coeff = 2 * state.isothermal_compressibility * kT * dt / (3 * state.tau_p)
     prefactor_random_matrix = torch.sqrt(random_coeff) / new_sqrt_volume
+    I = torch.eye(  # noqa: E741
+        3, device=state.positions.device, dtype=state.positions.dtype
+    ).expand_as(P_int)
+    # Driving force: traceless part of (P_int - pressure_dev)
+    P_drive = P_int
+    if deviatoric:
+        P_drive = P_int - pressure_dev
+    trace_P_drive = torch.einsum("bii->b", P_drive)
     a_tilde = (state.isothermal_compressibility / (3 * state.tau_p))[:, None, None] * (
-        P_int
-        - trace_P_int[:, None, None]
-        / 3
-        * torch.eye(
-            3, device=state.positions.device, dtype=state.positions.dtype
-        ).expand_as(P_int)
+        P_drive - trace_P_drive[:, None, None] / 3 * I
     )
     random_matrix = torch.randn(
         state.n_systems,
@@ -2137,11 +2224,9 @@ def _crescale_anisotropic_barostat_step(
         dtype=state.positions.dtype,
         generator=state.rng,
     )
-    random_matrix_tilde = random_matrix - torch.einsum("bii->b", random_matrix)[
-        :, None, None
-    ] / 3 * torch.eye(
-        3, device=state.positions.device, dtype=state.positions.dtype
-    ).expand_as(random_matrix)
+    random_matrix_tilde = (
+        random_matrix - torch.einsum("bii->b", random_matrix)[:, None, None] / 3 * I
+    )
     deformation_matrix = torch.matrix_exp(
         a_tilde * dt + prefactor_random_matrix[:, None, None] * random_matrix_tilde
     )
@@ -2149,7 +2234,7 @@ def _crescale_anisotropic_barostat_step(
 
     ## Step 3: propagate sqrt(volume) for dt/2
     new_sqrt_volume += -prefactor * (
-        external_pressure - trace_P_int / 3 - kT / (2 * volume)
+        effective_p_ext - trace_P_int / 3 - kT / (2 * volume)
     ) * dt / 2 + prefactor_random * _randn_for_state(state, sqrt_vol.shape)
     rscaling = deformation_matrix * torch.pow((new_sqrt_volume / sqrt_vol), 2 / 3).view(
         -1, 1, 1
@@ -2168,7 +2253,7 @@ def _crescale_anisotropic_barostat_step(
     return state
 
 
-def _crescale_independent_lengths_barostat_step(
+def _crescale_anisotropic_barostat_step(
     state: NPTCRescaleState,
     kT: torch.Tensor,
     dt: torch.Tensor,
@@ -2262,7 +2347,7 @@ def compute_average_pressure_tensor(
     return average_kinetic_energy_tensor - stress
 
 
-def _crescale_average_anisotropic_barostat_step(
+def _crescale_triclinic_average_barostat_step(
     state: NPTCRescaleState,
     kT: torch.Tensor,
     dt: torch.Tensor,
@@ -2403,7 +2488,7 @@ def _coerce_crescale_step_inputs(
 
 @dcite("10.1063/5.0020514")
 @dcite("10.3390/app12031139")
-def npt_crescale_anisotropic_step(
+def npt_crescale_triclinic_step(
     state: NPTCRescaleState,
     model: ModelInterface,
     *,
@@ -2511,7 +2596,7 @@ def npt_crescale_anisotropic_step(
     state = momentum_step(state, dt_tensor / 2)
 
     # Barostat step
-    state = _crescale_anisotropic_barostat_step(
+    state = _crescale_triclinic_barostat_step(
         state, kT_tensor, dt_tensor, external_pressure_tensor
     )
 
@@ -2530,7 +2615,7 @@ def npt_crescale_anisotropic_step(
 
 @dcite("10.1063/5.0020514")
 @dcite("10.3390/app12031139")
-def npt_crescale_independent_lengths_step(
+def npt_crescale_anisotropic_step(
     state: NPTCRescaleState,
     model: ModelInterface,
     *,
@@ -2588,7 +2673,7 @@ def npt_crescale_independent_lengths_step(
     state = momentum_step(state, dt / 2)
 
     # Barostat step
-    state = _crescale_independent_lengths_barostat_step(state, kT, dt, external_pressure)
+    state = _crescale_anisotropic_barostat_step(state, kT, dt, external_pressure)
 
     # Forces
     model_output = model(state)
@@ -2605,7 +2690,7 @@ def npt_crescale_independent_lengths_step(
 
 @dcite("10.1063/5.0020514")
 @dcite("10.3390/app12031139")
-def npt_crescale_average_anisotropic_step(
+def npt_crescale_triclinic_average_step(
     state: NPTCRescaleState,
     model: ModelInterface,
     *,
@@ -2664,7 +2749,7 @@ def npt_crescale_average_anisotropic_step(
     state = momentum_step(state, dt / 2)
 
     # Barostat step
-    state = _crescale_average_anisotropic_barostat_step(state, kT, dt, external_pressure)
+    state = _crescale_triclinic_average_barostat_step(state, kT, dt, external_pressure)
 
     # Forces
     model_output = model(state)
@@ -2849,6 +2934,11 @@ def npt_crescale_init(
             state.rng,
         )
 
+    # Store initial cell for deviatoric correction
+    initial_cell = state.cell.clone()
+    initial_cell_inv = torch.inverse(initial_cell)
+    initial_volume = torch.det(initial_cell)
+
     # Create the initial state
     return NPTCRescaleState.from_state(
         state,
@@ -2858,4 +2948,7 @@ def npt_crescale_init(
         stress=model_output["stress"],
         tau_p=tau_p,
         isothermal_compressibility=isothermal_compressibility,
+        initial_cell=initial_cell,
+        initial_cell_inv=initial_cell_inv,
+        initial_volume=initial_volume,
     )

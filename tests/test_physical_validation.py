@@ -22,11 +22,11 @@ Tested integrators:
         - nvt_vrescale
 
     NPT:
-        - npt_langevin (independent per-dimension strain, like LAMMPS couple=none)
-        - npt_langevin_strain (isotropic logarithmic strain)
-        - npt_nose_hoover
-        - npt_isotropic_crescale
-        - npt_anisotropic_crescale
+        - npt_langevin_anisotropic (independent per-dimension strain, like LAMMPS couple=none)
+        - npt_langevin_isotropic (isotropic logarithmic strain)
+        - npt_nose_hoover_isotropic
+        - npt_crescale_isotropic
+        - npt_crescale_triclinic
 
 Clean up saved data programmatically:
 
@@ -45,7 +45,7 @@ from ase.build import bulk
 from numpy.typing import NDArray
 
 import torch_sim as ts
-from torch_sim.integrators.npt import npt_crescale_average_anisotropic_step
+from torch_sim.integrators.npt import npt_crescale_triclinic_average_step
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.units import MetalUnits
 
@@ -283,28 +283,28 @@ def _run_npt(
     sim_state.rng = seed
 
     # Initialize (params matched to fast_integrator_tests_batch)
-    if integrator_name == "npt_langevin":
-        state = ts.npt_langevin_init(
+    if integrator_name == "npt_langevin_anisotropic":
+        state = ts.npt_langevin_anisotropic_init(
             sim_state, model, kT=kT, dt=dt,
             alpha=1 / (5 * dt), cell_alpha=1 / (30 * dt), b_tau=300 * dt,
         )
-    elif integrator_name == "npt_langevin_strain":
-        state = ts.npt_langevin_strain_init(
+    elif integrator_name == "npt_langevin_isotropic":
+        state = ts.npt_langevin_isotropic_init(
             sim_state, model, kT=kT, dt=dt,
             alpha=1 / (5 * dt), cell_alpha=1 / (30 * dt), b_tau=300 * dt,
         )
-    elif integrator_name == "npt_nose_hoover":
-        state = ts.npt_nose_hoover_init(
+    elif integrator_name == "npt_nose_hoover_isotropic":
+        state = ts.npt_nose_hoover_isotropic_init(
             sim_state, model, kT=kT, dt=dt,
             t_tau=10 * dt, b_tau=100 * dt,
         )
-    elif integrator_name == "npt_isotropic_crescale":
+    elif integrator_name == "npt_crescale_isotropic":
         state = ts.npt_crescale_init(
             sim_state, model, kT=kT, dt=dt,
             tau_p=3 * dt,
             isothermal_compressibility=1e-6 / MetalUnits.pressure,
         )
-    elif integrator_name == "npt_anisotropic_crescale":
+    elif integrator_name == "npt_crescale_triclinic":
         state = ts.npt_crescale_init(
             sim_state, model, kT=kT, dt=dt,
             tau_p=3 * dt,
@@ -315,20 +315,20 @@ def _run_npt(
         raise ValueError(msg)
 
     def _step(s):
-        if integrator_name == "npt_langevin":
-            return ts.npt_langevin_step(
+        if integrator_name == "npt_langevin_anisotropic":
+            return ts.npt_langevin_anisotropic_step(
                 s, model, dt=dt, kT=kT, external_pressure=ext_p,
             )
-        if integrator_name == "npt_langevin_strain":
-            return ts.npt_langevin_strain_step(
+        if integrator_name == "npt_langevin_isotropic":
+            return ts.npt_langevin_isotropic_step(
                 s, model, dt=dt, kT=kT, external_pressure=ext_p,
             )
-        if integrator_name == "npt_nose_hoover":
-            return ts.npt_nose_hoover_step(
+        if integrator_name == "npt_nose_hoover_isotropic":
+            return ts.npt_nose_hoover_isotropic_step(
                 s, model, dt=dt, kT=kT, external_pressure=ext_p,
             )
-        if integrator_name == "npt_anisotropic_crescale":
-            return npt_crescale_average_anisotropic_step(
+        if integrator_name == "npt_crescale_triclinic":
+            return npt_crescale_triclinic_average_step(
                 s, model, dt=dt, kT=kT, external_pressure=ext_p, tau=1 * dt,
             )
         return ts.npt_crescale_isotropic_step(
@@ -515,11 +515,11 @@ def test_nvt_ke_distribution(integrator_name: str, request) -> None:
 @pytest.mark.parametrize(
     "integrator_name",
     [
-        "npt_langevin",
-        "npt_langevin_strain",
-        "npt_nose_hoover",
-        "npt_isotropic_crescale",
-        "npt_anisotropic_crescale",
+        "npt_langevin_anisotropic",
+        "npt_langevin_isotropic",
+        "npt_nose_hoover_isotropic",
+        "npt_crescale_isotropic",
+        "npt_crescale_triclinic",
     ],
 )
 def test_npt_ke_distribution(integrator_name: str, request) -> None:
@@ -621,11 +621,11 @@ def test_nvt_ensemble_check(integrator_name: str, request) -> None:
 @pytest.mark.parametrize(
     "integrator_name",
     [
-        "npt_langevin",
-        "npt_langevin_strain",
-        "npt_nose_hoover",
-        "npt_isotropic_crescale",
-        "npt_anisotropic_crescale",
+        "npt_langevin_anisotropic",
+        "npt_langevin_isotropic",
+        "npt_nose_hoover_isotropic",
+        "npt_crescale_isotropic",
+        "npt_crescale_triclinic",
     ],
 )
 def test_npt_ensemble_check(integrator_name: str, request) -> None:
@@ -685,11 +685,11 @@ def test_npt_ensemble_check(integrator_name: str, request) -> None:
 @pytest.mark.parametrize(
     "integrator_name",
     [
-        "npt_langevin",
-        "npt_langevin_strain",
-        "npt_nose_hoover",
-        "npt_isotropic_crescale",
-        "npt_anisotropic_crescale",
+        "npt_langevin_anisotropic",
+        "npt_langevin_isotropic",
+        "npt_nose_hoover_isotropic",
+        "npt_crescale_isotropic",
+        "npt_crescale_triclinic",
     ],
 )
 def test_npt_pressure_ensemble_check(integrator_name: str, request) -> None:
