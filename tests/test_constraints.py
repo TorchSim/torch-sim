@@ -555,8 +555,8 @@ def test_constraint_validation_errors(
     [
         ("nve", FixAtoms(atom_idx=[0, 1]), 100),
         ("nvt_nose_hoover", FixCom([0]), 200),
-        ("npt_langevin", FixAtoms(atom_idx=[0, 3]), 200),
-        ("npt_nose_hoover", FixCom([0]), 200),
+        ("npt_langevin_anisotropic", FixAtoms(atom_idx=[0, 3]), 200),
+        ("npt_nose_hoover_isotropic", FixCom([0]), 200),
     ],
 )
 def test_integrators_with_constraints(
@@ -591,20 +591,20 @@ def test_integrators_with_constraints(
         state = ts.nvt_nose_hoover_init(cu_sim_state, lj_model, kT=kT, dt=dt)
         for _ in range(n_steps):
             state = ts.nvt_nose_hoover_step(state, lj_model, dt=dt, kT=kT)
-    elif integrator == "npt_langevin":
-        state = ts.npt_langevin_init(cu_sim_state, lj_model, kT=kT, dt=dt)
+    elif integrator == "npt_langevin_anisotropic":
+        state = ts.npt_langevin_anisotropic_init(cu_sim_state, lj_model, kT=kT, dt=dt)
         for _ in range(n_steps):
-            state = ts.npt_langevin_step(
+            state = ts.npt_langevin_anisotropic_step(
                 state,
                 lj_model,
                 dt=dt,
                 kT=kT,
                 external_pressure=torch.tensor(0.0, dtype=DTYPE),
             )
-    else:  # npt_nose_hoover
-        state = ts.npt_nose_hoover_init(cu_sim_state, lj_model, kT=kT, dt=dt)
+    else:  # npt_nose_hoover_isotropic
+        state = ts.npt_nose_hoover_isotropic_init(cu_sim_state, lj_model, kT=kT, dt=dt)
         for _ in range(n_steps):
-            state = ts.npt_nose_hoover_step(
+            state = ts.npt_nose_hoover_isotropic_step(
                 state,
                 lj_model,
                 dt=torch.tensor(0.001, dtype=DTYPE),

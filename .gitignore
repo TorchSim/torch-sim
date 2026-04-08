@@ -21,6 +21,7 @@ docs/reference/torch_sim.*
 
 # ipynb files
 *.ipynb
+!docs/tutorials/integrator_tests_analysis.ipynb
 
 # ignore trajectory files
 *.h5
@@ -37,6 +38,9 @@ coverage.xml
 
 # test cache (compiled models, etc.)
 tests/.cache/
+
+# physical validation data and plots
+tests/physical_validation_data/
 
 # env
 uv.lock
