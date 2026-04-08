@@ -1396,7 +1396,7 @@ def test_build_linked_cell_neighborhood_basic() -> None:
 
 def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
     n_steps = 50
-    dt = torch.tensor(0.001, dtype=DTYPE)
+    dt = torch.tensor(0.001, dtype=DTYPE) * MetalUnits.time
     kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
 
     # Same cell
@@ -1422,12 +1422,14 @@ def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJon
     assert torch.allclose(unwrapped_positions, positions, atol=1e-4)
 
     # Different cell
-    state = ts.npt_langevin_init(state=ar_double_sim_state, model=lj_model, kT=kT, dt=dt)
+    state = ts.npt_langevin_anisotropic_init(
+        state=ar_double_sim_state, model=lj_model, kT=kT, dt=dt
+    )
     state.positions = tst.pbc_wrap_batched(state.positions, state.cell, state.system_idx)
     positions = [state.positions.detach().clone()]
     cells = [state.cell.detach().clone()]
     for _step in range(n_steps):
-        state = ts.npt_langevin_step(
+        state = ts.npt_langevin_anisotropic_step(
             model=lj_model,
             state=state,
             dt=dt,
@@ -1446,7 +1448,7 @@ def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJon
     )
     unwrapped_positions = tst.unwrap_positions(
         wrapped_positions,
-        state.cell,
+        torch.stack(cells),
         state.system_idx,
     )
     assert torch.allclose(unwrapped_positions, positions, atol=1e-4)

@@ -77,6 +77,12 @@ class UnitConversion:
     kcal_to_cal = 1e3
     eV_to_J = bc.e
 
+    # Atomic-unit conversions (Bohr / Hartree <-> Angstrom / eV)
+    Bohr_to_Ang = 0.529177210903
+    Ang_to_Bohr = 1.0 / Bohr_to_Ang
+    Hartree_to_eV = 27.211386245988
+    eV_to_Hartree = 1.0 / Hartree_to_eV
+
 
 uc = UnitConversion
 

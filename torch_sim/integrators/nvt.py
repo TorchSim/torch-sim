@@ -143,16 +143,54 @@ def nvt_langevin_step(
     kT: float | torch.Tensor,
     gamma: float | torch.Tensor | None = None,
 ) -> MDState:
-    """Perform one complete Langevin dynamics integration step.
+    r"""Perform one complete Langevin dynamics integration step using the BAOAB scheme.
 
-    This function implements the BAOAB splitting scheme for Langevin dynamics,
-    which provides accurate sampling of the canonical ensemble. The integration
-    sequence is:
-    1. Half momentum update using forces (B step)
-    2. Half position update using updated momenta (A step)
-    3. Full stochastic update with noise and friction (O step)
-    4. Half position update using updated momenta (A step)
-    5. Half momentum update using new forces (B step)
+    Implements the BAOAB splitting of the Langevin equation from
+    Leimkuhler & Matthews (2013, 2016) [2]_. The Langevin SDE is:
+
+    .. math::
+
+        d\mathbf{q} &= M^{-1}\mathbf{p}\,dt \\
+        d\mathbf{p} &= -\nabla U(\mathbf{q})\,dt
+            - \gamma\,\mathbf{p}\,dt
+            + \sigma M^{1/2}\,d\mathbf{W}
+
+    where :math:`\sigma = \sqrt{2\gamma k_BT}` (fluctuation-dissipation relation).
+
+    **BAOAB splitting** (B = kick, A = drift, O = Ornstein-Uhlenbeck):
+
+    .. math::
+
+        \text{B:}\quad \mathbf{p} &\leftarrow \mathbf{p}
+            + \tfrac{\Delta t}{2}\,\mathbf{F}(\mathbf{q}) \\
+        \text{A:}\quad \mathbf{q} &\leftarrow \mathbf{q}
+            + \tfrac{\Delta t}{2}\,M^{-1}\mathbf{p} \\
+        \text{O:}\quad \mathbf{p} &\leftarrow
+            c_1\,\mathbf{p} + c_2\,M^{1/2}\mathbf{R},
+            \quad \mathbf{R}\sim\mathcal{N}(0,I) \\
+        \text{A:}\quad \mathbf{q} &\leftarrow \mathbf{q}
+            + \tfrac{\Delta t}{2}\,M^{-1}\mathbf{p} \\
+        \text{B:}\quad \mathbf{p} &\leftarrow \mathbf{p}
+            + \tfrac{\Delta t}{2}\,\mathbf{F}(\mathbf{q})
+
+    with :math:`c_1 = e^{-\gamma\Delta t}` and
+    :math:`c_2 = \sqrt{k_BT\,(1-c_1^2)}`.
+
+    **Variable mapping (equation -> code):**
+
+    ============================================  ============================
+    Equation symbol                               Code variable
+    ============================================  ============================
+    :math:`\mathbf{q}`  (positions)               ``state.positions``
+    :math:`\mathbf{p}`  (momenta)                 ``state.momenta``
+    :math:`M`           (mass matrix)             ``state.masses``
+    :math:`\mathbf{F}`  (forces)                  ``state.forces``
+    :math:`\gamma`      (friction coefficient)    ``gamma``
+    :math:`k_BT`        (thermal energy)          ``kT``
+    :math:`\Delta t`    (timestep)                ``dt``
+    :math:`c_1`                                   ``c1`` in ``_ou_step``
+    :math:`c_2`                                   ``c2`` in ``_ou_step``
+    ============================================  ============================
 
     Args:
         state: Current system state containing positions, momenta, forces
@@ -168,13 +206,12 @@ def nvt_langevin_step(
         MDState: Updated state after one complete Langevin step with new positions,
             momenta, forces, and energy
 
-    Notes:
-        - Uses BAOAB splitting scheme for Langevin dynamics
-        - Preserves detailed balance for correct NVT sampling
-        - Handles periodic boundary conditions if enabled in state
-        - Friction coefficient gamma controls the thermostat coupling strength
-        - Weak coupling (small gamma) preserves dynamics but with slower thermalization
-        - Strong coupling (large gamma) faster thermalization but may distort dynamics
+    References:
+        .. [2] Leimkuhler B, Matthews C. "Efficient molecular dynamics using geodesic
+           integration and solvent-solute splitting." Proc. R. Soc. A 472: 20160138
+           (2016). Original BAOAB analysis in: Leimkuhler B, Matthews C. "Rational
+           construction of stochastic numerical methods for molecular sampling."
+           Appl. Math. Res. Express 2013(1), 34-56 (2013).
     """
     device, dtype = model.device, model.dtype
 
@@ -290,7 +327,7 @@ def nvt_nose_hoover_init(
     dt_tensor = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
     kT_tensor = torch.as_tensor(kT, device=state.device, dtype=state.dtype)
     tau_tensor = torch.as_tensor(
-        100.0 * dt_tensor if tau is None else tau, device=state.device, dtype=state.dtype
+        10.0 * dt_tensor if tau is None else tau, device=state.device, dtype=state.dtype
     )
 
     # Create thermostat functions
@@ -338,13 +375,63 @@ def nvt_nose_hoover_step(
     dt: float | torch.Tensor,
     kT: float | torch.Tensor,
 ) -> NVTNoseHooverState:
-    """Perform one complete Nose-Hoover chain integration step.
+    r"""Perform one complete Nose-Hoover chain (NHC) integration step.
 
-    This function performs one integration step for an NVT system using a Nose-Hoover
-    chain thermostat. The integration scheme is time-reversible and conserves an
-    extended energy quantity. If the center of mass motion is removed initially,
-    it remains removed throughout the simulation, so the degrees of freedom decreases
-    by 3.
+    Implements the NHC thermostat from Martyna et al. (1996) [3]_ with
+    Suzuki-Yoshida integration of the chain variables.
+
+    **Equations of motion** (Martyna et al. 1996, Eqs. 13-18):
+
+    .. math::
+
+        \dot{\mathbf{r}}_i &= \mathbf{p}_i / m_i \\
+        \dot{\mathbf{p}}_i &= \mathbf{F}_i
+            - \frac{p_{\xi_1}}{Q_1}\,\mathbf{p}_i \\
+        \dot{\xi}_j &= p_{\xi_j} / Q_j \\
+        \dot{p}_{\xi_1} &= \bigl(2K - N_f k_BT\bigr)
+            - \frac{p_{\xi_2}}{Q_2}\,p_{\xi_1} \\
+        \dot{p}_{\xi_j} &= \left(\frac{p_{\xi_{j-1}}^2}{Q_{j-1}}
+            - k_BT\right) - \frac{p_{\xi_{j+1}}}{Q_{j+1}}\,p_{\xi_j}
+            \quad (j = 2,\ldots,M{-}1) \\
+        \dot{p}_{\xi_M} &= \frac{p_{\xi_{M-1}}^2}{Q_{M-1}} - k_BT
+
+    where :math:`K = \sum_i p_i^2/(2m_i)` is the kinetic energy,
+    :math:`N_f = 3N - 3` the degrees of freedom, and :math:`Q_j = k_BT\tau^2`
+    (with :math:`Q_1 = N_f k_BT\tau^2`) are the chain masses.
+
+    **Symmetric propagator** (Trotter factorization):
+
+    .. math::
+
+        e^{i\mathcal{L}\Delta t} = e^{i\mathcal{L}_{\text{NHC}}\Delta t/2}
+        \;e^{i\mathcal{L}_{\text{VV}}\Delta t}
+        \;e^{i\mathcal{L}_{\text{NHC}}\Delta t/2}
+
+    where :math:`i\mathcal{L}_{\text{VV}}` is the velocity Verlet propagator
+    and :math:`i\mathcal{L}_{\text{NHC}}` integrates the chain with
+    :math:`n_c \times n_{\text{sy}}` sub-steps (Suzuki-Yoshida decomposition).
+
+    **Variable mapping (equation -> code):**
+
+    ============================================  ============================
+    Equation symbol                               Code variable
+    ============================================  ============================
+    :math:`\mathbf{r}_i`  (positions)             ``state.positions``
+    :math:`\mathbf{p}_i`  (momenta)               ``state.momenta``
+    :math:`m_i`           (masses)                ``state.masses``
+    :math:`\mathbf{F}_i`  (forces)                ``state.forces``
+    :math:`\xi_j`         (chain positions)       ``state.chain.positions``
+    :math:`p_{\xi_j}`     (chain momenta)         ``state.chain.momenta``
+    :math:`Q_j`           (chain masses)           ``state.chain.masses``
+    :math:`K`             (kinetic energy)         ``state.chain.kinetic_energy``
+    :math:`N_f`           (degrees of freedom)    ``state.chain.degrees_of_freedom``
+    :math:`\tau`          (relaxation time)        ``state.chain.tau``
+    :math:`k_BT`          (thermal energy)        ``kT``
+    :math:`\Delta t`      (timestep)              ``dt``
+    :math:`M`             (chain length)          ``chain_length``
+    :math:`n_c`           (chain substeps)        ``chain_steps``
+    :math:`n_{\text{sy}}` (SY steps)              ``sy_steps``
+    ============================================  ============================
 
     Args:
         state: Current system state containing positions, momenta, forces, and chain
@@ -355,13 +442,10 @@ def nvt_nose_hoover_step(
     Returns:
         Updated state after one complete Nose-Hoover step
 
-    Notes:
-        Integration sequence:
-        1. Update chain masses based on target temperature
-        2. First half-step of chain evolution
-        3. Full velocity Verlet step
-        4. Update chain kinetic energy
-        5. Second half-step of chain evolution
+    References:
+        .. [3] Martyna, G. J., Tuckerman, M. E., Tobias, D. J. & Klein, M. L.
+           "Explicit reversible integrators for extended systems dynamics."
+           Molecular Physics 87(5), 1117-1157 (1996).
     """
     # Get chain functions from state
     chain_fns = state._chain_fns  # noqa: SLF001
@@ -410,7 +494,6 @@ def nvt_nose_hoover_invariant(
     useful for validating the thermostat implementation.
 
     Args:
-        energy_fn: Function that computes system potential energy given positions
         state: Current state of the system including chain variables
         kT: Target temperature in energy units
 
@@ -623,12 +706,53 @@ def nvt_vrescale_step(
     kT: float | torch.Tensor,
     tau: float | torch.Tensor | None = None,
 ) -> NVTVRescaleState:
-    """Perform one complete V-Rescale dynamics integration step.
+    r"""Perform one complete V-Rescale (CSVR) dynamics integration step.
 
-    This function implements the canonical sampling through velocity rescaling (V-Rescale)
-    thermostat combined with velocity Verlet integration. The V-Rescale thermostat samples
-    the canonical distribution by rescaling velocities with a properly chosen random
-    factor that ensures correct canonical sampling.
+    Implements canonical sampling through velocity rescaling from
+    Bussi, Donadio & Parrinello (2007) [1]_.
+
+    **Stochastic differential equation** for kinetic energy (Eq. 7 of [1]_):
+
+    .. math::
+
+        dK = \frac{\bar{K} - K}{\tau}\,dt
+            + 2\sqrt{\frac{K\bar{K}}{N_f\tau}}\,dW
+
+    where :math:`\bar{K} = N_f k_BT/2` is the target kinetic energy.
+
+    **Discrete rescaling factor** :math:`\alpha^2 = K'/K` (Eq. 22 of [1]_):
+
+    .. math::
+
+        \alpha^2 = e^{-\Delta t/\tau}
+            + \frac{\bar{K}}{N_f K}\bigl(1-e^{-\Delta t/\tau}\bigr)
+              \Bigl(R_1^2 + \sum_{i=2}^{N_f} R_i^2\Bigr)
+            + 2\,e^{-\Delta t/(2\tau)}
+              \sqrt{\frac{\bar{K}}{N_f K}
+              \bigl(1-e^{-\Delta t/\tau}\bigr)}\;R_1
+
+    where :math:`R_1 \sim \mathcal{N}(0,1)` and
+    :math:`\sum_{i=2}^{N_f} R_i^2 \sim \text{Gamma}\bigl((N_f-1)/2,\,2\bigr)`.
+    Momenta are then rescaled as :math:`\mathbf{p} \leftarrow \alpha\,\mathbf{p}`.
+
+    **Variable mapping (equation -> code):**
+
+    ============================================  ============================
+    Equation symbol                               Code variable
+    ============================================  ============================
+    :math:`K`             (kinetic energy)        ``KE_old``
+    :math:`\bar{K}`       (target KE)            ``KE_new``
+    :math:`N_f`           (degrees of freedom)   ``dof``
+    :math:`\tau`          (relaxation time)       ``tau``
+    :math:`k_BT`          (thermal energy)       ``kT``
+    :math:`\Delta t`      (timestep)             ``dt``
+    :math:`e^{-\Delta t/\tau}`                   ``c1``
+    :math:`(1-c_1)\bar{K}/(N_f K)`              ``c2``
+    :math:`R_1`                                  ``r1``
+    :math:`\sum_{i=2}^{N_f} R_i^2`              ``r2``
+    :math:`\alpha^2`      (scale factor)         ``scale``
+    :math:`\alpha`        (velocity rescaling)   ``lam``
+    ============================================  ============================
 
     Args:
         model: Neural network model that computes energies and forces.
@@ -644,19 +768,13 @@ def nvt_vrescale_step(
         MDState: Updated state after one complete V-Rescale step with new positions,
             momenta, forces, and energy
 
-    Notes:
-        - Uses V-Rescale thermostat for proper canonical ensemble sampling
-        - Unlike Berendsen thermostat, V-Rescale samples the true canonical distribution
-        - Integration sequence: V-Rescale rescaling + Velocity Verlet step
-        - The rescaling factor follows the distribution derived in Bussi et al.
-
     References:
-        Bussi G, Donadio D, Parrinello M. "Canonical sampling through velocity rescaling."
-        The Journal of chemical physics, 126(1), 014101 (2007).
+        .. [1] Bussi G, Donadio D, Parrinello M. "Canonical sampling through velocity
+           rescaling." J. Chem. Phys. 126(1), 014101 (2007).
     """
     device, dtype = model.device, model.dtype
 
-    tau = torch.as_tensor(100 * dt if tau is None else tau, device=device, dtype=dtype)
+    tau = torch.as_tensor(10 * dt if tau is None else tau, device=device, dtype=dtype)
     dt = torch.as_tensor(dt, device=device, dtype=dtype)
     kT = torch.as_tensor(kT, device=device, dtype=dtype)
 

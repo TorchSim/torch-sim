@@ -481,9 +481,9 @@ def test_build_triplets_device(device: str) -> None:
 
     result = build_triplets(edge_index, n_atoms)
 
-    assert result["trip_in"].device == dev
-    assert result["trip_out"].device == dev
-    assert result["center_atom"].device == dev
+    assert result["trip_in"].device.type == dev.type
+    assert result["trip_out"].device.type == dev.type
+    assert result["center_atom"].device.type == dev.type
 
 
 @pytest.mark.parametrize(
@@ -507,10 +507,10 @@ def test_build_quadruplets_device(device: str) -> None:
         internal_cell_offsets,
     )
 
-    assert result["quad_c_to_a_edge"].device == dev
-    assert result["quad_d_to_b_trip_idx"].device == dev
-    assert result["d_to_b_edge"].device == dev
-    assert result["c_to_a_edge"].device == dev
+    assert result["quad_c_to_a_edge"].device.type == dev.type
+    assert result["quad_d_to_b_trip_idx"].device.type == dev.type
+    assert result["d_to_b_edge"].device.type == dev.type
+    assert result["c_to_a_edge"].device.type == dev.type
 
 
 def test_build_triplets_jit_script() -> None:

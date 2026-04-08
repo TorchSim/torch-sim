@@ -30,7 +30,7 @@ dependencies = [
     "h5py>=3.15.1",
     "numpy>=1.26,<3; python_version < '3.13'",
     "numpy>=2.3.2,<3; python_version >= '3.13'",
-    "nvalchemi-toolkit-ops>=0.3.0",
+    "nvalchemi-toolkit-ops[torch]>=0.3.0",
     "tables>=3.11.1",
     "torch>=2",
     "tqdm>=4.67",
@@ -39,6 +39,7 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "torch-sim-atomistic[io,symmetry,vesin]",
+    "physical-validation>=1.0.5",
     "platformdirs>=4.0.0",
     "psutil>=7.0.0",
     "pymatgen>=2025.6.14",
@@ -51,11 +52,11 @@ vesin = ["vesin[torch]>=0.5.3"]
 io = ["ase>=3.26", "phonopy>=2.37.0", "pymatgen>=2025.6.14"]
 symmetry = ["moyopy>=0.7.8"]
 mace = ["mace-torch>=0.3.15"]
-mattersim = ["mattersim>=0.1.2"]
-metatomic = ["metatomic-torch>=0.1.3", "metatrain[pet]>=2025.12"]
-orb = ["orb-models>=0.6.0"]
+mattersim = ["mattersim>=1.2.2"]
+metatomic = ["metatomic-torchsim>=0.1.1", "metatomic-ase>=0.1.0", "upet>=0.2.0"]
+orb = ["orb-models>=0.6.2"]
 sevenn = ["sevenn[torchsim]>=0.12.1"]
-nequip = ["nequip>=0.17.0"]
+nequip = ["nequip>=0.17.1"]
 nequix = ["nequix[torch-sim]>=0.4.5"]
 fairchem = ["fairchem-core>=2.7", "scipy<1.17.0"]
 docs = [
@@ -126,9 +127,10 @@ isort.lines-after-imports = 2
 pep8-naming.ignore-names = ["get_kT", "kT"]
 
 [tool.ruff.lint.per-file-ignores]
-"**/tests/*" = ["ANN201", "D", "INP001", "S101"]
-"examples/**/*" = ["B018", "T201"]
+"**/tests/*" = ["ANN001", "ANN201", "ANN202", "D", "INP001", "S101", "T201"]
+"examples/**/*" = ["ANN001", "ANN201", "ANN202", "B018", "T201"]
 "examples/tutorials/**/*" = ["ALL"]
+"docs/tutorials/*.ipynb" = ["ANN001", "ANN201", "B905", "BLE001", "E501", "F841", "N816", "PLR1714", "RUF001", "T201"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -136,10 +138,14 @@ docstring-code-format = true
 [tool.codespell]
 check-filenames = true
 ignore-words-list = ["convertor"]  # codespell:ignore convertor
+skip = "docs/tutorials/integrator_tests_analysis.ipynb"
 
 [tool.pytest.ini_options]
-addopts = ["-p no:warnings"]
+addopts = ["-p no:warnings", "-m not physical_validation"]
 testpaths = ["tests"]
+markers = [
+    "physical_validation: long-running physical validation tests (run with: pytest -m physical_validation)",
+]
 
 [tool.uv]
 # make these dependencies mutually exclusive since they use incompatible e3nn versions
@@ -196,17 +202,31 @@ include = [
 unresolved-import = "ignore"
 
 [[tool.ty.overrides]]
+include = [
+    "torch_sim/models/dispersion.py",
+    "torch_sim/neighbors/vesin.py",
+]
+[tool.ty.overrides.rules]
+invalid-argument-type = "ignore"
+invalid-assignment = "ignore"
+
+[[tool.ty.overrides]]
 include = ["tests/**/*.py"]
 
 [tool.ty.overrides.rules]
 invalid-argument-type = "ignore"
+invalid-assignment = "ignore"
 no-matching-overload = "ignore"
 unresolved-attribute = "ignore"
 unresolved-import = "ignore"
 
 [[tool.ty.overrides]]
-include = ["docs/**/*.py", "examples/**/*.py"]
+include = ["docs/**/*.py", "docs/**/*.ipynb", "examples/**/*.py"]
 [tool.ty.overrides.rules]
+invalid-argument-type = "ignore"
+not-iterable = "ignore"
+not-subscriptable = "ignore"
+unresolved-attribute = "ignore"
 unresolved-import = "ignore"
 
 

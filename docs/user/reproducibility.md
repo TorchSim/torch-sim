@@ -50,7 +50,7 @@ sim_state.rng = 42  # required for reproducibility — torch.manual_seed() has n
 
 ### Deterministic vs stochastic integrators in TorchSim
 
-- `ts.Integrator.nvt_langevin` and `ts.Integrator.npt_langevin` include stochastic
+- `ts.Integrator.nvt_langevin` and `ts.Integrator.npt_langevin_anisotropic` include stochastic
   terms by design. When seeded via `state.rng`, they produce identical trajectories.
   The `rng` generator controls **both** the initial momenta sampling **and** all per-step stochastic noise (Langevin OU noise, V-Rescale draws, C-Rescale barostat noise, etc.). It is stored on the state and automatically advances on every step, so running the same seed twice produces identical trajectories.
 - `ts.Integrator.nvt_nose_hoover` and `ts.Integrator.nve` are deterministic at the

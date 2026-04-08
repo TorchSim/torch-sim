@@ -199,7 +199,7 @@ def run_ase_optimization(
         atoms = adaptor.get_atoms(Structure.from_dict(struct_dict))
         atoms.calc = calculator
         system: Any = cell_filter_cls(atoms) if cell_filter_cls is not None else atoms
-        opt = ase_optimizer_cls(system, logfile=os.devnull)  # type: ignore[arg-type]
+        opt = ase_optimizer_cls(system, logfile=os.devnull)
         opt.run(fmax=f_max, steps=max_steps)
         if opt.get_number_of_steps() < max_steps:
             converged += 1

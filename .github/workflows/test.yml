@@ -158,7 +158,7 @@ jobs:
           if [[ "${{ matrix.example }}" == *"fairchem"* ]]; then
             uv pip install huggingface_hub --system
           fi
-          uv run --with . ${{ matrix.example }}
+          uv run --with-editable . ${{ matrix.example }}
 
   all-required-pass:
     if: always()

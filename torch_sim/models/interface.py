@@ -26,16 +26,28 @@ Notes:
     compute_stress property, as some integrators require stress calculations.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 import torch
 
 import torch_sim as ts
-from torch_sim.state import SimState
-from torch_sim.typing import MemoryScaling
+
+
+if TYPE_CHECKING:
+    from torch_sim.state import SimState
+    from torch_sim.typing import MemoryScaling
 
 
 VALIDATE_ATOL = 1e-4
+
+_MEMORY_SCALING_PRIORITY: dict[MemoryScaling, int] = {
+    "n_atoms": 0,
+    "n_atoms_x_density": 1,
+    "n_edges": 2,
+}
 
 
 class ModelInterface(torch.nn.Module, ABC):
@@ -169,6 +181,129 @@ class ModelInterface(torch.nn.Module, ABC):
             stress = output.get("stress", None)
             ```
         """
+
+
+class SumModel(ModelInterface):
+    """Additive composition of multiple :class:`ModelInterface` models.
+
+    Calls each child model's :meth:`forward` and sums the output tensors
+    key-by-key, so energies, forces, and stresses are combined additively.
+    This is the standard way to layer a dispersion correction (e.g. DFT-D3),
+    an Ewald electrostatic term, or a local pair potential on top of a primary
+    machine-learning potential.
+
+    Args:
+        models: Two or more :class:`ModelInterface` instances that share the
+            same ``device`` and ``dtype``.
+
+    Raises:
+        ValueError: If fewer than two models are given or if ``device``/``dtype``
+            do not match across all models.
+
+    Examples:
+        ```py
+        sum_model = SumModel(mace_model, d3_model)
+        output = sum_model(sim_state)
+        ```
+    """
+
+    def __init__(self, *models: ModelInterface) -> None:
+        """Initialize the sum model.
+
+        Args:
+            models: Two or more :class:`ModelInterface` instances. All must
+                share the same ``device`` and ``dtype``.
+        """
+        super().__init__()
+        if len(models) < 2:
+            raise ValueError("SumModel requires at least two child models")
+        first = models[0]
+        for i, m in enumerate(models[1:], start=1):
+            if m.device != first.device:
+                raise ValueError(
+                    f"Device mismatch: model 0 has {first.device}, "
+                    f"model {i} has {m.device}"
+                )
+            if m.dtype != first.dtype:
+                raise ValueError(
+                    f"Dtype mismatch: model 0 has {first.dtype}, model {i} has {m.dtype}"
+                )
+        self.models = torch.nn.ModuleList(models)
+        self._device = first.device
+        self._dtype = first.dtype
+        self._compute_stress = all(m.compute_stress for m in models)
+        self._compute_forces = all(m.compute_forces for m in models)
+
+    def _children(self) -> list[ModelInterface]:
+        """Return child models with proper typing for static analysis."""
+        return list(self.models.children())  # type: ignore[return-value]
+
+    @ModelInterface.compute_stress.setter
+    def compute_stress(self, value: bool) -> None:  # noqa: FBT001
+        """Propagate ``compute_stress`` to all child models that support it."""
+        for m in self._children():
+            try:
+                m.compute_stress = value
+            except NotImplementedError:
+                if value:
+                    raise
+        self._compute_stress = value
+
+    @ModelInterface.compute_forces.setter
+    def compute_forces(self, value: bool) -> None:  # noqa: FBT001
+        """Propagate ``compute_forces`` to all child models that support it."""
+        for m in self._children():
+            try:
+                m.compute_forces = value
+            except NotImplementedError:
+                if value:
+                    raise
+        self._compute_forces = value
+
+    @property
+    def retain_graph(self) -> bool:
+        """Whether any child model retains the computation graph."""
+        return any(getattr(m, "retain_graph", False) for m in self._children())
+
+    @retain_graph.setter
+    def retain_graph(self, value: bool) -> None:
+        for m in self._children():
+            if hasattr(m, "retain_graph"):
+                m.retain_graph = value  # type: ignore[union-attr]
+
+    @property
+    def memory_scales_with(self) -> MemoryScaling:
+        """Most conservative memory-scaling among all child models."""
+        best: MemoryScaling = "n_atoms"
+        for m in self._children():
+            scaling = m.memory_scales_with
+            if _MEMORY_SCALING_PRIORITY[scaling] > _MEMORY_SCALING_PRIORITY[best]:
+                best = scaling
+        return best
+
+    def forward(self, state: SimState, **kwargs) -> dict[str, torch.Tensor]:
+        """Sum the outputs of all child models.
+
+        Each child model is called with the same ``state`` and ``**kwargs``.
+        Output tensors that appear in multiple children are summed element-wise;
+        keys unique to a single child are passed through unchanged.
+
+        Args:
+            state: Simulation state (see :class:`ModelInterface`).
+            **kwargs: Forwarded to every child model.
+
+        Returns:
+            Combined output dictionary with summed tensors.
+        """
+        combined: dict[str, torch.Tensor] = {}
+        for model in self._children():
+            output = model(state, **kwargs)
+            for key, tensor in output.items():
+                if key in combined:
+                    combined[key] = combined[key] + tensor
+                else:
+                    combined[key] = tensor
+        return combined
 
 
 def _check_output_detached(
