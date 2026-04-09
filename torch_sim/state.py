@@ -334,8 +334,14 @@ class SimState:
             | {"_constraints", "_system_extras", "_atom_extras"}
         )
 
-    def __getattr__(self, name: str) -> Any:
-        """Allow attribute-style access to extras dict entries."""
+    def __getattr__(self, name: str) -> torch.Tensor:
+        """Allow attribute-style access to extras dict entries.
+
+        Only called by Python as a fallback after normal lookup (descriptors,
+        instance __dict__, class attributes) fails, so real fields like
+        ``positions`` and properties like ``n_atoms`` never reach this method.
+        The return type is ``torch.Tensor`` because extras dicts only hold tensors.
+        """
         # Guard: don't look up private attrs in extras (avoids recursion during init)
         if name.startswith("_"):
             raise AttributeError(name)
@@ -1023,9 +1029,9 @@ def get_attrs_for_scope(
         yield attr_name, getattr(state, attr_name)
 
     if scope == "per-system":
-        yield from state._system_extras.items()  # noqa: SLF001
+        yield from state.system_extras.items()
     elif scope == "per-atom":
-        yield from state._atom_extras.items()  # noqa: SLF001
+        yield from state.atom_extras.items()
 
 
 def _filter_attrs_by_index(
@@ -1138,11 +1144,11 @@ def _split_state[T: SimState](state: T) -> list[T]:  # noqa: C901
     global_attrs = dict(get_attrs_for_scope(state, "global"))
 
     split_system_extras: dict[str, list[torch.Tensor]] = {}
-    for key, val in state._system_extras.items():  # noqa: SLF001
+    for key, val in state.system_extras.items():
         split_system_extras[key] = list(torch.split(val, 1, dim=0))
 
     split_atom_extras: dict[str, list[torch.Tensor]] = {}
-    for key, val in state._atom_extras.items():  # noqa: SLF001
+    for key, val in state.atom_extras.items():
         split_atom_extras[key] = list(torch.split(val, system_sizes, dim=0))
 
     # Create a state for each system
