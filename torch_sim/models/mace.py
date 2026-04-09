@@ -336,6 +336,8 @@ class MaceModel(ModelInterface):
             if stress is not None:
                 results["stress"] = stress.detach()
 
+        # Detach positions to prevent gradients from flowing back
+        state.positions = state.positions.detach()
         return results
 
 
