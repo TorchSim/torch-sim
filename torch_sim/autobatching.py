@@ -525,6 +525,10 @@ class BinningAutoBatcher[T: SimState]:
     metric to maximize GPU utilization. This approach is ideal for scenarios where
     all states need to be evolved the same number of steps.
 
+    Supports streaming via iterators/generators: when ``load_states`` receives an
+    iterator, it pulls ``sample_size`` systems at a time, bins them, yields the
+    bins, then pulls the next chunk automatically.
+
     To avoid a slow memory estimation step, set the `max_memory_scaler` to a
     known value.
 
@@ -533,6 +537,7 @@ class BinningAutoBatcher[T: SimState]:
         memory_scales_with (str): Metric type used for memory estimation.
         max_memory_scaler (float): Maximum memory metric allowed per system.
         max_atoms_to_try (int): Maximum number of atoms to try when estimating memory.
+        sample_size (int): Number of states to pull from an iterator per chunk.
         memory_scalers (list[float]): Memory scaling metrics for each state.
         index_to_scaler (dict): Mapping from state index to its scaling metric.
         index_bins (list[list[int]]): Groups of state indices that can be batched
@@ -555,6 +560,15 @@ class BinningAutoBatcher[T: SimState]:
 
         # Restore original order
         ordered_final_states = batcher.restore_original_order(final_states)
+
+        # Or stream states from a generator
+        def state_generator():
+            for atoms in large_dataset:
+                yield ts.initialize_state(atoms, device, dtype)
+
+        batcher.load_states(state_generator())
+        for batch, _indices in batcher:
+            process(batch)
     """
 
     index_bins: list[list[int]]
@@ -570,6 +584,7 @@ class BinningAutoBatcher[T: SimState]:
         memory_scaling_factor: float = 1.6,
         max_memory_padding: float = 1.0,
         oom_error_message: str | list[str] = "CUDA out of memory",
+        sample_size: int = 100,
     ) -> None:
         """Initialize the binning auto-batcher.
 
@@ -599,6 +614,9 @@ class BinningAutoBatcher[T: SimState]:
             oom_error_message (str | list[str]): String or list of strings to match in
                 RuntimeError messages to identify out-of-memory errors. Defaults to
                 "CUDA out of memory".
+            sample_size (int): Number of states to pull from an iterator at a time
+                when streaming. Only used when load_states receives an iterator.
+                Defaults to 100.
         """
         self.max_memory_scaler = max_memory_scaler
         self.max_atoms_to_try = max_atoms_to_try
@@ -608,26 +626,30 @@ class BinningAutoBatcher[T: SimState]:
         self.memory_scaling_factor = memory_scaling_factor
         self.max_memory_padding = max_memory_padding
         self.oom_error_message = oom_error_message
+        self.sample_size = sample_size
 
-    def load_states(self, states: T | Sequence[T]) -> float:
+    def load_states(self, states: T | Sequence[T] | Iterator[T]) -> float:
         """Load new states into the batcher.
 
         Processes the input states, computes memory scaling metrics for each,
         and organizes them into optimal batches using a bin-packing algorithm
-        to maximize GPU utilization.
+        to maximize GPU utilization. Supports iterators for streaming large
+        collections of states that don't fit in memory at once.
 
         Args:
-            states (SimState | list[SimState]): Collection of states to batch. Either a
-                list of individual SimState objects or a single batched SimState that
-                will be split into individual states. Each SimState has shape
-                information specific to its instance.
+            states (SimState | list[SimState] | Iterator[SimState]): Collection of
+                states to batch. Can be a list of individual SimState objects, a single
+                batched SimState that will be split into individual states, or an
+                iterator/generator yielding individual SimState objects. When an
+                iterator is provided, states are pulled in chunks of ``sample_size``
+                and binned incrementally.
 
         Returns:
             float: Maximum memory scaling metric that fits in GPU memory.
 
         Raises:
             ValueError: If any individual state has a memory scaling metric greater
-                than the maximum allowed value.
+                than the maximum allowed value, or if an iterator yields no states.
 
         Example::
 
@@ -637,13 +659,41 @@ class BinningAutoBatcher[T: SimState]:
             # Or load a batched state that will be split
             batcher.load_states(batched_state)
 
+            # Or stream states from an iterator/generator
+            batcher.load_states(iter(states))
+            batcher.load_states(state_generator())
+
         Notes:
             This method resets the current state bin index, so any ongoing iteration
             will be restarted when this method is called.
         """
-        batched = (
-            states if isinstance(states, SimState) else ts.concatenate_states(states)
-        )
+        # Reset accumulated tracking for restore_original_order
+        self._all_index_bins: list[list[int]] = []
+        self._global_index_offset: int = 0
+
+        if isinstance(states, SimState):
+            self._states_iterator = None
+            self._bin_and_prepare(states)
+        elif isinstance(states, Sequence):
+            self._states_iterator = None
+            self._bin_and_prepare(ts.concatenate_states(states))
+        else:
+            # Iterator/generator - streaming mode
+            self._states_iterator = states
+            if not self._load_next_chunk():
+                raise ValueError("Iterator yielded no states")
+
+        return self.max_memory_scaler
+
+    def _bin_and_prepare(self, batched: T) -> None:
+        """Compute metrics, bin states, and prepare batched_states for iteration.
+
+        Core binning logic used by both eager and streaming paths.
+
+        Args:
+            batched: A single concatenated/batched SimState containing all systems
+                to bin in this round.
+        """
         self.memory_scalers = calculate_memory_scalers(
             batched, self.memory_scales_with, self.cutoff
         )
@@ -674,10 +724,21 @@ class BinningAutoBatcher[T: SimState]:
         index_bins = to_constant_volume_bins(
             self.index_to_scaler, max_volume=self.max_memory_scaler
         )  # list[dict[original_index: int, memory_scale:float]]
-        # Convert to list of lists of indices
-        self.index_bins = [list(batch.keys()) for batch in index_bins]
-        self.batched_states = [[batched[index_bin]] for index_bin in self.index_bins]
+        # Local indices for indexing into the batched state
+        local_index_bins = [list(batch.keys()) for batch in index_bins]
+        # Global indices for tracking original order across streaming chunks
+        self.index_bins = [
+            [idx + self._global_index_offset for idx in bin_indices]
+            for bin_indices in local_index_bins
+        ]
+        self.batched_states = [
+            [batched[index_bin]] for index_bin in local_index_bins
+        ]
         self.current_state_bin = 0
+
+        # Accumulate index bins for restore_original_order
+        self._all_index_bins.extend(self.index_bins)
+        self._global_index_offset += len(self.memory_scalers)
 
         logger.info(
             "BinningAutoBatcher: %d systems → %d batch(es), max_memory_scaler=%.3g",
@@ -685,14 +746,36 @@ class BinningAutoBatcher[T: SimState]:
             len(self.index_bins),
             self.max_memory_scaler,
         )
-        return self.max_memory_scaler
+
+    def _load_next_chunk(self) -> bool:
+        """Pull the next chunk of states from the iterator and bin them.
+
+        Pulls up to ``sample_size`` states from the stored iterator, concatenates
+        them, and runs the binning logic to prepare the next round of batches.
+
+        Returns:
+            bool: True if states were loaded, False if the iterator is exhausted.
+        """
+        chunk: list[T] = []
+        for state in self._states_iterator:
+            chunk.append(state)
+            if len(chunk) >= self.sample_size:
+                break
+
+        if not chunk:
+            return False
+
+        batched = ts.concatenate_states(chunk)
+        self._bin_and_prepare(batched)
+        return True
 
     def next_batch(self) -> tuple[T | None, list[int]]:
         """Get the next batch of states.
 
         Returns batches sequentially until all states have been processed. Each batch
         contains states grouped together to maximize GPU utilization without exceeding
-        memory constraints.
+        memory constraints. When streaming from an iterator, automatically loads the
+        next chunk of states when the current bins are exhausted.
 
         Returns:
             tuple[T | None, list[int]]: A tuple containing:
@@ -707,30 +790,33 @@ class BinningAutoBatcher[T: SimState]:
                 process_batch(batch)
 
         """
-        # TODO: need to think about how this intersects with reporting too
-        # TODO: definitely a clever treatment to be done with iterators here
-        if self.current_state_bin < len(self.batched_states):
-            state_bin = self.batched_states[self.current_state_bin]
-            state = ts.concatenate_states(state_bin)
-            indices = (
-                self.index_bins[self.current_state_bin]
-                if self.current_state_bin < len(self.index_bins)
-                else []
-            )
-            self.current_state_bin += 1
-            remaining = len(self.batched_states) - self.current_state_bin
-            logger.info(
-                (
-                    "BinningAutoBatcher: returning batch %d/%d with %d system(s), "
-                    "%d batch(es) remaining"
-                ),
-                self.current_state_bin,
-                len(self.batched_states),
-                state.n_systems,
-                remaining,
-            )
-            return state, indices
-        return None, []
+        if self.current_state_bin >= len(self.batched_states):
+            # Try loading next chunk if streaming
+            if self._states_iterator is not None and self._load_next_chunk():
+                pass  # _load_next_chunk resets current_state_bin and batched_states
+            else:
+                return None, []
+
+        state_bin = self.batched_states[self.current_state_bin]
+        state = ts.concatenate_states(state_bin)
+        indices = (
+            self.index_bins[self.current_state_bin]
+            if self.current_state_bin < len(self.index_bins)
+            else []
+        )
+        self.current_state_bin += 1
+        remaining = len(self.batched_states) - self.current_state_bin
+        logger.info(
+            (
+                "BinningAutoBatcher: returning batch %d/%d with %d system(s), "
+                "%d batch(es) remaining"
+            ),
+            self.current_state_bin,
+            len(self.batched_states),
+            state.n_systems,
+            remaining,
+        )
+        return state, indices
 
     def __iter__(self) -> Iterator[tuple[T, list[int]]]:
         """Return self as an iterator.
@@ -797,7 +883,7 @@ class BinningAutoBatcher[T: SimState]:
         all_states = [
             state[i] for state in batched_states for i in range(state.n_systems)
         ]
-        original_indices = list(chain.from_iterable(self.index_bins))
+        original_indices = list(chain.from_iterable(self._all_index_bins))
 
         if len(all_states) != len(original_indices):
             raise ValueError(
