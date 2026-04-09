@@ -11,6 +11,7 @@ from ase.build import molecule
 import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
 from torch_sim.state import SimState
+from torch_sim.typing import AtomExtras, SystemExtras
 
 
 def test_single_atoms_to_state(si_atoms: Atoms) -> None:
@@ -34,7 +35,7 @@ def test_single_atoms_to_state(si_atoms: Atoms) -> None:
 
 
 @pytest.mark.parametrize(
-    ("system_extras", "atom_extras", "expected_sys", "expected_atom"),
+    ("system_extras_map", "atom_extras_map", "expected_sys", "expected_atom"),
     [
         pytest.param(None, None, {}, {}, id="no-extras-by-default"),
         pytest.param(
@@ -61,18 +62,24 @@ def test_single_atoms_to_state(si_atoms: Atoms) -> None:
     ],
 )
 def test_extras_map_import(
-    system_extras: dict[str, str] | None,
-    atom_extras: dict[str, str] | None,
+    system_extras_map: dict[SystemExtras, str] | None,
+    atom_extras_map: dict[AtomExtras, str] | None,
     expected_sys: dict[str, float],
     expected_atom: dict[str, list[float]],
 ) -> None:
-    """ExtrasMap controls which keys are read and how they are renamed on import."""
+    """test how system_extras_map and atom_extras_map control which keys are
+    read and how they are renamed on import.
+    """
     mol = molecule("H2O")
     mol.info["charge"] = 3.0
     mol.info["spin"] = 2.0
     mol.arrays["my_tags"] = np.array([1.0, 2.0, 3.0])
     state = ts.io.atoms_to_state(
-        [mol], DEVICE, DTYPE, system_extras=system_extras, atom_extras=atom_extras
+        [mol],
+        DEVICE,
+        DTYPE,
+        system_extras_map=system_extras_map,
+        atom_extras_map=atom_extras_map,
     )
     if not expected_sys and not expected_atom:
         assert not state.system_extras
@@ -86,7 +93,9 @@ def test_extras_map_import(
 def test_extras_map_missing_key_skipped() -> None:
     """Missing ASE keys are silently skipped rather than defaulting to zero."""
     mol = molecule("H2O")
-    state = ts.io.atoms_to_state([mol], DEVICE, DTYPE, system_extras={"charge": "charge"})
+    state = ts.io.atoms_to_state(
+        [mol], DEVICE, DTYPE, system_extras_map={"charge": "charge"}
+    )
     assert not state.system_extras
 
 
@@ -96,7 +105,7 @@ def test_extras_map_multi_system() -> None:
     mol1.info["charge"] = 1.0
     mol2.info["charge"] = -1.0
     state = ts.io.atoms_to_state(
-        [mol1, mol2], DEVICE, DTYPE, system_extras={"charge": "charge"}
+        [mol1, mol2], DEVICE, DTYPE, system_extras_map={"charge": "charge"}
     )
     assert state.charge.shape == (2,)
     assert state.charge[0].item() == 1.0
@@ -111,9 +120,11 @@ def test_extras_map_export_roundtrip() -> None:
     sys_map = {"total_charge": "charge"}
     atom_map = {"site_tags": "my_tags"}
     state = ts.io.atoms_to_state(
-        [mol], DEVICE, DTYPE, system_extras=sys_map, atom_extras=atom_map
+        [mol], DEVICE, DTYPE, system_extras_map=sys_map, atom_extras_map=atom_map
     )
-    atoms = ts.io.state_to_atoms(state, system_extras=sys_map, atom_extras=atom_map)
+    atoms = ts.io.state_to_atoms(
+        state, system_extras_map=sys_map, atom_extras_map=atom_map
+    )
     assert atoms[0].info["charge"] == 5.0
     np.testing.assert_allclose(atoms[0].arrays["my_tags"], [1.0, 2.0, 3.0])
     atoms_no_map = ts.io.state_to_atoms(state)

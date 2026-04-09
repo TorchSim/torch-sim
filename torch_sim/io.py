@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure
 
-    from torch_sim.typing import ExtrasMap
+    from torch_sim.typing import AtomExtras, SystemExtras
 
 
 @dcite(
@@ -39,17 +39,17 @@ if TYPE_CHECKING:
 def state_to_atoms(
     state: ts.SimState,
     *,
-    system_extras: ExtrasMap | None = None,
-    atom_extras: ExtrasMap | None = None,
+    system_extras_map: dict[SystemExtras, str] | None = None,
+    atom_extras_map: dict[AtomExtras, str] | None = None,
 ) -> list[Atoms]:
     """Convert a SimState to a list of ASE Atoms objects.
 
     Args:
         state: Batched state containing positions, cell, and atomic numbers.
-        system_extras: Map of ``{ts_key: ase_key}`` controlling which
+        system_extras_map: Map of ``{ts_key: ase_key}`` controlling which
             ``_system_extras`` entries are written to ``atoms.info``.
             ``None`` (default) means no extras are written.
-        atom_extras: Map of ``{ts_key: ase_key}`` controlling which
+        atom_extras_map: Map of ``{ts_key: ase_key}`` controlling which
             ``_atom_extras`` entries are written to ``atoms.arrays``.
             ``None`` (default) means no extras are written.
 
@@ -101,14 +101,14 @@ def state_to_atoms(
             symbols=symbols, positions=system_positions, cell=system_cell, pbc=pbc_for_sys
         )
 
-        if system_extras:
-            for ts_key, ase_key in system_extras.items():
+        if system_extras_map:
+            for ts_key, ase_key in system_extras_map.items():
                 if ts_key in state.system_extras:
                     val = state.system_extras[ts_key][sys_idx].detach().cpu().numpy()
                     atoms.info[ase_key] = val
 
-        if atom_extras:
-            for ts_key, ase_key in atom_extras.items():
+        if atom_extras_map:
+            for ts_key, ase_key in atom_extras_map.items():
                 if ts_key in state.atom_extras:
                     val = state.atom_extras[ts_key][mask].detach().cpu().numpy()
                     atoms.arrays[ase_key] = val
@@ -261,8 +261,8 @@ def atoms_to_state(
     device: torch.device | None = None,
     dtype: torch.dtype | None = None,
     *,
-    system_extras: ExtrasMap | None = None,
-    atom_extras: ExtrasMap | None = None,
+    system_extras_map: dict[SystemExtras, str] | None = None,
+    atom_extras_map: dict[AtomExtras, str] | None = None,
 ) -> ts.SimState:
     """Convert an ASE Atoms object or list of Atoms objects to a SimState.
 
@@ -271,10 +271,10 @@ def atoms_to_state(
         device: Device to create tensors on.
         dtype: Data type for tensors (typically ``torch.float32`` or
             ``torch.float64``).
-        system_extras: Map of ``{ts_key: ase_key}`` controlling which
+        system_extras_map: Map of ``{ts_key: ase_key}`` controlling which
             ``atoms.info`` entries are read into ``_system_extras``.
             ``None`` (default) means no extras are read.
-        atom_extras: Map of ``{ts_key: ase_key}`` controlling which
+        atom_extras_map: Map of ``{ts_key: ase_key}`` controlling which
             ``atoms.arrays`` entries are read into ``_atom_extras``.
             ``None`` (default) means no extras are read.
 
@@ -324,8 +324,8 @@ def atoms_to_state(
         raise ValueError("All systems must have the same periodic boundary conditions")
 
     _system_extras: dict[str, torch.Tensor] = {}
-    if system_extras:
-        for ts_key, ase_key in system_extras.items():
+    if system_extras_map:
+        for ts_key, ase_key in system_extras_map.items():
             vals = [at.info.get(ase_key) for at in atoms_list]
             non_none = [v for v in vals if v is not None]
             if len(non_none) == len(vals):
@@ -334,8 +334,8 @@ def atoms_to_state(
                 )
 
     _atom_extras: dict[str, torch.Tensor] = {}
-    if atom_extras:
-        for ts_key, ase_key in atom_extras.items():
+    if atom_extras_map:
+        for ts_key, ase_key in atom_extras_map.items():
             arrays = [at.arrays.get(ase_key) for at in atoms_list]
             non_none = [a for a in arrays if a is not None]
             if len(non_none) == len(arrays):

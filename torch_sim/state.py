@@ -17,7 +17,7 @@ import torch
 from torch._prims_common import DeviceLikeType
 
 import torch_sim as ts
-from torch_sim.typing import ExtrasMap, PRNGLike, StateLike
+from torch_sim.typing import AtomExtras, PRNGLike, StateLike, SystemExtras
 
 
 if TYPE_CHECKING:
@@ -73,21 +73,45 @@ def require_system_idx(system_idx: torch.Tensor | None) -> torch.Tensor:
 
 
 def _wrap_init_for_extras(cls: type) -> None:
-    """Wrap a dataclass __init__ to route unknown kwargs into _system_extras."""
+    """Wrap a dataclass __init__ to route unknown kwargs into extras dicts.
+
+    Unknown tensor kwargs are classified by leading dimension into
+    ``_atom_extras`` (leading dim == n_atoms) or ``_system_extras``
+    (leading dim == n_systems). When ambiguous (n_atoms == n_systems),
+    per-atom is preferred, matching ``store_model_extras`` convention.
+    """
     original_init = cls.__init__
     all_fields = {f.name for f in fields(cls)}
 
     @functools.wraps(original_init)
     def _wrapped_init(self: Any, *args: Any, **kwargs: Any) -> None:
-        extras = kwargs.get("_system_extras")
-        if extras is None:
-            extras = {}
-            kwargs["_system_extras"] = extras
+        sys_extras = kwargs.get("_system_extras")
+        if sys_extras is None:
+            sys_extras = {}
+            kwargs["_system_extras"] = sys_extras
+        atom_extras = kwargs.get("_atom_extras")
+        if atom_extras is None:
+            atom_extras = {}
+            kwargs["_atom_extras"] = atom_extras
+        positions = kwargs.get("positions")
+        cell = kwargs.get("cell")
+        n_atoms = positions.shape[0] if positions is not None else None
+        n_systems = cell.shape[0] if cell is not None else None
         unknown = [k for k in kwargs if k not in all_fields]
         for key in unknown:
             val = kwargs.pop(key)
-            if val is not None:
-                extras[key] = val
+            if val is None:
+                continue
+            if isinstance(val, torch.Tensor) and val.ndim > 0 and n_atoms is not None:
+                leading = val.shape[0]
+                if leading == n_atoms:
+                    atom_extras[key] = val
+                elif n_systems is not None and leading == n_systems:
+                    sys_extras[key] = val
+                else:
+                    sys_extras[key] = val
+            elif val is not None:
+                sys_extras[key] = val
         original_init(self, *args, **kwargs)
 
     cls.__init__ = _wrapped_init  # type: ignore[assignment]
@@ -603,16 +627,20 @@ class SimState:
             if attr_name in cls._get_all_attributes():
                 attrs[attr_name] = cls._clone_attr(attr_value)
 
-        # Route additional_attrs: known attrs go directly, unknown tensor attrs
-        # go to _system_extras (backward compat for charge/spin and extensibility)
         all_known = cls._get_all_attributes()
+        n_atoms = state.n_atoms
+        n_systems = state.n_systems
         for key, val in additional_attrs.items():
             if key in all_known:
                 attrs[key] = val
-            elif isinstance(val, torch.Tensor):
-                if "_system_extras" not in attrs:
-                    attrs["_system_extras"] = {}
-                attrs["_system_extras"][key] = val
+            elif isinstance(val, torch.Tensor) and val.ndim > 0:
+                leading = val.shape[0]
+                if leading == n_atoms:
+                    attrs.setdefault("_atom_extras", {})[key] = val
+                elif leading == n_systems:
+                    attrs.setdefault("_system_extras", {})[key] = val
+                else:
+                    raise ValueError(f"Attribute '{key}' has invalid leading dimension")
             else:
                 attrs[key] = val
 
@@ -621,20 +649,20 @@ class SimState:
     def to_atoms(
         self,
         *,
-        system_extras: ExtrasMap | None = None,
-        atom_extras: ExtrasMap | None = None,
+        system_extras_map: dict[SystemExtras, str] | None = None,
+        atom_extras_map: dict[AtomExtras, str] | None = None,
     ) -> list["Atoms"]:
         """Convert the SimState to a list of ASE Atoms objects.
 
         Args:
-            system_extras: Map of ``{ts_key: ase_key}`` for system extras.
-            atom_extras: Map of ``{ts_key: ase_key}`` for atom extras.
+            system_extras_map: Map of ``{ts_key: ase_key}`` for system extras.
+            atom_extras_map: Map of ``{ts_key: ase_key}`` for atom extras.
 
         Returns:
             list[Atoms]: A list of ASE Atoms objects, one per system.
         """
         return ts.io.state_to_atoms(
-            self, system_extras=system_extras, atom_extras=atom_extras
+            self, system_extras_map=system_extras_map, atom_extras_map=atom_extras_map
         )
 
     def to_structures(self) -> list["Structure"]:

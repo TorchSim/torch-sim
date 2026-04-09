@@ -1,8 +1,9 @@
 [project]
 name = "torch-sim-atomistic"
-version = "0.6.0"
+version = "0.5.2"
 description = "A pytorch toolkit for calculating material properties using MLIPs"
 authors = [
+    { name = "TorchSim Maintainers", email = "torchsimatomistic@gmail.com" },
     { name = "Abhijeet Gangan", email = "abhijeetgangan@g.ucla.edu" },
     { name = "Janosh Riebesell", email = "janosh.riebesell@gmail.com" },
     { name = "Orion Cohen", email = "orioncohen@berkeley.edu" },

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 class AtomExtras(StrEnum):
-    """Blessed names for per-atom :class:`~torch_sim.state.SimState` extras.
+    """Preferred names for per-atom :class:`~torch_sim.state.SimState` extras.
 
     Stored in ``SimState._atom_extras``; leading dimension is ``n_atoms``.
     """
@@ -26,7 +26,7 @@ class AtomExtras(StrEnum):
 
 
 class SystemExtras(StrEnum):
-    """Blessed names for per-system :class:`~torch_sim.state.SimState` extras.
+    """Preferred names for per-system :class:`~torch_sim.state.SimState` extras.
 
     Stored in ``SimState._system_extras``; leading dimension is ``n_systems``.
     """
@@ -62,8 +62,6 @@ class BravaisType(StrEnum):
     MONOCLINIC = "monoclinic"
     TRICLINIC = "triclinic"
 
-
-ExtrasMap = dict[str, str]
 
 StateLike = Union[
     "Atoms",
