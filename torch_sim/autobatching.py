@@ -561,10 +561,12 @@ class BinningAutoBatcher[T: SimState]:
         # Restore original order
         ordered_final_states = batcher.restore_original_order(final_states)
 
+
         # Or stream states from a generator
         def state_generator():
             for atoms in large_dataset:
                 yield ts.initialize_state(atoms, device, dtype)
+
 
         batcher.load_states(state_generator())
         for batch, _indices in batcher:
@@ -731,9 +733,7 @@ class BinningAutoBatcher[T: SimState]:
             [idx + self._global_index_offset for idx in bin_indices]
             for bin_indices in local_index_bins
         ]
-        self.batched_states = [
-            [batched[index_bin]] for index_bin in local_index_bins
-        ]
+        self.batched_states = [[batched[index_bin]] for index_bin in local_index_bins]
         self.current_state_bin = 0
 
         # Accumulate index bins for restore_original_order
