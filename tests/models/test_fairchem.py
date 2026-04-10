@@ -1,7 +1,9 @@
 import traceback
+from collections.abc import Callable
 
 import pytest
 import torch
+from ase.build import bulk, fcc100, molecule
 
 import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
@@ -9,15 +11,11 @@ from tests.models.conftest import make_validate_model_outputs_test
 
 
 try:
-    from collections.abc import Callable
-
-    from ase.build import bulk, fcc100, molecule
     from fairchem.core.calculate.pretrained_mlip import (
         pretrained_checkpoint_path_from_name,
     )
     from huggingface_hub.utils._auth import get_token
 
-    import torch_sim as ts
     from torch_sim.models.fairchem import FairChemModel
 
 except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
@@ -267,7 +265,7 @@ def test_fairchem_charge_spin(charge: float, spin: float) -> None:
         [mol],
         device=DEVICE,
         dtype=DTYPE,
-        system_extras={"charge": "charge", "spin": "spin"},
+        system_extras_map={"charge": "charge", "spin": "spin"},
     )
     assert state.charge is not None
     assert state.spin is not None
