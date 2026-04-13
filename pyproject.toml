@@ -43,14 +43,12 @@ test = [
     "physical-validation>=1.0.5",
     "platformdirs>=4.0.0",
     "psutil>=7.0.0",
-    "pymatgen>=2025.6.14",
     "pytest-cov>=6",
     "pytest>=8",
     "spglib>=2.6",
-    "vesin[torch]>=0.5.3",
 ]
 vesin = ["vesin[torch]>=0.5.3"]
-io = ["ase>=3.26", "phonopy>=2.37.0", "pymatgen>=2025.6.14"]
+io = ["ase>=3.26", "phonopy>=2.37.0", "pymatgen>=2026.3.23"]
 symmetry = ["moyopy>=0.7.8"]
 mace = ["mace-torch>=0.3.15"]
 mattersim = ["mattersim>=1.2.2"]

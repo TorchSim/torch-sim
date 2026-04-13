@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+_F = TypeVar("_F", bound="Callable[..., Any]")
 
 
 class InactiveDueCreditCollector:
@@ -15,12 +17,10 @@ class InactiveDueCreditCollector:
     def _donothing(self, *_args: Any, **_kwargs: Any) -> None:
         """Perform no good and no bad."""
 
-    def dcite(
-        self, *_args: Any, **_kwargs: Any
-    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def dcite(self, *_args: Any, **_kwargs: Any) -> Callable[[_F], _F]:
         """If I could cite I would."""
 
-        def nondecorating_decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        def nondecorating_decorator(func: _F) -> _F:
             return func
 
         return nondecorating_decorator
@@ -56,7 +56,7 @@ except Exception as e:  # noqa: BLE001
 
 def dcite(
     doi: str, description: str | None = None, *, path: str | None = None
-) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+) -> Callable[[_F], _F]:
     """Create a duecredit decorator from a DOI and description."""
     kwargs: dict[str, Any] = (
         {"description": description} if description is not None else {}
