@@ -685,7 +685,7 @@ class BinningAutoBatcher[T: SimState]:
             if not self._load_next_chunk():
                 raise ValueError("Iterator yielded no states")
 
-        return self.max_memory_scaler
+        return self.max_memory_scaler  # ty: ignore[invalid-return-type]
 
     def _bin_and_prepare(self, batched: T) -> None:
         """Compute metrics, bin states, and prepare batched_states for iteration.
@@ -757,7 +757,7 @@ class BinningAutoBatcher[T: SimState]:
             bool: True if states were loaded, False if the iterator is exhausted.
         """
         chunk: list[T] = []
-        for state in self._states_iterator:
+        for state in self._states_iterator:  # ty: ignore[not-iterable]
             chunk.append(state)
             if len(chunk) >= self.sample_size:
                 break
