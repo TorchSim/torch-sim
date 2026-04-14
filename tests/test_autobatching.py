@@ -457,13 +457,14 @@ def test_binning_auto_batcher_with_generator(
     assert restored_states[1].n_atoms == states[1].n_atoms
 
 
-def test_binning_auto_batcher_streaming_multiple_chunks(
+def test_binning_auto_batcher_streaming_multiple_batches(
     si_sim_state: ts.SimState,
     fe_supercell_sim_state: ts.SimState,
     lj_model: LennardJonesModel,
 ) -> None:
-    """Test BinningAutoBatcher streaming with sample_size forcing multiple chunks."""
-    # Create enough states to span multiple chunks with sample_size=1
+    """Test streaming path produces correct batches across multiple pulls."""
+    # max_memory_scaler=260 forces fe_supercell (216 atoms) into its own batch,
+    # si (8 atoms) states can batch together up to 32 per batch.
     states = [si_sim_state, fe_supercell_sim_state, si_sim_state]
 
     def state_generator():
@@ -473,7 +474,6 @@ def test_binning_auto_batcher_streaming_multiple_chunks(
         model=lj_model,
         memory_scales_with="n_atoms",
         max_memory_scaler=260.0,
-        sample_size=1,  # Force each state into its own chunk
     )
     batcher.load_states(state_generator())
 
@@ -490,7 +490,10 @@ def test_binning_auto_batcher_streaming_multiple_chunks(
     # Indices should cover all original positions
     assert sorted(all_indices) == [0, 1, 2]
 
-    # Restore order should work across chunks
+    # index_bins should be populated incrementally
+    assert len(batcher.index_bins) == len(batches)
+
+    # Restore order should work across streaming batches
     restored_states = batcher.restore_original_order(batches)
     assert len(restored_states) == len(states)
     assert restored_states[0].n_atoms == states[0].n_atoms
