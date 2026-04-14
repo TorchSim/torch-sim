@@ -333,19 +333,44 @@ class SerialSumModel(SumModel):
     Energies, forces, and stresses remain additive, while repeated auxiliary
     outputs are treated as full updated values from the latest stage.
 
+    Args:
+        models: Two or more :class:`ModelInterface` instances that share the
+            same ``device`` and ``dtype``.
+        key_map: Optional mapping from upstream output key names to the names
+            expected by downstream models. Applied to every model's non-canonical
+            outputs before they are accumulated and stored as state extras.
+
     Examples:
         ```py
-        serial_model = SerialSumModel(polarization_model, dispersion_model)
+        serial_model = SerialSumModel(
+            allegro_model,
+            field_model,
+            key_map={"polarization": "total_polarization"},
+        )
         output = serial_model(sim_state)
         ```
     """
+
+    def __init__(
+        self,
+        *models: ModelInterface,
+        key_map: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(*models)
+        self._key_map = key_map or {}
 
     def forward(self, state: SimState, **kwargs) -> dict[str, torch.Tensor]:
         """Run child models serially, exposing extras from earlier models."""
         combined: dict[str, torch.Tensor] = {}
         serial_state = state.clone()
+        rvc = serial_state.row_vector_cell
+        if not rvc.is_contiguous():
+            serial_state.cell = rvc.contiguous().mT
         for model in self._children():
             output = model(serial_state, **kwargs)
+            for old_key, new_key in self._key_map.items():
+                if old_key in output:
+                    output[new_key] = output.pop(old_key)
             _accumulate_model_output(combined, output)
             serial_state.store_model_extras(output)
         return combined

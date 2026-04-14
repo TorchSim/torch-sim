@@ -40,7 +40,6 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "torch-sim-atomistic[io,symmetry,vesin]",
-    "physical-validation>=1.0.5",
     "platformdirs>=4.0.0",
     "psutil>=7.0.0",
     "pytest-cov>=6",
@@ -56,6 +55,7 @@ metatomic = ["metatomic-torchsim>=0.1.1", "metatomic-ase>=0.1.0", "upet>=0.2.0"]
 orb = ["orb-models>=0.6.2"]
 sevenn = ["sevenn[torchsim]>=0.12.1"]
 nequip = ["nequip>=0.17.1"]
+allegro_pol = ["allegro-pol>=0.1.0"]
 nequix = ["nequix[torch-sim]>=0.4.5"]
 fairchem = ["fairchem-core>=2.7", "scipy<1.17.0"]
 docs = [
@@ -85,6 +85,9 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "torch_sim"
 module-root = ""
+
+[tool.uv.sources]
+allegro-pol = { git = "https://github.com/mir-group/allegro-pol" }
 
 [tool.ruff]
 target-version = "py312"
@@ -126,10 +129,9 @@ isort.lines-after-imports = 2
 pep8-naming.ignore-names = ["get_kT", "kT"]
 
 [tool.ruff.lint.per-file-ignores]
-"**/tests/*" = ["ANN001", "ANN201", "ANN202", "D", "INP001", "S101", "T201"]
-"examples/**/*" = ["ANN001", "ANN201", "ANN202", "B018", "T201"]
+"**/tests/*" = ["ANN201", "D", "INP001", "S101"]
+"examples/**/*" = ["B018", "T201"]
 "examples/tutorials/**/*" = ["ALL"]
-"docs/tutorials/*.ipynb" = ["ANN001", "ANN201", "B905", "BLE001", "E501", "F841", "N816", "PLR1714", "RUF001", "T201"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -137,14 +139,10 @@ docstring-code-format = true
 [tool.codespell]
 check-filenames = true
 ignore-words-list = ["convertor"]  # codespell:ignore convertor
-skip = "docs/tutorials/integrator_tests_analysis.ipynb"
 
 [tool.pytest.ini_options]
-addopts = ["-p no:warnings", "-m not physical_validation"]
+addopts = ["-p no:warnings"]
 testpaths = ["tests"]
-markers = [
-    "physical_validation: long-running physical validation tests (run with: pytest -m physical_validation)",
-]
 
 [tool.uv]
 # make these dependencies mutually exclusive since they use incompatible e3nn versions
@@ -152,11 +150,31 @@ markers = [
 conflicts = [
     [
         { extra = "fairchem" },
-        { extra = "mace" },
+        { extra = "graphpes" },
     ],
     [
         { extra = "fairchem" },
         { extra = "mace" },
+    ],
+    [
+        { extra = "graphpes" },
+        { extra = "mattersim" },
+    ],
+    [
+        { extra = "graphpes" },
+        { extra = "nequip" },
+    ],
+    [
+        { extra = "graphpes" },
+        { extra = "nequix" },
+    ],
+    [
+        { extra = "graphpes" },
+        { extra = "sevenn" },
+    ],
+    [
+        { extra = "graphpes" },
+        { extra = "allegro_pol" },
     ],
     [
         { extra = "mace" },
@@ -173,6 +191,10 @@ conflicts = [
     [
         { extra = "mace" },
         { extra = "sevenn" },
+    ],
+    [
+        { extra = "mace" },
+        { extra = "allegro_pol" },
     ],
 ]
 
@@ -201,31 +223,17 @@ include = [
 unresolved-import = "ignore"
 
 [[tool.ty.overrides]]
-include = [
-    "torch_sim/models/dispersion.py",
-    "torch_sim/neighbors/vesin.py",
-]
-[tool.ty.overrides.rules]
-invalid-argument-type = "ignore"
-invalid-assignment = "ignore"
-
-[[tool.ty.overrides]]
 include = ["tests/**/*.py"]
 
 [tool.ty.overrides.rules]
 invalid-argument-type = "ignore"
-invalid-assignment = "ignore"
 no-matching-overload = "ignore"
 unresolved-attribute = "ignore"
 unresolved-import = "ignore"
 
 [[tool.ty.overrides]]
-include = ["docs/**/*.py", "docs/**/*.ipynb", "examples/**/*.py"]
+include = ["docs/**/*.py", "examples/**/*.py"]
 [tool.ty.overrides.rules]
-invalid-argument-type = "ignore"
-not-iterable = "ignore"
-not-subscriptable = "ignore"
-unresolved-attribute = "ignore"
 unresolved-import = "ignore"
 
 

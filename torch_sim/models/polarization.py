@@ -80,7 +80,7 @@ class UniformPolarizationModel(ModelInterface):
         """Apply constant-field linear-response corrections.
 
         Computes the additive updates
-        - delta_energy = -E·P0 - 1/2 E·alpha·E
+        - delta_energy = -E·P0 - E·alpha·E
         - total_polarization = P0 + alpha·E
         - delta_forces = Z*·E
         """
@@ -103,7 +103,7 @@ class UniformPolarizationModel(ModelInterface):
         polarization_response = torch.einsum(
             "si,sij,sj->s", field, state.polarizability, field
         )
-        output["energy"] = -dipole_coupling - 0.5 * polarization_response
+        output["energy"] = -dipole_coupling - polarization_response
         output[SystemExtras.TOTAL_POLARIZATION.value] = (
             torch.einsum(
                 "sij,sj->si",
