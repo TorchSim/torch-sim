@@ -121,10 +121,12 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
         weights = _get_bins(vals, n_dcs)
         keys = _get_bins(keys, n_dcs)
 
-        bins = [[]] if is_tuple_list else [{}]
+        list_bins: list[list[Any]] | None = [[]] if is_tuple_list else None
+        dict_bins: list[dict[int, float]] | None = [{}] if not is_tuple_list else None
     else:
         weights = sorted(items, key=lambda x: -x)
-        bins = [[]]
+        list_bins = [[]]
+        dict_bins = None
 
     # find the valid indices
     if lower_bound is not None and upper_bound is not None and lower_bound < upper_bound:
@@ -174,9 +176,18 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
             b = len(weight_sum)
             weight_sum.append(0.0)
             if isinstance(items, dict):
-                bins.append([] if is_tuple_list else {})
+                if is_tuple_list:
+                    if list_bins is None:
+                        raise TypeError("tuple-list mode requires list bins")
+                    list_bins.append([])
+                else:
+                    if dict_bins is None:
+                        raise TypeError("dict mode requires dict bins")
+                    dict_bins.append({})
             else:
-                bins.append([])
+                if list_bins is None:
+                    raise TypeError("list items require list bins")
+                list_bins.append([])
 
         # if we are at the very first item, use the empty bin already open
         else:
@@ -184,15 +195,22 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
 
         # put it in
         if isinstance(items, dict):
-            bin_ = bins[b]
             if is_tuple_list:
+                if list_bins is None:
+                    raise TypeError("tuple-list mode requires list bins")
+                bin_ = list_bins[b]
                 if not isinstance(bin_, list):
                     raise TypeError("bins contain lists when tuple-list mode is used")
                 bin_.append(item_key)
-            elif isinstance(bin_, dict):
+            else:
+                if dict_bins is None:
+                    raise TypeError("dict mode requires dict bins")
+                bin_ = dict_bins[b]
                 bin_[item_key] = weight
         else:
-            bin_ = bins[b]
+            if list_bins is None:
+                raise TypeError("list items require list bins")
+            bin_ = list_bins[b]
             if not isinstance(bin_, list):
                 raise TypeError("bins contain lists when items is not dict")
             bin_.append(weight)
@@ -202,8 +220,16 @@ def to_constant_volume_bins(  # noqa: C901, PLR0915
         weight_sum[b] += weight
 
     if not is_tuple_list:
-        return bins
-    return [[new_dict[item_key] for item_key in bin_keys] for bin_keys in bins]
+        if isinstance(items, dict):
+            if dict_bins is None:
+                raise TypeError("dict mode requires dict bins")
+            return dict_bins
+        if list_bins is None:
+            raise TypeError("list items require list bins")
+        return list_bins
+    if list_bins is None:
+        raise TypeError("tuple-list mode requires list bins")
+    return [[new_dict[item_key] for item_key in bin_keys] for bin_keys in list_bins]
 
 
 def measure_model_memory_forward(state: SimState, model: ModelInterface) -> float:

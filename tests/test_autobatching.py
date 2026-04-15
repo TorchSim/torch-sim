@@ -526,9 +526,7 @@ def test_binning_auto_batcher_iterator_requires_max_memory_scaler(
         model=lj_model,
         memory_scales_with="n_atoms",
     )
-    with pytest.raises(
-        ValueError, match="Iterator inputs require max_memory_scaler"
-    ):
+    with pytest.raises(ValueError, match="Iterator inputs require max_memory_scaler"):
         batcher.load_states(iter([si_sim_state]))
 
 
