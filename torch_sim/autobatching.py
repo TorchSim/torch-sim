@@ -731,33 +731,45 @@ class BinningAutoBatcher[T: SimState]:
         self._states_iterator = chain([first], states_iter)
         self._iterator_idx = 0
 
-    def _next_eager_batch(self) -> tuple[T | None, list[int]]:
-        """Return the next pre-computed batch for eager inputs."""
-        if self.current_state_bin >= len(self.batched_states):
-            return None, []
-        state_bin = self.batched_states[self.current_state_bin]
-        state = ts.concatenate_states(state_bin)
-        indices = self.index_bins[self.current_state_bin]
-        self.current_state_bin += 1
-        remaining = len(self.batched_states) - self.current_state_bin
-        logger.info(
-            (
-                "BinningAutoBatcher: returning batch %d/%d with %d system(s), "
-                "%d batch(es) remaining"
-            ),
-            self.current_state_bin,
-            len(self.batched_states),
-            state.n_systems,
-            remaining,
-        )
-        return state, indices
+    def next_batch(self) -> tuple[T | None, list[int]]:
+        """Get the next batch of states.
 
-    def _next_streaming_batch(self) -> tuple[T | None, list[int]]:
-        """Return the next greedily packed batch for iterator inputs."""
+        Returns batches sequentially until all states have been processed. Eager
+        inputs use pre-computed globally packed batches. Iterator inputs pull
+        states on demand and pack greedily without materializing the full input.
+
+        Returns:
+            tuple[T | None, list[int]]: A tuple containing:
+                - A concatenated SimState containing the next batch of states,
+                  or None if no more batches
+                - List of indices of states in the current batch
+
+        Example::
+
+            # Get batches one by one
+            for batch, indices in batcher:
+                process_batch(batch)
+        """
         if self._states_iterator is None:
-            return None, []
+            if self.current_state_bin >= len(self.batched_states):
+                return None, []
+            state_bin = self.batched_states[self.current_state_bin]
+            state = ts.concatenate_states(state_bin)
+            indices = self.index_bins[self.current_state_bin]
+            self.current_state_bin += 1
+            remaining = len(self.batched_states) - self.current_state_bin
+            logger.info(
+                (
+                    "BinningAutoBatcher: returning batch %d/%d with %d system(s), "
+                    "%d batch(es) remaining"
+                ),
+                self.current_state_bin,
+                len(self.batched_states),
+                state.n_systems,
+                remaining,
+            )
+            return state, indices
 
-        # Streaming path: pull states until the batch is full.
         batch_states: list[T] = []
         batch_indices: list[int] = []
         current_sum = 0.0
@@ -795,29 +807,6 @@ class BinningAutoBatcher[T: SimState]:
             batch.n_systems,
         )
         return batch, batch_indices
-
-    def next_batch(self) -> tuple[T | None, list[int]]:
-        """Get the next batch of states.
-
-        Returns batches sequentially until all states have been processed. Eager
-        inputs use pre-computed globally packed batches. Iterator inputs pull
-        states on demand and pack greedily without materializing the full input.
-
-        Returns:
-            tuple[T | None, list[int]]: A tuple containing:
-                - A concatenated SimState containing the next batch of states,
-                  or None if no more batches
-                - List of indices of states in the current batch
-
-        Example::
-
-            # Get batches one by one
-            for batch, indices in batcher:
-                process_batch(batch)
-        """
-        if self._states_iterator is None:
-            return self._next_eager_batch()
-        return self._next_streaming_batch()
 
     def __iter__(self) -> Iterator[tuple[T, list[int]]]:
         """Return self as an iterator.
