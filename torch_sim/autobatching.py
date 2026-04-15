@@ -536,7 +536,8 @@ class BinningAutoBatcher[T: SimState]:
         max_atoms_to_try (int): Maximum number of atoms to try when estimating memory.
         memory_scalers (list[float]): Memory scaling metrics for each state.
         index_to_scaler (dict): Mapping from state index to its scaling metric.
-        index_bins (list[list[int]]): Groups of state indices that can be batched together.
+        index_bins (list[list[int]]): Groups of state indices that can be batched
+            together.
         batched_states (list[list[SimState]]): Grouped states ready for batching.
         current_state_bin (int): Index of the current batch being processed.
 
