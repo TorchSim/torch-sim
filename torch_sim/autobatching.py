@@ -536,8 +536,7 @@ class BinningAutoBatcher[T: SimState]:
         max_atoms_to_try (int): Maximum number of atoms to try when estimating memory.
         memory_scalers (list[float]): Memory scaling metrics for each state.
         index_to_scaler (dict): Mapping from state index to its scaling metric.
-        index_bins (list[list[int]]): Groups of state indices that can be batched
-            together.
+        index_bins (list[list[int]]): Groups of state indices that can be batched together.
         batched_states (list[list[SimState]]): Grouped states ready for batching.
         current_state_bin (int): Index of the current batch being processed.
 
@@ -625,14 +624,15 @@ class BinningAutoBatcher[T: SimState]:
     def load_states(self, states: T | Sequence[T] | Iterator[T]) -> float:
         """Load new states into the batcher.
 
-        Processes the input states and organizes them into batches. Eager inputs
-        (``SimState`` and ``Sequence``) use the original global bin-packing logic.
-        Iterator inputs are streamed lazily and packed greedily in input order.
+        Eager inputs (``SimState`` and ``Sequence``) are fully materialized and
+        packed up front using global bin packing. Iterator inputs are consumed
+        lazily and packed greedily in input order.
 
         Args:
-            states (SimState | list[SimState] | Iterator[SimState]): Collection of
-            states to batch. Can be a list of individual SimState objects, a single
-            batched SimState that will be split into individual states, or an
+            states (SimState | Sequence[SimState] | Iterator[SimState]): Collection
+                of states to batch. Can be a list of individual SimState objects,
+                a single batched SimState that will be split into individual states,
+                or an
                 iterator/generator yielding individual SimState objects.
 
         Returns:
@@ -640,8 +640,8 @@ class BinningAutoBatcher[T: SimState]:
 
         Raises:
             ValueError: If any individual state has a memory scaling metric greater
-                than the maximum allowed value, if an iterator yields no states, or
-                if an iterator is provided without ``max_memory_scaler``.
+                than the maximum allowed value, if an iterator yields no states,
+                or if an iterator is provided without ``max_memory_scaler``.
 
         Example::
 
@@ -656,8 +656,9 @@ class BinningAutoBatcher[T: SimState]:
             batcher.load_states(state_generator())
 
         Notes:
-            This method resets the current state bin index, so any ongoing iteration
-            will be restarted when this method is called.
+            Iterator inputs require ``max_memory_scaler`` to be set explicitly.
+            This method resets batching state, so any ongoing iteration restarts
+            when it is called.
         """
         self.memory_scalers: list[float] = []
         self.index_bins = []
