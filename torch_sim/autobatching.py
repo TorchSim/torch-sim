@@ -518,32 +518,27 @@ def estimate_max_memory_scaler(
 
 
 class BinningAutoBatcher[T: SimState]:
-    """Batcher that groups states into batches using greedy first-fit packing.
+    """Batcher that groups states into bins of similar computational cost.
 
-    Fills batches with successive states until adding another would exceed the
-    maximum memory scaling metric. Ideal for scenarios where all states need to
-    be evolved the same number of steps (e.g., MD integration).
-
-    Accepts a single batched ``SimState``, a sequence of individual states, or an
-    iterator/generator for streaming large datasets that don't fit in memory.
-    For eager inputs (``SimState`` or ``Sequence``) all batches are computed upfront.
-    For iterator inputs, batches are materialized lazily as ``next_batch`` is called.
+    Divides a collection of states into batches that can be processed efficiently
+    without exceeding GPU memory. For eager inputs, states are grouped based on a
+    memory scaling metric to maximize GPU utilization using global bin packing.
+    For iterator inputs, batches are formed lazily using greedy first-fit packing.
+    This approach is ideal for scenarios where all states need to be evolved the
+    same number of steps.
 
     To avoid a slow memory estimation step, set ``max_memory_scaler`` to a known value.
 
     Attributes:
         model (ModelInterface): Model used for memory estimation and processing.
         memory_scales_with (str): Metric type used for memory estimation.
-        max_memory_scaler (float): Maximum memory metric allowed per batch.
+        max_memory_scaler (float): Maximum memory metric allowed per system.
         max_atoms_to_try (int): Maximum number of atoms to try when estimating memory.
-        memory_scalers (list[float]): Memory scaling metrics per state. Populated
-            eagerly for ``SimState``/``Sequence`` inputs; grows incrementally for
-            iterator inputs as states are consumed.
-        index_bins (list[list[int]]): Groups of state indices per batch. Populated
-            eagerly for ``SimState``/``Sequence`` inputs; grows incrementally for
-            iterator inputs as batches are yielded.
-        batched_states (list[list[SimState]]): Pre-computed batches (eager path only).
-            Empty for iterator inputs since batches are materialized on demand.
+        memory_scalers (list[float]): Memory scaling metrics for each state.
+        index_to_scaler (dict): Mapping from state index to its scaling metric.
+        index_bins (list[list[int]]): Groups of state indices that can be batched
+            together.
+        batched_states (list[list[SimState]]): Grouped states ready for batching.
         current_state_bin (int): Index of the current batch being processed.
 
     Example::
@@ -563,7 +558,7 @@ class BinningAutoBatcher[T: SimState]:
         ordered_final_states = batcher.restore_original_order(final_states)
 
 
-        # Or stream states from a generator
+        # Or stream states from a generator using greedy packing
         def state_generator():
             for atoms in large_dataset:
                 yield ts.initialize_state(atoms, device, dtype)
@@ -625,19 +620,19 @@ class BinningAutoBatcher[T: SimState]:
         self.memory_scaling_factor = memory_scaling_factor
         self.max_memory_padding = max_memory_padding
         self.oom_error_message = oom_error_message
+        self._states_iterator: Iterator[T] | None = None
 
     def load_states(self, states: T | Sequence[T] | Iterator[T]) -> float:
         """Load new states into the batcher.
 
-        Computes memory scaling metrics and organizes states into batches using
-        greedy first-fit packing: states are added to the current batch in order
-        until the next would exceed ``max_memory_scaler``, at which point a new
-        batch starts.
+        Processes the input states and organizes them into batches. Eager inputs
+        (``SimState`` and ``Sequence``) use the original global bin-packing logic.
+        Iterator inputs are streamed lazily and packed greedily in input order.
 
         Args:
             states (SimState | list[SimState] | Iterator[SimState]): Collection of
-                states to batch. Can be a list of individual SimState objects, a single
-                batched SimState that will be split into individual states, or an
+            states to batch. Can be a list of individual SimState objects, a single
+            batched SimState that will be split into individual states, or an
                 iterator/generator yielding individual SimState objects.
 
         Returns:
@@ -645,7 +640,8 @@ class BinningAutoBatcher[T: SimState]:
 
         Raises:
             ValueError: If any individual state has a memory scaling metric greater
-                than the maximum allowed value, or if an iterator yields no states.
+                than the maximum allowed value, if an iterator yields no states, or
+                if an iterator is provided without ``max_memory_scaler``.
 
         Example::
 
@@ -660,13 +656,14 @@ class BinningAutoBatcher[T: SimState]:
             batcher.load_states(state_generator())
 
         Notes:
-            This method resets iteration state, so any ongoing iteration will be
-            restarted when called.
+            This method resets the current state bin index, so any ongoing iteration
+            will be restarted when this method is called.
         """
         self.memory_scalers: list[float] = []
         self.index_bins = []
         self.batched_states: list[list[T]] = []
         self.current_state_bin = 0
+        self._states_iterator = None
 
         if isinstance(states, SimState):
             self._load_eager(states)
@@ -683,40 +680,33 @@ class BinningAutoBatcher[T: SimState]:
             batched, self.memory_scales_with, self.cutoff
         )
         if not self.max_memory_scaler:
-            self.max_memory_scaler = (
-                estimate_max_memory_scaler(
-                    batched,
-                    self.model,
-                    self.memory_scalers,
-                    max_atoms=self.max_atoms_to_try,
-                    scale_factor=self.memory_scaling_factor,
-                    oom_error_message=self.oom_error_message,
-                )
-                * self.max_memory_padding
+            self.max_memory_scaler = estimate_max_memory_scaler(
+                batched,
+                self.model,
+                self.memory_scalers,
+                max_atoms=self.max_atoms_to_try,
+                scale_factor=self.memory_scaling_factor,
+                oom_error_message=self.oom_error_message,
             )
+            self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
             logger.debug("Estimated max memory scaler: %.3g", self.max_memory_scaler)
 
-        # Greedy first-fit packing preserving input order.
-        current_indices: list[int] = []
-        current_sum = 0.0
-        for idx, metric in enumerate(self.memory_scalers):
-            if metric > self.max_memory_scaler:
-                raise ValueError(
-                    f"Max metric of system with index {idx} in states: "
-                    f"{metric} is greater than max_metric {self.max_memory_scaler}, "
-                    f"please set a larger max_metric or run smaller systems metric."
-                )
-            if current_sum + metric > self.max_memory_scaler and current_indices:
-                self.index_bins.append(current_indices)
-                current_indices = []
-                current_sum = 0.0
-            current_indices.append(idx)
-            current_sum += metric
-        if current_indices:
-            self.index_bins.append(current_indices)
+        max_metric_value = max(self.memory_scalers)
+        max_metric_idx = self.memory_scalers.index(max_metric_value)
+        if max_metric_value > self.max_memory_scaler:
+            raise ValueError(
+                f"Max metric of system with index {max_metric_idx} in states: "
+                f"{max(self.memory_scalers)} is greater than max_metric "
+                f"{self.max_memory_scaler}, please set a larger max_metric "
+                f"or run smaller systems metric."
+            )
 
-        self.batched_states = [[batched[ib]] for ib in self.index_bins]
-        self._states_iterator: Iterator[T] | None = None
+        self.index_to_scaler = dict(enumerate(self.memory_scalers))
+        index_bins = to_constant_volume_bins(
+            self.index_to_scaler, max_volume=self.max_memory_scaler
+        )
+        self.index_bins = [list(batch.keys()) for batch in index_bins]
+        self.batched_states = [[batched[index_bin]] for index_bin in self.index_bins]
 
         logger.info(
             "BinningAutoBatcher: %d systems → %d batch(es), max_memory_scaler=%.3g",
@@ -733,66 +723,39 @@ class BinningAutoBatcher[T: SimState]:
         except StopIteration as exc:
             raise ValueError("Iterator yielded no states") from exc
 
-        # If max_memory_scaler isn't set, estimate using the first state.
-        # This mirrors InFlightAutoBatcher behavior: estimate from what's available.
         if not self.max_memory_scaler:
-            first_metrics = calculate_memory_scalers(
-                first, self.memory_scales_with, self.cutoff
+            raise ValueError(
+                "Iterator inputs require max_memory_scaler to be set explicitly."
             )
-            self.max_memory_scaler = (
-                estimate_max_memory_scaler(
-                    first,
-                    self.model,
-                    first_metrics,
-                    max_atoms=self.max_atoms_to_try,
-                    scale_factor=self.memory_scaling_factor,
-                    oom_error_message=self.oom_error_message,
-                )
-                * self.max_memory_padding
-            )
-            logger.debug("Estimated max memory scaler: %.3g", self.max_memory_scaler)
 
         self._states_iterator = chain([first], states_iter)
         self._iterator_idx = 0
 
-    def next_batch(self) -> tuple[T | None, list[int]]:
-        """Get the next batch of states via greedy first-fit packing.
+    def _next_eager_batch(self) -> tuple[T | None, list[int]]:
+        """Return the next pre-computed batch for eager inputs."""
+        if self.current_state_bin >= len(self.batched_states):
+            return None, []
+        state_bin = self.batched_states[self.current_state_bin]
+        state = ts.concatenate_states(state_bin)
+        indices = self.index_bins[self.current_state_bin]
+        self.current_state_bin += 1
+        remaining = len(self.batched_states) - self.current_state_bin
+        logger.info(
+            (
+                "BinningAutoBatcher: returning batch %d/%d with %d system(s), "
+                "%d batch(es) remaining"
+            ),
+            self.current_state_bin,
+            len(self.batched_states),
+            state.n_systems,
+            remaining,
+        )
+        return state, indices
 
-        For eager inputs, returns pre-computed batches sequentially. For iterator
-        inputs, pulls states on demand until the batch is full.
-
-        Returns:
-            tuple[T | None, list[int]]: A tuple containing:
-                - A concatenated SimState containing the next batch of states,
-                  or None if no more batches
-                - List of indices of states in the current batch
-
-        Example::
-
-            # Get batches one by one
-            for batch, indices in batcher:
-                process_batch(batch)
-        """
+    def _next_streaming_batch(self) -> tuple[T | None, list[int]]:
+        """Return the next greedily packed batch for iterator inputs."""
         if self._states_iterator is None:
-            # Eager path: iterate through pre-computed batches.
-            if self.current_state_bin >= len(self.batched_states):
-                return None, []
-            state_bin = self.batched_states[self.current_state_bin]
-            state = ts.concatenate_states(state_bin)
-            indices = self.index_bins[self.current_state_bin]
-            self.current_state_bin += 1
-            remaining = len(self.batched_states) - self.current_state_bin
-            logger.info(
-                (
-                    "BinningAutoBatcher: returning batch %d/%d with %d system(s), "
-                    "%d batch(es) remaining"
-                ),
-                self.current_state_bin,
-                len(self.batched_states),
-                state.n_systems,
-                remaining,
-            )
-            return state, indices
+            return None, []
 
         # Streaming path: pull states until the batch is full.
         batch_states: list[T] = []
@@ -812,7 +775,6 @@ class BinningAutoBatcher[T: SimState]:
                 current_sum + metric > self.max_memory_scaler  # ty: ignore[unsupported-operator]
                 and batch_states
             ):
-                # Current state doesn't fit — put it back for the next batch.
                 self._states_iterator = chain([state], self._states_iterator)
                 break
             batch_states.append(state)
@@ -833,6 +795,29 @@ class BinningAutoBatcher[T: SimState]:
             batch.n_systems,
         )
         return batch, batch_indices
+
+    def next_batch(self) -> tuple[T | None, list[int]]:
+        """Get the next batch of states.
+
+        Returns batches sequentially until all states have been processed. Eager
+        inputs use pre-computed globally packed batches. Iterator inputs pull
+        states on demand and pack greedily without materializing the full input.
+
+        Returns:
+            tuple[T | None, list[int]]: A tuple containing:
+                - A concatenated SimState containing the next batch of states,
+                  or None if no more batches
+                - List of indices of states in the current batch
+
+        Example::
+
+            # Get batches one by one
+            for batch, indices in batcher:
+                process_batch(batch)
+        """
+        if self._states_iterator is None:
+            return self._next_eager_batch()
+        return self._next_streaming_batch()
 
     def __iter__(self) -> Iterator[tuple[T, list[int]]]:
         """Return self as an iterator.

@@ -517,6 +517,21 @@ def test_binning_auto_batcher_empty_iterator(
         batcher.load_states(iter([]))
 
 
+def test_binning_auto_batcher_iterator_requires_max_memory_scaler(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    """Iterator inputs should require an explicit max_memory_scaler."""
+    batcher = BinningAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+    )
+    with pytest.raises(
+        ValueError, match="Iterator inputs require max_memory_scaler"
+    ):
+        batcher.load_states(iter([si_sim_state]))
+
+
 def test_in_flight_max_metric_too_small(
     si_sim_state: ts.SimState,
     fe_supercell_sim_state: ts.SimState,
