@@ -1151,11 +1151,20 @@ def _split_state[T: SimState](state: T) -> list[T]:  # noqa: C901
     for key, val in state.atom_extras.items():
         split_atom_extras[key] = list(torch.split(val, system_sizes, dim=0))
 
+    # Pre-split all constraints in one pass per constraint (not per system),
+    # then transpose to per-system lists so each system's constraints are
+    # already collected.
+    n_systems = len(system_sizes)
+    per_system_constraints: list[list[Constraint]] = [[] for _ in range(n_systems)]
+    for constraint in state.constraints:
+        for sys_idx, sub in enumerate(
+            constraint.split_constraint(n_systems, state.n_atoms_per_system)
+        ):
+            if sub is not None:
+                per_system_constraints[sys_idx].append(sub)
+
     # Create a state for each system
     states: list[T] = []
-    n_systems = len(system_sizes)
-    zero_tensor = torch.tensor([0], device=state.device, dtype=torch.int64)
-    cumsum_atoms = torch.cat((zero_tensor, torch.cumsum(state.n_atoms_per_system, dim=0)))
     for sys_idx in range(n_systems):
         # Build per-system attributes (padded attributes stay padded for consistency)
         per_system_dict = {
@@ -1183,18 +1192,9 @@ def _split_state[T: SimState](state: T) -> list[T]:  # noqa: C901
             "_atom_extras": {
                 key: split_atom_extras[key][sys_idx] for key in split_atom_extras
             },
+            "_constraints": per_system_constraints[sys_idx],
         }
 
-        start_idx = int(cumsum_atoms[sys_idx].item())
-        end_idx = int(cumsum_atoms[sys_idx + 1].item())
-        atom_idx = torch.arange(start_idx, end_idx, device=state.device)
-        new_constraints: list[Constraint] = []
-        for constraint in state.constraints:
-            sub = constraint.select_sub_constraint(atom_idx, sys_idx)
-            if sub is not None:
-                new_constraints.append(sub)
-
-        system_attrs["_constraints"] = new_constraints
         states.append(type(state)(**system_attrs))  # ty: ignore[invalid-argument-type]
 
     return states
