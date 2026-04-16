@@ -1,3 +1,10 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["allegro-pol", "torch-sim-atomistic"]
+# [tool.uv.sources]
+# torch-sim-atomistic = { path = "../..", editable = true }
+# allegro-pol = { git = "https://github.com/mir-group/allegro-pol" }
+# ///
 """Calculate the ferroelectric hysteresis loop for BaTiO₃ with allegro-pol."""
 
 from __future__ import annotations

@@ -63,8 +63,6 @@ class BravaisType(StrEnum):
     TRICLINIC = "triclinic"
 
 
-ExtrasMap = dict[str, str]
-
 StateLike = Union[
     "Atoms",
     "Structure",

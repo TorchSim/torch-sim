@@ -1,3 +1,10 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["allegro-pol", "torch-sim-atomistic"]
+# [tool.uv.sources]
+# torch-sim-atomistic = { path = "../..", editable = true }
+# allegro-pol = { git = "https://github.com/mir-group/allegro-pol" }
+# ///
 """Calculate the static dielectric constant of alpha-quartz SiO2."""
 
 from __future__ import annotations
