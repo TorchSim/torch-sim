@@ -384,6 +384,7 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         and primitive BCC iron) for validation. It tests both single and
         multi-batch processing capabilities.
     """
+    from ase import Atoms
     from ase.build import bulk, molecule
 
     def _modify(state: SimState) -> SimState:
@@ -565,4 +566,28 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         raise ValueError(
             f"forces shape incorrect for benzene: "
             f"{benzene_output['forces'].shape=} != (12, 3)"
+        )
+
+    # Test an isolated, non-periodic single atom. This catches models whose
+    # downstream post-processing squeezes length-1 batch/atom dimensions
+    # (e.g. ``torch.atleast_1d(out.squeeze())`` which collapses ``(1, 3)`` to
+    # ``(3,)``). An isolated atom has no edges, which often routes models
+    # through a different code path than a 1-atom periodic cell.
+    isolated_atoms = Atoms("H", positions=[[0.0, 0.0, 0.0]], pbc=False)
+    isolated_state = _modify(ts.io.atoms_to_state([isolated_atoms], device, dtype))
+    isolated_output = model.forward(isolated_state)
+    if isolated_output["energy"].shape != (1,):
+        raise ValueError(
+            f"energy shape incorrect for isolated atom: "
+            f"{isolated_output['energy'].shape=} != (1,)"
+        )
+    if force_computed and isolated_output["forces"].shape != (1, 3):
+        raise ValueError(
+            f"forces shape incorrect for isolated atom: "
+            f"{isolated_output['forces'].shape=} != (1, 3)"
+        )
+    if stress_computed and isolated_output["stress"].shape != (1, 3, 3):
+        raise ValueError(
+            f"stress shape incorrect for isolated atom: "
+            f"{isolated_output['stress'].shape=} != (1, 3, 3)"
         )
