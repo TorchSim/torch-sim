@@ -3,6 +3,81 @@
 
 ## Unreleased
 
+## v0.6.0
+
+This release is shaped by three major pushes:
+
+1. **External model posture.** Model integrations are increasingly maintained in the model's own package rather than in-tree. Orb (#456), SevenNet (#467), and Metatomic (#523) are migrated to upstream-maintained torch-sim interfaces, Nequix lands as a new model via the same pattern (#511), and testing utilities for this external-model posture are added (#433, released in v0.5.2).
+2. **Extensible extras framework.** A new scheme for attaching extra atom/system properties to `SimState` (#464) unlocks long-range physics on top of a common base: Electrostatics (#532), D3 Dispersion (#531), and a `SumModel` interface for composing force fields (#530, #537).
+3. **Physical validation.** A major effort from @thomasloux introduced an integration-test suite that checks physical observables across the integrators (#521). This surfaced and drove fixes for a string of long-standing bugs in the NPT Nose-Hoover and NPT Langevin integrators (#498, #504, #505, #520, #528), materially improving MD correctness.
+
+Other highlights include a native PyTorch batched cell list, a general pair-potential framework, a first-class PRNG on `SimState` with reproducibility docs, basic logging configuration, and `duecredit` support.
+
+### 🎉 New Features
+* Introduce more extensible scheme for extra properties by @CompRhys in [#464](https://github.com/TorchSim/torch-sim/pull/464)
+* Add Electrostatics using extensible extras by @CompRhys in [#532](https://github.com/TorchSim/torch-sim/pull/532)
+* Add D3 Dispersion Model by @CompRhys in [#531](https://github.com/TorchSim/torch-sim/pull/531)
+* Add SumModel interface by @CompRhys in [#530](https://github.com/TorchSim/torch-sim/pull/530)
+* Compose models for allegro-pol simulation by @CompRhys in [#537](https://github.com/TorchSim/torch-sim/pull/537)
+* Migrate Metatomic model to use upstream `metatomic-torchsim` integration by @CompRhys in [#523](https://github.com/TorchSim/torch-sim/pull/523)
+* Add Nequix model via upstream `nequix` integration by @teddykoker in [#511](https://github.com/TorchSim/torch-sim/pull/511)
+* Migrate Orb model to use upstream `orb-models` integration by @CompRhys in [#456](https://github.com/TorchSim/torch-sim/pull/456)
+* Migrate SevenNet model to use upstream `sevenn` integration by @CompRhys in [#467](https://github.com/TorchSim/torch-sim/pull/467)
+* Implement general pair-potential and pair-force by @CompRhys in [#483](https://github.com/TorchSim/torch-sim/pull/483)
+* Add batched Lennard-Jones model by @abhijeetgangan in [#474](https://github.com/TorchSim/torch-sim/pull/474)
+* Add `NPTState` that carries a stress variable by @thomasloux in [#505](https://github.com/TorchSim/torch-sim/pull/505)
+* Introduce PRNG to `SimState` and add reproducibility docs by @CompRhys in [#460](https://github.com/TorchSim/torch-sim/pull/460)
+* Configure basic logging by @CompRhys in [#484](https://github.com/TorchSim/torch-sim/pull/484)
+* Implement first pass at `duecredit` by @CompRhys in [#459](https://github.com/TorchSim/torch-sim/pull/459)
+
+### 🚀 Performance
+* Batch the torch cell list by @CompRhys in [#534](https://github.com/TorchSim/torch-sim/pull/534)
+* Eliminate for-loop in `build_naive_neighborhood` by @CompRhys in [#470](https://github.com/TorchSim/torch-sim/pull/470)
+* Reduce thread count to prevent overhead slowdown for LJ on CPU by @thomasloux in [#506](https://github.com/TorchSim/torch-sim/pull/506)
+* Remove unnecessary stress evaluation in `NPTLangevin` by @thomasloux in [#528](https://github.com/TorchSim/torch-sim/pull/528)
+
+### 🛠 Enhancements
+* Add `pbc_wrap_batched_and_get_lattice_shifts` to handle unwrapped positions in neighbor lists by @CompRhys in [#519](https://github.com/TorchSim/torch-sim/pull/519)
+* Expose `angle_tolerance` in symmetry pipeline by @danielzuegner in [#527](https://github.com/TorchSim/torch-sim/pull/527)
+* Forward `max_memory_padding` to `_chunked_apply` in `optimize()` by @niklashoelter in [#513](https://github.com/TorchSim/torch-sim/pull/513)
+* Enforce compatible constraints in DOF helper by @janosh in [#480](https://github.com/TorchSim/torch-sim/pull/480)
+* Check that models return detached tensors by @CompRhys in [#494](https://github.com/TorchSim/torch-sim/pull/494)
+* Add log line clarifying `BinningAutoBatcher` is initialization-only in `optimize` by @orionarcher in [#489](https://github.com/TorchSim/torch-sim/pull/489)
+* Add `n_edges` memory metric to auto-batching by @orionarcher in [#481](https://github.com/TorchSim/torch-sim/pull/481)
+* Standardize parameter typing to `float | torch.Tensor` where appropriate by @CompRhys in [#466](https://github.com/TorchSim/torch-sim/pull/466)
+* Remove `StateDict` type and `ensure_sim_state` helper by @orionarcher in [#487](https://github.com/TorchSim/torch-sim/pull/487)
+* Add single-atom motif edge case to the validate function by @CompRhys in [#518](https://github.com/TorchSim/torch-sim/pull/518)
+* Use sequential split instead of iterative `__getitem__` for slicing by @thomasloux in [#546](https://github.com/TorchSim/torch-sim/pull/546)
+
+### 🐛 Bug Fixes
+* Fix `state.to()` not propagating dtype/device to constraints by @danielzuegner in [#527](https://github.com/TorchSim/torch-sim/pull/527)
+* Fix `FixSymmetry` constraint `system_idx` remapping on reordered state slicing by @danielzuegner in [#509](https://github.com/TorchSim/torch-sim/pull/509)
+* Fix NPT Nose-Hoover integrator by @alphalm4 in [#520](https://github.com/TorchSim/torch-sim/pull/520)
+* Update momenta before integration in NPT Nose-Hoover by @alphalm4 in [#498](https://github.com/TorchSim/torch-sim/pull/498)
+* Update sources for NPT Nose-Hoover by @thomasloux in [#504](https://github.com/TorchSim/torch-sim/pull/504)
+* Clamp Frechet log-space deformation gradient to prevent NaN from `matrix_exp` overflow by @janosh in [#450](https://github.com/TorchSim/torch-sim/pull/450)
+* Fix FIRE NaN velocity sentinel corrupting retained systems during autobatcher swaps by @janosh in [#490](https://github.com/TorchSim/torch-sim/pull/490)
+* Fix GPU memory leak from missing `.detach()` in model wrappers by @reillyosadchey in [#491](https://github.com/TorchSim/torch-sim/pull/491)
+* Adjust test tolerances to resolve false positive test failures by @CompRhys in [#507](https://github.com/TorchSim/torch-sim/pull/507)
+* Update Phonopy test fixture after removal of dummy `pbc` kwarg in 3.2.0 by @CompRhys in [#515](https://github.com/TorchSim/torch-sim/pull/515)
+* Hotfix: max pin on `tables` due to broken 3.11 PyTables release by @CompRhys in [#461](https://github.com/TorchSim/torch-sim/pull/461)
+
+### 🧹 House-Keeping
+* Remove `graph-pes` model integration by @craigxchen in [#538](https://github.com/TorchSim/torch-sim/pull/538)
+* General maintenance & reap FairChem v1 by @CompRhys in [#522](https://github.com/TorchSim/torch-sim/pull/522)
+* Add integration tests checking physical observables across integrators by @thomasloux in [#521](https://github.com/TorchSim/torch-sim/pull/521)
+* Add example benchmarking scripts by @CompRhys in [#516](https://github.com/TorchSim/torch-sim/pull/516)
+* Maintenance to restore CI to all passing by @CompRhys in [#533](https://github.com/TorchSim/torch-sim/pull/533)
+* Nits rollup by @CompRhys in [#501](https://github.com/TorchSim/torch-sim/pull/501)
+* Batched pair-function cleanup by @CompRhys in [#488](https://github.com/TorchSim/torch-sim/pull/488)
+* Pin `orb<0.6` by @CompRhys in [#493](https://github.com/TorchSim/torch-sim/pull/493)
+* Consolidate branch protection rules by @CompRhys in [#492](https://github.com/TorchSim/torch-sim/pull/492)
+* Bump `tables` version and use py3.14 for highest tests by @CompRhys in [#486](https://github.com/TorchSim/torch-sim/pull/486)
+* Run `ty` in lint CI by @janosh in [#339](https://github.com/TorchSim/torch-sim/pull/339)
+* Restore non-conflicting changes from #339 (ty linting setup) by @CompRhys in [#476](https://github.com/TorchSim/torch-sim/pull/476)
+* Restore #460 seed-removal semantics after #339 by @janosh in [#477](https://github.com/TorchSim/torch-sim/pull/477)
+* Set root path in link check action by @CompRhys in [#468](https://github.com/TorchSim/torch-sim/pull/468)
+
 ## v0.5.2
 
 This release adds batched L-BFGS and BFGS optimizers, a FixSymmetry constraint, performance improvements to `ts.static` and `ts.optimize` through improved batching, and an MD progress bar. It also includes several bug fixes and quality-of-life improvements.
