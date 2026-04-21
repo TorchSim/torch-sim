@@ -58,6 +58,8 @@ try:
                     continue
                 _prop = "energy" if prop == "free_energy" else prop
 
+                # Do not squeeze the output tensors in the case of single atom cells
+                # TODO: remove after https://github.com/orbital-materials/orb-models/pull/158
                 results[prop] = torch.atleast_1d(out[_prop])
 
             # Rename certain keys for the conservative model
