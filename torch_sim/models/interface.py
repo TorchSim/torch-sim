@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING
 import torch
 
 import torch_sim as ts
+from torch_sim.state import _CANONICAL_MODEL_KEYS
 
 
 if TYPE_CHECKING:
@@ -50,6 +51,21 @@ _MEMORY_SCALING_PRIORITY: dict[MemoryScaling, int] = {
     "n_atoms_x_density": 1,
     "n_edges": 2,
 }
+
+
+def _accumulate_model_output(
+    combined: dict[str, torch.Tensor], output: dict[str, torch.Tensor]
+) -> None:
+    """Accumulate one model output into a combined output dict.
+
+    Canonical mechanical outputs are additive. Other outputs are treated as
+    full updated values, so later models replace earlier ones.
+    """
+    for key, tensor in output.items():
+        if key in combined and key in _CANONICAL_MODEL_KEYS:
+            combined[key] = combined[key] + tensor
+        else:
+            combined[key] = tensor
 
 
 class ModelInterface(torch.nn.Module, ABC):
@@ -188,11 +204,12 @@ class ModelInterface(torch.nn.Module, ABC):
 class SumModel(ModelInterface):
     """Additive composition of multiple :class:`ModelInterface` models.
 
-    Calls each child model's :meth:`forward` and sums the output tensors
-    key-by-key, so energies, forces, and stresses are combined additively.
-    This is the standard way to layer a dispersion correction (e.g. DFT-D3),
-    an Ewald electrostatic term, or a local pair potential on top of a primary
-    machine-learning potential.
+    Calls each child model's :meth:`forward`. Canonical mechanical outputs
+    (energy, forces, stress) are combined additively, while non-canonical
+    outputs are treated as full updated values and later models replace
+    earlier ones. This is the standard way to layer a dispersion correction
+    (e.g. DFT-D3), an Ewald electrostatic term, or a local pair potential on
+    top of a primary machine-learning potential.
 
     Args:
         models: Two or more :class:`ModelInterface` instances that share the
@@ -287,8 +304,9 @@ class SumModel(ModelInterface):
         """Sum the outputs of all child models.
 
         Each child model is called with the same ``state`` and ``**kwargs``.
-        Output tensors that appear in multiple children are summed element-wise;
-        keys unique to a single child are passed through unchanged.
+        Canonical mechanical outputs that appear in multiple children are
+        summed element-wise. Non-canonical outputs are replaced by later
+        models so they behave like full state updates rather than deltas.
 
         Args:
             state: Simulation state (see :class:`ModelInterface`).
@@ -300,11 +318,36 @@ class SumModel(ModelInterface):
         combined: dict[str, torch.Tensor] = {}
         for model in self._children():
             output = model(state, **kwargs)
-            for key, tensor in output.items():
-                if key in combined:
-                    combined[key] = combined[key] + tensor
-                else:
-                    combined[key] = tensor
+            _accumulate_model_output(combined, output)
+        return combined
+
+
+class SerialSumModel(SumModel):
+    """Serial additive composition of multiple :class:`ModelInterface` models.
+
+    Unlike :class:`SumModel`, child models do not all see the same input state.
+    Instead, each child runs after the previous child's non-canonical outputs have
+    been stored into a cloned :class:`~torch_sim.state.SimState` via
+    :meth:`torch_sim.state.SimState.store_model_extras`. This lets earlier models
+    expose per-atom or per-system features that later models can consume.
+    Energies, forces, and stresses remain additive, while repeated auxiliary
+    outputs are treated as full updated values from the latest stage.
+
+    Examples:
+        ```py
+        serial_model = SerialSumModel(polarization_model, dispersion_model)
+        output = serial_model(sim_state)
+        ```
+    """
+
+    def forward(self, state: SimState, **kwargs) -> dict[str, torch.Tensor]:
+        """Run child models serially, exposing extras from earlier models."""
+        combined: dict[str, torch.Tensor] = {}
+        serial_state = state.clone()
+        for model in self._children():
+            output = model(serial_state, **kwargs)
+            _accumulate_model_output(combined, output)
+            serial_state.store_model_extras(output)
         return combined
 
 
