@@ -202,17 +202,17 @@ def ase_neb(start_atoms, end_atoms, nimages=5):
     neb_calc = ASENEB(images, climb=True, method="improvedtangent")
     neb_calc.interpolate(mic=True)
 
-    # Attach calculator to all images using mace_mp
     ase_dtype_str = "float64" if torch_sim_dtype == torch.float64 else "float32"
-    print(f"Attaching ASE calculator with dtype: {ase_dtype_str} to all images")
-    ase_calc = mace_mp(
-        model=MaceUrls.mace_mpa_medium,
-        device=device,
-        default_dtype=ase_dtype_str,
-        dispersion=False,
+    print(
+        f"Attaching independent ASE calculators with dtype: {ase_dtype_str} to all images"
     )
     for image in neb_calc.images:
-        image.calc = ase_calc
+        image.calc = mace_mp(
+            model=MaceUrls.mace_mpa_medium,
+            device=device,
+            default_dtype=ase_dtype_str,
+            dispersion=False,
+        )
 
     # Set up trajectory logging for the reference ASE run (Commented out as not used for plot)
     # ase_traj_filename = "ase_ref_neb.traj"
@@ -730,15 +730,7 @@ final_path_gd = neb_workflow.run(
 print("Finished torch-sim NEB optimization.")
 
 # Check if it converged and plot results
-results = ts_mace_model(
-    dict(
-        positions=final_path_gd.positions,
-        cell=final_path_gd.cell,
-        atomic_numbers=final_path_gd.atomic_numbers,
-        system_idx=final_path_gd.system_idx,
-        pbc=True,
-    )
-)
+results = ts_mace_model(final_path_gd)
 
 energies = results["energy"].tolist()
 

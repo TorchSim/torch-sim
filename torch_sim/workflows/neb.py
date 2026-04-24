@@ -733,6 +733,24 @@ class NEB:
         endpoint_output = self.model(endpoint_states)
         initial_energy = endpoint_output["energy"][0]
         final_energy = endpoint_output["energy"][1]
+        # Distribute model extras (e.g. interaction_energy) back onto the
+        # endpoint states so that subsequent concatenate_states calls with
+        # opt_state (which carries those extras) produce consistent leading dims
+        n_init_atoms = initial_state.n_atoms
+        n_final_atoms = final_state.n_atoms
+        init_extras: dict[str, torch.Tensor] = {}
+        final_extras: dict[str, torch.Tensor] = {}
+        for key, val in endpoint_output.items():
+            if key in {"energy", "forces", "stress"} or not isinstance(val, torch.Tensor):
+                continue
+            if val.shape[0] == 2:
+                init_extras[key] = val[:1]
+                final_extras[key] = val[1:]
+            elif val.shape[0] == n_init_atoms + n_final_atoms:
+                init_extras[key] = val[:n_init_atoms]
+                final_extras[key] = val[n_init_atoms:]
+        initial_state.store_model_extras(init_extras)
+        final_state.store_model_extras(final_extras)
         logger.info(
             f"Initial Energy: {initial_energy:.4f}, Final Energy: {final_energy:.4f}"
         )
@@ -754,6 +772,35 @@ class NEB:
             else nullcontext()  # Use a dummy context if no filename
         )
 
+        def _opt_state_as_simstate(state: SimState) -> SimState:
+            """Project an OptimState/FireState down to a plain SimState.
+
+            Concatenating an OptimState/FireState with plain SimState endpoints
+            collapses to the first state's class (SimState), causing optimizer-
+            specific fields like velocities/forces/energy to be misrouted into
+            extras with mismatched leading dims. We strip those here and
+            preserve only model-derived extras (interaction_energy, etc.) that
+            were also populated on the endpoints.
+            """
+            optim_only_atom = {"forces"}
+            optim_only_system = {"energy", "stress", "dt", "alpha", "n_pos"}
+            sys_extras = {
+                k: v for k, v in state.system_extras.items() if k not in optim_only_system
+            }
+            atom_extras = {
+                k: v for k, v in state.atom_extras.items() if k not in optim_only_atom
+            }
+            return SimState(
+                positions=state.positions,
+                masses=state.masses,
+                cell=state.cell,
+                pbc=state.pbc,
+                atomic_numbers=state.atomic_numbers,
+                system_idx=state.system_idx,
+                _system_extras=sys_extras,
+                _atom_extras=atom_extras,
+            )
+
         with traj_context as traj:
             for step in range(max_steps):
                 # a. Get current true forces and energies
@@ -763,7 +810,7 @@ class NEB:
                 # b. Calculate NEB forces
                 # Concatenate states - ensures consistent group ID (0 for single NEB)
                 full_path_state_calc = concatenate_states(
-                    [initial_state, opt_state, final_state]
+                    [initial_state, _opt_state_as_simstate(opt_state), final_state]
                 )
                 # Store true forces *before* calculating NEB forces
                 true_forces_for_traj = opt_state.forces.clone()
@@ -796,7 +843,11 @@ class NEB:
                 if self.trajectory_filename is not None:  # Use explicit check
                     # Create the full path state for writing (including endpoints)
                     current_full_path = concatenate_states(
-                        [initial_state, opt_state, final_state]
+                        [
+                            initial_state,
+                            _opt_state_as_simstate(opt_state),
+                            final_state,
+                        ]
                     )
                     # Write arrays directly using traj.write_arrays
                     data_to_write = {
@@ -884,4 +935,6 @@ class NEB:
             logger.warning("No Step 0 TorchSim debug data was stored to write.")
         # ----------------------------------------------------------
 
-        return concatenate_states([initial_state, opt_state, final_state])
+        return concatenate_states(
+            [initial_state, _opt_state_as_simstate(opt_state), final_state]
+        )
