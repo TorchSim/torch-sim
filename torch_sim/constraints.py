@@ -151,6 +151,38 @@ class Constraint(ABC):
             constraints: Constraints to merge (all same type, already reindexed)
         """
 
+    def split_constraint(
+        self,
+        n_systems: int,
+        n_atoms_per_system: torch.Tensor,
+    ) -> list[Self | None]:
+        """Split this constraint into one constraint per system in a single pass.
+
+        Returns a list of length ``n_systems`` where each element is either a
+        single-system constraint (with local indices starting at 0) or ``None``
+        if this constraint does not apply to that system.
+
+        The default implementation falls back to calling
+        :meth:`select_sub_constraint` in a loop.  Subclasses should override
+        for better performance (fewer GPU synchronisation points).
+
+        Args:
+            n_systems: Total number of systems in the batched state.
+            n_atoms_per_system: Tensor of shape ``(n_systems,)`` giving atom
+                counts per system.
+
+        Returns:
+            List of length *n_systems* with per-system constraints or ``None``.
+        """
+        cumsum = _cumsum_with_zero(n_atoms_per_system)
+        result: list[Self | None] = [None] * n_systems
+        for sys_idx in range(n_systems):
+            start = int(cumsum[sys_idx].item())
+            end = int(cumsum[sys_idx + 1].item())
+            atom_idx = torch.arange(start, end, device=n_atoms_per_system.device)
+            result[sys_idx] = self.select_sub_constraint(atom_idx, sys_idx)
+        return result
+
     @abstractmethod
     def to(
         self,
@@ -268,6 +300,32 @@ class AtomConstraint(Constraint):
             return None
         return type(self)(new_atom_idx)
 
+    def split_constraint(
+        self,
+        n_systems: int,
+        n_atoms_per_system: torch.Tensor,
+    ) -> list[Self | None]:
+        """Split atom constraint across systems in one pass."""
+        cumsum = _cumsum_with_zero(n_atoms_per_system)
+        # Assign each constrained atom to its system via searchsorted
+        system_of_atom = torch.searchsorted(cumsum[1:], self.atom_idx, right=True)
+        # One GPU sync: get counts per system on CPU
+        counts = torch.bincount(system_of_atom, minlength=n_systems).tolist()
+        # Sort constrained atom indices by system for contiguous slicing
+        sort_order = torch.argsort(system_of_atom)
+        sorted_atom_idx = self.atom_idx[sort_order]
+
+        result: list[Self | None] = [None] * n_systems
+        offset = 0
+        for sys_idx in range(n_systems):
+            count = counts[sys_idx]
+            if count == 0:
+                continue
+            local_indices = sorted_atom_idx[offset : offset + count] - cumsum[sys_idx]
+            result[sys_idx] = type(self)(local_indices)
+            offset += count
+        return result
+
     def reindex(self, atom_offset: int, system_offset: int) -> Self:  # noqa: ARG002
         """Return copy with atom indices shifted by atom_offset."""
         return type(self)(self.atom_idx + atom_offset)
@@ -372,6 +430,20 @@ class SystemConstraint(Constraint):
             sys_idx: System index for a single system
         """
         return type(self)(torch.tensor([0])) if sys_idx in self.system_idx else None
+
+    def split_constraint(
+        self,
+        n_systems: int,
+        n_atoms_per_system: torch.Tensor,  # noqa: ARG002
+    ) -> list[Self | None]:
+        """Split system constraint across systems in one pass."""
+        # One GPU sync: transfer system_idx to CPU
+        present = set(self.system_idx.tolist())
+        device = self.system_idx.device
+        result: list[Self | None] = [None] * n_systems
+        for sys_idx in present:
+            result[sys_idx] = type(self)(torch.tensor([0], device=device))
+        return result
 
     def reindex(self, atom_offset: int, system_offset: int) -> Self:  # noqa: ARG002
         """Return copy with system indices shifted by system_offset."""
@@ -1124,6 +1196,32 @@ class FixSymmetry(SystemConstraint):
             reference_cells=ref_cells,
             max_cumulative_strain=self.max_cumulative_strain,
         )
+
+    def split_constraint(
+        self,
+        n_systems: int,
+        n_atoms_per_system: torch.Tensor,  # noqa: ARG002
+    ) -> list[Self | None]:
+        """Split FixSymmetry across systems in one pass."""
+        # One GPU sync: transfer system_idx to CPU
+        system_indices_cpu = self.system_idx.tolist()
+        device = self.system_idx.device
+        zero = torch.tensor([0], device=device)
+        result: list[Self | None] = [None] * n_systems
+        for local_idx, sys_idx in enumerate(system_indices_cpu):
+            ref_cells = (
+                [self.reference_cells[local_idx]] if self.reference_cells else None
+            )
+            result[sys_idx] = type(self)(
+                [self.rotations[local_idx]],
+                [self.symm_maps[local_idx]],
+                zero.clone(),
+                adjust_positions=self.do_adjust_positions,
+                adjust_cell=self.do_adjust_cell,
+                reference_cells=ref_cells,
+                max_cumulative_strain=self.max_cumulative_strain,
+            )
+        return result
 
     def __repr__(self) -> str:
         """String representation."""
