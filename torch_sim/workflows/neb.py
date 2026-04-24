@@ -26,11 +26,7 @@ from torch_sim.optimizers import (
     gradient_descent_step,
 )
 from torch_sim.optimizers.cell_filters import CellFilter
-from torch_sim.state import (
-    SimState,
-    concatenate_states,
-    initialize_state,
-)
+from torch_sim.state import SimState, concatenate_states, initialize_state
 from torch_sim.trajectory import TorchSimTrajectory
 from torch_sim.transforms import minimum_image_displacement
 from torch_sim.typing import StateLike
@@ -57,11 +53,7 @@ def _extract_kwargs_from_params(
     """
     exclude = exclude or {"state", "model"}
     sig = inspect.signature(func)
-    return {
-        k: v
-        for k, v in params.items()
-        if k in sig.parameters and k not in exclude
-    }
+    return {k: v for k, v in params.items() if k in sig.parameters and k not in exclude}
 
 
 @dataclass
@@ -216,9 +208,13 @@ class NEB:
             raise ValueError("Initial and final states must have the same atom types.")
         # Compare PBC values properly (can be bool, list, or tensor)
         pbc_match = False
-        if isinstance(initial_state.pbc, torch.Tensor) and isinstance(final_state.pbc, torch.Tensor):
+        if isinstance(initial_state.pbc, torch.Tensor) and isinstance(
+            final_state.pbc, torch.Tensor
+        ):
             pbc_match = torch.equal(initial_state.pbc, final_state.pbc)
-        elif isinstance(initial_state.pbc, torch.Tensor) or isinstance(final_state.pbc, torch.Tensor):
+        elif isinstance(initial_state.pbc, torch.Tensor) or isinstance(
+            final_state.pbc, torch.Tensor
+        ):
             # One is tensor, one is not - convert both to tensors for comparison
             initial_pbc_tensor = (
                 initial_state.pbc
@@ -278,8 +274,12 @@ class NEB:
         )  # Shape: [n_images, 3, 3]
 
         # Create system_idx tensor: [0, 0, ..., 1, 1, ..., n_images-1, ...]
-        system_indices = torch.arange(self.n_images, device=self.device, dtype=torch.int64)
-        all_system_idx = torch.repeat_interleave(system_indices, repeats=n_atoms_per_image)
+        system_indices = torch.arange(
+            self.n_images, device=self.device, dtype=torch.int64
+        )
+        all_system_idx = torch.repeat_interleave(
+            system_indices, repeats=n_atoms_per_image
+        )
 
         return SimState(
             positions=all_positions,
@@ -447,7 +447,9 @@ class NEB:
         cell = path_state.cell[0]  # Shape [3, 3]
         # Convert pbc to bool if it's a tensor (for _compute_tangents)
         if isinstance(path_state.pbc, torch.Tensor):
-            pbc_bool: bool = bool(path_state.pbc.any().item())  # True if any dimension has PBC
+            pbc_bool: bool = bool(
+                path_state.pbc.any().item()
+            )  # True if any dimension has PBC
         elif isinstance(path_state.pbc, bool):
             pbc_bool = path_state.pbc
         elif isinstance(path_state.pbc, list):
@@ -740,9 +742,7 @@ class NEB:
 
         # 3. Initialize optimizer state for the movable images
         # Use the generic initializer with model parameter
-        opt_state = self._init_fn(
-            interpolated_images, self.model, **self._init_kwargs
-        )
+        opt_state = self._init_fn(interpolated_images, self.model, **self._init_kwargs)
 
         # 4. Optimization loop
         logger.info(f"Running NEB for max {max_steps} steps or fmax < {fmax} eV/Ang.")

@@ -23,12 +23,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from ase.build import bulk
-from ase.io import read
 from ase.mep import NEB as ASENEB
 from ase.mep.neb import ImprovedTangentMethod, NEBState
 from ase.optimize import FIRE
 from mace.calculators.foundations_models import mace_mp
-from mace.calculators.mace import MACECalculator
 from monty.json import MontyDecoder, MontyEncoder  # Import Monty
 
 import torch_sim as ts
