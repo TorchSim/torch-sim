@@ -15,7 +15,7 @@ from tests.conftest import DEVICE, DTYPE
 from torch_sim.constraints import FixCom, FixSymmetry
 from torch_sim.models.interface import ModelInterface
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.optimizers.cell_filters import CellLBFGSState, deform_grad
+from torch_sim.optimizers.cell_filters import deform_grad
 from torch_sim.optimizers.fire import fire_init, fire_step
 from torch_sim.optimizers.lbfgs import lbfgs_init, lbfgs_step
 from torch_sim.symmetrize import get_symmetry_datasets
@@ -699,13 +699,12 @@ class TestFixSymmetryCellPositionsResync:
 
         # Recompute expected cell_positions from the actual cell
         cur_dg = deform_grad(opt_state.reference_cell.mT, opt_state.row_vector_cell)
-        expected_cp = (
-            ts.math.matrix_log_33(cur_dg, sim_dtype=opt_state.dtype)
-            * opt_state.cell_factor.view(opt_state.n_systems, 1, 1)
-        )
+        expected_cp = ts.math.matrix_log_33(
+            cur_dg, sim_dtype=opt_state.dtype
+        ) * opt_state.cell_factor.view(opt_state.n_systems, 1, 1)
         assert torch.allclose(opt_state.cell_positions, expected_cp, atol=1e-5), (
             f"cell_positions desynced from actual cell: "
-            f"max diff = {(opt_state.cell_positions - expected_cp).abs().max().item():.2e}"
+            f"max diff = {(opt_state.cell_positions - expected_cp).abs().max().item():.2e}"  # NOQA: E501
         )
 
     @pytest.mark.parametrize(
@@ -715,7 +714,7 @@ class TestFixSymmetryCellPositionsResync:
             pytest.param((lbfgs_init, lbfgs_step), id="lbfgs"),
         ],
     )
-    def test_optimizer_sym_batch1_matches_batchN(
+    def test_optimizer_sym_batch1_matches_batch_n(
         self,
         model: LennardJonesModel,
         optimizer: tuple,
@@ -753,10 +752,10 @@ class TestFixSymmetryCellPositionsResync:
             energies_2_sys0.append(s2.energy[0].item())
 
         # Per-step energies should match
-        for step, (e1, e2) in enumerate(zip(energies_1, energies_2_sys0)):
+        for step, (e1, e2) in enumerate(zip(energies_1, energies_2_sys0, strict=True)):
             assert abs(e1 - e2) < 1e-4, (
                 f"Energy diverged at step {step}: batch=1 {e1:.6f} vs "
-                f"batch=2[sys0] {e2:.6f} (diff={abs(e1-e2):.2e})"
+                f"batch=2[sys0] {e2:.6f} (diff={abs(e1 - e2):.2e})"
             )
 
     @pytest.mark.parametrize(
@@ -789,7 +788,8 @@ class TestFixSymmetryCellPositionsResync:
         state.positions = state.positions @ strain
 
         convergence_fn = ts.generate_force_convergence_fn(
-            force_tol=0.01, include_cell_forces=True,
+            force_tol=0.01,
+            include_cell_forces=True,
         )
         final_state = ts.optimize(
             system=state,

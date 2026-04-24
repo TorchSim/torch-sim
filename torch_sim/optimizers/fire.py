@@ -458,19 +458,13 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
                 state.reference_cell.mT, state.row_vector_cell
             )
             if is_frechet:
-                cell_factor_reshaped = state.cell_factor.view(
-                    state.n_systems, 1, 1
-                )
+                cell_factor_reshaped = state.cell_factor.view(state.n_systems, 1, 1)
                 state.cell_positions = (
-                    tsm.matrix_log_33(
-                        adjusted_deform_grad, sim_dtype=state.dtype
-                    )
+                    tsm.matrix_log_33(adjusted_deform_grad, sim_dtype=state.dtype)
                     * cell_factor_reshaped
                 )
             else:
-                cell_factor_expanded = state.cell_factor.expand(
-                    state.n_systems, 3, 1
-                )
+                cell_factor_expanded = state.cell_factor.expand(state.n_systems, 3, 1)
                 state.cell_positions = (
                     adjusted_deform_grad.reshape(state.n_systems, 3, 3)
                     * cell_factor_expanded

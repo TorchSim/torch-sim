@@ -1495,11 +1495,8 @@ def test_optimizer_preserves_charge_spin(
         assert torch.allclose(opt_state.spin, original_spin)
 
 
-def test_lbfgs_prev_cell_positions_stored_before_step(
-    ar_supercell_sim_state: SimState, lj_model: ModelInterface
-) -> None:
-    """prev_cell_positions captures start-of-step, prev_positions use adjusted frame.
-    """
+def test_lbfgs_prev_cell_positions_stored_before_step(lj_model: ModelInterface) -> None:
+    """prev_cell_positions captures start-of-step, prev_positions use adjusted frame."""
     from ase.build import bulk
 
     from torch_sim.constraints import FixSymmetry
@@ -1511,9 +1508,7 @@ def test_lbfgs_prev_cell_positions_stored_before_step(
     state.cell = state.cell * 0.95
     state.positions = state.positions * 0.95
 
-    opt_state = ts.lbfgs_init(
-        state, lj_model, cell_filter=ts.CellFilter.frechet
-    )
+    opt_state = ts.lbfgs_init(state, lj_model, cell_filter=ts.CellFilter.frechet)
     assert isinstance(opt_state, CellLBFGSState)
 
     # Save cell_positions BEFORE the step
@@ -1525,15 +1520,15 @@ def test_lbfgs_prev_cell_positions_stored_before_step(
     # prev_cell_positions should equal the pre-step value (not the post-resync value)
     assert torch.allclose(opt_state.prev_cell_positions, cell_pos_before, atol=1e-6), (
         "prev_cell_positions should capture start-of-step, not post-resync. "
-        f"max diff from pre-step = {(opt_state.prev_cell_positions - cell_pos_before).abs().max():.2e}, "
-        f"max diff from current = {(opt_state.prev_cell_positions - opt_state.cell_positions).abs().max():.2e}"
+        f"max diff from pre-step = {(opt_state.prev_cell_positions - cell_pos_before).abs().max():.2e}, "  # noqa: E501
+        f"max diff from current = {(opt_state.prev_cell_positions - opt_state.cell_positions).abs().max():.2e}"  # noqa: E501
     )
 
     # prev_cell_positions should NOT equal the current (post-step) cell_positions
     # (unless the step was zero, which shouldn't happen on a compressed structure)
-    assert not torch.allclose(opt_state.prev_cell_positions, opt_state.cell_positions, atol=1e-6), (
-        "prev_cell_positions equals current cell_positions — s_new_cell would be zero"
-    )
+    assert not torch.allclose(
+        opt_state.prev_cell_positions, opt_state.cell_positions, atol=1e-6
+    ), "prev_cell_positions equals current cell_positions — s_new_cell would be zero"
 
     # prev_positions should be in the adjusted (post-adjust_cell) frame
     cur_dg = deform_grad(opt_state.reference_cell.mT, opt_state.row_vector_cell)

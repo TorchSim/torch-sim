@@ -513,16 +513,13 @@ def lbfgs_step(  # noqa: PLR0915, C901
         if is_frechet:
             cell_factor_reshaped = state.cell_factor.view(n_systems, 1, 1)
             state.cell_positions = (
-                ts.math.matrix_log_33(
-                    adjusted_deform_grad, sim_dtype=state.dtype
-                )
+                ts.math.matrix_log_33(adjusted_deform_grad, sim_dtype=state.dtype)
                 * cell_factor_reshaped
             )
         else:
             cell_factor_expanded = state.cell_factor.expand(n_systems, 3, 1)
             state.cell_positions = (
-                adjusted_deform_grad.reshape(n_systems, 3, 3)
-                * cell_factor_expanded
+                adjusted_deform_grad.reshape(n_systems, 3, 3) * cell_factor_expanded
             )
 
         # Store prev_positions/prev_forces in the ADJUSTED cell's frame so
