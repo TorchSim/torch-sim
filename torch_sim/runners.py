@@ -22,7 +22,7 @@ from torch_sim.integrators import INTEGRATOR_REGISTRY, Integrator
 from torch_sim.integrators.md import MDState
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers import OPTIM_REGISTRY, FireState, Optimizer, OptimState
-from torch_sim.state import SimState
+from torch_sim.state import _CANONICAL_MODEL_KEYS, SimState
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.typing import StateLike
 from torch_sim.units import UnitSystem
@@ -642,6 +642,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             memory_scales_with=autobatcher.memory_scales_with,
             max_atoms_to_try=autobatcher.max_atoms_to_try,
             oom_error_message=autobatcher.oom_error_message,
+            max_memory_padding=autobatcher.max_memory_padding,
         )
     autobatcher.load_states(state)
     if trajectory_reporter is not None:
@@ -731,7 +732,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     )
 
 
-def static(
+def static(  # noqa: C901
     system: StateLike,
     model: ModelInterface,
     *,
@@ -750,7 +751,6 @@ def static(
     Args:
         system (StateLike): Input system to calculate properties for
         model (ModelInterface): Neural network model module
-        unit_system (UnitSystem): Unit system for energy and forces
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
             tracking trajectory. If a dict, will be passed to the TrajectoryReporter
             constructor and must include at least the "filenames" key. Any prop
@@ -835,8 +835,25 @@ def static(
                 else torch.full_like(sub_state.cell, fill_value=float("nan"))
             ),
         )
+        static_state.store_model_extras(model_outputs)
 
         props = trajectory_reporter.report(static_state, 0, model=model)
+
+        # Merge extra model outputs into per-system property dicts
+        # TODO: this should be cleaner?
+        extra_keys = {k for k in model_outputs if k not in _CANONICAL_MODEL_KEYS}
+        if extra_keys:
+            for sys_idx, sys_props in enumerate(props):
+                for key in extra_keys:
+                    val = model_outputs[key]
+                    if not isinstance(val, torch.Tensor) or val.ndim == 0:
+                        continue
+                    if val.shape[0] == static_state.n_atoms:
+                        mask = static_state.system_idx == sys_idx
+                        sys_props[key] = val[mask]
+                    elif val.shape[0] == static_state.n_systems:
+                        sys_props[key] = val[sys_idx : sys_idx + 1]
+
         all_props.extend(props)
 
         if tqdm_pbar:

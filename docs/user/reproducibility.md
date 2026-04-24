@@ -50,7 +50,7 @@ sim_state.rng = 42  # required for reproducibility — torch.manual_seed() has n
 
 ### Deterministic vs stochastic integrators in TorchSim
 
-- `ts.Integrator.nvt_langevin` and `ts.Integrator.npt_langevin` include stochastic
+- `ts.Integrator.nvt_langevin` and `ts.Integrator.npt_langevin_anisotropic` include stochastic
   terms by design. When seeded via `state.rng`, they produce identical trajectories.
   The `rng` generator controls **both** the initial momenta sampling **and** all per-step stochastic noise (Langevin OU noise, V-Rescale draws, C-Rescale barostat noise, etc.). It is stored on the state and automatically advances on every step, so running the same seed twice produces identical trajectories.
 - `ts.Integrator.nvt_nose_hoover` and `ts.Integrator.nve` are deterministic at the
@@ -79,17 +79,34 @@ Because TorchSim runs batched simulations, all systems in a batch share a single
 
 If strict reproducibility is required, keep your batching setup fixed.
 
-### Serialising the RNG state
+### Serialising state for reproducible restarts
 
-If you wish to be able to resume a session and ensure determinism you need to persist and reload the `torch.Generator` state. This can be done using `torch.save()` and `torch.Generator().set_state()`:
+To resume a simulation and ensure determinism you need to persist and reload the complete state, including the `torch.Generator` RNG state. The simplest approach is to save the full state dict with `torch.save()`:
 
 ```python
+from dataclasses import asdict
+from torch_sim.integrators import MDState
+
 # save
+torch.save(asdict(state), "checkpoint.pt")
+
+# restore (weights_only=False needed for torch.Generator in PyTorch 2.6+)
+restored = MDState(**torch.load("checkpoint.pt", weights_only=False))
+```
+
+This captures positions, momenta, forces, energy, cell, and the `torch.Generator` in a single file. Since `torch.save()` uses pickle, the generator is serialised automatically.
+
+> **Pickle caveat**: The `torch.Generator` object in the dict requires `weights_only=False` and may not unpickle across PyTorch versions. For portable checkpoints, save the tensors normally and extract the RNG state as a plain `uint8` tensor via `get_state()` — this loads with `weights_only=True` and is version-safe:
+
+```python
+# save RNG state as a plain uint8 tensor (no pickle needed)
 rng_state = state.rng.get_state()
 torch.save(rng_state, "rng_state.pt")
 
 # restore
 gen = torch.Generator(device=state.device)
-gen.set_state(torch.load("rng_state.pt"))
+gen.set_state(torch.load("rng_state.pt", weights_only=True))
 state.rng = gen
 ```
+
+See the [reproducible restart tutorial](../../examples/tutorials/reproducible_restart_tutorial.py) for a complete worked example.

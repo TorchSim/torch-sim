@@ -8,7 +8,10 @@ import torch_sim as ts
 from tests.conftest import DEVICE
 from torch_sim.integrators import MDState
 from torch_sim.integrators.md import NoseHooverChain, NoseHooverChainFns
-from torch_sim.integrators.npt import NPTLangevinState, NPTNoseHooverState
+from torch_sim.integrators.npt import (
+    NPTLangevinAnisotropicState,
+    NPTNoseHooverIsotropicState,
+)
 from torch_sim.integrators.nvt import NVTNoseHooverState, NVTVRescaleState
 from torch_sim.monte_carlo import SwapMCState
 from torch_sim.optimizers.state import BFGSState, FireState, LBFGSState, OptimState
@@ -34,7 +37,7 @@ def test_get_attrs_for_scope(si_sim_state: SimState) -> None:
     per_atom_attrs = dict(get_attrs_for_scope(si_sim_state, "per-atom"))
     assert set(per_atom_attrs) == {"positions", "masses", "atomic_numbers", "system_idx"}
     per_system_attrs = dict(get_attrs_for_scope(si_sim_state, "per-system"))
-    assert set(per_system_attrs) == {"cell", "charge", "spin"}
+    assert set(per_system_attrs) == {"cell"}
     global_attrs = dict(get_attrs_for_scope(si_sim_state, "global"))
     assert set(global_attrs) == {"pbc", "_rng"}
 
@@ -346,6 +349,35 @@ def test_initialize_state_from_state(ar_supercell_sim_state: SimState) -> None:
     assert state.positions.shape == ar_supercell_sim_state.positions.shape
     assert state.masses.shape == ar_supercell_sim_state.masses.shape
     assert state.cell.shape == ar_supercell_sim_state.cell.shape
+
+
+def test_initialize_state_from_list_of_states_with_multiple_systems(
+    si_double_sim_state: SimState, fe_supercell_sim_state: SimState
+) -> None:
+    """Test initialize_state with list of states that have n_systems > 1."""
+    # This should work now that we've removed the arbitrary n_systems == 1 constraint
+    concatenated = ts.initialize_state([si_double_sim_state, fe_supercell_sim_state])
+
+    # Should have 3 systems total (2 from si_double + 1 from fe)
+    assert concatenated.n_systems == 3
+    assert concatenated.cell.shape[0] == 3
+
+    # Check system indices are correct
+    fe_atoms = fe_supercell_sim_state.n_atoms
+    expected_system_indices = torch.cat(
+        [
+            si_double_sim_state.system_idx,
+            torch.full(
+                (fe_atoms,), 2, dtype=torch.int64, device=fe_supercell_sim_state.device
+            ),
+        ]
+    )
+    assert torch.all(concatenated.system_idx == expected_system_indices)
+
+    # Verify we can slice back to original states
+    assert torch.allclose(concatenated[0].positions, si_double_sim_state[0].positions)
+    assert torch.allclose(concatenated[1].positions, si_double_sim_state[1].positions)
+    assert torch.allclose(concatenated[2].positions, fe_supercell_sim_state.positions)
 
 
 def test_initialize_state_from_atoms(si_atoms: "Atoms") -> None:
@@ -1055,8 +1087,8 @@ def test_nvtvrscalestate_instantiation() -> None:
 
 
 def test_nptlangevinstate_instantiation() -> None:
-    """NPTLangevinState inherits pbc/system_idx coercion."""
-    state = NPTLangevinState(
+    """NPTLangevinAnisotropicState inherits pbc/system_idx coercion."""
+    state = NPTLangevinAnisotropicState(
         **BASE_KWARGS,
         pbc=True,
         momenta=torch.zeros(4, 3),
@@ -1067,8 +1099,8 @@ def test_nptlangevinstate_instantiation() -> None:
         cell_alpha=torch.ones(1),
         b_tau=torch.ones(1),
         reference_cell=torch.eye(3).unsqueeze(0),
-        cell_positions=torch.zeros(1, 3, 3),
-        cell_velocities=torch.zeros(1, 3, 3),
+        cell_positions=torch.zeros(1, 3),
+        cell_velocities=torch.zeros(1, 3),
         cell_masses=torch.ones(1),
     )
     _check_coercion(state)
@@ -1147,13 +1179,14 @@ def test_nvtnosehooverstate_instantiation() -> None:
 
 
 def test_nptnosehooverstate_instantiation() -> None:
-    """NPTNoseHooverState inherits pbc/system_idx coercion."""
-    state = NPTNoseHooverState(
+    """NPTNoseHooverIsotropicState inherits pbc/system_idx coercion."""
+    state = NPTNoseHooverIsotropicState(
         **BASE_KWARGS,
         pbc=True,
         momenta=torch.zeros(4, 3),
         energy=torch.zeros(1),
         forces=torch.zeros(4, 3),
+        stress=torch.zeros(1, 3, 3),
         reference_cell=torch.eye(3).unsqueeze(0),
         cell_position=torch.zeros(1),
         cell_momentum=torch.zeros(1),

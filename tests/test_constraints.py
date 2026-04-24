@@ -9,6 +9,7 @@ from torch_sim.constraints import (
     Constraint,
     FixAtoms,
     FixCom,
+    FixSymmetry,
     count_degrees_of_freedom,
     merge_constraints,
     validate_constraints,
@@ -554,8 +555,8 @@ def test_constraint_validation_errors(
     [
         ("nve", FixAtoms(atom_idx=[0, 1]), 100),
         ("nvt_nose_hoover", FixCom([0]), 200),
-        ("npt_langevin", FixAtoms(atom_idx=[0, 3]), 200),
-        ("npt_nose_hoover", FixCom([0]), 200),
+        ("npt_langevin_anisotropic", FixAtoms(atom_idx=[0, 3]), 200),
+        ("npt_nose_hoover_isotropic", FixCom([0]), 200),
     ],
 )
 def test_integrators_with_constraints(
@@ -590,20 +591,20 @@ def test_integrators_with_constraints(
         state = ts.nvt_nose_hoover_init(cu_sim_state, lj_model, kT=kT, dt=dt)
         for _ in range(n_steps):
             state = ts.nvt_nose_hoover_step(state, lj_model, dt=dt, kT=kT)
-    elif integrator == "npt_langevin":
-        state = ts.npt_langevin_init(cu_sim_state, lj_model, kT=kT, dt=dt)
+    elif integrator == "npt_langevin_anisotropic":
+        state = ts.npt_langevin_anisotropic_init(cu_sim_state, lj_model, kT=kT, dt=dt)
         for _ in range(n_steps):
-            state = ts.npt_langevin_step(
+            state = ts.npt_langevin_anisotropic_step(
                 state,
                 lj_model,
                 dt=dt,
                 kT=kT,
                 external_pressure=torch.tensor(0.0, dtype=DTYPE),
             )
-    else:  # npt_nose_hoover
-        state = ts.npt_nose_hoover_init(cu_sim_state, lj_model, kT=kT, dt=dt)
+    else:  # npt_nose_hoover_isotropic
+        state = ts.npt_nose_hoover_isotropic_init(cu_sim_state, lj_model, kT=kT, dt=dt)
         for _ in range(n_steps):
-            state = ts.npt_nose_hoover_step(
+            state = ts.npt_nose_hoover_isotropic_step(
                 state,
                 lj_model,
                 dt=torch.tensor(0.001, dtype=DTYPE),
@@ -1127,3 +1128,148 @@ def test_constraint_merge_rejects_empty_or_wrong_type(
     """Constraint.merge raises clear ValueError on empty or mismatched inputs."""
     with pytest.raises(ValueError, match="requires at least one"):
         merge_cls.merge(constraints)
+
+
+def test_fix_symmetry_system_idx_remapped_on_reordered_slice(
+    mixed_double_sim_state: ts.SimState,
+) -> None:
+    """Slicing with reversed system order must remap FixSymmetry so each
+    system's rotations/symm_maps/reference_cells stay paired with the
+    correct output system.
+    """
+    state = mixed_double_sim_state  # 2 systems
+
+    # Create distinct per-system rotation tensors so we can verify mapping
+    rot0 = torch.eye(3, dtype=DTYPE).unsqueeze(0)  # identity, (1, 3, 3)
+    rot1 = -torch.eye(3, dtype=DTYPE).unsqueeze(0)  # -identity, (1, 3, 3)
+
+    n0 = int(state.n_atoms_per_system[0].item())
+    n1 = int(state.n_atoms_per_system[1].item())
+
+    smap0 = torch.arange(n0).unsqueeze(0)  # (1, n0)
+    smap1 = torch.arange(n1).unsqueeze(0)  # (1, n1)
+
+    ref0 = state.row_vector_cell[0].clone()
+    ref1 = state.row_vector_cell[1].clone()
+
+    state.constraints = [
+        FixSymmetry(
+            rotations=[rot0, rot1],
+            symm_maps=[smap0, smap1],
+            system_idx=torch.tensor([0, 1]),
+            reference_cells=[ref0, ref1],
+        )
+    ]
+
+    # Reverse system order
+    sliced = state[[1, 0]]
+    assert len(sliced.constraints) == 1
+    c = sliced.constraints[0]
+    assert isinstance(c, FixSymmetry)
+
+    # In the output state, system 0 is old system 1 and system 1 is old
+    # system 0. The constraint's rotations list is still [rot0, rot1] (mask
+    # order), but system_idx should be remapped so ci=0 (rot0) points to
+    # output system 1 (old 0) and ci=1 (rot1) points to output system 0
+    # (old 1).
+    si_to_ci = {si.item(): ci for ci, si in enumerate(c.system_idx)}
+
+    # Output system 0 = old system 1 → should use rot1
+    ci_for_output0 = si_to_ci[0]
+    assert torch.equal(c.rotations[ci_for_output0], rot1)
+    assert c.reference_cells is not None
+    assert torch.equal(c.reference_cells[ci_for_output0], ref1)
+
+    # Output system 1 = old system 0 → should use rot0
+    ci_for_output1 = si_to_ci[1]
+    assert torch.equal(c.rotations[ci_for_output1], rot0)
+    assert torch.equal(c.reference_cells[ci_for_output1], ref0)
+
+
+def test_fix_com_system_idx_remapped_on_reordered_slice(
+    mixed_double_sim_state: ts.SimState,
+) -> None:
+    """Slicing with reversed system order must remap FixCom's system_idx
+    so it still targets the correct output systems.
+    """
+    state = mixed_double_sim_state  # 2 systems
+
+    # Constrain only system 0
+    state.constraints = [FixCom(system_idx=torch.tensor([0]))]
+
+    # Reverse system order: old system 0 becomes output system 1
+    sliced = state[[1, 0]]
+    assert len(sliced.constraints) == 1
+    c = sliced.constraints[0]
+    assert isinstance(c, FixCom)
+    assert c.system_idx.tolist() == [1]
+
+    # Constrain both systems and verify both are remapped
+    state.constraints = [FixCom(system_idx=torch.tensor([0, 1]))]
+    sliced = state[[1, 0]]
+    c = sliced.constraints[0]
+    assert isinstance(c, FixCom)
+    assert sorted(c.system_idx.tolist()) == [0, 1]
+
+
+class TestConstraintToDeviceDtype:
+    """Test that state.to() propagates device/dtype to constraint tensors."""
+
+    def test_fix_atoms_dtype_propagation(
+        self, ar_supercell_sim_state: ts.SimState
+    ) -> None:
+        """FixAtoms indices should be moved to the new device by state.to()."""
+        indices = torch.tensor([0, 3, 5], dtype=torch.long)
+        ar_supercell_sim_state.constraints = [FixAtoms(atom_idx=indices)]
+        new_state = ar_supercell_sim_state.to(dtype=torch.float32)
+
+        c = new_state.constraints[0]
+        assert isinstance(c, FixAtoms)
+        assert torch.equal(c.atom_idx, indices)
+        # dtype change should not affect integer indices, but the constraint
+        # object must be a distinct copy
+        assert c is not ar_supercell_sim_state.constraints[0]
+
+    def test_fix_com_dtype_propagation(self, ar_supercell_sim_state: ts.SimState) -> None:
+        """FixCom's cached coms tensor should follow state dtype changes."""
+        ar_supercell_sim_state.constraints = [FixCom([0])]
+        # Trigger lazy COM initialisation
+        ar_supercell_sim_state.set_constrained_positions(
+            ar_supercell_sim_state.positions.clone()
+        )
+        assert ar_supercell_sim_state.constraints[0].coms is not None
+
+        new_state = ar_supercell_sim_state.to(dtype=torch.float32)
+        c = new_state.constraints[0]
+        assert isinstance(c, FixCom)
+        assert c.coms is not None
+        assert c.coms.dtype == torch.float32
+
+    @pytest.mark.parametrize("target_dtype", [torch.float32, torch.float64])
+    def test_fix_symmetry_dtype_propagation(self, target_dtype: torch.dtype) -> None:
+        """FixSymmetry rotations and reference_cells must follow dtype changes."""
+        rotations = [torch.eye(3, dtype=torch.float64).unsqueeze(0)]
+        symm_maps = [torch.zeros(1, 2, dtype=torch.long)]
+        ref_cells = [torch.eye(3, dtype=torch.float64)]
+
+        state = ts.SimState(
+            positions=torch.zeros(2, 3, dtype=torch.float64),
+            masses=torch.ones(2, dtype=torch.float64),
+            cell=torch.eye(3, dtype=torch.float64).unsqueeze(0) * 5.0,
+            pbc=True,
+            atomic_numbers=torch.tensor([14, 14]),
+            system_idx=torch.zeros(2, dtype=torch.long),
+        )
+        state.constraints = [FixSymmetry(rotations, symm_maps, reference_cells=ref_cells)]
+
+        new_state = state.to(dtype=target_dtype)
+        c = new_state.constraints[0]
+        assert isinstance(c, FixSymmetry)
+        assert c.rotations[0].dtype == target_dtype
+        assert c.reference_cells is not None
+        assert c.reference_cells[0].dtype == target_dtype
+        # integer symm_maps must stay long
+        assert c.symm_maps[0].dtype == torch.long
+        # original constraint unchanged
+        orig = state.constraints[0]
+        assert orig.rotations[0].dtype == torch.float64

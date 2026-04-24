@@ -355,6 +355,66 @@ def test_pbc_wrap_batched_preserves_relative_positions(
                 assert torch.allclose(orig_vec, wrapped_vec, atol=1e-6)
 
 
+def test_pbc_wrap_batched_and_get_lattice_shifts() -> None:
+    """Test that wrapping returns correct positions and integer lattice shifts."""
+    cell1 = torch.tensor(
+        [[3.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 3.0]],
+        dtype=torch.float64,
+        device=DEVICE,
+    )
+    cell2 = torch.tensor(
+        [[2.0, 0.5, 0.0], [0.0, 2.0, 0.0], [0.0, 0.3, 2.0]],
+        dtype=torch.float64,
+        device=DEVICE,
+    )
+    cell = torch.stack([cell1, cell2])
+    pbc = torch.tensor([[True, True, True], [True, True, True]], device=DEVICE)
+    positions = torch.tensor(
+        [[4.0, -1.0, 7.5], [3.0, 2.5, 4.5]],
+        dtype=torch.float64,
+        device=DEVICE,
+    )
+    system_idx = torch.tensor([0, 1], device=DEVICE)
+    wrapped, shifts = tst.pbc_wrap_batched_and_get_lattice_shifts(
+        positions, cell, system_idx, pbc
+    )
+    assert wrapped.shape == positions.shape
+    assert shifts.shape == positions.shape
+    reconstructed = wrapped + (shifts.unsqueeze(-1) * cell[system_idx]).sum(dim=1)
+    torch.testing.assert_close(reconstructed, positions, atol=1e-10, rtol=0.0)
+    assert (shifts[0] != 0).any(), "expected non-zero shifts for displaced atom"
+
+
+def test_pbc_wrap_batched_and_get_lattice_shifts_singular_cell() -> None:
+    """Singular cells and non-periodic systems are left unchanged."""
+    cell = torch.zeros(1, 3, 3, dtype=torch.float64, device=DEVICE)
+    pbc = torch.tensor([[True, True, True]], device=DEVICE)
+    positions = torch.tensor([[5.0, 5.0, 5.0]], dtype=torch.float64, device=DEVICE)
+    system_idx = torch.tensor([0], device=DEVICE)
+    wrapped, shifts = tst.pbc_wrap_batched_and_get_lattice_shifts(
+        positions, cell, system_idx, pbc
+    )
+    torch.testing.assert_close(wrapped, positions)
+    assert (shifts == 0).all()
+
+
+def test_pbc_wrap_batched_and_get_lattice_shifts_non_periodic() -> None:
+    """Non-periodic axes should not be wrapped."""
+    cell = torch.eye(3, dtype=torch.float64, device=DEVICE).unsqueeze(0) * 2.0
+    pbc = torch.tensor([[True, False, True]], device=DEVICE)
+    positions = torch.tensor([[3.0, 5.0, 5.0]], dtype=torch.float64, device=DEVICE)
+    system_idx = torch.tensor([0], device=DEVICE)
+    wrapped, shifts = tst.pbc_wrap_batched_and_get_lattice_shifts(
+        positions, cell, system_idx, pbc
+    )
+    assert wrapped[0, 0] == 1.0, "periodic x should wrap 3.0 -> 1.0 in cell=2"
+    assert wrapped[0, 1] == 5.0, "non-periodic y should stay at 5.0"
+    assert wrapped[0, 2] == 1.0, "periodic z should wrap 5.0 -> 1.0 in cell=2"
+    assert shifts[0, 0] == 1, "x shift should be 1 (floor(3.0/2.0))"
+    assert shifts[0, 1] == 0, "non-periodic y shift should be 0"
+    assert shifts[0, 2] == 2, "z shift should be 2 (floor(5.0/2.0))"
+
+
 def test_safe_mask_basic() -> None:
     """Test basic functionality of safe_mask with log function.
 
@@ -1336,7 +1396,7 @@ def test_build_linked_cell_neighborhood_basic() -> None:
 
 def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
     n_steps = 50
-    dt = torch.tensor(0.001, dtype=DTYPE)
+    dt = torch.tensor(0.001, dtype=DTYPE) * MetalUnits.time
     kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
 
     # Same cell
@@ -1362,12 +1422,14 @@ def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJon
     assert torch.allclose(unwrapped_positions, positions, atol=1e-4)
 
     # Different cell
-    state = ts.npt_langevin_init(state=ar_double_sim_state, model=lj_model, kT=kT, dt=dt)
+    state = ts.npt_langevin_anisotropic_init(
+        state=ar_double_sim_state, model=lj_model, kT=kT, dt=dt
+    )
     state.positions = tst.pbc_wrap_batched(state.positions, state.cell, state.system_idx)
     positions = [state.positions.detach().clone()]
     cells = [state.cell.detach().clone()]
     for _step in range(n_steps):
-        state = ts.npt_langevin_step(
+        state = ts.npt_langevin_anisotropic_step(
             model=lj_model,
             state=state,
             dt=dt,
@@ -1386,7 +1448,7 @@ def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJon
     )
     unwrapped_positions = tst.unwrap_positions(
         wrapped_positions,
-        state.cell,
+        torch.stack(cells),
         state.system_idx,
     )
     assert torch.allclose(unwrapped_positions, positions, atol=1e-4)

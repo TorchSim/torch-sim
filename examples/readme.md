@@ -35,11 +35,38 @@ If you'd like to execute the scripts or examples locally, you can run them with:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # pick any of the examples
-uv run --with . examples/scripts/1_introduction.py
-uv run --with . examples/scripts/2_structural_optimization.py
-uv run --with . examples/scripts/3_dynamics.py
-uv run --with . examples/scripts/4_high_level_api.py
+uv run --with-editable . examples/scripts/1_introduction.py
+uv run --with-editable . examples/scripts/2_structural_optimization.py
+uv run --with-editable . examples/scripts/3_dynamics.py
+uv run --with-editable . examples/scripts/4_high_level_api.py
 
 # or any of the tutorials
-uv run --with . examples/tutorials/diff_sim.py
+uv run --with-editable . examples/tutorials/diff_sim.py
 ```
+
+## Benchmarking Scripts
+
+The `examples/benchmarking/` folder contains standalone benchmark scripts. They
+declare their own dependencies via [PEP 723 inline script metadata](https://peps.python.org/pep-0723/)
+and should be run with `uv run --with-editable .` so that the local `torch-sim` package
+is available alongside the script's isolated dependency environment:
+
+```sh
+# Neighbor-list backend benchmark on WBM or MP structures
+uv run --with-editable . examples/benchmarking/neighborlists.py \
+    --source wbm --n-structures 100 --device cpu
+
+# Scaling benchmark: static, relax, NVE, NVT
+uv run --with ".[mace]" examples/benchmarking/scaling.py
+
+# MD throughput: ASE Langevin vs torch-sim batched NVT-Langevin
+uv run --with ".[mace]" examples/benchmarking/md-throughput.py --model mace
+
+# Optimization throughput: ASE vs torch-sim LBFGS/FIRE on WBM structures
+uv run --with ".[mace]" examples/benchmarking/opt-throughput.py \
+    --model mace --optimizer lbfgs --n-structures 50
+```
+
+> **Note:** `--with .` installs the local editable `torch-sim` package into the
+> script's isolated environment. Using `--no-project` instead would skip this
+> and fail to find `torch_sim`.

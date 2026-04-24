@@ -13,6 +13,24 @@ from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.testing import SIMSTATE_GENERATORS
 
 
+torch.set_num_threads(4)
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--validation-plots",
+        action="store_true",
+        default=False,
+        help="Save physical validation plots to tests/physical_validation_data/plots/",
+    )
+    parser.addoption(
+        "--clean-validation-data",
+        action="store_true",
+        default=False,
+        help="Delete saved physical validation data before running tests",
+    )
+
+
 DEVICE = torch.device("cpu")
 DTYPE = torch.float64
 
@@ -107,7 +125,6 @@ def si_phonopy_atoms() -> Any:
         cell=lattice,
         scaled_positions=coords,
         symbols=species,
-        pbc=True,
     )
 
 

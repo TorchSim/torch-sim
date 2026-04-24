@@ -17,7 +17,7 @@ try:
     from torch_sim.models.orb import OrbModel
 
 except ImportError:
-    pytest.skip(f"ORB not installed: {traceback.format_exc()}", allow_module_level=True)  # ty:ignore[too-many-positional-arguments]
+    pytest.skip(f"ORB not installed: {traceback.format_exc()}", allow_module_level=True)
 
 
 @pytest.fixture
@@ -76,6 +76,11 @@ test_validate_conservative_model_outputs = make_validate_model_outputs_test(
     model_fixture_name="orbv3_conservative_inf_omat_model",
 )
 
-test_validate_direct_model_outputs = make_validate_model_outputs_test(
-    model_fixture_name="orbv3_direct_20_omat_model",
-)
+
+test_validate_direct_model_outputs = pytest.mark.xfail(
+    reason=(
+        "Upstream ORB direct model shows batch-dependent leakage; "
+        "see https://github.com/orbital-materials/orb-models/issues/159"
+    ),
+    strict=False,
+)(make_validate_model_outputs_test(model_fixture_name="orbv3_direct_20_omat_model"))

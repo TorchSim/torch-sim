@@ -1,5 +1,7 @@
 """Pytest fixtures and test factories for model testing."""
 
+from __future__ import annotations
+
 import typing
 
 import pytest
@@ -10,7 +12,10 @@ from torch_sim.testing import SIMSTATE_GENERATORS, assert_model_calculator_consi
 
 
 if typing.TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
     from torch_sim.models.interface import ModelInterface
+    from torch_sim.state import SimState
 
 
 def make_model_calculator_consistency_test(
@@ -81,8 +86,13 @@ def make_validate_model_outputs_test(
     dtype: torch.dtype = DTYPE,
     *,
     check_detached: bool = True,
+    state_modifiers: Sequence[Callable[[SimState], SimState]] = (),
 ):
     """Factory function to create model output validation tests.
+
+    Runs ``validate_model_outputs`` once with no modifier (baseline), then
+    once more for each entry in *state_modifiers* so that every modifier
+    gets a full, independent validation pass.
 
     Args:
         model_fixture_name: Name of the model fixture to validate
@@ -90,13 +100,25 @@ def make_validate_model_outputs_test(
         dtype: Data type to use for validation
         check_detached: Whether to assert output tensors are detached from the
             autograd graph (skipped for models with ``retain_graph=True``).
+        state_modifiers: Each callable receives a ``SimState`` and returns a
+            (possibly new) ``SimState``.  The full validation suite is run
+            once per modifier so that different input edge-cases are
+            exercised independently.
     """
     from torch_sim.models.interface import validate_model_outputs
 
     def test_model_output_validation(request: pytest.FixtureRequest) -> None:
         """Test that a model implementation follows the ModelInterface contract."""
         model: ModelInterface = request.getfixturevalue(model_fixture_name)
-        validate_model_outputs(model, device, dtype, check_detached=check_detached)
+        modifiers = state_modifiers or [None]
+        for modifier in modifiers:
+            validate_model_outputs(
+                model,
+                device,
+                dtype,
+                check_detached=check_detached,
+                state_modifier=modifier,
+            )
 
     test_model_output_validation.__name__ = f"test_{model_fixture_name}_output_validation"
     return test_model_output_validation

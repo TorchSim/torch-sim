@@ -19,7 +19,7 @@ try:
     from torch_sim.models.nequip_framework import NequIPFrameworkModel
 except (ImportError, ModuleNotFoundError):
     pytest.skip(
-        f"nequip not installed: {traceback.format_exc()}",  # ty:ignore[too-many-positional-arguments]
+        f"nequip not installed: {traceback.format_exc()}",
         allow_module_level=True,
     )
 
@@ -27,30 +27,30 @@ except (ImportError, ModuleNotFoundError):
 # Cache directory for compiled models (under tests/ for easy cleanup)
 NEQUIP_CACHE_DIR = Path(__file__).parent.parent / ".cache" / "nequip_compiled_models"
 
-# Zenodo URL for NequIP-OAM-L model (more reliable than nequip.net for CI)
-NEQUIP_OAM_L_ZENODO_URL = (
-    "https://zenodo.org/records/16980200/files/NequIP-OAM-L-0.1.nequip.zip?download=1"
+# Zenodo URL for NequIP-OAM-S model (more reliable than nequip.net for CI)
+NEQUIP_OAM_S_ZENODO_URL = (
+    "https://zenodo.org/records/18775904/files/NequIP-OAM-S-0.1.nequip.zip?download=1"
 )
-NEQUIP_OAM_L_ZIP_NAME = "NequIP-OAM-L-0.1.nequip.zip"
+NEQUIP_OAM_S_ZIP_NAME = "NequIP-OAM-S-0.1.nequip.zip"
 
 
 def _get_nequip_model_zip() -> Path:
-    """Download NequIP-OAM-L model from Zenodo if not already cached."""
+    """Download NequIP-OAM-S model from Zenodo if not already cached."""
     NEQUIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    zip_path = NEQUIP_CACHE_DIR / NEQUIP_OAM_L_ZIP_NAME
+    zip_path = NEQUIP_CACHE_DIR / NEQUIP_OAM_S_ZIP_NAME
 
     if not zip_path.exists():
-        urllib.request.urlretrieve(NEQUIP_OAM_L_ZENODO_URL, zip_path)  # noqa: S310
+        urllib.request.urlretrieve(NEQUIP_OAM_S_ZENODO_URL, zip_path)  # noqa: S310
 
     return zip_path
 
 
 @pytest.fixture(scope="session")
 def compiled_ase_nequip_model_path() -> Path:
-    """Compile NequIP OAM-L model from Zenodo for ASE (with persistent caching)."""
+    """Compile NequIP OAM-S model from Zenodo for ASE (with persistent caching)."""
     NEQUIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    output_model_name = f"mir-group__NequIP-OAM-L__0.1__{DEVICE.type}_ase.nequip.pt2"
+    output_model_name = f"mir-group__NequIP-OAM-S__0.1__{DEVICE.type}_ase.nequip.pt2"
     output_path = NEQUIP_CACHE_DIR / output_model_name
 
     # Only compile if not already cached
@@ -74,10 +74,10 @@ def compiled_ase_nequip_model_path() -> Path:
 
 @pytest.fixture(scope="session")
 def compiled_batch_nequip_model_path() -> Path:
-    """Compile NequIP OAM-L model from Zenodo for batch (with persistent caching)."""
+    """Compile NequIP OAM-S model from Zenodo for batch (with persistent caching)."""
     NEQUIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    output_model_name = f"mir-group__NequIP-OAM-L__0.1__{DEVICE.type}_batch.nequip.pt2"
+    output_model_name = f"mir-group__NequIP-OAM-S__0.1__{DEVICE.type}_batch.nequip.pt2"
     output_path = NEQUIP_CACHE_DIR / output_model_name
 
     # Only compile if not already cached

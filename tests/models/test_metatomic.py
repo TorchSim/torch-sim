@@ -12,38 +12,35 @@ from torch_sim.testing import SIMSTATE_GENERATORS
 
 
 try:
-    from metatomic.torch import ase_calculator
-    from metatrain.utils.io import load_model
+    from metatomic.torch import AtomisticModel
+    from metatomic_ase import MetatomicCalculator
+    from upet import get_upet
 
     from torch_sim.models.metatomic import MetatomicModel
 except ImportError:
     pytest.skip(
-        f"metatomic not installed: {traceback.format_exc()}",  # ty:ignore[too-many-positional-arguments]
+        f"metatomic not installed: {traceback.format_exc()}",
         allow_module_level=True,
     )
 
 
 @pytest.fixture
-def metatomic_calculator():
-    """Load a pretrained metatomic model for testing."""
-    model_url = "https://huggingface.co/lab-cosmo/pet-mad/resolve/v1.1.0/models/pet-mad-v1.1.0.ckpt"
-    return ase_calculator.MetatomicCalculator(
-        model=load_model(model_url).export(), device=DEVICE
-    )
+def metatomic_module() -> AtomisticModel:
+    return get_upet(model="pet-mad")
 
 
 @pytest.fixture
-def metatomic_model() -> MetatomicModel:
-    """Create an MetatomicModel wrapper for the pretrained model."""
-    return MetatomicModel(model="pet-mad", device=DEVICE)
+def metatomic_calculator(metatomic_module: AtomisticModel) -> MetatomicCalculator:
+    return MetatomicCalculator(model=metatomic_module, device=DEVICE)
+
+
+@pytest.fixture
+def metatomic_model(metatomic_module: AtomisticModel) -> MetatomicModel:
+    return MetatomicModel(model=metatomic_module, device=DEVICE)
 
 
 def test_metatomic_initialization() -> None:
-    """Test that the metatomic model initializes correctly."""
-    model = MetatomicModel(
-        model="pet-mad",
-        device=DEVICE,
-    )
+    model = MetatomicModel(model=get_upet(model="pet-mad"), device=DEVICE)
     assert model.device == DEVICE
     assert model.dtype == torch.float32
 

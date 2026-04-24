@@ -5,9 +5,9 @@ fallback based on available dependencies. The API supports both single-system
 and batched (multi-system) calculations.
 
 Available Implementations:
-    - Primitive: Pure PyTorch implementation (always available)
-    - Vesin: High-performance neighbor lists (optional, requires vesin package)
-    - Batched: Optimized for multiple systems (torch_nl_n2, torch_nl_linked_cell)
+    - Alchemiops: Warp-accelerated neighbor list implementation
+    - Vesin: High-performance neighbor list implementation
+    - TorchNL: Pure PyTorch implementation
 
 Default Neighbor Lists:
     The module automatically selects the best available implementation:
@@ -16,82 +16,30 @@ Default Neighbor Lists:
 
 import torch
 
-from torch_sim.neighbors.torch_nl import strict_nl as strict_nl
-from torch_sim.neighbors.torch_nl import torch_nl_linked_cell
-from torch_sim.neighbors.torch_nl import torch_nl_n2 as torch_nl_n2
+from torch_sim.neighbors.alchemiops import (
+    ALCHEMIOPS_AVAILABLE,
+    alchemiops_nl_cell_list,
+    alchemiops_nl_n2,
+)
+from torch_sim.neighbors.torch_nl import strict_nl, torch_nl_linked_cell, torch_nl_n2
+from torch_sim.neighbors.vesin import (
+    VESIN_AVAILABLE,
+    VESIN_TORCHSCRIPT_AVAILABLE,
+    vesin_nl,
+    vesin_nl_ts,
+)
 
-
-def _normalize_inputs(
-    cell: torch.Tensor, pbc: torch.Tensor, n_systems: int
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Normalize cell and PBC tensors to standard batch format.
-
-    Handles multiple input formats:
-    - cell: [3, 3], [n_systems, 3, 3], or [n_systems*3, 3]
-    - pbc: [3], [n_systems, 3], or [n_systems*3]
-
-    Returns:
-        (cell, pbc) normalized to ([n_systems, 3, 3], [n_systems, 3])
-        Both tensors are guaranteed to be contiguous.
-    """
-    # Normalize cell
-    if cell.ndim == 2:
-        if cell.shape[0] == 3:
-            cell = cell.unsqueeze(0).expand(n_systems, -1, -1).contiguous()
-        else:
-            cell = cell.reshape(n_systems, 3, 3).contiguous()
-    else:
-        cell = cell.contiguous()
-
-    # Normalize PBC
-    if pbc.ndim == 1:
-        if pbc.shape[0] == 3:
-            pbc = pbc.unsqueeze(0).expand(n_systems, -1).contiguous()
-        else:
-            pbc = pbc.reshape(n_systems, 3).contiguous()
-    else:
-        pbc = pbc.contiguous()
-
-    return cell, pbc
-
-
-# Try to import Alchemiops implementations (NVIDIA CUDA acceleration)
-try:
-    from torch_sim.neighbors.alchemiops import (
-        ALCHEMIOPS_AVAILABLE,
-        alchemiops_nl_cell_list,
-        alchemiops_nl_n2,
-    )
-except ImportError:
-    ALCHEMIOPS_AVAILABLE = False
-    alchemiops_nl_n2 = None  # type: ignore[assignment]
-    alchemiops_nl_cell_list = None  # type: ignore[assignment]
-
-# Try to import Vesin implementations
-try:
-    from torch_sim.neighbors.vesin import (
-        VESIN_AVAILABLE,
-        VesinNeighborList,
-        VesinNeighborListTorch,
-        vesin_nl,
-        vesin_nl_ts,
-    )
-except ImportError:
-    VESIN_AVAILABLE = False
-    VesinNeighborList = None
-    VesinNeighborListTorch = None
-    vesin_nl = None  # type: ignore[assignment]
-    vesin_nl_ts = None  # type: ignore[assignment]
 
 # Set default neighbor list based on what's available (priority order)
 if ALCHEMIOPS_AVAILABLE:
     # Alchemiops is fastest on NVIDIA GPUs
+    # TODO: why default to n2? we should document the cross-over point
     default_batched_nl = alchemiops_nl_n2
+elif VESIN_TORCHSCRIPT_AVAILABLE:
+    default_batched_nl = vesin_nl_ts
 elif VESIN_AVAILABLE:
-    # Vesin is good fallback
-    default_batched_nl = vesin_nl_ts  # Still use native for batched
+    default_batched_nl = vesin_nl
 else:
-    # Pure PyTorch fallback
     default_batched_nl = torch_nl_linked_cell
 
 
@@ -138,8 +86,28 @@ def torchsim_nl(
         return alchemiops_nl_n2(
             positions, cell, pbc, cutoff, system_idx, self_interaction
         )
-    if VESIN_AVAILABLE:
+
+    if VESIN_TORCHSCRIPT_AVAILABLE:
         return vesin_nl_ts(positions, cell, pbc, cutoff, system_idx, self_interaction)
+
+    if VESIN_AVAILABLE:
+        return vesin_nl(positions, cell, pbc, cutoff, system_idx, self_interaction)
+
     return torch_nl_linked_cell(
         positions, cell, pbc, cutoff, system_idx, self_interaction
     )
+
+
+__all__ = [
+    "ALCHEMIOPS_AVAILABLE",
+    "ALCHEMIOPS_TORCH_AVAILABLE",
+    "VESIN_AVAILABLE",
+    "VESIN_TORCHSCRIPT_AVAILABLE",
+    "alchemiops_nl_cell_list",
+    "alchemiops_nl_n2",
+    "strict_nl",
+    "torch_nl_linked_cell",
+    "torch_nl_n2",
+    "vesin_nl",
+    "vesin_nl_ts",
+]

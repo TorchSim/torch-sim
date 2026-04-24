@@ -68,7 +68,6 @@ autodoc_mock_imports = [
     "metatomic",
     "orb",
     "sevennet",
-    "graphpes",
 ]
 
 # use type hints

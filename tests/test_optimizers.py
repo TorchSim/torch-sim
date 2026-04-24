@@ -1,4 +1,5 @@
 import copy
+import warnings
 from collections.abc import Callable
 from functools import partial
 from typing import Any, get_args
@@ -1086,6 +1087,57 @@ def test_frechet_cell_fire_optimization(
     )
 
 
+def test_frechet_lbfgs_clamps_extreme_deformation(
+    ar_supercell_sim_state: SimState, lj_model: ModelInterface
+) -> None:
+    """LBFGS + Frechet cell filter clamps extreme log-space deformation.
+
+    Injects extreme cell_positions so that cell_positions / cell_factor > 2.0,
+    then verifies: (1) the clamp warning fires, (2) the log-space deformation
+    is bounded after the step, and (3) positions/cell remain finite.
+    """
+    state = ts.lbfgs_init(
+        state=ar_supercell_sim_state,
+        model=lj_model,
+        cell_filter=ts.CellFilter.frechet,
+    )
+
+    # Inject extreme cell_positions: log-deform = cell_positions/cell_factor = 10
+    # This far exceeds the MAX_LOG_DEFORM=2.0 clamp threshold.
+    state.cell_positions = state.cell_positions + 10.0 * state.cell_factor.view(
+        -1, 1, 1
+    ) * torch.eye(3, device=state.cell.device, dtype=state.cell.dtype).unsqueeze(0)
+
+    log_deform_before = (
+        (state.cell_positions / state.cell_factor.view(-1, 1, 1)).abs().max().item()
+    )
+    assert log_deform_before > 5.0, "Setup: log-deform should be extreme before step"
+
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always")
+        state = ts.lbfgs_step(state=state, model=lj_model)
+
+    # 1. Log-space deformation must be bounded after the clamp
+    log_deform_after = (
+        (state.cell_positions / state.cell_factor.view(-1, 1, 1)).abs().max().item()
+    )
+    assert log_deform_after <= 2.5, (
+        f"Log-space deformation should be clamped to ~2.0, got {log_deform_after:.2f}"
+    )
+
+    # 2. Positions and cell must remain finite
+    assert not torch.isnan(state.positions).any(), "Positions contain NaN"
+    assert not torch.isinf(state.positions).any(), "Positions contain Inf"
+    assert not torch.isnan(state.cell).any(), "Cell contains NaN"
+    assert not torch.isinf(state.cell).any(), "Cell contains Inf"
+
+    # 3. The clamp warning must have fired
+    clamp_warnings = [
+        warn for warn in caught_warnings if "Clamping log-space" in str(warn.message)
+    ]
+    assert len(clamp_warnings) > 0, "Expected clamping warning but none was emitted"
+
+
 @pytest.mark.parametrize(
     "filter_func",
     [None, ts.CellFilter.unit, ts.CellFilter.frechet],
@@ -1412,8 +1464,13 @@ def test_optimizer_preserves_charge_spin(
     original_spin = torch.tensor(
         [6.0], device=ar_supercell_sim_state.device, dtype=ar_supercell_sim_state.dtype
     )
-    ar_supercell_sim_state.charge = original_charge.clone()
-    ar_supercell_sim_state.spin = original_spin.clone()
+
+    ar_supercell_sim_state.store_model_extras(
+        {
+            "charge": original_charge.clone(),
+            "spin": original_spin.clone(),
+        }
+    )
 
     init_fn, step_fn = ts.OPTIM_REGISTRY[optimizer_fn]
     opt_state = init_fn(

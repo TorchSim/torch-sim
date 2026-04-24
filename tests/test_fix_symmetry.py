@@ -34,7 +34,7 @@ def make_structure(name: str, repeats: int = REPEATS) -> Atoms:
         "fcc": lambda: bulk("Cu", "fcc", a=3.6),
         "hcp": lambda: bulk("Ti", "hcp", a=2.95, c=4.68),
         "diamond": lambda: bulk("Si", "diamond", a=5.43),
-        "bcc": lambda: bulk("Al", "bcc", a=2 / np.sqrt(3), cubic=True),
+        "bcc": lambda: bulk("Al", "bcc", a=4 / np.sqrt(3), cubic=True),
         "p6bar": lambda: crystal(
             "Si",
             [(0.3, 0.1, 0.25)],
@@ -128,7 +128,7 @@ class NoisyModelWrapper(ModelInterface):
 @pytest.fixture
 def noisy_lj_model(model: LennardJonesModel) -> NoisyModelWrapper:
     """LJ model with noise added to forces/stress."""
-    return NoisyModelWrapper(model)
+    return NoisyModelWrapper(model, noise_scale=5e-1, concentration=1.0)
 
 
 @pytest.fixture
@@ -539,9 +539,9 @@ def test_build_symmetry_map_chunked_matches_vectorized() -> None:
 
     old_threshold = sym_mod._SYMM_MAP_CHUNK_THRESHOLD  # noqa: SLF001
     try:
-        sym_mod._SYMM_MAP_CHUNK_THRESHOLD = len(state.positions) + 1  # noqa: SLF001  # ty: ignore[invalid-assignment]
+        sym_mod._SYMM_MAP_CHUNK_THRESHOLD = len(state.positions) + 1  # noqa: SLF001
         vectorized = build_symmetry_map(rotations, translations, frac)
-        sym_mod._SYMM_MAP_CHUNK_THRESHOLD = 0  # noqa: SLF001  # ty: ignore[invalid-assignment]
+        sym_mod._SYMM_MAP_CHUNK_THRESHOLD = 0  # noqa: SLF001
         chunked = build_symmetry_map(rotations, translations, frac)
     finally:
         sym_mod._SYMM_MAP_CHUNK_THRESHOLD = old_threshold  # noqa: SLF001

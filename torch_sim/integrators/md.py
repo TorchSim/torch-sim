@@ -233,6 +233,7 @@ def velocity_verlet_step[T: MDState](
 
     state.energy = model_output["energy"]
     state.forces = model_output["forces"]
+    state.store_model_extras(model_output)
     return momentum_step(state, dt_2)
 
 
@@ -409,7 +410,7 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
 
         Q = (
             kT_batched.unsqueeze(-1)
-            * torch.square(tau_batched).unsqueeze(-1) ** 2
+            * torch.square(tau_batched).unsqueeze(-1)
             * torch.ones((n_systems, chain_length), dtype=dtype, device=device)
         )
         Q[:, 0] *= degrees_of_freedom

@@ -26,13 +26,46 @@ Notes:
     compute_stress property, as some integrators require stress calculations.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 import torch
 
 import torch_sim as ts
-from torch_sim.state import SimState
-from torch_sim.typing import MemoryScaling
+from torch_sim.state import _CANONICAL_MODEL_KEYS
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from torch_sim.state import SimState
+    from torch_sim.typing import MemoryScaling
+
+
+VALIDATE_ATOL = 1e-4
+
+_MEMORY_SCALING_PRIORITY: dict[MemoryScaling, int] = {
+    "n_atoms": 0,
+    "n_atoms_x_density": 1,
+    "n_edges": 2,
+}
+
+
+def _accumulate_model_output(
+    combined: dict[str, torch.Tensor], output: dict[str, torch.Tensor]
+) -> None:
+    """Accumulate one model output into a combined output dict.
+
+    Canonical mechanical outputs are additive. Other outputs are treated as
+    full updated values, so later models replace earlier ones.
+    """
+    for key, tensor in output.items():
+        if key in combined and key in _CANONICAL_MODEL_KEYS:
+            combined[key] = combined[key] + tensor
+        else:
+            combined[key] = tensor
 
 
 class ModelInterface(torch.nn.Module, ABC):
@@ -168,6 +201,156 @@ class ModelInterface(torch.nn.Module, ABC):
         """
 
 
+class SumModel(ModelInterface):
+    """Additive composition of multiple :class:`ModelInterface` models.
+
+    Calls each child model's :meth:`forward`. Canonical mechanical outputs
+    (energy, forces, stress) are combined additively, while non-canonical
+    outputs are treated as full updated values and later models replace
+    earlier ones. This is the standard way to layer a dispersion correction
+    (e.g. DFT-D3), an Ewald electrostatic term, or a local pair potential on
+    top of a primary machine-learning potential.
+
+    Args:
+        models: Two or more :class:`ModelInterface` instances that share the
+            same ``device`` and ``dtype``.
+
+    Raises:
+        ValueError: If fewer than two models are given or if ``device``/``dtype``
+            do not match across all models.
+
+    Examples:
+        ```py
+        sum_model = SumModel(mace_model, d3_model)
+        output = sum_model(sim_state)
+        ```
+    """
+
+    def __init__(self, *models: ModelInterface) -> None:
+        """Initialize the sum model.
+
+        Args:
+            models: Two or more :class:`ModelInterface` instances. All must
+                share the same ``device`` and ``dtype``.
+        """
+        super().__init__()
+        if len(models) < 2:
+            raise ValueError("SumModel requires at least two child models")
+        first = models[0]
+        for i, m in enumerate(models[1:], start=1):
+            if m.device != first.device:
+                raise ValueError(
+                    f"Device mismatch: model 0 has {first.device}, "
+                    f"model {i} has {m.device}"
+                )
+            if m.dtype != first.dtype:
+                raise ValueError(
+                    f"Dtype mismatch: model 0 has {first.dtype}, model {i} has {m.dtype}"
+                )
+        self.models = torch.nn.ModuleList(models)
+        self._device = first.device
+        self._dtype = first.dtype
+        self._compute_stress = all(m.compute_stress for m in models)
+        self._compute_forces = all(m.compute_forces for m in models)
+
+    def _children(self) -> list[ModelInterface]:
+        """Return child models with proper typing for static analysis."""
+        return list(self.models.children())  # type: ignore[return-value]
+
+    @ModelInterface.compute_stress.setter
+    def compute_stress(self, value: bool) -> None:  # noqa: FBT001
+        """Propagate ``compute_stress`` to all child models that support it."""
+        for m in self._children():
+            try:
+                m.compute_stress = value
+            except NotImplementedError:
+                if value:
+                    raise
+        self._compute_stress = value
+
+    @ModelInterface.compute_forces.setter
+    def compute_forces(self, value: bool) -> None:  # noqa: FBT001
+        """Propagate ``compute_forces`` to all child models that support it."""
+        for m in self._children():
+            try:
+                m.compute_forces = value
+            except NotImplementedError:
+                if value:
+                    raise
+        self._compute_forces = value
+
+    @property
+    def retain_graph(self) -> bool:
+        """Whether any child model retains the computation graph."""
+        return all(getattr(m, "retain_graph", False) for m in self._children())
+
+    @retain_graph.setter
+    def retain_graph(self, value: bool) -> None:
+        for m in self._children():
+            if hasattr(m, "retain_graph"):
+                m.retain_graph = value  # type: ignore[union-attr]
+
+    @property
+    def memory_scales_with(self) -> MemoryScaling:
+        """Most conservative memory-scaling among all child models."""
+        best: MemoryScaling = "n_atoms"
+        for m in self._children():
+            scaling = m.memory_scales_with
+            if _MEMORY_SCALING_PRIORITY[scaling] > _MEMORY_SCALING_PRIORITY[best]:
+                best = scaling
+        return best
+
+    def forward(self, state: SimState, **kwargs) -> dict[str, torch.Tensor]:
+        """Sum the outputs of all child models.
+
+        Each child model is called with the same ``state`` and ``**kwargs``.
+        Canonical mechanical outputs that appear in multiple children are
+        summed element-wise. Non-canonical outputs are replaced by later
+        models so they behave like full state updates rather than deltas.
+
+        Args:
+            state: Simulation state (see :class:`ModelInterface`).
+            **kwargs: Forwarded to every child model.
+
+        Returns:
+            Combined output dictionary with summed tensors.
+        """
+        combined: dict[str, torch.Tensor] = {}
+        for model in self._children():
+            output = model(state, **kwargs)
+            _accumulate_model_output(combined, output)
+        return combined
+
+
+class SerialSumModel(SumModel):
+    """Serial additive composition of multiple :class:`ModelInterface` models.
+
+    Unlike :class:`SumModel`, child models do not all see the same input state.
+    Instead, each child runs after the previous child's non-canonical outputs have
+    been stored into a cloned :class:`~torch_sim.state.SimState` via
+    :meth:`torch_sim.state.SimState.store_model_extras`. This lets earlier models
+    expose per-atom or per-system features that later models can consume.
+    Energies, forces, and stresses remain additive, while repeated auxiliary
+    outputs are treated as full updated values from the latest stage.
+
+    Examples:
+        ```py
+        serial_model = SerialSumModel(polarization_model, dispersion_model)
+        output = serial_model(sim_state)
+        ```
+    """
+
+    def forward(self, state: SimState, **kwargs) -> dict[str, torch.Tensor]:
+        """Run child models serially, exposing extras from earlier models."""
+        combined: dict[str, torch.Tensor] = {}
+        serial_state = state.clone()
+        for model in self._children():
+            output = model(serial_state, **kwargs)
+            _accumulate_model_output(combined, output)
+            serial_state.store_model_extras(output)
+        return combined
+
+
 def _check_output_detached(
     output: dict[str, torch.Tensor], model: ModelInterface
 ) -> None:
@@ -207,6 +390,7 @@ def validate_model_outputs(  # noqa: C901, PLR0915
     dtype: torch.dtype,
     *,
     check_detached: bool = False,
+    state_modifier: Callable[[SimState], SimState] | None = None,
 ) -> None:
     """Validate the outputs of a model implementation against the interface requirements.
 
@@ -222,6 +406,9 @@ def validate_model_outputs(  # noqa: C901, PLR0915
             detached from the autograd graph, unless the model has a
             ``retain_graph`` attribute set to ``True``. Defaults to ``False`` so
             that external callers are not immediately broken.
+        state_modifier: If provided, applied to every ``SimState`` created
+            during validation before the model sees it.  Must return the
+            (possibly new) state.
 
     Raises:
         AssertionError: If the model doesn't conform to the required interface,
@@ -236,10 +423,14 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         validate_model_outputs(model, device=torch.device("cuda"), dtype=torch.float64)
 
     Notes:
-        This validator creates small test systems (silicon and iron) for validation.
-        It tests both single and multi-batch processing capabilities.
+        This validator creates small test systems (diamond silicon, HCP magnesium,
+        and primitive BCC iron) for validation. It tests both single and
+        multi-batch processing capabilities.
     """
-    from ase.build import bulk
+    from ase.build import bulk, molecule
+
+    def _modify(state: SimState) -> SimState:
+        return state_modifier(state) if state_modifier is not None else state
 
     for attr in ("dtype", "device", "compute_stress", "compute_forces"):
         if not hasattr(model, attr):
@@ -260,10 +451,11 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         force_computed = False
 
     si_atoms = bulk("Si", "diamond", a=5.43, cubic=True)
-    fe_atoms = bulk("Fe", "fcc", a=5.26, cubic=True).repeat([3, 1, 1])
-
-    sim_state = ts.io.atoms_to_state([si_atoms, fe_atoms], device, dtype)
-
+    mg_atoms = bulk("Mg", "hcp", a=3.21, c=5.21).repeat([3, 2, 1])
+    fe_atoms = bulk("Fe", "bcc", a=2.87)
+    sim_state = _modify(
+        ts.io.atoms_to_state([si_atoms, mg_atoms, fe_atoms], device, dtype)
+    )
     og_positions = sim_state.positions.clone()
     og_cell = sim_state.cell.clone()
     system_idx = sim_state.system_idx
@@ -299,28 +491,27 @@ def validate_model_outputs(  # noqa: C901, PLR0915
         raise ValueError("stress not in model output")
 
     # assert model output shapes are correct
-    if model_output["energy"].shape != (2,):
-        raise ValueError(f"{model_output['energy'].shape=} != (2,)")
-    if force_computed and model_output["forces"].shape != (20, 3):
-        raise ValueError(f"{model_output['forces'].shape=} != (20, 3)")
-    if stress_computed and model_output["stress"].shape != (2, 3, 3):
-        raise ValueError(f"{model_output['stress'].shape=} != (2, 3, 3)")
+    if model_output["energy"].shape != (3,):
+        raise ValueError(f"{model_output['energy'].shape=} != (3,)")
+    if force_computed and model_output["forces"].shape != (21, 3):
+        raise ValueError(f"{model_output['forces'].shape=} != (21, 3)")
+    if stress_computed and model_output["stress"].shape != (3, 3, 3):
+        raise ValueError(f"{model_output['stress'].shape=} != (3, 3, 3)")
 
-    si_state = ts.io.atoms_to_state([si_atoms], device, dtype)
-
+    # Test single Si system output shapes (8 atoms)
+    si_state = _modify(ts.io.atoms_to_state([si_atoms], device, dtype))
     si_model_output = model.forward(si_state)
     if not torch.allclose(
-        si_model_output["energy"], model_output["energy"][0], atol=1e-3
+        si_model_output["energy"], model_output["energy"][0], atol=VALIDATE_ATOL
     ):
         raise ValueError(f"{si_model_output['energy']=} != {model_output['energy'][0]=}")
     if not torch.allclose(
         forces := si_model_output["forces"],
         expected_forces := model_output["forces"][: si_state.n_atoms],
-        atol=1e-3,
+        atol=VALIDATE_ATOL,
     ):
         raise ValueError(f"{forces=} != {expected_forces=}")
 
-    # Test single Si system output shapes (8 atoms)
     if si_model_output["energy"].shape != (1,):
         raise ValueError(f"{si_model_output['energy'].shape=} != (1,)")
     if force_computed and si_model_output["forces"].shape != (8, 3):
@@ -328,23 +519,93 @@ def validate_model_outputs(  # noqa: C901, PLR0915
     if stress_computed and si_model_output["stress"].shape != (1, 3, 3):
         raise ValueError(f"{si_model_output['stress'].shape=} != (1, 3, 3)")
 
-    fe_state = ts.io.atoms_to_state([fe_atoms], device, dtype)
-    fe_model_output = model.forward(fe_state)
+    # Test single Mg system output shapes (12 atoms)
+    mg_state = _modify(ts.io.atoms_to_state([mg_atoms], device, dtype))
+    mg_model_output = model.forward(mg_state)
     if not torch.allclose(
-        fe_model_output["energy"], model_output["energy"][1], atol=1e-3
+        mg_model_output["energy"], model_output["energy"][1], atol=VALIDATE_ATOL
     ):
-        raise ValueError(f"{fe_model_output['energy']=} != {model_output['energy'][1]=}")
+        raise ValueError(f"{mg_model_output['energy']=} != {model_output['energy'][1]=}")
+    mg_n = mg_state.n_atoms
+    mg_slice = slice(si_state.n_atoms, si_state.n_atoms + mg_n)
     if not torch.allclose(
-        forces := fe_model_output["forces"],
-        expected_forces := model_output["forces"][si_state.n_atoms :],
-        atol=1e-3,
+        forces := mg_model_output["forces"],
+        expected_forces := model_output["forces"][mg_slice],
+        atol=VALIDATE_ATOL,
     ):
         raise ValueError(f"{forces=} != {expected_forces=}")
 
-    # Test single Fe system output shapes (12 atoms)
+    if mg_model_output["energy"].shape != (1,):
+        raise ValueError(f"{mg_model_output['energy'].shape=} != (1,)")
+    if force_computed and mg_model_output["forces"].shape != (12, 3):
+        raise ValueError(f"{mg_model_output['forces'].shape=} != (12, 3)")
+    if stress_computed and mg_model_output["stress"].shape != (1, 3, 3):
+        raise ValueError(f"{mg_model_output['stress'].shape=} != (1, 3, 3)")
+
+    # Test single Fe system output shapes (1 atom)
+    # This catches that models do not squeeze away singleton dimensions.
+    fe_state = _modify(ts.io.atoms_to_state([fe_atoms], device, dtype))
+    fe_model_output = model.forward(fe_state)
+    if not torch.allclose(
+        fe_model_output["energy"], model_output["energy"][2], atol=VALIDATE_ATOL
+    ):
+        raise ValueError(f"{fe_model_output['energy']=} != {model_output['energy'][2]=}")
+    if not torch.allclose(
+        forces := fe_model_output["forces"],
+        expected_forces := model_output["forces"][si_state.n_atoms + mg_n :],
+        atol=VALIDATE_ATOL,
+    ):
+        raise ValueError(f"{forces=} != {expected_forces=}")
+
     if fe_model_output["energy"].shape != (1,):
         raise ValueError(f"{fe_model_output['energy'].shape=} != (1,)")
-    if force_computed and fe_model_output["forces"].shape != (12, 3):
-        raise ValueError(f"{fe_model_output['forces'].shape=} != (12, 3)")
+    if force_computed and fe_model_output["forces"].shape != (1, 3):
+        raise ValueError(f"{fe_model_output['forces'].shape=} != (1, 3)")
     if stress_computed and fe_model_output["stress"].shape != (1, 3, 3):
         raise ValueError(f"{fe_model_output['stress'].shape=} != (1, 3, 3)")
+
+    # Translating one atom by a full lattice vector should not change outputs.
+    # This catches models that fail to apply periodic boundary conditions.
+    shifted_state = si_state.clone()
+    lattice_vec = shifted_state.cell[0, :, 0]  # column convention
+    shifted_state.positions[0] = shifted_state.positions[0] + 3 * lattice_vec
+    shifted_output = model.forward(shifted_state)
+    if not torch.allclose(
+        shifted_output["energy"], si_model_output["energy"], atol=VALIDATE_ATOL
+    ):
+        raise ValueError(
+            "Energy changed after translating an atom by a lattice "
+            f"vector: {shifted_output['energy']=} != "
+            f"{si_model_output['energy']=}"
+        )
+    if force_computed and not torch.allclose(
+        shifted_output["forces"], si_model_output["forces"], atol=VALIDATE_ATOL
+    ):
+        raise ValueError(
+            "Forces changed after translating an atom by a lattice "
+            "vector: max diff = "
+            f"{(shifted_output['forces'] - si_model_output['forces']).abs().max()}"
+        )
+    if stress_computed and not torch.allclose(
+        shifted_output["stress"], si_model_output["stress"], atol=VALIDATE_ATOL
+    ):
+        raise ValueError(
+            "Stress changed after translating an atom by a lattice "
+            "vector: max diff = "
+            f"{(shifted_output['stress'] - si_model_output['stress']).abs().max()}"
+        )
+
+    # Test a non-periodic molecule (benzene)
+    benzene_atoms = molecule("C6H6")
+    benzene_state = _modify(ts.io.atoms_to_state([benzene_atoms], device, dtype))
+    benzene_output = model.forward(benzene_state)
+    if benzene_output["energy"].shape != (1,):
+        raise ValueError(
+            f"energy shape incorrect for benzene: "
+            f"{benzene_output['energy'].shape=} != (1,)"
+        )
+    if force_computed and benzene_output["forces"].shape != (12, 3):
+        raise ValueError(
+            f"forces shape incorrect for benzene: "
+            f"{benzene_output['forces'].shape=} != (12, 3)"
+        )

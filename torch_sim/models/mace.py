@@ -48,6 +48,10 @@ except (ImportError, ModuleNotFoundError) as exc:
             """Dummy init for type checking."""
             raise err
 
+        def forward(self, *_args: Any, **_kwargs: Any) -> Any:
+            """Unreachable — __init__ always raises."""
+            raise NotImplementedError
+
 
 def to_one_hot(
     indices: torch.Tensor, num_classes: int, dtype: torch.dtype
@@ -279,44 +283,29 @@ class MaceModel(ModelInterface):
             self._setup_ptr(state.system_idx)
             self.system_idx = state.system_idx
 
-        # Wrap positions into the unit cell
-        wrapped_positions = (
-            ts.transforms.pbc_wrap_batched(
-                state.positions,
-                state.cell,
-                state.system_idx,
-                state.pbc,
-            )
-            if state.pbc.any()
-            else state.positions
-        )
-
-        # Batched neighbor list using linked-cell algorithm
         edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
-            wrapped_positions,
+            state.positions,
             state.row_vector_cell,
             state.pbc,
             self.r_max,
             state.system_idx,
         )
-        # Convert unit cell shift indices to Cartesian shifts
         shifts = ts.transforms.compute_cell_shifts(
             state.row_vector_cell, unit_shifts, mapping_system
         )
 
-        # Build data dict for MACE model
         data_dict = dict(
             ptr=self.ptr,
             node_attrs=self.node_attrs,
             batch=state.system_idx,
             pbc=state.pbc,
             cell=state.row_vector_cell,
-            positions=wrapped_positions,
+            positions=state.positions,
             edge_index=edge_index,
             unit_shifts=unit_shifts,
             shifts=shifts,
-            total_charge=state.charge,
-            total_spin=state.spin,
+            total_charge=getattr(state, "charge", None),
+            total_spin=getattr(state, "spin", None),
         )
 
         # Get model output
@@ -346,6 +335,13 @@ class MaceModel(ModelInterface):
             stress = out["stress"]
             if stress is not None:
                 results["stress"] = stress.detach()
+
+        # Propagate additional model outputs (e.g. dipole, charges, etc.)
+        for key, val in out.items():
+            if key not in ("energy", "forces", "stress") and isinstance(
+                val, torch.Tensor
+            ):
+                results[key] = val.detach()
 
         return results
 

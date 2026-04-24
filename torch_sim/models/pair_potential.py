@@ -74,7 +74,7 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.transforms import compute_cell_shifts, pbc_wrap_batched
+from torch_sim.transforms import compute_cell_shifts
 
 
 if TYPE_CHECKING:
@@ -161,18 +161,12 @@ def _prepare_pairs(
         else torch.zeros(positions.shape[0], dtype=torch.long, device=device)
     )
 
-    wrapped_positions = (
-        pbc_wrap_batched(positions, sim_state.cell, system_idx, pbc)
-        if pbc.any()
-        else positions
-    )
-
     pbc_batched = (
         pbc.unsqueeze(0).expand(sim_state.n_systems, -1) if pbc.ndim == 1 else pbc
     )
 
     mapping, system_mapping, shifts_idx = neighbor_list_fn(
-        positions=wrapped_positions,
+        positions=positions,
         cell=row_cell,
         pbc=pbc_batched,
         cutoff=cutoff,
@@ -185,7 +179,7 @@ def _prepare_pairs(
         )
 
     cell_shifts = compute_cell_shifts(row_cell, shifts_idx, system_mapping)
-    dr_vec = wrapped_positions[mapping[1]] - wrapped_positions[mapping[0]] + cell_shifts
+    dr_vec = positions[mapping[1]] - positions[mapping[0]] + cell_shifts
     distances = dr_vec.norm(dim=1)
 
     return (
