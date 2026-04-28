@@ -666,8 +666,8 @@ class TestFixSymmetryWithOptimization:
 
 class TestFixSymmetryCellPositionsResync:
     """Tests that cell_positions stays consistent with the actual cell after
-    optimizer steps with FixSymmetry.  These would have caught the
-    cell_positions desync bug (Fix 1) and the batching discrepancy.
+    optimizer steps with FixSymmetry.  These catch cell_positions desyncs and
+    batching discrepancies.
     """
 
     @pytest.mark.parametrize(
