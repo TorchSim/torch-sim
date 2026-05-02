@@ -1091,7 +1091,7 @@ class TorchSimTrajectory:
         return Atoms(
             numbers=np.ascontiguousarray(arrays["atomic_numbers"]),
             positions=np.ascontiguousarray(arrays["positions"]),
-            cell=np.ascontiguousarray(arrays["cell"])[0],
+            cell=np.ascontiguousarray(arrays["cell"])[0].T,
             pbc=np.ascontiguousarray(arrays["pbc"]),
         )
 
