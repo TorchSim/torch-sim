@@ -828,7 +828,10 @@ def test_get_atoms_importerror(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
     )
     traj.write_state(state, steps=0)
 
-    with pytest.raises(ImportError, match="ASE is required to convert to ASE Atoms"):
+    with pytest.raises(
+        ImportError,
+        match="ASE is required for state_to_atoms conversion",
+    ):
         traj.get_atoms(0)
     traj.close()
 
