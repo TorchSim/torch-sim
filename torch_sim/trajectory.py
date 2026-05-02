@@ -1051,7 +1051,7 @@ class TorchSimTrajectory:
 
         return state_to_structures(self.get_state(frame, device=torch.device("cpu")))[0]
 
-    def get_atoms(self, frame: int = -1) -> "Atoms":
+    def get_atoms(self, frame: int = -1, **kwargs: Any) -> "Atoms":
         """Get an ASE Atoms object for a given frame.
 
         Converts the state at the specified frame to an ASE Atoms object
@@ -1059,6 +1059,7 @@ class TorchSimTrajectory:
 
         Args:
             frame (int): Frame index to retrieve (-1 for last frame)
+            **kwargs: Additional keyword arguments passed to `state_to_atoms`.
 
         Returns:
             Atoms: ASE Atoms object for the specified frame
@@ -1068,7 +1069,9 @@ class TorchSimTrajectory:
         """
         from torch_sim.io import state_to_atoms
 
-        return state_to_atoms(self.get_state(frame, device=torch.device("cpu")))[0]
+        return state_to_atoms(
+            self.get_state(frame, device=torch.device("cpu")), **kwargs
+        )[0]
 
     def get_state(
         self,
