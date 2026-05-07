@@ -49,7 +49,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: radical-ai/torch-sim
+          slug: torchsim/torch-sim
 
   test-model:
     strategy:
@@ -115,7 +115,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: radical-ai/torch-sim
+          slug: torchsim/torch-sim
 
   find-examples:
     runs-on: ubuntu-latest
