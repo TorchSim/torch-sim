@@ -1,6 +1,6 @@
 # TorchSim
 
-[![CI](https://github.com/torchsim/torch-sim/actions/workflows/test.yml/badge.svg)](https://github.com/torchsim/torch-sim/actions/workflows/test.yml)
+[![CI](https://img.shields.io/github/check-runs/torchsim/torch-sim/main?nameFilter=all-required-pass&label=CI&logo=github)](https://github.com/torchsim/torch-sim/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/torchsim/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/torchsim/torch-sim)
 [![This project supports Python 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg?logo=python&logoColor=white)](https://python.org/downloads)
 [![PyPI](https://img.shields.io/pypi/v/torch-sim-atomistic?logo=pypi&logoColor=white)](https://pypi.org/project/torch-sim-atomistic)
