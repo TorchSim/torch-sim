@@ -464,9 +464,12 @@ def lbfgs_step(  # noqa: PLR0915, C901
     # Save previous state for history update
     # For cell state: store fractional positions and scaled forces (ASE convention)
     if isinstance(state, CellLBFGSState):
-        state.prev_positions = frac_positions.clone()  # [N, 3] (fractional)
-        state.prev_forces = forces_scaled.clone()  # [N, 3] (scaled)
+        # Store cell prev state BEFORE the cell step so that the history
+        # update computes s_new_cell = resynced_current - start_of_step,
+        # correctly capturing the actual cell displacement.
         state.prev_cell_positions = state.cell_positions.clone()  # [S, 3, 3]
+        # prev_cell_forces comes from compute_cell_forces which already uses
+        # the adjusted cell, so it's in the correct frame.
         state.prev_cell_forces = state.cell_forces.clone()  # [S, 3, 3]
 
         # Apply cell step
@@ -499,12 +502,43 @@ def lbfgs_step(  # noqa: PLR0915, C901
         )  # [S, 3, 3]
         state.set_constrained_cell(new_col_vector_cell, scale_atoms=True)
 
+        # Resync cell_positions to match the (possibly adjusted) cell so
+        # the next step builds on the correct base instead of the
+        # pre-adjustment value.  Without this, any constraint that
+        # modifies the cell (e.g. FixSymmetry) causes a zigzag where the
+        # optimizer repeatedly proposes from a stale cell_positions.
+        adjusted_deform_grad = deform_grad(
+            state.reference_cell.mT, state.row_vector_cell
+        )  # [S, 3, 3]
+        if is_frechet:
+            cell_factor_reshaped = state.cell_factor.view(n_systems, 1, 1)
+            state.cell_positions = (
+                ts.math.matrix_log_33(adjusted_deform_grad, sim_dtype=state.dtype)
+                * cell_factor_reshaped
+            )
+        else:
+            cell_factor_expanded = state.cell_factor.expand(n_systems, 3, 1)
+            state.cell_positions = (
+                adjusted_deform_grad.reshape(n_systems, 3, 3) * cell_factor_expanded
+            )
+
+        # Store prev_positions/prev_forces in the ADJUSTED cell's frame so
+        # they are consistent with the next step's start-of-step deformation
+        # gradient.  Without this, the LBFGS history vectors (s, y) mix two
+        # different coordinate frames, corrupting the Hessian estimate.
+        state.prev_positions = torch.linalg.solve(
+            adjusted_deform_grad[state.system_idx],
+            state.positions.unsqueeze(-1),
+        ).squeeze(-1)  # [N, 3] (fractional in adjusted frame)
+        state.prev_forces = torch.bmm(
+            state.forces.unsqueeze(1),
+            adjusted_deform_grad[state.system_idx],
+        ).squeeze(1)  # [N, 3] (scaled in adjusted frame)
+
         # Apply position step in fractional space, then convert to Cartesian
         new_frac = frac_positions + step_positions  # [N, 3]
 
-        new_deform_grad = deform_grad(
-            state.reference_cell.mT, state.row_vector_cell
-        )  # [S, 3, 3]
+        new_deform_grad = adjusted_deform_grad  # already computed above
         # new_positions = new_frac @ deform_grad^T
         new_positions = torch.bmm(
             new_frac.unsqueeze(1),  # [N, 1, 3]

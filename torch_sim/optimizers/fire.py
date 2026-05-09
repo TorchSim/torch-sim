@@ -449,6 +449,27 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
             # (needed for correct displacement calculation in position constraints)
             state.set_constrained_cell(new_col_vector_cell, scale_atoms=True)
 
+            # Resync cell_positions to match the (possibly adjusted) cell so
+            # the next step builds on the correct base instead of the
+            # pre-adjustment value.  Without this, any constraint that
+            # modifies the cell (e.g. FixSymmetry) causes a zigzag where the
+            # optimizer repeatedly proposes from a stale cell_positions.
+            adjusted_deform_grad = cell_filters.deform_grad(
+                state.reference_cell.mT, state.row_vector_cell
+            )
+            if is_frechet:
+                cell_factor_reshaped = state.cell_factor.view(state.n_systems, 1, 1)
+                state.cell_positions = (
+                    tsm.matrix_log_33(adjusted_deform_grad, sim_dtype=state.dtype)
+                    * cell_factor_reshaped
+                )
+            else:
+                cell_factor_expanded = state.cell_factor.expand(state.n_systems, 3, 1)
+                state.cell_positions = (
+                    adjusted_deform_grad.reshape(state.n_systems, 3, 3)
+                    * cell_factor_expanded
+                )
+
         # Transform fractional positions to Cartesian using NEW deformation gradient
         new_deform_grad = cell_filters.deform_grad(
             state.reference_cell.mT, state.row_vector_cell

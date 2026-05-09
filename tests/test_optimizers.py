@@ -10,6 +10,7 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers import BFGSState, FireFlavor, FireState, LBFGSState, OptimState
+from torch_sim.optimizers.cell_filters import CellLBFGSState, deform_grad
 from torch_sim.state import SimState
 
 
@@ -1492,3 +1493,50 @@ def test_optimizer_preserves_charge_spin(
 
         assert torch.allclose(opt_state.charge, original_charge)
         assert torch.allclose(opt_state.spin, original_spin)
+
+
+def test_lbfgs_prev_cell_positions_stored_before_step(lj_model: ModelInterface) -> None:
+    """prev_cell_positions captures start-of-step, prev_positions use adjusted frame."""
+    from ase.build import bulk
+
+    from torch_sim.constraints import FixSymmetry
+
+    atoms = bulk("Ti", "hcp", a=2.95, c=4.68).repeat([2, 2, 2])
+    state = ts.io.atoms_to_state(atoms, lj_model.device, lj_model.dtype)
+    constraint = FixSymmetry.from_state(state, symprec=0.01)
+    state.constraints = [constraint]
+    state.cell = state.cell * 0.95
+    state.positions = state.positions * 0.95
+
+    opt_state = ts.lbfgs_init(state, lj_model, cell_filter=ts.CellFilter.frechet)
+    assert isinstance(opt_state, CellLBFGSState)
+
+    # Save cell_positions BEFORE the step
+    cell_pos_before = opt_state.cell_positions.clone()
+
+    # Run one step
+    opt_state = ts.lbfgs_step(state=opt_state, model=lj_model)
+
+    # prev_cell_positions should equal the pre-step value (not the post-resync value)
+    assert torch.allclose(opt_state.prev_cell_positions, cell_pos_before, atol=1e-6), (
+        "prev_cell_positions should capture start-of-step, not post-resync. "
+        f"max diff from pre-step = {(opt_state.prev_cell_positions - cell_pos_before).abs().max():.2e}, "  # noqa: E501
+        f"max diff from current = {(opt_state.prev_cell_positions - opt_state.cell_positions).abs().max():.2e}"  # noqa: E501
+    )
+
+    # prev_cell_positions should NOT equal the current (post-step) cell_positions
+    # (unless the step was zero, which shouldn't happen on a compressed structure)
+    assert not torch.allclose(
+        opt_state.prev_cell_positions, opt_state.cell_positions, atol=1e-6
+    ), "prev_cell_positions equals current cell_positions — s_new_cell would be zero"
+
+    # prev_positions should be in the adjusted (post-adjust_cell) frame
+    cur_dg = deform_grad(opt_state.reference_cell.mT, opt_state.row_vector_cell)
+    expected_prev = torch.linalg.solve(
+        cur_dg[opt_state.system_idx],
+        opt_state.positions.unsqueeze(-1),
+    ).squeeze(-1)
+    assert torch.allclose(opt_state.prev_positions, expected_prev, atol=1e-5), (
+        "prev_positions should be fractional coords in the adjusted cell frame. "
+        f"max diff = {(opt_state.prev_positions - expected_prev).abs().max():.2e}"
+    )

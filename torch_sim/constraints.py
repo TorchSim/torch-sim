@@ -774,10 +774,8 @@ class FixSymmetry(SystemConstraint):
 
     rotations: list[torch.Tensor]
     symm_maps: list[torch.Tensor]
-    reference_cells: list[torch.Tensor] | None
     do_adjust_positions: bool
     do_adjust_cell: bool
-    max_cumulative_strain: float
 
     def __init__(
         self,
@@ -787,8 +785,6 @@ class FixSymmetry(SystemConstraint):
         *,
         adjust_positions: bool = True,
         adjust_cell: bool = True,
-        reference_cells: list[torch.Tensor] | None = None,
-        max_cumulative_strain: float = 0.5,
     ) -> None:
         """Initialize FixSymmetry constraint.
 
@@ -798,11 +794,6 @@ class FixSymmetry(SystemConstraint):
             system_idx: System indices (defaults to 0..n_systems-1).
             adjust_positions: Whether to symmetrize position displacements.
             adjust_cell: Whether to symmetrize cell/stress adjustments.
-            reference_cells: Initial refined cells (row vectors) per system for
-                cumulative strain tracking. If None, cumulative check is skipped.
-            max_cumulative_strain: Maximum allowed cumulative strain from the
-                reference cell. If exceeded, the cell update is clamped to
-                keep the structure within this strain envelope.
         """
         n_systems = len(rotations)
         if len(symm_maps) != n_systems:
@@ -817,19 +808,12 @@ class FixSymmetry(SystemConstraint):
             raise ValueError(
                 f"system_idx length ({len(system_idx)}) != n_systems ({n_systems})"
             )
-        if reference_cells is not None and len(reference_cells) != n_systems:
-            raise ValueError(
-                f"reference_cells length ({len(reference_cells)}) "
-                f"!= n_systems ({n_systems})"
-            )
 
         super().__init__(system_idx=system_idx)
         self.rotations = rotations
         self.symm_maps = symm_maps
-        self.reference_cells = reference_cells
         self.do_adjust_positions = adjust_positions
         self.do_adjust_cell = adjust_cell
-        self.max_cumulative_strain = max_cumulative_strain
 
     @classmethod
     def from_state(
@@ -866,7 +850,7 @@ class FixSymmetry(SystemConstraint):
 
         from torch_sim.symmetrize import prep_symmetry, refine_and_prep_symmetry
 
-        rotations, symm_maps, reference_cells = [], [], []
+        rotations, symm_maps = [], []
         cumsum = _cumsum_with_zero(state.n_atoms_per_system)
 
         for sys_idx in range(state.n_systems):
@@ -896,8 +880,6 @@ class FixSymmetry(SystemConstraint):
 
             rotations.append(rots)
             symm_maps.append(smap)
-            # Store the refined cell as the reference for cumulative strain tracking
-            reference_cells.append(state.row_vector_cell[sys_idx].clone())
 
         return cls(
             rotations,
@@ -905,7 +887,6 @@ class FixSymmetry(SystemConstraint):
             system_idx=torch.arange(state.n_systems, device=state.device),
             adjust_positions=adjust_positions,
             adjust_cell=adjust_cell,
-            reference_cells=reference_cells,
         )
 
     def adjust_forces(self, state: SimState, forces: torch.Tensor) -> None:
@@ -932,20 +913,22 @@ class FixSymmetry(SystemConstraint):
             rots = self.rotations[ci].to(dtype=dtype)
             stress[si] = symmetrize_rank2(state.row_vector_cell[si], stress[si], rots)
 
-    def adjust_cell(self, state: SimState, cell: torch.Tensor) -> None:
+    def adjust_cell(
+        self, state: SimState, cell: torch.Tensor, max_delta_component: float = 0.25
+    ) -> None:
         """Symmetrize cell deformation gradient in-place.
 
         Computes ``F = inv(cell) @ new_cell_row``, symmetrizes ``F - I`` as a
         rank-2 tensor, then reconstructs ``cell @ (sym(F-I) + I)``.
 
-        Also checks cumulative strain from the initial reference cell. If the
-        total deformation exceeds ``max_cumulative_strain``, the update is
-        clamped to prevent phase transitions that would break the symmetry
-        constraint (e.g. hexagonal → tetragonal cell collapse).
+        Per-step deformation is clamped at max_delta_component to avoid
+        ill-conditioned symmetrization, matching the ASE FixSymmetry behaviour.
 
         Args:
             state: Current simulation state.
             cell: Cell tensor (n_systems, 3, 3) in column vector convention.
+            max_delta_component: Maximum component of the per-step deformation
+                gradient to allow.
 
         Raises:
             RuntimeError: If deformation gradient contains NaN or Inf.
@@ -961,8 +944,7 @@ class FixSymmetry(SystemConstraint):
             new_row = cell[si].mT  # column → row convention
 
             # Per-step deformation: clamp large steps to avoid ill-conditioned
-            # symmetrization while still making progress. The cumulative strain
-            # guard below is the real safety net against phase transitions.
+            # symmetrization while still making progress.
             deform_delta = torch.linalg.solve(cur_cell, new_row) - identity
             max_delta = torch.abs(deform_delta).max().item()
             if not math.isfinite(max_delta):
@@ -970,24 +952,13 @@ class FixSymmetry(SystemConstraint):
                     f"FixSymmetry: deformation gradient is {max_delta}, "
                     f"cell may be singular or ill-conditioned."
                 )
-            if max_delta > 0.25:
-                deform_delta = deform_delta * (0.25 / max_delta)
+            if max_delta > max_delta_component:
+                deform_delta = deform_delta * (max_delta_component / max_delta)
 
             # Symmetrize the per-step deformation
             rots = self.rotations[ci].to(dtype=state.dtype)
             sym_delta = symmetrize_rank2(cur_cell, deform_delta, rots)
             proposed_cell = cur_cell @ (sym_delta + identity)
-
-            # Cumulative strain check against reference cell
-            if self.reference_cells is not None:
-                ref_cell = self.reference_cells[ci].to(
-                    device=state.device, dtype=state.dtype
-                )
-                cumulative_strain = torch.linalg.solve(ref_cell, proposed_cell) - identity
-                max_cumulative = torch.abs(cumulative_strain).max().item()
-                if max_cumulative > self.max_cumulative_strain:
-                    scale = self.max_cumulative_strain / max_cumulative
-                    proposed_cell = ref_cell @ (cumulative_strain * scale + identity)
 
             cell[si] = proposed_cell.mT  # back to column convention
 
@@ -1018,8 +989,6 @@ class FixSymmetry(SystemConstraint):
             self.system_idx + system_offset,
             adjust_positions=self.do_adjust_positions,
             adjust_cell=self.do_adjust_cell,
-            reference_cells=list(self.reference_cells) if self.reference_cells else None,
-            max_cumulative_strain=self.max_cumulative_strain,
         )
 
     def to(
@@ -1034,12 +1003,6 @@ class FixSymmetry(SystemConstraint):
             self.system_idx.to(device=device),
             adjust_positions=self.do_adjust_positions,
             adjust_cell=self.do_adjust_cell,
-            reference_cells=(
-                [c.to(device=device, dtype=dtype) for c in self.reference_cells]
-                if self.reference_cells is not None
-                else None
-            ),
-            max_cumulative_strain=self.max_cumulative_strain,
         )
 
     @classmethod
@@ -1051,32 +1014,21 @@ class FixSymmetry(SystemConstraint):
         if any(
             c.do_adjust_positions != fix_sym_constraints[0].do_adjust_positions
             or c.do_adjust_cell != fix_sym_constraints[0].do_adjust_cell
-            or c.max_cumulative_strain != fix_sym_constraints[0].max_cumulative_strain
             for c in fix_sym_constraints[1:]
         ):
             raise ValueError(
                 "Cannot merge FixSymmetry constraints with different "
-                "adjust_positions/adjust_cell/max_cumulative_strain settings"
+                "adjust_positions/adjust_cell settings"
             )
         rotations = [r for c in fix_sym_constraints for r in c.rotations]
         symm_maps = [s for c in fix_sym_constraints for s in c.symm_maps]
         system_idx = torch.cat([c.system_idx for c in fix_sym_constraints])
-        # Merge reference cells if all constraints have them
-        ref_cells = None
-        if all(c.reference_cells is not None for c in fix_sym_constraints):
-            ref_cells = []
-            for c in fix_sym_constraints:
-                refs = c.reference_cells
-                if refs is not None:
-                    ref_cells.extend(refs)
         return cls(
             rotations,
             symm_maps,
             system_idx=system_idx,
             adjust_positions=fix_sym_constraints[0].do_adjust_positions,
             adjust_cell=fix_sym_constraints[0].do_adjust_cell,
-            reference_cells=ref_cells,
-            max_cumulative_strain=fix_sym_constraints[0].max_cumulative_strain,
         )
 
     def select_constraint(
@@ -1090,19 +1042,12 @@ class FixSymmetry(SystemConstraint):
         if not mask.any():
             return None
         local_idx = mask.nonzero(as_tuple=False).flatten().tolist()
-        ref_cells = (
-            [self.reference_cells[idx] for idx in local_idx]
-            if self.reference_cells
-            else None
-        )
         return type(self)(
             [self.rotations[idx] for idx in local_idx],
             [self.symm_maps[idx] for idx in local_idx],
             _mask_constraint_indices(self.system_idx[mask], system_mask),
             adjust_positions=self.do_adjust_positions,
             adjust_cell=self.do_adjust_cell,
-            reference_cells=ref_cells,
-            max_cumulative_strain=self.max_cumulative_strain,
         )
 
     def select_sub_constraint(
@@ -1114,15 +1059,12 @@ class FixSymmetry(SystemConstraint):
         if sys_idx not in self.system_idx:
             return None
         local = (self.system_idx == sys_idx).nonzero(as_tuple=True)[0].item()
-        ref_cells = [self.reference_cells[local]] if self.reference_cells else None
         return type(self)(
             [self.rotations[local]],
             [self.symm_maps[local]],
             torch.tensor([0], device=self.system_idx.device),
             adjust_positions=self.do_adjust_positions,
             adjust_cell=self.do_adjust_cell,
-            reference_cells=ref_cells,
-            max_cumulative_strain=self.max_cumulative_strain,
         )
 
     def __repr__(self) -> str:
