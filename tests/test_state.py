@@ -37,9 +37,34 @@ def test_get_attrs_for_scope(si_sim_state: SimState) -> None:
     per_atom_attrs = dict(get_attrs_for_scope(si_sim_state, "per-atom"))
     assert set(per_atom_attrs) == {"positions", "masses", "atomic_numbers", "system_idx"}
     per_system_attrs = dict(get_attrs_for_scope(si_sim_state, "per-system"))
-    assert set(per_system_attrs) == {"cell"}
+    assert set(per_system_attrs) == {"cell", "group_idx"}
+    per_group_attrs = dict(get_attrs_for_scope(si_sim_state, "per-group"))
+    assert set(per_group_attrs) == set()
     global_attrs = dict(get_attrs_for_scope(si_sim_state, "global"))
     assert set(global_attrs) == {"pbc", "_rng"}
+
+
+def test_group_idx_defaults_to_one_group_per_system(
+    si_double_sim_state: SimState,
+) -> None:
+    assert torch.equal(
+        si_double_sim_state.group_idx,
+        torch.arange(si_double_sim_state.n_systems, device=si_double_sim_state.device),
+    )
+    assert si_double_sim_state.n_groups == si_double_sim_state.n_systems
+
+
+def test_slice_remaps_group_idx(si_double_sim_state: SimState) -> None:
+    state = si_double_sim_state.clone()
+    state.group_idx = torch.zeros(state.n_systems, device=state.device, dtype=torch.int64)
+
+    sliced = _slice_state(state, [1, 0])
+
+    assert torch.equal(
+        sliced.group_idx,
+        torch.zeros(sliced.n_systems, device=sliced.device, dtype=torch.int64),
+    )
+    assert sliced.n_groups == 1
 
 
 def test_all_attributes_must_be_specified_in_scopes() -> None:
