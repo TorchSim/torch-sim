@@ -13,7 +13,7 @@ Visualization is disabled in CI mode.
 # /// script
 # dependencies = [
 #     "torch_sim_atomistic[mace, io]",
-#     "mace-torch @ git+https://github.com/CompRhys/mace.git@main",
+#     "mace-torch>0.3.16",
 #     "pymatviz>=0.17.1",
 #     "plotly>=6.3.0",
 #     "seekpath",

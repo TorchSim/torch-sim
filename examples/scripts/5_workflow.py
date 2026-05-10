@@ -9,7 +9,7 @@ This script demonstrates:
 # /// script
 # dependencies = [
 #     "torch_sim_atomistic[mace, io]",
-#     "mace-torch @ git+https://github.com/CompRhys/mace.git@main",
+#     "mace-torch>0.3.16",
 #     "matbench-discovery>=1.3.1",
 # ]
 # ///
