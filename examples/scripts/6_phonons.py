@@ -12,12 +12,10 @@ Visualization is disabled in CI mode.
 
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.12",
-#     "phonopy>=2.35",
+#     "torch_sim_atomistic[mace, io]",
 #     "pymatviz>=0.17.1",
 #     "plotly>=6.3.0",
 #     "seekpath",
-#     "ase",
 # ]
 # ///
 
@@ -30,7 +28,7 @@ from mace.calculators.foundations_models import mace_mp
 from phonopy import Phonopy
 
 import torch_sim as ts
-from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.models.mace import MaceModel
 from torch_sim.telemetry import configure_logging, get_logger
 
 
@@ -54,13 +52,13 @@ SMOKE_TEST = os.getenv("CI") is not None
 # ============================================================================
 # SECTION 1: Structure Relaxation for Phonons
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 1: Structure Relaxation")
-log.info("=" * 70)
+
 
 # Load the MACE model
 loaded_model = mace_mp(
-    model=MaceUrls.mace_mpa_medium,
+    model="medium",
     return_raw_model=True,
     default_dtype=str(dtype).removeprefix("torch."),
     device=str(device),
@@ -103,9 +101,9 @@ log.info(f"Relaxation complete. Final energy: {final_state.energy.item():.4f} eV
 # ============================================================================
 # SECTION 2: Phonon DOS Calculation
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 2: Phonon DOS Calculation")
-log.info("=" * 70)
+
 
 # Convert state to Phonopy atoms
 atoms = ts.io.state_to_phonopy(final_state)[0]
@@ -166,9 +164,9 @@ else:
 # ============================================================================
 # SECTION 3: Phonon Band Structure Calculation
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 3: Phonon Band Structure Calculation")
-log.info("=" * 70)
+
 
 try:
     import seekpath
@@ -260,16 +258,17 @@ except ImportError as e:
 # ============================================================================
 # SECTION 4: Summary
 # ============================================================================
-log.info("=" * 70)
-log.info("Summary")
-log.info("=" * 70)
-log.info("Structure: Silicon (diamond)")
-log.info("Supercell: 2x2x2")
-log.info(f"Number of displaced structures: {len(supercells)}")
-log.info("Batched force calculation: Yes")
-log.info("Phonon DOS calculated: Yes")
-log.info(f"Frequency range: {freq_points.min():.3f} to {freq_points.max():.3f} THz")
-
-log.info("=" * 70)
-log.info("Phonon calculation examples completed!")
-log.info("=" * 70)
+log.info(
+    f"{'=' * 70}\n"
+    "Summary\n"
+    f"{'=' * 70}\n"
+    "Structure: Silicon (diamond)\n"
+    "Supercell: 2x2x2\n"
+    f"Number of displaced structures: {len(supercells)}\n"
+    "Batched force calculation: Yes\n"
+    "Phonon DOS calculated: Yes\n"
+    f"Frequency range: {freq_points.min():.3f} to {freq_points.max():.3f} THz\n"
+    f"\n{'=' * 70}\n"
+    "Phonon calculation examples completed!\n"
+    f"{'=' * 70}"
+)

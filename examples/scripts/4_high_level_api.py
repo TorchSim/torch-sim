@@ -9,7 +9,9 @@ This script demonstrates the high-level API for:
 """
 
 # /// script
-# dependencies = ["mace-torch>=0.3.12", "pymatgen>=2025.2.18"]
+# dependencies = [
+#     "torch_sim_atomistic[mace, io]"
+# ]
 # ///
 
 import os
@@ -39,9 +41,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # ============================================================================
 # SECTION 1: Basic Integration with Lennard-Jones
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 1: Basic Integration with Lennard-Jones")
-log.info("=" * 70)
+
 
 lj_model = LennardJonesModel(
     sigma=2.0,  # Å, typical for Si-Si interaction
@@ -69,9 +71,9 @@ log.info(f"Final atoms: {len(final_atoms)} atoms")
 # ============================================================================
 # SECTION 2: Integration with Trajectory Logging
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 2: Integration with Trajectory Logging")
-log.info("=" * 70)
+
 
 trajectory_file = "tmp/lj_trajectory.h5md"
 
@@ -121,9 +123,9 @@ log.info(f"Number of potential energy samples: {len(potential_energies)}")
 # ============================================================================
 # SECTION 3: MACE Model with High-Level API
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 3: MACE Model with High-Level API")
-log.info("=" * 70)
+
 
 mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(
@@ -156,9 +158,9 @@ log.info(f"Final energy: {final_state.energy.item():.4f} eV")
 # ============================================================================
 # SECTION 4: Batched Integration
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 4: Batched Integration")
-log.info("=" * 70)
+
 
 fe_atoms = bulk("Fe", "fcc", a=5.26, cubic=True)
 fe_atoms_supercell = fe_atoms.repeat([2, 2, 2])
@@ -182,9 +184,9 @@ log.info(f"Final energies: {[e.item() for e in final_state.energy]} eV")
 # ============================================================================
 # SECTION 5: Batched Integration with Trajectory Reporting
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 5: Batched Integration with Trajectory Reporting")
-log.info("=" * 70)
+
 
 systems = [si_atoms, fe_atoms, si_atoms_supercell, fe_atoms_supercell]
 
@@ -217,9 +219,9 @@ log.info(f"Final energies per atom: {final_energies_per_atom}")
 # ============================================================================
 # SECTION 6: Structure Optimization
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 6: Structure Optimization")
-log.info("=" * 70)
+
 
 final_state = ts.optimize(
     system=systems,
@@ -240,9 +242,9 @@ for system in systems:
 # ============================================================================
 # SECTION 7: Optimization with Custom Convergence Criteria
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 7: Optimization with Custom Convergence")
-log.info("=" * 70)
+
 
 final_state = ts.optimize(
     system=systems,
@@ -261,9 +263,9 @@ log.info(f"Final converged energies: {[e.item() for e in final_state.energy]} eV
 # ============================================================================
 # SECTION 8: Pymatgen Structure Support
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 8: Pymatgen Structure Support")
-log.info("=" * 70)
+
 
 lattice = [[5.43, 0, 0], [0, 5.43, 0], [0, 0, 5.43]]
 species = ["Si"] * 8
@@ -292,6 +294,5 @@ final_structure = ts.io.state_to_structures(final_state)
 log.info(f"Final structure type: {type(final_structure)}")
 log.info(f"Final energy: {final_state.energy.item():.4f} eV")
 
-log.info("=" * 70)
+
 log.info("High-level API examples completed!")
-log.info("=" * 70)

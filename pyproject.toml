@@ -50,7 +50,7 @@ test = [
 vesin = ["vesin[torch]>=0.5.3"]
 io = ["ase>=3.26", "phonopy>=2.37.0", "pymatgen>=2026.3.23"]
 symmetry = ["moyopy>=0.7.8"]
-mace = ["mace-torch>=0.3.15"]
+mace = ["mace-torch>=0.3.16"]
 mattersim = ["mattersim>=1.2.2"]
 metatomic = ["metatomic-torchsim>=0.1.1", "metatomic-ase>=0.1.0", "upet>=0.2.0"]
 orb = ["orb-models>=0.6.2"]

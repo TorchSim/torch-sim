@@ -6,7 +6,9 @@ This script demonstrates the fundamental usage of TorchSim with:
 """
 
 # /// script
-# dependencies = ["scipy>=1.15", "mace-torch>=0.3.12"]
+# dependencies = [
+#     "torch_sim_atomistic[mace, io]"
+# ]
 # ///
 
 import itertools
@@ -18,7 +20,7 @@ from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.models.mace import MaceModel
 from torch_sim.telemetry import configure_logging, get_logger
 
 
@@ -33,9 +35,9 @@ dtype = torch.float32
 # ============================================================================
 # SECTION 1: Lennard-Jones Model - Simple Classical Potential
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 1: Lennard-Jones Model")
-log.info("=" * 70)
+
 
 # Create face-centered cubic (FCC) Argon
 # 5.26 Å is a typical lattice constant for Ar
@@ -118,13 +120,13 @@ log.info(f"Per-atom stresses shape: {results['stresses'].shape}")
 # ============================================================================
 # SECTION 2: MACE Model - Machine Learning Potential (Batched)
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 2: MACE Model with Batched Input")
-log.info("=" * 70)
+
 
 # Load the raw model from the downloaded model
 loaded_model = mace_mp(
-    model=MaceUrls.mace_mpa_medium,
+    model="medium",
     return_raw_model=True,
     default_dtype=str(dtype).removeprefix("torch."),
     device=str(device),
@@ -213,6 +215,5 @@ log.info(f"Max energy difference: {energy_diff}")
 log.info(f"Max forces difference: {forces_diff}")
 log.info(f"Max stress difference: {stress_diff}")
 
-log.info("=" * 70)
+
 log.info("Introduction examples completed!")
-log.info("=" * 70)

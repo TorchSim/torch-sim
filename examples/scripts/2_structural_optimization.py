@@ -8,7 +8,9 @@ This script demonstrates structural optimization techniques with:
 """
 
 # /// script
-# dependencies = ["scipy>=1.15", "mace-torch>=0.3.12"]
+# dependencies = [
+#     "torch_sim_atomistic[mace, io]"
+# ]
 # ///
 
 import itertools
@@ -21,7 +23,7 @@ from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.models.mace import MaceModel
 from torch_sim.telemetry import configure_logging, get_logger
 from torch_sim.units import UnitConversion
 
@@ -41,9 +43,9 @@ N_steps = 10 if SMOKE_TEST else 500
 # ============================================================================
 # SECTION 1: Lennard-Jones FIRE Optimization
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 1: Lennard-Jones FIRE Optimization")
-log.info("=" * 70)
+
 
 # Set up the random number generator
 generator = torch.Generator(device=device)
@@ -127,13 +129,13 @@ log.info(f"Final max force: {torch.max(torch.abs(state.forces[0])).item()} eV/Å
 # ============================================================================
 # SECTION 2: Batched MACE FIRE Optimization (Atomic Positions Only)
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 2: Batched MACE FIRE - Positions Only")
-log.info("=" * 70)
+
 
 # Load MACE model
 loaded_model = mace_mp(
-    model=MaceUrls.mace_mpa_medium,
+    model="medium",
     return_raw_model=True,
     default_dtype=str(dtype).removeprefix("torch."),
     device=str(device),
@@ -189,9 +191,9 @@ log.info(f"Final energies: {[energy.item() for energy in state.energy]} eV")
 # ============================================================================
 # SECTION 3: Batched MACE Gradient Descent Optimization
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 3: Batched MACE Gradient Descent")
-log.info("=" * 70)
+
 
 # Reset structures with new perturbations
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
@@ -222,9 +224,9 @@ log.info(f"Final energies: {[res.item() for res in state.energy]} eV")
 # ============================================================================
 # SECTION 4: Unit Cell Filter with Gradient Descent
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 4: Unit Cell Filter with Gradient Descent")
-log.info("=" * 70)
+
 
 # Recreate structures with perturbations
 si_dc = bulk("Si", "diamond", a=5.21, cubic=True).repeat((2, 2, 2))
@@ -278,9 +280,9 @@ log.info(f"Final energies: {[energy.item() for energy in state.energy]} eV")
 # ============================================================================
 # SECTION 5: Unit Cell Filter with FIRE
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 5: Unit Cell Filter with FIRE")
-log.info("=" * 70)
+
 
 # Recreate structures with perturbations
 si_dc = bulk("Si", "diamond", a=5.21, cubic=True).repeat((2, 2, 2))
@@ -330,9 +332,9 @@ log.info(f"Final energies: {[energy.item() for energy in state.energy]} eV")
 # ============================================================================
 # SECTION 6: Frechet Cell Filter with FIRE
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 6: Frechet Cell Filter with FIRE")
-log.info("=" * 70)
+
 
 # Recreate structures with perturbations
 si_dc = bulk("Si", "diamond", a=5.21, cubic=True).repeat((2, 2, 2))
@@ -392,9 +394,9 @@ log.info(f"Final pressure: {final_pressure} GPa")
 # ============================================================================
 # SECTION 7: Batched MACE L-BFGS
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 7: Batched MACE L-BFGS")
-log.info("=" * 70)
+
 
 # Recreate structures with perturbations
 si_dc = bulk("Si", "diamond", a=5.21).repeat((2, 2, 2))
@@ -425,9 +427,9 @@ log.info(f"Final energies: {[energy.item() for energy in state.energy]} eV")
 # ============================================================================
 # SECTION 8: Batched MACE BFGS
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 8: Batched MACE BFGS")
-log.info("=" * 70)
+
 
 # Recreate structures with perturbations
 si_dc = bulk("Si", "diamond", a=5.21).repeat((2, 2, 2))
@@ -455,6 +457,4 @@ log.info(f"Initial energies: {[energy.item() for energy in results['energy']]} e
 log.info(f"Final energies: {[energy.item() for energy in state.energy]} eV")
 
 
-log.info("=" * 70)
 log.info("Structural optimization examples completed!")
-log.info("=" * 70)
