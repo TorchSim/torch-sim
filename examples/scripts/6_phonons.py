@@ -12,8 +12,7 @@ Visualization is disabled in CI mode.
 
 # /// script
 # dependencies = [
-#     "torch_sim_atomistic[mace, io]",
-#     "mace-torch>0.3.16",
+#     "torch_sim_atomistic[mace, io]"
 #     "pymatviz>=0.17.1",
 #     "plotly>=6.3.0",
 #     "seekpath",

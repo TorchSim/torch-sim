@@ -7,8 +7,7 @@ This script demonstrates the fundamental usage of TorchSim with:
 
 # /// script
 # dependencies = [
-#     "torch_sim_atomistic[mace, io]",
-#     "mace-torch>0.3.16",
+#     "torch_sim_atomistic[mace, io]"
 # ]
 # ///
 

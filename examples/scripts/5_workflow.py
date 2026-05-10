@@ -8,8 +8,7 @@ This script demonstrates:
 
 # /// script
 # dependencies = [
-#     "torch_sim_atomistic[mace, io]",
-#     "mace-torch>0.3.16",
+#     "torch_sim_atomistic[mace, io]"
 #     "matbench-discovery>=1.3.1",
 # ]
 # ///

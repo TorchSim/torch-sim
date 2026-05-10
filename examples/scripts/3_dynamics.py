@@ -9,8 +9,7 @@ This script demonstrates molecular dynamics simulations with:
 
 # /// script
 # dependencies = [
-#     "torch_sim_atomistic[mace, io]",
-#     "mace-torch>0.3.16",
+#     "torch_sim_atomistic[mace, io]"
 # ]
 # ///
 
