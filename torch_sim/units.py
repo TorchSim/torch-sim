@@ -10,13 +10,17 @@ from math import pi, sqrt
 from typing import Self
 
 
-class BaseConstant:
+class BaseConstant(float, Enum):
     """CODATA Recommended Values of the Fundamental Physical Constants: 2014.
 
     References:
         http://arxiv.org/pdf/1507.07956.pdf
         https://wiki.fysik.dtu.dk/ase/_modules/ase/units.html#create_units
     """
+
+    def __new__(cls, value: float) -> Self:
+        """Create new BaseConstant enum value."""
+        return float.__new__(cls, value)
 
     c = 299792458.0  # speed of light, m/s
     mu0 = 4.0e-7 * pi  # permeability of vacuum
@@ -33,55 +37,30 @@ class BaseConstant:
 bc = BaseConstant
 
 
-class UnitConversion:
-    """Unit conversion class for different unit systems.
+class UnitConversion(float, Enum):
+    """Unit conversion factors between common unit systems."""
 
-    Distance:
-    Ang (Angstrom)
-    met (meter)
+    def __new__(cls, value: float) -> Self:
+        """Create new UnitConversion enum value."""
+        return float.__new__(cls, value)
 
-    Time:
-    ps (picosecond)
-    s (second)
-    fs (femtosecond)
-
-    Pressure:
-    atm (atmosphere)
-    pa (pascal)
-    bar (bar)
-    GPa (GigaPascal)
-
-    Energy:
-    cal (calorie)
-    kcal (kilocalorie)
-    eV (electron volt)
-    """
-
-    # Distance
     Ang_to_met = 1e-10
-    Ang2_to_met2 = Ang_to_met * Ang_to_met
-    Ang3_to_met3 = Ang_to_met * Ang2_to_met2
-
-    # Time
+    Ang2_to_met2 = 1e-10**2
+    Ang3_to_met3 = 1e-10**3
     ps_to_s = 1e-12
     fs_to_s = 1e-15
-
-    # Pressure
     bar_to_pa = 1e5
     atm_to_pa = 101325
     pa_to_GPa = 1e-9
-    eV_per_Ang3_to_GPa = (bc.e / Ang3_to_met3) * pa_to_GPa
-
-    # Energy
+    eV_per_Ang3_to_GPa = bc.e * 1e21
     cal_to_J = 4.184
     kcal_to_cal = 1e3
     eV_to_J = bc.e
-
-    # Atomic-unit conversions (Bohr / Hartree <-> Angstrom / eV)
     Bohr_to_Ang = 0.529177210903
     Ang_to_Bohr = 1.0 / Bohr_to_Ang
     Hartree_to_eV = 27.211386245988
     eV_to_Hartree = 1.0 / Hartree_to_eV
+    e2_per_Ang_to_eV = 14.399645478425668
 
 
 uc = UnitConversion

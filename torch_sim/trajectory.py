@@ -283,9 +283,6 @@ class TrajectoryReporter:
             model (ModelInterface, optional): Model used for simulation.
                 Defaults to None. Must be provided if any prop_calculators
                 are provided.
-            write_to_file (bool, optional): Whether to write the state to the trajectory
-                files. Defaults to True. Should only be set to `False` if the props
-                are being collected separately.
 
         Returns:
             list[dict[str, torch.Tensor]]: Map of property names to tensors for each
@@ -835,9 +832,6 @@ class TorchSimTrajectory:
 
         Args:
             name (str): Name of the array
-            start (int, optional): Starting frame index. Defaults to None.
-            stop (int, optional): Ending frame index (exclusive). Defaults to None.
-            step (int, optional): Step size between frames. Defaults to 1.
 
         Returns:
             np.ndarray: Array of step numbers with shape [n_selected_frames]
@@ -1053,24 +1047,11 @@ class TorchSimTrajectory:
         Raises:
             ImportError: If pymatgen is not installed
         """
-        from pymatgen.core import Structure
+        from torch_sim.io import state_to_structures
 
-        arrays = self._get_state_arrays(frame)
+        return state_to_structures(self.get_state(frame, device=torch.device("cpu")))[0]
 
-        # Create pymatgen Structure
-        # TODO: check if this is correct
-        lattice = arrays["cell"][0].T  # pymatgen expects lattice matrix as rows
-        species = [str(num) for num in arrays["atomic_numbers"]]
-
-        return Structure(
-            lattice=np.ascontiguousarray(lattice),
-            species=species,
-            coords=np.ascontiguousarray(arrays["positions"]),
-            coords_are_cartesian=True,
-            validate_proximity=False,
-        )
-
-    def get_atoms(self, frame: int = -1) -> "Atoms":
+    def get_atoms(self, frame: int = -1, **kwargs: Any) -> "Atoms":
         """Get an ASE Atoms object for a given frame.
 
         Converts the state at the specified frame to an ASE Atoms object
@@ -1078,6 +1059,7 @@ class TorchSimTrajectory:
 
         Args:
             frame (int): Frame index to retrieve (-1 for last frame)
+            **kwargs: Additional keyword arguments passed to `state_to_atoms`.
 
         Returns:
             Atoms: ASE Atoms object for the specified frame
@@ -1085,21 +1067,11 @@ class TorchSimTrajectory:
         Raises:
             ImportError: If ASE is not installed
         """
-        try:
-            from ase import Atoms
-        except ImportError:
-            raise ImportError(
-                "ASE is required to convert to ASE Atoms. Run `pip install ase`"
-            ) from None
+        from torch_sim.io import state_to_atoms
 
-        arrays = self._get_state_arrays(frame)
-
-        return Atoms(
-            numbers=np.ascontiguousarray(arrays["atomic_numbers"]),
-            positions=np.ascontiguousarray(arrays["positions"]),
-            cell=np.ascontiguousarray(arrays["cell"])[0],
-            pbc=np.ascontiguousarray(arrays["pbc"]),
-        )
+        return state_to_atoms(
+            self.get_state(frame, device=torch.device("cpu")), **kwargs
+        )[0]
 
     def get_state(
         self,

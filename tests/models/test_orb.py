@@ -72,17 +72,10 @@ test_orb_direct_consistency = make_model_calculator_consistency_test(
     energy_atol=5e-5,
 )
 
-test_validate_conservative_model_outputs = pytest.mark.xfail(
-    reason=(
-        "Upstream ORB conservative model incorrectly squeezes length-1 batch "
-        "dimensions; see https://github.com/orbital-materials/orb-models/pull/158"
-    ),
-    strict=False,
-)(
-    make_validate_model_outputs_test(
-        model_fixture_name="orbv3_conservative_inf_omat_model",
-    )
+test_validate_conservative_model_outputs = make_validate_model_outputs_test(
+    model_fixture_name="orbv3_conservative_inf_omat_model",
 )
+
 
 test_validate_direct_model_outputs = pytest.mark.xfail(
     reason=(

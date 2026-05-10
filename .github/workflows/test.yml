@@ -49,7 +49,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: radical-ai/torch-sim
+          slug: torchsim/torch-sim
 
   test-model:
     strategy:
@@ -61,7 +61,6 @@ jobs:
           - { python: '3.14', resolution: highest }
         model:
           - { name: fairchem, test_path: "tests/models/test_fairchem.py" }
-          - { name: graphpes, test_path: "tests/models/test_graphpes_framework.py" }
           - { name: mace, test_path: "tests/models/test_mace.py" }
           - { name: mace, test_path: "tests/test_elastic.py" }
           - { name: mace, test_path: "tests/test_optimizers_vs_ase.py" }
@@ -116,7 +115,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: radical-ai/torch-sim
+          slug: torchsim/torch-sim
 
   find-examples:
     runs-on: ubuntu-latest

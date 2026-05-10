@@ -1553,12 +1553,18 @@ def unwrap_positions(
         dfrac = frac[1:] - frac[:-1]
         dfrac -= torch.round(dfrac)
 
-        dcart = torch.einsum("tni,tnij->tnj", dfrac, box_atoms[:-1])
+        # Reconstruct unwrapped fractional trajectory
+        unwrapped_frac = torch.empty_like(frac)
+        unwrapped_frac[0] = frac[0]
+        unwrapped_frac[1:] = torch.cumsum(dfrac, dim=0) + frac[0]
+
+        # Convert back to Cartesian using each frame's cell
+        return torch.einsum("tni,tnij->tnj", unwrapped_frac, box_atoms)
 
     else:
         raise ValueError("box must have shape (n_systems,3,3) or (T,n_systems,3,3)")
 
-    # Cumulative reconstruction
+    # Cumulative reconstruction (constant cell path)
     unwrapped = torch.empty_like(positions)
     unwrapped[0] = positions[0]
     unwrapped[1:] = torch.cumsum(dcart, dim=0) + unwrapped[0]
