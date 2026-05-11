@@ -8,7 +8,9 @@ This script demonstrates:
 """
 
 # /// script
-# dependencies = ["ase>=3.26", "scipy>=1.15", "matplotlib", "numpy"]
+# dependencies = [
+#     "torch_sim_atomistic[io]",
+# ]
 # ///
 
 import os
@@ -36,9 +38,9 @@ SMOKE_TEST = os.getenv("CI") is not None
 # ============================================================================
 # SECTION 1: Batched Neighbor List Calculations
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 1: Batched Neighbor List Calculations")
-log.info("=" * 70)
+
 
 # Create multiple atomic systems
 atoms_list = [
@@ -102,9 +104,9 @@ else:
 # ============================================================================
 # SECTION 2: Velocity Autocorrelation Function (VACF)
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 2: Velocity Autocorrelation Function")
-log.info("=" * 70)
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float64
@@ -221,24 +223,27 @@ else:
 # ============================================================================
 # SECTION 3: Summary
 # ============================================================================
-log.info("=" * 70)
-log.info("Summary")
-log.info("=" * 70)
-log.info("Demonstrated features:")
-log.info("  1. Batched neighbor list calculations")
-log.info("     - Linked cell method (efficient)")
-log.info("     - N^2 method (simple)")
-log.info("  2. Velocity autocorrelation function (VACF)")
-log.info("     - NVE molecular dynamics")
-log.info("     - Running average over time windows")
-log.info("     - Normalized correlation decay")
+final_summary = (
+    "=" * 70
+    + "\nSummary\n"
+    + "=" * 70
+    + "\nDemonstrated features:\n"
+    + "  1. Batched neighbor list calculations\n"
+    + "     - Linked cell method (efficient)\n"
+    + "     - N^2 method (simple)\n"
+    + "  2. Velocity autocorrelation function (VACF)\n"
+    + "     - NVE molecular dynamics\n"
+    + "     - Running average over time windows\n"
+    + "     - Normalized correlation decay\n"
+    + "\nKey capabilities:\n"
+    + "  - Efficient batched computations\n"
+    + "  - Multiple neighbor list algorithms\n"
+    + "  - Advanced property calculations during MD\n"
+    + "  - Trajectory analysis and correlation functions\n"
+    + "\n"
+    + "=" * 70
+    + "\nMiscellaneous examples completed!\n"
+    + "=" * 70
+)
 
-log.info("Key capabilities:")
-log.info("  - Efficient batched computations")
-log.info("  - Multiple neighbor list algorithms")
-log.info("  - Advanced property calculations during MD")
-log.info("  - Trajectory analysis and correlation functions")
-
-log.info("=" * 70)
-log.info("Miscellaneous examples completed!")
-log.info("=" * 70)
+log.info(final_summary)

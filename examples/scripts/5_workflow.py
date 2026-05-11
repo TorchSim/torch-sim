@@ -7,7 +7,10 @@ This script demonstrates:
 """
 
 # /// script
-# dependencies = ["mace-torch>=0.3.12", "matbench-discovery>=1.3.1"]
+# dependencies = [
+#     "torch_sim_atomistic[mace, io]",
+#     "matbench-discovery>=1.3.1",
+# ]
 # ///
 
 import os
@@ -20,7 +23,7 @@ from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
 from torch_sim.elastic import get_bravais_type
-from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.models.mace import MaceModel
 from torch_sim.telemetry import configure_logging, get_logger
 
 
@@ -41,12 +44,12 @@ log.info(f"Running on device: {device}")
 # ============================================================================
 # SECTION 1: In-Flight Autobatching Workflow
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 1: In-Flight Autobatching Workflow")
-log.info("=" * 70)
+
 
 log.info("Loading MACE model...")
-mace = mace_mp(model=MaceUrls.mace_mpa_medium, return_raw_model=True)
+mace = mace_mp(model="medium", return_raw_model=True)
 mace_model = MaceModel(
     model=mace,
     device=device,
@@ -147,15 +150,15 @@ log.info(
 # ============================================================================
 # SECTION 2: Elastic Constants Calculation
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 2: Elastic Constants Calculation")
-log.info("=" * 70)
+
 
 # Use higher precision for elastic constants
 dtype_elastic = torch.float64
 
 loaded_model = mace_mp(
-    model=MaceUrls.mace_mpa_medium,
+    model="medium",
     enable_cueq=False,
     device=str(device),
     default_dtype=str(dtype_elastic).removeprefix("torch."),
@@ -221,21 +224,25 @@ bulk_modulus, shear_modulus, poisson_ratio, pugh_ratio = (
 )
 
 # Print results
-log.info("Elastic tensor (GPa):")
 elastic_tensor_np = elastic_tensor.detach().cpu().numpy()
-for row in elastic_tensor_np:
-    log.info("  ".join(f"{val:10.4f}" for val in row))
-
-log.info("Elastic moduli:")
-log.info(f"  Bulk modulus (GPa): {bulk_modulus:.4f}")
-log.info(f"  Shear modulus (GPa): {shear_modulus:.4f}")
-log.info(f"  Poisson's ratio: {poisson_ratio:.4f}")
-log.info(f"  Pugh's ratio (K/G): {pugh_ratio:.4f}")
+elastic_tensor_str = "\n".join(
+    "  ".join(f"{val:10.4f}" for val in row) for row in elastic_tensor_np
+)
 
 # Interpret Pugh's ratio
 material_type = "ductile" if pugh_ratio > 1.75 else "brittle"
-log.info(f"  Material behavior: {material_type}")
 
-log.info("=" * 70)
-log.info("Workflow examples completed!")
-log.info("=" * 70)
+final_summary = (
+    "Elastic tensor (GPa):\n"
+    f"{elastic_tensor_str}\n"
+    "\nElastic moduli:\n"
+    f"  Bulk modulus (GPa): {bulk_modulus:.4f}\n"
+    f"  Shear modulus (GPa): {shear_modulus:.4f}\n"
+    f"  Poisson's ratio: {poisson_ratio:.4f}\n"
+    f"  Pugh's ratio (K/G): {pugh_ratio:.4f}\n"
+    f"  Material behavior: {material_type}\n"
+    f"\n{'=' * 70}\n"
+    "Workflow examples completed!\n"
+    f"{'=' * 70}"
+)
+log.info(final_summary)

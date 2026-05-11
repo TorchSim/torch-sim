@@ -31,7 +31,7 @@ def random_state() -> MDState:
         energy=torch.tensor(1.0),
         forces=torch.randn(10, 3),
         masses=torch.ones(10),
-        cell=torch.unsqueeze(torch.eye(3) * 10.0, 0),
+        cell=torch.tensor([[[4.0, -4.0, 0.0], [4.0, 4.0, 0.0], [0.0, 0.0, 8.0]]]),
         atomic_numbers=torch.ones(10, dtype=torch.int32),
         system_idx=torch.zeros(10, dtype=torch.int32),
         pbc=[True, True, False],
@@ -453,7 +453,7 @@ def test_get_atoms(trajectory: TorchSimTrajectory, random_state: MDState) -> Non
 
     # Test basic properties
     assert len(atoms) == len(random_state.atomic_numbers)
-    np.testing.assert_allclose(atoms.get_cell(), random_state.cell.numpy()[0])
+    np.testing.assert_allclose(atoms.get_cell(), random_state.row_vector_cell.numpy()[0])
     np.testing.assert_allclose(atoms.get_positions(), random_state.positions.numpy())
     np.testing.assert_allclose(
         atoms.get_atomic_numbers(), random_state.atomic_numbers.numpy()
@@ -524,7 +524,9 @@ def test_write_ase_trajectory(
     for _, atoms in enumerate(ase_traj):
         # Check basic properties match
         assert len(atoms) == len(random_state.atomic_numbers)
-        np.testing.assert_allclose(atoms.get_cell(), random_state.cell.numpy()[0])
+        np.testing.assert_allclose(
+            atoms.get_cell(), random_state.row_vector_cell.numpy()[0]
+        )
         np.testing.assert_allclose(atoms.get_positions(), random_state.positions.numpy())
         np.testing.assert_allclose(
             atoms.get_atomic_numbers(), random_state.atomic_numbers.numpy()
@@ -826,7 +828,10 @@ def test_get_atoms_importerror(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
     )
     traj.write_state(state, steps=0)
 
-    with pytest.raises(ImportError, match="ASE is required to convert to ASE Atoms"):
+    with pytest.raises(
+        ImportError,
+        match="ASE is required for state_to_atoms conversion",
+    ):
         traj.get_atoms(0)
     traj.close()
 

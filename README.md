@@ -1,6 +1,6 @@
 # TorchSim
 
-[![CI](https://github.com/torchsim/torch-sim/actions/workflows/test.yml/badge.svg)](https://github.com/torchsim/torch-sim/actions/workflows/test.yml)
+[![CI](https://img.shields.io/github/check-runs/torchsim/torch-sim/main?nameFilter=all-required-pass&label=CI&logo=github)](https://github.com/torchsim/torch-sim/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/torchsim/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/torchsim/torch-sim)
 [![This project supports Python 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg?logo=python&logoColor=white)](https://python.org/downloads)
 [![PyPI](https://img.shields.io/pypi/v/torch-sim-atomistic?logo=pypi&logoColor=white)](https://pypi.org/project/torch-sim-atomistic)
@@ -14,7 +14,7 @@ era. By rewriting the core primitives of atomistic simulation in Pytorch, it all
 orders of magnitude acceleration of popular machine learning potentials.
 
 * Automatic batching and GPU memory management allowing significant simulation speedup
-* Support for MACE, Fairchem, SevenNet, ORB, MatterSim, graph-pes, metatomic, and Nequix MLIP models
+* Support for MACE, Fairchem, SevenNet, ORB, MatterSim, metatomic, and Nequix MLIP models
 * Support for classical lennard jones, morse, and soft-sphere potentials
 * Molecular dynamics integration schemes like NVE, NVT Langevin, and NPT Langevin
 * Relaxation of atomic positions and cell with gradient descent and FIRE

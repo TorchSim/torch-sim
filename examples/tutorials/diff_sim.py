@@ -1,12 +1,7 @@
-# %% [markdown]
-# <details>
-#   <summary>Dependencies</summary>
+# %%
 # /// script
-# dependencies = [
-#     "matplotlib",
-# ]
+# dependencies = ["matplotlib",]
 # ///
-# </details>
 
 # %%
 import typing

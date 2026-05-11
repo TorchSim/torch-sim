@@ -241,7 +241,6 @@ def random_packed_structure(
             position when computing minimum distances.
         device: PyTorch device for calculations (CPU/GPU).
         dtype: PyTorch data type for numerical precision.
-        log: List to store positions at each iteration.
 
     Returns:
         FIREState: The optimized structure state containing positions, forces,

@@ -8,7 +8,9 @@ This script demonstrates molecular dynamics simulations with:
 """
 
 # /// script
-# dependencies = ["scipy>=1.15", "mace-torch>=0.3.12"]
+# dependencies = [
+#     "torch_sim_atomistic[mace, io]"
+# ]
 # ///
 
 import itertools
@@ -21,7 +23,7 @@ from mace.calculators.foundations_models import mace_mp
 
 import torch_sim as ts
 from torch_sim.models.lennard_jones import LennardJonesModel
-from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.models.mace import MaceModel
 from torch_sim.telemetry import configure_logging, get_logger
 from torch_sim.units import MetalUnits as Units
 
@@ -52,9 +54,9 @@ generator.manual_seed(42)
 # ============================================================================
 # SECTION 1: Lennard-Jones NVE (Microcanonical Ensemble)
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 1: Lennard-Jones NVE Simulation")
-log.info("=" * 70)
+
 
 # Create face-centered cubic (FCC) Argon
 a_len = 5.26  # Lattice constant
@@ -139,13 +141,13 @@ log.info(f"Final total energy: {final_total_energy.item():.4f} eV")
 # ============================================================================
 # SECTION 2: MACE NVE Simulation
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 2: MACE NVE Simulation")
-log.info("=" * 70)
+
 
 # Load MACE model
 loaded_model = mace_mp(
-    model=MaceUrls.mace_mpa_medium,
+    model="medium",
     return_raw_model=True,
     default_dtype=str(dtype).removeprefix("torch."),
     device=str(device),
@@ -205,9 +207,9 @@ log.info(f"Average time per step: {(end_time - start_time) / N_steps:.4f} second
 # ============================================================================
 # SECTION 3: MACE NVT Langevin Simulation
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 3: MACE NVT Langevin Simulation")
-log.info("=" * 70)
+
 
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
@@ -252,9 +254,9 @@ log.info(f"Final temperature: {final_temp.item():.4f} K")
 # ============================================================================
 # SECTION 4: MACE NVT Nose-Hoover Simulation
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 4: MACE NVT Nose-Hoover Simulation")
-log.info("=" * 70)
+
 
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
@@ -294,9 +296,9 @@ log.info(f"Final temperature: {final_temp.item():.4f} K")
 # ============================================================================
 # SECTION 5: MACE NPT Nose-Hoover Simulation
 # ============================================================================
-log.info("=" * 70)
+
 log.info("SECTION 5: MACE NPT Nose-Hoover Simulation")
-log.info("=" * 70)
+
 
 # Create diamond cubic Silicon
 si_dc = bulk("Si", "diamond", a=5.43, cubic=True).repeat((2, 2, 2))
@@ -323,7 +325,7 @@ kT = torch.tensor(300 * Units.temperature, device=device, dtype=dtype)  # 300 K
 target_pressure = torch.tensor(0.0 * Units.pressure, device=device, dtype=dtype)  # 0 bar
 
 # Initialize NPT with NVT equilibration
-state = ts.npt_nose_hoover_init(
+state = ts.npt_nose_hoover_isotropic_init(
     state=state, model=mace_model_stress, kT=kT, dt=torch.tensor(dt)
 )
 
@@ -337,12 +339,14 @@ for step in range(N_steps_nvt):
             / Units.temperature
         )
         invariant = float(
-            ts.npt_nose_hoover_invariant(state, kT=kT, external_pressure=target_pressure)
+            ts.npt_nose_hoover_isotropic_invariant(
+                state, kT=kT, external_pressure=target_pressure
+            )
         )
         log.info(
             f"Step {step}: Temperature: {temp.item():.4f} K, Invariant: {invariant:.4f}"
         )
-    state = ts.npt_nose_hoover_step(
+    state = ts.npt_nose_hoover_isotropic_step(
         state=state,
         model=mace_model_stress,
         dt=torch.tensor(dt),
@@ -351,7 +355,7 @@ for step in range(N_steps_nvt):
     )
 
 # Reinitialize for NPT phase
-state = ts.npt_nose_hoover_init(
+state = ts.npt_nose_hoover_isotropic_init(
     state=state, model=mace_model_stress, kT=kT, dt=torch.tensor(dt)
 )
 
@@ -365,7 +369,9 @@ for step in range(N_steps_npt):
             / Units.temperature
         )
         invariant = float(
-            ts.npt_nose_hoover_invariant(state, kT=kT, external_pressure=target_pressure)
+            ts.npt_nose_hoover_isotropic_invariant(
+                state, kT=kT, external_pressure=target_pressure
+            )
         )
         stress = mace_model_stress(state)["stress"]
         volume = torch.det(state.current_cell)
@@ -379,7 +385,7 @@ for step in range(N_steps_npt):
             f"Pressure: {pressure:.4f} eV/Å³, "
             f"Cell: [{xx.item():.4f}, {yy.item():.4f}, {zz.item():.4f}]"
         )
-    state = ts.npt_nose_hoover_step(
+    state = ts.npt_nose_hoover_isotropic_step(
         state=state,
         model=mace_model_stress,
         dt=torch.tensor(dt),
@@ -404,6 +410,5 @@ final_pressure = ts.get_pressure(
 )
 log.info(f"Final pressure: {final_pressure.item():.4f} eV/Å³")
 
-log.info("=" * 70)
+
 log.info("Molecular dynamics examples completed!")
-log.info("=" * 70)
