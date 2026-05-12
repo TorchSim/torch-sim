@@ -640,8 +640,8 @@ def lbfgs_step(  # noqa: PLR0915, C901
         state.prev_forces = new_forces.clone()  # [N, 3]
         state.prev_positions = state.positions.clone()  # [N, 3]
 
-    state.s_history = s_hist  # [S, H, M_ext, 3] or [S, H, M, 3]
-    state.y_history = y_hist  # [S, H, M_ext, 3] or [S, H, M, 3]
+    state.s_history = s_hist.detach()  # [S, H, M_ext, 3] or [S, H, M, 3]
+    state.y_history = y_hist.detach()  # [S, H, M_ext, 3] or [S, H, M, 3]
     state.n_iter = state.n_iter + 1  # [S]
 
     return state
