@@ -57,7 +57,7 @@ orb = ["orb-models>=0.6.2"]
 sevenn = ["sevenn[torchsim]>=0.12.1"]
 nequip = ["nequip>=0.17.1"]
 nequix = ["nequix[torch-sim]>=0.4.5"]
-fairchem = ["fairchem-core>=2.19.0", "scipy<1.17.0"]
+fairchem = ["fairchem-core>=2.20.0"]
 docs = [
     "autodoc_pydantic==2.2.0",
     "furo==2024.8.6",
