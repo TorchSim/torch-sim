@@ -383,6 +383,9 @@ def integrate[T: SimState](  # noqa: C901
                 **integrator_kwargs,
             )
 
+            if not getattr(model, "retain_graph", False):
+                state.detach_()
+
             if trajectory_reporter:
                 trajectory_reporter.report(state, step, model=model)
 
@@ -696,6 +699,9 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             if hasattr(state, "energy"):
                 last_energy = state.energy
             state = step_fn(state=state, model=model, **optimizer_kwargs)
+
+            if not getattr(model, "retain_graph", False):
+                state.detach_()
 
             if trajectory_reporter:
                 trajectory_reporter.report(

@@ -403,6 +403,32 @@ class SimState:
             elif leading == n_systems:
                 self._system_extras[key] = val
 
+    def detach_(self) -> Self:
+        """Detach all tensor fields and extras from the computation graph in-place.
+
+        This severs the autograd graph that accumulates when model forward passes
+        produce graph-attached tensors (energy, forces, stress) stored on the state.
+        Without detaching, each simulation step builds an ever-growing computation
+        graph chain, causing progressive slowdown and memory growth.
+
+        Uses ``object.__setattr__`` to bypass ``SimState.__setattr__`` coercion
+        and avoid re-validating ``system_idx`` on every call.
+
+        Returns:
+            Self: The same state instance, for method chaining.
+        """
+        for f in fields(self):
+            val = getattr(self, f.name)
+            if isinstance(val, torch.Tensor):
+                object.__setattr__(self, f.name, val.detach())
+        for key, val in self._atom_extras.items():
+            if isinstance(val, torch.Tensor):
+                self._atom_extras[key] = val.detach()
+        for key, val in self._system_extras.items():
+            if isinstance(val, torch.Tensor):
+                self._system_extras[key] = val.detach()
+        return self
+
     @property
     def wrap_positions(self) -> torch.Tensor:
         """Atomic positions wrapped according to periodic boundary conditions if pbc=True,
