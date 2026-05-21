@@ -409,7 +409,7 @@ class SimState:
         This severs the autograd graph that accumulates when model forward passes
         produce graph-attached tensors (energy, forces, stress) stored on the state.
         Without detaching, each simulation step builds an ever-growing computation
-        graph chain, causing progressive slowdown and memory growth.
+        graph chain, causing progressive slowdown.
 
         Uses ``object.__setattr__`` to bypass ``SimState.__setattr__`` coercion
         and avoid re-validating ``system_idx`` on every call.
