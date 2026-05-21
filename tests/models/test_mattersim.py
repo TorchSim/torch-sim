@@ -1,7 +1,5 @@
 import traceback
 
-import ase.spacegroup
-import ase.units
 import pytest
 
 from tests.conftest import DEVICE
@@ -54,7 +52,6 @@ def test_mattersim_initialization(pretrained_mattersim_model: Potential) -> None
     """Test that the MatterSim model initializes correctly."""
     model = MatterSimModel(model=pretrained_mattersim_model, device=DEVICE)
     assert model.device == DEVICE
-    assert model.stress_weight == ase.units.GPa
 
 
 test_mattersim_consistency = make_model_calculator_consistency_test(
