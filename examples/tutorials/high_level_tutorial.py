@@ -347,6 +347,10 @@ that instead of taking `n_steps` and `temperature`, `optimize` takes a `converge
 that determines when the optimization is converged. By default, the `convergence_fn` will
 wait until the energy difference between steps is less than 1 meV.
 
+Note that `optimize` returns the final state even if `max_steps` is reached before
+convergence. To check per-system convergence afterwards, evaluate
+`convergence_fn(final_state)` on the returned state.
+
 Let's use the `optimize` function with the FIRE algorithm to relax our structures:
 """
 
@@ -359,6 +363,8 @@ final_state = ts.optimize(
 )
 
 final_atoms = final_state.to_atoms()
+# `optimize` may return `final_atoms` before convergence if `max_steps` is reached.
+# Evaluate `convergence_fn` on `final_state` to verify per-system convergence
 
 
 # %% [markdown]
@@ -408,6 +414,10 @@ final_state = ts.optimize(
 )
 
 final_atoms = final_state.to_atoms()
+
+# Check per-system convergence on the returned state
+convergence_tensor = force_convergence_fn(final_state)
+print(f"Converged systems: {convergence_tensor.tolist()}")
 
 
 # %% [markdown]
