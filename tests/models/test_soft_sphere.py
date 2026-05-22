@@ -151,7 +151,7 @@ def test_multispecies_initialization_custom() -> None:
     assert torch.allclose(model.sigma_matrix, sigma_matrix)
     assert torch.allclose(model.epsilon_matrix, epsilon_matrix)
     assert torch.allclose(model.alpha_matrix, alpha_matrix)
-    assert model.cutoff.item() == 3.0
+    assert model.cutoff == 3.0
 
 
 def test_multispecies_matrix_validation() -> None:
@@ -196,7 +196,7 @@ def test_multispecies_cutoff_default() -> None:
     model = SoftSphereMultiModel(
         atomic_numbers=torch.tensor([0, 1, 2]), sigma_matrix=sigma_matrix
     )
-    assert model.cutoff.item() == 3.0
+    assert model.cutoff == 3.0
 
 
 def test_multispecies_evaluation() -> None:

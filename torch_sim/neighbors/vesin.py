@@ -8,6 +8,7 @@ Vesin is available at: https://github.com/Luthaf/vesin
 
 import torch
 
+from torch_sim import transforms
 from torch_sim.neighbors.utils import normalize_inputs
 
 
@@ -25,13 +26,14 @@ except ImportError:
 VESIN_AVAILABLE = VesinNeighborList is not None
 VESIN_TORCHSCRIPT_AVAILABLE = VesinNeighborListTorch is not None
 
+
 if VESIN_AVAILABLE:
 
     def vesin_nl(
         positions: torch.Tensor,
         cell: torch.Tensor,
         pbc: torch.Tensor,
-        cutoff: float | torch.Tensor,
+        cutoff: float,
         system_idx: torch.Tensor,
         self_interaction: bool = False,  # noqa: FBT001, FBT002
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -80,6 +82,9 @@ if VESIN_AVAILABLE:
         dtype = positions.dtype
         n_systems = int(system_idx.max().item()) + 1
         cell, pbc = normalize_inputs(cell, pbc, n_systems)
+        wrapped, wrap_shifts = transforms.pbc_wrap_batched_and_get_lattice_shifts(
+            positions, cell, system_idx, pbc
+        )
 
         # Process each system's neighbor list separately
         edge_indices = []
@@ -103,15 +108,16 @@ if VESIN_AVAILABLE:
             )
 
             # Convert tensors to CPU and float64 without gradients
-            positions_cpu = positions[system_mask].detach().cpu().to(dtype=torch.float64)
+            positions_cpu = wrapped[system_mask].detach().cpu().to(dtype=torch.float64)
             cell_cpu = cell_sys.detach().cpu().to(dtype=torch.float64)
             periodic_cpu = pbc[sys_idx].detach().to(dtype=torch.bool).cpu()
+            periodic_bool = bool(torch.all(periodic_cpu).item())
 
             # Only works on CPU and returns numpy arrays
             i, j, S = neighbor_list_fn.compute(
                 points=positions_cpu,
                 box=cell_cpu,
-                periodic=periodic_cpu,
+                periodic=periodic_bool,
                 quantities="ijS",
             )
             i, j = (
@@ -123,6 +129,9 @@ if VESIN_AVAILABLE:
 
             # Adjust indices for the global atom indexing
             edge_idx = edge_idx + offset
+            shifts = shifts + (wrap_shifts[edge_idx[0]] - wrap_shifts[edge_idx[1]]).to(
+                dtype=dtype
+            )
 
             edge_indices.append(edge_idx)
             shifts_idx_list.append(shifts)
@@ -173,7 +182,7 @@ if VESIN_TORCHSCRIPT_AVAILABLE:
         positions: torch.Tensor,
         cell: torch.Tensor,
         pbc: torch.Tensor,
-        cutoff: torch.Tensor,
+        cutoff: float,
         system_idx: torch.Tensor,
         self_interaction: bool = False,  # noqa: FBT001, FBT002
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -186,7 +195,7 @@ if VESIN_TORCHSCRIPT_AVAILABLE:
             positions: Atomic positions tensor [n_atoms, 3]
             cell: Unit cell vectors [n_systems, 3, 3] or [3, 3]
             pbc: Boolean tensor [n_systems, 3] or [3]
-            cutoff: Maximum distance (scalar tensor) for considering atoms as neighbors
+            cutoff: Maximum distance for considering atoms as neighbors
             system_idx: Tensor [n_atoms] indicating which system each atom belongs to
             self_interaction: If True, include self-pairs. Default: False
 
@@ -220,6 +229,9 @@ if VESIN_TORCHSCRIPT_AVAILABLE:
         dtype = positions.dtype
         n_systems = int(system_idx.max().item()) + 1
         cell, pbc = normalize_inputs(cell, pbc, n_systems)
+        wrapped, wrap_shifts = transforms.pbc_wrap_batched_and_get_lattice_shifts(
+            positions, cell, system_idx, pbc
+        )
 
         # Process each system's neighbor list separately
         edge_indices = []
@@ -235,13 +247,13 @@ if VESIN_TORCHSCRIPT_AVAILABLE:
                 continue
 
             # Calculate neighbor list for this system
-            neighbor_list_fn = VesinNeighborListTorch(cutoff.item(), full_list=True)
+            neighbor_list_fn = VesinNeighborListTorch(cutoff, full_list=True)
 
             # Get the cell for this system
             cell_sys = cell[sys_idx]
 
             # Convert tensors to CPU and float64 properly
-            positions_cpu = positions[system_mask].cpu().to(dtype=torch.float64)
+            positions_cpu = wrapped[system_mask].cpu().to(dtype=torch.float64)
             cell_cpu = cell_sys.cpu().to(dtype=torch.float64)
             periodic_cpu = pbc[sys_idx].to(dtype=torch.bool).cpu()
 
@@ -258,6 +270,9 @@ if VESIN_TORCHSCRIPT_AVAILABLE:
 
             # Adjust indices for the global atom indexing
             edge_idx = edge_idx + offset
+            shifts = shifts + (wrap_shifts[edge_idx[0]] - wrap_shifts[edge_idx[1]]).to(
+                dtype=dtype
+            )
 
             edge_indices.append(edge_idx)
             shifts_idx_list.append(shifts)

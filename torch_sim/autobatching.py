@@ -338,12 +338,11 @@ def determine_max_batch_size(
 
 def _n_edges_scalers(state: SimState, cutoff: float) -> list[float]:
     """Return per-system edge counts from the neighbor list as memory scalers."""
-    cutoff_tensor = torch.tensor(cutoff, dtype=state.dtype, device=state.device)
     _, system_mapping, _ = torchsim_nl(
         positions=state.positions,
         cell=state.cell,
         pbc=state.pbc,
-        cutoff=cutoff_tensor,
+        cutoff=cutoff,
         system_idx=state.system_idx,
     )
     return system_mapping.bincount(minlength=state.n_systems).float().tolist()

@@ -53,7 +53,7 @@ state = ts.io.atoms_to_state(atoms_list, device=torch.device("cpu"), dtype=torch
 pos, cell, pbc = state.positions, state.cell, state.pbc
 system_idx = state.system_idx
 n_atoms = state.n_atoms
-cutoff = torch.tensor(4.0, dtype=pos.dtype)
+cutoff = 4.0
 self_interaction = False
 
 # Ensure pbc has the correct shape [n_systems, 3]

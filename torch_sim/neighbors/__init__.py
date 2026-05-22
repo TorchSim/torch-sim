@@ -47,7 +47,7 @@ def torchsim_nl(
     positions: torch.Tensor,
     cell: torch.Tensor,
     pbc: torch.Tensor,
-    cutoff: torch.Tensor,
+    cutoff: float,
     system_idx: torch.Tensor,
     self_interaction: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -63,7 +63,7 @@ def torchsim_nl(
         positions: Atomic positions tensor [n_atoms, 3]
         cell: Unit cell vectors [n_systems, 3, 3] or [3, 3]
         pbc: Boolean tensor [n_systems, 3] or [3]
-        cutoff: Maximum distance (scalar tensor) for considering atoms as neighbors
+        cutoff: Maximum distance for considering atoms as neighbors
         system_idx: Tensor [n_atoms] indicating which system each atom belongs to
         self_interaction: If True, include self-pairs. Default: False
 
