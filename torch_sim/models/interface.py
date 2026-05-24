@@ -389,7 +389,7 @@ def validate_model_outputs(  # noqa: C901, PLR0915
     device: torch.device,
     dtype: torch.dtype,
     *,
-    check_detached: bool = False,
+    check_detached: bool = True,
     state_modifier: Callable[[SimState], SimState] | None = None,
 ) -> None:
     """Validate the outputs of a model implementation against the interface requirements.

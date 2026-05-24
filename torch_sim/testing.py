@@ -275,6 +275,124 @@ def make_benzene_sim_state(
     return ts.io.atoms_to_state(atoms, device, dtype)
 
 
+def make_pentacene_sim_state(
+    device: torch.device | None = None, dtype: torch.dtype | None = None
+) -> ts.SimState:
+    """Create pentacene molecule C22H14 (non-periodic, planar)."""
+    import numpy as np
+    from ase import Atoms
+
+    a, ch, nrings = 1.40, 1.08, 5
+    angles = np.deg2rad([30, 90, 150, 210, 270, 330])
+    carbons: list[np.ndarray] = []
+    for k in range(nrings):
+        xc = k * a * np.sqrt(3)
+        for theta in angles:
+            pos = np.array([xc + a * np.cos(theta), a * np.sin(theta), 0.0])
+            if not any(np.allclose(pos, q, atol=0.05) for q in carbons):
+                carbons.append(pos)
+    hydrogens: list[np.ndarray] = []
+    for k in range(nrings):
+        xc = k * a * np.sqrt(3)
+        hydrogens.append(np.array([xc, a + ch, 0.0]))
+        hydrogens.append(np.array([xc, -a - ch, 0.0]))
+    for theta_deg, k in [(150, 0), (210, 0), (30, nrings - 1), (330, nrings - 1)]:
+        theta = np.deg2rad(theta_deg)
+        xc = k * a * np.sqrt(3)
+        cx, cy = xc + a * np.cos(theta), a * np.sin(theta)
+        dx, dy = cx - xc, cy
+        norm = (dx**2 + dy**2) ** 0.5
+        hydrogens.append(np.array([cx + ch * dx / norm, cy + ch * dy / norm, 0.0]))
+    symbols = "C" * len(carbons) + "H" * len(hydrogens)
+    atoms = Atoms(symbols, positions=carbons + hydrogens)
+    return ts.io.atoms_to_state(atoms, device, dtype)
+
+
+# Aspirin (acetylsalicylic acid, C9H8O4) geometry, planar phenyl ring.
+# Coords constructed from ideal bond lengths/angles; suitable for model<->ASE
+# consistency checks where exact geometry is not required.
+_ASPIRIN_XYZ: Final[tuple[tuple[str, float, float, float], ...]] = (
+    ("C", 1.4000, 0.0000, 0.0000),
+    ("C", 0.7000, 1.2124, 0.0000),
+    ("C", -0.7000, 1.2124, 0.0000),
+    ("C", -1.4000, 0.0000, 0.0000),
+    ("C", -0.7000, -1.2124, 0.0000),
+    ("C", 0.7000, -1.2124, 0.0000),
+    ("C", 2.9000, 0.0000, 0.0000),
+    ("O", 3.5100, 1.0566, 0.0000),
+    ("O", 3.5800, -1.1778, 0.0000),
+    ("H", 4.0650, -2.0178, 0.0000),
+    ("O", 1.3800, 2.3902, 0.0000),
+    ("C", 0.7000, 3.5680, 0.0000),
+    ("O", -0.5200, 3.5680, 0.0000),
+    ("C", 1.4500, 4.8671, 0.0000),
+    ("H", 2.1506, 4.0321, 0.0000),
+    ("H", 0.8201, 4.8003, -0.8870),
+    ("H", 0.8201, 4.8003, 0.8870),
+    ("H", -1.2400, 2.1477, 0.0000),
+    ("H", -2.4800, 0.0000, 0.0000),
+    ("H", -1.2400, -2.1477, 0.0000),
+    ("H", 1.2400, -2.1477, 0.0000),
+)
+
+
+def make_aspirin_sim_state(
+    device: torch.device | None = None, dtype: torch.dtype | None = None
+) -> ts.SimState:
+    """Create aspirin (acetylsalicylic acid, C9H8O4) molecule (non-periodic)."""
+    from ase import Atoms
+
+    symbols = [row[0] for row in _ASPIRIN_XYZ]
+    positions = [row[1:] for row in _ASPIRIN_XYZ]
+    atoms = Atoms(symbols=symbols, positions=positions)
+    return ts.io.atoms_to_state(atoms, device, dtype)
+
+
+# Alanine dipeptide (Ac-Ala-NMe, C6H12N2O2): smallest peptide surrogate used as
+# a standard benchmark for protein backbone (phi/psi) sampling. Extended (beta)
+# conformation built from ideal internal coordinates.
+_ALANINE_DIPEPTIDE_XYZ: Final[tuple[tuple[str, float, float, float], ...]] = (
+    ("C", 0.0000, 0.0000, 0.0000),
+    ("C", 1.5200, 0.0000, 0.0000),
+    ("N", 2.1900, -1.1605, 0.0000),
+    ("C", 3.6400, -1.1605, 0.0000),
+    ("C", 4.4000, -2.4768, 0.0000),
+    ("N", 5.7400, -2.4768, 0.0000),
+    ("C", 6.4650, -3.7326, 0.0000),
+    ("O", 2.1300, 1.0566, 0.0000),
+    ("O", 3.7900, -3.5334, 0.0000),
+    ("H", 1.6850, -2.0352, 0.0000),
+    ("H", 6.2450, -1.6021, 0.0000),
+    ("C", 4.0786, -0.4007, 1.2413),
+    ("H", 3.9545, -0.6157, -0.8901),
+    ("H", -0.3638, 1.0275, 0.0000),
+    ("H", -0.3638, -0.5137, -0.8898),
+    ("H", -0.3638, -0.5137, 0.8898),
+    ("H", 5.7571, -4.5614, 0.0000),
+    ("H", 7.0918, -3.7908, -0.8898),
+    ("H", 7.0918, -3.7908, 0.8898),
+    ("H", 5.0735, -0.7326, 1.5384),
+    ("H", 4.1020, 0.6673, 1.0249),
+    ("H", 3.3754, -0.5913, 2.0520),
+)
+
+
+def make_alanine_dipeptide_sim_state(
+    device: torch.device | None = None, dtype: torch.dtype | None = None
+) -> ts.SimState:
+    """Create alanine dipeptide (Ac-Ala-NMe, C6H12N2O2) (non-periodic).
+
+    Smallest commonly used protein surrogate for testing biomolecular force
+    fields; contains two peptide bonds and a chiral alpha-carbon.
+    """
+    from ase import Atoms
+
+    symbols = [row[0] for row in _ALANINE_DIPEPTIDE_XYZ]
+    positions = [row[1:] for row in _ALANINE_DIPEPTIDE_XYZ]
+    atoms = Atoms(symbols=symbols, positions=positions)
+    return ts.io.atoms_to_state(atoms, device, dtype)
+
+
 def make_osn2_sim_state(
     device: torch.device | None = None, dtype: torch.dtype | None = None
 ) -> ts.SimState:
@@ -344,6 +462,9 @@ SIMSTATE_MOLECULE_GENERATORS: Final[
     dict[str, Callable[[torch.device, torch.dtype], ts.SimState]]
 ] = {
     "benzene_sim_state": make_benzene_sim_state,
+    "pentacene_sim_state": make_pentacene_sim_state,
+    "aspirin_sim_state": make_aspirin_sim_state,
+    "alanine_dipeptide_sim_state": make_alanine_dipeptide_sim_state,
 }
 
 
