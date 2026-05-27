@@ -47,6 +47,7 @@ batching several independent paths in TorchSim.
 """
 
 
+# %%
 @dataclass(frozen=True)
 class NEBCase:
     name: str
@@ -83,6 +84,7 @@ curvatures.
 """
 
 
+# %%
 class TorchBatchedDoubleWellModel(ModelInterface):
     def __init__(
         self,
@@ -162,6 +164,7 @@ starting guesses.
 """
 
 
+# %%
 def make_state(position: tuple[float, float, float], device: torch.device) -> ts.SimState:
     return ts.SimState(
         positions=torch.tensor([position], device=device, dtype=torch.float64),
@@ -565,7 +568,13 @@ axes[0, 1].tick_params(axis="x", rotation=45)
 axes[0, 1].set_title("Validation error by NEB case")
 
 torch_force_history = np.stack(torch_fmax)
-axes[1, 0].plot(torch_force_history.max(axis=1), label="torch-sim batch max")
+axes[1, 0].plot(
+    torch_force_history.max(axis=1),
+    color="tab:blue",
+    linestyle="--",
+    linewidth=2,
+    label="torch-sim batch max",
+)
 for case, case_fmax in zip(cases, ase_fmax, strict=True):
     axes[1, 0].plot(case_fmax, alpha=0.35, linewidth=1, label=f"ASE {case.name}")
 axes[1, 0].axhline(fmax, color="k", linestyle=":", label="fmax")
