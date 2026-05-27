@@ -130,29 +130,22 @@ def interpolate_path(
 
 def as_sim_state(state: SimState) -> SimState:
     """Drop optimizer-only fields while preserving the atomistic state."""
-    return SimState(
-        positions=state.positions,
-        masses=state.masses,
-        cell=state.cell,
-        pbc=state.pbc,
-        atomic_numbers=state.atomic_numbers,
-        system_idx=state.system_idx,
-        group_idx=state.group_idx,
-        _constraints=state.constraints,
-    )
+    return SimState.from_state(state)
 
 
 def assemble_path(
     initial_state: SimState, movable_state: SimState, final_state: SimState
 ) -> SimState:
     """Return the full NEB path as endpoints plus movable images."""
-    return concatenate_states(
+    path = concatenate_states(
         [
             as_sim_state(initial_state),
             as_sim_state(movable_state),
             as_sim_state(final_state),
         ]
     )
+    path.group_idx = torch.zeros(path.n_systems, device=path.device, dtype=torch.long)
+    return path
 
 
 def compute_tangents(
@@ -220,6 +213,8 @@ def calculate_neb_forces(
     n_intermediate = n_total_images - 2
     if n_intermediate <= 0:
         raise ValueError("A NEB path must include at least one movable image.")
+    if path_state.n_atoms % n_total_images != 0:
+        raise ValueError("NEB path images must contain the same number of atoms.")
     if true_energies.shape[0] != n_intermediate:
         raise ValueError(f"{true_energies.shape[0]=} does not match {n_intermediate=}.")
 
@@ -262,10 +257,10 @@ def calculate_neb_forces(
 def _endpoint_energies(
     initial_state: SimState, final_state: SimState, model: ModelInterface
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    output = model(
-        concatenate_states([as_sim_state(initial_state), as_sim_state(final_state)])
+    return (
+        model(as_sim_state(initial_state))["energy"][0],
+        model(as_sim_state(final_state))["energy"][0],
     )
-    return output["energy"][0], output["energy"][1]
 
 
 def _store_neb_force_metadata(state: OptimState, neb_forces: torch.Tensor) -> None:
@@ -339,18 +334,8 @@ def neb_convergence_fn(
 ) -> torch.Tensor:
     """Return all-or-nothing NEB convergence for the movable images."""
     del last_energy
-    neb_max_force = getattr(
-        state,
-        "neb_max_force",
-        torch.linalg.norm(state.forces, dim=-1).max(),
-    )
-    converged = neb_max_force < fmax
-    return torch.full(
-        (state.n_systems,),
-        bool(converged.item()),
-        device=state.device,
-        dtype=torch.bool,
-    )
+    converged = torch.linalg.norm(state.forces, dim=-1).max() < fmax
+    return converged.expand(state.n_systems)
 
 
 @dataclass

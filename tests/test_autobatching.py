@@ -715,6 +715,35 @@ def test_in_flight_max_iterations(
         assert batcher.iteration_count[idx] == max_iterations
 
 
+def test_in_flight_max_iterations_completes_whole_group(
+    si_double_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    grouped_state = si_double_sim_state.clone()
+    grouped_state.group_idx = torch.zeros(
+        grouped_state.n_systems, device=grouped_state.device, dtype=torch.long
+    )
+    batcher = InFlightAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=800.0,
+        max_iterations=1,
+    )
+    batcher.load_states(grouped_state)
+
+    state, [] = batcher.next_batch(None, None)
+    assert state is not None
+    assert state.n_systems == grouped_state.n_systems
+    assert state.n_groups == 1
+
+    convergence_tensor = torch.zeros(state.n_systems, dtype=torch.bool)
+    next_state, completed_states = batcher.next_batch(state, convergence_tensor)
+
+    assert next_state is None
+    assert len(completed_states) == 1
+    assert completed_states[0].n_systems == grouped_state.n_systems
+
+
 @pytest.mark.parametrize(
     "num_steps_per_batch",
     [

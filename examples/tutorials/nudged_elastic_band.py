@@ -50,12 +50,14 @@ batching several independent paths in TorchSim.
 @dataclass(frozen=True)
 class NEBCase:
     name: str
+    barrier_height: float
     valley_scale: float
     valley_curve: float
 
 
 def curved_double_well(
     positions: torch.Tensor,
+    barrier_height: torch.Tensor | float,
     valley_scale: torch.Tensor | float,
     valley_curve: torch.Tensor | float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -64,8 +66,8 @@ def curved_double_well(
     z = positions[:, 2]
     u = x**2 - 1.0
     v = y - valley_curve * u
-    energy = u**2 + valley_scale * v**2 + z**2
-    dE_dx = 4.0 * x * u - 4.0 * valley_scale * valley_curve * x * v
+    energy = barrier_height * u**2 + valley_scale * v**2 + z**2
+    dE_dx = 4.0 * barrier_height * x * u - 4.0 * valley_scale * valley_curve * x * v
     dE_dy = 2.0 * valley_scale * v
     dE_dz = 2.0 * z
     forces = -torch.stack([dE_dx, dE_dy, dE_dz], dim=1)
@@ -101,12 +103,18 @@ class TorchBatchedDoubleWellModel(ModelInterface):
         self.valley_curve = torch.tensor(
             [case.valley_curve for case in cases], device=device, dtype=dtype
         )
+        self.barrier_height = torch.tensor(
+            [case.barrier_height for case in cases], device=device, dtype=dtype
+        )
 
     def forward(self, state: ts.SimState, **kwargs: object) -> dict[str, torch.Tensor]:
         del kwargs
         case_idx = state.group_idx[state.system_idx]
         per_atom_energy, forces = curved_double_well(
-            state.positions, self.valley_scale[case_idx], self.valley_curve[case_idx]
+            state.positions,
+            self.barrier_height[case_idx],
+            self.valley_scale[case_idx],
+            self.valley_curve[case_idx],
         )
         energy = torch.zeros(state.n_systems, device=state.device, dtype=state.dtype)
         energy.scatter_add_(0, state.system_idx, per_atom_energy)
@@ -135,7 +143,10 @@ class ASEDoubleWellCalculator(Calculator):
         super().calculate(atoms, properties, system_changes)
         positions = torch.tensor(self.atoms.positions, dtype=torch.float64)
         per_atom_energy, forces = curved_double_well(
-            positions, self.case.valley_scale, self.case.valley_curve
+            positions,
+            self.case.barrier_height,
+            self.case.valley_scale,
+            self.case.valley_curve,
         )
         self.results["energy"] = float(per_atom_energy.sum().item())
         self.results["forces"] = forces.detach().cpu().numpy()
@@ -431,14 +442,14 @@ these paths together; ASE will run the same cases sequentially.
 # %%
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cases = [
-    NEBCase("reference", valley_scale=5.0, valley_curve=0.50),
-    NEBCase("shallow", valley_scale=3.0, valley_curve=0.25),
-    NEBCase("steep", valley_scale=8.0, valley_curve=0.35),
-    NEBCase("left bend", valley_scale=5.5, valley_curve=-0.45),
-    NEBCase("tight bend", valley_scale=7.0, valley_curve=0.70),
-    NEBCase("wide bend", valley_scale=4.0, valley_curve=-0.75),
-    NEBCase("soft", valley_scale=2.5, valley_curve=0.60),
-    NEBCase("stiff", valley_scale=9.0, valley_curve=-0.25),
+    NEBCase("0.8 eV", barrier_height=0.8, valley_scale=5.0, valley_curve=0.50),
+    NEBCase("0.9 eV", barrier_height=0.9, valley_scale=3.0, valley_curve=0.25),
+    NEBCase("1.0 eV", barrier_height=1.0, valley_scale=8.0, valley_curve=0.35),
+    NEBCase("1.1 eV", barrier_height=1.1, valley_scale=5.5, valley_curve=-0.45),
+    NEBCase("1.2 eV", barrier_height=1.2, valley_scale=7.0, valley_curve=0.70),
+    NEBCase("1.3 eV", barrier_height=1.3, valley_scale=4.0, valley_curve=-0.75),
+    NEBCase("1.4 eV", barrier_height=1.4, valley_scale=2.5, valley_curve=0.60),
+    NEBCase("1.5 eV", barrier_height=1.5, valley_scale=9.0, valley_curve=-0.25),
 ]
 n_images = 7
 spring_constant = 0.1

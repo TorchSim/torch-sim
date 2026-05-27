@@ -1116,8 +1116,7 @@ class InFlightAutoBatcher[T: SimState]:
             if self.max_iterations is not None and (
                 self.iteration_count[abs_idx] >= self.max_iterations
             ):
-                # Force convergence for states that have reached max attempts
-                convergence_tensor[cur_idx] = torch.tensor(True)  # noqa: FBT003
+                convergence_tensor[updated_state.group_idx == cur_idx] = True
 
         completed_idx = []
         completed_system_indices = []

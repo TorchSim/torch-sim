@@ -7,7 +7,12 @@ from ase.mep.neb import ImprovedTangentMethod, NEBState
 import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
 from torch_sim.models.interface import ModelInterface
-from torch_sim.workflows.neb import NEB, calculate_neb_forces, interpolate_path
+from torch_sim.workflows.neb import (
+    NEB,
+    assemble_path,
+    calculate_neb_forces,
+    interpolate_path,
+)
 
 
 class HarmonicModel(ModelInterface):
@@ -32,6 +37,13 @@ class HarmonicModel(ModelInterface):
         }
 
 
+class GroupIndexedModel(HarmonicModel):
+    def forward(self, state: ts.SimState, **kwargs: object) -> dict[str, torch.Tensor]:
+        if state.group_idx.max() >= 1:
+            raise AssertionError("NEB endpoint/path assembly should preserve one group.")
+        return super().forward(state, **kwargs)
+
+
 def _single_atom_state(position: float) -> ts.SimState:
     return ts.SimState(
         positions=torch.tensor([[position, 0.0, 0.0]], device=DEVICE, dtype=DTYPE),
@@ -41,6 +53,18 @@ def _single_atom_state(position: float) -> ts.SimState:
         atomic_numbers=torch.tensor([18], device=DEVICE),
         system_idx=torch.zeros(1, device=DEVICE, dtype=torch.long),
     )
+
+
+def test_assemble_path_preserves_one_optimizer_group() -> None:
+    initial = _single_atom_state(0.0)
+    final = _single_atom_state(1.0)
+    movable = interpolate_path(initial, final, n_images=3)
+
+    path = assemble_path(initial, movable, final)
+
+    assert path.n_systems == 5
+    assert path.n_groups == 1
+    assert torch.equal(path.group_idx, torch.zeros(5, device=DEVICE, dtype=torch.long))
 
 
 def test_interpolate_path_uses_movable_images_only() -> None:
@@ -159,3 +183,19 @@ def test_neb_run_uses_single_chain_optimize_without_moving_endpoints() -> None:
         result.positions[:, 0],
         torch.tensor([0.0, 0.5, 1.0], device=DEVICE, dtype=DTYPE),
     )
+    assert result.n_groups == 1
+
+
+def test_neb_run_does_not_offset_endpoint_groups() -> None:
+    initial = _single_atom_state(0.0)
+    final = _single_atom_state(1.0)
+    neb = NEB(
+        model=GroupIndexedModel(),
+        n_images=1,
+        optimizer_type="gd",
+        optimizer_params={"pos_lr": 0.1},
+    )
+
+    result = neb.run(initial, final, max_steps=1, fmax=1e-12)
+
+    assert result.n_groups == 1
