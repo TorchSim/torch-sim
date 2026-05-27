@@ -95,7 +95,7 @@ def torch_nl_n2(
     positions: torch.Tensor,
     cell: torch.Tensor,
     pbc: torch.Tensor,
-    cutoff: torch.Tensor,
+    cutoff: float,
     system_idx: torch.Tensor,
     self_interaction: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -114,7 +114,7 @@ def torch_nl_n2(
         cell (torch.Tensor [n_systems, 3, 3]): Unit cell vectors.
         pbc (torch.Tensor [n_systems, 3] bool):
             A tensor indicating the periodic boundary conditions to apply.
-        cutoff (torch.Tensor):
+        cutoff (float):
             The cutoff radius used for the neighbor search.
         system_idx (torch.Tensor [n_atom,] torch.long):
             A tensor containing the index of the structure to which each atom belongs.
@@ -144,10 +144,10 @@ def torch_nl_n2(
 
     n_atoms = torch.bincount(system_idx)
     mapping, system_mapping, shifts_idx = transforms.build_naive_neighborhood(
-        wrapped, cell, pbc, cutoff.item(), n_atoms, self_interaction
+        wrapped, cell, pbc, cutoff, n_atoms, self_interaction
     )
     mapping, mapping_system, shifts_idx = strict_nl(
-        cutoff.item(), wrapped, cell, mapping, system_mapping, shifts_idx
+        cutoff, wrapped, cell, mapping, system_mapping, shifts_idx
     )
     shifts_idx = shifts_idx + wrap_shifts[mapping[0]] - wrap_shifts[mapping[1]]
     return mapping, mapping_system, shifts_idx
@@ -157,7 +157,7 @@ def torch_nl_linked_cell(
     positions: torch.Tensor,
     cell: torch.Tensor,
     pbc: torch.Tensor,
-    cutoff: torch.Tensor,
+    cutoff: float,
     system_idx: torch.Tensor,
     self_interaction: bool = False,  # noqa: FBT001, FBT002
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -177,7 +177,7 @@ def torch_nl_linked_cell(
         cell (torch.Tensor [n_systems, 3, 3]): Unit cell vectors.
         pbc (torch.Tensor [n_systems, 3] bool):
             A tensor indicating the periodic boundary conditions to apply.
-        cutoff (torch.Tensor):
+        cutoff (float):
             The cutoff radius used for the neighbor search.
         system_idx (torch.Tensor [n_atom,] torch.long):
             A tensor containing the index of the structure to which each atom belongs.
@@ -206,10 +206,10 @@ def torch_nl_linked_cell(
 
     n_atoms = torch.bincount(system_idx)
     mapping, system_mapping, shifts_idx = transforms.build_linked_cell_neighborhood(
-        wrapped, cell, pbc, cutoff.item(), n_atoms, self_interaction
+        wrapped, cell, pbc, cutoff, n_atoms, self_interaction
     )
     mapping, mapping_system, shifts_idx = strict_nl(
-        cutoff.item(), wrapped, cell, mapping, system_mapping, shifts_idx
+        cutoff, wrapped, cell, mapping, system_mapping, shifts_idx
     )
     shifts_idx = shifts_idx + wrap_shifts[mapping[0]] - wrap_shifts[mapping[1]]
     return mapping, mapping_system, shifts_idx

@@ -17,6 +17,7 @@ from nvalchemiops.torch.interactions.electrostatics import (
     particle_mesh_ewald,
 )
 
+from torch_sim import transforms
 from torch_sim._duecredit import dcite
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
@@ -45,32 +46,6 @@ def _zero_result(
     if compute_stress:
         results["stress"] = torch.zeros(state.n_systems, 3, 3, dtype=dtype, device=dev)
     return results
-
-
-def _build_csr(
-    state: SimState,
-    cutoff: float,
-    neighbor_list_fn: Callable,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Build a CSR neighbor list and integer unit-shift tensor."""
-    edge_index, _mapping, unit_shifts = neighbor_list_fn(
-        state.positions,
-        state.row_vector_cell,
-        state.pbc,
-        cutoff,
-        state.system_idx,
-    )
-    n_atoms = state.positions.shape[0]
-    dev = state.positions.device
-    neighbor_ptr = torch.zeros(n_atoms + 1, dtype=torch.int32, device=dev)
-    neighbor_ptr[1:] = (
-        torch.bincount(edge_index[0], minlength=n_atoms).cumsum(0).to(torch.int32)
-    )
-    return (
-        edge_index.to(torch.int32),
-        neighbor_ptr,
-        unit_shifts.to(torch.int32),
-    )
 
 
 class DSFCoulombModel(ModelInterface):
@@ -133,8 +108,18 @@ class DSFCoulombModel(ModelInterface):
             raise ValueError("Partial charges are required for DSF Coulomb summation.")
 
         charges = state.partial_charges
-        edge_index, neighbor_ptr, unit_shifts = _build_csr(
-            state, self.cutoff, self.neighbor_list_fn
+        edge_index, _mapping, unit_shifts = self.neighbor_list_fn(
+            state.positions,
+            state.row_vector_cell,
+            state.pbc,
+            self.cutoff,
+            state.system_idx,
+        )
+        edge_index, neighbor_ptr, unit_shifts = transforms.build_csr_neighbor_list(
+            edge_index,
+            _mapping,
+            unit_shifts,
+            state.positions.shape[0],
         )
         cell = state.row_vector_cell.contiguous()
         dsf_args: dict = dict(
@@ -233,8 +218,18 @@ class EwaldModel(ModelInterface):
                 state, self._dtype, self._compute_forces, self._compute_stress
             )
         charges = state.partial_charges
-        edge_index, neighbor_ptr, unit_shifts = _build_csr(
-            state, self.cutoff, self.neighbor_list_fn
+        edge_index, _mapping, unit_shifts = self.neighbor_list_fn(
+            state.positions,
+            state.row_vector_cell,
+            state.pbc,
+            self.cutoff,
+            state.system_idx,
+        )
+        edge_index, neighbor_ptr, unit_shifts = transforms.build_csr_neighbor_list(
+            edge_index,
+            _mapping,
+            unit_shifts,
+            state.positions.shape[0],
         )
         cell = state.row_vector_cell.contiguous()
         out = ewald_summation(
@@ -345,8 +340,18 @@ class PMEModel(ModelInterface):
                 state, self._dtype, self._compute_forces, self._compute_stress
             )
         charges = state.partial_charges
-        edge_index, neighbor_ptr, unit_shifts = _build_csr(
-            state, self.cutoff, self.neighbor_list_fn
+        edge_index, _mapping, unit_shifts = self.neighbor_list_fn(
+            state.positions,
+            state.row_vector_cell,
+            state.pbc,
+            self.cutoff,
+            state.system_idx,
+        )
+        edge_index, neighbor_ptr, unit_shifts = transforms.build_csr_neighbor_list(
+            edge_index,
+            _mapping,
+            unit_shifts,
+            state.positions.shape[0],
         )
         cell = state.row_vector_cell.contiguous()
         batch_idx = state.system_idx.to(torch.int32) if state.n_systems > 1 else None

@@ -115,7 +115,7 @@ def lbfgs_init(
     state: SimState,
     model: "ModelInterface",
     *,
-    step_size: float | torch.Tensor = 0.1,
+    step_size: float | torch.Tensor = 1.0,
     alpha: float | torch.Tensor | None = None,
     cell_filter: "CellFilter | CellFilterFuncs | None" = None,
     **filter_kwargs: Any,
@@ -136,8 +136,6 @@ def lbfgs_init(
         state: Input SimState
         model: Model that computes energies, forces, and optionally stress
         step_size: Fixed per-system step length (damping factor).
-            If using ASE mode (fixed alpha), set this to 1.0 (or your damping).
-            If using dynamic mode (default), 0.1 is a safe starting point.
         alpha: Initial inverse Hessian stiffness guess (ASE parameter).
             If provided (e.g. 70.0), fixes H0 = 1/alpha for all steps (ASE-style).
             If None (default), H0 is updated dynamically (Standard L-BFGS).
@@ -640,8 +638,8 @@ def lbfgs_step(  # noqa: PLR0915, C901
         state.prev_forces = new_forces.clone()  # [N, 3]
         state.prev_positions = state.positions.clone()  # [N, 3]
 
-    state.s_history = s_hist  # [S, H, M_ext, 3] or [S, H, M, 3]
-    state.y_history = y_hist  # [S, H, M_ext, 3] or [S, H, M, 3]
+    state.s_history = s_hist.detach()  # [S, H, M_ext, 3] or [S, H, M, 3]
+    state.y_history = y_hist.detach()  # [S, H, M_ext, 3] or [S, H, M, 3]
     state.n_iter = state.n_iter + 1  # [S]
 
     return state

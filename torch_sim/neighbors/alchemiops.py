@@ -49,7 +49,7 @@ if ALCHEMIOPS_AVAILABLE:
         positions: torch.Tensor,
         cell: torch.Tensor,
         pbc: torch.Tensor,
-        cutoff: torch.Tensor,
+        cutoff: float,
         system_idx: torch.Tensor,
         self_interaction: bool = False,  # noqa: FBT001, FBT002
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -59,14 +59,13 @@ if ALCHEMIOPS_AVAILABLE:
             positions: Atomic positions tensor [n_atoms, 3]
             cell: Unit cell vectors [n_systems, 3, 3] or [3, 3]
             pbc: Boolean tensor [n_systems, 3] or [3]
-            cutoff: Maximum distance (scalar tensor)
+            cutoff: Maximum distance
             system_idx: Tensor [n_atoms] indicating system assignment
             self_interaction: If True, include self-pairs
 
         Returns:
             (mapping, system_mapping, shifts_idx)
         """
-        r_max = cutoff.item() if isinstance(cutoff, torch.Tensor) else cutoff
         n_systems = int(system_idx.max().item()) + 1
         cell, pbc = normalize_inputs(cell, pbc, n_systems)
 
@@ -74,7 +73,7 @@ if ALCHEMIOPS_AVAILABLE:
             raise RuntimeError("nvalchemiops neighbor list is unavailable")
         res = _batch_naive_neighbor_list(
             positions=positions,
-            cutoff=r_max,
+            cutoff=cutoff,
             batch_idx=system_idx.to(torch.int32),
             cell=cell,
             pbc=pbc.to(torch.bool),
@@ -120,7 +119,7 @@ if ALCHEMIOPS_AVAILABLE:
         positions: torch.Tensor,
         cell: torch.Tensor,
         pbc: torch.Tensor,
-        cutoff: torch.Tensor,
+        cutoff: float,
         system_idx: torch.Tensor,
         self_interaction: bool = False,  # noqa: FBT001, FBT002
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -130,14 +129,13 @@ if ALCHEMIOPS_AVAILABLE:
             positions: Atomic positions tensor [n_atoms, 3]
             cell: Unit cell vectors [n_systems, 3, 3] or [3, 3]
             pbc: Boolean tensor [n_systems, 3] or [3]
-            cutoff: Maximum distance (scalar tensor)
+            cutoff: Maximum distance
             system_idx: Tensor [n_atoms] indicating system assignment
             self_interaction: If True, include self-pairs
 
         Returns:
             (mapping, system_mapping, shifts_idx)
         """
-        r_max = cutoff.item() if isinstance(cutoff, torch.Tensor) else cutoff
         n_systems = int(system_idx.max().item()) + 1
         cell, pbc = normalize_inputs(cell, pbc, n_systems)
 
@@ -157,7 +155,7 @@ if ALCHEMIOPS_AVAILABLE:
             raise RuntimeError("nvalchemiops cell list is unavailable")
         res = _batch_cell_list(
             positions=positions,
-            cutoff=r_max,
+            cutoff=cutoff,
             batch_idx=system_idx.to(torch.int32),
             cell=cell,
             pbc=pbc.to(torch.bool),

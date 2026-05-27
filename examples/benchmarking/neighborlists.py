@@ -238,7 +238,7 @@ def _benchmark_backend(
     positions: torch.Tensor,
     cell: torch.Tensor,
     pbc: torch.Tensor,
-    cutoff: torch.Tensor,
+    cutoff: float,
     system_idx: torch.Tensor,
     n_repeats: int,
     device: str,
@@ -291,7 +291,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
     positions, cell, pbc, system_idx = _build_tensors(
         structures, dtype=torch_dtype, device=args.device
     )
-    cutoff = torch.tensor(args.cutoff, dtype=torch_dtype, device=args.device)
+    cutoff = float(args.cutoff)
     n_atoms = positions.shape[0]
 
     backends = args.nl_backend if isinstance(args.nl_backend, list) else [args.nl_backend]

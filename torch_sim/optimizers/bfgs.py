@@ -381,6 +381,7 @@ def bfgs_step(  # noqa: C901, PLR0915
         term2 = torch.bmm(dg, dg.transpose(1, 2)) / (b.unsqueeze(2) + 1e-30)
 
         state.hessian[idx] = H - term1 - term2  # [S_active, dim, dim]
+        state.hessian = state.hessian.detach()
 
     # Calculate step direction using eigendecomposition
     # step = V @ (|omega|^-1) @ V^T @ forces (pseudo-inverse via eigendecomposition)

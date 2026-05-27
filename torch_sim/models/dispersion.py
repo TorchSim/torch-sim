@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
+from torch_sim import transforms
 from torch_sim._duecredit import dcite
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
@@ -141,18 +142,17 @@ class D3DispersionModel(ModelInterface):
             self.cutoff,
             state.system_idx,
         )
-        n_atoms = state.positions.shape[0]
-        neighbor_ptr = torch.zeros(
-            n_atoms + 1, dtype=torch.int32, device=state.positions.device
-        )
-        neighbor_ptr[1:] = (
-            torch.bincount(edge_index[0], minlength=n_atoms).cumsum(0).to(torch.int32)
+        edge_index_int, neighbor_ptr, unit_shifts_int = (
+            transforms.build_csr_neighbor_list(
+                edge_index,
+                _mapping_system,
+                unit_shifts,
+                state.positions.shape[0],
+            )
         )
         positions_bohr = state.positions * UnitConversion.Ang_to_Bohr
         cell_bohr = state.row_vector_cell.contiguous() * UnitConversion.Ang_to_Bohr
         numbers = state.atomic_numbers.to(torch.int32)
-        unit_shifts_int = unit_shifts.to(torch.int32)
-        edge_index_int = edge_index.to(torch.int32)
         d3_out = nvalchemiops_dftd3(
             positions=positions_bohr,
             numbers=numbers,

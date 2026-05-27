@@ -257,9 +257,8 @@ def test_neighbor_list_invariant_under_lattice_image_shifts(
     assert not torch.allclose(pos_shifted, pos_wrapped, rtol=0.0, atol=1e-12), (
         "expected non-trivial lattice shifts along periodic axes"
     )
-    c_tensor = torch.tensor(cutoff, dtype=DTYPE, device=DEVICE)
     map_w, sys_w, sh_w = nl_implementation(
-        cutoff=c_tensor,
+        cutoff=cutoff,
         positions=pos_wrapped,
         cell=cell_b,
         pbc=pbc_b,
@@ -267,7 +266,7 @@ def test_neighbor_list_invariant_under_lattice_image_shifts(
         self_interaction=self_interaction,
     )
     map_s, sys_s, sh_s = nl_implementation(
-        cutoff=c_tensor,
+        cutoff=cutoff,
         positions=pos_shifted,
         cell=cell_b,
         pbc=pbc_b,
@@ -311,7 +310,7 @@ def test_neighbor_list_implementations(
         atoms_list, device=DEVICE, dtype=DTYPE
     )
     mapping, mapping_system, shifts_idx = nl_implementation(
-        cutoff=torch.tensor(cutoff, dtype=DTYPE, device=DEVICE),
+        cutoff=cutoff,
         positions=pos,
         cell=row_vector_cell,
         pbc=pbc,
@@ -377,7 +376,7 @@ def test_nl_pbc_edge_cases(
     """
     pos = torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]], device=DEVICE, dtype=DTYPE)
     cell = torch.eye(3, device=DEVICE, dtype=DTYPE) * 2.0
-    cutoff = torch.tensor(1.5, device=DEVICE, dtype=DTYPE)
+    cutoff = 1.5
     pbc = torch.tensor([pbc_val, pbc_val, pbc_val], device=DEVICE)
     system_idx = torch.zeros(2, dtype=torch.long, device=DEVICE)
 
@@ -400,7 +399,7 @@ def test_vesin_nl_float32() -> None:
         [[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]], device=DEVICE, dtype=torch.float32
     )
     cell = torch.eye(3, device=DEVICE, dtype=torch.float32) * 2.0
-    cutoff = torch.tensor(1.5, device=DEVICE, dtype=torch.float32)
+    cutoff = 1.5
     pbc = torch.tensor([True, True, True], device=DEVICE)
     system_idx = torch.zeros(2, dtype=torch.long, device=DEVICE)
 
@@ -412,12 +411,12 @@ def test_vesin_nl_float32() -> None:
 
 def _minimal_neighbor_list_inputs(
     device: torch.device,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, float, torch.Tensor]:
     """Create minimal valid tensor inputs for neighbor-list API smoke checks."""
     positions = torch.zeros((1, 3), dtype=torch.float32, device=device)
     cell = torch.eye(3, dtype=torch.float32, device=device)
     pbc = torch.tensor([False, False, False], dtype=torch.bool, device=device)
-    cutoff = torch.tensor(1.0, dtype=torch.float32, device=device)
+    cutoff = 1.0
     system_idx = torch.zeros(1, dtype=torch.long, device=device)
     return positions, cell, pbc, cutoff, system_idx
 
@@ -480,7 +479,7 @@ def test_fallback_when_alchemiops_unavailable(monkeypatch: pytest.MonkeyPatch) -
     )
     cell = torch.eye(3, device=device, dtype=dtype) * 3.0
     pbc = torch.tensor([False, False, False], device=device)
-    cutoff = torch.tensor(1.5, device=device, dtype=dtype)
+    cutoff = 1.5
     system_idx = torch.zeros(4, dtype=torch.long, device=device)
 
     # Use monkeypatch to temporarily disable alchemiops
@@ -520,7 +519,7 @@ def test_torchsim_nl_gpu() -> None:
     )
     cell = torch.eye(3, device=device, dtype=dtype) * 3.0
     pbc = torch.tensor([True, True, True], device=device)
-    cutoff = torch.tensor(1.5, device=device, dtype=dtype)
+    cutoff = 1.5
     system_idx = torch.zeros(2, dtype=torch.long, device=device)
 
     # Should work on GPU regardless of implementation availability
@@ -557,7 +556,7 @@ def test_torchsim_nl_fallback_when_vesin_unavailable(
     )
     cell = torch.eye(3, device=device, dtype=dtype) * 3.0
     pbc = torch.tensor([False, False, False], device=device)
-    cutoff = torch.tensor(1.5, device=device, dtype=dtype)
+    cutoff = 1.5
     system_idx = torch.zeros(4, dtype=torch.long, device=device)
 
     # Monkeypatch both availability flags to False
@@ -582,9 +581,9 @@ def test_torchsim_nl_fallback_when_vesin_unavailable(
 
 
 def _no_neighbor_inputs() -> tuple[
-    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
+    torch.Tensor, torch.Tensor, torch.Tensor, float, torch.Tensor
 ]:
-    """Build a simple no-neighbor system."""
+    """Two atoms far apart in a large non-periodic box; cutoff too small for any pair."""
     positions = torch.tensor(
         [[0.0, 0.0, 0.0], [10.0, 10.0, 10.0]],
         device=DEVICE,
@@ -592,8 +591,21 @@ def _no_neighbor_inputs() -> tuple[
     )
     cell = torch.eye(3, device=DEVICE, dtype=DTYPE) * 20.0
     pbc = torch.tensor([False, False, False], device=DEVICE)
-    cutoff = torch.tensor(1.0, device=DEVICE, dtype=DTYPE)
-    return positions, cell, pbc, cutoff
+    cutoff = 1.0
+    system_idx = torch.zeros(2, dtype=torch.long, device=DEVICE)
+    return positions, cell, pbc, cutoff, system_idx
+
+
+@pytest.mark.parametrize("nl_implementation", _all_nl_backends())
+def test_neighbor_list_empty_when_all_pairs_beyond_cutoff(
+    nl_implementation: Callable[..., tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+) -> None:
+    """Every backend returns a valid empty neighbor list when no pair is within cutoff."""
+    positions, cell, pbc, cutoff, system_idx = _no_neighbor_inputs()
+    mapping, sys_map, shifts = nl_implementation(positions, cell, pbc, cutoff, system_idx)
+    assert mapping.shape == (2, 0)
+    assert sys_map.numel() == 0
+    assert shifts.shape == (0, 3)
 
 
 def test_strict_nl_edge_cases() -> None:

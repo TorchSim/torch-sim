@@ -130,7 +130,7 @@ def full_to_half_list(
 def _prepare_pairs(
     state: SimState,
     *,
-    cutoff: torch.Tensor,
+    cutoff: float,
     neighbor_list_fn: Callable,
     reduce_to_half_list: bool,
     device: torch.device,
@@ -344,7 +344,7 @@ class PairPotentialModel(ModelInterface):
         self.per_atom_stresses = per_atom_stresses
         self.pair_fn = pair_fn
         self.neighbor_list_fn = neighbor_list_fn
-        self.cutoff = torch.tensor(cutoff, dtype=dtype, device=self._device)
+        self.cutoff = cutoff
         self.reduce_to_half_list = reduce_to_half_list
         self.retain_graph = retain_graph
 
@@ -529,7 +529,7 @@ class PairForcesModel(ModelInterface):
         self.per_atom_stresses = per_atom_stresses
         self.force_fn = force_fn
         self.neighbor_list_fn = neighbor_list_fn
-        self.cutoff = torch.tensor(cutoff, dtype=dtype, device=self._device)
+        self.cutoff = cutoff
         self.reduce_to_half_list = reduce_to_half_list
 
     def forward(self, state: SimState, **_kwargs: object) -> dict[str, torch.Tensor]:

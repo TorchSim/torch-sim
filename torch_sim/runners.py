@@ -593,6 +593,11 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
 
     Returns:
         T: Optimized system state
+
+    Notes:
+        The state is returned even if max_steps was reached before
+        `convergence_fn` was satisfied. To check per-system convergence,
+        evaluate `convergence_fn(final_state)` on the returned state
     """
     # create a default convergence function if one is not provided
     # TODO: document this behavior
