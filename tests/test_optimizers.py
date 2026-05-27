@@ -10,7 +10,15 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers import BFGSState, FireFlavor, FireState, LBFGSState, OptimState
-from torch_sim.optimizers.cell_filters import CellLBFGSState, deform_grad
+from torch_sim.optimizers.cell_filters import (
+    CellLBFGSState,
+    current_deform_grad,
+    deform_grad,
+    forces_to_scaled,
+    positions_to_fractional,
+    unit_cell_filter_init,
+    unit_cell_step,
+)
 from torch_sim.state import SimState
 
 
@@ -908,6 +916,7 @@ def test_cell_optimizer_init_with_dict_and_cell_factor(
         dtype=lj_model.dtype,
     )
     assert torch.allclose(opt_state.cell_factor, expected_cf_tensor)
+    assert opt_state.cell_filter_kind == cell_filter
 
 
 @pytest.mark.parametrize(
@@ -956,10 +965,59 @@ def test_cell_optimizer_init_cell_factor_none(
 
     # Check cell_factor is stored in cell_state for new API
     assert torch.allclose(opt_state.cell_factor, expected_cf_tensor)
+    assert opt_state.cell_filter_kind == cell_filter
 
     assert opt_state.energy is not None
     assert opt_state.forces is not None
     assert opt_state.stress is not None
+
+
+def test_custom_cell_filter_tuple_keeps_custom_kind(
+    ar_supercell_sim_state: SimState,
+    lj_model: ModelInterface,
+) -> None:
+    def custom_init(
+        state: ts.CellOptimState, model: ModelInterface, **kwargs: Any
+    ) -> None:
+        unit_cell_filter_init(state, model, **kwargs)
+
+    def custom_step(state: ts.CellOptimState, cell_lr: float | torch.Tensor) -> None:
+        unit_cell_step(state, cell_lr)
+
+    opt_state = ts.gradient_descent_init(
+        ar_supercell_sim_state,
+        lj_model,
+        cell_filter=(custom_init, custom_step),
+    )
+
+    assert opt_state.cell_filter_kind == "custom"
+    assert opt_state.cell_filter == (custom_init, custom_step)
+
+
+def test_cell_coordinate_helpers_match_inline_formulas(
+    ar_supercell_sim_state: SimState,
+    lj_model: ModelInterface,
+) -> None:
+    opt_state = ts.lbfgs_init(
+        ar_supercell_sim_state, lj_model, cell_filter=ts.CellFilter.unit
+    )
+    cur_deform_grad = current_deform_grad(opt_state)
+
+    expected_fractional = torch.linalg.solve(
+        cur_deform_grad[opt_state.system_idx], opt_state.positions.unsqueeze(-1)
+    ).squeeze(-1)
+    expected_scaled_forces = torch.bmm(
+        opt_state.forces.unsqueeze(1), cur_deform_grad[opt_state.system_idx]
+    ).squeeze(1)
+
+    assert torch.allclose(
+        positions_to_fractional(opt_state, opt_state.positions, cur_deform_grad),
+        expected_fractional,
+    )
+    assert torch.allclose(
+        forces_to_scaled(opt_state, opt_state.forces, cur_deform_grad),
+        expected_scaled_forces,
+    )
 
 
 @pytest.mark.filterwarnings("ignore:WARNING: Non-positive volume detected")

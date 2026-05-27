@@ -10,7 +10,7 @@ import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 import torch
 
@@ -291,6 +291,9 @@ class CellFilter(StrEnum):
     frechet = "frechet"
 
 
+CellFilterKind = CellFilter | Literal["custom"]
+
+
 # Filter type definitions for convenience
 def unit_cell_step[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) -> None:
     """Update cell using unit cell approach."""
@@ -363,13 +366,7 @@ def compute_cell_forces[T: AnyCellState](
         constant_volume=state.constant_volume,
     )
 
-    # Check if this is Frechet method by examining the stored cell filter functions
-    cell_filter_funcs = getattr(state, "cell_filter", None)
-    is_frechet = (
-        cell_filter_funcs is not None and cell_filter_funcs[0] is frechet_cell_filter_init
-    )
-
-    if is_frechet:
+    if state.cell_filter_kind == CellFilter.frechet:
         # Frechet cell force computation
         cur_deform_grad = deform_grad(state.reference_cell.mT, state.row_vector_cell)
         ucf_cell_grad = torch.bmm(
@@ -407,6 +404,17 @@ CELL_FILTER_REGISTRY: dict[CellFilter, CellFilterFuncs] = {
 }
 
 
+def get_cell_filter_kind(cell_filter: "CellFilter | tuple") -> CellFilterKind:
+    """Return the explicit kind for a built-in or custom cell filter."""
+    if isinstance(cell_filter, CellFilter):
+        return cell_filter
+    if cell_filter == CELL_FILTER_REGISTRY[CellFilter.unit]:
+        return CellFilter.unit
+    if cell_filter == CELL_FILTER_REGISTRY[CellFilter.frechet]:
+        return CellFilter.frechet
+    return "custom"
+
+
 def get_cell_filter(cell_filter: "CellFilter | tuple") -> CellFilterFuncs:
     """Resolve cell filter into a tuple of init and update functions."""
     if isinstance(cell_filter, CellFilter):
@@ -429,6 +437,7 @@ class CellOptimState(OptimState):
 
     reference_cell: torch.Tensor
     cell_filter: CellFilterFuncs
+    cell_filter_kind: CellFilterKind
     cell_factor: torch.Tensor = field(default_factory=lambda: None)
     pressure: torch.Tensor = field(default_factory=lambda: None)
     hydrostatic_strain: bool = False
@@ -448,6 +457,7 @@ class CellOptimState(OptimState):
         "cell_filter",
     }
     _global_attributes = OptimState._global_attributes | {  # noqa: SLF001
+        "cell_filter_kind",
         "hydrostatic_strain",
         "constant_volume",
         "frechet_method",
@@ -524,3 +534,106 @@ class CellLBFGSState(CellOptimState, LBFGSState):
 
 
 AnyCellState = CellFireState | CellOptimState | CellBFGSState | CellLBFGSState
+
+
+def current_deform_grad(state: AnyCellState) -> torch.Tensor:
+    """Return the deformation gradient from reference to current cell."""
+    return deform_grad(state.reference_cell.mT, state.row_vector_cell)
+
+
+def positions_to_fractional(
+    state: AnyCellState,
+    positions: torch.Tensor,
+    cur_deform_grad: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Convert Cartesian positions to the cell-filter fractional frame."""
+    if cur_deform_grad is None:
+        cur_deform_grad = current_deform_grad(state)
+    return torch.linalg.solve(
+        cur_deform_grad[state.system_idx], positions.unsqueeze(-1)
+    ).squeeze(-1)
+
+
+def forces_to_scaled(
+    state: AnyCellState,
+    forces: torch.Tensor,
+    cur_deform_grad: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Convert Cartesian forces to the scaled cell-filter frame."""
+    if cur_deform_grad is None:
+        cur_deform_grad = current_deform_grad(state)
+    return torch.bmm(forces.unsqueeze(1), cur_deform_grad[state.system_idx]).squeeze(1)
+
+
+def unit_cell_positions_from_cell(
+    state: AnyCellState,
+    cur_deform_grad: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Return unit-cell-filter positions implied by the current cell."""
+    if cur_deform_grad is None:
+        cur_deform_grad = current_deform_grad(state)
+    cell_factor_expanded = state.cell_factor.expand(state.n_systems, 3, 1)
+    return cur_deform_grad.reshape(state.n_systems, 3, 3) * cell_factor_expanded
+
+
+def cell_positions_to_deform_grad(
+    state: AnyCellState, cell_positions: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Convert filter cell positions to deformation gradients."""
+    if state.cell_filter_kind == CellFilter.frechet:
+        cell_factor_reshaped = state.cell_factor.view(state.n_systems, 1, 1)
+        deform_grad_log, cell_positions = _clamp_deform_grad_log(
+            cell_positions / cell_factor_reshaped,
+            cell_positions,
+            cell_factor_reshaped,
+        )
+        return torch.matrix_exp(deform_grad_log), cell_positions
+    cell_factor_expanded = state.cell_factor.expand(state.n_systems, 3, 1)
+    return cell_positions / cell_factor_expanded, cell_positions
+
+
+def resync_cell_positions(state: AnyCellState) -> None:
+    """Resync filter cell positions after constraints adjust the cell."""
+    adjusted_deform_grad = current_deform_grad(state)
+    if state.cell_filter_kind == CellFilter.frechet:
+        state.cell_positions = tsm.matrix_log_33(
+            adjusted_deform_grad, sim_dtype=state.dtype
+        ) * state.cell_factor.view(state.n_systems, 1, 1)
+    else:
+        state.cell_positions = unit_cell_positions_from_cell(state, adjusted_deform_grad)
+
+
+def apply_cell_positions(
+    state: AnyCellState,
+    cell_positions: torch.Tensor,
+    *,
+    scale_atoms: bool = False,
+    resync: bool = True,
+) -> torch.Tensor:
+    """Apply filter cell positions to the physical cell."""
+    deform_grad_new, cell_positions = cell_positions_to_deform_grad(state, cell_positions)
+    state.cell_positions = cell_positions
+    new_cell = torch.bmm(deform_grad_new, state.reference_cell)
+    state.set_constrained_cell(new_cell, scale_atoms=scale_atoms)
+    if resync:
+        resync_cell_positions(state)
+    return current_deform_grad(state)
+
+
+def init_cell_state[T: AnyCellState](
+    state: SimState,
+    model: ModelInterface,
+    cell_state_cls: type[T],
+    attrs: dict[str, Any],
+    cell_filter: CellFilter | CellFilterFuncs,
+    **filter_kwargs: Any,
+) -> T:
+    """Resolve a cell filter, upcast state, and run filter initialization."""
+    cell_filter_funcs = init_fn, _step_fn = get_cell_filter(cell_filter)
+    attrs = dict(attrs)
+    attrs.setdefault("reference_cell", state.cell.clone())
+    attrs["cell_filter"] = cell_filter_funcs
+    attrs["cell_filter_kind"] = get_cell_filter_kind(cell_filter)
+    cell_state = cell_state_cls.from_state(state, **attrs)
+    init_fn(cell_state, model, **filter_kwargs)
+    return cell_state

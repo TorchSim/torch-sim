@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-import torch_sim as ts
 from torch_sim.optimizers import cell_filters
 from torch_sim.state import SimState
 
@@ -56,15 +55,9 @@ def gradient_descent_init(
     state.store_model_extras(model_output)
 
     if cell_filter is not None:  # Create cell optimization state
-        cell_filter_funcs = init_fn, _step_fn = ts.get_cell_filter(cell_filter)
-        optim_attrs["reference_cell"] = state.cell.clone()
-        optim_attrs["cell_filter"] = cell_filter_funcs
-        cell_state = CellOptimState.from_state(state, **optim_attrs)
-
-        # Initialize cell-specific attributes
-        init_fn(cell_state, model, **filter_kwargs)
-
-        return cell_state
+        return cell_filters.init_cell_state(
+            state, model, CellOptimState, optim_attrs, cell_filter, **filter_kwargs
+        )
     # Create regular OptimState without cell optimization
     return OptimState.from_state(state, **optim_attrs)
 
