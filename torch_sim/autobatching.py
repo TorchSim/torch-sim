@@ -94,11 +94,11 @@ def to_constant_volume_bins(  # noqa: C901
     # placed in the output bin: the dict key, the original tuple, or the weight.
     is_dict = isinstance(items, dict)
     if is_dict:
-        entries = [(weight, k) for k, weight in items.items()]  # ty: ignore[unresolved-attribute]
+        entries = [(weight, k) for k, weight in items.items()]
     # list of objects: dispatch on how to extract the weight from each item
     elif weight_pos is not None:
         # weight lives at a fixed tuple/list position; payload is the original item
-        entries = [(item[weight_pos], item) for item in items]  # ty: ignore[not-subscriptable]
+        entries = [(item[weight_pos], item) for item in items]
     elif key is not None:
         # custom extractor for arbitrary item types; payload is the original item
         entries = [(key(item), item) for item in items]
@@ -912,7 +912,7 @@ class InFlightAutoBatcher[T: SimState]:
             metric = calculate_memory_scalers(
                 state, self.memory_scales_with, self.cutoff
             )[0]
-            if metric > self.max_memory_scaler:  # ty: ignore[unsupported-operator]
+            if metric > self.max_memory_scaler:
                 raise ValueError(
                     f"State {metric=} is greater than max_metric {self.max_memory_scaler}"
                     ", please set a larger max_metric or run smaller systems metric."

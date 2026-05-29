@@ -173,7 +173,7 @@ def fire_step(
         step_func_kwargs["max_step"] = max_step
 
     step_func = {vv_fire_key: _vv_fire_step, ase_fire_key: _ase_fire_step}[fire_flavor]
-    return step_func(state, **step_func_kwargs)  # ty: ignore[invalid-argument-type]
+    return step_func(state, **step_func_kwargs)
 
 
 def _vv_fire_step[T: "FireState | CellFireState"](  # noqa: PLR0915

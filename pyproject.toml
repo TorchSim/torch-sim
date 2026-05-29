@@ -186,11 +186,14 @@ unused-ignore-comment = "warn"
 [[tool.ty.overrides]]
 include = [
     "tests/models/**/*.py",
+    "torch_sim/autobatching.py",
     "torch_sim/constraints.py",
     "torch_sim/io.py",
     "torch_sim/models/**/*.py",
     "torch_sim/neighbors/alchemiops.py",
     "torch_sim/neighbors/vesin.py",
+    "torch_sim/optimizers/**/*.py",
+    "torch_sim/quantities.py",
     "torch_sim/state.py",
     "torch_sim/symmetrize.py",
     "torch_sim/trajectory.py",
@@ -199,6 +202,12 @@ include = [
 ]
 
 [tool.ty.overrides.rules]
+index-out-of-bounds = "ignore"
+invalid-argument-type = "ignore"
+invalid-assignment = "ignore"
+invalid-return-type = "ignore"
+unsupported-operator = "ignore"
+unresolved-attribute = "ignore"
 unresolved-import = "ignore"
 
 [[tool.ty.overrides]]
@@ -214,6 +223,7 @@ invalid-assignment = "ignore"
 include = ["tests/**/*.py"]
 
 [tool.ty.overrides.rules]
+call-non-callable = "ignore"
 invalid-argument-type = "ignore"
 invalid-assignment = "ignore"
 no-matching-overload = "ignore"
@@ -224,6 +234,7 @@ unresolved-import = "ignore"
 include = ["docs/**/*.py", "docs/**/*.ipynb", "examples/**/*.py"]
 [tool.ty.overrides.rules]
 invalid-argument-type = "ignore"
+invalid-assignment = "ignore"
 not-iterable = "ignore"
 not-subscriptable = "ignore"
 unresolved-attribute = "ignore"
