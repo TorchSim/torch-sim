@@ -1,6 +1,8 @@
 """Tests for the D3DispersionModel wrapper."""
 
-import traceback  # noqa: I001
+from __future__ import annotations
+
+import traceback
 
 import pytest
 import torch
@@ -8,15 +10,19 @@ import torch
 from tests.conftest import DEVICE, DTYPE
 from tests.models.conftest import make_validate_model_outputs_test
 
+
 try:
     from nvalchemiops.torch.interactions.dispersion import D3Parameters
 
     from torch_sim.models.dispersion import D3DispersionModel
+
+    _IMPORT_ERROR: str | None = None
 except (ImportError, OSError, RuntimeError):
-    pytest.skip(
-        f"nvalchemiops not installed: {traceback.format_exc()}",
-        allow_module_level=True,
-    )
+    _IMPORT_ERROR = traceback.format_exc()
+
+pytestmark = pytest.mark.skipif(
+    _IMPORT_ERROR is not None, reason=f"nvalchemiops not installed: {_IMPORT_ERROR}"
+)
 
 
 def _make_d3_params(device: torch.device = DEVICE) -> D3Parameters:

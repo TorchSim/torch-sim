@@ -396,7 +396,7 @@ def integrate[T: SimState](  # noqa: C901
 
     if isinstance(batch_iterator, BinningAutoBatcher):
         reordered = batch_iterator.restore_original_order(final_states)  # ty: ignore[invalid-argument-type]
-        result = ts.concatenate_states(reordered)  # ty: ignore[invalid-argument-type]
+        result = ts.concatenate_states(reordered)
         logger.info("integrate: complete, %d systems returned", result.n_systems)
         return result
 

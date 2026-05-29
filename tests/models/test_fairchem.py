@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import traceback
 
 import pytest
@@ -11,11 +13,13 @@ try:
 
     from torch_sim.models.fairchem import FairChemModel
 
+    _IMPORT_ERROR: str | None = None
 except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
-    pytest.skip(
-        f"FairChem not installed: {traceback.format_exc()}",
-        allow_module_level=True,
-    )
+    _IMPORT_ERROR = traceback.format_exc()
+
+pytestmark = pytest.mark.skipif(
+    _IMPORT_ERROR is not None, reason=f"FairChem not installed: {_IMPORT_ERROR}"
+)
 
 
 @pytest.fixture
@@ -25,7 +29,7 @@ def eqv2_uma_model_pbc() -> FairChemModel:
 
 
 test_fairchem_uma_model_outputs = pytest.mark.skipif(
-    get_token() is None,
+    _IMPORT_ERROR is not None or get_token() is None,
     reason="Requires HuggingFace authentication for UMA model access",
 )(
     make_validate_model_outputs_test(

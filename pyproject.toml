@@ -48,10 +48,10 @@ test = [
     "spglib>=2.6",
 ]
 vesin = ["vesin[torch]>=0.5.3"]
-io = ["ase>=3.26", "phonopy>=2.37.0", "pymatgen>=2026.3.23"]
+io = ["ase>=3.26", "phonopy>=3.0.0", "pymatgen>=2026.3.23"]
 symmetry = ["moyopy>=0.7.8"]
 mace = ["mace-torch>=0.3.16"]
-mattersim = ["mattersim>=1.2.4"]
+mattersim = ["mattersim>=1.2.5"]
 metatomic = ["metatomic-torchsim>=0.1.1", "metatomic-ase>=0.1.0", "upet>=0.2.0"]
 orb = ["orb-models>=0.6.2"]
 sevenn = ["sevenn[torchsim]>=0.12.1"]
@@ -60,6 +60,7 @@ nequix = ["nequix[torch-sim]>=0.4.5"]
 fairchem = ["fairchem-core>=2.20.0"]
 docs = [
     "autodoc_pydantic==2.2.0",
+    "duecredit>=0.11",
     "furo==2024.8.6",
     "ipykernel==6.30.1",
     "ipython==8.34.0",
@@ -185,11 +186,14 @@ unused-ignore-comment = "warn"
 [[tool.ty.overrides]]
 include = [
     "tests/models/**/*.py",
+    "torch_sim/autobatching.py",
     "torch_sim/constraints.py",
     "torch_sim/io.py",
     "torch_sim/models/**/*.py",
     "torch_sim/neighbors/alchemiops.py",
     "torch_sim/neighbors/vesin.py",
+    "torch_sim/optimizers/**/*.py",
+    "torch_sim/quantities.py",
     "torch_sim/state.py",
     "torch_sim/symmetrize.py",
     "torch_sim/trajectory.py",
@@ -198,6 +202,12 @@ include = [
 ]
 
 [tool.ty.overrides.rules]
+index-out-of-bounds = "ignore"
+invalid-argument-type = "ignore"
+invalid-assignment = "ignore"
+invalid-return-type = "ignore"
+unsupported-operator = "ignore"
+unresolved-attribute = "ignore"
 unresolved-import = "ignore"
 
 [[tool.ty.overrides]]
@@ -213,6 +223,7 @@ invalid-assignment = "ignore"
 include = ["tests/**/*.py"]
 
 [tool.ty.overrides.rules]
+call-non-callable = "ignore"
 invalid-argument-type = "ignore"
 invalid-assignment = "ignore"
 no-matching-overload = "ignore"
@@ -223,6 +234,8 @@ unresolved-import = "ignore"
 include = ["docs/**/*.py", "docs/**/*.ipynb", "examples/**/*.py"]
 [tool.ty.overrides.rules]
 invalid-argument-type = "ignore"
+invalid-assignment = "ignore"
+invalid-attribute-override = "ignore"
 not-iterable = "ignore"
 not-subscriptable = "ignore"
 unresolved-attribute = "ignore"

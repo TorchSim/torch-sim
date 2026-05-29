@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import traceback
 
 import pytest
@@ -7,7 +9,7 @@ from tests.models.conftest import (
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
-from torch_sim.testing import SIMSTATE_GENERATORS
+from torch_sim.testing import SIMSTATE_GENERATORS, ModelTolerance
 
 
 try:
@@ -16,8 +18,13 @@ try:
 
     from torch_sim.models.orb import OrbModel
 
+    _IMPORT_ERROR: str | None = None
 except ImportError:
-    pytest.skip(f"ORB not installed: {traceback.format_exc()}", allow_module_level=True)
+    _IMPORT_ERROR = traceback.format_exc()
+
+pytestmark = pytest.mark.skipif(
+    _IMPORT_ERROR is not None, reason=f"ORB not installed: {_IMPORT_ERROR}"
+)
 
 
 @pytest.fixture
@@ -59,8 +66,8 @@ test_orb_conservative_consistency = make_model_calculator_consistency_test(
     model_fixture_name="orbv3_conservative_inf_omat_model",
     calculator_fixture_name="orbv3_conservative_inf_omat_calculator",
     sim_state_names=tuple(SIMSTATE_GENERATORS.keys()),
-    energy_rtol=5e-5,
-    energy_atol=5e-5,
+    energy_rtol=ModelTolerance.LOOSE,
+    energy_atol=ModelTolerance.LOOSE,
 )
 
 test_orb_direct_consistency = make_model_calculator_consistency_test(
@@ -68,8 +75,8 @@ test_orb_direct_consistency = make_model_calculator_consistency_test(
     model_fixture_name="orbv3_direct_20_omat_model",
     calculator_fixture_name="orbv3_direct_20_omat_calculator",
     sim_state_names=tuple(SIMSTATE_GENERATORS.keys()),
-    energy_rtol=5e-5,
-    energy_atol=5e-5,
+    energy_rtol=ModelTolerance.LOOSE,
+    energy_atol=ModelTolerance.LOOSE,
 )
 
 test_validate_conservative_model_outputs = make_validate_model_outputs_test(

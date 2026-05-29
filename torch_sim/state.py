@@ -1157,9 +1157,9 @@ def _filter_attrs_by_index(  # noqa: C901
     new_system_idx = system_remap[torch.where(system_mask)[0]]
     for c in filtered_attrs["_constraints"]:
         if hasattr(c, "atom_idx") and isinstance(c.atom_idx, torch.Tensor):
-            c.atom_idx = new_atom_idx[c.atom_idx]  # ty: ignore[invalid-assignment]
+            c.atom_idx = new_atom_idx[c.atom_idx]
         if hasattr(c, "system_idx") and isinstance(c.system_idx, torch.Tensor):
-            c.system_idx = new_system_idx[c.system_idx]  # ty: ignore[invalid-assignment]
+            c.system_idx = new_system_idx[c.system_idx]
 
     for name, val in get_attrs_for_scope(state, "per-atom"):
         if name in state.atom_extras:
@@ -1297,7 +1297,7 @@ def _split_state[T: SimState](state: T) -> list[T]:  # noqa: C901
                 new_constraints.append(sub)
 
         system_attrs["_constraints"] = new_constraints
-        states.append(type(state)(**system_attrs))  # ty: ignore[invalid-argument-type]
+        states.append(type(state)(**system_attrs))
 
     return states
 
