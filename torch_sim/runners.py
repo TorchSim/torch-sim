@@ -6,6 +6,7 @@ converting between different atomistic representations and handling simulation s
 """
 
 import copy
+import logging
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -21,10 +22,13 @@ from torch_sim.integrators import INTEGRATOR_REGISTRY, Integrator
 from torch_sim.integrators.md import MDState
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers import OPTIM_REGISTRY, FireState, Optimizer, OptimState
-from torch_sim.state import SimState
+from torch_sim.state import _CANONICAL_MODEL_KEYS, SimState
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.typing import StateLike
 from torch_sim.units import UnitSystem
+
+
+logger = logging.getLogger(__name__)
 
 
 def _configure_reporter(
@@ -44,6 +48,7 @@ def _configure_reporter(
             velocities=state.velocities, masses=state.masses
         ),
         "temperature": lambda state: state.calc_temperature(),
+        "max_force": ts.system_wise_max_force,
     }
 
     prop_calculators = {
@@ -68,7 +73,7 @@ def _configure_batches_iterator(
     model: ModelInterface,
     *,
     autobatcher: BinningAutoBatcher | bool,
-) -> BinningAutoBatcher | list[tuple[SimState, list[int]]]:
+) -> BinningAutoBatcher[SimState] | list[tuple[SimState, list[int]]]:
     """Create a batches iterator for the integrate function.
 
     Args:
@@ -81,7 +86,7 @@ def _configure_batches_iterator(
     """
     # load and properly configure the autobatcher
     if autobatcher is True:
-        autobatcher = BinningAutoBatcher(
+        autobatcher = BinningAutoBatcher[SimState](
             model=model,
             max_memory_padding=0.9,
         )
@@ -100,6 +105,150 @@ def _configure_batches_iterator(
     return batches
 
 
+def _determine_initial_step_for_integrate(
+    trajectory_reporter: TrajectoryReporter | None,
+) -> int:
+    """Determine the initial step for resuming integration from trajectory files.
+
+    Args:
+        trajectory_reporter (TrajectoryReporter | None): The trajectory reporter to
+            check for resume information
+
+    Returns:
+        int: The initial step to start from (1 if not resuming, otherwise last_step + 1)
+    """
+    initial_step: int = 1
+    if trajectory_reporter is not None and trajectory_reporter.mode == "a":
+        last_logged_steps = [
+            step if step is not None else 0 for step in trajectory_reporter.last_steps
+        ]
+        last_logged_step = min(last_logged_steps)
+        initial_step = initial_step + last_logged_step
+        if len(set(last_logged_steps)) != 1:
+            raise ValueError(
+                f"Trajectory files have different last steps: {set(last_logged_steps)} "
+                "Cannot resume integration from inconsistent states."
+                "You can truncate the trajectories to the same step using:\n\n"
+                "    reporter.truncate_to_step(min(reporter.last_step))\n\n"
+                "before calling integrate again."
+            )
+        if last_logged_step > 0:
+            logger.info(
+                "Detected existing trajectory with last step %s. Resuming integration "
+                "from step %s.",
+                last_logged_step,
+                initial_step,
+            )
+    return initial_step
+
+
+def _determine_initial_step_for_optimize(
+    trajectory_reporter: TrajectoryReporter | None,
+    state: SimState,
+) -> torch.Tensor:
+    """Determine the initial steps for resuming optimization from trajectory files.
+
+    Args:
+        trajectory_reporter (TrajectoryReporter | None): The trajectory reporter to
+            check for resume information
+        state (SimState): The state being optimized
+
+    Returns:
+        torch.Tensor: Tensor of initial steps for each system (1 if not resuming,
+            otherwise last_step + 1 for each system)
+    """
+    initial_step: torch.Tensor = torch.full(
+        size=(state.n_systems,), fill_value=1, dtype=torch.long, device=state.device
+    )
+    if trajectory_reporter is not None and trajectory_reporter.mode == "a":
+        last_steps = trajectory_reporter.last_steps
+        last_steps = [step if step is not None else 0 for step in last_steps]
+        last_logged_steps = torch.tensor(
+            last_steps, dtype=torch.long, device=state.device
+        )
+        initial_step = initial_step + last_logged_steps
+    return initial_step
+
+
+def _normalize_temperature_tensor(
+    temperature: float | list | torch.Tensor, n_steps: int, initial_state: SimState
+) -> torch.Tensor:
+    """Turn the temperature into a tensor of shape (n_steps,) or (n_steps, n_systems).
+
+    Args:
+        temperature (float | int | list | torch.Tensor): Temperature input
+        n_steps (int): Number of integration steps
+        initial_state (SimState): Initial simulation state for dtype and device
+    Returns:
+        torch.Tensor: Normalized temperature tensor
+    """
+    # ---- Step 1: Convert to tensor ----
+    temps = torch.as_tensor(
+        temperature, dtype=initial_state.dtype, device=initial_state.device
+    )
+
+    # ---- Step 2: Determine how to broadcast ----
+    temps = torch.atleast_1d(temps)
+    if temps.ndim > 2:
+        raise ValueError(f"Temperature tensor must be 1D or 2D, got shape {temps.shape}.")
+
+    if temps.numel() == 1:
+        # A single value
+        return temps.expand(n_steps)
+
+    if initial_state.n_systems == n_steps:
+        msg = (
+            "n_systems is equal to n_steps. Interpreting temperature array of length "
+            "n_systems as temperatures for each system, broadcasted over steps."
+        )
+        warnings.warn(msg, stacklevel=2)
+        logger.warning(msg)
+        return temps.expand(n_steps)
+
+    if temps.shape[0] == initial_state.n_systems:
+        if temps.ndim == 2:
+            raise ValueError(
+                "If temperature tensor is 2D, first dimension must be n_steps."
+            )
+        # Interpret as single-step multi-system temperatures → broadcast over steps
+        return temps.unsqueeze(0).expand(n_steps, -1)  # (n_steps, n_systems)
+
+    if temps.shape[0] == n_steps:
+        return temps  # already good: (n_steps,) or (n_steps, n_systems)
+
+    raise ValueError(
+        f"Temperature length ({temps.shape[0]}) must be either:\n"
+        f" - n_steps ({n_steps}), or\n"
+        f" - n_systems ({initial_state.n_systems}), or\n"
+        f" - 1 (scalar),\n"
+        f"but got {temps.shape[0]}."
+    )
+
+
+def _write_initial_state(
+    trajectory_reporter: TrajectoryReporter | None,
+    state: SimState,
+    model: ModelInterface,
+) -> None:
+    """Write initial state (step 0) to trajectory if conditions are met.
+
+    Only writes step 0 if:
+    1. trajectory_reporter is provided
+    2. All trajectories are empty (last_step returns None)
+
+    Args:
+        trajectory_reporter (TrajectoryReporter | None): Optional reporter
+        state (SimState): Current simulation state
+        model (ModelInterface): Model used for simulation
+    """
+    if trajectory_reporter:
+        trajectories_empty = all(
+            traj.last_step is None for traj in trajectory_reporter.trajectories
+        )
+        if trajectories_empty:
+            trajectory_reporter.report(state, 0, model=model)
+
+
 def integrate[T: SimState](  # noqa: C901
     system: StateLike,
     model: ModelInterface,
@@ -111,6 +260,7 @@ def integrate[T: SimState](  # noqa: C901
     trajectory_reporter: TrajectoryReporter | dict | None = None,
     autobatcher: BinningAutoBatcher | bool = False,
     pbar: bool | dict[str, Any] = False,
+    init_kwargs: dict[str, Any] | None = None,
     **integrator_kwargs: Any,
 ) -> T:
     """Simulate a system using a model and integrator.
@@ -120,36 +270,41 @@ def integrate[T: SimState](  # noqa: C901
         model (ModelInterface): Neural network model module
         integrator (Integrator | tuple): Either a key from Integrator or a tuple of
             (init_func, step_func) functions.
-        n_steps (int): Number of integration steps
+        n_steps (int): Number of integration steps. If resuming from a trajectory, this
+            is the  number of additional steps to run.
         temperature (float | ArrayLike): Temperature or array of temperatures for each
-            step
+            step or system:
+            Float: used for all steps and systems
+            1D array of length n_steps: used for each step
+            1D array of length n_systems: used for each system
+            2D array of shape (n_steps, n_systems): used for each step and system.
         timestep (float): Integration time step
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
             tracking trajectory. If a dict, will be passed to the TrajectoryReporter
             constructor.
         autobatcher (BinningAutoBatcher | bool): Optional autobatcher to use
-        pbar (bool | dict[str, Any], optional): Show a progress bar.
-            Only works with an autobatcher in interactive shell. If a dict is given,
+        pbar (bool | dict[str, Any], optional): Show a progress bar. If a dict is given,
             it's passed to `tqdm` as kwargs.
+        init_kwargs (dict[str, Any], optional): Additional keyword arguments for
+            integrator init function.
         **integrator_kwargs: Additional keyword arguments for integrator init function
 
     Returns:
         T: Final state after integration
     """
     unit_system = UnitSystem.metal
-    # create a list of temperatures
-    temps = (
-        [temperature] * n_steps
-        if isinstance(temperature, (float, int))
-        else list(temperature)
-    )
-    if len(temps) != n_steps:
-        raise ValueError(f"{len(temps)=:,}. It must equal n_steps = {n_steps=:,}")
 
     initial_state: SimState = ts.initialize_state(system, model.device, model.dtype)
+    logger.info(
+        "integrate: n_systems=%d, n_steps=%d, integrator=%s",
+        initial_state.n_systems,
+        n_steps,
+        integrator,
+    )
     dtype, device = initial_state.dtype, initial_state.device
-    kTs = torch.tensor(temps, dtype=dtype, device=device) * unit_system.temperature
-    dt = torch.tensor(timestep * unit_system.time, dtype=dtype, device=device)
+    kTs = _normalize_temperature_tensor(temperature, n_steps, initial_state)
+    kTs = kTs * unit_system.temperature
+    dt = torch.as_tensor(timestep * unit_system.time, dtype=dtype, device=device)
 
     # Handle both string names and direct function tuples
     if isinstance(integrator, Integrator):
@@ -165,7 +320,6 @@ def integrate[T: SimState](  # noqa: C901
             f"integrator must be key from Integrator or a tuple of "
             f"(init_func, step_func), got {type(integrator)}"
         )
-
     # batch_iterator will be a list if autobatcher is False
     batch_iterator = _configure_batches_iterator(
         initial_state, model, autobatcher=autobatcher
@@ -175,33 +329,58 @@ def integrate[T: SimState](  # noqa: C901
             trajectory_reporter,
             properties=["kinetic_energy", "potential_energy", "temperature"],
         )
+    # Auto-detect initial step from trajectory files for resuming integration
+    initial_step = _determine_initial_step_for_integrate(trajectory_reporter)
 
     final_states: list[T] = []
     og_filenames = trajectory_reporter.filenames if trajectory_reporter else None
 
+    # Extract pbar kwargs for both outer and inner progress bars
+    pbar_kwargs = pbar if isinstance(pbar, dict) else {}
+
     tqdm_pbar = None
     if pbar and autobatcher:
-        pbar_kwargs = pbar if isinstance(pbar, dict) else {}
-        pbar_kwargs.setdefault("desc", "Integrate")
-        pbar_kwargs.setdefault("disable", None)
-        tqdm_pbar = tqdm(total=initial_state.n_systems, **pbar_kwargs)
+        outer_pbar_kwargs = pbar_kwargs.copy()
+        outer_pbar_kwargs.setdefault("desc", "Integrate")
+        outer_pbar_kwargs.setdefault("disable", None)
+        tqdm_pbar = tqdm(total=initial_state.n_systems, **outer_pbar_kwargs)
 
     # Handle both BinningAutoBatcher and list of tuples
     for state, system_indices in batch_iterator:
         # Pass correct parameters based on integrator type
-        state = init_func(state=state, model=model, kT=kTs[0], dt=dt, **integrator_kwargs)
+        batch_kT = (
+            kTs[:, system_indices] if (system_indices and len(kTs.shape) == 2) else kTs
+        )
+        state = init_func(
+            state=state, model=model, kT=batch_kT[0], dt=dt, **init_kwargs or {}
+        )
 
         # set up trajectory reporters
         if autobatcher and trajectory_reporter is not None and og_filenames is not None:
             # we must remake the trajectory reporter for each system
-            trajectory_reporter.load_new_trajectories(
+            trajectory_reporter.reopen_trajectories(
                 filenames=[og_filenames[i] for i in system_indices]
             )
 
+        # Save initial state into step 0
+        _write_initial_state(trajectory_reporter, state, model)
+
         # run the simulation
-        for step in range(1, n_steps + 1):
+        inner_pbar_kwargs = pbar_kwargs.copy()
+        inner_pbar_kwargs.setdefault("disable", pbar is False)
+        inner_pbar_kwargs.setdefault(
+            "desc", f"Batch systems {system_indices}" if system_indices else "Integrate"
+        )
+        inner_pbar_kwargs.setdefault("leave", False)
+        for step in tqdm(
+            range(initial_step, initial_step + n_steps), **inner_pbar_kwargs
+        ):
             state = step_func(
-                state=state, model=model, dt=dt, kT=kTs[step - 1], **integrator_kwargs
+                state=state,
+                model=model,
+                dt=dt,
+                kT=batch_kT[step - initial_step],
+                **integrator_kwargs,
             )
 
             if trajectory_reporter:
@@ -216,9 +395,12 @@ def integrate[T: SimState](  # noqa: C901
         trajectory_reporter.finish()
 
     if isinstance(batch_iterator, BinningAutoBatcher):
-        reordered_states = batch_iterator.restore_original_order(final_states)
-        return ts.concatenate_states(reordered_states)
+        reordered = batch_iterator.restore_original_order(final_states)  # ty: ignore[invalid-argument-type]
+        result = ts.concatenate_states(reordered)
+        logger.info("integrate: complete, %d systems returned", result.n_systems)
+        return result
 
+    logger.info("integrate: complete")
     return state
 
 
@@ -301,7 +483,7 @@ def _chunked_apply[T: SimState](
 
 
 def generate_force_convergence_fn[T: MDState | FireState](
-    force_tol: float = 1e-1, *, include_cell_forces: bool = True
+    force_tol: float = 1e-1, *, include_cell_forces: bool = False
 ) -> Callable:
     """Generate a force-based convergence function for the convergence_fn argument
     of the optimize function.
@@ -342,7 +524,7 @@ def generate_force_convergence_fn[T: MDState | FireState](
 
 def generate_energy_convergence_fn[T: MDState | OptimState](
     energy_tol: float = 1e-3,
-) -> Callable[[T, torch.Tensor | None], torch.Tensor]:
+) -> Callable[[T, torch.Tensor], torch.Tensor]:
     """Generate an energy-based convergence function for the convergence_fn argument
     of the optimize function.
 
@@ -354,7 +536,7 @@ def generate_energy_convergence_fn[T: MDState | OptimState](
             a state and last energy and returns a systemwise boolean function.
     """
 
-    def convergence_fn(state: T, last_energy: torch.Tensor | None = None) -> torch.Tensor:
+    def convergence_fn(state: T, last_energy: torch.Tensor) -> torch.Tensor:
         """Check if the system has converged.
 
         Returns:
@@ -371,7 +553,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     model: ModelInterface,
     *,
     optimizer: Optimizer | tuple[Callable[..., T], Callable[..., T]],
-    convergence_fn: Callable[[T, torch.Tensor | None], torch.Tensor] | None = None,
+    convergence_fn: Callable[[T, torch.Tensor], torch.Tensor] | None = None,
     max_steps: int = 10_000,
     steps_between_swaps: int = 5,
     trajectory_reporter: TrajectoryReporter | dict | None = None,
@@ -411,6 +593,11 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
 
     Returns:
         T: Optimized system state
+
+    Notes:
+        The state is returned even if max_steps was reached before
+        `convergence_fn` was satisfied. To check per-system convergence,
+        evaluate `convergence_fn(final_state)` on the returned state
     """
     # create a default convergence function if one is not provided
     # TODO: document this behavior
@@ -418,6 +605,12 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         convergence_fn = generate_energy_convergence_fn(energy_tol=1e-3)
 
     initial_state = ts.initialize_state(system, model.device, model.dtype)
+    logger.info(
+        "optimize: n_systems=%d, max_steps=%d, optimizer=%s",
+        initial_state.n_systems,
+        max_steps,
+        optimizer,
+    )
     if isinstance(optimizer, Optimizer):
         init_fn, step_fn = OPTIM_REGISTRY[optimizer]
     elif (
@@ -441,6 +634,10 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     if isinstance(initial_state, OptimState):
         state = initial_state
     else:
+        logger.info(
+            "optimize: initializing optimizer state via chunked apply "
+            "(BinningAutoBatcher); InFlightAutoBatcher will be used for optimization"
+        )
         state = _chunked_apply(
             init_fn,
             initial_state,
@@ -450,6 +647,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             memory_scales_with=autobatcher.memory_scales_with,
             max_atoms_to_try=autobatcher.max_atoms_to_try,
             oom_error_message=autobatcher.oom_error_message,
+            max_memory_padding=autobatcher.max_memory_padding,
         )
     autobatcher.load_states(state)
     if trajectory_reporter is not None:
@@ -457,7 +655,12 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             trajectory_reporter, properties=["potential_energy"]
         )
 
-    step: int = 1
+    # Auto-detect initial step from trajectory files for resuming optimizations
+    step = _determine_initial_step_for_optimize(trajectory_reporter, state)
+
+    # Save initial state into step 0
+    _write_initial_state(trajectory_reporter, state, model)
+
     last_energy = None
     all_converged_states: list[T] = []
     convergence_tensor = None
@@ -483,27 +686,38 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         if (
             trajectory_reporter is not None
             and og_filenames is not None
-            and (step == 1 or len(converged_states) > 0)
+            and ((step[autobatcher.current_idx] == 1).any() or len(converged_states) > 0)
         ):
-            trajectory_reporter.load_new_trajectories(
+            trajectory_reporter.reopen_trajectories(
                 filenames=[og_filenames[i] for i in autobatcher.current_idx]
             )
 
         for _step in range(steps_between_swaps):
             if hasattr(state, "energy"):
                 last_energy = state.energy
-
             state = step_fn(state=state, model=model, **optimizer_kwargs)
 
             if trajectory_reporter:
-                trajectory_reporter.report(state, step, model=model)
-            step += 1
-            if step > max_steps:
-                # TODO: max steps should be tracked for each structure in the batch
-                warnings.warn(f"Optimize has reached max steps: {step}", stacklevel=2)
+                trajectory_reporter.report(
+                    state, step[autobatcher.current_idx].tolist(), model=model
+                )
+            step[autobatcher.current_idx] += 1
+            exceeded_max_steps = step > max_steps
+            if exceeded_max_steps.all():
+                msg = (
+                    f"All systems have reached the maximum number of steps: {max_steps}."
+                )
+                warnings.warn(msg, stacklevel=2)
+                logger.warning(msg)
                 break
 
-        convergence_tensor = convergence_fn(state, last_energy)
+        if last_energy is None:
+            raise ValueError("last_energy cannot be None")
+        convergence_tensor = convergence_fn(state, last_energy)  # ty:ignore[invalid-argument-type]
+        # Mark states that exceeded max steps as converged to remove them from batch
+        convergence_tensor = (
+            convergence_tensor | exceeded_max_steps[autobatcher.current_idx]
+        )
         if tqdm_pbar:
             # assume convergence_tensor shape is correct
             tqdm_pbar.update(torch.count_nonzero(convergence_tensor).item())
@@ -512,13 +726,18 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         trajectory_reporter.finish()
 
     if autobatcher:
-        final_states = autobatcher.restore_original_order(all_converged_states)
-        return ts.concatenate_states(final_states)
+        final_states_ordered = autobatcher.restore_original_order(all_converged_states)
+        result = ts.concatenate_states(final_states_ordered)
+        logger.info("optimize: complete, %d systems returned", result.n_systems)
+        return result
 
-    return state  # type: ignore[return-value]
+    # Unreachable: _configure_in_flight_autobatcher always returns InFlightAutoBatcher
+    raise RuntimeError(
+        "autobatcher is always truthy after _configure_in_flight_autobatcher"
+    )
 
 
-def static(
+def static(  # noqa: C901
     system: StateLike,
     model: ModelInterface,
     *,
@@ -537,7 +756,6 @@ def static(
     Args:
         system (StateLike): Input system to calculate properties for
         model (ModelInterface): Neural network model module
-        unit_system (UnitSystem): Unit system for energy and forces
         trajectory_reporter (TrajectoryReporter | dict | None): Optional reporter for
             tracking trajectory. If a dict, will be passed to the TrajectoryReporter
             constructor and must include at least the "filenames" key. Any prop
@@ -555,6 +773,7 @@ def static(
         list[dict[str, torch.Tensor]]: Maps of property names to tensors for all batches
     """
     state: SimState = ts.initialize_state(system, model.device, model.dtype)
+    logger.info("static: n_systems=%d", state.n_systems)
 
     batch_iterator = _configure_batches_iterator(state, model, autobatcher=autobatcher)
     properties = ["potential_energy"]
@@ -563,12 +782,13 @@ def static(
     if model.compute_stress:
         properties.append("stress")
     if isinstance(trajectory_reporter, dict):
-        trajectory_reporter = copy.deepcopy(trajectory_reporter)
-        trajectory_reporter["state_kwargs"] = {
+        traj_dict = dict(copy.deepcopy(trajectory_reporter))
+        traj_dict["state_kwargs"] = {
             "variable_atomic_numbers": True,
             "variable_masses": True,
             "save_forces": model.compute_forces,
         }
+        trajectory_reporter = traj_dict
     trajectory_reporter = _configure_reporter(
         trajectory_reporter or dict(filenames=None),
         properties=properties,
@@ -601,18 +821,13 @@ def static(
         # set up trajectory reporters
         if autobatcher and trajectory_reporter and og_filenames is not None:
             # we must remake the trajectory reporter for each system
-            trajectory_reporter.load_new_trajectories(
+            trajectory_reporter.reopen_trajectories(
                 filenames=[og_filenames[idx] for idx in system_indices]
             )
 
         model_outputs = model(sub_state)
-        static_state = StaticState(
-            positions=sub_state.positions,
-            masses=sub_state.masses,
-            cell=sub_state.cell,
-            pbc=sub_state.pbc,
-            atomic_numbers=sub_state.atomic_numbers,
-            system_idx=sub_state.system_idx,
+        static_state = StaticState.from_state(
+            state=sub_state,
             energy=model_outputs["energy"],
             forces=(
                 model_outputs["forces"]
@@ -625,8 +840,25 @@ def static(
                 else torch.full_like(sub_state.cell, fill_value=float("nan"))
             ),
         )
+        static_state.store_model_extras(model_outputs)
 
         props = trajectory_reporter.report(static_state, 0, model=model)
+
+        # Merge extra model outputs into per-system property dicts
+        # TODO: this should be cleaner?
+        extra_keys = {k for k in model_outputs if k not in _CANONICAL_MODEL_KEYS}
+        if extra_keys:
+            for sys_idx, sys_props in enumerate(props):
+                for key in extra_keys:
+                    val = model_outputs[key]
+                    if not isinstance(val, torch.Tensor) or val.ndim == 0:
+                        continue
+                    if val.shape[0] == static_state.n_atoms:
+                        mask = static_state.system_idx == sys_idx
+                        sys_props[key] = val[mask]
+                    elif val.shape[0] == static_state.n_systems:
+                        sys_props[key] = val[sys_idx : sys_idx + 1]
+
         all_props.extend(props)
 
         if tqdm_pbar:

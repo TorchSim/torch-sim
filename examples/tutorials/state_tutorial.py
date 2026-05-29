@@ -1,10 +1,7 @@
 # %%
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.12",
-#     "pymatgen>=2025.6.14",
-#     "ase>=3.26",
-#     "phonopy>=2.37.0",
+#     "torch_sim_atomistic[mace, io]"
 # ]
 # ///
 
@@ -61,7 +58,8 @@ print(f"Cell shape: {si_state.cell.shape}")
 print(f"Atomic numbers shape: {si_state.atomic_numbers.shape}")
 print(f"Masses shape: {si_state.masses.shape}")
 print(f"PBC: {si_state.pbc}")
-print(f"System indices shape: {si_state.system_idx.shape}")
+sys_idx = si_state.system_idx
+print(f"System indices shape: {sys_idx.shape if sys_idx is not None else 'N/A'}")
 
 
 # %% [markdown]
@@ -122,7 +120,8 @@ print(
 print(f"Positions shape: {multi_state.positions.shape}")
 print(f"Cell shape: {multi_state.cell.shape}")
 print(f"PBC: {multi_state.pbc}")
-print(f"System indices shape: {multi_state.system_idx.shape}")
+sys_idx = multi_state.system_idx
+print(f"System indices shape: {sys_idx.shape if sys_idx is not None else 'N/A'}")
 
 
 # %% [markdown]

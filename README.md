@@ -1,6 +1,6 @@
 # TorchSim
 
-[![CI](https://github.com/torchsim/torch-sim/actions/workflows/test.yml/badge.svg)](https://github.com/torchsim/torch-sim/actions/workflows/test.yml)
+[![CI](https://img.shields.io/github/check-runs/torchsim/torch-sim/main?nameFilter=all-required-pass&label=CI&logo=github)](https://github.com/torchsim/torch-sim/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/torchsim/torch-sim/branch/main/graph/badge.svg)](https://codecov.io/gh/torchsim/torch-sim)
 [![This project supports Python 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg?logo=python&logoColor=white)](https://python.org/downloads)
 [![PyPI](https://img.shields.io/pypi/v/torch-sim-atomistic?logo=pypi&logoColor=white)](https://pypi.org/project/torch-sim-atomistic)
@@ -14,7 +14,7 @@ era. By rewriting the core primitives of atomistic simulation in Pytorch, it all
 orders of magnitude acceleration of popular machine learning potentials.
 
 * Automatic batching and GPU memory management allowing significant simulation speedup
-* Support for MACE, Fairchem, SevenNet, ORB, MatterSim, graph-pes, and metatomic MLIP models
+* Support for MACE, Fairchem, SevenNet, ORB, MatterSim, metatomic, and Nequix MLIP models
 * Support for classical lennard jones, morse, and soft-sphere potentials
 * Molecular dynamics integration schemes like NVE, NVT Langevin, and NPT Langevin
 * Relaxation of atomic positions and cell with gradient descent and FIRE
@@ -127,7 +127,7 @@ To understand how TorchSim works, start with the [comprehensive tutorials](https
 
 TorchSim's package structure is summarized in the [API reference](https://torchsim.github.io/torch-sim/reference/index.html) documentation and drawn as a treemap below.
 
-![TorchSim package treemap](https://github.com/user-attachments/assets/1ccb3a15-233d-4bc0-b11c-35a676a2bcf3)
+![TorchSim package treemap](https://raw.githubusercontent.com/torchsim/torch-sim/main/docs/_static/torch-sim-pkg-treemap.svg)
 
 ## Contributing
 
@@ -139,4 +139,28 @@ TorchSim is released under an [MIT license](LICENSE).
 
 ## Citation
 
-If you use TorchSim in your research, please cite the [arXiv preprint](https://arxiv.org/abs/2508.06628).
+If you use TorchSim in your research, please cite our [publication](https://iopscience.iop.org/article/10.1088/3050-287X/ae1799).
+
+```bibtex
+@article{cohen2025torchsim,
+  title={TorchSim: An efficient atomistic simulation engine in PyTorch},
+  author={Cohen, Orion and Riebesell, Janosh and Goodall, Rhys and Kolluru, Adeesh and Falletta, Stefano and Krause, Joseph and Colindres, Jorge and Ceder, Gerbrand and Gangan, Abhijeet S},
+  journal={AI for Science},
+  volume={1},
+  number={2},
+  pages={025003},
+  year={2025},
+  publisher={IOP Publishing},
+  doi={10.1088/3050-287X/ae1799}
+}
+```
+
+## Due Credit
+
+We aim to recognize all [duecredit](https://github.com/duecredit/duecredit) for the decades of work that TorchSim builds on top of, an automated list of references can be obtained for the package by running `DUECREDIT_ENABLE=yes uv run --with-editable . --extra docs --extra test python -m duecredit <(printf 'import pytest\nraise SystemExit(pytest.main(["-q"]))\n')`. This list is incomplete and we welcome PRs to help improve our citation coverage.
+
+To collect citations for a specific tutorial run, for example autobatching, use:
+
+```sh
+DUECREDIT_ENABLE=yes uv run --with-editable . --extra docs --extra test python -m duecredit examples/tutorials/autobatching_tutorial.py
+```

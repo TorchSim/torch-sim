@@ -7,7 +7,6 @@ import torch
 import torch_sim as ts
 from torch_sim.optimizers import cell_filters
 from torch_sim.state import SimState
-from torch_sim.typing import StateDict
 
 
 if TYPE_CHECKING:
@@ -17,7 +16,7 @@ if TYPE_CHECKING:
 
 
 def gradient_descent_init(
-    state: SimState | StateDict,
+    state: SimState,
     model: "ModelInterface",
     *,
     cell_filter: "CellFilter | CellFilterFuncs | None" = None,
@@ -41,40 +40,33 @@ def gradient_descent_init(
     # Import here to avoid circular imports
     from torch_sim.optimizers import CellOptimState, OptimState
 
-    if not isinstance(state, SimState):
-        state = SimState(**state)
-
     # Get initial forces and energy from model
     model_output = model(state)
     energy = model_output["energy"]
     forces = model_output["forces"]
     stress = model_output.get("stress")
 
-    # Common state arguments
-    common_args = {
-        "positions": state.positions,
+    # Optimizer-specific additional attributes
+    optim_attrs = {
         "forces": forces,
         "energy": energy,
         "stress": stress,
-        "masses": state.masses,
-        "cell": state.cell,
-        "pbc": state.pbc,
-        "atomic_numbers": state.atomic_numbers,
-        "system_idx": state.system_idx,
     }
+
+    state.store_model_extras(model_output)
 
     if cell_filter is not None:  # Create cell optimization state
         cell_filter_funcs = init_fn, _step_fn = ts.get_cell_filter(cell_filter)
-        common_args["reference_cell"] = state.cell.clone()
-        common_args["cell_filter"] = cell_filter_funcs
-        cell_state = CellOptimState(**common_args)
+        optim_attrs["reference_cell"] = state.cell.clone()
+        optim_attrs["cell_filter"] = cell_filter_funcs
+        cell_state = CellOptimState.from_state(state, **optim_attrs)
 
         # Initialize cell-specific attributes
         init_fn(cell_state, model, **filter_kwargs)
 
         return cell_state
     # Create regular OptimState without cell optimization
-    return OptimState(**common_args)
+    return OptimState.from_state(state, **optim_attrs)
 
 
 def gradient_descent_step(
@@ -102,12 +94,13 @@ def gradient_descent_step(
     device, dtype = model.device, model.dtype
 
     # Get per-atom learning rates
-    if isinstance(pos_lr, (int, float)):
-        pos_lr = torch.full((state.n_systems,), pos_lr, device=device, dtype=dtype)
+    pos_lr = torch.as_tensor(pos_lr, device=device, dtype=dtype)
+    if pos_lr.ndim == 0:
+        pos_lr = pos_lr.expand(state.n_systems)
     atom_lr = pos_lr[state.system_idx].unsqueeze(-1)
 
     # Update atomic positions
-    state.positions = state.positions + atom_lr * state.forces
+    state.set_constrained_positions(state.positions + atom_lr * state.forces)
 
     # Update cell if using cell optimization
     if isinstance(state, CellOptimState):
@@ -117,10 +110,11 @@ def gradient_descent_step(
 
     # Get updated forces, energy, and stress
     model_output = model(state)
-    state.forces = model_output["forces"]
+    state.set_constrained_forces(model_output["forces"])
     state.energy = model_output["energy"]
     if "stress" in model_output:
         state.stress = model_output["stress"]
+    state.store_model_extras(model_output)
 
     # Update cell forces
     if isinstance(state, CellOptimState):

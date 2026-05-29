@@ -113,7 +113,9 @@ def compute_einstein_frequencies_from_nvt(
         )
 
     # Compute average square deviation from mean position
-    unwrapped_positions = ts.transforms.unwrap_positions(positions, system.cell[0])
+    unwrapped_positions = ts.transforms.unwrap_positions(
+        positions, system.cell, system.system_idx
+    )
     square_deviations = unwrapped_positions.var(dim=0).sum(dim=-1)  # (n_particles)
 
     # Compute frequencies using equipartition theorem

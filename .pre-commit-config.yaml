@@ -1,20 +1,15 @@
-ci:
-  autoupdate_schedule: quarterly
-
-default_stages: [pre-commit]
-
 default_install_hook_types: [pre-commit, commit-msg]
 
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.13
+    rev: v0.15.4
     hooks:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: check-case-conflict
       - id: check-symlinks
@@ -32,11 +27,21 @@ repos:
         stages: [pre-commit, commit-msg]
 
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.45.0
+    rev: v0.47.0
     hooks:
       - id: markdownlint
         # MD013: line length
         # MD033: no inline HTML
         # MD041: first line in a file should be a top-level heading
         # MD034: bare URL used
-        args: [--disable, MD013, MD033, MD041, MD034, '--']
+        args: [--disable, MD013, MD033, MD041, MD034, "--"]
+
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty check
+        entry: env -u VIRTUAL_ENV UV_PROJECT_ENVIRONMENT=.venv_prek uv run --extra test --extra docs ty check
+        language: python
+        additional_dependencies: [uv]
+        types: [python]
+        pass_filenames: false

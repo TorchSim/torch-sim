@@ -1,4 +1,4 @@
-# ruff: noqa: RUF002, RUF003, PLC2401
+# ruff: noqa: RUF003, PLC2401
 """Calculation of elastic properties of crystals.
 
 Primary Sources and References for Crystal Elasticity.
@@ -21,9 +21,12 @@ Online Resources:
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 
+import torch_sim as ts
+from torch_sim.autobatching import BinningAutoBatcher
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers import OptimState
 from torch_sim.state import SimState
@@ -88,7 +91,7 @@ def get_bravais_type(  # noqa: PLR0911
         and abs(beta - 90) < angle_tol
         and abs(gamma - 90) < angle_tol
     ):
-        return BravaisType.cubic
+        return BravaisType.CUBIC
 
     # Hexagonal: a = b ≠ c, alpha = beta = 90°, gamma = 120°
     if (
@@ -97,7 +100,7 @@ def get_bravais_type(  # noqa: PLR0911
         and abs(beta - 90) < angle_tol
         and abs(gamma - 120) < angle_tol
     ):
-        return BravaisType.hexagonal
+        return BravaisType.HEXAGONAL
 
     # Tetragonal: a = b ≠ c, alpha = beta = gamma = 90°
     if (
@@ -107,7 +110,7 @@ def get_bravais_type(  # noqa: PLR0911
         and abs(beta - 90) < angle_tol
         and abs(gamma - 90) < angle_tol
     ):
-        return BravaisType.tetragonal
+        return BravaisType.TETRAGONAL
 
     # Orthorhombic: a ≠ b ≠ c, alpha = beta = gamma = 90°
     if (
@@ -117,7 +120,7 @@ def get_bravais_type(  # noqa: PLR0911
         and abs(a - b) > length_tol
         and (abs(b - c) > length_tol or abs(a - c) > length_tol)
     ):
-        return BravaisType.orthorhombic
+        return BravaisType.ORTHORHOMBIC
 
     # Monoclinic: a ≠ b ≠ c, alpha = gamma = 90°, beta ≠ 90°
     if (
@@ -125,7 +128,7 @@ def get_bravais_type(  # noqa: PLR0911
         and abs(gamma - 90) < angle_tol
         and abs(beta - 90) > angle_tol
     ):
-        return BravaisType.monoclinic
+        return BravaisType.MONOCLINIC
 
     # Trigonal/Rhombohedral: a = b = c, alpha = beta = gamma ≠ 90°
     if (
@@ -135,10 +138,10 @@ def get_bravais_type(  # noqa: PLR0911
         and abs(beta - gamma) < angle_tol
         and abs(alpha - 90) > angle_tol
     ):
-        return BravaisType.trigonal
+        return BravaisType.TRIGONAL
 
     # Triclinic: a ≠ b ≠ c, alpha ≠ beta ≠ gamma ≠ 90°
-    return BravaisType.triclinic
+    return BravaisType.TRICLINIC
 
 
 def regular_symmetry(strains: torch.Tensor) -> torch.Tensor:
@@ -663,21 +666,13 @@ def get_cart_deformed_cell(state: SimState, axis: int = 0, size: float = 1.0) ->
     else:  # axis == 5
         L[0, 1] += size  # xy shear
 
-    # Convert positions to fractional coordinates
-    old_inv = torch.linalg.inv(row_vector_cell)
-    frac_coords = torch.matmul(positions, old_inv)
+    frac_coords = torch.matmul(positions, torch.linalg.inv(row_vector_cell))
+    new_cell = torch.matmul(row_vector_cell, L)
 
-    # Apply transformation to cell and convert positions back to cartesian
-    row_vector_cell = torch.matmul(row_vector_cell, L)
-    new_positions = torch.matmul(frac_coords, row_vector_cell)
-
-    return SimState(
-        positions=new_positions,
-        cell=row_vector_cell.mT.unsqueeze(0),
-        masses=state.masses,
-        pbc=state.pbc,
-        atomic_numbers=state.atomic_numbers,
-    )
+    new_state = state.clone()
+    new_state.row_vector_cell = new_cell.unsqueeze(0)
+    new_state.positions = torch.matmul(frac_coords, new_cell)
+    return new_state
 
 
 def get_elementary_deformations(
@@ -716,18 +711,20 @@ def get_elementary_deformations(
     # Deformation rules for different Bravais lattices
     # Each tuple contains (allowed_axes, symmetry_handler_function)
     deformation_rules: dict[BravaisType, DeformationRule] = {
-        BravaisType.cubic: DeformationRule([0, 3], regular_symmetry),
-        BravaisType.hexagonal: DeformationRule([0, 2, 3, 5], hexagonal_symmetry),
-        BravaisType.trigonal: DeformationRule([0, 1, 2, 3, 4, 5], trigonal_symmetry),
-        BravaisType.tetragonal: DeformationRule([0, 2, 3, 5], tetragonal_symmetry),
-        BravaisType.orthorhombic: DeformationRule(
+        BravaisType.CUBIC: DeformationRule([0, 3], regular_symmetry),
+        BravaisType.HEXAGONAL: DeformationRule([0, 2, 3, 5], hexagonal_symmetry),
+        BravaisType.TRIGONAL: DeformationRule([0, 1, 2, 3, 4, 5], trigonal_symmetry),
+        BravaisType.TETRAGONAL: DeformationRule([0, 2, 3, 5], tetragonal_symmetry),
+        BravaisType.ORTHORHOMBIC: DeformationRule(
             [0, 1, 2, 3, 4, 5], orthorhombic_symmetry
         ),
-        BravaisType.monoclinic: DeformationRule([0, 1, 2, 3, 4, 5], monoclinic_symmetry),
-        BravaisType.triclinic: DeformationRule([0, 1, 2, 3, 4, 5], triclinic_symmetry),
+        BravaisType.MONOCLINIC: DeformationRule([0, 1, 2, 3, 4, 5], monoclinic_symmetry),
+        BravaisType.TRICLINIC: DeformationRule([0, 1, 2, 3, 4, 5], triclinic_symmetry),
     }
 
-    # Get deformation rules for this Bravais lattice
+    # Get deformation rules for this Bravais lattice (default to triclinic if None)
+    if bravais_type is None:
+        bravais_type = BravaisType.TRICLINIC
     rule = deformation_rules[bravais_type]
     allowed_axes = rule.axes
 
@@ -893,7 +890,7 @@ def get_elastic_coeffs(
     deformed_states: list[SimState],
     stresses: torch.Tensor,
     base_pressure: torch.Tensor,
-    bravais_type: BravaisType = BravaisType.triclinic,
+    bravais_type: BravaisType = BravaisType.TRICLINIC,
 ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor, int, torch.Tensor]]:
     """Calculate elastic tensor from stress-strain relationships.
 
@@ -927,15 +924,15 @@ def get_elastic_coeffs(
     """
     # Deformation rules for different Bravais lattices
     deformation_rules: dict[BravaisType, DeformationRule] = {
-        BravaisType.cubic: DeformationRule([0, 3], regular_symmetry),
-        BravaisType.hexagonal: DeformationRule([0, 2, 3, 5], hexagonal_symmetry),
-        BravaisType.trigonal: DeformationRule([0, 2, 3, 4, 5], trigonal_symmetry),
-        BravaisType.tetragonal: DeformationRule([0, 2, 3, 4, 5], tetragonal_symmetry),
-        BravaisType.orthorhombic: DeformationRule(
+        BravaisType.CUBIC: DeformationRule([0, 3], regular_symmetry),
+        BravaisType.HEXAGONAL: DeformationRule([0, 2, 3, 5], hexagonal_symmetry),
+        BravaisType.TRIGONAL: DeformationRule([0, 2, 3, 4, 5], trigonal_symmetry),
+        BravaisType.TETRAGONAL: DeformationRule([0, 2, 3, 4, 5], tetragonal_symmetry),
+        BravaisType.ORTHORHOMBIC: DeformationRule(
             [0, 1, 2, 3, 4, 5], orthorhombic_symmetry
         ),
-        BravaisType.monoclinic: DeformationRule([0, 1, 2, 3, 4, 5], monoclinic_symmetry),
-        BravaisType.triclinic: DeformationRule([0, 1, 2, 3, 4, 5], triclinic_symmetry),
+        BravaisType.MONOCLINIC: DeformationRule([0, 1, 2, 3, 4, 5], monoclinic_symmetry),
+        BravaisType.TRICLINIC: DeformationRule([0, 1, 2, 3, 4, 5], triclinic_symmetry),
     }
 
     # Get symmetry handler for this Bravais lattice
@@ -968,15 +965,15 @@ def get_elastic_coeffs(
     # Calculate elastic constants with pressure correction
     p = base_pressure
     pressure_corrections = {
-        BravaisType.cubic: torch.tensor([-p, p, -p]),
-        BravaisType.hexagonal: torch.tensor([-p, -p, p, p, -p]),
-        BravaisType.trigonal: torch.tensor([-p, -p, p, p, p, p, -p]),
-        BravaisType.tetragonal: torch.tensor([-p, -p, p, p, -p, -p, -p]),
-        BravaisType.orthorhombic: torch.tensor([-p, -p, -p, p, p, p, -p, -p, -p]),
-        BravaisType.monoclinic: torch.tensor(
+        BravaisType.CUBIC: torch.tensor([-p, p, -p]),
+        BravaisType.HEXAGONAL: torch.tensor([-p, -p, p, p, -p]),
+        BravaisType.TRIGONAL: torch.tensor([-p, -p, p, p, p, p, -p]),
+        BravaisType.TETRAGONAL: torch.tensor([-p, -p, p, p, -p, -p, -p]),
+        BravaisType.ORTHORHOMBIC: torch.tensor([-p, -p, -p, p, p, p, -p, -p, -p]),
+        BravaisType.MONOCLINIC: torch.tensor(
             [-p, -p, -p, p, p, p, -p, -p, -p, p, p, p, p]
         ),
-        BravaisType.triclinic: torch.tensor(
+        BravaisType.TRICLINIC: torch.tensor(
             [
                 -p,
                 p,
@@ -1039,7 +1036,7 @@ def get_elastic_tensor_from_coeffs(  # noqa: C901, PLR0915
     # Initialize full tensor
     C = torch.zeros((6, 6), dtype=Cij.dtype, device=Cij.device)
 
-    if bravais_type == BravaisType.triclinic:
+    if bravais_type == BravaisType.TRICLINIC:
         if len(Cij) != 21:
             raise ValueError(
                 f"Triclinic symmetry requires 21 independent constants, "
@@ -1052,19 +1049,19 @@ def get_elastic_tensor_from_coeffs(  # noqa: C901, PLR0915
                 C[i, j] = C[j, i] = Cij[idx]
                 idx += 1
 
-    elif bravais_type == BravaisType.cubic:
+    elif bravais_type == BravaisType.CUBIC:
         C11, C12, C44 = Cij
         diag = torch.tensor([C11, C11, C11, C44, C44, C44])
         C.diagonal().copy_(diag)
         C[0, 1] = C[1, 0] = C[0, 2] = C[2, 0] = C[1, 2] = C[2, 1] = C12
 
-    elif bravais_type == BravaisType.hexagonal:
+    elif bravais_type == BravaisType.HEXAGONAL:
         C11, C12, C13, C33, C44 = Cij
         C.diagonal().copy_(torch.tensor([C11, C11, C33, C44, C44, (C11 - C12) / 2]))
         C[0, 1] = C[1, 0] = C12
         C[0, 2] = C[2, 0] = C[1, 2] = C[2, 1] = C13
 
-    elif bravais_type == BravaisType.trigonal:
+    elif bravais_type == BravaisType.TRIGONAL:
         C11, C12, C13, C14, C15, C33, C44 = Cij
         C.diagonal().copy_(torch.tensor([C11, C11, C33, C44, C44, (C11 - C12) / 2]))
         C[0, 1] = C[1, 0] = C12
@@ -1076,7 +1073,7 @@ def get_elastic_tensor_from_coeffs(  # noqa: C901, PLR0915
         C[3, 5] = C[5, 3] = -C15
         C[4, 5] = C[5, 4] = C14
 
-    elif bravais_type == BravaisType.tetragonal:
+    elif bravais_type == BravaisType.TETRAGONAL:
         C11, C12, C13, C16, C33, C44, C66 = Cij
         C.diagonal().copy_(torch.tensor([C11, C11, C33, C44, C44, C66]))
         C[0, 1] = C[1, 0] = C12
@@ -1084,14 +1081,14 @@ def get_elastic_tensor_from_coeffs(  # noqa: C901, PLR0915
         C[0, 5] = C[5, 0] = C16
         C[1, 5] = C[5, 1] = -C16
 
-    elif bravais_type == BravaisType.orthorhombic:
+    elif bravais_type == BravaisType.ORTHORHOMBIC:
         C11, C12, C13, C22, C23, C33, C44, C55, C66 = Cij
         C.diagonal().copy_(torch.tensor([C11, C22, C33, C44, C55, C66]))
         C[0, 1] = C[1, 0] = C12
         C[0, 2] = C[2, 0] = C13
         C[1, 2] = C[2, 1] = C23
 
-    elif bravais_type == BravaisType.monoclinic:
+    elif bravais_type == BravaisType.MONOCLINIC:
         C11, C12, C13, C15, C22, C23, C25, C33, C35, C44, C46, C55, C66 = Cij
         C.diagonal().copy_(torch.tensor([C11, C22, C33, C44, C55, C66]))
         C[0, 1] = C[1, 0] = C12
@@ -1109,10 +1106,12 @@ def calculate_elastic_tensor(
     state: OptimState,
     model: ModelInterface,
     *,
-    bravais_type: BravaisType = BravaisType.triclinic,
+    bravais_type: BravaisType = BravaisType.TRICLINIC,
     max_strain_normal: float = 0.01,
     max_strain_shear: float = 0.06,
     n_deform: int = 5,
+    autobatcher: BinningAutoBatcher | bool = False,
+    pbar: bool | dict[str, Any] = False,
 ) -> torch.Tensor:
     """Calculate the elastic tensor of a structure.
 
@@ -1123,6 +1122,12 @@ def calculate_elastic_tensor(
         max_strain_normal: Maximum normal strain
         max_strain_shear: Maximum shear strain
         n_deform: Number of deformations
+        autobatcher: Optional autobatcher for batching calculations. If True,
+            automatically determines batch sizes based on available memory.
+            If False (default), processes all deformations in a single batch.
+            If a BinningAutoBatcher instance, uses the provided configuration.
+        pbar: Show a progress bar. If True, displays default progress bar.
+            If a dict, passed as kwargs to tqdm. Defaults to False.
 
     Returns:
         torch.Tensor: Elastic tensor
@@ -1138,13 +1143,29 @@ def calculate_elastic_tensor(
         bravais_type=bravais_type,
     )
 
-    # Calculate stresses for deformations
+    # Calculate stresses for deformations using static runner
     ref_pressure = -torch.trace(state.stress.squeeze()) / 3
-    stresses = torch.zeros((len(deformations), 6), device=device, dtype=dtype)
 
-    for def_idx, deformation in enumerate(deformations):
-        result = model(deformation)
-        stresses[def_idx] = full_3x3_to_voigt_6_stress(result["stress"].squeeze())
+    # Validate that model computes stress
+    if not model.compute_stress:
+        raise ValueError("Model must compute stress for elastic tensor calculation")
+
+    # Concatenate deformations into single multi-system state
+    concatenated_deformations = ts.concatenate_states(deformations)
+
+    # Run static calculations on all deformations
+    properties_list = ts.static(
+        system=concatenated_deformations,
+        model=model,
+        autobatcher=autobatcher,
+        pbar=pbar,
+    )
+
+    # Extract stresses from results
+    stresses = torch.zeros((len(deformations), 6), device=device, dtype=dtype)
+    for def_idx, props in enumerate(properties_list):
+        stress_3x3 = props["stress"].squeeze()
+        stresses[def_idx] = full_3x3_to_voigt_6_stress(stress_3x3)
 
     # Calculate elastic tensor
     C_ij, _residuals = get_elastic_coeffs(

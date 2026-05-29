@@ -5,17 +5,19 @@ operations and conversion to/from various atomistic formats.
 """
 
 import copy
+import functools
 import importlib
 import typing
 from collections import defaultdict
 from collections.abc import Generator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 
 import torch
+from torch._prims_common import DeviceLikeType
 
 import torch_sim as ts
-from torch_sim.typing import StateLike
+from torch_sim.typing import AtomExtras, PRNGLike, StateLike, SystemExtras
 
 
 if TYPE_CHECKING:
@@ -23,8 +25,99 @@ if TYPE_CHECKING:
     from phonopy.structure.atoms import PhonopyAtoms
     from pymatgen.core import Structure
 
+from torch_sim.constraints import (
+    Constraint,
+    _dof_per_system,
+    merge_constraints,
+    validate_constraints,
+)
 
-@dataclass
+
+# Canonical model output keys that are handled explicitly by integrators/runners
+_CANONICAL_MODEL_KEYS = frozenset({"energy", "forces", "stress"})
+
+
+def coerce_prng(rng: PRNGLike, device: DeviceLikeType | None) -> torch.Generator:
+    """Coerce an int seed or existing Generator into a ``torch.Generator``.
+
+    Args:
+        rng: An int seed, an existing ``torch.Generator``, or None for unseeded.
+        device: Target device for the returned generator.
+
+    Returns:
+        A ``torch.Generator`` on *device*.
+    """
+    if isinstance(rng, torch.Generator):
+        if rng.device == device:
+            return rng
+        new_generator = torch.Generator(device=device)
+        new_generator.set_state(rng.get_state())
+        return new_generator
+
+    if isinstance(rng, int):
+        generator = torch.Generator(device=device)
+        generator.manual_seed(rng)
+        return generator
+
+    if rng is None:
+        return torch.Generator(device=device)
+
+    raise ValueError(f"Invalid rng type: {type(rng)}")
+
+
+def require_system_idx(system_idx: torch.Tensor | None) -> torch.Tensor:
+    """Return non-null system indices or raise with a clear invariant message."""
+    if system_idx is None:
+        raise RuntimeError("system_idx is set by SimState.__post_init__")
+    return system_idx
+
+
+def _wrap_init_for_extras(cls: type) -> None:
+    """Wrap a dataclass __init__ to route unknown kwargs into extras dicts.
+
+    Unknown tensor kwargs are classified by leading dimension into
+    ``_atom_extras`` (leading dim == n_atoms) or ``_system_extras``
+    (leading dim == n_systems). When ambiguous (n_atoms == n_systems),
+    per-atom is preferred, matching ``store_model_extras`` convention.
+    """
+    original_init = cls.__init__
+    all_fields = {f.name for f in fields(cls)}
+
+    @functools.wraps(original_init)
+    def _wrapped_init(self: Any, *args: Any, **kwargs: Any) -> None:
+        sys_extras = kwargs.get("_system_extras")
+        if sys_extras is None:
+            sys_extras = {}
+            kwargs["_system_extras"] = sys_extras
+        atom_extras = kwargs.get("_atom_extras")
+        if atom_extras is None:
+            atom_extras = {}
+            kwargs["_atom_extras"] = atom_extras
+        positions = kwargs.get("positions")
+        cell = kwargs.get("cell")
+        n_atoms = positions.shape[0] if positions is not None else None
+        n_systems = cell.shape[0] if cell is not None else None
+        unknown = [k for k in kwargs if k not in all_fields]
+        for key in unknown:
+            val = kwargs.pop(key)
+            if val is None:
+                continue
+            if isinstance(val, torch.Tensor) and val.ndim > 0 and n_atoms is not None:
+                leading = val.shape[0]
+                if leading == n_atoms:
+                    atom_extras[key] = val
+                elif n_systems is not None and leading == n_systems:
+                    sys_extras[key] = val
+                else:
+                    sys_extras[key] = val
+            elif val is not None:
+                sys_extras[key] = val
+        original_init(self, *args, **kwargs)
+
+    cls.__init__ = _wrapped_init  # type: ignore[assignment]
+
+
+@dataclass(kw_only=True)
 class SimState:
     """State representation for atomistic systems with batched operations support.
 
@@ -47,10 +140,14 @@ class SimState:
             stored as `[[a1, b1, c1], [a2, b2, c2], [a3, b3, c3]]` as opposed to
             the row vector convention `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`
             used by ASE.
-        pbc (bool): Boolean indicating whether to use periodic boundary conditions
+        pbc (bool | list[bool] | torch.Tensor): indicates periodic boundary
+            conditions in each axis. If a boolean is provided, all axes are
+            assumed to have the same periodic boundary conditions.
         atomic_numbers (torch.Tensor): Atomic numbers with shape (n_atoms,)
         system_idx (torch.Tensor): Maps each atom index to its system index.
             Has shape (n_atoms,), must be unique consecutive integers starting from 0.
+        constraints (list["Constraint"] | None): List of constraints applied to the
+            system. Constraints affect degrees of freedom and modify positions.
 
     Properties:
         wrap_positions (torch.Tensor): Positions wrapped according to periodic boundary
@@ -80,16 +177,29 @@ class SimState:
     positions: torch.Tensor
     masses: torch.Tensor
     cell: torch.Tensor
-    pbc: bool  # TODO: do all calculators support mixed pbc?
+    pbc: torch.Tensor  # coerced from bool/list[bool] by __setattr__
     atomic_numbers: torch.Tensor
-    system_idx: torch.Tensor | None = field(default=None)
+    system_idx: torch.Tensor = field(default=None)  # type: ignore[assignment]  # coerced from None by __setattr__
+    _constraints: list["Constraint"] = field(default_factory=list)
+    _system_extras: dict[str, torch.Tensor] = field(default_factory=dict)
+    _atom_extras: dict[str, torch.Tensor] = field(default_factory=dict)
+    _rng: PRNGLike = field(default=None, repr=False)
 
     if TYPE_CHECKING:
 
-        @property
-        def system_idx(self) -> torch.Tensor:
-            """A getter for system_idx that tells type checkers it's always defined."""
-            return self.system_idx
+        def __init__(  # noqa: D107
+            self,
+            *,
+            positions: torch.Tensor,
+            masses: torch.Tensor,
+            cell: torch.Tensor,
+            pbc: torch.Tensor | list[bool] | bool,
+            atomic_numbers: torch.Tensor,
+            system_idx: torch.Tensor | None = None,
+            _constraints: list[Constraint] | None = None,
+            _rng: PRNGLike = None,
+            **kwargs: Any,
+        ) -> None: ...
 
     _atom_attributes: ClassVar[set[str]] = {
         "positions",
@@ -98,21 +208,53 @@ class SimState:
         "system_idx",
     }
     _system_attributes: ClassVar[set[str]] = {"cell"}
-    _global_attributes: ClassVar[set[str]] = {"pbc"}
+    _global_attributes: ClassVar[set[str]] = {"pbc", "_rng"}
 
-    def __post_init__(self) -> None:
+    @property
+    def rng(self) -> torch.Generator:
+        """Lazily initialized per-state RNG on the state's device."""
+        self._rng = coerce_prng(self._rng, self.device)
+        return self._rng
+
+    @rng.setter
+    def rng(self, value: PRNGLike) -> None:
+        self._rng = value
+
+    def __setattr__(self, name: str, value: object) -> None:  # noqa: C901
+        """Coerce pbc and system_idx on every assignment.
+
+        Routes writes to existing extras keys back into their extras dict.
+        """
+        if not name.startswith("_"):
+            for extras_attr in ("_system_extras", "_atom_extras"):
+                try:
+                    extras = object.__getattribute__(self, extras_attr)
+                except AttributeError:
+                    continue
+                if name in extras:
+                    if value is not None:
+                        extras[name] = value
+                    else:
+                        del extras[name]
+                    return
+        if name == "pbc" and not isinstance(value, torch.Tensor):
+            if isinstance(value, bool):
+                value = [value] * 3
+            value = torch.tensor(value, dtype=torch.bool, device=self.device)
+        elif name == "system_idx":
+            if value is None:
+                if hasattr(self, "positions"):
+                    value = torch.zeros(
+                        self.n_atoms, device=self.device, dtype=torch.int64
+                    )
+            elif isinstance(value, torch.Tensor):
+                _, counts = torch.unique_consecutive(value, return_counts=True)
+                if not torch.all(counts == torch.bincount(value)):
+                    raise ValueError("System indices must be unique consecutive integers")
+        super().__setattr__(name, value)
+
+    def __post_init__(self) -> None:  # noqa: C901
         """Initialize the SimState and validate the arguments."""
-        # Validate and process the state after initialization.
-        # data validation and fill system_idx
-        # should make pbc a tensor here
-        # if devices aren't all the same, raise an error, in a clean way
-        devices = {
-            attr: getattr(self, attr).device
-            for attr in ("positions", "masses", "cell", "atomic_numbers")
-        }
-        if len(set(devices.values())) > 1:
-            raise ValueError("All tensors must be on the same device")
-
         # Check that positions, masses and atomic numbers have compatible shapes
         shapes = [
             getattr(self, attr).shape[0]
@@ -125,34 +267,152 @@ class SimState:
                 f"masses {shapes[1]}, atomic_numbers {shapes[2]}"
             )
 
-        initial_system_idx = self.system_idx
-        if initial_system_idx is None:
-            self.system_idx = torch.zeros(
-                self.n_atoms, device=self.device, dtype=torch.int64
-            )
-        else:  # assert that system indices are unique consecutive integers
-            _, counts = torch.unique_consecutive(initial_system_idx, return_counts=True)
-            if not torch.all(counts == torch.bincount(initial_system_idx)):
-                raise ValueError("System indices must be unique consecutive integers")
+        # Get n_systems from system_idx (now guaranteed to be non-None)
+        _, counts = torch.unique_consecutive(self.system_idx, return_counts=True)
+        n_systems = len(counts)
 
-        if self.cell.ndim != 3 and initial_system_idx is None:
+        if self.constraints:
+            validate_constraints(self.constraints, state=self)
+
+        if self.cell.ndim != 3:
             self.cell = self.cell.unsqueeze(0)
 
         if self.cell.shape[-2:] != (3, 3):
             raise ValueError("Cell must have shape (n_systems, 3, 3)")
 
-        if self.cell.shape[0] != self.n_systems:
+        if self.cell.shape[0] != n_systems:
             raise ValueError(
-                f"Cell must have shape (n_systems, 3, 3), got {self.cell.shape}"
+                f"Cell must have shape (n_systems={n_systems}, 3, 3), "
+                f"got {self.cell.shape}"
             )
+
+        # if devices aren't all the same, raise an error, in a clean way
+        devices = {
+            attr: getattr(self, attr).device
+            for attr in (
+                "positions",
+                "masses",
+                "cell",
+                "atomic_numbers",
+                "pbc",
+                "system_idx",
+            )
+        }
+        if len(set(devices.values())) > 1:
+            raise ValueError("All tensors must be on the same device")
+
+        # Validate extras shapes and prevent shadowing
+        all_attrs = self._get_all_attributes()
+        for key, val in self._system_extras.items():
+            if key in all_attrs or hasattr(type(self), key):
+                raise ValueError(f"System extra '{key}' shadows an existing attribute")
+            if not isinstance(val, torch.Tensor):
+                raise TypeError(f"System extra '{key}' must be a torch.Tensor")
+            if val.shape[0] != n_systems:
+                raise ValueError(
+                    f"System extra '{key}' leading dim must be "
+                    f"n_systems={n_systems}, got {val.shape[0]}"
+                )
+        for key, val in self._atom_extras.items():
+            if key in all_attrs or hasattr(type(self), key):
+                raise ValueError(f"Atom extra '{key}' shadows an existing attribute")
+            if not isinstance(val, torch.Tensor):
+                raise TypeError(f"Atom extra '{key}' must be a torch.Tensor")
+            if val.shape[0] != self.n_atoms:
+                raise ValueError(
+                    f"Atom extra '{key}' leading dim must be "
+                    f"n_atoms={self.n_atoms}, got {val.shape[0]}"
+                )
+
+    @classmethod
+    def _get_all_attributes(cls) -> set[str]:
+        """Get all attributes of the SimState."""
+        return (
+            cls._atom_attributes
+            | cls._system_attributes
+            | cls._global_attributes
+            | {"_constraints", "_system_extras", "_atom_extras"}
+        )
+
+    def __getattr__(self, name: str) -> torch.Tensor:
+        """Allow attribute-style access to extras dict entries.
+
+        Only called by Python as a fallback after normal lookup (descriptors,
+        instance __dict__, class attributes) fails, so real fields like
+        ``positions`` and properties like ``n_atoms`` never reach this method.
+        The return type is ``torch.Tensor`` because extras dicts only hold tensors.
+        """
+        # Guard: don't look up private attrs in extras (avoids recursion during init)
+        if name.startswith("_"):
+            raise AttributeError(name)
+        for extras_attr in ("_system_extras", "_atom_extras"):
+            try:
+                extras = object.__getattribute__(self, extras_attr)
+            except AttributeError:
+                continue
+            if name in extras:
+                return extras[name]
+
+        # Raise AttributeError so that Python's getattr(obj, name, default),
+        # hasattr(obj, name), and other descriptor-protocol machinery work correctly.
+        raise AttributeError(
+            f"'{type(self).__name__}' has no attribute or extra '{name}'"
+        )
+
+    @property
+    def system_extras(self) -> dict[str, torch.Tensor]:
+        """Get the system extras."""
+        return self._system_extras
+
+    @property
+    def atom_extras(self) -> dict[str, torch.Tensor]:
+        """Get the atom extras."""
+        return self._atom_extras
+
+    def has_extras(self, key: str) -> bool:
+        """Check if an extras key exists."""
+        return key in self._system_extras or key in self._atom_extras
+
+    def store_model_extras(self, model_output: dict[str, torch.Tensor]) -> None:
+        """Store non-canonical model outputs into state extras (in-place).
+
+        Any key in *model_output* that is not in ``{"energy", "forces", "stress"}``
+        is classified by its leading dimension:
+
+        * ``n_atoms``  → stored in ``_atom_extras``
+        * ``n_systems`` → stored in ``_system_extras``
+        * otherwise     → skipped (ambiguity or scalar)
+
+        When ``n_atoms == n_systems`` (single-atom system), the tensor is stored as
+        per-atom by convention.
+
+        Args:
+            model_output: Full dict returned by ``model.forward()``.
+        """
+        n_atoms = self.n_atoms
+        n_systems = self.n_systems
+
+        for key, val in model_output.items():
+            if key in _CANONICAL_MODEL_KEYS:
+                continue
+            if not isinstance(val, torch.Tensor) or val.ndim == 0:
+                continue
+            leading = val.shape[0]
+            if leading == n_atoms:
+                self._atom_extras[key] = val
+            elif leading == n_systems:
+                self._system_extras[key] = val
 
     @property
     def wrap_positions(self) -> torch.Tensor:
         """Atomic positions wrapped according to periodic boundary conditions if pbc=True,
         otherwise returns unwrapped positions with shape (n_atoms, 3).
         """
-        # TODO: implement a wrapping method
-        return self.positions
+        if not self.pbc.any():
+            return self.positions
+        return ts.transforms.pbc_wrap_batched(
+            self.positions, self.cell, self.system_idx, self.pbc
+        )
 
     @property
     def device(self) -> torch.device:
@@ -172,11 +432,7 @@ class SimState:
     @property
     def n_atoms_per_system(self) -> torch.Tensor:
         """Number of atoms per system."""
-        return (
-            self.system_idx.bincount()
-            if self.system_idx is not None
-            else torch.tensor([self.n_atoms], device=self.device)
-        )
+        return self.system_idx.bincount()
 
     @property
     def n_systems(self) -> int:
@@ -189,14 +445,9 @@ class SimState:
         return torch.det(self.cell)
 
     @property
-    def attributes(self) -> dict[str, torch.Tensor]:
+    def attributes(self) -> dict[str, Any]:
         """Get all public attributes of the state."""
-        return {
-            attr: getattr(self, attr)
-            for attr in self._atom_attributes
-            | self._system_attributes
-            | self._global_attributes
-        }
+        return {attr: getattr(self, attr) for attr in self._get_all_attributes()}
 
     @property
     def column_vector_cell(self) -> torch.Tensor:
@@ -226,6 +477,88 @@ class SimState:
         """
         self.cell = value.mT
 
+    def set_constrained_positions(self, new_positions: torch.Tensor) -> None:
+        """Set the positions and apply constraints if they exist.
+
+        Args:
+            new_positions: New positions tensor with shape (n_atoms, 3)
+        """
+        # Apply constraints if they exist
+        for constraint in self.constraints:
+            constraint.adjust_positions(self, new_positions)
+        self.positions = new_positions
+
+    def set_constrained_cell(
+        self,
+        new_cell: torch.Tensor,
+        scale_atoms: bool = False,  # noqa: FBT001, FBT002
+    ) -> None:
+        """Set the cell, apply constraints, and optionally scale atomic positions.
+
+        Args:
+            new_cell: New cell tensor with shape (n_systems, 3, 3)
+                in column vector convention
+            scale_atoms: Whether to scale atomic positions to preserve
+                fractional coordinates. Defaults to False.
+        """
+        for constraint in self.constraints:
+            constraint.adjust_cell(self, new_cell)
+        self.set_cell(new_cell, scale_atoms=scale_atoms)
+
+    @property
+    def constraints(self) -> list[Constraint]:
+        """Get the constraints for the SimState.
+
+        Returns:
+            list["Constraint"]: List of constraints applied to the system.
+        """
+        return self._constraints
+
+    @constraints.setter
+    def constraints(self, constraints: list[Constraint] | Constraint) -> None:
+        """Set the constraints for the SimState.
+
+        Args:
+            constraints (list["Constraint"] | None): List of constraints to apply.
+                If None, no constraints are applied.
+
+        Raises:
+            ValueError: If constraints are invalid or span multiple systems
+        """
+        # check it is a list
+        if isinstance(constraints, Constraint):
+            constraints = [constraints]
+
+        # Validate new constraints before adding
+        validate_constraints(constraints, state=self)
+
+        self._constraints = constraints
+
+    def set_cell(
+        self,
+        cell: torch.Tensor,
+        scale_atoms: bool = False,  # noqa: FBT001, FBT002
+    ) -> None:
+        """Set the unit cell of the system, optionally scaling atomic positions.
+        Torch version of ASE Atoms.set_cell.
+
+        Args:
+            cell (torch.Tensor): New unit cell with shape (n_systems, 3, 3)
+            scale_atoms (bool, optional): Whether to scale atomic positions according to
+                the change in cell. Defaults to False.
+        """
+        if cell.shape != self.cell.shape:
+            raise ValueError(
+                f"New cell must have shape {self.cell.shape}, got {cell.shape}"
+            )
+        if scale_atoms:
+            M = torch.linalg.solve(self.cell.mT, cell.mT)
+            self.positions = torch.bmm(
+                self.positions.unsqueeze(1), M[self.system_idx]
+            ).squeeze(1)
+
+        self.cell = cell
+
     def get_number_of_degrees_of_freedom(self) -> torch.Tensor:
         """Calculate degrees of freedom accounting for constraints.
 
@@ -233,9 +566,27 @@ class SimState:
             torch.Tensor: Number of degrees of freedom per system, with shape
                 (n_systems,). Each system starts with 3 * n_atoms_per_system degrees
                 of freedom, minus any degrees removed by constraints.
+
+        Raises:
+            ValueError: If any system has zero or negative degrees of freedom.
+                This strict behavior is used by simulation routines that require
+                physically valid DOF.
         """
-        # Start with unconstrained DOF: 3 degrees per atom
-        return 3 * self.n_atoms_per_system
+        dof_per_system = _dof_per_system(self, self.constraints)
+        if (dof_per_system <= 0).any():
+            raise ValueError("Degrees of freedom cannot be zero or negative")
+        return dof_per_system
+
+    @staticmethod
+    def _clone_attr(value: object) -> object:
+        """Clone one attribute value, preserving RNG generator state."""
+        if isinstance(value, torch.Tensor):
+            return value.clone()
+        if isinstance(value, torch.Generator):
+            cloned_generator = torch.Generator(device=value.device)
+            cloned_generator.set_state(value.get_state())
+            return cloned_generator
+        return copy.deepcopy(value)
 
     def clone(self) -> Self:
         """Create a deep copy of the SimState.
@@ -246,22 +597,20 @@ class SimState:
         Returns:
             SimState: A new SimState object with the same properties as the original
         """
-        attrs = {}
-        for attr_name, attr_value in self.attributes.items():
-            if isinstance(attr_value, torch.Tensor):
-                attrs[attr_name] = attr_value.clone()
-            else:
-                attrs[attr_name] = copy.deepcopy(attr_value)
-
+        attrs: dict[str, Any] = {
+            attr_name: self._clone_attr(attr_value)
+            for attr_name, attr_value in self.attributes.items()
+        }
         return type(self)(**attrs)
 
     @classmethod
     def from_state(cls, state: "SimState", **additional_attrs: Any) -> Self:
         """Create a new state from an existing state with additional attributes.
 
-        This method copies all attributes from the source state and adds any additional
-        attributes needed for the target state class. It's useful for converting between
-        different state types (e.g., SimState to MDState).
+        This method copies attributes from the source state that are valid for the
+        target state class, and adds any additional attributes needed. It supports
+        upcasting (SimState -> MDState), downcasting (MDState -> SimState), and
+        cross-casting (MDState -> OptimState) between state types.
 
         Args:
             state: Source state to copy base attributes from
@@ -279,26 +628,48 @@ class SimState:
             ...     momenta=torch.zeros_like(sim_state.positions),
             ... )
         """
-        # Copy all attributes from the source state
         attrs = {}
         for attr_name, attr_value in state.attributes.items():
-            if isinstance(attr_value, torch.Tensor):
-                attrs[attr_name] = attr_value.clone()
-            else:
-                attrs[attr_name] = copy.deepcopy(attr_value)
+            if attr_name in cls._get_all_attributes():
+                attrs[attr_name] = cls._clone_attr(attr_value)
 
-        # Add/override with additional attributes
-        attrs.update(additional_attrs)
+        all_known = cls._get_all_attributes()
+        n_atoms = state.n_atoms
+        n_systems = state.n_systems
+        for key, val in additional_attrs.items():
+            if key in all_known:
+                attrs[key] = val
+            elif isinstance(val, torch.Tensor) and val.ndim > 0:
+                leading = val.shape[0]
+                if leading == n_atoms:
+                    attrs.setdefault("_atom_extras", {})[key] = val
+                elif leading == n_systems:
+                    attrs.setdefault("_system_extras", {})[key] = val
+                else:
+                    raise ValueError(f"Attribute '{key}' has invalid leading dimension")
+            else:
+                attrs[key] = val
 
         return cls(**attrs)
 
-    def to_atoms(self) -> list["Atoms"]:
+    def to_atoms(
+        self,
+        *,
+        system_extras_map: dict[SystemExtras, str] | None = None,
+        atom_extras_map: dict[AtomExtras, str] | None = None,
+    ) -> list["Atoms"]:
         """Convert the SimState to a list of ASE Atoms objects.
 
+        Args:
+            system_extras_map: Map of ``{ts_key: ase_key}`` for system extras.
+            atom_extras_map: Map of ``{ts_key: ase_key}`` for atom extras.
+
         Returns:
-            list[Atoms]: A list of ASE Atoms objects, one per system
+            list[Atoms]: A list of ASE Atoms objects, one per system.
         """
-        return ts.io.state_to_atoms(self)
+        return ts.io.state_to_atoms(
+            self, system_extras_map=system_extras_map, atom_extras_map=atom_extras_map
+        )
 
     def to_structures(self) -> list["Structure"]:
         """Convert the SimState to a list of pymatgen Structure objects.
@@ -485,6 +856,9 @@ class SimState:
                 )
 
 
+_wrap_init_for_extras(SimState)
+
+
 @dataclass(kw_only=True)
 class DeformGradMixin:
     """Mixin for states that support deformation gradients."""
@@ -570,7 +944,7 @@ def _normalize_system_indices(
     raise TypeError(f"Unsupported index type: {type(system_indices)}")
 
 
-def _state_to_device[T: SimState](
+def _state_to_device[T: SimState](  # noqa: C901
     state: T, device: torch.device | None = None, dtype: torch.dtype | None = None
 ) -> T:
     """Convert the SimState to a new device and dtype.
@@ -594,14 +968,39 @@ def _state_to_device[T: SimState](
     attrs = state.attributes
     for attr_name, attr_value in attrs.items():
         if isinstance(attr_value, torch.Tensor):
-            attrs[attr_name] = attr_value.to(device=device)
+            if attr_value.is_floating_point() and dtype is not None:
+                # also move floating point attributes like forces, velocities, etc.
+                # to dtype.
+                attrs[attr_name] = attr_value.to(device=device, dtype=dtype)
+            else:
+                # non-floating attributes like system_idx keep their dtype.
+                attrs[attr_name] = attr_value.to(device=device)
+        elif isinstance(attr_value, torch.Generator):
+            attrs[attr_name] = coerce_prng(attr_value, device)
+
+    for extras_key in ("_system_extras", "_atom_extras"):
+        if extras_key in attrs and isinstance(attrs[extras_key], dict):
+            attrs[extras_key] = {
+                k: v.to(device=device) for k, v in attrs[extras_key].items()
+            }
 
     if dtype is not None:
-        attrs["positions"] = attrs["positions"].to(dtype=dtype)
-        attrs["masses"] = attrs["masses"].to(dtype=dtype)
-        attrs["cell"] = attrs["cell"].to(dtype=dtype)
         attrs["atomic_numbers"] = attrs["atomic_numbers"].to(dtype=torch.int)
-    return type(state)(**attrs)  # type: ignore[invalid-return-type]
+
+        # Update floating point extras to new dtype
+        for extras_key in ("_system_extras", "_atom_extras"):
+            if extras_key in attrs and isinstance(attrs[extras_key], dict):
+                attrs[extras_key] = {
+                    k: v.to(dtype=dtype) if v.is_floating_point() else v
+                    for k, v in attrs[extras_key].items()
+                }
+
+    if attrs.get("_constraints"):
+        attrs["_constraints"] = [
+            c.to(device=device, dtype=dtype) for c in attrs["_constraints"]
+        ]
+
+    return type(state)(**attrs)
 
 
 def get_attrs_for_scope(
@@ -629,64 +1028,90 @@ def get_attrs_for_scope(
     for attr_name in attr_names:
         yield attr_name, getattr(state, attr_name)
 
+    if scope == "per-system":
+        yield from state.system_extras.items()
+    elif scope == "per-atom":
+        yield from state.atom_extras.items()
 
-def _filter_attrs_by_mask(
+
+def _filter_attrs_by_index(
     state: SimState,
-    atom_mask: torch.Tensor,
-    system_mask: torch.Tensor,
+    atom_indices: torch.Tensor,
+    system_indices: torch.Tensor,
 ) -> dict:
-    """Filter attributes by atom and system masks.
+    """Filter attributes by integer atom and system indices.
 
-    Selects subsets of attributes based on boolean masks for atoms and systems.
+    Selects subsets of attributes using integer index tensors, preserving the
+    order specified by the indices.
 
     Args:
         state (SimState): The state to filter
-        atom_mask (torch.Tensor): Boolean mask for atoms to include with shape
-            (n_atoms,)
-        system_mask (torch.Tensor): Boolean mask for systems to include with shape
-            (n_systems,)
+        atom_indices (torch.Tensor): Integer indices of atoms to include
+        system_indices (torch.Tensor): Integer indices of systems to include
 
     Returns:
         dict: Filtered attributes with appropriate handling for each scope
     """
-    # Copy global attributes directly
     filtered_attrs = dict(get_attrs_for_scope(state, "global"))
 
-    # Filter per-atom attributes
-    for attr_name, attr_value in get_attrs_for_scope(state, "per-atom"):
-        if attr_name == "system_idx":
-            # Get the old system indices for the selected atoms
-            old_system_indices = attr_value[atom_mask]
+    # Build inverse maps: old index → new position in the output.
+    # These are used for both constraint remapping and per-atom system_idx.
+    atom_remap = torch.empty(state.n_atoms, dtype=torch.long, device=state.device)
+    atom_remap[atom_indices] = torch.arange(len(atom_indices), device=state.device)
+    if len(system_indices) == 0:
+        system_remap = torch.empty(0, device=state.device, dtype=torch.long)
+    else:
+        max_idx = int(system_indices.max().item()) + 1
+        system_remap = torch.empty(max_idx, device=state.device, dtype=torch.long)
+        system_remap[system_indices] = torch.arange(
+            len(system_indices), device=state.device
+        )
 
-            # Get the system indices that are kept
-            kept_indices = torch.arange(attr_value.max() + 1, device=attr_value.device)[
-                system_mask
-            ]
+    # select_constraint uses boolean masks (which lose ordering), so we must
+    # remap constraint atom_idx / system_idx afterward to match the actual
+    # output order given by atom_indices / system_indices.
+    atom_mask = torch.zeros(state.n_atoms, dtype=torch.bool, device=state.device)
+    atom_mask[atom_indices] = True
+    system_mask = torch.zeros(state.n_systems, dtype=torch.bool, device=state.device)
+    system_mask[system_indices] = True
+    filtered_attrs["_constraints"] = [
+        c
+        for con in copy.deepcopy(state.constraints)
+        if (c := con.select_constraint(atom_mask, system_mask))
+    ]
+    new_atom_idx = atom_remap[torch.where(atom_mask)[0]]
+    new_system_idx = system_remap[torch.where(system_mask)[0]]
+    for c in filtered_attrs["_constraints"]:
+        if hasattr(c, "atom_idx") and isinstance(c.atom_idx, torch.Tensor):
+            c.atom_idx = new_atom_idx[c.atom_idx]
+        if hasattr(c, "system_idx") and isinstance(c.system_idx, torch.Tensor):
+            c.system_idx = new_system_idx[c.system_idx]
 
-            # Create a mapping from old system indices to new consecutive indices
-            system_idx_map = {idx.item(): i for i, idx in enumerate(kept_indices)}
+    for name, val in get_attrs_for_scope(state, "per-atom"):
+        if name in state.atom_extras:
+            continue
+        filtered_attrs[name] = (
+            system_remap[val[atom_indices]] if name == "system_idx" else val[atom_indices]
+        )
 
-            # Create new system tensor with remapped indices
-            new_system_idxs = torch.tensor(
-                [system_idx_map[b.item()] for b in old_system_indices],
-                device=attr_value.device,
-                dtype=attr_value.dtype,
-            )
-            filtered_attrs[attr_name] = new_system_idxs
-        else:
-            filtered_attrs[attr_name] = attr_value[atom_mask]
+    for name, val in get_attrs_for_scope(state, "per-system"):
+        if name in state.system_extras:
+            continue
+        filtered_attrs[name] = (
+            val[system_indices] if isinstance(val, torch.Tensor) else val
+        )
 
-    # Filter per-system attributes
-    for attr_name, attr_value in get_attrs_for_scope(state, "per-system"):
-        if isinstance(attr_value, torch.Tensor):
-            filtered_attrs[attr_name] = attr_value[system_mask]
-        else:  # Non-tensor attributes (e.g. cell filter) are copied as-is
-            filtered_attrs[attr_name] = attr_value
+    filtered_attrs["_system_extras"] = {
+        key: val[system_indices] for key, val in state.system_extras.items()
+    }
+    filtered_attrs["_atom_extras"] = {
+        key: val[atom_indices] for key, val in state.atom_extras.items()
+    }
 
     return filtered_attrs
 
 
-def _split_state[T: SimState](state: T) -> list[T]:
+def _split_state[T: SimState](state: T) -> list[T]:  # noqa: C901
     """Split a SimState into a list of states, each containing a single system.
 
     Divides a multi-system state into individual single-system states, preserving
@@ -699,15 +1124,18 @@ def _split_state[T: SimState](state: T) -> list[T]:
         list[SimState]: A list of SimState objects, each containing a single
             system
     """
-    system_sizes = torch.bincount(state.system_idx).tolist()
+    system_sizes = state.n_atoms_per_system.tolist()
 
     split_per_atom = {}
     for attr_name, attr_value in get_attrs_for_scope(state, "per-atom"):
-        if attr_name != "system_idx":
-            split_per_atom[attr_name] = torch.split(attr_value, system_sizes, dim=0)
+        if attr_name == "system_idx" or attr_name in state.atom_extras:
+            continue
+        split_per_atom[attr_name] = torch.split(attr_value, system_sizes, dim=0)
 
     split_per_system = {}
     for attr_name, attr_value in get_attrs_for_scope(state, "per-system"):
+        if attr_name in state.system_extras:
+            continue
         if isinstance(attr_value, torch.Tensor):
             split_per_system[attr_name] = torch.split(attr_value, 1, dim=0)
         else:  # Non-tensor attributes are replicated for each split
@@ -715,10 +1143,26 @@ def _split_state[T: SimState](state: T) -> list[T]:
 
     global_attrs = dict(get_attrs_for_scope(state, "global"))
 
+    split_system_extras: dict[str, list[torch.Tensor]] = {}
+    for key, val in state.system_extras.items():
+        split_system_extras[key] = list(torch.split(val, 1, dim=0))
+
+    split_atom_extras: dict[str, list[torch.Tensor]] = {}
+    for key, val in state.atom_extras.items():
+        split_atom_extras[key] = list(torch.split(val, system_sizes, dim=0))
+
     # Create a state for each system
     states: list[T] = []
     n_systems = len(system_sizes)
+    zero_tensor = torch.tensor([0], device=state.device, dtype=torch.int64)
+    cumsum_atoms = torch.cat((zero_tensor, torch.cumsum(state.n_atoms_per_system, dim=0)))
     for sys_idx in range(n_systems):
+        # Build per-system attributes (padded attributes stay padded for consistency)
+        per_system_dict = {
+            attr_name: split_per_system[attr_name][sys_idx]
+            for attr_name in split_per_system
+        }
+
         system_attrs = {
             # Create a system tensor with all zeros for this system
             "system_idx": torch.zeros(
@@ -729,15 +1173,29 @@ def _split_state[T: SimState](state: T) -> list[T]:
                 attr_name: split_per_atom[attr_name][sys_idx]
                 for attr_name in split_per_atom
             },
-            # Add the split per-system attributes
-            **{
-                attr_name: split_per_system[attr_name][sys_idx]
-                for attr_name in split_per_system
-            },
+            # Add the split per-system attributes (with unpadding applied)
+            **per_system_dict,
             # Add the global attributes
             **global_attrs,
+            "_system_extras": {
+                key: split_system_extras[key][sys_idx] for key in split_system_extras
+            },
+            "_atom_extras": {
+                key: split_atom_extras[key][sys_idx] for key in split_atom_extras
+            },
         }
-        states.append(type(state)(**system_attrs))  # type: ignore[invalid-argument-type]
+
+        start_idx = int(cumsum_atoms[sys_idx].item())
+        end_idx = int(cumsum_atoms[sys_idx + 1].item())
+        atom_idx = torch.arange(start_idx, end_idx, device=state.device)
+        new_constraints: list[Constraint] = []
+        for constraint in state.constraints:
+            sub = constraint.select_sub_constraint(atom_idx, sys_idx)
+            if sub is not None:
+                new_constraints.append(sub)
+
+        system_attrs["_constraints"] = new_constraints
+        states.append(type(state)(**system_attrs))
 
     return states
 
@@ -767,23 +1225,22 @@ def _pop_states[T: SimState](
     if isinstance(pop_indices, list):
         pop_indices = torch.tensor(pop_indices, device=state.device, dtype=torch.int64)
 
-    # Create masks for the atoms and systems to keep and pop
-    system_range = torch.arange(state.n_systems, device=state.device)
-    pop_system_mask = torch.isin(system_range, pop_indices)
-    keep_system_mask = ~pop_system_mask
-
+    # Derive keep/pop atom and system indices
+    all_systems = torch.arange(state.n_systems, device=state.device)
+    keep_system_indices = all_systems[~torch.isin(all_systems, pop_indices)]
     pop_atom_mask = torch.isin(state.system_idx, pop_indices)
-    keep_atom_mask = ~pop_atom_mask
+    keep_atom_indices = torch.where(~pop_atom_mask)[0]
+    pop_atom_indices = torch.where(pop_atom_mask)[0]
 
     # Filter attributes for keep and pop states
-    keep_attrs = _filter_attrs_by_mask(state, keep_atom_mask, keep_system_mask)
-    pop_attrs = _filter_attrs_by_mask(state, pop_atom_mask, pop_system_mask)
+    keep_attrs = _filter_attrs_by_index(state, keep_atom_indices, keep_system_indices)
+    pop_attrs = _filter_attrs_by_index(state, pop_atom_indices, pop_indices)
 
     # Create the keep state
-    keep_state: T = type(state)(**keep_attrs)  # type: ignore[assignment]
+    keep_state: T = type(state)(**keep_attrs)
 
     # Create and split the pop state
-    pop_state: T = type(state)(**pop_attrs)  # type: ignore[assignment]
+    pop_state: T = type(state)(**pop_attrs)
     pop_states = _split_state(pop_state)
 
     return keep_state, pop_states
@@ -793,12 +1250,13 @@ def _slice_state[T: SimState](state: T, system_indices: list[int] | torch.Tensor
     """Slice a substate from the SimState containing only the specified system indices.
 
     Creates a new SimState containing only the specified systems, preserving
-    all relevant properties.
+    the requested order. E.g., system_indices=[3, 1, 4] results in original
+    systems 3, 1, 4 becoming new systems 0, 1, 2.
 
     Args:
         state (SimState): The state to slice
         system_indices (list[int] | torch.Tensor): System indices to include in the
-            sliced state
+            sliced state (order preserved in the result)
 
     Returns:
         SimState: A new SimState object containing only the specified systems
@@ -814,19 +1272,23 @@ def _slice_state[T: SimState](state: T, system_indices: list[int] | torch.Tensor
     if len(system_indices) == 0:
         raise ValueError("system_indices cannot be empty")
 
-    # Create masks for the atoms and systems to include
-    system_range = torch.arange(state.n_systems, device=state.device)
-    system_mask = torch.isin(system_range, system_indices)
-    atom_mask = torch.isin(state.system_idx, system_indices)
+    # Build atom indices in requested order (preserves system_indices order)
+    system_indices = system_indices.reshape(-1)
+    cumsum = torch.cat(
+        (state.n_atoms_per_system.new_zeros(1), state.n_atoms_per_system.cumsum(0))
+    )
+    atom_indices = torch.cat(
+        [
+            torch.arange(cumsum[i].item(), cumsum[i + 1].item(), device=state.device)
+            for i in system_indices
+        ]
+    )
 
-    # Filter attributes
-    filtered_attrs = _filter_attrs_by_mask(state, atom_mask, system_mask)
-
-    # Create the sliced state
-    return type(state)(**filtered_attrs)  # type: ignore[invalid-return-type]
+    filtered_attrs = _filter_attrs_by_index(state, atom_indices, system_indices)
+    return type(state)(**filtered_attrs)
 
 
-def concatenate_states[T: SimState](  # noqa: C901
+def concatenate_states[T: SimState](  # noqa: C901, PLR0915
     states: Sequence[T], device: torch.device | None = None
 ) -> T:
     """Concatenate a list of SimStates into a single SimState.
@@ -867,8 +1329,11 @@ def concatenate_states[T: SimState](  # noqa: C901
     # Pre-allocate lists for tensors to concatenate
     per_atom_tensors = defaultdict(list)
     per_system_tensors = defaultdict(list)
+    system_extras_tensors: dict[str, list[torch.Tensor]] = defaultdict(list)
+    atom_extras_tensors: dict[str, list[torch.Tensor]] = defaultdict(list)
     new_system_indices = []
     system_offset = 0
+    num_atoms_per_state = []
 
     # Process all states in a single pass
     for state in states:
@@ -878,19 +1343,29 @@ def concatenate_states[T: SimState](  # noqa: C901
 
         # Collect per-atom properties
         for prop, val in get_attrs_for_scope(state, "per-atom"):
-            if prop == "system_idx":
+            if prop == "system_idx" or prop in state.atom_extras:
                 # skip system_idx, it will be handled below
                 continue
             per_atom_tensors[prop].append(val)
 
         # Collect per-system properties
         for prop, val in get_attrs_for_scope(state, "per-system"):
+            if prop in state.system_extras:
+                continue
             per_system_tensors[prop].append(val)
+
+        # Collect extras
+        for key, val in state.system_extras.items():
+            system_extras_tensors[key].append(val)
+        for key, val in state.atom_extras.items():
+            atom_extras_tensors[key].append(val)
 
         # Update system indices
         num_systems = state.n_systems
         new_indices = state.system_idx + system_offset
         new_system_indices.append(new_indices)
+        num_atoms_per_state.append(state.n_atoms)
+
         system_offset += num_systems
 
     # Concatenate collected tensors
@@ -898,24 +1373,88 @@ def concatenate_states[T: SimState](  # noqa: C901
         # if tensors:
         concatenated[prop] = torch.cat(tensors, dim=0)
 
+    # Get padded attributes if defined on the state class
+    padded_attrs = getattr(first_state, "_padded_system_attributes", set())
+
     for prop, tensors in per_system_tensors.items():
         # if tensors:
         if isinstance(tensors[0], torch.Tensor):
-            concatenated[prop] = torch.cat(tensors, dim=0)
+            # TODO(AG): Is there a clean way to handle this?
+            if prop in padded_attrs:
+                # Pad tensors to max size before concatenating
+                # Detect tensor shape to determine padding strategy
+                first_tensor = tensors[0]
+                ndim = first_tensor.ndim
+
+                if ndim == 3:
+                    # Shape [S, D, D] required for BFGS hessian
+                    # Pad last two dimensions
+                    max_size = max(t.shape[-1] for t in tensors)
+                    padded_tensors = []
+                    for t in tensors:
+                        if t.shape[-1] < max_size:
+                            pad_size = max_size - t.shape[-1]
+                            t = torch.nn.functional.pad(t, (0, pad_size, 0, pad_size))
+                        padded_tensors.append(t)
+                    concatenated[prop] = torch.cat(padded_tensors, dim=0)
+                elif ndim == 4:
+                    # Shape [S, H, M, 3] required for L-BFGS history
+                    # Pad dimension 2 (M) to max, and dimension 1 (H) to max
+                    max_m = max(t.shape[2] for t in tensors)  # max atoms dim
+                    max_h = max(t.shape[1] for t in tensors)  # max history dim
+                    padded_tensors = []
+                    for t in tensors:
+                        s_dim, h_dim, m_dim, last_dim = t.shape
+                        if h_dim == 0:
+                            # Special case: empty history, just create new shape
+                            t = torch.zeros(
+                                (s_dim, max_h, max_m, last_dim),
+                                device=t.device,
+                                dtype=t.dtype,
+                            )
+                        elif m_dim < max_m or h_dim < max_h:
+                            pad_m = max_m - m_dim
+                            pad_h = max_h - h_dim
+                            # For [S, H, M, 3]: pad M (dim 2) and H (dim 1)
+                            t = torch.nn.functional.pad(t, (0, 0, 0, pad_m, 0, pad_h))
+                        padded_tensors.append(t)
+                    concatenated[prop] = torch.cat(padded_tensors, dim=0)
+                else:
+                    # Unknown shape, just concatenate without padding
+                    concatenated[prop] = torch.cat(tensors, dim=0)
+            else:
+                concatenated[prop] = torch.cat(tensors, dim=0)
         else:  # Non-tensor attributes, take first one (they should all be identical)
             concatenated[prop] = tensors[0]
 
     # Concatenate system indices
     concatenated["system_idx"] = torch.cat(new_system_indices)
 
+    # Concatenate extras
+    concatenated["_system_extras"] = {
+        key: torch.cat(tensors, dim=0) for key, tensors in system_extras_tensors.items()
+    }
+    concatenated["_atom_extras"] = {
+        key: torch.cat(tensors, dim=0) for key, tensors in atom_extras_tensors.items()
+    }
+
+    # Merge constraints
+    constraint_lists = [state.constraints for state in states]
+    num_systems_per_state = [state.n_systems for state in states]
+    constraints = merge_constraints(
+        constraint_lists,
+        torch.tensor(num_atoms_per_state, device=target_device),
+        torch.tensor(num_systems_per_state, device=target_device),
+    )
+
     # Create a new instance of the same class
-    return state_class(**concatenated)
+    return state_class(**concatenated, _constraints=constraints)
 
 
 def initialize_state(
     system: StateLike,
-    device: torch.device,
-    dtype: torch.dtype,
+    device: torch.device | None = None,
+    dtype: torch.dtype | None = None,
 ) -> SimState:
     """Initialize state tensors from a atomistic system representation.
 
@@ -940,12 +1479,7 @@ def initialize_state(
         return system.clone().to(device, dtype)
 
     if isinstance(system, list | tuple) and all(isinstance(s, SimState) for s in system):
-        if not all(state.n_systems == 1 for state in system):
-            raise ValueError(
-                "When providing a list of states, to the initialize_state function, "
-                "all states must have n_systems == 1. To fix this, you can split the "
-                "states into individual states with the split_state function."
-            )
+        system: list[SimState] = typing.cast("list[SimState]", system)
         return ts.concatenate_states(system)
 
     converters = [

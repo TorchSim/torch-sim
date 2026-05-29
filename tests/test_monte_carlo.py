@@ -51,6 +51,7 @@ def test_generate_swaps(batched_diverse_state: ts.SimState, *, use_generator: bo
 
     # System consistency
     system_idx = batched_diverse_state.system_idx
+    assert system_idx is not None
     assert torch.all(system_idx[swaps[:, 0]] == system_idx[swaps[:, 1]])
 
     # Different atomic numbers
@@ -90,6 +91,7 @@ def test_swaps_to_permutation(batched_diverse_state: ts.SimState, *, n_swaps: in
 
     # Test permutation preserves system assignments
     original_system = batched_diverse_state.system_idx
+    assert original_system is not None
     assert torch.all(original_system == original_system[permutation])
 
 
@@ -178,6 +180,8 @@ def test_monte_carlo_integration(
         assert isinstance(mc_state, SwapMCState)
 
     # Verify conservation properties
+    assert mc_state.system_idx is not None
+    assert batched_diverse_state.system_idx is not None
     assert torch.all(mc_state.system_idx == batched_diverse_state.system_idx)
     for sys_idx in torch.unique(mc_state.system_idx):
         orig_mask = batched_diverse_state.system_idx == sys_idx
@@ -185,6 +189,26 @@ def test_monte_carlo_integration(
         orig_counts = torch.bincount(batched_diverse_state.atomic_numbers[orig_mask])
         result_counts = torch.bincount(mc_state.atomic_numbers[result_mask])
         assert torch.all(orig_counts == result_counts)
+
+
+def test_swap_mc_state_default_last_permutation(
+    batched_diverse_state: ts.SimState,
+) -> None:
+    """Test that SwapMCState initializes last_permutation to identity if not provided."""
+    from torch_sim.monte_carlo import SwapMCState
+
+    state = SwapMCState(
+        positions=batched_diverse_state.positions,
+        masses=batched_diverse_state.masses,
+        cell=batched_diverse_state.cell,
+        pbc=batched_diverse_state.pbc,
+        atomic_numbers=batched_diverse_state.atomic_numbers,
+        system_idx=batched_diverse_state.system_idx,
+        energy=torch.zeros(batched_diverse_state.n_systems),
+    )
+    assert state.last_permutation is not None
+    expected_identity = torch.arange(batched_diverse_state.n_atoms, device=DEVICE)
+    assert torch.equal(state.last_permutation, expected_identity)
 
 
 def test_swap_mc_state_attributes():
@@ -200,3 +224,43 @@ def test_swap_mc_state_attributes():
     parent_system_attrs = SimState._system_attributes  # noqa: SLF001
     assert atom_attrs >= parent_atom_attrs
     assert system_attrs >= parent_system_attrs
+
+
+def test_generate_swaps_ragged_systems():
+    """
+    Test that generate_swaps works with multiple systems with different atom counts.
+
+    This ensures that we are properly calculating the system_starts for each system.
+    """
+    s1 = Structure(torch.eye(3), ["H", "He"], [[0, 0, 0], [0.5, 0.5, 0.5]])
+    # use more elements for the second system so there's a higher chance that the swap
+    # chooses an atom from the second system - and when we the actual index of that
+    # atom in the SimState, we get an out-of-bounds index if we improperly
+    # calculate the system_starts.
+    s2 = Structure(
+        torch.eye(3),
+        ["Li", "Be", "B", "C", "N"],
+        [[0, 0, 0], [0.1, 0.1, 0.1], [0.2, 0.2, 0.2], [0.3, 0.3, 0.3], [0.4, 0.4, 0.4]],
+    )
+
+    # Combine into a single batched state
+    ragged_state = ts.io.structures_to_state([s1, s2], device=DEVICE, dtype=torch.float64)
+
+    rng = torch.Generator(device=DEVICE)
+    _ = rng.manual_seed(42)
+
+    # Run multiple times to ensure the RNG hits the out-of-bounds indices
+    for _ in range(10):
+        swaps = generate_swaps(ragged_state, rng=rng)
+
+        # Check that indices are within bounds
+        assert torch.all(swaps < ragged_state.n_atoms), (
+            f"Swap indices {swaps.max()} exceed total n_atoms {ragged_state.n_atoms}"
+        )
+
+        # Check that swapped atoms belong to the same system
+        sys_idx = ragged_state.system_idx
+        sys_0 = sys_idx[swaps[:, 0]]
+        sys_1 = sys_idx[swaps[:, 1]]
+
+        assert torch.all(sys_0 == sys_1), "Proposed swap crosses system boundaries!"

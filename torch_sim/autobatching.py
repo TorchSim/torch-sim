@@ -20,6 +20,7 @@ Notes:
     model architectures and GPU configurations.
 """
 
+import logging
 from collections.abc import Callable, Iterator, Sequence
 from itertools import chain
 from typing import Any, get_args
@@ -28,21 +29,23 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
+from torch_sim.neighbors import torchsim_nl
 from torch_sim.state import SimState
 from torch_sim.typing import MemoryScaling
 
 
-def to_constant_volume_bins[  # noqa: C901, PLR0915
-    T: dict[int, float] | list[float] | list[tuple[T, ...]]
-](
-    items: T,
+logger = logging.getLogger(__name__)
+
+
+def to_constant_volume_bins(  # noqa: C901
+    items: dict[int, float] | list[Any],
     max_volume: float,
     *,
     weight_pos: int | None = None,
-    key: Callable[[T], float] | None = None,
+    key: Callable[[Any], float] | None = None,
     lower_bound: float | None = None,
     upper_bound: float | None = None,
-) -> list[T]:
+) -> list[Any]:
     """Distribute items into bins of fixed maximum volume.
 
     Groups items into the minimum number of bins possible while ensuring each bin's
@@ -54,8 +57,9 @@ def to_constant_volume_bins[  # noqa: C901, PLR0915
     Args:
         items (dict[int, float] | list[float] | list[tuple]): Items to distribute,
             provided as either:
-            - Dictionary with numeric weights as values
-            - List of numeric weights
+            - Dictionary with numeric weights as values: maps system_idx -> weight
+            - List of numeric weights. Useful when you care about how many bins
+              are needed since the index isn't tracked.
             - List of tuples containing weights (requires weight_pos or key)
         max_volume (float): Maximum allowed weight sum per bin.
         weight_pos (int | None): For tuple lists, index of weight in each tuple.
@@ -75,128 +79,63 @@ def to_constant_volume_bins[  # noqa: C901, PLR0915
             - List of lists of tuples if input was a list of tuples
 
     Raises:
-        TypeError: If input is not iterable.
         ValueError: If weight_pos or key is not provided for tuple list input,
             or if lower_bound >= upper_bound.
     """
-
-    def _get_bins(lst: list[float], ndx: list[int]) -> list[float]:
-        return [lst[n] for n in ndx]
-
-    def _argmax_bins(lst: list[float]) -> int:
-        return max(range(len(lst)), key=lst.__getitem__)
-
-    def _rev_argsort_bins(lst: list[float]) -> list[int]:
-        return sorted(range(len(lst)), key=lambda i: -lst[i])
-
-    if not hasattr(items, "__len__"):
-        raise TypeError("d must be iterable")
-
-    if not isinstance(items, dict) and hasattr(items[0], "__len__"):
-        if weight_pos is not None:
-            key = lambda x: x[weight_pos]  # noqa: E731
-        if key is None:
-            raise ValueError("Must provide weight_pos or key for tuple list")
-
-    if not isinstance(items, dict) and key:
-        new_dict = dict(enumerate(items))
-        items = {idx: key(val) for idx, val in enumerate(items)}  # type: ignore[invalid-assignment]
-        is_tuple_list = True
-    else:
-        is_tuple_list = False
-
-    if isinstance(items, dict):
-        # get keys and values (weights)
-        keys_vals = items.items()
-        keys = [k for k, v in keys_vals]
-        vals = [v for k, v in keys_vals]
-
-        # sort weights decreasingly
-        n_dcs = _rev_argsort_bins(vals)
-
-        weights = _get_bins(vals, n_dcs)
-        keys = _get_bins(keys, n_dcs)
-
-        bins = [{}]
-    else:
-        weights = sorted(items, key=lambda x: -x)
-        bins = [[]]
-
-    # find the valid indices
-    if lower_bound is not None and upper_bound is not None and lower_bound < upper_bound:
-        valid_ndcs = filter(
-            lambda i: lower_bound < weights[i] < upper_bound, range(len(weights))
-        )
-    elif lower_bound is not None:
-        valid_ndcs = filter(lambda i: lower_bound < weights[i], range(len(weights)))
-    elif upper_bound is not None:
-        valid_ndcs = filter(lambda i: weights[i] < upper_bound, range(len(weights)))
-    elif lower_bound is None and upper_bound is None:
-        valid_ndcs = range(len(weights))
-    elif lower_bound >= upper_bound:
+    if lower_bound is not None and upper_bound is not None and lower_bound >= upper_bound:
         raise ValueError("lower_bound is greater or equal to upper_bound")
 
-    valid_ndcs = list(valid_ndcs)
+    if not hasattr(items, "__len__"):
+        raise TypeError("items must be iterable")
+    if len(items) == 0:
+        return []
 
-    weights = _get_bins(weights, valid_ndcs)
+    # Normalize input to (weight, payload) entries. The payload is whatever gets
+    # placed in the output bin: the dict key, the original tuple, or the weight.
+    is_dict = isinstance(items, dict)
+    if is_dict:
+        entries = [(weight, k) for k, weight in items.items()]
+    # list of objects: dispatch on how to extract the weight from each item
+    elif weight_pos is not None:
+        # weight lives at a fixed tuple/list position; payload is the original item
+        entries = [(item[weight_pos], item) for item in items]
+    elif key is not None:
+        # custom extractor for arbitrary item types; payload is the original item
+        entries = [(key(item), item) for item in items]
+    elif isinstance(items[0], (tuple, list)):
+        # structured items but caller didn't say how to extract a weight
+        raise ValueError("Must provide weight_pos or key for tuple list")
+    else:
+        # plain numeric weights; the item is its own payload
+        entries = [(weight, weight) for weight in items]
 
-    if isinstance(items, dict):
-        keys = _get_bins(keys, valid_ndcs)
+    if lower_bound is not None:
+        entries = [e for e in entries if e[0] > lower_bound]
+    if upper_bound is not None:
+        entries = [e for e in entries if e[0] < upper_bound]
 
-    # prepare array containing the current weight of the bins
-    weight_sum = [0.0]
+    # Pack heaviest first, opening a new bin only when nothing fits.
+    entries.sort(key=lambda e: -e[0])
+    bin_entries: list[list[tuple[float, Any]]] = []
+    bin_sums: list[float] = []
+    for weight, payload in entries:
+        # get all bin indices that can fit this payload
+        candidate_bin_indices = [
+            i for i, s in enumerate(bin_sums) if s + weight <= max_volume
+        ]
+        if candidate_bin_indices:
+            # get the idx of the most-full bin that has enough space
+            b = max(candidate_bin_indices, key=lambda i: bin_sums[i])
+        else:  # no bin has enough space. Create a new bin
+            b = len(bin_sums)
+            bin_entries.append([])
+            bin_sums.append(0.0)
+        bin_entries[b].append((weight, payload))
+        bin_sums[b] += weight
 
-    # iterate through the weight list, starting with heaviest
-    for item, weight in enumerate(weights):
-        if isinstance(items, dict):
-            key = keys[item]
-
-        # find candidate bins where the weight might fit
-        candidate_bins = list(
-            filter(lambda i: weight_sum[i] + weight <= max_volume, range(len(weight_sum)))
-        )
-
-        # if there are candidates where it fits
-        if len(candidate_bins) > 0:
-            # find the fullest bin where this item fits and assign it
-            candidate_index = _argmax_bins(_get_bins(weight_sum, candidate_bins))
-            b = candidate_bins[candidate_index]
-
-        # if this weight doesn't fit in any existent bin
-        elif item > 0:
-            # note! if this is the very first item then there is already an
-            # empty bin open so we don't need to open another one.
-
-            # open a new bin
-            b = len(weight_sum)
-            weight_sum.append(0.0)
-            if isinstance(items, dict):
-                bins.append({})
-            else:
-                bins.append([])
-
-        # if we are at the very first item, use the empty bin already open
-        else:
-            b = 0
-
-        # put it in
-        if isinstance(items, dict):
-            bins[b][key] = weight
-        else:
-            bins[b].append(weight)
-
-        # increase weight sum of the bin and continue with
-        # next item
-        weight_sum[b] += weight
-
-    if not is_tuple_list:
-        return bins
-    new_bins = []
-    for bin_idx in range(len(bins)):
-        new_bins.append([])
-        for _key in bins[bin_idx]:
-            new_bins[bin_idx].append(new_dict[_key])
-    return new_bins
+    if is_dict:
+        return [{payload: weight for weight, payload in bin_} for bin_ in bin_entries]
+    return [[payload for _, payload in bin_] for bin_ in bin_entries]
 
 
 def measure_model_memory_forward(state: SimState, model: ModelInterface) -> float:
@@ -314,65 +253,141 @@ def determine_max_batch_size(
             # Check if any of the OOM error messages match
             for msg in oom_error_message:
                 if msg in exc_str:
-                    return sizes[max(0, sys_idx - 2)]
+                    safe_size = sizes[max(0, sys_idx - 2)]
+                    logger.debug(
+                        "OOM at %d systems (%d atoms), returning safe batch size %d",
+                        n_systems,
+                        concat_state.n_atoms,
+                        safe_size,
+                    )
+                    return safe_size
 
-            # No OOM message matched - re-raise the error
-            raise
+                # No OOM message matched - re-raise the error
+                raise
 
     return sizes[-1]
 
 
-def calculate_memory_scaler(
+def _n_edges_scalers(state: SimState, cutoff: float) -> list[float]:
+    """Return per-system edge counts from the neighbor list as memory scalers."""
+    _, system_mapping, _ = torchsim_nl(
+        positions=state.positions,
+        cell=state.cell,
+        pbc=state.pbc,
+        cutoff=cutoff,
+        system_idx=state.system_idx,
+    )
+    return system_mapping.bincount(minlength=state.n_systems).float().tolist()
+
+
+def calculate_memory_scalers(
     state: SimState,
     memory_scales_with: MemoryScaling = "n_atoms_x_density",
-) -> float:
-    """Calculate a metric that estimates memory requirements for a state.
+    cutoff: float = 6.0,
+) -> list[float]:
+    """Calculate a metric that estimates memory requirements for each system in a state.
 
     Provides different scaling metrics that correlate with memory usage.
     Models with radial neighbor cutoffs generally scale with "n_atoms_x_density",
     while models with a fixed number of neighbors scale with "n_atoms".
+    For molecular systems, "n_edges" gives the most accurate estimate by computing
+    the actual neighbor list edge count using the provided cutoff.
     The choice of metric can significantly impact the accuracy of memory requirement
     estimations for different types of simulation systems.
+
+    Uses vectorized operations for batched periodic states and ``state[i]``
+    indexing for non-periodic systems so no eager split is needed.
 
     Args:
         state (SimState): State to calculate metric for, with shape information
             specific to the SimState instance.
-        memory_scales_with ("n_atoms_x_density" | "n_atoms"): Type of metric
-            to use. "n_atoms" uses only atom count and is suitable for models that
-            have a fixed number of neighbors. "n_atoms_x_density" uses atom count
-            multiplied by number density and is better for models with radial cutoffs
-            Defaults to "n_atoms_x_density".
+        memory_scales_with ("n_atoms_x_density" | "n_atoms" | "n_edges"): Type of
+            metric to use. "n_atoms" uses only atom count and is suitable for models
+            that have a fixed number of neighbors. "n_atoms_x_density" uses atom count
+            multiplied by number density and is better for models with radial cutoffs.
+            "n_edges" computes the actual neighbor list edge count, which is the most
+            accurate metric overall but more expensive to compute than the alternatives;
+            strongly recommended for molecular systems. Defaults to "n_atoms_x_density".
+        cutoff (float): Neighbor list cutoff distance in Angstroms. Only used when
+            memory_scales_with="n_edges". Should match the model's cutoff for best
+            accuracy. Defaults to 7.0.
 
     Returns:
-        float: Calculated metric value.
+        list[float]: Calculated metric value for each system.
 
     Raises:
-        ValueError: If state has multiple batches or if an invalid metric type is
-            provided.
+        ValueError: If an invalid metric type is provided.
 
     Example::
 
         # Calculate memory scaling factor based on atom count
-        metric = calculate_memory_scaler(state, memory_scales_with="n_atoms")
+        metrics = calculate_memory_scalers(state, memory_scales_with="n_atoms")
 
         # Calculate memory scaling factor based on atom count and density
-        metric = calculate_memory_scaler(state, memory_scales_with="n_atoms_x_density")
+        metrics = calculate_memory_scalers(state, memory_scales_with="n_atoms_x_density")
+
+        # Calculate memory scaling factor based on actual neighbor list edge count
+        metrics = calculate_memory_scalers(
+            state, memory_scales_with="n_edges", cutoff=5.0
+        )
     """
-    if state.n_systems > 1:
-        return sum(calculate_memory_scaler(s, memory_scales_with) for s in state.split())
     if memory_scales_with == "n_atoms":
-        return state.n_atoms
+        return state.n_atoms_per_system.tolist()
     if memory_scales_with == "n_atoms_x_density":
-        volume = torch.abs(torch.linalg.det(state.cell[0])) / 1000
-        number_density = state.n_atoms / volume.item()
-        return state.n_atoms * number_density
+        pbc_all = (
+            state.pbc.all().item()
+            if torch.is_tensor(state.pbc)
+            else (state.pbc if isinstance(state.pbc, bool) else all(state.pbc))
+        )
+        if state.n_systems > 1 and pbc_all:
+            # Vectorized volume only valid when all axes periodic
+            n_atoms = state.n_atoms_per_system.to(state.volume.dtype)
+            volume = torch.abs(state.volume) / 1000  # A^3 -> nm^3
+            return torch.where(volume > 0, n_atoms * n_atoms / volume, n_atoms).tolist()
+        # per-system path (non-periodic or single system)
+        scalers = []
+        for system_idx in range(state.n_systems):
+            system_state = state[system_idx]
+            system_pbc_all = (
+                system_state.pbc
+                if isinstance(system_state.pbc, bool)
+                else (
+                    all(system_state.pbc)
+                    if isinstance(system_state.pbc, (list, tuple))
+                    else system_state.pbc.all().item()
+                )
+            )
+            if system_pbc_all:
+                volume = torch.abs(torch.linalg.det(system_state.cell[0])) / 1000
+            else:
+                bbox = (
+                    system_state.positions.max(dim=0).values
+                    - system_state.positions.min(dim=0).values
+                )
+                pbc_iter: tuple[bool, ...] | list[bool] = (
+                    (system_state.pbc,) * 3
+                    if isinstance(system_state.pbc, bool)
+                    else (
+                        system_state.pbc.tolist()
+                        if torch.is_tensor(system_state.pbc)
+                        else system_state.pbc
+                    )
+                )
+                for axis_idx, periodic in enumerate(pbc_iter):
+                    if not periodic:
+                        bbox[axis_idx] += 2.0
+                volume = bbox.prod() / 1000
+            scalers.append(system_state.n_atoms * (system_state.n_atoms / volume.item()))
+        return scalers
+    if memory_scales_with == "n_edges":
+        return _n_edges_scalers(state, cutoff)
     raise ValueError(
         f"Invalid metric: {memory_scales_with}, must be one of {get_args(MemoryScaling)}"
     )
 
 
 def estimate_max_memory_scaler(
-    state_list: list[SimState],
+    states: SimState | Sequence[SimState],
     model: ModelInterface,
     metric_values: list[float] | torch.Tensor,
     **kwargs: Any,
@@ -384,12 +399,13 @@ def estimate_max_memory_scaler(
     for both small, dense systems and large, sparse systems.
 
     Args:
+        states (SimState | Sequence[SimState]): Batched state or list of states.
+            Individual systems are accessed via ``states[idx]`` (integer
+            indexing), so only the two extreme states are materialized.
         model (ModelInterface): Model to test with, implementing the ModelInterface
             protocol.
-        state_list (list[SimState]): States to test, each with shape information
-            specific to the SimState instance.
         metric_values (list[float]): Corresponding metric values for each state,
-            as calculated by calculate_memory_scaler().
+            as calculated by calculate_memory_scalers().
         **kwargs: Additional keyword arguments passed to determine_max_batch_size.
 
     Returns:
@@ -398,10 +414,10 @@ def estimate_max_memory_scaler(
     Example::
 
         # Calculate metrics for a set of states
-        metrics = [calculate_memory_scaler(state) for state in states]
+        metrics = calculate_memory_scalers(state, memory_scales_with="n_atoms")
 
         # Estimate maximum safe metric value
-        max_metric = estimate_max_memory_scaler(model, states, metrics)
+        max_metric = estimate_max_memory_scaler(states, model, metrics)
 
     Notes:
         This function tests batch sizes with both the smallest and largest systems
@@ -414,8 +430,8 @@ def estimate_max_memory_scaler(
     min_metric = metric_values.min()
     max_metric = metric_values.max()
 
-    min_state = state_list[metric_values.argmin()]
-    max_state = state_list[metric_values.argmax()]
+    min_state = states[int(metric_values.argmin())]
+    max_state = states[int(metric_values.argmax())]
 
     print(  # noqa: T201
         "Model Memory Estimation: Estimating memory from worst case of "
@@ -448,7 +464,6 @@ class BinningAutoBatcher[T: SimState]:
         memory_scales_with (str): Metric type used for memory estimation.
         max_memory_scaler (float): Maximum memory metric allowed per system.
         max_atoms_to_try (int): Maximum number of atoms to try when estimating memory.
-        state_slices (list[SimState]): Individual states to be batched.
         memory_scalers (list[float]): Memory scaling metrics for each state.
         index_to_scaler (dict): Mapping from state index to its scaling metric.
         index_bins (list[list[int]]): Groups of state indices that can be batched
@@ -473,11 +488,14 @@ class BinningAutoBatcher[T: SimState]:
         ordered_final_states = batcher.restore_original_order(final_states)
     """
 
+    index_bins: list[list[int]]
+
     def __init__(
         self,
         model: ModelInterface,
         *,
         memory_scales_with: MemoryScaling = "n_atoms_x_density",
+        cutoff: float = 6.0,
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         memory_scaling_factor: float = 1.6,
@@ -489,11 +507,16 @@ class BinningAutoBatcher[T: SimState]:
         Args:
             model (ModelInterface): Model to batch for, used to estimate memory
                 requirements.
-            memory_scales_with ("n_atoms" | "n_atoms_x_density"): Metric to use
-                for estimating memory requirements:
+            memory_scales_with ("n_atoms" | "n_atoms_x_density" | "n_edges"): Metric to
+                use for estimating memory requirements:
                 - "n_atoms": Uses only atom count
                 - "n_atoms_x_density": Uses atom count multiplied by number density
+                - "n_edges": Uses actual neighbor list edge count; most accurate overall
+                  but more expensive; strongly recommended for molecular systems
                 Defaults to "n_atoms_x_density".
+            cutoff (float): Neighbor list cutoff in Angstroms. Only used when
+                memory_scales_with="n_edges". Should match the model's cutoff.
+                Defaults to 7.0.
             max_memory_scaler (float | None): Maximum metric value allowed per system. If
                 None, will be automatically estimated. Defaults to None.
             max_atoms_to_try (int): Maximum number of atoms to try when estimating
@@ -511,6 +534,7 @@ class BinningAutoBatcher[T: SimState]:
         self.max_memory_scaler = max_memory_scaler
         self.max_atoms_to_try = max_atoms_to_try
         self.memory_scales_with = memory_scales_with
+        self.cutoff = cutoff
         self.model = model
         self.memory_scaling_factor = memory_scaling_factor
         self.max_memory_padding = max_memory_padding
@@ -548,14 +572,15 @@ class BinningAutoBatcher[T: SimState]:
             This method resets the current state bin index, so any ongoing iteration
             will be restarted when this method is called.
         """
-        self.state_slices = states.split() if isinstance(states, SimState) else states
-        self.memory_scalers = [
-            calculate_memory_scaler(state_slice, self.memory_scales_with)
-            for state_slice in self.state_slices
-        ]
+        batched = (
+            states if isinstance(states, SimState) else ts.concatenate_states(states)
+        )
+        self.memory_scalers = calculate_memory_scalers(
+            batched, self.memory_scales_with, self.cutoff
+        )
         if not self.max_memory_scaler:
             self.max_memory_scaler = estimate_max_memory_scaler(
-                self.state_slices,
+                batched,
                 self.model,
                 self.memory_scalers,
                 max_atoms=self.max_atoms_to_try,
@@ -563,6 +588,7 @@ class BinningAutoBatcher[T: SimState]:
                 oom_error_message=self.oom_error_message,
             )
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
+            logger.debug("Estimated max memory scaler: %.3g", self.max_memory_scaler)
 
         # verify that no systems are too large
         max_metric_value = max(self.memory_scalers)
@@ -576,14 +602,20 @@ class BinningAutoBatcher[T: SimState]:
             )
 
         self.index_to_scaler = dict(enumerate(self.memory_scalers))
-        self.index_bins = to_constant_volume_bins(
+        index_bins = to_constant_volume_bins(
             self.index_to_scaler, max_volume=self.max_memory_scaler
-        )
-        self.batched_states = []
-        for index_bin in self.index_bins:
-            self.batched_states.append([self.state_slices[idx] for idx in index_bin])
+        )  # list[dict[original_index: int, memory_scale:float]]
+        # Convert to list of lists of indices
+        self.index_bins = [list(batch.keys()) for batch in index_bins]
+        self.batched_states = [[batched[index_bin]] for index_bin in self.index_bins]
         self.current_state_bin = 0
 
+        logger.info(
+            "BinningAutoBatcher: %d systems → %d batch(es), max_memory_scaler=%.3g",
+            len(self.memory_scalers),
+            len(self.index_bins),
+            self.max_memory_scaler,
+        )
         return self.max_memory_scaler
 
     def next_batch(self) -> tuple[T | None, list[int]]:
@@ -617,6 +649,17 @@ class BinningAutoBatcher[T: SimState]:
                 else []
             )
             self.current_state_bin += 1
+            remaining = len(self.batched_states) - self.current_state_bin
+            logger.info(
+                (
+                    "BinningAutoBatcher: returning batch %d/%d with %d system(s), "
+                    "%d batch(es) remaining"
+                ),
+                self.current_state_bin,
+                len(self.batched_states),
+                state.n_systems,
+                remaining,
+            )
             return state, indices
         return None, []
 
@@ -682,10 +725,8 @@ class BinningAutoBatcher[T: SimState]:
             ordered_results = batcher.restore_original_order(results)
 
         """
-        state_bins = [state.split() for state in batched_states]
-
-        # Flatten lists
-        all_states = list(chain.from_iterable(state_bins))
+        all_states = [state.split() for state in batched_states]
+        all_states = list(chain.from_iterable(all_states))
         original_indices = list(chain.from_iterable(self.index_bins))
 
         if len(all_states) != len(original_indices):
@@ -719,7 +760,6 @@ class InFlightAutoBatcher[T: SimState]:
         max_memory_scaler (float): Maximum memory metric allowed per system.
         max_atoms_to_try (int): Maximum number of atoms to try when estimating memory.
         max_iterations (int | None): Maximum number of iterations per state.
-        state_slices (list[SimState]): Individual states to be batched.
         memory_scalers (list[float]): Memory scaling metrics for each state.
         current_idx (list[int]): Indices of states in the current batch.
         completed_idx (list[int]): Indices of states that have been processed.
@@ -758,6 +798,7 @@ class InFlightAutoBatcher[T: SimState]:
         model: ModelInterface,
         *,
         memory_scales_with: MemoryScaling = "n_atoms_x_density",
+        cutoff: float = 6.0,
         max_memory_scaler: float | None = None,
         max_atoms_to_try: int = 500_000,
         memory_scaling_factor: float = 1.6,
@@ -770,11 +811,16 @@ class InFlightAutoBatcher[T: SimState]:
         Args:
             model (ModelInterface): Model to batch for, used to estimate memory
                 requirements.
-            memory_scales_with ("n_atoms" | "n_atoms_x_density"): Metric to use
-                for estimating memory requirements:
+            memory_scales_with ("n_atoms" | "n_atoms_x_density" | "n_edges"): Metric to
+                use for estimating memory requirements:
                 - "n_atoms": Uses only atom count
                 - "n_atoms_x_density": Uses atom count multiplied by number density
+                - "n_edges": Uses actual neighbor list edge count; most accurate overall
+                  but more expensive; strongly recommended for molecular systems
                 Defaults to "n_atoms_x_density".
+            cutoff (float): Neighbor list cutoff in Angstroms. Only used when
+                memory_scales_with="n_edges". Should match the model's cutoff.
+                Defaults to 7.0.
             max_memory_scaler (float | None): Maximum metric value allowed per system.
                 If None, will be automatically estimated. Defaults to None.
             max_atoms_to_try (int): Maximum number of atoms to try when estimating
@@ -794,6 +840,7 @@ class InFlightAutoBatcher[T: SimState]:
         """
         self.model = model
         self.memory_scales_with = memory_scales_with
+        self.cutoff = cutoff
         self.max_memory_scaler = max_memory_scaler or None
         self.max_atoms_to_try = max_atoms_to_try
         self.memory_scaling_factor = memory_scaling_factor
@@ -801,7 +848,7 @@ class InFlightAutoBatcher[T: SimState]:
         self.max_memory_padding = max_memory_padding
         self.oom_error_message = oom_error_message
 
-    def load_states(self, states: Sequence[T] | Iterator[T] | T) -> None:
+    def load_states(self, states: Sequence[T] | Iterator[T] | T) -> float | None:
         """Load new states into the batcher.
 
         Processes the input states, computes memory scaling metrics for each,
@@ -836,10 +883,7 @@ class InFlightAutoBatcher[T: SimState]:
         """
         if isinstance(states, SimState):
             states = states.split()
-        if isinstance(states, list | tuple):
-            states = iter(states)
-
-        self.states_iterator = states
+        self.states_iterator = iter(states)
 
         self.current_scalers = []
         self.current_idx = []
@@ -865,7 +909,9 @@ class InFlightAutoBatcher[T: SimState]:
         new_idx: list[int] = []
         new_states: list[T] = []
         for state in self.states_iterator:
-            metric = calculate_memory_scaler(state, self.memory_scales_with)
+            metric = calculate_memory_scalers(
+                state, self.memory_scales_with, self.cutoff
+            )[0]
             if metric > self.max_memory_scaler:
                 raise ValueError(
                     f"State {metric=} is greater than max_metric {self.max_memory_scaler}"
@@ -921,7 +967,7 @@ class InFlightAutoBatcher[T: SimState]:
         # we need to sample a state and use it to estimate the max metric
         # for the first batch
         first_state = next(self.states_iterator)
-        first_metric = calculate_memory_scaler(first_state, self.memory_scales_with)
+        first_metric = calculate_memory_scalers(first_state, self.memory_scales_with)[0]
         self.current_scalers += [first_metric]
         self.current_idx += [0]
         self.iteration_count.append(0)  # Initialize attempt counter for first state
@@ -940,10 +986,11 @@ class InFlightAutoBatcher[T: SimState]:
             self.max_memory_scaler = n_systems * first_metric * 0.8
 
         states = self._get_next_states()
+        all_states = [first_state, *states]
 
         if not has_max_metric:
             self.max_memory_scaler = estimate_max_memory_scaler(
-                [first_state, *states],
+                all_states,
                 self.model,
                 self.current_scalers,
                 max_atoms=self.max_atoms_to_try,
@@ -952,12 +999,21 @@ class InFlightAutoBatcher[T: SimState]:
             )
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
             newer_states = self._get_next_states()
-            states = [*states, *newer_states]
-        return ts.concatenate_states([first_state, *states])
+            all_states.extend(newer_states)
+            logger.debug(
+                "InFlightAutoBatcher: estimated max_memory_scaler=%.3g",
+                self.max_memory_scaler,
+            )
+
+        logger.info(
+            "InFlightAutoBatcher: starting with %d system(s) in first batch",
+            len(all_states),
+        )
+        return ts.concatenate_states(all_states)
 
     def next_batch(  # noqa: C901
         self, updated_state: T | None, convergence_tensor: torch.Tensor | None
-    ) -> tuple[T, list[T]]:
+    ) -> tuple[T | None, list[T]]:
         """Get the next batch of states based on convergence.
 
         Removes converged states from the batch, adds new states if possible,
@@ -1044,9 +1100,15 @@ class InFlightAutoBatcher[T: SimState]:
         self._delete_old_states(completed_idx)
         next_states = self._get_next_states()
 
+        logger.info(
+            "InFlightAutoBatcher: %d state(s) completed, %d state(s) remaining in batch",
+            len(completed_states),
+            len(self.current_idx),
+        )
+
         # there are no states left to run, return the completed states
         if not self.current_idx:
-            return None, completed_states  # type: ignore[invalid-return-type]
+            return None, completed_states
 
         # concatenate remaining state with next states
         if updated_state.n_systems > 0:

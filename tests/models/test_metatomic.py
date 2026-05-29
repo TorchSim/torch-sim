@@ -1,48 +1,54 @@
+from __future__ import annotations
+
 import traceback
+from typing import TYPE_CHECKING
 
 import pytest
 import torch
 
 from tests.conftest import DEVICE
 from tests.models.conftest import (
-    consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
+from torch_sim.testing import SIMSTATE_GENERATORS, ModelTolerance
 
+
+if TYPE_CHECKING:
+    from metatomic.torch import AtomisticModel
 
 try:
-    from metatomic.torch import ase_calculator
-    from metatrain.utils.io import load_model
+    from metatomic_ase import MetatomicCalculator
+    from upet import get_upet
 
     from torch_sim.models.metatomic import MetatomicModel
+
+    _IMPORT_ERROR: str | None = None
 except ImportError:
-    pytest.skip(
-        f"metatomic not installed: {traceback.format_exc()}", allow_module_level=True
-    )
+    _IMPORT_ERROR = traceback.format_exc()
+
+pytestmark = pytest.mark.skipif(
+    _IMPORT_ERROR is not None, reason=f"metatomic not installed: {_IMPORT_ERROR}"
+)
 
 
 @pytest.fixture
-def metatomic_calculator():
-    """Load a pretrained metatomic model for testing."""
-    model_url = "https://huggingface.co/lab-cosmo/pet-mad/resolve/v1.1.0/models/pet-mad-v1.1.0.ckpt"
-    return ase_calculator.MetatomicCalculator(
-        model=load_model(model_url).export(), device=DEVICE
-    )
+def metatomic_module() -> AtomisticModel:
+    return get_upet(model="pet-mad")
 
 
 @pytest.fixture
-def metatomic_model() -> MetatomicModel:
-    """Create an MetatomicModel wrapper for the pretrained model."""
-    return MetatomicModel(model="pet-mad", device=DEVICE)
+def metatomic_calculator(metatomic_module: AtomisticModel) -> MetatomicCalculator:
+    return MetatomicCalculator(model=metatomic_module, device=DEVICE)
+
+
+@pytest.fixture
+def metatomic_model(metatomic_module: AtomisticModel) -> MetatomicModel:
+    return MetatomicModel(model=metatomic_module, device=DEVICE)
 
 
 def test_metatomic_initialization() -> None:
-    """Test that the metatomic model initializes correctly."""
-    model = MetatomicModel(
-        model="pet-mad",
-        device=DEVICE,
-    )
+    model = MetatomicModel(model=get_upet(model="pet-mad"), device=DEVICE)
     assert model.device == DEVICE
     assert model.dtype == torch.float32
 
@@ -51,8 +57,8 @@ test_metatomic_consistency = make_model_calculator_consistency_test(
     test_name="metatomic",
     model_fixture_name="metatomic_model",
     calculator_fixture_name="metatomic_calculator",
-    sim_state_names=consistency_test_simstate_fixtures,
-    energy_atol=5e-5,
+    sim_state_names=tuple(SIMSTATE_GENERATORS.keys()),
+    energy_atol=ModelTolerance.LOOSE,
     dtype=torch.float32,
     device=DEVICE,
 )

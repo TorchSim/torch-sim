@@ -1,6 +1,8 @@
 # %%
 # /// script
-# dependencies = ["mace-torch>=0.3.12"]
+# dependencies = [
+#     "torch_sim_atomistic[mace, io]"
+# ]
 # ///
 
 
@@ -60,14 +62,15 @@ Then we can initialize the MaceModel class with the raw model.
 
 # %%
 from mace.calculators.foundations_models import mace_mp
-from torch_sim.models.mace import MaceModel, MaceUrls
+from torch_sim.models.mace import MaceModel
+
 
 # load mace_mp using the mace package
 loaded_model = mace_mp(
-    model=MaceUrls.mace_mpa_medium,
+    model="medium",
     return_raw_model=True,
     default_dtype=str(dtype).removeprefix("torch."),
-    device=device,
+    device=str(device),
 )
 
 # wrap the mace_mp model in the MaceModel class
@@ -209,7 +212,7 @@ initial_kT = kT
 for step in range(30):
     current_kT = initial_kT * (1 + step / 30)
     state = ts.nvt_langevin_step(
-        model=model, state=state, dt=dt, kT=current_kT, gamma=gamma
+        state=state, model=model, dt=dt, kT=current_kT, gamma=gamma
     )
     if step % 5 == 0:
         temp_E_units = ts.calc_kT(

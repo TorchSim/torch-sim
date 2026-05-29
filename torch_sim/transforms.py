@@ -5,12 +5,12 @@ boundary conditions in molecular simulations, including matrix inversions and
 general PBC wrapping.
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from functools import wraps
 
 import torch
+from torch.nn.utils.rnn import pad_sequence
 from torch.types import _dtype
-from typing_extensions import deprecated
 
 
 def get_fractional_coordinates(
@@ -111,52 +111,11 @@ def inverse_box(box: torch.Tensor) -> torch.Tensor:
     raise ValueError(f"Box must be either: a scalar, a vector, or a matrix. Found {box}.")
 
 
-@deprecated("Use wrap_positions instead")
-def pbc_wrap_general(
-    positions: torch.Tensor, lattice_vectors: torch.Tensor
-) -> torch.Tensor:
-    """Apply periodic boundary conditions using lattice
-        vector transformation method.
-
-    This implementation follows the general matrix-based approach for
-    periodic boundary conditions in arbitrary triclinic cells:
-    1. Transform positions to fractional coordinates using B = A^(-1)
-    2. Wrap fractional coordinates to [0,1) using modulo
-    3. Transform back to real space using A
-
-    Args:
-        positions (torch.Tensor): Tensor of shape (..., d)
-            containing particle positions in real space.
-        lattice_vectors (torch.Tensor): Tensor of shape (d, d) containing
-            lattice vectors as columns (A matrix in the equations).
-
-    Returns:
-        torch.Tensor: Wrapped positions in real space with same shape as input positions.
-    """
-    # Validate inputs
-    if not torch.is_floating_point(positions) or not torch.is_floating_point(
-        lattice_vectors
-    ):
-        raise TypeError("Positions and lattice vectors must be floating point tensors.")
-
-    if lattice_vectors.ndim != 2 or lattice_vectors.shape[0] != lattice_vectors.shape[1]:
-        raise ValueError("Lattice vectors must be a square matrix.")
-
-    if positions.shape[-1] != lattice_vectors.shape[0]:
-        raise ValueError("Position dimensionality must match lattice vectors.")
-
-    # Transform to fractional coordinates: f = Br
-    frac_coords = positions @ torch.linalg.inv(lattice_vectors).T
-
-    # Wrap to reference cell [0,1) using modulo
-    wrapped_frac = frac_coords % 1.0
-
-    # Transform back to real space: r_row_wrapped = wrapped_f_row @ M_row
-    return wrapped_frac @ lattice_vectors.T
-
-
 def pbc_wrap_batched(
-    positions: torch.Tensor, cell: torch.Tensor, system_idx: torch.Tensor
+    positions: torch.Tensor,
+    cell: torch.Tensor,
+    system_idx: torch.Tensor,
+    pbc: torch.Tensor | bool = True,  # noqa: FBT001, FBT002
 ) -> torch.Tensor:
     """Apply periodic boundary conditions to batched systems.
 
@@ -171,64 +130,106 @@ def pbc_wrap_batched(
             lattice vectors as column vectors.
         system_idx (torch.Tensor): Tensor of shape (n_atoms,) containing system
             indices for each atom.
+        pbc (torch.Tensor | bool): Tensor of shape (3,) containing boolean values
+            indicating whether periodic boundary conditions are applied in each dimension.
+            Can also be a bool. Defaults to True.
 
     Returns:
         torch.Tensor: Wrapped positions in real space with same shape as input positions.
     """
-    # Validate inputs
+    if isinstance(pbc, bool):
+        pbc = torch.tensor([pbc, pbc, pbc], dtype=torch.bool, device=positions.device)
     if not torch.is_floating_point(positions) or not torch.is_floating_point(cell):
         raise TypeError("Positions and lattice vectors must be floating point tensors.")
-
     if positions.shape[-1] != cell.shape[-1]:
         raise ValueError("Position dimensionality must match lattice vectors.")
-
-    # Get unique system indices and counts
     uniq_systems = torch.unique(system_idx)
     n_systems = len(uniq_systems)
-
     if n_systems != cell.shape[0]:
         raise ValueError(
             f"Number of unique systems ({n_systems}) doesn't "
             f"match number of cells ({cell.shape[0]})"
         )
+    pbc_batched = pbc.unsqueeze(0).expand(n_systems, -1)
+    wrapped, _ = pbc_wrap_batched_and_get_lattice_shifts(
+        positions, cell.mT, system_idx, pbc_batched
+    )
+    return wrapped
 
-    # Efficient approach without explicit loops
-    # Get the cell for each atom based on its system index
-    B = torch.linalg.inv(cell)  # Shape: (n_systems, 3, 3)
+
+def pbc_wrap_batched_and_get_lattice_shifts(
+    positions: torch.Tensor,
+    cell: torch.Tensor,
+    system_idx: torch.Tensor,
+    pbc: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Wrap Cartesian positions into the primary cell and return the applied shifts.
+
+    ``cell`` rows are lattice vectors (row-vector convention matching
+    ``compute_cell_shifts`` and the batched neighbor-list APIs). Fractional coordinates
+    use ``cell_col = cell[s].T`` so ``r = f @ cell[s]`` with ``f`` in ``[0, 1)`` on
+    periodic axes. Atoms in non-periodic systems or systems with singular cells are
+    left unchanged.
+
+    Returns ``(wrapped_positions, lattice_shifts)`` where ``lattice_shifts[i]`` is the
+    integer vector ``floor(frac_i)`` on periodic axes (zero elsewhere). The neighbor-list
+    code uses these to correct ``shifts_idx`` so they remain valid for the original
+    (unwrapped) input positions.
+    """
+    cell_T = cell.transpose(1, 2)
+    dets = torch.linalg.det(cell_T)
+    invertible = torch.isfinite(dets) & (dets.abs() > 1e-12)
+    active = pbc.any(dim=1) & invertible
+
+    if not active.any():
+        return positions.clone(), torch.zeros_like(positions, dtype=cell.dtype)
+
+    # Get the inverse cell for each atom based on its system index
+    B = torch.zeros_like(cell)  # Shape: (n_systems, 3, 3)
+    B[active] = torch.linalg.inv(cell_T[active])
     B_per_atom = B[system_idx]  # Shape: (n_atoms, 3, 3)
 
     # Transform to fractional coordinates: f = B·r
     # For each atom, multiply its position by its system's inverse cell matrix
-    frac_coords = torch.bmm(B_per_atom, positions.unsqueeze(2)).squeeze(2)
+    frac = torch.bmm(B_per_atom, positions.unsqueeze(2)).squeeze(2)
 
-    # Wrap to reference cell [0,1) using modulo
-    wrapped_frac = frac_coords % 1.0
+    pbc_per_atom = pbc[system_idx]
+    active_per_atom = active[system_idx].unsqueeze(1)
+    pbc_mask = pbc_per_atom & active_per_atom
+
+    # Wrap to reference cell [0,1) using floor
+    int_shifts = torch.where(pbc_mask, torch.floor(frac), torch.zeros_like(frac))
+    wrapped_frac = frac - int_shifts
 
     # Transform back to real space: r = A·f
-    # Get the cell for each atom based on its system index
-    cell_per_atom = cell[system_idx]  # Shape: (n_atoms, 3, 3)
-
     # For each atom, multiply its wrapped fractional coords by its system's cell matrix
-    return torch.bmm(cell_per_atom, wrapped_frac.unsqueeze(2)).squeeze(2)
+    cell_per_atom = cell_T[system_idx]  # Shape: (n_atoms, 3, 3)
+    wrapped_pos = torch.bmm(cell_per_atom, wrapped_frac.unsqueeze(2)).squeeze(2)
+    out = torch.where(active_per_atom, wrapped_pos, positions)
+    shifts = torch.where(active_per_atom, int_shifts, torch.zeros_like(int_shifts))
+    return out, shifts
 
 
 def minimum_image_displacement(
     *,
     dr: torch.Tensor,
     cell: torch.Tensor | None = None,
-    pbc: bool = True,
+    pbc: torch.Tensor | bool = True,
 ) -> torch.Tensor:
     """Apply minimum image convention to displacement vectors.
 
     Args:
         dr (torch.Tensor): Displacement vectors [N, 3] or [N, N, 3].
         cell (Optional[torch.Tensor]): Unit cell matrix [3, 3].
-        pbc (bool): Whether to apply periodic boundary conditions.
+        pbc (Optional[torch.Tensor]): Boolean tensor of shape (3,) indicating
+            periodic boundary conditions in each dimension.
 
     Returns:
         torch.Tensor: Minimum image displacement vectors with same shape as input.
     """
-    if cell is None or not pbc:
+    if isinstance(pbc, bool):
+        pbc = torch.tensor([pbc] * 3, dtype=torch.bool, device=dr.device)
+    if cell is None or not pbc.any():
         return dr
 
     # Convert to fractional coordinates
@@ -236,7 +237,7 @@ def minimum_image_displacement(
     dr_frac = torch.einsum("ij,...j->...i", cell_inv, dr)
 
     # Apply minimum image convention
-    dr_frac -= torch.round(dr_frac)
+    dr_frac -= torch.where(pbc, torch.round(dr_frac), torch.zeros_like(dr_frac))
 
     # Convert back to cartesian
     return torch.einsum("ij,...j->...i", cell, dr_frac)
@@ -304,7 +305,7 @@ def get_pair_displacements(
     *,
     positions: torch.Tensor,
     cell: torch.Tensor | None = None,
-    pbc: bool = True,
+    pbc: torch.Tensor | bool = True,
     pairs: tuple[torch.Tensor, torch.Tensor] | None = None,
     shifts: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -313,7 +314,8 @@ def get_pair_displacements(
     Args:
         positions (torch.Tensor): Atomic positions [N, 3].
         cell (Optional[torch.Tensor]): Unit cell matrix [3, 3].
-        pbc (bool): Whether to apply periodic boundary conditions.
+        pbc (Optional[torch.Tensor]): Boolean tensor of shape (3,) indicating
+            periodic boundary conditions in each dimension.
         pairs (Optional[Tuple[torch.Tensor, torch.Tensor]]):
             (i, j) indices for specific pairs to compute.
         shifts (Optional[torch.Tensor]): Shift vectors for periodic images [n_pairs, 3].
@@ -323,13 +325,15 @@ def get_pair_displacements(
             - Displacement vectors [n_pairs, 3].
             - Distances [n_pairs].
     """
+    if isinstance(pbc, bool):
+        pbc = torch.tensor([pbc] * 3, dtype=torch.bool, device=positions.device)
     if pairs is None:
         # Create full distance matrix
         ri = positions.unsqueeze(0)  # [1, N, 3]
         rj = positions.unsqueeze(1)  # [N, 1, 3]
         dr = rj - ri  # [N, N, 3]
 
-        if cell is not None and pbc:
+        if cell is not None and pbc.any():
             dr = minimum_image_displacement(dr=dr, cell=cell, pbc=pbc)
 
         # Calculate distances
@@ -345,7 +349,7 @@ def get_pair_displacements(
     i, j = pairs
     dr = positions[j] - positions[i]  # [n_pairs, 3]
 
-    if cell is not None and pbc:
+    if cell is not None and pbc.any():
         if shifts is not None:
             # Apply provided shifts
             dr = dr + torch.einsum("ij,kj->ki", cell, shifts)
@@ -513,7 +517,7 @@ def get_number_of_cell_repeats(
     cell = cell.view((-1, 3, 3))
     pbc = pbc.view((-1, 3))
 
-    has_pbc = pbc.prod(dim=1, dtype=torch.bool)
+    has_pbc = pbc.any(dim=1)
     reciprocal_cell = torch.zeros_like(cell)
     reciprocal_cell[has_pbc, :, :] = torch.linalg.inv(cell[has_pbc, :, :]).transpose(2, 1)
     inv_distances = reciprocal_cell.norm(2, dim=-1)
@@ -539,9 +543,10 @@ def get_cell_shift_idx(num_repeats: torch.Tensor, dtype: _dtype) -> torch.Tensor
     """
     reps = []
     for ii in range(3):
+        n_rep = int(num_repeats[ii].item())
         r1 = torch.arange(
-            -num_repeats[ii],
-            num_repeats[ii] + 1,
+            -n_rep,
+            n_rep + 1,
             device=num_repeats.device,
             dtype=dtype,
         )
@@ -619,52 +624,53 @@ def compute_cell_shifts(
     return cell_shifts
 
 
-def get_fully_connected_mapping(
-    *,
-    i_ids: torch.Tensor,
-    shifts_idx: torch.Tensor,
-    self_interaction: bool,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Generate a fully connected mapping of atom indices with optional cell shifts.
+def _calculate_n2_lattice_shifts(
+    cell: torch.Tensor,
+    pbc: torch.Tensor,
+    cutoff: float,
+) -> torch.Tensor:
+    """Compute the superset of integer lattice shift vectors needed across all systems.
 
-    This function computes a mapping of atom indices for a fully connected graph,
-    considering periodic boundary conditions through cell shifts. It can also exclude
-    self-interactions based on the provided flag.
+    For periodic axes, computes the number of images needed based on
+    face-to-face distances. Non-periodic axes get zero repeats.
 
     Args:
-        i_ids (torch.Tensor): A tensor of shape (n_atoms,)
-            containing the indices of the atoms.
-        shifts_idx (torch.Tensor): A tensor of shape (n_shifts, 3)
-            representing the shifts to apply for periodic boundary
-            conditions.
-        self_interaction (bool): A flag indicating whether to include
-            self-interactions in the mapping.
+        cell: Cell matrices [n_systems, 3, 3].
+        pbc: PBC flags [n_systems, 3].
+        cutoff: Cutoff radius.
 
     Returns:
-        tuple[torch.Tensor, torch.Tensor]: A tuple containing:
-            - mapping (torch.Tensor): A tensor of shape (n_pairs, 2)
-                representing the pairs of indices for which distances
-                will be computed.
-            - shifts_idx (torch.Tensor): A tensor of shape (n_pairs, 3)
-                representing the corresponding shifts for the computed pairs.
+        Integer lattice shift vectors [n_shifts, 3].
     """
-    n_atom = i_ids.shape[0]
-    n_atom2 = n_atom * n_atom
-    n_cell_image = shifts_idx.shape[0]
-    j_ids = torch.repeat_interleave(
-        i_ids, n_cell_image, dim=0, output_size=n_cell_image * n_atom
-    )
-    mapping = torch.cartesian_prod(i_ids, j_ids)
-    shifts_idx = shifts_idx.repeat((n_atom2, 1))
-    if not self_interaction:
-        mask = torch.ones(mapping.shape[0], dtype=torch.bool, device=i_ids.device)
-        ids = n_cell_image * torch.arange(n_atom, device=i_ids.device) + torch.arange(
-            0, mapping.shape[0], n_atom * n_cell_image, device=i_ids.device
-        )
-        mask[ids] = False
-        mapping = mapping[mask, :]
-        shifts_idx = shifts_idx[mask]
-    return mapping, shifts_idx
+    num_repeats = get_number_of_cell_repeats(cutoff, cell, pbc)  # (n_systems, 3)
+    # take the max across all systems so a single shift set covers everything
+    S_max = num_repeats.max(dim=0).values  # (3,)
+    repeat_x = int(S_max[0].item())
+    repeat_y = int(S_max[1].item())
+    repeat_z = int(S_max[2].item())
+
+    return torch.cartesian_prod(
+        torch.arange(-repeat_x, repeat_x + 1, device=cell.device, dtype=torch.long),
+        torch.arange(-repeat_y, repeat_y + 1, device=cell.device, dtype=torch.long),
+        torch.arange(-repeat_z, repeat_z + 1, device=cell.device, dtype=torch.long),
+    )  # (n_shifts, 3)
+
+
+def _pad_batched_positions(
+    positions: torch.Tensor,
+    n_atoms: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Pad flat per-system positions and return the atom mask and offsets."""
+    device = positions.device
+    n_systems = n_atoms.shape[0]
+    n_max = int(n_atoms.max().item())
+    offsets = torch.zeros(n_systems, dtype=torch.long, device=device)
+    if n_systems > 1:
+        offsets[1:] = torch.cumsum(n_atoms[:-1], dim=0)
+    pos_list = [positions[offsets[i] : offsets[i] + n_atoms[i]] for i in range(n_systems)]
+    batch_positions = pad_sequence(pos_list, batch_first=True, padding_value=0.0)
+    atom_mask = torch.arange(n_max, device=device).unsqueeze(0) < n_atoms.unsqueeze(1)
+    return batch_positions, atom_mask, offsets
 
 
 def build_naive_neighborhood(
@@ -675,21 +681,23 @@ def build_naive_neighborhood(
     n_atoms: torch.Tensor,
     self_interaction: bool,  # noqa: FBT001
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Build a naive neighborhood list for atoms based on positions
-        and periodic boundary conditions.
+    """Build a vectorized O(N^2) neighborhood list for batched atomic systems.
 
-    This function computes a neighborhood list of atoms within a
-    specified cutoff distance, considering periodic boundary conditions
-    defined by the unit cell. It returns the mapping of atom pairs,
-    the system mapping for each structure, and the corresponding shifts.
+    All systems are padded to a common size and processed simultaneously
+    using batched tensor operations. Pairs within the cutoff are returned
+    with global atom indices.
+
+    NOTE: due to the use of `pad_sequence`, this function is best used when
+    all the systems being batched have a similar number of atoms as this
+    reduces the memory overhead of the padding.
 
     Args:
-        positions (torch.Tensor): A tensor of shape (n_atoms, 3)
+        positions (torch.Tensor): A tensor of shape (n_total_atoms, 3)
             representing the positions of atoms.
-        cell (torch.Tensor): A tensor of shape (n_cells, 3, 3)
+        cell (torch.Tensor): A tensor of shape (n_systems, 3, 3)
             representing the unit cell matrices.
-        pbc (torch.Tensor): A tensor indicating whether
-            periodic boundary conditions are applied.
+        pbc (torch.Tensor): A tensor of shape (n_systems, 3) indicating
+            whether periodic boundary conditions are applied.
         cutoff (float): The cutoff distance beyond which atoms are not
             considered neighbors.
         n_atoms (torch.Tensor): A tensor containing the number of atoms
@@ -699,41 +707,83 @@ def build_naive_neighborhood(
 
     Returns:
         tuple[torch.Tensor, torch.Tensor, torch.Tensor]: A tuple containing:
-            - mapping (torch.Tensor): A tensor of shape (n_pairs, 2)
-                representing the pairs of indices for neighboring atoms.
+            - mapping (torch.Tensor): A tensor of shape (2, n_pairs)
+                representing the pairs of global indices for neighboring atoms.
             - system_mapping (torch.Tensor): A tensor of shape (n_pairs,)
                 indicating the structure index for each pair.
             - shifts_idx (torch.Tensor): A tensor of shape (n_pairs, 3)
-                representing the shifts applied for periodic boundary
-                conditions.
+                representing the integer lattice shifts for each pair.
+
+    References:
+        - https://github.com/venkatkapil24/batch_nl: inspired the use of `pad_sequence`
+          to vectorize a previous implementation that used a loop to iterate over systems.
     """
     device = positions.device
     dtype = positions.dtype
 
-    num_repeats_ = get_number_of_cell_repeats(cutoff, cell, pbc)
+    cell = cell.view(-1, 3, 3)
+    pbc = pbc.view(-1, 3).to(torch.bool)
+    batch_positions, batch_mask, offsets = _pad_batched_positions(positions, n_atoms)
 
-    stride = strides_of(n_atoms)
-    ids = torch.arange(positions.shape[0], device=device, dtype=torch.long)
+    # --- compute lattice shifts ---
+    lattice_shifts = _calculate_n2_lattice_shifts(cell, pbc, cutoff)  # (n_shifts, 3)
 
-    mapping, system_mapping, shifts_idx_ = [], [], []
-    for struct_idx in range(n_atoms.shape[0]):
-        num_repeats = num_repeats_[struct_idx]
-        shifts_idx = get_cell_shift_idx(num_repeats, dtype)
-        i_ids = ids[stride[struct_idx] : stride[struct_idx + 1]]
+    # Cartesian shifts per system: (n_systems, n_shifts, 3)
+    cart_shifts = torch.matmul(lattice_shifts.to(dtype), cell)
 
-        s_mapping, shifts_idx = get_fully_connected_mapping(
-            i_ids=i_ids, shifts_idx=shifts_idx, self_interaction=self_interaction
-        )
-        mapping.append(s_mapping)
-        system_mapping.append(
-            torch.full((s_mapping.shape[0],), struct_idx, dtype=torch.long, device=device)
-        )
-        shifts_idx_.append(shifts_idx)
-    return (
-        torch.cat(mapping, dim=0).t(),
-        torch.cat(system_mapping, dim=0),
-        torch.cat(shifts_idx_, dim=0),
+    # shifted positions: (n_systems, n_shifts, n_max, 3)
+    shifted = cart_shifts.unsqueeze(-2) + batch_positions.unsqueeze(1)
+
+    # pairwise distances: (n_systems, n_shifts, n_max, n_max)
+    diff = batch_positions.unsqueeze(1).unsqueeze(3) - shifted.unsqueeze(2)
+    dist = torch.sqrt((diff * diff).sum(dim=-1))
+
+    # --- build criterion mask ---
+    criterion = dist < cutoff
+    if not self_interaction:
+        criterion = criterion & (dist >= 1e-6)
+
+    # mask out shifts along non-periodic axes per system
+    # pbc: (n_systems, 3), lattice_shifts: (n_shifts, 3)
+    # a shift is valid only if non-zero components are along periodic axes
+    # shift_ok: (n_systems, n_shifts) — True if the shift is allowed for that system
+    shift_is_zero = lattice_shifts == 0  # (n_shifts, 3)
+    shift_ok = (shift_is_zero.unsqueeze(0) | pbc.unsqueeze(1)).all(
+        dim=-1
+    )  # (n_systems, n_shifts)
+    criterion = criterion & shift_ok[:, :, None, None]
+
+    # mask out padded atoms
+    pair_mask = (batch_mask.unsqueeze(-2) & batch_mask.unsqueeze(-1)).unsqueeze(
+        1
+    )  # (n_systems, 1, n_max, n_max)
+    criterion = criterion & pair_mask
+
+    # --- extract edges ---
+    config_idx, shift_idx, atom_idx, neighbor_idx = torch.nonzero(
+        criterion,
+        as_tuple=True,
     )
+
+    if config_idx.numel() == 0:
+        mapping = torch.zeros((2, 0), dtype=torch.long, device=device)
+        system_mapping = torch.zeros(0, dtype=torch.long, device=device)
+        shifts_out = torch.zeros((0, 3), dtype=dtype, device=device)
+        return mapping, system_mapping, shifts_out
+
+    # convert local indices to global atom indices
+    mapping = torch.stack(
+        [
+            atom_idx + offsets[config_idx],
+            neighbor_idx + offsets[config_idx],
+        ],
+        dim=0,
+    ).to(torch.long)
+
+    system_mapping = config_idx.to(torch.long)
+    shifts_out = lattice_shifts[shift_idx].to(dtype)
+
+    return mapping, system_mapping, shifts_out
 
 
 def ravel_3d(idx_3d: torch.Tensor, shape: torch.Tensor) -> torch.Tensor:
@@ -746,16 +796,17 @@ def ravel_3d(idx_3d: torch.Tensor, shape: torch.Tensor) -> torch.Tensor:
     elements in a flattened representation.
 
     Args:
-        idx_3d (torch.Tensor): A tensor of shape [-1, 3]
+        idx_3d (torch.Tensor): A tensor of shape [..., 3]
             representing the 3D indices to be converted.
         shape (torch.Tensor): A tensor of shape [3]
             representing the dimensions of the array.
 
     Returns:
-        torch.Tensor: A tensor containing the linear indices
+        torch.Tensor: A tensor of shape [...]
+            containing the linear indices
             corresponding to the input 3D indices.
     """
-    return idx_3d[:, 2] + shape[2] * (idx_3d[:, 1] + shape[1] * idx_3d[:, 0])
+    return idx_3d[..., 2] + shape[2] * (idx_3d[..., 1] + shape[1] * idx_3d[..., 0])
 
 
 def unravel_3d(idx_linear: torch.Tensor, shape: torch.Tensor) -> torch.Tensor:
@@ -766,22 +817,19 @@ def unravel_3d(idx_linear: torch.Tensor, shape: torch.Tensor) -> torch.Tensor:
     The conversion is based on the provided shape of the array.
 
     Args:
-        idx_linear (torch.Tensor): A tensor of shape [-1]
+        idx_linear (torch.Tensor): A tensor of shape [...]
             representing the linear indices to be converted.
         shape (torch.Tensor): A tensor of shape [3]
             representing the dimensions of the array.
 
     Returns:
-        torch.Tensor: A tensor of shape [-1, 3]
+        torch.Tensor: A tensor of shape [..., 3]
             containing the 3D indices corresponding to the input linear indices.
     """
-    idx_3d = idx_linear.new_empty((idx_linear.shape[0], 3))
-    idx_3d[:, 2] = torch.remainder(idx_linear, shape[2])
-    idx_3d[:, 1] = torch.remainder(
-        torch.div(idx_linear, shape[2], rounding_mode="floor"), shape[1]
-    )
-    idx_3d[:, 0] = torch.div(idx_linear, shape[1] * shape[2], rounding_mode="floor")
-    return idx_3d
+    z = torch.remainder(idx_linear, shape[2])
+    y = torch.remainder(torch.div(idx_linear, shape[2], rounding_mode="floor"), shape[1])
+    x = torch.div(idx_linear, shape[1] * shape[2], rounding_mode="floor")
+    return torch.stack([x, y, z], dim=-1)
 
 
 def get_linear_bin_idx(
@@ -1013,7 +1061,7 @@ def linked_cell(  # noqa: PLR0915
     return neigh_atom, neigh_shift_idx
 
 
-def build_linked_cell_neighborhood(
+def build_linked_cell_neighborhood_serial(
     positions: torch.Tensor,
     cell: torch.Tensor,
     pbc: torch.Tensor,
@@ -1066,6 +1114,7 @@ def build_linked_cell_neighborhood(
     stride = strides_of(n_atoms)
 
     mapping, system_mapping, cell_shifts_idx = [], [], []
+    # TODO: can we vectorize this for loop?
     for struct_idx in range(n_structure):
         # Compute the neighborhood with the linked cell algorithm
         neigh_atom, neigh_shift_idx = linked_cell(
@@ -1088,6 +1137,325 @@ def build_linked_cell_neighborhood(
         torch.cat(system_mapping, dim=0),
         torch.cat(cell_shifts_idx, dim=0),
     )
+
+
+def _neighbor_bin_shifts_3d(device: torch.device) -> torch.Tensor:
+    """Return the 27 neighboring 3D bin offsets."""
+    dd = torch.tensor([0, 1, -1], dtype=torch.long, device=device)
+    return torch.cartesian_prod(dd, dd, dd)
+
+
+def _within_bin_position(sorted_bin: torch.Tensor) -> torch.Tensor:
+    """Compute within-bin position for a sorted bin index tensor.
+
+    Given (S, N) of sorted bin indices, returns (S, N) where each element
+    is the 0-based position of that atom within its bin (0 for first atom
+    in the bin, 1 for second, etc.).
+
+    Uses a vectorized segment-cumsum: cumsum of ones, minus the cumulative
+    count at each group boundary broadcast to the group.
+    """
+    S, N = sorted_bin.shape
+    device = sorted_bin.device
+    same = torch.ones(S, N, dtype=torch.long, device=device)
+    same[:, 1:] = (sorted_bin[:, 1:] == sorted_bin[:, :-1]).long()
+    cum = torch.cumsum(same, dim=1)  # (S, N) — running count within each row
+    boundary = same == 0  # True at group starts (except position 0)
+    boundary_val = torch.where(boundary, cum - 1, torch.zeros_like(cum))
+    correction = torch.cummax(boundary_val, dim=1).values
+    return cum - correction - 1
+
+
+def _build_linked_cell_images_batched(
+    batch_pos: torch.Tensor,
+    atom_mask: torch.Tensor,
+    shifts_idx_unique: torch.Tensor,
+    cell: torch.Tensor,
+    pbc: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Build shifted images and validity mask for the batched linked-cell path."""
+    n_structure, n_max = batch_pos.shape[:2]
+    n_shifts = shifts_idx_unique.shape[0]
+    cart_shifts = torch.matmul(
+        shifts_idx_unique.to(batch_pos.dtype), cell
+    )  # (n_systems, n_shifts, 3)
+    shift_ok = ((shifts_idx_unique == 0).unsqueeze(0) | pbc.unsqueeze(1)).all(dim=-1)
+    # `shift_ok` is (n_systems, n_shifts): valid shared lattice shifts per system.
+    # Flatten the (shift, atom) grid into one image axis for later sorting/binning.
+    images_flat = (batch_pos.unsqueeze(1) + cart_shifts.unsqueeze(2)).reshape(
+        n_structure, n_shifts * n_max, 3
+    )  # (n_systems, n_shifts * max_atoms, 3)
+    image_valid = (
+        (atom_mask.unsqueeze(1) & shift_ok.unsqueeze(-1))
+        .expand(-1, n_shifts, -1)
+        .reshape(n_structure, n_shifts * n_max)
+    )  # (n_systems, n_shifts * max_atoms)
+    return cart_shifts, images_flat, image_valid, shift_ok
+
+
+def _bin_linked_cell_images_batched(
+    batch_pos: torch.Tensor,
+    atom_mask: torch.Tensor,
+    images_flat: torch.Tensor,
+    image_valid: torch.Tensor,
+    cart_shifts: torch.Tensor,
+    shift_ok: torch.Tensor,
+    cutoff: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Assign shifted images to bins and build the per-bin image lookup table."""
+    device = batch_pos.device
+    dtype = batch_pos.dtype
+    n_structure = batch_pos.shape[0]
+    n_img = images_flat.shape[1]
+    big_val = torch.finfo(dtype).max / 2
+    pos_for_min = torch.where(
+        atom_mask.unsqueeze(-1), batch_pos, torch.full_like(batch_pos, big_val)
+    )
+    pos_for_max = torch.where(
+        atom_mask.unsqueeze(-1), batch_pos, torch.full_like(batch_pos, -big_val)
+    )
+    shift_for_min = torch.where(
+        shift_ok.unsqueeze(-1), cart_shifts, torch.full_like(cart_shifts, big_val)
+    )
+    shift_for_max = torch.where(
+        shift_ok.unsqueeze(-1), cart_shifts, torch.full_like(cart_shifts, -big_val)
+    )
+    b_min = pos_for_min.min(dim=1).values + shift_for_min.min(dim=1).values
+    b_max = pos_for_max.max(dim=1).values + shift_for_max.max(dim=1).values
+    # Rebuild the same cutoff-sized box construction used in the single-structure path.
+    images_shifted = images_flat - b_min.unsqueeze(1) + 1e-5
+    box_length = b_max - b_min + 1e-3
+    n_bins_s_per_sys = torch.maximum(
+        torch.ceil(box_length / cutoff),
+        torch.ones(n_structure, 3, device=device, dtype=dtype),
+    ).to(torch.long)  # (n_systems, 3)
+    n_bins_s = n_bins_s_per_sys.max(dim=0).values  # (3,)
+    n_bins = int(n_bins_s.prod().item())
+    box_diag_per_sys = n_bins_s_per_sys.to(dtype) * cutoff
+    scaled_pos = images_shifted / box_diag_per_sys.unsqueeze(1)
+    bin_3d = torch.floor(scaled_pos * n_bins_s_per_sys.to(dtype).unsqueeze(1)).to(
+        torch.long
+    )
+    bin_3d = bin_3d.clamp(
+        min=torch.zeros(3, device=device, dtype=torch.long),
+        max=(n_bins_s - 1),
+    )
+    bin_linear = ravel_3d(bin_3d, n_bins_s)  # (n_systems, n_shifts * max_atoms)
+    # Sort-by-bin lets us scatter images into a dense (bin, slot) lookup table.
+    safe_bin = torch.where(image_valid, bin_linear, torch.full_like(bin_linear, n_bins))
+    sorted_bin, sorted_order = torch.sort(safe_bin, dim=1)
+    sorted_valid = image_valid.gather(1, sorted_order)
+    sorted_bin_clamped = torch.where(
+        sorted_valid, sorted_bin, torch.zeros_like(sorted_bin)
+    )
+    within_pos = _within_bin_position(sorted_bin_clamped)
+    within_pos = torch.where(sorted_valid, within_pos, torch.zeros_like(within_pos))
+    counts = torch.zeros(n_structure, n_bins, device=device, dtype=torch.long)
+    counts.scatter_add_(1, sorted_bin_clamped, sorted_valid.long())
+    max_apb = max(int(counts.max().item()), 1)
+    sentinel = n_img
+    bin_id_j = torch.full(
+        (n_structure, n_bins * max_apb + 1), sentinel, dtype=torch.long, device=device
+    )
+    flat_target = sorted_bin_clamped * max_apb + within_pos
+    scatter_mask = sorted_valid & (within_pos < max_apb)
+    trash_idx = n_bins * max_apb
+    safe_target = torch.where(
+        scatter_mask, flat_target, torch.full_like(flat_target, trash_idx)
+    )
+    src_vals = torch.where(
+        scatter_mask, sorted_order, torch.full_like(sorted_order, sentinel)
+    )
+    bin_id_j.scatter_(1, safe_target, src_vals)
+    bin_id_j = bin_id_j[:, : n_bins * max_apb].view(
+        n_structure, n_bins, max_apb
+    )  # (n_systems, n_bins, max_atoms_per_bin)
+    return bin_linear, bin_id_j, n_bins_s
+
+
+def _gather_linked_cell_candidates_batched(
+    bin_linear: torch.Tensor,
+    bin_id_j: torch.Tensor,
+    atom_mask: torch.Tensor,
+    n_bins_s: torch.Tensor,
+    shifts_idx_unique: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, int]:
+    """Gather per-atom candidate neighbor images from surrounding bins."""
+    device = bin_linear.device
+    n_structure, n_max = atom_mask.shape
+    max_apb = bin_id_j.shape[2]
+    sentinel = bin_linear.shape[1]
+    zero_shift_idx = (shifts_idx_unique == 0).all(dim=1).nonzero(as_tuple=True)[0][0]
+    orig_start = int(zero_shift_idx.item()) * n_max
+    bin_index_i = bin_linear[:, orig_start : orig_start + n_max]
+    bin_shifts_27 = _neighbor_bin_shifts_3d(device)
+    n_nb = bin_shifts_27.shape[0]
+    # Each central atom only needs images from its own bin and the 26 adjacent bins.
+    i_bins_3d = unravel_3d(bin_index_i, n_bins_s)
+    neigh_bins_3d = i_bins_3d.unsqueeze(2) + bin_shifts_27.view(
+        1, 1, n_nb, 3
+    )  # (n_systems, max_atoms, 27, 3)
+    neigh_ok = ((neigh_bins_3d >= 0) & (neigh_bins_3d < n_bins_s.view(1, 1, 1, 3))).all(
+        dim=-1
+    ) & atom_mask.unsqueeze(2)
+    neigh_bins_lin = ravel_3d(
+        neigh_bins_3d.clamp(
+            min=torch.zeros(3, device=device, dtype=torch.long),
+            max=(n_bins_s - 1),
+        ),
+        n_bins_s,
+    )
+    gather_idx = (
+        neigh_bins_lin.reshape(n_structure, -1).unsqueeze(-1).expand(-1, -1, max_apb)
+    )  # (n_systems, max_atoms * 27, max_atoms_per_bin)
+    candidates = bin_id_j.gather(1, gather_idx).reshape(
+        n_structure, n_max, n_nb, max_apb
+    )  # (n_systems, max_atoms, 27, max_atoms_per_bin)
+    candidate_valid = neigh_ok.unsqueeze(-1) & (
+        candidates != sentinel
+    )  # (n_systems, max_atoms, 27, max_atoms_per_bin)
+    return (
+        candidates.reshape(n_structure, n_max, n_nb * max_apb),
+        candidate_valid.reshape(n_structure, n_max, n_nb * max_apb),
+        orig_start,
+    )
+
+
+def _finalize_linked_cell_pairs_batched(
+    candidates: torch.Tensor,
+    candidate_valid: torch.Tensor,
+    offsets: torch.Tensor,
+    shifts_idx_unique: torch.Tensor,
+    orig_start: int,
+    *,
+    self_interaction: bool,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Convert candidate image indices into the final neighbor list outputs."""
+    device = candidates.device
+    _, n_max, _ = candidates.shape
+    pair_valid = candidate_valid
+    if not self_interaction:
+        local_image_idx = torch.arange(n_max, device=device).view(1, -1, 1) + orig_start
+        pair_valid = pair_valid & (candidates != local_image_idx)
+    # Compact the valid (system, i, candidate-slot) triples once, then index directly.
+    s_flat, i_flat, k_flat = pair_valid.nonzero(as_tuple=True)
+    j_flat = candidates[s_flat, i_flat, k_flat]
+    j_atom = j_flat % n_max
+    shift_out = shifts_idx_unique[j_flat // n_max]
+    mapping = torch.stack([i_flat + offsets[s_flat], j_atom + offsets[s_flat]], dim=0)
+    sort_idx = torch.argsort(mapping[0])
+    return mapping[:, sort_idx], s_flat[sort_idx], shift_out[sort_idx]
+
+
+def build_linked_cell_neighborhood_batched(
+    positions: torch.Tensor,
+    cell: torch.Tensor,
+    pbc: torch.Tensor,
+    cutoff: float,
+    n_atoms: torch.Tensor,
+    self_interaction: bool = False,  # noqa: FBT001, FBT002
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Fully batched linked-cell neighbor list construction.
+
+    Drop-in replacement for build_linked_cell_neighborhood that processes all
+    structures simultaneously using padded tensors, eliminating Python for-loops
+    over structures. The algorithm mirrors the single-structure ``linked_cell``
+    but operates on all structures at once via padded 3D/4D tensors.
+
+    Args:
+        positions: Flat atomic positions (N_total, 3).
+        cell: Unit cell matrices, broadcastable to (n_structure, 3, 3).
+        pbc: PBC flags, broadcastable to (n_structure, 3).
+        cutoff: Neighbor cutoff distance.
+        n_atoms: Number of atoms per structure (n_structure,).
+        self_interaction: Whether to include self-pairs.
+
+    Returns:
+        (mapping, system_mapping, cell_shifts_idx) — same format as
+        build_linked_cell_neighborhood.
+    """
+    shift_dtype = cell.dtype
+    cell = cell.view(-1, 3, 3)
+    pbc = pbc.view(-1, 3).to(torch.bool)
+    shifts_idx_unique = _calculate_n2_lattice_shifts(cell, pbc, cutoff)
+    batch_pos, atom_mask, offsets = _pad_batched_positions(positions, n_atoms)
+    # Mirror the main linked-cell stages: images -> bins -> candidates -> pairs.
+    cart_shifts, images_flat, image_valid, shift_ok = _build_linked_cell_images_batched(
+        batch_pos, atom_mask, shifts_idx_unique, cell, pbc
+    )
+    bin_linear, bin_id_j, n_bins_s = _bin_linked_cell_images_batched(
+        batch_pos, atom_mask, images_flat, image_valid, cart_shifts, shift_ok, cutoff
+    )
+    candidates, candidate_valid, orig_start = _gather_linked_cell_candidates_batched(
+        bin_linear, bin_id_j, atom_mask, n_bins_s, shifts_idx_unique
+    )
+    mapping, system_mapping, shift_out = _finalize_linked_cell_pairs_batched(
+        candidates,
+        candidate_valid,
+        offsets,
+        shifts_idx_unique,
+        orig_start,
+        self_interaction=self_interaction,
+    )
+    return mapping, system_mapping, shift_out.to(shift_dtype)
+
+
+def build_linked_cell_neighborhood(
+    positions: torch.Tensor,
+    cell: torch.Tensor,
+    pbc: torch.Tensor,
+    cutoff: float,
+    n_atoms: torch.Tensor,
+    self_interaction: bool = False,  # noqa: FBT001, FBT002
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Backward-compatible alias for the batched linked-cell implementation."""
+    if cell.shape[0] == 1:
+        return build_linked_cell_neighborhood_serial(
+            positions,
+            cell,
+            pbc,
+            cutoff,
+            n_atoms,
+            self_interaction,
+        )
+    return build_linked_cell_neighborhood_batched(
+        positions,
+        cell,
+        pbc,
+        cutoff,
+        n_atoms,
+        self_interaction,
+    )
+
+
+def sort_neighbors_for_csr(
+    mapping: torch.Tensor,
+    system_mapping: torch.Tensor,
+    shifts_idx: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Group neighbor-list entries by central atom for CSR kernels."""
+    if mapping.shape[1] == 0:
+        return mapping, system_mapping, shifts_idx
+    original_order = torch.arange(mapping.shape[1], device=mapping.device)
+    order = torch.argsort(mapping[0] * mapping.shape[1] + original_order)
+    return mapping[:, order], system_mapping[order], shifts_idx[order]
+
+
+def build_csr_neighbor_list(
+    mapping: torch.Tensor,
+    system_mapping: torch.Tensor,
+    shifts_idx: torch.Tensor,
+    n_atoms: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Build CSR inputs for kernels that require neighbors grouped by center atom."""
+    mapping, _system_mapping, shifts_idx = sort_neighbors_for_csr(
+        mapping, system_mapping, shifts_idx
+    )
+    neighbor_ptr = torch.zeros(n_atoms + 1, dtype=torch.int32, device=mapping.device)
+    neighbor_ptr[1:] = (
+        torch.bincount(mapping[0], minlength=n_atoms).cumsum(0).to(torch.int32)
+    )
+    return mapping.to(torch.int32), neighbor_ptr, shifts_idx.to(torch.int32)
 
 
 def multiplicative_isotropic_cutoff(
@@ -1152,7 +1520,7 @@ def multiplicative_isotropic_cutoff(
 
 def high_precision_sum(
     x: torch.Tensor,
-    dim: int | Iterable[int] | None = None,
+    dim: int | tuple[int, ...] | list[int] | None = None,
     *,
     keepdim: bool = False,
 ) -> torch.Tensor:
@@ -1184,7 +1552,10 @@ def high_precision_sum(
         high_precision_dtype = torch.int64
 
     # Cast to high precision, sum, and cast back to original dtype
-    return torch.sum(x.to(high_precision_dtype), dim=dim, keepdim=keepdim).to(x.dtype)
+    x_high = x.to(high_precision_dtype)
+    if dim is None:
+        return torch.sum(x_high).to(x.dtype)
+    return torch.sum(x_high, dim=dim, keepdim=keepdim).to(x.dtype)
 
 
 def safe_mask(
@@ -1219,44 +1590,101 @@ def safe_mask(
     return torch.where(mask, fn(masked), torch.full_like(operand, placeholder))
 
 
-def unwrap_positions(pos: torch.Tensor, box: torch.Tensor) -> torch.Tensor:
-    """Unwrap wrapped positions into continuous coordinates.
+def unwrap_positions(
+    positions: torch.Tensor, cells: torch.Tensor, system_idx: torch.Tensor
+) -> torch.Tensor:
+    """Vectorized unwrapping for multiple systems without explicit loops.
 
     Parameters
     ----------
-    pos : (T, N, 3) tensor
-        Wrapped cartesian positions
-    box : (3,3) or (T,3,3) tensor
-        Box matrix (orthorhombic: diagonal; triclinic: full 3x3).
-        If constant, pass shape (3,3). If time-dependent, pass (T,3,3).
+    positions : (T, N_tot, 3)
+        Wrapped cartesian positions for all systems concatenated.
+    cells : (n_systems, 3, 3) or (T, n_systems, 3, 3)
+        Box matrices, constant or time-dependent.
+    system_idx : (N_tot,)
+        For each atom, which system it belongs to (0..n_systems-1).
 
     Returns:
     -------
-    unwrapped_pos : (T, N, 3) tensor
-        Unwrapped cartesian positions
+    unwrapped_pos : (T, N_tot, 3)
+        Unwrapped cartesian positions.
     """
-    box = box.squeeze()
-    if box.ndim == 2:  # constant box
-        inv_box = torch.inverse(box)  # (3,3)
-        frac = torch.matmul(pos, inv_box.T)  # (T,N,3)
-        dfrac = frac[1:] - frac[:-1]  # (T-1,N,3)
-        dfrac_corrected = dfrac - torch.round(dfrac)
-        dcart = torch.matmul(dfrac_corrected, box.T)  # (T-1,N,3)
+    # -- Constant boxes per system
+    if cells.ndim == 3:
+        inv_box = torch.inverse(cells)  # (n_systems, 3, 3)
 
-    elif box.ndim == 3:  # time-dependent box
-        inv_box = torch.inverse(box)  # (T,3,3)
-        # fractional coords: (T,N,3) = (T,3,3) @ (T,N,3)
-        frac = torch.einsum("tij,tnj->tni", inv_box, pos)
-        dfrac = frac[1:] - frac[:-1]  # (T-1,N,3)
-        dfrac_corrected = dfrac - torch.round(dfrac)
-        dcart = torch.einsum("tij,tnj->tni", box[:-1], dfrac_corrected)
+        # Map each atom to its system's box
+        inv_box_atoms = inv_box[system_idx]  # (N, 3, 3)
+        box_atoms = cells[system_idx]  # (N, 3, 3)
+
+        # Compute fractional coordinates
+        frac = torch.einsum("tni,nij->tnj", positions, inv_box_atoms)
+
+        # Fractional displacements and unwrap
+        dfrac = frac[1:] - frac[:-1]
+        dfrac -= torch.round(dfrac)
+
+        # Back to Cartesian
+        dcart = torch.einsum("tni,nij->tnj", dfrac, box_atoms)
+
+    # -- Time-dependent boxes per system
+    elif cells.ndim == 4:
+        inv_box = torch.inverse(cells)  # (T, n_systems, 3, 3)
+
+        # Gather each atom's box per frame efficiently
+        inv_box_atoms = inv_box[:, system_idx]  # (T, N, 3, 3)
+        box_atoms = cells[:, system_idx]  # (T, N, 3, 3)
+
+        # Compute fractional coordinates per frame
+        frac = torch.einsum("tni,tnij->tnj", positions, inv_box_atoms)
+
+        dfrac = frac[1:] - frac[:-1]
+        dfrac -= torch.round(dfrac)
+
+        # Reconstruct unwrapped fractional trajectory
+        unwrapped_frac = torch.empty_like(frac)
+        unwrapped_frac[0] = frac[0]
+        unwrapped_frac[1:] = torch.cumsum(dfrac, dim=0) + frac[0]
+
+        # Convert back to Cartesian using each frame's cell
+        return torch.einsum("tni,tnij->tnj", unwrapped_frac, box_atoms)
 
     else:
-        raise ValueError("box must be shape (3,3) or (T,3,3)")
+        raise ValueError("box must have shape (n_systems,3,3) or (T,n_systems,3,3)")
 
-    # cumulative reconstruction
-    unwrapped = torch.empty_like(pos)
-    unwrapped[0] = pos[0]
+    # Cumulative reconstruction (constant cell path)
+    unwrapped = torch.empty_like(positions)
+    unwrapped[0] = positions[0]
     unwrapped[1:] = torch.cumsum(dcart, dim=0) + unwrapped[0]
 
     return unwrapped
+
+
+def get_centers_of_mass(
+    positions: torch.Tensor,
+    masses: torch.Tensor,
+    system_idx: torch.Tensor,
+    n_systems: int,
+) -> torch.Tensor:
+    """Compute the centers of mass for each structure in the simulation state.s.
+
+    Args:
+        positions (torch.Tensor): Atomic positions of shape (N, 3).
+        masses (torch.Tensor): Atomic masses of shape (N,).
+        system_idx (torch.Tensor): System indices for each atom of shape (N,).
+        n_systems (int): Total number of systems.
+
+    Returns:
+        torch.Tensor: A tensor of shape (n_structures, 3) containing
+            the center of mass coordinates for each structure.
+    """
+    coms = torch.zeros((n_systems, 3), dtype=positions.dtype).scatter_add_(
+        0,
+        system_idx.unsqueeze(-1).expand(-1, 3),
+        masses.unsqueeze(-1) * positions,
+    )
+    system_masses = torch.zeros((n_systems,), dtype=positions.dtype).scatter_add_(
+        0, system_idx, masses
+    )
+    coms /= system_masses.unsqueeze(-1)
+    return coms

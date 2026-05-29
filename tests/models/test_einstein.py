@@ -156,7 +156,7 @@ class TestEinsteinModel:
         )
 
         assert torch.allclose(model.reference_energy, torch.tensor(1.0, dtype=dtype))
-        assert model.frequencies.shape[0] == len(atoms)
+        assert len(model.frequencies) == len(atoms)
 
     def test_periodic_boundary_conditions(
         self, simple_system: tuple[ts.SimState, torch.device, torch.dtype]
@@ -220,7 +220,7 @@ class TestEinsteinModel:
 
         # Create a displaced state with gradients enabled
         test_positions = state.positions.clone() + 0.1
-        test_positions.requires_grad_(requires_grad=True)
+        test_positions.requires_grad = True
 
         test_state = state.clone()
         test_state.positions = test_positions

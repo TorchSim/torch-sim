@@ -7,12 +7,21 @@ import torch
 import torch_sim as ts
 from tests.conftest import DEVICE
 from torch_sim.integrators import MDState
+from torch_sim.integrators.md import NoseHooverChain, NoseHooverChainFns
+from torch_sim.integrators.npt import (
+    NPTLangevinAnisotropicState,
+    NPTNoseHooverIsotropicState,
+)
+from torch_sim.integrators.nvt import NVTNoseHooverState, NVTVRescaleState
+from torch_sim.monte_carlo import SwapMCState
+from torch_sim.optimizers.state import BFGSState, FireState, LBFGSState, OptimState
 from torch_sim.state import (
     DeformGradMixin,
     SimState,
     _normalize_system_indices,
     _pop_states,
     _slice_state,
+    coerce_prng,
     get_attrs_for_scope,
 )
 
@@ -30,7 +39,7 @@ def test_get_attrs_for_scope(si_sim_state: SimState) -> None:
     per_system_attrs = dict(get_attrs_for_scope(si_sim_state, "per-system"))
     assert set(per_system_attrs) == {"cell"}
     global_attrs = dict(get_attrs_for_scope(si_sim_state, "global"))
-    assert set(global_attrs) == {"pbc"}
+    assert set(global_attrs) == {"pbc", "_rng"}
 
 
 def test_all_attributes_must_be_specified_in_scopes() -> None:
@@ -97,6 +106,44 @@ def test_slice_md_substate(si_double_sim_state: SimState) -> None:
         assert substate.momenta.shape == (8, 3)
         assert substate.forces.shape == (8, 3)
         assert substate.energy.shape == (1,)
+
+
+def test_slice_state_permuted_order(
+    si_sim_state: SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
+) -> None:
+    """Slice with [2, 0, 1] should yield [Fe, Si, Ar]."""
+    concatenated = ts.concatenate_states(
+        [si_sim_state, ar_supercell_sim_state, fe_supercell_sim_state]
+    )
+    result = _slice_state(concatenated, [2, 0, 1])
+
+    assert torch.allclose(result[0].positions, fe_supercell_sim_state.positions)
+    assert torch.allclose(result[1].positions, si_sim_state.positions)
+    assert torch.allclose(result[2].positions, ar_supercell_sim_state.positions)
+    assert torch.allclose(result.cell[0], fe_supercell_sim_state.cell[0])
+    assert torch.allclose(result.cell[1], si_sim_state.cell[0])
+    assert torch.allclose(result.cell[2], ar_supercell_sim_state.cell[0])
+
+
+def test_slice_state_reversed_subset(
+    si_sim_state: SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
+) -> None:
+    """Slice with [2, 0] should match concatenate([Fe, Si])."""
+    concatenated = ts.concatenate_states(
+        [si_sim_state, ar_supercell_sim_state, fe_supercell_sim_state]
+    )
+    result = _slice_state(concatenated, [2, 0])
+    expected = ts.concatenate_states([fe_supercell_sim_state, si_sim_state])
+
+    assert torch.allclose(result.positions, expected.positions)
+    assert torch.allclose(result.cell, expected.cell)
+    assert torch.allclose(result.atomic_numbers, expected.atomic_numbers)
+    assert torch.allclose(result.masses, expected.masses)
+    assert result.n_systems == expected.n_systems
 
 
 def test_concatenate_two_si_states(
@@ -304,6 +351,35 @@ def test_initialize_state_from_state(ar_supercell_sim_state: SimState) -> None:
     assert state.cell.shape == ar_supercell_sim_state.cell.shape
 
 
+def test_initialize_state_from_list_of_states_with_multiple_systems(
+    si_double_sim_state: SimState, fe_supercell_sim_state: SimState
+) -> None:
+    """Test initialize_state with list of states that have n_systems > 1."""
+    # This should work now that we've removed the arbitrary n_systems == 1 constraint
+    concatenated = ts.initialize_state([si_double_sim_state, fe_supercell_sim_state])
+
+    # Should have 3 systems total (2 from si_double + 1 from fe)
+    assert concatenated.n_systems == 3
+    assert concatenated.cell.shape[0] == 3
+
+    # Check system indices are correct
+    fe_atoms = fe_supercell_sim_state.n_atoms
+    expected_system_indices = torch.cat(
+        [
+            si_double_sim_state.system_idx,
+            torch.full(
+                (fe_atoms,), 2, dtype=torch.int64, device=fe_supercell_sim_state.device
+            ),
+        ]
+    )
+    assert torch.all(concatenated.system_idx == expected_system_indices)
+
+    # Verify we can slice back to original states
+    assert torch.allclose(concatenated[0].positions, si_double_sim_state[0].positions)
+    assert torch.allclose(concatenated[1].positions, si_double_sim_state[1].positions)
+    assert torch.allclose(concatenated[2].positions, fe_supercell_sim_state.positions)
+
+
 def test_initialize_state_from_atoms(si_atoms: "Atoms") -> None:
     """Test conversion from ASE Atoms to SimState."""
     state = ts.initialize_state([si_atoms], DEVICE, torch.float64)
@@ -320,6 +396,33 @@ def test_initialize_state_from_phonopy_atoms(si_phonopy_atoms: "PhonopyAtoms") -
     assert state.positions.shape == si_phonopy_atoms.positions.shape
     assert state.masses.shape == si_phonopy_atoms.masses.shape
     assert state.cell.shape[1:] == si_phonopy_atoms.cell.shape
+
+
+@pytest.mark.parametrize(
+    ("input_kind", "error_pattern"),
+    [
+        ("empty", "empty list"),
+        ("mixed", "All items in list must be of the same type"),
+    ],
+)
+def test_initialize_state_invalid_inputs_raise(
+    input_kind: str,
+    error_pattern: str,
+    request: pytest.FixtureRequest,
+) -> None:
+    """initialize_state rejects invalid list inputs with clear errors."""
+    if input_kind == "empty":
+        system_input: list = []
+    elif input_kind == "mixed":
+        system_input = [
+            request.getfixturevalue("si_atoms"),
+            request.getfixturevalue("si_structure"),
+        ]
+    else:
+        raise ValueError(f"Unsupported {input_kind=}")
+
+    with pytest.raises(ValueError, match=error_pattern):
+        ts.initialize_state(system_input, DEVICE, torch.float64)
 
 
 def test_state_pop_method(
@@ -650,3 +753,489 @@ def test_state_to_device_no_side_effects(si_sim_state: SimState) -> None:
             "New state doesn't have correct device!"
         )
         assert si_sim_state is not new_state_gpu, "New state is not a different object!"
+
+
+def test_state_set_cell(ti_sim_state: SimState) -> None:
+    """Test the set_cell method of SimState."""
+    new_cell = (
+        torch.diag_embed(
+            torch.tensor(
+                [3.0, 4.0, 5.0], device=ti_sim_state.device, dtype=ti_sim_state.dtype
+            )
+        )
+        @ ti_sim_state.cell
+    )
+    ase_atoms = ti_sim_state.to_atoms()[0]
+    ti_sim_state.set_cell(new_cell, scale_atoms=True)
+    ase_atoms.set_cell(new_cell[0].T.detach().cpu().numpy(), scale_atoms=True)
+    assert torch.allclose(
+        ti_sim_state.positions.cpu(), torch.from_numpy(ase_atoms.positions)
+    )
+
+    M = torch.tensor(
+        [[[1.0, 0.2, 0.0], [0.1, 1.5, 0.0], [0.0, 0.0, 2.0]]],
+        device=DEVICE,
+        dtype=ti_sim_state.dtype,
+    )
+    new_cell = M @ ti_sim_state.cell
+    ase_atoms = ti_sim_state.to_atoms()[0]
+    ti_sim_state.set_cell(new_cell, scale_atoms=True)
+    ase_atoms.set_cell(new_cell[0].T.detach().cpu().numpy(), scale_atoms=True)
+    assert torch.allclose(
+        ti_sim_state.positions.cpu(), torch.from_numpy(ase_atoms.positions)
+    )
+
+
+def test_wrap_positions_no_pbc(si_sim_state: SimState) -> None:
+    """Test wrap_positions returns unwrapped positions when pbc=False."""
+    state = si_sim_state.clone()
+    state.pbc = torch.tensor([False, False, False])
+    # Move some atoms outside the cell
+    state.positions = state.positions + 100.0
+    # With no pbc, wrap_positions should return positions unchanged
+    assert torch.allclose(state.wrap_positions, state.positions)
+
+
+def test_wrap_positions_with_pbc(si_sim_state: SimState) -> None:
+    """Test wrap_positions wraps positions when pbc=True."""
+    state = si_sim_state.clone()
+    state.pbc = torch.tensor([True, True, True])
+    original_positions = state.positions.clone()
+    # Add one lattice vector to move atoms outside
+    lattice_shift = state.row_vector_cell[0, 0]  # first lattice vector
+    state.positions = state.positions + lattice_shift
+    # Wrapped positions should be back to original (within tolerance)
+    wrapped = state.wrap_positions
+    assert torch.allclose(wrapped, original_positions, atol=1e-5)
+
+
+def test_wrap_positions_mixed_pbc(si_sim_state: SimState) -> None:
+    """Test wrap_positions with mixed pbc (True in some dimensions, False in others)."""
+    state = si_sim_state.clone()
+    state.pbc = torch.tensor([True, False, True])  # periodic in x and z, not y
+    original_positions = state.positions.clone()
+    # Shift by lattice vectors in all directions
+    shift_x = state.row_vector_cell[0, 0]  # first lattice vector (x)
+    shift_y = state.row_vector_cell[0, 1]  # second lattice vector (y)
+    shift_z = state.row_vector_cell[0, 2]  # third lattice vector (z)
+    state.positions = state.positions + shift_x + shift_y + shift_z
+    wrapped = state.wrap_positions
+    # x and z should be wrapped back, y should remain shifted
+    expected = original_positions + shift_y
+    assert torch.allclose(wrapped, expected, atol=1e-5)
+
+
+def test_wrap_positions_batched(si_double_sim_state: SimState) -> None:
+    """Test wrap_positions works with batched systems."""
+    state = si_double_sim_state.clone()
+    state.pbc = torch.tensor([True, True, True])
+    original_positions = state.positions.clone()
+    # Shift all positions by one lattice vector (using first system's cell)
+    for sys_idx in range(state.n_systems):
+        mask = state.system_idx == sys_idx
+        lattice_shift = state.row_vector_cell[sys_idx, 0]
+        state.positions[mask] = state.positions[mask] + lattice_shift
+    wrapped = state.wrap_positions
+    assert torch.allclose(wrapped, original_positions, atol=1e-5)
+
+
+# ── rng property tests ──────────────────────────────────────────────────────
+
+
+def test_rng_lazy_init(si_sim_state: SimState) -> None:
+    """rng property creates a Generator on first access when _rng is None."""
+    state = si_sim_state.clone()
+    state.rng = None
+    assert state._rng is None  # noqa: SLF001
+    gen = state.rng
+    assert isinstance(gen, torch.Generator)
+    assert gen.device == state.device
+
+
+def test_rng_int_seed_via_constructor() -> None:
+    """Passing an int _rng to SimState is lazily coerced on first .rng access."""
+    state = SimState(
+        positions=torch.randn(2, 3),
+        masses=torch.ones(2),
+        cell=torch.eye(3).unsqueeze(0),
+        pbc=True,
+        atomic_numbers=torch.ones(2, dtype=torch.int),
+        _rng=42,
+    )
+    assert isinstance(state.rng, torch.Generator)
+
+
+def test_rng_int_seed_via_property(si_sim_state: SimState) -> None:
+    """Setting rng to an int via the property coerces on next access."""
+    state = si_sim_state.clone()
+    state.rng = 123
+    gen = state.rng
+    assert isinstance(gen, torch.Generator)
+
+
+def test_rng_generator_passthrough(si_sim_state: SimState) -> None:
+    """Setting rng to a Generator stores it directly."""
+    state = si_sim_state.clone()
+    gen = torch.Generator(device=state.device)
+    gen.manual_seed(7)
+    state.rng = gen
+    assert state.rng is gen
+
+
+def test_rng_none_resets(si_sim_state: SimState) -> None:
+    """Setting rng = None resets; next access lazily re-initialises."""
+    state = si_sim_state.clone()
+    state.rng = 42
+    first_gen = state.rng
+    state.rng = None
+    second_gen = state.rng
+    assert isinstance(second_gen, torch.Generator)
+    assert second_gen is not first_gen
+
+
+def test_rng_int_seed_reproducible() -> None:
+    """Same int seed produces the same random sequence."""
+
+    def _make_state(seed: int) -> SimState:
+        return SimState(
+            positions=torch.randn(4, 3),
+            masses=torch.ones(4),
+            cell=torch.eye(3).unsqueeze(0),
+            pbc=True,
+            atomic_numbers=torch.ones(4, dtype=torch.int),
+            _rng=seed,
+        )
+
+    s1 = _make_state(99)
+    s2 = _make_state(99)
+    r1 = torch.randn(5, generator=s1.rng)
+    r2 = torch.randn(5, generator=s2.rng)
+    assert torch.equal(r1, r2)
+
+
+def test_rng_clone_independent(si_sim_state: SimState) -> None:
+    """Cloned state has an independent Generator with the same state."""
+    state = si_sim_state.clone()
+    state.rng = 42
+    clone = state.clone()
+
+    assert torch.equal(state.rng.get_state(), clone.rng.get_state())
+    assert clone.rng is not state.rng
+
+    # Drawing from one does not affect the other
+    torch.randn(3, generator=state.rng)
+    assert not torch.equal(state.rng.get_state(), clone.rng.get_state())
+
+
+def test_rng_clone_none_preserved(si_sim_state: SimState) -> None:
+    """Cloning a state with _rng=None keeps it None on the clone."""
+    state = si_sim_state.clone()
+    state.rng = None
+    clone = state.clone()
+    assert clone._rng is None  # noqa: SLF001
+
+
+def test_rng_from_state_mdstate(si_sim_state: SimState) -> None:
+    """MDState.from_state copies the rng from the source SimState."""
+    state = si_sim_state.clone()
+    state.rng = 42
+    original_rng_state = state.rng.get_state().clone()
+
+    md = MDState.from_state(
+        state,
+        momenta=torch.zeros_like(state.positions),
+        energy=torch.zeros(state.n_systems, device=state.device),
+        forces=torch.zeros_like(state.positions),
+    )
+    assert isinstance(md.rng, torch.Generator)
+    assert torch.equal(md.rng.get_state(), original_rng_state)
+    assert md.rng is not state.rng
+
+
+def test_rng_mdstate_inherits_lazy_init() -> None:
+    """MDState without explicit _rng still lazily initialises via the property."""
+    md = MDState(
+        positions=torch.randn(2, 3),
+        masses=torch.ones(2),
+        cell=torch.eye(3).unsqueeze(0),
+        pbc=True,
+        atomic_numbers=torch.ones(2, dtype=torch.int),
+        momenta=torch.zeros(2, 3),
+        energy=torch.zeros(1),
+        forces=torch.zeros(2, 3),
+    )
+    assert md._rng is None  # noqa: SLF001
+    gen = md.rng
+    assert isinstance(gen, torch.Generator)
+
+
+def test_rng_concat_takes_first(si_sim_state: SimState) -> None:
+    """concatenate_states takes rng from the first state."""
+    s1 = si_sim_state.clone()
+    s2 = si_sim_state.clone()
+    s1.rng = 11
+    s2.rng = 22
+    combined = ts.concatenate_states([s1, s2])
+    assert torch.equal(combined.rng.get_state(), s1.rng.get_state())
+
+
+def test_rng_split_preserves(si_sim_state: SimState) -> None:
+    """Splitting a batched state shares the same rng value to each piece."""
+    batched = ts.concatenate_states([si_sim_state, si_sim_state])
+    batched.rng = 77
+    parts = batched.split()
+    assert len(parts) == 2
+    for part in parts:
+        assert isinstance(part.rng, torch.Generator)
+
+
+def test_coerce_prng_none() -> None:
+    """None seed creates an unseeded Generator."""
+    gen = coerce_prng(None, device=DEVICE)
+    assert isinstance(gen, torch.Generator)
+
+
+def test_coerce_prng_int_seed() -> None:
+    """Int seed creates a deterministically-seeded Generator."""
+    g1 = coerce_prng(42, device=DEVICE)
+    g2 = coerce_prng(42, device=DEVICE)
+    r1 = torch.randn(5, generator=g1)
+    r2 = torch.randn(5, generator=g2)
+    assert torch.equal(r1, r2)
+
+
+def test_coerce_prng_different_seeds_diverge() -> None:
+    """Different int seeds produce different random streams."""
+    g1 = coerce_prng(1, device=DEVICE)
+    g2 = coerce_prng(2, device=DEVICE)
+    r1 = torch.randn(5, generator=g1)
+    r2 = torch.randn(5, generator=g2)
+    assert not torch.equal(r1, r2)
+
+
+def test_coerce_prng_generator_passthrough() -> None:
+    """Passing a Generator returns the exact same object."""
+    gen = torch.Generator()
+    gen.manual_seed(7)
+    result = coerce_prng(gen, device=DEVICE)
+    assert result is gen
+
+
+def test_coerce_prng_default_no_arg() -> None:
+    """Calling with no argument (default None) returns a Generator."""
+    gen = coerce_prng(None, device=DEVICE)
+    assert isinstance(gen, torch.Generator)
+
+
+def test_rng_setter_int_advances_state(si_sim_state: SimState) -> None:
+    """Setting rng to an int must store a Generator so its state advances."""
+    state = si_sim_state.clone()
+    state.rng = 99
+    # Two consecutive draws should differ because the Generator state advances
+    r1 = torch.randn(5, generator=state.rng)
+    r2 = torch.randn(5, generator=state.rng)
+    assert not torch.equal(r1, r2)
+
+
+# --- Subclass instantiation tests (verify pbc/system_idx coercion is inherited) ---
+
+BASE_KWARGS: dict = dict(
+    positions=torch.randn(4, 3),
+    masses=torch.ones(4),
+    cell=torch.eye(3),
+    atomic_numbers=torch.ones(4, dtype=torch.int),
+)
+
+
+def _check_coercion(state: SimState) -> None:
+    """Assert pbc is a bool tensor and system_idx is a non-None tensor."""
+    assert isinstance(state.pbc, torch.Tensor)
+    assert state.pbc.dtype == torch.bool
+    assert isinstance(state.system_idx, torch.Tensor)
+
+
+@pytest.mark.parametrize("pbc", [True, False, [True, True, False]])
+def test_simstate_instantiation(pbc: bool | list[bool]) -> None:  # noqa: FBT001
+    """SimState accepts bool/list pbc and None system_idx."""
+    state = SimState(**BASE_KWARGS, pbc=pbc)
+    _check_coercion(state)
+
+
+@pytest.mark.parametrize("pbc", [True, [True, True, False]])
+def test_mdstate_instantiation(pbc: bool | list[bool]) -> None:  # noqa: FBT001
+    """MDState inherits pbc/system_idx coercion."""
+    state = MDState(
+        **BASE_KWARGS,
+        pbc=pbc,
+        momenta=torch.zeros(4, 3),
+        energy=torch.zeros(1),
+        forces=torch.zeros(4, 3),
+    )
+    _check_coercion(state)
+
+
+def test_nvtvrscalestate_instantiation() -> None:
+    """NVTVRescaleState (no extra fields beyond MDState) inherits coercion."""
+    state = NVTVRescaleState(
+        **BASE_KWARGS,
+        pbc=True,
+        momenta=torch.zeros(4, 3),
+        energy=torch.zeros(1),
+        forces=torch.zeros(4, 3),
+    )
+    _check_coercion(state)
+
+
+def test_nptlangevinstate_instantiation() -> None:
+    """NPTLangevinAnisotropicState inherits pbc/system_idx coercion."""
+    state = NPTLangevinAnisotropicState(
+        **BASE_KWARGS,
+        pbc=True,
+        momenta=torch.zeros(4, 3),
+        energy=torch.zeros(1),
+        forces=torch.zeros(4, 3),
+        stress=torch.zeros(1, 3, 3),
+        alpha=torch.ones(1),
+        cell_alpha=torch.ones(1),
+        b_tau=torch.ones(1),
+        reference_cell=torch.eye(3).unsqueeze(0),
+        cell_positions=torch.zeros(1, 3),
+        cell_velocities=torch.zeros(1, 3),
+        cell_masses=torch.ones(1),
+    )
+    _check_coercion(state)
+
+
+def test_optimstate_instantiation() -> None:
+    """OptimState inherits pbc/system_idx coercion."""
+    state = OptimState(
+        **BASE_KWARGS,
+        pbc=[True, True, False],
+        forces=torch.zeros(4, 3),
+        energy=torch.zeros(1),
+        stress=torch.zeros(1, 3, 3),
+    )
+    _check_coercion(state)
+
+
+def test_firestate_instantiation() -> None:
+    """FireState inherits pbc/system_idx coercion."""
+    state = FireState(
+        **BASE_KWARGS,
+        pbc=True,
+        forces=torch.zeros(4, 3),
+        energy=torch.zeros(1),
+        stress=torch.zeros(1, 3, 3),
+        velocities=torch.zeros(4, 3),
+        dt=torch.tensor([0.01]),
+        alpha=torch.tensor([0.1]),
+        n_pos=torch.tensor([0]),
+    )
+    _check_coercion(state)
+
+
+def test_swapmc_instantiation() -> None:
+    """SwapMCState inherits pbc/system_idx coercion."""
+    state = SwapMCState(
+        **BASE_KWARGS,
+        pbc=True,
+        energy=torch.zeros(1),
+        last_permutation=torch.arange(4),
+    )
+    _check_coercion(state)
+
+
+def _make_nhc(n_systems: int = 1, chain_length: int = 3) -> NoseHooverChain:
+    return NoseHooverChain(
+        positions=torch.zeros(n_systems, chain_length),
+        momenta=torch.zeros(n_systems, chain_length),
+        masses=torch.ones(n_systems, chain_length),
+        tau=torch.ones(n_systems),
+        kinetic_energy=torch.zeros(n_systems),
+        degrees_of_freedom=torch.tensor([9.0] * n_systems),
+    )
+
+
+def _make_nhc_fns() -> NoseHooverChainFns:
+    return NoseHooverChainFns(
+        initialize=lambda *a, **kw: None,  # noqa: ARG005
+        half_step=lambda *a, **kw: None,  # noqa: ARG005
+        update_mass=lambda *a, **kw: None,  # noqa: ARG005
+    )
+
+
+def test_nvtnosehooverstate_instantiation() -> None:
+    """NVTNoseHooverState inherits pbc/system_idx coercion."""
+    state = NVTNoseHooverState(
+        **BASE_KWARGS,
+        pbc=True,
+        momenta=torch.zeros(4, 3),
+        energy=torch.zeros(1),
+        forces=torch.zeros(4, 3),
+        chain=_make_nhc(),
+        _chain_fns=_make_nhc_fns(),
+    )
+    _check_coercion(state)
+
+
+def test_nptnosehooverstate_instantiation() -> None:
+    """NPTNoseHooverIsotropicState inherits pbc/system_idx coercion."""
+    state = NPTNoseHooverIsotropicState(
+        **BASE_KWARGS,
+        pbc=True,
+        momenta=torch.zeros(4, 3),
+        energy=torch.zeros(1),
+        forces=torch.zeros(4, 3),
+        stress=torch.zeros(1, 3, 3),
+        reference_cell=torch.eye(3).unsqueeze(0),
+        cell_position=torch.zeros(1),
+        cell_momentum=torch.zeros(1),
+        cell_mass=torch.ones(1),
+        thermostat=_make_nhc(),
+        thermostat_fns=_make_nhc_fns(),
+        barostat=_make_nhc(),
+        barostat_fns=_make_nhc_fns(),
+    )
+    _check_coercion(state)
+
+
+def test_bfgsstate_instantiation() -> None:
+    """BFGSState inherits pbc/system_idx coercion."""
+    n_atoms, n_dim = 4, 3
+    state = BFGSState(
+        **BASE_KWARGS,
+        pbc=True,
+        forces=torch.zeros(n_atoms, n_dim),
+        energy=torch.zeros(1),
+        stress=torch.zeros(1, n_dim, n_dim),
+        hessian=torch.eye(n_atoms * n_dim).unsqueeze(0),
+        prev_forces=torch.zeros(n_atoms, n_dim),
+        prev_positions=torch.zeros(n_atoms, n_dim),
+        alpha=torch.ones(1),
+        max_step=torch.tensor([0.2]),
+        n_iter=torch.zeros(1, dtype=torch.int32),
+        atom_idx_in_system=torch.arange(n_atoms),
+        max_atoms=torch.tensor([n_atoms]),
+    )
+    _check_coercion(state)
+
+
+def test_lbfgsstate_instantiation() -> None:
+    """LBFGSState inherits pbc/system_idx coercion."""
+    n_atoms, n_dim, history = 4, 3, 5
+    state = LBFGSState(
+        **BASE_KWARGS,
+        pbc=True,
+        forces=torch.zeros(n_atoms, n_dim),
+        energy=torch.zeros(1),
+        stress=torch.zeros(1, n_dim, n_dim),
+        prev_forces=torch.zeros(n_atoms, n_dim),
+        prev_positions=torch.zeros(n_atoms, n_dim),
+        s_history=torch.zeros(1, history, n_atoms, n_dim),
+        y_history=torch.zeros(1, history, n_atoms, n_dim),
+        step_size=torch.tensor([0.1]),
+        alpha=torch.ones(1),
+        n_iter=torch.zeros(1, dtype=torch.int32),
+        max_atoms=torch.tensor([n_atoms]),
+    )
+    _check_coercion(state)

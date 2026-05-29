@@ -1,37 +1,21 @@
+"""Pytest fixtures and test factories for model testing."""
+
+from __future__ import annotations
+
 import typing
-from typing import Final
 
 import pytest
 import torch
 
-import torch_sim as ts
-from tests.conftest import DEVICE
-from torch_sim.elastic import full_3x3_to_voigt_6_stress
+from tests.conftest import DEVICE, DTYPE
+from torch_sim.testing import SIMSTATE_GENERATORS, assert_model_calculator_consistency
 
 
 if typing.TYPE_CHECKING:
-    from ase.calculators.calculator import Calculator
+    from collections.abc import Callable, Sequence
 
     from torch_sim.models.interface import ModelInterface
-
-
-consistency_test_simstate_fixtures: Final[tuple[str, ...]] = (
-    "cu_sim_state",
-    "mg_sim_state",
-    "sb_sim_state",
-    "tio2_sim_state",
-    "ga_sim_state",
-    "niti_sim_state",
-    "ti_sim_state",
-    "si_sim_state",
-    "rattled_si_sim_state",
-    "sio2_sim_state",
-    "rattled_sio2_sim_state",
-    "ar_supercell_sim_state",
-    "fe_supercell_sim_state",
-    "casio3_sim_state",
-    "benzene_sim_state",
-)
+    from torch_sim.state import SimState
 
 
 def make_model_calculator_consistency_test(
@@ -51,188 +35,90 @@ def make_model_calculator_consistency_test(
     """Factory function to create model-calculator consistency tests.
 
     Args:
-        test_name: Name of the test (used in the function name and messages)
+        test_name: Name of the test (used in the function name)
         model_fixture_name: Name of the model fixture
         calculator_fixture_name: Name of the calculator fixture
         sim_state_names: sim_state fixture names to test
+        device: Device to run tests on
+        dtype: Data type to use for tests
         energy_rtol: Relative tolerance for energy comparisons
         energy_atol: Absolute tolerance for energy comparisons
         force_rtol: Relative tolerance for force comparisons
         force_atol: Absolute tolerance for force comparisons
         stress_rtol: Relative tolerance for stress comparisons
         stress_atol: Absolute tolerance for stress comparisons
+
+    Returns:
+        A pytest test function that can be assigned to a module-level variable
     """
 
     @pytest.mark.parametrize("sim_state_name", sim_state_names)
-    def test_model_calculator_consistency(
+    def _model_calculator_consistency_test(
         sim_state_name: str, request: pytest.FixtureRequest
     ) -> None:
         """Test consistency between model and calculator implementations."""
-        # Get the model and calculator fixtures dynamically
-        model: ModelInterface = request.getfixturevalue(model_fixture_name)
-        calculator: Calculator = request.getfixturevalue(calculator_fixture_name)
+        model = request.getfixturevalue(model_fixture_name)
+        calculator = request.getfixturevalue(calculator_fixture_name)
 
-        # Get the sim_state fixture dynamically using the name
-        sim_state: ts.SimState = request.getfixturevalue(sim_state_name).to(device, dtype)
+        # Generate sim_state from the generator
+        generator = SIMSTATE_GENERATORS[sim_state_name]
+        sim_state = generator(device, dtype)
 
-        # Set up ASE calculator
-        atoms = ts.io.state_to_atoms(sim_state)[0]
-        atoms.calc = calculator
-
-        # Get model results
-        model_results = model(sim_state)
-
-        # Get calculator results
-        calc_forces = torch.tensor(
-            atoms.get_forces(),
-            device=device,
-            dtype=model_results["forces"].dtype,
+        assert_model_calculator_consistency(
+            model=model,
+            calculator=calculator,
+            sim_state=sim_state,
+            energy_rtol=energy_rtol,
+            energy_atol=energy_atol,
+            force_rtol=force_rtol,
+            force_atol=force_atol,
+            stress_rtol=stress_rtol,
+            stress_atol=stress_atol,
         )
 
-        # Test consistency with specified tolerances
-        torch.testing.assert_close(
-            model_results["energy"].item(),
-            atoms.get_potential_energy(),
-            rtol=energy_rtol,
-            atol=energy_atol,
-        )
-        torch.testing.assert_close(
-            model_results["forces"],
-            calc_forces,
-            rtol=force_rtol,
-            atol=force_atol,
-        )
-
-        if "stress" in model_results:
-            calc_stress = torch.tensor(
-                atoms.get_stress(),
-                device=device,
-                dtype=model_results["stress"].dtype,
-            ).unsqueeze(0)
-
-            torch.testing.assert_close(
-                full_3x3_to_voigt_6_stress(model_results["stress"]),
-                calc_stress,
-                rtol=stress_rtol,
-                atol=stress_atol,
-                equal_nan=True,
-            )
-
-    # Rename the function to include the test name
-    test_model_calculator_consistency.__name__ = f"test_{test_name}_consistency"
-    return test_model_calculator_consistency
+    _model_calculator_consistency_test.__name__ = f"test_{test_name}_consistency"
+    return _model_calculator_consistency_test
 
 
-def make_validate_model_outputs_test(  # noqa: PLR0915
+def make_validate_model_outputs_test(
     model_fixture_name: str,
     device: torch.device = DEVICE,
-    dtype: torch.dtype = torch.float64,
+    dtype: torch.dtype = DTYPE,
+    *,
+    check_detached: bool = True,
+    state_modifiers: Sequence[Callable[[SimState], SimState]] = (),
 ):
     """Factory function to create model output validation tests.
 
+    Runs ``validate_model_outputs`` once with no modifier (baseline), then
+    once more for each entry in *state_modifiers* so that every modifier
+    gets a full, independent validation pass.
+
     Args:
-        test_name: Name of the test (used in the function name and messages)
         model_fixture_name: Name of the model fixture to validate
+        device: Device to run validation on
+        dtype: Data type to use for validation
+        check_detached: Whether to assert output tensors are detached from the
+            autograd graph (skipped for models with ``retain_graph=True``).
+        state_modifiers: Each callable receives a ``SimState`` and returns a
+            (possibly new) ``SimState``.  The full validation suite is run
+            once per modifier so that different input edge-cases are
+            exercised independently.
     """
+    from torch_sim.models.interface import validate_model_outputs
 
-    def test_model_output_validation(request: pytest.FixtureRequest) -> None:  # noqa: PLR0915
+    def test_model_output_validation(request: pytest.FixtureRequest) -> None:
         """Test that a model implementation follows the ModelInterface contract."""
-        # Get the model fixture dynamically
         model: ModelInterface = request.getfixturevalue(model_fixture_name)
+        modifiers = state_modifiers or [None]
+        for modifier in modifiers:
+            validate_model_outputs(
+                model,
+                device,
+                dtype,
+                check_detached=check_detached,
+                state_modifier=modifier,
+            )
 
-        from ase.build import bulk
-
-        assert model.dtype is not None
-        assert model.device is not None
-        assert model.compute_stress is not None
-        assert model.compute_forces is not None
-
-        try:
-            if not model.compute_stress:
-                model.compute_stress = True
-            stress_computed = True
-        except NotImplementedError:
-            stress_computed = False
-
-        try:
-            if not model.compute_forces:
-                model.compute_forces = True
-            force_computed = True
-        except NotImplementedError:
-            force_computed = False
-
-        si_atoms = bulk("Si", "diamond", a=5.43, cubic=True)
-        fe_atoms = bulk("Fe", "fcc", a=5.26, cubic=True).repeat([3, 1, 1])
-
-        sim_state = ts.io.atoms_to_state([si_atoms, fe_atoms], device, dtype)
-
-        og_positions = sim_state.positions.clone()
-        og_cell = sim_state.cell.clone()
-        og_batch = sim_state.system_idx.clone()
-        og_atomic_nums = sim_state.atomic_numbers.clone()
-
-        model_output = model.forward(sim_state)
-
-        # assert model did not mutate the input
-        assert torch.allclose(og_positions, sim_state.positions)
-        assert torch.allclose(og_cell, sim_state.cell)
-        assert torch.allclose(og_batch, sim_state.system_idx)
-        assert torch.allclose(og_atomic_nums, sim_state.atomic_numbers)
-
-        # assert model output has the correct keys
-        assert "energy" in model_output
-        assert "forces" in model_output if force_computed else True
-        assert "stress" in model_output if stress_computed else True
-
-        # assert model output shapes are correct
-        assert model_output["energy"].shape == (2,)
-        assert model_output["forces"].shape == (20, 3) if force_computed else True
-        assert model_output["stress"].shape == (2, 3, 3) if stress_computed else True
-
-        si_state = ts.io.atoms_to_state([si_atoms], device, dtype)
-        fe_state = ts.io.atoms_to_state([fe_atoms], device, dtype)
-
-        si_model_output = model.forward(si_state)
-        assert torch.allclose(
-            si_model_output["energy"], model_output["energy"][0], atol=10e-3
-        )
-        assert torch.allclose(
-            si_model_output["forces"],
-            model_output["forces"][: si_state.n_atoms],
-            atol=10e-3,
-        )
-        # assert torch.allclose(
-        #     si_model_output["stress"],
-        #     model_output["stress"][0],
-        #     atol=10e-3,
-        # )
-
-        fe_model_output = model.forward(fe_state)
-        si_model_output = model.forward(si_state)
-
-        assert torch.allclose(
-            fe_model_output["energy"], model_output["energy"][1], atol=10e-2
-        )
-        assert torch.allclose(
-            fe_model_output["forces"],
-            model_output["forces"][si_state.n_atoms :],
-            atol=10e-2,
-        )
-        # assert torch.allclose(
-        #     fe_model_output["stress"],
-        #     model_output["stress"][1],
-        #     atol=10e-3,
-        # )
-
-        # Test single system output
-        assert fe_model_output["energy"].shape == (1,)
-        # forces should be shape (n_atoms, 3) for n_atoms in the system
-        if force_computed:
-            assert fe_model_output["forces"].shape == (12, 3)
-        # stress should be shape (1, 3, 3) for 1 system
-        if stress_computed:
-            assert fe_model_output["stress"].shape == (1, 3, 3)
-
-    # Rename the function to include the test name
     test_model_output_validation.__name__ = f"test_{model_fixture_name}_output_validation"
     return test_model_output_validation

@@ -12,14 +12,13 @@ import torch_sim as ts
 from torch_sim.autobatching import BinningAutoBatcher
 from torch_sim.integrators.md import (
     MDState,
-    calculate_momenta,
+    initialize_momenta,
     momentum_step,
     position_step,
 )
 from torch_sim.models.interface import ModelInterface
 from torch_sim.runners import _configure_batches_iterator, _configure_reporter
 from torch_sim.state import SimState, concatenate_states, initialize_state
-from torch_sim.typing import StateDict
 from torch_sim.units import UnitSystem
 
 
@@ -105,21 +104,23 @@ class MixedModel(ModelInterface):
         super().__init__()
         self.model1 = model1
         self.model2 = model2
-        self._device = device or torch.device(
+        resolved_device = device or torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
         )
-        if isinstance(self._device, str):
-            self._device = torch.device(self._device)
+        if isinstance(resolved_device, str):
+            resolved_device = torch.device(resolved_device)
+        self._device = resolved_device
 
         self._dtype = dtype
         self._compute_stress = compute_stress
         self._compute_forces = compute_forces
 
-    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: SimState, **_kwargs: object) -> dict[str, torch.Tensor]:
         """Forward pass through the mixed model.
 
         Args:
             state: Simulation state containing positions, masses, etc.
+            **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
             Dictionary with mixed energies and forces
@@ -146,15 +147,15 @@ class MixedModel(ModelInterface):
 
 
 def nvt_langevin_thermodynamic_integration(  # noqa: C901
-    model: torch.nn.Module,
+    model: ModelInterface,
     *,
     dt: torch.Tensor,
     kT: torch.Tensor,
     gamma: torch.Tensor | None = None,
     seed: int | None = None,
 ) -> tuple[
-    Callable[[SimState | StateDict, torch.Tensor], MDState],
-    Callable[[MDState, torch.Tensor], MDState],
+    Callable[..., ThermodynamicIntegrationMDState],
+    Callable[..., ThermodynamicIntegrationMDState],
 ]:
     """Initialize and return an NVT (canonical) integrator using Langevin dynamics.
 
@@ -259,7 +260,7 @@ def nvt_langevin_thermodynamic_integration(  # noqa: C901
         return state
 
     def langevin_init(
-        state: SimState | StateDict,
+        state: SimState,
         lambda_: torch.Tensor,
         kT: torch.Tensor = kT,
         seed: int | None = seed,
@@ -287,14 +288,20 @@ def nvt_langevin_thermodynamic_integration(  # noqa: C901
             at the specified temperature. This provides a proper thermal initial
             state for the subsequent Langevin dynamics.
         """
-        if not isinstance(state, SimState):
-            state = SimState(**state)
         model_output = model(state)
-        momenta = getattr(
-            state,
-            "momenta",
-            calculate_momenta(state.positions, state.masses, state.system_idx, kT, seed),
-        )
+        momenta = getattr(state, "momenta", None)
+        if momenta is None:
+            generator = state.rng
+            if seed is not None:
+                generator = torch.Generator(device=state.device)
+                generator.manual_seed(seed)
+            momenta = initialize_momenta(
+                state.positions,
+                state.masses,
+                state.system_idx,
+                kT,
+                generator,
+            )
 
         initial_state = ThermodynamicIntegrationMDState(
             positions=state.positions,
@@ -365,10 +372,10 @@ def nvt_langevin_thermodynamic_integration(  # noqa: C901
     return langevin_init, langevin_update
 
 
-def run_non_equilibrium_md(  # noqa: C901 PLR0915
+def run_non_equilibrium_md(  # noqa: C901
     system: Any,
-    model_a: torch.nn.Module,
-    model_b: torch.nn.Module,
+    model_a: ModelInterface,
+    model_b: ModelInterface,
     save_dir: str,
     integrator: Callable,
     *,
@@ -420,9 +427,13 @@ def run_non_equilibrium_md(  # noqa: C901 PLR0915
                 f"Available: {list(LAMBDA_SCHEDULES.keys())}"
             )
         schedule_fn = LAMBDA_SCHEDULES[lambda_schedule]
-
-    if isinstance(lambda_schedule, Callable):
+    elif callable(lambda_schedule):
         schedule_fn = lambda_schedule
+    else:
+        raise TypeError(
+            "lambda_schedule must be a schedule name or a callable "
+            "(step, n_steps) -> float"
+        )
 
     def lambda_schedule(step: int) -> float:
         if reverse:
@@ -483,7 +494,7 @@ def run_non_equilibrium_md(  # noqa: C901 PLR0915
     )
 
     # batch_iterator will be a list if autobatcher is False
-    batch_iterator = _configure_batches_iterator(model, state, autobatcher)
+    batch_iterator = _configure_batches_iterator(state, model, autobatcher=autobatcher)
     trajectory_reporter = _configure_reporter(
         trajectory_reporter,
         properties=["kinetic_energy", "potential_energy", "temperature"],
@@ -507,9 +518,9 @@ def run_non_equilibrium_md(  # noqa: C901 PLR0915
         state = init_fn(state, lambda_=lambda_values, kT=kT)
 
         # set up trajectory reporters
-        if autobatcher and trajectory_reporter:
+        if autobatcher and trajectory_reporter and log_filenames is not None:
             # we must remake the trajectory reporter for each batch
-            trajectory_reporter.load_new_trajectories(
+            trajectory_reporter.reopen_trajectories(
                 filenames=[log_filenames[i] for i in batch_indices]
             )
 
@@ -526,16 +537,9 @@ def run_non_equilibrium_md(  # noqa: C901 PLR0915
             lambda_value = lambda_schedule(step - 1)
 
             # Update lambda values
-            if len(batch_indices) > 0:
-                new_lambdas = torch.full_like(
-                    batch_indices, lambda_value, dtype=dtype, device=device
-                )
-            else:
-                new_lambdas = torch.full(
-                    (state.n_systems,), lambda_value, dtype=dtype, device=device
-                )
-
-            state.lambda_ = new_lambdas
+            state.lambda_ = torch.full(
+                (state.n_systems,), lambda_value, dtype=dtype, device=device
+            )
 
             # Update state
             state = update_fn(state, kT=kT)
@@ -552,7 +556,7 @@ def run_non_equilibrium_md(  # noqa: C901 PLR0915
         trajectory_reporter.finish()
 
     if isinstance(batch_iterator, BinningAutoBatcher):
-        reordered_states = batch_iterator.restore_original_order(final_states)
+        reordered_states = batch_iterator.restore_original_order(final_states)  # ty: ignore[invalid-argument-type]
         return concatenate_states(reordered_states)
 
     return state
@@ -560,8 +564,8 @@ def run_non_equilibrium_md(  # noqa: C901 PLR0915
 
 def run_equilibrium_md(  # noqa: C901
     system: Any,
-    model_a: torch.nn.Module,
-    model_b: torch.nn.Module,
+    model_a: ModelInterface,
+    model_b: ModelInterface,
     lambdas: torch.Tensor,
     save_dir: str,
     integrator: Callable,
@@ -572,7 +576,7 @@ def run_equilibrium_md(  # noqa: C901
     pbar: bool | dict[str, Any] = False,
     trajectory_reporter: ts.TrajectoryReporter | None = None,
     step_frequency: int = 1,
-    filenames: str | None = None,
+    filenames: str | list[str] | None = None,
     autobatcher: bool = False,
     state_frequency: int = 50,
     **integrator_kwargs,
@@ -676,7 +680,7 @@ def run_equilibrium_md(  # noqa: C901
     )
 
     # batch_iterator will be a list if autobatcher is False
-    batch_iterator = _configure_batches_iterator(model, state, autobatcher)
+    batch_iterator = _configure_batches_iterator(state, model, autobatcher=autobatcher)
     trajectory_reporter = _configure_reporter(
         trajectory_reporter,
         properties=["kinetic_energy", "potential_energy", "temperature"],
@@ -696,9 +700,9 @@ def run_equilibrium_md(  # noqa: C901
         state = init_fn(state, lambda_=lambdas, kT=kT)
 
         # set up trajectory reporters
-        if autobatcher and trajectory_reporter:
+        if autobatcher and trajectory_reporter and log_filenames is not None:
             # we must remake the trajectory reporter for each batch
-            trajectory_reporter.load_new_trajectories(
+            trajectory_reporter.reopen_trajectories(
                 filenames=[log_filenames[i] for i in batch_indices]
             )
 
@@ -726,7 +730,7 @@ def run_equilibrium_md(  # noqa: C901
         trajectory_reporter.finish()
 
     if isinstance(batch_iterator, BinningAutoBatcher):
-        reordered_states = batch_iterator.restore_original_order(final_states)
+        reordered_states = batch_iterator.restore_original_order(final_states)  # ty: ignore[invalid-argument-type]
         return concatenate_states(reordered_states)
 
     return state

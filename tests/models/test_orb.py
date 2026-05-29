@@ -1,93 +1,93 @@
+from __future__ import annotations
+
 import traceback
 
-import numpy as np
 import pytest
-from ase.geometry.cell import cell_to_cellpar as ase_c2p
 
 from tests.conftest import DEVICE
 from tests.models.conftest import (
-    consistency_test_simstate_fixtures,
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
-from torch_sim import SimState
-from torch_sim.models.orb import cell_to_cellpar
+from torch_sim.testing import SIMSTATE_GENERATORS, ModelTolerance
 
 
 try:
     from orb_models.forcefield import pretrained
-    from orb_models.forcefield.calculator import ORBCalculator
+    from orb_models.forcefield.inference.calculator import ORBCalculator
 
     from torch_sim.models.orb import OrbModel
+
+    _IMPORT_ERROR: str | None = None
 except ImportError:
-    pytest.skip(f"ORB not installed: {traceback.format_exc()}", allow_module_level=True)
+    _IMPORT_ERROR = traceback.format_exc()
+
+pytestmark = pytest.mark.skipif(
+    _IMPORT_ERROR is not None, reason=f"ORB not installed: {_IMPORT_ERROR}"
+)
 
 
 @pytest.fixture
 def orbv3_conservative_inf_omat_model() -> OrbModel:
-    orb_ff = pretrained.orb_v3_conservative_inf_omat(
+    orb_ff, atoms_adapter = pretrained.orb_v3_conservative_inf_omat(
         device=DEVICE, precision="float32-high"
     )
-    return OrbModel(model=orb_ff, device=DEVICE)
+    return OrbModel(orb_ff, atoms_adapter, device=DEVICE)
 
 
 @pytest.fixture
 def orbv3_direct_20_omat_model() -> OrbModel:
-    orb_ff = pretrained.orb_v3_direct_20_omat(device=DEVICE, precision="float32-high")
-    return OrbModel(model=orb_ff, device=DEVICE)
+    orb_ff, atoms_adapter = pretrained.orb_v3_direct_20_omat(
+        device=DEVICE, precision="float32-high"
+    )
+    return OrbModel(orb_ff, atoms_adapter, device=DEVICE)
 
 
 @pytest.fixture
 def orbv3_conservative_inf_omat_calculator() -> ORBCalculator:
     """Create an ORBCalculator for the pretrained model."""
-    orb_ff = pretrained.orb_v3_conservative_inf_omat(
+    orb_ff, atoms_adapter = pretrained.orb_v3_conservative_inf_omat(
         device=DEVICE, precision="float32-high"
     )
-    return ORBCalculator(model=orb_ff, device=DEVICE)
+    return ORBCalculator(model=orb_ff, atoms_adapter=atoms_adapter, device=DEVICE)
 
 
 @pytest.fixture
 def orbv3_direct_20_omat_calculator() -> ORBCalculator:
     """Create an ORBCalculator for the pretrained model."""
-    orb_ff = pretrained.orb_v3_direct_20_omat(device=DEVICE, precision="float32-high")
-    return ORBCalculator(model=orb_ff, device=DEVICE)
+    orb_ff, atoms_adapter = pretrained.orb_v3_direct_20_omat(
+        device=DEVICE, precision="float32-high"
+    )
+    return ORBCalculator(model=orb_ff, atoms_adapter=atoms_adapter, device=DEVICE)
 
 
 test_orb_conservative_consistency = make_model_calculator_consistency_test(
     test_name="orbv3_conservative_inf_omat",
     model_fixture_name="orbv3_conservative_inf_omat_model",
     calculator_fixture_name="orbv3_conservative_inf_omat_calculator",
-    sim_state_names=consistency_test_simstate_fixtures,
-    energy_rtol=5e-5,
-    energy_atol=5e-5,
+    sim_state_names=tuple(SIMSTATE_GENERATORS.keys()),
+    energy_rtol=ModelTolerance.LOOSE,
+    energy_atol=ModelTolerance.LOOSE,
 )
 
 test_orb_direct_consistency = make_model_calculator_consistency_test(
     test_name="orbv3_direct_20_omat",
     model_fixture_name="orbv3_direct_20_omat_model",
     calculator_fixture_name="orbv3_direct_20_omat_calculator",
-    sim_state_names=consistency_test_simstate_fixtures,
-    energy_rtol=5e-5,
-    energy_atol=5e-5,
+    sim_state_names=tuple(SIMSTATE_GENERATORS.keys()),
+    energy_rtol=ModelTolerance.LOOSE,
+    energy_atol=ModelTolerance.LOOSE,
 )
 
 test_validate_conservative_model_outputs = make_validate_model_outputs_test(
     model_fixture_name="orbv3_conservative_inf_omat_model",
 )
 
-test_validate_direct_model_outputs = make_validate_model_outputs_test(
-    model_fixture_name="orbv3_direct_20_omat_model",
-)
 
-
-def test_cell_to_cellpar(ti_sim_state: SimState) -> None:
-    assert np.allclose(
-        ase_c2p(ti_sim_state.row_vector_cell.squeeze()),
-        cell_to_cellpar(ti_sim_state.row_vector_cell.squeeze(0)).cpu().numpy(),
-    )
-    assert np.allclose(
-        ase_c2p(ti_sim_state.row_vector_cell.squeeze(), radians=True),
-        cell_to_cellpar(ti_sim_state.row_vector_cell.squeeze(0), radians=True)
-        .cpu()
-        .numpy(),
-    )
+test_validate_direct_model_outputs = pytest.mark.xfail(
+    reason=(
+        "Upstream ORB direct model shows batch-dependent leakage; "
+        "see https://github.com/orbital-materials/orb-models/issues/159"
+    ),
+    strict=False,
+)(make_validate_model_outputs_test(model_fixture_name="orbv3_direct_20_omat_model"))

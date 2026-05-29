@@ -4,6 +4,7 @@
 :hidden:
 user/introduction
 user/overview
+user/reproducibility
 user/models
 tutorials/index
 ```

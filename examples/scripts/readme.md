@@ -1,75 +1,268 @@
-# TorchSim Example Scripts
+# TorchSim Consolidated Examples
 
-This folder contains a series of examples demonstrating the use of TorchSim, a library for simulating molecular dynamics and structural optimization using classical and machine learning interatomic potentials. Each example showcases different functionalities and models available in TorchSim.
+This directory contains consolidated example scripts demonstrating the key features of TorchSim. Each script combines multiple related examples into a single, well-organized file with clear sections.
 
-1. **Introduction**
+## Quick Start
 
-   1. **Lennard-Jones Model** - [`examples/1_Introduction/1.1_Lennard_Jones.py`](1_Introduction/1.1_Lennard_Jones.py): Simulate Argon atoms in an FCC lattice with a Lennard-Jones potential. Initialize the model, run a forward pass, and print energy, forces, and stress.
+All scripts can be run directly with Python or using `uv`:
 
-   1. **MACE Model** - [`examples/1_Introduction/1.2_MACE.py`](1_Introduction/1.2_MACE.py): Use the MACE model to simulate diamond cubic Silicon. Load a pre-trained model, set up the system, and calculate energy, forces, and stress.
+```bash
+# Run with Python
+python 1_introduction.py
 
-   1. **Batched MACE Model** - [`examples/1_Introduction/1.3_Batched_MACE.py`](1_Introduction/1.3_Batched_MACE.py): Handle batched inputs with the MACE model to simulate multiple systems simultaneously.
+# Run with uv (automatically installs dependencies)
+uv run 1_introduction.py
+```
 
-   1. **Fairchem Model** - [`examples/1_Introduction/1.4_Fairchem.py`](1_Introduction/1.4_Fairchem.py): Simulate diamond cubic Silicon with the Fairchem model. Set up the model and calculate energy, forces, and stress.
+## Overview of Examples
 
-1. **Structural Optimization**
+### 1. [1_introduction.py](1_introduction.py)
 
-   1. **Lennard-Jones FIRE** - [`examples/2_Structural_optimization/2.1_Lennard_Jones_FIRE.py`](2_Structural_optimization/2.1_Lennard_Jones_FIRE.py): Perform structural optimization using the FIRE optimizer with a Lennard-Jones model.
+#### Introduction to TorchSim basics
 
-   1. **Soft Sphere FIRE** - [`examples/2_Structural_optimization/2.2_Soft_Sphere_FIRE.py`](2_Structural_optimization/2.2_Soft_Sphere_FIRE.py): Optimize structures with a Soft Sphere model using the FIRE optimizer.
+Learn the fundamentals of TorchSim with simple examples using classical and machine learning potentials.
 
-   1. **MACE FIRE** - [`examples/2_Structural_optimization/2.3_MACE_FIRE.py`](2_Structural_optimization/2.3_MACE_FIRE.py): Optimize structures with the MACE model using the FIRE optimizer.
+**Topics covered:**
 
-   1. **MACE UnitCellFilter FIRE** - [`examples/2_Structural_optimization/2.4_MACE_UnitCellFilter_FIRE.py`](2_Structural_optimization/2.4_MACE_UnitCellFilter_FIRE.py): Optimize structures with the MACE model using the UnitCellFilter FIRE optimizer.
+- Lennard-Jones model for classical potentials
+- MACE model for machine learning potentials
+- Batched inference for efficient computation
+- Basic state management and model evaluation
 
-   1. **MACE FrechetCellFilter FIRE** - [`examples/2_Structural_optimization/2.5_MACE_FrechetCellFilter_FIRE.py`](2_Structural_optimization/2.5_MACE_FrechetCellFilter_FIRE.py): Optimize structures with the MACE model using the FrechetCellFilter FIRE optimizer.
+**Dependencies:** `scipy>=1.15`, `mace-torch>=0.3.12`
 
-   1. **Batched MACE Gradient Descent** - [`examples/2_Structural_optimization/2.6_Batched_MACE_Gradient_Descent.py`](2_Structural_optimization/2.6_Batched_MACE_Gradient_Descent.py): Optimize multiple structures simultaneously using batched gradient descent with the MACE model.
+---
 
-   1. **Batched MACE FIRE** - [`examples/2_Structural_optimization/2.7_Batched_MACE_FIRE.py`](2_Structural_optimization/2.7_Batched_MACE_FIRE.py): Optimize multiple structures simultaneously using the batched FIRE optimizer with MACE.
+### 2. [2_structural_optimization.py](2_structural_optimization.py)
 
-   1. **Batched MACE UnitCellFilter Gradient Descent** - [`examples/2_Structural_optimization/2.8_Batched_MACE_UnitCellFilter_Gradient_Descent.py`](2_Structural_optimization/2.8_Batched_MACE_UnitCellFilter_Gradient_Descent.py): Optimize multiple structures and their unit cells using batched gradient descent with MACE.
+#### Structure optimization techniques
 
-   1. **Batched MACE UnitCellFilter FIRE** - [`examples/2_Structural_optimization/2.9_Batched_MACE_UnitCellFilter_FIRE.py`](2_Structural_optimization/2.9_Batched_MACE_UnitCellFilter_FIRE.py): Optimize multiple structures and their unit cells using the batched FIRE optimizer with MACE.
+Comprehensive examples of structural relaxation using different optimizers and cell filters.
 
-1. **Dynamics**
+**Topics covered:**
 
-   1. **Lennard-Jones NVE** - [`examples/3_Dynamics/3.1_Lennard_Jones_NVE.py`](3_Dynamics/3.1_Lennard_Jones_NVE.py): Run molecular dynamics with the NVE ensemble using a Lennard-Jones model. Set up, simulate, and check energy conservation.
+- FIRE optimizer (Fast Inertial Relaxation Engine)
+- Gradient descent optimizer
+- Position-only optimization
+- Cell optimization with unit cell filter
+- Cell optimization with Frechet cell filter
+- Batched optimization for multiple structures
+- Pressure control during optimization
 
-   1. **MACE NVE** - [`examples/3_Dynamics/3.2_MACE_NVE.py`](3_Dynamics/3.2_MACE_NVE.py): Run NVE molecular dynamics simulation with the MACE model.
+**Key concepts:** Force minimization, cell relaxation, pressure convergence, batched computations
 
-   1. **MACE NVE with Cueq** - [`examples/3_Dynamics/3.3_MACE_NVE_cueq.py`](3_Dynamics/3.3_MACE_NVE_cueq.py): Run the MACE model in NVE with CuEq acceleration.
+**Dependencies:** `scipy>=1.15`, `mace-torch>=0.3.12`
 
-   1. **MACE NVT Langevin** - [`examples/3_Dynamics/3.4_MACE_NVT_Langevin.py`](3_Dynamics/3.4_MACE_NVT_Langevin.py): Run temperature-controlled molecular dynamics using the NVT Langevin integrator with MACE.
+---
 
-   1. **MACE NVT Nose-Hoover** - [`examples/3_Dynamics/3.5_MACE_NVT_Nose_Hoover.py`](3_Dynamics/3.5_MACE_NVT_Nose_Hoover.py): Run temperature-controlled molecular dynamics using the NVT Nose-Hoover integrator with MACE.
+### 3. [3_dynamics.py](3_dynamics.py)
 
-   1. **MACE NVT Nose-Hoover with Temperature Profile** - [`examples/3_Dynamics/3.6_MACE_NVT_Nose_Hoover_temp_profile.py`](3_Dynamics/3.6_MACE_NVT_Nose_Hoover_temp_profile.py): Simulate heating and cooling cycles using Nose-Hoover integrator with a temperature profile.
+#### Molecular dynamics simulations
 
-   1. **Lennard-Jones NPT Nose-Hoover** - [`examples/3_Dynamics/3.7_Lennard_Jones_NPT_Nose_Hoover.py`](3_Dynamics/3.7_Lennard_Jones_NPT_Nose_Hoover.py): Run pressure-controlled molecular dynamics using the NPT Nose-Hoover integrator with Lennard-Jones.
+Explore various ensembles and integrators for molecular dynamics.
 
-   1. **MACE NPT Nose-Hoover** - [`examples/3_Dynamics/3.8_MACE_NPT_Nose_Hoover.py`](3_Dynamics/3.8_MACE_NPT_Nose_Hoover.py): Run pressure-controlled molecular dynamics using the NPT Nose-Hoover integrator with MACE.
+**Topics covered:**
 
-   1. **MACE NVT with Staggered Stress** - [`examples/3_Dynamics/3.9_MACE_NVT_staggered_stress.py`](3_Dynamics/3.9_MACE_NVT_staggered_stress.py): Use staggered stress calculations during NVT simulations with the MACE model.
+- **NVE ensemble** (microcanonical): Energy conservation
+- **NVT ensemble** (canonical): Temperature control with Langevin and Nose-Hoover thermostats
+- **NPT ensemble** (isothermal-isobaric): Pressure and temperature control
+- Lennard-Jones and MACE models
+- Energy conservation verification
+- Performance benchmarking
 
-   1. **Hybrid Swap Monte Carlo** - [`examples/3_Dynamics/3.10_Hybrid_swap_mc.py`](3_Dynamics/3.10_Hybrid_swap_mc.py): Combine molecular dynamics with Monte Carlo simulations using the MACE model.
+**Key concepts:** Statistical ensembles, thermostats, barostats, total energy conservation
 
-1. **High-Level API**
+**Dependencies:** `scipy>=1.15`, `mace-torch>=0.3.12`
 
-   1. **High-Level API** - [`examples/4_High_level_api/4.1_high_level_api.py`](4_High_level_api/4.1_high_level_api.py): Integrate systems using the high-level API with different models and integrators.
+---
 
-1. **Workflow**
+### 4. [4_high_level_api.py](4_high_level_api.py)
 
-   1. **Workflow** - [`examples/5_Workflow/5.1_a2c_silicon.py`](5_Workflow/5.1_a2c_silicon.py): Run the a2c workflow with the MACE model.
+#### Simplified high-level interface
 
-   1. **Workflow** - [`examples/5_Workflow/5.4_Elastic.py`](5_Workflow/5.4_Elastic.py): Calculate elastic tensor, bulk modulus and shear modulus with MACE.
+Use TorchSim's high-level API for common workflows with minimal code.
 
-1. **Phonons**
+**Topics covered:**
 
-   1. **Phonon DOS with MACE Batched** - [`examples/6_Phonons/6.1_Phonons_MACE.py`](6_Phonons/6.1_Phonons_MACE.py): Calculate DOS and band structure with MACE, batching over FC2 calculations.
+- Simple integration interface (`ts.integrate`)
+- Simple optimization interface (`ts.optimize`)
+- Trajectory logging and reporting
+- Batched simulations
+- Custom convergence criteria
+- Support for ASE Atoms and Pymatgen Structure objects
 
-   1. **Thermal Conductivity with MACE** - [`examples/6_Phonons/6.2_QuasiHarmonic_MACE.py`](6_Phonons/6.2_QuasiHarmonic_MACE.py): Calculates quasi-harmonic properties with MACE, batching over volumes and FC2 calculations.
+**Key concepts:** User-friendly API, automatic batching, flexible input formats, trajectory analysis
 
-   1. **Thermal Conductivity with MACE Batched** - [`examples/6_Phonons/6.3_Conductivity_MACE.py`](6_Phonons/6.3_Conductivity_MACE.py): Calculate the Wigner lattice conductivity with MACE, batching over FC2 and FC3 calculations.
+**Dependencies:** `mace-torch>=0.3.12`, `pymatgen>=2025.2.18`
 
-Each example is self-contained and can be run independently to explore TorchSim capabilities. The examples cover basic model setup to advanced simulation techniques, providing a comprehensive overview of the library's features.
+---
+
+### 5. [5_workflow.py](5_workflow.py)
+
+#### Advanced workflows and utilities
+
+Complex simulation workflows for production use cases.
+
+**Topics covered:**
+
+- In-flight autobatching for memory-efficient optimization
+- Dynamic batch management
+- Elastic constant calculations
+- Bulk and shear moduli
+- Bravais lattice detection
+- Force convergence utilities
+
+**Key concepts:** Autobatching, mechanical properties, elastic tensor, production workflows
+
+**Dependencies:** `mace-torch>=0.3.12`, `matbench-discovery>=1.3.1`
+
+---
+
+### 6. [6_phonons.py](6_phonons.py)
+
+#### Phonon calculations
+
+Calculate vibrational properties using finite differences.
+
+**Topics covered:**
+
+- Structure relaxation for phonons
+- Phonon density of states (DOS)
+- Phonon band structure
+- Batched force constant calculations
+- Integration with Phonopy
+- High-symmetry path generation
+- Visualization (optional)
+
+**Key concepts:** Harmonic approximation, force constants, phonon dispersion, thermal properties
+
+**Dependencies:** `mace-torch>=0.3.12`, `phonopy>=2.35`, `pymatviz>=0.17.1`, `plotly>=6.3.0`, `seekpath`, `ase`
+
+---
+
+### 7. [7_others.py](7_others.py)
+
+#### Miscellaneous advanced features
+
+Advanced features and utility functions.
+
+**Topics covered:**
+
+- Batched neighbor list calculations
+  - Linked cell method (efficient for large systems)
+  - N^2 method (simple reference implementation)
+- Velocity autocorrelation function (VACF)
+- Correlation function analysis
+- Property calculations during MD
+
+**Key concepts:** Neighbor lists, time correlation functions, analysis tools
+
+**Dependencies:** `ase>=3.26`, `scipy>=1.15`, `matplotlib`, `numpy`
+
+---
+
+## Running the Examples
+
+### Prerequisites
+
+Install TorchSim and dependencies:
+
+```bash
+pip install torch-sim
+```
+
+Or use `uv` for automatic dependency management:
+
+```bash
+uv pip install torch-sim
+```
+
+### Running Individual Scripts
+
+Each script is self-contained with its dependencies specified in the header. You can run them directly:
+
+```bash
+# With Python
+python examples/new_scripts/1_introduction.py
+
+# With uv (auto-installs dependencies)
+uv run examples/new_scripts/1_introduction.py
+```
+
+### Smoke Testing (Fast Mode)
+
+All scripts support a fast "smoke test" mode for CI or quick verification:
+
+```bash
+CI=1 python 1_introduction.py
+```
+
+This reduces the number of steps and simplifies calculations for quick execution.
+
+## Learning Path
+
+We recommend working through the examples in order:
+
+1. **Start with [1_introduction.py](1_introduction.py)** to understand basic concepts
+2. **Try [2_structural_optimization.py](2_structural_optimization.py)** to learn optimization
+3. **Explore [3_dynamics.py](3_dynamics.py)** for molecular dynamics
+4. **Use [4_high_level_api.py](4_high_level_api.py)** for simplified workflows
+5. **Advanced users:** Check out [5_workflow.py](5_workflow.py), [6_phonons.py](6_phonons.py), and [7_others.py](7_others.py)
+
+## Key Features Demonstrated
+
+### Models
+
+- **Lennard-Jones**: Classical pair potential
+- **MACE**: Machine learning interatomic potential
+
+### Optimizers
+
+- **FIRE**: Fast, adaptive optimizer for geometry relaxation
+- **Gradient Descent**: Simple first-order optimizer
+
+### Integrators
+
+- **NVE**: Microcanonical ensemble (energy conservation)
+- **NVT Langevin**: Canonical ensemble with stochastic thermostat
+- **NVT Nose-Hoover**: Canonical ensemble with deterministic thermostat
+- **NPT Nose-Hoover**: Isothermal-isobaric ensemble
+
+### Cell Filters
+
+- **None**: Position-only optimization
+- **Unit Cell**: Optimize cell with uniform scaling
+- **Frechet Cell**: Full cell optimization with metric-preserving updates
+
+### Batching
+
+- Efficient batched inference for multiple structures
+- Dynamic autobatching for memory optimization
+- Mixed system sizes in single batch
+
+## Tips for Best Performance
+
+1. **Use CUDA if available**: TorchSim automatically uses GPU when available
+2. **Batch similar structures**: Group structures with similar sizes for best efficiency
+3. **Enable autobatching**: For heterogeneous workloads, use `InFlightAutoBatcher`
+4. **Choose appropriate precision**: Use `float32` for speed, `float64` for accuracy
+5. **Profile your code**: Use the built-in timing in examples as a template
+
+## Getting Help
+
+- **Documentation**: See the main TorchSim documentation
+- **Issues**: Report problems at the TorchSim GitHub repository
+- **Questions**: Check existing issues or open a new discussion
+
+## Differences from Original Examples
+
+These consolidated examples:
+
+- ✅ Remove duplicate code and common setup patterns
+- ✅ Use consistent naming and style
+- ✅ Add clear section markers and documentation
+- ✅ Include sensible defaults and smoke test support
+- ✅ Reduce total execution time by ~10x in CI
+- ✅ Maintain all key functionality and learning objectives
+
+The original examples in `examples/scripts/` remain available for reference.

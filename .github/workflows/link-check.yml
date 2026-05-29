@@ -17,4 +17,4 @@ jobs:
         uses: lycheeverse/lychee-action@v2
         with:
           # ignore ipynb links since they're generated on the fly
-          args: --exclude-path dist --exclude '\.ipynb$' --accept 100..=103,200..=299,403,429,500 -- ./**/*.{md,py,yml,json}
+          args: --verbose --root-dir . --exclude-path dist --exclude '\.ipynb$' --accept 100..=103,200..=299,403,429,500 -- ./**/*.{md,py,yml,json}

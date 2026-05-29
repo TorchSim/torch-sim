@@ -1,6 +1,8 @@
 # %%
 # /// script
-# dependencies = ["mace-torch>=0.3.12"]
+# dependencies = [
+#     "torch_sim_atomistic[mace, io]"
+# ]
 # ///
 
 
@@ -50,7 +52,7 @@ Before diving into autobatching, let's understand how memory usage is estimated:
 
 # %%
 import torch
-from torch_sim.autobatching import calculate_memory_scaler
+from torch_sim.autobatching import calculate_memory_scalers
 from ase.build import bulk
 
 
@@ -64,13 +66,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 state = ts.initialize_state(many_cu_atoms, device=device, dtype=torch.float64)
 
 # Calculate memory scaling factor based on atom count
-atom_metric = calculate_memory_scaler(state, memory_scales_with="n_atoms")
+atom_metric = calculate_memory_scalers(state, memory_scales_with="n_atoms")
 
 # Calculate memory scaling based on atom count and density
-density_metric = calculate_memory_scaler(state, memory_scales_with="n_atoms_x_density")
+density_metric = calculate_memory_scalers(state, memory_scales_with="n_atoms_x_density")
 
 print(f"Atom-based memory metric: {atom_metric}")
-print(f"Density-based memory metric: {density_metric:.2f}")
+print(f"Density-based memory metric: {[f'{m:.2f}' for m in density_metric]}")
 
 
 # %% [markdown]
@@ -95,13 +97,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(model=mace, device=device)
 
-state_list = state.split()
-memory_metric_values = [
-    calculate_memory_scaler(s, memory_scales_with="n_atoms") for s in state_list
-]
+memory_metric_values = calculate_memory_scalers(state, memory_scales_with="n_atoms")
 
 max_memory_metric = estimate_max_memory_scaler(
-    state_list, mace_model, metric_values=memory_metric_values
+    state, mace_model, metric_values=memory_metric_values
 )
 print(f"Max memory metric: {max_memory_metric}")
 
@@ -195,7 +194,7 @@ finished_states = []
 for batch, _indices in batcher:
     # Run 5 steps of NVT dynamics
     for _ in range(5):
-        batch = ts.nvt_langevin_step(mace_model, batch, dt=0.001, kT=0.01)
+        batch = ts.nvt_langevin_step(batch, mace_model, dt=0.001, kT=0.01)
 
     finished_states.append(batch)
 
@@ -248,6 +247,7 @@ all_converged_states, convergence_tensor = [], None
 while (result := batcher.next_batch(fire_state, convergence_tensor))[0] is not None:
     # collect the converged states
     fire_state, converged_states = result
+    assert fire_state is not None
     all_converged_states.extend(converged_states)
 
     # optimize the batch, we stagger the steps to avoid state processing overhead
@@ -267,7 +267,8 @@ final_states = batcher.restore_original_order(all_converged_states)
 # Verify all states were processed
 assert len(final_states) == total_states
 
-# Note that the fire_state has been modified in place
+# Note that the fire_state has been modified in place (from last loop iteration)
+assert fire_state is not None
 assert fire_state.n_systems == 0
 
 

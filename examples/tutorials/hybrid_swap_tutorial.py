@@ -1,6 +1,8 @@
 # %%
 # /// script
-# dependencies = ["mace-torch>=0.3.12", "pymatgen>=2025.2.18"]
+# dependencies = [
+#     "torch_sim_atomistic[mace, io]"
+# ]
 # ///
 
 
@@ -100,10 +102,16 @@ class HybridSwapMCState(SwapMCState, MDState):
     from MDState.
     """
 
-    last_permutation: torch.Tensor
     _atom_attributes = (
-        MDState._atom_attributes | {"last_permutation"}  # noqa: SLF001
+        ts.SwapMCState._atom_attributes | MDState._atom_attributes  # noqa: SLF001
     )
+    _system_attributes = (
+        ts.SwapMCState._system_attributes | MDState._system_attributes  # noqa: SLF001
+    )
+
+    def __post_init__(self) -> None:
+        """Initialize HybridSwapMCState and ensure last_permutation is set."""
+        super().__post_init__()
 
 
 # %% [markdown]
@@ -122,18 +130,11 @@ from torch_sim.units import MetalUnits
 kT = 1000 * MetalUnits.temperature
 
 # Initialize NVT Langevin dynamics state
-md_state = ts.nvt_langevin_init(state=state, model=mace_model, kT=kT, seed=42)
+state.rng = 42
+md_state = ts.nvt_langevin_init(state=state, model=mace_model, kT=kT)
 
-# Initialize swap Monte Carlo state
-swap_state = ts.swap_mc_init(state=md_state, model=mace_model)
-
-# Create hybrid state combining both
-hybrid_state = HybridSwapMCState(
-    **md_state.attributes,
-    last_permutation=torch.arange(
-        md_state.n_atoms, device=md_state.device, dtype=torch.long
-    ),
-)
+# Create hybrid state from MD state
+hybrid_state = HybridSwapMCState(**md_state.attributes)
 
 
 # %% [markdown]
@@ -163,7 +164,7 @@ for step in range(n_steps):
         )
     else:  # Perform MD step
         hybrid_state = ts.nvt_langevin_step(
-            model=mace_model, state=hybrid_state, dt=0.002, kT=kT
+            state=hybrid_state, model=mace_model, dt=0.002, kT=kT
         )
 
     if step % 20 == 0:

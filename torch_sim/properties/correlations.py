@@ -523,8 +523,8 @@ class HeatFluxAutoCorrelation:
         """
         # TODO (AG): Figure out how to do it in a more efficient way
         self.model = model
-        self.model.per_atom_stresses = True
-        self.model.per_atom_energies = True
+        self.model.per_atom_stresses = True  # ty: ignore[unresolved-attribute]
+        self.model.per_atom_energies = True  # ty: ignore[unresolved-attribute]
 
         self.corr_calc = CorrelationCalculator(
             window_size=window_size,

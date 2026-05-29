@@ -1,15 +1,20 @@
 """Core molecular dynamics state and operations."""
 
+import logging
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 
 import torch
 
-from torch_sim import transforms
+from torch_sim._duecredit import dcite
 from torch_sim.models.interface import ModelInterface
-from torch_sim.quantities import calc_temperature
+from torch_sim.quantities import calc_kT
 from torch_sim.state import SimState
 from torch_sim.units import MetalUnits
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True)
@@ -29,8 +34,12 @@ class MDState(SimState):
         system_idx (torch.Tensor): System indices [n_particles]
         atomic_numbers (torch.Tensor): Atomic numbers [n_particles]
         momenta (torch.Tensor): Particle momenta [n_particles, n_dim]
-        energy (torch.Tensor): Total energy of the system [n_systems]
+        energy (torch.Tensor): Potential energy of the system [n_systems]
         forces (torch.Tensor): Forces on particles [n_particles, n_dim]
+        rng (torch.Generator): RNG used by stochastic integrators (lazily
+            initialised via the ``rng`` property on ``SimState``).  Stored on
+            the state so that the random stream advances consistently across
+            steps and can be serialised for reproducibility.
 
     Properties:
         velocities (torch.Tensor): Particle velocities [n_particles, n_dim]
@@ -57,6 +66,12 @@ class MDState(SimState):
         """
         return self.momenta / self.masses.unsqueeze(-1)
 
+    def set_constrained_momenta(self, new_momenta: torch.Tensor) -> None:
+        """Set new momenta, applying any constraints as needed."""
+        for constraint in self.constraints:
+            constraint.adjust_momenta(self, new_momenta)
+        self.momenta = new_momenta
+
     def calc_temperature(
         self, units: MetalUnits = MetalUnits.temperature
     ) -> torch.Tensor:
@@ -68,21 +83,28 @@ class MDState(SimState):
         Returns:
             torch.Tensor: Calculated temperature
         """
-        return calc_temperature(
+        return self.calc_kT() / units.temperature
+
+    def calc_kT(self) -> torch.Tensor:  # noqa: N802
+        """Calculate kT from momenta, masses, and system indices.
+
+        Returns:
+            torch.Tensor: Calculated kT in energy units
+        """
+        return calc_kT(
             masses=self.masses,
             momenta=self.momenta,
             system_idx=self.system_idx,
             dof_per_system=self.get_number_of_degrees_of_freedom(),
-            units=units,
         )
 
 
-def calculate_momenta(
+def initialize_momenta(
     positions: torch.Tensor,
     masses: torch.Tensor,
     system_idx: torch.Tensor,
     kT: float | torch.Tensor,
-    seed: int | None = None,
+    generator: torch.Generator | None = None,
 ) -> torch.Tensor:
     """Initialize particle momenta based on temperature.
 
@@ -95,7 +117,7 @@ def calculate_momenta(
         masses (torch.Tensor): Particle masses [n_particles]
         system_idx (torch.Tensor): System indices [n_particles]
         kT (torch.Tensor): Temperature in energy units [n_systems]
-        seed (int, optional): Random seed for reproducibility. Defaults to None.
+        generator: Optional ``torch.Generator`` for reproducibility.
 
     Returns:
         torch.Tensor: Initialized momenta [n_particles, n_dim]
@@ -103,12 +125,8 @@ def calculate_momenta(
     device = positions.device
     dtype = positions.dtype
 
-    generator = torch.Generator(device=device)
-    if seed is not None:
-        generator.manual_seed(seed)
-
-    if isinstance(kT, torch.Tensor) and len(kT.shape) > 0:
-        # kT is a tensor with shape (n_systems,)
+    kT = torch.as_tensor(kT, device=device, dtype=dtype)
+    if kT.ndim > 0:
         kT = kT[system_idx]
 
     # Generate random momenta from normal distribution
@@ -153,8 +171,9 @@ def momentum_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
         MDState: Updated state with new momenta after force application
 
     """
+    dt = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
     new_momenta = state.momenta + state.forces * dt
-    state.momenta = new_momenta
+    state.set_constrained_momenta(new_momenta)
     return state
 
 
@@ -173,19 +192,15 @@ def position_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
         MDState: Updated state with new positions after propagation
 
     """
+    dt = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
     new_positions = state.positions + state.velocities * dt
-
-    if state.pbc:
-        # Split positions and cells by system
-        new_positions = transforms.pbc_wrap_batched(
-            new_positions, state.cell, state.system_idx
-        )
-
-    state.positions = new_positions
+    state.set_constrained_positions(new_positions)
     return state
 
 
-def velocity_verlet[T: MDState](state: T, dt: torch.Tensor, model: ModelInterface) -> T:
+def velocity_verlet_step[T: MDState](
+    state: T, dt: float | torch.Tensor, model: ModelInterface
+) -> T:
     """Perform one complete velocity Verlet integration step.
 
     This function implements the velocity Verlet algorithm, which provides
@@ -209,6 +224,7 @@ def velocity_verlet[T: MDState](state: T, dt: torch.Tensor, model: ModelInterfac
         - Conserves energy in the absence of numerical errors
         - Handles periodic boundary conditions if enabled in state
     """
+    dt = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
     dt_2 = dt / 2
     state = momentum_step(state, dt_2)
     state = position_step(state, dt)
@@ -217,7 +233,18 @@ def velocity_verlet[T: MDState](state: T, dt: torch.Tensor, model: ModelInterfac
 
     state.energy = model_output["energy"]
     state.forces = model_output["forces"]
+    state.store_model_extras(model_output)
     return momentum_step(state, dt_2)
+
+
+def velocity_verlet[T: MDState](
+    state: T, dt: float | torch.Tensor, model: ModelInterface
+) -> T:
+    """Deprecated alias for velocity_verlet_step."""
+    msg = "velocity_verlet is deprecated. Use velocity_verlet_step instead."
+    warnings.warn(msg, DeprecationWarning, stacklevel=2)
+    logger.warning(msg)
+    return velocity_verlet_step(state=state, dt=dt, model=model)
 
 
 @dataclass
@@ -307,12 +334,15 @@ SUZUKI_YOSHIDA_WEIGHTS = {
 }
 
 
+@dcite("10.1063/1.463940")
+@dcite("10.2183/pjab.69.161")
+@dcite("10.1016/0375-9601(90)90092-3")
 def construct_nose_hoover_chain(  # noqa: C901 PLR0915
-    dt: torch.Tensor,
+    dt: float | torch.Tensor,
     chain_length: int,
     chain_steps: int,
     sy_steps: int,
-    tau: torch.Tensor,
+    tau: float | torch.Tensor,
 ) -> NoseHooverChainFns:
     """Creates functions to simulate a Nose-Hoover Chain thermostat.
 
@@ -369,20 +399,18 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
         p_xi = torch.zeros((n_systems, chain_length), dtype=dtype, device=device)
 
         # Broadcast tau to match n_systems
-        if isinstance(tau, torch.Tensor):
-            tau_batched = tau.expand(n_systems) if tau.dim() == 0 else tau
-        else:
-            tau_batched = torch.full((n_systems,), tau, dtype=dtype, device=device)
+        tau_batched = torch.as_tensor(tau, device=device, dtype=dtype)
+        if tau_batched.ndim == 0:
+            tau_batched = tau_batched.expand(n_systems)
 
         # Ensure kT has proper batch dimension
-        if isinstance(kT, torch.Tensor):
-            kT_batched = kT.expand(n_systems) if kT.dim() == 0 else kT
-        else:
-            kT_batched = torch.full((n_systems,), kT, dtype=dtype, device=device)
+        kT_batched = torch.as_tensor(kT, device=device, dtype=dtype)
+        if kT_batched.ndim == 0:
+            kT_batched = kT_batched.expand(n_systems)
 
         Q = (
             kT_batched.unsqueeze(-1)
-            * torch.square(tau_batched).unsqueeze(-1) ** 2
+            * torch.square(tau_batched).unsqueeze(-1)
             * torch.ones((n_systems, chain_length), dtype=dtype, device=device)
         )
         Q[:, 0] *= degrees_of_freedom
@@ -424,10 +452,9 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
         M = chain_length - 1
 
         # Ensure kT has proper batch dimension
-        if isinstance(kT, torch.Tensor):
-            kT_batched = kT.expand(KE.shape[0]) if kT.dim() == 0 else kT
-        else:
-            kT_batched = torch.full_like(KE, kT)
+        kT_batched = torch.as_tensor(kT, device=KE.device, dtype=KE.dtype)
+        if kT_batched.ndim == 0:
+            kT_batched = kT_batched.expand(KE.shape[0])
 
         # Update chain momenta backwards
         if M > 0:
@@ -482,11 +509,12 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
         Returns:
             Tuple of (rescaled momenta, updated chain state)
         """
+        dt_tensor = torch.as_tensor(dt, device=P.device, dtype=P.dtype)
         if chain_steps == 1 and sy_steps == 1:
-            P, state, _ = substep_fn(dt, P, state, kT, system_idx)
+            P, state, _ = substep_fn(dt_tensor, P, state, kT, system_idx)
             return P, state
 
-        delta = dt / chain_steps
+        delta = dt_tensor / chain_steps
         weights = SUZUKI_YOSHIDA_WEIGHTS[sy_steps]
 
         for step in range(chain_steps * sy_steps):
@@ -496,7 +524,7 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
         return P, state
 
     def update_chain_mass_fn(
-        chain_state: NoseHooverChain, kT: torch.Tensor
+        chain_state: NoseHooverChain, kT: float | torch.Tensor
     ) -> NoseHooverChain:
         """Update chain masses to maintain target oscillation period.
 
@@ -514,10 +542,9 @@ def construct_nose_hoover_chain(  # noqa: C901 PLR0915
         n_systems = chain_state.kinetic_energy.shape[0]
 
         # Ensure kT has proper batch dimension
-        if isinstance(kT, torch.Tensor):
-            kT_batched = kT.expand(n_systems) if kT.dim() == 0 else kT
-        else:
-            kT_batched = torch.full((n_systems,), kT, dtype=dtype, device=device)
+        kT_batched = torch.as_tensor(kT, device=device, dtype=dtype)
+        if kT_batched.ndim == 0:
+            kT_batched = kT_batched.expand(n_systems)
 
         Q = (
             kT_batched.unsqueeze(-1)

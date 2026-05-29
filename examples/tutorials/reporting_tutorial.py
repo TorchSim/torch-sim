@@ -1,9 +1,7 @@
 # %%
 # /// script
 # dependencies = [
-#     "mace-torch>=0.3.12",
-#     "pymatgen>=2025.2.18",
-#     "ase>=3.26",
+#     "torch_sim_atomistic[mace, io]"
 # ]
 # ///
 
@@ -228,7 +226,7 @@ reporter = ts.TrajectoryReporter(
 )
 
 # Initialize a model for energy calculation
-lj_model = LennardJonesModel()
+lj_model = LennardJonesModel(device=state.device, dtype=state.positions.dtype)
 
 # Run simulation with property calculation
 for step in range(100):

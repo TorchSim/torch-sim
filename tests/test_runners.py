@@ -100,11 +100,69 @@ def test_integrate_double_nvt(
         n_steps=10,
         temperature=100.0,  # K
         timestep=0.001,  # ps
+        init_kwargs={},
     )
 
     assert isinstance(final_state, SimState)
     assert final_state.n_atoms == 64
     assert not torch.isnan(final_state.energy).any()
+
+
+def test_integrate_double_nvt_multiple_temperatures(
+    ar_double_sim_state: SimState, lj_model: LennardJonesModel
+) -> None:
+    """Test NVT integration with LJ potential."""
+    n_steps = 5
+    _ = ts.integrate(
+        system=ar_double_sim_state,
+        model=lj_model,
+        integrator=ts.Integrator.nvt_langevin,
+        n_steps=n_steps,
+        temperature=[100.0, 200.0],  # K
+        timestep=0.001,  # ps
+        init_kwargs={},
+    )
+
+    batcher = ts.autobatching.BinningAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=ar_double_sim_state[0].n_atoms,
+    )
+    _ = ts.integrate(
+        system=ar_double_sim_state,
+        model=lj_model,
+        integrator=ts.Integrator.nvt_langevin,
+        n_steps=n_steps,
+        temperature=[100.0, 200.0],  # K
+        timestep=0.001,  # ps
+        autobatcher=batcher,
+        init_kwargs={},
+    )
+
+    # Temperature tensor with correct shape (n_steps, n_systems)
+    _ = ts.integrate(
+        system=ar_double_sim_state,
+        model=lj_model,
+        integrator=ts.Integrator.nvt_langevin,
+        n_steps=n_steps,
+        temperature=torch.tensor([100.0, 200.0])[None, :].repeat(n_steps, 1),
+        timestep=0.001,  # ps
+        autobatcher=batcher,
+        init_kwargs={},
+    )
+
+    # Temperature tensor with incorrect shape (n_systems, n_steps)
+    with pytest.raises(ValueError, match="first dimension must be n_steps"):
+        _ = ts.integrate(
+            system=ar_double_sim_state,
+            model=lj_model,
+            integrator=ts.Integrator.nvt_langevin,
+            n_steps=n_steps,
+            temperature=torch.tensor([100.0, 200.0])[None, :].repeat(n_steps, 1).T,  # K
+            timestep=0.001,  # ps
+            autobatcher=batcher,
+            init_kwargs={},
+        )
 
 
 def test_integrate_double_nvt_with_reporter(
@@ -278,8 +336,8 @@ def test_integrate_with_autobatcher_and_reporting(
             )
             energies = traj.get_array("pe")
             energy_steps = traj.get_steps("pe")
-            assert len(energies) == 10
-            assert len(energy_steps) == 10
+            assert len(energies) == 11  # includes initial state at step 0, hence 10 + 1
+            assert len(energy_steps) == 11
 
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
@@ -314,9 +372,25 @@ def test_optimize_fire(
 
     # Check force convergence
     assert torch.all(final_state.forces < 3e-1)
-    assert energies.shape[0] >= 10
+    assert energies.shape[0] >= 11
     assert energies[0] > energies[-1]
     assert not torch.allclose(original_state.positions, final_state.positions)
+
+
+def test_force_convergence_fn_w_cell_filter(lj_model: LennardJonesModel):
+    """Tests that we can calculate static properties after an optimize run."""
+    atoms = bulk("Si", "diamond", a=5.43, cubic=True)
+    initial_state = ts.io.atoms_to_state(
+        atoms, device=lj_model.device, dtype=lj_model.dtype
+    )
+
+    ts.optimize(
+        system=initial_state,
+        model=lj_model,
+        optimizer=ts.Optimizer.fire,
+        convergence_fn=ts.generate_force_convergence_fn(),
+        max_steps=100,
+    )
 
 
 def test_default_converged_fn(

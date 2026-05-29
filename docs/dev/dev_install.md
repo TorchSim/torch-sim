@@ -32,7 +32,17 @@ prek run --all-files
 ```
 
 The `prek` command will ensure that changes to the source code match the
-TorchSim style guidelines by running the `ruff` code linters and the `ty` type checker automatically with each commit.
+TorchSim style guidelines by running the `ruff` code linters and the `ty` type checker automatically with each commit. If you observe differences between running this locally
+and in CI then the most likely cause is that you have a `uv.lock` file causing differences
+for some dependencies that are unpinned.
+To resolve this, you can run:
+
+```bash
+uv sync -U
+```
+
+to ensure that all dependencies are latest for the unpinned dependencies which is the
+behavior that we see in CI.
 
 ## Running unit tests
 

@@ -1,6 +1,6 @@
 import copy
+import warnings
 from collections.abc import Callable
-from dataclasses import fields
 from functools import partial
 from typing import Any, get_args
 
@@ -9,7 +9,8 @@ import torch
 
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
-from torch_sim.optimizers import FireFlavor, FireState, OptimState
+from torch_sim.optimizers import BFGSState, FireFlavor, FireState, LBFGSState, OptimState
+from torch_sim.optimizers.cell_filters import CellLBFGSState, deform_grad
 from torch_sim.state import SimState
 
 
@@ -161,11 +162,409 @@ def test_fire_optimization(
     )
 
 
+def test_bfgs_optimization(
+    ar_supercell_sim_state: SimState, lj_model: ModelInterface
+) -> None:
+    """Test that the BFGS optimizer actually minimizes energy."""
+    current_positions = (
+        ar_supercell_sim_state.positions.clone()
+        + torch.randn_like(ar_supercell_sim_state.positions) * 0.1
+    )
+
+    current_sim_state = SimState(
+        positions=current_positions,
+        masses=ar_supercell_sim_state.masses.clone(),
+        cell=ar_supercell_sim_state.cell.clone(),
+        pbc=ar_supercell_sim_state.pbc,
+        atomic_numbers=ar_supercell_sim_state.atomic_numbers.clone(),
+        system_idx=ar_supercell_sim_state.system_idx.clone(),
+    )
+
+    initial_state_positions = current_sim_state.positions.clone()
+
+    # Initialize BFGS optimizer
+    state = ts.bfgs_init(current_sim_state, lj_model)
+
+    # Run optimization for a few steps
+    energies = [1000, state.energy.item()]
+    max_steps = 1000
+    steps_taken = 0
+    while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
+        state = ts.bfgs_step(state=state, model=lj_model)
+        energies.append(state.energy.item())
+        steps_taken += 1
+
+    assert steps_taken < max_steps, f"BFGS optimization did not converge in {max_steps=}"
+
+    energies = energies[1:]
+
+    # Check that energy decreased
+    assert energies[-1] < energies[0], (
+        f"BFGS optimization should reduce energy "
+        f"(initial: {energies[0]}, final: {energies[-1]})"
+    )
+
+    # Check force convergence
+    max_force = torch.max(torch.norm(state.forces, dim=1))
+    assert max_force < 0.3, f"Forces should be small after optimization, got {max_force=}"
+
+    assert not torch.allclose(state.positions, initial_state_positions), (
+        "BFGS positions should have changed after optimization."
+    )
+
+
+def test_lbfgs_optimization(
+    ar_supercell_sim_state: SimState, lj_model: ModelInterface
+) -> None:
+    """Test that the L-BFGS optimizer actually minimizes energy."""
+    current_positions = (
+        ar_supercell_sim_state.positions.clone()
+        + torch.randn_like(ar_supercell_sim_state.positions) * 0.1
+    )
+
+    current_sim_state = SimState(
+        positions=current_positions,
+        masses=ar_supercell_sim_state.masses.clone(),
+        cell=ar_supercell_sim_state.cell.clone(),
+        pbc=ar_supercell_sim_state.pbc,
+        atomic_numbers=ar_supercell_sim_state.atomic_numbers.clone(),
+        system_idx=ar_supercell_sim_state.system_idx.clone(),
+    )
+
+    initial_state_positions = current_sim_state.positions.clone()
+
+    # Initialize L-BFGS optimizer
+    state = ts.lbfgs_init(current_sim_state, lj_model)
+
+    # Run optimization for a few steps
+    energies = [1000, state.energy.item()]
+    max_steps = 1000
+    steps_taken = 0
+    while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
+        state = ts.lbfgs_step(state=state, model=lj_model)
+        energies.append(state.energy.item())
+        steps_taken += 1
+
+    assert steps_taken < max_steps, (
+        f"L-BFGS optimization did not converge in {max_steps=}"
+    )
+
+    energies = energies[1:]
+
+    # Check that energy decreased
+    assert energies[-1] < energies[0], (
+        f"L-BFGS optimization should reduce energy "
+        f"(initial: {energies[0]}, final: {energies[-1]})"
+    )
+
+    # Check force convergence
+    max_force = torch.max(torch.norm(state.forces, dim=1))
+    assert max_force < 0.3, f"Forces should be small after optimization, got {max_force=}"
+
+    assert not torch.allclose(state.positions, initial_state_positions), (
+        "L-BFGS positions should have changed after optimization."
+    )
+
+
+@pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
+def test_bfgs_cell_optimization(
+    ar_supercell_sim_state: SimState,
+    lj_model: ModelInterface,
+    cell_filter: ts.CellFilter,
+) -> None:
+    """Test that BFGS with cell filter actually minimizes energy."""
+    current_positions = (
+        ar_supercell_sim_state.positions.clone()
+        + torch.randn_like(ar_supercell_sim_state.positions) * 0.1
+    )
+    current_cell = (
+        ar_supercell_sim_state.cell.clone()
+        + torch.randn_like(ar_supercell_sim_state.cell) * 0.01
+    )
+
+    current_sim_state = SimState(
+        positions=current_positions,
+        masses=ar_supercell_sim_state.masses.clone(),
+        cell=current_cell,
+        pbc=ar_supercell_sim_state.pbc,
+        atomic_numbers=ar_supercell_sim_state.atomic_numbers.clone(),
+        system_idx=ar_supercell_sim_state.system_idx.clone(),
+    )
+
+    initial_state_positions = current_sim_state.positions.clone()
+    initial_state_cell = current_sim_state.cell.clone()
+
+    # Initialize BFGS optimizer with cell filter
+    state = ts.bfgs_init(
+        state=current_sim_state,
+        model=lj_model,
+        cell_filter=cell_filter,
+    )
+
+    # Run optimization
+    energies = [1000.0, state.energy.item()]
+    max_steps = 1000
+    steps_taken = 0
+
+    while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
+        state = ts.bfgs_step(state=state, model=lj_model)
+        energies.append(state.energy.item())
+        steps_taken += 1
+
+    assert steps_taken < max_steps, (
+        f"BFGS {cell_filter.name} optimization did not converge in {max_steps=}"
+    )
+
+    energies = energies[1:]
+
+    # Check that energy decreased
+    assert energies[-1] < energies[0], (
+        f"BFGS {cell_filter.name} optimization should reduce energy "
+        f"(initial: {energies[0]}, final: {energies[-1]})"
+    )
+
+    # Check force convergence
+    max_force = torch.max(torch.norm(state.forces, dim=1))
+    pressure = torch.trace(state.stress.squeeze(0)) / 3.0
+
+    assert torch.abs(pressure) < 0.05, (
+        f"Pressure should be small after {cell_filter.name} optimization, got {pressure=}"
+    )
+    assert max_force < 0.3, (
+        f"Forces should be small after {cell_filter.name} optimization, got {max_force=}"
+    )
+
+    assert not torch.allclose(state.positions, initial_state_positions, atol=1e-5), (
+        f"BFGS {cell_filter.name} positions should have changed after optimization."
+    )
+    assert not torch.allclose(state.cell, initial_state_cell, atol=1e-5), (
+        f"BFGS {cell_filter.name} cell should have changed after optimization."
+    )
+
+
+def test_unit_cell_bfgs_multi_batch(
+    ar_supercell_sim_state: SimState, lj_model: ModelInterface
+) -> None:
+    """Test BFGS optimization with multiple batches."""
+    generator = torch.Generator(device=ar_supercell_sim_state.device)
+
+    ar_supercell_sim_state_1 = copy.deepcopy(ar_supercell_sim_state)
+    ar_supercell_sim_state_2 = copy.deepcopy(ar_supercell_sim_state)
+
+    for state in (ar_supercell_sim_state_1, ar_supercell_sim_state_2):
+        generator.manual_seed(43)
+        state.positions += (
+            torch.randn(
+                state.positions.shape,
+                device=state.device,
+                generator=generator,
+            )
+            * 0.1
+        )
+
+    multi_state = ts.concatenate_states(
+        [ar_supercell_sim_state_1, ar_supercell_sim_state_2],
+        device=ar_supercell_sim_state.device,
+    )
+
+    # Initialize BFGS optimizer with unit cell filter
+    state = ts.bfgs_init(
+        state=multi_state, model=lj_model, cell_filter=ts.CellFilter.unit
+    )
+    initial_state = copy.deepcopy(state)
+
+    # Run optimization
+    prev_energy = torch.ones(2, device=state.device, dtype=state.energy.dtype) * 1000
+    current_energy = initial_state.energy
+    step = 0
+    while not torch.allclose(current_energy, prev_energy, atol=1e-9):
+        prev_energy = current_energy
+        state = ts.bfgs_step(state=state, model=lj_model)
+        current_energy = state.energy
+
+        step += 1
+        if step > 500:
+            raise ValueError("BFGS optimization did not converge")
+
+    # Check that we actually optimized
+    assert step > 5
+
+    # Check that energy decreased for both batches
+    assert torch.all(state.energy < initial_state.energy), (
+        "BFGS optimization should reduce energy for all batches"
+    )
+
+    # Check force convergence
+    max_force = torch.max(torch.norm(state.forces, dim=1))
+    assert torch.all(max_force < 0.2), (
+        f"Forces should be small after optimization, got {max_force=}"
+    )
+
+    n_ar_atoms = ar_supercell_sim_state.n_atoms
+    assert not torch.allclose(
+        state.positions[:n_ar_atoms], multi_state.positions[:n_ar_atoms]
+    )
+    assert not torch.allclose(
+        state.positions[n_ar_atoms:], multi_state.positions[n_ar_atoms:]
+    )
+
+    # We are evolving identical systems
+    assert torch.allclose(current_energy[0], current_energy[1])
+
+
+@pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
+def test_lbfgs_cell_optimization(
+    ar_supercell_sim_state: SimState,
+    lj_model: ModelInterface,
+    cell_filter: ts.CellFilter,
+) -> None:
+    """Test that L-BFGS with cell filter actually minimizes energy."""
+    current_positions = (
+        ar_supercell_sim_state.positions.clone()
+        + torch.randn_like(ar_supercell_sim_state.positions) * 0.1
+    )
+    current_cell = (
+        ar_supercell_sim_state.cell.clone()
+        + torch.randn_like(ar_supercell_sim_state.cell) * 0.01
+    )
+
+    current_sim_state = SimState(
+        positions=current_positions,
+        masses=ar_supercell_sim_state.masses.clone(),
+        cell=current_cell,
+        pbc=ar_supercell_sim_state.pbc,
+        atomic_numbers=ar_supercell_sim_state.atomic_numbers.clone(),
+        system_idx=ar_supercell_sim_state.system_idx.clone(),
+    )
+
+    initial_state_positions = current_sim_state.positions.clone()
+    initial_state_cell = current_sim_state.cell.clone()
+
+    # Initialize L-BFGS optimizer with cell filter
+    state = ts.lbfgs_init(
+        state=current_sim_state,
+        model=lj_model,
+        cell_filter=cell_filter,
+    )
+
+    # Run optimization
+    energies = [1000.0, state.energy.item()]
+    max_steps = 1000
+    steps_taken = 0
+
+    while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
+        state = ts.lbfgs_step(state=state, model=lj_model)
+        energies.append(state.energy.item())
+        steps_taken += 1
+
+    assert steps_taken < max_steps, (
+        f"L-BFGS {cell_filter.name} optimization did not converge in {max_steps=}"
+    )
+
+    energies = energies[1:]
+
+    # Check that energy decreased
+    assert energies[-1] < energies[0], (
+        f"L-BFGS {cell_filter.name} optimization should reduce energy "
+        f"(initial: {energies[0]}, final: {energies[-1]})"
+    )
+
+    # Check force convergence
+    max_force = torch.max(torch.norm(state.forces, dim=1))
+    pressure = torch.trace(state.stress.squeeze(0)) / 3.0
+
+    assert torch.abs(pressure) < 0.05, (
+        f"Pressure should be small after {cell_filter.name} optimization, got {pressure=}"
+    )
+    assert max_force < 0.3, (
+        f"Forces should be small after {cell_filter.name} optimization, got {max_force=}"
+    )
+
+    assert not torch.allclose(state.positions, initial_state_positions, atol=1e-5), (
+        f"L-BFGS {cell_filter.name} positions should have changed after optimization."
+    )
+    assert not torch.allclose(state.cell, initial_state_cell, atol=1e-5), (
+        f"L-BFGS {cell_filter.name} cell should have changed after optimization."
+    )
+
+
+def test_unit_cell_lbfgs_multi_batch(
+    ar_supercell_sim_state: SimState, lj_model: ModelInterface
+) -> None:
+    """Test L-BFGS optimization with multiple batches."""
+    generator = torch.Generator(device=ar_supercell_sim_state.device)
+
+    ar_supercell_sim_state_1 = copy.deepcopy(ar_supercell_sim_state)
+    ar_supercell_sim_state_2 = copy.deepcopy(ar_supercell_sim_state)
+
+    for state in (ar_supercell_sim_state_1, ar_supercell_sim_state_2):
+        generator.manual_seed(43)
+        state.positions += (
+            torch.randn(
+                state.positions.shape,
+                device=state.device,
+                generator=generator,
+            )
+            * 0.1
+        )
+
+    multi_state = ts.concatenate_states(
+        [ar_supercell_sim_state_1, ar_supercell_sim_state_2],
+        device=ar_supercell_sim_state.device,
+    )
+
+    # Initialize L-BFGS optimizer with unit cell filter
+    state = ts.lbfgs_init(
+        state=multi_state, model=lj_model, cell_filter=ts.CellFilter.unit
+    )
+    initial_state = copy.deepcopy(state)
+
+    # Run optimization
+    prev_energy = torch.ones(2, device=state.device, dtype=state.energy.dtype) * 1000
+    current_energy = initial_state.energy
+    step = 0
+    while not torch.allclose(current_energy, prev_energy, atol=1e-9):
+        prev_energy = current_energy
+        state = ts.lbfgs_step(state=state, model=lj_model)
+        current_energy = state.energy
+
+        step += 1
+        if step > 500:
+            raise ValueError("L-BFGS optimization did not converge")
+
+    # Check that we actually optimized
+    assert step > 5
+
+    # Check that energy decreased for both batches
+    assert torch.all(state.energy < initial_state.energy), (
+        "L-BFGS optimization should reduce energy for all batches"
+    )
+
+    # Check force convergence
+    max_force = torch.max(torch.norm(state.forces, dim=1))
+    assert torch.all(max_force < 0.2), (
+        f"Forces should be small after optimization, got {max_force=}"
+    )
+
+    n_ar_atoms = ar_supercell_sim_state.n_atoms
+    assert not torch.allclose(
+        state.positions[:n_ar_atoms], multi_state.positions[:n_ar_atoms]
+    )
+    assert not torch.allclose(
+        state.positions[n_ar_atoms:], multi_state.positions[n_ar_atoms:]
+    )
+
+    # We are evolving identical systems
+    assert torch.allclose(current_energy[0], current_energy[1])
+
+
 @pytest.mark.parametrize(
     ("optimizer_fn", "expected_state_type"),
     [
         (ts.Optimizer.fire, FireState),
         (ts.Optimizer.gradient_descent, OptimState),
+        (ts.Optimizer.bfgs, BFGSState),
+        (ts.Optimizer.lbfgs, LBFGSState),
     ],
 )
 def test_simple_optimizer_init_with_dict(
@@ -174,13 +573,9 @@ def test_simple_optimizer_init_with_dict(
     ar_supercell_sim_state: SimState,
     lj_model: ModelInterface,
 ) -> None:
-    """Test simple optimizer init_fn with a SimState dictionary."""
-    state_dict = {
-        field.name: getattr(ar_supercell_sim_state, field.name)
-        for field in fields(ar_supercell_sim_state)
-    }
+    """Test simple optimizer init_fn with a SimState."""
     init_fn, _ = ts.OPTIM_REGISTRY[optimizer_fn]
-    opt_state = init_fn(model=lj_model, state=state_dict)
+    opt_state = init_fn(model=lj_model, state=ar_supercell_sim_state)
     assert isinstance(opt_state, expected_state_type)
     assert opt_state.energy is not None
     assert opt_state.forces is not None
@@ -323,6 +718,74 @@ def test_fire_vv_negative_power_branch(
 
 
 @pytest.mark.parametrize("fire_flavor", get_args(FireFlavor))
+@pytest.mark.parametrize("cell_filter", [None, ts.CellFilter.unit, ts.CellFilter.frechet])
+def test_fire_nan_velocities_dont_affect_other_systems(
+    ar_supercell_sim_state: SimState,
+    lj_model: ModelInterface,
+    fire_flavor: "FireFlavor",
+    cell_filter: "ts.CellFilter | None",
+) -> None:
+    """Injecting NaN velocities into one system must not alter another's trajectory.
+
+    Regression: _ase_fire_step used ``if nan_velocities.any()`` to skip force
+    transformation AND FIRE mixing for ALL systems. When the InFlightAutoBatcher
+    swaps in a new state (NaN velocities from fire_init), retained systems got
+    skipped FIRE mixing and untransformed forces. This test clones a state,
+    injects NaN into one copy's system 1, and verifies system 0 is identical.
+    """
+    multi = ts.concatenate_states(
+        [ar_supercell_sim_state, copy.deepcopy(ar_supercell_sim_state)]
+    )
+
+    init_kwargs: dict[str, Any] = {"fire_flavor": fire_flavor}
+    if cell_filter is not None:
+        multi.cell = multi.cell * 0.85
+        multi.positions = multi.positions * 0.85
+        init_kwargs["cell_filter"] = cell_filter
+
+    state = ts.fire_init(state=multi, model=lj_model, **init_kwargs)
+
+    # Evolve 10 steps so system 0 has non-trivial FIRE state (dt, alpha, n_pos)
+    for _ in range(10):
+        state = ts.fire_step(state=state, model=lj_model)
+
+    # Clone, then inject NaN into system 1 of one copy
+    state_clean = copy.deepcopy(state)
+    state_mixed = copy.deepcopy(state)
+
+    sys1_atoms = state_mixed.system_idx == 1
+    state_mixed.velocities[sys1_atoms] = float("nan")
+    if cell_filter is not None:
+        state_mixed.cell_velocities[1] = float("nan")
+
+    # One step each
+    state_clean = ts.fire_step(state=state_clean, model=lj_model)
+    state_mixed = ts.fire_step(state=state_mixed, model=lj_model)
+
+    # System 0 must be identical regardless of system 1's NaN velocities
+    sys0 = state_clean.system_idx == 0
+    assert torch.equal(state_mixed.positions[sys0], state_clean.positions[sys0]), (
+        "System 0 positions differ when system 1 has NaN velocities"
+    )
+    assert torch.equal(state_mixed.velocities[sys0], state_clean.velocities[sys0]), (
+        "System 0 velocities differ when system 1 has NaN velocities"
+    )
+    assert state_mixed.dt[0] == state_clean.dt[0], (
+        "System 0 dt differs when system 1 has NaN velocities"
+    )
+    assert state_mixed.alpha[0] == state_clean.alpha[0], (
+        "System 0 alpha differs when system 1 has NaN velocities"
+    )
+    assert state_mixed.n_pos[0] == state_clean.n_pos[0], (
+        "System 0 n_pos differs when system 1 has NaN velocities"
+    )
+    if cell_filter is not None:
+        assert torch.equal(state_mixed.cell[0], state_clean.cell[0]), (
+            "System 0 cell differs when system 1 has NaN velocities"
+        )
+
+
+@pytest.mark.parametrize("fire_flavor", get_args(FireFlavor))
 def test_unit_cell_fire_optimization(
     ar_supercell_sim_state: SimState, lj_model: ModelInterface, fire_flavor: FireFlavor
 ) -> None:
@@ -410,6 +873,10 @@ def test_unit_cell_fire_optimization(
             50.0,
         ),
         (ts.Optimizer.fire, ts.CellFilter.frechet, ts.CellFireState, 75.0),
+        (ts.Optimizer.bfgs, ts.CellFilter.unit, ts.CellBFGSState, 100),
+        (ts.Optimizer.bfgs, ts.CellFilter.frechet, ts.CellBFGSState, 75.0),
+        (ts.Optimizer.lbfgs, ts.CellFilter.unit, ts.CellLBFGSState, 100),
+        (ts.Optimizer.lbfgs, ts.CellFilter.frechet, ts.CellLBFGSState, 75.0),
     ],
 )
 def test_cell_optimizer_init_with_dict_and_cell_factor(
@@ -420,15 +887,11 @@ def test_cell_optimizer_init_with_dict_and_cell_factor(
     ar_supercell_sim_state: SimState,
     lj_model: ModelInterface,
 ) -> None:
-    """Test cell optimizer init_fn with dict state and explicit cell_factor."""
-    state_dict = {
-        f.name: getattr(ar_supercell_sim_state, f.name)
-        for f in fields(ar_supercell_sim_state)
-    }
+    """Test cell optimizer init_fn with explicit cell_factor."""
     init_fn, _ = ts.OPTIM_REGISTRY[optimizer_fn]
     opt_state = init_fn(
         model=lj_model,
-        state=state_dict,
+        state=ar_supercell_sim_state,
         cell_factor=cell_factor_val,
         cell_filter=cell_filter,
     )
@@ -462,6 +925,10 @@ def test_cell_optimizer_init_with_dict_and_cell_factor(
             ts.CellFilter.frechet,
             ts.CellOptimState,
         ),
+        (ts.Optimizer.bfgs, ts.CellFilter.unit, ts.CellBFGSState),
+        (ts.Optimizer.bfgs, ts.CellFilter.frechet, ts.CellBFGSState),
+        (ts.Optimizer.lbfgs, ts.CellFilter.unit, ts.CellLBFGSState),
+        (ts.Optimizer.lbfgs, ts.CellFilter.frechet, ts.CellLBFGSState),
     ],
 )
 def test_cell_optimizer_init_cell_factor_none(
@@ -482,7 +949,9 @@ def test_cell_optimizer_init_cell_factor_none(
     # Ensure n_systems > 0 for cell_factor calculation from counts
     assert ar_supercell_sim_state.n_systems > 0
     assert isinstance(opt_state, expected_state_type)
-    _, counts = torch.unique(ar_supercell_sim_state.system_idx, return_counts=True)
+    system_idx = ar_supercell_sim_state.system_idx
+    assert system_idx is not None
+    _, counts = torch.unique(system_idx, return_counts=True)
     expected_cf_tensor = counts.to(dtype=lj_model.dtype).view(-1, 1, 1)
 
     # Check cell_factor is stored in cell_state for new API
@@ -619,6 +1088,57 @@ def test_frechet_cell_fire_optimization(
     )
 
 
+def test_frechet_lbfgs_clamps_extreme_deformation(
+    ar_supercell_sim_state: SimState, lj_model: ModelInterface
+) -> None:
+    """LBFGS + Frechet cell filter clamps extreme log-space deformation.
+
+    Injects extreme cell_positions so that cell_positions / cell_factor > 2.0,
+    then verifies: (1) the clamp warning fires, (2) the log-space deformation
+    is bounded after the step, and (3) positions/cell remain finite.
+    """
+    state = ts.lbfgs_init(
+        state=ar_supercell_sim_state,
+        model=lj_model,
+        cell_filter=ts.CellFilter.frechet,
+    )
+
+    # Inject extreme cell_positions: log-deform = cell_positions/cell_factor = 10
+    # This far exceeds the MAX_LOG_DEFORM=2.0 clamp threshold.
+    state.cell_positions = state.cell_positions + 10.0 * state.cell_factor.view(
+        -1, 1, 1
+    ) * torch.eye(3, device=state.cell.device, dtype=state.cell.dtype).unsqueeze(0)
+
+    log_deform_before = (
+        (state.cell_positions / state.cell_factor.view(-1, 1, 1)).abs().max().item()
+    )
+    assert log_deform_before > 5.0, "Setup: log-deform should be extreme before step"
+
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always")
+        state = ts.lbfgs_step(state=state, model=lj_model)
+
+    # 1. Log-space deformation must be bounded after the clamp
+    log_deform_after = (
+        (state.cell_positions / state.cell_factor.view(-1, 1, 1)).abs().max().item()
+    )
+    assert log_deform_after <= 2.5, (
+        f"Log-space deformation should be clamped to ~2.0, got {log_deform_after:.2f}"
+    )
+
+    # 2. Positions and cell must remain finite
+    assert not torch.isnan(state.positions).any(), "Positions contain NaN"
+    assert not torch.isinf(state.positions).any(), "Positions contain Inf"
+    assert not torch.isnan(state.cell).any(), "Cell contains NaN"
+    assert not torch.isinf(state.cell).any(), "Cell contains Inf"
+
+    # 3. The clamp warning must have fired
+    clamp_warnings = [
+        warn for warn in caught_warnings if "Clamping log-space" in str(warn.message)
+    ]
+    assert len(clamp_warnings) > 0, "Expected clamping warning but none was emitted"
+
+
 @pytest.mark.parametrize(
     "filter_func",
     [None, ts.CellFilter.unit, ts.CellFilter.frechet],
@@ -629,25 +1149,26 @@ def test_optimizer_batch_consistency(
     lj_model: ModelInterface,
 ) -> None:
     """Test batched optimizer is consistent with individual optimizations."""
-    generator = torch.Generator(device=ar_supercell_sim_state.device)
-
     # Create two distinct initial states by cloning and perturbing
     state1_orig = ar_supercell_sim_state.clone()
+    state1_orig.rng = 0
 
     # Apply identical perturbations to state1_orig
     # for state_item in [state1_orig, state2_orig]: # Old loop structure
-    generator.manual_seed(43)  # Reset seed for positions
     state1_orig.positions += (
         torch.randn(
-            state1_orig.positions.shape, device=state1_orig.device, generator=generator
+            state1_orig.positions.shape,
+            device=state1_orig.device,
+            generator=state1_orig.rng,
         )
         * 0.1
     )
     if filter_func:
-        generator.manual_seed(44)  # Reset seed for cell
         state1_orig.cell += (
             torch.randn(
-                state1_orig.cell.shape, device=state1_orig.device, generator=generator
+                state1_orig.cell.shape,
+                device=state1_orig.device,
+                generator=state1_orig.rng,
             )
             * 0.01
         )
@@ -685,9 +1206,8 @@ def test_optimizer_batch_consistency(
             current_e_indiv = opt_state_indiv.energy
             steps_indiv += 1
             if steps_indiv > 1000:
-                raise ValueError(
-                    f"Individual opt for {filter_func.name} did not converge"
-                )
+                filter_name = filter_func.name if filter_func else "position-only"
+                raise ValueError(f"Individual opt for {filter_name} did not converge")
         final_individual_states.append(opt_state_indiv)
 
     # Batched optimization
@@ -711,11 +1231,12 @@ def test_optimizer_batch_consistency(
     # Converge when all batch energies have converged
     while not torch.allclose(e_current_batch, e_prev_batch, atol=1e-6):
         e_prev_batch = e_current_batch.clone()
-        batch_opt_state = step_fn_batch(model=lj_model, state=batch_opt_state)
+        batch_opt_state = step_fn_batch(model=lj_model, state=batch_opt_state, dt_max=0.3)
         e_current_batch = batch_opt_state.energy.clone()
         steps_batch += 1
         if steps_batch > 1000:
-            raise ValueError(f"Batched opt for {filter_func.name} did not converge")
+            filter_name = filter_func.name if filter_func else "position-only"
+            raise ValueError(f"Batched opt for {filter_name} did not converge")
 
     individual_final_energies = [s.energy.item() for s in final_individual_states]
     for idx, indiv_energy in enumerate(individual_final_energies):
@@ -907,3 +1428,115 @@ def test_fire_fixed_cell_unit_cell_consistency(  # noqa: C901
             f"Energy for system {step} doesn't match position only optimization: "
             f"system={energy_unit_cell}, individual={individual_energies_fire[step]}"
         )
+
+
+# Test for charge and spin preservation
+# GitHub Issue https://github.com/TorchSim/torch-sim/issues/389
+@pytest.mark.parametrize(
+    ("optimizer_fn", "cell_filter"),
+    [
+        (ts.Optimizer.fire, None),
+        (ts.Optimizer.gradient_descent, None),
+        (ts.Optimizer.fire, ts.CellFilter.unit),
+        (ts.Optimizer.gradient_descent, ts.CellFilter.frechet),
+        (ts.Optimizer.bfgs, None),
+        (ts.Optimizer.lbfgs, None),
+        (ts.Optimizer.bfgs, ts.CellFilter.unit),
+        (ts.Optimizer.lbfgs, ts.CellFilter.frechet),
+    ],
+)
+def test_optimizer_preserves_charge_spin(
+    optimizer_fn: ts.Optimizer,
+    cell_filter: ts.CellFilter | None,
+    ar_supercell_sim_state: SimState,
+    lj_model: ModelInterface,
+) -> None:
+    """Test that optimizers preserve charge and spin through initialization and steps."""
+    # Add perturbation to positions for meaningful optimization
+    ar_supercell_sim_state.positions = (
+        ar_supercell_sim_state.positions
+        + torch.randn_like(ar_supercell_sim_state.positions) * 0.1
+    )
+
+    # Set non-zero charge and spin values
+    original_charge = torch.tensor(
+        [5.0], device=ar_supercell_sim_state.device, dtype=ar_supercell_sim_state.dtype
+    )
+    original_spin = torch.tensor(
+        [6.0], device=ar_supercell_sim_state.device, dtype=ar_supercell_sim_state.dtype
+    )
+
+    ar_supercell_sim_state.store_model_extras(
+        {
+            "charge": original_charge.clone(),
+            "spin": original_spin.clone(),
+        }
+    )
+
+    init_fn, step_fn = ts.OPTIM_REGISTRY[optimizer_fn]
+    opt_state = init_fn(
+        model=lj_model, state=ar_supercell_sim_state, cell_filter=cell_filter
+    )
+
+    # Verify after initialization
+    assert torch.allclose(opt_state.charge, original_charge)
+    assert torch.allclose(opt_state.spin, original_spin)
+
+    # Run several optimization steps and verify preservation
+    for _ in range(3):
+        if optimizer_fn == ts.Optimizer.fire:
+            opt_state = step_fn(state=opt_state, model=lj_model, dt_max=0.3)
+        elif optimizer_fn == ts.Optimizer.gradient_descent:
+            opt_state = step_fn(state=opt_state, model=lj_model, pos_lr=0.01, cell_lr=0.1)
+        else:
+            opt_state = step_fn(state=opt_state, model=lj_model)
+
+        assert torch.allclose(opt_state.charge, original_charge)
+        assert torch.allclose(opt_state.spin, original_spin)
+
+
+def test_lbfgs_prev_cell_positions_stored_before_step(lj_model: ModelInterface) -> None:
+    """prev_cell_positions captures start-of-step, prev_positions use adjusted frame."""
+    from ase.build import bulk
+
+    from torch_sim.constraints import FixSymmetry
+
+    atoms = bulk("Ti", "hcp", a=2.95, c=4.68).repeat([2, 2, 2])
+    state = ts.io.atoms_to_state(atoms, lj_model.device, lj_model.dtype)
+    constraint = FixSymmetry.from_state(state, symprec=0.01)
+    state.constraints = [constraint]
+    state.cell = state.cell * 0.95
+    state.positions = state.positions * 0.95
+
+    opt_state = ts.lbfgs_init(state, lj_model, cell_filter=ts.CellFilter.frechet)
+    assert isinstance(opt_state, CellLBFGSState)
+
+    # Save cell_positions BEFORE the step
+    cell_pos_before = opt_state.cell_positions.clone()
+
+    # Run one step
+    opt_state = ts.lbfgs_step(state=opt_state, model=lj_model)
+
+    # prev_cell_positions should equal the pre-step value (not the post-resync value)
+    assert torch.allclose(opt_state.prev_cell_positions, cell_pos_before, atol=1e-6), (
+        "prev_cell_positions should capture start-of-step, not post-resync. "
+        f"max diff from pre-step = {(opt_state.prev_cell_positions - cell_pos_before).abs().max():.2e}, "  # noqa: E501
+        f"max diff from current = {(opt_state.prev_cell_positions - opt_state.cell_positions).abs().max():.2e}"  # noqa: E501
+    )
+
+    # prev_cell_positions should NOT equal the current (post-step) cell_positions
+    # (unless the step was zero, which shouldn't happen on a compressed structure)
+    assert not torch.allclose(
+        opt_state.prev_cell_positions, opt_state.cell_positions, atol=1e-6
+    ), "prev_cell_positions equals current cell_positions — s_new_cell would be zero"
+
+    # prev_positions should be in the adjusted (post-adjust_cell) frame
+    cur_dg = deform_grad(opt_state.reference_cell.mT, opt_state.row_vector_cell)
+    expected_prev = torch.linalg.solve(
+        cur_dg[opt_state.system_idx],
+        opt_state.positions.unsqueeze(-1),
+    ).squeeze(-1)
+    assert torch.allclose(opt_state.prev_positions, expected_prev, atol=1e-5), (
+        "prev_positions should be fractional coords in the adjusted cell frame. "
+        f"max diff = {(opt_state.prev_positions - expected_prev).abs().max():.2e}"
+    )

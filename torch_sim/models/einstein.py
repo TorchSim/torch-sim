@@ -156,11 +156,12 @@ class EinsteinModel(ModelInterface):
             dtype=dtype,
         )
 
-    def forward(self, state: ts.SimState) -> dict[str, torch.Tensor]:
+    def forward(self, state: SimState, **_kwargs: object) -> dict[str, torch.Tensor]:
         """Calculate energies and forces for the Einstein model.
 
         Args:
-            state: SimState or StateDict containing positions, cell, etc.
+            state: SimState containing positions, cell, etc.
+            **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
             Dictionary containing energy, forces
@@ -240,7 +241,7 @@ class EinsteinModel(ModelInterface):
             -3 * kB * T * torch.log(kB * T / (hbar * frequencies_tensor))
         )
 
-        n_systems = self.system_idx.max().item() + 1
+        n_systems = int(self.get_buffer("system_idx").max().item()) + 1
         free_energy_per_system = torch.zeros(
             n_systems, dtype=self._dtype, device=self._device
         )
@@ -262,7 +263,7 @@ class EinsteinModel(ModelInterface):
         distributions
         for both positions and velocities.
         """
-        N = self.x0.shape[0]
+        N = int(self.get_buffer("x0").shape[0])
         kB = units.BaseConstant.k_B / units.UnitConversion.eV_to_J
         beta = 1.0 / (kB * temperature)  # Inverse temperature in 1/eV
 

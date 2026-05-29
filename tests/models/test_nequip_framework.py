@@ -1,84 +1,140 @@
+from __future__ import annotations
+
 import traceback
 import urllib.request
-from enum import StrEnum
 from pathlib import Path
 
 import pytest
 
-from tests.conftest import DEVICE
-from tests.models.conftest import make_model_calculator_consistency_test
+from tests.conftest import DEVICE, DTYPE
+from tests.models.conftest import (
+    make_model_calculator_consistency_test,
+    make_validate_model_outputs_test,
+)
+from torch_sim.testing import SIMSTATE_BULK_GENERATORS, ModelTolerance
 
 
 try:
     from nequip.ase import NequIPCalculator
+    from nequip.scripts.compile import main
 
-    from torch_sim.models.nequip_framework import (
-        NequIPFrameworkModel,
-        from_compiled_model,
-    )
+    from torch_sim.models.nequip_framework import NequIPFrameworkModel
+
+    _IMPORT_ERROR: str | None = None
 except (ImportError, ModuleNotFoundError):
-    pytest.skip(
-        f"nequip not installed: {traceback.format_exc()}", allow_module_level=True
-    )
+    _IMPORT_ERROR = traceback.format_exc()
+
+pytestmark = pytest.mark.skipif(
+    _IMPORT_ERROR is not None, reason=f"nequip not installed: {_IMPORT_ERROR}"
+)
 
 
-class NequIPUrls(StrEnum):
-    """Checkpoint download URLs for NequIP models."""
+# Cache directory for compiled models (under tests/ for easy cleanup)
+NEQUIP_CACHE_DIR = Path(__file__).parent.parent / ".cache" / "nequip_compiled_models"
 
-    Si = "https://github.com/abhijeetgangan/pt_model_checkpoints/raw/refs/heads/main/nequip/Si.nequip.pth"
+# Zenodo URL for NequIP-OAM-S model (more reliable than nequip.net for CI)
+NEQUIP_OAM_S_ZENODO_URL = (
+    "https://zenodo.org/records/18775904/files/NequIP-OAM-S-0.1.nequip.zip?download=1"
+)
+NEQUIP_OAM_S_ZIP_NAME = "NequIP-OAM-S-0.1.nequip.zip"
+
+
+def _get_nequip_model_zip() -> Path:
+    """Download NequIP-OAM-S model from Zenodo if not already cached."""
+    NEQUIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    zip_path = NEQUIP_CACHE_DIR / NEQUIP_OAM_S_ZIP_NAME
+
+    if not zip_path.exists():
+        urllib.request.urlretrieve(NEQUIP_OAM_S_ZENODO_URL, zip_path)  # noqa: S310
+
+    return zip_path
 
 
 @pytest.fixture(scope="session")
-def model_path_nequip(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    tmp_path = tmp_path_factory.mktemp("nequip_checkpoints")
-    model_name = "Si.nequip.pth"
-    model_path = Path(tmp_path) / model_name
+def compiled_ase_nequip_model_path() -> Path:
+    """Compile NequIP OAM-S model from Zenodo for ASE (with persistent caching)."""
+    NEQUIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    if not model_path.is_file():
-        urllib.request.urlretrieve(NequIPUrls.Si, model_path)  # noqa: S310
+    output_model_name = f"mir-group__NequIP-OAM-S__0.1__{DEVICE.type}_ase.nequip.pt2"
+    output_path = NEQUIP_CACHE_DIR / output_model_name
 
-    return model_path
+    # Only compile if not already cached
+    if not output_path.exists():
+        model_zip_path = _get_nequip_model_zip()
+        main(
+            args=[
+                str(model_zip_path),
+                str(output_path),
+                "--mode",
+                "aotinductor",
+                "--device",
+                DEVICE.type,
+                "--target",
+                "ase",
+            ]
+        )
+
+    return output_path
 
 
-@pytest.fixture
-def nequip_model(model_path_nequip: Path) -> NequIPFrameworkModel:
+@pytest.fixture(scope="session")
+def compiled_batch_nequip_model_path() -> Path:
+    """Compile NequIP OAM-S model from Zenodo for batch (with persistent caching)."""
+    NEQUIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    output_model_name = f"mir-group__NequIP-OAM-S__0.1__{DEVICE.type}_batch.nequip.pt2"
+    output_path = NEQUIP_CACHE_DIR / output_model_name
+
+    # Only compile if not already cached
+    if not output_path.exists():
+        model_zip_path = _get_nequip_model_zip()
+        main(
+            args=[
+                str(model_zip_path),
+                str(output_path),
+                "--mode",
+                "aotinductor",
+                "--device",
+                DEVICE.type,
+                "--target",
+                "batch",
+            ]
+        )
+
+    return output_path
+
+
+@pytest.fixture(scope="session")
+def nequip_model(compiled_batch_nequip_model_path: Path) -> NequIPFrameworkModel:
     """Create an NequIPModel wrapper for the pretrained model."""
-    compiled_model, (r_max, type_names) = from_compiled_model(
-        model_path_nequip, device=DEVICE
-    )
-    return NequIPFrameworkModel(
-        model=compiled_model,
-        r_max=r_max,
-        type_names=type_names,
+    return NequIPFrameworkModel.from_compiled_model(
+        compiled_batch_nequip_model_path,
         device=DEVICE,
+        chemical_species_to_atom_type_map=True,  # Use identity mapping without warning
     )
 
 
-@pytest.fixture
-def nequip_calculator(model_path_nequip: Path) -> NequIPCalculator:
+@pytest.fixture(scope="session")
+def nequip_calculator(compiled_ase_nequip_model_path: Path) -> NequIPCalculator:
     """Create an NequIPCalculator for the pretrained model."""
-    return NequIPCalculator.from_compiled_model(str(model_path_nequip), device=DEVICE)
-
-
-def test_nequip_initialization(model_path_nequip: Path) -> None:
-    """Test that the NequIP model initializes correctly."""
-    compiled_model, (r_max, type_names) = from_compiled_model(
-        model_path_nequip, device=DEVICE
+    return NequIPCalculator.from_compiled_model(
+        str(compiled_ase_nequip_model_path), device=DEVICE
     )
-    model = NequIPFrameworkModel(
-        model=compiled_model,
-        r_max=r_max,
-        type_names=type_names,
-        device=DEVICE,
-    )
-    assert model._device == DEVICE  # noqa: SLF001
 
 
+# NOTE: skip molecule sim states as stress in NequIP gave inf.
 test_nequip_consistency = make_model_calculator_consistency_test(
     test_name="nequip",
     model_fixture_name="nequip_model",
     calculator_fixture_name="nequip_calculator",
-    sim_state_names=("si_sim_state", "rattled_si_sim_state"),
+    sim_state_names=tuple(SIMSTATE_BULK_GENERATORS.keys()),
+    energy_atol=ModelTolerance.LOOSE,
+    dtype=DTYPE,
+    device=DEVICE,
 )
 
-# TODO (AG): Test multi element models
+test_nequip_model_outputs = make_validate_model_outputs_test(
+    model_fixture_name="nequip_model",
+    dtype=DTYPE,
+    device=DEVICE,
+)
