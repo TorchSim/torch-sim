@@ -60,6 +60,7 @@ nequix = ["nequix[torch-sim]>=0.4.5"]
 fairchem = ["fairchem-core>=2.20.0"]
 docs = [
     "autodoc_pydantic==2.2.0",
+    "duecredit>=0.11",
     "furo==2024.8.6",
     "ipykernel==6.30.1",
     "ipython==8.34.0",
