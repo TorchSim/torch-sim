@@ -26,6 +26,7 @@ Example usage in another repo::
 """
 
 from collections.abc import Callable
+from enum import Enum
 from typing import TYPE_CHECKING, Final
 
 import torch
@@ -38,6 +39,37 @@ if TYPE_CHECKING:
     from ase.calculators.calculator import Calculator
 
     from torch_sim.models.interface import ModelInterface
+
+
+class ModelTolerance(float, Enum):
+    """Named tolerance levels for model tests.
+
+    Centralizes the absolute/relative tolerance values used across model tests,
+    spanning model-vs-calculator consistency, autograd-vs-direct force checks,
+    neighbor-list equivalence, symmetry, and exact-agreement assertions. Choose
+    the loosest level that still catches the regressions you care about.
+    """
+
+    COARSE = 1e-3
+    VERY_LOOSE = 1e-4
+    LOOSE = 5e-5
+    STANDARD = 1e-5
+    TIGHT = 1e-6
+    VERY_TIGHT = 1e-7
+    STRICT = 1e-10
+    EXACT = 1e-13
+
+    def __repr__(self) -> str:
+        """Return a string representation of the tolerance level."""
+        return f"{type(self).__name__}.{self.name} ({float(self.value):g})"
+
+    __str__ = __repr__
+
+    def __format__(self, format_spec: str) -> str:
+        """Format the tolerance level as a string."""
+        if format_spec:
+            return float(self.value).__format__(format_spec)
+        return self.__repr__()
 
 
 def make_cu_sim_state(
@@ -481,12 +513,12 @@ def assert_model_calculator_consistency(
     model: "ModelInterface",
     calculator: "Calculator",
     sim_state: ts.SimState,
-    energy_rtol: float = 1e-5,
-    energy_atol: float = 1e-5,
-    force_rtol: float = 1e-5,
-    force_atol: float = 1e-5,
-    stress_rtol: float = 1e-5,
-    stress_atol: float = 1e-5,
+    energy_rtol: float = ModelTolerance.STANDARD,
+    energy_atol: float = ModelTolerance.STANDARD,
+    force_rtol: float = ModelTolerance.STANDARD,
+    force_atol: float = ModelTolerance.STANDARD,
+    stress_rtol: float = ModelTolerance.STANDARD,
+    stress_atol: float = ModelTolerance.STANDARD,
 ) -> None:
     """Assert consistency between model and calculator implementations.
 

@@ -254,7 +254,7 @@ class EwaldModel(ModelInterface):
             "energy": energy.to(self._dtype).detach(),
         }
         if self._compute_forces:
-            forces = out[1] * UnitConversion.e2_per_Ang_to_eV  # type: ignore[index]
+            forces = out[1] * UnitConversion.e2_per_Ang_to_eV
             results["forces"] = forces.to(self._dtype).detach()
         if self._compute_stress:
             volumes = state.volume.unsqueeze(-1).unsqueeze(-1)
@@ -383,7 +383,7 @@ class PMEModel(ModelInterface):
             "energy": energy.to(self._dtype).detach(),
         }
         if self._compute_forces:
-            forces = out[1] * UnitConversion.e2_per_Ang_to_eV  # type: ignore[index]
+            forces = out[1] * UnitConversion.e2_per_Ang_to_eV
             results["forces"] = forces.to(self._dtype).detach()
         if self._compute_stress:
             volumes = state.volume.unsqueeze(-1).unsqueeze(-1)

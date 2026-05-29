@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import traceback
 import urllib.request
 from pathlib import Path
@@ -9,7 +11,7 @@ from tests.models.conftest import (
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
-from torch_sim.testing import SIMSTATE_BULK_GENERATORS
+from torch_sim.testing import SIMSTATE_BULK_GENERATORS, ModelTolerance
 
 
 try:
@@ -17,11 +19,14 @@ try:
     from nequip.scripts.compile import main
 
     from torch_sim.models.nequip_framework import NequIPFrameworkModel
+
+    _IMPORT_ERROR: str | None = None
 except (ImportError, ModuleNotFoundError):
-    pytest.skip(
-        f"nequip not installed: {traceback.format_exc()}",
-        allow_module_level=True,
-    )
+    _IMPORT_ERROR = traceback.format_exc()
+
+pytestmark = pytest.mark.skipif(
+    _IMPORT_ERROR is not None, reason=f"nequip not installed: {_IMPORT_ERROR}"
+)
 
 
 # Cache directory for compiled models (under tests/ for easy cleanup)
@@ -117,14 +122,13 @@ def nequip_calculator(compiled_ase_nequip_model_path: Path) -> NequIPCalculator:
     )
 
 
-# NOTE: we take [:-1] to skip benzene. This is because the stress calculation in NequIP
-# for non-periodic systems gave infinity.
+# NOTE: skip molecule sim states as stress in NequIP gave inf.
 test_nequip_consistency = make_model_calculator_consistency_test(
     test_name="nequip",
     model_fixture_name="nequip_model",
     calculator_fixture_name="nequip_calculator",
     sim_state_names=tuple(SIMSTATE_BULK_GENERATORS.keys()),
-    energy_atol=5e-5,
+    energy_atol=ModelTolerance.LOOSE,
     dtype=DTYPE,
     device=DEVICE,
 )

@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import traceback
+from typing import TYPE_CHECKING
 
 import pytest
 import torch
@@ -8,20 +11,25 @@ from tests.models.conftest import (
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
-from torch_sim.testing import SIMSTATE_GENERATORS
+from torch_sim.testing import SIMSTATE_GENERATORS, ModelTolerance
 
+
+if TYPE_CHECKING:
+    from metatomic.torch import AtomisticModel
 
 try:
-    from metatomic.torch import AtomisticModel
     from metatomic_ase import MetatomicCalculator
     from upet import get_upet
 
     from torch_sim.models.metatomic import MetatomicModel
+
+    _IMPORT_ERROR: str | None = None
 except ImportError:
-    pytest.skip(
-        f"metatomic not installed: {traceback.format_exc()}",
-        allow_module_level=True,
-    )
+    _IMPORT_ERROR = traceback.format_exc()
+
+pytestmark = pytest.mark.skipif(
+    _IMPORT_ERROR is not None, reason=f"metatomic not installed: {_IMPORT_ERROR}"
+)
 
 
 @pytest.fixture
@@ -50,7 +58,7 @@ test_metatomic_consistency = make_model_calculator_consistency_test(
     model_fixture_name="metatomic_model",
     calculator_fixture_name="metatomic_calculator",
     sim_state_names=tuple(SIMSTATE_GENERATORS.keys()),
-    energy_atol=5e-5,
+    energy_atol=ModelTolerance.LOOSE,
     dtype=torch.float32,
     device=DEVICE,
 )

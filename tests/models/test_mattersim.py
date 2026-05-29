@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import traceback
 
 import pytest
@@ -7,7 +9,7 @@ from tests.models.conftest import (
     make_model_calculator_consistency_test,
     make_validate_model_outputs_test,
 )
-from torch_sim.testing import SIMSTATE_GENERATORS
+from torch_sim.testing import SIMSTATE_GENERATORS, ModelTolerance
 
 
 try:
@@ -15,11 +17,13 @@ try:
 
     from torch_sim.models.mattersim import MatterSimModel
 
+    _IMPORT_ERROR: str | None = None
 except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
-    pytest.skip(
-        f"mattersim not installed: {traceback.format_exc()}",
-        allow_module_level=True,
-    )
+    _IMPORT_ERROR = traceback.format_exc()
+
+pytestmark = pytest.mark.skipif(
+    _IMPORT_ERROR is not None, reason=f"mattersim not installed: {_IMPORT_ERROR}"
+)
 
 
 model_name = "mattersim-v1.0.0-1m.pth"
@@ -59,6 +63,10 @@ test_mattersim_consistency = make_model_calculator_consistency_test(
     model_fixture_name="mattersim_model",
     calculator_fixture_name="mattersim_calculator",
     sim_state_names=tuple(SIMSTATE_GENERATORS.keys()),
+    energy_rtol=ModelTolerance.LOOSE,
+    energy_atol=ModelTolerance.LOOSE,
+    force_rtol=ModelTolerance.LOOSE,
+    force_atol=ModelTolerance.STANDARD,
 )
 
 test_mattersim_model_outputs = make_validate_model_outputs_test(

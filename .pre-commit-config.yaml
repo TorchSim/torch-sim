@@ -40,8 +40,8 @@ repos:
     hooks:
       - id: ty
         name: ty check
-        entry: ty check
+        entry: env -u VIRTUAL_ENV UV_PROJECT_ENVIRONMENT=.venv_prek uv run --extra test --extra docs ty check
         language: python
+        additional_dependencies: [uv]
         types: [python]
         pass_filenames: false
-        additional_dependencies: [ty, torch, ase, "mace-torch>=0.3.15"]

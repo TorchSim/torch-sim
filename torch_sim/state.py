@@ -1498,7 +1498,7 @@ def initialize_state(
                 isinstance(system, list | tuple)
                 and all(isinstance(s, cls) for s in system)
             ):
-                return converter_func(system, device, dtype)
+                return converter_func(system, device, dtype)  # ty: ignore[invalid-argument-type]
         except ImportError:
             continue
 

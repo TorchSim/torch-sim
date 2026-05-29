@@ -1,15 +1,21 @@
+from __future__ import annotations
+
 import random
 import time
 import traceback
 import urllib.error
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import torch
-from ase.atoms import Atoms
 
 import torch_sim as ts
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from ase.atoms import Atoms
 from tests.conftest import DEVICE
 from tests.models.conftest import (
     make_model_calculator_consistency_test,
@@ -23,8 +29,14 @@ try:
     from mace.calculators.foundations_models import mace_mp, mace_off, mace_omol
 
     from torch_sim.models.mace import MaceModel
+
+    _IMPORT_ERROR: str | None = None
 except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
-    pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)
+    _IMPORT_ERROR = traceback.format_exc()
+
+pytestmark = pytest.mark.skipif(
+    _IMPORT_ERROR is not None, reason=f"MACE not installed: {_IMPORT_ERROR}"
+)
 
 DTYPE = torch.float64
 MAX_RETRIES = 3

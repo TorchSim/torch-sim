@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import traceback
+from typing import TYPE_CHECKING
 
 import pytest
 import torch
@@ -11,18 +14,22 @@ from tests.models.conftest import (
 from torch_sim.testing import SIMSTATE_BULK_GENERATORS
 
 
+if TYPE_CHECKING:
+    from sevenn.nn.sequential import AtomGraphSequential
+
 try:
     import sevenn.util
     from sevenn.calculator import SevenNetCalculator
-    from sevenn.nn.sequential import AtomGraphSequential
 
     from torch_sim.models.sevennet import SevenNetModel
 
+    _IMPORT_ERROR: str | None = None
 except ImportError:
-    pytest.skip(
-        f"sevenn not installed: {traceback.format_exc()}",
-        allow_module_level=True,
-    )
+    _IMPORT_ERROR = traceback.format_exc()
+
+pytestmark = pytest.mark.skipif(
+    _IMPORT_ERROR is not None, reason=f"sevenn not installed: {_IMPORT_ERROR}"
+)
 
 
 model_name = "sevennet-mf-ompa"
