@@ -8,7 +8,7 @@ from torch_sim._duecredit import BibTeX, due
 
 
 if due is not None:
-    due.cite(
+    due.cite(  # ty: ignore[unresolved-attribute]
         BibTeX(
             """@article{cohen2025torchsim,
   title={TorchSim: An efficient atomistic simulation engine in PyTorch},
@@ -28,7 +28,7 @@ if due is not None:
         path="torch_sim",
         cite_module=True,
     )
-    due.cite(
+    due.cite(  # ty: ignore[unresolved-attribute]
         BibTeX(
             """@inproceedings{paszke2019pytorch,
   title={PyTorch: An Imperative Style, High-Performance Deep Learning Library},

@@ -46,12 +46,12 @@ def _disable_duecredit(exc: Exception) -> None:
 
 
 try:
-    from duecredit import BibTeX, Doi, Text, Url, due  # type: ignore[unresolved-import]
+    from duecredit import BibTeX, Doi, Text, Url, due
 except Exception as e:  # noqa: BLE001
     if not isinstance(e, ImportError):
         _disable_duecredit(e)
-    due = InactiveDueCreditCollector()
-    BibTeX = Doi = Url = Text = _donothing_func
+    due = InactiveDueCreditCollector()  # ty: ignore[invalid-assignment]
+    BibTeX = Doi = Url = Text = _donothing_func  # ty: ignore[invalid-assignment]
 
 
 def dcite(
@@ -63,4 +63,4 @@ def dcite(
     )
     if path is not None:
         kwargs["path"] = path
-    return due.dcite(Doi(doi), **kwargs)
+    return due.dcite(Doi(doi), **kwargs)  # ty: ignore[unresolved-attribute]
