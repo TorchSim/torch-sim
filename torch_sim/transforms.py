@@ -210,6 +210,102 @@ def pbc_wrap_batched_and_get_lattice_shifts(
     return out, shifts
 
 
+_CELL_DET_EPS = 1e-12
+_MAX_REFLECT_ITERS = 12
+
+
+def apply_nonperiodic_reflecting_boundaries(
+    positions: torch.Tensor,
+    cell: torch.Tensor,
+    system_idx: torch.Tensor,
+    pbc: torch.Tensor,
+    *,
+    momenta: torch.Tensor | None = None,
+    masses: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """Reflect positions and momenta into the primary cell on non-periodic axes.
+
+    For each system with an invertible cell (``|det(cell)| > 1e-12``), atoms are
+    confined to fractional coordinates in ``[0, 1]`` along axes where ``pbc`` is
+    False. Singular/zero cells are left unchanged (open boundaries). When
+    ``momenta`` is supplied, the fractional velocity component normal to each
+    wall is flipped on bounce (perfectly elastic reflection).
+
+    ``cell`` uses the SimState column-vector convention (lattice vectors as columns).
+
+    Returns:
+        Reflected positions and, if ``momenta`` was given, reflected momenta.
+    """
+    if momenta is not None and masses is None:
+        raise ValueError("masses are required when momenta is provided")
+    n_systems = cell.shape[0]
+    pbc_batched = pbc.unsqueeze(0).expand(n_systems, -1) if pbc.ndim == 1 else pbc
+    cell_row = cell.transpose(1, 2)
+    dets = torch.linalg.det(cell)
+    invertible = torch.isfinite(dets) & (dets.abs() > _CELL_DET_EPS)
+    reflect_axes = (~pbc_batched) & invertible.unsqueeze(1)
+    if not reflect_axes.any():
+        return positions, momenta
+
+    active_systems = reflect_axes.any(dim=1)
+    cell_inv = torch.zeros_like(cell_row)
+    cell_inv[active_systems] = torch.linalg.inv(cell_row[active_systems])
+    cell_inv_per_atom = cell_inv[system_idx]
+    cell_row_per_atom = cell_row[system_idx]
+    reflect_mask = reflect_axes[system_idx]
+
+    frac = torch.bmm(cell_inv_per_atom, positions.unsqueeze(2)).squeeze(2)
+    v_frac: torch.Tensor | None = None
+    if momenta is not None:
+        if masses is None:
+            raise ValueError("masses are required when momenta is provided")
+        v_cart = momenta / masses.unsqueeze(-1)
+        v_frac = torch.bmm(cell_inv_per_atom, v_cart.unsqueeze(2)).squeeze(2)
+
+    for _ in range(_MAX_REFLECT_ITERS):
+        below = (frac < 0) & reflect_mask
+        above = (frac > 1) & reflect_mask
+        if not (below.any() or above.any()):
+            break
+        frac = torch.where(below, -frac, frac)
+        frac = torch.where(above, 2.0 - frac, frac)
+        if v_frac is not None:
+            bounce = below | above
+            v_frac = torch.where(bounce, -v_frac, v_frac)
+
+    out_positions = torch.bmm(cell_row_per_atom, frac.unsqueeze(2)).squeeze(2)
+    out_momenta = momenta
+    if momenta is not None and v_frac is not None:
+        if masses is None:
+            raise ValueError("masses are required when momenta is provided")
+        v_cart = torch.bmm(cell_row_per_atom, v_frac.unsqueeze(2)).squeeze(2)
+        out_momenta = masses.unsqueeze(-1) * v_cart
+    return out_positions, out_momenta
+
+
+def reflect_nonperiodic_boundaries_batched(
+    positions: torch.Tensor,
+    cell: torch.Tensor,
+    system_idx: torch.Tensor,
+    pbc: torch.Tensor,
+    *,
+    momenta: torch.Tensor | None = None,
+    masses: torch.Tensor | None = None,
+) -> None:
+    """In-place wrapper around :func:`apply_nonperiodic_reflecting_boundaries`."""
+    out_pos, out_mom = apply_nonperiodic_reflecting_boundaries(
+        positions,
+        cell,
+        system_idx,
+        pbc,
+        momenta=momenta,
+        masses=masses,
+    )
+    positions.copy_(out_pos)
+    if momenta is not None and out_mom is not None:
+        momenta.copy_(out_mom)
+
+
 def minimum_image_displacement(
     *,
     dr: torch.Tensor,

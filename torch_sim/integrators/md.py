@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import torch
 
+from torch_sim import transforms
 from torch_sim._duecredit import dcite
 from torch_sim.models.interface import ModelInterface
 from torch_sim.quantities import calc_kT
@@ -71,6 +72,27 @@ class MDState(SimState):
         for constraint in self.constraints:
             constraint.adjust_momenta(self, new_momenta)
         self.momenta = new_momenta
+
+    def set_constrained_positions(self, new_positions: torch.Tensor) -> None:
+        """Set positions after constraints and non-periodic wall reflection.
+
+        Unlike :meth:`SimState.set_constrained_positions`, this also updates
+        ``momenta`` when atoms bounce so velocity stays consistent with the
+        reflected coordinates.
+        """
+        for constraint in self.constraints:
+            constraint.adjust_positions(self, new_positions)
+        new_positions, new_momenta = transforms.apply_nonperiodic_reflecting_boundaries(
+            new_positions,
+            self.cell,
+            self.system_idx,
+            self.pbc,
+            momenta=self.momenta,
+            masses=self.masses,
+        )
+        self.positions = new_positions
+        if new_momenta is not None:
+            self.momenta = new_momenta
 
     def calc_temperature(
         self, units: MetalUnits = MetalUnits.temperature

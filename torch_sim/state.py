@@ -140,9 +140,10 @@ class SimState:
             stored as `[[a1, b1, c1], [a2, b2, c2], [a3, b3, c3]]` as opposed to
             the row vector convention `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`
             used by ASE.
-        pbc (bool | list[bool] | torch.Tensor): indicates periodic boundary
-            conditions in each axis. If a boolean is provided, all axes are
-            assumed to have the same periodic boundary conditions.
+        pbc (bool | list[bool] | torch.Tensor): Periodic (``True``) axes use
+            wrapping; non-periodic (``False``) axes use elastic reflection at cell
+            faces when the cell is invertible, or open boundaries when the cell is
+            singular (zero volume).
         atomic_numbers (torch.Tensor): Atomic numbers with shape (n_atoms,)
         system_idx (torch.Tensor): Maps each atom index to its system index.
             Has shape (n_atoms,), must be unique consecutive integers starting from 0.
@@ -483,9 +484,14 @@ class SimState:
         Args:
             new_positions: New positions tensor with shape (n_atoms, 3)
         """
-        # Apply constraints if they exist
         for constraint in self.constraints:
             constraint.adjust_positions(self, new_positions)
+        new_positions, _ = ts.transforms.apply_nonperiodic_reflecting_boundaries(
+            new_positions,
+            self.cell,
+            self.system_idx,
+            self.pbc,
+        )
         self.positions = new_positions
 
     def set_constrained_cell(
