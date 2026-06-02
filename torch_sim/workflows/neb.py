@@ -381,12 +381,6 @@ class NEB:
         self._init_kwargs = init_kwargs
         self._step_kwargs = step_kwargs
 
-    def _interpolate_path(
-        self, initial_state: SimState, final_state: SimState
-    ) -> SimState:
-        """Compatibility wrapper for existing callers/tests."""
-        return interpolate_path(initial_state, final_state, self.n_images)
-
     def run(
         self,
         initial_system: StateLike,

@@ -333,6 +333,68 @@ def test_split_many_states(
     assert len(states) == 3
 
 
+def test_split_by_group_matches_systems_for_default_groups(
+    si_sim_state: SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
+) -> None:
+    """With default single-system groups, split(by='group') == split(by='system')."""
+    concatenated = ts.concatenate_states(
+        [si_sim_state, ar_supercell_sim_state, fe_supercell_sim_state]
+    )
+    by_system = concatenated.split_systems()
+    by_group = concatenated.split_groups()
+    assert len(by_system) == len(by_group) == 3
+    for sys_state, group_state in zip(by_system, by_group, strict=True):
+        assert torch.allclose(sys_state.positions, group_state.positions)
+        assert torch.allclose(sys_state.system_idx, group_state.system_idx)
+        assert group_state.n_groups == 1
+
+
+def test_split_by_group_keeps_multi_system_groups_together(
+    si_sim_state: SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
+) -> None:
+    """split(by='group') returns one state per group with systems intact."""
+    concatenated = ts.concatenate_states(
+        [si_sim_state, ar_supercell_sim_state, fe_supercell_sim_state]
+    )
+    # group 0 = {si, ar}, group 1 = {fe}
+    concatenated.group_idx = torch.tensor(
+        [0, 0, 1], device=concatenated.device, dtype=torch.long
+    )
+    groups = concatenated.split(by="group")
+
+    assert len(groups) == 2
+    assert groups[0].n_systems == 2
+    assert groups[1].n_systems == 1
+    assert groups[0].n_groups == groups[1].n_groups == 1
+    # first group holds si + ar atoms with locally re-based system_idx
+    assert groups[0].n_atoms == si_sim_state.n_atoms + ar_supercell_sim_state.n_atoms
+    assert torch.equal(
+        torch.unique(groups[0].system_idx),
+        torch.tensor([0, 1], device=concatenated.device),
+    )
+    assert torch.allclose(groups[1].positions, fe_supercell_sim_state.positions)
+
+
+def test_split_by_group_rejects_non_contiguous_groups(
+    si_sim_state: SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
+) -> None:
+    """Non-decreasing group_idx is required for splitting by group."""
+    concatenated = ts.concatenate_states(
+        [si_sim_state, ar_supercell_sim_state, fe_supercell_sim_state]
+    )
+    concatenated.group_idx = torch.tensor(
+        [0, 1, 0], device=concatenated.device, dtype=torch.long
+    )
+    with pytest.raises(ValueError, match="non-decreasing group_idx"):
+        concatenated.split_groups()
+
+
 def test_pop_states(
     si_sim_state: SimState,
     ar_supercell_sim_state: SimState,

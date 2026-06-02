@@ -386,19 +386,6 @@ def calculate_memory_scalers(
     )
 
 
-def _split_autobatch_units[T: SimState](state: T) -> list[T]:
-    """Split a state into independent optimizer groups for autobatching."""
-    if state.n_groups == state.n_systems and torch.equal(
-        state.group_idx,
-        torch.arange(state.n_systems, device=state.device, dtype=torch.int64),
-    ):
-        return state.split()
-    return [
-        state[torch.where(state.group_idx == group_idx)[0]]
-        for group_idx in range(state.n_groups)
-    ]
-
-
 def _unit_memory_scaler(
     state: SimState,
     memory_scales_with: MemoryScaling,
@@ -422,10 +409,11 @@ def _group_memory_scalers(
     per_system = torch.tensor(
         calculate_memory_scalers(state, memory_scales_with, cutoff),
         dtype=torch.float64,
+        device=state.device,
     )
-    out = torch.zeros(state.n_groups, dtype=torch.float64)
-    out.scatter_add_(0, state.group_idx.cpu(), per_system)
-    return out.tolist()
+    return torch.bincount(
+        state.group_idx, weights=per_system, minlength=state.n_groups
+    ).tolist()
 
 
 def estimate_max_memory_scaler(
@@ -601,9 +589,9 @@ class BinningAutoBatcher[T: SimState]:
 
         Args:
             states (SimState | list[SimState]): Collection of states to batch. Either a
-                list of individual SimState objects or a single batched SimState that
-                will be split into individual states. Each SimState has shape
-                information specific to its instance.
+                list of individual SimState objects or a single batched SimState. The
+                batcher works in units of optimizer groups (one per system by default),
+                so multi-system groups are kept together in the same batch.
 
         Returns:
             float: Maximum memory scaling metric that fits in GPU memory.
@@ -789,7 +777,7 @@ class BinningAutoBatcher[T: SimState]:
             ordered_results = batcher.restore_original_order(results)
 
         """
-        all_states = [_split_autobatch_units(state) for state in batched_states]
+        all_states = [state.split_groups() for state in batched_states]
         all_states = list(chain.from_iterable(all_states))
         original_indices = list(chain.from_iterable(self.index_bins))
 
@@ -947,7 +935,7 @@ class InFlightAutoBatcher[T: SimState]:
         """
         state_units: Sequence[T] | Iterator[T]
         if isinstance(states, SimState):
-            state_units = _split_autobatch_units(cast("T", states))
+            state_units = cast("T", states).split_groups()
         else:
             state_units = states
         self.states_iterator = iter(state_units)
@@ -1164,7 +1152,7 @@ class InFlightAutoBatcher[T: SimState]:
                 completed_system_indices.extend(torch.where(system_mask)[0].tolist())
 
         completed_states = (
-            _split_autobatch_units(updated_state[completed_system_indices])
+            updated_state[completed_system_indices].split_groups()
             if completed_system_indices
             else []
         )

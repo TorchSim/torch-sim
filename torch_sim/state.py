@@ -732,16 +732,52 @@ class SimState:
         """
         return ts.io.state_to_phonopy(self)
 
-    def split(self) -> list[Self]:
-        """Split the SimState into a list of single-system SimStates.
+    def split(self, *, by: Literal["system", "group"] = "system") -> list[Self]:
+        """Split the SimState into a list of independent SimStates.
 
-        Divides the current state into separate states, each containing a single system,
-        preserving all properties appropriately for each system.
+        Divides the current state into separate states, preserving all properties
+        appropriately for each piece.
+
+        Args:
+            by ("system" | "group"): Whether to split into one state per system
+                (default) or one state per optimizer group. With the default
+                single-system groups the two are equivalent.
 
         Returns:
-            list[SimState]: A list of SimState objects, one per system
+            list[SimState]: A list of SimState objects, one per system or per group.
         """
-        return _split_state(self)
+        if by == "system":
+            return self.split_systems()
+        if by == "group":
+            return self.split_groups()
+        raise ValueError(f"Invalid split mode {by!r}, must be 'system' or 'group'")
+
+    def split_systems(self) -> list[Self]:
+        """Split the SimState into a list of single-system SimStates.
+
+        Returns:
+            list[SimState]: A list of SimState objects, one per system.
+        """
+        return _split_state(self, by="system")
+
+    def split_groups(self) -> list[Self]:
+        """Split the SimState into a list of single-group SimStates.
+
+        Each returned state holds all systems belonging to one optimizer group, with
+        ``group_idx`` remapped to a single group. With the default single-system
+        groups this is equivalent to :meth:`split_systems`.
+
+        Requires ``group_idx`` to be non-decreasing so each group is a contiguous
+        block of systems (the layout produced by ``concatenate_states`` and the
+        autobatchers).
+
+        Returns:
+            list[SimState]: A list of SimState objects, one per group.
+
+        Raises:
+            ValueError: If ``group_idx`` is not non-decreasing.
+        """
+        return _split_state(self, by="group")
 
     def pop(self, system_indices: int | list[int] | slice | torch.Tensor) -> list[Self]:
         """Pop off states with the specified system indices.
@@ -1193,113 +1229,198 @@ def _filter_attrs_by_index(  # noqa: C901
     return filtered_attrs
 
 
-def _split_state[T: SimState](state: T) -> list[T]:  # noqa: C901
-    """Split a SimState into a list of states, each containing a single system.
+def _split_state[T: SimState](  # noqa: C901
+    state: T, *, by: Literal["system", "group"] = "system"
+) -> list[T]:
+    """Split a SimState into a list of states, one per system or per optimizer group.
 
-    Divides a multi-system state into individual single-system states, preserving
-    appropriate properties for each system.
+    Both modes share one vectorized ``torch.split`` pass over the state tensors.
+    ``by="system"`` yields one single-system state per system. ``by="group"`` yields
+    one state per group and requires ``group_idx`` to be non-decreasing so each group
+    is a contiguous block of systems (the layout produced by ``concatenate_states``
+    and the autobatchers).
 
     Args:
-        state (SimState): The SimState to split
+        state (SimState): The SimState to split.
+        by (Literal["system", "group"]): The granularity to split at.
 
     Returns:
-        list[SimState]: A list of SimState objects, each containing a single
-            system
+        list[SimState]: One SimState per system or per group.
+
+    Raises:
+        ValueError: For an unknown ``by`` value, or if ``by="group"`` and
+            ``group_idx`` is not non-decreasing.
     """
-    system_sizes = state.n_atoms_per_system.tolist()
+    if by == "system":
+        system_to_output = torch.arange(state.n_systems, device=state.device)
+        n_outputs = state.n_systems
+    elif by == "group":
+        if state.n_systems > 1 and not bool(
+            (state.group_idx[1:] >= state.group_idx[:-1]).all()
+        ):
+            raise ValueError(
+                "split by group requires non-decreasing group_idx so each group is a "
+                "contiguous block of systems"
+            )
+        system_to_output = state.group_idx
+        n_outputs = state.n_groups
+    else:
+        raise ValueError(f"Invalid split mode {by!r}, must be 'system' or 'group'")
+
+    # Number of systems and atoms in each output, used to drive torch.split.
+    output_system_sizes = torch.bincount(system_to_output, minlength=n_outputs).tolist()
+    output_atom_sizes = (
+        torch.bincount(
+            system_to_output,
+            weights=state.n_atoms_per_system.to(torch.float64),
+            minlength=n_outputs,
+        )
+        .round()
+        .to(torch.int64)
+        .tolist()
+    )
 
     split_per_atom = {}
     for attr_name, attr_value in get_attrs_for_scope(state, "per-atom"):
-        if attr_name == "system_idx" or attr_name in state.atom_extras:
+        if attr_name in state.atom_extras:
             continue
-        split_per_atom[attr_name] = torch.split(attr_value, system_sizes, dim=0)
+        split_per_atom[attr_name] = torch.split(attr_value, output_atom_sizes, dim=0)
 
     split_per_system = {}
     for attr_name, attr_value in get_attrs_for_scope(state, "per-system"):
         if attr_name == "group_idx" or attr_name in state.system_extras:
             continue
         if isinstance(attr_value, torch.Tensor):
-            split_per_system[attr_name] = torch.split(attr_value, 1, dim=0)
+            split_per_system[attr_name] = torch.split(
+                attr_value, output_system_sizes, dim=0
+            )
         else:  # Non-tensor attributes are replicated for each split
-            split_per_system[attr_name] = [attr_value] * state.n_systems
+            split_per_system[attr_name] = [attr_value] * n_outputs
 
     split_per_group = {}
-    for attr_name, attr_value in get_attrs_for_scope(state, "per-group"):
-        if isinstance(attr_value, torch.Tensor):
-            split_per_group[attr_name] = [
-                attr_value[
-                    int(state.group_idx[sys_idx].item()) : int(
-                        state.group_idx[sys_idx].item()
-                    )
-                    + 1
-                ]
-                for sys_idx in range(state.n_systems)
-            ]
+    per_group_attrs = list(get_attrs_for_scope(state, "per-group"))
+    # When splitting by system, several systems can share a group, so each output maps
+    # to its group's row; when splitting by group, each output is exactly one group.
+    group_ids = state.group_idx.tolist() if (per_group_attrs and by == "system") else []
+    for attr_name, attr_value in per_group_attrs:
+        if not isinstance(attr_value, torch.Tensor):
+            split_per_group[attr_name] = [attr_value] * n_outputs
+        elif by == "group":
+            split_per_group[attr_name] = list(torch.split(attr_value, 1, dim=0))
         else:
-            split_per_group[attr_name] = [attr_value] * state.n_systems
+            split_per_group[attr_name] = [attr_value[g : g + 1] for g in group_ids]
 
     global_attrs = dict(get_attrs_for_scope(state, "global"))
 
-    split_system_extras: dict[str, list[torch.Tensor]] = {}
-    for key, val in state.system_extras.items():
-        split_system_extras[key] = list(torch.split(val, 1, dim=0))
+    split_system_extras = {
+        key: torch.split(val, output_system_sizes, dim=0)
+        for key, val in state.system_extras.items()
+    }
+    split_atom_extras = {
+        key: torch.split(val, output_atom_sizes, dim=0)
+        for key, val in state.atom_extras.items()
+    }
 
-    split_atom_extras: dict[str, list[torch.Tensor]] = {}
-    for key, val in state.atom_extras.items():
-        split_atom_extras[key] = list(torch.split(val, system_sizes, dim=0))
+    atom_offsets = [0]
+    for size in output_atom_sizes:
+        atom_offsets.append(atom_offsets[-1] + size)
+    system_offsets = [0]
+    for size in output_system_sizes:
+        system_offsets.append(system_offsets[-1] + size)
 
-    # Create a state for each system
     states: list[T] = []
-    n_systems = len(system_sizes)
-    zero_tensor = torch.tensor([0], device=state.device, dtype=torch.int64)
-    cumsum_atoms = torch.cat((zero_tensor, torch.cumsum(state.n_atoms_per_system, dim=0)))
-    for sys_idx in range(n_systems):
-        # Build per-system attributes (padded attributes stay padded for consistency)
-        per_system_dict = {
-            attr_name: split_per_system[attr_name][sys_idx]
-            for attr_name in split_per_system
-        }
+    for out_idx in range(n_outputs):
+        # Rebase per-atom system_idx to 0-based within the output. Atoms are ordered by
+        # system, so the first entry is the output's lowest original system index.
+        sys_chunk = split_per_atom["system_idx"][out_idx]
+        local_system_idx = sys_chunk - sys_chunk[0] if sys_chunk.numel() else sys_chunk
 
         system_attrs = {
-            # Create a system tensor with all zeros for this system
-            "system_idx": torch.zeros(
-                system_sizes[sys_idx], device=state.device, dtype=torch.int64
+            "system_idx": local_system_idx,
+            "group_idx": torch.zeros(
+                output_system_sizes[out_idx], device=state.device, dtype=torch.int64
             ),
-            "group_idx": torch.zeros(1, device=state.device, dtype=torch.int64),
-            # Add the split per-atom attributes
             **{
-                attr_name: split_per_atom[attr_name][sys_idx]
+                attr_name: split_per_atom[attr_name][out_idx]
                 for attr_name in split_per_atom
+                if attr_name != "system_idx"
             },
-            # Add the split per-system attributes (with unpadding applied)
-            **per_system_dict,
             **{
-                attr_name: split_per_group[attr_name][sys_idx]
+                attr_name: split_per_system[attr_name][out_idx]
+                for attr_name in split_per_system
+            },
+            **{
+                attr_name: split_per_group[attr_name][out_idx]
                 for attr_name in split_per_group
             },
-            # Add the global attributes
             **global_attrs,
             "_system_extras": {
-                key: split_system_extras[key][sys_idx] for key in split_system_extras
+                key: split_system_extras[key][out_idx] for key in split_system_extras
             },
             "_atom_extras": {
-                key: split_atom_extras[key][sys_idx] for key in split_atom_extras
+                key: split_atom_extras[key][out_idx] for key in split_atom_extras
             },
         }
-
-        start_idx = int(cumsum_atoms[sys_idx].item())
-        end_idx = int(cumsum_atoms[sys_idx + 1].item())
-        atom_idx = torch.arange(start_idx, end_idx, device=state.device)
-        new_constraints: list[Constraint] = []
-        for constraint in state.constraints:
-            sub = constraint.select_sub_constraint(atom_idx, sys_idx)
-            if sub is not None:
-                new_constraints.append(sub)
-
-        system_attrs["_constraints"] = new_constraints
+        system_attrs["_constraints"] = _split_constraints(
+            state,
+            out_idx,
+            by=by,
+            atom_offsets=atom_offsets,
+            system_offsets=system_offsets,
+        )
         states.append(type(state)(**system_attrs))
 
     return states
+
+
+def _split_constraints(
+    state: SimState,
+    out_idx: int,
+    *,
+    by: str,
+    atom_offsets: list[int],
+    system_offsets: list[int],
+) -> list[Constraint]:
+    """Select the constraints for one output of :func:`_split_state`."""
+    if not state.constraints:
+        return []
+
+    atom_idx = torch.arange(
+        atom_offsets[out_idx], atom_offsets[out_idx + 1], device=state.device
+    )
+    if by == "system":
+        return [
+            sub
+            for constraint in state.constraints
+            if (sub := constraint.select_sub_constraint(atom_idx, out_idx)) is not None
+        ]
+
+    # A group spans several systems: select each system's sub-constraints (local to that
+    # system) and merge them into the group's frame, mirroring concatenate_states.
+    per_system_constraints: list[list[Constraint]] = []
+    per_system_atoms: list[int] = []
+    atom_cursor = atom_offsets[out_idx]
+    for sys_idx in range(system_offsets[out_idx], system_offsets[out_idx + 1]):
+        n_atoms = int(state.n_atoms_per_system[sys_idx].item())
+        sys_atom_idx = torch.arange(
+            atom_cursor, atom_cursor + n_atoms, device=state.device
+        )
+        per_system_constraints.append(
+            [
+                sub
+                for constraint in state.constraints
+                if (sub := constraint.select_sub_constraint(sys_atom_idx, sys_idx))
+                is not None
+            ]
+        )
+        per_system_atoms.append(n_atoms)
+        atom_cursor += n_atoms
+
+    return merge_constraints(
+        per_system_constraints,
+        torch.tensor(per_system_atoms, device=state.device),
+        torch.ones(len(per_system_atoms), device=state.device, dtype=torch.int64),
+    )
 
 
 def _pop_states[T: SimState](
