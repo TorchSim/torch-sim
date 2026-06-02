@@ -23,7 +23,7 @@ Notes:
 import logging
 from collections.abc import Callable, Iterator, Sequence
 from itertools import chain
-from typing import Any, get_args
+from typing import Any, cast, get_args
 
 import torch
 
@@ -386,6 +386,36 @@ def calculate_memory_scalers(
     )
 
 
+def _unit_memory_scaler(
+    state: SimState,
+    memory_scales_with: MemoryScaling,
+    cutoff: float,
+) -> float:
+    """Estimate memory for one autobatching unit, which may contain many systems."""
+    return float(sum(calculate_memory_scalers(state, memory_scales_with, cutoff)))
+
+
+def _group_memory_scalers(
+    state: SimState,
+    memory_scales_with: MemoryScaling,
+    cutoff: float,
+) -> list[float]:
+    """Estimate memory for each optimizer group without materializing per-group states.
+
+    Computes per-system memory scalers with the already-vectorized
+    ``calculate_memory_scalers`` and segment-sums them by ``group_idx`` so that
+    each group's scaler is the sum over its constituent systems.
+    """
+    per_system = torch.tensor(
+        calculate_memory_scalers(state, memory_scales_with, cutoff),
+        dtype=torch.float64,
+        device=state.device,
+    )
+    return torch.bincount(
+        state.group_idx, weights=per_system, minlength=state.n_groups
+    ).tolist()
+
+
 def estimate_max_memory_scaler(
     states: SimState | Sequence[SimState],
     model: ModelInterface,
@@ -430,8 +460,17 @@ def estimate_max_memory_scaler(
     min_metric = metric_values.min()
     max_metric = metric_values.max()
 
-    min_state = states[int(metric_values.argmin())]
-    max_state = states[int(metric_values.argmax())]
+    min_idx = int(metric_values.argmin())
+    max_idx = int(metric_values.argmax())
+
+    # metric_values are per-group, so only materialize the two extreme groups rather
+    # than splitting every group out of the batched state.
+    if isinstance(states, SimState):
+        min_state = states[torch.where(states.group_idx == min_idx)[0]]
+        max_state = states[torch.where(states.group_idx == max_idx)[0]]
+    else:
+        min_state = states[min_idx]
+        max_state = states[max_idx]
 
     print(  # noqa: T201
         "Model Memory Estimation: Estimating memory from worst case of "
@@ -468,7 +507,8 @@ class BinningAutoBatcher[T: SimState]:
         index_to_scaler (dict): Mapping from state index to its scaling metric.
         index_bins (list[list[int]]): Groups of state indices that can be batched
             together.
-        batched_states (list[list[SimState]]): Grouped states ready for batching.
+        batched_states (list[torch.Tensor]): Per-bin system indices into the loaded
+            state, used to materialize each batch lazily.
         current_state_bin (int): Index of the current batch being processed.
 
     Example::
@@ -549,9 +589,9 @@ class BinningAutoBatcher[T: SimState]:
 
         Args:
             states (SimState | list[SimState]): Collection of states to batch. Either a
-                list of individual SimState objects or a single batched SimState that
-                will be split into individual states. Each SimState has shape
-                information specific to its instance.
+                list of individual SimState objects or a single batched SimState. The
+                batcher works in units of optimizer groups (one per system by default),
+                so multi-system groups are kept together in the same batch.
 
         Returns:
             float: Maximum memory scaling metric that fits in GPU memory.
@@ -575,7 +615,8 @@ class BinningAutoBatcher[T: SimState]:
         batched = (
             states if isinstance(states, SimState) else ts.concatenate_states(states)
         )
-        self.memory_scalers = calculate_memory_scalers(
+        self._batched = batched
+        self.memory_scalers = _group_memory_scalers(
             batched, self.memory_scales_with, self.cutoff
         )
         if not self.max_memory_scaler:
@@ -605,14 +646,25 @@ class BinningAutoBatcher[T: SimState]:
         index_bins = to_constant_volume_bins(
             self.index_to_scaler, max_volume=self.max_memory_scaler
         )  # list[dict[original_index: int, memory_scale:float]]
-        # Convert to list of lists of indices
+        # Convert to list of lists of group indices
         self.index_bins = [list(batch.keys()) for batch in index_bins]
-        self.batched_states = [[batched[index_bin]] for index_bin in self.index_bins]
+        # Per bin, the system indices for that bin's groups, ordered by group so the
+        # remapped group_idx after indexing matches the bin's group order. Materialized
+        # lazily in next_batch to avoid eagerly splitting one SimState per group.
+        self.batched_states = [
+            torch.cat(
+                [
+                    torch.where(batched.group_idx == group_idx)[0]
+                    for group_idx in index_bin
+                ]
+            )
+            for index_bin in self.index_bins
+        ]
         self.current_state_bin = 0
 
         logger.info(
             "BinningAutoBatcher: %d systems → %d batch(es), max_memory_scaler=%.3g",
-            len(self.memory_scalers),
+            batched.n_systems,
             len(self.index_bins),
             self.max_memory_scaler,
         )
@@ -641,8 +693,8 @@ class BinningAutoBatcher[T: SimState]:
         # TODO: need to think about how this intersects with reporting too
         # TODO: definitely a clever treatment to be done with iterators here
         if self.current_state_bin < len(self.batched_states):
-            state_bin = self.batched_states[self.current_state_bin]
-            state = ts.concatenate_states(state_bin)
+            system_indices = self.batched_states[self.current_state_bin]
+            state = self._batched[system_indices]
             indices = (
                 self.index_bins[self.current_state_bin]
                 if self.current_state_bin < len(self.index_bins)
@@ -725,7 +777,7 @@ class BinningAutoBatcher[T: SimState]:
             ordered_results = batcher.restore_original_order(results)
 
         """
-        all_states = [state.split() for state in batched_states]
+        all_states = [state.split_groups() for state in batched_states]
         all_states = list(chain.from_iterable(all_states))
         original_indices = list(chain.from_iterable(self.index_bins))
 
@@ -881,9 +933,12 @@ class InFlightAutoBatcher[T: SimState]:
             This method resets the current state indices and completed state tracking,
             so any ongoing processing will be restarted when this method is called.
         """
+        state_units: Sequence[T] | Iterator[T]
         if isinstance(states, SimState):
-            states = states.split()
-        self.states_iterator = iter(states)
+            state_units = cast("T", states).split_groups()
+        else:
+            state_units = states
+        self.states_iterator = iter(state_units)
 
         self.current_scalers = []
         self.current_idx = []
@@ -909,9 +964,7 @@ class InFlightAutoBatcher[T: SimState]:
         new_idx: list[int] = []
         new_states: list[T] = []
         for state in self.states_iterator:
-            metric = calculate_memory_scalers(
-                state, self.memory_scales_with, self.cutoff
-            )[0]
+            metric = _unit_memory_scaler(state, self.memory_scales_with, self.cutoff)
             if metric > self.max_memory_scaler:
                 raise ValueError(
                     f"State {metric=} is greater than max_metric {self.max_memory_scaler}"
@@ -967,7 +1020,9 @@ class InFlightAutoBatcher[T: SimState]:
         # we need to sample a state and use it to estimate the max metric
         # for the first batch
         first_state = next(self.states_iterator)
-        first_metric = calculate_memory_scalers(first_state, self.memory_scales_with)[0]
+        first_metric = _unit_memory_scaler(
+            first_state, self.memory_scales_with, self.cutoff
+        )
         self.current_scalers += [first_metric]
         self.current_idx += [0]
         self.iteration_count.append(0)  # Initialize attempt counter for first state
@@ -1086,12 +1141,23 @@ class InFlightAutoBatcher[T: SimState]:
             if self.max_iterations is not None and (
                 self.iteration_count[abs_idx] >= self.max_iterations
             ):
-                # Force convergence for states that have reached max attempts
-                convergence_tensor[cur_idx] = torch.tensor(True)  # noqa: FBT003
+                convergence_tensor[updated_state.group_idx == cur_idx] = True
 
-        completed_idx = torch.where(convergence_tensor)[0].tolist()
+        completed_idx = []
+        completed_system_indices = []
+        for group_idx in range(updated_state.n_groups):
+            system_mask = updated_state.group_idx == group_idx
+            if convergence_tensor[system_mask].all():
+                completed_idx.append(group_idx)
+                completed_system_indices.extend(torch.where(system_mask)[0].tolist())
 
-        completed_states = updated_state.pop(completed_idx)
+        completed_states = (
+            updated_state[completed_system_indices].split_groups()
+            if completed_system_indices
+            else []
+        )
+        if completed_system_indices:
+            updated_state.pop(completed_system_indices)
 
         # necessary to ensure states that finish at the same time are ordered properly
         completed_states.reverse()

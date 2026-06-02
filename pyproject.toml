@@ -235,6 +235,7 @@ include = ["docs/**/*.py", "docs/**/*.ipynb", "examples/**/*.py"]
 [tool.ty.overrides.rules]
 invalid-argument-type = "ignore"
 invalid-assignment = "ignore"
+invalid-attribute-override = "ignore"
 not-iterable = "ignore"
 not-subscriptable = "ignore"
 unresolved-attribute = "ignore"

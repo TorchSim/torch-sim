@@ -162,6 +162,36 @@ def test_fire_optimization(
     )
 
 
+@pytest.mark.parametrize("fire_flavor", get_args(FireFlavor))
+def test_fire_uses_group_scoped_adaptive_state(
+    ar_double_sim_state: SimState, lj_model: ModelInterface, fire_flavor: FireFlavor
+) -> None:
+    ar_double_sim_state.group_idx = torch.zeros(
+        ar_double_sim_state.n_systems,
+        device=ar_double_sim_state.device,
+        dtype=torch.int64,
+    )
+
+    state = ts.fire_init(
+        ar_double_sim_state,
+        lj_model,
+        fire_flavor=fire_flavor,
+        dt_start=0.1,
+        alpha_start=0.1,
+    )
+
+    assert state.n_groups == 1
+    assert state.dt.shape == (1,)
+    assert state.alpha.shape == (1,)
+    assert state.n_pos.shape == (1,)
+
+    updated = ts.fire_step(state=state, model=lj_model, dt_max=0.3)
+
+    assert updated.dt.shape == (1,)
+    assert updated.alpha.shape == (1,)
+    assert updated.n_pos.shape == (1,)
+
+
 def test_bfgs_optimization(
     ar_supercell_sim_state: SimState, lj_model: ModelInterface
 ) -> None:
