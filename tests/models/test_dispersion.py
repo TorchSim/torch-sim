@@ -7,6 +7,7 @@ import traceback
 import pytest
 import torch
 
+import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
 from tests.models.conftest import make_validate_model_outputs_test
 
@@ -66,6 +67,110 @@ def d3_model_r2scan() -> D3DispersionModel:
         dtype=DTYPE,
         compute_forces=True,
         compute_stress=True,
+    )
+
+
+def test_d3_stress_matches_finite_strain_sign() -> None:
+    """Stress should match dE/dstrain/V, not the opposite virial sign."""
+    row_cell = torch.tensor(
+        [[4.2, 0.3, 0.1], [0.2, 4.8, 0.4], [0.15, 0.35, 5.1]],
+        dtype=DTYPE,
+        device=DEVICE,
+    )
+    positions = torch.tensor(
+        [[0.4, 0.5, 0.6], [1.9, 1.4, 2.3], [3.1, 2.6, 1.7]],
+        dtype=DTYPE,
+        device=DEVICE,
+    )
+    state = ts.SimState(
+        positions=positions,
+        masses=torch.ones(3, dtype=DTYPE, device=DEVICE),
+        cell=row_cell.mT.unsqueeze(0),
+        pbc=True,
+        atomic_numbers=torch.tensor([6, 8, 14], dtype=torch.int64, device=DEVICE),
+    )
+
+    gen = torch.Generator(device=DEVICE)
+    gen.manual_seed(1234)
+    max_z = 14
+    mesh = 5
+    rcov = torch.rand(max_z + 1, generator=gen, device=DEVICE) + 0.5
+    r4r2 = torch.rand(max_z + 1, generator=gen, device=DEVICE) + 0.5
+    c6ab = 20.0 * (
+        torch.rand(
+            max_z + 1,
+            max_z + 1,
+            mesh,
+            mesh,
+            generator=gen,
+            device=DEVICE,
+        )
+        + 0.1
+    )
+    c6ab = 0.5 * (c6ab + c6ab.permute(1, 0, 3, 2))
+    cn_ref = 4.0 * torch.rand(
+        max_z + 1,
+        max_z + 1,
+        mesh,
+        mesh,
+        generator=gen,
+        device=DEVICE,
+    )
+    cn_ref = 0.5 * (cn_ref + cn_ref.permute(1, 0, 3, 2))
+
+    model = D3DispersionModel(
+        **PBE_BJ,
+        d3_params=D3Parameters(rcov=rcov, r4r2=r4r2, c6ab=c6ab, cn_ref=cn_ref),
+        cutoff=6.0,
+        device=DEVICE,
+        dtype=DTYPE,
+        compute_forces=True,
+        compute_stress=True,
+    )
+
+    stress = model(state)["stress"][0]
+    volume = state.volume[0]
+    frac_positions = torch.linalg.solve(row_cell.mT, positions.mT).mT
+    identity = torch.eye(3, dtype=DTYPE, device=DEVICE)
+
+    def strained_energy(strain: torch.Tensor) -> torch.Tensor:
+        strained_row_cell = row_cell @ (identity + strain)
+        strained_state = ts.SimState(
+            positions=frac_positions @ strained_row_cell,
+            masses=state.masses,
+            cell=strained_row_cell.mT.unsqueeze(0),
+            pbc=state.pbc,
+            atomic_numbers=state.atomic_numbers,
+            system_idx=state.system_idx,
+        )
+        return model(strained_state)["energy"][0]
+
+    step = 1e-3
+    finite_diff_stress = torch.zeros((3, 3), dtype=DTYPE, device=DEVICE)
+    for idx_i in range(3):
+        for idx_j in range(idx_i, 3):
+            strain = torch.zeros((3, 3), dtype=DTYPE, device=DEVICE)
+            if idx_i == idx_j:
+                strain[idx_i, idx_i] = step
+                energy_plus = strained_energy(strain)
+                strain[idx_i, idx_i] = -step
+                energy_minus = strained_energy(strain)
+            else:
+                strain[idx_i, idx_j] = 0.5 * step
+                strain[idx_j, idx_i] = 0.5 * step
+                energy_plus = strained_energy(strain)
+                strain[idx_i, idx_j] = -0.5 * step
+                strain[idx_j, idx_i] = -0.5 * step
+                energy_minus = strained_energy(strain)
+            stress_component = (energy_plus - energy_minus) / (2 * step * volume)
+            finite_diff_stress[idx_i, idx_j] = stress_component
+            finite_diff_stress[idx_j, idx_i] = stress_component
+
+    torch.testing.assert_close(
+        stress,
+        finite_diff_stress,
+        rtol=5e-3,
+        atol=5e-7,
     )
 
 
