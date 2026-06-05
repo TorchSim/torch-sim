@@ -178,6 +178,8 @@ class D3DispersionModel(ModelInterface):
             # d3_out[3] is only defined if compute_virial is True
             # we use [-1] to index it to avoid typing errors.
             volumes = state.volume.unsqueeze(-1).unsqueeze(-1)
-            stress = (d3_out[-1] * UnitConversion.Hartree_to_eV) / volumes
+            # nvalchemiops returns the negative strain-gradient virial; TorchSim stress
+            # follows dE / dstrain / volume, matching ASE and other TorchSim models.
+            stress = -(d3_out[-1] * UnitConversion.Hartree_to_eV) / volumes
             results["stress"] = stress.to(self._dtype).detach()
         return results
