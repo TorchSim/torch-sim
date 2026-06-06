@@ -146,7 +146,9 @@ class DSFCoulombModel(ModelInterface):
             results["forces"] = forces.to(self._dtype).detach()
         if self._compute_stress:
             volumes = state.volume.unsqueeze(-1).unsqueeze(-1)
-            stress = (out[-1] * UnitConversion.e2_per_Ang_to_eV) / volumes
+            # nvalchemiops returns the negative strain-gradient virial; TorchSim stress
+            # follows dE / dstrain / volume, matching ASE and other TorchSim models.
+            stress = -(out[-1] * UnitConversion.e2_per_Ang_to_eV) / volumes
             results["stress"] = stress.to(self._dtype).detach()
         return results
 
@@ -258,7 +260,9 @@ class EwaldModel(ModelInterface):
             results["forces"] = forces.to(self._dtype).detach()
         if self._compute_stress:
             volumes = state.volume.unsqueeze(-1).unsqueeze(-1)
-            stress = (out[-1] * UnitConversion.e2_per_Ang_to_eV) / volumes
+            # nvalchemiops returns the negative strain-gradient virial; TorchSim stress
+            # follows dE / dstrain / volume, matching ASE and other TorchSim models.
+            stress = -(out[-1] * UnitConversion.e2_per_Ang_to_eV) / volumes
             results["stress"] = stress.to(self._dtype).detach()
         return results
 
@@ -387,6 +391,8 @@ class PMEModel(ModelInterface):
             results["forces"] = forces.to(self._dtype).detach()
         if self._compute_stress:
             volumes = state.volume.unsqueeze(-1).unsqueeze(-1)
-            stress = (out[-1] * UnitConversion.e2_per_Ang_to_eV) / volumes
+            # nvalchemiops returns the negative strain-gradient virial; TorchSim stress
+            # follows dE / dstrain / volume, matching ASE and other TorchSim models.
+            stress = -(out[-1] * UnitConversion.e2_per_Ang_to_eV) / volumes
             results["stress"] = stress.to(self._dtype).detach()
         return results
