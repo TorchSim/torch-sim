@@ -13,10 +13,5 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v5
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-
       - name: Run prek
         uses: j178/prek-action@v1

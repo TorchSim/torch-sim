@@ -148,6 +148,7 @@ markers = [
 ]
 
 [tool.uv]
+default-groups = ["dev", "typecheck"]
 # make these dependencies mutually exclusive since they use incompatible e3nn versions
 # see https://docs.astral.sh/uv/concepts/projects/config/#conflicting-dependencies for more details
 conflicts = [
@@ -179,6 +180,7 @@ conflicts = [
 
 [dependency-groups]
 dev = ["prek>=0.3.4", "ty>=0.0.19"]
+typecheck = ["torch-sim-atomistic[docs,test]"]
 
 [tool.ty.rules]
 unused-ignore-comment = "warn"
