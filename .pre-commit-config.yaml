@@ -40,3 +40,4 @@ repos:
     rev: v0.0.48
     hooks:
       - id: ty
+        args: [--only-group, typecheck]
