@@ -491,7 +491,7 @@ def generate_force_convergence_fn[T: MDState | FireState](
     Args:
         force_tol (float): Force tolerance for convergence
         include_cell_forces (bool): Whether to include the `cell_forces` in
-            the convergence check. Defaults to True.
+            the convergence check. Defaults to False.
 
     Returns:
         Convergence function that takes a state and last energy and

@@ -71,6 +71,17 @@ if ALCHEMIOPS_AVAILABLE:
 
         if _batch_naive_neighbor_list is None:
             raise RuntimeError("nvalchemiops neighbor list is unavailable")
+
+        # Temporary fix: the naive kernel wraps on every axis ignoring pbc, so a
+        # non-zero cell breaks non-periodic and partial-pbc systems. Zeroing the cell
+        # makes the wrap a no-op, fixing fully non-periodic systems (e.g. molecules).
+        # Slabs / partial pbc are not covered yet and need the upstream fix.
+        # See https://github.com/TorchSim/torch-sim/issues/575
+        non_periodic = ~pbc.any(dim=1)  # [n_systems]
+        if non_periodic.any():
+            cell = cell.clone()  # avoid modifying the original
+            cell[non_periodic] = 0.0
+
         res = _batch_naive_neighbor_list(
             positions=positions,
             cutoff=cutoff,

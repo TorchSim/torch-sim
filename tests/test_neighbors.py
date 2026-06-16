@@ -286,11 +286,13 @@ def test_neighbor_list_invariant_under_lattice_image_shifts(
     _nl_backends_x_cutoffs(),
 )
 @pytest.mark.parametrize("self_interaction", [True, False])
+@pytest.mark.parametrize("molecule_dummy_cell", [0.0, 1.0])
 def test_neighbor_list_implementations(
     *,
     nl_implementation: Callable[..., tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
     cutoff: float,
     self_interaction: bool,
+    molecule_dummy_cell: float,
     molecule_atoms_set: list[Atoms],
     periodic_atoms_set: list[Atoms],
 ) -> None:
@@ -298,8 +300,17 @@ def test_neighbor_list_implementations(
 
     Tests all implementations in batched mode with mixed periodic and non-periodic
     systems, comparing sorted distances against ASE reference values.
+
+    With molecule_dummy_cell != 0 the non-periodic molecules carry a non-zero
+    (dummy) cell, e.g. from ase.Atoms.get_cell(complete=True). Since pbc stays False
+    the neighbor list must remain cell-independent and still match ASE values.
     """
-    atoms_list = molecule_atoms_set + periodic_atoms_set
+    molecules = molecule_atoms_set
+    if molecule_dummy_cell:
+        molecules = [atoms.copy() for atoms in molecule_atoms_set]
+        for atoms in molecules:
+            atoms.set_cell([molecule_dummy_cell] * 3)  # dummy cell; pbc stays False
+    atoms_list = molecules + periodic_atoms_set
     is_alchemiops = "alchemiops" in nl_implementation.__name__
     if is_alchemiops and cutoff >= 3:
         atoms_list = [a for a in atoms_list if not a.info.get("very_skewed")]
