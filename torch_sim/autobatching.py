@@ -23,7 +23,7 @@ Notes:
 import logging
 from collections.abc import Callable, Iterator, Sequence
 from itertools import chain
-from typing import Any, cast, get_args
+from typing import Any, get_args
 
 import torch
 
@@ -416,6 +416,16 @@ def _group_memory_scalers(
     ).tolist()
 
 
+def _system_indices_for_groups(
+    state: SimState, group_ids: Sequence[int], *, sort: bool = True
+) -> torch.Tensor:
+    """Return system indices for optimizer groups in canonical group order."""
+    ordered_group_ids = sorted(group_ids) if sort else group_ids
+    return torch.cat(
+        [torch.where(state.group_idx == group_idx)[0] for group_idx in ordered_group_ids]
+    )
+
+
 def estimate_max_memory_scaler(
     states: SimState | Sequence[SimState],
     model: ModelInterface,
@@ -466,8 +476,8 @@ def estimate_max_memory_scaler(
     # metric_values are per-group, so only materialize the two extreme groups rather
     # than splitting every group out of the batched state.
     if isinstance(states, SimState):
-        min_state = states[torch.where(states.group_idx == min_idx)[0]]
-        max_state = states[torch.where(states.group_idx == max_idx)[0]]
+        min_state = states[_system_indices_for_groups(states, [min_idx])]
+        max_state = states[_system_indices_for_groups(states, [max_idx])]
     else:
         min_state = states[min_idx]
         max_state = states[max_idx]
@@ -646,24 +656,22 @@ class BinningAutoBatcher[T: SimState]:
         index_bins = to_constant_volume_bins(
             self.index_to_scaler, max_volume=self.max_memory_scaler
         )  # list[dict[original_index: int, memory_scale:float]]
-        # Convert to list of lists of group indices
-        self.index_bins = [list(batch.keys()) for batch in index_bins]
+        # Keep groups in canonical order so later split_groups() calls see contiguous
+        # group blocks after the batched state is sliced.
+        self.index_bins = [sorted(batch) for batch in index_bins]
         # Per bin, the system indices for that bin's groups, ordered by group so the
         # remapped group_idx after indexing matches the bin's group order. Materialized
         # lazily in next_batch to avoid eagerly splitting one SimState per group.
         self.batched_states = [
-            torch.cat(
-                [
-                    torch.where(batched.group_idx == group_idx)[0]
-                    for group_idx in index_bin
-                ]
-            )
+            _system_indices_for_groups(batched, index_bin)
             for index_bin in self.index_bins
         ]
         self.current_state_bin = 0
 
         logger.info(
-            "BinningAutoBatcher: %d systems → %d batch(es), max_memory_scaler=%.3g",
+            "BinningAutoBatcher: %d group(s) across %d system(s) → %d batch(es), "
+            "max_memory_scaler=%.3g",
+            batched.n_groups,
             batched.n_systems,
             len(self.index_bins),
             self.max_memory_scaler,
@@ -910,9 +918,9 @@ class InFlightAutoBatcher[T: SimState]:
         Args:
             states (list[SimState] | Iterator[SimState] | SimState): Collection of
                 states to batch. Can be a list of individual SimState objects, an
-                iterator yielding SimState objects, or a single batched SimState
-                that will be split into individual states. Each SimState has shape
-                information specific to its instance.
+                iterator yielding SimState objects, or a single batched SimState.
+                Inputs are normalized to one batched state and sliced lazily by
+                optimizer group.
 
         Raises:
             ValueError: If any individual state has a memory scaling metric greater
@@ -933,17 +941,21 @@ class InFlightAutoBatcher[T: SimState]:
             This method resets the current state indices and completed state tracking,
             so any ongoing processing will be restarted when this method is called.
         """
-        state_units: Sequence[T] | Iterator[T]
         if isinstance(states, SimState):
-            state_units = cast("T", states).split_groups()
+            batched = states
+        elif isinstance(states, Sequence):
+            batched = ts.concatenate_states(states)
         else:
-            state_units = states
-        self.states_iterator = iter(state_units)
+            batched = ts.concatenate_states(list(states))
+        self._batched = batched
+        self.memory_scalers = _group_memory_scalers(
+            batched, self.memory_scales_with, self.cutoff
+        )
+        self._pending_group_ids = list(range(batched.n_groups))
 
         self.current_scalers = []
         self.current_idx = []
-        self.iterator_idx = 0
-        self.iteration_count = []  # Track attempts for each state
+        self.iteration_count = [0] * batched.n_groups
 
         self.completed_idx_og_order = []
 
@@ -951,20 +963,26 @@ class InFlightAutoBatcher[T: SimState]:
         self._first_batch = self._get_first_batch()
         return self.max_memory_scaler
 
-    def _get_next_states(self) -> list[T]:
-        """Add states from the iterator until max_memory_scaler is reached.
+    def _materialize_groups(self, group_ids: Sequence[int]) -> T:
+        """Slice the loaded state to materialize optimizer groups."""
+        return self._batched[_system_indices_for_groups(self._batched, group_ids)]
 
-        Pulls states from the iterator and adds them to the current batch until
+    def _pull_group_ids(self) -> list[int]:
+        """Admit pending groups until the memory budget is full.
+
+        Pulls group ids from the pending queue and adds them to the current batch until
         adding another would exceed the maximum memory scaling metric.
 
         Returns:
-            list[SimState]: new states added to the batch.
+            list[int]: New group ids added to the batch.
         """
+        if self.max_memory_scaler is None:
+            raise ValueError("max_memory_scaler must be set before pulling groups")
         new_metrics: list[float] = []
         new_idx: list[int] = []
-        new_states: list[T] = []
-        for state in self.states_iterator:
-            metric = _unit_memory_scaler(state, self.memory_scales_with, self.cutoff)
+        while self._pending_group_ids:
+            group_id = self._pending_group_ids[0]
+            metric = self.memory_scalers[group_id]
             if metric > self.max_memory_scaler:
                 raise ValueError(
                     f"State {metric=} is greater than max_metric {self.max_memory_scaler}"
@@ -974,21 +992,16 @@ class InFlightAutoBatcher[T: SimState]:
                 sum(self.current_scalers) + sum(new_metrics) + metric
                 > self.max_memory_scaler
             ):
-                # put the state back in the iterator
-                self.states_iterator = chain([state], self.states_iterator)
                 break
 
+            self._pending_group_ids.pop(0)
             new_metrics.append(metric)
-            new_idx.append(self.iterator_idx)
-            new_states.append(state)
-            # Initialize attempt counter for new state
-            self.iteration_count.append(0)
-            self.iterator_idx += 1
+            new_idx.append(group_id)
 
         self.current_scalers.extend(new_metrics)
         self.current_idx.extend(new_idx)
 
-        return new_states
+        return new_idx
 
     def _delete_old_states(self, completed_idx: list[int]) -> None:
         """Remove completed states from tracking lists.
@@ -1017,19 +1030,20 @@ class InFlightAutoBatcher[T: SimState]:
         Returns:
             T: first batch of states.
         """
-        # we need to sample a state and use it to estimate the max metric
-        # for the first batch
-        first_state = next(self.states_iterator)
-        first_metric = _unit_memory_scaler(
-            first_state, self.memory_scales_with, self.cutoff
-        )
+        first_group_id = self._pending_group_ids.pop(0)
+        first_metric = self.memory_scalers[first_group_id]
+        first_state = self._materialize_groups([first_group_id])
         self.current_scalers += [first_metric]
-        self.current_idx += [0]
-        self.iteration_count.append(0)  # Initialize attempt counter for first state
-        self.iterator_idx += 1
+        self.current_idx += [first_group_id]
 
         # if max_metric is not set, estimate it
         has_max_metric = bool(self.max_memory_scaler)
+        if has_max_metric and first_metric > self.max_memory_scaler:
+            raise ValueError(
+                f"State {first_metric=} is greater than max_metric "
+                f"{self.max_memory_scaler}, please set a larger max_metric or run "
+                "smaller systems metric."
+            )
         if not has_max_metric:
             n_systems = determine_max_batch_size(
                 first_state,
@@ -1040,31 +1054,29 @@ class InFlightAutoBatcher[T: SimState]:
             )
             self.max_memory_scaler = n_systems * first_metric * 0.8
 
-        states = self._get_next_states()
-        all_states = [first_state, *states]
+        group_ids = [first_group_id, *self._pull_group_ids()]
 
         if not has_max_metric:
             self.max_memory_scaler = estimate_max_memory_scaler(
-                all_states,
+                self._batched,
                 self.model,
-                self.current_scalers,
+                self.memory_scalers,
                 max_atoms=self.max_atoms_to_try,
                 scale_factor=self.memory_scaling_factor,
                 oom_error_message=self.oom_error_message,
             )
             self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
-            newer_states = self._get_next_states()
-            all_states.extend(newer_states)
+            group_ids.extend(self._pull_group_ids())
             logger.debug(
                 "InFlightAutoBatcher: estimated max_memory_scaler=%.3g",
                 self.max_memory_scaler,
             )
 
         logger.info(
-            "InFlightAutoBatcher: starting with %d system(s) in first batch",
-            len(all_states),
+            "InFlightAutoBatcher: starting with %d group unit(s) in first batch",
+            len(group_ids),
         )
-        return ts.concatenate_states(all_states)
+        return self._materialize_groups(group_ids)
 
     def next_batch(  # noqa: C901
         self, updated_state: T | None, convergence_tensor: torch.Tensor | None
@@ -1151,11 +1163,10 @@ class InFlightAutoBatcher[T: SimState]:
                 completed_idx.append(group_idx)
                 completed_system_indices.extend(torch.where(system_mask)[0].tolist())
 
-        completed_states = (
-            updated_state[completed_system_indices].split_groups()
-            if completed_system_indices
-            else []
-        )
+        completed_states = [
+            updated_state[torch.where(updated_state.group_idx == group_idx)[0]]
+            for group_idx in completed_idx
+        ]
         if completed_system_indices:
             updated_state.pop(completed_system_indices)
 
@@ -1164,10 +1175,10 @@ class InFlightAutoBatcher[T: SimState]:
         completed_idx.sort(reverse=True)
 
         self._delete_old_states(completed_idx)
-        next_states = self._get_next_states()
+        next_group_ids = self._pull_group_ids()
 
         logger.info(
-            "InFlightAutoBatcher: %d state(s) completed, %d state(s) remaining in batch",
+            "InFlightAutoBatcher: %d group(s) completed, %d group(s) remaining in batch",
             len(completed_states),
             len(self.current_idx),
         )
@@ -1176,10 +1187,17 @@ class InFlightAutoBatcher[T: SimState]:
         if not self.current_idx:
             return None, completed_states
 
-        # concatenate remaining state with next states
+        # concatenate remaining state with newly materialized groups
+        next_states: list[T] = []
         if updated_state.n_systems > 0:
-            next_states = [updated_state, *next_states]
-        next_batch = ts.concatenate_states(next_states)
+            next_states.append(updated_state)
+        if next_group_ids:
+            next_states.append(self._materialize_groups(next_group_ids))
+        next_batch = (
+            next_states[0]
+            if len(next_states) == 1
+            else ts.concatenate_states(next_states)
+        )
 
         return next_batch, completed_states
 

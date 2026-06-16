@@ -192,6 +192,35 @@ def test_fire_uses_group_scoped_adaptive_state(
     assert updated.n_pos.shape == (1,)
 
 
+def test_fire_group_attributes_roundtrip_through_split_groups(
+    si_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
+    lj_model: ModelInterface,
+) -> None:
+    grouped = ts.concatenate_states([si_sim_state, si_sim_state, fe_supercell_sim_state])
+    grouped.group_idx = torch.tensor([0, 0, 1], device=grouped.device, dtype=torch.long)
+    dt_start = torch.tensor([0.1, 0.2], device=grouped.device)
+    alpha_start = torch.tensor([0.3, 0.4], device=grouped.device)
+    state = ts.fire_init(
+        grouped,
+        lj_model,
+        dt_start=dt_start,
+        alpha_start=alpha_start,
+    )
+    state.n_pos = torch.tensor([3, 4], device=grouped.device, dtype=torch.int32)
+
+    split_groups = state.split_groups()
+    roundtrip = ts.concatenate_states(split_groups)
+
+    assert len(split_groups) == 2
+    assert split_groups[0].n_systems == 2
+    assert split_groups[1].n_systems == 1
+    assert torch.allclose(roundtrip.dt, state.dt)
+    assert torch.allclose(roundtrip.alpha, state.alpha)
+    assert torch.equal(roundtrip.n_pos, state.n_pos)
+    assert torch.equal(roundtrip.group_idx, grouped.group_idx)
+
+
 def test_bfgs_optimization(
     ar_supercell_sim_state: SimState, lj_model: ModelInterface
 ) -> None:
