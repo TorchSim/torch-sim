@@ -18,6 +18,7 @@ Overview of the TorchSim API.
     io
     integrators
     math
+    metadynamics
     models
     monte_carlo
     neighbors
