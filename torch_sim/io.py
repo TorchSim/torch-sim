@@ -394,6 +394,11 @@ def structures_to_state(
 
     struct_list = [structure] if isinstance(structure, Structure) else structure
 
+    # Check that structures are not disordered
+    for s in struct_list:
+        if not s.is_ordered:
+            raise ValueError("Disordered structures are not supported")
+
     # Stack all properties
     cell = torch.tensor(
         np.stack([s.lattice.matrix.T for s in struct_list]), dtype=dtype, device=device
