@@ -37,9 +37,34 @@ def test_get_attrs_for_scope(si_sim_state: SimState) -> None:
     per_atom_attrs = dict(get_attrs_for_scope(si_sim_state, "per-atom"))
     assert set(per_atom_attrs) == {"positions", "masses", "atomic_numbers", "system_idx"}
     per_system_attrs = dict(get_attrs_for_scope(si_sim_state, "per-system"))
-    assert set(per_system_attrs) == {"cell"}
+    assert set(per_system_attrs) == {"cell", "group_idx"}
+    per_group_attrs = dict(get_attrs_for_scope(si_sim_state, "per-group"))
+    assert set(per_group_attrs) == set()
     global_attrs = dict(get_attrs_for_scope(si_sim_state, "global"))
     assert set(global_attrs) == {"pbc", "_rng"}
+
+
+def test_group_idx_defaults_to_one_group_per_system(
+    si_double_sim_state: SimState,
+) -> None:
+    assert torch.equal(
+        si_double_sim_state.group_idx,
+        torch.arange(si_double_sim_state.n_systems, device=si_double_sim_state.device),
+    )
+    assert si_double_sim_state.n_groups == si_double_sim_state.n_systems
+
+
+def test_slice_remaps_group_idx(si_double_sim_state: SimState) -> None:
+    state = si_double_sim_state.clone()
+    state.group_idx = torch.zeros(state.n_systems, device=state.device, dtype=torch.int64)
+
+    sliced = _slice_state(state, [1, 0])
+
+    assert torch.equal(
+        sliced.group_idx,
+        torch.zeros(sliced.n_systems, device=sliced.device, dtype=torch.int64),
+    )
+    assert sliced.n_groups == 1
 
 
 def test_all_attributes_must_be_specified_in_scopes() -> None:
@@ -306,6 +331,68 @@ def test_split_many_states(
         assert torch.allclose(sub_state.system_idx, state.system_idx)
 
     assert len(states) == 3
+
+
+def test_split_by_group_matches_systems_for_default_groups(
+    si_sim_state: SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
+) -> None:
+    """With default single-system groups, split(by='group') == split(by='system')."""
+    concatenated = ts.concatenate_states(
+        [si_sim_state, ar_supercell_sim_state, fe_supercell_sim_state]
+    )
+    by_system = concatenated.split_systems()
+    by_group = concatenated.split_groups()
+    assert len(by_system) == len(by_group) == 3
+    for sys_state, group_state in zip(by_system, by_group, strict=True):
+        assert torch.allclose(sys_state.positions, group_state.positions)
+        assert torch.allclose(sys_state.system_idx, group_state.system_idx)
+        assert group_state.n_groups == 1
+
+
+def test_split_by_group_keeps_multi_system_groups_together(
+    si_sim_state: SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
+) -> None:
+    """split(by='group') returns one state per group with systems intact."""
+    concatenated = ts.concatenate_states(
+        [si_sim_state, ar_supercell_sim_state, fe_supercell_sim_state]
+    )
+    # group 0 = {si, ar}, group 1 = {fe}
+    concatenated.group_idx = torch.tensor(
+        [0, 0, 1], device=concatenated.device, dtype=torch.long
+    )
+    groups = concatenated.split(by="group")
+
+    assert len(groups) == 2
+    assert groups[0].n_systems == 2
+    assert groups[1].n_systems == 1
+    assert groups[0].n_groups == groups[1].n_groups == 1
+    # first group holds si + ar atoms with locally re-based system_idx
+    assert groups[0].n_atoms == si_sim_state.n_atoms + ar_supercell_sim_state.n_atoms
+    assert torch.equal(
+        torch.unique(groups[0].system_idx),
+        torch.tensor([0, 1], device=concatenated.device),
+    )
+    assert torch.allclose(groups[1].positions, fe_supercell_sim_state.positions)
+
+
+def test_split_by_group_rejects_non_contiguous_groups(
+    si_sim_state: SimState,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
+) -> None:
+    """Non-decreasing group_idx is required for splitting by group."""
+    concatenated = ts.concatenate_states(
+        [si_sim_state, ar_supercell_sim_state, fe_supercell_sim_state]
+    )
+    concatenated.group_idx = torch.tensor(
+        [0, 1, 0], device=concatenated.device, dtype=torch.long
+    )
+    with pytest.raises(ValueError, match="non-decreasing group_idx"):
+        concatenated.split_groups()
 
 
 def test_pop_states(

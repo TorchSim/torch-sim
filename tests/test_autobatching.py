@@ -399,6 +399,269 @@ def test_binning_auto_batcher_restore_order_with_split_states(
     assert torch.all(restored_states[1].atomic_numbers == states[1].atomic_numbers)
 
 
+def test_binning_auto_batcher_keeps_group_together(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    """A multi-system group is treated as one unit and stays in a single batch."""
+    grouped = ts.concatenate_states([si_sim_state, fe_supercell_sim_state])
+    grouped.group_idx = torch.zeros(
+        grouped.n_systems, device=grouped.device, dtype=torch.long
+    )
+
+    batcher = BinningAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=float(grouped.n_atoms),
+    )
+    batcher.load_states(grouped)
+
+    # one group => one unit whose scaler is the sum over its systems
+    assert len(batcher.memory_scalers) == 1
+    assert batcher.memory_scalers[0] == grouped.n_atoms
+
+    batches = [batch for batch, _ in batcher]
+    assert len(batches) == 1
+    assert batches[0].n_systems == grouped.n_systems
+    assert batches[0].n_groups == 1
+
+    restored = batcher.restore_original_order(batches)
+    assert len(restored) == 1
+    assert restored[0].n_systems == grouped.n_systems
+
+
+def test_binning_auto_batcher_packs_multiple_groups(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    """Multiple groups pack into one bin when memory allows (no throttling)."""
+    grouped = ts.concatenate_states([si_sim_state, si_sim_state, fe_supercell_sim_state])
+    grouped.group_idx = torch.tensor([0, 0, 1], device=grouped.device, dtype=torch.long)
+    group0 = 2 * si_sim_state.n_atoms
+    group1 = fe_supercell_sim_state.n_atoms
+
+    batcher = BinningAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=float(group0 + group1),
+    )
+    batcher.load_states(grouped)
+
+    assert batcher.memory_scalers == [group0, group1]
+
+    batches = [batch for batch, _ in batcher]
+    assert len(batches) == 1
+    assert batches[0].n_systems == 3
+    assert batches[0].n_groups == 2
+
+    restored = batcher.restore_original_order(batches)
+    assert len(restored) == 2
+    assert restored[0].n_systems == 2
+    assert restored[1].n_systems == 1
+
+
+def test_binning_auto_batcher_restores_unsorted_group_bins(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    grouped = ts.concatenate_states([si_sim_state, si_sim_state, fe_supercell_sim_state])
+    grouped.group_idx = torch.tensor([0, 0, 1], device=grouped.device, dtype=torch.long)
+
+    def unsorted_bins(
+        index_to_scaler: dict[int, float], *, max_volume: float
+    ) -> list[dict[int, float]]:
+        assert max_volume > 0
+        return [{1: index_to_scaler[1], 0: index_to_scaler[0]}]
+
+    monkeypatch.setattr("torch_sim.autobatching.to_constant_volume_bins", unsorted_bins)
+    batcher = BinningAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=float(grouped.n_atoms),
+    )
+    batcher.load_states(grouped)
+
+    batches = [batch for batch, _ in batcher]
+    restored = batcher.restore_original_order(batches)
+
+    assert batcher.index_bins == [[0, 1]]
+    assert len(restored) == 2
+    assert restored[0].n_systems == 2
+    assert restored[1].n_systems == 1
+
+
+def test_binning_auto_batcher_does_not_split_group(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    """A group never spans bins; tight memory packs one group per batch."""
+    grouped = ts.concatenate_states([si_sim_state, si_sim_state, fe_supercell_sim_state])
+    grouped.group_idx = torch.tensor([0, 0, 1], device=grouped.device, dtype=torch.long)
+    group0 = 2 * si_sim_state.n_atoms
+    group1 = fe_supercell_sim_state.n_atoms
+
+    batcher = BinningAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=float(max(group0, group1)),
+    )
+    batcher.load_states(grouped)
+
+    batches = [batch for batch, _ in batcher]
+    assert len(batches) == 2
+    assert sorted(batch.n_systems for batch in batches) == [1, 2]
+
+    multi = next(batch for batch in batches if batch.n_systems == 2)
+    assert multi.n_groups == 1
+
+
+def test_in_flight_auto_batcher_keeps_group_together(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    grouped = ts.concatenate_states([si_sim_state, fe_supercell_sim_state])
+    grouped.group_idx = torch.zeros(
+        grouped.n_systems, device=grouped.device, dtype=torch.long
+    )
+    batcher = InFlightAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=float(grouped.n_atoms),
+    )
+    batcher.load_states(grouped)
+
+    state, [] = batcher.next_batch(None, None)
+    assert state is not None
+    assert state.n_systems == grouped.n_systems
+    assert state.n_groups == 1
+
+    next_state, completed_states = batcher.next_batch(
+        state, torch.ones(state.n_systems, dtype=torch.bool)
+    )
+    assert next_state is None
+    assert len(completed_states) == 1
+    assert completed_states[0].n_systems == grouped.n_systems
+
+
+def test_in_flight_auto_batcher_packs_multiple_groups(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    grouped = ts.concatenate_states([si_sim_state, si_sim_state, fe_supercell_sim_state])
+    grouped.group_idx = torch.tensor([0, 0, 1], device=grouped.device, dtype=torch.long)
+    group0 = 2 * si_sim_state.n_atoms
+    group1 = fe_supercell_sim_state.n_atoms
+    batcher = InFlightAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=float(group0 + group1),
+    )
+    batcher.load_states(grouped)
+
+    assert batcher.memory_scalers == [group0, group1]
+    state, [] = batcher.next_batch(None, None)
+    assert state is not None
+    assert state.n_systems == 3
+    assert state.n_groups == 2
+
+
+def test_in_flight_auto_batcher_does_not_split_group(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    grouped = ts.concatenate_states([si_sim_state, si_sim_state, fe_supercell_sim_state])
+    grouped.group_idx = torch.tensor([0, 0, 1], device=grouped.device, dtype=torch.long)
+    group0 = 2 * si_sim_state.n_atoms
+    group1 = fe_supercell_sim_state.n_atoms
+    batcher = InFlightAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=float(max(group0, group1)),
+    )
+    batcher.load_states(grouped)
+
+    first_batch, [] = batcher.next_batch(None, None)
+    assert first_batch is not None
+    assert first_batch.n_systems == 2
+    assert first_batch.n_groups == 1
+
+    second_batch, completed_states = batcher.next_batch(
+        first_batch, torch.ones(first_batch.n_systems, dtype=torch.bool)
+    )
+    assert second_batch is not None
+    assert len(completed_states) == 1
+    assert completed_states[0].n_systems == 2
+    assert second_batch.n_systems == 1
+    assert second_batch.n_groups == 1
+
+
+def test_in_flight_auto_batcher_restore_order_with_grouped_state(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    grouped = ts.concatenate_states([si_sim_state, si_sim_state, fe_supercell_sim_state])
+    grouped.group_idx = torch.tensor([0, 0, 1], device=grouped.device, dtype=torch.long)
+    batcher = InFlightAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=float(grouped.n_atoms),
+    )
+    batcher.load_states(grouped)
+    state, [] = batcher.next_batch(None, None)
+    assert state is not None
+
+    convergence = torch.tensor([False, False, True], dtype=torch.bool)
+    state, completed_states = batcher.next_batch(state, convergence)
+    all_completed = [*completed_states]
+    assert state is not None
+    assert state.n_systems == 2
+
+    state, completed_states = batcher.next_batch(
+        state, torch.ones(state.n_systems, dtype=torch.bool)
+    )
+    assert state is None
+    all_completed.extend(completed_states)
+
+    restored = batcher.restore_original_order(all_completed)
+    assert len(restored) == 2
+    assert restored[0].n_systems == 2
+    assert restored[1].n_systems == 1
+
+
+def test_in_flight_auto_batcher_loads_batched_state_without_split_groups(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    grouped = ts.concatenate_states([si_sim_state, si_sim_state, fe_supercell_sim_state])
+    grouped.group_idx = torch.tensor([0, 0, 1], device=grouped.device, dtype=torch.long)
+
+    def fail_split_groups(_self: ts.SimState) -> list[ts.SimState]:
+        raise AssertionError("split_groups should not be called while loading")
+
+    monkeypatch.setattr(ts.SimState, "split_groups", fail_split_groups)
+    batcher = InFlightAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=float(grouped.n_atoms),
+    )
+    batcher.load_states(grouped)
+
+    state, [] = batcher.next_batch(None, None)
+    assert state is not None
+    assert state.n_groups == 2
+
+
 def test_in_flight_max_metric_too_small(
     si_sim_state: ts.SimState,
     fe_supercell_sim_state: ts.SimState,
@@ -713,6 +976,36 @@ def test_in_flight_max_iterations(
     # Verify iteration_count tracking
     for idx in range(len(states)):
         assert batcher.iteration_count[idx] == max_iterations
+
+
+def test_in_flight_max_iterations_completes_whole_group(
+    si_double_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    grouped_state = si_double_sim_state.clone()
+    grouped_state.group_idx = torch.zeros(
+        grouped_state.n_systems, device=grouped_state.device, dtype=torch.long
+    )
+    batcher = InFlightAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=800.0,
+        max_iterations=1,
+    )
+    batcher.load_states(grouped_state)
+
+    state, [] = batcher.next_batch(None, None)
+    assert state is not None
+    assert state.n_systems == grouped_state.n_systems
+    assert state.n_groups == 1
+
+    convergence_tensor = torch.zeros(state.n_systems, dtype=torch.bool)
+    next_state, completed_states = batcher.next_batch(state, convergence_tensor)
+
+    assert next_state is None
+    assert len(completed_states) == 1
+    assert completed_states[0].n_systems == grouped_state.n_systems
+    assert completed_states[0].n_groups == 1
 
 
 @pytest.mark.parametrize(
