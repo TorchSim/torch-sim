@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from torch_sim.enhanced_sampling.history import History
 from torch_sim.models.interface import ModelInterface
 from torch_sim.units import UnitConversion
 
@@ -170,11 +171,13 @@ class RMSDCV(ModelInterface):
     This pushes the dynamics away from previously visited configurations.
     Idea and default parameters from 10.1021/acs.jctc.9b00143.
 
-    The buffer is seeded on the first call (which returns zero bias), and a
-    new reference is deposited every ``update_interval`` calls. TorchSim integrators 
-    evaluate the model once per MD step (plus once at initialization), so 
-    calls correspond to MD steps. Use :meth:`push_reference` and :meth:`reset` for manual
-    control of the buffer.
+    The references are held in a :class:`~torch_sim.enhanced_sampling.history.History`
+    buffer, which owns the deposition cadence and capacity limit. The buffer is
+    seeded on the first call (which returns zero bias), and a new reference is
+    deposited every ``update_interval`` calls. TorchSim integrators evaluate the
+    model once per MD step (plus once at initialization), so calls correspond to
+    MD steps. Use :meth:`push_reference` and :meth:`reset` for manual control of
+    the buffer.
 
     Forces are obtained by autograd through the alignment, so backprop through
     the SVD requires non-degenerate singular values (generic for molecular
@@ -239,14 +242,22 @@ class RMSDCV(ModelInterface):
         self.atom_mask: torch.Tensor | None
         self.register_buffer("atom_mask", atom_mask)
 
-        # rolling buffer of centered references, shape (n_stored, n_biased_atoms, 3)
-        self.ref_buf: torch.Tensor | None = None
-        self._n_calls = 0
+        # rolling buffer of centered references, each entry (n_biased_atoms, 3)
+        self.history = History(
+            capacity=self.n_refs,
+            stride=self.update_interval,
+            device=self._device,
+            dtype=self._dtype,
+        )
+
+    @property
+    def ref_buf(self) -> torch.Tensor | None:
+        """Stored references with shape (n_stored, n_biased_atoms, 3), or None."""
+        return self.history.stack()
 
     def reset(self) -> None:
-        """Clear all stored references and the internal call counter."""
-        self.ref_buf = None
-        self._n_calls = 0
+        """Clear all stored references and the internal deposition counter."""
+        self.history.reset()
 
     @torch.no_grad()
     def push_reference(self, state: SimState) -> None:
@@ -255,15 +266,15 @@ class RMSDCV(ModelInterface):
         Args:
             state: Simulation state whose (masked) positions are stored.
         """
+        self.history.push(self._centered(state))
+
+    def _centered(self, state: SimState) -> torch.Tensor:
+        """Return the biased atoms' positions with each system's COM removed."""
         positions, system_idx = self._masked(state)
         counts = torch.bincount(system_idx, minlength=state.n_systems)
         com = _segment_sum(positions, system_idx, state.n_systems)
         com = com / counts.unsqueeze(-1)
-        centered = (positions - com[system_idx]).unsqueeze(0)
-        if self.ref_buf is None:
-            self.ref_buf = centered
-        else:
-            self.ref_buf = torch.cat([self.ref_buf, centered], dim=0)[-self.n_refs :]
+        return positions - com[system_idx]
 
     def _masked(self, state: SimState) -> tuple[torch.Tensor, torch.Tensor]:
         """Return positions and system indices of biased atoms only."""
@@ -311,9 +322,8 @@ class RMSDCV(ModelInterface):
         """
         n_systems = state.n_systems
 
-        if self.ref_buf is None:
+        if self.history.is_empty:
             self.push_reference(state)
-            self._n_calls = 1
             zero_energy = torch.zeros(
                 n_systems, device=state.positions.device, dtype=state.positions.dtype
             )
@@ -328,7 +338,7 @@ class RMSDCV(ModelInterface):
 
         with torch.enable_grad():
             pos = masked_pos.detach().requires_grad_(requires_grad=True)  # (n_biased, 3)
-            qc = self.ref_buf.to(pos)  # (X, n_biased, 3), already centered
+            qc = self.history.stack().to(pos)  # (X, n_biased, 3), already centered
 
             com = _segment_sum(pos, system_idx, n_systems) / counts.unsqueeze(-1)
             rc = pos - com[system_idx]
@@ -350,9 +360,7 @@ class RMSDCV(ModelInterface):
         else:
             forces[self.atom_mask] = -grad
 
-        if self._n_calls % self.update_interval == 0:
-            self.push_reference(state)
-        self._n_calls += 1
+        self.history.maybe_push(self._centered(state))
 
         detached_energy = energy.detach()
         return {

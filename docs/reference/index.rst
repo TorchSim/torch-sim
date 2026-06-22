@@ -15,10 +15,10 @@ Overview of the TorchSim API.
     autobatching
     properties.correlations
     elastic
+    enhanced_sampling
     io
     integrators
     math
-    metadynamics
     models
     monte_carlo
     neighbors

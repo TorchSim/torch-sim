@@ -3,7 +3,7 @@ import torch
 from ase.build import molecule
 
 import torch_sim as ts
-from torch_sim.metadynamics import EPS, RMSDCV, LogfermiWall
+from torch_sim.enhanced_sampling.metadynamics import EPS, RMSDCV, LogfermiWall
 from torch_sim.models.interface import SumModel
 from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.units import UnitConversion
