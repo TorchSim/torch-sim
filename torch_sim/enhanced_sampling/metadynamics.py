@@ -1,9 +1,10 @@
-"""Metadynamics bias potentials.
+"""Bias potentials for enhanced sampling.
 
-This module implements history-dependent and static bias potentials that add
-external energies and forces to a simulation. Each bias is a
-:class:`~torch_sim.models.interface.ModelInterface`, so it composes with any
-MLIP (or classical potential) through
+This module provides two composable bias potentials -- a static spherical
+confining wall and a history-dependent RMSD bias -- that add extra energy and
+forces on top of a base potential. Each bias is a
+:class:`~torch_sim.models.interface.ModelInterface`, so it layers onto any MLIP
+(or classical potential) through
 :class:`~torch_sim.models.interface.SumModel`::
 
     bias = RMSDCV(k_push=0.02, alpha_width=1.2)
@@ -67,13 +68,16 @@ def _segment_sum(
 
 
 class LogfermiWall(ModelInterface):
-    """Log-Fermi wall potential confining atoms inside a sphere.
+    """Spherical confining potential with a smooth log-Fermi boundary.
 
-    Adds the per-atom energy ``k_wall * log(1 + exp(beta * (r - radius)))``
-    where ``r`` is the distance of the atom from the wall center. The energy
-    is near zero well inside the sphere and grows linearly (slope
-    ``k_wall * beta``) outside it, gently steering escaping atoms back.
-    Idea and default parameters from 10.1021/acs.jctc.9b00143.
+    Holds the atoms of each system near a center point through the per-atom
+    penalty ``k_wall * softplus(beta * (r - radius))``, where ``r`` is the
+    atom's distance from the center. Well inside the radius the penalty is
+    negligible; once an atom crosses the radius the softplus turns linear, so
+    the inward force saturates at ``k_wall * beta`` rather than diverging --
+    a soft, leak-proof boundary for keeping fragments from drifting apart. This
+    is the log-Fermi restraint from Grimme's metadynamics-style biasing
+    (10.1021/acs.jctc.9b00143); the default parameters follow that reference.
 
     Forces are computed analytically, so the model is safe to call under
     ``torch.no_grad()``.
@@ -162,14 +166,17 @@ class LogfermiWall(ModelInterface):
 
 
 class RMSDCV(ModelInterface):
-    """History-dependent RMSD bias (weighted, Kabsch-aligned) for metadynamics.
+    """History-dependent Gaussian bias on an RMSD collective variable.
 
-    Maintains a rolling buffer of reference structures and adds the repulsive
-    bias ``E = k_push * sum_i exp(-alpha * rmsd2_i)`` per system, where
-    ``rmsd2_i`` is the squared deviation from reference *i* after optimal
-    (Kabsch) alignment, averaged over biased atoms and Cartesian components.
-    This pushes the dynamics away from previously visited configurations.
-    Idea and default parameters from 10.1021/acs.jctc.9b00143.
+    Discourages the system from revisiting earlier geometries by summing a
+    Gaussian repulsion over a rolling set of stored reference structures,
+    ``E = k_push * sum_i exp(-alpha * d2_i)`` per system, where ``d2_i`` is the
+    mean-square displacement from reference *i* after a least-squares (Kabsch)
+    rotation that removes rigid-body orientation, averaged over the biased atoms
+    and Cartesian components. As references accumulate along the trajectory the
+    bias fills the basins already visited and steers the dynamics toward new
+    configurations. The functional form and default parameters follow Grimme's
+    RMSD-based metadynamics (10.1021/acs.jctc.9b00143).
 
     The references are held in a :class:`~torch_sim.enhanced_sampling.history.History`
     buffer, which owns the deposition cadence and capacity limit. The buffer is
