@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 import torch
 from ase.build import molecule
@@ -75,13 +77,16 @@ class TestPairDistanceDescriptor:
 
 
 class TestLoxodynamicsWall:
-    def _wall(self, *, offset: float) -> tuple[LoxodynamicsWall, int]:
+    def _components(self):
+        """Deterministic (descriptor, encoder, fitted normalizer) for the wall."""
         torch.manual_seed(0)
         desc = PairDistanceDescriptor(_all_pairs_3())
-        cfg = SkewencoderConfig(input_dim=3, hidden_dims=(8, 4))
-        enc = Skewencoder(cfg).to(DTYPE)
+        enc = Skewencoder(SkewencoderConfig(input_dim=3, hidden_dims=(8, 4))).to(DTYPE)
         sample = torch.randn(20, 3, dtype=DTYPE).abs() + 1.0
-        norm = fit_descriptor_normalizer(sample)
+        return desc, enc, fit_descriptor_normalizer(sample)
+
+    def _wall(self, *, offset: float) -> tuple[LoxodynamicsWall, int]:
+        desc, enc, norm = self._components()
         wall = LoxodynamicsWall(
             desc,
             enc,
@@ -120,6 +125,60 @@ class TestLoxodynamicsWall:
         wall, _ = self._wall(offset=1.0)
         with pytest.raises(ValueError, match="single system"):
             wall(two)
+
+    def test_emits_latent_cv(self, water_state: ts.SimState) -> None:
+        # the wall reports the raw (unsigned) latent CV under the "loxo_cv" key
+        desc, enc, norm = self._components()
+        wall = LoxodynamicsWall(
+            desc,
+            enc,
+            norm,
+            mu=0.0,
+            sigma=1.0,
+            skewness=1.0,
+            kappa=1.0,
+            offset=1.0,
+            device=DEVICE,
+            dtype=DTYPE,
+        )
+        out = wall(water_state)
+        assert "loxo_cv" in out
+        assert out["loxo_cv"].shape == (1,)
+        with torch.no_grad():
+            latent = enc.encode(
+                norm.transform(desc(water_state.positions)).unsqueeze(0)
+            ).reshape(1)
+        torch.testing.assert_close(out["loxo_cv"], latent)
+
+    def test_energy_scale_invariant_at_reference(self, water_state: ts.SimState) -> None:
+        # The standardized wall acts on (s - mu)/sigma, so at the reference point
+        # (mu == the current latent) the violation is exactly `offset` and the
+        # energy is kappa*offset**2 regardless of sigma. A raw-latent wall would
+        # instead give ~kappa*(sigma + offset)**2, which diverges as sigma grows.
+        desc, enc, norm = self._components()
+        with torch.no_grad():
+            s0 = (
+                enc.encode(norm.transform(desc(water_state.positions)).unsqueeze(0))
+                .reshape(())
+                .item()
+            )
+        energies = [
+            LoxodynamicsWall(
+                desc,
+                enc,
+                norm,
+                mu=s0,
+                sigma=sigma,
+                skewness=1.0,
+                kappa=1.0,
+                offset=2.0,
+                device=DEVICE,
+                dtype=DTYPE,
+            )(water_state)["energy"].item()
+            for sigma in (0.1, 1.0, 100.0)
+        ]
+        for energy in energies:
+            assert energy == pytest.approx(4.0, abs=1e-9)  # kappa * offset**2
 
 
 class TestRunLoxodynamics:
@@ -174,6 +233,40 @@ class TestRunLoxodynamics:
                 temperature=300.0,
                 min_local_samples=3,
             )
+
+    def test_checkpoint_dir_saves_loadable_models(
+        self, water_state: ts.SimState, tmp_path: Path
+    ) -> None:
+        model, desc, cfg = self._setup(water_state)
+        result = run_loxodynamics(
+            water_state,
+            model,
+            descriptor=desc,
+            max_steps=20,
+            segment_steps=5,
+            initial_unbiased_steps=5,
+            timestep=0.0005,
+            temperature=300.0,
+            sample_stride=1,
+            min_local_samples=3,
+            seed=0,
+            skewencoder_config=cfg,
+            checkpoint_dir=tmp_path,
+        )
+        # one checkpoint per retrain/wall
+        files = sorted(tmp_path.glob("skewencoder_iter*.pt"))
+        assert len(files) == len(result.wall_stats) >= 1
+        ckpt = torch.load(files[0], weights_only=False)
+        assert {
+            "skewencoder_state_dict",
+            "skewencoder_config",
+            "normalizer",
+            "wall_stats",
+            "training_report",
+        } <= set(ckpt)
+        # the saved weights reload into a fresh Skewencoder built from the config
+        enc = Skewencoder(SkewencoderConfig(**ckpt["skewencoder_config"]))
+        enc.load_state_dict(ckpt["skewencoder_state_dict"])
 
 
 class TestExecutorDtype:

@@ -42,9 +42,9 @@ class History(torch.nn.Module):
     Example::
 
         history = History(capacity=10, stride=5)
-        history.push(value)            # unconditional seed
+        history.push(value)  # unconditional seed
         deposited = history.maybe_push(value)  # True every 5th call
-        record = history.stack()       # (n_stored, *value.shape)
+        record = history.stack()  # (n_stored, *value.shape)
     """
 
     data: torch.Tensor | None

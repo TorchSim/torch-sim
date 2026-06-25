@@ -279,9 +279,7 @@ def run_boxed_md(
         ValueError: If ``state`` contains more than one system.
     """
     if state.n_systems != 1:
-        raise ValueError(
-            f"run_boxed_md expects a single system, got {state.n_systems}"
-        )
+        raise ValueError(f"run_boxed_md expects a single system, got {state.n_systems}")
 
     device, dtype = state.device, state.dtype
     kT = float(temperature) * unit_system.temperature

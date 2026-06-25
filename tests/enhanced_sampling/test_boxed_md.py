@@ -94,9 +94,7 @@ class TestVelocityInversion:
 
 class TestRunBoxedMD:
     def test_rejects_multiple_systems(self, harmonic_model: HarmonicModel) -> None:
-        two = ts.io.atoms_to_state(
-            [molecule("CH3CH2OH"), molecule("H2O")], DEVICE, DTYPE
-        )
+        two = ts.io.atoms_to_state([molecule("CH3CH2OH"), molecule("H2O")], DEVICE, DTYPE)
         with pytest.raises(ValueError, match="single system"):
             run_boxed_md(
                 two,
