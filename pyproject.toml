@@ -51,7 +51,8 @@ vesin = ["vesin[torch]>=0.5.3"]
 io = ["ase>=3.26", "phonopy>=3.0.0", "pymatgen>=2026.3.23"]
 symmetry = ["moyopy>=0.7.8"]
 mace = ["mace-torch>=0.3.16"]
-mattersim = ["mattersim>=1.2.5"]
+# phono3py>=4.0.0: some older 3.x sdists (e.g. 3.2.0) fail to build and break uv resolution.
+mattersim = ["mattersim>=1.2.5", "phono3py>=4.0.0"]
 metatomic = ["metatomic-torchsim>=0.1.1", "metatomic-ase>=0.1.0", "upet>=0.2.0"]
 orb = ["orb-models>=0.6.2"]
 sevenn = ["sevenn[torchsim]>=0.12.1"]
@@ -148,6 +149,7 @@ markers = [
 ]
 
 [tool.uv]
+default-groups = ["dev", "typecheck"]
 # make these dependencies mutually exclusive since they use incompatible e3nn versions
 # see https://docs.astral.sh/uv/concepts/projects/config/#conflicting-dependencies for more details
 conflicts = [
@@ -179,6 +181,7 @@ conflicts = [
 
 [dependency-groups]
 dev = ["prek>=0.3.4", "ty>=0.0.19"]
+typecheck = ["torch-sim-atomistic[docs,test]"]
 
 [tool.ty.rules]
 unused-ignore-comment = "warn"

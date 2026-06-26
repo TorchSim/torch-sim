@@ -172,6 +172,22 @@ def test_state_round_trip(
         assert torch.allclose(sim_state.masses, round_trip_state.masses)
 
 
+def test_structures_to_state_disordered() -> None:
+    """structures_to_state rejects disordered (partial occupancy) structures."""
+    pytest.importorskip("pymatgen")
+    from pymatgen.core import Lattice, Structure
+
+    # Site with partial occupancy (Cu/Au solid solution) -> disordered
+    disordered = Structure(
+        Lattice.cubic(3.6),
+        [{"Cu": 0.5, "Au": 0.5}],
+        [[0.0, 0.0, 0.0]],
+    )
+    assert not disordered.is_ordered
+    with pytest.raises(ValueError, match="Disordered structures are not supported"):
+        ts.io.structures_to_state(disordered, DEVICE, DTYPE)
+
+
 @pytest.mark.parametrize(
     ("monkeypatch_modules", "func", "args", "match"),
     [
