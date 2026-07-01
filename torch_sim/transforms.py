@@ -1620,13 +1620,15 @@ def get_centers_of_mass(
         torch.Tensor: A tensor of shape (n_structures, 3) containing
             the center of mass coordinates for each structure.
     """
-    coms = torch.zeros((n_systems, 3), dtype=positions.dtype).scatter_add_(
+    coms = torch.zeros(
+        (n_systems, 3), dtype=positions.dtype, device=positions.device
+    ).scatter_add_(
         0,
         system_idx.unsqueeze(-1).expand(-1, 3),
         masses.unsqueeze(-1) * positions,
     )
-    system_masses = torch.zeros((n_systems,), dtype=positions.dtype).scatter_add_(
-        0, system_idx, masses
-    )
+    system_masses = torch.zeros(
+        (n_systems,), dtype=positions.dtype, device=positions.device
+    ).scatter_add_(0, system_idx, masses)
     coms /= system_masses.unsqueeze(-1)
     return coms
