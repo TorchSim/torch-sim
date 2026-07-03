@@ -488,6 +488,63 @@ def test_determine_max_batch_size_fibonacci(
     assert max_size == 2
 
 
+@pytest.mark.parametrize(
+    "oom_message",
+    [
+        "CUDA out of memory. Tried to allocate 20.00 MiB",
+        # Warp / nvalchemiops allocator (used by ORB v3 neighbor lists) phrases
+        # OOM differently and must still be recognised by the default matcher.
+        "Failed to allocate 2556 bytes on device 'cuda:0'",
+    ],
+)
+def test_determine_max_batch_size_recognises_oom_variants(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+    oom_message: str,
+) -> None:
+    """OOM is detected for both PyTorch and Warp-style allocator messages.
+
+    Regression test: the default ``oom_error_message`` must cover the Warp
+    allocator wording, and a non-matching first entry in the message list must
+    not short-circuit the check before later entries are compared.
+    """
+    call_count = {"n": 0}
+
+    def mock_measure(*_args: Any, **_kwargs: Any) -> float:
+        call_count["n"] += 1
+        if call_count["n"] >= 3:  # OOM once the batch grows past a couple probes
+            raise RuntimeError(oom_message)
+        return 0.1
+
+    monkeypatch.setattr(
+        "torch_sim.autobatching.measure_model_memory_forward", mock_measure
+    )
+
+    # Uses the (broadened) default oom_error_message. Should degrade to a safe
+    # batch size instead of propagating the OOM RuntimeError.
+    max_size = determine_max_batch_size(si_sim_state, lj_model, max_atoms=10_000)
+    assert max_size >= 1
+
+
+def test_determine_max_batch_size_reraises_non_oom_error(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A genuine (non-OOM) error is still propagated, not swallowed."""
+
+    def mock_measure(*_args: Any, **_kwargs: Any) -> float:
+        raise RuntimeError("shape mismatch in einsum")
+
+    monkeypatch.setattr(
+        "torch_sim.autobatching.measure_model_memory_forward", mock_measure
+    )
+
+    with pytest.raises(RuntimeError, match="shape mismatch"):
+        determine_max_batch_size(si_sim_state, lj_model, max_atoms=10_000)
+
+
 @pytest.mark.parametrize("scale_factor", [1.1, 1.4])
 def test_determine_max_batch_size_small_scale_factor_no_infinite_loop(
     si_sim_state: ts.SimState,
