@@ -179,6 +179,16 @@ conflicts = [
     ],
 ]
 
+# NVIDIA driver 570.124.06 supports at most CUDA 12.8; PyPI's default torch wheel
+# (cu130) fails CUDA init and silently falls back to CPU.
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
 [dependency-groups]
 dev = ["prek>=0.3.4", "ty>=0.0.19"]
 typecheck = ["torch-sim-atomistic[docs,test]"]
