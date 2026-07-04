@@ -186,6 +186,32 @@ def measure_model_memory_forward(state: SimState, model: ModelInterface) -> floa
     return torch.cuda.max_memory_allocated() / 1024**3  # Convert to GB
 
 
+def _detach_state_graph[T: SimState](state: T) -> T:
+    """Detach any autograd-graph-carrying tensors on a state, in place.
+
+    Some models return graph-carrying outputs - notably UMA, whose ``energy``
+    keeps ``requires_grad=True`` even though its forces are already detached.
+    When a converged system is popped out of the running batch and accumulated
+    for the remainder of the run, such a tensor pins that swap's *entire*
+    forward autograd graph, so live GPU memory grows by roughly one graph per
+    finished system until the device fills - independent of the batch size and
+    unreclaimable by ``empty_cache`` (it is allocated, not cached). Completed
+    states are only ever read for their values, never differentiated, so
+    dropping the graph is safe.
+
+    Args:
+        state (SimState): State whose grad-carrying tensor attributes are
+            detached in place.
+
+    Returns:
+        SimState: The same state instance, with grad-carrying tensors detached.
+    """
+    for attr_name, attr_value in state.attributes.items():
+        if torch.is_tensor(attr_value) and attr_value.requires_grad:
+            setattr(state, attr_name, attr_value.detach())
+    return state
+
+
 def determine_max_batch_size(
     state: SimState,
     model: ModelInterface,
@@ -1092,6 +1118,14 @@ class InFlightAutoBatcher[T: SimState]:
         completed_idx = torch.where(convergence_tensor)[0].tolist()
 
         completed_states = updated_state.pop(completed_idx)
+
+        # Drop any retained autograd graph before these states are accumulated
+        # for the rest of the run. A popped state preserves grad_fn, and models
+        # such as UMA return a graph-carrying energy, so without this each
+        # completed state would pin its swap's full forward graph - leaking GPU
+        # memory (one graph per finished system) until the device fills.
+        for completed_state in completed_states:
+            _detach_state_graph(completed_state)
 
         # necessary to ensure states that finish at the same time are ordered properly
         completed_states.reverse()
