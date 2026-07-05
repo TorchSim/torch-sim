@@ -17,7 +17,11 @@ import torch
 from tqdm import tqdm
 
 import torch_sim as ts
-from torch_sim.autobatching import BinningAutoBatcher, InFlightAutoBatcher
+from torch_sim.autobatching import (
+    BinningAutoBatcher,
+    InFlightAutoBatcher,
+    _detach_state_graph,
+)
 from torch_sim.integrators import INTEGRATOR_REGISTRY, Integrator
 from torch_sim.integrators.md import MDState
 from torch_sim.models.interface import ModelInterface
@@ -472,10 +476,17 @@ def _chunked_apply[T: SimState](
     """
     autobatcher = BinningAutoBatcher(model=model, **batcher_kwargs)
     autobatcher.load_states(states)
-    initialized_states = []
 
+    # Each initialized bin is accumulated and held until every bin is done, then
+    # concatenated. Models such as UMA return a graph-carrying energy, so without
+    # detaching, every accumulated state would pin its bin's full forward autograd
+    # graph - live GPU memory then grows by roughly one graph per bin until the
+    # device fills mid-pass (fatal here: BinningAutoBatcher has no OOM recovery).
+    # The initialized states are only read for their values downstream, so
+    # dropping the graph is safe. Mirrors the InFlightAutoBatcher fix.
     initialized_states = [
-        fn(model=model, state=system, **init_kwargs) for system, _indices in autobatcher
+        _detach_state_graph(fn(model=model, state=system, **init_kwargs))
+        for system, _indices in autobatcher
     ]
 
     ordered_states = autobatcher.restore_original_order(initialized_states)
