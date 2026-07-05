@@ -22,7 +22,11 @@ from torch_sim import (
     transforms,
     units,
 )
-from torch_sim.autobatching import BinningAutoBatcher, InFlightAutoBatcher
+from torch_sim.autobatching import (
+    BinningAutoBatcher,
+    InFlightAutoBatcher,
+    detach_state_graph,
+)
 from torch_sim.integrators import (
     INTEGRATOR_REGISTRY,
     Integrator,
@@ -145,6 +149,7 @@ __all__ = [
     "calc_temperature",
     "concatenate_states",
     "constraints",
+    "detach_state_graph",
     "elastic",
     "fire_init",
     "fire_step",

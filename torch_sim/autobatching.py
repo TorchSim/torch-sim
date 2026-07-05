@@ -186,7 +186,7 @@ def measure_model_memory_forward(state: SimState, model: ModelInterface) -> floa
     return torch.cuda.max_memory_allocated() / 1024**3  # Convert to GB
 
 
-def _detach_state_graph[T: SimState](state: T) -> T:
+def detach_state_graph[T: SimState](state: T) -> T:
     """Detach any autograd-graph-carrying tensors on a state, in place.
 
     Some models return graph-carrying outputs - notably UMA, whose ``energy``
@@ -1125,7 +1125,7 @@ class InFlightAutoBatcher[T: SimState]:
         # completed state would pin its swap's full forward graph - leaking GPU
         # memory (one graph per finished system) until the device fills.
         for completed_state in completed_states:
-            _detach_state_graph(completed_state)
+            detach_state_graph(completed_state)
 
         # necessary to ensure states that finish at the same time are ordered properly
         completed_states.reverse()

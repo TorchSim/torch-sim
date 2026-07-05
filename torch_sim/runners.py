@@ -20,7 +20,7 @@ import torch_sim as ts
 from torch_sim.autobatching import (
     BinningAutoBatcher,
     InFlightAutoBatcher,
-    _detach_state_graph,
+    detach_state_graph,
 )
 from torch_sim.integrators import INTEGRATOR_REGISTRY, Integrator
 from torch_sim.integrators.md import MDState
@@ -485,7 +485,7 @@ def _chunked_apply[T: SimState](
     # The initialized states are only read for their values downstream, so
     # dropping the graph is safe. Mirrors the InFlightAutoBatcher fix.
     initialized_states = [
-        _detach_state_graph(fn(model=model, state=system, **init_kwargs))
+        detach_state_graph(fn(model=model, state=system, **init_kwargs))
         for system, _indices in autobatcher
     ]
 

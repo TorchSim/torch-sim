@@ -491,14 +491,14 @@ def test_determine_max_batch_size_fibonacci(
 def test_detach_state_graph_drops_grad_but_keeps_values(
     si_sim_state: ts.SimState,
 ) -> None:
-    """`_detach_state_graph` strips grad graphs (the UMA leak) but preserves data.
+    """`detach_state_graph` strips grad graphs (the UMA leak) but preserves data.
 
     Models such as UMA return a graph-carrying ``energy`` (``requires_grad=True``)
     while their forces are detached; accumulating those graph-carrying states for
     the whole run is the memory leak. The helper must detach grad-carrying tensors
     in place, leave non-grad tensors untouched, and not change any values.
     """
-    from torch_sim.autobatching import _detach_state_graph
+    from torch_sim.autobatching import detach_state_graph
 
     # Give one tensor attribute an autograd graph, as UMA's energy would carry.
     grad_positions = (si_sim_state.positions.detach().clone().requires_grad_()) * 2
@@ -507,7 +507,7 @@ def test_detach_state_graph_drops_grad_but_keeps_values(
     masses_before = si_sim_state.masses  # a plain, non-grad tensor
     assert si_sim_state.positions.requires_grad
 
-    returned = _detach_state_graph(si_sim_state)
+    returned = detach_state_graph(si_sim_state)
 
     assert returned is si_sim_state  # detaches in place
     assert not si_sim_state.positions.requires_grad
