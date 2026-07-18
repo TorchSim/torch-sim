@@ -1,9 +1,7 @@
 """Alchemiops-based neighbor list implementations.
 
-This module provides neighbor lists via nvalchemiops: prefer the PyTorch subtree
-(``nvalchemiops.torch.neighbors``), typical for CUDA builds, and fall back to
-``nvalchemiops.neighborlist`` when that import path is missing (CPU-oriented API
-with the same call surface). Supports naive N^2 and cell-list algorithms.
+This module provides neighbor lists via nvalchemiops
+(``nvalchemiops.torch.neighbors``). Supports naive N^2 and cell-list algorithms.
 
 nvalchemiops is available at: https://github.com/NVIDIA/nvalchemiops
 """
@@ -18,23 +16,12 @@ _batch_cell_list: object | None = None
 
 
 def _import_nvalchemiops_batch_neighbors() -> tuple[object, object] | None:
-    """Return ``(batch_cell_list, batch_naive_neighbor_list)`` if a layout is importable.
-
-    Tries ``nvalchemiops.torch.neighbors`` first (PyTorch tensors; usual GPU wheel).
-    On ``ImportError``, tries ``nvalchemiops.neighborlist`` — same API, CPU fallback
-    when the ``torch.neighbors`` subtree is absent.
-    """
+    """Return ``(batch_cell_list, batch_naive_neighbor_list)`` if importable."""
     try:
-        from nvalchemiops.torch.neighbors.batch_cell_list import batch_cell_list as bcl
-        from nvalchemiops.torch.neighbors.batch_naive import (
-            batch_naive_neighbor_list as bnl,
-        )
+        from nvalchemiops.torch.neighbors import batch_cell_list as bcl
+        from nvalchemiops.torch.neighbors import batch_naive_neighbor_list as bnl
     except (ImportError, RuntimeError):
-        try:
-            from nvalchemiops.neighborlist import batch_cell_list as bcl
-            from nvalchemiops.neighborlist import batch_naive_neighbor_list as bnl
-        except (ImportError, RuntimeError):
-            return None
+        return None
     return bcl, bnl
 
 
