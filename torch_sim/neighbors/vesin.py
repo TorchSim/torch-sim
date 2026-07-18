@@ -108,7 +108,7 @@ if VESIN_AVAILABLE:
 
             # Calculate neighbor list for this system
             neighbor_list_fn = VesinNeighborList(
-                (float(cutoff)), full_list=True, sorted=False
+                cutoff=float(cutoff), full_list=True, sorted=False
             )
 
             # Convert tensors to CPU and float64 without gradients
