@@ -1029,7 +1029,6 @@ def detach_state_graph[T: SimState](state: T) -> T:
     return state
 
 
-
 def get_attrs_for_scope(
     state: SimState, scope: Literal["per-atom", "per-system", "global"]
 ) -> Generator[tuple[str, Any], None, None]:

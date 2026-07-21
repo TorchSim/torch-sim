@@ -17,10 +17,7 @@ import torch
 from tqdm import tqdm
 
 import torch_sim as ts
-from torch_sim.autobatching import (
-    BinningAutoBatcher,
-    InFlightAutoBatcher,
-)
+from torch_sim.autobatching import BinningAutoBatcher, InFlightAutoBatcher
 from torch_sim.integrators import INTEGRATOR_REGISTRY, Integrator
 from torch_sim.integrators.md import MDState
 from torch_sim.models.interface import ModelInterface

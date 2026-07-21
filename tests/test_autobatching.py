@@ -12,8 +12,8 @@ from torch_sim.autobatching import (
     determine_max_batch_size,
     to_constant_volume_bins,
 )
-from torch_sim.state import detach_state_graph
 from torch_sim.models.lennard_jones import LennardJonesModel
+from torch_sim.state import detach_state_graph
 
 
 def test_exact_fit():
@@ -513,6 +513,7 @@ def test_detach_state_graph_drops_grad_but_keeps_values(
     assert si_sim_state.positions.grad_fn is None
     assert torch.allclose(si_sim_state.positions, values_before)  # values unchanged
     assert si_sim_state.masses is masses_before  # non-grad tensors left as-is
+
 
 @pytest.mark.parametrize(
     "oom_message",
