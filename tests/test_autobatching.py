@@ -12,6 +12,7 @@ from torch_sim.autobatching import (
     determine_max_batch_size,
     to_constant_volume_bins,
 )
+from torch_sim.state import detach_state_graph
 from torch_sim.models.lennard_jones import LennardJonesModel
 
 
@@ -498,8 +499,6 @@ def test_detach_state_graph_drops_grad_but_keeps_values(
     the whole run is the memory leak. The helper must detach grad-carrying tensors
     in place, leave non-grad tensors untouched, and not change any values.
     """
-    from torch_sim.autobatching import detach_state_graph
-
     # Give one tensor attribute an autograd graph, as UMA's energy would carry.
     grad_positions = (si_sim_state.positions.detach().clone().requires_grad_()) * 2
     values_before = grad_positions.detach().clone()

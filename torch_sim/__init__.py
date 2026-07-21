@@ -25,7 +25,6 @@ from torch_sim import (
 from torch_sim.autobatching import (
     BinningAutoBatcher,
     InFlightAutoBatcher,
-    detach_state_graph,
 )
 from torch_sim.integrators import (
     INTEGRATOR_REGISTRY,
@@ -97,7 +96,7 @@ from torch_sim.runners import (
     optimize,
     static,
 )
-from torch_sim.state import SimState, concatenate_states, initialize_state
+from torch_sim.state import SimState, concatenate_states, initialize_state, detach_state_graph
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 
 

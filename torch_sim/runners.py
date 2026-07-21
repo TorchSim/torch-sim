@@ -20,13 +20,12 @@ import torch_sim as ts
 from torch_sim.autobatching import (
     BinningAutoBatcher,
     InFlightAutoBatcher,
-    detach_state_graph,
 )
 from torch_sim.integrators import INTEGRATOR_REGISTRY, Integrator
 from torch_sim.integrators.md import MDState
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers import OPTIM_REGISTRY, FireState, Optimizer, OptimState
-from torch_sim.state import _CANONICAL_MODEL_KEYS, SimState
+from torch_sim.state import _CANONICAL_MODEL_KEYS, SimState, detach_state_graph
 from torch_sim.trajectory import TrajectoryReporter
 from torch_sim.typing import StateLike
 from torch_sim.units import UnitSystem

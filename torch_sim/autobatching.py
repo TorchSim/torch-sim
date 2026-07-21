@@ -30,7 +30,7 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import SimState
+from torch_sim.state import SimState, detach_state_graph
 from torch_sim.typing import MemoryScaling
 
 
@@ -190,32 +190,6 @@ def measure_model_memory_forward(state: SimState, model: ModelInterface) -> floa
     model(state)
 
     return torch.cuda.max_memory_allocated() / 1024**3  # Convert to GB
-
-
-def detach_state_graph[T: SimState](state: T) -> T:
-    """Detach any autograd-graph-carrying tensors on a state, in place.
-
-    Some models return graph-carrying outputs - notably UMA, whose ``energy``
-    keeps ``requires_grad=True`` even though its forces are already detached.
-    When a converged system is popped out of the running batch and accumulated
-    for the remainder of the run, such a tensor pins that swap's *entire*
-    forward autograd graph, so live GPU memory grows by roughly one graph per
-    finished system until the device fills - independent of the batch size and
-    unreclaimable by ``empty_cache`` (it is allocated, not cached). Completed
-    states are only ever read for their values, never differentiated, so
-    dropping the graph is safe.
-
-    Args:
-        state (SimState): State whose grad-carrying tensor attributes are
-            detached in place.
-
-    Returns:
-        SimState: The same state instance, with grad-carrying tensors detached.
-    """
-    for attr_name, attr_value in state.attributes.items():
-        if torch.is_tensor(attr_value) and attr_value.requires_grad:
-            setattr(state, attr_name, attr_value.detach())
-    return state
 
 
 def determine_max_batch_size(
