@@ -1,9 +1,7 @@
 """Alchemiops-based neighbor list implementations.
 
-This module provides neighbor lists via nvalchemiops: prefer the PyTorch subtree
-(``nvalchemiops.torch.neighbors``), typical for CUDA builds, and fall back to
-``nvalchemiops.neighborlist`` when that import path is missing (CPU-oriented API
-with the same call surface). Supports naive N^2 and cell-list algorithms.
+This module provides neighbor lists via nvalchemiops
+(``nvalchemiops.torch.neighbors``). Supports naive N^2 and cell-list algorithms.
 
 nvalchemiops is available at: https://github.com/NVIDIA/nvalchemiops
 """
@@ -18,23 +16,12 @@ _batch_cell_list: object | None = None
 
 
 def _import_nvalchemiops_batch_neighbors() -> tuple[object, object] | None:
-    """Return ``(batch_cell_list, batch_naive_neighbor_list)`` if a layout is importable.
-
-    Tries ``nvalchemiops.torch.neighbors`` first (PyTorch tensors; usual GPU wheel).
-    On ``ImportError``, tries ``nvalchemiops.neighborlist`` — same API, CPU fallback
-    when the ``torch.neighbors`` subtree is absent.
-    """
+    """Return ``(batch_cell_list, batch_naive_neighbor_list)`` if importable."""
     try:
-        from nvalchemiops.torch.neighbors.batch_cell_list import batch_cell_list as bcl
-        from nvalchemiops.torch.neighbors.batch_naive import (
-            batch_naive_neighbor_list as bnl,
-        )
+        from nvalchemiops.torch.neighbors import batch_cell_list as bcl
+        from nvalchemiops.torch.neighbors import batch_naive_neighbor_list as bnl
     except (ImportError, RuntimeError):
-        try:
-            from nvalchemiops.neighborlist import batch_cell_list as bcl
-            from nvalchemiops.neighborlist import batch_naive_neighbor_list as bnl
-        except (ImportError, RuntimeError):
-            return None
+        return None
     return bcl, bnl
 
 
@@ -71,16 +58,6 @@ if ALCHEMIOPS_AVAILABLE:
 
         if _batch_naive_neighbor_list is None:
             raise RuntimeError("nvalchemiops neighbor list is unavailable")
-
-        # Temporary fix: the naive kernel wraps on every axis ignoring pbc, so a
-        # non-zero cell breaks non-periodic and partial-pbc systems. Zeroing the cell
-        # makes the wrap a no-op, fixing fully non-periodic systems (e.g. molecules).
-        # Slabs / partial pbc are not covered yet and need the upstream fix.
-        # See https://github.com/TorchSim/torch-sim/issues/575
-        non_periodic = ~pbc.any(dim=1)  # [n_systems]
-        if non_periodic.any():
-            cell = cell.clone()  # avoid modifying the original
-            cell[non_periodic] = 0.0
 
         res = _batch_naive_neighbor_list(
             positions=positions,

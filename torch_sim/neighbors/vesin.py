@@ -18,10 +18,14 @@ except ImportError:
     VesinNeighborList = None
 
 
+# vesin 0.6.0 renamed the TorchScript module from vesin.torch to vesin_torch
 try:
-    from vesin.torch import NeighborList as VesinNeighborListTorch
+    from vesin_torch import NeighborList as VesinNeighborListTorch
 except ImportError:
-    VesinNeighborListTorch = None
+    try:
+        from vesin.torch import NeighborList as VesinNeighborListTorch
+    except ImportError:
+        VesinNeighborListTorch = None  # ty: ignore[conflicting-declarations]
 
 VESIN_AVAILABLE = VesinNeighborList is not None
 VESIN_TORCHSCRIPT_AVAILABLE = VesinNeighborListTorch is not None
@@ -104,20 +108,19 @@ if VESIN_AVAILABLE:
 
             # Calculate neighbor list for this system
             neighbor_list_fn = VesinNeighborList(
-                (float(cutoff)), full_list=True, sorted=False
+                cutoff=float(cutoff), full_list=True, sorted=False
             )
 
             # Convert tensors to CPU and float64 without gradients
             positions_cpu = wrapped[system_mask].detach().cpu().to(dtype=torch.float64)
             cell_cpu = cell_sys.detach().cpu().to(dtype=torch.float64)
             periodic_cpu = pbc[sys_idx].detach().to(dtype=torch.bool).cpu()
-            periodic_bool = bool(torch.all(periodic_cpu).item())
 
             # Only works on CPU and returns numpy arrays
             i, j, S = neighbor_list_fn.compute(
                 points=positions_cpu,
                 box=cell_cpu,
-                periodic=periodic_bool,
+                periodic=periodic_cpu,
                 quantities="ijS",
             )
             i, j = (

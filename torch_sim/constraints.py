@@ -544,7 +544,9 @@ class FixCom(SystemConstraint):
         Returns:
             Always returns 3 (center of mass translation degrees of freedom)
         """
-        affected_systems = torch.zeros(state.n_systems, dtype=torch.long)
+        affected_systems = torch.zeros(
+            state.n_systems, dtype=torch.long, device=state.device
+        )
         affected_systems[self.system_idx] = 1
         return 3 * affected_systems
 
@@ -559,24 +561,29 @@ class FixCom(SystemConstraint):
             raise ValueError("FixCom requires state with system_idx")
         system_idx = state.system_idx
         dtype = state.positions.dtype
-        system_mass = torch.zeros(state.n_systems, dtype=dtype).scatter_add_(
-            0, system_idx, state.masses
-        )
+        device = state.device
+        system_mass = torch.zeros(
+            state.n_systems, dtype=dtype, device=device
+        ).scatter_add_(0, system_idx, state.masses)
         if self.coms is None:
-            self.coms = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
+            self.coms = torch.zeros(
+                (state.n_systems, 3), dtype=dtype, device=device
+            ).scatter_add_(
                 0,
                 system_idx.unsqueeze(-1).expand(-1, 3),
                 state.masses.unsqueeze(-1) * state.positions,
             )
             self.coms /= system_mass.unsqueeze(-1)
 
-        new_com = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
+        new_com = torch.zeros(
+            (state.n_systems, 3), dtype=dtype, device=device
+        ).scatter_add_(
             0,
             system_idx.unsqueeze(-1).expand(-1, 3),
             state.masses.unsqueeze(-1) * new_positions,
         )
         new_com /= system_mass.unsqueeze(-1)
-        displacement = torch.zeros(state.n_systems, 3, dtype=dtype)
+        displacement = torch.zeros(state.n_systems, 3, dtype=dtype, device=device)
         displacement[self.system_idx] = (
             -new_com[self.system_idx] + self.coms[self.system_idx]
         )
@@ -594,16 +601,19 @@ class FixCom(SystemConstraint):
         system_idx = state.system_idx
         # Compute center of mass momenta
         dtype = momenta.dtype
-        com_momenta = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
+        device = state.device
+        com_momenta = torch.zeros(
+            (state.n_systems, 3), dtype=dtype, device=device
+        ).scatter_add_(
             0,
             system_idx.unsqueeze(-1).expand(-1, 3),
             momenta,
         )
-        system_mass = torch.zeros(state.n_systems, dtype=dtype).scatter_add_(
-            0, system_idx, state.masses
-        )
+        system_mass = torch.zeros(
+            state.n_systems, dtype=dtype, device=device
+        ).scatter_add_(0, system_idx, state.masses)
         velocity_com = com_momenta / system_mass.unsqueeze(-1)
-        velocity_change = torch.zeros(state.n_systems, 3, dtype=dtype)
+        velocity_change = torch.zeros(state.n_systems, 3, dtype=dtype, device=device)
         velocity_change[self.system_idx] = velocity_com[self.system_idx]
         momenta -= velocity_change[system_idx] * state.masses.unsqueeze(-1)
 
@@ -621,18 +631,21 @@ class FixCom(SystemConstraint):
             raise ValueError("FixCom requires state with system_idx")
         system_idx = state.system_idx
         dtype = state.positions.dtype
-        system_square_mass = torch.zeros(state.n_systems, dtype=dtype).scatter_add_(
+        device = state.device
+        system_square_mass = torch.zeros(
+            state.n_systems, dtype=dtype, device=device
+        ).scatter_add_(
             0,
             system_idx,
             torch.square(state.masses),
         )
-        lmd = torch.zeros((state.n_systems, 3), dtype=dtype).scatter_add_(
+        lmd = torch.zeros((state.n_systems, 3), dtype=dtype, device=device).scatter_add_(
             0,
             system_idx.unsqueeze(-1).expand(-1, 3),
             forces * state.masses.unsqueeze(-1),
         )
         lmd /= system_square_mass.unsqueeze(-1)
-        forces_change = torch.zeros(state.n_systems, 3, dtype=dtype)
+        forces_change = torch.zeros(state.n_systems, 3, dtype=dtype, device=device)
         forces_change[self.system_idx] = lmd[self.system_idx]
         forces -= forces_change[system_idx] * state.masses.unsqueeze(-1)
 

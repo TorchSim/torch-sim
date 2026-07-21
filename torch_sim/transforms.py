@@ -888,7 +888,7 @@ def linked_cell(  # noqa: PLR0915
     shifts_idx = torch.repeat_interleave(
         shifts_idx, n_atom, dim=0, output_size=n_atom * n_cell_image
     )
-    batch_image = torch.zeros((shifts_idx.shape[0]), dtype=torch.long)
+    batch_image = torch.zeros((shifts_idx.shape[0]), dtype=torch.long, device=device)
     cell_shifts = compute_cell_shifts(cell.view(-1, 3, 3), shifts_idx, batch_image)
 
     i_ids = torch.arange(n_atom, device=device, dtype=torch.long)
@@ -968,7 +968,10 @@ def linked_cell(  # noqa: PLR0915
     )
     # Fill the i_atom index
     neigh_atom[0] = (
-        torch.arange(n_atom).view(-1, 1).repeat(1, max_neigh_per_atom).view(-1)
+        torch.arange(n_atom, device=device)
+        .view(-1, 1)
+        .repeat(1, max_neigh_per_atom)
+        .view(-1)
     )
     # Relate `bin_index` (row) with the `neighbor_atom_index` (stored in the columns).
     # empty entries are set to `n_images`
@@ -1620,13 +1623,15 @@ def get_centers_of_mass(
         torch.Tensor: A tensor of shape (n_structures, 3) containing
             the center of mass coordinates for each structure.
     """
-    coms = torch.zeros((n_systems, 3), dtype=positions.dtype).scatter_add_(
+    coms = torch.zeros(
+        (n_systems, 3), dtype=positions.dtype, device=positions.device
+    ).scatter_add_(
         0,
         system_idx.unsqueeze(-1).expand(-1, 3),
         masses.unsqueeze(-1) * positions,
     )
-    system_masses = torch.zeros((n_systems,), dtype=positions.dtype).scatter_add_(
-        0, system_idx, masses
-    )
+    system_masses = torch.zeros(
+        (n_systems,), dtype=positions.dtype, device=positions.device
+    ).scatter_add_(0, system_idx, masses)
     coms /= system_masses.unsqueeze(-1)
     return coms

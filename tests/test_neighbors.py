@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 from ase import Atoms
-from ase.build import bulk, molecule
+from ase.build import bulk, fcc111, molecule
 from ase.neighborlist import neighbor_list
 
 from tests.conftest import DEVICE, DTYPE
@@ -135,9 +135,32 @@ def periodic_atoms_set():
 
 @pytest.fixture
 def molecule_atoms_set() -> list:
-    return [
+    """Non-periodic molecules, each duplicated with a dummy cell set.
+
+    A dummy cell arises e.g. from ase.Atoms.get_cell(complete=True).
+    """
+    molecules = [
         *map(molecule, ("CH3CH2NH2", "H2O", "methylenecyclopropane", "OCHCHO", "C3H9C")),
     ]
+    dummy_cell_molecules = [atoms.copy() for atoms in molecules]
+    for atoms in dummy_cell_molecules:
+        atoms.set_cell([1.0, 1.0, 1.0])
+    return molecules + dummy_cell_molecules
+
+
+@pytest.fixture
+def partial_pbc_atoms_set() -> list[Atoms]:
+    """Slab structures to test partially periodic systems.
+
+    To increase coverage, they include atoms drifted across the cell boundary
+    along the non-periodic axis.
+    """
+    cu111 = fcc111("Cu", size=(2, 2, 3), a=3.6, vacuum=10.0)
+    cu111.translate([0.0, 0.0, -cu111.cell[2, 2] / 2])
+    cu_slab = bulk("Cu", "fcc", a=3.6, cubic=True).repeat((2, 2, 2))
+    cu_slab.set_pbc([True, True, False])
+    cu_slab.translate([0.0, 0.0, -3.6])
+    return [cu111, cu_slab]
 
 
 def _sorted_mic_distances(
@@ -286,31 +309,22 @@ def test_neighbor_list_invariant_under_lattice_image_shifts(
     _nl_backends_x_cutoffs(),
 )
 @pytest.mark.parametrize("self_interaction", [True, False])
-@pytest.mark.parametrize("molecule_dummy_cell", [0.0, 1.0])
 def test_neighbor_list_implementations(
     *,
     nl_implementation: Callable[..., tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
     cutoff: float,
     self_interaction: bool,
-    molecule_dummy_cell: float,
     molecule_atoms_set: list[Atoms],
     periodic_atoms_set: list[Atoms],
+    partial_pbc_atoms_set: list[Atoms],
 ) -> None:
     """Check that neighbor list implementations give the same results as ASE.
 
-    Tests all implementations in batched mode with mixed periodic and non-periodic
-    systems, comparing sorted distances against ASE reference values.
-
-    With molecule_dummy_cell != 0 the non-periodic molecules carry a non-zero
-    (dummy) cell, e.g. from ase.Atoms.get_cell(complete=True). Since pbc stays False
-    the neighbor list must remain cell-independent and still match ASE values.
+    Tests all implementations in batched mode with mixed periodic, partially
+    periodic, and non-periodic systems, comparing sorted distances against ASE
+    reference values.
     """
-    molecules = molecule_atoms_set
-    if molecule_dummy_cell:
-        molecules = [atoms.copy() for atoms in molecule_atoms_set]
-        for atoms in molecules:
-            atoms.set_cell([molecule_dummy_cell] * 3)  # dummy cell; pbc stays False
-    atoms_list = molecules + periodic_atoms_set
+    atoms_list = molecule_atoms_set + periodic_atoms_set + partial_pbc_atoms_set
     is_alchemiops = "alchemiops" in nl_implementation.__name__
     if is_alchemiops and cutoff >= 3:
         atoms_list = [a for a in atoms_list if not a.info.get("very_skewed")]
