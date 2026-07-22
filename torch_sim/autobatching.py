@@ -30,11 +30,17 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.state import SimState
+from torch_sim.state import SimState, detach_state_graph
 from torch_sim.typing import MemoryScaling
 
 
 logger = logging.getLogger(__name__)
+
+# Substrings used to recognise out-of-memory errors raised during the memory
+# estimation forward passes. Different backends word this differently: PyTorch
+# raises "CUDA out of memory", while Warp-based neighbor lists (e.g. the
+# nvalchemiops kernels used by ORB v3) raise "Failed to allocate <n> bytes".
+DEFAULT_OOM_ERROR_MESSAGES = ("CUDA out of memory", "Failed to allocate")
 
 
 def to_constant_volume_bins(  # noqa: C901
@@ -192,7 +198,7 @@ def determine_max_batch_size(
     max_atoms: int = 500_000,
     start_size: int = 1,
     scale_factor: float = 1.6,
-    oom_error_message: str | list[str] = "CUDA out of memory",
+    oom_error_message: str | Sequence[str] = DEFAULT_OOM_ERROR_MESSAGES,
 ) -> int:
     """Determine maximum batch size that fits in GPU memory.
 
@@ -210,8 +216,9 @@ def determine_max_batch_size(
         scale_factor (float): Factor to multiply batch size by in each iteration.
             Defaults to 1.6.
         oom_error_message (str | list[str]): String or list of strings to match in
-            RuntimeError messages to identify out-of-memory errors. Defaults to
-            "CUDA out of memory".
+            RuntimeError messages to identify out-of-memory errors. If any
+            listed substring appears in the error, it is treated as OOM.
+            Defaults to ``("CUDA out of memory", "Failed to allocate")``.
 
     Returns:
         int: Maximum number of batches that fit in GPU memory.
@@ -251,19 +258,18 @@ def determine_max_batch_size(
         except Exception as exc:
             exc_str = str(exc)
             # Check if any of the OOM error messages match
-            for msg in oom_error_message:
-                if msg in exc_str:
-                    safe_size = sizes[max(0, sys_idx - 2)]
-                    logger.debug(
-                        "OOM at %d systems (%d atoms), returning safe batch size %d",
-                        n_systems,
-                        concat_state.n_atoms,
-                        safe_size,
-                    )
-                    return safe_size
+            if any(msg in exc_str for msg in oom_error_message):
+                safe_size = sizes[max(0, sys_idx - 2)]
+                logger.debug(
+                    "OOM at %d systems (%d atoms), returning safe batch size %d",
+                    n_systems,
+                    concat_state.n_atoms,
+                    safe_size,
+                )
+                return safe_size
 
-                # No OOM message matched - re-raise the error
-                raise
+            # Not an OOM error - re-raise
+            raise
 
     return sizes[-1]
 
@@ -442,6 +448,15 @@ def estimate_max_memory_scaler(
     min_state_max_batches = determine_max_batch_size(min_state, model, **kwargs)
     max_state_max_batches = determine_max_batch_size(max_state, model, **kwargs)
 
+    # The probing above deliberately grows batches until an OOM, which leaves
+    # PyTorch's caching allocator holding most of the device memory. Release it
+    # so the real optimization run - and in particular any separate allocator
+    # such as the Warp/cudaMallocAsync pool used by ORB's neighbor lists - is
+    # not starved on the first real forward pass.
+    if torch.cuda.is_available():  # pragma: no cover
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+
     return min(
         min_state_max_batches * min_metric.item(),
         max_state_max_batches * max_metric.item(),
@@ -500,7 +515,7 @@ class BinningAutoBatcher[T: SimState]:
         max_atoms_to_try: int = 500_000,
         memory_scaling_factor: float = 1.6,
         max_memory_padding: float = 1.0,
-        oom_error_message: str | list[str] = "CUDA out of memory",
+        oom_error_message: str | Sequence[str] = DEFAULT_OOM_ERROR_MESSAGES,
     ) -> None:
         """Initialize the binning auto-batcher.
 
@@ -528,8 +543,9 @@ class BinningAutoBatcher[T: SimState]:
             max_memory_padding (float): Multiply the auto-determined max_memory_scaler
                 by this value to account for fluctuations in max memory. Defaults to 1.0.
             oom_error_message (str | list[str]): String or list of strings to match in
-                RuntimeError messages to identify out-of-memory errors. Defaults to
-                "CUDA out of memory".
+                RuntimeError messages to identify out-of-memory errors. If any
+                listed substring appears in the error, it is treated as OOM.
+                Defaults to ``("CUDA out of memory", "Failed to allocate")``.
         """
         self.max_memory_scaler = max_memory_scaler
         self.max_atoms_to_try = max_atoms_to_try
@@ -804,7 +820,7 @@ class InFlightAutoBatcher[T: SimState]:
         memory_scaling_factor: float = 1.6,
         max_iterations: int | None = None,
         max_memory_padding: float = 1.0,
-        oom_error_message: str | list[str] = "CUDA out of memory",
+        oom_error_message: str | Sequence[str] = DEFAULT_OOM_ERROR_MESSAGES,
     ) -> None:
         """Initialize the hot-swapping auto-batcher.
 
@@ -835,8 +851,9 @@ class InFlightAutoBatcher[T: SimState]:
             max_memory_padding (float): Multiply the auto-determined max_memory_scaler
                 by this value to account for fluctuations in max memory. Defaults to 1.0.
             oom_error_message (str | list[str]): String or list of strings to match in
-                RuntimeError messages to identify out-of-memory errors. Defaults to
-                "CUDA out of memory".
+                RuntimeError messages to identify out-of-memory errors. If any
+                listed substring appears in the error, it is treated as OOM.
+                Defaults to ``("CUDA out of memory", "Failed to allocate")``.
         """
         self.model = model
         self.memory_scales_with = memory_scales_with
@@ -1092,6 +1109,14 @@ class InFlightAutoBatcher[T: SimState]:
         completed_idx = torch.where(convergence_tensor)[0].tolist()
 
         completed_states = updated_state.pop(completed_idx)
+
+        # Drop any retained autograd graph before these states are accumulated
+        # for the rest of the run. A popped state preserves grad_fn, and models
+        # such as UMA return a graph-carrying energy, so without this each
+        # completed state would pin its swap's full forward graph - leaking GPU
+        # memory (one graph per finished system) until the device fills.
+        for completed_state in completed_states:
+            detach_state_graph(completed_state)
 
         # necessary to ensure states that finish at the same time are ordered properly
         completed_states.reverse()

@@ -31,7 +31,7 @@ dependencies = [
     "h5py>=3.15.1",
     "numpy>=1.26,<3; python_version < '3.13'",
     "numpy>=2.3.2,<3; python_version >= '3.13'",
-    "nvalchemi-toolkit-ops[torch]>=0.3.1",
+    "nvalchemi-toolkit-ops[torch]>=0.4.0",
     "tables>=3.11.1",
     "torch>=2",
     "tqdm>=4.67",
@@ -47,7 +47,7 @@ test = [
     "pytest>=8",
     "spglib>=2.6",
 ]
-vesin = ["vesin[torch]>=0.5.3"]
+vesin = ["vesin[torch]>=0.5.8"]
 io = ["ase>=3.26", "phonopy>=3.0.0", "pymatgen>=2026.3.23"]
 symmetry = ["moyopy>=0.7.8"]
 mace = ["mace-torch>=0.3.16"]

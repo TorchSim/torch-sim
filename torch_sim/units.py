@@ -15,7 +15,7 @@ class BaseConstant(float, Enum):
 
     References:
         http://arxiv.org/pdf/1507.07956.pdf
-        https://wiki.fysik.dtu.dk/ase/_modules/ase/units.html#create_units
+        https://docs.ase-lib.org/_modules/ase/units.html#create_units
     """
 
     def __new__(cls, value: float) -> Self:
