@@ -822,10 +822,13 @@ def test_get_fractional_coordinates_batched() -> None:
             [[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]],
         ),
         (
+            # Boundary case: ±1.5 in a cell of period 3 are equidistant.
+            # The 27-image enumeration consistently picks the -1 shift (lower
+            # grid index) when candidates are tied, so both rows map to -1.5.
             [[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]],
             torch.eye(3, dtype=DTYPE) * 3.0,
             True,
-            [[1.5, 1.5, 1.5], [-1.5, -1.5, -1.5]],
+            [[-1.5, -1.5, -1.5], [-1.5, -1.5, -1.5]],
         ),
         (
             [[2.2, 0.0, 0.0], [0.0, 2.2, 0.0], [0.0, 0.0, 2.2]],
@@ -838,6 +841,20 @@ def test_get_fractional_coordinates_batched() -> None:
             torch.eye(3, dtype=DTYPE) * 2.0,
             torch.tensor([True, False, True], dtype=torch.bool),
             [[0.2, 0.0, 0.0], [0.0, 2.2, 0.0], [0.0, 0.0, 0.2]],
+        ),
+        (
+            # Triclinic cell from issue #592: component-wise rounding gives the wrong
+            # image; the correct minimum-image shifts by the second lattice vector.
+            # cell cols: a=[1,0,0], b=[0.9,0.1,0], c=[0,0,1]
+            # dr = cell @ [0.49, 0.49, 0] = [0.49+0.9*0.49, 0.1*0.49, 0]
+            #             = [0.931, 0.049, 0]
+            # Correct MIC image: dr - cell[:,1] = [0.031, -0.051, 0]
+            [0.931, 0.049, 0.0],
+            torch.tensor(
+                [[1.0, 0.9, 0.0], [0.0, 0.1, 0.0], [0.0, 0.0, 1.0]], dtype=DTYPE
+            ),
+            torch.tensor([True, True, False], dtype=torch.bool),
+            [0.031, -0.051, 0.0],
         ),
     ],
 )

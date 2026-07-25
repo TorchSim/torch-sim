@@ -218,6 +218,13 @@ def minimum_image_displacement(
 ) -> torch.Tensor:
     """Apply minimum image convention to displacement vectors.
 
+    For general triclinic (non-orthogonal) cells the minimum-image problem
+    is the closest-vector problem.  Component-wise rounding in fractional
+    coordinates is only exact for orthogonal lattices.  This implementation
+    enumerates the 3^k candidate images (k = number of periodic directions,
+    at most 27) and returns the one with the smallest Cartesian norm,
+    which is correct for any reduced cell.
+
     Args:
         dr (torch.Tensor): Displacement vectors [N, 3] or [N, N, 3].
         cell (Optional[torch.Tensor]): Unit cell matrix [3, 3].
@@ -232,15 +239,44 @@ def minimum_image_displacement(
     if cell is None or not pbc.any():
         return dr
 
-    # Convert to fractional coordinates
+    # Convert to fractional coordinates and center in [-0.5, 0.5)
     cell_inv = torch.linalg.inv(cell)
     dr_frac = torch.einsum("ij,...j->...i", cell_inv, dr)
-
-    # Apply minimum image convention
     dr_frac -= torch.where(pbc, torch.round(dr_frac), torch.zeros_like(dr_frac))
 
-    # Convert back to cartesian
-    return torch.einsum("ij,...j->...i", cell, dr_frac)
+    # For non-orthogonal cells, component-wise rounding in fractional coordinates
+    # does not guarantee the minimum Cartesian distance (closest-vector problem).
+    # Enumerate all 3^k candidate images (shifts of -1, 0, +1 along each periodic
+    # direction) and select the one with the smallest Cartesian norm.
+    # Build the shift grid: shape [27, 3]
+    offsets = torch.tensor([-1, 0, 1], dtype=dr_frac.dtype, device=dr_frac.device)
+    # Only apply shifts along periodic directions; non-periodic stays at 0
+    shifts_1d = [offsets * pbc[i].to(dr_frac.dtype) for i in range(3)]
+    grid = torch.stack(
+        torch.meshgrid(shifts_1d[0], shifts_1d[1], shifts_1d[2], indexing="ij"),
+        dim=-1,
+    ).reshape(-1, 3)  # [27, 3]
+
+    # Candidate displacements in fractional coords: [27, ..., 3]
+    # dr_frac shape: [..., 3]; candidates shape: [27, ..., 3]
+    candidates_frac = dr_frac.unsqueeze(0) + grid.reshape(
+        (27,) + (1,) * (dr_frac.dim() - 1) + (3,)
+    )
+
+    # Convert all candidates to Cartesian: [27, ..., 3]
+    candidates_cart = torch.einsum("ij,...j->...i", cell, candidates_frac)
+
+    # Squared norms of each candidate: [27, ...]
+    sq_norms = (candidates_cart**2).sum(dim=-1)
+
+    # Index of candidate with minimum norm for each displacement: [...]
+    best = sq_norms.argmin(dim=0)
+
+    # Gather the best Cartesian displacement for each entry
+    # candidates_cart: [27, ..., 3] -> index along dim 0
+    return candidates_cart.gather(
+        0, best.unsqueeze(0).unsqueeze(-1).expand(1, *best.shape, 3)
+    ).squeeze(0)
 
 
 def get_pair_displacements(
