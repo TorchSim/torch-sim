@@ -99,7 +99,6 @@ from torch_sim.state import (
     detach_state_graph,
     initialize_state,
     require_full_pbc,
-    require_uniform_pbc,
 )
 from torch_sim.trajectory import TorchSimTrajectory, TrajectoryReporter
 
@@ -203,7 +202,6 @@ __all__ = [
     "optimizers",
     "quantities",
     "require_full_pbc",
-    "require_uniform_pbc",
     "runners",
     "state",
     "static",

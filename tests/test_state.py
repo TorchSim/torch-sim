@@ -21,6 +21,7 @@ from torch_sim.state import (
     _normalize_system_indices,
     _pop_states,
     _slice_state,
+    _to_legacy_pbc_state,
     coerce_prng,
     get_attrs_for_scope,
 )
@@ -88,20 +89,33 @@ def test_pbc_broadcast_and_assignment(si_double_sim_state: SimState) -> None:
         )
 
 
-def test_require_pbc_helpers(
+def test_require_full_pbc(
     ar_supercell_sim_state: SimState, benzene_sim_state: SimState
 ) -> None:
-    """require_uniform_pbc and require_full_pbc validate per-system pbc."""
-    uniform = ar_supercell_sim_state
-    row = ts.require_uniform_pbc(uniform, "test feature")
-    assert torch.equal(row, torch.tensor([True, True, True], device=DEVICE))
-    ts.require_full_pbc(uniform, "test feature")
+    """require_full_pbc validates per-system pbc."""
+    ts.require_full_pbc(ar_supercell_sim_state, "test feature")
 
-    mixed = ts.concatenate_states([uniform, benzene_sim_state])
-    with pytest.raises(ValueError, match="mixed pbc"):
-        ts.require_uniform_pbc(mixed, "test feature")
+    mixed = ts.concatenate_states([ar_supercell_sim_state, benzene_sim_state])
     with pytest.raises(ValueError, match="fully periodic"):
         ts.require_full_pbc(mixed, "test feature")
+
+
+def test_to_legacy_pbc_state(
+    si_double_sim_state: SimState, benzene_sim_state: SimState
+) -> None:
+    """_to_legacy_pbc_state shares tensors and exposes the shared (3,) pbc row."""
+    state = SimState.from_state(si_double_sim_state, pbc=[True, False, True])
+    assert state.pbc.shape == (2, 3)
+
+    view = _to_legacy_pbc_state(state)
+    assert view.pbc.shape == (3,)
+    assert torch.equal(view.pbc, torch.tensor([True, False, True], device=DEVICE))
+    assert view.positions is state.positions
+    assert state.pbc.shape == (2, 3)
+
+    mixed = ts.concatenate_states([state, benzene_sim_state])
+    with pytest.raises(ValueError, match="mixed pbc"):
+        _to_legacy_pbc_state(mixed)
 
 
 def test_wrap_positions_mixed_pbc_batch(

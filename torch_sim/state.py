@@ -916,29 +916,32 @@ class DeformGradMixin:
         return self._deform_grad(self.reference_row_vector_cell, self.row_vector_cell)
 
 
-def require_uniform_pbc(state: SimState, feature: str) -> torch.Tensor:
-    """Return the pbc row shared by all systems, raising if systems differ.
+def _to_legacy_pbc_state(state: SimState) -> SimState:
+    """Return a shallow copy of state with pbc in the legacy (3,) shape.
 
-    For consumers that cannot handle per-system pbc, e.g. model featurizers
-    that treat pbc as a single global setting.
+    Converts pbc back to the single global row that predates per-system pbc,
+    for external model integrations that still read state.pbc that way.
+    Remove once those integrations migrate.
 
     Args:
-        state (SimState): The state to validate.
-        feature (str): Name of the feature used in the error message.
+        state (SimState): The state to convert.
 
     Returns:
-        torch.Tensor: The shared pbc row with shape (3,).
+        SimState: A copy sharing all tensors with state, with pbc of shape (3,).
 
     Raises:
-        ValueError: If systems have different pbc.
+        ValueError: If systems have different pbc, which the legacy shape
+            cannot represent.
     """
     pbc = state.pbc
     if (pbc != pbc[0]).any():
         raise ValueError(
-            f"{feature} does not support mixed pbc across systems; "
+            "This model does not support mixed pbc across systems; "
             f"got per-system pbc {pbc.tolist()}. Split the batch by pbc instead."
         )
-    return pbc[0]
+    view = copy.copy(state)
+    object.__setattr__(view, "pbc", pbc[0])
+    return view
 
 
 def require_full_pbc(state: SimState, feature: str) -> None:
