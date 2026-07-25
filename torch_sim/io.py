@@ -78,11 +78,7 @@ def state_to_atoms(
         if state.system_idx is not None
         else np.zeros(state.positions.shape[0], dtype=np.int64)
     )
-    pbc_np = (
-        state.pbc.detach().cpu().numpy()
-        if torch.is_tensor(state.pbc)
-        else np.array([state.pbc] * 3 if isinstance(state.pbc, bool) else state.pbc)
-    )
+    pbc_np = state.pbc.detach().cpu().numpy()  # Shape: (n_systems, 3)
 
     atoms_list = []
     for sys_idx in np.unique(system_indices):
@@ -94,9 +90,7 @@ def state_to_atoms(
         # Convert atomic numbers to chemical symbols
         symbols = [chemical_symbols[z] for z in system_numbers]
 
-        pbc_for_sys = (
-            tuple(pbc_np[sys_idx].tolist()) if pbc_np.ndim > 1 else tuple(pbc_np.tolist())
-        )
+        pbc_for_sys = tuple(pbc_np[sys_idx].tolist())
         atoms = Atoms(
             symbols=symbols, positions=system_positions, cell=system_cell, pbc=pbc_for_sys
         )
