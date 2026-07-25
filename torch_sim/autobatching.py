@@ -340,11 +340,7 @@ def calculate_memory_scalers(
     if memory_scales_with == "n_atoms":
         return state.n_atoms_per_system.tolist()
     if memory_scales_with == "n_atoms_x_density":
-        pbc_all = (
-            state.pbc.all().item()
-            if torch.is_tensor(state.pbc)
-            else (state.pbc if isinstance(state.pbc, bool) else all(state.pbc))
-        )
+        pbc_all = state.pbc.all().item()
         if state.n_systems > 1 and pbc_all:
             # Vectorized volume only valid when all axes periodic
             n_atoms = state.n_atoms_per_system.to(state.volume.dtype)
@@ -354,31 +350,14 @@ def calculate_memory_scalers(
         scalers = []
         for system_idx in range(state.n_systems):
             system_state = state[system_idx]
-            system_pbc_all = (
-                system_state.pbc
-                if isinstance(system_state.pbc, bool)
-                else (
-                    all(system_state.pbc)
-                    if isinstance(system_state.pbc, (list, tuple))
-                    else system_state.pbc.all().item()
-                )
-            )
-            if system_pbc_all:
+            if system_state.pbc.all().item():
                 volume = torch.abs(torch.linalg.det(system_state.cell[0])) / 1000
             else:
                 bbox = (
                     system_state.positions.max(dim=0).values
                     - system_state.positions.min(dim=0).values
                 )
-                pbc_iter: tuple[bool, ...] | list[bool] = (
-                    (system_state.pbc,) * 3
-                    if isinstance(system_state.pbc, bool)
-                    else (
-                        system_state.pbc.tolist()
-                        if torch.is_tensor(system_state.pbc)
-                        else system_state.pbc
-                    )
-                )
+                pbc_iter = system_state.pbc.reshape(-1).tolist()
                 for axis_idx, periodic in enumerate(pbc_iter):
                     if not periodic:
                         bbox[axis_idx] += 2.0

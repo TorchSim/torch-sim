@@ -141,8 +141,9 @@ class SimState:
             the row vector convention `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`
             used by ASE.
         pbc (bool | list[bool] | torch.Tensor): indicates periodic boundary
-            conditions in each axis. If a boolean is provided, all axes are
-            assumed to have the same periodic boundary conditions.
+            conditions per system and axis, stored with shape (n_systems, 3).
+            A boolean, a list of three booleans, or a tensor of shape (3,) is
+            broadcast to all systems.
         atomic_numbers (torch.Tensor): Atomic numbers with shape (n_atoms,)
         system_idx (torch.Tensor): Maps each atom index to its system index.
             Has shape (n_atoms,), must be unique consecutive integers starting from 0.
@@ -207,8 +208,8 @@ class SimState:
         "atomic_numbers",
         "system_idx",
     }
-    _system_attributes: ClassVar[set[str]] = {"cell"}
-    _global_attributes: ClassVar[set[str]] = {"pbc", "_rng"}
+    _system_attributes: ClassVar[set[str]] = {"cell", "pbc"}
+    _global_attributes: ClassVar[set[str]] = {"_rng"}
 
     @property
     def rng(self) -> torch.Generator:
@@ -237,10 +238,16 @@ class SimState:
                     else:
                         del extras[name]
                     return
-        if name == "pbc" and not isinstance(value, torch.Tensor):
-            if isinstance(value, bool):
-                value = [value] * 3
-            value = torch.tensor(value, dtype=torch.bool, device=self.device)
+        if name == "pbc":
+            if not isinstance(value, torch.Tensor):
+                if isinstance(value, bool):
+                    value = [value] * 3
+                value = torch.tensor(value, dtype=torch.bool, device=self.device)
+            # Broadcast a single (3,) row to all systems. During __init__ the pbc
+            # field is assigned before system_idx, so broadcasting then happens
+            # in __post_init__ instead.
+            if value.ndim == 1 and getattr(self, "system_idx", None) is not None:
+                value = value.unsqueeze(0).expand(self.n_systems, -1).contiguous()
         elif name == "system_idx":
             if value is None:
                 if hasattr(self, "positions"):
@@ -284,6 +291,16 @@ class SimState:
             raise ValueError(
                 f"Cell must have shape (n_systems={n_systems}, 3, 3), "
                 f"got {self.cell.shape}"
+            )
+
+        # pbc is coerced to a tensor in __setattr__ but assigned before
+        # system_idx, so a single (3,) row is broadcast to all systems here
+        if self.pbc.ndim == 1:
+            self.pbc = self.pbc.unsqueeze(0).expand(n_systems, -1).contiguous()
+        if self.pbc.shape != (n_systems, 3):
+            raise ValueError(
+                f"pbc must have shape (n_systems={n_systems}, 3), "
+                f"got {tuple(self.pbc.shape)}"
             )
 
         # if devices aren't all the same, raise an error, in a clean way
@@ -902,6 +919,49 @@ class DeformGradMixin:
             The deformation gradient
         """
         return self._deform_grad(self.reference_row_vector_cell, self.row_vector_cell)
+
+
+def require_uniform_pbc(state: SimState, feature: str) -> torch.Tensor:
+    """Return the pbc row shared by all systems, raising if systems differ.
+
+    For consumers that cannot handle per-system pbc, e.g. model featurizers
+    that treat pbc as a single global setting.
+
+    Args:
+        state (SimState): The state to validate.
+        feature (str): Name of the feature used in the error message.
+
+    Returns:
+        torch.Tensor: The shared pbc row with shape (3,).
+
+    Raises:
+        ValueError: If systems have different pbc.
+    """
+    pbc = state.pbc
+    if (pbc != pbc[0]).any():
+        raise ValueError(
+            f"{feature} does not support mixed pbc across systems; "
+            f"got per-system pbc {pbc.tolist()}. Split the batch by pbc instead."
+        )
+    return pbc[0]
+
+
+def require_full_pbc(state: SimState, feature: str) -> None:
+    """Raise if any system is not fully periodic.
+
+    Args:
+        state (SimState): The state to validate.
+        feature (str): Name of the feature used in the error message.
+
+    Raises:
+        ValueError: If any system has a non-periodic axis.
+    """
+    if not state.pbc.all():
+        bad = torch.where(~state.pbc.all(dim=1))[0]
+        raise ValueError(
+            f"{feature} requires fully periodic systems; systems "
+            f"{bad.tolist()} have pbc {state.pbc[bad].tolist()}."
+        )
 
 
 def _normalize_system_indices(

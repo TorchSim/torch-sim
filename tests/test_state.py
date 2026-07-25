@@ -37,9 +37,83 @@ def test_get_attrs_for_scope(si_sim_state: SimState) -> None:
     per_atom_attrs = dict(get_attrs_for_scope(si_sim_state, "per-atom"))
     assert set(per_atom_attrs) == {"positions", "masses", "atomic_numbers", "system_idx"}
     per_system_attrs = dict(get_attrs_for_scope(si_sim_state, "per-system"))
-    assert set(per_system_attrs) == {"cell"}
+    assert set(per_system_attrs) == {"cell", "pbc"}
     global_attrs = dict(get_attrs_for_scope(si_sim_state, "global"))
-    assert set(global_attrs) == {"pbc", "_rng"}
+    assert set(global_attrs) == {"_rng"}
+
+
+def test_mixed_pbc_batch_operations(
+    ar_supercell_sim_state: SimState, benzene_sim_state: SimState
+) -> None:
+    """Per-system pbc survives concatenation, slicing, splitting, and popping."""
+    periodic, molecule = ar_supercell_sim_state, benzene_sim_state
+    assert periodic.pbc.shape == (1, 3)
+    assert not molecule.pbc.any()
+
+    state = ts.concatenate_states([periodic, molecule])
+    assert torch.equal(state.pbc, torch.cat([periodic.pbc, molecule.pbc]))
+    assert torch.equal(state[1].pbc, molecule.pbc)
+
+    split = state.split()
+    assert torch.equal(split[0].pbc, periodic.pbc)
+    assert torch.equal(split[1].pbc, molecule.pbc)
+
+    popped = state.pop(0)
+    assert torch.equal(popped[0].pbc, periodic.pbc)
+    assert torch.equal(state.pbc, molecule.pbc)
+
+
+def test_pbc_broadcast_and_assignment(si_double_sim_state: SimState) -> None:
+    """Scalar and (3,) pbc inputs broadcast to shape (n_systems, 3)."""
+    state = si_double_sim_state
+    assert state.pbc.shape == (2, 3)
+    assert state.pbc.all()
+
+    state.pbc = [True, False, True]
+    assert torch.equal(state.pbc, torch.tensor([[True, False, True]] * 2, device=DEVICE))
+
+    state.pbc = False
+    assert state.pbc.shape == (2, 3)
+    assert not state.pbc.any()
+
+    # Only (3,) is broadcast; 2D pbc must match (n_systems, 3)
+    with pytest.raises(ValueError, match="pbc must have shape"):
+        SimState(
+            positions=state.positions,
+            masses=state.masses,
+            cell=state.cell,
+            pbc=torch.ones(3, 3, dtype=torch.bool),
+            atomic_numbers=state.atomic_numbers,
+            system_idx=state.system_idx,
+        )
+
+
+def test_require_pbc_helpers(
+    ar_supercell_sim_state: SimState, benzene_sim_state: SimState
+) -> None:
+    """require_uniform_pbc and require_full_pbc validate per-system pbc."""
+    uniform = ar_supercell_sim_state
+    row = ts.require_uniform_pbc(uniform, "test feature")
+    assert torch.equal(row, torch.tensor([True, True, True], device=DEVICE))
+    ts.require_full_pbc(uniform, "test feature")
+
+    mixed = ts.concatenate_states([uniform, benzene_sim_state])
+    with pytest.raises(ValueError, match="mixed pbc"):
+        ts.require_uniform_pbc(mixed, "test feature")
+    with pytest.raises(ValueError, match="fully periodic"):
+        ts.require_full_pbc(mixed, "test feature")
+
+
+def test_wrap_positions_mixed_pbc_batch(
+    ar_supercell_sim_state: SimState, benzene_sim_state: SimState
+) -> None:
+    """Wrapping only touches the periodic systems of a mixed batch."""
+    state = ts.concatenate_states([ar_supercell_sim_state, benzene_sim_state])
+    state.positions = state.positions + 100.0
+    wrapped = state.wrap_positions
+    n_periodic = ar_supercell_sim_state.n_atoms
+    assert not torch.allclose(wrapped[:n_periodic], state.positions[:n_periodic])
+    assert torch.equal(wrapped[n_periodic:], state.positions[n_periodic:])
 
 
 def test_all_attributes_must_be_specified_in_scopes() -> None:

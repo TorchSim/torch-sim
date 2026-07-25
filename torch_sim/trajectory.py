@@ -969,13 +969,14 @@ class TorchSimTrajectory:
             self.write_arrays({"atomic_numbers": state[0].atomic_numbers}, 0)
 
         if "pbc" not in self.array_registry:
-            pbc_val = state[0].pbc
+            pbc_val = sub_states[0].pbc
             pbc_arr = (
                 pbc_val
                 if torch.is_tensor(pbc_val)
                 else torch.tensor([pbc_val] * 3 if isinstance(pbc_val, bool) else pbc_val)
             )
-            self.write_global_array("pbc", pbc_arr)
+            # Trajectory files hold a single system, so store its (3,) pbc row
+            self.write_global_array("pbc", pbc_arr.reshape(-1))
 
         # Write all arrays to file
         self.write_arrays(data, steps)
