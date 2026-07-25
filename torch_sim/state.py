@@ -178,9 +178,9 @@ class SimState:
     positions: torch.Tensor
     masses: torch.Tensor
     cell: torch.Tensor
-    pbc: torch.Tensor  # coerced from bool/list[bool] by __setattr__
     atomic_numbers: torch.Tensor
     system_idx: torch.Tensor = field(default=None)  # type: ignore[assignment]  # coerced from None by __setattr__
+    pbc: torch.Tensor  # coerced from bool/list[bool] by __setattr__
     _constraints: list["Constraint"] = field(default_factory=list)
     _system_extras: dict[str, torch.Tensor] = field(default_factory=dict)
     _atom_extras: dict[str, torch.Tensor] = field(default_factory=dict)
@@ -194,8 +194,8 @@ class SimState:
             positions: torch.Tensor,
             masses: torch.Tensor,
             cell: torch.Tensor,
-            pbc: torch.Tensor | list[bool] | bool,
             atomic_numbers: torch.Tensor,
+            pbc: torch.Tensor | list[bool] | bool,
             system_idx: torch.Tensor | None = None,
             _constraints: list[Constraint] | None = None,
             _rng: PRNGLike = None,
@@ -243,9 +243,8 @@ class SimState:
                 if isinstance(value, bool):
                     value = [value] * 3
                 value = torch.tensor(value, dtype=torch.bool, device=self.device)
-            # Broadcast a single (3,) row to all systems. During __init__ the pbc
-            # field is assigned before system_idx, so broadcasting then happens
-            # in __post_init__ instead.
+            # Broadcast a single (3,) row to all systems. pbc is declared after
+            # system_idx, so n_systems is available already during __init__.
             if value.ndim == 1 and getattr(self, "system_idx", None) is not None:
                 value = value.unsqueeze(0).expand(self.n_systems, -1).contiguous()
         elif name == "system_idx":
@@ -293,10 +292,6 @@ class SimState:
                 f"got {self.cell.shape}"
             )
 
-        # pbc is coerced to a tensor in __setattr__ but assigned before
-        # system_idx, so a single (3,) row is broadcast to all systems here
-        if self.pbc.ndim == 1:
-            self.pbc = self.pbc.unsqueeze(0).expand(n_systems, -1).contiguous()
         if self.pbc.shape != (n_systems, 3):
             raise ValueError(
                 f"pbc must have shape (n_systems={n_systems}, 3), "
