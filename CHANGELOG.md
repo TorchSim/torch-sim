@@ -3,6 +3,49 @@
 
 ## Unreleased
 
+## v0.6.1
+
+This patch release upstreams the MACE and FairChem model integrations into their respective packages and delivers a focused set of correctness fixes across the neighbor-list, dispersion/electrostatics, optimizer, and IO layers.
+
+### 🎉 New Features
+* Upstream MACE model to use `mace-torch` integration by @CompRhys in [#524](https://github.com/TorchSim/torch-sim/pull/524)
+* Use upstreamed FairChem model by @CompRhys in [#499](https://github.com/TorchSim/torch-sim/pull/499)
+* Upstream MatterSim model integration by @CompRhys in [#565](https://github.com/TorchSim/torch-sim/pull/565)
+* Check for disordered structure and raise informative error by @thomasloux in [#578](https://github.com/TorchSim/torch-sim/pull/578)
+
+### 🛠 Enhancements
+* Convert all kwargs to metal units in high-level `integrate` API by @curtischong in [#587](https://github.com/TorchSim/torch-sim/pull/587)
+* Simplify `to_constant_volume_bins` by @curtischong in [#562](https://github.com/TorchSim/torch-sim/pull/562)
+* Change `validate_model_outputs` kwarg default `check_detached` to `True` by @CompRhys in [#568](https://github.com/TorchSim/torch-sim/pull/568)
+* Document post-hoc convergence check by @lil-lon in [#561](https://github.com/TorchSim/torch-sim/pull/561)
+* Add more molecule test cases for consistency checking by @CompRhys in [#567](https://github.com/TorchSim/torch-sim/pull/567)
+* Bump default L-BFGS `step_size` and detach optimizer-state buffers in L-BFGS / BFGS step by @niklashoelter in [#559](https://github.com/TorchSim/torch-sim/pull/559)
+
+### 🐛 Bug Fixes
+* Fix bugs with constrained geometry optimization and `FixSymmetry` by @PascalSalzbrenner in [#552](https://github.com/TorchSim/torch-sim/pull/552)
+* Fix `get_atoms_from_traj` not returning row-vector cell to ASE `Atoms` by @CompRhys in [#555](https://github.com/TorchSim/torch-sim/pull/555)
+* Fix D3, Ewald, PME, DSF stress sign by @teddykoker in [#571](https://github.com/TorchSim/torch-sim/pull/571)
+* Fix alchemiops dispersion/electrostatics neighbor-list issue by @CompRhys in [#560](https://github.com/TorchSim/torch-sim/pull/560)
+* Fix zero dummy cell for non-periodic systems in alchemiops naive NL by @lil-lon in [#576](https://github.com/TorchSim/torch-sim/pull/576)
+* Fix missing device in `FixCom` and `get_centers_of_mass()` by @sklenard in [#583](https://github.com/TorchSim/torch-sim/pull/583)
+* Pull in alchemiops partial PBC fixes by @lil-lon in [#591](https://github.com/TorchSim/torch-sim/pull/591)
+* Detach states in autobatchers by @niklashoelter in [#590](https://github.com/TorchSim/torch-sim/pull/590)
+* Recognise Warp OOM in memory estimation and free cache before the real run by @niklashoelter in [#589](https://github.com/TorchSim/torch-sim/pull/589)
+* Fix wrong default value in doc-string by @t-reents in [#572](https://github.com/TorchSim/torch-sim/pull/572)
+
+### 🧹 House-Keeping
+* Use `ty` pre-commit hook by @CompRhys in [#574](https://github.com/TorchSim/torch-sim/pull/574)
+* Better `ty` dep setup in prek for CI vs local, bump MatterSim version for molecule support by @CompRhys in [#570](https://github.com/TorchSim/torch-sim/pull/570)
+* Pin `phono3py>=4.0.0` in mattersim extra by @lil-lon in [#577](https://github.com/TorchSim/torch-sim/pull/577)
+* Restore code coverage badge by @CompRhys in [#558](https://github.com/TorchSim/torch-sim/pull/558)
+* Make CI badge reflect required test status by @CompRhys in [#557](https://github.com/TorchSim/torch-sim/pull/557)
+* Update ASE wiki URL to fix lint in CI by @curtischong in [#588](https://github.com/TorchSim/torch-sim/pull/588)
+
+### 🆕 New Contributors
+* @PascalSalzbrenner made their first contribution in [#552](https://github.com/TorchSim/torch-sim/pull/552)
+* @sklenard made their first contribution in [#583](https://github.com/TorchSim/torch-sim/pull/583)
+* @lil-lon made their first contribution in [#561](https://github.com/TorchSim/torch-sim/pull/561)
+
 ## v0.6.0
 
 This release is shaped by three major pushes:

@@ -19,4 +19,5 @@ license-url: https://github.com/torchsim/torch-sim/blob/main/LICENSE
 repository-code: https://github.com/torchsim/torch-sim
 url: https://github.com/torchsim/torch-sim
 type: software
-date-released: 2025-04-02
+version: 0.6.1
+date-released: 2026-07-27
