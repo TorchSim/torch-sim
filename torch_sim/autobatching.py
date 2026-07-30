@@ -237,6 +237,11 @@ def determine_max_batch_size(
     Notes:
         The function returns a batch size slightly smaller than the actual maximum
         (with a safety margin) to avoid operating too close to memory limits.
+
+        On CUDA devices the caching allocator is released before returning, so that
+        separately-allocating backends - such as the Warp/cudaMallocAsync pool behind
+        the alchemiops neighbor lists - are not starved by memory the probe left
+        cached.
     """
     # Convert oom_error_message to list if it's a string
     if isinstance(oom_error_message, str):
@@ -249,29 +254,40 @@ def determine_max_batch_size(
     ) * state.n_atoms <= max_atoms:
         sizes.append(next_size)
 
-    for sys_idx in range(len(sizes)):
-        n_systems = sizes[sys_idx]
-        concat_state = ts.concatenate_states([state] * n_systems)
+    try:
+        for sys_idx in range(len(sizes)):
+            n_systems = sizes[sys_idx]
+            concat_state = ts.concatenate_states([state] * n_systems)
 
-        try:
-            measure_model_memory_forward(concat_state, model)
-        except Exception as exc:
-            exc_str = str(exc)
-            # Check if any of the OOM error messages match
-            if any(msg in exc_str for msg in oom_error_message):
-                safe_size = sizes[max(0, sys_idx - 2)]
-                logger.debug(
-                    "OOM at %d systems (%d atoms), returning safe batch size %d",
-                    n_systems,
-                    concat_state.n_atoms,
-                    safe_size,
-                )
-                return safe_size
+            try:
+                measure_model_memory_forward(concat_state, model)
+            except Exception as exc:
+                exc_str = str(exc)
+                # Check if any of the OOM error messages match
+                if any(msg in exc_str for msg in oom_error_message):
+                    safe_size = sizes[max(0, sys_idx - 2)]
+                    logger.debug(
+                        "OOM at %d systems (%d atoms), returning safe batch size %d",
+                        n_systems,
+                        concat_state.n_atoms,
+                        safe_size,
+                    )
+                    return safe_size
 
-            # Not an OOM error - re-raise
-            raise
+                # Not an OOM error - re-raise
+                raise
 
-    return sizes[-1]
+        return sizes[-1]
+    finally:
+        # The probing above deliberately grows batches until an OOM, which
+        # leaves PyTorch's caching allocator holding most of the device memory.
+        # Release it on every exit path, including the OOM return above: a
+        # separate allocator - such as the Warp/cudaMallocAsync pool behind the
+        # alchemiops neighbor lists - draws from what PyTorch is not holding, so
+        # it can otherwise fail to allocate even a few bytes on the next call.
+        if torch.cuda.is_available():  # pragma: no cover
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
 
 
 def _n_edges_scalers(state: SimState, cutoff: float) -> list[float]:
@@ -445,17 +461,10 @@ def estimate_max_memory_scaler(
         f"and {max_state.n_systems} batches, and smallest system has "
         f"{min_state.n_atoms} atoms and {min_state.n_systems} batches.",
     )
+    # determine_max_batch_size releases the caching allocator on its way out, so
+    # the device is already handed back before the real optimization run starts.
     min_state_max_batches = determine_max_batch_size(min_state, model, **kwargs)
     max_state_max_batches = determine_max_batch_size(max_state, model, **kwargs)
-
-    # The probing above deliberately grows batches until an OOM, which leaves
-    # PyTorch's caching allocator holding most of the device memory. Release it
-    # so the real optimization run - and in particular any separate allocator
-    # such as the Warp/cudaMallocAsync pool used by ORB's neighbor lists - is
-    # not starved on the first real forward pass.
-    if torch.cuda.is_available():  # pragma: no cover
-        torch.cuda.synchronize()
-        torch.cuda.empty_cache()
 
     return min(
         min_state_max_batches * min_metric.item(),

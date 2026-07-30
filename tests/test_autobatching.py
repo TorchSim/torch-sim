@@ -554,6 +554,45 @@ def test_determine_max_batch_size_recognises_oom_variants(
     assert max_size >= 1
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@pytest.mark.parametrize("probe_ooms", [True, False])
+def test_determine_max_batch_size_releases_cached_memory(
+    *,
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+    probe_ooms: bool,
+) -> None:
+    """The probe must hand the device back on every exit path.
+
+    Regression test: probing deliberately grows batches until the GPU runs out
+    of memory. If PyTorch's caching allocator keeps holding that memory after
+    the probe returns, a separate allocator - such as the Warp/cudaMallocAsync
+    pool behind the alchemiops neighbor lists - can fail to allocate even a few
+    bytes on the very next call.
+    """
+
+    def mock_measure(*_args: Any, **_kwargs: Any) -> float:
+        # Reserve a chunk and release it, so it lands in PyTorch's cache the
+        # way a real probe's activations do.
+        buffer = torch.empty(256 * 1024**2, dtype=torch.uint8, device="cuda")
+        del buffer
+        if probe_ooms:
+            raise RuntimeError("CUDA out of memory")
+        return 0.1
+
+    monkeypatch.setattr(
+        "torch_sim.autobatching.measure_model_memory_forward", mock_measure
+    )
+
+    torch.cuda.empty_cache()
+    baseline = torch.cuda.memory_reserved()
+
+    determine_max_batch_size(si_sim_state, lj_model, max_atoms=10_000)
+
+    assert torch.cuda.memory_reserved() <= baseline
+
+
 def test_determine_max_batch_size_reraises_non_oom_error(
     si_sim_state: ts.SimState,
     lj_model: LennardJonesModel,
