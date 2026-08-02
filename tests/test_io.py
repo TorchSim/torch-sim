@@ -34,6 +34,40 @@ def test_single_atoms_to_state(si_atoms: Atoms) -> None:
     assert state.atomic_numbers.dtype == torch.int
 
 
+def test_atoms_to_state_mixed_pbc(si_atoms: Atoms, benzene_atoms: Atoms) -> None:
+    """Atoms with different pbc convert to per-system pbc and round-trip."""
+    slab_atoms = si_atoms.copy()
+    slab_atoms.set_pbc([True, True, False])
+    atoms_list = [si_atoms, slab_atoms, benzene_atoms]
+    state = ts.io.atoms_to_state(atoms_list, DEVICE, DTYPE)
+    assert state.pbc.tolist() == [
+        [True, True, True],
+        [True, True, False],
+        [False, False, False],
+    ]
+
+    round_trip = state.to_atoms()
+    for converted, original in zip(round_trip, atoms_list, strict=True):
+        np.testing.assert_array_equal(converted.pbc, original.pbc)
+
+
+def test_structures_to_state_mixed_pbc(si_structure: Any) -> None:
+    """Structures with different pbc convert to per-system pbc and round-trip."""
+    from pymatgen.core import Lattice, Structure
+
+    slab = Structure(
+        Lattice(si_structure.lattice.matrix, pbc=(True, True, False)),
+        [site.specie for site in si_structure],
+        si_structure.frac_coords,
+    )
+    state = ts.io.structures_to_state([si_structure, slab], DEVICE, DTYPE)
+    assert state.pbc.tolist() == [[True, True, True], [True, True, False]]
+
+    round_trip = state.to_structures()
+    assert round_trip[0].lattice.pbc == (True, True, True)
+    assert round_trip[1].lattice.pbc == (True, True, False)
+
+
 @pytest.mark.parametrize(
     ("system_extras_map", "atom_extras_map", "expected_sys", "expected_atom"),
     [

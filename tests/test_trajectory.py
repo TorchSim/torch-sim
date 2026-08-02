@@ -458,7 +458,7 @@ def test_get_atoms(trajectory: TorchSimTrajectory, random_state: MDState) -> Non
     np.testing.assert_allclose(
         atoms.get_atomic_numbers(), random_state.atomic_numbers.numpy()
     )
-    np.testing.assert_array_equal(atoms.pbc, random_state.pbc.detach().cpu().numpy())
+    np.testing.assert_array_equal(atoms.pbc, random_state.pbc[0].detach().cpu().numpy())
 
 
 def test_get_state(trajectory: TorchSimTrajectory, random_state: MDState) -> None:
@@ -531,7 +531,7 @@ def test_write_ase_trajectory(
         np.testing.assert_allclose(
             atoms.get_atomic_numbers(), random_state.atomic_numbers.numpy()
         )
-        np.testing.assert_array_equal(atoms.pbc, random_state.pbc.numpy())
+        np.testing.assert_array_equal(atoms.pbc, random_state.pbc[0].numpy())
 
     # Clean up
     ase_traj.close()
@@ -754,6 +754,26 @@ def test_property_model_consistency(
     # Close all trajectories
     for traj in single_reporters + multi_trajectories:
         traj.close()
+
+
+def test_reporter_mixed_pbc_batch(
+    ar_supercell_sim_state: SimState, benzene_sim_state: SimState, tmp_path: Path
+) -> None:
+    """Each per-system trajectory file stores that system's (3,) pbc row."""
+    state = ts.concatenate_states([ar_supercell_sim_state, benzene_sim_state])
+    filenames = [tmp_path / "periodic.hdf5", tmp_path / "molecule.hdf5"]
+    reporter = TrajectoryReporter(filenames, state_frequency=1)
+    reporter.report(state, 0)
+    reporter.close()
+
+    expected_rows = ([True] * 3, [False] * 3)
+    for filename, expected in zip(filenames, expected_rows, strict=True):
+        with TorchSimTrajectory(filename, mode="r") as traj:
+            pbc_arr = traj.get_array("pbc")
+            assert pbc_arr.shape == (3,)
+            assert pbc_arr.tolist() == expected
+            round_trip = traj.get_state(frame=0)
+        assert round_trip.pbc.tolist() == [expected]
 
 
 def test_reporter_with_model(

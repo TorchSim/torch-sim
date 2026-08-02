@@ -141,8 +141,9 @@ class SimState:
             the row vector convention `[[a1, a2, a3], [b1, b2, b3], [c1, c2, c3]]`
             used by ASE.
         pbc (bool | list[bool] | torch.Tensor): indicates periodic boundary
-            conditions in each axis. If a boolean is provided, all axes are
-            assumed to have the same periodic boundary conditions.
+            conditions per system and axis, stored with shape (n_systems, 3).
+            A boolean, a list of three booleans, or a tensor of shape (3,) is
+            broadcast to all systems.
         atomic_numbers (torch.Tensor): Atomic numbers with shape (n_atoms,)
         system_idx (torch.Tensor): Maps each atom index to its system index.
             Has shape (n_atoms,), must be unique consecutive integers starting from 0.
@@ -177,9 +178,9 @@ class SimState:
     positions: torch.Tensor
     masses: torch.Tensor
     cell: torch.Tensor
-    pbc: torch.Tensor  # coerced from bool/list[bool] by __setattr__
     atomic_numbers: torch.Tensor
     system_idx: torch.Tensor = field(default=None)  # type: ignore[assignment]  # coerced from None by __setattr__
+    pbc: torch.Tensor  # coerced from bool/list[bool] by __setattr__
     _constraints: list["Constraint"] = field(default_factory=list)
     _system_extras: dict[str, torch.Tensor] = field(default_factory=dict)
     _atom_extras: dict[str, torch.Tensor] = field(default_factory=dict)
@@ -193,8 +194,8 @@ class SimState:
             positions: torch.Tensor,
             masses: torch.Tensor,
             cell: torch.Tensor,
-            pbc: torch.Tensor | list[bool] | bool,
             atomic_numbers: torch.Tensor,
+            pbc: torch.Tensor | list[bool] | bool,
             system_idx: torch.Tensor | None = None,
             _constraints: list[Constraint] | None = None,
             _rng: PRNGLike = None,
@@ -207,8 +208,8 @@ class SimState:
         "atomic_numbers",
         "system_idx",
     }
-    _system_attributes: ClassVar[set[str]] = {"cell"}
-    _global_attributes: ClassVar[set[str]] = {"pbc", "_rng"}
+    _system_attributes: ClassVar[set[str]] = {"cell", "pbc"}
+    _global_attributes: ClassVar[set[str]] = {"_rng"}
 
     @property
     def rng(self) -> torch.Generator:
@@ -237,10 +238,15 @@ class SimState:
                     else:
                         del extras[name]
                     return
-        if name == "pbc" and not isinstance(value, torch.Tensor):
-            if isinstance(value, bool):
-                value = [value] * 3
-            value = torch.tensor(value, dtype=torch.bool, device=self.device)
+        if name == "pbc":
+            if not isinstance(value, torch.Tensor):
+                if isinstance(value, bool):
+                    value = [value] * 3
+                value = torch.tensor(value, dtype=torch.bool, device=self.device)
+            # Broadcast a single (3,) row to all systems. pbc is declared after
+            # system_idx, so n_systems is available already during __init__.
+            if value.ndim == 1 and getattr(self, "system_idx", None) is not None:
+                value = value.unsqueeze(0).expand(self.n_systems, -1).contiguous()
         elif name == "system_idx":
             if value is None:
                 if hasattr(self, "positions"):
@@ -284,6 +290,12 @@ class SimState:
             raise ValueError(
                 f"Cell must have shape (n_systems={n_systems}, 3, 3), "
                 f"got {self.cell.shape}"
+            )
+
+        if self.pbc.shape != (n_systems, 3):
+            raise ValueError(
+                f"pbc must have shape (n_systems={n_systems}, 3), "
+                f"got {tuple(self.pbc.shape)}"
             )
 
         # if devices aren't all the same, raise an error, in a clean way
@@ -902,6 +914,52 @@ class DeformGradMixin:
             The deformation gradient
         """
         return self._deform_grad(self.reference_row_vector_cell, self.row_vector_cell)
+
+
+def _to_legacy_pbc_state(state: SimState) -> SimState:
+    """Return a shallow copy of state with pbc in the legacy (3,) shape.
+
+    Converts pbc back to the single global row that predates per-system pbc,
+    for external model integrations that still read state.pbc that way.
+    Remove once those integrations migrate.
+
+    Args:
+        state (SimState): The state to convert.
+
+    Returns:
+        SimState: A copy sharing all tensors with state, with pbc of shape (3,).
+
+    Raises:
+        ValueError: If systems have different pbc, which the legacy shape
+            cannot represent.
+    """
+    pbc = state.pbc
+    if (pbc != pbc[0]).any():
+        raise ValueError(
+            "This model does not support mixed pbc across systems; "
+            f"got per-system pbc {pbc.tolist()}. Split the batch by pbc instead."
+        )
+    view = copy.copy(state)
+    object.__setattr__(view, "pbc", pbc[0])
+    return view
+
+
+def require_full_pbc(state: SimState, feature: str) -> None:
+    """Raise if any system is not fully periodic.
+
+    Args:
+        state (SimState): The state to validate.
+        feature (str): Name of the feature used in the error message.
+
+    Raises:
+        ValueError: If any system has a non-periodic axis.
+    """
+    if not state.pbc.all():
+        bad = torch.where(~state.pbc.all(dim=1))[0]
+        raise ValueError(
+            f"{feature} requires fully periodic systems; systems "
+            f"{bad.tolist()} have pbc {state.pbc[bad].tolist()}."
+        )
 
 
 def _normalize_system_indices(

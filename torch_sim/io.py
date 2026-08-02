@@ -78,11 +78,7 @@ def state_to_atoms(
         if state.system_idx is not None
         else np.zeros(state.positions.shape[0], dtype=np.int64)
     )
-    pbc_np = (
-        state.pbc.detach().cpu().numpy()
-        if torch.is_tensor(state.pbc)
-        else np.array([state.pbc] * 3 if isinstance(state.pbc, bool) else state.pbc)
-    )
+    pbc_np = state.pbc.detach().cpu().numpy()  # Shape: (n_systems, 3)
 
     atoms_list = []
     for sys_idx in np.unique(system_indices):
@@ -94,9 +90,7 @@ def state_to_atoms(
         # Convert atomic numbers to chemical symbols
         symbols = [chemical_symbols[z] for z in system_numbers]
 
-        pbc_for_sys = (
-            tuple(pbc_np[sys_idx].tolist()) if pbc_np.ndim > 1 else tuple(pbc_np.tolist())
-        )
+        pbc_for_sys = tuple(pbc_np[sys_idx].tolist())
         atoms = Atoms(
             symbols=symbols, positions=system_positions, cell=system_cell, pbc=pbc_for_sys
         )
@@ -171,13 +165,8 @@ def state_to_structures(state: ts.SimState) -> list[Structure]:
         species = [Element.from_Z(z) for z in system_numbers]
 
         # Create structure for this system
-        if torch.is_tensor(state.pbc):
-            pbc_tup = tuple(state.pbc.tolist())
-        elif isinstance(state.pbc, bool):
-            pbc_tup = (state.pbc, state.pbc, state.pbc)
-        else:
-            pbc_tup = (bool(state.pbc[0]), bool(state.pbc[1]), bool(state.pbc[2]))
-        pbc_tup = (pbc_tup[0], pbc_tup[1], pbc_tup[2])  # ensure tuple[bool, bool, bool]
+        pbc_row = state.pbc[uniq_sys_idx].tolist()
+        pbc_tup = (bool(pbc_row[0]), bool(pbc_row[1]), bool(pbc_row[2]))
         struct = Structure(
             lattice=Lattice(system_cell, pbc=pbc_tup),
             species=species,
@@ -283,12 +272,10 @@ def atoms_to_state(
 
     Raises:
         ImportError: If ASE is not installed.
-        ValueError: If systems have inconsistent periodic boundary conditions.
 
     Notes:
         - Input positions and cell should be in Å
         - Input masses should be in amu
-        - All systems must have consistent periodic boundary conditions
     """
     try:
         from ase import Atoms
@@ -319,9 +306,9 @@ def atoms_to_state(
         torch.arange(len(atoms_list), device=device), atoms_per_system
     )
 
-    # Verify consistent pbc
-    if not all(np.all(np.equal(at.pbc, atoms_list[0].pbc)) for at in atoms_list[1:]):
-        raise ValueError("All systems must have the same periodic boundary conditions")
+    pbc = torch.tensor(
+        np.stack([at.pbc for at in atoms_list]), dtype=torch.bool, device=device
+    )
 
     _system_extras: dict[str, torch.Tensor] = {}
     if system_extras_map:
@@ -347,7 +334,7 @@ def atoms_to_state(
         positions=positions,
         masses=masses,
         cell=cell,
-        pbc=atoms_list[0].pbc,
+        pbc=pbc,
         atomic_numbers=atomic_numbers,
         system_idx=system_idx,
         _system_extras=_system_extras,
@@ -423,19 +410,14 @@ def structures_to_state(
         torch.arange(len(struct_list), device=device), atoms_per_system
     )
 
-    # Verify consistent pbc
-    if not all(tuple(s.pbc) == tuple(struct_list[0].pbc) for s in struct_list[1:]):
-        raise ValueError("All systems must have the same periodic boundary conditions")
-
-    pbc_struct = struct_list[0].pbc
-    pbc_state: torch.Tensor | list[bool] | bool = (
-        list(pbc_struct) if isinstance(pbc_struct, (list, tuple)) else pbc_struct
+    pbc = torch.tensor(
+        np.array([s.pbc for s in struct_list]), dtype=torch.bool, device=device
     )
     return ts.SimState(
         positions=positions,
         masses=masses,
         cell=cell,
-        pbc=pbc_state,
+        pbc=pbc,
         atomic_numbers=atomic_numbers,
         system_idx=system_idx,
     )
