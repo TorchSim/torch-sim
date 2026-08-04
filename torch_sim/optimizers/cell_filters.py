@@ -462,8 +462,11 @@ class CellFireState(CellOptimState, FireState):
 
     _system_attributes = (
         CellOptimState._system_attributes  # noqa: SLF001
-        | FireState._system_attributes  # noqa: SLF001
         | {"cell_velocities"}
+    )
+    _group_attributes = (
+        CellOptimState._group_attributes  # noqa: SLF001
+        | FireState._group_attributes  # noqa: SLF001
     )
 
 
