@@ -21,6 +21,13 @@ import torch
 
 logger = logging.getLogger(__name__)
 
+#: Below this, the SHAKE denominator is degenerate: the reference and proposed pair axes
+#: are nearly perpendicular, so the linearized correction is undefined for this step.
+_SHAKE_MIN_DENOMINATOR = 1e-12
+
+#: Pair count above which ``FixBondLengths.__repr__`` abbreviates.
+_REPR_MAX_PAIRS = 4
+
 if TYPE_CHECKING:
     from torch_sim.state import SimState
 
@@ -519,6 +526,475 @@ class FixAtoms(AtomConstraint):
         return f"FixAtoms(indices={indices_str})"
 
 
+class FixBondLengths(Constraint):
+    """Constrain interatomic distances with SHAKE and RATTLE.
+
+    Holds one or more pair distances at fixed values by projection rather than by a
+    stiff restraint potential. The distances are satisfied exactly, to the requested
+    tolerance, and no penalty term is added to the energy, so reported energies remain
+    the model's own.
+
+    Three projections are applied, following ``ase.constraints.FixBondLengths``:
+
+    - ``adjust_positions`` runs SHAKE: a mass-weighted correction along the current
+      pair axis that restores each target distance.
+    - ``adjust_momenta`` runs RATTLE: removes the relative velocity along each pair
+      axis, so a constraint satisfied in position stays satisfied as the system moves.
+    - ``adjust_forces`` applies the same projection to the forces, which removes the
+      constrained component of the relative acceleration.
+
+    All three are iterated, because constraints that share an atom are coupled and a
+    single pass would satisfy only the last one applied. Corrections are mass-weighted,
+    so a hydrogen moves further than the heavy atom it is bonded to.
+
+    Each constraint removes one degree of freedom from its system. Constraints must not
+    span two systems of a batch, which would couple otherwise independent systems.
+
+    Notes:
+        A common use is freezing fast X-H stretches so that molecular dynamics can take
+        a larger timestep. For geometry optimization the same projection confines the
+        search to the subspace orthogonal to the constrained coordinates.
+
+    Examples:
+        Hold two bonds at the lengths they have in the initial state:
+        >>> constraint = FixBondLengths([[0, 1], [1, 2]])
+
+        Hold two bonds at explicit target lengths, in Angstrom:
+        >>> constraint = FixBondLengths([[0, 1], [1, 2]], bond_lengths=[1.09, 1.52])
+    """
+
+    #: Iterations of the coupled projection before giving up.
+    max_iter: int = 500
+
+    def __init__(
+        self,
+        pairs: torch.Tensor | list[list[int]],
+        bond_lengths: torch.Tensor | list[float] | None = None,
+        tolerance: float = 1e-13,
+        max_iter: int | None = None,
+    ) -> None:
+        """Initialize a bond-length constraint.
+
+        Args:
+            pairs: Atom index pairs of shape (n_constraints, 2). Indices are global to
+                the state the constraint is attached to.
+            bond_lengths: Target distance per pair. When None, the distances present in
+                the state the first time the constraint is applied are used, so the
+                initial geometry defines the targets.
+            tolerance: Convergence threshold on the SHAKE and RATTLE multipliers.
+            max_iter: Iteration cap. Defaults to :attr:`max_iter`.
+
+        Raises:
+            ValueError: If pairs have the wrong shape or dtype, a pair repeats an atom,
+                the number of targets does not match the number of pairs, or a target
+                is not positive.
+        """
+        pairs_tensor = torch.atleast_2d(torch.as_tensor(pairs))
+        if pairs_tensor.ndim != 2 or pairs_tensor.shape[-1] != 2:
+            raise ValueError(
+                "pairs must have shape (n_constraints, 2), got "
+                f"{tuple(pairs_tensor.shape)}"
+            )
+        if torch.is_floating_point(pairs_tensor):
+            raise ValueError(
+                f"Atom indices must be integers, not dtype={pairs_tensor.dtype}"
+            )
+        if (pairs_tensor < 0).any():
+            raise ValueError("Atom indices must be non-negative.")
+        if bool((pairs_tensor[:, 0] == pairs_tensor[:, 1]).any()):
+            raise ValueError("A bond-length constraint cannot use the same atom twice.")
+
+        self.pairs = pairs_tensor.long()
+
+        if bond_lengths is None:
+            self.bond_lengths = None
+        else:
+            # The dtype is given at creation, not by a later cast: ``as_tensor`` on a
+            # list of Python floats would otherwise use the ambient default dtype, and a
+            # float32 default silently rounds a target such as 0.98 by ~2e-8 before any
+            # later promotion could recover it.
+            lengths = torch.atleast_1d(torch.as_tensor(bond_lengths, dtype=torch.float64))
+            if lengths.shape[0] != self.pairs.shape[0]:
+                raise ValueError(
+                    f"Got {self.pairs.shape[0]} pair(s) but {lengths.shape[0]} bond "
+                    "length(s); each pair needs exactly one target."
+                )
+            if bool((lengths <= 0).any()):
+                raise ValueError("Bond lengths must be positive.")
+            # Stored at double precision regardless of the ambient default dtype, and
+            # cast down to the state's dtype only at use. Storing a Python float as
+            # float32 would bake in a ~1e-8 error that no number of SHAKE iterations
+            # can remove, since the target itself would be wrong.
+            self.bond_lengths = lengths
+
+        self.tolerance = float(tolerance)
+        if max_iter is not None:
+            self.max_iter = int(max_iter)
+        #: Constraint contribution to the forces from the most recent
+        #: :meth:`adjust_forces` call, i.e. the Lagrange-multiplier force.
+        self.constraint_forces: torch.Tensor | None = None
+
+    def get_indices(self) -> torch.Tensor:
+        """Get the sorted, unique atom indices this constraint acts on.
+
+        Returns:
+            Tensor of atom indices appearing in any constrained pair
+        """
+        return torch.unique(self.pairs.flatten())
+
+    def get_bond_lengths(self, state: SimState) -> torch.Tensor:
+        """Get the target distances, measuring them from *state* if unset.
+
+        Args:
+            state: Simulation state used to define unset targets
+
+        Returns:
+            Target distance per constrained pair
+        """
+        if self.bond_lengths is None:
+            displacement = self._displacement(state, state.positions)
+            self.bond_lengths = torch.linalg.norm(displacement, dim=-1).to(torch.float64)
+            logger.debug(
+                "FixBondLengths: initialized %d bond length(s) from the state.",
+                self.bond_lengths.shape[0],
+            )
+        return self.bond_lengths.to(
+            device=state.positions.device, dtype=state.positions.dtype
+        )
+
+    def _displacement(self, state: SimState, positions: torch.Tensor) -> torch.Tensor:
+        """Get pair displacement vectors, applying the minimum image convention.
+
+        Args:
+            state: Simulation state supplying the cells and periodicity
+            positions: Positions to measure, of shape (n_atoms, 3)
+
+        Returns:
+            Displacement from the first to the second atom of each pair
+        """
+        pairs = self.pairs.to(positions.device)
+        delta = positions[pairs[:, 0]] - positions[pairs[:, 1]]
+        return self._apply_minimum_image(state, delta)
+
+    def _apply_minimum_image(self, state: SimState, delta: torch.Tensor) -> torch.Tensor:
+        """Apply the minimum image convention to per-pair displacements.
+
+        Each pair is wrapped with the cell of the system it belongs to, so a batch of
+        systems with different cells is handled correctly.
+
+        Args:
+            state: Simulation state supplying the cells and periodicity
+            delta: Per-pair displacement vectors of shape (n_constraints, 3)
+
+        Returns:
+            Minimum-image displacement vectors
+        """
+        pbc = state.pbc
+        if isinstance(pbc, bool):
+            if not pbc:
+                return delta
+            pbc = torch.ones(3, dtype=torch.bool, device=delta.device)
+        pbc = pbc.to(delta.device)
+        if not bool(pbc.any()) or state.cell is None:
+            return delta
+
+        system_idx = state.system_idx
+        if system_idx is None:
+            return delta
+        pairs = self.pairs.to(delta.device)
+        # SimState stores cells in the column vector convention, so the lattice vectors
+        # are the columns and fractional coordinates follow from solving cell @ f = dr.
+        cells = state.cell[system_idx[pairs[:, 0]]].to(delta.device)
+        fractional = torch.linalg.solve(cells, delta.unsqueeze(-1)).squeeze(-1)
+        fractional = fractional - torch.where(
+            pbc, torch.round(fractional), torch.zeros_like(fractional)
+        )
+        return torch.matmul(cells, fractional.unsqueeze(-1)).squeeze(-1)
+
+    def _reduced_masses(self, state: SimState) -> tuple[torch.Tensor, torch.Tensor]:
+        """Get the per-pair inverse masses and reduced masses.
+
+        Args:
+            state: Simulation state supplying the masses
+
+        Returns:
+            Tuple of (stacked inverse masses of the two atoms, reduced mass) per pair
+        """
+        pairs = self.pairs.to(state.masses.device)
+        inverse = 1.0 / state.masses[pairs]
+        reduced = 1.0 / inverse.sum(dim=-1)
+        return inverse, reduced
+
+    def get_removed_dof(self, state: SimState) -> torch.Tensor:
+        """Get the number of degrees of freedom removed per system.
+
+        Each constrained distance removes exactly one degree of freedom.
+
+        Args:
+            state: Simulation state
+
+        Returns:
+            Number of degrees of freedom removed, per system
+
+        Raises:
+            ValueError: If system_idx is unset, or a constraint spans two systems
+        """
+        system_idx = state.system_idx
+        if system_idx is None:
+            raise ValueError("FixBondLengths requires system_idx to be set")
+        pairs = self.pairs.to(system_idx.device)
+        first, second = system_idx[pairs[:, 0]], system_idx[pairs[:, 1]]
+        if not torch.equal(first, second):
+            offending = torch.nonzero(first != second).flatten().tolist()
+            raise ValueError(
+                f"FixBondLengths constraint(s) {offending} span more than one system. "
+                "A constraint must stay within a single system."
+            )
+        return torch.bincount(first, minlength=state.n_systems)
+
+    def adjust_positions(self, state: SimState, new_positions: torch.Tensor) -> None:
+        """Apply the SHAKE projection so every constrained distance meets its target.
+
+        Args:
+            state: Current simulation state, supplying the reference geometry and masses
+            new_positions: Proposed positions, adjusted in-place
+        """
+        targets = self.get_bond_lengths(state)
+        pairs = self.pairs.to(new_positions.device)
+        first, second = pairs[:, 0], pairs[:, 1]
+        inverse_masses, reduced = self._reduced_masses(state)
+        inverse_masses = inverse_masses.to(new_positions.dtype)
+        reduced = reduced.to(new_positions.dtype)
+
+        raw_reference = state.positions[first] - state.positions[second]
+        reference = self._apply_minimum_image(state, raw_reference)
+        # Shift the proposed displacement by whatever lattice offset the minimum image
+        # applied to the reference, so both live in the same image.
+        image_shift = reference - raw_reference
+
+        for _ in range(self.max_iter):
+            proposed = new_positions[first] - new_positions[second] + image_shift
+            denominator = (reference * proposed).sum(dim=-1)
+            numerator = targets**2 - (proposed * proposed).sum(dim=-1)
+            multiplier = torch.where(
+                denominator.abs() > _SHAKE_MIN_DENOMINATOR,
+                0.5 * numerator / denominator,
+                torch.zeros_like(denominator),
+            )
+            if float(multiplier.abs().max()) <= self.tolerance:
+                return
+            scaled = (multiplier * reduced).unsqueeze(-1) * reference
+            new_positions.index_add_(
+                0, first, scaled * inverse_masses[:, 0].unsqueeze(-1)
+            )
+            new_positions.index_add_(
+                0, second, -scaled * inverse_masses[:, 1].unsqueeze(-1)
+            )
+
+        self._warn_not_converged("SHAKE", float(multiplier.abs().max()))
+
+    def adjust_momenta(self, state: SimState, momenta: torch.Tensor) -> None:
+        """Apply the RATTLE projection, removing relative motion along each pair axis.
+
+        Args:
+            state: Current simulation state, supplying the geometry and masses
+            momenta: Momenta, adjusted in-place
+        """
+        targets = self.get_bond_lengths(state)
+        pairs = self.pairs.to(momenta.device)
+        first, second = pairs[:, 0], pairs[:, 1]
+        inverse_masses, reduced = self._reduced_masses(state)
+        inverse_masses = inverse_masses.to(momenta.dtype)
+        reduced = reduced.to(momenta.dtype)
+        reference = self._displacement(state, state.positions).to(momenta.dtype)
+
+        for _ in range(self.max_iter):
+            relative = momenta[first] * inverse_masses[:, 0].unsqueeze(-1) - momenta[
+                second
+            ] * inverse_masses[:, 1].unsqueeze(-1)
+            multiplier = -(relative * reference).sum(dim=-1) / targets**2
+            if float(multiplier.abs().max()) <= self.tolerance:
+                return
+            scaled = (multiplier * reduced).unsqueeze(-1) * reference
+            momenta.index_add_(0, first, scaled)
+            momenta.index_add_(0, second, -scaled)
+
+        self._warn_not_converged("RATTLE", float(multiplier.abs().max()))
+
+    def adjust_forces(self, state: SimState, forces: torch.Tensor) -> None:
+        """Remove the constrained component of the relative acceleration.
+
+        The forces are projected exactly as the momenta are, since force divided by mass
+        is an acceleration just as momentum divided by mass is a velocity. The constraint
+        contribution is recorded in :attr:`constraint_forces`.
+
+        Args:
+            state: Current simulation state
+            forces: Forces, adjusted in-place
+        """
+        self.constraint_forces = -forces.clone()
+        self.adjust_momenta(state, forces)
+        self.constraint_forces += forces
+
+    def _warn_not_converged(self, scheme: str, residual: float) -> None:
+        """Warn that a projection hit its iteration cap.
+
+        Args:
+            scheme: Name of the projection that failed to converge
+            residual: Largest remaining multiplier
+        """
+        msg = (
+            f"{scheme} did not converge in {self.max_iter} iterations; largest remaining "
+            f"multiplier is {residual:.3e} against a tolerance of {self.tolerance:.3e}. "
+            "This usually means two constraints are geometrically incompatible, or the "
+            "requested tolerance is below the working precision."
+        )
+        warnings.warn(msg, UserWarning, stacklevel=3)
+        logger.warning(msg)
+
+    def select_constraint(
+        self,
+        atom_mask: torch.Tensor,
+        system_mask: torch.Tensor,  # noqa: ARG002
+    ) -> None | Self:
+        """Update the constraint to account for atom and system masks.
+
+        A constraint survives only when both of its atoms are kept, since half a
+        distance constraint is meaningless.
+
+        Args:
+            atom_mask: Boolean mask for atoms to keep
+            system_mask: Boolean mask for systems to keep
+
+        Returns:
+            The remapped constraint, or None when no pair survives
+        """
+        atom_mask = torch.as_tensor(atom_mask, dtype=torch.bool)
+        pairs = self.pairs.to(atom_mask.device)
+        keep = atom_mask[pairs[:, 0]] & atom_mask[pairs[:, 1]]
+        if not bool(keep.any()):
+            return None
+        remap = torch.cumsum(atom_mask.long(), dim=0) - 1
+        lengths = None if self.bond_lengths is None else self.bond_lengths[keep]
+        return type(self)(remap[pairs[keep]], lengths, self.tolerance, self.max_iter)
+
+    def select_sub_constraint(
+        self,
+        atom_idx: torch.Tensor,
+        sys_idx: int,  # noqa: ARG002
+    ) -> None | Self:
+        """Select the constraints belonging to a single system.
+
+        Args:
+            atom_idx: Atom indices for a single system
+            sys_idx: System index for a single system
+
+        Returns:
+            The constraint rebased to local indices, or None when no pair survives
+        """
+        atom_idx = torch.as_tensor(atom_idx)
+        pairs = self.pairs.to(atom_idx.device)
+        keep = torch.isin(pairs[:, 0], atom_idx) & torch.isin(pairs[:, 1], atom_idx)
+        if not bool(keep.any()):
+            return None
+        lengths = None if self.bond_lengths is None else self.bond_lengths[keep]
+        return type(self)(
+            pairs[keep] - int(atom_idx.min()), lengths, self.tolerance, self.max_iter
+        )
+
+    def reindex(self, atom_offset: int, system_offset: int) -> Self:  # noqa: ARG002
+        """Return a copy with atom indices shifted by atom_offset.
+
+        Args:
+            atom_offset: Offset to add to atom indices
+            system_offset: Offset to add to system indices
+
+        Returns:
+            The reindexed constraint
+        """
+        return type(self)(
+            self.pairs + atom_offset, self.bond_lengths, self.tolerance, self.max_iter
+        )
+
+    @classmethod
+    def merge(cls, constraints: list[Constraint]) -> Self:
+        """Merge already-reindexed constraints by concatenating their pairs.
+
+        Args:
+            constraints: Constraints to merge, already reindexed
+
+        Returns:
+            A single merged constraint
+
+        Raises:
+            ValueError: If no constraint of this type is present, or some but not all
+                have explicit bond lengths
+        """
+        matching = [c for c in constraints if isinstance(c, cls)]
+        if not matching:
+            raise ValueError(
+                f"{cls.__name__}.merge requires at least one {cls.__name__}."
+            )
+
+        explicit = [c for c in matching if c.bond_lengths is not None]
+        if explicit and len(explicit) != len(matching):
+            raise ValueError(
+                f"Cannot merge {cls.__name__} constraints where some have explicit bond "
+                "lengths and others do not; the merged targets would be ambiguous."
+            )
+        lengths = torch.cat([c.bond_lengths for c in explicit]) if explicit else None
+        return cls(
+            torch.cat([c.pairs for c in matching]),
+            lengths,
+            # The strictest settings win, so merging never loosens a constraint.
+            min(c.tolerance for c in matching),
+            max(c.max_iter for c in matching),
+        )
+
+    def to(
+        self,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,  # noqa: ARG002
+    ) -> Self:
+        """Return a copy with internal tensors moved to *device*.
+
+        The target bond lengths are deliberately **not** cast to *dtype*. They are the
+        definition of the constraint rather than working data, and rounding them to
+        single precision would introduce an error of order 1e-8 A that no amount of
+        iteration can remove. They are kept at double precision and cast down only when
+        applied, so the working precision of a projection still follows the state.
+
+        Args:
+            device: Target device
+            dtype: Ignored, see above
+
+        Returns:
+            The moved constraint
+        """
+        lengths = self.bond_lengths
+        if lengths is not None:
+            lengths = lengths.to(device=device)
+        return type(self)(
+            self.pairs.to(device=device), lengths, self.tolerance, self.max_iter
+        )
+
+    def __repr__(self) -> str:
+        """String representation of the constraint."""
+        n_pairs = self.pairs.shape[0]
+        if self.bond_lengths is None:
+            targets = "from state"
+        elif n_pairs <= _REPR_MAX_PAIRS:
+            targets = str([round(float(v), 3) for v in self.bond_lengths])
+        else:
+            targets = f"{n_pairs} targets"
+        shown = (
+            self.pairs.tolist()
+            if n_pairs <= _REPR_MAX_PAIRS
+            else f"{self.pairs[:3].tolist()}..."
+        )
+        return f"FixBondLengths(pairs={shown}, bond_lengths={targets})"
+
+
 class FixCom(SystemConstraint):
     """Constraint that fixes the center of mass of all atoms per system.
 
@@ -733,6 +1209,12 @@ def validate_constraints(constraints: list[Constraint], state: SimState) -> None
         elif isinstance(constraint, SystemConstraint):
             check_no_index_out_of_bounds(
                 constraint.system_idx, state.n_systems, type(constraint).__name__
+            )
+        elif isinstance(constraint, FixBondLengths):
+            # Acts on atom pairs rather than a flat index list, so it is not an
+            # AtomConstraint, but its indices still need bounds checking.
+            check_no_index_out_of_bounds(
+                constraint.pairs.flatten(), state.n_atoms, type(constraint).__name__
             )
 
         if isinstance(constraint, FixCom):
