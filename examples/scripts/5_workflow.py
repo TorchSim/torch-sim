@@ -49,7 +49,7 @@ log.info("SECTION 1: In-Flight Autobatching Workflow")
 
 
 log.info("Loading MACE model...")
-mace = mace_mp(model="medium", return_raw_model=True)
+mace = mace_mp(model="medium-mpa-0", return_raw_model=True)
 mace_model = MaceModel(
     model=mace,
     device=device,
@@ -158,7 +158,7 @@ log.info("SECTION 2: Elastic Constants Calculation")
 dtype_elastic = torch.float64
 
 loaded_model = mace_mp(
-    model="medium",
+    model="medium-mpa-0",
     enable_cueq=False,
     device=str(device),
     default_dtype=str(dtype_elastic).removeprefix("torch."),
