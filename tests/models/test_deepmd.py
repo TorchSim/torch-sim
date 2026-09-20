@@ -52,7 +52,7 @@ def model_path(tmp_path_factory: pytest.TempPathFactory) -> str:
     dest = tmp_path_factory.mktemp("deepmd") / "DPA-3.1-3M.pt"
     for attempt in range(MAX_RETRIES):
         try:
-            urllib.request.urlretrieve(_MODEL_URL, dest)
+            urllib.request.urlretrieve(_MODEL_URL, dest)  # noqa: S310
         except (urllib.error.URLError, TimeoutError) as exc:
             if attempt == MAX_RETRIES - 1:
                 pytest.skip(f"could not download DPA-3.1-3M from {_MODEL_URL}: {exc}")
