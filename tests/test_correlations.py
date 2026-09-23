@@ -28,9 +28,19 @@ class MockState:
     the components needed for correlation calculations.
     """
 
-    def __init__(self, velocities: torch.Tensor, device: torch.device) -> None:
+    def __init__(
+        self,
+        velocities: torch.Tensor,
+        device: torch.device,
+        masses: torch.Tensor | None = None,
+    ) -> None:
         """Initialize mock state with provided data."""
         self.velocities = velocities
+        self.masses = (
+            torch.ones(velocities.shape[0], device=device, dtype=velocities.dtype)
+            if masses is None
+            else masses
+        )
         self.device = device
         # Required for TrajectoryReporter
         self.n_systems = 1
@@ -436,6 +446,45 @@ def test_velocity_autocorrelation(mock_state_factory: Callable) -> None:
     # min/max at [-1.0, 1.0]
     assert torch.max(vacf) <= 1.0 + 1e-2
     assert torch.min(vacf) >= -1.0 - 1e-2
+
+
+@pytest.mark.parametrize("normalize", [False, True])
+def test_mass_weighted_velocity_autocorrelation(normalize) -> None:
+    """Test that atomic masses weight the raw ACF before normalization."""
+    window_size = 8
+    masses = torch.tensor([1.0, 4.0], device=DEVICE)
+    t = torch.arange(window_size, device=DEVICE)
+
+    velocity_history = torch.zeros(window_size, 2, 3, device=DEVICE)
+    velocity_history[:, 0] = torch.cos(2 * math.pi * t / 4).unsqueeze(-1)
+    velocity_history[:, 1] = torch.cos(2 * math.pi * t / 8).unsqueeze(-1)
+
+    vacf_calc = VelocityAutoCorrelation(
+        window_size=window_size,
+        device=DEVICE,
+        use_running_average=False,
+        normalize=normalize,
+        mass_weighted=True,
+    )
+
+    for velocities in velocity_history:
+        vacf_calc(MockState(velocities, DEVICE, masses))
+
+    centered = velocity_history - velocity_history.mean(dim=0, keepdim=True)
+    expected_acf = torch.stack(
+        [
+            torch.sum(centered[: window_size - lag] * centered[lag:], dim=0)
+            for lag in range(window_size)
+        ]
+    )
+    expected = torch.sum(
+        expected_acf.mean(dim=2) * masses.unsqueeze(0), dim=1
+    ) / masses.sum()
+    if normalize:
+        expected = expected / expected[0]
+
+    assert vacf_calc.vacf is not None
+    assert torch.allclose(vacf_calc.vacf, expected, atol=1e-5)
 
 
 def test_velocity_autocorrelation_with_trajectory_reporter(

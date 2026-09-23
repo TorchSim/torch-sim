@@ -393,7 +393,7 @@ class VelocityAutoCorrelation:
     """Calculator for velocity autocorrelation function (VACF).
 
     Computes VACF by averaging over atoms and dimensions, with optional
-    running average across correlation windows.
+    mass weighting and running average across correlation windows.
 
 
     Using ``VelocityAutoCorrelation`` with
@@ -422,6 +422,7 @@ class VelocityAutoCorrelation:
         device: torch.device,
         use_running_average: bool = True,
         normalize: bool = True,
+        mass_weighted: bool = False,
     ) -> None:
         """Initialize VACF calculator.
 
@@ -429,15 +430,21 @@ class VelocityAutoCorrelation:
             window_size: Number of steps in correlation window
             device: Computation device
             use_running_average: Whether to compute running average across windows
-            normalize: Whether to normalize correlation functions to [0,1]
+            normalize: Whether to normalize correlations at zero lag
+            mass_weighted: Whether to weight each atom's raw VACF by its mass
+                before normalization
         """
+        # Mass weighting must be applied before normalization. Normalizing each
+        # atom/component first would cancel the multiplicative mass weights.
         self.corr_calc = CorrelationCalculator(
             window_size=window_size,
             properties={"velocity": lambda s: s.velocities},
             device=device,
-            normalize=normalize,
+            normalize=normalize and not mass_weighted,
         )
         self.use_running_average = use_running_average
+        self.normalize = normalize
+        self.mass_weighted = mass_weighted
         self._window_count = 0
         self._avg = torch.zeros(window_size, device=device)
 
@@ -455,8 +462,20 @@ class VelocityAutoCorrelation:
 
         if self.corr_calc.buffers["velocity"].count == self.corr_calc.window_size:
             correlations = self.corr_calc.get_auto_correlations()
-            # dims: (natoms, ndims)
-            vacf = torch.mean(correlations["velocity"], dim=(1, 2))
+            velocity_acf = correlations["velocity"]
+            # velocity_acf shape: (window_size, n_atoms, n_dimensions)
+            if self.mass_weighted:
+                masses = state.masses.to(
+                    device=velocity_acf.device, dtype=velocity_acf.dtype
+                )
+                atom_vacf = torch.mean(velocity_acf, dim=2)
+                vacf = torch.sum(atom_vacf * masses.unsqueeze(0), dim=1) / torch.sum(
+                    masses
+                )
+                if self.normalize and vacf[0] > 1e-10:
+                    vacf = vacf / vacf[0]
+            else:
+                vacf = torch.mean(velocity_acf, dim=(1, 2))
 
             self._window_count += 1
 
