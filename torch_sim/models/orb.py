@@ -20,6 +20,7 @@ try:
 
     import torch_sim as ts
     from torch_sim.elastic import voigt_6_to_full_3x3_stress
+    from torch_sim.state import _to_legacy_pbc_state
 
     # Re-export with backward-compatible name
     class OrbModel(OrbTorchSimModel):
@@ -83,10 +84,14 @@ try:
 
         def forward(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
             """Run forward pass, detaching outputs unless retain_graph is True."""
+            # orb-models reads state.pbc as a single global setting, so present
+            # the shared (3,) row until it supports per-system pbc.
             if args and isinstance(args[0], ts.SimState):
-                args = (self._normalize_charge_spin(args[0]), *args[1:])
+                state = self._normalize_charge_spin(args[0])
+                args = (_to_legacy_pbc_state(state), *args[1:])
             elif isinstance(kwargs.get("state"), ts.SimState):
-                kwargs["state"] = self._normalize_charge_spin(kwargs["state"])
+                state = self._normalize_charge_spin(kwargs["state"])
+                kwargs["state"] = _to_legacy_pbc_state(state)
             output = super().forward(*args, **kwargs)
             return {  # detach tensors as energy is not detached by default
                 k: v.detach() if hasattr(v, "detach") else v for k, v in output.items()

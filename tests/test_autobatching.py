@@ -122,11 +122,7 @@ def test_calculate_scaling_metric_non_periodic(benzene_sim_state: ts.SimState) -
         benzene_sim_state.positions.max(dim=0).values
         - benzene_sim_state.positions.min(dim=0).values
     ).clone()
-    pbc_tensor = torch.as_tensor(
-        benzene_sim_state.pbc, device=benzene_sim_state.device, dtype=torch.bool
-    )
-    if pbc_tensor.ndim == 0:
-        pbc_tensor = pbc_tensor.repeat(3)
+    pbc_tensor = benzene_sim_state.pbc.reshape(-1)
     for idx, p in enumerate(pbc_tensor):
         if not p:
             bbox[idx] += 2.0
@@ -147,11 +143,38 @@ def test_calculate_scaling_metric_mixed_pbc_uses_per_system_path(
             split_state.positions.max(dim=0).values
             - split_state.positions.min(dim=0).values
         ).clone()
-        split_state_pbc = torch.as_tensor(split_state.pbc, dtype=torch.bool).tolist()
+        split_state_pbc = split_state.pbc.reshape(-1).tolist()
         for axis_idx, is_periodic in enumerate(split_state_pbc):
             if not is_periodic:
                 bbox[axis_idx] += 2.0
         volume = bbox.prod() / 1000
+        expected_values.append(
+            split_state.n_atoms * (split_state.n_atoms / volume.item())
+        )
+    assert metric_values == pytest.approx(expected_values, rel=1e-5)
+
+
+def test_calculate_scaling_metric_mixed_pbc_batch(
+    si_sim_state: ts.SimState, benzene_sim_state: ts.SimState
+) -> None:
+    """Full-pbc, partial-pbc, and molecule systems each use the right volume."""
+    partial = ts.SimState.from_state(si_sim_state, pbc=[True, False, True])
+    state = ts.concatenate_states([si_sim_state, partial, benzene_sim_state])
+
+    metric_values = calculate_memory_scalers(state, "n_atoms_x_density")
+    expected_values: list[float] = []
+    for split_state in state.split():
+        if split_state.pbc.all():
+            volume = torch.abs(torch.linalg.det(split_state.cell[0])) / 1000
+        else:
+            bbox = (
+                split_state.positions.max(dim=0).values
+                - split_state.positions.min(dim=0).values
+            ).clone()
+            for axis_idx, is_periodic in enumerate(split_state.pbc.reshape(-1).tolist()):
+                if not is_periodic:
+                    bbox[axis_idx] += 2.0
+            volume = bbox.prod() / 1000
         expected_values.append(
             split_state.n_atoms * (split_state.n_atoms / volume.item())
         )

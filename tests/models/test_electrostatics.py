@@ -96,6 +96,46 @@ def test_dsf_nonzero_energy() -> None:
 @pytest.mark.parametrize(
     ("model_cls", "kwargs"),
     [
+        pytest.param(EwaldModel, {"cutoff": 8.0, "accuracy": 1e-6}, id="ewald"),
+        pytest.param(
+            PMEModel,
+            {"cutoff": 8.0, "accuracy": 1e-6, "mesh_spacing": 1.0},
+            id="pme",
+        ),
+    ],
+)
+def test_mixed_pbc_batch_zero_fills_non_periodic(
+    model_cls: type[EwaldModel | PMEModel],
+    kwargs: dict[str, float],
+    benzene_sim_state: ts.SimState,
+) -> None:
+    """Mixed batches compute periodic systems and zero-fill non-periodic ones."""
+    model = model_cls(
+        **kwargs,
+        device=DEVICE,
+        dtype=DTYPE,
+        compute_forces=True,
+        compute_stress=True,
+    )
+    periodic = _make_charged_state()
+    # Charges only make the molecule batchable with the charged system; the
+    # values are never used because the non-periodic system is zero-filled.
+    molecule = _add_partial_charges(benzene_sim_state)
+    mixed = ts.concatenate_states([periodic, molecule])
+
+    out = model(mixed)
+    ref = model(periodic)
+    torch.testing.assert_close(out["energy"][0], ref["energy"][0])
+    torch.testing.assert_close(out["forces"][: periodic.n_atoms], ref["forces"])
+    torch.testing.assert_close(out["stress"][0], ref["stress"][0])
+    assert out["energy"][1] == 0
+    assert torch.all(out["forces"][periodic.n_atoms :] == 0)
+    assert torch.all(out["stress"][1] == 0)
+
+
+@pytest.mark.parametrize(
+    ("model_cls", "kwargs"),
+    [
         pytest.param(DSFCoulombModel, {"cutoff": 8.0, "alpha": 0.2}, id="dsf"),
         pytest.param(EwaldModel, {"cutoff": 8.0, "accuracy": 1e-6}, id="ewald"),
         pytest.param(

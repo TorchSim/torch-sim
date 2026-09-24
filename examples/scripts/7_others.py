@@ -56,9 +56,6 @@ n_atoms = state.n_atoms
 cutoff = 4.0
 self_interaction = False
 
-# Ensure pbc has the correct shape [n_systems, 3]
-pbc_tensor = torch.tensor(pbc).repeat(state.n_systems, 1)
-
 log.info(f"Batched system with {state.n_systems} structures:")
 for i, atoms in enumerate(atoms_list):
     log.info(f"  Structure {i}: {atoms.get_chemical_formula()} ({len(atoms)} atoms)")
@@ -66,7 +63,7 @@ for i, atoms in enumerate(atoms_list):
 # Method 1: Linked cell neighbor list (efficient for large systems)
 log.info("Calculating neighbor lists with linked cell method...")
 mapping, mapping_system, shifts_idx = torch_nl_linked_cell(
-    pos, cell, pbc_tensor, cutoff, system_idx, self_interaction
+    pos, cell, pbc, cutoff, system_idx, self_interaction
 )
 cell_shifts = transforms.compute_cell_shifts(cell, shifts_idx, mapping_system)
 dds = transforms.compute_distances_with_cell_shifts(pos, mapping, cell_shifts)
@@ -82,7 +79,7 @@ log.info(f"  Total neighbor pairs: {mapping.shape[1]}")
 # Method 2: N^2 neighbor list (simple but slower)
 log.info("Calculating neighbor lists with N^2 method...")
 mapping_n2, mapping_system_n2, shifts_idx_n2 = torch_nl_n2(
-    pos, cell, pbc_tensor, cutoff, system_idx, self_interaction
+    pos, cell, pbc, cutoff, system_idx, self_interaction
 )
 cell_shifts_n2 = transforms.compute_cell_shifts(cell, shifts_idx_n2, mapping_system_n2)
 dds_n2 = transforms.compute_distances_with_cell_shifts(pos, mapping_n2, cell_shifts_n2)
