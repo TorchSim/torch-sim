@@ -162,6 +162,65 @@ def test_fire_optimization(
     )
 
 
+@pytest.mark.parametrize("fire_flavor", get_args(FireFlavor))
+def test_fire_uses_group_scoped_adaptive_state(
+    ar_double_sim_state: SimState, lj_model: ModelInterface, fire_flavor: FireFlavor
+) -> None:
+    ar_double_sim_state.group_idx = torch.zeros(
+        ar_double_sim_state.n_systems,
+        device=ar_double_sim_state.device,
+        dtype=torch.int64,
+    )
+
+    state = ts.fire_init(
+        ar_double_sim_state,
+        lj_model,
+        fire_flavor=fire_flavor,
+        dt_start=0.1,
+        alpha_start=0.1,
+    )
+
+    assert state.n_groups == 1
+    assert state.dt.shape == (1,)
+    assert state.alpha.shape == (1,)
+    assert state.n_pos.shape == (1,)
+
+    updated = ts.fire_step(state=state, model=lj_model, dt_max=0.3)
+
+    assert updated.dt.shape == (1,)
+    assert updated.alpha.shape == (1,)
+    assert updated.n_pos.shape == (1,)
+
+
+def test_fire_group_attributes_roundtrip_through_split_groups(
+    si_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
+    lj_model: ModelInterface,
+) -> None:
+    grouped = ts.concatenate_states([si_sim_state, si_sim_state, fe_supercell_sim_state])
+    grouped.group_idx = torch.tensor([0, 0, 1], device=grouped.device, dtype=torch.long)
+    dt_start = torch.tensor([0.1, 0.2], device=grouped.device)
+    alpha_start = torch.tensor([0.3, 0.4], device=grouped.device)
+    state = ts.fire_init(
+        grouped,
+        lj_model,
+        dt_start=dt_start,
+        alpha_start=alpha_start,
+    )
+    state.n_pos = torch.tensor([3, 4], device=grouped.device, dtype=torch.int32)
+
+    split_groups = state.split_groups()
+    roundtrip = ts.concatenate_states(split_groups)
+
+    assert len(split_groups) == 2
+    assert split_groups[0].n_systems == 2
+    assert split_groups[1].n_systems == 1
+    assert torch.allclose(roundtrip.dt, state.dt)
+    assert torch.allclose(roundtrip.alpha, state.alpha)
+    assert torch.equal(roundtrip.n_pos, state.n_pos)
+    assert torch.equal(roundtrip.group_idx, grouped.group_idx)
+
+
 def test_bfgs_optimization(
     ar_supercell_sim_state: SimState, lj_model: ModelInterface
 ) -> None:
