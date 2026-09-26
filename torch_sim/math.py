@@ -746,7 +746,11 @@ def matrix_log_33(
 
 
 def batched_vdot(
-    x: torch.Tensor, y: torch.Tensor, batch_indices: torch.Tensor
+    x: torch.Tensor,
+    y: torch.Tensor,
+    batch_indices: torch.Tensor,
+    *,
+    n_systems: int | None = None,
 ) -> torch.Tensor:
     """Computes batched vdot (sum of element-wise product) for groups of vectors.
 
@@ -754,6 +758,9 @@ def batched_vdot(
         x: Tensor of shape [N_total_entities, D] (e.g., forces, velocities).
         y: Tensor of shape [N_total_entities, D].
         batch_indices: Tensor of shape [N_total_entities] indicating batch membership.
+        n_systems: Known number of systems. When provided, indices must lie in
+            [0, n_systems). Skips scalar validation and size inference to avoid
+            synchronizing CUDA tensors with the CPU.
 
     Returns:
         Tensor: shape [n_systems] where each element is the sum(x_i * y_i)
@@ -769,10 +776,12 @@ def batched_vdot(
     ):
         raise ValueError(f"Invalid input shapes: {x.shape=}, {batch_indices.shape=}")
 
-    if batch_indices.min() < 0:
-        raise ValueError("batch_indices must be non-negative")
+    if n_systems is None:
+        if batch_indices.min() < 0:
+            raise ValueError("batch_indices must be non-negative")
+        n_systems = int(batch_indices.max()) + 1
 
-    output = torch.zeros(int(batch_indices.max()) + 1, dtype=x.dtype, device=x.device)
+    output = torch.zeros(n_systems, dtype=x.dtype, device=x.device)
     output.scatter_add_(dim=0, index=batch_indices, src=(x * y).sum(dim=1))
 
     return output
