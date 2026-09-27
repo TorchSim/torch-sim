@@ -196,9 +196,7 @@ def _vv_fire_step[T: "FireState | CellFireState"](
     state.velocities.masked_fill_(nan_velocities.unsqueeze(-1), 0)
     if isinstance(state, CellFireState):
         nan_cell_vel = state.cell_velocities.isnan().any(dim=(1, 2))
-        state.cell_velocities.masked_fill_(
-            (nan_cell_vel & nan_velocities.any()).view(n_systems, 1, 1), 0
-        )
+        state.cell_velocities.masked_fill_(nan_cell_vel.view(n_systems, 1, 1), 0)
 
     # First half of velocity update
     atom_wise_dt = state.dt[state.system_idx].unsqueeze(-1)

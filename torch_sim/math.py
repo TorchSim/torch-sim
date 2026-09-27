@@ -758,9 +758,9 @@ def batched_vdot(
         x: Tensor of shape [N_total_entities, D] (e.g., forces, velocities).
         y: Tensor of shape [N_total_entities, D].
         batch_indices: Tensor of shape [N_total_entities] indicating batch membership.
-        n_systems: Known number of systems. When provided, indices must lie in
-            [0, n_systems). Skips scalar validation and size inference to avoid
-            synchronizing CUDA tensors with the CPU.
+        n_systems: Known output size. When provided, batch_indices are assumed to
+            lie in [0, n_systems), avoiding scalar validation and size inference
+            that synchronize CUDA tensors with the CPU.
 
     Returns:
         Tensor: shape [n_systems] where each element is the sum(x_i * y_i)
