@@ -787,26 +787,23 @@ def test_fire_nan_velocities_dont_affect_other_systems(
 
 @pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
 def test_vv_fire_nan_cell_velocities_with_finite_atomic_velocities(
-    ar_supercell_sim_state: SimState,
+    ar_double_sim_state: SimState,
     lj_model: ModelInterface,
     cell_filter: ts.CellFilter,
 ) -> None:
     """Cell NaNs reset that system's cell velocity independently of atomic NaNs."""
-    multi = ts.concatenate_states(
-        [ar_supercell_sim_state, copy.deepcopy(ar_supercell_sim_state)]
-    )
-    multi.cell = multi.cell * 0.85
-    multi.positions = multi.positions * 0.85
+    ar_double_sim_state.cell *= 0.85
+    ar_double_sim_state.positions *= 0.85
     state = ts.fire_init(
-        state=multi, model=lj_model, fire_flavor="vv_fire", cell_filter=cell_filter
+        ar_double_sim_state, lj_model, fire_flavor="vv_fire", cell_filter=cell_filter
     )
     state.velocities.fill_(0.01)
     state.cell_velocities.fill_(0.02)
 
-    expected = copy.deepcopy(state)
+    # A single NaN should reset the whole cell velocity for that system.
+    expected = state.clone()
     expected.cell_velocities[1] = 0
     state.cell_velocities[1, 0, 0] = float("nan")
-    assert torch.isfinite(state.velocities).all()
 
     expected = ts.fire_step(state=expected, model=lj_model, fire_flavor="vv_fire")
     actual = ts.fire_step(state=state, model=lj_model, fire_flavor="vv_fire")
