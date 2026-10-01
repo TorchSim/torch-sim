@@ -181,3 +181,112 @@ test_d3_pbe_outputs = make_validate_model_outputs_test(
 test_d3_r2scan_outputs = make_validate_model_outputs_test(
     model_fixture_name="d3_model_r2scan", device=DEVICE, dtype=DTYPE
 )
+
+
+def test_d3_molecular_neighbor_cap_is_exact(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Non-periodic states size the neighbor matrix to the largest system, exactly."""
+    from ase.build import molecule
+
+    import torch_sim.models.dispersion as dispersion_module
+    from torch_sim.neighbors import torchsim_nl
+
+    state = ts.io.atoms_to_state(
+        [molecule("H2O"), molecule("C6H6"), molecule("CH3CH2OH")],
+        device=DEVICE,
+        dtype=DTYPE,
+    )
+    kwargs = {
+        **PBE_BJ,
+        "d3_params": _make_d3_params(),
+        "cutoff": 50.0,
+        "device": DEVICE,
+        "dtype": DTYPE,
+        "compute_stress": False,
+    }
+    seen: list[int | None] = []
+
+    def spy_nl(*args: object, **nl_kwargs: object) -> object:
+        seen.append(nl_kwargs.get("max_neighbors"))
+        return torchsim_nl(*args, **nl_kwargs)
+
+    def uncapped_nl(*args: object) -> object:
+        # A different callable than torchsim_nl, so the model leaves the width alone.
+        return torchsim_nl(*args)
+
+    capped = D3DispersionModel(**kwargs)
+    uncapped = D3DispersionModel(**kwargs, neighbor_list_fn=uncapped_nl)
+    monkeypatch.setattr(dispersion_module, "torchsim_nl", spy_nl)
+    capped.neighbor_list_fn = spy_nl
+
+    out_capped = capped(state)
+    out_uncapped = uncapped(state)
+
+    assert seen == [11]  # benzene, 12 atoms
+    torch.testing.assert_close(out_capped["energy"], out_uncapped["energy"])
+    torch.testing.assert_close(out_capped["forces"], out_uncapped["forces"])
+
+
+def test_d3_molecular_cap_never_widens_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Systems larger than the bulk-density estimate keep the default width."""
+    import torch_sim.models.dispersion as dispersion_module
+    from torch_sim.neighbors import torchsim_nl
+
+    seen: list[int | None] = []
+
+    def spy_nl(*args: object, **nl_kwargs: object) -> object:
+        seen.append(nl_kwargs.get("max_neighbors"))
+        return torchsim_nl(*args, **nl_kwargs)
+
+    monkeypatch.setattr(dispersion_module, "torchsim_nl", spy_nl)
+    model = D3DispersionModel(
+        **PBE_BJ,
+        d3_params=_make_d3_params(),
+        cutoff=2.0,  # estimate_max_neighbors(2.0) == 16
+        device=DEVICE,
+        dtype=DTYPE,
+        compute_stress=False,
+        neighbor_list_fn=spy_nl,
+    )
+    n_atoms = 40
+    positions = torch.zeros(n_atoms, 3, dtype=DTYPE)
+    positions[:, 0] = 1.5 * torch.arange(n_atoms, dtype=DTYPE)
+    state = ts.SimState(
+        positions=positions,
+        masses=torch.ones(n_atoms, dtype=DTYPE),
+        cell=torch.zeros(1, 3, 3, dtype=DTYPE),
+        pbc=False,
+        atomic_numbers=torch.full((n_atoms,), 6),
+        system_idx=torch.zeros(n_atoms, dtype=torch.int64),
+    )
+    model(state)
+    assert seen == [None]
+
+
+def test_d3_periodic_state_keeps_default_neighbor_width() -> None:
+    """Periodic states must not be capped: images add neighbors beyond n_atoms - 1."""
+    from torch_sim.neighbors import torchsim_nl
+
+    seen: list[int | None] = []
+
+    def spy_nl(*args: object, **nl_kwargs: object) -> object:
+        seen.append(nl_kwargs.get("max_neighbors"))
+        return torchsim_nl(*args, **nl_kwargs)
+
+    model = D3DispersionModel(
+        **PBE_BJ,
+        d3_params=_make_d3_params(),
+        cutoff=12.0,
+        device=DEVICE,
+        dtype=DTYPE,
+        neighbor_list_fn=spy_nl,
+    )
+    state = ts.SimState(
+        positions=torch.tensor([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], dtype=DTYPE),
+        masses=torch.ones(2, dtype=DTYPE),
+        cell=(4.0 * torch.eye(3, dtype=DTYPE)).unsqueeze(0),
+        pbc=True,
+        atomic_numbers=torch.tensor([6, 8]),
+        system_idx=torch.zeros(2, dtype=torch.int64),
+    )
+    model(state)
+    assert seen == [None]
