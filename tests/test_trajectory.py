@@ -9,6 +9,7 @@ import pytest
 import torch
 
 import torch_sim as ts
+from torch_sim.autobatching import InFlightAutoBatcher
 from torch_sim.integrators import MDState
 from torch_sim.models.interface import ModelInterface
 from torch_sim.models.lennard_jones import LennardJonesModel
@@ -1006,7 +1007,7 @@ def test_truncate_trajectory(
                 ValueError,
                 match=(
                     r"Cannot truncate to a step greater than the last step\. "
-                    r"self\.last_step=3 < step=10"
+                    r"last_written_step=3 < step=10"
                 ),
             ):
                 traj.truncate_to_step(10)
@@ -1047,8 +1048,10 @@ def test_truncate_trajectory_reporter(
             trajectory_reporter=trajectory_reporter,
         )
 
-        trajectory_reporter.truncate_to_step(step=min(trajectory_reporter.last_steps))
-        assert trajectory_reporter.last_steps == [5, 5]
+        trajectory_reporter.truncate_to_step(
+            step=min(trajectory_reporter.last_written_steps)
+        )
+        assert trajectory_reporter.last_written_steps == [5, 5]
         with pytest.raises(
             ValueError,
             match=(
@@ -1064,16 +1067,17 @@ def test_truncate_trajectory_reporter(
             trajectory_reporter.truncate_to_step(-2)
         # truncate to step 3
         trajectory_reporter.truncate_to_step(3)
-        assert trajectory_reporter.last_steps == [3, 3]
+        assert trajectory_reporter.last_written_steps == [3, 3]
 
 
 def test_integrate_uneven_trajectory_append(
     si_double_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
     """
-    Test appending to an existing trajectory with uneven frames running ts.integrate.
-    Expected behavior: ts.integrate should first truncate all trajectories to the shortest
-    length, and then append new frames to all trajectories.
+    Test appending to trajectory files that disagree on their last step.
+    ts.integrate advances a single step counter for the whole batch, so its files
+    must agree before it can resume. Disagreement is an error the caller resolves
+    by truncating to a common step explicitly.
     """
 
     # Create a temporary trajectory file
@@ -1167,3 +1171,453 @@ def test_optimize_save_initial_state(
                 steps = traj.get_steps("positions")
                 # Should start at step 0
                 np.testing.assert_allclose(steps, [0, 1, 2, 3])
+
+
+# ----------------------------------------------------------------------------------
+# Resuming and truncating with mismatched array cadences
+# ----------------------------------------------------------------------------------
+
+
+def _per_array_steps(traj_file: str | Path) -> dict[str, np.ndarray]:
+    """Map array name to its recorded steps, skipping global (step-0-only) arrays."""
+    with TorchSimTrajectory(traj_file, mode="r") as traj:
+        return {
+            name: traj.get_steps(name)
+            for name in traj.array_registry
+            if set(traj.get_steps(name).tolist()) != {0}
+        }
+
+
+def _run_integrate(
+    system: SimState,
+    model: LennardJonesModel,
+    traj_files: list[str],
+    *,
+    n_steps: int,
+    state_freq: int,
+    prop_freq: int,
+    mode: str = "w",
+) -> SimState:
+    """Run ts.integrate with independent state and property cadences."""
+    reporter = ts.TrajectoryReporter(
+        traj_files,
+        state_frequency=state_freq,
+        prop_calculators={prop_freq: {"potential_energy": lambda state: state.energy}},
+        trajectory_kwargs=dict(mode=mode),
+    )
+    return ts.integrate(
+        system=system,
+        model=model,
+        timestep=0.001,
+        n_steps=n_steps,
+        temperature=300.0,
+        integrator=ts.Integrator.nvt_langevin,
+        trajectory_reporter=reporter,
+    )
+
+
+def test_last_written_step_vs_last_step(test_file: Path, random_state: MDState) -> None:
+    """last_step tracks positions; last_written_step tracks all arrays."""
+    with TorchSimTrajectory(test_file, mode="w") as traj:
+        # both are None for an empty trajectory
+        assert traj.last_step is None
+        assert traj.last_written_step is None
+
+        traj.write_state(random_state, 0)
+        traj.write_state(random_state, 10)
+        for step in range(16):
+            traj.write_arrays({"potential_energy": torch.tensor([float(step)])}, step)
+
+        assert traj.last_step == 10
+        assert traj.last_written_step == 15
+        assert traj.last_step_of("positions") == 10
+        assert traj.last_step_of("potential_energy") == 15
+        assert traj.last_step_of("not_an_array") is None
+
+
+@pytest.mark.parametrize(
+    ("state_freq", "prop_freq"),
+    [(1, 1), (10, 1), (100, 10), (100, 30), (10, 100)],
+    ids=["matched", "sparse_state", "multiple", "non_multiple", "sparse_prop"],
+)
+def test_resume_preserves_monotonicity(
+    state_freq: int,
+    prop_freq: int,
+    si_double_sim_state: SimState,
+    lj_model: LennardJonesModel,
+    tmp_path: Path,
+) -> None:
+    """Resumption preserves strict per-array step monotonicity for any combination
+    of cadences, including non-multiples."""
+    traj_files = [str(tmp_path / f"monotonic_{idx}.h5") for idx in range(2)]
+
+    state = _run_integrate(
+        si_double_sim_state,
+        lj_model,
+        traj_files,
+        n_steps=15,
+        state_freq=state_freq,
+        prop_freq=prop_freq,
+    )
+    _run_integrate(
+        state,
+        lj_model,
+        traj_files,
+        n_steps=12,
+        state_freq=state_freq,
+        prop_freq=prop_freq,
+        mode="a",
+    )
+
+    for traj_file in traj_files:
+        for name, steps in _per_array_steps(traj_file).items():
+            assert np.all(np.diff(steps) > 0), f"{name} steps not monotonic: {steps}"
+
+
+def test_resume_does_not_discard_data(
+    si_double_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
+) -> None:
+    """No array may lose rows across a close/reopen cycle."""
+    traj_files = [str(tmp_path / f"no_discard_{idx}.h5") for idx in range(2)]
+
+    state = _run_integrate(
+        si_double_sim_state,
+        lj_model,
+        traj_files,
+        n_steps=15,
+        state_freq=100,
+        prop_freq=10,
+    )
+    before = {traj_file: _per_array_steps(traj_file) for traj_file in traj_files}
+
+    _run_integrate(
+        state,
+        lj_model,
+        traj_files,
+        n_steps=12,
+        state_freq=100,
+        prop_freq=10,
+        mode="a",
+    )
+
+    for traj_file in traj_files:
+        after = _per_array_steps(traj_file)
+        for name, steps in before[traj_file].items():
+            assert len(after[name]) >= len(steps)
+            assert after[name][-1] >= steps[-1]
+            # the pre-existing rows must be preserved verbatim
+            np.testing.assert_array_equal(after[name][: len(steps)], steps)
+
+
+def test_resume_continues_on_absolute_grid(
+    si_double_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
+) -> None:
+    """Each array resumes on its own absolute lattice."""
+    traj_files = [str(tmp_path / f"abs_grid_{idx}.h5") for idx in range(2)]
+    state_freq, prop_freq = 10, 3
+
+    # both runs end on a step divisible by 10 and by 3, so no final frame is
+    # written off-grid and every step must lie on its array's own lattice
+    state = _run_integrate(
+        si_double_sim_state,
+        lj_model,
+        traj_files,
+        n_steps=30,
+        state_freq=state_freq,
+        prop_freq=prop_freq,
+    )
+    _run_integrate(
+        state,
+        lj_model,
+        traj_files,
+        n_steps=30,
+        state_freq=state_freq,
+        prop_freq=prop_freq,
+        mode="a",
+    )
+
+    for traj_file in traj_files:
+        with TorchSimTrajectory(traj_file, mode="r") as traj:
+            pos_steps = traj.get_steps("positions")
+            energy_steps = traj.get_steps("potential_energy")
+        assert np.all(pos_steps % state_freq == 0)
+        assert np.all(energy_steps % prop_freq == 0)
+        # both grids span the interruption at step 30
+        assert pos_steps[-1] == 60
+        assert energy_steps[-1] == 60
+        assert 30 in pos_steps.tolist()
+        assert 33 in energy_steps.tolist()
+
+
+def test_truncate_aligns_all_arrays(test_file: Path, random_state: MDState) -> None:
+    """Explicit truncation trims every array, not just those on the positions grid."""
+    with TorchSimTrajectory(test_file, mode="w") as traj:
+        for step in (0, 100):
+            traj.write_state(random_state, step)
+        for step in range(0, 121, 30):
+            traj.write_arrays({"potential_energy": torch.tensor([float(step)])}, step)
+
+        assert traj.last_step == 100
+        assert traj.last_written_step == 120
+
+        # align every array to the last positions frame
+        traj.truncate_to_step(100)
+        assert traj.last_written_step == 100
+        for name in traj.array_registry:
+            assert traj.get_steps(name)[-1] <= 100
+
+        # a subsequent write at step 101 must now succeed
+        traj.write_state(random_state, 101)
+        traj.write_arrays({"potential_energy": torch.tensor([101.0])}, 101)
+        assert traj.last_written_step == 101
+
+
+def test_truncate_to_last_written_step_is_noop(
+    test_file: Path, random_state: MDState
+) -> None:
+    """Truncating to a step no array exceeds leaves every array untouched."""
+    with TorchSimTrajectory(test_file, mode="w") as traj:
+        for step in (0, 100):
+            traj.write_state(random_state, step)
+        for step in range(0, 121, 30):
+            traj.write_arrays({"potential_energy": torch.tensor([float(step)])}, step)
+
+        before = {name: traj.get_steps(name).copy() for name in traj.array_registry}
+        traj.truncate_to_step(120)
+        for name, steps in before.items():
+            np.testing.assert_array_equal(traj.get_steps(name), steps)
+
+
+def test_mismatched_cadence_emits_no_warning(
+    si_double_sim_state: SimState,
+    lj_model: LennardJonesModel,
+    tmp_path: Path,
+    recwarn: pytest.WarningsRecorder,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Reopening a multi-cadence trajectory is not an error condition."""
+    traj_files = [str(tmp_path / f"no_warn_{idx}.h5") for idx in range(2)]
+    _run_integrate(
+        si_double_sim_state,
+        lj_model,
+        traj_files,
+        n_steps=15,
+        state_freq=10,
+        prop_freq=1,
+    )
+
+    recwarn.clear()
+    with caplog.at_level("WARNING", logger="torch_sim.trajectory"):
+        for traj_file in traj_files:
+            TorchSimTrajectory(traj_file, mode="a").close()
+
+    assert not [w for w in recwarn if "Inconsistent last steps" in str(w.message)]
+    assert not [rec for rec in caplog.records if "Inconsistent last steps" in rec.message]
+
+
+def test_autobatcher_swap_does_not_warn(
+    lj_model: LennardJonesModel,
+    ar_supercell_sim_state: SimState,
+    tmp_path: Path,
+    recwarn: pytest.WarningsRecorder,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The InFlightAutoBatcher reopen path stays quiet under mismatched cadences."""
+    torch.manual_seed(0)
+    # staggered perturbations make systems converge in different swaps, so that a
+    # surviving system's file is reopened mid-run with its property array ahead of
+    # its positions array - the only configuration that trips the removed check
+    substates = []
+    for scale in (0.02, 0.05, 0.08, 0.12, 0.16, 0.2):
+        substate = ar_supercell_sim_state.clone()
+        substate.positions = (
+            substate.positions + torch.randn_like(substate.positions) * scale
+        )
+        substates.append(substate)
+    multi_state = ts.initialize_state(substates, lj_model.device, lj_model.dtype)
+
+    traj_files = [
+        str(tmp_path / f"swap_{idx}.h5") for idx in range(multi_state.n_systems)
+    ]
+    reporter = ts.TrajectoryReporter(
+        traj_files,
+        state_frequency=10,
+        prop_calculators={1: {"potential_energy": lambda state: state.energy}},
+    )
+    autobatcher = InFlightAutoBatcher(
+        model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=70
+    )
+
+    opened: set[str] = set()
+    reopened_mid_run: list[str] = []
+    original_reopen = reporter.reopen_trajectories
+
+    def spy(filenames: list[str]) -> None:
+        for name in map(str, filenames):
+            if name in opened:
+                reopened_mid_run.append(name)
+            opened.add(name)
+        original_reopen(filenames)
+
+    reporter.reopen_trajectories = spy
+
+    recwarn.clear()
+    with caplog.at_level("WARNING", logger="torch_sim.trajectory"):
+        ts.optimize(
+            system=multi_state,
+            model=lj_model,
+            optimizer=ts.Optimizer.fire,
+            convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
+            trajectory_reporter=reporter,
+            autobatcher=autobatcher,
+            max_steps=200,
+            steps_between_swaps=5,
+        )
+
+    assert reopened_mid_run, "no system survived a swap, scenario not exercised"
+    assert not [w for w in recwarn if "Inconsistent last steps" in str(w.message)]
+    assert not [rec for rec in caplog.records if "Inconsistent last steps" in rec.message]
+
+
+# ----------------------------------------------------------------------------------
+# final frame recording
+# ----------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("state_freq", "prop_freq", "n_steps"),
+    [(10, 10, 10), (10, 10, 13), (100, 10, 150), (10, 1, 15), (100, 30, 155)],
+    ids=["on_grid", "off_grid", "on_prop_grid", "dense_prop", "non_multiple"],
+)
+def test_final_frame_is_recorded(
+    state_freq: int,
+    prop_freq: int,
+    n_steps: int,
+    si_double_sim_state: SimState,
+    lj_model: LennardJonesModel,
+    tmp_path: Path,
+) -> None:
+    """The last recorded frame is the final state, on-grid or not.
+
+    The ``on_prop_grid`` and ``dense_prop`` cases end on the property cadence but
+    off the state cadence, so a guard keyed off the largest step across all arrays
+    would skip the final state write.
+    """
+    traj_files = [str(tmp_path / f"final_frame_{idx}.h5") for idx in range(2)]
+    final_state = _run_integrate(
+        si_double_sim_state,
+        lj_model,
+        traj_files,
+        n_steps=n_steps,
+        state_freq=state_freq,
+        prop_freq=prop_freq,
+    )
+
+    for idx, traj_file in enumerate(traj_files):
+        with TorchSimTrajectory(traj_file, mode="r") as traj:
+            assert traj.get_steps("positions")[-1] == n_steps
+            assert traj.get_steps("potential_energy")[-1] == n_steps
+            last_positions = torch.tensor(traj.get_array("positions")[-1])
+        torch.testing.assert_close(
+            last_positions.to(dtype=final_state.dtype),
+            final_state.split()[idx].positions,
+        )
+
+
+def test_no_duplicate_final_frame(
+    si_double_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
+) -> None:
+    """A run ending exactly on-grid does not double-write its last frame."""
+    traj_files = [str(tmp_path / f"no_dupe_{idx}.h5") for idx in range(2)]
+    _run_integrate(
+        si_double_sim_state,
+        lj_model,
+        traj_files,
+        n_steps=10,
+        state_freq=5,
+        prop_freq=5,
+    )
+
+    for traj_file in traj_files:
+        with TorchSimTrajectory(traj_file, mode="r") as traj:
+            np.testing.assert_array_equal(traj.get_steps("positions"), [0, 5, 10])
+            np.testing.assert_array_equal(traj.get_steps("potential_energy"), [0, 5, 10])
+
+
+def test_optimize_records_converged_state(
+    si_double_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
+) -> None:
+    """The converged geometry appears in its own trajectory."""
+    traj_files = [str(tmp_path / f"opt_final_{idx}.h5") for idx in range(2)]
+    state = si_double_sim_state
+    state.positions += torch.randn_like(state.positions) * 0.05
+
+    reporter = ts.TrajectoryReporter(traj_files, state_frequency=10)
+    final_states = ts.optimize(
+        system=state,
+        model=lj_model,
+        optimizer=ts.Optimizer.fire,
+        convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
+        trajectory_reporter=reporter,
+        max_steps=100,
+        steps_between_swaps=5,
+    )
+
+    for idx, traj_file in enumerate(traj_files):
+        with TorchSimTrajectory(traj_file, mode="r") as traj:
+            last_positions = torch.tensor(traj.get_array("positions")[-1])
+        torch.testing.assert_close(
+            last_positions.to(dtype=final_states.dtype),
+            final_states.split()[idx].positions,
+        )
+
+
+def test_optimize_final_frame_for_early_converging_systems(
+    lj_model: LennardJonesModel,
+    ar_supercell_sim_state: SimState,
+    fe_supercell_sim_state: SimState,
+    tmp_path: Path,
+) -> None:
+    """Systems popped out mid-run still get their final frame written."""
+    torch.manual_seed(0)
+    states = [
+        ar_supercell_sim_state,
+        fe_supercell_sim_state,
+        ar_supercell_sim_state,
+        fe_supercell_sim_state,
+    ]
+    multi_state = ts.initialize_state(states, lj_model.device, lj_model.dtype)
+    for sub, scale in enumerate((0.01, 0.05, 0.1, 0.2)):
+        mask = multi_state.system_idx == sub
+        multi_state.positions[mask] += (
+            torch.randn_like(multi_state.positions[mask]) * scale
+        )
+
+    traj_files = [
+        str(tmp_path / f"early_conv_{idx}.h5") for idx in range(multi_state.n_systems)
+    ]
+    reporter = ts.TrajectoryReporter(traj_files, state_frequency=10)
+    autobatcher = InFlightAutoBatcher(
+        model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=260
+    )
+
+    final_states = ts.optimize(
+        system=multi_state,
+        model=lj_model,
+        optimizer=ts.Optimizer.fire,
+        convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-1),
+        trajectory_reporter=reporter,
+        autobatcher=autobatcher,
+        max_steps=50,
+        steps_between_swaps=5,
+    )
+
+    # every file - not just those in the final batch - must end at its own
+    # system's final geometry
+    for idx, traj_file in enumerate(traj_files):
+        with TorchSimTrajectory(traj_file, mode="r") as traj:
+            last_positions = torch.tensor(traj.get_array("positions")[-1])
+        torch.testing.assert_close(
+            last_positions.to(dtype=final_states.dtype),
+            final_states.split()[idx].positions,
+        )

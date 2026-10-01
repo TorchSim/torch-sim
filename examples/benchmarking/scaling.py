@@ -57,7 +57,7 @@ MEMORY_SCALES_WITH = "n_atoms_x_density"
 def load_mace_model(device: torch.device) -> MaceModel:
     """Load MACE model for benchmarking."""
     loaded_model = mace_mp(
-        model="medium",
+        model="medium-mpa-0",
         return_raw_model=True,
         default_dtype="float64",
         device=str(device),

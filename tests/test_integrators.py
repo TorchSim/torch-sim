@@ -1,5 +1,6 @@
 import pytest
 import torch
+from ase.build import bulk
 
 import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
@@ -672,6 +673,113 @@ def test_npt_crescale_triclinic(
         state.positions[:n_atoms].mean(0) - state.positions[n_atoms:].mean(0)
     )
     assert pos_diff > 0.0001  # Systems should remain separated
+
+
+@pytest.mark.parametrize(
+    "integrator_name", ["npt_crescale_isotropic", "npt_crescale_triclinic"]
+)
+def test_npt_crescale_default_coupling_is_stable(integrator_name: str) -> None:
+    """The barostat defaults must not blow the cell up.
+
+    Every other c-rescale test passes ``tau_p``/``isothermal_compressibility``
+    explicitly, so the *defaults* were never exercised. With ``tau_p = 3 * dt``
+    the barostat relaxes pressure on the timescale of a single step, so it
+    integrates the instantaneous virial-pressure noise of a small cell as if it
+    were signal: this equilibrated LJ solid, held at its own pressure, tripled
+    in volume within ~4 steps and then crashed the neighbour list.
+
+    Guidance puts the barostat time at 10^2-10^4 timesteps (GROMACS' default
+    tau-p is 5 ps and its first-order coupling requires >=5 steps per tau;
+    LAMMPS recommends "a Pdamp of around 1000 timesteps").
+
+    Uses a local reduced-unit LJ model rather than the ``lj_model`` fixture:
+    the fixture's argon is far softer than the default compressibility assumes
+    (1e-6 bar^-1 ~ 100 GPa), and since only the ratio beta/tau_p enters the
+    equations of motion that mismatch lengthens the effective coupling time and
+    masks the instability.
+    """
+    model = LennardJonesModel(
+        sigma=1.0,
+        epsilon=1.0,
+        cutoff=1.2,
+        device=DEVICE,
+        dtype=DTYPE,
+        compute_forces=True,
+        compute_stress=True,
+    )
+    atoms = bulk("Ar", "fcc", a=2**0.5 * 2 ** (1 / 6)).repeat((3, 3, 3))
+    state = ts.io.atoms_to_state([atoms], device=DEVICE, dtype=DTYPE)
+    state.rng = 42
+
+    step_fn = getattr(ts, f"{integrator_name}_step")
+    dt = torch.tensor(0.002, dtype=DTYPE)
+    kT = torch.tensor(5.0, dtype=DTYPE) * MetalUnits.temperature
+    # Hold the system at its own pressure: any volume runaway is the barostat's
+    # doing, not a response to a genuine pressure imbalance.
+    external_pressure = torch.tensor(0.0, dtype=DTYPE)
+
+    state = ts.npt_crescale_init(state=state, model=model, dt=dt, kT=kT)
+    initial_volume = torch.det(state.cell).abs().clone()
+
+    for step in range(100):
+        state = step_fn(
+            state=state, model=model, dt=dt, kT=kT, external_pressure=external_pressure
+        )
+        assert torch.isfinite(state.cell).all(), (
+            f"{integrator_name}: non-finite cell at step {step + 1} with default "
+            "barostat coupling"
+        )
+
+    ratio = (torch.det(state.cell).abs() / initial_volume).tolist()
+    assert all(0.5 < r < 2.0 for r in ratio), (
+        f"{integrator_name}: default barostat changed the volume by {ratio} in "
+        "100 steps at the system's own pressure"
+    )
+
+
+def test_npt_crescale_init_accepts_per_system_coupling(
+    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
+) -> None:
+    """``tau_p``/``isothermal_compressibility`` may be given per system.
+
+    Both are declared ``float | torch.Tensor``, stored as ``[n_systems]`` and
+    consumed per system by the barostat, so a batch must be able to mix (say)
+    a soft and a stiff material. A ``x or default`` guard silently broke this:
+    a multi-element tensor raises "Boolean value of Tensor with more than one
+    value is ambiguous", and a legitimate 0.0 was replaced by the default.
+    """
+    dt = torch.tensor(0.001, dtype=DTYPE)
+    kT = torch.tensor(300.0, dtype=DTYPE) * MetalUnits.temperature
+    tau_p = torch.tensor([0.1, 0.05], dtype=DTYPE, device=DEVICE)
+    compressibility = torch.tensor([1e-4, 5e-5], dtype=DTYPE, device=DEVICE)
+
+    ar_double_sim_state.rng = 42
+    state = ts.npt_crescale_init(
+        state=ar_double_sim_state,
+        model=lj_model,
+        dt=dt,
+        kT=kT,
+        tau_p=tau_p,
+        isothermal_compressibility=compressibility,
+    )
+
+    assert torch.allclose(state.tau_p, tau_p)
+    assert torch.allclose(state.isothermal_compressibility, compressibility)
+
+    # Scalars still broadcast to every system.
+    ar_double_sim_state.rng = 42
+    scalar_state = ts.npt_crescale_init(
+        state=ar_double_sim_state,
+        model=lj_model,
+        dt=dt,
+        kT=kT,
+        tau_p=0.1,
+        isothermal_compressibility=1e-4,
+    )
+    assert scalar_state.tau_p.shape == (ar_double_sim_state.n_systems,)
+    assert scalar_state.isothermal_compressibility.shape == (
+        ar_double_sim_state.n_systems,
+    )
 
 
 def test_npt_crescale_triclinic_shear(

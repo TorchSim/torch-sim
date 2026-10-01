@@ -334,25 +334,8 @@ def lbfgs_step(  # noqa: PLR0915, C901
         ext_mask = atom_mask  # [S, M]
 
     if isinstance(state, CellLBFGSState):
-        # Get current deformation gradient
-        # reference_cell.mT: [S, 3, 3], row_vector_cell: [S, 3, 3]
-        cur_deform_grad = deform_grad(
-            state.reference_cell.mT, state.row_vector_cell
-        )  # [S, 3, 3]
-
-        # Transform forces to scaled coordinates
-        # forces: [N, 3], cur_deform_grad[system_idx]: [N, 3, 3] -> [N, 3]
-        forces_scaled = torch.bmm(
-            state.forces.unsqueeze(1),  # [N, 1, 3]
-            cur_deform_grad[state.system_idx],  # [N, 3, 3]
-        ).squeeze(1)  # [N, 3]
-
-        # Current fractional positions
-        # positions: [N, 3] -> frac_positions: [N, 3]
-        frac_positions = torch.linalg.solve(
-            cur_deform_grad[state.system_idx],  # [N, 3, 3]
-            state.positions.unsqueeze(-1),  # [N, 3, 1]
-        ).squeeze(-1)  # [N, 3]
+        forces_scaled = state.deform_grad_forces()  # [N, 3]
+        frac_positions = state.frac_positions()  # [N, 3]
 
         # Convert to padded per-system format: [S, M, 3]
         g_atoms = _atoms_to_padded(-forces_scaled, state.system_idx, n_systems, max_atoms)
@@ -505,9 +488,7 @@ def lbfgs_step(  # noqa: PLR0915, C901
         # pre-adjustment value.  Without this, any constraint that
         # modifies the cell (e.g. FixSymmetry) causes a zigzag where the
         # optimizer repeatedly proposes from a stale cell_positions.
-        adjusted_deform_grad = deform_grad(
-            state.reference_cell.mT, state.row_vector_cell
-        )  # [S, 3, 3]
+        adjusted_deform_grad = state.deform_grad()  # [S, 3, 3]
         if is_frechet:
             cell_factor_reshaped = state.cell_factor.view(n_systems, 1, 1)
             state.cell_positions = (
@@ -524,25 +505,12 @@ def lbfgs_step(  # noqa: PLR0915, C901
         # they are consistent with the next step's start-of-step deformation
         # gradient.  Without this, the LBFGS history vectors (s, y) mix two
         # different coordinate frames, corrupting the Hessian estimate.
-        state.prev_positions = torch.linalg.solve(
-            adjusted_deform_grad[state.system_idx],
-            state.positions.unsqueeze(-1),
-        ).squeeze(-1)  # [N, 3] (fractional in adjusted frame)
-        state.prev_forces = torch.bmm(
-            state.forces.unsqueeze(1),
-            adjusted_deform_grad[state.system_idx],
-        ).squeeze(1)  # [N, 3] (scaled in adjusted frame)
+        state.prev_positions = state.frac_positions()  # [N, 3]
+        state.prev_forces = state.deform_grad_forces()  # [N, 3]
 
         # Apply position step in fractional space, then convert to Cartesian
         new_frac = frac_positions + step_positions  # [N, 3]
-
-        new_deform_grad = adjusted_deform_grad  # already computed above
-        # new_positions = new_frac @ deform_grad^T
-        new_positions = torch.bmm(
-            new_frac.unsqueeze(1),  # [N, 1, 3]
-            new_deform_grad[state.system_idx].transpose(-2, -1),  # [N, 3, 3]
-        ).squeeze(1)  # [N, 3]
-        state.set_constrained_positions(new_positions)  # [N, 3]
+        state.set_constrained_positions(state.positions_from_frac(new_frac))  # [N, 3]
     else:
         state.prev_positions = state.positions.clone()  # [N, 3]
         state.prev_forces = state.forces.clone()  # [N, 3]
@@ -568,19 +536,8 @@ def lbfgs_step(  # noqa: PLR0915, C901
     # s = position difference, y = gradient difference
     if isinstance(state, CellLBFGSState):
         # Get new scaled forces and fractional positions for history
-        new_deform_grad = deform_grad(
-            state.reference_cell.mT, state.row_vector_cell
-        )  # [S, 3, 3]
-        # new_forces: [N, 3] -> new_forces_scaled: [N, 3]
-        new_forces_scaled = torch.bmm(
-            new_forces.unsqueeze(1),  # [N, 1, 3]
-            new_deform_grad[state.system_idx],  # [N, 3, 3]
-        ).squeeze(1)  # [N, 3]
-        # positions: [N, 3] -> new_frac_positions: [N, 3]
-        new_frac_positions = torch.linalg.solve(
-            new_deform_grad[state.system_idx],  # [N, 3, 3]
-            state.positions.unsqueeze(-1),  # [N, 3, 1]
-        ).squeeze(-1)  # [N, 3]
+        new_forces_scaled = state.deform_grad_forces()  # [N, 3]
+        new_frac_positions = state.frac_positions()  # [N, 3]
 
         # s_new_pos = frac_pos_new - frac_pos_old: [N, 3] -> [S, M, 3]
         s_new_pos_atoms = new_frac_positions - state.prev_positions  # [N, 3]

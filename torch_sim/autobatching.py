@@ -776,9 +776,6 @@ class InFlightAutoBatcher[T: SimState]:
     To avoid a slow memory estimation step, set the `max_memory_scaler` to a
     known value.
 
-    .. image:: https://github.com/janosh/diagrams/raw/main/assets/in-flight-auto-batcher/in-flight-auto-batcher.svg
-       :alt: In-flight auto-batcher diagram
-
     Attributes:
         model (ModelInterface): Model used for memory estimation and processing.
         memory_scales_with (str): Metric type used for memory estimation.

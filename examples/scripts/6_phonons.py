@@ -58,7 +58,7 @@ log.info("SECTION 1: Structure Relaxation")
 
 # Load the MACE model
 loaded_model = mace_mp(
-    model="medium",
+    model="medium-mpa-0",
     return_raw_model=True,
     default_dtype=str(dtype).removeprefix("torch."),
     device=str(device),

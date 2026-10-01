@@ -671,13 +671,24 @@ class SimState:
             self, system_extras_map=system_extras_map, atom_extras_map=atom_extras_map
         )
 
-    def to_structures(self) -> list["Structure"]:
+    def to_structures(
+        self,
+        *,
+        system_extras_map: dict[SystemExtras, str] | None = None,
+        atom_extras_map: dict[AtomExtras, str] | None = None,
+    ) -> list["Structure"]:
         """Convert the SimState to a list of pymatgen Structure objects.
+
+        Args:
+            system_extras_map: Map of ``{ts_key: pymatgen_key}`` for system extras.
+            atom_extras_map: Map of ``{ts_key: pymatgen_key}`` for atom extras.
 
         Returns:
             list[Structure]: A list of pymatgen Structure objects, one per system
         """
-        return ts.io.state_to_structures(self)
+        return ts.io.state_to_structures(
+            self, system_extras_map=system_extras_map, atom_extras_map=atom_extras_map
+        )
 
     def to_phonopy(self) -> list["PhonopyAtoms"]:
         """Convert the SimState to a list of PhonopyAtoms objects.

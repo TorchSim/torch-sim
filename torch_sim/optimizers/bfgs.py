@@ -247,25 +247,8 @@ def bfgs_step(  # noqa: C901, PLR0915
     )
 
     if isinstance(state, CellBFGSState):
-        # Get current deformation gradient
-        # reference_cell.mT: [S, 3, 3], row_vector_cell: [S, 3, 3]
-        cur_deform_grad = cell_filters.deform_grad(
-            state.reference_cell.mT, state.row_vector_cell
-        )  # [S, 3, 3]
-
-        # Transform forces to scaled coordinates
-        # forces: [N, 3], cur_deform_grad[system_idx]: [N, 3, 3]
-        forces_scaled = torch.bmm(
-            state.forces.unsqueeze(1),  # [N, 1, 3]
-            cur_deform_grad[state.system_idx],  # [N, 3, 3]
-        ).squeeze(1)  # [N, 3]
-
-        # Current fractional positions
-        # positions: [N, 3] -> frac_positions: [N, 3]
-        frac_positions = torch.linalg.solve(
-            cur_deform_grad[state.system_idx],  # [N, 3, 3]
-            state.positions.unsqueeze(-1),  # [N, 3, 1]
-        ).squeeze(-1)  # [N, 3]
+        forces_scaled = state.deform_grad_forces()  # [N, 3]
+        frac_positions = state.frac_positions()  # [N, 3]
 
         # Pack into dense tensors [N, 3] -> [S, M, 3] -> [S, D]
         # For cell state, prev_positions is already fractional (stored that way)
@@ -495,15 +478,7 @@ def bfgs_step(  # noqa: C901, PLR0915
         # Apply position step in fractional space, then convert to Cartesian
         new_frac = frac_positions + flat_step  # [N, 3]
 
-        new_deform_grad = cell_filters.deform_grad(
-            state.reference_cell.mT, state.row_vector_cell
-        )  # [S, 3, 3]
-        # new_positions = new_frac @ deform_grad^T
-        new_positions = torch.bmm(
-            new_frac.unsqueeze(1),  # [N, 1, 3]
-            new_deform_grad[state.system_idx].transpose(-2, -1),  # [N, 3, 3]
-        ).squeeze(1)  # [N, 3]
-        state.set_constrained_positions(new_positions)  # [N, 3]
+        state.set_constrained_positions(state.positions_from_frac(new_frac))  # [N, 3]
     else:
         state.prev_positions = state.positions.clone()  # [N, 3]
         state.prev_forces = state.forces.clone()  # [N, 3]

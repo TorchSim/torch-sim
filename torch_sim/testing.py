@@ -253,6 +253,17 @@ def make_ar_supercell_sim_state(
     return ts.io.atoms_to_state(atoms, device, dtype)
 
 
+def make_rattled_ar_supercell_stretched_sim_state(
+    device: torch.device | None = None, dtype: torch.dtype | None = None
+) -> ts.SimState:
+    """Create a rattled FCC Argon supercell with a 5% stretched cell."""
+    from ase.build import bulk
+
+    atoms = bulk("Ar", "fcc", a=5.26 * 1.05, cubic=True).repeat([2, 2, 2])
+    atoms.rattle(stdev=0.1, seed=0)
+    return ts.io.atoms_to_state(atoms, device, dtype)
+
+
 def make_fe_supercell_sim_state(
     device: torch.device | None = None, dtype: torch.dtype | None = None
 ) -> ts.SimState:
@@ -482,6 +493,9 @@ SIMSTATE_BULK_GENERATORS: Final[dict[str, SimStateGenerator]] = {
     "sio2_sim_state": make_sio2_sim_state,
     "rattled_sio2_sim_state": make_rattled_sio2_sim_state,
     "ar_supercell_sim_state": make_ar_supercell_sim_state,
+    "rattled_ar_supercell_stretched_sim_state": (
+        make_rattled_ar_supercell_stretched_sim_state
+    ),
     "fe_supercell_sim_state": make_fe_supercell_sim_state,
     "casio3_sim_state": make_casio3_sim_state,
     "osn2_sim_state": make_osn2_sim_state,

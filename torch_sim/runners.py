@@ -115,12 +115,14 @@ def _determine_initial_step_for_integrate(
             check for resume information
 
     Returns:
-        int: The initial step to start from (1 if not resuming, otherwise last_step + 1)
+        int: The initial step to start from (1 if not resuming, otherwise the largest
+            step recorded in any array of any trajectory + 1)
     """
     initial_step: int = 1
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
         last_logged_steps = [
-            step if step is not None else 0 for step in trajectory_reporter.last_steps
+            step if step is not None else 0
+            for step in trajectory_reporter.last_written_steps
         ]
         last_logged_step = min(last_logged_steps)
         initial_step = initial_step + last_logged_step
@@ -129,7 +131,7 @@ def _determine_initial_step_for_integrate(
                 f"Trajectory files have different last steps: {set(last_logged_steps)} "
                 "Cannot resume integration from inconsistent states."
                 "You can truncate the trajectories to the same step using:\n\n"
-                "    reporter.truncate_to_step(min(reporter.last_step))\n\n"
+                "    reporter.truncate_to_step(min(reporter.last_written_steps))\n\n"
                 "before calling integrate again."
             )
         if last_logged_step > 0:
@@ -161,7 +163,7 @@ def _determine_initial_step_for_optimize(
         size=(state.n_systems,), fill_value=1, dtype=torch.long, device=state.device
     )
     if trajectory_reporter is not None and trajectory_reporter.mode == "a":
-        last_steps = trajectory_reporter.last_steps
+        last_steps = trajectory_reporter.last_written_steps
         last_steps = [step if step is not None else 0 for step in last_steps]
         last_logged_steps = torch.tensor(
             last_steps, dtype=torch.long, device=state.device
@@ -243,10 +245,73 @@ def _write_initial_state(
     """
     if trajectory_reporter:
         trajectories_empty = all(
-            traj.last_step is None for traj in trajectory_reporter.trajectories
+            traj.last_written_step is None for traj in trajectory_reporter.trajectories
         )
         if trajectories_empty:
-            trajectory_reporter.report(state, 0, model=model)
+            trajectory_reporter.report(state, 0, model=model, force=True)
+
+
+def _write_final_state(
+    trajectory_reporter: TrajectoryReporter | None,
+    state: SimState,
+    model: ModelInterface,
+    step: int,
+) -> None:
+    """Write the final state if the run ended off the ``state_frequency`` grid.
+
+    Args:
+        trajectory_reporter (TrajectoryReporter | None): Optional reporter
+        state (SimState): Final simulation state
+        model (ModelInterface): Model used for simulation
+        step (int): Final step of the run
+    """
+    if not trajectory_reporter:
+        return
+    if all(
+        traj.last_step is not None and traj.last_step >= step
+        for traj in trajectory_reporter.trajectories
+    ):
+        return
+    trajectory_reporter.report(state, step, model=model, force=True)
+
+
+def _write_final_states_for_converged(
+    trajectory_reporter: TrajectoryReporter | None,
+    converged_states: list[SimState],
+    og_indices: list[int],
+    og_filenames: list[str] | None,
+    model: ModelInterface,
+    step: torch.Tensor,
+) -> None:
+    """Write the final frame of each newly converged system.
+
+    ``optimize`` pops converged systems out of the batch mid-run and immediately
+    repoints the reporter at the remaining systems, so a single final write before
+    ``finish()`` would miss every system that converged earlier. This must therefore
+    be called while the reporter still holds open handles to the batch the systems
+    converged out of.
+
+    Args:
+        trajectory_reporter (TrajectoryReporter | None): Optional reporter
+        converged_states (list[SimState]): Newly converged single-system states
+        og_indices (list[int]): Original index of each converged state
+        og_filenames (list[str] | None): Full list of trajectory filenames, indexed
+            by original system index
+        model (ModelInterface): Model used for optimization
+        step (torch.Tensor): Per-system step counter, indexed by original index.
+            Holds the *next* step, so the final written step is ``step - 1``.
+    """
+    if not trajectory_reporter or not converged_states or og_filenames is None:
+        return
+    open_filenames = trajectory_reporter.filenames or []
+    position = {str(name): idx for idx, name in enumerate(open_filenames)}
+    for og_idx, converged_state in zip(og_indices, converged_states, strict=True):
+        idx = position.get(str(og_filenames[og_idx]))
+        if idx is None:  # file not currently open, cannot write without reopening
+            continue
+        trajectory_reporter.report_final_frame(
+            idx, converged_state, int(step[og_idx]) - 1, model=model
+        )
 
 
 def integrate[T: SimState](  # noqa: C901, PLR0915
@@ -394,6 +459,12 @@ def integrate[T: SimState](  # noqa: C901, PLR0915
 
             if trajectory_reporter:
                 trajectory_reporter.report(state, step, model=model)
+
+        # ensure the final state is recorded even if it is off the cadence grid
+        if n_steps > 0:
+            _write_final_state(
+                trajectory_reporter, state, model, initial_step + n_steps - 1
+            )
 
         # finish the trajectory reporter
         final_states.append(state)
@@ -691,6 +762,23 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
 
     while True:
         result = autobatcher.next_batch(state, convergence_tensor)
+        newly_converged = result[1]
+        # og indices of the states that just converged, in the same order
+        newly_converged_og_idx = (
+            autobatcher.completed_idx_og_order[-len(newly_converged) :]
+            if newly_converged
+            else []
+        )
+        # must happen before reopen_trajectories, while the reporter still holds
+        # open handles to the batch these systems converged out of
+        _write_final_states_for_converged(
+            trajectory_reporter,
+            newly_converged,
+            newly_converged_og_idx,
+            og_filenames,
+            model,
+            step,
+        )
         if result[0] is None:
             # All states have converged, collect the final converged states
             all_converged_states.extend(result[1])

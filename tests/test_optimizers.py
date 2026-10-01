@@ -10,7 +10,7 @@ import torch
 import torch_sim as ts
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers import BFGSState, FireFlavor, FireState, LBFGSState, OptimState
-from torch_sim.optimizers.cell_filters import CellLBFGSState, deform_grad
+from torch_sim.optimizers.cell_filters import CellLBFGSState, CellOptimState, deform_grad
 from torch_sim.state import SimState
 
 
@@ -1086,6 +1086,28 @@ def test_frechet_cell_fire_optimization(
     assert not torch.allclose(state.cell, initial_state_cell, atol=1e-5), (
         f"{fire_flavor=} cell should have changed after Frechet optimization."
     )
+
+
+@pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
+def test_cell_optim_state_deform_grad_forces(
+    ar_supercell_sim_state: SimState,
+    lj_model: ModelInterface,
+    cell_filter: ts.CellFilter,
+) -> None:
+    """deform_grad_forces applies forces @ deform_grad, like ASE's cell filters."""
+    state = ts.fire_init(
+        state=ar_supercell_sim_state, model=lj_model, cell_filter=cell_filter
+    )
+    assert isinstance(state, CellOptimState)
+
+    # freshly initialized, cell == reference_cell, so the transform is a no-op
+    torch.testing.assert_close(state.deform_grad_forces(), state.forces)
+
+    # against a reference cell scaled by s, deform_grad = I / s, so the
+    # transform scales the forces by 1 / s
+    scale = 0.95
+    state.reference_cell = state.cell.clone() * scale
+    torch.testing.assert_close(state.deform_grad_forces(), state.forces / scale)
 
 
 def test_frechet_lbfgs_clamps_extreme_deformation(

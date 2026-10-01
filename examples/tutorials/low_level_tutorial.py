@@ -67,7 +67,7 @@ from torch_sim.models.mace import MaceModel
 
 # load mace_mp using the mace package
 loaded_model = mace_mp(
-    model="medium",
+    model="medium-mpa-0",
     return_raw_model=True,
     default_dtype=str(dtype).removeprefix("torch."),
     device=str(device),

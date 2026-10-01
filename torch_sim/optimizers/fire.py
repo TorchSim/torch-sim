@@ -318,17 +318,13 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
             (n_systems,), alpha_start.item(), device=device, dtype=dtype
         )
 
-        # Transform forces for cell optimization
-        if isinstance(state, CellFireState):
-            cur_deform_grad = cell_filters.deform_grad(
-                state.row_vector_cell,
-                getattr(state, "reference_row_vector_cell", state.row_vector_cell),
-            )
-            forces = torch.bmm(
-                state.forces.unsqueeze(1), cur_deform_grad[state.system_idx]
-            ).squeeze(1)
-        else:
-            forces = state.forces
+        # Only cell states have a reference cell to define deform_grad; ASE's cell
+        # filters hand FIRE `forces @ deform_grad`, a plain FireState uses raw forces.
+        forces = (
+            state.deform_grad_forces()
+            if isinstance(state, CellFireState)
+            else state.forces
+        )
 
         # Calculate power (newly zeroed systems will have power=0 → neg_mask)
         system_power = tsm.batched_vdot(forces, state.velocities, state.system_idx)
@@ -409,15 +405,8 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
     if isinstance(state, CellFireState):
         # For cell optimization, handle both atomic and cell position updates
         # This follows the ASE FIRE implementation pattern
-        # Transform atomic positions to fractional coordinates
-        cur_deform_grad = cell_filters.deform_grad(
-            state.reference_cell.mT, state.row_vector_cell
-        )
-        frac_positions = torch.linalg.solve(
-            cur_deform_grad[state.system_idx], state.positions.unsqueeze(-1)
-        ).squeeze(-1)
         # Store fractional positions (will transform to Cartesian after cell update)
-        new_frac_positions = frac_positions + dr_atom
+        new_frac_positions = state.frac_positions() + dr_atom
 
         # Update cell positions directly based on stored cell filter type
         if hasattr(state, "cell_filter") and state.cell_filter is not None:
@@ -454,9 +443,7 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
             # pre-adjustment value.  Without this, any constraint that
             # modifies the cell (e.g. FixSymmetry) causes a zigzag where the
             # optimizer repeatedly proposes from a stale cell_positions.
-            adjusted_deform_grad = cell_filters.deform_grad(
-                state.reference_cell.mT, state.row_vector_cell
-            )
+            adjusted_deform_grad = state.deform_grad()
             if is_frechet:
                 cell_factor_reshaped = state.cell_factor.view(state.n_systems, 1, 1)
                 state.cell_positions = (
@@ -471,16 +458,7 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
                 )
 
         # Transform fractional positions to Cartesian using NEW deformation gradient
-        new_deform_grad = cell_filters.deform_grad(
-            state.reference_cell.mT, state.row_vector_cell
-        )
-
-        state.set_constrained_positions(
-            torch.bmm(
-                new_frac_positions.unsqueeze(1),
-                new_deform_grad[state.system_idx].transpose(-2, -1),
-            ).squeeze(1)
-        )
+        state.set_constrained_positions(state.positions_from_frac(new_frac_positions))
     else:
         state.set_constrained_positions(state.positions + dr_atom)
 

@@ -2937,10 +2937,14 @@ def npt_crescale_init(
     kT = torch.as_tensor(kT, device=device, dtype=dtype)
 
     # Set default values if not provided
-    tau_p = torch.as_tensor(tau_p or 3 * dt, device=device, dtype=dtype)  # 5ps for dt=1fs
+    if tau_p is None:
+        tau_p = 1000 * dt  # 1ps for dt=1fs
+    if isothermal_compressibility is None:
+        isothermal_compressibility = 1e-6 / MetalUnits.pressure  # 1e-6 bar^-1 for metals
+
+    tau_p = torch.as_tensor(tau_p, device=device, dtype=dtype)
     isothermal_compressibility = torch.as_tensor(
-        isothermal_compressibility
-        or 1e-6 / MetalUnits.pressure,  # 1e-6 bar^-1 for metals
+        isothermal_compressibility,
         device=device,
         dtype=dtype,  # (eV/A^3)^-1
     )

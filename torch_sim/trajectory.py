@@ -31,7 +31,6 @@ import copy
 import inspect
 import logging
 import pathlib
-import warnings
 from collections.abc import Callable, Mapping, Sequence
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, Self
@@ -227,7 +226,7 @@ class TrajectoryReporter:
         """
         if step <= 0:
             raise ValueError(f"Step must be greater than 0. Got step={step}.")
-        last_steps = self.last_steps
+        last_steps = self.last_written_steps
         if any(s is None for s in last_steps):
             raise ValueError("Cannot truncate: one or more trajectories are empty.")
         if step > min(last_steps):
@@ -265,7 +264,12 @@ class TrajectoryReporter:
                     self.prop_calculators[frequency][name] = new_fn
 
     def report(
-        self, state: SimState, step: int | list[int], model: ModelInterface | None = None
+        self,
+        state: SimState,
+        step: int | list[int],
+        model: ModelInterface | None = None,
+        *,
+        force: bool = False,
     ) -> list[dict[str, torch.Tensor]]:
         """Report a state and step to the trajectory files.
 
@@ -283,6 +287,10 @@ class TrajectoryReporter:
             model (ModelInterface, optional): Model used for simulation.
                 Defaults to None. Must be provided if any prop_calculators
                 are provided.
+            force (bool): If True, bypass the frequency gates and write every array
+                whose last recorded step is below ``step``. Used to capture the
+                initial and final frames of a run, which need not lie on the
+                cadence grid. Defaults to False.
 
         Returns:
             list[dict[str, torch.Tensor]]: Map of property names to tensors for each
@@ -311,33 +319,98 @@ class TrajectoryReporter:
         # Process each system separately
         for idx, substate in enumerate(split_states):
             sys_step = step[idx] if isinstance(step, list) else step
-            # Write state to trajectory if it's time
-            if self.state_frequency and sys_step % self.state_frequency == 0:
-                self.trajectories[idx].write_state(
-                    substate, sys_step, **self.state_kwargs
-                )
-
-            all_state_props = {}
-            # Process property calculators for this system
-            for report_frequency, calculators in self.prop_calculators.items():
-                if sys_step % report_frequency != 0 or report_frequency == 0:
-                    continue
-
-                # Calculate properties for this substate
-                props = {}
-                for prop_name, prop_fn in calculators.items():
-                    prop = prop_fn(substate, model)
-                    if len(prop.shape) == 0:
-                        prop = prop.unsqueeze(0)
-                    props[prop_name] = prop
-
-                # Write properties to this trajectory
-                if props:
-                    all_state_props.update(props)
-                    self.trajectories[idx].write_arrays(props, sys_step)
-            all_props.append(all_state_props)
+            all_props.append(
+                self._report_system(idx, substate, sys_step, model, force=force)
+            )
 
         return all_props
+
+    def _report_system(  # noqa: C901
+        self,
+        idx: int,
+        substate: SimState,
+        sys_step: int,
+        model: ModelInterface | None = None,
+        *,
+        force: bool = False,
+    ) -> dict[str, torch.Tensor]:
+        """Write a single system's state and properties to its trajectory file.
+
+        Args:
+            idx (int): Index of the trajectory file to write to
+            substate (SimState): Single-system state to write
+            sys_step (int): Step to label the written frames with
+            model (ModelInterface, optional): Model used for simulation
+            force (bool): Bypass the frequency gates, writing any array whose last
+                recorded step is below ``sys_step``.
+
+        Returns:
+            dict[str, torch.Tensor]: Map of property names to tensors.
+        """
+        trajectory = self.trajectories[idx]
+
+        # Write state to trajectory if it's time
+        if self.state_frequency and (force or sys_step % self.state_frequency == 0):
+            last_state_step = trajectory.last_step
+            already_written = (
+                force and last_state_step is not None and last_state_step >= sys_step
+            )
+            if not already_written:
+                trajectory.write_state(substate, sys_step, **self.state_kwargs)
+
+        all_state_props: dict[str, torch.Tensor] = {}
+        # Process property calculators for this system
+        for report_frequency, calculators in self.prop_calculators.items():
+            if report_frequency == 0:
+                continue
+            if not force and sys_step % report_frequency != 0:
+                continue
+
+            # Calculate properties for this substate
+            props = {}
+            for prop_name, prop_fn in calculators.items():
+                prop = prop_fn(substate, model)
+                if len(prop.shape) == 0:
+                    prop = prop.unsqueeze(0)
+                props[prop_name] = prop
+
+            # Write properties to this trajectory
+            if props:
+                all_state_props.update(props)
+                if force:
+                    props = {
+                        name: value
+                        for name, value in props.items()
+                        if (last := trajectory.last_step_of(name)) is None
+                        or last < sys_step
+                    }
+                if props:
+                    trajectory.write_arrays(props, sys_step)
+
+        return all_state_props
+
+    def report_final_frame(
+        self,
+        index: int,
+        state: SimState,
+        step: int,
+        model: ModelInterface | None = None,
+    ) -> None:
+        """Write the final frame of a single system, bypassing the cadence grid.
+
+        Runs generally terminate at a step that is not a multiple of
+        ``state_frequency``, which would leave the final state absent from its own
+        trajectory. This writes it unconditionally, skipping any array that already
+        holds a step at or beyond ``step`` so a run that ends on-grid is not
+        double-written.
+
+        Args:
+            index (int): Index of the trajectory file to write to
+            state (SimState): Single-system final state
+            step (int): Final step of that system
+            model (ModelInterface, optional): Model used for simulation
+        """
+        self._report_system(index, state, step, model, force=True)
 
     def _extract_props_batched(
         self,
@@ -442,6 +515,30 @@ class TrajectoryReporter:
                     last_steps.append(traj.last_step)
         return last_steps
 
+    @property
+    def last_written_steps(self) -> list[int | None]:
+        """Get the largest step recorded across all arrays of each trajectory file.
+
+        Unlike :attr:`last_steps`, which only tracks the ``positions`` cadence, this
+        is the correct basis for resuming a run when different arrays are written at
+        different frequencies.
+
+        Returns:
+            list[int | None]: The largest recorded step number for each trajectory,
+                or None if the trajectory is empty. Returns an empty list if no
+                trajectories exist.
+        """
+        if not self.trajectories:
+            return []
+        last_steps = []
+        for trajectory in self.trajectories:
+            if trajectory._file.isopen:
+                last_steps.append(trajectory.last_written_step)
+            else:
+                with TorchSimTrajectory(trajectory._file.filename, mode="r") as traj:
+                    last_steps.append(traj.last_written_step)
+        return last_steps
+
     def __enter__(self) -> Self:
         """Support the context manager protocol.
 
@@ -537,18 +634,6 @@ class TorchSimTrajectory:
         self.type_map = self._initialize_type_map(
             coerce_to_float32=coerce_to_float32, coerce_to_int32=coerce_to_int32
         )
-        if mode == "a" and self.last_step is not None:
-            inconsistent_step = any(
-                self.get_steps(name)[-1] > self.last_step for name in self.array_registry
-            )
-            if inconsistent_step:
-                msg = (
-                    "Inconsistent last steps detected in trajectory arrays. "
-                    "Truncating all arrays to the `positions` array's last step."
-                )
-                warnings.warn(msg, UserWarning, stacklevel=2)
-                logger.warning(msg)
-                self.truncate_to_step(self.last_step)
 
     def _initialize_header(self, metadata: dict[str, str] | None = None) -> None:
         """Initialize the HDF5 file header with metadata.
@@ -853,7 +938,48 @@ class TorchSimTrajectory:
         """
         if not self.array_registry or "positions" not in self.array_registry:
             return None
-        return self.get_steps("positions")[-1].item()
+        return self.last_step_of("positions")
+
+    def last_step_of(self, name: str) -> int | None:
+        """Get the last recorded step of a single array.
+
+        Uses a direct slice of the steps node rather than reading the whole
+        array, which is O(1) rather than O(rows).
+
+        Args:
+            name (str): Name of the array
+
+        Returns:
+            int | None: The last recorded step, or None if the array is absent
+        """
+        if name not in self.array_registry:
+            return None
+        steps_node = self._file.get_node("/steps/", name=name)
+        if not isinstance(steps_node, tables.Array) or len(steps_node) == 0:
+            return None
+        return int(steps_node[-1])
+
+    @property
+    def last_written_step(self) -> int | None:
+        """Largest step recorded across *all* arrays.
+
+        Unlike :attr:`last_step`, which only tracks the ``positions`` cadence,
+        this is the correct basis for resuming a run: writing strictly beyond it
+        guarantees the per-array step monotonicity that ``_validate_array``
+        enforces, whatever cadence each individual array uses.
+
+        Returns:
+            int | None: The largest recorded step number, or None if the
+                trajectory holds no data.
+        """
+        if not self.array_registry:
+            return None
+        last_steps = [
+            step
+            for step in (self.last_step_of(name) for name in self.array_registry)
+            if step is not None
+        ]
+        return max(last_steps) if last_steps else None
 
     def __str__(self) -> str:
         """Get a string representation of the trajectory.
@@ -1032,7 +1158,7 @@ class TorchSimTrajectory:
 
         return arrays
 
-    def get_structure(self, frame: int = -1) -> Any:
+    def get_structure(self, frame: int = -1, **kwargs: Any) -> Any:
         """Get a pymatgen Structure object for a given frame.
 
         Converts the state at the specified frame to a pymatgen Structure object
@@ -1040,6 +1166,7 @@ class TorchSimTrajectory:
 
         Args:
             frame (int, optional): Frame index to retrieve. Defaults to -1 for last frame.
+            **kwargs: Additional keyword arguments to pass to ``state_to_structures``.
 
         Returns:
             Structure: Pymatgen Structure object for the specified frame
@@ -1049,7 +1176,9 @@ class TorchSimTrajectory:
         """
         from torch_sim.io import state_to_structures
 
-        return state_to_structures(self.get_state(frame, device=torch.device("cpu")))[0]
+        return state_to_structures(
+            self.get_state(frame, device=torch.device("cpu")), **kwargs
+        )[0]
 
     def get_atoms(self, frame: int = -1, **kwargs: Any) -> "Atoms":
         """Get an ASE Atoms object for a given frame.
@@ -1200,17 +1329,18 @@ class TorchSimTrajectory:
         Args:
             step (int): Desired last step of the trajectory after truncation
         """
-        if self.last_step is None:
+        last_written_step = self.last_written_step
+        if last_written_step is None:
             raise ValueError(
                 "Cannot truncate an empty trajectory (no data has been written)."
             )
-        if self.last_step < step:
+        if last_written_step < step:
             raise ValueError(
                 f"Cannot truncate to a step greater than the last step."
-                f" {self.last_step=} < {step=}"
+                f" {last_written_step=} < {step=}"
             )
-        if self.last_step == step:
-            return  # No truncation needed
+        if last_written_step == step:
+            return  # no array holds steps beyond `step`, nothing to truncate
         if step <= 0:
             raise ValueError(f"Step must be larger than 0. Got {step=}")
         for name in self.array_registry:
@@ -1221,9 +1351,10 @@ class TorchSimTrajectory:
             if set(steps_data) == {0}:
                 continue  # skip global arrays
             # Find the index where the step is less than or equal to the desired step
-            # We know that it must be at least one index because of the earlier check.
             indices = np.where(steps_data <= step)[0]
-            length = indices[-1] + 1  # +1 because we want to include this index
+            # +1 because we want to include this index; an array written entirely
+            # after `step` is emptied.
+            length = int(indices[-1]) + 1 if len(indices) else 0
 
             data_node = self._file.get_node("/data/", name=name)
             if isinstance(data_node, tables.EArray):
