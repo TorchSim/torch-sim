@@ -2,7 +2,7 @@
 
 Uses the DPA-3.1-3M universal foundation checkpoint (full periodic-table
 type_map, "Omat24" head).
-"""
+""" 
 
 from __future__ import annotations
 
