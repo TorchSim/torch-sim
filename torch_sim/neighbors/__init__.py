@@ -50,6 +50,8 @@ def torchsim_nl(
     cutoff: float,
     system_idx: torch.Tensor,
     self_interaction: bool = False,  # noqa: FBT001, FBT002
+    *,
+    max_neighbors: int | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute neighbor lists with automatic selection of best available implementation.
 
@@ -66,6 +68,10 @@ def torchsim_nl(
         cutoff: Maximum distance for considering atoms as neighbors
         system_idx: Tensor [n_atoms] indicating which system each atom belongs to
         self_interaction: If True, include self-pairs. Default: False
+        max_neighbors: Upper bound on neighbors per atom, used to size the
+            Alchemiops neighbor matrix; an undersized bound raises
+            NeighborOverflowError. Other backends return exact lists and
+            ignore it. Default: None (Alchemiops' bulk-density estimate)
 
     Returns:
         tuple containing:
@@ -84,7 +90,13 @@ def torchsim_nl(
     """
     if ALCHEMIOPS_AVAILABLE:
         return alchemiops_nl_n2(
-            positions, cell, pbc, cutoff, system_idx, self_interaction
+            positions,
+            cell,
+            pbc,
+            cutoff,
+            system_idx,
+            self_interaction,
+            max_neighbors=max_neighbors,
         )
 
     if VESIN_TORCHSCRIPT_AVAILABLE:

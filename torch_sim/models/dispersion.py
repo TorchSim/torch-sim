@@ -28,6 +28,7 @@ from torch_sim.units import UnitConversion
 
 
 try:
+    from nvalchemiops.neighbors.neighbor_utils import estimate_max_neighbors
     from nvalchemiops.torch.interactions.dispersion import D3Parameters
     from nvalchemiops.torch.interactions.dispersion import dftd3 as nvalchemiops_dftd3
 except (ImportError, ModuleNotFoundError) as exc:
@@ -41,6 +42,10 @@ except (ImportError, ModuleNotFoundError) as exc:
             raise _err
 
     def nvalchemiops_dftd3(*_a: Any, _err: Exception = exc, **_kw: Any) -> Any:
+        """Raise the original import error."""
+        raise _err
+
+    def estimate_max_neighbors(*_a: Any, _err: Exception = exc, **_kw: Any) -> Any:
         """Raise the original import error."""
         raise _err
 
@@ -77,6 +82,9 @@ class D3DispersionModel(ModelInterface):
         compute_forces: Whether to return forces. Defaults to True.
         compute_stress: Whether to return stress. Defaults to True.
         neighbor_list_fn: Neighbor-list constructor. Defaults to ``torchsim_nl``.
+            With the default and no periodic boundaries, the neighbor matrix
+            is sized to the largest system when that is narrower than the
+            bulk-density estimate for ``cutoff``; the bound is exact.
 
     Example::
 
@@ -135,12 +143,20 @@ class D3DispersionModel(ModelInterface):
             dict with ``"energy"`` [n_systems], ``"forces"`` [n_atoms, 3],
             and (if ``compute_stress``) ``"stress"`` [n_systems, 3, 3].
         """
+        nl_kwargs = {}
+        if self.neighbor_list_fn is torchsim_nl and not bool(state.pbc.any()):
+            # Without images an atom has at most n_atoms - 1 neighbors. Only
+            # narrow the default width, never widen it.
+            n_cap = max(int(state.n_atoms_per_system.max().item()) - 1, 1)
+            if n_cap < estimate_max_neighbors(self.cutoff):
+                nl_kwargs["max_neighbors"] = n_cap
         edge_index, _mapping_system, unit_shifts = self.neighbor_list_fn(
             state.positions,
             state.row_vector_cell,
             state.pbc,
             self.cutoff,
             state.system_idx,
+            **nl_kwargs,
         )
         edge_index_int, neighbor_ptr, unit_shifts_int = (
             transforms.build_csr_neighbor_list(

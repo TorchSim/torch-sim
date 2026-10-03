@@ -39,6 +39,8 @@ if ALCHEMIOPS_AVAILABLE:
         cutoff: float,
         system_idx: torch.Tensor,
         self_interaction: bool = False,  # noqa: FBT001, FBT002
+        *,
+        max_neighbors: int | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute neighbor lists using Alchemiops naive N^2 algorithm.
 
@@ -49,6 +51,9 @@ if ALCHEMIOPS_AVAILABLE:
             cutoff: Maximum distance
             system_idx: Tensor [n_atoms] indicating system assignment
             self_interaction: If True, include self-pairs
+            max_neighbors: Width of the per-atom neighbor matrix. Must be an upper
+                bound; an undersized width raises NeighborOverflowError. Defaults
+                to nvalchemiops' bulk-density estimate for ``cutoff``.
 
         Returns:
             (mapping, system_mapping, shifts_idx)
@@ -65,6 +70,7 @@ if ALCHEMIOPS_AVAILABLE:
             batch_idx=system_idx.to(torch.int32),
             cell=cell,
             pbc=pbc.to(torch.bool),
+            max_neighbors=max_neighbors,
             return_neighbor_list=True,
         )
 
