@@ -8,6 +8,7 @@ from tests.conftest import DTYPE
 from torch_sim.constraints import (
     Constraint,
     FixAtoms,
+    FixBondLengths,
     FixCom,
     FixSymmetry,
     count_degrees_of_freedom,
@@ -1262,3 +1263,317 @@ class TestConstraintToDeviceDtype:
         # original constraint unchanged
         orig = state.constraints[0]
         assert orig.rotations[0].dtype == torch.float64
+
+
+def _water_methane_state() -> ts.SimState:
+    """Build a two-molecule state with distinct masses, for bond-length tests."""
+    from ase import Atoms
+
+    symbols = ["O", "H", "H", "C", "H"]
+    positions = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [0.95, 0.0, 0.0],
+            [-0.25, 0.92, 0.0],
+            [3.0, 0.0, 0.0],
+            [4.15, 0.1, 0.0],
+        ],
+        dtype=DTYPE,
+    )
+    reference = Atoms(symbols)
+    return ts.SimState(
+        positions=positions,
+        masses=torch.tensor(reference.get_masses(), dtype=DTYPE),
+        cell=torch.zeros(1, 3, 3, dtype=DTYPE),
+        pbc=torch.zeros(3, dtype=torch.bool),
+        atomic_numbers=torch.tensor(reference.get_atomic_numbers()),
+        system_idx=torch.zeros(len(symbols), dtype=torch.long),
+    )
+
+
+def test_fix_bond_lengths_shake_matches_ase() -> None:
+    """SHAKE positions must agree with ase.constraints.FixBondLengths."""
+    from ase import Atoms
+    from ase.constraints import FixBondLengths as ASEFixBondLengths
+
+    pairs, targets = [[0, 1], [0, 2], [3, 4]], [0.98, 0.98, 1.09]
+    state = _water_methane_state()
+    base = state.positions.numpy().copy()
+    generator = torch.Generator().manual_seed(0)
+    displacement = torch.randn(base.shape, generator=generator, dtype=DTYPE) * 0.08
+    proposed = state.positions + displacement
+
+    atoms = Atoms(["O", "H", "H", "C", "H"], positions=base)
+    ase_new = proposed.numpy().copy()
+    ASEFixBondLengths(pairs, bondlengths=targets).adjust_positions(atoms, ase_new)
+
+    torch_new = proposed.clone()
+    FixBondLengths(pairs, bond_lengths=targets).adjust_positions(state, torch_new)
+
+    torch.testing.assert_close(
+        torch_new, torch.tensor(ase_new, dtype=DTYPE), atol=1e-12, rtol=0
+    )
+    for (idx_a, idx_b), target in zip(pairs, targets, strict=True):
+        distance = torch.linalg.norm(torch_new[idx_a] - torch_new[idx_b])
+        assert distance.item() == pytest.approx(target, abs=1e-10)
+
+
+def test_fix_bond_lengths_rattle_matches_ase() -> None:
+    """RATTLE momenta must agree with ASE and zero the relative velocity."""
+    from ase import Atoms
+    from ase.constraints import FixBondLengths as ASEFixBondLengths
+
+    pairs, targets = [[0, 1], [0, 2], [3, 4]], [0.98, 0.98, 1.09]
+    state = _water_methane_state()
+    generator = torch.Generator().manual_seed(1)
+    momenta = torch.randn(state.positions.shape, generator=generator, dtype=DTYPE) * 0.5
+
+    atoms = Atoms(["O", "H", "H", "C", "H"], positions=state.positions.numpy())
+    ase_p = momenta.numpy().copy()
+    ASEFixBondLengths(pairs, bondlengths=targets).adjust_momenta(atoms, ase_p)
+
+    torch_p = momenta.clone()
+    FixBondLengths(pairs, bond_lengths=targets).adjust_momenta(state, torch_p)
+    torch.testing.assert_close(
+        torch_p, torch.tensor(ase_p, dtype=DTYPE), atol=1e-12, rtol=0
+    )
+
+    for idx_a, idx_b in pairs:
+        axis = state.positions[idx_a] - state.positions[idx_b]
+        relative = (
+            torch_p[idx_a] / state.masses[idx_a] - torch_p[idx_b] / state.masses[idx_b]
+        )
+        assert torch.dot(relative, axis).abs().item() < 1e-10
+
+
+def test_fix_bond_lengths_forces_match_ase() -> None:
+    """Force projection must agree with ASE and record the constraint force."""
+    from ase import Atoms
+    from ase.constraints import FixBondLengths as ASEFixBondLengths
+
+    pairs, targets = [[0, 1], [3, 4]], [0.98, 1.09]
+    state = _water_methane_state()
+    generator = torch.Generator().manual_seed(2)
+    forces = torch.randn(state.positions.shape, generator=generator, dtype=DTYPE)
+
+    atoms = Atoms(["O", "H", "H", "C", "H"], positions=state.positions.numpy())
+    ase_f = forces.numpy().copy()
+    ASEFixBondLengths(pairs, bondlengths=targets).adjust_forces(atoms, ase_f)
+
+    constraint = FixBondLengths(pairs, bond_lengths=targets)
+    torch_f = forces.clone()
+    constraint.adjust_forces(state, torch_f)
+
+    torch.testing.assert_close(
+        torch_f, torch.tensor(ase_f, dtype=DTYPE), atol=1e-12, rtol=0
+    )
+    # The recorded constraint force is exactly what the projection added.
+    torch.testing.assert_close(
+        constraint.constraint_forces, torch_f - forces, atol=1e-12, rtol=0
+    )
+
+
+def test_fix_bond_lengths_corrections_are_mass_weighted() -> None:
+    """A light atom must absorb more of the correction than a heavy one."""
+    state = _water_methane_state()
+    constraint = FixBondLengths([[0, 1]], bond_lengths=[0.98])
+
+    proposed = state.positions.clone()
+    proposed[1, 0] += 0.3
+    before = proposed.clone()
+    constraint.adjust_positions(state, proposed)
+
+    moved = (proposed - before).norm(dim=1)
+    expected_ratio = (state.masses[0] / state.masses[1]).item()
+    assert (moved[1] / moved[0]).item() == pytest.approx(expected_ratio, rel=1e-9)
+
+
+def test_fix_bond_lengths_targets_default_to_the_state() -> None:
+    """Without explicit targets, the distances in the state are held."""
+    state = _water_methane_state()
+    pairs = [[0, 1], [3, 4]]
+    constraint = FixBondLengths(pairs)
+
+    measured = constraint.get_bond_lengths(state)
+    for position, (idx_a, idx_b) in enumerate(pairs):
+        expected = torch.linalg.norm(state.positions[idx_a] - state.positions[idx_b])
+        assert measured[position].item() == pytest.approx(expected.item(), rel=1e-12)
+
+    # And a subsequent projection is a no-op, since the state already satisfies them.
+    proposed = state.positions.clone()
+    constraint.adjust_positions(state, proposed)
+    torch.testing.assert_close(proposed, state.positions, atol=1e-12, rtol=0)
+
+
+def test_fix_bond_lengths_coupled_constraints_converge() -> None:
+    """Constraints sharing an atom are all satisfied, not just the last applied."""
+    state = _water_methane_state()
+    # Both pairs involve atom 0.
+    constraint = FixBondLengths([[0, 1], [0, 2]], bond_lengths=[0.98, 0.98])
+    proposed = state.positions.clone()
+    proposed[1, 0] += 0.25
+    proposed[2, 1] -= 0.2
+    constraint.adjust_positions(state, proposed)
+
+    for idx_a, idx_b in ([0, 1], [0, 2]):
+        distance = torch.linalg.norm(proposed[idx_a] - proposed[idx_b])
+        assert distance.item() == pytest.approx(0.98, abs=1e-10)
+
+
+def test_fix_bond_lengths_respects_periodic_images() -> None:
+    """A bond across a periodic boundary is measured by minimum image."""
+    cell_length = 6.0
+    state = ts.SimState(
+        positions=torch.tensor([[0.2, 0.0, 0.0], [5.8, 0.0, 0.0]], dtype=DTYPE),
+        masses=torch.ones(2, dtype=DTYPE),
+        cell=(torch.eye(3, dtype=DTYPE) * cell_length).unsqueeze(0),
+        pbc=torch.ones(3, dtype=torch.bool),
+        atomic_numbers=torch.tensor([1, 1]),
+        system_idx=torch.zeros(2, dtype=torch.long),
+    )
+    constraint = FixBondLengths([[0, 1]])
+    # The direct separation is 5.6 A; the minimum image is 0.4 A.
+    assert constraint.get_bond_lengths(state)[0].item() == pytest.approx(0.4, abs=1e-12)
+
+
+def test_fix_bond_lengths_removed_dof_is_per_system() -> None:
+    """Each constraint removes one degree of freedom from its own system."""
+    state = ts.concatenate_states([_water_methane_state(), _water_methane_state()])
+    state.constraints = [FixBondLengths([[0, 1], [5, 6], [8, 9]])]
+    assert state.constraints[0].get_removed_dof(state).tolist() == [1, 2]
+
+
+def test_fix_bond_lengths_rejects_constraint_spanning_systems() -> None:
+    """A constraint may not couple two systems of a batch."""
+    state = ts.concatenate_states([_water_methane_state(), _water_methane_state()])
+    constraint = FixBondLengths([[1, 6]])
+    with pytest.raises(ValueError, match="span more than one system"):
+        constraint.get_removed_dof(state)
+
+
+def test_fix_bond_lengths_validates_its_arguments() -> None:
+    """Malformed pairs and targets are rejected at construction."""
+    with pytest.raises(ValueError, match=r"shape \(n_constraints, 2\)"):
+        FixBondLengths([[0, 1, 2]])
+    with pytest.raises(ValueError, match="must be integers"):
+        FixBondLengths(torch.tensor([[0.0, 1.0]]))
+    with pytest.raises(ValueError, match="non-negative"):
+        FixBondLengths([[-1, 0]])
+    with pytest.raises(ValueError, match="same atom twice"):
+        FixBondLengths([[2, 2]])
+    with pytest.raises(ValueError, match="each pair needs exactly one target"):
+        FixBondLengths([[0, 1], [1, 2]], bond_lengths=[1.0])
+    with pytest.raises(ValueError, match="must be positive"):
+        FixBondLengths([[0, 1]], bond_lengths=[0.0])
+
+
+def test_fix_bond_lengths_out_of_bounds_index_is_caught() -> None:
+    """Pair indices are bounds-checked against the state."""
+    state = _water_methane_state()
+    with pytest.raises(ValueError, match="FixBondLengths"):
+        validate_constraints([FixBondLengths([[0, 99]])], state)
+
+
+def test_fix_bond_lengths_state_manipulation() -> None:
+    """Reindexing, merging, selection and dtype moves preserve the pairs."""
+    first = FixBondLengths([[0, 1]], bond_lengths=[0.98])
+    second = FixBondLengths([[0, 1]], bond_lengths=[1.09])
+
+    shifted = second.reindex(5, 1)
+    assert shifted.pairs.tolist() == [[5, 6]]
+
+    merged = FixBondLengths.merge([first, shifted])
+    assert merged.pairs.tolist() == [[0, 1], [5, 6]]
+    assert [round(float(v), 3) for v in merged.bond_lengths] == [0.98, 1.09]
+
+    # Dropping atom 0 destroys the first pair and renumbers the second.
+    mask = torch.tensor([False, True, True, True, True, True, True])
+    selected = merged.select_constraint(mask, torch.ones(1, dtype=torch.bool))
+    assert selected.pairs.tolist() == [[4, 5]]
+
+    sub = merged.select_sub_constraint(torch.arange(5, 7), 1)
+    assert sub.pairs.tolist() == [[0, 1]]
+
+    # Targets stay at double precision: they define the constraint, and rounding them
+    # to float32 would introduce an error no iteration could remove.
+    moved = merged.to(dtype=torch.float32)
+    assert moved.bond_lengths.dtype == torch.float64
+    assert moved.pairs.dtype == torch.long
+
+
+def test_fix_bond_lengths_merge_rejects_mixed_targets() -> None:
+    """Merging explicit and state-derived targets would be ambiguous."""
+    with pytest.raises(ValueError, match="ambiguous"):
+        FixBondLengths.merge(
+            [FixBondLengths([[0, 1]], bond_lengths=[0.98]), FixBondLengths([[2, 3]])]
+        )
+
+
+def test_fix_bond_lengths_survives_state_round_trip() -> None:
+    """Splitting a batched state carries the constraint into each system."""
+    state = ts.concatenate_states([_water_methane_state(), _water_methane_state()])
+    state.constraints = [FixBondLengths([[0, 1], [5, 6]], bond_lengths=[0.98, 0.98])]
+
+    for member in state.split():
+        constraints = [c for c in member.constraints if isinstance(c, FixBondLengths)]
+        assert len(constraints) == 1
+        assert constraints[0].pairs.tolist() == [[0, 1]]
+
+
+def test_fix_bond_lengths_warns_when_not_converged() -> None:
+    """An unreachable tolerance reports the residual instead of failing silently."""
+    state = _water_methane_state()
+    constraint = FixBondLengths(
+        [[0, 1]], bond_lengths=[0.98], tolerance=1e-30, max_iter=2
+    )
+    proposed = state.positions.clone()
+    proposed[1, 0] += 0.5
+    with pytest.warns(UserWarning, match="SHAKE did not converge"):
+        constraint.adjust_positions(state, proposed)
+
+
+def test_fix_bond_lengths_holds_bonds_during_optimization(
+    lj_model: LennardJonesModel,
+) -> None:
+    """A constrained bond keeps its length through a FIRE relaxation.
+
+    Without the constraint the pair relaxes toward the Lennard-Jones minimum, so this
+    also confirms the constraint is what holds it.
+    """
+    target = 4.5
+    positions = torch.tensor(
+        [[0.0, 0.0, 0.0], [target, 0.0, 0.0], [0.0, 9.0, 0.0]], dtype=DTYPE
+    )
+
+    def build(*, constrained: bool) -> ts.SimState:
+        state = ts.SimState(
+            positions=positions.clone(),
+            masses=torch.full((3,), 39.95, dtype=DTYPE),
+            cell=torch.zeros(1, 3, 3, dtype=DTYPE),
+            pbc=torch.zeros(3, dtype=torch.bool),
+            atomic_numbers=torch.full((3,), 18),
+            system_idx=torch.zeros(3, dtype=torch.long),
+        )
+        if constrained:
+            state.constraints = [FixBondLengths([[0, 1]], bond_lengths=[target])]
+        return state
+
+    free = ts.optimize(
+        system=build(constrained=False),
+        model=lj_model,
+        optimizer=ts.Optimizer.fire,
+        convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-4),
+        max_steps=1000,
+    )
+    held = ts.optimize(
+        system=build(constrained=True),
+        model=lj_model,
+        optimizer=ts.Optimizer.fire,
+        convergence_fn=ts.generate_force_convergence_fn(force_tol=1e-4),
+        max_steps=1000,
+    )
+
+    free_distance = torch.linalg.norm(free.positions[0] - free.positions[1]).item()
+    held_distance = torch.linalg.norm(held.positions[0] - held.positions[1]).item()
+    assert held_distance == pytest.approx(target, abs=1e-6)
+    assert abs(free_distance - target) > 1e-2
