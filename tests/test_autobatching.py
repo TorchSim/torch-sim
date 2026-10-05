@@ -196,21 +196,21 @@ def mixed_many_sim_state(
     )
 
 
-@pytest.mark.parametrize("max_atoms_per_pass", [1, 16, 40, 10_000])
+@pytest.mark.parametrize("max_atoms_per_chunk", [1, 16, 40, 10_000])
 def test_n_edges_scalers_chunked_matches_single_pass(
-    mixed_many_sim_state: ts.SimState, max_atoms_per_pass: int
+    mixed_many_sim_state: ts.SimState, max_atoms_per_chunk: int
 ) -> None:
     """Splitting the neighbor-list pass leaves every per-system edge count unchanged."""
     state = mixed_many_sim_state
-    single = _n_edges_scalers(state, cutoff=5.0, max_atoms_per_pass=state.n_atoms)
-    chunked = _n_edges_scalers(state, cutoff=5.0, max_atoms_per_pass=max_atoms_per_pass)
+    single = _n_edges_scalers(state, cutoff=5.0, max_atoms_per_chunk=state.n_atoms)
+    chunked = _n_edges_scalers(state, cutoff=5.0, max_atoms_per_chunk=max_atoms_per_chunk)
     assert chunked == single
 
 
-@pytest.mark.parametrize("max_atoms_per_pass", [1, 16, 40, 10_000])
+@pytest.mark.parametrize("max_atoms_per_chunk", [1, 16, 40, 10_000])
 def test_n_edges_scalers_chunk_bounds(
     mixed_many_sim_state: ts.SimState,
-    max_atoms_per_pass: int,
+    max_atoms_per_chunk: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Each pass holds whole systems and exceeds the bound only for a lone system."""
@@ -223,11 +223,11 @@ def test_n_edges_scalers_chunk_bounds(
 
     monkeypatch.setattr(ts.autobatching, "torchsim_nl", recording_nl)
     state = mixed_many_sim_state
-    _n_edges_scalers(state, cutoff=5.0, max_atoms_per_pass=max_atoms_per_pass)
+    _n_edges_scalers(state, cutoff=5.0, max_atoms_per_chunk=max_atoms_per_chunk)
 
     assert sum(n_sys for n_sys, _ in passes) == state.n_systems
     assert sum(n_at for _, n_at in passes) == state.n_atoms
-    assert all(n_at <= max_atoms_per_pass or n_sys == 1 for n_sys, n_at in passes)
+    assert all(n_at <= max_atoms_per_chunk or n_sys == 1 for n_sys, n_at in passes)
 
 
 @pytest.mark.parametrize("items", [[], {}])

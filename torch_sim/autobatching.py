@@ -45,7 +45,7 @@ DEFAULT_OOM_ERROR_MESSAGES = ("CUDA out of memory", "Failed to allocate")
 # Atoms per neighbor-list pass when computing n_edges scalers. Alchemiops holds
 # fixed-width buffers of ~4.4 KiB per atom at a 6 A cutoff, so this caps the
 # pass at about 1 GiB however large the state is.
-N_EDGES_MAX_ATOMS_PER_PASS = 250_000
+N_EDGES_MAX_ATOMS_PER_CHUNK = 250_000
 
 
 def to_constant_volume_bins(  # noqa: C901
@@ -298,12 +298,12 @@ def determine_max_batch_size(
 def _n_edges_scalers(
     state: SimState,
     cutoff: float,
-    max_atoms_per_pass: int = N_EDGES_MAX_ATOMS_PER_PASS,
+    max_atoms_per_chunk: int = N_EDGES_MAX_ATOMS_PER_CHUNK,
 ) -> list[float]:
     """Return per-system edge counts from the neighbor list as memory scalers.
 
     The neighbor list runs over contiguous runs of systems holding at most
-    ``max_atoms_per_pass`` atoms, so peak memory does not grow with the size of
+    ``max_atoms_per_chunk`` atoms, so peak memory does not grow with the size of
     the state. A system larger than the bound runs alone. Edge counts do not
     depend on other systems, so the result equals a single pass over the state.
     """
@@ -313,7 +313,7 @@ def _n_edges_scalers(
     s0 = a0 = 0
     while s0 < n_systems:
         s1, a1 = s0 + 1, a0 + n_atoms_per_system[s0]
-        while s1 < n_systems and a1 - a0 + n_atoms_per_system[s1] <= max_atoms_per_pass:
+        while s1 < n_systems and a1 - a0 + n_atoms_per_system[s1] <= max_atoms_per_chunk:
             a1 += n_atoms_per_system[s1]
             s1 += 1
         _, system_mapping, _ = torchsim_nl(
