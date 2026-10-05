@@ -42,6 +42,11 @@ logger = logging.getLogger(__name__)
 # nvalchemiops kernels used by ORB v3) raise "Failed to allocate <n> bytes".
 DEFAULT_OOM_ERROR_MESSAGES = ("CUDA out of memory", "Failed to allocate")
 
+# Atoms per neighbor-list pass when computing n_edges scalers. Alchemiops holds
+# fixed-width buffers of ~4.4 KiB per atom at a 6 A cutoff, so this caps the
+# pass at about 1 GiB however large the state is.
+N_EDGES_MAX_ATOMS_PER_PASS = 250_000
+
 
 def to_constant_volume_bins(  # noqa: C901
     items: dict[int, float] | list[Any],
@@ -290,16 +295,37 @@ def determine_max_batch_size(
             torch.cuda.empty_cache()
 
 
-def _n_edges_scalers(state: SimState, cutoff: float) -> list[float]:
-    """Return per-system edge counts from the neighbor list as memory scalers."""
-    _, system_mapping, _ = torchsim_nl(
-        positions=state.positions,
-        cell=state.cell,
-        pbc=state.pbc,
-        cutoff=cutoff,
-        system_idx=state.system_idx,
-    )
-    return system_mapping.bincount(minlength=state.n_systems).float().tolist()
+def _n_edges_scalers(
+    state: SimState,
+    cutoff: float,
+    max_atoms_per_pass: int = N_EDGES_MAX_ATOMS_PER_PASS,
+) -> list[float]:
+    """Return per-system edge counts from the neighbor list as memory scalers.
+
+    The neighbor list runs over contiguous runs of systems holding at most
+    ``max_atoms_per_pass`` atoms, so peak memory does not grow with the size of
+    the state. A system larger than the bound runs alone. Edge counts do not
+    depend on other systems, so the result equals a single pass over the state.
+    """
+    n_atoms_per_system = state.n_atoms_per_system.tolist()
+    n_systems = len(n_atoms_per_system)
+    scalers: list[float] = []
+    s0 = a0 = 0
+    while s0 < n_systems:
+        s1, a1 = s0 + 1, a0 + n_atoms_per_system[s0]
+        while s1 < n_systems and a1 - a0 + n_atoms_per_system[s1] <= max_atoms_per_pass:
+            a1 += n_atoms_per_system[s1]
+            s1 += 1
+        _, system_mapping, _ = torchsim_nl(
+            positions=state.positions[a0:a1],
+            cell=state.cell[s0:s1],
+            pbc=state.pbc,
+            cutoff=cutoff,
+            system_idx=state.system_idx[a0:a1] - s0,
+        )
+        scalers.extend(system_mapping.bincount(minlength=s1 - s0).float().tolist())
+        s0, a0 = s1, a1
+    return scalers
 
 
 def calculate_memory_scalers(
