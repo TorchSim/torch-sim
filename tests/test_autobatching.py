@@ -185,6 +185,51 @@ def test_n_edges_scalers_batched(ar_double_sim_state: ts.SimState) -> None:
     assert all(v >= 0 for v in result)
 
 
+@pytest.fixture
+def mixed_many_sim_state(
+    ar_supercell_sim_state: ts.SimState, si_sim_state: ts.SimState
+) -> ts.SimState:
+    """Batched state of alternating large and small periodic systems."""
+    return ts.concatenate_states(
+        [ar_supercell_sim_state, si_sim_state, si_sim_state, ar_supercell_sim_state],
+        device=si_sim_state.device,
+    )
+
+
+@pytest.mark.parametrize("max_atoms_per_chunk", [1, 16, 40, 10_000])
+def test_n_edges_scalers_chunked_matches_single_pass(
+    mixed_many_sim_state: ts.SimState, max_atoms_per_chunk: int
+) -> None:
+    """Splitting the neighbor-list pass leaves every per-system edge count unchanged."""
+    state = mixed_many_sim_state
+    single = _n_edges_scalers(state, cutoff=5.0, max_atoms_per_chunk=state.n_atoms)
+    chunked = _n_edges_scalers(state, cutoff=5.0, max_atoms_per_chunk=max_atoms_per_chunk)
+    assert chunked == single
+
+
+@pytest.mark.parametrize("max_atoms_per_chunk", [1, 16, 40, 10_000])
+def test_n_edges_scalers_chunk_bounds(
+    mixed_many_sim_state: ts.SimState,
+    max_atoms_per_chunk: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each pass holds whole systems and exceeds the bound only for a lone system."""
+    passes: list[tuple[int, int]] = []
+    real_nl = ts.autobatching.torchsim_nl
+
+    def recording_nl(**kwargs: Any) -> Any:
+        passes.append((int(kwargs["system_idx"].max()) + 1, kwargs["positions"].shape[0]))
+        return real_nl(**kwargs)
+
+    monkeypatch.setattr(ts.autobatching, "torchsim_nl", recording_nl)
+    state = mixed_many_sim_state
+    _n_edges_scalers(state, cutoff=5.0, max_atoms_per_chunk=max_atoms_per_chunk)
+
+    assert sum(n_sys for n_sys, _ in passes) == state.n_systems
+    assert sum(n_at for _, n_at in passes) == state.n_atoms
+    assert all(n_at <= max_atoms_per_chunk or n_sys == 1 for n_sys, n_at in passes)
+
+
 @pytest.mark.parametrize("items", [[], {}])
 def test_to_constant_volume_bins_empty_input(
     items: list[Any] | dict[int, float],
