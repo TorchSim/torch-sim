@@ -48,7 +48,7 @@ class FireState(OptimState):
     n_pos: torch.Tensor
 
     _atom_attributes = OptimState._atom_attributes | {"velocities"}  # noqa: SLF001
-    _system_attributes = OptimState._system_attributes | {"dt", "alpha", "n_pos"}  # noqa: SLF001
+    _group_attributes = OptimState._group_attributes | {"dt", "alpha", "n_pos"}  # noqa: SLF001
 
 
 @dataclass(kw_only=True)
