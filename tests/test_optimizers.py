@@ -747,7 +747,7 @@ def test_fire_nan_velocities_dont_affect_other_systems(
 
     # Evolve 10 steps so system 0 has non-trivial FIRE state (dt, alpha, n_pos)
     for _ in range(10):
-        state = ts.fire_step(state=state, model=lj_model)
+        state = ts.fire_step(state=state, model=lj_model, fire_flavor=fire_flavor)
 
     # Clone, then inject NaN into system 1 of one copy
     state_clean = copy.deepcopy(state)
@@ -759,8 +759,8 @@ def test_fire_nan_velocities_dont_affect_other_systems(
         state_mixed.cell_velocities[1] = float("nan")
 
     # One step each
-    state_clean = ts.fire_step(state=state_clean, model=lj_model)
-    state_mixed = ts.fire_step(state=state_mixed, model=lj_model)
+    state_clean = ts.fire_step(state=state_clean, model=lj_model, fire_flavor=fire_flavor)
+    state_mixed = ts.fire_step(state=state_mixed, model=lj_model, fire_flavor=fire_flavor)
 
     # System 0 must be identical regardless of system 1's NaN velocities
     sys0 = state_clean.system_idx == 0
@@ -783,6 +783,41 @@ def test_fire_nan_velocities_dont_affect_other_systems(
         assert torch.equal(state_mixed.cell[0], state_clean.cell[0]), (
             "System 0 cell differs when system 1 has NaN velocities"
         )
+
+
+@pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
+def test_vv_fire_nan_cell_velocities_with_finite_atomic_velocities(
+    ar_double_sim_state: SimState,
+    lj_model: ModelInterface,
+    cell_filter: ts.CellFilter,
+) -> None:
+    """Cell NaNs reset that system's cell velocity independently of atomic NaNs."""
+    ar_double_sim_state.cell *= 0.85
+    ar_double_sim_state.positions *= 0.85
+    state = ts.fire_init(
+        ar_double_sim_state, lj_model, fire_flavor="vv_fire", cell_filter=cell_filter
+    )
+    state.velocities.fill_(0.01)
+    state.cell_velocities.fill_(0.02)
+
+    # A single NaN should reset the whole cell velocity for that system.
+    expected = state.clone()
+    expected.cell_velocities[1] = 0
+    state.cell_velocities[1, 0, 0] = float("nan")
+
+    expected = ts.fire_step(state=expected, model=lj_model, fire_flavor="vv_fire")
+    actual = ts.fire_step(state=state, model=lj_model, fire_flavor="vv_fire")
+
+    for attr in (
+        "positions",
+        "velocities",
+        "cell",
+        "cell_velocities",
+        "dt",
+        "alpha",
+        "n_pos",
+    ):
+        torch.testing.assert_close(getattr(actual, attr), getattr(expected, attr))
 
 
 @pytest.mark.parametrize("fire_flavor", get_args(FireFlavor))
