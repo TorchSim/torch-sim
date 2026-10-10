@@ -4,9 +4,9 @@ TorchSim is an open-source project spun out of Radical AI. It is supported by Ra
 
 ## **Governance Model**
 
-The project is guided by a **Steering Committee** representing Radical AI, Globus Labs, and the original TorchSim team. It currently consists of:
+The project is guided by a **Steering Committee**. It currently consists of:
 
-* Rhys Goodall (Radical AI)
+* Rhys Goodall (TorchSim lead maintainer)
 * Will Engler (Globus Labs, University of Chicago)
 * Orion Cohen (TorchSim co-creator)
 * Abhijeet Gangan (TorchSim co-creator)
