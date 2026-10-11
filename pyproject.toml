@@ -54,6 +54,7 @@ mace = ["mace-torch>=0.3.16"]
 # phono3py>=4.0.0: some older 3.x sdists (e.g. 3.2.0) fail to build and break uv resolution.
 mattersim = ["mattersim>=1.2.5", "phono3py>=4.0.0"]
 metatomic = ["metatomic-torchsim>=0.1.1", "metatomic-ase>=0.1.0", "upet>=0.2.0"]
+deepmd = ["deepmd_torchsim[deepmd]>=0.1.1"]
 orb = ["orb-models>=0.6.2"]
 sevenn = ["sevenn[torchsim]>=0.12.1"]
 nequip = ["nequip>=0.17.1"]
@@ -176,6 +177,10 @@ conflicts = [
     [
         { extra = "mace" },
         { extra = "sevenn" },
+    ],
+    [
+        { extra = "deepmd" },
+        { extra = "fairchem" },
     ],
 ]
 

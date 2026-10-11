@@ -60,6 +60,7 @@ jobs:
           - { python: '3.12', resolution: lowest-direct }
           - { python: '3.14', resolution: highest }
         model:
+          - { name: deepmd, test_path: "tests/models/test_deepmd.py" }
           - { name: fairchem, test_path: "tests/models/test_fairchem.py" }
           - { name: mace, test_path: "tests/models/test_mace.py" }
           - { name: mace, test_path: "tests/test_elastic.py" }
