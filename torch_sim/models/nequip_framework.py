@@ -15,6 +15,8 @@ from typing import Any, Self
 try:
     from nequip.integrations.torchsim import NequIPTorchSimCalc
 
+    from torch_sim.state import SimState, _to_legacy_pbc_state
+
     # Re-export with backward-compatible name
     class NequIPFrameworkModel(NequIPTorchSimCalc):
         """NequIP model framework wrapper for torch-sim.
@@ -23,6 +25,18 @@ try:
         The AOTInductor may actually contain a different dtype but the
         model will cast to the correct dtype internally.
         """
+
+        def forward(self, *args: Any, **kwargs: Any) -> Any:
+            """Run forward pass with the legacy global pbc row.
+
+            The NequIP integration reads state.pbc as a single global setting,
+            so present the shared (3,) row until it supports per-system pbc.
+            """
+            if args and isinstance(args[0], SimState):
+                args = (_to_legacy_pbc_state(args[0]), *args[1:])
+            elif isinstance(kwargs.get("state"), SimState):
+                kwargs["state"] = _to_legacy_pbc_state(kwargs["state"])
+            return super().forward(*args, **kwargs)
 
 except ImportError as exc:
     _nequip_import_error = exc  # capture before except block ends (exc is deleted)

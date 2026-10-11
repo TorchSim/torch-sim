@@ -9,7 +9,28 @@ from typing import Any
 
 
 try:
-    from metatomic_torchsim import MetatomicModel  # pyright: ignore[reportMissingImports]
+    from metatomic_torchsim import (  # pyright: ignore[reportMissingImports]
+        MetatomicModel as _MetatomicTorchSimModel,
+    )
+
+    from torch_sim.state import SimState, _to_legacy_pbc_state
+
+    class MetatomicModel(_MetatomicTorchSimModel):
+        """Metatomic model wrapper for torch-sim."""
+
+        def forward(self, *args: Any, **kwargs: Any) -> Any:
+            """Run forward pass with the legacy global pbc row.
+
+            The metatomic integration reads state.pbc as a single global
+            setting, so present the shared (3,) row until it supports
+            per-system pbc.
+            """
+            if args and isinstance(args[0], SimState):
+                args = (_to_legacy_pbc_state(args[0]), *args[1:])
+            elif isinstance(kwargs.get("state"), SimState):
+                kwargs["state"] = _to_legacy_pbc_state(kwargs["state"])
+            return super().forward(*args, **kwargs)
+
 except ImportError as exc:
     warnings.warn(
         f"metatomic-torchsim import failed: {traceback.format_exc()}", stacklevel=2

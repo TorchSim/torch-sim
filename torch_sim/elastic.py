@@ -29,7 +29,7 @@ import torch_sim as ts
 from torch_sim.autobatching import BinningAutoBatcher
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers import OptimState
-from torch_sim.state import SimState
+from torch_sim.state import SimState, require_full_pbc
 from torch_sim.typing import BravaisType
 
 
@@ -1132,6 +1132,7 @@ def calculate_elastic_tensor(
     Returns:
         torch.Tensor: Elastic tensor
     """
+    require_full_pbc(state, "Elastic tensor calculation")
     device, dtype = state.device, state.dtype
 
     # Calculate deformations for the bravais type

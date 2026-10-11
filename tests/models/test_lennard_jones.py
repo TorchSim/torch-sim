@@ -116,6 +116,30 @@ def test_lennard_jones_model_evaluation(si_double_sim_state: ts.SimState) -> Non
     assert results["stress"].shape == (si_double_sim_state.n_systems, 3, 3)
 
 
+def test_lennard_jones_model_mixed_pbc_batch(
+    ar_supercell_sim_state: ts.SimState, benzene_sim_state: ts.SimState
+) -> None:
+    """A batch mixing periodic and non-periodic systems matches per-system results."""
+    model = LennardJonesModel(
+        sigma=3.405,
+        epsilon=0.0104,
+        cutoff=2.5 * 3.405,
+        dtype=torch.float64,
+        compute_forces=True,
+    )
+    mixed = ts.concatenate_states([ar_supercell_sim_state, benzene_sim_state])
+    assert mixed.pbc.tolist() == [[True, True, True], [False, False, False]]
+
+    batched = model(mixed)
+    for sys_idx, single in enumerate((ar_supercell_sim_state, benzene_sim_state)):
+        single_results = model(single)
+        torch.testing.assert_close(
+            batched["energy"][sys_idx], single_results["energy"][0]
+        )
+        mask = mixed.system_idx == sys_idx
+        torch.testing.assert_close(batched["forces"][mask], single_results["forces"])
+
+
 def test_lennard_jones_model_force_conservation(
     si_double_sim_state: ts.SimState,
 ) -> None:

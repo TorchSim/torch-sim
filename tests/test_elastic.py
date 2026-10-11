@@ -13,6 +13,7 @@ from torch_sim.elastic import (
     get_elementary_deformations,
     get_strain,
 )
+from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.typing import BravaisType
 from torch_sim.units import UnitConversion
 
@@ -23,6 +24,14 @@ try:
     from torch_sim.models.mace import MaceModel
 except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
     pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)
+
+
+def test_calculate_elastic_tensor_requires_full_pbc(
+    benzene_sim_state: ts.SimState, lj_model: LennardJonesModel
+) -> None:
+    """Elastic tensor calculation rejects systems that are not fully periodic."""
+    with pytest.raises(ValueError, match="fully periodic"):
+        calculate_elastic_tensor(benzene_sim_state, lj_model)
 
 
 def test_get_strain_zero_deformation(cu_sim_state: ts.SimState) -> None:

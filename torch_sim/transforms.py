@@ -130,9 +130,10 @@ def pbc_wrap_batched(
             lattice vectors as column vectors.
         system_idx (torch.Tensor): Tensor of shape (n_atoms,) containing system
             indices for each atom.
-        pbc (torch.Tensor | bool): Tensor of shape (3,) containing boolean values
-            indicating whether periodic boundary conditions are applied in each dimension.
-            Can also be a bool. Defaults to True.
+        pbc (torch.Tensor | bool): Tensor of shape (n_systems, 3) or (3,) containing
+            boolean values indicating whether periodic boundary conditions are applied
+            in each dimension. Can also be a bool. A (3,) tensor or bool is broadcast
+            to all systems. Defaults to True.
 
     Returns:
         torch.Tensor: Wrapped positions in real space with same shape as input positions.
@@ -150,7 +151,7 @@ def pbc_wrap_batched(
             f"Number of unique systems ({n_systems}) doesn't "
             f"match number of cells ({cell.shape[0]})"
         )
-    pbc_batched = pbc.unsqueeze(0).expand(n_systems, -1)
+    pbc_batched = pbc.unsqueeze(0).expand(n_systems, -1) if pbc.ndim == 1 else pbc
     wrapped, _ = pbc_wrap_batched_and_get_lattice_shifts(
         positions, cell.mT, system_idx, pbc_batched
     )
