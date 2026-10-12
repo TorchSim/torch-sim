@@ -1452,3 +1452,12 @@ def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJon
         state.system_idx,
     )
     assert torch.allclose(unwrapped_positions, positions, atol=1e-4)
+
+
+def test_cell_volume_handedness_invariant() -> None:
+    """Volume is positive and identical for left- and right-handed cells."""
+    cell = torch.tensor([[[2.0, 0, 0], [0, 3.0, 0], [0, 0, 4.0]]] * 2)
+    cell[1, 2] *= -1  # flip handedness of the second cell
+    volumes = tst.cell_volume(cell)
+    torch.testing.assert_close(volumes, torch.full((2,), 24.0))
+    assert tst.cell_volume(cell[0]).shape == ()

@@ -5,7 +5,7 @@ import pytest
 import torch
 
 import torch_sim as ts
-from tests.conftest import DEVICE
+from tests.conftest import DEVICE, make_left_handed
 from torch_sim.integrators import MDState
 from torch_sim.integrators.md import NoseHooverChain, NoseHooverChainFns
 from torch_sim.integrators.npt import (
@@ -1239,3 +1239,11 @@ def test_lbfgsstate_instantiation() -> None:
         max_atoms=torch.tensor([n_atoms]),
     )
     _check_coercion(state)
+
+
+def test_volume_is_positive_for_left_handed_cell(si_sim_state: SimState) -> None:
+    left = make_left_handed(si_sim_state)
+
+    assert torch.det(left.cell).item() < 0
+    assert (left.volume > 0).all()
+    torch.testing.assert_close(left.volume, si_sim_state.volume)

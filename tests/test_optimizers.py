@@ -8,6 +8,7 @@ import pytest
 import torch
 
 import torch_sim as ts
+from tests.conftest import make_left_handed
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers import BFGSState, FireFlavor, FireState, LBFGSState, OptimState
 from torch_sim.optimizers.cell_filters import CellLBFGSState, CellOptimState, deform_grad
@@ -976,7 +977,7 @@ def test_unit_cell_fire_ase_non_positive_volume_warning(
         torch.randn_like(perturbed_state.cell) * 0.5
     )  # Large perturbation
     # Also ensure no PBC issues by slightly expanding cell if it got too small
-    if torch.linalg.det(perturbed_state.cell[0]) < 1.0:
+    if ts.transforms.cell_volume(perturbed_state.cell[0]) < 1.0:
         perturbed_state.cell[0] *= 2.0
 
     state = ts.fire_init(
@@ -1562,3 +1563,56 @@ def test_lbfgs_prev_cell_positions_stored_before_step(lj_model: ModelInterface) 
         "prev_positions should be fractional coords in the adjusted cell frame. "
         f"max diff = {(opt_state.prev_positions - expected_prev).abs().max():.2e}"
     )
+
+
+@pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
+@pytest.mark.parametrize("include_cell_forces", [False, True])
+def test_cell_optimization_is_independent_of_cell_handedness(
+    ar_supercell_sim_state: SimState,
+    lj_model: ModelInterface,
+    cell_filter: ts.CellFilter,
+    *,
+    include_cell_forces: bool,
+) -> None:
+    """A left-handed description of a crystal relaxes exactly like the right-handed.
+
+    The cell filters turn the stress into cell forces through the cell volume, which
+    must be |det(cell)|: a signed volume flips the cell forces, so the cell relaxes
+    the wrong way. A force criterion only sees their norm, so a left-handed cell would
+    still be reported as converged (`include_cell_forces=True`).
+    """
+    strained = ar_supercell_sim_state.clone()
+    strained.cell = strained.cell * 1.05
+    strained.positions = strained.positions * 1.05
+    initial_volume = strained.volume.clone()
+    convergence_fn = (
+        ts.generate_force_convergence_fn(force_tol=1e-3, include_cell_forces=True)
+        if include_cell_forces
+        else None  # ts.optimize falls back to its default energy criterion
+    )
+
+    initial_cell_forces, final = {}, {}
+    for name, start in (("right", strained), ("left", make_left_handed(strained))):
+        state = ts.fire_init(state=start, model=lj_model, cell_filter=cell_filter)
+        initial_cell_forces[name] = state.cell_forces
+        final[name] = ts.optimize(
+            system=start,
+            model=lj_model,
+            optimizer=ts.Optimizer.fire,
+            convergence_fn=convergence_fn,
+            init_kwargs={"cell_filter": cell_filter},
+            max_steps=1000,
+        )
+        if convergence_fn is not None:
+            assert convergence_fn(final[name]).all()
+
+    # The cell forces come from the (Cartesian) stress and the physical volume, so they
+    # must not depend on the handedness, and for a stretched crystal they point inward.
+    torch.testing.assert_close(initial_cell_forces["left"], initial_cell_forces["right"])
+    assert (torch.diagonal(initial_cell_forces["right"], dim1=-2, dim2=-1) < 0).all()
+
+    # The strained Ar crystal is under tension, so the volume must shrink.
+    assert (final["right"].volume < initial_volume).all()
+    torch.testing.assert_close(final["left"].volume, final["right"].volume)
+    torch.testing.assert_close(final["left"].energy, final["right"].energy)
+    torch.testing.assert_close(final["left"].positions, final["right"].positions)

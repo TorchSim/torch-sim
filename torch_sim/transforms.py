@@ -13,6 +13,22 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.types import _dtype
 
 
+def cell_volume(cell: torch.Tensor) -> torch.Tensor:
+    """Volume of one or more cells, positive for left- and right-handed cells.
+
+    ``det(cell)`` is negative for left-handed cells, which would flip the sign of
+    anything derived from it (pressure, barostat forces, scaled cells). Use this
+    helper rather than calling ``torch.det`` on a cell directly.
+
+    Args:
+        cell: Cell matrices with shape ``[..., 3, 3]``.
+
+    Returns:
+        Volumes with shape ``[...]``.
+    """
+    return torch.linalg.det(cell).abs()
+
+
 def get_fractional_coordinates(
     positions: torch.Tensor, cell: torch.Tensor
 ) -> torch.Tensor:

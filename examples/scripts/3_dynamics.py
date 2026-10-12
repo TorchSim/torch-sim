@@ -374,7 +374,7 @@ for step in range(N_steps_npt):
             )
         )
         stress = mace_model_stress(state)["stress"]
-        volume = torch.det(state.current_cell)
+        volume = ts.transforms.cell_volume(state.current_cell)
         e_kin = ts.calc_kinetic_energy(
             masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
         )
@@ -400,7 +400,7 @@ final_temp = (
 log.info(f"Final temperature: {final_temp.item():.4f} K")
 
 final_stress = mace_model_stress(state)["stress"]
-final_volume = torch.det(state.current_cell)
+final_volume = ts.transforms.cell_volume(state.current_cell)
 final_pressure = ts.get_pressure(
     final_stress,
     ts.calc_kinetic_energy(

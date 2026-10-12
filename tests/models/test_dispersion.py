@@ -8,7 +8,7 @@ import pytest
 import torch
 
 import torch_sim as ts
-from tests.conftest import DEVICE, DTYPE
+from tests.conftest import DEVICE, DTYPE, make_left_handed
 from tests.models.conftest import make_validate_model_outputs_test
 
 
@@ -290,3 +290,15 @@ def test_d3_periodic_state_keeps_default_neighbor_width() -> None:
     )
     model(state)
     assert seen == [None]
+
+
+def test_d3_stress_is_independent_of_cell_handedness(
+    d3_model_pbe: D3DispersionModel, si_sim_state: ts.SimState
+) -> None:
+    """The Cartesian D3 stress must not depend on the handedness of the cell."""
+    right = d3_model_pbe(si_sim_state)
+    left = d3_model_pbe(make_left_handed(si_sim_state))
+
+    torch.testing.assert_close(left["energy"], right["energy"])
+    torch.testing.assert_close(left["forces"], right["forces"])
+    torch.testing.assert_close(left["stress"], right["stress"])

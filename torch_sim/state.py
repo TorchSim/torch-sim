@@ -442,7 +442,7 @@ class SimState:
     @property
     def volume(self) -> torch.Tensor:
         """Volume of the system."""
-        return torch.det(self.cell)
+        return ts.transforms.cell_volume(self.cell)
 
     @property
     def attributes(self) -> dict[str, Any]:
