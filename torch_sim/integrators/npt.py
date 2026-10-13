@@ -692,7 +692,7 @@ class NPTLangevinIsotropicState(NPTState):
     def volume(self) -> torch.Tensor:
         """Current volume V = V₀ · exp(d·ε)."""
         dim = self.positions.shape[1]
-        V_0 = ts.transforms.cell_volume(self.reference_cell)
+        V_0 = ts.quantities.cell_volume(self.reference_cell)
         return V_0 * torch.exp(dim * self.cell_positions)
 
 
@@ -1200,7 +1200,7 @@ class NPTNoseHooverIsotropicState(NPTState):
                 [n_systems, n_dimensions, n_dimensions]
         """
         dim = self.positions.shape[1]
-        V_0 = ts.transforms.cell_volume(self.reference_cell)  # [n_systems]
+        V_0 = ts.quantities.cell_volume(self.reference_cell)  # [n_systems]
         V = V_0 * torch.exp(dim * self.cell_position)  # [n_systems]
         scale = (V / V_0) ** (1.0 / dim)  # [n_systems]
         # Expand scale to [n_systems, 1, 1] for broadcasting
@@ -1239,7 +1239,7 @@ def _npt_nose_hoover_isotropic_cell_info(
     """
     dim = state.positions.shape[1]
     ref = state.reference_cell  # [n_systems, dim, dim]
-    V_0 = ts.transforms.cell_volume(ref)  # [n_systems] - Reference volume
+    V_0 = ts.quantities.cell_volume(ref)  # [n_systems] - Reference volume
     V = V_0 * torch.exp(dim * state.cell_position)  # [n_systems] - Current volume
 
     def volume_to_cell(V: torch.Tensor) -> torch.Tensor:
@@ -2021,7 +2021,7 @@ def npt_nose_hoover_isotropic_invariant(
             multiple systems.
     """
     # Calculate volume and potential energy
-    volume = ts.transforms.cell_volume(state.current_cell)  # [n_systems]
+    volume = ts.quantities.cell_volume(state.current_cell)  # [n_systems]
     e_pot = state.energy  # Should be scalar or [n_systems]
 
     # Calculate kinetic energy of particles per system

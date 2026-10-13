@@ -74,7 +74,8 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
-from torch_sim.transforms import cell_volume, compute_cell_shifts
+from torch_sim.quantities import cell_volume
+from torch_sim.transforms import compute_cell_shifts
 
 
 if TYPE_CHECKING:

@@ -977,7 +977,7 @@ def test_unit_cell_fire_ase_non_positive_volume_warning(
         torch.randn_like(perturbed_state.cell) * 0.5
     )  # Large perturbation
     # Also ensure no PBC issues by slightly expanding cell if it got too small
-    if ts.transforms.cell_volume(perturbed_state.cell[0]) < 1.0:
+    if ts.quantities.cell_volume(perturbed_state.cell[0]) < 1.0:
         perturbed_state.cell[0] *= 2.0
 
     state = ts.fire_init(
