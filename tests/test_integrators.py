@@ -721,7 +721,7 @@ def test_npt_crescale_default_coupling_is_stable(integrator_name: str) -> None:
     external_pressure = torch.tensor(0.0, dtype=DTYPE)
 
     state = ts.npt_crescale_init(state=state, model=model, dt=dt, kT=kT)
-    initial_volume = ts.transforms.cell_volume(state.cell).clone()
+    initial_volume = state.volume.clone()
 
     for step in range(100):
         state = step_fn(
@@ -732,7 +732,7 @@ def test_npt_crescale_default_coupling_is_stable(integrator_name: str) -> None:
             "barostat coupling"
         )
 
-    ratio = (ts.transforms.cell_volume(state.cell) / initial_volume).tolist()
+    ratio = (state.volume / initial_volume).tolist()
     assert all(0.5 < r < 2.0 for r in ratio), (
         f"{integrator_name}: default barostat changed the volume by {ratio} in "
         "100 steps at the system's own pressure"

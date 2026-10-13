@@ -125,11 +125,6 @@ class NPTLangevinAnisotropicState(NPTState):
         scale = torch.exp(self.cell_positions)  # (n_systems, 3)
         return scale.unsqueeze(-1) * self.reference_cell
 
-    @property
-    def volume(self) -> torch.Tensor:
-        """Current volume from cell determinant (positive for any handedness)."""
-        return ts.transforms.cell_volume(self.cell)
-
 
 def _npt_langevin_particle_beta(
     state: "NPTLangevinAnisotropicState | NPTLangevinIsotropicState",
@@ -2189,7 +2184,7 @@ def _crescale_triclinic_barostat_step(
     dt: torch.Tensor,
     external_pressure: torch.Tensor,
 ) -> NPTCRescaleState:
-    volume = ts.transforms.cell_volume(state.cell)  # shape: (n_systems,)
+    volume = state.volume  # shape: (n_systems,)
     P_int = ts.quantities.compute_instantaneous_pressure_tensor(
         momenta=state.momenta,
         masses=state.masses,
@@ -2285,7 +2280,7 @@ def _crescale_anisotropic_barostat_step(
     dt: torch.Tensor,
     external_pressure: torch.Tensor,
 ) -> NPTCRescaleState:
-    volume = ts.transforms.cell_volume(state.cell)  # shape: (n_systems,)
+    volume = state.volume  # shape: (n_systems,)
     P_int = ts.quantities.compute_instantaneous_pressure_tensor(
         momenta=state.momenta,
         masses=state.masses,
@@ -2379,7 +2374,7 @@ def _crescale_triclinic_average_barostat_step(
     dt: torch.Tensor,
     external_pressure: torch.Tensor,
 ) -> NPTCRescaleState:
-    volume = ts.transforms.cell_volume(state.cell)  # shape: (n_systems,)
+    volume = state.volume  # shape: (n_systems,)
     P_int = compute_average_pressure_tensor(
         degrees_of_freedom=state.get_number_of_degrees_of_freedom() / 3,
         kT=kT,
@@ -2458,7 +2453,7 @@ def _crescale_isotropic_barostat_step(
     dt: torch.Tensor,
     external_pressure: torch.Tensor,
 ) -> NPTCRescaleState:
-    volume = ts.transforms.cell_volume(state.cell)  # shape: (n_systems,)
+    volume = state.volume  # shape: (n_systems,)
     P_int = ts.quantities.compute_instantaneous_pressure_tensor(
         momenta=state.momenta,
         masses=state.masses,
@@ -2971,7 +2966,7 @@ def npt_crescale_init(
     # Store initial cell for deviatoric correction
     initial_cell = state.cell.clone()
     initial_cell_inv = torch.inverse(initial_cell)
-    initial_volume = ts.transforms.cell_volume(initial_cell)
+    initial_volume = state.volume
 
     # Create the initial state
     npt_state = NPTCRescaleState.from_state(
