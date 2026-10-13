@@ -48,6 +48,20 @@ def _zero_result(
     return results
 
 
+def _masked_forward(
+    model: ModelInterface, state: SimState, has_pbc: torch.Tensor
+) -> dict[str, torch.Tensor]:
+    """Evaluate the model on systems with any periodic axis, zero-filling the rest."""
+    sub_results = model.forward(state[torch.where(has_pbc)[0]])
+    results = _zero_result(state, model.dtype, model.compute_forces, model.compute_stress)
+    results["energy"][has_pbc] = sub_results["energy"]
+    if model.compute_forces:
+        results["forces"][has_pbc[state.system_idx]] = sub_results["forces"]
+    if model.compute_stress:
+        results["stress"][has_pbc] = sub_results["stress"]
+    return results
+
+
 class DSFCoulombModel(ModelInterface):
     """Damped Shifted Force electrostatics as a :class:`ModelInterface`.
 
@@ -208,7 +222,7 @@ class EwaldModel(ModelInterface):
         Args:
             state: Simulation state with ``partial_charges`` set as an
                 atom extra (shape ``[n_atoms]``).  Returns zeros for
-                non-periodic states.
+                non-periodic systems.
             **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
@@ -218,10 +232,15 @@ class EwaldModel(ModelInterface):
         if not state.has_extras("partial_charges"):
             raise ValueError("Partial charges are required for Ewald summation.")
 
-        if not state.pbc.any():
+        # Systems with any periodic axis go to the 3D kernels; only systems
+        # with no periodic axis are zero-filled.
+        has_pbc = state.pbc.any(dim=1)
+        if not has_pbc.any():
             return _zero_result(
                 state, self._dtype, self._compute_forces, self._compute_stress
             )
+        if not has_pbc.all():
+            return _masked_forward(self, state, has_pbc)
         charges = state.partial_charges
         edge_index, _mapping, unit_shifts = self.neighbor_list_fn(
             state.positions,
@@ -337,7 +356,7 @@ class PMEModel(ModelInterface):
         Args:
             state: Simulation state with ``partial_charges`` set as an
                 atom extra (shape ``[n_atoms]``).  Returns zeros for
-                non-periodic states.
+                non-periodic systems.
             **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
@@ -347,10 +366,15 @@ class PMEModel(ModelInterface):
         if not state.has_extras("partial_charges"):
             raise ValueError("Partial charges are required for PME summation.")
 
-        if not state.pbc.any():
+        # Systems with any periodic axis go to the 3D kernels; only systems
+        # with no periodic axis are zero-filled.
+        has_pbc = state.pbc.any(dim=1)
+        if not has_pbc.any():
             return _zero_result(
                 state, self._dtype, self._compute_forces, self._compute_stress
             )
+        if not has_pbc.all():
+            return _masked_forward(self, state, has_pbc)
         charges = state.partial_charges
         edge_index, _mapping, unit_shifts = self.neighbor_list_fn(
             state.positions,
