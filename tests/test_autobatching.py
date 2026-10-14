@@ -100,7 +100,7 @@ def test_calculate_scaling_metric(si_sim_state: ts.SimState) -> None:
 
     # Test n_atoms_x_density metric
     density_metric = calculate_memory_scalers(si_sim_state, "n_atoms_x_density")
-    volume = torch.abs(torch.linalg.det(si_sim_state.cell[0])) / 1000
+    volume = ts.quantities.cell_volume(si_sim_state.cell[0]) / 1000
     expected = si_sim_state.n_atoms * (si_sim_state.n_atoms / volume.item())
     assert pytest.approx(density_metric[0], rel=1e-5) == expected
 

@@ -406,7 +406,7 @@ def calculate_memory_scalers(
                 )
             )
             if system_pbc_all:
-                volume = torch.abs(torch.linalg.det(system_state.cell[0])) / 1000
+                volume = system_state.volume[0] / 1000
             else:
                 bbox = (
                     system_state.positions.max(dim=0).values

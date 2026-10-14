@@ -11,6 +11,7 @@ from torch_sim.quantities import (
     calc_kinetic_energy,
     calc_kT,
     calc_temperature,
+    cell_volume,
 )
 from torch_sim.units import MetalUnits
 
@@ -276,3 +277,12 @@ def test_calc_temperature(single_system_data: dict[str, Tensor]) -> None:
         velocities=single_system_data["velocities"],
     )
     assert torch.allclose(temp, kt / MetalUnits.temperature)
+
+
+def test_cell_volume_handedness_invariant() -> None:
+    """Volume is positive and identical for left- and right-handed cells."""
+    cell = torch.tensor([[[2.0, 0, 0], [0, 3.0, 0], [0, 0, 4.0]]] * 2)
+    cell[1, 2] *= -1  # flip handedness of the second cell
+    volumes = cell_volume(cell)
+    torch.testing.assert_close(volumes, torch.full((2,), 24.0))
+    assert cell_volume(cell[0]).shape == ()

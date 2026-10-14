@@ -12,6 +12,22 @@ if TYPE_CHECKING:
     from torch_sim.optimizers import OptimState
 
 
+def cell_volume(cell: torch.Tensor) -> torch.Tensor:
+    """Volume of one or more cells, positive for left- and right-handed cells.
+
+    ``det(cell)`` is negative for left-handed cells, which would flip the sign of
+    anything derived from it (pressure, barostat forces, scaled cells). Use this
+    helper rather than calling ``torch.det`` on a cell directly.
+
+    Args:
+        cell: Cell matrices with shape ``[..., 3, 3]``.
+
+    Returns:
+        Volumes with shape ``[...]``.
+    """
+    return torch.linalg.det(cell).abs()
+
+
 # @torch.jit.script
 def calc_kT(  # noqa: N802
     *,
