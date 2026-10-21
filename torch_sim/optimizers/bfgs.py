@@ -90,7 +90,7 @@ def bfgs_init(
     *,
     max_step: float | torch.Tensor = 0.2,
     alpha: float | torch.Tensor = 70.0,
-    cell_filter: "CellFilter | CellFilterFuncs | None" = None,
+    cell_filter: "CellFilter | str | CellFilterFuncs | None" = None,
     **filter_kwargs: Any,
 ) -> "BFGSState | CellBFGSState":
     """Create an initial BFGSState.

@@ -6,6 +6,7 @@ Filters encapsulate the logic for computing cell forces and updating cell parame
 during optimization.
 """
 
+import contextlib
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -407,8 +408,11 @@ CELL_FILTER_REGISTRY: dict[CellFilter, CellFilterFuncs] = {
 }
 
 
-def get_cell_filter(cell_filter: "CellFilter | tuple") -> CellFilterFuncs:
+def get_cell_filter(cell_filter: "CellFilter | str | tuple") -> CellFilterFuncs:
     """Resolve cell filter into a tuple of init and update functions."""
+    if isinstance(cell_filter, str):
+        with contextlib.suppress(ValueError):  # invalid names hit the error below
+            cell_filter = CellFilter(cell_filter)
     if isinstance(cell_filter, CellFilter):
         return CELL_FILTER_REGISTRY[cell_filter]
     if (

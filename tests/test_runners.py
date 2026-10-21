@@ -1195,3 +1195,62 @@ def test_generate_force_convergence_fn_default_behavior(
 
     assert torch.equal(result_default, result_explicit)
     assert result_default.all()  # Should converge with low forces
+
+
+def test_integrate_accepts_string_integrator(
+    ar_supercell_sim_state: SimState, lj_model: LennardJonesModel
+) -> None:
+    final_state = ts.integrate(
+        system=ar_supercell_sim_state,
+        model=lj_model,
+        integrator="nve",
+        n_steps=2,
+        temperature=100.0,
+        timestep=0.001,
+    )
+    assert isinstance(final_state, SimState)
+
+
+def test_integrate_invalid_string_integrator(
+    ar_supercell_sim_state: SimState, lj_model: LennardJonesModel
+) -> None:
+    with pytest.raises(ValueError, match="integrator must be key from Integrator"):
+        ts.integrate(
+            system=ar_supercell_sim_state,
+            model=lj_model,
+            integrator="not_an_integrator",
+            n_steps=2,
+            temperature=100.0,
+            timestep=0.001,
+        )
+
+
+def test_optimize_accepts_string_optimizer_and_cell_filter(
+    ar_supercell_sim_state: SimState, lj_model: LennardJonesModel
+) -> None:
+    final_state = ts.optimize(
+        system=ar_supercell_sim_state,
+        model=lj_model,
+        optimizer="fire",
+        max_steps=3,
+        init_kwargs={"cell_filter": "unit"},
+    )
+    assert isinstance(final_state, SimState)
+
+
+def test_optimize_invalid_string_optimizer(
+    ar_supercell_sim_state: SimState, lj_model: LennardJonesModel
+) -> None:
+    with pytest.raises(TypeError, match="must be key from Optimizer"):
+        ts.optimize(
+            system=ar_supercell_sim_state,
+            model=lj_model,
+            optimizer="not_an_optimizer",
+            max_steps=3,
+        )
+
+
+def test_get_cell_filter_strings() -> None:
+    assert ts.get_cell_filter("frechet") == ts.get_cell_filter(ts.CellFilter.frechet)
+    with pytest.raises(ValueError, match="Unknown cell_filter"):
+        ts.get_cell_filter("not_a_filter")

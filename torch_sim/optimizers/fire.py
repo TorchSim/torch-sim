@@ -26,7 +26,7 @@ def fire_init(
     dt_start: float | torch.Tensor = 0.1,
     alpha_start: float | torch.Tensor = 0.1,
     fire_flavor: "FireFlavor" = "ase_fire",
-    cell_filter: "CellFilter | CellFilterFuncs | None" = None,
+    cell_filter: "CellFilter | str | CellFilterFuncs | None" = None,
     **filter_kwargs: Any,
 ) -> "FireState | CellFireState":
     """Initialize a FIRE optimization state.

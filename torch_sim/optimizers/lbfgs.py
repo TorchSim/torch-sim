@@ -117,7 +117,7 @@ def lbfgs_init(
     *,
     step_size: float | torch.Tensor = 1.0,
     alpha: float | torch.Tensor | None = None,
-    cell_filter: "CellFilter | CellFilterFuncs | None" = None,
+    cell_filter: "CellFilter | str | CellFilterFuncs | None" = None,
     **filter_kwargs: Any,
 ) -> "LBFGSState | CellLBFGSState":
     r"""Create an initial LBFGSState from a SimState or state dict.

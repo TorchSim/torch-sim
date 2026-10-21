@@ -19,7 +19,7 @@ def gradient_descent_init(
     state: SimState,
     model: "ModelInterface",
     *,
-    cell_filter: "CellFilter | CellFilterFuncs | None" = None,
+    cell_filter: "CellFilter | str | CellFilterFuncs | None" = None,
     **filter_kwargs: Any,
 ) -> "OptimState | CellOptimState":
     """Initialize a gradient descent optimization state.

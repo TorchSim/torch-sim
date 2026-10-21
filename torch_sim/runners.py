@@ -5,6 +5,7 @@ optimizations using various models and integrators. It includes utilities for
 converting between different atomistic representations and handling simulation state.
 """
 
+import contextlib
 import copy
 import logging
 import warnings
@@ -318,7 +319,7 @@ def integrate[T: SimState](  # noqa: C901, PLR0915
     system: StateLike,
     model: ModelInterface,
     *,
-    integrator: Integrator | tuple[Callable[..., T], Callable[..., T]],
+    integrator: Integrator | str | tuple[Callable[..., T], Callable[..., T]],
     n_steps: int,
     temperature: float | list | torch.Tensor,
     timestep: float,
@@ -370,6 +371,9 @@ def integrate[T: SimState](  # noqa: C901, PLR0915
     kTs = _normalize_temperature_tensor(temperature, n_steps, initial_state)
 
     # Handle both string names and direct function tuples
+    if isinstance(integrator, str):
+        with contextlib.suppress(ValueError):  # invalid names hit the error below
+            integrator = Integrator(integrator)
     if isinstance(integrator, Integrator):
         init_func, step_func = INTEGRATOR_REGISTRY[integrator]
     elif (
@@ -639,7 +643,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     system: StateLike,
     model: ModelInterface,
     *,
-    optimizer: Optimizer | tuple[Callable[..., T], Callable[..., T]],
+    optimizer: Optimizer | str | tuple[Callable[..., T], Callable[..., T]],
     convergence_fn: Callable[[T, torch.Tensor], torch.Tensor] | None = None,
     max_steps: int = 10_000,
     steps_between_swaps: int = 5,
@@ -698,6 +702,10 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
         max_steps,
         optimizer,
     )
+    if isinstance(optimizer, str):
+        with contextlib.suppress(ValueError):  # invalid names hit the error below
+            optimizer = Optimizer(optimizer)
+
     if isinstance(optimizer, Optimizer):
         init_fn, step_fn = OPTIM_REGISTRY[optimizer]
     elif (
