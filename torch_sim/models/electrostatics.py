@@ -164,6 +164,9 @@ class EwaldModel(ModelInterface):
 
     Requires periodic boundary conditions.
 
+    Systems with one non-periodic axis are treated as slabs and get the slab
+    correction.
+
     Args:
         cutoff: Real-space cutoff in Angstrom.
         accuracy: Target accuracy for auto-estimated Ewald parameters.
@@ -245,6 +248,8 @@ class EwaldModel(ModelInterface):
             compute_forces=self._compute_forces,
             compute_virial=self._compute_stress,
             accuracy=self.accuracy,
+            pbc=state.pbc.expand(state.n_systems, 3),
+            slab_correction=not state.pbc.all(),
         )
         if not isinstance(out, tuple):
             out = (out,)
@@ -278,6 +283,9 @@ class PMEModel(ModelInterface):
     Per-atom partial charges are read from ``state.partial_charges``.
 
     Requires periodic boundary conditions.
+
+    Systems with one non-periodic axis are treated as slabs and get the slab
+    correction.
 
     Args:
         cutoff: Real-space cutoff in Angstrom.
@@ -371,6 +379,8 @@ class PMEModel(ModelInterface):
             compute_virial=self._compute_stress,
             accuracy=self.accuracy,
             spline_order=self.spline_order,
+            pbc=state.pbc.expand(state.n_systems, 3),
+            slab_correction=not state.pbc.all(),
         )
         if self.mesh_spacing is not None:
             pme_kwargs["mesh_spacing"] = self.mesh_spacing

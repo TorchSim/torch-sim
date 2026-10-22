@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import traceback
 
 import pytest
@@ -11,6 +12,7 @@ from ase.build import bulk
 import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
 from tests.models.conftest import make_validate_model_outputs_test
+from torch_sim.units import UnitConversion
 
 
 try:
@@ -193,6 +195,69 @@ def test_ewald_pme_energy_agreement() -> None:
     torch.testing.assert_close(
         ewald(state)["energy"], pme(state)["energy"], atol=1e-3, rtol=1e-3
     )
+
+
+def _slab_reference_energy_forces(
+    positions: torch.Tensor, charges: torch.Tensor, box: float, n_max: int = 100
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Reference slab energy and forces from a direct Coulomb sum over x and y images.
+
+    Images within a circle of radius n_max * box are summed directly, and the
+    cells outside it are added analytically as point dipoles.
+    """
+    positions = positions.clone().requires_grad_()
+    # In-plane image shifts within the circle
+    idx = torch.arange(-n_max, n_max + 1, dtype=positions.dtype, device=DEVICE)
+    # The z shift is always zero because a slab has no images along z
+    shifts = torch.cartesian_prod(idx, idx, torch.zeros_like(idx[:1])) * box
+    shifts = shifts[shifts.norm(dim=-1) <= n_max * box]
+    # Pair distances and charge products over all images
+    pair_vectors = positions[:, None] - positions[None, :] + shifts[:, None, None]
+    dist_sq = pair_vectors.pow(2).sum(dim=-1)
+    pair_charges = (charges[:, None] * charges[None, :]).expand_as(dist_sq)
+    # Direct sum without the i = j, n = 0 terms
+    is_pair = dist_sq > 0
+    energy = 0.5 * (pair_charges[is_pair] * dist_sq[is_pair].rsqrt()).sum()
+    # Dipole term of the cells outside the circle
+    dipole_sq = (charges[:, None] * positions).sum(dim=0).pow(2)
+    energy = energy + math.pi * (dipole_sq[2] - 0.5 * dipole_sq[:2].sum()) / (
+        n_max * box**3
+    )
+    # e^2 / Angstrom to eV
+    energy = energy * UnitConversion.e2_per_Ang_to_eV
+    forces = -torch.autograd.grad(energy, positions)[0]
+    return energy.detach(), forces
+
+
+@pytest.mark.parametrize(
+    "model_cls",
+    [pytest.param(EwaldModel, id="ewald"), pytest.param(PMEModel, id="pme")],
+)
+def test_slab_matches_2d_lattice_sum(model_cls: type[EwaldModel | PMEModel]) -> None:
+    """A slab state should match the direct Coulomb sum over its 2D lattice."""
+    box = 6.0
+    positions = torch.tensor(
+        [[0.3, 0.4, 8.8], [3.1, 2.7, 11.1], [1.4, 4.2, 10.6], [4.4, 1.0, 9.3]],
+        dtype=DTYPE,
+        device=DEVICE,
+    )
+    charges = torch.tensor([1.0, -1.0, 0.5, -0.5], dtype=DTYPE, device=DEVICE)
+    state = ts.SimState(
+        positions=positions,
+        masses=torch.ones(4, dtype=DTYPE, device=DEVICE),
+        cell=torch.diag(
+            torch.tensor([box, box, 20.0], dtype=DTYPE, device=DEVICE)
+        ).unsqueeze(0),
+        pbc=[True, True, False],
+        atomic_numbers=torch.tensor([11, 17, 11, 17], dtype=torch.int64, device=DEVICE),
+    )
+    state._atom_extras["partial_charges"] = charges  # noqa: SLF001
+
+    model = model_cls(device=DEVICE, dtype=DTYPE)
+    out = model(state)
+    energy, forces = _slab_reference_energy_forces(positions, charges, box)
+    torch.testing.assert_close(out["energy"][0], energy, atol=1e-3, rtol=1e-3)
+    torch.testing.assert_close(out["forces"], forces, atol=1e-3, rtol=1e-3)
 
 
 def test_sum_model_lj_plus_dsf() -> None:
