@@ -189,7 +189,7 @@ def _vv_fire_step[T: "FireState | CellFireState"](
     eps: float,
 ) -> T:
     """Perform one Velocity-Verlet based FIRE optimization step."""
-    n_systems = state.dt.numel()
+    n_systems = state.n_systems
 
     # Initialize velocities if NaN
     nan_velocities = state.velocities.isnan().any(dim=1)
@@ -299,7 +299,7 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
     """Perform one ASE-style FIRE optimization step."""
     from torch_sim.optimizers import CellFireState
 
-    n_systems = state.dt.numel()
+    n_systems = state.n_systems
 
     # NaN velocities mark newly initialized atoms. Skip adaptation for a wholly
     # new batch; replacing only part of an autobatch must not skip the others.

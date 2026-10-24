@@ -271,9 +271,6 @@ class SimState:
         _, counts = torch.unique_consecutive(self.system_idx, return_counts=True)
         n_systems = len(counts)
 
-        if self.constraints:
-            validate_constraints(self.constraints, state=self)
-
         if self.cell.ndim != 3:
             self.cell = self.cell.unsqueeze(0)
 
@@ -285,6 +282,9 @@ class SimState:
                 f"Cell must have shape (n_systems={n_systems}, 3, 3), "
                 f"got {self.cell.shape}"
             )
+
+        if self.constraints:
+            validate_constraints(self.constraints, state=self)
 
         # if devices aren't all the same, raise an error, in a clean way
         devices = {
@@ -437,7 +437,7 @@ class SimState:
     @property
     def n_systems(self) -> int:
         """Number of systems in the system."""
-        return torch.unique(self.system_idx).shape[0]
+        return self.cell.shape[0]
 
     @property
     def volume(self) -> torch.Tensor:
