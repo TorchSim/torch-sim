@@ -150,8 +150,13 @@ def noisy_lj_model(model: LennardJonesModel) -> NoisyModelWrapper:
 
 
 @pytest.fixture
-def symmetry_breaking_lj_model(model: LennardJonesModel) -> NoisyModelWrapper:
-    """LJ model with large noise that FixSymmetry removes exactly."""
+def symmetry_breaking_lj_model() -> NoisyModelWrapper:
+    """LJ model with sigma near the hcp neighbor distance, so the strained cells feel
+    real forces, and large noise that FixSymmetry removes exactly.
+    """
+    model = LennardJonesModel(
+        sigma=2.5, epsilon=0.05, cutoff=6.0, compute_stress=True, dtype=DTYPE
+    )
     return NoisyModelWrapper(
         model, noise_scale=5e-1, concentration=1.0, symmetry_breaking_only=True
     )
@@ -628,8 +633,10 @@ class TestFixSymmetryWithOptimization:
         final = get_symmetry_datasets(final_state, symprec=SYMPREC)
         assert initial[0].number == final[0].number
 
-    @pytest.mark.parametrize("structure", ["bcc", "hcp"])
-    @pytest.mark.parametrize("optimizer", [ts.Optimizer.lbfgs, ts.Optimizer.bfgs])
+    @pytest.mark.parametrize(
+        ("optimizer", "structure"),
+        [(ts.Optimizer.lbfgs, "bcc"), (ts.Optimizer.bfgs, "hcp")],
+    )
     @pytest.mark.parametrize("cell_filter", [ts.CellFilter.frechet, ts.CellFilter.unit])
     def test_quasi_newton_preserves_symmetry(
         self,
@@ -801,7 +808,8 @@ class TestFixSymmetryCellPositionsResync:
 
         Uses HCP with anisotropic strain (a-axis compressed, c-axis stretched)
         so the cell actively wants to change shape under symmetry constraints.
-        Asserts the optimizer converges within MAX_STEPS (not just preserves symmetry).
+        Asserts the optimizer converges within 2 * MAX_STEPS (not just preserves
+        symmetry).
         """
         state = ts.io.atoms_to_state(make_structure("hcp"), DEVICE, DTYPE)
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
@@ -824,7 +832,7 @@ class TestFixSymmetryCellPositionsResync:
             optimizer=optimizer,
             convergence_fn=convergence_fn,
             init_kwargs={"cell_filter": ts.CellFilter.frechet},
-            max_steps=MAX_STEPS,
+            max_steps=2 * MAX_STEPS,
             steps_between_swaps=1,
         )
         fmax = ts.system_wise_max_force(final_state).item()

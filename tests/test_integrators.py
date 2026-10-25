@@ -790,7 +790,7 @@ def test_npt_crescale_init_accepts_per_system_coupling(
     )
 
 
-def test_npt_crescale_triclinic_shear(
+def test_npt_crescale_triclinic_shear(  # noqa: PLR0915
     ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test anisotropic crescale with off-diagonal (shear) external stress."""
@@ -888,6 +888,47 @@ def test_npt_crescale_triclinic_shear(
     torch.testing.assert_close(
         frac_positions(free_state), frac_before, atol=1e-10, rtol=0
     )
+    # The rotation-free update keeps the upper-triangular cells upper-triangular
+    assert torch.all(free_state.cell.tril(-1) == 0)
+
+    # The same crystal in another lattice basis must deform the same way
+    basis_change = torch.tensor(
+        [[1.0, 1.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=DTYPE
+    )
+    shear_strain = torch.tensor(
+        [[1.0, 0.05, 0.0], [0.0, 1.0, 0.02], [0.0, 0.0, 0.97]], dtype=DTYPE
+    )
+    deviatoric_pressure = MetalUnits.pressure * torch.diag(
+        torch.tensor([1e4, 0.0, -1e4], dtype=DTYPE)
+    )
+    deformations = []
+    for basis in (torch.eye(3, dtype=DTYPE), basis_change):
+        crystal = ts.io.atoms_to_state(
+            bulk("Ar", "fcc", a=5.26, cubic=True), DEVICE, DTYPE
+        )
+        crystal.cell = crystal.cell @ basis
+        crystal = ts.npt_crescale_init(
+            state=crystal,
+            model=free_model,
+            dt=dt,
+            kT=zero_kT,
+            tau_p=10 * dt,
+            isothermal_compressibility=torch.tensor(1e-2, dtype=DTYPE),
+        )
+        crystal.momenta = torch.full_like(crystal.momenta, 1e-9)
+        # Shear away from the reference cell, moving the atoms with it
+        crystal.cell = shear_strain @ crystal.cell
+        crystal.positions = crystal.positions @ shear_strain.T
+        cell_before = crystal.cell.clone()
+        crystal = ts.npt_crescale_triclinic_step(
+            state=crystal,
+            model=free_model,
+            dt=dt,
+            kT=zero_kT,
+            external_pressure=deviatoric_pressure,
+        )
+        deformations.append(crystal.cell @ torch.linalg.inv(cell_before))
+    torch.testing.assert_close(deformations[0], deformations[1], atol=1e-12, rtol=0)
 
     # Check energy is stable
     for traj in energies_tensor.T:

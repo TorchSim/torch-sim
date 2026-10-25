@@ -2258,7 +2258,8 @@ def _crescale_triclinic_barostat_step(
     deformation_matrix = torch.matrix_exp(
         a_tilde * dt + prefactor_random_matrix[:, None, None] * random_matrix_tilde
     )
-    deformation_matrix = rotate_gram_schmidt(deformation_matrix)
+    # rotate_gram_schmidt gives R^T of mu = QR; R keeps upper-triangular cells that way
+    deformation_matrix = rotate_gram_schmidt(deformation_matrix).mT
 
     ## Step 3: propagate sqrt(volume) for dt/2
     new_sqrt_volume += -prefactor * (
@@ -2427,7 +2428,8 @@ def _crescale_triclinic_average_barostat_step(
     deformation_matrix = torch.matrix_exp(
         a_tilde * dt + prefactor_random_matrix[:, None, None] * random_matrix_tilde
     )
-    deformation_matrix = rotate_gram_schmidt(deformation_matrix)
+    # rotate_gram_schmidt gives R^T of mu = QR; R keeps upper-triangular cells that way
+    deformation_matrix = rotate_gram_schmidt(deformation_matrix).mT
 
     ## Step 3: propagate sqrt(volume) for dt/2
     new_sqrt_volume += -prefactor * (

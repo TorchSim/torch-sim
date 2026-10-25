@@ -391,10 +391,13 @@ def bfgs_step(  # noqa: C901, PLR0915
             cell_idx = torch.arange(atom_dim, atom_dim + 9, device=state.device)  # [9]
             dof_idx = torch.cat([dof_idx, cell_idx])  # [d]
         mask = state.max_atoms == size  # [S] bool - systems with this size
+        indices = mask.nonzero(as_tuple=True)[0]  # [G]
 
-        # Extract actual-sized Hessians and forces for this group
-        H_group = state.hessian[mask][:, dof_idx[:, None], dof_idx]  # [G, d, d]
-        f_group = forces_new[mask][:, dof_idx]  # [G, d]
+        # Extract actual-sized Hessians and forces for this group in one gather
+        H_group = state.hessian[
+            indices[:, None, None], dof_idx[:, None], dof_idx
+        ]  # [G, d, d]
+        f_group = forces_new[indices[:, None], dof_idx]  # [G, d]
 
         # Batched eigendecomposition on actual size (no padding overhead)
         omega, V = torch.linalg.eigh(H_group)  # omega: [G, d], V: [G, d, d]
@@ -405,7 +408,6 @@ def bfgs_step(  # noqa: C901, PLR0915
         step_group = torch.bmm(V, vt_f / abs_omega.unsqueeze(2)).squeeze(2)  # [G, d]
 
         # Place results back into step_dense (padded to hessian_dim)
-        indices = mask.nonzero(as_tuple=True)[0]
         step_dense[indices[:, None], dof_idx] = step_group
 
     # Split step into position and cell components
@@ -474,7 +476,7 @@ def bfgs_step(  # noqa: C901, PLR0915
             cell_factor_expanded = state.cell_factor.expand(state.n_systems, 3, 1)
             deform_grad_new = cell_positions_new / cell_factor_expanded  # [S, 3, 3]
 
-        # Update cell: new_cell = reference_cell @ deform_grad^T
+        # Update cell: new_cell = deform_grad @ reference_cell
         # deform_grad_new: [S, 3, 3], reference_cell: [S, 3, 3]
         # Apply cell constraints such as FixSymmetry and scale atoms with the cell
         state.set_constrained_cell(

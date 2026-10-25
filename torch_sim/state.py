@@ -41,7 +41,8 @@ def coerce_prng(rng: PRNGLike, device: DeviceLikeType | None) -> torch.Generator
     """Coerce an int seed or existing Generator into a ``torch.Generator``.
 
     Args:
-        rng: An int seed, an existing ``torch.Generator``, or None for unseeded.
+        rng: An int seed, an existing ``torch.Generator``, or None to draw a seed
+            from torch's global generator.
         device: Target device for the returned generator.
 
     Returns:
@@ -1502,8 +1503,9 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
                         elif m_dim < max_m or h_dim < max_h:
                             pad_h = max_h - h_dim
                             # For [S, H, M, 3]: pad M (dim 2) and H (dim 1)
+                            # H is padded at the front, so the newest pair stays last
                             t = _pad_before_tail(t, 2, max_m, 3 if has_cell_dofs else 0)
-                            t = torch.nn.functional.pad(t, (0, 0, 0, 0, 0, pad_h))
+                            t = torch.nn.functional.pad(t, (0, 0, 0, 0, pad_h, 0))
                         padded_tensors.append(t)
                     concatenated[prop] = torch.cat(padded_tensors, dim=0)
                 else:

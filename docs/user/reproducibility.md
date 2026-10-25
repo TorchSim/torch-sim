@@ -41,11 +41,11 @@ One of the main reasons for seeding the global states is to control the determin
 
 ## Seeding TorchSim SimStates
 
-In PyTorch, `torch.manual_seed()` only seeds the default global generator, i.e. the generator used in `torch.rand(..., generator=None)` if the generator isn't specified. TorchSim internally uses a `torch.Generator()` in the form of `SimState.rng` for all algorithmic randomness in core code. An unseeded state seeds it from the global generator when `rng` is first used, so setting the global seed is insufficient to ensure determinism within TorchSim if anything else draws from the global generator first. **You must explicitly seed your SimStates to ensure determinism**.
+In PyTorch, `torch.manual_seed()` only seeds the default global generator, i.e. the generator used in `torch.rand(..., generator=None)` if the generator isn't specified. TorchSim internally uses a `torch.Generator()` in the form of `SimState.rng` for all algorithmic randomness in core code. An unseeded state seeds it from the global generator when `rng` is first used. After `torch.manual_seed()` a fixed script is therefore reproducible, but its random streams shift whenever other code draws from the global generator first, for example a model initializing its weights. **You must explicitly seed your SimStates to ensure determinism**.
 
 ```python
 sim_state = ts.initialize_state(atoms, device, dtype)
-sim_state.rng = 42  # needed for reproducibility: torch.manual_seed() has no effect
+sim_state.rng = 42  # fixes the stream, whatever else uses the global generator
 ```
 
 ### Deterministic vs stochastic integrators in TorchSim
@@ -54,15 +54,17 @@ sim_state.rng = 42  # needed for reproducibility: torch.manual_seed() has no eff
   terms by design. When seeded via `state.rng`, they produce identical trajectories.
   The `rng` generator controls **both** the initial momenta sampling **and** all per-step stochastic noise (Langevin OU noise, V-Rescale draws, C-Rescale barostat noise, etc.). It is stored on the state and automatically advances on every step, so running the same seed twice produces identical trajectories.
 - `ts.Integrator.nvt_nose_hoover` and `ts.Integrator.nve` are deterministic at the
-  algorithmic level and require no seeding.
+  algorithmic level, but they still draw their starting momenta from `state.rng`.
 
-For the simplest path to reproducibility, use a deterministic integrator such as Nosé-Hoover:
+For the simplest path to reproducibility, seed the state and use a deterministic integrator such as Nosé-Hoover:
 
 ```python
 import torch_sim as ts
 
+state = ts.initialize_state(atoms, device, dtype)
+state.rng = 42
 state = ts.integrate(
-    system=atoms,
+    system=state,
     model=model,
     n_steps=500,
     timestep=0.001,

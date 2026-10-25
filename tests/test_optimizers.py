@@ -600,7 +600,8 @@ def test_unit_cell_lbfgs_multi_batch(
     # We are evolving identical systems
     assert torch.allclose(current_energy[0], current_energy[1])
 
-    # Concatenating mid-run states of different sizes keeps the history consistent
+    # Concatenating mid-run states of different sizes and history lengths keeps
+    # each history consistent
     small = ts.io.atoms_to_state(
         bulk("Ar", "fcc", a=5.5, cubic=True), multi_state.device, multi_state.dtype
     )
@@ -610,12 +611,14 @@ def test_unit_cell_lbfgs_multi_batch(
     )
     for _ in range(3):
         alone = ts.lbfgs_step(state=alone, model=lj_model)
-        large = ts.lbfgs_step(state=large, model=lj_model)
+    large = ts.lbfgs_step(state=large, model=lj_model)
     merged = ts.concatenate_states([alone, large])
     for _ in range(3):
         alone = ts.lbfgs_step(state=alone, model=lj_model)
+        large = ts.lbfgs_step(state=large, model=lj_model)
         merged = ts.lbfgs_step(state=merged, model=lj_model)
     torch.testing.assert_close(merged.cell[:1], alone.cell)
+    torch.testing.assert_close(merged.positions[alone.n_atoms :], large.positions)
 
 
 @pytest.mark.parametrize(
