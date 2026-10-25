@@ -290,6 +290,13 @@ STRICT_FIRE_CASES = [
         1e-11,
         "Ar stretched-rattled supercell (Frechet)",
     ),
+    (
+        "rattled_ar_supercell_stretched_sim_state",
+        10,
+        1e-10,
+        5e-11,
+        "Ar stretched-rattled supercell past first alpha decay (Frechet)",
+    ),
 ]
 
 BFGS_CASES = [

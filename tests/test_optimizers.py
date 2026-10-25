@@ -785,6 +785,11 @@ def test_fire_nan_velocities_dont_affect_other_systems(
             "System 0 cell differs when system 1 has NaN velocities"
         )
 
+    # System 1 now takes a first step, which leaves dt, alpha and n_pos unchanged
+    if fire_flavor == "ase_fire":
+        for attr in ("dt", "alpha", "n_pos"):
+            assert getattr(state_mixed, attr)[1] == getattr(state, attr)[1], attr
+
 
 @pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
 def test_vv_fire_nan_cell_velocities_with_finite_atomic_velocities(
