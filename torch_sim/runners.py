@@ -198,16 +198,16 @@ def _normalize_temperature_tensor(
         # A single value
         return temps.expand(n_steps)
 
-    if initial_state.n_systems == n_steps:
+    if temps.ndim == 1 and temps.shape[0] == initial_state.n_systems == n_steps:
         msg = (
             "n_systems is equal to n_steps. Interpreting temperature array of length "
             "n_systems as temperatures for each system, broadcasted over steps."
         )
         warnings.warn(msg, stacklevel=2)
         logger.warning(msg)
-        return temps.expand(n_steps)
+        return temps.unsqueeze(0).expand(n_steps, -1)  # (n_steps, n_systems)
 
-    if temps.shape[0] == initial_state.n_systems:
+    if temps.shape[0] == initial_state.n_systems and initial_state.n_systems != n_steps:
         if temps.ndim == 2:
             raise ValueError(
                 "If temperature tensor is 2D, first dimension must be n_steps."

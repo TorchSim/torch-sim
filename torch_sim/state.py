@@ -249,9 +249,10 @@ class SimState:
                     value = torch.zeros(
                         self.n_atoms, device=self.device, dtype=torch.int64
                     )
-            elif isinstance(value, torch.Tensor):
-                _, counts = torch.unique_consecutive(value, return_counts=True)
-                if not torch.all(counts == torch.bincount(value)):
+            elif isinstance(value, torch.Tensor) and value.numel() > 0:
+                # atoms must be grouped by system in ascending order: 0, ..., 0, 1, ...
+                steps = value.diff()
+                if value[0] != 0 or ((steps < 0) | (steps > 1)).any():
                     raise ValueError("System indices must be unique consecutive integers")
         super().__setattr__(name, value)
 
@@ -630,7 +631,7 @@ class SimState:
             ...     momenta=torch.zeros_like(sim_state.positions),
             ... )
         """
-        attrs = {}
+        attrs: dict[str, Any] = {}
         for attr_name, attr_value in state.attributes.items():
             if attr_name in cls._get_all_attributes():
                 attrs[attr_name] = cls._clone_attr(attr_value)

@@ -576,6 +576,13 @@ def npt_langevin_anisotropic_step(
     if external_pressure_tensor.ndim == 0:
         external_pressure_tensor = external_pressure_tensor.expand(state.n_systems, 3)
     elif external_pressure_tensor.ndim == 1 and external_pressure_tensor.shape[0] == 3:
+        if state.n_systems == 3:
+            warnings.warn(
+                "external_pressure of shape (3,) is ambiguous for 3 systems and is read "
+                "as the (x, y, z) pressure of every system. Pass shape (1, 3) for that, "
+                "or shape (3, 3) for per-system pressures.",
+                stacklevel=2,
+            )
         external_pressure_tensor = external_pressure_tensor.unsqueeze(0).expand(
             state.n_systems, 3
         )
