@@ -256,8 +256,8 @@ def test_slab_matches_2d_lattice_sum(model_cls: type[EwaldModel | PMEModel]) -> 
     model = model_cls(device=DEVICE, dtype=DTYPE)
     out = model(state)
     energy, forces = _slab_reference_energy_forces(positions, charges, box)
-    torch.testing.assert_close(out["energy"][0], energy, atol=1e-3, rtol=1e-3)
-    torch.testing.assert_close(out["forces"], forces, atol=1e-3, rtol=1e-3)
+    torch.testing.assert_close(out["energy"][0], energy, atol=1e-4, rtol=0)
+    torch.testing.assert_close(out["forces"], forces, atol=1e-4, rtol=0)
 
 
 def test_sum_model_lj_plus_dsf() -> None:

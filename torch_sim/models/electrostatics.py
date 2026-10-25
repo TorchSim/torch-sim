@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 import torch
 from nvalchemiops.torch.interactions.electrostatics import (
     dsf_coulomb,
+    estimate_ewald_parameters,
+    estimate_pme_parameters,
     ewald_summation,
     particle_mesh_ewald,
 )
@@ -169,7 +171,8 @@ class EwaldModel(ModelInterface):
 
     Args:
         cutoff: Real-space cutoff in Angstrom.
-        accuracy: Target accuracy for auto-estimated Ewald parameters.
+        accuracy: Target accuracy, which sets the Ewald splitting parameter and the
+            reciprocal-space cutoff together with ``cutoff``.
         device: Compute device. Defaults to CUDA if available, else CPU.
         dtype: Floating-point dtype. Defaults to ``torch.float64``.
         compute_forces: Whether to return forces. Defaults to True.
@@ -237,14 +240,21 @@ class EwaldModel(ModelInterface):
             state.positions.shape[0],
         )
         cell = state.row_vector_cell.contiguous()
+        batch_idx = state.system_idx.to(torch.int32)
+        params = estimate_ewald_parameters(
+            state.positions, cell, batch_idx, accuracy=self.accuracy
+        )
+        scale = params.real_space_cutoff / self.cutoff
         out = ewald_summation(
             positions=state.positions,
             charges=charges,
             cell=cell,
+            alpha=params.alpha * scale,
+            k_cutoff=params.reciprocal_space_cutoff * scale,
             neighbor_list=edge_index,
             neighbor_ptr=neighbor_ptr,
             neighbor_shifts=unit_shifts,
-            batch_idx=state.system_idx.to(torch.int32),
+            batch_idx=batch_idx,
             compute_forces=self._compute_forces,
             compute_virial=self._compute_stress,
             accuracy=self.accuracy,
@@ -289,7 +299,8 @@ class PMEModel(ModelInterface):
 
     Args:
         cutoff: Real-space cutoff in Angstrom.
-        accuracy: Target accuracy for auto-estimated parameters.
+        accuracy: Target accuracy, which sets the Ewald splitting parameter and the
+            default mesh together with ``cutoff``.
         mesh_spacing: Optional mesh spacing (Angstrom) for automatic mesh sizing.
         mesh_dimensions: Explicit FFT mesh dimensions ``(nx, ny, nz)``.
         spline_order: B-spline interpolation order. Defaults to 4.
@@ -367,10 +378,14 @@ class PMEModel(ModelInterface):
         )
         cell = state.row_vector_cell.contiguous()
         batch_idx = state.system_idx.to(torch.int32) if state.n_systems > 1 else None
+        params = estimate_pme_parameters(
+            state.positions, cell, batch_idx, self.accuracy, real_space_cutoff=self.cutoff
+        )
         pme_kwargs: dict = dict(
             positions=state.positions,
             charges=charges,
             cell=cell,
+            alpha=params.alpha,
             neighbor_list=edge_index,
             neighbor_ptr=neighbor_ptr,
             neighbor_shifts=unit_shifts,
