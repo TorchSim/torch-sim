@@ -92,6 +92,19 @@ def test_bounds_and_tuples():
     ]
 
 
+@pytest.mark.parametrize(
+    ("items", "lower_bound", "upper_bound"), [([1, 2], 11, 1), ([1, 2], 5, 5), ([], 5, 5)]
+)
+def test_to_constant_volume_bins_invalid_bounds(
+    items: list[int], lower_bound: int, upper_bound: int
+) -> None:
+    """Inverted or empty bounds raise instead of silently applying only lower_bound."""
+    with pytest.raises(ValueError, match="lower_bound is greater or equal"):
+        to_constant_volume_bins(
+            items, 5, lower_bound=lower_bound, upper_bound=upper_bound
+        )
+
+
 def test_calculate_scaling_metric(si_sim_state: ts.SimState) -> None:
     """Test calculation of scaling metrics for a state."""
     # Test n_atoms metric

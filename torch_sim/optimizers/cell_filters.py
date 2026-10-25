@@ -96,8 +96,9 @@ def _setup_pressure(
 
 def _compute_cell_masses(state: SimState) -> torch.Tensor:
     """Compute cell masses by summing atomic masses per system."""
-    system_counts = torch.bincount(state.system_idx)
-    cell_masses = torch.segment_reduce(state.masses, reduce="sum", lengths=system_counts)
+    cell_masses = state.masses.new_zeros(state.n_systems).index_add(
+        0, state.system_idx, state.masses
+    )
     return cell_masses.unsqueeze(-1).expand(-1, 3)
 
 

@@ -112,7 +112,7 @@ def _run_and_compare_optimizers(
     ase_mace_mpa: "MACECalculator",
     fire_type: ts.Optimizer,
     cell_filter: ts.CellFilter,
-    ase_filter_cls: FrechetCellFilter | UnitCellFilter,
+    ase_filter_cls: type[FrechetCellFilter | UnitCellFilter],
     checkpoints: list[int],
     force_tol: float,
     tolerances: dict[str, float],
@@ -129,7 +129,7 @@ def _run_and_compare_optimizers(
         initial_sim_state_fixture.clone().to(dtype=DTYPE, device=device)
     )[0]
     ase_atoms.calc = ase_mace_mpa
-    filtered_ase_atoms = ase_filter_cls(ase_atoms)  # type: ignore[call-non-callable]
+    filtered_ase_atoms = ase_filter_cls(ase_atoms)
     ase_optimizer = FIRE(filtered_ase_atoms, logfile=None)
 
     last_checkpoint_step_count = 0
@@ -424,7 +424,7 @@ def test_optimizer_vs_ase_parametrized(
     sim_state_fixture_name: str,
     fire_type: ts.Optimizer,
     cell_filter: ts.CellFilter,
-    ase_filter_cls: FrechetCellFilter | UnitCellFilter,
+    ase_filter_cls: type[FrechetCellFilter | UnitCellFilter],
     checkpoints: list[int],
     force_tol: float,
     tolerances: dict[str, float],
@@ -534,7 +534,7 @@ def test_fire_frechet_matches_ase_strict(
 def test_bfgs_vs_ase_parametrized(
     sim_state_fixture_name: str,
     cell_filter: ts.CellFilter,
-    ase_filter_cls: type,
+    ase_filter_cls: type[FrechetCellFilter | UnitCellFilter],
     checkpoints: list[int],
     force_tol: float,
     tolerances: dict[str, float],
@@ -610,7 +610,7 @@ def test_bfgs_vs_ase_parametrized(
 def test_lbfgs_vs_ase_parametrized(
     sim_state_fixture_name: str,
     cell_filter: ts.CellFilter,
-    ase_filter_cls: type,
+    ase_filter_cls: type[FrechetCellFilter | UnitCellFilter],
     checkpoints: list[int],
     force_tol: float,
     tolerances: dict[str, float],
