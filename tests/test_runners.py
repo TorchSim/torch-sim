@@ -239,6 +239,29 @@ def test_integrate_double_nvt_multiple_temperatures(
             init_kwargs={},
         )
 
+    # n_steps == n_systems: 1D temperatures are per system, 2D are (n_steps, n_systems)
+    init, real_step = ts.integrators.INTEGRATOR_REGISTRY[ts.Integrator.nvt_langevin]
+    step_kTs: list[torch.Tensor] = []
+
+    def spy_step(**kwargs: object) -> MDState:
+        step_kTs.append(kwargs["kT"])
+        return real_step(**kwargs)
+
+    temps = torch.tensor([100.0, 200.0], dtype=DTYPE, device=DEVICE)
+    for temperature in (temps, temps.expand(2, 2)):
+        step_kTs.clear()
+        ts.integrate(
+            system=ar_double_sim_state,
+            model=lj_model,
+            integrator=(init, spy_step),
+            n_steps=2,
+            temperature=temperature,
+            timestep=0.001,
+        )
+        assert len(step_kTs) == 2
+        for kT in step_kTs:
+            torch.testing.assert_close(kT, temps * ts.units.MetalUnits.temperature)
+
 
 def test_integrate_double_nvt_with_reporter(
     ar_double_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
