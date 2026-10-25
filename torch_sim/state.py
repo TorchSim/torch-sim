@@ -9,8 +9,8 @@ import functools
 import importlib
 import typing
 from collections import defaultdict
-from collections.abc import Generator, Sequence
-from dataclasses import dataclass, field, fields
+from collections.abc import Callable, Generator, Sequence
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 
 import torch
@@ -60,7 +60,9 @@ def coerce_prng(rng: PRNGLike, device: DeviceLikeType | None) -> torch.Generator
         return generator
 
     if rng is None:
-        return torch.Generator(device=device)
+        # Seed from torch's global generator, so torch.manual_seed() controls it
+        seed = int(torch.randint(2**62, (1,)))
+        return torch.Generator(device=device).manual_seed(seed)
 
     raise ValueError(f"Invalid rng type: {type(rng)}")
 
@@ -988,6 +990,15 @@ def _state_to_device[T: SimState](  # noqa: C901
                 attrs[attr_name] = attr_value.to(device=device)
         elif isinstance(attr_value, torch.Generator):
             attrs[attr_name] = coerce_prng(attr_value, device)
+        else:
+            attrs[attr_name] = _map_tensor_fields(
+                attr_value,
+                lambda t: (
+                    t.to(device=device, dtype=dtype)
+                    if t.is_floating_point()
+                    else t.to(device=device)
+                ),
+            )
 
     for extras_key in ("_system_extras", "_atom_extras"):
         if extras_key in attrs and isinstance(attrs[extras_key], dict):
@@ -1038,6 +1049,22 @@ def detach_state_graph[T: SimState](state: T) -> T:
         if torch.is_tensor(attr_value) and attr_value.requires_grad:
             setattr(state, attr_name, attr_value.detach())
     return state
+
+
+def _map_tensor_fields(value: Any, fn: Callable[[torch.Tensor], torch.Tensor]) -> Any:
+    """Apply ``fn`` to each tensor field of a dataclass of per-system tensors, such as
+    a ``NoseHooverChain``, returning other values unchanged.
+    """
+    if not is_dataclass(value) or isinstance(value, type):
+        return value
+    return replace(
+        value,
+        **{
+            f.name: fn(getattr(value, f.name))
+            for f in fields(value)
+            if isinstance(getattr(value, f.name), torch.Tensor)
+        },
+    )
 
 
 def get_attrs_for_scope(
@@ -1135,7 +1162,9 @@ def _filter_attrs_by_index(
         if name in state.system_extras:
             continue
         filtered_attrs[name] = (
-            val[system_indices] if isinstance(val, torch.Tensor) else val
+            val[system_indices]
+            if isinstance(val, torch.Tensor)
+            else _map_tensor_fields(val, lambda t: t[system_indices] if t.ndim else t)
         )
 
     filtered_attrs["_system_extras"] = {
@@ -1175,8 +1204,13 @@ def _split_state[T: SimState](state: T) -> list[T]:  # noqa: C901
             continue
         if isinstance(attr_value, torch.Tensor):
             split_per_system[attr_name] = torch.split(attr_value, 1, dim=0)
-        else:  # Non-tensor attributes are replicated for each split
-            split_per_system[attr_name] = [attr_value] * state.n_systems
+        else:  # Non-tensor attributes are replicated, but their tensor fields split
+            split_per_system[attr_name] = [
+                _map_tensor_fields(
+                    attr_value, lambda t, i=i: t[i : i + 1] if t.ndim else t
+                )
+                for i in range(state.n_systems)
+            ]
 
     global_attrs = dict(get_attrs_for_scope(state, "global"))
 
@@ -1325,6 +1359,18 @@ def _slice_state[T: SimState](state: T, system_indices: list[int] | torch.Tensor
     return type(state)(**filtered_attrs)
 
 
+def _pad_before_tail(
+    tensor: torch.Tensor, dim: int, size: int, n_tail: int
+) -> torch.Tensor:
+    """Zero-pad ``tensor`` to ``size`` along ``dim``, keeping its last ``n_tail``
+    entries at the end.
+    """
+    pad_shape = list(tensor.shape)
+    pad_shape[dim] = size - tensor.shape[dim]
+    head, tail = tensor.split([tensor.shape[dim] - n_tail, n_tail], dim=dim)
+    return torch.cat([head, tensor.new_zeros(pad_shape), tail], dim=dim)
+
+
 def concatenate_states[T: SimState](  # noqa: C901, PLR0915
     states: Sequence[T], device: torch.device | None = None
 ) -> T:
@@ -1412,6 +1458,8 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
 
     # Get padded attributes if defined on the state class
     padded_attrs = getattr(first_state, "_padded_system_attributes", set())
+    # Cell optimizer states keep their cell DOFs after the atom DOFs
+    has_cell_dofs = "cell_positions" in first_state._system_attributes  # noqa: SLF001
 
     for prop, tensors in per_system_tensors.items():
         # if tensors:
@@ -1427,11 +1475,12 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
                     # Shape [S, D, D] required for BFGS hessian
                     # Pad last two dimensions
                     max_size = max(t.shape[-1] for t in tensors)
+                    n_tail = 9 if has_cell_dofs else 0
                     padded_tensors = []
                     for t in tensors:
                         if t.shape[-1] < max_size:
-                            pad_size = max_size - t.shape[-1]
-                            t = torch.nn.functional.pad(t, (0, pad_size, 0, pad_size))
+                            t = _pad_before_tail(t, 1, max_size, n_tail)
+                            t = _pad_before_tail(t, 2, max_size, n_tail)
                         padded_tensors.append(t)
                     concatenated[prop] = torch.cat(padded_tensors, dim=0)
                 elif ndim == 4:
@@ -1450,10 +1499,10 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
                                 dtype=t.dtype,
                             )
                         elif m_dim < max_m or h_dim < max_h:
-                            pad_m = max_m - m_dim
                             pad_h = max_h - h_dim
                             # For [S, H, M, 3]: pad M (dim 2) and H (dim 1)
-                            t = torch.nn.functional.pad(t, (0, 0, 0, pad_m, 0, pad_h))
+                            t = _pad_before_tail(t, 2, max_m, 3 if has_cell_dofs else 0)
+                            t = torch.nn.functional.pad(t, (0, 0, 0, 0, 0, pad_h))
                         padded_tensors.append(t)
                     concatenated[prop] = torch.cat(padded_tensors, dim=0)
                 else:
@@ -1461,6 +1510,17 @@ def concatenate_states[T: SimState](  # noqa: C901, PLR0915
                     concatenated[prop] = torch.cat(tensors, dim=0)
             else:
                 concatenated[prop] = torch.cat(tensors, dim=0)
+        elif is_dataclass(tensors[0]):  # e.g. NoseHooverChain: concatenate its fields
+            first = tensors[0]
+            concatenated[prop] = replace(
+                first,
+                **{
+                    f.name: torch.cat([getattr(t, f.name) for t in tensors])
+                    for f in fields(first)
+                    if isinstance(val := getattr(first, f.name), torch.Tensor)
+                    and val.ndim
+                },
+            )
         else:  # Non-tensor attributes, take first one (they should all be identical)
             concatenated[prop] = tensors[0]
 

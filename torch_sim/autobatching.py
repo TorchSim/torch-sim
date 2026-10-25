@@ -659,6 +659,13 @@ class BinningAutoBatcher[T: SimState]:
         # Convert to list of lists of indices
         self.index_bins = [list(batch.keys()) for batch in index_bins]
         self.batched_states = [[batched[index_bin]] for index_bin in self.index_bins]
+        # Later batches get their own seeds, so replicas don't replay one stream
+        parent_rng = torch.Generator(device=batched.device)
+        parent_rng.set_state(batched.rng.get_state())
+        for (bin_state,) in self.batched_states[1:]:
+            bin_state.rng = int(
+                torch.randint(2**62, (1,), generator=parent_rng, device=batched.device)
+            )
         self.current_state_bin = 0
 
         logger.info(

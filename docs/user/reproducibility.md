@@ -41,7 +41,7 @@ One of the main reasons for seeding the global states is to control the determin
 
 ## Seeding TorchSim SimStates
 
-In PyTorch, `torch.manual_seed()` only seeds the default global generator, i.e. the generator used in `torch.rand(..., generator=None)` if the generator isn't specified. An explicit `torch.Generator()` is independent and is initialized at the time of calling from the OS entropy source. Since TorchSim internally uses a `torch.Generator()` in the form of `SimState.rng` for all algorithmic randomness in core code setting the global seed is insufficient to ensure determinism within TorchSim. **You must explicitly seed your SimStates to ensure determinism**.
+In PyTorch, `torch.manual_seed()` only seeds the default global generator, i.e. the generator used in `torch.rand(..., generator=None)` if the generator isn't specified. TorchSim internally uses a `torch.Generator()` in the form of `SimState.rng` for all algorithmic randomness in core code. An unseeded state seeds it from the global generator when `rng` is first used, so setting the global seed is insufficient to ensure determinism within TorchSim if anything else draws from the global generator first. **You must explicitly seed your SimStates to ensure determinism**.
 
 ```python
 sim_state = ts.initialize_state(atoms, device, dtype)
@@ -76,6 +76,8 @@ In practice, exact reproducibility also depends on hardware, driver/library vers
 ### Batching and reproducibility
 
 Because TorchSim runs batched simulations, all systems in a batch share a single `torch.Generator`. Random numbers are drawn in a fixed order each step, so **identical batch composition** is required for exact reproducibility. Changing which systems are in a batch (or their order) will consume random numbers differently and cause trajectories to diverge.
+
+A `BinningAutoBatcher` gives each batch after the first its own seed drawn from the state's generator, so replicas in different batches get independent noise.
 
 If strict reproducibility is required, keep your batching setup fixed.
 
