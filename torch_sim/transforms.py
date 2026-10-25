@@ -1517,7 +1517,7 @@ def safe_mask(
 
     Args:
         mask: Boolean tensor indicating which elements to process (True) or mask (False)
-        fn: TorchScript function to apply to the masked elements
+        fn: Function to apply to the masked elements
         operand: Input tensor to apply the function to
         placeholder: Value to use for masked-out positions (default: 0.0)
 

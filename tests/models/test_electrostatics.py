@@ -7,7 +7,7 @@ import traceback
 
 import pytest
 import torch
-from ase.build import bulk
+from ase.build import bulk, molecule
 
 import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
@@ -93,6 +93,15 @@ def test_dsf_nonzero_energy() -> None:
     state = _make_charged_state()
     out = model(state)
     assert out["energy"].abs().item() > 0
+
+    # A molecule has no cell volume, so its stress is zero rather than NaN
+    water = molecule("H2O")
+    water.set_initial_charges([-0.8, 0.4, 0.4])
+    water_state = ts.io.atoms_to_state(
+        water, DEVICE, DTYPE, atom_extras_map={"partial_charges": "initial_charges"}
+    )
+    stress = model(water_state)["stress"]
+    torch.testing.assert_close(stress, torch.zeros_like(stress))
 
 
 @pytest.mark.parametrize(

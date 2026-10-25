@@ -197,5 +197,6 @@ class D3DispersionModel(ModelInterface):
             # nvalchemiops returns the negative strain-gradient virial; TorchSim stress
             # follows dE / dstrain / volume, matching ASE and other TorchSim models.
             stress = -(d3_out[-1] * UnitConversion.Hartree_to_eV) / volumes
+            stress = torch.where(volumes > 0, stress, torch.zeros_like(stress))
             results["stress"] = stress.to(self._dtype).detach()
         return results

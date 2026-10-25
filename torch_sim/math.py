@@ -9,7 +9,6 @@ import torch
 from torch_sim._duecredit import dcite
 
 
-@torch.jit.script
 def torch_divmod(a: torch.Tensor, b: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute division and modulo operations for tensors.
 

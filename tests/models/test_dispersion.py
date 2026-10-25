@@ -225,6 +225,10 @@ def test_d3_molecular_neighbor_cap_is_exact(monkeypatch: pytest.MonkeyPatch) -> 
     torch.testing.assert_close(out_capped["energy"], out_uncapped["energy"])
     torch.testing.assert_close(out_capped["forces"], out_uncapped["forces"])
 
+    # Molecules have no cell volume, so their stress is zero rather than NaN
+    stress = D3DispersionModel(**{**kwargs, "compute_stress": True})(state)["stress"]
+    torch.testing.assert_close(stress, torch.zeros_like(stress))
+
 
 def test_d3_molecular_cap_never_widens_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """Systems larger than the bulk-density estimate keep the default width."""
