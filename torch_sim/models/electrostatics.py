@@ -8,13 +8,12 @@ from ``state.partial_charges`` (a SimState atom extra).
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import torch
 from nvalchemiops.torch.interactions.electrostatics import (
     dsf_coulomb,
-    estimate_ewald_parameters,
-    estimate_pme_parameters,
     ewald_summation,
     particle_mesh_ewald,
 )
@@ -240,21 +239,18 @@ class EwaldModel(ModelInterface):
             state.positions.shape[0],
         )
         cell = state.row_vector_cell.contiguous()
-        batch_idx = state.system_idx.to(torch.int32)
-        params = estimate_ewald_parameters(
-            state.positions, cell, batch_idx, accuracy=self.accuracy
-        )
-        scale = params.real_space_cutoff / self.cutoff
+        # The real-space cutoff is fixed, so alpha and k_cutoff follow from accuracy
+        log_accuracy = math.log(self.accuracy)
         out = ewald_summation(
             positions=state.positions,
             charges=charges,
             cell=cell,
-            alpha=params.alpha * scale,
-            k_cutoff=params.reciprocal_space_cutoff * scale,
+            alpha=math.sqrt(-log_accuracy) / self.cutoff,
+            k_cutoff=-2.0 * log_accuracy / self.cutoff,
             neighbor_list=edge_index,
             neighbor_ptr=neighbor_ptr,
             neighbor_shifts=unit_shifts,
-            batch_idx=batch_idx,
+            batch_idx=state.system_idx.to(torch.int32),
             compute_forces=self._compute_forces,
             compute_virial=self._compute_stress,
             accuracy=self.accuracy,
@@ -378,14 +374,12 @@ class PMEModel(ModelInterface):
         )
         cell = state.row_vector_cell.contiguous()
         batch_idx = state.system_idx.to(torch.int32) if state.n_systems > 1 else None
-        params = estimate_pme_parameters(
-            state.positions, cell, batch_idx, self.accuracy, real_space_cutoff=self.cutoff
-        )
         pme_kwargs: dict = dict(
             positions=state.positions,
             charges=charges,
             cell=cell,
-            alpha=params.alpha,
+            # The real-space cutoff is fixed, so alpha follows from accuracy
+            alpha=math.sqrt(-math.log(self.accuracy)) / self.cutoff,
             neighbor_list=edge_index,
             neighbor_ptr=neighbor_ptr,
             neighbor_shifts=unit_shifts,
