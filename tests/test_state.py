@@ -275,6 +275,23 @@ def test_concatenate_double_si_and_fe_states(
     assert torch.allclose(fe_slice.positions, fe_supercell_sim_state.positions)
 
 
+@pytest.mark.parametrize(
+    "system_idx",
+    [
+        [1] * 8 + [0] * 8,  # descending
+        [0, 1] * 8,  # interleaved
+        [0] * 8 + [2] * 8,  # gap
+        [1] * 16,  # not starting at 0
+    ],
+)
+def test_invalid_system_idx_raises(
+    si_double_sim_state: SimState, system_idx: list[int]
+) -> None:
+    """Atoms must be grouped by system in ascending order starting at 0."""
+    with pytest.raises(ValueError, match="unique consecutive integers"):
+        si_double_sim_state.system_idx = torch.tensor(system_idx, device=DEVICE)
+
+
 def test_split_state(si_double_sim_state: SimState) -> None:
     """Test splitting a state into a list of states."""
     states = si_double_sim_state.split()
@@ -990,9 +1007,13 @@ def test_rng_split_preserves(si_sim_state: SimState) -> None:
 
 
 def test_coerce_prng_none() -> None:
-    """None seed creates an unseeded Generator."""
+    """None seed draws a new seed from torch's global generator each time."""
+    torch.manual_seed(1)
     gen = coerce_prng(None, device=DEVICE)
     assert isinstance(gen, torch.Generator)
+    assert gen.initial_seed() != coerce_prng(None, device=DEVICE).initial_seed()
+    torch.manual_seed(1)
+    assert coerce_prng(None, device=DEVICE).initial_seed() == gen.initial_seed()
 
 
 def test_coerce_prng_int_seed() -> None:

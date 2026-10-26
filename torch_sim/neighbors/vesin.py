@@ -107,6 +107,7 @@ if VESIN_AVAILABLE:
             cell_sys = cell[sys_idx]
 
             # Calculate neighbor list for this system
+            # vesin>=0.6 makes cutoff keyword-only
             neighbor_list_fn = VesinNeighborList(
                 cutoff=float(cutoff), full_list=True, sorted=False
             )
@@ -250,7 +251,7 @@ if VESIN_TORCHSCRIPT_AVAILABLE:
                 continue
 
             # Calculate neighbor list for this system
-            neighbor_list_fn = VesinNeighborListTorch(cutoff, full_list=True)
+            neighbor_list_fn = VesinNeighborListTorch(cutoff=cutoff, full_list=True)
 
             # Get the cell for this system
             cell_sys = cell[sys_idx]

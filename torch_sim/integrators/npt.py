@@ -576,6 +576,13 @@ def npt_langevin_anisotropic_step(
     if external_pressure_tensor.ndim == 0:
         external_pressure_tensor = external_pressure_tensor.expand(state.n_systems, 3)
     elif external_pressure_tensor.ndim == 1 and external_pressure_tensor.shape[0] == 3:
+        if state.n_systems == 3:
+            warnings.warn(
+                "external_pressure of shape (3,) is ambiguous for 3 systems and is read "
+                "as the (x, y, z) pressure of every system. Pass shape (1, 3) for that, "
+                "or shape (3, 3) for per-system pressures.",
+                stacklevel=2,
+            )
         external_pressure_tensor = external_pressure_tensor.unsqueeze(0).expand(
             state.n_systems, 3
         )
@@ -1170,10 +1177,10 @@ class NPTNoseHooverIsotropicState(NPTState):
         "cell_position",
         "cell_momentum",
         "cell_mass",
-    }
-    _global_attributes = NPTState._global_attributes | {  # noqa: SLF001
         "thermostat",
         "barostat",
+    }
+    _global_attributes = NPTState._global_attributes | {  # noqa: SLF001
         "thermostat_fns",
         "barostat_fns",
     }
@@ -2167,13 +2174,13 @@ def _compute_deviatoric_correction(
     stress_dev = external_pressure_tensor - pressure_hydro[:, None, None] * I.expand_as(
         external_pressure_tensor
     )
-    # Project to reference coordinates: sigma = V0 * h0_inv^T @ stress_dev @ h0_inv
+    # Project to reference coordinates: sigma = V0 * h0_inv @ stress_dev @ h0_inv^T
     sigma = initial_volume[:, None, None] * (
-        initial_cell_inv.transpose(-2, -1) @ stress_dev @ initial_cell_inv
+        initial_cell_inv @ stress_dev @ initial_cell_inv.transpose(-2, -1)
     )
-    # Symmetrize and project back: pressure_dev = h^T @ 0.5*(sigma+sigma^T) @ h / V
+    # Symmetrize and project back: pressure_dev = h @ 0.5*(sigma+sigma^T) @ h^T / V
     sigma_sym = 0.5 * (sigma + sigma.transpose(-2, -1))
-    pressure_dev = cell.transpose(-2, -1) @ sigma_sym @ cell / volume[:, None, None]
+    pressure_dev = cell @ sigma_sym @ cell.transpose(-2, -1) / volume[:, None, None]
     trace_pressure_dev = torch.einsum("bii->b", pressure_dev)
     return pressure_hydro, pressure_dev, trace_pressure_dev
 
@@ -2251,7 +2258,8 @@ def _crescale_triclinic_barostat_step(
     deformation_matrix = torch.matrix_exp(
         a_tilde * dt + prefactor_random_matrix[:, None, None] * random_matrix_tilde
     )
-    deformation_matrix = rotate_gram_schmidt(deformation_matrix)
+    # rotate_gram_schmidt gives R^T of mu = QR; R keeps upper-triangular cells that way
+    deformation_matrix = rotate_gram_schmidt(deformation_matrix).mT
 
     ## Step 3: propagate sqrt(volume) for dt/2
     new_sqrt_volume += -prefactor * (
@@ -2269,8 +2277,8 @@ def _crescale_triclinic_barostat_step(
         (vscaling + rscaling)[state.system_idx], state.momenta
     ) * dt / (2 * state.masses.unsqueeze(-1))
     state.momenta = batch_matrix_vector(vscaling[state.system_idx], state.momenta)
-    # Right multiply: cell @ rscaling^T preserves fractional coordinates
-    state.cell = state.cell @ rscaling.mT
+    # Left multiply: rscaling @ cell preserves fractional coordinates
+    state.cell = rscaling @ state.cell
     return state
 
 
@@ -2420,7 +2428,8 @@ def _crescale_triclinic_average_barostat_step(
     deformation_matrix = torch.matrix_exp(
         a_tilde * dt + prefactor_random_matrix[:, None, None] * random_matrix_tilde
     )
-    deformation_matrix = rotate_gram_schmidt(deformation_matrix)
+    # rotate_gram_schmidt gives R^T of mu = QR; R keeps upper-triangular cells that way
+    deformation_matrix = rotate_gram_schmidt(deformation_matrix).mT
 
     ## Step 3: propagate sqrt(volume) for dt/2
     new_sqrt_volume += -prefactor * (
@@ -2442,8 +2451,8 @@ def _crescale_triclinic_average_barostat_step(
         )[state.system_idx],
         state.momenta,
     ) * dt / (2 * state.masses.unsqueeze(-1))
-    # Right multiply: cell @ rscaling^T preserves fractional coordinates
-    state.cell = state.cell @ rscaling.mT
+    # Left multiply: rscaling @ cell preserves fractional coordinates
+    state.cell = rscaling @ state.cell
     return state
 
 
@@ -2567,7 +2576,7 @@ def npt_crescale_triclinic_step(
             + (\boldsymbol{\mu}^{-T} + \boldsymbol{\mu})\,
             \frac{\mathbf{p}_i}{2m_i}\,\Delta t \\
         \mathbf{p}_i &\leftarrow \boldsymbol{\mu}^{-T}\,\mathbf{p}_i \\
-        \mathbf{h} &\leftarrow \mathbf{h}\,\boldsymbol{\mu}^T
+        \mathbf{h} &\leftarrow \boldsymbol{\mu}\,\mathbf{h}
 
     **Variable mapping (equation -> code):**
 

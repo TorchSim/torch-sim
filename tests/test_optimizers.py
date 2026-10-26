@@ -6,6 +6,7 @@ from typing import Any, get_args
 
 import pytest
 import torch
+from ase.build import bulk
 
 import torch_sim as ts
 from tests.conftest import make_left_handed
@@ -129,12 +130,31 @@ def test_fire_optimization(
         current_sim_state, lj_model, fire_flavor=fire_flavor, dt_start=0.1
     )
 
+    if fire_flavor == "vv_fire":
+        # A step past n_min mixes velocities with the current alpha, then decays it
+        check = state.clone()
+        check.n_pos = torch.full_like(check.n_pos, 10)
+        inv_mass = 1 / check.masses.unsqueeze(-1)
+        # Not parallel to the forces, so the mixing changes it
+        check.velocities = (check.forces + check.forces.roll(1, dims=1)) * inv_mass
+        alpha, dt, forces = check.alpha.clone(), check.dt.clone(), check.forces.clone()
+        velocities = check.velocities.clone()
+        check = ts.fire_step(state=check, model=lj_model, fire_flavor=fire_flavor)
+        velocities += 0.5 * dt * (forces + check.forces) * inv_mass
+        expected = (1 - alpha) * velocities + alpha * check.forces * (
+            velocities.norm() / check.forces.norm()
+        )
+        torch.testing.assert_close(check.velocities, expected)
+        assert check.alpha < alpha
+
     # Run optimization for a few steps
     energies = [1000, state.energy.item()]
     max_steps = 1000  # Add max step to prevent infinite loop
     steps_taken = 0
     while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
-        state = ts.fire_step(state=state, model=lj_model, dt_max=0.3)
+        state = ts.fire_step(
+            state=state, model=lj_model, dt_max=0.3, fire_flavor=fire_flavor
+        )
         energies.append(state.energy.item())
         steps_taken += 1
 
@@ -412,6 +432,28 @@ def test_unit_cell_bfgs_multi_batch(
     # We are evolving identical systems
     assert torch.allclose(current_energy[0], current_energy[1])
 
+    # A smaller system relaxes its cell as it does alone, however the batch is built
+    small = ts.io.atoms_to_state(
+        bulk("Ar", "fcc", a=5.5, cubic=True), multi_state.device, multi_state.dtype
+    )
+    alone = ts.bfgs_init(state=small, model=lj_model, cell_filter=ts.CellFilter.unit)
+    mixed = ts.bfgs_init(
+        state=ts.concatenate_states([small, ar_supercell_sim_state_1]),
+        model=lj_model,
+        cell_filter=ts.CellFilter.unit,
+    )
+    large = ts.bfgs_init(
+        state=ar_supercell_sim_state_1, model=lj_model, cell_filter=ts.CellFilter.unit
+    )
+    merged = ts.concatenate_states([alone, large])
+    for _ in range(5):
+        alone = ts.bfgs_step(state=alone, model=lj_model)
+        mixed = ts.bfgs_step(state=mixed, model=lj_model)
+        merged = ts.bfgs_step(state=merged, model=lj_model)
+    assert not torch.allclose(alone.cell, small.cell)
+    torch.testing.assert_close(mixed.cell[:1], alone.cell)
+    torch.testing.assert_close(merged.cell[:1], alone.cell)
+
 
 @pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
 def test_lbfgs_cell_optimization(
@@ -557,6 +599,26 @@ def test_unit_cell_lbfgs_multi_batch(
 
     # We are evolving identical systems
     assert torch.allclose(current_energy[0], current_energy[1])
+
+    # Concatenating mid-run states of different sizes and history lengths keeps
+    # each history consistent
+    small = ts.io.atoms_to_state(
+        bulk("Ar", "fcc", a=5.5, cubic=True), multi_state.device, multi_state.dtype
+    )
+    alone = ts.lbfgs_init(state=small, model=lj_model, cell_filter=ts.CellFilter.unit)
+    large = ts.lbfgs_init(
+        state=ar_supercell_sim_state_1, model=lj_model, cell_filter=ts.CellFilter.unit
+    )
+    for _ in range(3):
+        alone = ts.lbfgs_step(state=alone, model=lj_model)
+    large = ts.lbfgs_step(state=large, model=lj_model)
+    merged = ts.concatenate_states([alone, large])
+    for _ in range(3):
+        alone = ts.lbfgs_step(state=alone, model=lj_model)
+        large = ts.lbfgs_step(state=large, model=lj_model)
+        merged = ts.lbfgs_step(state=merged, model=lj_model)
+    torch.testing.assert_close(merged.cell[:1], alone.cell)
+    torch.testing.assert_close(merged.positions[alone.n_atoms :], large.positions)
 
 
 @pytest.mark.parametrize(
@@ -785,6 +847,11 @@ def test_fire_nan_velocities_dont_affect_other_systems(
             "System 0 cell differs when system 1 has NaN velocities"
         )
 
+    # System 1 now takes a first step, which leaves dt, alpha and n_pos unchanged
+    if fire_flavor == "ase_fire":
+        for attr in ("dt", "alpha", "n_pos"):
+            assert getattr(state_mixed, attr)[1] == getattr(state, attr)[1], attr
+
 
 @pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
 def test_vv_fire_nan_cell_velocities_with_finite_atomic_velocities(
@@ -864,7 +931,9 @@ def test_unit_cell_fire_optimization(
     steps_taken = 0
 
     while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
-        state = ts.fire_step(state=state, model=lj_model, dt_max=0.3)
+        state = ts.fire_step(
+            state=state, model=lj_model, dt_max=0.3, fire_flavor=fire_flavor
+        )
         energies.append(state.energy.item())
         steps_taken += 1
 
@@ -1083,7 +1152,9 @@ def test_frechet_cell_fire_optimization(
     steps_taken = 0
 
     while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
-        state = ts.fire_step(state=state, model=lj_model, dt_max=0.3)
+        state = ts.fire_step(
+            state=state, model=lj_model, dt_max=0.3, fire_flavor=fire_flavor
+        )
         energies.append(state.energy.item())
         steps_taken += 1
 

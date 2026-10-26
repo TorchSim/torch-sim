@@ -218,6 +218,9 @@ def minimum_image_displacement(
 ) -> torch.Tensor:
     """Apply minimum image convention to displacement vectors.
 
+    The result is exact for orthogonal and reduced (e.g. Niggli-reduced) cells.
+    Strongly skewed cells should be reduced first.
+
     Args:
         dr (torch.Tensor): Displacement vectors [N, 3] or [N, N, 3].
         cell (Optional[torch.Tensor]): Unit cell matrix [3, 3].
@@ -240,7 +243,19 @@ def minimum_image_displacement(
     dr_frac -= torch.where(pbc, torch.round(dr_frac), torch.zeros_like(dr_frac))
 
     # Convert back to cartesian
-    return torch.einsum("ij,...j->...i", cell, dr_frac)
+    dr = torch.einsum("ij,...j->...i", cell, dr_frac)
+
+    # Rounding is only exact for orthogonal cells, so also try the neighboring images
+    offsets = torch.tensor([-1, 0, 1], device=dr.device, dtype=dr.dtype)
+    shifts = torch.cartesian_prod(offsets, offsets, offsets) * pbc
+    mic_dr, min_dist = dr, torch.linalg.vector_norm(dr, dim=-1)
+    for shift in shifts @ cell.mT:
+        image = dr + shift
+        dist = torch.linalg.vector_norm(image, dim=-1)
+        closer = dist < min_dist
+        mic_dr = torch.where(closer.unsqueeze(-1), image, mic_dr)
+        min_dist = torch.where(closer, dist, min_dist)
+    return mic_dr
 
 
 def get_pair_displacements(

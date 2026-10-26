@@ -30,9 +30,10 @@ pytestmark = pytest.mark.skipif(
 def _make_charged_state(
     device: torch.device = DEVICE,
     dtype: torch.dtype = DTYPE,
+    repeat: int = 1,
 ) -> ts.SimState:
     """Build a small NaCl-like state with alternating +1/-1 site charges."""
-    atoms = bulk("NaCl", crystalstructure="rocksalt", a=5.64, cubic=True)
+    atoms = bulk("NaCl", crystalstructure="rocksalt", a=5.64, cubic=True).repeat(repeat)
     state = ts.io.atoms_to_state(atoms, device, dtype)
     n = state.n_atoms
     charges = torch.empty(n, dtype=dtype, device=device)
@@ -205,6 +206,21 @@ def test_ewald_pme_energy_agreement() -> None:
         ewald(state)["energy"], pme(state)["energy"], atol=1e-3, rtol=1e-3
     )
 
+    # A primitive cell batched with a large supercell keeps its single-system stress
+    small = _add_partial_charges(
+        ts.io.atoms_to_state(bulk("MgO", "rocksalt", a=4.21), DEVICE, DTYPE)
+    )
+    large = _add_partial_charges(
+        ts.io.atoms_to_state(
+            bulk("NaCl", "rocksalt", a=5.64, cubic=True).repeat(2), DEVICE, DTYPE
+        )
+    )
+    batch = ts.concatenate_states([small, large])
+    for model in (ewald, pme):
+        torch.testing.assert_close(
+            model(batch)["stress"][:1], model(small)["stress"], rtol=1e-4, atol=1e-6
+        )
+
 
 def _slab_reference_energy_forces(
     positions: torch.Tensor, charges: torch.Tensor, box: float, n_max: int = 100
@@ -265,8 +281,29 @@ def test_slab_matches_2d_lattice_sum(model_cls: type[EwaldModel | PMEModel]) -> 
     model = model_cls(device=DEVICE, dtype=DTYPE)
     out = model(state)
     energy, forces = _slab_reference_energy_forces(positions, charges, box)
-    torch.testing.assert_close(out["energy"][0], energy, atol=1e-3, rtol=1e-3)
-    torch.testing.assert_close(out["forces"], forces, atol=1e-3, rtol=1e-3)
+    torch.testing.assert_close(out["energy"][0], energy, atol=1e-4, rtol=0)
+    torch.testing.assert_close(out["forces"], forces, atol=1e-4, rtol=0)
+
+
+@pytest.mark.parametrize(
+    "model_cls",
+    [pytest.param(EwaldModel, id="ewald"), pytest.param(PMEModel, id="pme")],
+)
+def test_bulk_matches_madelung_energy(model_cls: type[EwaldModel | PMEModel]) -> None:
+    """A 216-atom NaCl crystal should match its Madelung energy at the default cutoff."""
+    state = _make_charged_state(repeat=3)
+    madelung = 1.7475645946  # rocksalt, per ion pair at the nearest-neighbor distance
+    nearest_neighbor = 5.64 / 2
+    energy = -state.n_atoms / 2 * madelung / nearest_neighbor
+    energy *= UnitConversion.e2_per_Ang_to_eV
+    out = model_cls(device=DEVICE, dtype=DTYPE)(state)
+    # nvalchemiops 0.4's approximate erfc leaves ~1e-6 relative error in the energy
+    torch.testing.assert_close(
+        out["energy"][0],
+        torch.tensor(energy, dtype=DTYPE, device=DEVICE),
+        atol=0,
+        rtol=3e-6,
+    )
 
 
 def test_sum_model_lj_plus_dsf() -> None:

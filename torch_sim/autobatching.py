@@ -21,7 +21,7 @@ Notes:
 """
 
 import logging
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from itertools import chain
 from typing import Any, get_args
 
@@ -98,6 +98,8 @@ def to_constant_volume_bins(  # noqa: C901
 
     if not hasattr(items, "__len__"):
         raise TypeError("items must be iterable")
+    if lower_bound is not None and upper_bound is not None and lower_bound >= upper_bound:
+        raise ValueError("lower_bound is greater or equal to upper_bound")
     if len(items) == 0:
         return []
 
@@ -624,7 +626,7 @@ class BinningAutoBatcher[T: SimState]:
             will be restarted when this method is called.
         """
         batched = (
-            states if isinstance(states, SimState) else ts.concatenate_states(states)
+            ts.concatenate_states(states) if isinstance(states, Sequence) else states
         )
         self.memory_scalers = calculate_memory_scalers(
             batched, self.memory_scales_with, self.cutoff
@@ -659,6 +661,13 @@ class BinningAutoBatcher[T: SimState]:
         # Convert to list of lists of indices
         self.index_bins = [list(batch.keys()) for batch in index_bins]
         self.batched_states = [[batched[index_bin]] for index_bin in self.index_bins]
+        # Later batches get their own seeds, so replicas don't replay one stream
+        parent_rng = torch.Generator(device=batched.device)
+        parent_rng.set_state(batched.rng.get_state())
+        for (bin_state,) in self.batched_states[1:]:
+            bin_state.rng = int(
+                torch.randint(2**62, (1,), generator=parent_rng, device=batched.device)
+            )
         self.current_state_bin = 0
 
         logger.info(
@@ -930,9 +939,9 @@ class InFlightAutoBatcher[T: SimState]:
             This method resets the current state indices and completed state tracking,
             so any ongoing processing will be restarted when this method is called.
         """
-        if isinstance(states, SimState):
-            states = states.split()
-        self.states_iterator = iter(states)
+        self.states_iterator = iter(
+            states if isinstance(states, Iterable) else states.split()
+        )
 
         self.current_scalers = []
         self.current_idx = []

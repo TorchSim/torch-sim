@@ -176,7 +176,7 @@ def fire_step(
     return step_func(state, **step_func_kwargs)
 
 
-def _vv_fire_step[T: "FireState | CellFireState"](
+def _vv_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
     state: T,
     model: "ModelInterface",
     *,
@@ -189,7 +189,7 @@ def _vv_fire_step[T: "FireState | CellFireState"](
     eps: float,
 ) -> T:
     """Perform one Velocity-Verlet based FIRE optimization step."""
-    n_systems = state.dt.numel()
+    n_systems = state.n_systems
 
     # Initialize velocities if NaN
     nan_velocities = state.velocities.isnan().any(dim=1)
@@ -201,11 +201,38 @@ def _vv_fire_step[T: "FireState | CellFireState"](
     # First half of velocity update
     atom_wise_dt = state.dt[state.system_idx].unsqueeze(-1)
     state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
+    if isinstance(state, CellFireState):
+        cell_wise_dt = state.dt.view(n_systems, 1, 1)
+        state.cell_velocities += (
+            0.5 * cell_wise_dt * state.cell_forces / state.cell_masses.unsqueeze(-1)
+        )
 
     # Position update
     state.set_constrained_positions(state.positions + atom_wise_dt * state.velocities)
 
-    # Cell position updates are handled in the velocity update step above
+    # Cell update, scaling atoms with the cell
+    if isinstance(state, CellFireState):
+        from torch_sim.optimizers.cell_filters import frechet_cell_filter_init
+
+        is_frechet = state.cell_filter[0] is frechet_cell_filter_init
+        cell_factor = state.cell_factor.view(n_systems, 1, 1)
+        cell_positions_new = state.cell_positions + cell_wise_dt * state.cell_velocities
+        if is_frechet:
+            deform_grad_log_new, cell_positions_new = _clamp_deform_grad_log(
+                cell_positions_new / cell_factor, cell_positions_new, cell_factor
+            )
+            deform_grad_new = torch.matrix_exp(deform_grad_log_new)
+        else:
+            deform_grad_new = cell_positions_new / cell_factor
+        state.set_constrained_cell(
+            torch.bmm(deform_grad_new, state.reference_cell), scale_atoms=True
+        )
+        adjusted_deform_grad = state.deform_grad()
+        if is_frechet:
+            adjusted_deform_grad = tsm.matrix_log_33(
+                adjusted_deform_grad, sim_dtype=state.dtype
+            )
+        state.cell_positions = adjusted_deform_grad * cell_factor
 
     # Get new forces and energy
     model_output = model(state)
@@ -222,7 +249,6 @@ def _vv_fire_step[T: "FireState | CellFireState"](
     # Second half of velocity update
     state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
     if isinstance(state, CellFireState):
-        cell_wise_dt = state.dt.view(n_systems, 1, 1)
         state.cell_velocities += (
             0.5 * cell_wise_dt * state.cell_forces / state.cell_masses.unsqueeze(-1)
         )
@@ -234,17 +260,8 @@ def _vv_fire_step[T: "FireState | CellFireState"](
     if isinstance(state, CellFireState):
         system_power += (state.cell_forces * state.cell_velocities).sum(dim=(1, 2))
 
-    # Update dt, alpha, n_pos
     pos_mask_system = system_power > 0.0
     neg_mask_system = ~pos_mask_system
-
-    state.n_pos = torch.where(pos_mask_system, state.n_pos + 1, 0)
-    inc_mask = (state.n_pos > n_min) & pos_mask_system
-    state.dt = torch.where(inc_mask, torch.minimum(state.dt * f_inc, dt_max), state.dt)
-    state.alpha = torch.where(inc_mask, state.alpha * f_alpha, state.alpha)
-
-    state.dt = torch.where(neg_mask_system, state.dt * f_dec, state.dt)
-    state.alpha = torch.where(neg_mask_system, alpha_start, state.alpha)
 
     # Velocity mixing
     v_scaling_system = tsm.batched_vdot(
@@ -280,6 +297,15 @@ def _vv_fire_step[T: "FireState | CellFireState"](
         torch.zeros_like(state.velocities),
     )
 
+    # Update dt, alpha, n_pos after mixing with the current alpha, as in the FIRE paper
+    state.n_pos = torch.where(pos_mask_system, state.n_pos + 1, 0)
+    inc_mask = (state.n_pos > n_min) & pos_mask_system
+    state.dt = torch.where(inc_mask, torch.minimum(state.dt * f_inc, dt_max), state.dt)
+    state.alpha = torch.where(inc_mask, state.alpha * f_alpha, state.alpha)
+
+    state.dt = torch.where(neg_mask_system, state.dt * f_dec, state.dt)
+    state.alpha = torch.where(neg_mask_system, alpha_start, state.alpha)
+
     return state
 
 
@@ -299,24 +325,29 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
     """Perform one ASE-style FIRE optimization step."""
     from torch_sim.optimizers import CellFireState
 
-    n_systems = state.dt.numel()
+    n_systems = state.n_systems
 
-    # NaN velocities mark newly initialized atoms. Skip adaptation for a wholly
-    # new batch; replacing only part of an autobatch must not skip the others.
-    nan_velocities = state.velocities.isnan().any(dim=1)
+    # NaN velocities mark systems that haven't stepped yet, including ones swapped in
+    # by an autobatcher; reduce per system without a GPU-syncing Python branch
+    nan_velocities = state.velocities.isnan().any(dim=1).to(torch.int32)
+    is_first_step = (
+        torch.zeros(n_systems, device=state.device, dtype=torch.int32)
+        .scatter_add_(0, state.system_idx, nan_velocities)
+        .bool()
+    )
     state.velocities.nan_to_num_(nan=0.0)
     if isinstance(state, CellFireState):
         state.cell_velocities.nan_to_num_(nan=0.0)
-
-    # All atoms have NaN velocities when every system in the batch is taking its
-    # first step. Keep this as a tensor: a Python branch would synchronize the GPU.
-    is_first_step = nan_velocities.all()
 
     # Only cell states have a reference cell to define deform_grad; ASE's cell
     # filters hand FIRE `forces @ deform_grad`, a plain FireState uses raw forces.
     forces = state.forces
     if isinstance(state, CellFireState):
-        forces = torch.where(is_first_step, forces, state.deform_grad_forces())
+        forces = torch.where(
+            is_first_step[state.system_idx].unsqueeze(-1),
+            forces,
+            state.deform_grad_forces(),
+        )
 
     # Calculate power. Newly zeroed systems have zero power.
     system_power = tsm.batched_vdot(
@@ -325,25 +356,15 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
     if isinstance(state, CellFireState):
         system_power += (state.cell_forces * state.cell_velocities).sum(dim=(1, 2))
 
-    # Update dt, alpha, n_pos
     pos_mask_system = system_power > 0.0
     neg_mask_system = ~pos_mask_system
 
-    # Only update dt, alpha, and n_pos after the first step.
+    # As in ASE, each system's first step leaves dt, alpha and n_pos unchanged
     pos_mask_system &= ~is_first_step
     neg_mask_system &= ~is_first_step
 
-    inc_mask = (state.n_pos > n_min) & pos_mask_system
-    state.dt = torch.where(inc_mask, torch.minimum(state.dt * f_inc, dt_max), state.dt)
-    state.alpha = torch.where(inc_mask, state.alpha * f_alpha, state.alpha)
-    state.n_pos = state.n_pos + pos_mask_system.to(state.n_pos.dtype)
-
-    state.dt = torch.where(neg_mask_system, state.dt * f_dec, state.dt)
-    state.alpha = torch.where(neg_mask_system, alpha_start, state.alpha)
-    state.n_pos = torch.where(neg_mask_system, 0, state.n_pos)
-
-    # Mix velocities before acceleration (ASE ordering). The first step keeps
-    # the initialized velocities, so the selections below also skip mixing.
+    # As in ASE, mix with the current alpha before adapting it and before acceleration;
+    # uphill and first-step systems restart from rest
     v_scaling_system = tsm.batched_vdot(
         state.velocities, state.velocities, state.system_idx, n_systems=n_systems
     )
@@ -360,13 +381,10 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
         v_mixing_cell = state.cell_forces / (f_scaling_cell + eps) * v_scaling_cell
 
         alpha_cell_bc = state.alpha.view(n_systems, 1, 1)
-        mixed_cell_velocities = torch.where(
+        state.cell_velocities = torch.where(
             pos_mask_system.view(n_systems, 1, 1),
             (1.0 - alpha_cell_bc) * state.cell_velocities + alpha_cell_bc * v_mixing_cell,
             torch.zeros_like(state.cell_velocities),
-        )
-        state.cell_velocities = torch.where(
-            ~is_first_step, mixed_cell_velocities, state.cell_velocities
         )
 
     v_scaling_atom = torch.sqrt(v_scaling_system[state.system_idx].unsqueeze(-1))
@@ -374,12 +392,21 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
     v_mixing_atom = forces * (v_scaling_atom / (f_scaling_atom + eps))
 
     alpha_atom = state.alpha[state.system_idx].unsqueeze(-1)
-    mixed_velocities = torch.where(
+    state.velocities = torch.where(
         pos_mask_system[state.system_idx].unsqueeze(-1),
         (1.0 - alpha_atom) * state.velocities + alpha_atom * v_mixing_atom,
         torch.zeros_like(state.velocities),
     )
-    state.velocities = torch.where(~is_first_step, mixed_velocities, state.velocities)
+
+    # Update dt, alpha, n_pos
+    inc_mask = (state.n_pos > n_min) & pos_mask_system
+    state.dt = torch.where(inc_mask, torch.minimum(state.dt * f_inc, dt_max), state.dt)
+    state.alpha = torch.where(inc_mask, state.alpha * f_alpha, state.alpha)
+    state.n_pos = state.n_pos + pos_mask_system.to(state.n_pos.dtype)
+
+    state.dt = torch.where(neg_mask_system, state.dt * f_dec, state.dt)
+    state.alpha = torch.where(neg_mask_system, alpha_start, state.alpha)
+    state.n_pos = torch.where(neg_mask_system, 0, state.n_pos)
 
     # Acceleration (single forward-Euler, no mass for ASE FIRE)
     state.velocities += forces * state.dt[state.system_idx].unsqueeze(-1)

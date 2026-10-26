@@ -128,6 +128,12 @@ def si_phonopy_atoms() -> Any:
     )
 
 
+@pytest.fixture(autouse=True)
+def _seed_torch() -> None:
+    """Seed torch per test, so unseeded states don't depend on test order."""
+    torch.manual_seed(0)
+
+
 @pytest.fixture
 def cu_supercell_sim_state() -> ts.SimState:
     """Create a 4x4x4 FCC Copper supercell with small random displacements."""

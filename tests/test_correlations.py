@@ -14,9 +14,11 @@ import torch
 
 import torch_sim as ts
 from tests.conftest import DEVICE
+from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.properties.correlations import (
     CircularBuffer,
     CorrelationCalculator,
+    HeatFluxAutoCorrelation,
     VelocityAutoCorrelation,
 )
 
@@ -475,3 +477,34 @@ def test_velocity_autocorrelation_with_trajectory_reporter(
             assert props[0]["vacf"].shape == (1,)
 
     reporter.close()
+
+
+def test_heat_flux_autocorrelation(
+    lj_model: LennardJonesModel, ar_double_sim_state: ts.SimState
+) -> None:
+    """HFACF runs one model forward per update and yields a normalized HFACF."""
+    window_size = 4
+    hfacf_calc = HeatFluxAutoCorrelation(
+        model=lj_model, window_size=window_size, device=DEVICE
+    )
+    state = ts.nve_init(ar_double_sim_state, lj_model, kT=0.01)
+    heat_flux = hfacf_calc.corr_calc.properties["heat_flux"](state)
+    assert heat_flux.shape == (state.n_systems, 3)
+    assert heat_flux.abs().sum() > 0
+
+    n_forward_calls = 0
+
+    def count_forward(*_args: object) -> None:
+        nonlocal n_forward_calls
+        n_forward_calls += 1
+
+    lj_model.register_forward_hook(count_forward)
+    for _ in range(window_size):
+        state.momenta = torch.randn_like(state.momenta)
+        n_windows = hfacf_calc(state)
+
+    assert n_forward_calls == window_size
+    assert n_windows.tolist() == [1]
+    assert hfacf_calc.hfacf.shape == (window_size,)
+    assert torch.isfinite(hfacf_calc.hfacf).all()
+    assert hfacf_calc.hfacf[0] == pytest.approx(1.0)
