@@ -1,8 +1,11 @@
+from collections.abc import Callable
+
 import pytest
 import torch
+from ase.build import bulk
 
 import torch_sim as ts
-from tests.conftest import DEVICE, DTYPE
+from tests.conftest import DEVICE, DTYPE, make_left_handed
 from torch_sim.integrators import initialize_momenta
 from torch_sim.integrators.npt import _npt_langevin_anisotropic_compute_cell_force
 from torch_sim.models.lennard_jones import LennardJonesModel
@@ -494,6 +497,12 @@ def test_nvt_nose_hoover_multi_equivalent_to_single(
 
     assert torch.allclose(final_temperatures, temp / MetalUnits.temperature)
 
+    # Slicing, splitting and .to() keep each system's own chain
+    torch.testing.assert_close(state[1].chain.momenta, state.chain.momenta[1:])
+    rejoined = ts.concatenate_states(state.split())
+    torch.testing.assert_close(rejoined.chain.momenta, state.chain.momenta)
+    assert state.to(dtype=torch.float32).chain.momenta.dtype == torch.float32
+
 
 def test_nvt_nose_hoover_multi_kt(
     ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
@@ -674,7 +683,114 @@ def test_npt_crescale_triclinic(
     assert pos_diff > 0.0001  # Systems should remain separated
 
 
-def test_npt_crescale_triclinic_shear(
+@pytest.mark.parametrize(
+    "integrator_name", ["npt_crescale_isotropic", "npt_crescale_triclinic"]
+)
+def test_npt_crescale_default_coupling_is_stable(integrator_name: str) -> None:
+    """The barostat defaults must not blow the cell up.
+
+    Every other c-rescale test passes ``tau_p``/``isothermal_compressibility``
+    explicitly, so the *defaults* were never exercised. With ``tau_p = 3 * dt``
+    the barostat relaxes pressure on the timescale of a single step, so it
+    integrates the instantaneous virial-pressure noise of a small cell as if it
+    were signal: this equilibrated LJ solid, held at its own pressure, tripled
+    in volume within ~4 steps and then crashed the neighbour list.
+
+    Guidance puts the barostat time at 10^2-10^4 timesteps (GROMACS' default
+    tau-p is 5 ps and its first-order coupling requires >=5 steps per tau;
+    LAMMPS recommends "a Pdamp of around 1000 timesteps").
+
+    Uses a local reduced-unit LJ model rather than the ``lj_model`` fixture:
+    the fixture's argon is far softer than the default compressibility assumes
+    (1e-6 bar^-1 ~ 100 GPa), and since only the ratio beta/tau_p enters the
+    equations of motion that mismatch lengthens the effective coupling time and
+    masks the instability.
+    """
+    model = LennardJonesModel(
+        sigma=1.0,
+        epsilon=1.0,
+        cutoff=1.2,
+        device=DEVICE,
+        dtype=DTYPE,
+        compute_forces=True,
+        compute_stress=True,
+    )
+    atoms = bulk("Ar", "fcc", a=2**0.5 * 2 ** (1 / 6)).repeat((3, 3, 3))
+    state = ts.io.atoms_to_state([atoms], device=DEVICE, dtype=DTYPE)
+    state.rng = 42
+
+    step_fn = getattr(ts, f"{integrator_name}_step")
+    dt = torch.tensor(0.002, dtype=DTYPE)
+    kT = torch.tensor(5.0, dtype=DTYPE) * MetalUnits.temperature
+    # Hold the system at its own pressure: any volume runaway is the barostat's
+    # doing, not a response to a genuine pressure imbalance.
+    external_pressure = torch.tensor(0.0, dtype=DTYPE)
+
+    state = ts.npt_crescale_init(state=state, model=model, dt=dt, kT=kT)
+    initial_volume = state.volume.clone()
+
+    for step in range(100):
+        state = step_fn(
+            state=state, model=model, dt=dt, kT=kT, external_pressure=external_pressure
+        )
+        assert torch.isfinite(state.cell).all(), (
+            f"{integrator_name}: non-finite cell at step {step + 1} with default "
+            "barostat coupling"
+        )
+
+    ratio = (state.volume / initial_volume).tolist()
+    assert all(0.5 < r < 2.0 for r in ratio), (
+        f"{integrator_name}: default barostat changed the volume by {ratio} in "
+        "100 steps at the system's own pressure"
+    )
+
+
+def test_npt_crescale_init_accepts_per_system_coupling(
+    ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
+) -> None:
+    """``tau_p``/``isothermal_compressibility`` may be given per system.
+
+    Both are declared ``float | torch.Tensor``, stored as ``[n_systems]`` and
+    consumed per system by the barostat, so a batch must be able to mix (say)
+    a soft and a stiff material. A ``x or default`` guard silently broke this:
+    a multi-element tensor raises "Boolean value of Tensor with more than one
+    value is ambiguous", and a legitimate 0.0 was replaced by the default.
+    """
+    dt = torch.tensor(0.001, dtype=DTYPE)
+    kT = torch.tensor(300.0, dtype=DTYPE) * MetalUnits.temperature
+    tau_p = torch.tensor([0.1, 0.05], dtype=DTYPE, device=DEVICE)
+    compressibility = torch.tensor([1e-4, 5e-5], dtype=DTYPE, device=DEVICE)
+
+    ar_double_sim_state.rng = 42
+    state = ts.npt_crescale_init(
+        state=ar_double_sim_state,
+        model=lj_model,
+        dt=dt,
+        kT=kT,
+        tau_p=tau_p,
+        isothermal_compressibility=compressibility,
+    )
+
+    assert torch.allclose(state.tau_p, tau_p)
+    assert torch.allclose(state.isothermal_compressibility, compressibility)
+
+    # Scalars still broadcast to every system.
+    ar_double_sim_state.rng = 42
+    scalar_state = ts.npt_crescale_init(
+        state=ar_double_sim_state,
+        model=lj_model,
+        dt=dt,
+        kT=kT,
+        tau_p=0.1,
+        isothermal_compressibility=1e-4,
+    )
+    assert scalar_state.tau_p.shape == (ar_double_sim_state.n_systems,)
+    assert scalar_state.isothermal_compressibility.shape == (
+        ar_double_sim_state.n_systems,
+    )
+
+
+def test_npt_crescale_triclinic_shear(  # noqa: PLR0915
     ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test anisotropic crescale with off-diagonal (shear) external stress."""
@@ -741,6 +857,78 @@ def test_npt_crescale_triclinic_shear(
     mean_temps = torch.mean(temperatures_tensor, dim=0)
     for mean_temp in mean_temps:
         assert abs(mean_temp - kT.item() / MetalUnits.temperature) < 150.0
+
+    # With no forces or noise and tiny momenta, atoms must move with the cell
+    free_model = LennardJonesModel(
+        sigma=3.405, epsilon=0.0, device=DEVICE, dtype=DTYPE, compute_stress=True
+    )
+    zero_kT = torch.tensor(0.0, dtype=DTYPE)
+    free_state = ts.npt_crescale_init(
+        state=ar_double_sim_state,
+        model=free_model,
+        dt=dt,
+        kT=zero_kT,
+        tau_p=10 * dt,
+        isothermal_compressibility=torch.tensor(1.0, dtype=DTYPE),
+    )
+    free_state.momenta = torch.full_like(free_state.momenta, 1e-9)
+
+    def frac_positions(state: ts.SimState) -> torch.Tensor:
+        cells = state.cell[state.system_idx]
+        return torch.linalg.solve(cells, state.positions.unsqueeze(-1)).squeeze(-1)
+
+    frac_before = frac_positions(free_state)
+    free_state = ts.npt_crescale_triclinic_step(
+        state=free_state,
+        model=free_model,
+        dt=dt,
+        kT=zero_kT,
+        external_pressure=1e4 * external_pressure,
+    )
+    torch.testing.assert_close(
+        frac_positions(free_state), frac_before, atol=1e-10, rtol=0
+    )
+    # The rotation-free update keeps the upper-triangular cells upper-triangular
+    assert torch.all(free_state.cell.tril(-1) == 0)
+
+    # The same crystal in another lattice basis must deform the same way
+    basis_change = torch.tensor(
+        [[1.0, 1.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=DTYPE
+    )
+    shear_strain = torch.tensor(
+        [[1.0, 0.05, 0.0], [0.0, 1.0, 0.02], [0.0, 0.0, 0.97]], dtype=DTYPE
+    )
+    deviatoric_pressure = MetalUnits.pressure * torch.diag(
+        torch.tensor([1e4, 0.0, -1e4], dtype=DTYPE)
+    )
+    deformations = []
+    for basis in (torch.eye(3, dtype=DTYPE), basis_change):
+        crystal = ts.io.atoms_to_state(
+            bulk("Ar", "fcc", a=5.26, cubic=True), DEVICE, DTYPE
+        )
+        crystal.cell = crystal.cell @ basis
+        crystal = ts.npt_crescale_init(
+            state=crystal,
+            model=free_model,
+            dt=dt,
+            kT=zero_kT,
+            tau_p=10 * dt,
+            isothermal_compressibility=torch.tensor(1e-2, dtype=DTYPE),
+        )
+        crystal.momenta = torch.full_like(crystal.momenta, 1e-9)
+        # Shear away from the reference cell, moving the atoms with it
+        crystal.cell = shear_strain @ crystal.cell
+        crystal.positions = crystal.positions @ shear_strain.T
+        cell_before = crystal.cell.clone()
+        crystal = ts.npt_crescale_triclinic_step(
+            state=crystal,
+            model=free_model,
+            dt=dt,
+            kT=zero_kT,
+            external_pressure=deviatoric_pressure,
+        )
+        deformations.append(crystal.cell @ torch.linalg.inv(cell_before))
+    torch.testing.assert_close(deformations[0], deformations[1], atol=1e-12, rtol=0)
 
     # Check energy is stable
     for traj in energies_tensor.T:
@@ -1008,6 +1196,16 @@ def test_npt_nose_hoover_multi_equivalent_to_single(
 
     assert torch.allclose(final_temperatures, temp / MetalUnits.temperature)
 
+    # Slicing, splitting and .to() keep each system's own chains
+    for chain_name in ("thermostat", "barostat"):
+        chain = getattr(state, chain_name)
+        torch.testing.assert_close(
+            getattr(state[1], chain_name).momenta, chain.momenta[1:]
+        )
+        rejoined = getattr(ts.concatenate_states(state.split()), chain_name)
+        torch.testing.assert_close(rejoined.momenta, chain.momenta)
+    assert state.to(dtype=torch.float32).thermostat.momenta.dtype == torch.float32
+
 
 def test_npt_nose_hoover_multi_kt(
     ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
@@ -1266,3 +1464,57 @@ def test_npt_langevin_reproducibility(
     assert not torch.allclose(pos_a, pos_c)
     assert not torch.allclose(mom_a, mom_c)
     assert not torch.allclose(cell_a, cell_c)
+
+
+@pytest.mark.parametrize(
+    ("init_fn", "step_fn"),
+    [
+        (ts.npt_crescale_init, ts.npt_crescale_isotropic_step),
+        (ts.npt_crescale_init, ts.npt_crescale_triclinic_step),
+        (ts.npt_nose_hoover_isotropic_init, ts.npt_nose_hoover_isotropic_step),
+        (ts.npt_langevin_isotropic_init, ts.npt_langevin_isotropic_step),
+    ],
+    ids=["crescale_isotropic", "crescale_triclinic", "nose_hoover", "langevin"],
+)
+def test_npt_is_independent_of_cell_handedness(
+    init_fn: Callable,
+    step_fn: Callable,
+    ar_double_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    """NPT dynamics of a left-handed cell match the right-handed description.
+
+    The barostats use the cell volume (e.g. sqrt(V)), which must be |det(cell)|:
+    a signed determinant gives NaN or the wrong pressure for a left-handed cell.
+    """
+    dt = torch.tensor(0.001, dtype=DTYPE)
+    kT = torch.tensor(300.0, dtype=DTYPE) * MetalUnits.temperature
+    external_pressure = torch.tensor(10.0, dtype=DTYPE) * MetalUnits.pressure
+
+    final = {}
+    for name, start in (
+        ("right", ar_double_sim_state.clone()),
+        ("left", make_left_handed(ar_double_sim_state)),
+    ):
+        start.rng = 42
+        state = init_fn(state=start, model=lj_model, dt=dt, kT=kT)
+        for _ in range(10):
+            state = step_fn(
+                state=state,
+                model=lj_model,
+                dt=dt,
+                kT=kT,
+                external_pressure=external_pressure,
+            )
+        final[name] = state
+
+    assert torch.isfinite(final["left"].energy).all()
+    # The triclinic barostat re-orthonormalises its random deformation, so the two
+    # trajectories agree to ~1e-6
+    for attr in ("energy", "volume", "positions"):
+        torch.testing.assert_close(
+            getattr(final["left"], attr),
+            getattr(final["right"], attr),
+            rtol=1e-5,
+            atol=1e-5,
+        )

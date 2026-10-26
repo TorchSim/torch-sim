@@ -123,11 +123,22 @@ def state_to_atoms(
     description="pymatgen: Python Materials Genomics",
     path="pymatgen",
 )
-def state_to_structures(state: ts.SimState) -> list[Structure]:
+def state_to_structures(  # noqa: C901
+    state: ts.SimState,
+    *,
+    system_extras_map: dict[SystemExtras, str] | None = None,
+    atom_extras_map: dict[AtomExtras, str] | None = None,
+) -> list[Structure]:
     """Convert a SimState to a list of Pymatgen Structure objects.
 
     Args:
         state (SimState): Batched state containing positions, cell, and atomic numbers
+        system_extras_map: Map of ``{ts_key: pymatgen_key}`` controlling which
+            ``_system_extras`` entries are written to ``structure.properties``.
+            ``None`` (default) means no extras are written.
+        atom_extras_map: Map of ``{ts_key: pymatgen_key}`` controlling which
+            ``_atom_extras`` entries are written to ``structure.site_properties``.
+            ``None`` (default) means no extras are written.
 
     Returns:
         list[Structure]: Pymatgen Structure objects, one per system
@@ -184,6 +195,19 @@ def state_to_structures(state: ts.SimState) -> list[Structure]:
             coords=system_positions,
             coords_are_cartesian=True,
         )
+
+        if system_extras_map:
+            for ts_key, pmg_key in system_extras_map.items():
+                if ts_key in state.system_extras:
+                    val = state.system_extras[ts_key][uniq_sys_idx].detach().cpu().numpy()
+                    struct.properties[pmg_key] = val
+
+        if atom_extras_map:
+            for ts_key, pmg_key in atom_extras_map.items():
+                if ts_key in state.atom_extras:
+                    val = state.atom_extras[ts_key][mask].detach().cpu().numpy()
+                    struct.add_site_property(pmg_key, val)
+
         structures.append(struct)
 
     return structures
@@ -360,10 +384,13 @@ def atoms_to_state(
     description="pymatgen: Python Materials Genomics",
     path="pymatgen",
 )
-def structures_to_state(
+def structures_to_state(  # noqa: C901
     structure: Structure | list[Structure],
     device: torch.device | None = None,
     dtype: torch.dtype | None = None,
+    *,
+    system_extras_map: dict[SystemExtras, str] | None = None,
+    atom_extras_map: dict[AtomExtras, str] | None = None,
 ) -> ts.SimState:
     """Create a SimState from pymatgen Structure(s).
 
@@ -373,6 +400,12 @@ def structures_to_state(
         device (torch.device): Device to create tensors on
         dtype (torch.dtype): Data type for tensors (typically torch.float32 or
             torch.float64)
+        system_extras_map: Map of ``{ts_key: pymatgen_key}`` controlling which
+            ``pymatgen.properties`` entries are read into ``_system_extras``.
+            ``None`` (default) means no extras are read.
+        atom_extras_map: Map of ``{ts_key: pymatgen_key}`` controlling which
+            ``pymatgen.site_properties`` entries are read into ``_atom_extras``.
+            ``None`` (default) means no extras are read.
 
     Returns:
         SimState: TorchSim SimState object.
@@ -431,6 +464,27 @@ def structures_to_state(
     pbc_state: torch.Tensor | list[bool] | bool = (
         list(pbc_struct) if isinstance(pbc_struct, (list, tuple)) else pbc_struct
     )
+
+    _system_extras: dict[str, torch.Tensor] = {}
+    if system_extras_map:
+        for ts_key, pmg_key in system_extras_map.items():
+            vals = [at.properties.get(pmg_key) for at in struct_list]
+            non_none = [v for v in vals if v is not None]
+            if len(non_none) == len(vals):
+                _system_extras[ts_key] = torch.tensor(
+                    np.array(non_none), dtype=dtype, device=device
+                )
+
+    _atom_extras: dict[str, torch.Tensor] = {}
+    if atom_extras_map:
+        for ts_key, pmg_key in atom_extras_map.items():
+            arrays = [at.site_properties.get(pmg_key) for at in struct_list]
+            non_none = [a for a in arrays if a is not None]
+            if len(non_none) == len(arrays):
+                _atom_extras[ts_key] = torch.tensor(
+                    np.concatenate(non_none), dtype=dtype, device=device
+                )
+
     return ts.SimState(
         positions=positions,
         masses=masses,
@@ -438,6 +492,8 @@ def structures_to_state(
         pbc=pbc_state,
         atomic_numbers=atomic_numbers,
         system_idx=system_idx,
+        _system_extras=_system_extras,
+        _atom_extras=_atom_extras,
     )
 
 

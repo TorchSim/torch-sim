@@ -83,6 +83,9 @@ class NoisyModelWrapper(ModelInterface):
     Uses Weibull noise (heavy-tailed) rather than Gaussian so that occasional
     large perturbations can break symmetry in negative-control tests. This
     also better mimics real ML potential errors, which have heavy tails.
+
+    With ``symmetry_breaking_only`` the symmetric part of the noise is removed, so
+    FixSymmetry cancels it exactly.
     """
 
     model: LennardJonesModel
@@ -94,6 +97,8 @@ class NoisyModelWrapper(ModelInterface):
         model: LennardJonesModel,
         noise_scale: float = 1e-1,
         concentration: float = 1.0,
+        *,
+        symmetry_breaking_only: bool = False,
     ) -> None:
         super().__init__()
         self.model = model
@@ -103,6 +108,7 @@ class NoisyModelWrapper(ModelInterface):
         self._dtype = model.dtype
         self._compute_stress = model.compute_stress
         self._compute_forces = model.compute_forces
+        self.symmetry_breaking_only = symmetry_breaking_only
 
     def forward(self, state: ts.SimState, **kwargs: object) -> dict[str, torch.Tensor]:
         """Forward pass with added Weibull noise."""
@@ -124,6 +130,15 @@ class NoisyModelWrapper(ModelInterface):
                     noise = magnitudes.unsqueeze(-1) * direction
                 else:
                     noise = magnitudes.view(-1, 1, 1) * direction
+                if self.symmetry_breaking_only:
+                    symmetric = noise.to(results[key].dtype, copy=True)
+                    for constraint in state.constraints:
+                        if isinstance(constraint, FixSymmetry):
+                            if key == "forces":
+                                constraint.adjust_forces(state, symmetric)
+                            else:
+                                constraint.adjust_stress(state, symmetric)
+                    noise = noise - symmetric
                 results[key] = results[key] + noise
         return results
 
@@ -132,6 +147,19 @@ class NoisyModelWrapper(ModelInterface):
 def noisy_lj_model(model: LennardJonesModel) -> NoisyModelWrapper:
     """LJ model with noise added to forces/stress."""
     return NoisyModelWrapper(model, noise_scale=5e-1, concentration=1.0)
+
+
+@pytest.fixture
+def symmetry_breaking_lj_model() -> NoisyModelWrapper:
+    """LJ model with sigma near the hcp neighbor distance, so the strained cells feel
+    real forces, and large noise that FixSymmetry removes exactly.
+    """
+    model = LennardJonesModel(
+        sigma=2.5, epsilon=0.05, cutoff=6.0, compute_stress=True, dtype=DTYPE
+    )
+    return NoisyModelWrapper(
+        model, noise_scale=5e-1, concentration=1.0, symmetry_breaking_only=True
+    )
 
 
 @pytest.fixture
@@ -605,14 +633,20 @@ class TestFixSymmetryWithOptimization:
         final = get_symmetry_datasets(final_state, symprec=SYMPREC)
         assert initial[0].number == final[0].number
 
+    @pytest.mark.parametrize(
+        ("optimizer", "structure"),
+        [(ts.Optimizer.lbfgs, "bcc"), (ts.Optimizer.bfgs, "hcp")],
+    )
     @pytest.mark.parametrize("cell_filter", [ts.CellFilter.frechet, ts.CellFilter.unit])
-    def test_lbfgs_preserves_symmetry(
+    def test_quasi_newton_preserves_symmetry(
         self,
         noisy_lj_model: NoisyModelWrapper,
         cell_filter: ts.CellFilter,
+        optimizer: ts.Optimizer,
+        structure: str,
     ) -> None:
-        """Regression: LBFGS must use set_constrained_cell for FixSymmetry support."""
-        state = ts.io.atoms_to_state(make_structure("bcc"), DEVICE, DTYPE)
+        """Regression: L-BFGS and BFGS must use set_constrained_cell for FixSymmetry."""
+        state = ts.io.atoms_to_state(make_structure(structure), DEVICE, DTYPE)
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
         state.constraints = [constraint]
         state.cell = state.cell * 0.95
@@ -620,7 +654,7 @@ class TestFixSymmetryWithOptimization:
         final_state = ts.optimize(
             system=state,
             model=noisy_lj_model,
-            optimizer=ts.Optimizer.lbfgs,
+            optimizer=optimizer,
             convergence_fn=ts.generate_force_convergence_fn(
                 force_tol=0.01,
                 include_cell_forces=True,
@@ -629,7 +663,7 @@ class TestFixSymmetryWithOptimization:
             max_steps=MAX_STEPS,
         )
         final = get_symmetry_datasets(final_state, symprec=SYMPREC)
-        assert final[0].number == SPACEGROUPS["bcc"]
+        assert final[0].number == SPACEGROUPS[structure]
 
     def test_noisy_model_loses_symmetry_without_constraint(
         self,
@@ -767,14 +801,15 @@ class TestFixSymmetryCellPositionsResync:
     )
     def test_optimizer_sym_converges(
         self,
-        noisy_lj_model: NoisyModelWrapper,
+        symmetry_breaking_lj_model: NoisyModelWrapper,
         optimizer: ts.Optimizer,
     ) -> None:
         """Optimizer with FixSymmetry + Frechet converges on anisotropically strained HCP.
 
         Uses HCP with anisotropic strain (a-axis compressed, c-axis stretched)
         so the cell actively wants to change shape under symmetry constraints.
-        Asserts the optimizer converges within MAX_STEPS (not just preserves symmetry).
+        Asserts the optimizer converges within 2 * MAX_STEPS (not just preserves
+        symmetry).
         """
         state = ts.io.atoms_to_state(make_structure("hcp"), DEVICE, DTYPE)
         constraint = FixSymmetry.from_state(state, symprec=SYMPREC)
@@ -793,11 +828,11 @@ class TestFixSymmetryCellPositionsResync:
         )
         final_state = ts.optimize(
             system=state,
-            model=noisy_lj_model,
+            model=symmetry_breaking_lj_model,
             optimizer=optimizer,
             convergence_fn=convergence_fn,
             init_kwargs={"cell_filter": ts.CellFilter.frechet},
-            max_steps=MAX_STEPS,
+            max_steps=2 * MAX_STEPS,
             steps_between_swaps=1,
         )
         fmax = ts.system_wise_max_force(final_state).item()

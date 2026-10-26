@@ -147,7 +147,7 @@ log.info("SECTION 2: MACE NVE Simulation")
 
 # Load MACE model
 loaded_model = mace_mp(
-    model="medium",
+    model="medium-mpa-0",
     return_raw_model=True,
     default_dtype=str(dtype).removeprefix("torch."),
     device=str(device),
@@ -374,7 +374,7 @@ for step in range(N_steps_npt):
             )
         )
         stress = mace_model_stress(state)["stress"]
-        volume = torch.det(state.current_cell)
+        volume = state.volume
         e_kin = ts.calc_kinetic_energy(
             masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
         )
@@ -400,7 +400,7 @@ final_temp = (
 log.info(f"Final temperature: {final_temp.item():.4f} K")
 
 final_stress = mace_model_stress(state)["stress"]
-final_volume = torch.det(state.current_cell)
+final_volume = state.volume
 final_pressure = ts.get_pressure(
     final_stress,
     ts.calc_kinetic_energy(

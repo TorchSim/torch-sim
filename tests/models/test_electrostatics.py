@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import traceback
 
 import pytest
@@ -11,6 +12,7 @@ from ase.build import bulk
 import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
 from tests.models.conftest import make_validate_model_outputs_test
+from torch_sim.units import UnitConversion
 
 
 try:
@@ -28,9 +30,10 @@ pytestmark = pytest.mark.skipif(
 def _make_charged_state(
     device: torch.device = DEVICE,
     dtype: torch.dtype = DTYPE,
+    repeat: int = 1,
 ) -> ts.SimState:
     """Build a small NaCl-like state with alternating +1/-1 site charges."""
-    atoms = bulk("NaCl", crystalstructure="rocksalt", a=5.64, cubic=True)
+    atoms = bulk("NaCl", crystalstructure="rocksalt", a=5.64, cubic=True).repeat(repeat)
     state = ts.io.atoms_to_state(atoms, device, dtype)
     n = state.n_atoms
     charges = torch.empty(n, dtype=dtype, device=device)
@@ -192,6 +195,105 @@ def test_ewald_pme_energy_agreement() -> None:
     pme = PMEModel(cutoff=8.0, accuracy=1e-6, device=DEVICE, dtype=DTYPE)
     torch.testing.assert_close(
         ewald(state)["energy"], pme(state)["energy"], atol=1e-3, rtol=1e-3
+    )
+
+    # A primitive cell batched with a large supercell keeps its single-system stress
+    small = _add_partial_charges(
+        ts.io.atoms_to_state(bulk("MgO", "rocksalt", a=4.21), DEVICE, DTYPE)
+    )
+    large = _add_partial_charges(
+        ts.io.atoms_to_state(
+            bulk("NaCl", "rocksalt", a=5.64, cubic=True).repeat(2), DEVICE, DTYPE
+        )
+    )
+    batch = ts.concatenate_states([small, large])
+    for model in (ewald, pme):
+        torch.testing.assert_close(
+            model(batch)["stress"][:1], model(small)["stress"], rtol=1e-4, atol=1e-6
+        )
+
+
+def _slab_reference_energy_forces(
+    positions: torch.Tensor, charges: torch.Tensor, box: float, n_max: int = 100
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Reference slab energy and forces from a direct Coulomb sum over x and y images.
+
+    Images within a circle of radius n_max * box are summed directly, and the
+    cells outside it are added analytically as point dipoles.
+    """
+    positions = positions.clone().requires_grad_()
+    # In-plane image shifts within the circle
+    idx = torch.arange(-n_max, n_max + 1, dtype=positions.dtype, device=DEVICE)
+    # The z shift is always zero because a slab has no images along z
+    shifts = torch.cartesian_prod(idx, idx, torch.zeros_like(idx[:1])) * box
+    shifts = shifts[shifts.norm(dim=-1) <= n_max * box]
+    # Pair distances and charge products over all images
+    pair_vectors = positions[:, None] - positions[None, :] + shifts[:, None, None]
+    dist_sq = pair_vectors.pow(2).sum(dim=-1)
+    pair_charges = (charges[:, None] * charges[None, :]).expand_as(dist_sq)
+    # Direct sum without the i = j, n = 0 terms
+    is_pair = dist_sq > 0
+    energy = 0.5 * (pair_charges[is_pair] * dist_sq[is_pair].rsqrt()).sum()
+    # Dipole term of the cells outside the circle
+    dipole_sq = (charges[:, None] * positions).sum(dim=0).pow(2)
+    energy = energy + math.pi * (dipole_sq[2] - 0.5 * dipole_sq[:2].sum()) / (
+        n_max * box**3
+    )
+    # e^2 / Angstrom to eV
+    energy = energy * UnitConversion.e2_per_Ang_to_eV
+    forces = -torch.autograd.grad(energy, positions)[0]
+    return energy.detach(), forces
+
+
+@pytest.mark.parametrize(
+    "model_cls",
+    [pytest.param(EwaldModel, id="ewald"), pytest.param(PMEModel, id="pme")],
+)
+def test_slab_matches_2d_lattice_sum(model_cls: type[EwaldModel | PMEModel]) -> None:
+    """A slab state should match the direct Coulomb sum over its 2D lattice."""
+    box = 6.0
+    positions = torch.tensor(
+        [[0.3, 0.4, 8.8], [3.1, 2.7, 11.1], [1.4, 4.2, 10.6], [4.4, 1.0, 9.3]],
+        dtype=DTYPE,
+        device=DEVICE,
+    )
+    charges = torch.tensor([1.0, -1.0, 0.5, -0.5], dtype=DTYPE, device=DEVICE)
+    state = ts.SimState(
+        positions=positions,
+        masses=torch.ones(4, dtype=DTYPE, device=DEVICE),
+        cell=torch.diag(
+            torch.tensor([box, box, 20.0], dtype=DTYPE, device=DEVICE)
+        ).unsqueeze(0),
+        pbc=[True, True, False],
+        atomic_numbers=torch.tensor([11, 17, 11, 17], dtype=torch.int64, device=DEVICE),
+    )
+    state._atom_extras["partial_charges"] = charges  # noqa: SLF001
+
+    model = model_cls(device=DEVICE, dtype=DTYPE)
+    out = model(state)
+    energy, forces = _slab_reference_energy_forces(positions, charges, box)
+    torch.testing.assert_close(out["energy"][0], energy, atol=1e-4, rtol=0)
+    torch.testing.assert_close(out["forces"], forces, atol=1e-4, rtol=0)
+
+
+@pytest.mark.parametrize(
+    "model_cls",
+    [pytest.param(EwaldModel, id="ewald"), pytest.param(PMEModel, id="pme")],
+)
+def test_bulk_matches_madelung_energy(model_cls: type[EwaldModel | PMEModel]) -> None:
+    """A 216-atom NaCl crystal should match its Madelung energy at the default cutoff."""
+    state = _make_charged_state(repeat=3)
+    madelung = 1.7475645946  # rocksalt, per ion pair at the nearest-neighbor distance
+    nearest_neighbor = 5.64 / 2
+    energy = -state.n_atoms / 2 * madelung / nearest_neighbor
+    energy *= UnitConversion.e2_per_Ang_to_eV
+    out = model_cls(device=DEVICE, dtype=DTYPE)(state)
+    # nvalchemiops 0.4's approximate erfc leaves ~1e-6 relative error in the energy
+    torch.testing.assert_close(
+        out["energy"][0],
+        torch.tensor(energy, dtype=DTYPE, device=DEVICE),
+        atol=0,
+        rtol=3e-6,
     )
 
 

@@ -12,6 +12,22 @@ if TYPE_CHECKING:
     from torch_sim.optimizers import OptimState
 
 
+def cell_volume(cell: torch.Tensor) -> torch.Tensor:
+    """Volume of one or more cells, positive for left- and right-handed cells.
+
+    ``det(cell)`` is negative for left-handed cells, which would flip the sign of
+    anything derived from it (pressure, barostat forces, scaled cells). Use this
+    helper rather than calling ``torch.det`` on a cell directly.
+
+    Args:
+        cell: Cell matrices with shape ``[..., 3, 3]``.
+
+    Returns:
+        Volumes with shape ``[...]``.
+    """
+    return torch.linalg.det(cell).abs()
+
+
 # @torch.jit.script
 def calc_kT(  # noqa: N802
     *,
@@ -60,8 +76,8 @@ def calc_kT(  # noqa: N802
         dof_per_system = system_sizes * squared_term.shape[-1]  # multiply by n_dimensions
 
     # Calculate temperature per system
-    system_sums = torch.segment_reduce(
-        flattened_squared, reduce="sum", lengths=system_sizes
+    system_sums = flattened_squared.new_zeros(len(system_sizes)).index_add(
+        0, system_idx, flattened_squared
     )
     return system_sums / dof_per_system
 
@@ -134,8 +150,9 @@ def calc_kinetic_energy(
     if system_idx is None:
         return 0.5 * torch.sum(squared_term)
     flattened_squared = torch.sum(squared_term, dim=-1)
-    return 0.5 * torch.segment_reduce(
-        flattened_squared, reduce="sum", lengths=torch.bincount(system_idx)
+    n_systems = int(system_idx.max()) + 1
+    return 0.5 * flattened_squared.new_zeros(n_systems).index_add(
+        0, system_idx, flattened_squared
     )
 
 
@@ -250,14 +267,13 @@ def calc_heat_flux(
     Returns:
         Heat flux vector of shape (3,) or (n_systems, 3)
     """
-    if momenta is not None and velocities is not None:
-        raise ValueError("Must pass either momenta or velocities, not both")
-    if momenta is None and velocities is None:
-        raise ValueError("Must pass either momenta or velocities")
-
     # Deduce velocities
     if velocities is None:
+        if momenta is None:
+            raise ValueError("Must pass either momenta or velocities")
         velocities = momenta / masses.unsqueeze(-1)
+    elif momenta is not None:
+        raise ValueError("Must pass either momenta or velocities, not both")
 
     convective_flux = energies.unsqueeze(-1) * velocities
 

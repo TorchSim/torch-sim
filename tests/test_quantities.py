@@ -1,5 +1,7 @@
 """Tests for quantities module functions."""
 
+from collections.abc import Callable
+
 import pytest
 import torch
 from numpy.testing import assert_allclose
@@ -11,6 +13,7 @@ from torch_sim.quantities import (
     calc_kinetic_energy,
     calc_kT,
     calc_temperature,
+    cell_volume,
 )
 from torch_sim.units import MetalUnits
 
@@ -221,6 +224,24 @@ def test_calc_kinetic_energy_batched_system(
     assert torch.allclose(ke_mom, batched_system_data["ke"])
 
 
+@pytest.mark.parametrize("calc_fn", [calc_kinetic_energy, calc_kT])
+def test_per_system_sums_with_unsorted_system_idx(calc_fn: Callable[..., Tensor]) -> None:
+    """Per-system reductions must not assume atoms are grouped by system."""
+    torch.manual_seed(0)
+    system_idx = torch.tensor([1, 0, 1, 2, 0, 2, 1], device=DEVICE)
+    masses = torch.rand(7, device=DEVICE, dtype=DTYPE) + 0.5
+    velocities = torch.randn(7, 3, device=DEVICE, dtype=DTYPE)
+
+    result = calc_fn(masses=masses, velocities=velocities, system_idx=system_idx)
+    expected = torch.stack(
+        [
+            calc_fn(masses=masses[mask], velocities=velocities[mask])
+            for mask in (system_idx == sys_id for sys_id in range(3))
+        ]
+    )
+    assert torch.allclose(result, expected)
+
+
 def test_calc_kinetic_energy_errors(single_system_data: dict[str, Tensor]) -> None:
     with pytest.raises(ValueError, match="Must pass either one of momenta or velocities"):
         calc_kinetic_energy(
@@ -276,3 +297,12 @@ def test_calc_temperature(single_system_data: dict[str, Tensor]) -> None:
         velocities=single_system_data["velocities"],
     )
     assert torch.allclose(temp, kt / MetalUnits.temperature)
+
+
+def test_cell_volume_handedness_invariant() -> None:
+    """Volume is positive and identical for left- and right-handed cells."""
+    cell = torch.tensor([[[2.0, 0, 0], [0, 3.0, 0], [0, 0, 4.0]]] * 2)
+    cell[1, 2] *= -1  # flip handedness of the second cell
+    volumes = cell_volume(cell)
+    torch.testing.assert_close(volumes, torch.full((2,), 24.0))
+    assert cell_volume(cell[0]).shape == ()

@@ -4,6 +4,7 @@
 # ruff: noqa: SLF001
 
 import numpy as np
+import pytest
 import scipy
 import torch
 from numpy.testing import assert_allclose
@@ -13,6 +14,29 @@ from tests.conftest import DTYPE
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+@pytest.mark.parametrize(
+    ("n_systems", "expected"),
+    [(None, [208, 212, 420]), (3, [208, 212, 420]), (5, [208, 212, 420, 0, 0])],
+)
+def test_batched_vdot_known_size(n_systems, expected):
+    x = torch.arange(18, dtype=DTYPE, device=device).reshape(6, 3)
+    y = x.flip(0)
+    indices = torch.tensor([0, 0, 1, 2, 2, 2], device=device)
+    result = fm.batched_vdot(x, y, indices, n_systems=n_systems)
+    expected = torch.tensor(expected, dtype=DTYPE, device=device)
+    torch.testing.assert_close(result, expected)
+
+
+def test_batched_vdot_known_size_empty():
+    x = torch.empty((0, 3), dtype=DTYPE, device=device)
+    indices = torch.empty(0, dtype=torch.int64, device=device)
+    expected = torch.zeros(2, dtype=DTYPE, device=device)
+
+    result = fm.batched_vdot(x, x, indices, n_systems=2)
+
+    torch.testing.assert_close(result, expected)
 
 
 class TestExpmFrechet:

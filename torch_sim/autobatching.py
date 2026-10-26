@@ -21,7 +21,7 @@ Notes:
 """
 
 import logging
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from itertools import chain
 from typing import Any, get_args
 
@@ -41,6 +41,11 @@ logger = logging.getLogger(__name__)
 # raises "CUDA out of memory", while Warp-based neighbor lists (e.g. the
 # nvalchemiops kernels used by ORB v3) raise "Failed to allocate <n> bytes".
 DEFAULT_OOM_ERROR_MESSAGES = ("CUDA out of memory", "Failed to allocate")
+
+# Atoms per neighbor-list pass when computing n_edges scalers. Alchemiops holds
+# fixed-width buffers of ~4.4 KiB per atom at a 6 A cutoff, so this caps the
+# pass at about 1 GiB however large the state is.
+N_EDGES_MAX_ATOMS_PER_CHUNK = 250_000
 
 
 def to_constant_volume_bins(  # noqa: C901
@@ -93,6 +98,8 @@ def to_constant_volume_bins(  # noqa: C901
 
     if not hasattr(items, "__len__"):
         raise TypeError("items must be iterable")
+    if lower_bound is not None and upper_bound is not None and lower_bound >= upper_bound:
+        raise ValueError("lower_bound is greater or equal to upper_bound")
     if len(items) == 0:
         return []
 
@@ -290,16 +297,37 @@ def determine_max_batch_size(
             torch.cuda.empty_cache()
 
 
-def _n_edges_scalers(state: SimState, cutoff: float) -> list[float]:
-    """Return per-system edge counts from the neighbor list as memory scalers."""
-    _, system_mapping, _ = torchsim_nl(
-        positions=state.positions,
-        cell=state.cell,
-        pbc=state.pbc,
-        cutoff=cutoff,
-        system_idx=state.system_idx,
-    )
-    return system_mapping.bincount(minlength=state.n_systems).float().tolist()
+def _n_edges_scalers(
+    state: SimState,
+    cutoff: float,
+    max_atoms_per_chunk: int = N_EDGES_MAX_ATOMS_PER_CHUNK,
+) -> list[float]:
+    """Return per-system edge counts from the neighbor list as memory scalers.
+
+    The neighbor list runs over contiguous runs of systems holding at most
+    ``max_atoms_per_chunk`` atoms, so peak memory does not grow with the size of
+    the state. A system larger than the bound runs alone. Edge counts do not
+    depend on other systems, so the result equals a single pass over the state.
+    """
+    n_atoms_per_system = state.n_atoms_per_system.tolist()
+    n_systems = len(n_atoms_per_system)
+    scalers: list[float] = []
+    s0 = a0 = 0
+    while s0 < n_systems:
+        s1, a1 = s0 + 1, a0 + n_atoms_per_system[s0]
+        while s1 < n_systems and a1 - a0 + n_atoms_per_system[s1] <= max_atoms_per_chunk:
+            a1 += n_atoms_per_system[s1]
+            s1 += 1
+        _, system_mapping, _ = torchsim_nl(
+            positions=state.positions[a0:a1],
+            cell=state.cell[s0:s1],
+            pbc=state.pbc,
+            cutoff=cutoff,
+            system_idx=state.system_idx[a0:a1] - s0,
+        )
+        scalers.extend(system_mapping.bincount(minlength=s1 - s0).float().tolist())
+        s0, a0 = s1, a1
+    return scalers
 
 
 def calculate_memory_scalers(
@@ -380,7 +408,7 @@ def calculate_memory_scalers(
                 )
             )
             if system_pbc_all:
-                volume = torch.abs(torch.linalg.det(system_state.cell[0])) / 1000
+                volume = system_state.volume[0] / 1000
             else:
                 bbox = (
                     system_state.positions.max(dim=0).values
@@ -598,7 +626,7 @@ class BinningAutoBatcher[T: SimState]:
             will be restarted when this method is called.
         """
         batched = (
-            states if isinstance(states, SimState) else ts.concatenate_states(states)
+            ts.concatenate_states(states) if isinstance(states, Sequence) else states
         )
         self.memory_scalers = calculate_memory_scalers(
             batched, self.memory_scales_with, self.cutoff
@@ -633,6 +661,13 @@ class BinningAutoBatcher[T: SimState]:
         # Convert to list of lists of indices
         self.index_bins = [list(batch.keys()) for batch in index_bins]
         self.batched_states = [[batched[index_bin]] for index_bin in self.index_bins]
+        # Later batches get their own seeds, so replicas don't replay one stream
+        parent_rng = torch.Generator(device=batched.device)
+        parent_rng.set_state(batched.rng.get_state())
+        for (bin_state,) in self.batched_states[1:]:
+            bin_state.rng = int(
+                torch.randint(2**62, (1,), generator=parent_rng, device=batched.device)
+            )
         self.current_state_bin = 0
 
         logger.info(
@@ -776,9 +811,6 @@ class InFlightAutoBatcher[T: SimState]:
     To avoid a slow memory estimation step, set the `max_memory_scaler` to a
     known value.
 
-    .. image:: https://github.com/janosh/diagrams/raw/main/assets/in-flight-auto-batcher/in-flight-auto-batcher.svg
-       :alt: In-flight auto-batcher diagram
-
     Attributes:
         model (ModelInterface): Model used for memory estimation and processing.
         memory_scales_with (str): Metric type used for memory estimation.
@@ -907,9 +939,9 @@ class InFlightAutoBatcher[T: SimState]:
             This method resets the current state indices and completed state tracking,
             so any ongoing processing will be restarted when this method is called.
         """
-        if isinstance(states, SimState):
-            states = states.split()
-        self.states_iterator = iter(states)
+        self.states_iterator = iter(
+            states if isinstance(states, Iterable) else states.split()
+        )
 
         self.current_scalers = []
         self.current_idx = []

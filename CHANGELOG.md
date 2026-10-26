@@ -3,6 +3,23 @@
 
 ## Unreleased
 
+## v0.6.2
+
+This patch release adds a C-rescale barostat, improves trajectory reporting and Pymatgen IO support, and fixes optimizer, autobatching, and ASE FIRE deformation behavior.
+
+### New Features
+* Add a C-rescale barostat for temperature control during NPT simulations.
+* Support system and atom extras in Pymatgen IO functions.
+* Improve trajectory reporter functionality and coverage.
+
+### Enhancements
+* Free cached memory during batch-size probing to reduce peak memory use.
+* Restore tutorial examples to MACE-MPA-0 to match their docstrings.
+
+### Bug Fixes
+* Fix forces from ASE FIRE optimization with deformable cells.
+* Improve optimizer and cell-filter handling across FIRE, BFGS, and L-BFGS workflows.
+
 ## v0.6.1
 
 This patch release upstreams the MACE and FairChem model integrations into their respective packages and delivers a focused set of correctness fixes across the neighbor-list, dispersion/electrostatics, optimizer, and IO layers.

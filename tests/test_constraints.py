@@ -550,6 +550,27 @@ def test_constraint_validation_errors(
         )
 
 
+def test_system_constraint_validation_with_unbatched_cell(
+    ar_supercell_sim_state: ts.SimState,
+) -> None:
+    """System constraints are validated correctly for an unbatched cell."""
+    kwargs = dict(
+        positions=ar_supercell_sim_state.positions.clone(),
+        masses=ar_supercell_sim_state.masses,
+        cell=ar_supercell_sim_state.cell[0],  # (3, 3) cell without the batch dim
+        pbc=ar_supercell_sim_state.pbc,
+        atomic_numbers=ar_supercell_sim_state.atomic_numbers,
+        system_idx=ar_supercell_sim_state.system_idx,
+    )
+    # FixCom on system 0 is valid since the state has one system.
+    state = ts.SimState(**kwargs, _constraints=[FixCom([0])])
+    assert state.n_systems == 1
+
+    # FixCom on system 1 is out of bounds and must be rejected.
+    with pytest.raises(ValueError, match=r"has indices up to.*only has.*atoms"):
+        ts.SimState(**kwargs, _constraints=[FixCom([1])])
+
+
 @pytest.mark.parametrize(
     ("integrator", "constraint", "n_steps"),
     [

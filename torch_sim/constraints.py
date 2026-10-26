@@ -108,7 +108,7 @@ class Constraint(ABC):
     @abstractmethod
     def select_constraint(
         self, atom_mask: torch.Tensor, system_mask: torch.Tensor
-    ) -> None | Self:
+    ) -> Self | None:
         """Update the constraint to account for atom and system masks.
 
         Args:
@@ -117,7 +117,7 @@ class Constraint(ABC):
         """
 
     @abstractmethod
-    def select_sub_constraint(self, atom_idx: torch.Tensor, sys_idx: int) -> None | Self:
+    def select_sub_constraint(self, atom_idx: torch.Tensor, sys_idx: int) -> Self | None:
         """Select a constraint for a given atom and system index.
 
         Args:
@@ -237,7 +237,7 @@ class AtomConstraint(Constraint):
         self,
         atom_mask: torch.Tensor,
         system_mask: torch.Tensor,  # noqa: ARG002
-    ) -> None | Self:
+    ) -> Self | None:
         """Update the constraint to account for atom and system masks.
 
         Args:
@@ -254,7 +254,7 @@ class AtomConstraint(Constraint):
         self,
         atom_idx: torch.Tensor,
         sys_idx: int,  # noqa: ARG002
-    ) -> None | Self:
+    ) -> Self | None:
         """Select a constraint for a given atom and system index.
 
         Args:
@@ -347,7 +347,7 @@ class SystemConstraint(Constraint):
         self,
         atom_mask: torch.Tensor,  # noqa: ARG002
         system_mask: torch.Tensor,
-    ) -> None | Self:
+    ) -> Self | None:
         """Update the constraint to account for atom and system masks.
 
         Args:
@@ -364,7 +364,7 @@ class SystemConstraint(Constraint):
         self,
         atom_idx: torch.Tensor,  # noqa: ARG002
         sys_idx: int,
-    ) -> None | Self:
+    ) -> Self | None:
         """Select a constraint for a given atom and system index.
 
         Args:

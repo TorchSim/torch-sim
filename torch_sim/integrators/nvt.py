@@ -273,9 +273,8 @@ class NVTNoseHooverState(MDState):
     chain: NoseHooverChain
     _chain_fns: NoseHooverChainFns
 
-    _global_attributes = (
-        MDState._global_attributes | {"chain", "_chain_fns"}  # noqa: SLF001
-    )
+    _system_attributes = MDState._system_attributes | {"chain"}  # noqa: SLF001
+    _global_attributes = MDState._global_attributes | {"_chain_fns"}  # noqa: SLF001
 
     @property
     def velocities(self) -> torch.Tensor:

@@ -125,11 +125,6 @@ class NPTLangevinAnisotropicState(NPTState):
         scale = torch.exp(self.cell_positions)  # (n_systems, 3)
         return scale.unsqueeze(-1) * self.reference_cell
 
-    @property
-    def volume(self) -> torch.Tensor:
-        """Current volume from cell determinant."""
-        return torch.linalg.det(self.cell)
-
 
 def _npt_langevin_particle_beta(
     state: "NPTLangevinAnisotropicState | NPTLangevinIsotropicState",
@@ -581,6 +576,13 @@ def npt_langevin_anisotropic_step(
     if external_pressure_tensor.ndim == 0:
         external_pressure_tensor = external_pressure_tensor.expand(state.n_systems, 3)
     elif external_pressure_tensor.ndim == 1 and external_pressure_tensor.shape[0] == 3:
+        if state.n_systems == 3:
+            warnings.warn(
+                "external_pressure of shape (3,) is ambiguous for 3 systems and is read "
+                "as the (x, y, z) pressure of every system. Pass shape (1, 3) for that, "
+                "or shape (3, 3) for per-system pressures.",
+                stacklevel=2,
+            )
         external_pressure_tensor = external_pressure_tensor.unsqueeze(0).expand(
             state.n_systems, 3
         )
@@ -697,7 +699,7 @@ class NPTLangevinIsotropicState(NPTState):
     def volume(self) -> torch.Tensor:
         """Current volume V = V₀ · exp(d·ε)."""
         dim = self.positions.shape[1]
-        V_0 = torch.linalg.det(self.reference_cell)
+        V_0 = ts.quantities.cell_volume(self.reference_cell)
         return V_0 * torch.exp(dim * self.cell_positions)
 
 
@@ -1175,10 +1177,10 @@ class NPTNoseHooverIsotropicState(NPTState):
         "cell_position",
         "cell_momentum",
         "cell_mass",
-    }
-    _global_attributes = NPTState._global_attributes | {  # noqa: SLF001
         "thermostat",
         "barostat",
+    }
+    _global_attributes = NPTState._global_attributes | {  # noqa: SLF001
         "thermostat_fns",
         "barostat_fns",
     }
@@ -1205,7 +1207,7 @@ class NPTNoseHooverIsotropicState(NPTState):
                 [n_systems, n_dimensions, n_dimensions]
         """
         dim = self.positions.shape[1]
-        V_0 = torch.det(self.reference_cell)  # [n_systems]
+        V_0 = ts.quantities.cell_volume(self.reference_cell)  # [n_systems]
         V = V_0 * torch.exp(dim * self.cell_position)  # [n_systems]
         scale = (V / V_0) ** (1.0 / dim)  # [n_systems]
         # Expand scale to [n_systems, 1, 1] for broadcasting
@@ -1244,7 +1246,7 @@ def _npt_nose_hoover_isotropic_cell_info(
     """
     dim = state.positions.shape[1]
     ref = state.reference_cell  # [n_systems, dim, dim]
-    V_0 = torch.det(ref)  # [n_systems] - Reference volume
+    V_0 = ts.quantities.cell_volume(ref)  # [n_systems] - Reference volume
     V = V_0 * torch.exp(dim * state.cell_position)  # [n_systems] - Current volume
 
     def volume_to_cell(V: torch.Tensor) -> torch.Tensor:
@@ -2026,7 +2028,7 @@ def npt_nose_hoover_isotropic_invariant(
             multiple systems.
     """
     # Calculate volume and potential energy
-    volume = torch.det(state.current_cell)  # [n_systems]
+    volume = ts.quantities.cell_volume(state.current_cell)  # [n_systems]
     e_pot = state.energy  # Should be scalar or [n_systems]
 
     # Calculate kinetic energy of particles per system
@@ -2172,13 +2174,13 @@ def _compute_deviatoric_correction(
     stress_dev = external_pressure_tensor - pressure_hydro[:, None, None] * I.expand_as(
         external_pressure_tensor
     )
-    # Project to reference coordinates: sigma = V0 * h0_inv^T @ stress_dev @ h0_inv
+    # Project to reference coordinates: sigma = V0 * h0_inv @ stress_dev @ h0_inv^T
     sigma = initial_volume[:, None, None] * (
-        initial_cell_inv.transpose(-2, -1) @ stress_dev @ initial_cell_inv
+        initial_cell_inv @ stress_dev @ initial_cell_inv.transpose(-2, -1)
     )
-    # Symmetrize and project back: pressure_dev = h^T @ 0.5*(sigma+sigma^T) @ h / V
+    # Symmetrize and project back: pressure_dev = h @ 0.5*(sigma+sigma^T) @ h^T / V
     sigma_sym = 0.5 * (sigma + sigma.transpose(-2, -1))
-    pressure_dev = cell.transpose(-2, -1) @ sigma_sym @ cell / volume[:, None, None]
+    pressure_dev = cell @ sigma_sym @ cell.transpose(-2, -1) / volume[:, None, None]
     trace_pressure_dev = torch.einsum("bii->b", pressure_dev)
     return pressure_hydro, pressure_dev, trace_pressure_dev
 
@@ -2189,7 +2191,7 @@ def _crescale_triclinic_barostat_step(
     dt: torch.Tensor,
     external_pressure: torch.Tensor,
 ) -> NPTCRescaleState:
-    volume = torch.det(state.cell)  # shape: (n_systems,)
+    volume = state.volume  # shape: (n_systems,)
     P_int = ts.quantities.compute_instantaneous_pressure_tensor(
         momenta=state.momenta,
         masses=state.masses,
@@ -2256,7 +2258,8 @@ def _crescale_triclinic_barostat_step(
     deformation_matrix = torch.matrix_exp(
         a_tilde * dt + prefactor_random_matrix[:, None, None] * random_matrix_tilde
     )
-    deformation_matrix = rotate_gram_schmidt(deformation_matrix)
+    # rotate_gram_schmidt gives R^T of mu = QR; R keeps upper-triangular cells that way
+    deformation_matrix = rotate_gram_schmidt(deformation_matrix).mT
 
     ## Step 3: propagate sqrt(volume) for dt/2
     new_sqrt_volume += -prefactor * (
@@ -2274,8 +2277,8 @@ def _crescale_triclinic_barostat_step(
         (vscaling + rscaling)[state.system_idx], state.momenta
     ) * dt / (2 * state.masses.unsqueeze(-1))
     state.momenta = batch_matrix_vector(vscaling[state.system_idx], state.momenta)
-    # Right multiply: cell @ rscaling^T preserves fractional coordinates
-    state.cell = state.cell @ rscaling.mT
+    # Left multiply: rscaling @ cell preserves fractional coordinates
+    state.cell = rscaling @ state.cell
     return state
 
 
@@ -2285,7 +2288,7 @@ def _crescale_anisotropic_barostat_step(
     dt: torch.Tensor,
     external_pressure: torch.Tensor,
 ) -> NPTCRescaleState:
-    volume = torch.det(state.cell)  # shape: (n_systems,)
+    volume = state.volume  # shape: (n_systems,)
     P_int = ts.quantities.compute_instantaneous_pressure_tensor(
         momenta=state.momenta,
         masses=state.masses,
@@ -2379,7 +2382,7 @@ def _crescale_triclinic_average_barostat_step(
     dt: torch.Tensor,
     external_pressure: torch.Tensor,
 ) -> NPTCRescaleState:
-    volume = torch.det(state.cell)  # shape: (n_systems,)
+    volume = state.volume  # shape: (n_systems,)
     P_int = compute_average_pressure_tensor(
         degrees_of_freedom=state.get_number_of_degrees_of_freedom() / 3,
         kT=kT,
@@ -2425,7 +2428,8 @@ def _crescale_triclinic_average_barostat_step(
     deformation_matrix = torch.matrix_exp(
         a_tilde * dt + prefactor_random_matrix[:, None, None] * random_matrix_tilde
     )
-    deformation_matrix = rotate_gram_schmidt(deformation_matrix)
+    # rotate_gram_schmidt gives R^T of mu = QR; R keeps upper-triangular cells that way
+    deformation_matrix = rotate_gram_schmidt(deformation_matrix).mT
 
     ## Step 3: propagate sqrt(volume) for dt/2
     new_sqrt_volume += -prefactor * (
@@ -2447,8 +2451,8 @@ def _crescale_triclinic_average_barostat_step(
         )[state.system_idx],
         state.momenta,
     ) * dt / (2 * state.masses.unsqueeze(-1))
-    # Right multiply: cell @ rscaling^T preserves fractional coordinates
-    state.cell = state.cell @ rscaling.mT
+    # Left multiply: rscaling @ cell preserves fractional coordinates
+    state.cell = rscaling @ state.cell
     return state
 
 
@@ -2458,7 +2462,7 @@ def _crescale_isotropic_barostat_step(
     dt: torch.Tensor,
     external_pressure: torch.Tensor,
 ) -> NPTCRescaleState:
-    volume = torch.det(state.cell)  # shape: (n_systems,)
+    volume = state.volume  # shape: (n_systems,)
     P_int = ts.quantities.compute_instantaneous_pressure_tensor(
         momenta=state.momenta,
         masses=state.masses,
@@ -2572,7 +2576,7 @@ def npt_crescale_triclinic_step(
             + (\boldsymbol{\mu}^{-T} + \boldsymbol{\mu})\,
             \frac{\mathbf{p}_i}{2m_i}\,\Delta t \\
         \mathbf{p}_i &\leftarrow \boldsymbol{\mu}^{-T}\,\mathbf{p}_i \\
-        \mathbf{h} &\leftarrow \mathbf{h}\,\boldsymbol{\mu}^T
+        \mathbf{h} &\leftarrow \boldsymbol{\mu}\,\mathbf{h}
 
     **Variable mapping (equation -> code):**
 
@@ -2937,10 +2941,14 @@ def npt_crescale_init(
     kT = torch.as_tensor(kT, device=device, dtype=dtype)
 
     # Set default values if not provided
-    tau_p = torch.as_tensor(tau_p or 3 * dt, device=device, dtype=dtype)  # 5ps for dt=1fs
+    if tau_p is None:
+        tau_p = 1000 * dt  # 1ps for dt=1fs
+    if isothermal_compressibility is None:
+        isothermal_compressibility = 1e-6 / MetalUnits.pressure  # 1e-6 bar^-1 for metals
+
+    tau_p = torch.as_tensor(tau_p, device=device, dtype=dtype)
     isothermal_compressibility = torch.as_tensor(
-        isothermal_compressibility
-        or 1e-6 / MetalUnits.pressure,  # 1e-6 bar^-1 for metals
+        isothermal_compressibility,
         device=device,
         dtype=dtype,  # (eV/A^3)^-1
     )
@@ -2967,7 +2975,7 @@ def npt_crescale_init(
     # Store initial cell for deviatoric correction
     initial_cell = state.cell.clone()
     initial_cell_inv = torch.inverse(initial_cell)
-    initial_volume = torch.det(initial_cell)
+    initial_volume = state.volume
 
     # Create the initial state
     npt_state = NPTCRescaleState.from_state(

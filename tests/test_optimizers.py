@@ -6,11 +6,13 @@ from typing import Any, get_args
 
 import pytest
 import torch
+from ase.build import bulk
 
 import torch_sim as ts
+from tests.conftest import make_left_handed
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers import BFGSState, FireFlavor, FireState, LBFGSState, OptimState
-from torch_sim.optimizers.cell_filters import CellLBFGSState, deform_grad
+from torch_sim.optimizers.cell_filters import CellLBFGSState, CellOptimState, deform_grad
 from torch_sim.state import SimState
 
 
@@ -128,12 +130,31 @@ def test_fire_optimization(
         current_sim_state, lj_model, fire_flavor=fire_flavor, dt_start=0.1
     )
 
+    if fire_flavor == "vv_fire":
+        # A step past n_min mixes velocities with the current alpha, then decays it
+        check = state.clone()
+        check.n_pos = torch.full_like(check.n_pos, 10)
+        inv_mass = 1 / check.masses.unsqueeze(-1)
+        # Not parallel to the forces, so the mixing changes it
+        check.velocities = (check.forces + check.forces.roll(1, dims=1)) * inv_mass
+        alpha, dt, forces = check.alpha.clone(), check.dt.clone(), check.forces.clone()
+        velocities = check.velocities.clone()
+        check = ts.fire_step(state=check, model=lj_model, fire_flavor=fire_flavor)
+        velocities += 0.5 * dt * (forces + check.forces) * inv_mass
+        expected = (1 - alpha) * velocities + alpha * check.forces * (
+            velocities.norm() / check.forces.norm()
+        )
+        torch.testing.assert_close(check.velocities, expected)
+        assert check.alpha < alpha
+
     # Run optimization for a few steps
     energies = [1000, state.energy.item()]
     max_steps = 1000  # Add max step to prevent infinite loop
     steps_taken = 0
     while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
-        state = ts.fire_step(state=state, model=lj_model, dt_max=0.3)
+        state = ts.fire_step(
+            state=state, model=lj_model, dt_max=0.3, fire_flavor=fire_flavor
+        )
         energies.append(state.energy.item())
         steps_taken += 1
 
@@ -411,6 +432,28 @@ def test_unit_cell_bfgs_multi_batch(
     # We are evolving identical systems
     assert torch.allclose(current_energy[0], current_energy[1])
 
+    # A smaller system relaxes its cell as it does alone, however the batch is built
+    small = ts.io.atoms_to_state(
+        bulk("Ar", "fcc", a=5.5, cubic=True), multi_state.device, multi_state.dtype
+    )
+    alone = ts.bfgs_init(state=small, model=lj_model, cell_filter=ts.CellFilter.unit)
+    mixed = ts.bfgs_init(
+        state=ts.concatenate_states([small, ar_supercell_sim_state_1]),
+        model=lj_model,
+        cell_filter=ts.CellFilter.unit,
+    )
+    large = ts.bfgs_init(
+        state=ar_supercell_sim_state_1, model=lj_model, cell_filter=ts.CellFilter.unit
+    )
+    merged = ts.concatenate_states([alone, large])
+    for _ in range(5):
+        alone = ts.bfgs_step(state=alone, model=lj_model)
+        mixed = ts.bfgs_step(state=mixed, model=lj_model)
+        merged = ts.bfgs_step(state=merged, model=lj_model)
+    assert not torch.allclose(alone.cell, small.cell)
+    torch.testing.assert_close(mixed.cell[:1], alone.cell)
+    torch.testing.assert_close(merged.cell[:1], alone.cell)
+
 
 @pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
 def test_lbfgs_cell_optimization(
@@ -556,6 +599,26 @@ def test_unit_cell_lbfgs_multi_batch(
 
     # We are evolving identical systems
     assert torch.allclose(current_energy[0], current_energy[1])
+
+    # Concatenating mid-run states of different sizes and history lengths keeps
+    # each history consistent
+    small = ts.io.atoms_to_state(
+        bulk("Ar", "fcc", a=5.5, cubic=True), multi_state.device, multi_state.dtype
+    )
+    alone = ts.lbfgs_init(state=small, model=lj_model, cell_filter=ts.CellFilter.unit)
+    large = ts.lbfgs_init(
+        state=ar_supercell_sim_state_1, model=lj_model, cell_filter=ts.CellFilter.unit
+    )
+    for _ in range(3):
+        alone = ts.lbfgs_step(state=alone, model=lj_model)
+    large = ts.lbfgs_step(state=large, model=lj_model)
+    merged = ts.concatenate_states([alone, large])
+    for _ in range(3):
+        alone = ts.lbfgs_step(state=alone, model=lj_model)
+        large = ts.lbfgs_step(state=large, model=lj_model)
+        merged = ts.lbfgs_step(state=merged, model=lj_model)
+    torch.testing.assert_close(merged.cell[:1], alone.cell)
+    torch.testing.assert_close(merged.positions[alone.n_atoms :], large.positions)
 
 
 @pytest.mark.parametrize(
@@ -747,7 +810,7 @@ def test_fire_nan_velocities_dont_affect_other_systems(
 
     # Evolve 10 steps so system 0 has non-trivial FIRE state (dt, alpha, n_pos)
     for _ in range(10):
-        state = ts.fire_step(state=state, model=lj_model)
+        state = ts.fire_step(state=state, model=lj_model, fire_flavor=fire_flavor)
 
     # Clone, then inject NaN into system 1 of one copy
     state_clean = copy.deepcopy(state)
@@ -759,8 +822,8 @@ def test_fire_nan_velocities_dont_affect_other_systems(
         state_mixed.cell_velocities[1] = float("nan")
 
     # One step each
-    state_clean = ts.fire_step(state=state_clean, model=lj_model)
-    state_mixed = ts.fire_step(state=state_mixed, model=lj_model)
+    state_clean = ts.fire_step(state=state_clean, model=lj_model, fire_flavor=fire_flavor)
+    state_mixed = ts.fire_step(state=state_mixed, model=lj_model, fire_flavor=fire_flavor)
 
     # System 0 must be identical regardless of system 1's NaN velocities
     sys0 = state_clean.system_idx == 0
@@ -783,6 +846,46 @@ def test_fire_nan_velocities_dont_affect_other_systems(
         assert torch.equal(state_mixed.cell[0], state_clean.cell[0]), (
             "System 0 cell differs when system 1 has NaN velocities"
         )
+
+    # System 1 now takes a first step, which leaves dt, alpha and n_pos unchanged
+    if fire_flavor == "ase_fire":
+        for attr in ("dt", "alpha", "n_pos"):
+            assert getattr(state_mixed, attr)[1] == getattr(state, attr)[1], attr
+
+
+@pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
+def test_vv_fire_nan_cell_velocities_with_finite_atomic_velocities(
+    ar_double_sim_state: SimState,
+    lj_model: ModelInterface,
+    cell_filter: ts.CellFilter,
+) -> None:
+    """Cell NaNs reset that system's cell velocity independently of atomic NaNs."""
+    ar_double_sim_state.cell *= 0.85
+    ar_double_sim_state.positions *= 0.85
+    state = ts.fire_init(
+        ar_double_sim_state, lj_model, fire_flavor="vv_fire", cell_filter=cell_filter
+    )
+    state.velocities.fill_(0.01)
+    state.cell_velocities.fill_(0.02)
+
+    # A single NaN should reset the whole cell velocity for that system.
+    expected = state.clone()
+    expected.cell_velocities[1] = 0
+    state.cell_velocities[1, 0, 0] = float("nan")
+
+    expected = ts.fire_step(state=expected, model=lj_model, fire_flavor="vv_fire")
+    actual = ts.fire_step(state=state, model=lj_model, fire_flavor="vv_fire")
+
+    for attr in (
+        "positions",
+        "velocities",
+        "cell",
+        "cell_velocities",
+        "dt",
+        "alpha",
+        "n_pos",
+    ):
+        torch.testing.assert_close(getattr(actual, attr), getattr(expected, attr))
 
 
 @pytest.mark.parametrize("fire_flavor", get_args(FireFlavor))
@@ -828,7 +931,9 @@ def test_unit_cell_fire_optimization(
     steps_taken = 0
 
     while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
-        state = ts.fire_step(state=state, model=lj_model, dt_max=0.3)
+        state = ts.fire_step(
+            state=state, model=lj_model, dt_max=0.3, fire_flavor=fire_flavor
+        )
         energies.append(state.energy.item())
         steps_taken += 1
 
@@ -976,7 +1081,7 @@ def test_unit_cell_fire_ase_non_positive_volume_warning(
         torch.randn_like(perturbed_state.cell) * 0.5
     )  # Large perturbation
     # Also ensure no PBC issues by slightly expanding cell if it got too small
-    if torch.linalg.det(perturbed_state.cell[0]) < 1.0:
+    if ts.quantities.cell_volume(perturbed_state.cell[0]) < 1.0:
         perturbed_state.cell[0] *= 2.0
 
     state = ts.fire_init(
@@ -1047,7 +1152,9 @@ def test_frechet_cell_fire_optimization(
     steps_taken = 0
 
     while abs(energies[-2] - energies[-1]) > 1e-6 and steps_taken < max_steps:
-        state = ts.fire_step(state=state, model=lj_model, dt_max=0.3)
+        state = ts.fire_step(
+            state=state, model=lj_model, dt_max=0.3, fire_flavor=fire_flavor
+        )
         energies.append(state.energy.item())
         steps_taken += 1
 
@@ -1086,6 +1193,28 @@ def test_frechet_cell_fire_optimization(
     assert not torch.allclose(state.cell, initial_state_cell, atol=1e-5), (
         f"{fire_flavor=} cell should have changed after Frechet optimization."
     )
+
+
+@pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
+def test_cell_optim_state_deform_grad_forces(
+    ar_supercell_sim_state: SimState,
+    lj_model: ModelInterface,
+    cell_filter: ts.CellFilter,
+) -> None:
+    """deform_grad_forces applies forces @ deform_grad, like ASE's cell filters."""
+    state = ts.fire_init(
+        state=ar_supercell_sim_state, model=lj_model, cell_filter=cell_filter
+    )
+    assert isinstance(state, CellOptimState)
+
+    # freshly initialized, cell == reference_cell, so the transform is a no-op
+    torch.testing.assert_close(state.deform_grad_forces(), state.forces)
+
+    # against a reference cell scaled by s, deform_grad = I / s, so the
+    # transform scales the forces by 1 / s
+    scale = 0.95
+    state.reference_cell = state.cell.clone() * scale
+    torch.testing.assert_close(state.deform_grad_forces(), state.forces / scale)
 
 
 def test_frechet_lbfgs_clamps_extreme_deformation(
@@ -1540,3 +1669,56 @@ def test_lbfgs_prev_cell_positions_stored_before_step(lj_model: ModelInterface) 
         "prev_positions should be fractional coords in the adjusted cell frame. "
         f"max diff = {(opt_state.prev_positions - expected_prev).abs().max():.2e}"
     )
+
+
+@pytest.mark.parametrize("cell_filter", [ts.CellFilter.unit, ts.CellFilter.frechet])
+@pytest.mark.parametrize("include_cell_forces", [False, True])
+def test_cell_optimization_is_independent_of_cell_handedness(
+    ar_supercell_sim_state: SimState,
+    lj_model: ModelInterface,
+    cell_filter: ts.CellFilter,
+    *,
+    include_cell_forces: bool,
+) -> None:
+    """A left-handed description of a crystal relaxes exactly like the right-handed.
+
+    The cell filters turn the stress into cell forces through the cell volume, which
+    must be |det(cell)|: a signed volume flips the cell forces, so the cell relaxes
+    the wrong way. A force criterion only sees their norm, so a left-handed cell would
+    still be reported as converged (`include_cell_forces=True`).
+    """
+    strained = ar_supercell_sim_state.clone()
+    strained.cell = strained.cell * 1.05
+    strained.positions = strained.positions * 1.05
+    initial_volume = strained.volume.clone()
+    convergence_fn = (
+        ts.generate_force_convergence_fn(force_tol=1e-3, include_cell_forces=True)
+        if include_cell_forces
+        else None  # ts.optimize falls back to its default energy criterion
+    )
+
+    initial_cell_forces, final = {}, {}
+    for name, start in (("right", strained), ("left", make_left_handed(strained))):
+        state = ts.fire_init(state=start, model=lj_model, cell_filter=cell_filter)
+        initial_cell_forces[name] = state.cell_forces
+        final[name] = ts.optimize(
+            system=start,
+            model=lj_model,
+            optimizer=ts.Optimizer.fire,
+            convergence_fn=convergence_fn,
+            init_kwargs={"cell_filter": cell_filter},
+            max_steps=1000,
+        )
+        if convergence_fn is not None:
+            assert convergence_fn(final[name]).all()
+
+    # The cell forces come from the (Cartesian) stress and the physical volume, so they
+    # must not depend on the handedness, and for a stretched crystal they point inward.
+    torch.testing.assert_close(initial_cell_forces["left"], initial_cell_forces["right"])
+    assert (torch.diagonal(initial_cell_forces["right"], dim1=-2, dim2=-1) < 0).all()
+
+    # The strained Ar crystal is under tension, so the volume must shrink.
+    assert (final["right"].volume < initial_volume).all()
+    torch.testing.assert_close(final["left"].volume, final["right"].volume)
+    torch.testing.assert_close(final["left"].energy, final["right"].energy)
+    torch.testing.assert_close(final["left"].positions, final["right"].positions)
