@@ -52,7 +52,8 @@ io = ["ase>=3.26", "phonopy>=3.0.0", "pymatgen>=2026.3.23"]
 symmetry = ["moyopy>=0.7.8"]
 mace = ["mace-torch>=0.3.16"]
 # phono3py>=4.0.0: some older 3.x sdists (e.g. 3.2.0) fail to build and break uv resolution.
-mattersim = ["mattersim>=1.2.5", "phono3py>=4.0.0"]
+# python-dateutil<3: with 3.x, uv backtracks to an old maggma whose pyzmq no longer builds.
+mattersim = ["mattersim>=1.2.5", "phono3py>=4.0.0", "python-dateutil<3"]
 metatomic = ["metatomic-torchsim>=0.1.1", "metatomic-ase>=0.1.0", "upet>=0.3.0"]
 orb = ["orb-models>=0.6.2"]
 sevenn = ["sevenn[torchsim]>=0.12.1"]

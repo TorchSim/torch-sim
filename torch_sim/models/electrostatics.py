@@ -8,6 +8,7 @@ from ``state.partial_charges`` (a SimState atom extra).
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import torch
@@ -169,7 +170,8 @@ class EwaldModel(ModelInterface):
 
     Args:
         cutoff: Real-space cutoff in Angstrom.
-        accuracy: Target accuracy for auto-estimated Ewald parameters.
+        accuracy: Target accuracy, which sets the Ewald splitting parameter and the
+            reciprocal-space cutoff together with ``cutoff``.
         device: Compute device. Defaults to CUDA if available, else CPU.
         dtype: Floating-point dtype. Defaults to ``torch.float64``.
         compute_forces: Whether to return forces. Defaults to True.
@@ -237,10 +239,14 @@ class EwaldModel(ModelInterface):
             state.positions.shape[0],
         )
         cell = state.row_vector_cell.contiguous()
+        # The real-space cutoff is fixed, so alpha and k_cutoff follow from accuracy
+        log_accuracy = math.log(self.accuracy)
         out = ewald_summation(
             positions=state.positions,
             charges=charges,
             cell=cell,
+            alpha=math.sqrt(-log_accuracy) / self.cutoff,
+            k_cutoff=-2.0 * log_accuracy / self.cutoff,
             neighbor_list=edge_index,
             neighbor_ptr=neighbor_ptr,
             neighbor_shifts=unit_shifts,
@@ -294,7 +300,8 @@ class PMEModel(ModelInterface):
 
     Args:
         cutoff: Real-space cutoff in Angstrom.
-        accuracy: Target accuracy for auto-estimated parameters.
+        accuracy: Target accuracy, which sets the Ewald splitting parameter and the
+            default mesh together with ``cutoff``.
         mesh_spacing: Optional mesh spacing (Angstrom) for automatic mesh sizing.
         mesh_dimensions: Explicit FFT mesh dimensions ``(nx, ny, nz)``.
         spline_order: B-spline interpolation order. Defaults to 4.
@@ -376,6 +383,8 @@ class PMEModel(ModelInterface):
             positions=state.positions,
             charges=charges,
             cell=cell,
+            # The real-space cutoff is fixed, so alpha follows from accuracy
+            alpha=math.sqrt(-math.log(self.accuracy)) / self.cutoff,
             neighbor_list=edge_index,
             neighbor_ptr=neighbor_ptr,
             neighbor_shifts=unit_shifts,
