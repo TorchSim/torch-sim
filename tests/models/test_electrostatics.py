@@ -266,18 +266,19 @@ def test_slab_matches_2d_lattice_sum(model_cls: type[EwaldModel | PMEModel]) -> 
     [pytest.param(EwaldModel, id="ewald"), pytest.param(PMEModel, id="pme")],
 )
 def test_bulk_matches_madelung_energy(model_cls: type[EwaldModel | PMEModel]) -> None:
-    """A 64-atom NaCl crystal should match its Madelung energy at the default cutoff."""
-    state = _make_charged_state(repeat=2)
+    """A 216-atom NaCl crystal should match its Madelung energy at the default cutoff."""
+    state = _make_charged_state(repeat=3)
     madelung = 1.7475645946  # rocksalt, per ion pair at the nearest-neighbor distance
     nearest_neighbor = 5.64 / 2
     energy = -state.n_atoms / 2 * madelung / nearest_neighbor
     energy *= UnitConversion.e2_per_Ang_to_eV
     out = model_cls(device=DEVICE, dtype=DTYPE)(state)
+    # nvalchemiops 0.4's approximate erfc leaves ~1e-6 relative error in the energy
     torch.testing.assert_close(
         out["energy"][0],
         torch.tensor(energy, dtype=DTYPE, device=DEVICE),
-        atol=2e-4,
-        rtol=0,
+        atol=0,
+        rtol=3e-6,
     )
 
 
