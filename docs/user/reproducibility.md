@@ -45,7 +45,7 @@ In PyTorch, `torch.manual_seed()` only seeds the default global generator, i.e. 
 
 ```python
 sim_state = ts.initialize_state(atoms, device, dtype)
-sim_state.rng = 42  # required for reproducibility — torch.manual_seed() has no effect here
+sim_state.rng = 42  # needed for reproducibility: torch.manual_seed() has no effect
 ```
 
 ### Deterministic vs stochastic integrators in TorchSim

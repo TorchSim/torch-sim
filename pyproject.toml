@@ -90,7 +90,6 @@ module-name = "torch_sim"
 module-root = ""
 
 [tool.ruff]
-target-version = "py312"
 line-length = 90
 output-format = "concise"
 
@@ -102,6 +101,7 @@ ignore = [
     "ANN401",  # Allow use of type Any for function argument {name}
     "C408",    # Unnecessary {obj_type} call (rewrite as a literal)
     "COM812",  # missing-trailing-comma
+    "CPY001",  # Missing copyright notice at top of file (license lives in LICENSE)
     "D205",    # 1 blank line required between summary line and description
     "EM101",   # Exception must not use a string literal, assign to variable first
     "EM102",   # Exception must not use an f-string literal, assign to variable first
@@ -113,6 +113,7 @@ ignore = [
     "PLC0415", # import should be at the top-level of a file
     "PLR0912", # too many branches
     "PLR0913", # too many function arguments
+    "PLR0917", # too many positional arguments (same reason as PLR0913)
     "PLR2004", # Magic value used in comparison, consider replacing {value} with a constant variable
     "PLW2901", # Outer for loop variable overwritten by inner assignment target
     "PTH",     # flake8-use-pathlib

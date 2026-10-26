@@ -45,7 +45,7 @@ def _get_nequip_model_zip() -> Path:
     zip_path = NEQUIP_CACHE_DIR / NEQUIP_OAM_S_ZIP_NAME
 
     if not zip_path.exists():
-        urllib.request.urlretrieve(NEQUIP_OAM_S_ZENODO_URL, zip_path)  # noqa: S310
+        urllib.request.urlretrieve(NEQUIP_OAM_S_ZENODO_URL, zip_path)
 
     return zip_path
 
