@@ -196,6 +196,21 @@ def test_ewald_pme_energy_agreement() -> None:
         ewald(state)["energy"], pme(state)["energy"], atol=1e-3, rtol=1e-3
     )
 
+    # A primitive cell batched with a large supercell keeps its single-system stress
+    small = _add_partial_charges(
+        ts.io.atoms_to_state(bulk("MgO", "rocksalt", a=4.21), DEVICE, DTYPE)
+    )
+    large = _add_partial_charges(
+        ts.io.atoms_to_state(
+            bulk("NaCl", "rocksalt", a=5.64, cubic=True).repeat(2), DEVICE, DTYPE
+        )
+    )
+    batch = ts.concatenate_states([small, large])
+    for model in (ewald, pme):
+        torch.testing.assert_close(
+            model(batch)["stress"][:1], model(small)["stress"], rtol=1e-4, atol=1e-6
+        )
+
 
 def _slab_reference_energy_forces(
     positions: torch.Tensor, charges: torch.Tensor, box: float, n_max: int = 100

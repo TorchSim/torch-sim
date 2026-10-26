@@ -1007,9 +1007,13 @@ def test_rng_split_preserves(si_sim_state: SimState) -> None:
 
 
 def test_coerce_prng_none() -> None:
-    """None seed creates an unseeded Generator."""
+    """None seed draws a new seed from torch's global generator each time."""
+    torch.manual_seed(1)
     gen = coerce_prng(None, device=DEVICE)
     assert isinstance(gen, torch.Generator)
+    assert gen.initial_seed() != coerce_prng(None, device=DEVICE).initial_seed()
+    torch.manual_seed(1)
+    assert coerce_prng(None, device=DEVICE).initial_seed() == gen.initial_seed()
 
 
 def test_coerce_prng_int_seed() -> None:

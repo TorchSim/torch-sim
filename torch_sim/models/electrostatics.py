@@ -268,6 +268,11 @@ class EwaldModel(ModelInterface):
             # nvalchemiops returns the negative strain-gradient virial; TorchSim stress
             # follows dE / dstrain / volume, matching ASE and other TorchSim models.
             stress = -(out[-1] * UnitConversion.e2_per_Ang_to_eV) / volumes
+            # A batch shares one k-space grid, which can give a small cell a 0/0 virial
+            if state.n_systems > 1:
+                non_finite = ~torch.isfinite(stress).all(dim=(1, 2))
+                for sys_idx in non_finite.nonzero().flatten().tolist():
+                    stress[sys_idx] = self(state[sys_idx])["stress"][0]
             results["stress"] = stress.to(self._dtype).detach()
         return results
 

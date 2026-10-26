@@ -176,7 +176,7 @@ def fire_step(
     return step_func(state, **step_func_kwargs)
 
 
-def _vv_fire_step[T: "FireState | CellFireState"](
+def _vv_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
     state: T,
     model: "ModelInterface",
     *,
@@ -201,11 +201,38 @@ def _vv_fire_step[T: "FireState | CellFireState"](
     # First half of velocity update
     atom_wise_dt = state.dt[state.system_idx].unsqueeze(-1)
     state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
+    if isinstance(state, CellFireState):
+        cell_wise_dt = state.dt.view(n_systems, 1, 1)
+        state.cell_velocities += (
+            0.5 * cell_wise_dt * state.cell_forces / state.cell_masses.unsqueeze(-1)
+        )
 
     # Position update
     state.set_constrained_positions(state.positions + atom_wise_dt * state.velocities)
 
-    # Cell position updates are handled in the velocity update step above
+    # Cell update, scaling atoms with the cell
+    if isinstance(state, CellFireState):
+        from torch_sim.optimizers.cell_filters import frechet_cell_filter_init
+
+        is_frechet = state.cell_filter[0] is frechet_cell_filter_init
+        cell_factor = state.cell_factor.view(n_systems, 1, 1)
+        cell_positions_new = state.cell_positions + cell_wise_dt * state.cell_velocities
+        if is_frechet:
+            deform_grad_log_new, cell_positions_new = _clamp_deform_grad_log(
+                cell_positions_new / cell_factor, cell_positions_new, cell_factor
+            )
+            deform_grad_new = torch.matrix_exp(deform_grad_log_new)
+        else:
+            deform_grad_new = cell_positions_new / cell_factor
+        state.set_constrained_cell(
+            torch.bmm(deform_grad_new, state.reference_cell), scale_atoms=True
+        )
+        adjusted_deform_grad = state.deform_grad()
+        if is_frechet:
+            adjusted_deform_grad = tsm.matrix_log_33(
+                adjusted_deform_grad, sim_dtype=state.dtype
+            )
+        state.cell_positions = adjusted_deform_grad * cell_factor
 
     # Get new forces and energy
     model_output = model(state)
@@ -222,7 +249,6 @@ def _vv_fire_step[T: "FireState | CellFireState"](
     # Second half of velocity update
     state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
     if isinstance(state, CellFireState):
-        cell_wise_dt = state.dt.view(n_systems, 1, 1)
         state.cell_velocities += (
             0.5 * cell_wise_dt * state.cell_forces / state.cell_masses.unsqueeze(-1)
         )
@@ -234,17 +260,8 @@ def _vv_fire_step[T: "FireState | CellFireState"](
     if isinstance(state, CellFireState):
         system_power += (state.cell_forces * state.cell_velocities).sum(dim=(1, 2))
 
-    # Update dt, alpha, n_pos
     pos_mask_system = system_power > 0.0
     neg_mask_system = ~pos_mask_system
-
-    state.n_pos = torch.where(pos_mask_system, state.n_pos + 1, 0)
-    inc_mask = (state.n_pos > n_min) & pos_mask_system
-    state.dt = torch.where(inc_mask, torch.minimum(state.dt * f_inc, dt_max), state.dt)
-    state.alpha = torch.where(inc_mask, state.alpha * f_alpha, state.alpha)
-
-    state.dt = torch.where(neg_mask_system, state.dt * f_dec, state.dt)
-    state.alpha = torch.where(neg_mask_system, alpha_start, state.alpha)
 
     # Velocity mixing
     v_scaling_system = tsm.batched_vdot(
@@ -279,6 +296,15 @@ def _vv_fire_step[T: "FireState | CellFireState"](
         (1.0 - alpha_atom) * state.velocities + alpha_atom * v_mixing_atom,
         torch.zeros_like(state.velocities),
     )
+
+    # Update dt, alpha, n_pos after mixing with the current alpha, as in the FIRE paper
+    state.n_pos = torch.where(pos_mask_system, state.n_pos + 1, 0)
+    inc_mask = (state.n_pos > n_min) & pos_mask_system
+    state.dt = torch.where(inc_mask, torch.minimum(state.dt * f_inc, dt_max), state.dt)
+    state.alpha = torch.where(inc_mask, state.alpha * f_alpha, state.alpha)
+
+    state.dt = torch.where(neg_mask_system, state.dt * f_dec, state.dt)
+    state.alpha = torch.where(neg_mask_system, alpha_start, state.alpha)
 
     return state
 

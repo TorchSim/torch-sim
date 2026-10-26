@@ -497,6 +497,12 @@ def test_nvt_nose_hoover_multi_equivalent_to_single(
 
     assert torch.allclose(final_temperatures, temp / MetalUnits.temperature)
 
+    # Slicing, splitting and .to() keep each system's own chain
+    torch.testing.assert_close(state[1].chain.momenta, state.chain.momenta[1:])
+    rejoined = ts.concatenate_states(state.split())
+    torch.testing.assert_close(rejoined.chain.momenta, state.chain.momenta)
+    assert state.to(dtype=torch.float32).chain.momenta.dtype == torch.float32
+
 
 def test_nvt_nose_hoover_multi_kt(
     ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
@@ -784,7 +790,7 @@ def test_npt_crescale_init_accepts_per_system_coupling(
     )
 
 
-def test_npt_crescale_triclinic_shear(
+def test_npt_crescale_triclinic_shear(  # noqa: PLR0915
     ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test anisotropic crescale with off-diagonal (shear) external stress."""
@@ -851,6 +857,78 @@ def test_npt_crescale_triclinic_shear(
     mean_temps = torch.mean(temperatures_tensor, dim=0)
     for mean_temp in mean_temps:
         assert abs(mean_temp - kT.item() / MetalUnits.temperature) < 150.0
+
+    # With no forces or noise and tiny momenta, atoms must move with the cell
+    free_model = LennardJonesModel(
+        sigma=3.405, epsilon=0.0, device=DEVICE, dtype=DTYPE, compute_stress=True
+    )
+    zero_kT = torch.tensor(0.0, dtype=DTYPE)
+    free_state = ts.npt_crescale_init(
+        state=ar_double_sim_state,
+        model=free_model,
+        dt=dt,
+        kT=zero_kT,
+        tau_p=10 * dt,
+        isothermal_compressibility=torch.tensor(1.0, dtype=DTYPE),
+    )
+    free_state.momenta = torch.full_like(free_state.momenta, 1e-9)
+
+    def frac_positions(state: ts.SimState) -> torch.Tensor:
+        cells = state.cell[state.system_idx]
+        return torch.linalg.solve(cells, state.positions.unsqueeze(-1)).squeeze(-1)
+
+    frac_before = frac_positions(free_state)
+    free_state = ts.npt_crescale_triclinic_step(
+        state=free_state,
+        model=free_model,
+        dt=dt,
+        kT=zero_kT,
+        external_pressure=1e4 * external_pressure,
+    )
+    torch.testing.assert_close(
+        frac_positions(free_state), frac_before, atol=1e-10, rtol=0
+    )
+    # The rotation-free update keeps the upper-triangular cells upper-triangular
+    assert torch.all(free_state.cell.tril(-1) == 0)
+
+    # The same crystal in another lattice basis must deform the same way
+    basis_change = torch.tensor(
+        [[1.0, 1.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=DTYPE
+    )
+    shear_strain = torch.tensor(
+        [[1.0, 0.05, 0.0], [0.0, 1.0, 0.02], [0.0, 0.0, 0.97]], dtype=DTYPE
+    )
+    deviatoric_pressure = MetalUnits.pressure * torch.diag(
+        torch.tensor([1e4, 0.0, -1e4], dtype=DTYPE)
+    )
+    deformations = []
+    for basis in (torch.eye(3, dtype=DTYPE), basis_change):
+        crystal = ts.io.atoms_to_state(
+            bulk("Ar", "fcc", a=5.26, cubic=True), DEVICE, DTYPE
+        )
+        crystal.cell = crystal.cell @ basis
+        crystal = ts.npt_crescale_init(
+            state=crystal,
+            model=free_model,
+            dt=dt,
+            kT=zero_kT,
+            tau_p=10 * dt,
+            isothermal_compressibility=torch.tensor(1e-2, dtype=DTYPE),
+        )
+        crystal.momenta = torch.full_like(crystal.momenta, 1e-9)
+        # Shear away from the reference cell, moving the atoms with it
+        crystal.cell = shear_strain @ crystal.cell
+        crystal.positions = crystal.positions @ shear_strain.T
+        cell_before = crystal.cell.clone()
+        crystal = ts.npt_crescale_triclinic_step(
+            state=crystal,
+            model=free_model,
+            dt=dt,
+            kT=zero_kT,
+            external_pressure=deviatoric_pressure,
+        )
+        deformations.append(crystal.cell @ torch.linalg.inv(cell_before))
+    torch.testing.assert_close(deformations[0], deformations[1], atol=1e-12, rtol=0)
 
     # Check energy is stable
     for traj in energies_tensor.T:
@@ -1117,6 +1195,16 @@ def test_npt_nose_hoover_multi_equivalent_to_single(
     )
 
     assert torch.allclose(final_temperatures, temp / MetalUnits.temperature)
+
+    # Slicing, splitting and .to() keep each system's own chains
+    for chain_name in ("thermostat", "barostat"):
+        chain = getattr(state, chain_name)
+        torch.testing.assert_close(
+            getattr(state[1], chain_name).momenta, chain.momenta[1:]
+        )
+        rejoined = getattr(ts.concatenate_states(state.split()), chain_name)
+        torch.testing.assert_close(rejoined.momenta, chain.momenta)
+    assert state.to(dtype=torch.float32).thermostat.momenta.dtype == torch.float32
 
 
 def test_npt_nose_hoover_multi_kt(

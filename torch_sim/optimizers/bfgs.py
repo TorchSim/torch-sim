@@ -384,12 +384,20 @@ def bfgs_step(  # noqa: C901, PLR0915
     unique_sizes = state.max_atoms.unique()
 
     for size in unique_sizes:
-        actual_dim = int(3 * size.item()) + (9 if isinstance(state, CellBFGSState) else 0)
+        dof_idx = torch.arange(int(3 * size.item()), device=state.device)  # [d]
+        if isinstance(state, CellBFGSState):
+            # Cell DOFs follow the padded atom block, not this system's atoms
+            atom_dim = 3 * global_max_atoms  # D
+            cell_idx = torch.arange(atom_dim, atom_dim + 9, device=state.device)  # [9]
+            dof_idx = torch.cat([dof_idx, cell_idx])  # [d]
         mask = state.max_atoms == size  # [S] bool - systems with this size
+        indices = mask.nonzero(as_tuple=True)[0]  # [G]
 
-        # Extract actual-sized Hessians and forces for this group
-        H_group = state.hessian[mask, :actual_dim, :actual_dim]  # [G, d, d]
-        f_group = forces_new[mask, :actual_dim]  # [G, d]
+        # Extract actual-sized Hessians and forces for this group in one gather
+        H_group = state.hessian[
+            indices[:, None, None], dof_idx[:, None], dof_idx
+        ]  # [G, d, d]
+        f_group = forces_new[indices[:, None], dof_idx]  # [G, d]
 
         # Batched eigendecomposition on actual size (no padding overhead)
         omega, V = torch.linalg.eigh(H_group)  # omega: [G, d], V: [G, d, d]
@@ -400,8 +408,7 @@ def bfgs_step(  # noqa: C901, PLR0915
         step_group = torch.bmm(V, vt_f / abs_omega.unsqueeze(2)).squeeze(2)  # [G, d]
 
         # Place results back into step_dense (padded to hessian_dim)
-        indices = mask.nonzero(as_tuple=True)[0]
-        step_dense[indices, :actual_dim] = step_group
+        step_dense[indices[:, None], dof_idx] = step_group
 
     # Split step into position and cell components
     atom_dim = 3 * global_max_atoms  # D
@@ -469,11 +476,22 @@ def bfgs_step(  # noqa: C901, PLR0915
             cell_factor_expanded = state.cell_factor.expand(state.n_systems, 3, 1)
             deform_grad_new = cell_positions_new / cell_factor_expanded  # [S, 3, 3]
 
-        # Update cell: new_cell = reference_cell @ deform_grad^T
-        # reference_cell.mT: [S, 3, 3], deform_grad_new: [S, 3, 3]
-        state.row_vector_cell = torch.bmm(
-            state.reference_cell.mT, deform_grad_new.transpose(-2, -1)
+        # Update cell: new_cell = deform_grad @ reference_cell
+        # deform_grad_new: [S, 3, 3], reference_cell: [S, 3, 3]
+        # Apply cell constraints such as FixSymmetry and scale atoms with the cell
+        state.set_constrained_cell(
+            torch.bmm(deform_grad_new, state.reference_cell), scale_atoms=True
         )  # [S, 3, 3]
+
+        # Resync cell_positions with the possibly adjusted cell, as L-BFGS does
+        adjusted_deform_grad = state.deform_grad()  # [S, 3, 3]
+        if is_frechet:
+            state.cell_positions = (
+                ts.math.matrix_log_33(adjusted_deform_grad, sim_dtype=state.dtype)
+                * cell_factor_reshaped
+            )
+        else:
+            state.cell_positions = adjusted_deform_grad * cell_factor_expanded
 
         # Apply position step in fractional space, then convert to Cartesian
         new_frac = frac_positions + flat_step  # [N, 3]
