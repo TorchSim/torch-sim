@@ -150,6 +150,7 @@ class DSFCoulombModel(ModelInterface):
             # nvalchemiops returns the negative strain-gradient virial; TorchSim stress
             # follows dE / dstrain / volume, matching ASE and other TorchSim models.
             stress = -(out[-1] * UnitConversion.e2_per_Ang_to_eV) / volumes
+            stress = torch.where(volumes > 0, stress, torch.zeros_like(stress))
             results["stress"] = stress.to(self._dtype).detach()
         return results
 

@@ -28,7 +28,6 @@ def cell_volume(cell: torch.Tensor) -> torch.Tensor:
     return torch.linalg.det(cell).abs()
 
 
-# @torch.jit.script
 def calc_kT(  # noqa: N802
     *,
     masses: torch.Tensor,
@@ -116,7 +115,6 @@ def calc_temperature(
     return kT / units
 
 
-# @torch.jit.script
 def calc_kinetic_energy(
     *,
     masses: torch.Tensor,
