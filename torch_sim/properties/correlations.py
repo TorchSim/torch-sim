@@ -391,8 +391,10 @@ class CorrelationCalculator[S: SimState]:
 class VelocityAutoCorrelation:
     """Calculator for velocity autocorrelation function (VACF).
 
-    Computes VACF by averaging over atoms and dimensions, with optional
-    running average across correlation windows.
+    Computes the VACF of each system by averaging over its atoms and dimensions,
+    with optional running average across correlation windows. Systems in a
+    batched state are kept separate: ``vacf`` has shape ``(n_systems, window_size)``,
+    or ``(window_size,)`` if the state holds a single system.
 
 
     Using ``VelocityAutoCorrelation`` with
@@ -444,22 +446,30 @@ class VelocityAutoCorrelation:
         """Update VACF with new state.
 
         Args:
-            state: Current simulation state
+            state: Current simulation state, possibly with several systems
             _: Unused model argument (required property calculator interface)
 
         Returns:
-            Tensor containing average VACF
+            Number of completed correlation windows, shape (1,)
         """
         self.corr_calc.update(state)
 
         if self.corr_calc.buffers["velocity"].count == self.corr_calc.window_size:
             correlations = self.corr_calc.get_auto_correlations()
-            # dims: (natoms, ndims)
-            vacf = torch.mean(correlations["velocity"], dim=(1, 2))
+            # dims: (window_size, n_atoms, 3) -> per-atom ACF (n_atoms, window_size)
+            acf = correlations["velocity"].mean(dim=2).T
+            # average over the atoms of each system -> (n_systems, window_size)
+            system_idx = state.system_idx.to(acf.device)
+            n_atoms_per_system = torch.bincount(system_idx, minlength=state.n_systems)
+            vacf = acf.new_zeros(state.n_systems, acf.shape[1]).index_add(
+                0, system_idx, acf
+            ) / n_atoms_per_system.unsqueeze(1)
+            if state.n_systems == 1:  # keep the single-system shape (window_size,)
+                vacf = vacf.squeeze(0)
 
             self._window_count += 1
 
-            if self.use_running_average:
+            if self.use_running_average and self._window_count > 1:
                 factor = 1.0 / self._window_count
                 self._avg += (vacf - self._avg) * factor
             else:
@@ -471,7 +481,12 @@ class VelocityAutoCorrelation:
 
     @property
     def vacf(self) -> torch.Tensor | None:
-        """Current VACF result."""
+        """Current VACF result.
+
+        Shape ``(n_systems, window_size)`` for a batched state and ``(window_size,)``
+        for a single system. Zeros of shape ``(window_size,)`` until the first
+        window is complete.
+        """
         return self._avg
 
 

@@ -479,6 +479,33 @@ def test_velocity_autocorrelation_with_trajectory_reporter(
     reporter.close()
 
 
+def test_velocity_autocorrelation_batched(
+    lj_model: LennardJonesModel,
+    si_sim_state: ts.SimState,
+    ar_supercell_sim_state: ts.SimState,
+) -> None:
+    """Batched VACF matches the VACFs of each system computed separately."""
+    window_size = 8
+    batched_state = ts.concatenate_states([si_sim_state, ar_supercell_sim_state])
+    state = ts.nve_init(batched_state, lj_model, kT=0.01)
+    batched_calc = VelocityAutoCorrelation(window_size=window_size, device=DEVICE)
+    single_calcs = [
+        VelocityAutoCorrelation(window_size=window_size, device=DEVICE)
+        for _ in range(state.n_systems)
+    ]
+
+    for _ in range(2 * window_size):  # two windows to cover the running average
+        state.momenta = torch.randn_like(state.momenta)
+        batched_calc(state)
+        for calc, single_state in zip(single_calcs, state.split(), strict=True):
+            calc(single_state)
+
+    expected = torch.stack([calc.vacf for calc in single_calcs])
+    assert expected.shape == (state.n_systems, window_size)
+    assert batched_calc.vacf.shape == (state.n_systems, window_size)
+    torch.testing.assert_close(batched_calc.vacf, expected)
+
+
 def test_heat_flux_autocorrelation(
     lj_model: LennardJonesModel, ar_double_sim_state: ts.SimState
 ) -> None:
