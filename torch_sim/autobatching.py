@@ -38,9 +38,10 @@ logger = logging.getLogger(__name__)
 
 # Substrings used to recognise out-of-memory errors raised during the memory
 # estimation forward passes. Different backends word this differently: PyTorch
-# raises "CUDA out of memory", while Warp-based neighbor lists (e.g. the
-# nvalchemiops kernels used by ORB v3) raise "Failed to allocate <n> bytes".
-DEFAULT_OOM_ERROR_MESSAGES = ("CUDA out of memory", "Failed to allocate")
+# raises "CUDA out of memory", cuequivariance raises "out of memory", and
+# Warp-based neighbor lists (e.g. the nvalchemiops kernels used by ORB v3) raise
+# "Failed to allocate <n> bytes".
+DEFAULT_OOM_ERROR_MESSAGES = ("out of memory", "Failed to allocate")
 
 # Atoms per neighbor-list pass when computing n_edges scalers. Alchemiops holds
 # fixed-width buffers of ~4.4 KiB per atom at a 6 A cutoff, so this caps the
@@ -225,14 +226,16 @@ def determine_max_batch_size(
         oom_error_message (str | list[str]): String or list of strings to match in
             RuntimeError messages to identify out-of-memory errors. If any
             listed substring appears in the error, it is treated as OOM.
-            Defaults to ``("CUDA out of memory", "Failed to allocate")``.
+            torch.cuda.OutOfMemoryError is always treated as OOM.
+            Defaults to ``("out of memory", "Failed to allocate")``.
 
     Returns:
         int: Maximum number of batches that fit in GPU memory.
 
     Raises:
-        RuntimeError: If a RuntimeError occurs that doesn't match any of the
-            specified OOM error messages.
+        RuntimeError: If a RuntimeError occurs that is not a
+            torch.cuda.OutOfMemoryError and doesn't match any of the specified
+            OOM error messages.
 
     Example::
 
@@ -270,8 +273,10 @@ def determine_max_batch_size(
                 measure_model_memory_forward(concat_state, model)
             except Exception as exc:
                 exc_str = str(exc)
-                # Check if any of the OOM error messages match
-                if any(msg in exc_str for msg in oom_error_message):
+                # Check the OOM exception type or any of the OOM error messages
+                if isinstance(exc, torch.cuda.OutOfMemoryError) or any(
+                    msg in exc_str for msg in oom_error_message
+                ):
                     safe_size = sizes[max(0, sys_idx - 2)]
                     logger.debug(
                         "OOM at %d systems (%d atoms), returning safe batch size %d",
@@ -582,7 +587,7 @@ class BinningAutoBatcher[T: SimState]:
             oom_error_message (str | list[str]): String or list of strings to match in
                 RuntimeError messages to identify out-of-memory errors. If any
                 listed substring appears in the error, it is treated as OOM.
-                Defaults to ``("CUDA out of memory", "Failed to allocate")``.
+                Defaults to ``("out of memory", "Failed to allocate")``.
         """
         self.max_memory_scaler = max_memory_scaler
         self.max_atoms_to_try = max_atoms_to_try
@@ -894,7 +899,7 @@ class InFlightAutoBatcher[T: SimState]:
             oom_error_message (str | list[str]): String or list of strings to match in
                 RuntimeError messages to identify out-of-memory errors. If any
                 listed substring appears in the error, it is treated as OOM.
-                Defaults to ``("CUDA out of memory", "Failed to allocate")``.
+                Defaults to ``("out of memory", "Failed to allocate")``.
         """
         self.model = model
         self.memory_scales_with = memory_scales_with
