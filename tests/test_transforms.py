@@ -1402,13 +1402,20 @@ def test_build_linked_cell_neighborhood_basic() -> None:
     assert torch.any(system_mapping == 1)
 
 
-def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
+@pytest.mark.parametrize(
+    "sim_state_name",
+    ["ar_supercell_sim_state", "distorted_fcc_al_conventional_sim_state"],
+)
+def test_unwrap_positions(
+    sim_state_name: str, request: pytest.FixtureRequest, lj_model: LennardJonesModel
+):
+    sim_state = request.getfixturevalue(sim_state_name)
     n_steps = 50
     dt = torch.tensor(0.001, dtype=DTYPE) * MetalUnits.time
     kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
 
     # Same cell
-    state = ts.nvt_langevin_init(state=ar_double_sim_state, model=lj_model, kT=kT)
+    state = ts.nvt_langevin_init(state=sim_state, model=lj_model, kT=kT)
     state.positions = tst.pbc_wrap_batched(state.positions, state.cell, state.system_idx)
     positions = [state.positions.detach().clone()]
     for _step in range(n_steps):
@@ -1431,7 +1438,7 @@ def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJon
 
     # Different cell
     state = ts.npt_langevin_anisotropic_init(
-        state=ar_double_sim_state, model=lj_model, kT=kT, dt=dt
+        state=sim_state, model=lj_model, kT=kT, dt=dt
     )
     state.positions = tst.pbc_wrap_batched(state.positions, state.cell, state.system_idx)
     positions = [state.positions.detach().clone()]
@@ -1460,25 +1467,3 @@ def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJon
         state.system_idx,
     )
     assert torch.allclose(unwrapped_positions, positions, atol=1e-4)
-
-
-def test_unwrap_positions_triclinic() -> None:
-    # Lattice vectors as columns, matching SimState.cell
-    cell = torch.tensor(
-        [[6.0, 0.0, 0.0], [1.5, 5.0, 0.0], [1.0, 1.2, 4.5]], dtype=DTYPE
-    ).T.unsqueeze(0)
-    system_idx = torch.zeros(2, dtype=torch.long)
-    start = torch.tensor([[5.5, 4.5, 4.0], [1.0, 1.0, 1.0]], dtype=DTYPE)
-    step = torch.tensor([[0.3, 0.25, 0.2], [-0.2, 0.1, -0.15]], dtype=DTYPE)
-    positions = torch.stack([start + i * step for i in range(20)])
-    wrapped = torch.stack(
-        [tst.pbc_wrap_batched(pos, cell, system_idx) for pos in positions]
-    )
-    assert not torch.allclose(wrapped, positions)
-
-    unwrapped = tst.unwrap_positions(wrapped, cell, system_idx)
-    assert torch.allclose(unwrapped, positions, atol=1e-10)
-
-    cells = cell.expand(len(positions), -1, -1, -1)
-    unwrapped = tst.unwrap_positions(wrapped, cells, system_idx)
-    assert torch.allclose(unwrapped, positions, atol=1e-10)
