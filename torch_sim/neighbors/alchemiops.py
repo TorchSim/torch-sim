@@ -39,6 +39,8 @@ if ALCHEMIOPS_AVAILABLE:
         cutoff: float,
         system_idx: torch.Tensor,
         self_interaction: bool = False,  # noqa: FBT001, FBT002
+        *,
+        max_neighbors: int | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute neighbor lists using Alchemiops naive N^2 algorithm.
 
@@ -49,6 +51,9 @@ if ALCHEMIOPS_AVAILABLE:
             cutoff: Maximum distance
             system_idx: Tensor [n_atoms] indicating system assignment
             self_interaction: If True, include self-pairs
+            max_neighbors: Width of the per-atom neighbor matrix. Must be an upper
+                bound; an undersized width raises NeighborOverflowError. Defaults
+                to nvalchemiops' bulk-density estimate for ``cutoff``.
 
         Returns:
             (mapping, system_mapping, shifts_idx)
@@ -65,6 +70,7 @@ if ALCHEMIOPS_AVAILABLE:
             batch_idx=system_idx.to(torch.int32),
             cell=cell,
             pbc=pbc.to(torch.bool),
+            max_neighbors=max_neighbors,
             return_neighbor_list=True,
         )
 
@@ -126,17 +132,6 @@ if ALCHEMIOPS_AVAILABLE:
         """
         n_systems = int(system_idx.max().item()) + 1
         cell, pbc = normalize_inputs(cell, pbc, n_systems)
-
-        # For non-periodic systems with zero cells, use a nominal identity cell
-        # to avoid division by zero in alchemiops warp kernels
-        # See https://github.com/NVIDIA/nvalchemi-toolkit-ops/issues/4
-        is_non_periodic = ~pbc.any(dim=1)  # [n_systems]
-        is_zero_cell = cell.abs().sum(dim=(1, 2)) == 0  # [n_systems]
-        needs_nominal_cell = is_non_periodic & is_zero_cell
-        if needs_nominal_cell.any():
-            identity = torch.eye(3, dtype=cell.dtype, device=cell.device)
-            cell = cell.clone()  # Avoid modifying the original
-            cell[needs_nominal_cell] = identity
 
         # Call alchemiops cell list
         if _batch_cell_list is None:

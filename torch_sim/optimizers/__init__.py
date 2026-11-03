@@ -23,12 +23,7 @@ from torch_sim.optimizers.gradient_descent import (
     gradient_descent_step,
 )
 from torch_sim.optimizers.lbfgs import lbfgs_init, lbfgs_step
-from torch_sim.optimizers.state import (  # noqa: F401
-    BFGSState,
-    FireState,
-    LBFGSState,
-    OptimState,
-)
+from torch_sim.optimizers.state import BFGSState, FireState, LBFGSState, OptimState  # noqa: F401
 
 
 FireFlavor = Literal["vv_fire", "ase_fire"]

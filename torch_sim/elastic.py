@@ -58,7 +58,8 @@ def get_bravais_type(  # noqa: PLR0911
     """Check and return the crystal system of a structure.
 
     This function determines the crystal system by analyzing the lattice
-    parameters and angles without using spglib.
+    parameters and angles without using spglib. A hexagonal lattice is checked
+    for a trigonal space group when moyopy is available.
 
     Args:
         state: SimState object representing the crystal structure
@@ -100,6 +101,15 @@ def get_bravais_type(  # noqa: PLR0911
         and abs(beta - 90) < angle_tol
         and abs(gamma - 120) < angle_tol
     ):
+        # Trigonal crystals can share this lattice; tell them apart by space group
+        try:
+            from torch_sim.symmetrize import get_symmetry_datasets
+
+            space_group = get_symmetry_datasets(state, symprec=length_tol)[0].number
+        except ImportError:
+            return BravaisType.HEXAGONAL
+        if 143 <= space_group <= 167:
+            return BravaisType.TRIGONAL
         return BravaisType.HEXAGONAL
 
     # Tetragonal: a = b ≠ c, alpha = beta = gamma = 90°
@@ -138,7 +148,10 @@ def get_bravais_type(  # noqa: PLR0911
         and abs(beta - gamma) < angle_tol
         and abs(alpha - 90) > angle_tol
     ):
-        return BravaisType.TRIGONAL
+        # trigonal_symmetry assumes the 3-fold axis, a + b + c, lies along z
+        axis = row_vector_cell.sum(dim=0)
+        tilt = torch.rad2deg(torch.atan2(torch.linalg.norm(axis[:2]), axis[2].abs()))
+        return BravaisType.TRIGONAL if tilt < angle_tol else BravaisType.TRICLINIC
 
     # Triclinic: a ≠ b ≠ c, alpha ≠ beta ≠ gamma ≠ 90°
     return BravaisType.TRICLINIC

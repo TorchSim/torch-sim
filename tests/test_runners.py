@@ -239,6 +239,29 @@ def test_integrate_double_nvt_multiple_temperatures(
             init_kwargs={},
         )
 
+    # n_steps == n_systems: 1D temperatures are per system, 2D are (n_steps, n_systems)
+    init, real_step = ts.integrators.INTEGRATOR_REGISTRY[ts.Integrator.nvt_langevin]
+    step_kTs: list[torch.Tensor] = []
+
+    def spy_step(**kwargs: object) -> MDState:
+        step_kTs.append(kwargs["kT"])
+        return real_step(**kwargs)
+
+    temps = torch.tensor([100.0, 200.0], dtype=DTYPE, device=DEVICE)
+    for temperature in (temps, temps.expand(2, 2)):
+        step_kTs.clear()
+        ts.integrate(
+            system=ar_double_sim_state,
+            model=lj_model,
+            integrator=(init, spy_step),
+            n_steps=2,
+            temperature=temperature,
+            timestep=0.001,
+        )
+        assert len(step_kTs) == 2
+        for kT in step_kTs:
+            torch.testing.assert_close(kT, temps * ts.units.MetalUnits.temperature)
+
 
 def test_integrate_double_nvt_with_reporter(
     ar_double_sim_state: SimState, lj_model: LennardJonesModel, tmp_path: Path
@@ -358,6 +381,30 @@ def test_integrate_with_autobatcher(
     for init_state, final_state in zip(states, final_states.split(), strict=True):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
+
+    # Replicas in different batches get different noise, reproducibly for a seed
+    replicas = ts.initialize_state(
+        [ar_supercell_sim_state] * 2, lj_model.device, lj_model.dtype
+    )
+    replicas.rng = 7
+    one_per_batch = BinningAutoBatcher(
+        model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=40
+    )
+    runs = [
+        ts.integrate(
+            system=replicas.clone(),
+            model=lj_model,
+            integrator=ts.Integrator.nvt_langevin,
+            n_steps=5,
+            temperature=300.0,
+            timestep=0.001,
+            autobatcher=one_per_batch,
+        ).positions
+        for _ in range(2)
+    ]
+    n_atoms = ar_supercell_sim_state.n_atoms
+    assert not torch.equal(runs[0][:n_atoms], runs[0][n_atoms:])
+    torch.testing.assert_close(runs[0], runs[1])
 
 
 def test_integrate_with_autobatcher_and_reporting(

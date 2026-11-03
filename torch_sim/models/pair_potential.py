@@ -74,6 +74,7 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
+from torch_sim.quantities import cell_volume
 from torch_sim.transforms import compute_cell_shifts
 
 
@@ -224,7 +225,7 @@ def _virial_stress(
         ``[n_systems, 3, 3]``, stress_per_pair ``[n_pairs, 3, 3]``, and
         volumes ``[n_systems]``.
     """
-    volumes = torch.abs(torch.linalg.det(row_cell))
+    volumes = cell_volume(row_cell)
     stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
     stress = torch.zeros((n_systems, 3, 3), dtype=dtype, device=device)
     stress = stress.index_add(0, system_mapping, -stress_per_pair)

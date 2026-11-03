@@ -1,9 +1,11 @@
+from collections.abc import Callable
+
 import pytest
 import torch
 from ase.build import bulk
 
 import torch_sim as ts
-from tests.conftest import DEVICE, DTYPE
+from tests.conftest import DEVICE, DTYPE, make_left_handed
 from torch_sim.integrators import initialize_momenta
 from torch_sim.integrators.npt import _npt_langevin_anisotropic_compute_cell_force
 from torch_sim.models.lennard_jones import LennardJonesModel
@@ -495,6 +497,12 @@ def test_nvt_nose_hoover_multi_equivalent_to_single(
 
     assert torch.allclose(final_temperatures, temp / MetalUnits.temperature)
 
+    # Slicing, splitting and .to() keep each system's own chain
+    torch.testing.assert_close(state[1].chain.momenta, state.chain.momenta[1:])
+    rejoined = ts.concatenate_states(state.split())
+    torch.testing.assert_close(rejoined.chain.momenta, state.chain.momenta)
+    assert state.to(dtype=torch.float32).chain.momenta.dtype == torch.float32
+
 
 def test_nvt_nose_hoover_multi_kt(
     ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
@@ -719,7 +727,7 @@ def test_npt_crescale_default_coupling_is_stable(integrator_name: str) -> None:
     external_pressure = torch.tensor(0.0, dtype=DTYPE)
 
     state = ts.npt_crescale_init(state=state, model=model, dt=dt, kT=kT)
-    initial_volume = torch.det(state.cell).abs().clone()
+    initial_volume = state.volume.clone()
 
     for step in range(100):
         state = step_fn(
@@ -730,7 +738,7 @@ def test_npt_crescale_default_coupling_is_stable(integrator_name: str) -> None:
             "barostat coupling"
         )
 
-    ratio = (torch.det(state.cell).abs() / initial_volume).tolist()
+    ratio = (state.volume / initial_volume).tolist()
     assert all(0.5 < r < 2.0 for r in ratio), (
         f"{integrator_name}: default barostat changed the volume by {ratio} in "
         "100 steps at the system's own pressure"
@@ -782,7 +790,7 @@ def test_npt_crescale_init_accepts_per_system_coupling(
     )
 
 
-def test_npt_crescale_triclinic_shear(
+def test_npt_crescale_triclinic_shear(  # noqa: PLR0915
     ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
 ) -> None:
     """Test anisotropic crescale with off-diagonal (shear) external stress."""
@@ -849,6 +857,78 @@ def test_npt_crescale_triclinic_shear(
     mean_temps = torch.mean(temperatures_tensor, dim=0)
     for mean_temp in mean_temps:
         assert abs(mean_temp - kT.item() / MetalUnits.temperature) < 150.0
+
+    # With no forces or noise and tiny momenta, atoms must move with the cell
+    free_model = LennardJonesModel(
+        sigma=3.405, epsilon=0.0, device=DEVICE, dtype=DTYPE, compute_stress=True
+    )
+    zero_kT = torch.tensor(0.0, dtype=DTYPE)
+    free_state = ts.npt_crescale_init(
+        state=ar_double_sim_state,
+        model=free_model,
+        dt=dt,
+        kT=zero_kT,
+        tau_p=10 * dt,
+        isothermal_compressibility=torch.tensor(1.0, dtype=DTYPE),
+    )
+    free_state.momenta = torch.full_like(free_state.momenta, 1e-9)
+
+    def frac_positions(state: ts.SimState) -> torch.Tensor:
+        cells = state.cell[state.system_idx]
+        return torch.linalg.solve(cells, state.positions.unsqueeze(-1)).squeeze(-1)
+
+    frac_before = frac_positions(free_state)
+    free_state = ts.npt_crescale_triclinic_step(
+        state=free_state,
+        model=free_model,
+        dt=dt,
+        kT=zero_kT,
+        external_pressure=1e4 * external_pressure,
+    )
+    torch.testing.assert_close(
+        frac_positions(free_state), frac_before, atol=1e-10, rtol=0
+    )
+    # The rotation-free update keeps the upper-triangular cells upper-triangular
+    assert torch.all(free_state.cell.tril(-1) == 0)
+
+    # The same crystal in another lattice basis must deform the same way
+    basis_change = torch.tensor(
+        [[1.0, 1.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=DTYPE
+    )
+    shear_strain = torch.tensor(
+        [[1.0, 0.05, 0.0], [0.0, 1.0, 0.02], [0.0, 0.0, 0.97]], dtype=DTYPE
+    )
+    deviatoric_pressure = MetalUnits.pressure * torch.diag(
+        torch.tensor([1e4, 0.0, -1e4], dtype=DTYPE)
+    )
+    deformations = []
+    for basis in (torch.eye(3, dtype=DTYPE), basis_change):
+        crystal = ts.io.atoms_to_state(
+            bulk("Ar", "fcc", a=5.26, cubic=True), DEVICE, DTYPE
+        )
+        crystal.cell = crystal.cell @ basis
+        crystal = ts.npt_crescale_init(
+            state=crystal,
+            model=free_model,
+            dt=dt,
+            kT=zero_kT,
+            tau_p=10 * dt,
+            isothermal_compressibility=torch.tensor(1e-2, dtype=DTYPE),
+        )
+        crystal.momenta = torch.full_like(crystal.momenta, 1e-9)
+        # Shear away from the reference cell, moving the atoms with it
+        crystal.cell = shear_strain @ crystal.cell
+        crystal.positions = crystal.positions @ shear_strain.T
+        cell_before = crystal.cell.clone()
+        crystal = ts.npt_crescale_triclinic_step(
+            state=crystal,
+            model=free_model,
+            dt=dt,
+            kT=zero_kT,
+            external_pressure=deviatoric_pressure,
+        )
+        deformations.append(crystal.cell @ torch.linalg.inv(cell_before))
+    torch.testing.assert_close(deformations[0], deformations[1], atol=1e-12, rtol=0)
 
     # Check energy is stable
     for traj in energies_tensor.T:
@@ -1116,6 +1196,16 @@ def test_npt_nose_hoover_multi_equivalent_to_single(
 
     assert torch.allclose(final_temperatures, temp / MetalUnits.temperature)
 
+    # Slicing, splitting and .to() keep each system's own chains
+    for chain_name in ("thermostat", "barostat"):
+        chain = getattr(state, chain_name)
+        torch.testing.assert_close(
+            getattr(state[1], chain_name).momenta, chain.momenta[1:]
+        )
+        rejoined = getattr(ts.concatenate_states(state.split()), chain_name)
+        torch.testing.assert_close(rejoined.momenta, chain.momenta)
+    assert state.to(dtype=torch.float32).thermostat.momenta.dtype == torch.float32
+
 
 def test_npt_nose_hoover_multi_kt(
     ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel
@@ -1374,3 +1464,57 @@ def test_npt_langevin_reproducibility(
     assert not torch.allclose(pos_a, pos_c)
     assert not torch.allclose(mom_a, mom_c)
     assert not torch.allclose(cell_a, cell_c)
+
+
+@pytest.mark.parametrize(
+    ("init_fn", "step_fn"),
+    [
+        (ts.npt_crescale_init, ts.npt_crescale_isotropic_step),
+        (ts.npt_crescale_init, ts.npt_crescale_triclinic_step),
+        (ts.npt_nose_hoover_isotropic_init, ts.npt_nose_hoover_isotropic_step),
+        (ts.npt_langevin_isotropic_init, ts.npt_langevin_isotropic_step),
+    ],
+    ids=["crescale_isotropic", "crescale_triclinic", "nose_hoover", "langevin"],
+)
+def test_npt_is_independent_of_cell_handedness(
+    init_fn: Callable,
+    step_fn: Callable,
+    ar_double_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    """NPT dynamics of a left-handed cell match the right-handed description.
+
+    The barostats use the cell volume (e.g. sqrt(V)), which must be |det(cell)|:
+    a signed determinant gives NaN or the wrong pressure for a left-handed cell.
+    """
+    dt = torch.tensor(0.001, dtype=DTYPE)
+    kT = torch.tensor(300.0, dtype=DTYPE) * MetalUnits.temperature
+    external_pressure = torch.tensor(10.0, dtype=DTYPE) * MetalUnits.pressure
+
+    final = {}
+    for name, start in (
+        ("right", ar_double_sim_state.clone()),
+        ("left", make_left_handed(ar_double_sim_state)),
+    ):
+        start.rng = 42
+        state = init_fn(state=start, model=lj_model, dt=dt, kT=kT)
+        for _ in range(10):
+            state = step_fn(
+                state=state,
+                model=lj_model,
+                dt=dt,
+                kT=kT,
+                external_pressure=external_pressure,
+            )
+        final[name] = state
+
+    assert torch.isfinite(final["left"].energy).all()
+    # The triclinic barostat re-orthonormalises its random deformation, so the two
+    # trajectories agree to ~1e-6
+    for attr in ("energy", "volume", "positions"):
+        torch.testing.assert_close(
+            getattr(final["left"], attr),
+            getattr(final["right"], attr),
+            rtol=1e-5,
+            atol=1e-5,
+        )

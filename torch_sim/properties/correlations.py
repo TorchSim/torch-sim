@@ -24,6 +24,7 @@ from typing import Any
 import torch
 
 from torch_sim.elastic import full_3x3_to_voigt_6_stress
+from torch_sim.integrators.md import MDState
 from torch_sim.quantities import calc_heat_flux
 from torch_sim.state import SimState
 
@@ -97,7 +98,7 @@ class CircularBuffer:
         return self.count == self.size
 
 
-class CorrelationCalculator:
+class CorrelationCalculator[S: SimState]:
     """Efficient on-the-fly correlation function calculator.
 
     Manage the calculation of time correlation functions during
@@ -136,7 +137,7 @@ class CorrelationCalculator:
         self,
         *,
         window_size: int,
-        properties: dict[str, Callable[[SimState], torch.Tensor]],
+        properties: dict[str, Callable[[S], torch.Tensor]],
         device: torch.device,
         normalize: bool = True,
     ) -> None:
@@ -161,9 +162,7 @@ class CorrelationCalculator:
         self.correlations: dict[str, torch.Tensor] = {}
         self.cross_correlations: dict[tuple[str, str], torch.Tensor] = {}
 
-    def add_property(
-        self, name: str, calculator: Callable[[SimState], torch.Tensor]
-    ) -> None:
+    def add_property(self, name: str, calculator: Callable[[S], torch.Tensor]) -> None:
         """Track a new simulation property.
 
         Args:
@@ -176,7 +175,7 @@ class CorrelationCalculator:
         self.properties[name] = calculator
         self.buffers[name] = CircularBuffer(self.window_size, device=self.device)
 
-    def update(self, state: SimState) -> None:
+    def update(self, state: S) -> None:
         """Update correlation calculations with new state data.
 
         Args:
@@ -340,7 +339,7 @@ class CorrelationCalculator:
         self.correlations = {}
         self.cross_correlations = {}
 
-    def to(self, device: torch.device) -> "CorrelationCalculator":
+    def to(self, device: torch.device) -> "CorrelationCalculator[S]":
         """Move calculator to specified device.
 
         Args:
@@ -392,8 +391,10 @@ class CorrelationCalculator:
 class VelocityAutoCorrelation:
     """Calculator for velocity autocorrelation function (VACF).
 
-    Computes VACF by averaging over atoms and dimensions, with optional
-    running average across correlation windows.
+    Computes the VACF of each system by averaging over its atoms and dimensions,
+    with optional running average across correlation windows. Systems in a
+    batched state are kept separate: ``vacf`` has shape ``(n_systems, window_size)``,
+    or ``(window_size,)`` if the state holds a single system.
 
 
     Using ``VelocityAutoCorrelation`` with
@@ -431,7 +432,7 @@ class VelocityAutoCorrelation:
             use_running_average: Whether to compute running average across windows
             normalize: Whether to normalize correlation functions to [0,1]
         """
-        self.corr_calc = CorrelationCalculator(
+        self.corr_calc = CorrelationCalculator[MDState](
             window_size=window_size,
             properties={"velocity": lambda s: s.velocities},
             device=device,
@@ -441,26 +442,34 @@ class VelocityAutoCorrelation:
         self._window_count = 0
         self._avg = torch.zeros(window_size, device=device)
 
-    def __call__(self, state: SimState, _: Any = None) -> torch.Tensor:
+    def __call__(self, state: MDState, _: Any = None) -> torch.Tensor:
         """Update VACF with new state.
 
         Args:
-            state: Current simulation state
+            state: Current simulation state, possibly with several systems
             _: Unused model argument (required property calculator interface)
 
         Returns:
-            Tensor containing average VACF
+            Number of completed correlation windows, shape (1,)
         """
         self.corr_calc.update(state)
 
         if self.corr_calc.buffers["velocity"].count == self.corr_calc.window_size:
             correlations = self.corr_calc.get_auto_correlations()
-            # dims: (natoms, ndims)
-            vacf = torch.mean(correlations["velocity"], dim=(1, 2))
+            # dims: (window_size, n_atoms, 3) -> per-atom ACF (n_atoms, window_size)
+            acf = correlations["velocity"].mean(dim=2).T
+            # average over the atoms of each system -> (n_systems, window_size)
+            system_idx = state.system_idx.to(acf.device)
+            n_atoms_per_system = torch.bincount(system_idx, minlength=state.n_systems)
+            vacf = acf.new_zeros(state.n_systems, acf.shape[1]).index_add(
+                0, system_idx, acf
+            ) / n_atoms_per_system.unsqueeze(1)
+            if state.n_systems == 1:  # keep the single-system shape (window_size,)
+                vacf = vacf.squeeze(0)
 
             self._window_count += 1
 
-            if self.use_running_average:
+            if self.use_running_average and self._window_count > 1:
                 factor = 1.0 / self._window_count
                 self._avg += (vacf - self._avg) * factor
             else:
@@ -472,7 +481,12 @@ class VelocityAutoCorrelation:
 
     @property
     def vacf(self) -> torch.Tensor | None:
-        """Current VACF result."""
+        """Current VACF result.
+
+        Shape ``(n_systems, window_size)`` for a batched state and ``(window_size,)``
+        for a single system. Zeros of shape ``(window_size,)`` until the first
+        window is complete.
+        """
         return self._avg
 
 
@@ -526,20 +540,22 @@ class HeatFluxAutoCorrelation:
         self.model.per_atom_stresses = True  # ty: ignore[unresolved-attribute]
         self.model.per_atom_energies = True  # ty: ignore[unresolved-attribute]
 
-        self.corr_calc = CorrelationCalculator(
+        def heat_flux(state: MDState) -> torch.Tensor:
+            output = self.model(state)  # single forward pass for energies and stresses
+            return calc_heat_flux(
+                momenta=state.momenta,
+                masses=state.masses,
+                velocities=None,
+                energies=output["energies"],
+                stresses=full_3x3_to_voigt_6_stress(output["stresses"]),
+                batch=state.system_idx,
+                is_centroid_stress=False,
+                is_virial_only=False,
+            )
+
+        self.corr_calc = CorrelationCalculator[MDState](
             window_size=window_size,
-            properties={
-                "heat_flux": lambda s: calc_heat_flux(
-                    momenta=s.momenta,
-                    masses=s.masses,
-                    velocities=None,
-                    energies=self.model(s)["energies"],
-                    stresses=full_3x3_to_voigt_6_stress(self.model(s)["stresses"]),
-                    batch=s.system_idx,
-                    is_centroid_stress=False,
-                    is_virial_only=False,
-                )
-            },
+            properties={"heat_flux": heat_flux},
             device=device,
             normalize=normalize,
         )
@@ -547,7 +563,7 @@ class HeatFluxAutoCorrelation:
         self._window_count = 0
         self._avg = torch.zeros(window_size, device=device)
 
-    def __call__(self, state: SimState, _: Any = None) -> torch.Tensor:
+    def __call__(self, state: MDState, _: Any = None) -> torch.Tensor:
         """Update HFACF with new state.
 
         Args:

@@ -226,8 +226,9 @@ class TrajectoryReporter:
         """
         if step <= 0:
             raise ValueError(f"Step must be greater than 0. Got step={step}.")
-        last_steps = self.last_written_steps
-        if any(s is None for s in last_steps):
+        all_last_steps = self.last_written_steps
+        last_steps = [s for s in all_last_steps if s is not None]
+        if len(last_steps) < len(all_last_steps):
             raise ValueError("Cannot truncate: one or more trajectories are empty.")
         if step > min(last_steps):
             raise ValueError(

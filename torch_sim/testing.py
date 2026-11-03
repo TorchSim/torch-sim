@@ -99,6 +99,8 @@ def make_sb_sim_state(
     from ase.build import bulk
 
     atoms = bulk("Sb", "rhombohedral", a=4.58, alpha=60)
+    # Put the 3-fold axis a + b + c along z
+    atoms.rotate(atoms.cell.sum(axis=0), "z", rotate_cell=True)
     return ts.io.atoms_to_state(atoms, device, dtype)
 
 

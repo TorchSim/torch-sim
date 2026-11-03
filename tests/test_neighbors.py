@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 from ase import Atoms
-from ase.build import bulk, fcc111, molecule
+from ase.build import bulk, fcc111, graphene, molecule, nanotube
 from ase.neighborlist import neighbor_list
 
 from tests.conftest import DEVICE, DTYPE
@@ -153,14 +153,15 @@ def partial_pbc_atoms_set() -> list[Atoms]:
     """Slab structures to test partially periodic systems.
 
     To increase coverage, they include atoms drifted across the cell boundary
-    along the non-periodic axis.
+    along the non-periodic axis, and ASE's 2D and 1D builders, which leave the
+    non-periodic cell vectors at zero.
     """
     cu111 = fcc111("Cu", size=(2, 2, 3), a=3.6, vacuum=10.0)
     cu111.translate([0.0, 0.0, -cu111.cell[2, 2] / 2])
     cu_slab = bulk("Cu", "fcc", a=3.6, cubic=True).repeat((2, 2, 2))
     cu_slab.set_pbc([True, True, False])
     cu_slab.translate([0.0, 0.0, -3.6])
-    return [cu111, cu_slab]
+    return [cu111, cu_slab, graphene(), nanotube(3, 3)]
 
 
 def _sorted_mic_distances(

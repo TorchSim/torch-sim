@@ -37,19 +37,15 @@ def _donothing_func(*_args: Any, **_kwargs: Any) -> Any:
     return None
 
 
-def _disable_duecredit(exc: Exception) -> None:
-    import logging
-
-    logging.getLogger("duecredit").exception(
-        "Failed to import duecredit despite being installed: %s", exc
-    )
-
-
 try:
     from duecredit import BibTeX, Doi, Text, Url, due
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     if not isinstance(e, ImportError):
-        _disable_duecredit(e)
+        import logging
+
+        logging.getLogger("duecredit").exception(
+            "Failed to import duecredit despite being installed"
+        )
     due = InactiveDueCreditCollector()  # ty: ignore[invalid-assignment]
     BibTeX = Doi = Url = Text = _donothing_func  # ty: ignore[invalid-assignment]
 

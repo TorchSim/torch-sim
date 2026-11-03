@@ -839,6 +839,14 @@ def test_get_fractional_coordinates_batched() -> None:
             torch.tensor([True, False, True], dtype=torch.bool),
             [[0.2, 0.0, 0.0], [0.0, 2.2, 0.0], [0.0, 0.0, 0.2]],
         ),
+        (  # skewed cell where rounding fractional coordinates misses the image
+            [[0.931, 0.049, 0.0]],
+            torch.tensor(
+                [[1.0, 0.9, 0.0], [0.0, 0.1, 0.0], [0.0, 0.0, 1.0]], dtype=DTYPE
+            ),
+            torch.tensor([True, True, False], dtype=torch.bool),
+            [[0.031, -0.051, 0.0]],
+        ),
     ],
 )
 def test_minimum_image_displacement(

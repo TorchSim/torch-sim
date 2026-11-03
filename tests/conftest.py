@@ -128,6 +128,12 @@ def si_phonopy_atoms() -> Any:
     )
 
 
+@pytest.fixture(autouse=True)
+def _seed_torch() -> None:
+    """Seed torch per test, so unseeded states don't depend on test order."""
+    torch.manual_seed(0)
+
+
 @pytest.fixture
 def cu_supercell_sim_state() -> ts.SimState:
     """Create a 4x4x4 FCC Copper supercell with small random displacements."""
@@ -165,3 +171,17 @@ def mixed_double_sim_state(
         [ar_supercell_sim_state, si_sim_state],
         device=ar_supercell_sim_state.device,
     )
+
+
+def make_left_handed(state: ts.SimState) -> ts.SimState:
+    """Describe the same crystal with a left-handed cell.
+
+    Negating the third lattice vector leaves Cartesian positions, the lattice and the
+    order of the a and b vectors untouched (some algorithms depend on that order) but
+    flips the sign of det(cell). `state.cell` stores lattice vectors as columns.
+    """
+    left = state.clone()
+    cell = state.cell.clone()
+    cell[:, :, 2] *= -1
+    left.cell = cell
+    return left

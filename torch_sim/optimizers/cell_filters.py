@@ -96,8 +96,9 @@ def _setup_pressure(
 
 def _compute_cell_masses(state: SimState) -> torch.Tensor:
     """Compute cell masses by summing atomic masses per system."""
-    system_counts = torch.bincount(state.system_idx)
-    cell_masses = torch.segment_reduce(state.masses, reduce="sum", lengths=system_counts)
+    cell_masses = state.masses.new_zeros(state.n_systems).index_add(
+        0, state.system_idx, state.masses
+    )
     return cell_masses.unsqueeze(-1).expand(-1, 3)
 
 
@@ -202,7 +203,7 @@ def unit_cell_filter_init[T: AnyCellState](
 
     # Calculate initial cell forces
     stress = _get_constrained_stress(model_output, state)
-    volumes = torch.linalg.det(state.cell).view(n_systems, 1, 1)
+    volumes = state.volume.view(n_systems, 1, 1)
     virial = -volumes * (stress + pressure)
     virial = _apply_constraints(
         virial, hydrostatic_strain=hydrostatic_strain, constant_volume=constant_volume
@@ -255,7 +256,7 @@ def frechet_cell_filter_init[T: AnyCellState](
 
     # Calculate initial cell forces using Frechet approach
     stress = _get_constrained_stress(model_output, state)
-    volumes = torch.linalg.det(state.cell).view(n_systems, 1, 1)
+    volumes = state.volume.view(n_systems, 1, 1)
     virial = -volumes * (stress + pressure)
     virial = _apply_constraints(
         virial, hydrostatic_strain=hydrostatic_strain, constant_volume=constant_volume
@@ -355,7 +356,7 @@ def compute_cell_forces[T: AnyCellState](
 ) -> None:
     """Compute cell forces for both unit and frechet methods."""
     stress = _get_constrained_stress(model_output, state)
-    volumes = torch.linalg.det(state.cell).view(state.n_systems, 1, 1)
+    volumes = state.volume.view(state.n_systems, 1, 1)
     virial = -volumes * (stress + state.pressure)
     virial = _apply_constraints(
         virial,

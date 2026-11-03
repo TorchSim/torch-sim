@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Run prek
-        uses: j178/prek-action@v1
+        uses: j178/prek-action@v2
