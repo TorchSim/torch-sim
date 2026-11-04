@@ -1404,7 +1404,7 @@ def test_build_linked_cell_neighborhood_basic() -> None:
 
 @pytest.mark.parametrize(
     "sim_state_name",
-    ["ar_supercell_sim_state", "distorted_fcc_al_conventional_sim_state"],
+    ["ar_double_sim_state", "distorted_fcc_al_conventional_sim_state"],
 )
 def test_unwrap_positions(
     sim_state_name: str, request: pytest.FixtureRequest, lj_model: LennardJonesModel
