@@ -1560,7 +1560,8 @@ def unwrap_positions(
     positions : (T, N_tot, 3)
         Wrapped cartesian positions for all systems concatenated.
     cells : (n_systems, 3, 3) or (T, n_systems, 3, 3)
-        Box matrices, constant or time-dependent.
+        Box matrices with lattice vectors as columns (as in ``SimState.cell``),
+        constant or time-dependent.
     system_idx : (N_tot,)
         For each atom, which system it belongs to (0..n_systems-1).
 
@@ -1570,6 +1571,8 @@ def unwrap_positions(
         Unwrapped cartesian positions.
     """
     # -- Constant boxes per system
+    # cells store lattice vectors as columns; einsums below use row vectors
+    cells = cells.mT
     if cells.ndim == 3:
         inv_box = torch.inverse(cells)  # (n_systems, 3, 3)
 
