@@ -413,8 +413,13 @@ class PairPotentialModel(ModelInterface):
             atom_energies = torch.zeros(
                 positions.shape[0], dtype=dtype, device=self._device
             )
-            atom_energies = atom_energies.index_add(0, mapping[0], ew * pair_energies)
-            atom_energies = atom_energies.index_add(0, mapping[1], ew * pair_energies)
+            # Divide each weighted pair energy equally between its endpoints.
+            atom_energies = atom_energies.index_add(
+                0, mapping[0], 0.5 * ew * pair_energies
+            )
+            atom_energies = atom_energies.index_add(
+                0, mapping[1], 0.5 * ew * pair_energies
+            )
             results["energies"] = atom_energies
 
         if need_grad:
