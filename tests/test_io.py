@@ -35,6 +35,25 @@ def test_single_atoms_to_state(si_atoms: Atoms) -> None:
     assert state.atomic_numbers.dtype == torch.int
 
 
+@pytest.mark.parametrize("batched", [False, True])
+def test_state_to_atoms_preserves_custom_masses(*, batched: bool) -> None:
+    """Explicit isotope masses survive ASE export for single and batched states."""
+    atoms_list = [Atoms("H2", positions=[[0, 0, 0], [1, 0, 0]], masses=[2.014, 3.016])]
+    expected_masses = [[2.014, 3.016]]
+    if batched:
+        atoms_list.append(Atoms("He", positions=[[0, 0, 0]], masses=[4.5]))
+        expected_masses.append([4.5])
+
+    state = ts.io.atoms_to_state(atoms_list if batched else atoms_list[0], DEVICE, DTYPE)
+    exported_atoms = ts.io.state_to_atoms(state)
+
+    assert len(exported_atoms) == len(expected_masses)
+    for atoms, masses in zip(exported_atoms, expected_masses, strict=True):
+        np.testing.assert_allclose(atoms.get_masses(), masses)
+    round_trip_state = ts.io.atoms_to_state(exported_atoms, DEVICE, DTYPE)
+    torch.testing.assert_close(round_trip_state.masses, state.masses)
+
+
 @pytest.mark.parametrize(
     ("system_extras_map", "atom_extras_map", "expected_sys", "expected_atom"),
     [
