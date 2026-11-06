@@ -1,6 +1,7 @@
 """Tests for the general pair potential model and pair forces model."""
 
 import functools
+from collections.abc import Callable
 
 import pytest
 import torch
@@ -18,8 +19,8 @@ from torch_sim.models.pair_potential import (
     full_to_half_list,
 )
 from torch_sim.models.particle_life import particle_life_pair_force
-from torch_sim.models.soft_sphere import soft_sphere_pair
-from torch_sim.neighbors import torch_nl_n2
+from torch_sim.models.soft_sphere import soft_sphere_pair, soft_sphere_pair_force
+from torch_sim.neighbors import torch_nl_n2, torchsim_nl
 
 
 # BMHTF (Born-Meyer-Huggins-Tosi-Fumi) potential for NaCl
@@ -353,3 +354,58 @@ def test_no_retain_graph_frees_graph(nacl_sim_state: ts.SimState) -> None:
     out = model(nacl_sim_state)
     with pytest.raises(RuntimeError, match="does not require grad"):
         torch.autograd.grad(out["energy"].sum(), A)
+
+
+@pytest.mark.parametrize("neighbor_list_fn", [torch_nl_n2, torchsim_nl])
+@pytest.mark.parametrize("reduce_to_half_list", [False, True])
+def test_isolated_pair_direct_forces(
+    neighbor_list_fn: Callable, *, reduce_to_half_list: bool
+) -> None:
+    """A nonzero soft-sphere force is counted once with either neighbor list."""
+    state = ts.SimState(
+        positions=torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]], dtype=DTYPE),
+        cell=10 * torch.eye(3, dtype=DTYPE),
+        pbc=False,
+        masses=torch.ones(2, dtype=DTYPE),
+        atomic_numbers=torch.tensor([1, 2]),
+    )
+    model = PairForcesModel(
+        force_fn=soft_sphere_pair_force,
+        cutoff=1.0,
+        dtype=DTYPE,
+        neighbor_list_fn=neighbor_list_fn,
+        reduce_to_half_list=reduce_to_half_list,
+    )
+    # For epsilon=sigma=1 and alpha=2, -dV/dr = 1-r = 0.5.
+    expected = torch.tensor([[-0.5, 0.0, 0.0], [0.5, 0.0, 0.0]], dtype=DTYPE)
+    torch.testing.assert_close(model(state)["forces"], expected)
+
+
+@pytest.mark.parametrize("neighbor_list_fn", [torch_nl_n2, torchsim_nl])
+def test_full_list_direct_forces_preserve_asymmetric_interactions(
+    neighbor_list_fn: Callable,
+) -> None:
+    """Each directed interaction contributes only to its source atom."""
+    state = ts.SimState(
+        positions=torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]], dtype=DTYPE),
+        cell=10 * torch.eye(3, dtype=DTYPE),
+        pbc=False,
+        masses=torch.ones(2, dtype=DTYPE),
+        atomic_numbers=torch.tensor([1, 2]),
+    )
+
+    def asymmetric_force(
+        dr: torch.Tensor,
+        zi: torch.Tensor,
+        zj: torch.Tensor,  # noqa: ARG001
+    ) -> torch.Tensor:
+        return zi.to(dr)
+
+    model = PairForcesModel(
+        force_fn=asymmetric_force,
+        cutoff=1.0,
+        dtype=DTYPE,
+        neighbor_list_fn=neighbor_list_fn,
+    )
+    expected = torch.tensor([[-1.0, 0.0, 0.0], [2.0, 0.0, 0.0]], dtype=DTYPE)
+    torch.testing.assert_close(model(state)["forces"], expected)
