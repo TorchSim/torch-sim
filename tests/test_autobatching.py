@@ -10,6 +10,7 @@ from torch_sim.autobatching import (
     _n_edges_scalers,
     calculate_memory_scalers,
     determine_max_batch_size,
+    estimate_max_memory_scaler,
     to_constant_volume_bins,
 )
 from torch_sim.models.lennard_jones import LennardJonesModel
@@ -1072,3 +1073,162 @@ def test_binning_auto_batcher_with_lbfgs(
         all_finished_states.extend(batch.split())
 
     assert len(all_finished_states) == len(lbfgs_states)
+
+
+def test_estimate_max_memory_scaler_probes_identical_systems_once(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A single system, or identical ones, is probed once, not twice."""
+    probed_systems = []
+
+    def mock_measure(state: ts.SimState, *_args: Any) -> float:
+        probed_systems.append(state.n_systems)
+        if state.n_atoms > 1_000:
+            raise RuntimeError("CUDA out of memory")
+        return 0.1
+
+    monkeypatch.setattr(
+        "torch_sim.autobatching.measure_model_memory_forward", mock_measure
+    )
+    states = ts.concatenate_states([si_sim_state, si_sim_state])
+    metrics = calculate_memory_scalers(states, "n_atoms")
+
+    estimate_max_memory_scaler(states, lj_model, metrics)
+
+    # Each probe starts with a single system
+    assert probed_systems.count(1) == 1
+
+
+def test_estimate_max_memory_scaler_probes_the_smallest_and_largest_systems(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probed_systems = []
+
+    def mock_measure(state: ts.SimState, *_args: Any) -> float:
+        probed_systems.append(state.n_systems)
+        if state.n_atoms > 1_000:
+            raise RuntimeError("CUDA out of memory")
+        return 0.1
+
+    monkeypatch.setattr(
+        "torch_sim.autobatching.measure_model_memory_forward", mock_measure
+    )
+    states = ts.concatenate_states([si_sim_state, fe_supercell_sim_state])
+    metrics = calculate_memory_scalers(states, "n_atoms")
+
+    estimate_max_memory_scaler(states, lj_model, metrics)
+
+    assert probed_systems.count(1) == 2
+
+
+@pytest.mark.parametrize(
+    ("make_states", "n_probes"),
+    [
+        (list, 2),  # all the states are known: the smallest and the largest
+        (ts.concatenate_states, 2),
+        (iter, 3),  # lazy: a bootstrap probe of the first state, then those two
+    ],
+)
+def test_in_flight_auto_batcher_probes_known_states_without_bootstrap(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+    make_states: Any,
+    n_probes: int,
+) -> None:
+    probed_systems = []
+
+    def mock_measure(state: ts.SimState, *_args: Any) -> float:
+        probed_systems.append(state.n_systems)
+        if state.n_atoms > 1_000:
+            raise RuntimeError("CUDA out of memory")
+        return 0.1
+
+    monkeypatch.setattr(
+        "torch_sim.autobatching.measure_model_memory_forward", mock_measure
+    )
+    batcher = InFlightAutoBatcher(model=lj_model, memory_scales_with="n_atoms")
+
+    batcher.load_states(make_states([si_sim_state, fe_supercell_sim_state]))
+
+    assert probed_systems.count(1) == n_probes
+
+
+@pytest.mark.parametrize(("identical", "n_probes"), [(True, 1), (False, 2)])
+def test_optimize_reuses_the_memory_estimate_of_the_init(
+    ar_supercell_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    identical: bool,
+    n_probes: int,
+) -> None:
+    """The in-flight autobatcher takes the limit estimated for the init."""
+    probed_systems = []
+
+    def mock_measure(state: ts.SimState, *_args: Any) -> float:
+        probed_systems.append(state.n_systems)
+        if state.n_atoms > 1_000:
+            raise RuntimeError("CUDA out of memory")
+        return 0.1
+
+    monkeypatch.setattr(
+        "torch_sim.autobatching.measure_model_memory_forward", mock_measure
+    )
+    second = ar_supercell_sim_state if identical else fe_supercell_sim_state
+    state = ts.initialize_state(
+        [ar_supercell_sim_state, second], lj_model.device, lj_model.dtype
+    )
+
+    ts.optimize(
+        system=state,
+        model=lj_model,
+        optimizer=ts.Optimizer.fire,
+        max_steps=5,
+        autobatcher=True,
+    )
+
+    # Each probe starts with a single system: the smallest and the largest ones
+    assert probed_systems.count(1) == n_probes
+
+
+def test_optimize_estimates_the_memory_at_the_cutoff_of_the_autobatcher(
+    ar_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The limit estimated for the init counts edges at the autobatcher's cutoff."""
+
+    def mock_measure(state: ts.SimState, *_args: Any) -> float:
+        if state.n_atoms > 1_000:
+            raise RuntimeError("CUDA out of memory")
+        return 0.1
+
+    monkeypatch.setattr(
+        "torch_sim.autobatching.measure_model_memory_forward", mock_measure
+    )
+    # First neighbors only (3.7 A), where the default of 6.0 also counts the second
+    cutoff = 4.0
+    autobatcher = InFlightAutoBatcher(
+        model=lj_model, memory_scales_with="n_edges", cutoff=cutoff
+    )
+
+    ts.optimize(
+        system=ar_supercell_sim_state,
+        model=lj_model,
+        optimizer=ts.Optimizer.fire,
+        max_steps=5,
+        autobatcher=autobatcher,
+    )
+
+    metrics = calculate_memory_scalers(ar_supercell_sim_state, "n_edges", cutoff)
+    assert autobatcher.max_memory_scaler == pytest.approx(
+        estimate_max_memory_scaler(ar_supercell_sim_state, lj_model, metrics)
+    )
