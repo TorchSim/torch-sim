@@ -480,8 +480,11 @@ def estimate_max_memory_scaler(
     min_metric = metric_values.min()
     max_metric = metric_values.max()
 
-    min_state = states[int(metric_values.argmin())]
-    max_state = states[int(metric_values.argmax())]
+    min_idx = int(metric_values.argmin())
+    max_idx = int(metric_values.argmax())
+
+    min_state = states[min_idx]
+    max_state = states[max_idx]
 
     print(  # noqa: T201
         "Model Memory Estimation: Estimating memory from worst case of "
@@ -489,9 +492,12 @@ def estimate_max_memory_scaler(
         f"and {max_state.n_systems} batches, and smallest system has "
         f"{min_state.n_atoms} atoms and {min_state.n_systems} batches.",
     )
+
     # determine_max_batch_size releases the caching allocator on its way out, so
     # the device is already handed back before the real optimization run starts.
     min_state_max_batches = determine_max_batch_size(min_state, model, **kwargs)
+    if max_idx == min_idx:
+        return min_state_max_batches * min_metric.item()
     max_state_max_batches = determine_max_batch_size(max_state, model, **kwargs)
 
     return min(
@@ -939,6 +945,26 @@ class InFlightAutoBatcher[T: SimState]:
             This method resets the current state indices and completed state tracking,
             so any ongoing processing will be restarted when this method is called.
         """
+        # When all the states are known, estimate the limit over them as
+        # BinningAutoBatcher does, instead of probing the first state to pick the
+        # first batch. Lazy iterators keep that bootstrap probe.
+        if not self.max_memory_scaler and not isinstance(states, Iterator):
+            batched = (
+                states if isinstance(states, SimState) else ts.concatenate_states(states)
+            )
+            metrics = calculate_memory_scalers(
+                batched, self.memory_scales_with, self.cutoff
+            )
+            _max_memory_scaler = estimate_max_memory_scaler(
+                batched,
+                self.model,
+                metrics,
+                max_atoms=self.max_atoms_to_try,
+                scale_factor=self.memory_scaling_factor,
+                oom_error_message=self.oom_error_message,
+            )
+            self.max_memory_scaler = _max_memory_scaler * self.max_memory_padding
+
         self.states_iterator = iter(
             states if isinstance(states, Iterable) else states.split()
         )
