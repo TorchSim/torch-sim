@@ -232,7 +232,8 @@ def determine_max_batch_size(
 
     Raises:
         RuntimeError: If a RuntimeError occurs that doesn't match any of the
-            specified OOM error messages.
+            specified OOM error messages, or if the first batch size already runs
+            out of memory.
 
     Example::
 
@@ -272,6 +273,11 @@ def determine_max_batch_size(
                 exc_str = str(exc)
                 # Check if any of the OOM error messages match
                 if any(msg in exc_str for msg in oom_error_message):
+                    if sys_idx == 0:
+                        raise RuntimeError(
+                            f"A batch of {n_systems} system(s) with "
+                            f"{concat_state.n_atoms} atoms does not fit on the device."
+                        ) from exc
                     safe_size = sizes[max(0, sys_idx - 2)]
                     logger.debug(
                         "OOM at %d systems (%d atoms), returning safe batch size %d",
@@ -474,7 +480,8 @@ def estimate_max_memory_scaler(
         to find a conservative estimate that works across varying system sizes.
         The returned value will be the minimum of the two estimates.
     """
-    metric_values = torch.tensor(metric_values)
+    # with the float32 default, a single system's limit could round below its own metric
+    metric_values = torch.as_tensor(metric_values, dtype=torch.float64)
 
     # select one state with the min n_atoms
     min_metric = metric_values.min()
@@ -646,7 +653,11 @@ class BinningAutoBatcher[T: SimState]:
                 scale_factor=self.memory_scaling_factor,
                 oom_error_message=self.oom_error_message,
             )
-            self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
+            # The probe of the largest system fit at least one copy of it, so the
+            # padding must not bring the limit below that system
+            self.max_memory_scaler = max(
+                self.max_memory_scaler * self.max_memory_padding, *self.memory_scalers
+            )
             logger.debug("Estimated max memory scaler: %.3g", self.max_memory_scaler)
 
         # verify that no systems are too large
@@ -963,7 +974,11 @@ class InFlightAutoBatcher[T: SimState]:
                 scale_factor=self.memory_scaling_factor,
                 oom_error_message=self.oom_error_message,
             )
-            self.max_memory_scaler = _max_memory_scaler * self.max_memory_padding
+            # The probe of the largest system fit at least one copy of it, so the
+            # padding must not bring the limit below that system
+            self.max_memory_scaler = max(
+                _max_memory_scaler * self.max_memory_padding, *metrics
+            )
 
         self.states_iterator = iter(
             states if isinstance(states, Iterable) else states.split()
@@ -1067,7 +1082,8 @@ class InFlightAutoBatcher[T: SimState]:
                 scale_factor=self.memory_scaling_factor,
                 oom_error_message=self.oom_error_message,
             )
-            self.max_memory_scaler = n_systems * first_metric * 0.8
+            # At least one copy of the first state fit
+            self.max_memory_scaler = max(n_systems * first_metric * 0.8, first_metric)
 
         states = self._get_next_states()
         all_states = [first_state, *states]
@@ -1081,7 +1097,11 @@ class InFlightAutoBatcher[T: SimState]:
                 scale_factor=self.memory_scaling_factor,
                 oom_error_message=self.oom_error_message,
             )
-            self.max_memory_scaler = self.max_memory_scaler * self.max_memory_padding
+            # The probe of the largest system fit at least one copy of it, so the
+            # padding must not bring the limit below that system
+            self.max_memory_scaler = max(
+                self.max_memory_scaler * self.max_memory_padding, *self.current_scalers
+            )
             newer_states = self._get_next_states()
             all_states.extend(newer_states)
             logger.debug(
