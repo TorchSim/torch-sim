@@ -737,6 +737,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             max_memory_scaler=autobatcher.max_memory_scaler,
             memory_scales_with=autobatcher.memory_scales_with,
             cutoff=autobatcher.cutoff,
+            memory_scaling_factor=autobatcher.memory_scaling_factor,
             max_atoms_to_try=autobatcher.max_atoms_to_try,
             oom_error_message=autobatcher.oom_error_message,
             max_memory_padding=autobatcher.max_memory_padding,
