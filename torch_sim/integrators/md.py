@@ -182,6 +182,8 @@ def momentum_step[T: MDState](state: T, dt: TimeArg) -> T:
 
     """
     dt = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
+    if dt.ndim > 0:
+        dt = dt[state.system_idx].unsqueeze(-1)
     new_momenta = state.momenta + state.forces * dt
     state.set_constrained_momenta(new_momenta)
     return state
@@ -203,6 +205,8 @@ def position_step[T: MDState](state: T, dt: TimeArg) -> T:
 
     """
     dt = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
+    if dt.ndim > 0:
+        dt = dt[state.system_idx].unsqueeze(-1)
     new_positions = state.positions + state.velocities * dt
     state.set_constrained_positions(new_positions)
     return state
