@@ -574,19 +574,26 @@ def test_detach_state_graph_drops_grad_but_keeps_values(
 
 
 @pytest.mark.parametrize(
-    "oom_message",
+    "oom_error",
     [
-        "CUDA out of memory. Tried to allocate 20.00 MiB",
+        RuntimeError("CUDA out of memory. Tried to allocate 20.00 MiB"),
+        torch.cuda.OutOfMemoryError("CUDA out of memory. Tried to allocate 20.00 MiB"),
         # Warp / nvalchemiops allocator (used by ORB v3 neighbor lists) phrases
         # OOM differently and must still be recognised by the default matcher.
-        "Failed to allocate 2556 bytes on device 'cuda:0'",
+        RuntimeError("Failed to allocate 2556 bytes on device 'cuda:0'"),
+        # cuequivariance OOM error message.
+        RuntimeError(
+            "CUDA error encountered at: "
+            "call='cudaMallocAsync(&sort_permutation, ...)', "
+            "Reason=cudaErrorMemoryAllocation:out of memory"
+        ),
     ],
 )
 def test_determine_max_batch_size_recognises_oom_variants(
     si_sim_state: ts.SimState,
     lj_model: LennardJonesModel,
     monkeypatch: pytest.MonkeyPatch,
-    oom_message: str,
+    oom_error: RuntimeError,
 ) -> None:
     """OOM is detected for both PyTorch and Warp-style allocator messages.
 
@@ -599,7 +606,7 @@ def test_determine_max_batch_size_recognises_oom_variants(
     def mock_measure(*_args: Any, **_kwargs: Any) -> float:
         call_count["n"] += 1
         if call_count["n"] >= 3:  # OOM once the batch grows past a couple probes
-            raise RuntimeError(oom_message)
+            raise oom_error
         return 0.1
 
     monkeypatch.setattr(

@@ -71,6 +71,7 @@ def state_to_atoms(
 
     # Convert tensors to numpy arrays on CPU
     positions = state.positions.detach().cpu().numpy()
+    masses = state.masses.detach().cpu().numpy()
     cell = state.cell.detach().cpu().numpy()  # Shape: (n_systems, 3, 3)
     atomic_numbers = state.atomic_numbers.detach().cpu().numpy()
     system_indices = (
@@ -98,7 +99,11 @@ def state_to_atoms(
             tuple(pbc_np[sys_idx].tolist()) if pbc_np.ndim > 1 else tuple(pbc_np.tolist())
         )
         atoms = Atoms(
-            symbols=symbols, positions=system_positions, cell=system_cell, pbc=pbc_for_sys
+            symbols=symbols,
+            positions=system_positions,
+            masses=masses[mask],
+            cell=system_cell,
+            pbc=pbc_for_sys,
         )
 
         if system_extras_map:

@@ -7,7 +7,7 @@ import traceback
 
 import pytest
 import torch
-from ase.build import bulk, molecule
+from ase.build import bulk, graphene, molecule
 
 import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
@@ -283,6 +283,69 @@ def test_slab_matches_2d_lattice_sum(model_cls: type[EwaldModel | PMEModel]) -> 
     energy, forces = _slab_reference_energy_forces(positions, charges, box)
     torch.testing.assert_close(out["energy"][0], energy, atol=1e-4, rtol=0)
     torch.testing.assert_close(out["forces"], forces, atol=1e-4, rtol=0)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize(
+    "model_cls",
+    [pytest.param(EwaldModel, id="ewald"), pytest.param(PMEModel, id="pme")],
+)
+def test_molecules_match_direct_coulomb_sum(
+    model_cls: type[EwaldModel | PMEModel], dtype: torch.dtype
+) -> None:
+    """Batched molecules should match the bare Coulomb sum over their atom pairs.
+
+    Molecules get zero stress with or without a vacuum box.
+    """
+    molecule_charges_vacuum = [
+        ("H2O", [-0.8, 0.4, 0.4], 4.0),
+        ("NH3", [-0.9, 0.3, 0.3, 0.3], None),
+        ("CH3CH2OH", [-0.2, 0.1, -0.6, 0.4, 0.05, 0.05, 0.05, 0.075, 0.075], 6.0),
+    ]
+    states = []
+    for name, charges, vacuum in molecule_charges_vacuum:
+        atoms = molecule(name, vacuum=vacuum)
+        atoms.set_initial_charges(charges)
+        extras_map = {"partial_charges": "initial_charges"}
+        states.append(
+            ts.io.atoms_to_state(atoms, DEVICE, dtype, atom_extras_map=extras_map)
+        )
+    state = ts.concatenate_states(states)
+    out = model_cls(device=DEVICE, dtype=dtype)(state)
+
+    positions = state.positions.clone().requires_grad_()
+    charges = state.partial_charges
+    # Every ordered pair of distinct atoms within one molecule
+    is_pair = state.system_idx[:, None] == state.system_idx[None, :]
+    is_pair.fill_diagonal_(fill_value=False)
+    i, j = is_pair.nonzero().T
+    distances = (positions[i] - positions[j]).norm(dim=-1)
+    pair_energy = 0.5 * charges[i] * charges[j] / distances
+    energy = torch.zeros(state.n_systems, dtype=dtype, device=DEVICE)
+    energy = energy.index_add(0, state.system_idx[i], pair_energy)
+    energy = energy * UnitConversion.e2_per_Ang_to_eV
+    (position_grad,) = torch.autograd.grad(energy.sum(), positions)
+
+    torch.testing.assert_close(out["energy"], energy.detach())
+    torch.testing.assert_close(out["forces"], -position_grad)
+    torch.testing.assert_close(out["stress"], torch.zeros_like(out["stress"]))
+
+
+@pytest.mark.parametrize(
+    "model_cls",
+    [pytest.param(EwaldModel, id="ewald"), pytest.param(PMEModel, id="pme")],
+)
+def test_zero_nonperiodic_cell_vector_raises(
+    model_cls: type[EwaldModel | PMEModel],
+) -> None:
+    """A slab without a cell vector on its non-periodic axis should raise."""
+    atoms = graphene()
+    atoms.set_initial_charges([0.5, -0.5])
+    state = ts.io.atoms_to_state(
+        atoms, DEVICE, DTYPE, atom_extras_map={"partial_charges": "initial_charges"}
+    )
+    with pytest.raises(ValueError, match="zero cell vector"):
+        model_cls(device=DEVICE, dtype=DTYPE)(state)
 
 
 @pytest.mark.parametrize(
