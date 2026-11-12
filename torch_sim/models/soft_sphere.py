@@ -55,8 +55,10 @@ def soft_sphere_pair(
     Returns:
         Pair energies, shape [n_pairs].
     """
-    energy = epsilon / alpha * (1.0 - dr / sigma).pow(alpha)
-    return torch.where(dr < sigma, energy, torch.zeros_like(energy))
+    within_cutoff = dr < sigma
+    base = torch.where(within_cutoff, 1.0 - dr / sigma, torch.ones_like(dr))
+    energy = epsilon / alpha * base.pow(alpha)
+    return torch.where(within_cutoff, energy, torch.zeros_like(energy))
 
 
 def soft_sphere_pair_force(
@@ -163,8 +165,10 @@ class MultiSoftSpherePairFn(torch.nn.Module):
         sigma = self.sigma_matrix[idx_i, idx_j]
         epsilon = self.epsilon_matrix[idx_i, idx_j]
         alpha = self.alpha_matrix[idx_i, idx_j]
-        energy = epsilon / alpha * (1.0 - dr / sigma).pow(alpha)
-        return torch.where(dr < sigma, energy, torch.zeros_like(energy))
+        within_cutoff = dr < sigma
+        base = torch.where(within_cutoff, 1.0 - dr / sigma, torch.ones_like(dr))
+        energy = epsilon / alpha * base.pow(alpha)
+        return torch.where(within_cutoff, energy, torch.zeros_like(energy))
 
 
 DEFAULT_SIGMA = torch.tensor(1.0)
