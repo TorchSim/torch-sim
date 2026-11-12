@@ -206,7 +206,7 @@ def _vv_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
 ) -> T:
     """Perform one Velocity-Verlet based FIRE optimization step."""
     n_systems = state.n_systems
-    n_groups = state.dt.numel()
+    n_groups = state.n_groups
     atom_group_idx = state.group_idx[state.system_idx]
 
     # Initialize velocities if NaN
@@ -360,7 +360,7 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
     from torch_sim.optimizers import CellFireState
 
     n_systems = state.n_systems
-    n_groups = state.dt.numel()
+    n_groups = state.n_groups
     atom_group_idx = state.group_idx[state.system_idx]
 
     # NaN velocities mark systems/groups that haven't stepped yet, including ones swapped
