@@ -186,7 +186,7 @@ class ModelInterface(torch.nn.Module, ABC):
                 - "energy": Potential energy with shape [n_systems]
                 - "forces": Atomic forces with shape [n_atoms, 3]
                 - "stress": Stress tensor with shape [n_systems, 3, 3] (if
-                    compute_stress=True)
+                    compute_stress=True). Systems with zero cell volume get zero stress.
                 - May include additional model-specific outputs
 
         Examples:
@@ -255,7 +255,7 @@ class SumModel(ModelInterface):
 
     def _children(self) -> list[ModelInterface]:
         """Return child models with proper typing for static analysis."""
-        return list(self.models.children())  # type: ignore[return-value]
+        return [m for m in self.models.children() if isinstance(m, ModelInterface)]
 
     @ModelInterface.compute_stress.setter
     def compute_stress(self, value: bool) -> None:  # noqa: FBT001

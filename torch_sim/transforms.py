@@ -218,6 +218,9 @@ def minimum_image_displacement(
 ) -> torch.Tensor:
     """Apply minimum image convention to displacement vectors.
 
+    The result is exact for orthogonal and reduced (e.g. Niggli-reduced) cells.
+    Strongly skewed cells should be reduced first.
+
     Args:
         dr (torch.Tensor): Displacement vectors [N, 3] or [N, N, 3].
         cell (Optional[torch.Tensor]): Unit cell matrix [3, 3].
@@ -240,7 +243,19 @@ def minimum_image_displacement(
     dr_frac -= torch.where(pbc, torch.round(dr_frac), torch.zeros_like(dr_frac))
 
     # Convert back to cartesian
-    return torch.einsum("ij,...j->...i", cell, dr_frac)
+    dr = torch.einsum("ij,...j->...i", cell, dr_frac)
+
+    # Rounding is only exact for orthogonal cells, so also try the neighboring images
+    offsets = torch.tensor([-1, 0, 1], device=dr.device, dtype=dr.dtype)
+    shifts = torch.cartesian_prod(offsets, offsets, offsets) * pbc
+    mic_dr, min_dist = dr, torch.linalg.vector_norm(dr, dim=-1)
+    for shift in shifts @ cell.mT:
+        image = dr + shift
+        dist = torch.linalg.vector_norm(image, dim=-1)
+        closer = dist < min_dist
+        mic_dr = torch.where(closer.unsqueeze(-1), image, mic_dr)
+        min_dist = torch.where(closer, dist, min_dist)
+    return mic_dr
 
 
 def get_pair_displacements(
@@ -888,7 +903,7 @@ def linked_cell(  # noqa: PLR0915
     shifts_idx = torch.repeat_interleave(
         shifts_idx, n_atom, dim=0, output_size=n_atom * n_cell_image
     )
-    batch_image = torch.zeros((shifts_idx.shape[0]), dtype=torch.long)
+    batch_image = torch.zeros((shifts_idx.shape[0]), dtype=torch.long, device=device)
     cell_shifts = compute_cell_shifts(cell.view(-1, 3, 3), shifts_idx, batch_image)
 
     i_ids = torch.arange(n_atom, device=device, dtype=torch.long)
@@ -968,7 +983,10 @@ def linked_cell(  # noqa: PLR0915
     )
     # Fill the i_atom index
     neigh_atom[0] = (
-        torch.arange(n_atom).view(-1, 1).repeat(1, max_neigh_per_atom).view(-1)
+        torch.arange(n_atom, device=device)
+        .view(-1, 1)
+        .repeat(1, max_neigh_per_atom)
+        .view(-1)
     )
     # Relate `bin_index` (row) with the `neighbor_atom_index` (stored in the columns).
     # empty entries are set to `n_images`
@@ -1514,7 +1532,7 @@ def safe_mask(
 
     Args:
         mask: Boolean tensor indicating which elements to process (True) or mask (False)
-        fn: TorchScript function to apply to the masked elements
+        fn: Function to apply to the masked elements
         operand: Input tensor to apply the function to
         placeholder: Value to use for masked-out positions (default: 0.0)
 
@@ -1542,7 +1560,8 @@ def unwrap_positions(
     positions : (T, N_tot, 3)
         Wrapped cartesian positions for all systems concatenated.
     cells : (n_systems, 3, 3) or (T, n_systems, 3, 3)
-        Box matrices, constant or time-dependent.
+        Box matrices with lattice vectors as columns (as in ``SimState.cell``),
+        constant or time-dependent.
     system_idx : (N_tot,)
         For each atom, which system it belongs to (0..n_systems-1).
 
@@ -1552,6 +1571,8 @@ def unwrap_positions(
         Unwrapped cartesian positions.
     """
     # -- Constant boxes per system
+    # cells store lattice vectors as columns; einsums below use row vectors
+    cells = cells.mT
     if cells.ndim == 3:
         inv_box = torch.inverse(cells)  # (n_systems, 3, 3)
 
@@ -1620,13 +1641,15 @@ def get_centers_of_mass(
         torch.Tensor: A tensor of shape (n_structures, 3) containing
             the center of mass coordinates for each structure.
     """
-    coms = torch.zeros((n_systems, 3), dtype=positions.dtype).scatter_add_(
+    coms = torch.zeros(
+        (n_systems, 3), dtype=positions.dtype, device=positions.device
+    ).scatter_add_(
         0,
         system_idx.unsqueeze(-1).expand(-1, 3),
         masses.unsqueeze(-1) * positions,
     )
-    system_masses = torch.zeros((n_systems,), dtype=positions.dtype).scatter_add_(
-        0, system_idx, masses
-    )
+    system_masses = torch.zeros(
+        (n_systems,), dtype=positions.dtype, device=positions.device
+    ).scatter_add_(0, system_idx, masses)
     coms /= system_masses.unsqueeze(-1)
     return coms

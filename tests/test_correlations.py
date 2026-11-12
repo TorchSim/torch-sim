@@ -14,9 +14,11 @@ import torch
 
 import torch_sim as ts
 from tests.conftest import DEVICE
+from torch_sim.models.lennard_jones import LennardJonesModel
 from torch_sim.properties.correlations import (
     CircularBuffer,
     CorrelationCalculator,
+    HeatFluxAutoCorrelation,
     VelocityAutoCorrelation,
 )
 
@@ -130,6 +132,44 @@ class TestCorrelationCalculator:
     Tests focus on validating the calculator's ability to compute accurate
     autocorrelation functions for idealized signals with known properties.
     """
+
+    @pytest.mark.parametrize("shape", [(), (1,), (1, 1)])
+    @pytest.mark.parametrize("normalize", [False, True])
+    @pytest.mark.parametrize(
+        "device",
+        [
+            "cpu",
+            pytest.param(
+                "cuda",
+                marks=pytest.mark.skipif(
+                    not torch.cuda.is_available(), reason="CUDA is not available"
+                ),
+            ),
+        ],
+    )
+    def test_single_component_autocorrelation(
+        self, shape: tuple[int, ...], device: str, *, normalize: bool
+    ) -> None:
+        """A single component retains its shape and correlates along time."""
+        calc = CorrelationCalculator(
+            window_size=4,
+            properties={"value": lambda state: state},
+            device=torch.device(device),
+            normalize=normalize,
+        )
+        values = torch.tensor([1, 2, 4, 8, 16], dtype=torch.float64, device=device)
+        for value in values:
+            calc.update(value.reshape(shape))
+
+        centered = values[-4:] - values[-4:].mean()
+        expected = torch.stack(
+            [(centered[lag:] * centered[: len(centered) - lag]).sum() for lag in range(4)]
+        )
+        if normalize:
+            expected = expected / expected[0]
+        actual = calc.get_auto_correlations()["value"]
+        assert actual.shape == (4, *shape)
+        torch.testing.assert_close(actual.reshape(-1), expected)
 
     def test_initialization(self, corr_calc: CorrelationCalculator) -> None:
         """Test that calculator is initialized with correct properties."""
@@ -475,3 +515,61 @@ def test_velocity_autocorrelation_with_trajectory_reporter(
             assert props[0]["vacf"].shape == (1,)
 
     reporter.close()
+
+
+def test_velocity_autocorrelation_batched(
+    lj_model: LennardJonesModel,
+    si_sim_state: ts.SimState,
+    ar_supercell_sim_state: ts.SimState,
+) -> None:
+    """Batched VACF matches the VACFs of each system computed separately."""
+    window_size = 8
+    batched_state = ts.concatenate_states([si_sim_state, ar_supercell_sim_state])
+    state = ts.nve_init(batched_state, lj_model, kT=0.01)
+    batched_calc = VelocityAutoCorrelation(window_size=window_size, device=DEVICE)
+    single_calcs = [
+        VelocityAutoCorrelation(window_size=window_size, device=DEVICE)
+        for _ in range(state.n_systems)
+    ]
+
+    for _ in range(2 * window_size):  # two windows to cover the running average
+        state.momenta = torch.randn_like(state.momenta)
+        batched_calc(state)
+        for calc, single_state in zip(single_calcs, state.split(), strict=True):
+            calc(single_state)
+
+    expected = torch.stack([calc.vacf for calc in single_calcs])
+    assert expected.shape == (state.n_systems, window_size)
+    assert batched_calc.vacf.shape == (state.n_systems, window_size)
+    torch.testing.assert_close(batched_calc.vacf, expected)
+
+
+def test_heat_flux_autocorrelation(
+    lj_model: LennardJonesModel, ar_double_sim_state: ts.SimState
+) -> None:
+    """HFACF runs one model forward per update and yields a normalized HFACF."""
+    window_size = 4
+    hfacf_calc = HeatFluxAutoCorrelation(
+        model=lj_model, window_size=window_size, device=DEVICE
+    )
+    state = ts.nve_init(ar_double_sim_state, lj_model, kT=0.01)
+    heat_flux = hfacf_calc.corr_calc.properties["heat_flux"](state)
+    assert heat_flux.shape == (state.n_systems, 3)
+    assert heat_flux.abs().sum() > 0
+
+    n_forward_calls = 0
+
+    def count_forward(*_args: object) -> None:
+        nonlocal n_forward_calls
+        n_forward_calls += 1
+
+    lj_model.register_forward_hook(count_forward)
+    for _ in range(window_size):
+        state.momenta = torch.randn_like(state.momenta)
+        n_windows = hfacf_calc(state)
+
+    assert n_forward_calls == window_size
+    assert n_windows.tolist() == [1]
+    assert hfacf_calc.hfacf.shape == (window_size,)
+    assert torch.isfinite(hfacf_calc.hfacf).all()
+    assert hfacf_calc.hfacf[0] == pytest.approx(1.0)

@@ -8,9 +8,12 @@ import torch
 import torch_sim as ts
 from torch_sim._duecredit import dcite
 from torch_sim.integrators.md import (
+    EnergyArg,
+    InverseTimeArg,
     MDState,
     NoseHooverChain,
     NoseHooverChainFns,
+    TimeArg,
     construct_nose_hoover_chain,
     initialize_momenta,
     momentum_step,
@@ -23,8 +26,8 @@ from torch_sim.state import SimState
 
 def _ou_step(
     state: MDState,
-    dt: float | torch.Tensor,
-    kT: float | torch.Tensor,
+    dt: TimeArg,
+    kT: EnergyArg,
     gamma: float | torch.Tensor,
 ) -> MDState:
     """Apply stochastic noise and friction for Langevin dynamics.
@@ -87,7 +90,7 @@ def nvt_langevin_init(
     state: SimState,
     model: ModelInterface,
     *,
-    kT: float | torch.Tensor,
+    kT: EnergyArg,
     **_kwargs: Any,
 ) -> MDState:
     """Initialize an NVT state from input data for Langevin dynamics.
@@ -117,13 +120,15 @@ def nvt_langevin_init(
     """
     model_output = model(state)
 
+    kT_tensor = torch.as_tensor(kT, device=state.device, dtype=state.dtype)
+
     momenta = getattr(state, "momenta", None)
     if momenta is None:
         momenta = initialize_momenta(
             state.positions,
             state.masses,
             state.system_idx,
-            kT,
+            kT_tensor,
             state.rng,
         )
     md_state = MDState.from_state(
@@ -141,9 +146,9 @@ def nvt_langevin_step(
     state: MDState,
     model: ModelInterface,
     *,
-    dt: float | torch.Tensor,
-    kT: float | torch.Tensor,
-    gamma: float | torch.Tensor | None = None,
+    dt: TimeArg,
+    kT: EnergyArg,
+    gamma: InverseTimeArg | None = None,
 ) -> MDState:
     r"""Perform one complete Langevin dynamics integration step using the BAOAB scheme.
 
@@ -268,9 +273,8 @@ class NVTNoseHooverState(MDState):
     chain: NoseHooverChain
     _chain_fns: NoseHooverChainFns
 
-    _global_attributes = (
-        MDState._global_attributes | {"chain", "_chain_fns"}  # noqa: SLF001
-    )
+    _system_attributes = MDState._system_attributes | {"chain"}  # noqa: SLF001
+    _global_attributes = MDState._global_attributes | {"_chain_fns"}  # noqa: SLF001
 
     @property
     def velocities(self) -> torch.Tensor:
@@ -289,9 +293,9 @@ def nvt_nose_hoover_init(
     state: SimState,
     model: ModelInterface,
     *,
-    kT: float | torch.Tensor,
-    dt: float | torch.Tensor,
-    tau: float | torch.Tensor | None = None,
+    kT: EnergyArg,
+    dt: TimeArg,
+    tau: TimeArg | None = None,
     chain_length: int = 3,
     chain_steps: int = 3,
     sy_steps: int = 3,
@@ -377,8 +381,8 @@ def nvt_nose_hoover_step(
     state: NVTNoseHooverState,
     model: ModelInterface,
     *,
-    dt: float | torch.Tensor,
-    kT: float | torch.Tensor,
+    dt: TimeArg,
+    kT: EnergyArg,
 ) -> NVTNoseHooverState:
     r"""Perform one complete Nose-Hoover chain (NHC) integration step.
 
@@ -588,9 +592,9 @@ class NVTVRescaleState(MDState):
 
 def _vrescale_update[T: MDState](
     state: T,
-    tau: float | torch.Tensor,
-    kT: float | torch.Tensor,
-    dt: float | torch.Tensor,
+    tau: TimeArg,
+    kT: EnergyArg,
+    dt: TimeArg,
 ) -> T:
     """Update the momentum by a scaling factor as described by Eq.A7 Bussi et al.
 
@@ -653,7 +657,7 @@ def nvt_vrescale_init(
     state: SimState,
     model: ModelInterface,
     *,
-    kT: float | torch.Tensor,
+    kT: EnergyArg,
     **_kwargs: Any,
 ) -> NVTVRescaleState:
     """Initialize an NVT state from input data for velocity rescaling dynamics.
@@ -684,13 +688,15 @@ def nvt_vrescale_init(
     """
     model_output = model(state)
 
+    kT_tensor = torch.as_tensor(kT, device=state.device, dtype=state.dtype)
+
     momenta = getattr(state, "momenta", None)
     if momenta is None:
         momenta = initialize_momenta(
             state.positions,
             state.masses,
             state.system_idx,
-            kT,
+            kT_tensor,
             state.rng,
         )
 
@@ -709,9 +715,9 @@ def nvt_vrescale_step(
     model: ModelInterface,
     state: NVTVRescaleState,
     *,
-    dt: float | torch.Tensor,
-    kT: float | torch.Tensor,
-    tau: float | torch.Tensor | None = None,
+    dt: TimeArg,
+    kT: EnergyArg,
+    tau: TimeArg | None = None,
 ) -> NVTVRescaleState:
     r"""Perform one complete V-Rescale (CSVR) dynamics integration step.
 

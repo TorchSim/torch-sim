@@ -1,9 +1,7 @@
 """Alchemiops-based neighbor list implementations.
 
-This module provides neighbor lists via nvalchemiops: prefer the PyTorch subtree
-(``nvalchemiops.torch.neighbors``), typical for CUDA builds, and fall back to
-``nvalchemiops.neighborlist`` when that import path is missing (CPU-oriented API
-with the same call surface). Supports naive N^2 and cell-list algorithms.
+This module provides neighbor lists via nvalchemiops
+(``nvalchemiops.torch.neighbors``). Supports naive N^2 and cell-list algorithms.
 
 nvalchemiops is available at: https://github.com/NVIDIA/nvalchemiops
 """
@@ -18,23 +16,12 @@ _batch_cell_list: object | None = None
 
 
 def _import_nvalchemiops_batch_neighbors() -> tuple[object, object] | None:
-    """Return ``(batch_cell_list, batch_naive_neighbor_list)`` if a layout is importable.
-
-    Tries ``nvalchemiops.torch.neighbors`` first (PyTorch tensors; usual GPU wheel).
-    On ``ImportError``, tries ``nvalchemiops.neighborlist`` — same API, CPU fallback
-    when the ``torch.neighbors`` subtree is absent.
-    """
+    """Return ``(batch_cell_list, batch_naive_neighbor_list)`` if importable."""
     try:
-        from nvalchemiops.torch.neighbors.batch_cell_list import batch_cell_list as bcl
-        from nvalchemiops.torch.neighbors.batch_naive import (
-            batch_naive_neighbor_list as bnl,
-        )
+        from nvalchemiops.torch.neighbors import batch_cell_list as bcl
+        from nvalchemiops.torch.neighbors import batch_naive_neighbor_list as bnl
     except (ImportError, RuntimeError):
-        try:
-            from nvalchemiops.neighborlist import batch_cell_list as bcl
-            from nvalchemiops.neighborlist import batch_naive_neighbor_list as bnl
-        except (ImportError, RuntimeError):
-            return None
+        return None
     return bcl, bnl
 
 
@@ -52,6 +39,8 @@ if ALCHEMIOPS_AVAILABLE:
         cutoff: float,
         system_idx: torch.Tensor,
         self_interaction: bool = False,  # noqa: FBT001, FBT002
+        *,
+        max_neighbors: int | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute neighbor lists using Alchemiops naive N^2 algorithm.
 
@@ -62,6 +51,9 @@ if ALCHEMIOPS_AVAILABLE:
             cutoff: Maximum distance
             system_idx: Tensor [n_atoms] indicating system assignment
             self_interaction: If True, include self-pairs
+            max_neighbors: Width of the per-atom neighbor matrix. Must be an upper
+                bound; an undersized width raises NeighborOverflowError. Defaults
+                to nvalchemiops' bulk-density estimate for ``cutoff``.
 
         Returns:
             (mapping, system_mapping, shifts_idx)
@@ -71,12 +63,14 @@ if ALCHEMIOPS_AVAILABLE:
 
         if _batch_naive_neighbor_list is None:
             raise RuntimeError("nvalchemiops neighbor list is unavailable")
+
         res = _batch_naive_neighbor_list(
             positions=positions,
             cutoff=cutoff,
             batch_idx=system_idx.to(torch.int32),
             cell=cell,
             pbc=pbc.to(torch.bool),
+            max_neighbors=max_neighbors,
             return_neighbor_list=True,
         )
 
@@ -138,17 +132,6 @@ if ALCHEMIOPS_AVAILABLE:
         """
         n_systems = int(system_idx.max().item()) + 1
         cell, pbc = normalize_inputs(cell, pbc, n_systems)
-
-        # For non-periodic systems with zero cells, use a nominal identity cell
-        # to avoid division by zero in alchemiops warp kernels
-        # See https://github.com/NVIDIA/nvalchemi-toolkit-ops/issues/4
-        is_non_periodic = ~pbc.any(dim=1)  # [n_systems]
-        is_zero_cell = cell.abs().sum(dim=(1, 2)) == 0  # [n_systems]
-        needs_nominal_cell = is_non_periodic & is_zero_cell
-        if needs_nominal_cell.any():
-            identity = torch.eye(3, dtype=cell.dtype, device=cell.device)
-            cell = cell.clone()  # Avoid modifying the original
-            cell[needs_nominal_cell] = identity
 
         # Call alchemiops cell list
         if _batch_cell_list is None:

@@ -5,9 +5,34 @@ Defines a units system and returns a dictionary of conversion factors.
 Units are defined similar to https://docs.lammps.org/units.html.
 """
 
+import typing
+from dataclasses import dataclass
 from enum import Enum
 from math import pi, sqrt
 from typing import Self
+
+
+@dataclass(frozen=True, slots=True)
+class UnitAnnotation:
+    """Typed :class:`typing.Annotated` metadata for a unit conversion factor."""
+
+    factor: float
+
+
+def unit_factor_from_annotation(hint: object) -> float | None:
+    """Return a unit factor from an annotation, including optional annotations."""
+    factors = {
+        float(meta.factor)
+        for meta in getattr(hint, "__metadata__", ())
+        if isinstance(meta, UnitAnnotation)
+    }
+    for argument in typing.get_args(hint):
+        if (factor := unit_factor_from_annotation(argument)) is not None:
+            factors.add(factor)
+
+    if len(factors) > 1:
+        raise TypeError(f"Annotation {hint!r} contains multiple unit factors")
+    return next(iter(factors), None)
 
 
 class BaseConstant(float, Enum):
@@ -15,7 +40,7 @@ class BaseConstant(float, Enum):
 
     References:
         http://arxiv.org/pdf/1507.07956.pdf
-        https://wiki.fysik.dtu.dk/ase/_modules/ase/units.html#create_units
+        https://docs.ase-lib.org/_modules/ase/units.html#create_units
     """
 
     def __new__(cls, value: float) -> Self:

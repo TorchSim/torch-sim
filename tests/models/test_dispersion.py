@@ -7,7 +7,8 @@ import traceback
 import pytest
 import torch
 
-from tests.conftest import DEVICE, DTYPE
+import torch_sim as ts
+from tests.conftest import DEVICE, DTYPE, make_left_handed
 from tests.models.conftest import make_validate_model_outputs_test
 
 
@@ -69,6 +70,110 @@ def d3_model_r2scan() -> D3DispersionModel:
     )
 
 
+def test_d3_stress_matches_finite_strain_sign() -> None:
+    """Stress should match dE/dstrain/V, not the opposite virial sign."""
+    row_cell = torch.tensor(
+        [[4.2, 0.3, 0.1], [0.2, 4.8, 0.4], [0.15, 0.35, 5.1]],
+        dtype=DTYPE,
+        device=DEVICE,
+    )
+    positions = torch.tensor(
+        [[0.4, 0.5, 0.6], [1.9, 1.4, 2.3], [3.1, 2.6, 1.7]],
+        dtype=DTYPE,
+        device=DEVICE,
+    )
+    state = ts.SimState(
+        positions=positions,
+        masses=torch.ones(3, dtype=DTYPE, device=DEVICE),
+        cell=row_cell.mT.unsqueeze(0),
+        pbc=True,
+        atomic_numbers=torch.tensor([6, 8, 14], dtype=torch.int64, device=DEVICE),
+    )
+
+    gen = torch.Generator(device=DEVICE)
+    gen.manual_seed(1234)
+    max_z = 14
+    mesh = 5
+    rcov = torch.rand(max_z + 1, generator=gen, device=DEVICE) + 0.5
+    r4r2 = torch.rand(max_z + 1, generator=gen, device=DEVICE) + 0.5
+    c6ab = 20.0 * (
+        torch.rand(
+            max_z + 1,
+            max_z + 1,
+            mesh,
+            mesh,
+            generator=gen,
+            device=DEVICE,
+        )
+        + 0.1
+    )
+    c6ab = 0.5 * (c6ab + c6ab.permute(1, 0, 3, 2))
+    cn_ref = 4.0 * torch.rand(
+        max_z + 1,
+        max_z + 1,
+        mesh,
+        mesh,
+        generator=gen,
+        device=DEVICE,
+    )
+    cn_ref = 0.5 * (cn_ref + cn_ref.permute(1, 0, 3, 2))
+
+    model = D3DispersionModel(
+        **PBE_BJ,
+        d3_params=D3Parameters(rcov=rcov, r4r2=r4r2, c6ab=c6ab, cn_ref=cn_ref),
+        cutoff=6.0,
+        device=DEVICE,
+        dtype=DTYPE,
+        compute_forces=True,
+        compute_stress=True,
+    )
+
+    stress = model(state)["stress"][0]
+    volume = state.volume[0]
+    frac_positions = torch.linalg.solve(row_cell.mT, positions.mT).mT
+    identity = torch.eye(3, dtype=DTYPE, device=DEVICE)
+
+    def strained_energy(strain: torch.Tensor) -> torch.Tensor:
+        strained_row_cell = row_cell @ (identity + strain)
+        strained_state = ts.SimState(
+            positions=frac_positions @ strained_row_cell,
+            masses=state.masses,
+            cell=strained_row_cell.mT.unsqueeze(0),
+            pbc=state.pbc,
+            atomic_numbers=state.atomic_numbers,
+            system_idx=state.system_idx,
+        )
+        return model(strained_state)["energy"][0]
+
+    step = 1e-3
+    finite_diff_stress = torch.zeros((3, 3), dtype=DTYPE, device=DEVICE)
+    for idx_i in range(3):
+        for idx_j in range(idx_i, 3):
+            strain = torch.zeros((3, 3), dtype=DTYPE, device=DEVICE)
+            if idx_i == idx_j:
+                strain[idx_i, idx_i] = step
+                energy_plus = strained_energy(strain)
+                strain[idx_i, idx_i] = -step
+                energy_minus = strained_energy(strain)
+            else:
+                strain[idx_i, idx_j] = 0.5 * step
+                strain[idx_j, idx_i] = 0.5 * step
+                energy_plus = strained_energy(strain)
+                strain[idx_i, idx_j] = -0.5 * step
+                strain[idx_j, idx_i] = -0.5 * step
+                energy_minus = strained_energy(strain)
+            stress_component = (energy_plus - energy_minus) / (2 * step * volume)
+            finite_diff_stress[idx_i, idx_j] = stress_component
+            finite_diff_stress[idx_j, idx_i] = stress_component
+
+    torch.testing.assert_close(
+        stress,
+        finite_diff_stress,
+        rtol=5e-3,
+        atol=5e-7,
+    )
+
+
 test_d3_pbe_outputs = make_validate_model_outputs_test(
     model_fixture_name="d3_model_pbe", device=DEVICE, dtype=DTYPE
 )
@@ -76,3 +181,128 @@ test_d3_pbe_outputs = make_validate_model_outputs_test(
 test_d3_r2scan_outputs = make_validate_model_outputs_test(
     model_fixture_name="d3_model_r2scan", device=DEVICE, dtype=DTYPE
 )
+
+
+def test_d3_molecular_neighbor_cap_is_exact(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Non-periodic states size the neighbor matrix to the largest system, exactly."""
+    from ase.build import molecule
+
+    import torch_sim.models.dispersion as dispersion_module
+    from torch_sim.neighbors import torchsim_nl
+
+    state = ts.io.atoms_to_state(
+        [molecule("H2O"), molecule("C6H6"), molecule("CH3CH2OH")],
+        device=DEVICE,
+        dtype=DTYPE,
+    )
+    kwargs = {
+        **PBE_BJ,
+        "d3_params": _make_d3_params(),
+        "cutoff": 50.0,
+        "device": DEVICE,
+        "dtype": DTYPE,
+        "compute_stress": False,
+    }
+    seen: list[int | None] = []
+
+    def spy_nl(*args: object, **nl_kwargs: object) -> object:
+        seen.append(nl_kwargs.get("max_neighbors"))
+        return torchsim_nl(*args, **nl_kwargs)
+
+    def uncapped_nl(*args: object) -> object:
+        # A different callable than torchsim_nl, so the model leaves the width alone.
+        return torchsim_nl(*args)
+
+    capped = D3DispersionModel(**kwargs)
+    uncapped = D3DispersionModel(**kwargs, neighbor_list_fn=uncapped_nl)
+    monkeypatch.setattr(dispersion_module, "torchsim_nl", spy_nl)
+    capped.neighbor_list_fn = spy_nl
+
+    out_capped = capped(state)
+    out_uncapped = uncapped(state)
+
+    assert seen == [11]  # benzene, 12 atoms
+    torch.testing.assert_close(out_capped["energy"], out_uncapped["energy"])
+    torch.testing.assert_close(out_capped["forces"], out_uncapped["forces"])
+
+    # Molecules have no cell volume, so their stress is zero rather than NaN
+    stress = D3DispersionModel(**{**kwargs, "compute_stress": True})(state)["stress"]
+    torch.testing.assert_close(stress, torch.zeros_like(stress))
+
+
+def test_d3_molecular_cap_never_widens_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Systems larger than the bulk-density estimate keep the default width."""
+    import torch_sim.models.dispersion as dispersion_module
+    from torch_sim.neighbors import torchsim_nl
+
+    seen: list[int | None] = []
+
+    def spy_nl(*args: object, **nl_kwargs: object) -> object:
+        seen.append(nl_kwargs.get("max_neighbors"))
+        return torchsim_nl(*args, **nl_kwargs)
+
+    monkeypatch.setattr(dispersion_module, "torchsim_nl", spy_nl)
+    model = D3DispersionModel(
+        **PBE_BJ,
+        d3_params=_make_d3_params(),
+        cutoff=2.0,  # estimate_max_neighbors(2.0) == 16
+        device=DEVICE,
+        dtype=DTYPE,
+        compute_stress=False,
+        neighbor_list_fn=spy_nl,
+    )
+    n_atoms = 40
+    positions = torch.zeros(n_atoms, 3, dtype=DTYPE)
+    positions[:, 0] = 1.5 * torch.arange(n_atoms, dtype=DTYPE)
+    state = ts.SimState(
+        positions=positions,
+        masses=torch.ones(n_atoms, dtype=DTYPE),
+        cell=torch.zeros(1, 3, 3, dtype=DTYPE),
+        pbc=False,
+        atomic_numbers=torch.full((n_atoms,), 6),
+        system_idx=torch.zeros(n_atoms, dtype=torch.int64),
+    )
+    model(state)
+    assert seen == [None]
+
+
+def test_d3_periodic_state_keeps_default_neighbor_width() -> None:
+    """Periodic states must not be capped: images add neighbors beyond n_atoms - 1."""
+    from torch_sim.neighbors import torchsim_nl
+
+    seen: list[int | None] = []
+
+    def spy_nl(*args: object, **nl_kwargs: object) -> object:
+        seen.append(nl_kwargs.get("max_neighbors"))
+        return torchsim_nl(*args, **nl_kwargs)
+
+    model = D3DispersionModel(
+        **PBE_BJ,
+        d3_params=_make_d3_params(),
+        cutoff=12.0,
+        device=DEVICE,
+        dtype=DTYPE,
+        neighbor_list_fn=spy_nl,
+    )
+    state = ts.SimState(
+        positions=torch.tensor([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], dtype=DTYPE),
+        masses=torch.ones(2, dtype=DTYPE),
+        cell=(4.0 * torch.eye(3, dtype=DTYPE)).unsqueeze(0),
+        pbc=True,
+        atomic_numbers=torch.tensor([6, 8]),
+        system_idx=torch.zeros(2, dtype=torch.int64),
+    )
+    model(state)
+    assert seen == [None]
+
+
+def test_d3_stress_is_independent_of_cell_handedness(
+    d3_model_pbe: D3DispersionModel, si_sim_state: ts.SimState
+) -> None:
+    """The Cartesian D3 stress must not depend on the handedness of the cell."""
+    right = d3_model_pbe(si_sim_state)
+    left = d3_model_pbe(make_left_handed(si_sim_state))
+
+    torch.testing.assert_close(left["energy"], right["energy"])
+    torch.testing.assert_close(left["forces"], right["forces"])
+    torch.testing.assert_close(left["stress"], right["stress"])

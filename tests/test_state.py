@@ -5,7 +5,7 @@ import pytest
 import torch
 
 import torch_sim as ts
-from tests.conftest import DEVICE
+from tests.conftest import DEVICE, make_left_handed
 from torch_sim.integrators import MDState
 from torch_sim.integrators.md import NoseHooverChain, NoseHooverChainFns
 from torch_sim.integrators.npt import (
@@ -54,17 +54,83 @@ def test_group_idx_defaults_to_one_group_per_system(
     assert si_double_sim_state.n_groups == si_double_sim_state.n_systems
 
 
-def test_slice_remaps_group_idx(si_double_sim_state: SimState) -> None:
-    state = si_double_sim_state.clone()
-    state.group_idx = torch.zeros(state.n_systems, device=state.device, dtype=torch.int64)
-
-    sliced = _slice_state(state, [1, 0])
-
+def test_slice_remaps_group_idx(
+    si_sim_state: SimState,
+    si_double_sim_state: SimState,
+) -> None:
+    sliced_second = _slice_state(si_double_sim_state, [1])
     assert torch.equal(
-        sliced.group_idx,
-        torch.zeros(sliced.n_systems, device=sliced.device, dtype=torch.int64),
+        sliced_second.group_idx,
+        torch.zeros(1, device=sliced_second.device, dtype=torch.int64),
     )
-    assert sliced.n_groups == 1
+    assert sliced_second.n_groups == 1
+
+    triple = ts.concatenate_states([si_sim_state, si_sim_state, si_sim_state])
+    triple.group_idx = torch.tensor([0, 1, 1], device=triple.device, dtype=torch.int64)
+    same_group = _slice_state(triple, [2, 1])
+    assert torch.equal(
+        same_group.group_idx,
+        torch.tensor([0, 0], device=same_group.device, dtype=torch.int64),
+    )
+    assert same_group.n_groups == 1
+
+    fire_triple = ts.FireState.from_state(
+        triple,
+        forces=torch.zeros_like(triple.positions),
+        energy=torch.zeros(3, device=triple.device, dtype=triple.dtype),
+        stress=torch.zeros((3, 3, 3), device=triple.device, dtype=triple.dtype),
+        velocities=torch.zeros_like(triple.positions),
+        dt=torch.tensor([10.0, 20.0], device=triple.device, dtype=triple.dtype),
+        alpha=torch.tensor([0.1, 0.2], device=triple.device, dtype=triple.dtype),
+        n_pos=torch.tensor([1, 2], device=triple.device, dtype=torch.int32),
+    )
+    reordered = _slice_state(fire_triple, [2, 0])
+    assert torch.equal(
+        reordered.group_idx,
+        torch.tensor([0, 1], device=reordered.device, dtype=torch.int64),
+    )
+    assert reordered.n_groups == 2
+    assert torch.allclose(
+        reordered.dt,
+        torch.tensor([20.0, 10.0], device=reordered.device, dtype=reordered.dtype),
+    )
+
+
+def test_group_idx_setter_validates_and_rejects_mismatched_group_attrs(
+    si_double_sim_state: SimState,
+) -> None:
+    state = si_double_sim_state.clone()
+    with pytest.raises(ValueError, match="consecutive integers"):
+        state.group_idx = torch.tensor([0, 2], device=state.device)
+    with pytest.raises(ValueError, match="Group indices must have shape"):
+        state.group_idx = torch.tensor([0], device=state.device)
+
+    fire_state = ts.FireState.from_state(
+        state,
+        forces=torch.zeros_like(state.positions),
+        energy=torch.zeros(2, device=state.device, dtype=state.dtype),
+        stress=torch.zeros((2, 3, 3), device=state.device, dtype=state.dtype),
+        velocities=torch.zeros_like(state.positions),
+        dt=torch.tensor([0.1, 0.1], device=state.device, dtype=state.dtype),
+        alpha=torch.tensor([0.1, 0.1], device=state.device, dtype=state.dtype),
+        n_pos=torch.zeros(2, device=state.device, dtype=torch.int32),
+    )
+    with pytest.raises(
+        ValueError, match=r"Group attribute '.*' leading dim must be n_groups=1, got 2"
+    ):
+        fire_state.group_idx = torch.tensor([0, 0], device=fire_state.device)
+
+
+def test_from_state_rejects_unknown_n_groups_sized_tensor(
+    si_sim_state: SimState,
+) -> None:
+    grouped = ts.concatenate_states([si_sim_state, si_sim_state, si_sim_state])
+    grouped.group_idx = torch.tensor([0, 0, 1], device=grouped.device)
+    with pytest.raises(ValueError, match="invalid leading dimension"):
+        SimState.from_state(
+            grouped,
+            bogus=torch.ones(grouped.n_groups, device=grouped.device),
+        )
 
 
 def test_all_attributes_must_be_specified_in_scopes() -> None:
@@ -298,6 +364,23 @@ def test_concatenate_double_si_and_fe_states(
     assert torch.allclose(si_slice_0.positions, si_double_sim_state[0].positions)
     assert torch.allclose(si_slice_1.positions, si_double_sim_state[1].positions)
     assert torch.allclose(fe_slice.positions, fe_supercell_sim_state.positions)
+
+
+@pytest.mark.parametrize(
+    "system_idx",
+    [
+        [1] * 8 + [0] * 8,  # descending
+        [0, 1] * 8,  # interleaved
+        [0] * 8 + [2] * 8,  # gap
+        [1] * 16,  # not starting at 0
+    ],
+)
+def test_invalid_system_idx_raises(
+    si_double_sim_state: SimState, system_idx: list[int]
+) -> None:
+    """Atoms must be grouped by system in ascending order starting at 0."""
+    with pytest.raises(ValueError, match="unique consecutive integers"):
+        si_double_sim_state.system_idx = torch.tensor(system_idx, device=DEVICE)
 
 
 def test_split_state(si_double_sim_state: SimState) -> None:
@@ -1077,9 +1160,13 @@ def test_rng_split_preserves(si_sim_state: SimState) -> None:
 
 
 def test_coerce_prng_none() -> None:
-    """None seed creates an unseeded Generator."""
+    """None seed draws a new seed from torch's global generator each time."""
+    torch.manual_seed(1)
     gen = coerce_prng(None, device=DEVICE)
     assert isinstance(gen, torch.Generator)
+    assert gen.initial_seed() != coerce_prng(None, device=DEVICE).initial_seed()
+    torch.manual_seed(1)
+    assert coerce_prng(None, device=DEVICE).initial_seed() == gen.initial_seed()
 
 
 def test_coerce_prng_int_seed() -> None:
@@ -1326,3 +1413,11 @@ def test_lbfgsstate_instantiation() -> None:
         max_atoms=torch.tensor([n_atoms]),
     )
     _check_coercion(state)
+
+
+def test_volume_is_positive_for_left_handed_cell(si_sim_state: SimState) -> None:
+    left = make_left_handed(si_sim_state)
+
+    assert torch.det(left.cell).item() < 0
+    assert (left.volume > 0).all()
+    torch.testing.assert_close(left.volume, si_sim_state.volume)

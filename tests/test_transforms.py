@@ -839,6 +839,14 @@ def test_get_fractional_coordinates_batched() -> None:
             torch.tensor([True, False, True], dtype=torch.bool),
             [[0.2, 0.0, 0.0], [0.0, 2.2, 0.0], [0.0, 0.0, 0.2]],
         ),
+        (  # skewed cell where rounding fractional coordinates misses the image
+            [[0.931, 0.049, 0.0]],
+            torch.tensor(
+                [[1.0, 0.9, 0.0], [0.0, 0.1, 0.0], [0.0, 0.0, 1.0]], dtype=DTYPE
+            ),
+            torch.tensor([True, True, False], dtype=torch.bool),
+            [[0.031, -0.051, 0.0]],
+        ),
     ],
 )
 def test_minimum_image_displacement(
@@ -1394,13 +1402,20 @@ def test_build_linked_cell_neighborhood_basic() -> None:
     assert torch.any(system_mapping == 1)
 
 
-def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJonesModel):
+@pytest.mark.parametrize(
+    "sim_state_name",
+    ["ar_double_sim_state", "distorted_fcc_al_conventional_sim_state"],
+)
+def test_unwrap_positions(
+    sim_state_name: str, request: pytest.FixtureRequest, lj_model: LennardJonesModel
+):
+    sim_state = request.getfixturevalue(sim_state_name)
     n_steps = 50
     dt = torch.tensor(0.001, dtype=DTYPE) * MetalUnits.time
     kT = torch.tensor(300, dtype=DTYPE) * MetalUnits.temperature
 
     # Same cell
-    state = ts.nvt_langevin_init(state=ar_double_sim_state, model=lj_model, kT=kT)
+    state = ts.nvt_langevin_init(state=sim_state, model=lj_model, kT=kT)
     state.positions = tst.pbc_wrap_batched(state.positions, state.cell, state.system_idx)
     positions = [state.positions.detach().clone()]
     for _step in range(n_steps):
@@ -1423,7 +1438,7 @@ def test_unwrap_positions(ar_double_sim_state: ts.SimState, lj_model: LennardJon
 
     # Different cell
     state = ts.npt_langevin_anisotropic_init(
-        state=ar_double_sim_state, model=lj_model, kT=kT, dt=dt
+        state=sim_state, model=lj_model, kT=kT, dt=dt
     )
     state.positions = tst.pbc_wrap_batched(state.positions, state.cell, state.system_idx)
     positions = [state.positions.detach().clone()]

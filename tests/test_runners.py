@@ -108,6 +108,81 @@ def test_integrate_double_nvt(
     assert not torch.isnan(final_state.energy).any()
 
 
+def test_integrate_converts_init_kwarg(
+    ar_supercell_sim_state: SimState, lj_model: LennardJonesModel
+) -> None:
+    """integrate scales Nose-Hoover `tau` to internal units like `timestep`.
+
+    Otherwise `tau` is ~98x too small for metal units, giving an over-stiff
+    thermostat that diverges on force spikes
+
+    See https://github.com/TorchSim/torch-sim/issues/579 for more info
+    """
+    tau = 0.1  # ps, same convention as `timestep`
+    final = ts.integrate(
+        system=ar_supercell_sim_state,
+        model=lj_model,
+        integrator=ts.Integrator.nvt_nose_hoover,
+        n_steps=1,
+        temperature=100.0,
+        timestep=0.002,
+        init_kwargs={"tau": tau},
+    )
+    expected = tau * ts.units.MetalUnits.time
+    assert torch.allclose(final.chain.tau, torch.full_like(final.chain.tau, expected))
+
+
+def test_integrator_unit_kwargs_support_shared_init_and_step_parameters() -> None:
+    """Shared and optional unit kwargs retain their conversion metadata."""
+    dt = ts.integrators.INTEGRATOR_KWARG_UNITS[ts.Integrator.nvt_nose_hoover]["dt"]
+    tau = ts.integrators.INTEGRATOR_KWARG_UNITS[ts.Integrator.nvt_nose_hoover]["tau"]
+    gamma = ts.integrators.INTEGRATOR_KWARG_UNITS[ts.Integrator.nvt_langevin]["gamma"]
+
+    assert dict(dt.factors) == {
+        "init": ts.units.MetalUnits.time,
+        "step": ts.units.MetalUnits.time,
+    }
+    assert dict(tau.factors) == {"init": ts.units.MetalUnits.time}
+    assert dict(gamma.factors) == {"step": 1 / ts.units.MetalUnits.time}
+
+
+def test_integrate_converts_step_kwarg(
+    ar_supercell_sim_state: SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """integrate divides inverse-time kwargs (e.g. Langevin `gamma`) by the unit factor.
+
+    The opposite direction from relaxation times: `gamma` is a rate, so it scales as
+    1/time, not time. It is a step kwarg, so it travels through `**integrator_kwargs`
+    to the step function (issue #579 / InverseTimeArg).
+    """
+    gamma = 10.0  # 1/ps, same time convention as `timestep`
+    # gamma is consumed inside the step function and never stored on the state, so
+    # unlike the tau test in test_integrate_converts_persistent_init_kwarg, we must
+    # spy on the step call to see the converted value.
+    received: dict[str, object] = {}
+    init, real_step = ts.integrators.INTEGRATOR_REGISTRY[ts.Integrator.nvt_langevin]
+
+    def spy_step(**kwargs: object) -> MDState:
+        received["gamma"] = kwargs["gamma"]
+        return real_step(**kwargs)
+
+    monkeypatch.setitem(
+        ts.integrators.INTEGRATOR_REGISTRY, ts.Integrator.nvt_langevin, (init, spy_step)
+    )
+    ts.integrate(
+        system=ar_supercell_sim_state,
+        model=lj_model,
+        integrator=ts.Integrator.nvt_langevin,
+        n_steps=1,
+        temperature=100.0,
+        timestep=0.002,
+        gamma=gamma,
+    )
+    assert received["gamma"] == gamma / ts.units.MetalUnits.time
+
+
 def test_integrate_double_nvt_multiple_temperatures(
     ar_double_sim_state: SimState, lj_model: LennardJonesModel
 ) -> None:
@@ -163,6 +238,29 @@ def test_integrate_double_nvt_multiple_temperatures(
             autobatcher=batcher,
             init_kwargs={},
         )
+
+    # n_steps == n_systems: 1D temperatures are per system, 2D are (n_steps, n_systems)
+    init, real_step = ts.integrators.INTEGRATOR_REGISTRY[ts.Integrator.nvt_langevin]
+    step_kTs: list[torch.Tensor] = []
+
+    def spy_step(**kwargs: object) -> MDState:
+        step_kTs.append(kwargs["kT"])
+        return real_step(**kwargs)
+
+    temps = torch.tensor([100.0, 200.0], dtype=DTYPE, device=DEVICE)
+    for temperature in (temps, temps.expand(2, 2)):
+        step_kTs.clear()
+        ts.integrate(
+            system=ar_double_sim_state,
+            model=lj_model,
+            integrator=(init, spy_step),
+            n_steps=2,
+            temperature=temperature,
+            timestep=0.001,
+        )
+        assert len(step_kTs) == 2
+        for kT in step_kTs:
+            torch.testing.assert_close(kT, temps * ts.units.MetalUnits.temperature)
 
 
 def test_integrate_double_nvt_with_reporter(
@@ -283,6 +381,30 @@ def test_integrate_with_autobatcher(
     for init_state, final_state in zip(states, final_states.split(), strict=True):
         assert torch.all(final_state.atomic_numbers == init_state.atomic_numbers)
         assert torch.any(final_state.positions != init_state.positions)
+
+    # Replicas in different batches get different noise, reproducibly for a seed
+    replicas = ts.initialize_state(
+        [ar_supercell_sim_state] * 2, lj_model.device, lj_model.dtype
+    )
+    replicas.rng = 7
+    one_per_batch = BinningAutoBatcher(
+        model=lj_model, memory_scales_with="n_atoms", max_memory_scaler=40
+    )
+    runs = [
+        ts.integrate(
+            system=replicas.clone(),
+            model=lj_model,
+            integrator=ts.Integrator.nvt_langevin,
+            n_steps=5,
+            temperature=300.0,
+            timestep=0.001,
+            autobatcher=one_per_batch,
+        ).positions
+        for _ in range(2)
+    ]
+    n_atoms = ar_supercell_sim_state.n_atoms
+    assert not torch.equal(runs[0][:n_atoms], runs[0][n_atoms:])
+    torch.testing.assert_close(runs[0], runs[1])
 
 
 def test_integrate_with_autobatcher_and_reporting(

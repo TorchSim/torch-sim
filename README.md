@@ -43,10 +43,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # easily load the model from mace-mp
 from mace.calculators.foundations_models import mace_mp
 from torch_sim.models.mace import MaceModel
+
 mace = mace_mp(model="small", return_raw_model=True)
 mace_model = MaceModel(model=mace, device=device)
 
 from ase.build import bulk
+
 cu_atoms = bulk("Cu", "fcc", a=3.58, cubic=True).repeat((2, 2, 2))
 many_cu_atoms = [cu_atoms] * 50
 trajectory_files = [f"Cu_traj_{i}.h5md" for i in range(len(many_cu_atoms))]

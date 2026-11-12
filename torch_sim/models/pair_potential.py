@@ -74,6 +74,7 @@ import torch
 
 from torch_sim.models.interface import ModelInterface
 from torch_sim.neighbors import torchsim_nl
+from torch_sim.quantities import cell_volume
 from torch_sim.transforms import compute_cell_shifts
 
 
@@ -220,16 +221,19 @@ def _virial_stress(
         device: Output device.
 
     Returns:
-        ``(stress, stress_per_pair, volumes)`` where stress has shape
+        ``(stress, stress_per_pair, inv_volumes)`` where stress has shape
         ``[n_systems, 3, 3]``, stress_per_pair ``[n_pairs, 3, 3]``, and
-        volumes ``[n_systems]``.
+        inv_volumes ``[n_systems]``. Zero-volume cells get zero inverse volume
+        and therefore zero stress.
     """
-    volumes = torch.abs(torch.linalg.det(row_cell))
+    volumes = cell_volume(row_cell)
+    has_volume = volumes > 0
+    inv_volumes = has_volume.to(volumes.dtype) / torch.where(has_volume, volumes, 1)
     stress_per_pair = torch.einsum("...i,...j->...ij", dr_vec, force_vectors)
     stress = torch.zeros((n_systems, 3, 3), dtype=dtype, device=device)
     stress = stress.index_add(0, system_mapping, -stress_per_pair)
-    stress = stress / volumes[:, None, None]
-    return stress, stress_per_pair, volumes
+    stress = stress * inv_volumes[:, None, None]
+    return stress, stress_per_pair, inv_volumes
 
 
 def _accumulate_stress(
@@ -248,7 +252,7 @@ def _accumulate_stress(
     per_atom: bool,
 ) -> dict[str, torch.Tensor]:
     """Compute system and (optionally) per-atom virial stresses."""
-    stress, stress_per_pair, volumes = _virial_stress(
+    stress, stress_per_pair, inv_volumes = _virial_stress(
         dr_vec,
         force_vectors,
         system_mapping,
@@ -269,7 +273,7 @@ def _accumulate_stress(
         atom_stresses = torch.zeros((n_atoms, 3, 3), dtype=dtype, device=device)
         atom_stresses = atom_stresses.index_add(0, mapping[0], -w * stress_per_pair)
         atom_stresses = atom_stresses.index_add(0, mapping[1], -w * stress_per_pair)
-        out["stresses"] = atom_stresses / volumes[system_idx, None, None]
+        out["stresses"] = atom_stresses * inv_volumes[system_idx, None, None]
 
     return out
 

@@ -1,4 +1,7 @@
+from pathlib import Path
+
 import numpy as np
+import pytest
 import torch
 from ase import Atoms
 from ase.mep import NEB as ASENEB
@@ -6,12 +9,14 @@ from ase.mep.neb import ImprovedTangentMethod, NEBState
 
 import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
+from torch_sim.constraints import FixAtoms
 from torch_sim.models.interface import ModelInterface
 from torch_sim.workflows.neb import (
     NEB,
     assemble_path,
     calculate_neb_forces,
     interpolate_path,
+    validate_endpoints,
 )
 
 
@@ -199,3 +204,121 @@ def test_neb_run_does_not_offset_endpoint_groups() -> None:
     result = neb.run(initial, final, max_steps=1, fmax=1e-12)
 
     assert result.n_groups == 1
+
+
+def test_neb_gd_lr_alias() -> None:
+    initial = _single_atom_state(0.0)
+    initial.positions[0, 1] = 1.0
+    final = _single_atom_state(1.0)
+    final.positions[0, 1] = 1.0
+
+    neb_fast = NEB(
+        model=HarmonicModel(),
+        n_images=1,
+        optimizer_type="gd",
+        optimizer_params={"lr": 0.2},
+    )
+    neb_slow = NEB(
+        model=HarmonicModel(),
+        n_images=1,
+        optimizer_type="gd",
+        optimizer_params={"lr": 0.01},
+    )
+
+    fast_result = neb_fast.run(initial, final, max_steps=1, fmax=1e-12)
+    slow_result = neb_slow.run(initial, final, max_steps=1, fmax=1e-12)
+
+    fast_disp = abs(fast_result.positions[1, 1].item() - 1.0)
+    slow_disp = abs(slow_result.positions[1, 1].item() - 1.0)
+    assert fast_disp > slow_disp * 10
+
+
+def _two_atom_state(
+    pos0: list[float],
+    pos1: list[float],
+    constraints: list[FixAtoms] | None = None,
+) -> ts.SimState:
+    state = ts.SimState(
+        positions=torch.tensor([pos0, pos1], device=DEVICE, dtype=DTYPE),
+        masses=torch.tensor([39.948, 39.948], device=DEVICE, dtype=DTYPE),
+        cell=torch.eye(3, device=DEVICE, dtype=DTYPE) * 10.0,
+        pbc=False,
+        atomic_numbers=torch.tensor([18, 18], device=DEVICE),
+    )
+    if constraints:
+        state.constraints = constraints
+    return state
+
+
+def test_neb_preserves_fix_atoms_constraints() -> None:
+    initial = _two_atom_state([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [FixAtoms([0])])
+    final = _two_atom_state([0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [FixAtoms([0])])
+
+    path = interpolate_path(initial, final, n_images=3)
+    assert len(path.constraints) == 1
+    assert isinstance(path.constraints[0], FixAtoms)
+    assert torch.equal(
+        path.constraints[0].atom_idx,
+        torch.tensor([0, 2, 4], device=DEVICE),
+    )
+
+    neb = NEB(
+        model=HarmonicModel(),
+        n_images=3,
+        spring_constant=0.2,
+        optimizer_type="ase_fire",
+    )
+    result = neb.run(initial, final, max_steps=30, fmax=1e-4)
+
+    for img_idx in range(5):
+        atom0_pos = result.positions[img_idx * 2]
+        assert torch.allclose(atom0_pos, torch.zeros(3, device=DEVICE, dtype=DTYPE))
+    # Unconstrained atom 1 should have relaxed toward y=0 under HarmonicModel
+    mid_atom1_y = result.positions[2 * 2 + 1, 1].item()
+    assert mid_atom1_y < 0.9
+
+    mismatched_fixed_pos = _two_atom_state(
+        [0.5, 0.0, 0.0], [1.0, 1.0, 0.0], [FixAtoms([0])]
+    )
+    with pytest.raises(ValueError, match="Fixed atoms"):
+        validate_endpoints(initial, mismatched_fixed_pos)
+
+    mismatched_constraints = _two_atom_state([0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [])
+    with pytest.raises(ValueError, match="matching constraints"):
+        validate_endpoints(initial, mismatched_constraints)
+
+
+def test_neb_vv_fire_uses_neb_forces() -> None:
+    initial = _single_atom_state(0.0)
+    final = _single_atom_state(1.0)
+    neb = NEB(
+        model=HarmonicModel(),
+        n_images=3,
+        spring_constant=0.2,
+        optimizer_type="fire",
+        optimizer_params={"fire_flavor": "vv_fire"},
+    )
+
+    result = neb.run(initial, final, max_steps=100, fmax=1e-4)
+
+    movable_x = result.positions[1:4, 0]
+    expected_x = torch.tensor([0.25, 0.5, 0.75], device=DEVICE, dtype=DTYPE)
+    assert torch.allclose(movable_x, expected_x, atol=1e-2)
+
+
+def test_neb_multi_image_with_trajectory_reporter(tmp_path: Path) -> None:
+    initial = _single_atom_state(0.0)
+    final = _single_atom_state(1.0)
+    traj_path = tmp_path / "neb.h5"
+    neb = NEB(
+        model=HarmonicModel(),
+        n_images=3,
+        optimizer_type="ase_fire",
+        trajectory_filename=str(traj_path),
+    )
+
+    result = neb.run(initial, final, max_steps=5, fmax=1e-12)
+
+    assert result.n_systems == 5
+    for idx in range(3):
+        assert (tmp_path / f"neb_image_{idx}.h5").exists()

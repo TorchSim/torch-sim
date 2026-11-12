@@ -10,9 +10,11 @@ from torch_sim.autobatching import (
     _n_edges_scalers,
     calculate_memory_scalers,
     determine_max_batch_size,
+    estimate_max_memory_scaler,
     to_constant_volume_bins,
 )
 from torch_sim.models.lennard_jones import LennardJonesModel
+from torch_sim.state import detach_state_graph
 
 
 def test_exact_fit():
@@ -91,6 +93,19 @@ def test_bounds_and_tuples():
     ]
 
 
+@pytest.mark.parametrize(
+    ("items", "lower_bound", "upper_bound"), [([1, 2], 11, 1), ([1, 2], 5, 5), ([], 5, 5)]
+)
+def test_to_constant_volume_bins_invalid_bounds(
+    items: list[int], lower_bound: int, upper_bound: int
+) -> None:
+    """Inverted or empty bounds raise instead of silently applying only lower_bound."""
+    with pytest.raises(ValueError, match="lower_bound is greater or equal"):
+        to_constant_volume_bins(
+            items, 5, lower_bound=lower_bound, upper_bound=upper_bound
+        )
+
+
 def test_calculate_scaling_metric(si_sim_state: ts.SimState) -> None:
     """Test calculation of scaling metrics for a state."""
     # Test n_atoms metric
@@ -99,7 +114,7 @@ def test_calculate_scaling_metric(si_sim_state: ts.SimState) -> None:
 
     # Test n_atoms_x_density metric
     density_metric = calculate_memory_scalers(si_sim_state, "n_atoms_x_density")
-    volume = torch.abs(torch.linalg.det(si_sim_state.cell[0])) / 1000
+    volume = ts.quantities.cell_volume(si_sim_state.cell[0]) / 1000
     expected = si_sim_state.n_atoms * (si_sim_state.n_atoms / volume.item())
     assert pytest.approx(density_metric[0], rel=1e-5) == expected
 
@@ -182,6 +197,51 @@ def test_n_edges_scalers_batched(ar_double_sim_state: ts.SimState) -> None:
     assert len(result) == ar_double_sim_state.n_systems
     assert all(isinstance(v, float) for v in result)
     assert all(v >= 0 for v in result)
+
+
+@pytest.fixture
+def mixed_many_sim_state(
+    ar_supercell_sim_state: ts.SimState, si_sim_state: ts.SimState
+) -> ts.SimState:
+    """Batched state of alternating large and small periodic systems."""
+    return ts.concatenate_states(
+        [ar_supercell_sim_state, si_sim_state, si_sim_state, ar_supercell_sim_state],
+        device=si_sim_state.device,
+    )
+
+
+@pytest.mark.parametrize("max_atoms_per_chunk", [1, 16, 40, 10_000])
+def test_n_edges_scalers_chunked_matches_single_pass(
+    mixed_many_sim_state: ts.SimState, max_atoms_per_chunk: int
+) -> None:
+    """Splitting the neighbor-list pass leaves every per-system edge count unchanged."""
+    state = mixed_many_sim_state
+    single = _n_edges_scalers(state, cutoff=5.0, max_atoms_per_chunk=state.n_atoms)
+    chunked = _n_edges_scalers(state, cutoff=5.0, max_atoms_per_chunk=max_atoms_per_chunk)
+    assert chunked == single
+
+
+@pytest.mark.parametrize("max_atoms_per_chunk", [1, 16, 40, 10_000])
+def test_n_edges_scalers_chunk_bounds(
+    mixed_many_sim_state: ts.SimState,
+    max_atoms_per_chunk: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each pass holds whole systems and exceeds the bound only for a lone system."""
+    passes: list[tuple[int, int]] = []
+    real_nl = ts.autobatching.torchsim_nl
+
+    def recording_nl(**kwargs: Any) -> Any:
+        passes.append((int(kwargs["system_idx"].max()) + 1, kwargs["positions"].shape[0]))
+        return real_nl(**kwargs)
+
+    monkeypatch.setattr(ts.autobatching, "torchsim_nl", recording_nl)
+    state = mixed_many_sim_state
+    _n_edges_scalers(state, cutoff=5.0, max_atoms_per_chunk=max_atoms_per_chunk)
+
+    assert sum(n_sys for n_sys, _ in passes) == state.n_systems
+    assert sum(n_at for _, n_at in passes) == state.n_atoms
+    assert all(n_at <= max_atoms_per_chunk or n_sys == 1 for n_sys, n_at in passes)
 
 
 @pytest.mark.parametrize("items", [[], {}])
@@ -751,6 +811,135 @@ def test_determine_max_batch_size_fibonacci(
     assert max_size == 2
 
 
+def test_detach_state_graph_drops_grad_but_keeps_values(
+    si_sim_state: ts.SimState,
+) -> None:
+    """`detach_state_graph` strips grad graphs (the UMA leak) but preserves data.
+
+    Models such as UMA return a graph-carrying ``energy`` (``requires_grad=True``)
+    while their forces are detached; accumulating those graph-carrying states for
+    the whole run is the memory leak. The helper must detach grad-carrying tensors
+    in place, leave non-grad tensors untouched, and not change any values.
+    """
+    # Give one tensor attribute an autograd graph, as UMA's energy would carry.
+    grad_positions = (si_sim_state.positions.detach().clone().requires_grad_()) * 2
+    values_before = grad_positions.detach().clone()
+    si_sim_state.positions = grad_positions
+    masses_before = si_sim_state.masses  # a plain, non-grad tensor
+    assert si_sim_state.positions.requires_grad
+
+    returned = detach_state_graph(si_sim_state)
+
+    assert returned is si_sim_state  # detaches in place
+    assert not si_sim_state.positions.requires_grad
+    assert si_sim_state.positions.grad_fn is None
+    assert torch.allclose(si_sim_state.positions, values_before)  # values unchanged
+    assert si_sim_state.masses is masses_before  # non-grad tensors left as-is
+
+
+@pytest.mark.parametrize(
+    "oom_error",
+    [
+        RuntimeError("CUDA out of memory. Tried to allocate 20.00 MiB"),
+        torch.cuda.OutOfMemoryError("CUDA out of memory. Tried to allocate 20.00 MiB"),
+        # Warp / nvalchemiops allocator (used by ORB v3 neighbor lists) phrases
+        # OOM differently and must still be recognised by the default matcher.
+        RuntimeError("Failed to allocate 2556 bytes on device 'cuda:0'"),
+        # cuequivariance OOM error message.
+        RuntimeError(
+            "CUDA error encountered at: "
+            "call='cudaMallocAsync(&sort_permutation, ...)', "
+            "Reason=cudaErrorMemoryAllocation:out of memory"
+        ),
+    ],
+)
+def test_determine_max_batch_size_recognises_oom_variants(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+    oom_error: RuntimeError,
+) -> None:
+    """OOM is detected for both PyTorch and Warp-style allocator messages.
+
+    Regression test: the default ``oom_error_message`` must cover the Warp
+    allocator wording, and a non-matching first entry in the message list must
+    not short-circuit the check before later entries are compared.
+    """
+    call_count = {"n": 0}
+
+    def mock_measure(*_args: Any, **_kwargs: Any) -> float:
+        call_count["n"] += 1
+        if call_count["n"] >= 3:  # OOM once the batch grows past a couple probes
+            raise oom_error
+        return 0.1
+
+    monkeypatch.setattr(
+        "torch_sim.autobatching.measure_model_memory_forward", mock_measure
+    )
+
+    # Uses the (broadened) default oom_error_message. Should degrade to a safe
+    # batch size instead of propagating the OOM RuntimeError.
+    max_size = determine_max_batch_size(si_sim_state, lj_model, max_atoms=10_000)
+    assert max_size >= 1
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@pytest.mark.parametrize("probe_ooms", [True, False])
+def test_determine_max_batch_size_releases_cached_memory(
+    *,
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+    probe_ooms: bool,
+) -> None:
+    """The probe must hand the device back on every exit path.
+
+    Regression test: probing deliberately grows batches until the GPU runs out
+    of memory. If PyTorch's caching allocator keeps holding that memory after
+    the probe returns, a separate allocator - such as the Warp/cudaMallocAsync
+    pool behind the alchemiops neighbor lists - can fail to allocate even a few
+    bytes on the very next call.
+    """
+
+    def mock_measure(*_args: Any, **_kwargs: Any) -> float:
+        # Reserve a chunk and release it, so it lands in PyTorch's cache the
+        # way a real probe's activations do.
+        buffer = torch.empty(256 * 1024**2, dtype=torch.uint8, device="cuda")
+        del buffer
+        if probe_ooms:
+            raise RuntimeError("CUDA out of memory")
+        return 0.1
+
+    monkeypatch.setattr(
+        "torch_sim.autobatching.measure_model_memory_forward", mock_measure
+    )
+
+    torch.cuda.empty_cache()
+    baseline = torch.cuda.memory_reserved()
+
+    determine_max_batch_size(si_sim_state, lj_model, max_atoms=10_000)
+
+    assert torch.cuda.memory_reserved() <= baseline
+
+
+def test_determine_max_batch_size_reraises_non_oom_error(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A genuine (non-OOM) error is still propagated, not swallowed."""
+
+    def mock_measure(*_args: Any, **_kwargs: Any) -> float:
+        raise RuntimeError("shape mismatch in einsum")
+
+    monkeypatch.setattr(
+        "torch_sim.autobatching.measure_model_memory_forward", mock_measure
+    )
+
+    with pytest.raises(RuntimeError, match="shape mismatch"):
+        determine_max_batch_size(si_sim_state, lj_model, max_atoms=10_000)
+
+
 @pytest.mark.parametrize("scale_factor", [1.1, 1.4])
 def test_determine_max_batch_size_small_scale_factor_no_infinite_loop(
     si_sim_state: ts.SimState,
@@ -1184,3 +1373,111 @@ def test_binning_auto_batcher_with_lbfgs(
         all_finished_states.extend(batch.split())
 
     assert len(all_finished_states) == len(lbfgs_states)
+
+
+def test_in_flight_auto_batcher_streams_iterator_lazily(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    pulled: list[int] = []
+
+    def single_group_gen() -> Any:
+        for idx in range(10):
+            pulled.append(idx)
+            s = si_sim_state.clone()
+            s.positions = s.positions + idx * 0.01
+            yield s
+
+    batcher = InFlightAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=si_sim_state.n_atoms * 2,
+    )
+    batcher.load_states(single_group_gen())
+    # Must stop after filling the first batch + at most one lookahead item
+    assert len(pulled) <= 3
+
+    finished: list[ts.SimState] = []
+    batch, _ = batcher.next_batch(None, None)
+    while batch is not None:
+        converged = torch.ones(batch.n_groups, dtype=torch.bool, device=batch.device)
+        batch, just_finished = batcher.next_batch(batch, converged)
+        finished.extend(just_finished)
+
+    assert len(pulled) == 10
+    restored = batcher.restore_original_order(finished)
+    assert len(restored) == 10
+    for idx, restored_state in enumerate(restored):
+        assert torch.allclose(
+            restored_state.positions, si_sim_state.positions + idx * 0.01
+        )
+
+
+def test_estimate_max_memory_scaler_handles_per_system_metrics_for_grouped_state(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 2 groups with different total atom counts; calculate_memory_scalers returns 4
+    # per-system metrics, which estimate_max_memory_scaler aggregates per group.
+    grouped = ts.concatenate_states(
+        [si_sim_state, si_sim_state, fe_supercell_sim_state, fe_supercell_sim_state],
+    )
+    grouped.group_idx = torch.tensor([0, 0, 1, 1], device=grouped.device)
+    per_system_metrics = calculate_memory_scalers(grouped, memory_scales_with="n_atoms")
+    assert len(per_system_metrics) == 4
+
+    seen_states: list[ts.SimState] = []
+
+    def fake_determine_max_batch_size(
+        state: ts.SimState, _model: Any, **_kwargs: Any
+    ) -> int:
+        seen_states.append(state)
+        return 2
+
+    monkeypatch.setattr(
+        "torch_sim.autobatching.determine_max_batch_size",
+        fake_determine_max_batch_size,
+    )
+
+    max_scaler = estimate_max_memory_scaler(grouped, lj_model, per_system_metrics)
+    assert len(seen_states) == 2
+    assert seen_states[0].n_systems == 2
+    assert seen_states[0].n_groups == 1
+    assert seen_states[0].n_atoms == 2 * si_sim_state.n_atoms
+    assert seen_states[1].n_systems == 2
+    assert seen_states[1].n_groups == 1
+    assert seen_states[1].n_atoms == 2 * fe_supercell_sim_state.n_atoms
+    assert max_scaler == pytest.approx(2 * 2 * si_sim_state.n_atoms)
+
+
+def test_binning_restore_original_order_with_system_split_groups(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    group0 = ts.concatenate_states([si_sim_state, si_sim_state])
+    group0.group_idx = torch.tensor([0, 0], device=group0.device)
+    group1 = ts.concatenate_states([fe_supercell_sim_state, si_sim_state])
+    group1.group_idx = torch.tensor([0, 0], device=group1.device)
+    group2 = ts.concatenate_states([si_sim_state, fe_supercell_sim_state])
+    group2.group_idx = torch.tensor([0, 0], device=group2.device)
+    originals = [group0, group1, group2]
+
+    batcher = BinningAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_atoms",
+        max_memory_scaler=group1.n_atoms + group0.n_atoms,
+    )
+    batcher.load_states(originals)
+
+    system_split_results = [s for batch, _ in batcher for s in batch.split()]
+    assert len(system_split_results) == 6
+
+    restored = batcher.restore_original_order(system_split_results)
+    assert len(restored) == 3
+    for orig, rest in zip(originals, restored, strict=True):
+        assert rest.n_systems == orig.n_systems
+        assert rest.n_groups == orig.n_groups
+        assert torch.allclose(rest.positions, orig.positions)

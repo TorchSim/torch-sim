@@ -112,7 +112,7 @@ def _run_and_compare_optimizers(
     ase_mace_mpa: "MACECalculator",
     fire_type: ts.Optimizer,
     cell_filter: ts.CellFilter,
-    ase_filter_cls: FrechetCellFilter | UnitCellFilter,
+    ase_filter_cls: type[FrechetCellFilter | UnitCellFilter],
     checkpoints: list[int],
     force_tol: float,
     tolerances: dict[str, float],
@@ -129,7 +129,7 @@ def _run_and_compare_optimizers(
         initial_sim_state_fixture.clone().to(dtype=DTYPE, device=device)
     )[0]
     ase_atoms.calc = ase_mace_mpa
-    filtered_ase_atoms = ase_filter_cls(ase_atoms)  # type: ignore[call-non-callable]
+    filtered_ase_atoms = ase_filter_cls(ase_atoms)
     ase_optimizer = FIRE(filtered_ase_atoms, logfile=None)
 
     last_checkpoint_step_count = 0
@@ -282,6 +282,23 @@ FIRE_CASES = [
     ),
 ]
 
+STRICT_FIRE_CASES = [
+    (
+        "rattled_ar_supercell_stretched_sim_state",
+        5,
+        1e-10,
+        1e-11,
+        "Ar stretched-rattled supercell (Frechet)",
+    ),
+    (
+        "rattled_ar_supercell_stretched_sim_state",
+        10,
+        1e-10,
+        5e-11,
+        "Ar stretched-rattled supercell past first alpha decay (Frechet)",
+    ),
+]
+
 BFGS_CASES = [
     (
         "rattled_sio2_sim_state",
@@ -414,7 +431,7 @@ def test_optimizer_vs_ase_parametrized(
     sim_state_fixture_name: str,
     fire_type: ts.Optimizer,
     cell_filter: ts.CellFilter,
-    ase_filter_cls: FrechetCellFilter | UnitCellFilter,
+    ase_filter_cls: type[FrechetCellFilter | UnitCellFilter],
     checkpoints: list[int],
     force_tol: float,
     tolerances: dict[str, float],
@@ -441,6 +458,71 @@ def test_optimizer_vs_ase_parametrized(
     )
 
 
+@pytest.mark.parametrize(
+    (
+        "sim_state_fixture_name",
+        "steps",
+        "position_atol",
+        "cell_atol",
+        "test_id",
+    ),
+    STRICT_FIRE_CASES,
+)
+def test_fire_frechet_matches_ase_strict(
+    sim_state_fixture_name: str,
+    steps: int,
+    position_atol: float,
+    cell_atol: float,
+    test_id: str,
+    ts_mace_mpa: MaceModel,
+    ase_mace_mpa: "MACECalculator",
+    request: pytest.FixtureRequest,
+) -> None:
+    """Compare the first FIRE steps with tight position and cell tolerances."""
+    initial_sim_state = request.getfixturevalue(sim_state_fixture_name)
+    state = ts.fire_init(
+        initial_sim_state.clone(),
+        ts_mace_mpa,
+        cell_filter=ts.CellFilter.frechet,
+    )
+
+    ase_atoms = ts.io.state_to_atoms(
+        initial_sim_state.clone().to(dtype=DTYPE, device=ts_mace_mpa.device)
+    )[0]
+    ase_atoms.calc = ase_mace_mpa
+    filtered_ase_atoms = FrechetCellFilter(ase_atoms)
+    ase_optimizer = FIRE(filtered_ase_atoms, logfile=None)
+
+    for step in range(1, steps + 1):
+        state = ts.fire_step(state, ts_mace_mpa)
+        ase_optimizer.run(fmax=0.02, steps=1)
+
+        ase_positions = torch.as_tensor(
+            filtered_ase_atoms.atoms.get_positions(),
+            device=state.device,
+            dtype=state.dtype,
+        )
+        ase_cell = torch.as_tensor(
+            filtered_ase_atoms.atoms.get_cell().array,
+            device=state.device,
+            dtype=state.dtype,
+        )
+        torch.testing.assert_close(
+            state.positions,
+            ase_positions,
+            rtol=0.0,
+            atol=position_atol,
+            msg=f"{test_id}: position trajectories diverged at FIRE step {step}",
+        )
+        torch.testing.assert_close(
+            state.cell[0].mT,
+            ase_cell,
+            rtol=0.0,
+            atol=cell_atol,
+            msg=f"{test_id}: cell trajectories diverged at FIRE step {step}",
+        )
+
+
 # TODO (AG): Can we merge these tests with the FIRE tests?
 
 
@@ -459,7 +541,7 @@ def test_optimizer_vs_ase_parametrized(
 def test_bfgs_vs_ase_parametrized(
     sim_state_fixture_name: str,
     cell_filter: ts.CellFilter,
-    ase_filter_cls: type,
+    ase_filter_cls: type[FrechetCellFilter | UnitCellFilter],
     checkpoints: list[int],
     force_tol: float,
     tolerances: dict[str, float],
@@ -535,7 +617,7 @@ def test_bfgs_vs_ase_parametrized(
 def test_lbfgs_vs_ase_parametrized(
     sim_state_fixture_name: str,
     cell_filter: ts.CellFilter,
-    ase_filter_cls: type,
+    ase_filter_cls: type[FrechetCellFilter | UnitCellFilter],
     checkpoints: list[int],
     force_tol: float,
     tolerances: dict[str, float],

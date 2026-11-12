@@ -1,5 +1,26 @@
-"""Tutorial: run batched torch-sim Nudged Elastic Band calculations."""
-# ruff: noqa: D101, D102, D103, D107
+# ruff: noqa: D101, D102, D103, D107, E402
+
+# %% [markdown]
+"""
+# Nudged Elastic Band
+
+The nudged elastic band (NEB) method finds a minimum-energy pathway between two
+endpoints. The useful TorchSim pattern is not just "run one NEB", but "run many
+related NEBs together": each path is an optimizer group inside one batched
+`SimState`, so model evaluations and optimizer bookkeeping happen together.
+
+Why does NEB need `group_idx`? A single NEB pathway contains multiple movable
+images (`system_idx = 0..n_images-1`), yet tangent projections, parallel spring
+forces, climbing-image force inversion, and FIRE's power (`F · v`), velocity
+mixing, and step-size adaptation couple every image in that band into one
+optimization unit. Assigning one `group_idx` per pathway keeps all images of a
+path coupled while allowing independent pathways to be batched in one `SimState`
+without cross-talk.
+
+ASE is kept in this tutorial as a reference implementation. It makes the result
+easier to trust, and it gives a clear baseline for reporting the speedup from
+batching several independent paths in TorchSim.
+"""
 
 # %%
 # /// script
@@ -31,20 +52,6 @@ from torch_sim.workflows.neb import (
     calculate_neb_forces,
     interpolate_path,
 )
-
-# %% [markdown]
-"""
-# Nudged Elastic Band
-
-The nudged elastic band (NEB) method finds a minimum-energy pathway between two
-endpoints. The useful TorchSim pattern is not just "run one NEB", but "run many
-related NEBs together": each path is an optimizer group inside one batched
-`SimState`, so model evaluations and optimizer bookkeeping happen together.
-
-ASE is kept in this tutorial as a reference implementation. It makes the result
-easier to trust, and it gives a clear baseline for reporting the speedup from
-batching several independent paths in TorchSim.
-"""
 
 
 # %%
@@ -130,7 +137,7 @@ class TorchBatchedDoubleWellModel(ModelInterface):
 
 
 class ASEDoubleWellCalculator(Calculator):
-    implemented_properties: ClassVar[list[str]] = ["energy", "forces"]
+    implemented_properties: ClassVar[list[str]] = ["energy", "forces"]  # ty: ignore[invalid-attribute-override]
 
     def __init__(self, case: NEBCase) -> None:
         super().__init__()
@@ -380,7 +387,19 @@ def run_torch_sim_batched_neb(
         )
 
     record(state)
+    converged_groups = state.neb_max_force_by_group < fmax
     for _ in range(max_steps):
+        if bool(converged_groups.all()):
+            break
+        prev_positions = state.positions.clone()
+        prev_velocities = state.velocities.clone()
+        prev_energy = state.energy.clone()
+        prev_forces = state.forces.clone()
+        prev_true_forces = getattr(state, "true_forces", state.forces).clone()
+        prev_dt = state.dt.clone()
+        prev_alpha = state.alpha.clone()
+        prev_n_pos = state.n_pos.clone()
+
         state = batched_neb_step(
             state,
             model,
@@ -391,8 +410,23 @@ def run_torch_sim_batched_neb(
             spring_constant=spring_constant,
             use_climbing_image=True,
         )
+        if bool(converged_groups.any()):
+            sys_mask = converged_groups[state.group_idx]
+            atom_mask = sys_mask[state.system_idx]
+            state.positions[atom_mask] = prev_positions[atom_mask]
+            state.velocities[atom_mask] = prev_velocities[atom_mask]
+            state.energy[sys_mask] = prev_energy[sys_mask]
+            state.dt[converged_groups] = prev_dt[converged_groups]
+            state.alpha[converged_groups] = prev_alpha[converged_groups]
+            state.n_pos[converged_groups] = prev_n_pos[converged_groups]
+            state.true_forces[atom_mask] = prev_true_forces[atom_mask]
+            frozen_neb_forces = state.forces.clone()
+            frozen_neb_forces[atom_mask] = prev_forces[atom_mask]
+            store_batched_neb_forces(state, frozen_neb_forces)
+
+        converged_groups = converged_groups | (state.neb_max_force_by_group < fmax)
         record(state)
-        if bool((state.neb_max_force_by_group < fmax).all()):
+        if bool(converged_groups.all()):
             break
 
     elapsed = perf_counter() - start_time
@@ -438,12 +472,13 @@ def run_ase_neb(
 # %% [markdown]
 """
 Now set up a small batch. Each case is one independent NEB calculation with the
-same endpoints and a different curved valley. TorchSim will optimize all of
-these paths together; ASE will run the same cases sequentially.
+same endpoints and a different curved valley. Both TorchSim and ASE run on CPU
+here for an apples-to-apples batching comparison (moving the TorchSim state and
+model to `"cuda"` speeds up larger neural-network potentials further).
 """
 
 # %%
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 cases = [
     NEBCase("0.8 eV", barrier_height=0.8, valley_scale=5.0, valley_curve=0.50),
     NEBCase("0.9 eV", barrier_height=0.9, valley_scale=3.0, valley_curve=0.25),
@@ -561,7 +596,7 @@ axes[0, 0].set_ylabel("Relative energy")
 axes[0, 0].set_title("Final profiles: lines are torch-sim, dots are ASE")
 axes[0, 0].legend(fontsize=8)
 
-axes[0, 1].bar([case.name for case in cases], barrier_difference)
+axes[0, 1].bar([case.name for case in cases], np.maximum(barrier_difference, 1e-16))
 axes[0, 1].set_ylabel("Barrier |torch-sim - ASE|")
 axes[0, 1].set_yscale("log")
 axes[0, 1].tick_params(axis="x", rotation=45)
@@ -589,5 +624,4 @@ axes[1, 1].set_ylabel("Runtime (s)")
 axes[1, 1].set_title(f"Batching speedup: {speedup:.2f}x")
 
 fig.tight_layout()
-fig.savefig("neb_ase_torchsim_comparison.png", dpi=200)
-print("Saved comparison plot to neb_ase_torchsim_comparison.png")
+plt.show()

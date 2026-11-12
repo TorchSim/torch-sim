@@ -7,6 +7,7 @@ import pytest
 import torch
 from ase import Atoms
 from ase.build import molecule
+from pymatgen.core import Lattice, Structure
 
 import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
@@ -32,6 +33,25 @@ def test_single_atoms_to_state(si_atoms: Atoms) -> None:
         t.dtype == torch.float64 for t in (state.positions, state.masses, state.cell)
     )
     assert state.atomic_numbers.dtype == torch.int
+
+
+@pytest.mark.parametrize("batched", [False, True])
+def test_state_to_atoms_preserves_custom_masses(*, batched: bool) -> None:
+    """Explicit isotope masses survive ASE export for single and batched states."""
+    atoms_list = [Atoms("H2", positions=[[0, 0, 0], [1, 0, 0]], masses=[2.014, 3.016])]
+    expected_masses = [[2.014, 3.016]]
+    if batched:
+        atoms_list.append(Atoms("He", positions=[[0, 0, 0]], masses=[4.5]))
+        expected_masses.append([4.5])
+
+    state = ts.io.atoms_to_state(atoms_list if batched else atoms_list[0], DEVICE, DTYPE)
+    exported_atoms = ts.io.state_to_atoms(state)
+
+    assert len(exported_atoms) == len(expected_masses)
+    for atoms, masses in zip(exported_atoms, expected_masses, strict=True):
+        np.testing.assert_allclose(atoms.get_masses(), masses)
+    round_trip_state = ts.io.atoms_to_state(exported_atoms, DEVICE, DTYPE)
+    torch.testing.assert_close(round_trip_state.masses, state.masses)
 
 
 @pytest.mark.parametrize(
@@ -170,6 +190,117 @@ def test_state_round_trip(
     assert torch.equal(sim_state.pbc, round_trip_state.pbc)
     if isinstance(intermediate_format[0], Atoms):
         assert torch.allclose(sim_state.masses, round_trip_state.masses)
+
+
+@pytest.mark.parametrize(
+    ("system_extras_map", "atom_extras_map", "expected_sys", "expected_atom"),
+    [
+        pytest.param(None, None, {}, {}, id="no-extras-by-default"),
+        pytest.param(
+            {"charge": "charge", "spin": "spin"},
+            None,
+            {"charge": 3.0, "spin": 2.0},
+            {},
+            id="system-extras-identity-map",
+        ),
+        pytest.param(
+            {"total_charge": "charge"},
+            None,
+            {"total_charge": 3.0},
+            {},
+            id="system-extras-rename",
+        ),
+        pytest.param(
+            None,
+            {"site_tags": "my_tags"},
+            {},
+            {"site_tags": [1.0, 2.0]},
+            id="atom-extras-rename",
+        ),
+    ],
+)
+def test_extras_map_import_pymatgen(
+    system_extras_map: dict[SystemExtras, str] | None,
+    atom_extras_map: dict[AtomExtras, str] | None,
+    expected_sys: dict[str, float],
+    expected_atom: dict[str, list[float]],
+) -> None:
+    """test how system_extras_map and atom_extras_map control which keys are
+    read and how they are renamed on import from pymatgen Structures.
+    """
+    struct = Structure(Lattice.cubic(3.0), ["Si", "Si"], [[0, 0, 0], [0.5, 0.5, 0.5]])
+    struct.properties["charge"] = 3.0
+    struct.properties["spin"] = 2.0
+    struct.add_site_property("my_tags", [1.0, 2.0])
+    state = ts.io.structures_to_state(
+        [struct],
+        DEVICE,
+        DTYPE,
+        system_extras_map=system_extras_map,
+        atom_extras_map=atom_extras_map,
+    )
+    if not expected_sys and not expected_atom:
+        assert not state.system_extras
+        assert not state.atom_extras
+    for key, val in expected_sys.items():
+        assert getattr(state, key)[0].item() == val
+    for key, vals in expected_atom.items():
+        assert getattr(state, key).shape == (len(vals),)
+
+
+def test_extras_map_missing_key_skipped_pymatgen() -> None:
+    """Missing pymatgen keys are silently skipped rather than defaulting to zero."""
+    struct = Structure(Lattice.cubic(3.0), ["Si"], [[0, 0, 0]])
+    state = ts.io.structures_to_state(
+        [struct], DEVICE, DTYPE, system_extras_map={"charge": "charge"}
+    )
+    assert not state.system_extras
+
+
+def test_extras_map_multi_system_pymatgen() -> None:
+    """System extras work across multiple structures with correct per-system values."""
+    struct1 = Structure(Lattice.cubic(3.0), ["Si"], [[0, 0, 0]])
+    struct2 = Structure(Lattice.cubic(4.0), ["Fe"], [[0, 0, 0]])
+    struct1.properties["charge"] = 1.0
+    struct2.properties["charge"] = -1.0
+    state = ts.io.structures_to_state(
+        [struct1, struct2], DEVICE, DTYPE, system_extras_map={"charge": "charge"}
+    )
+    assert state.charge.shape == (2,)
+    assert state.charge[0].item() == 1.0
+    assert state.charge[1].item() == -1.0
+
+
+def test_extras_map_export_roundtrip_pymatgen() -> None:
+    """System and atom extras round-trip through state_to_structures with rename."""
+    struct = Structure(Lattice.cubic(3.0), ["Si", "Si"], [[0, 0, 0], [0.5, 0.5, 0.5]])
+    struct.properties["charge"] = 5.0
+    struct.add_site_property("my_tags", [1.0, 2.0])
+    sys_map = {"total_charge": "charge"}
+    atom_map = {"site_tags": "my_tags"}
+    state = ts.io.structures_to_state(
+        [struct], DEVICE, DTYPE, system_extras_map=sys_map, atom_extras_map=atom_map
+    )
+    structures = ts.io.state_to_structures(
+        state, system_extras_map=sys_map, atom_extras_map=atom_map
+    )
+    assert structures[0].properties["charge"] == 5.0
+    np.testing.assert_allclose(structures[0].site_properties["my_tags"], [1.0, 2.0])
+    structures_no_map = ts.io.state_to_structures(state)
+    assert "charge" not in structures_no_map[0].properties
+
+
+def test_structures_to_state_disordered() -> None:
+    """structures_to_state rejects disordered (partial occupancy) structures."""
+    # Site with partial occupancy (Cu/Au solid solution) -> disordered
+    disordered = Structure(
+        Lattice.cubic(3.6),
+        [{"Cu": 0.5, "Au": 0.5}],
+        [[0.0, 0.0, 0.0]],
+    )
+    assert not disordered.is_ordered
+    with pytest.raises(ValueError, match="Disordered structures are not supported"):
+        ts.io.structures_to_state(disordered, DEVICE, DTYPE)
 
 
 @pytest.mark.parametrize(

@@ -2,9 +2,11 @@ import traceback
 
 import pytest
 import torch
+from ase.build import bulk
+from ase.spacegroup import crystal
 
 import torch_sim as ts
-from tests.conftest import DEVICE
+from tests.conftest import DEVICE, DTYPE
 from torch_sim.elastic import (
     calculate_elastic_moduli,
     calculate_elastic_tensor,
@@ -268,12 +270,22 @@ def mace_model() -> MaceModel:
     )
 
 
+@pytest.fixture
+def sb_hexagonal_sim_state() -> ts.SimState:
+    """R-3m antimony in the hexagonal setting."""
+    atoms = crystal(
+        "Sb", [(0, 0, 0.2336)], spacegroup=166, cellpar=[4.31, 4.31, 11.27, 90, 90, 120]
+    )
+    return ts.io.atoms_to_state(atoms, DEVICE, DTYPE)
+
+
 @pytest.mark.parametrize(
     ("sim_state_name", "expected_bravais_type", "atol"),
     [
         ("cu_sim_state", BravaisType.CUBIC, 2e-1),
         ("mg_sim_state", BravaisType.HEXAGONAL, 5e-1),
         ("sb_sim_state", BravaisType.TRIGONAL, 5e-1),
+        ("sb_hexagonal_sim_state", BravaisType.TRIGONAL, 5e-1),
         ("tio2_sim_state", BravaisType.TETRAGONAL, 5e-1),
         ("ga_sim_state", BravaisType.ORTHORHOMBIC, 5e-1),
         ("niti_sim_state", BravaisType.MONOCLINIC, 5e-1),
@@ -356,6 +368,9 @@ def test_copper_elastic_properties(
     mace_model: MaceModel, cu_sim_state: ts.SimState
 ) -> None:
     """Test calculation of elastic properties for copper."""
+    # The primitive cell's 3-fold axis isn't along z
+    primitive = ts.io.atoms_to_state(bulk("Cu", "fcc", a=3.58), DEVICE, DTYPE)
+    assert get_bravais_type(primitive) == BravaisType.TRICLINIC
 
     # Relax positions and cell
     state = ts.fire_init(

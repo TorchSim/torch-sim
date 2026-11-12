@@ -1,9 +1,9 @@
 """Core molecular dynamics state and operations."""
 
 import logging
-import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Annotated
 
 import torch
 
@@ -11,10 +11,21 @@ from torch_sim._duecredit import dcite
 from torch_sim.models.interface import ModelInterface
 from torch_sim.quantities import calc_kT
 from torch_sim.state import SimState
-from torch_sim.units import MetalUnits
+from torch_sim.units import MetalUnits, UnitAnnotation
 
 
 logger = logging.getLogger(__name__)
+
+
+# The metadata is the factor that converts the kwarg to internal units
+TemperatureArg = Annotated[float | torch.Tensor, UnitAnnotation(MetalUnits.temperature)]
+EnergyArg = Annotated[float | torch.Tensor, UnitAnnotation(MetalUnits.energy)]
+TimeArg = Annotated[float | torch.Tensor, UnitAnnotation(MetalUnits.time)]
+InverseTimeArg = Annotated[float | torch.Tensor, UnitAnnotation(1 / MetalUnits.time)]
+PressureArg = Annotated[float | torch.Tensor, UnitAnnotation(MetalUnits.pressure)]
+InversePressureArg = Annotated[
+    float | torch.Tensor, UnitAnnotation(1 / MetalUnits.pressure)
+]
 
 
 @dataclass(kw_only=True)
@@ -103,7 +114,7 @@ def initialize_momenta(
     positions: torch.Tensor,
     masses: torch.Tensor,
     system_idx: torch.Tensor,
-    kT: float | torch.Tensor,
+    kT: torch.Tensor,
     generator: torch.Generator | None = None,
 ) -> torch.Tensor:
     """Initialize particle momenta based on temperature.
@@ -125,7 +136,6 @@ def initialize_momenta(
     device = positions.device
     dtype = positions.dtype
 
-    kT = torch.as_tensor(kT, device=device, dtype=dtype)
     if kT.ndim > 0:
         kT = kT[system_idx]
 
@@ -156,7 +166,7 @@ def initialize_momenta(
     )
 
 
-def momentum_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
+def momentum_step[T: MDState](state: T, dt: TimeArg) -> T:
     """Update particle momenta using current forces.
 
     This function performs the momentum update step of velocity Verlet integration
@@ -172,12 +182,14 @@ def momentum_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
 
     """
     dt = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
+    if dt.ndim > 0:
+        dt = dt[state.system_idx].unsqueeze(-1)
     new_momenta = state.momenta + state.forces * dt
     state.set_constrained_momenta(new_momenta)
     return state
 
 
-def position_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
+def position_step[T: MDState](state: T, dt: TimeArg) -> T:
     """Update particle positions using current velocities.
 
     This function performs the position update step of velocity Verlet integration
@@ -193,14 +205,14 @@ def position_step[T: MDState](state: T, dt: float | torch.Tensor) -> T:
 
     """
     dt = torch.as_tensor(dt, device=state.device, dtype=state.dtype)
+    if dt.ndim > 0:
+        dt = dt[state.system_idx].unsqueeze(-1)
     new_positions = state.positions + state.velocities * dt
     state.set_constrained_positions(new_positions)
     return state
 
 
-def velocity_verlet_step[T: MDState](
-    state: T, dt: float | torch.Tensor, model: ModelInterface
-) -> T:
+def velocity_verlet_step[T: MDState](state: T, dt: TimeArg, model: ModelInterface) -> T:
     """Perform one complete velocity Verlet integration step.
 
     This function implements the velocity Verlet algorithm, which provides
@@ -235,16 +247,6 @@ def velocity_verlet_step[T: MDState](
     state.forces = model_output["forces"]
     state.store_model_extras(model_output)
     return momentum_step(state, dt_2)
-
-
-def velocity_verlet[T: MDState](
-    state: T, dt: float | torch.Tensor, model: ModelInterface
-) -> T:
-    """Deprecated alias for velocity_verlet_step."""
-    msg = "velocity_verlet is deprecated. Use velocity_verlet_step instead."
-    warnings.warn(msg, DeprecationWarning, stacklevel=2)
-    logger.warning(msg)
-    return velocity_verlet_step(state=state, dt=dt, model=model)
 
 
 @dataclass
@@ -338,11 +340,11 @@ SUZUKI_YOSHIDA_WEIGHTS = {
 @dcite("10.2183/pjab.69.161")
 @dcite("10.1016/0375-9601(90)90092-3")
 def construct_nose_hoover_chain(  # noqa: C901 PLR0915
-    dt: float | torch.Tensor,
+    dt: TimeArg,
     chain_length: int,
     chain_steps: int,
     sy_steps: int,
-    tau: float | torch.Tensor,
+    tau: TimeArg,
 ) -> NoseHooverChainFns:
     """Creates functions to simulate a Nose-Hoover Chain thermostat.
 

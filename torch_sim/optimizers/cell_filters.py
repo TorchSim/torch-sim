@@ -17,7 +17,7 @@ import torch
 import torch_sim.math as tsm
 from torch_sim.models.interface import ModelInterface
 from torch_sim.optimizers.state import BFGSState, FireState, LBFGSState, OptimState
-from torch_sim.state import SimState
+from torch_sim.state import DeformGradMixin, SimState
 
 
 MAX_LOG_DEFORM = 2.0
@@ -96,8 +96,9 @@ def _setup_pressure(
 
 def _compute_cell_masses(state: SimState) -> torch.Tensor:
     """Compute cell masses by summing atomic masses per system."""
-    system_counts = torch.bincount(state.system_idx)
-    cell_masses = torch.segment_reduce(state.masses, reduce="sum", lengths=system_counts)
+    cell_masses = state.masses.new_zeros(state.n_systems).index_add(
+        0, state.system_idx, state.masses
+    )
     return cell_masses.unsqueeze(-1).expand(-1, 3)
 
 
@@ -202,7 +203,7 @@ def unit_cell_filter_init[T: AnyCellState](
 
     # Calculate initial cell forces
     stress = _get_constrained_stress(model_output, state)
-    volumes = torch.linalg.det(state.cell).view(n_systems, 1, 1)
+    volumes = state.volume.view(n_systems, 1, 1)
     virial = -volumes * (stress + pressure)
     virial = _apply_constraints(
         virial, hydrostatic_strain=hydrostatic_strain, constant_volume=constant_volume
@@ -255,7 +256,7 @@ def frechet_cell_filter_init[T: AnyCellState](
 
     # Calculate initial cell forces using Frechet approach
     stress = _get_constrained_stress(model_output, state)
-    volumes = torch.linalg.det(state.cell).view(n_systems, 1, 1)
+    volumes = state.volume.view(n_systems, 1, 1)
     virial = -volumes * (stress + pressure)
     virial = _apply_constraints(
         virial, hydrostatic_strain=hydrostatic_strain, constant_volume=constant_volume
@@ -299,7 +300,7 @@ def unit_cell_step[T: AnyCellState](state: T, cell_lr: float | torch.Tensor) -> 
         cell_lr = cell_lr.expand(state.n_systems)
 
     # Get current deformation gradient
-    cur_deform_grad = deform_grad(state.reference_cell.mT, state.row_vector_cell)
+    cur_deform_grad = state.deform_grad()
 
     # Calculate cell positions from current deformation gradient
     cell_factor_expanded = state.cell_factor.expand(state.n_systems, 3, 1)
@@ -355,7 +356,7 @@ def compute_cell_forces[T: AnyCellState](
 ) -> None:
     """Compute cell forces for both unit and frechet methods."""
     stress = _get_constrained_stress(model_output, state)
-    volumes = torch.linalg.det(state.cell).view(state.n_systems, 1, 1)
+    volumes = state.volume.view(state.n_systems, 1, 1)
     virial = -volumes * (stress + state.pressure)
     virial = _apply_constraints(
         virial,
@@ -371,7 +372,7 @@ def compute_cell_forces[T: AnyCellState](
 
     if is_frechet:
         # Frechet cell force computation
-        cur_deform_grad = deform_grad(state.reference_cell.mT, state.row_vector_cell)
+        cur_deform_grad = state.deform_grad()
         ucf_cell_grad = torch.bmm(
             virial, torch.linalg.inv(torch.transpose(cur_deform_grad, 1, 2))
         )
@@ -392,7 +393,7 @@ def compute_cell_forces[T: AnyCellState](
     else:  # Unit cell force computation
         # Note (AG): ASE transforms virial as:
         # virial = np.linalg.solve(cur_deform_grad, virial.T).T
-        cur_deform_grad = deform_grad(state.reference_cell.mT, state.row_vector_cell)
+        cur_deform_grad = state.deform_grad()
         virial_transformed = torch.linalg.solve(
             cur_deform_grad, virial.transpose(-2, -1)
         ).transpose(-2, -1)
@@ -424,10 +425,9 @@ def get_cell_filter(cell_filter: "CellFilter | tuple") -> CellFilterFuncs:
 
 
 @dataclass(kw_only=True)
-class CellOptimState(OptimState):
+class CellOptimState(OptimState, DeformGradMixin):
     """State class for cell optimization."""
 
-    reference_cell: torch.Tensor
     cell_filter: CellFilterFuncs
     cell_factor: torch.Tensor = field(default_factory=lambda: None)
     pressure: torch.Tensor = field(default_factory=lambda: None)
@@ -452,6 +452,45 @@ class CellOptimState(OptimState):
         "constant_volume",
         "frechet_method",
     }
+
+    def deform_grad_forces(self) -> torch.Tensor:
+        """Atomic forces in deformation gradient space, ``forces @ deform_grad``.
+
+        Mirrors the transform ASE's ``get_forces_unitcellfilter`` and
+        ``get_forces_frechet`` apply to the atomic forces. Equals ``forces`` when
+        the cell is undeformed relative to the reference cell.
+
+        Returns:
+            The transformed atomic forces, shape (n_atoms, 3)
+        """
+        # per-atom row vector @ its system's deform_grad:
+        # (n_atoms, 1, 3) @ (n_atoms, 3, 3) -> (n_atoms, 1, 3) -> (n_atoms, 3)
+        return torch.bmm(
+            self.forces.unsqueeze(1), self.deform_grad()[self.system_idx]
+        ).squeeze(1)
+
+    def frac_positions(self) -> torch.Tensor:
+        """Atomic positions in the reference cell frame, ``solve(deform_grad, r)``.
+
+        Returns:
+            The reference-frame positions, shape (n_atoms, 3)
+        """
+        return torch.linalg.solve(
+            self.deform_grad()[self.system_idx], self.positions.unsqueeze(-1)
+        ).squeeze(-1)
+
+    def positions_from_frac(self, frac_positions: torch.Tensor) -> torch.Tensor:
+        """Cartesian positions from reference-frame positions, ``frac @ deform_grad.mT``.
+
+        Args:
+            frac_positions: Reference-frame positions, shape (n_atoms, 3)
+
+        Returns:
+            The Cartesian positions, shape (n_atoms, 3)
+        """
+        return torch.bmm(
+            frac_positions.unsqueeze(1), self.deform_grad()[self.system_idx].mT
+        ).squeeze(1)
 
 
 @dataclass(kw_only=True)
