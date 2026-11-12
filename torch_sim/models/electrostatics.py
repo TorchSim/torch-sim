@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import torch
 from nvalchemiops.torch.interactions.electrostatics import (
+    coulomb_energy_forces,
     dsf_coulomb,
     ewald_summation,
     particle_mesh_ewald,
@@ -31,22 +32,63 @@ if TYPE_CHECKING:
     from torch_sim.state import SimState
 
 
-def _zero_result(
+def _direct_coulomb_result(
     state: SimState,
     dtype: torch.dtype,
     compute_forces: bool,  # noqa: FBT001
     compute_stress: bool,  # noqa: FBT001
 ) -> dict[str, torch.Tensor]:
-    """Return zero energy / forces / stress for non-periodic states."""
+    """Return the bare Coulomb sum and zero stress for non-periodic states."""
+    charges = state.partial_charges
     dev = state.positions.device
-    results: dict[str, torch.Tensor] = {
-        "energy": torch.zeros(state.n_systems, dtype=dtype, device=dev),
-    }
+    # Every ordered pair of distinct atoms within one system
+    n_atoms_per_system = state.n_atoms_per_system
+    system_size = n_atoms_per_system[state.system_idx]
+    system_start = (n_atoms_per_system.cumsum(0) - n_atoms_per_system)[state.system_idx]
+    i = torch.repeat_interleave(torch.arange(state.n_atoms, device=dev), system_size)
+    block_start = system_size.cumsum(0) - system_size
+    j = system_start[i] + torch.arange(i.shape[0], device=dev) - block_start[i]
+    mapping = torch.stack([i, j])[:, i != j]
+    edge_index, neighbor_ptr, unit_shifts = transforms.build_csr_neighbor_list(
+        mapping,
+        state.system_idx[mapping[0]],
+        mapping.new_zeros(mapping.shape[1], 3),
+        state.n_atoms,
+    )
+    per_atom_energy, forces = coulomb_energy_forces(
+        positions=state.positions,
+        charges=charges,
+        cell=state.row_vector_cell.contiguous(),
+        cutoff=math.inf,
+        neighbor_list=edge_index,
+        neighbor_ptr=neighbor_ptr,
+        neighbor_shifts=unit_shifts,
+        batch_idx=state.system_idx.to(torch.int32),
+    )
+    energy = torch.zeros(state.n_systems, dtype=per_atom_energy.dtype, device=dev)
+    energy.scatter_add_(0, state.system_idx.long(), per_atom_energy)
+    energy = energy * UnitConversion.e2_per_Ang_to_eV
+    results: dict[str, torch.Tensor] = {"energy": energy.to(dtype).detach()}
     if compute_forces:
-        results["forces"] = torch.zeros(state.n_atoms, 3, dtype=dtype, device=dev)
+        forces = forces * UnitConversion.e2_per_Ang_to_eV
+        results["forces"] = forces.to(dtype).detach()
     if compute_stress:
         results["stress"] = torch.zeros(state.n_systems, 3, 3, dtype=dtype, device=dev)
     return results
+
+
+def _check_nonperiodic_cell_vectors(state: SimState) -> None:
+    """Raise if a partially periodic state has a zero cell vector on a non-periodic axis.
+
+    Ewald and PME treat the non-periodic axis as a periodic one padded with vacuum,
+    so it needs a cell vector whose length sets that vacuum.
+    """
+    zero_vectors = (state.row_vector_cell == 0).all(dim=-1) & ~state.pbc
+    if zero_vectors.any():
+        raise ValueError(
+            "Ewald and PME cannot compute valid values for a partially periodic "
+            "state with a zero cell vector on a non-periodic axis."
+        )
 
 
 class DSFCoulombModel(ModelInterface):
@@ -164,10 +206,11 @@ class EwaldModel(ModelInterface):
 
     Per-atom partial charges are read from ``state.partial_charges``.
 
-    Requires periodic boundary conditions.
+    Non-periodic states get the bare Coulomb sum over all atom pairs and zero stress.
 
     Systems with one non-periodic axis are treated as slabs and get the slab
-    correction.
+    correction. Partially periodic states need a non-zero cell vector with vacuum
+    on every non-periodic axis.
 
     Args:
         cutoff: Real-space cutoff in Angstrom.
@@ -210,8 +253,7 @@ class EwaldModel(ModelInterface):
 
         Args:
             state: Simulation state with ``partial_charges`` set as an
-                atom extra (shape ``[n_atoms]``).  Returns zeros for
-                non-periodic states.
+                atom extra (shape ``[n_atoms]``).
             **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
@@ -222,9 +264,11 @@ class EwaldModel(ModelInterface):
             raise ValueError("Partial charges are required for Ewald summation.")
 
         if not state.pbc.any():
-            return _zero_result(
+            return _direct_coulomb_result(
                 state, self._dtype, self._compute_forces, self._compute_stress
             )
+        if not state.pbc.all():
+            _check_nonperiodic_cell_vectors(state)
         charges = state.partial_charges
         edge_index, _mapping, unit_shifts = self.neighbor_list_fn(
             state.positions,
@@ -294,10 +338,11 @@ class PMEModel(ModelInterface):
 
     Per-atom partial charges are read from ``state.partial_charges``.
 
-    Requires periodic boundary conditions.
+    Non-periodic states get the bare Coulomb sum over all atom pairs and zero stress.
 
     Systems with one non-periodic axis are treated as slabs and get the slab
-    correction.
+    correction. Partially periodic states need a non-zero cell vector with vacuum
+    on every non-periodic axis.
 
     Args:
         cutoff: Real-space cutoff in Angstrom.
@@ -349,8 +394,7 @@ class PMEModel(ModelInterface):
 
         Args:
             state: Simulation state with ``partial_charges`` set as an
-                atom extra (shape ``[n_atoms]``).  Returns zeros for
-                non-periodic states.
+                atom extra (shape ``[n_atoms]``).
             **_kwargs: Unused; accepted for interface compatibility.
 
         Returns:
@@ -361,9 +405,11 @@ class PMEModel(ModelInterface):
             raise ValueError("Partial charges are required for PME summation.")
 
         if not state.pbc.any():
-            return _zero_result(
+            return _direct_coulomb_result(
                 state, self._dtype, self._compute_forces, self._compute_stress
             )
+        if not state.pbc.all():
+            _check_nonperiodic_cell_vectors(state)
         charges = state.partial_charges
         edge_index, _mapping, unit_shifts = self.neighbor_list_fn(
             state.positions,

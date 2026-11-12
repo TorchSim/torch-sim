@@ -4,7 +4,7 @@ import functools
 
 import pytest
 import torch
-from ase.build import bulk
+from ase.build import bulk, molecule
 
 import torch_sim as ts
 from tests.conftest import DEVICE, DTYPE
@@ -250,6 +250,25 @@ def test_stress_tensor_symmetry(
     for i in range(nacl_sim_state.n_systems):
         stress = out["stress"][i]
         assert torch.allclose(stress, stress.T, atol=1e-10)
+
+
+def test_zero_volume_stress() -> None:
+    """A molecule has no cell volume, so its stress and its gradient are zero."""
+    state = io.atoms_to_state(molecule("H2O"), device=DEVICE, dtype=DTYPE)
+    state.positions.requires_grad_()
+    model = LennardJonesModel(
+        cutoff=5.0,
+        dtype=DTYPE,
+        device=DEVICE,
+        compute_stress=True,
+        per_atom_stresses=True,
+        retain_graph=True,
+    )
+    out = model(state)
+    for key in ("stress", "stresses"):
+        torch.testing.assert_close(out[key], torch.zeros_like(out[key]))
+        (grad,) = torch.autograd.grad(out[key].sum(), state.positions, retain_graph=True)
+        torch.testing.assert_close(grad, torch.zeros_like(grad))
 
 
 def test_multi_system(ar_double_sim_state: ts.SimState) -> None:
