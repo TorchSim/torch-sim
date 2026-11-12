@@ -1191,3 +1191,22 @@ def test_optimize_estimates_the_init_with_the_settings_of_the_autobatcher(
     metrics = calculate_memory_scalers(ar_supercell_sim_state, "n_edges", cutoff)
     assert autobatcher.max_memory_scaler == pytest.approx(200 * metrics[0])
     assert scale_factors == [2.0]
+
+
+def test_in_flight_auto_batcher_counts_lazy_states_at_its_cutoff(
+    ar_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    probed_n_atoms: list[int],
+) -> None:
+    """The first state of a lazy iterator counts edges at the autobatcher's cutoff."""
+    # First neighbors only (3.7 A), where the default of 6.0 also counts the second
+    cutoff = 4.0
+    batcher = InFlightAutoBatcher(
+        model=lj_model, memory_scales_with="n_edges", cutoff=cutoff
+    )
+
+    batcher.load_states(iter([ar_supercell_sim_state]))
+
+    metrics = calculate_memory_scalers(ar_supercell_sim_state, "n_edges", cutoff)
+    assert probed_n_atoms == [32, 32]
+    assert batcher.max_memory_scaler == pytest.approx(200 * metrics[0])
