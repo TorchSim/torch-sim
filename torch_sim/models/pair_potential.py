@@ -476,8 +476,8 @@ class PairForcesModel(ModelInterface):
     This covers asymmetric or non-conservative interactions such as the particle-life
     potential where no scalar energy exists.
 
-    Forces are accumulated as:
-        F_i += -f_ij * r̂_ij,  F_j += +f_ij * r̂_ij
+    Each full-list entry contributes F_i += -f_ij * r̂_ij to its source atom.
+    For a half list, the same entry also contributes F_j += +f_ij * r̂_ij.
 
     Note:
         Unlike :class:`PairPotentialModel`, this class does not compute energies
@@ -588,7 +588,8 @@ class PairForcesModel(ModelInterface):
 
         forces = torch.zeros_like(positions)
         forces = forces.index_add(0, mapping[0], -force_vectors)
-        forces = forces.index_add(0, mapping[1], force_vectors)
+        if half:
+            forces = forces.index_add(0, mapping[1], force_vectors)
 
         results: dict[str, torch.Tensor] = {
             "energy": torch.zeros(n_systems, dtype=dtype, device=self._device),
