@@ -260,7 +260,7 @@ class CorrelationCalculator[S: SimState]:
                     acf = acf.reshape(original_shape)
             else:
                 # Single dimension case
-                dim_data = data - data.mean()
+                dim_data = data.reshape(-1) - data.mean()
 
                 n_fft = 2 * len(dim_data)
                 fft = torch.fft.rfft(dim_data, n=n_fft)
@@ -270,7 +270,7 @@ class CorrelationCalculator[S: SimState]:
                 if self.normalize and corr[0] > 1e-10:
                     corr = corr / corr[0]
 
-                acf = corr
+                acf = corr.reshape(original_shape)
 
             self.correlations[name] = acf
 

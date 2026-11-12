@@ -133,6 +133,44 @@ class TestCorrelationCalculator:
     autocorrelation functions for idealized signals with known properties.
     """
 
+    @pytest.mark.parametrize("shape", [(), (1,), (1, 1)])
+    @pytest.mark.parametrize("normalize", [False, True])
+    @pytest.mark.parametrize(
+        "device",
+        [
+            "cpu",
+            pytest.param(
+                "cuda",
+                marks=pytest.mark.skipif(
+                    not torch.cuda.is_available(), reason="CUDA is not available"
+                ),
+            ),
+        ],
+    )
+    def test_single_component_autocorrelation(
+        self, shape: tuple[int, ...], device: str, *, normalize: bool
+    ) -> None:
+        """A single component retains its shape and correlates along time."""
+        calc = CorrelationCalculator(
+            window_size=4,
+            properties={"value": lambda state: state},
+            device=torch.device(device),
+            normalize=normalize,
+        )
+        values = torch.tensor([1, 2, 4, 8, 16], dtype=torch.float64, device=device)
+        for value in values:
+            calc.update(value.reshape(shape))
+
+        centered = values[-4:] - values[-4:].mean()
+        expected = torch.stack(
+            [(centered[lag:] * centered[: len(centered) - lag]).sum() for lag in range(4)]
+        )
+        if normalize:
+            expected = expected / expected[0]
+        actual = calc.get_auto_correlations()["value"]
+        assert actual.shape == (4, *shape)
+        torch.testing.assert_close(actual.reshape(-1), expected)
+
     def test_initialization(self, corr_calc: CorrelationCalculator) -> None:
         """Test that calculator is initialized with correct properties."""
         assert corr_calc.window_size == 5
