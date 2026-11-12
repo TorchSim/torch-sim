@@ -421,8 +421,15 @@ def integrate[T: SimState](  # noqa: C901, PLR0915
         outer_pbar_kwargs.setdefault("disable", None)
         tqdm_pbar = tqdm(total=initial_state.n_systems, **outer_pbar_kwargs)
 
+    group_to_og_sys_idx: list[list[int]] = [[] for _ in range(initial_state.n_groups)]
+    for sys_i, grp_i in enumerate(initial_state.group_idx.tolist()):
+        group_to_og_sys_idx[grp_i].append(sys_i)
+
     # Handle both BinningAutoBatcher and list of tuples
-    for state, system_indices in batch_iterator:
+    for state, group_indices in batch_iterator:
+        system_indices = [
+            sys_i for grp_i in group_indices for sys_i in group_to_og_sys_idx[grp_i]
+        ]
         # Pass correct parameters based on integrator type
         batch_kT = (
             kTs[:, system_indices] if (system_indices and len(kTs.shape) == 2) else kTs
@@ -737,6 +744,9 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             max_memory_padding=autobatcher.max_memory_padding,
         )
     autobatcher.load_states(state)
+    group_to_og_sys_idx: list[list[int]] = [[] for _ in range(state.n_groups)]
+    for sys_i, grp_i in enumerate(state.group_idx.tolist()):
+        group_to_og_sys_idx[grp_i].append(sys_i)
     if trajectory_reporter is not None:
         trajectory_reporter = _configure_reporter(
             trajectory_reporter, properties=["potential_energy"]
@@ -763,18 +773,30 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
     while True:
         result = autobatcher.next_batch(state, convergence_tensor)
         newly_converged = result[1]
-        # og indices of the states that just converged, in the same order
-        newly_converged_og_idx = (
+        # og group indices of the states that just converged, in the same order
+        newly_converged_group_idx = (
             autobatcher.completed_idx_og_order[-len(newly_converged) :]
             if newly_converged
             else []
         )
+        # Flatten converged groups into single-system states paired with original system
+        # indices so the trajectory reporter writes each system's final frame.
+        newly_converged_sys_states: list[SimState] = []
+        newly_converged_og_sys_idx: list[int] = []
+        for grp_idx, grp_state in zip(
+            newly_converged_group_idx, newly_converged, strict=True
+        ):
+            sys_states = (
+                [grp_state] if grp_state.n_systems == 1 else grp_state.split_systems()
+            )
+            newly_converged_sys_states.extend(sys_states)
+            newly_converged_og_sys_idx.extend(group_to_og_sys_idx[grp_idx])
         # must happen before reopen_trajectories, while the reporter still holds
         # open handles to the batch these systems converged out of
         _write_final_states_for_converged(
             trajectory_reporter,
-            newly_converged,
-            newly_converged_og_idx,
+            newly_converged_sys_states,
+            newly_converged_og_sys_idx,
             og_filenames,
             model,
             step,
@@ -785,15 +807,20 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             break
         state, converged_states = result
         all_converged_states.extend(converged_states)
+        active_og_sys_idx = [
+            sys_i
+            for grp_i in autobatcher.current_idx
+            for sys_i in group_to_og_sys_idx[grp_i]
+        ]
 
         # need to update the trajectory reporter if any states have converged
         if (
             trajectory_reporter is not None
             and og_filenames is not None
-            and ((step[autobatcher.current_idx] == 1).any() or len(converged_states) > 0)
+            and ((step[active_og_sys_idx] == 1).any() or len(converged_states) > 0)
         ):
             trajectory_reporter.reopen_trajectories(
-                filenames=[og_filenames[i] for i in autobatcher.current_idx]
+                filenames=[og_filenames[i] for i in active_og_sys_idx]
             )
 
         for _step in range(steps_between_swaps):
@@ -803,9 +830,9 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
 
             if trajectory_reporter:
                 trajectory_reporter.report(
-                    state, step[autobatcher.current_idx].tolist(), model=model
+                    state, step[active_og_sys_idx].tolist(), model=model
                 )
-            step[autobatcher.current_idx] += 1
+            step[active_og_sys_idx] += 1
             exceeded_max_steps = step > max_steps
             if exceeded_max_steps.all():
                 msg = (
@@ -819,9 +846,7 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             raise ValueError("last_energy cannot be None")
         convergence_tensor = convergence_fn(state, last_energy)  # ty:ignore[invalid-argument-type]
         # Mark states that exceeded max steps as converged to remove them from batch
-        convergence_tensor = (
-            convergence_tensor | exceeded_max_steps[autobatcher.current_idx]
-        )
+        convergence_tensor = convergence_tensor | exceeded_max_steps[active_og_sys_idx]
         if tqdm_pbar:
             # assume convergence_tensor shape is correct
             tqdm_pbar.update(torch.count_nonzero(convergence_tensor).item())

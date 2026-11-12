@@ -18,6 +18,13 @@ if TYPE_CHECKING:
     from torch_sim.optimizers.cell_filters import CellFilter, CellFilterFuncs
 
 
+def _group_sum(
+    values: torch.Tensor, group_idx: torch.Tensor, n_groups: int
+) -> torch.Tensor:
+    summed = torch.zeros(n_groups, device=values.device, dtype=values.dtype)
+    return summed.scatter_add(0, group_idx, values)
+
+
 @dcite("10.1103/PhysRevLett.97.170201")
 def fire_init(
     state: SimState,
@@ -37,8 +44,9 @@ def fire_init(
     Args:
         model: Model that computes energies, forces, and optionally stress
         state: Input SimState
-        dt_start: Initial timestep per system
-        alpha_start: Initial mixing parameter per system
+        dt_start: Initial timestep per optimizer group (scalar or shape ``(n_groups,)``)
+        alpha_start: Initial mixing parameter per optimizer group
+            (scalar or shape ``(n_groups,)``)
         fire_flavor: Optimization flavor ("vv_fire" or "ase_fire")
         cell_filter: Filter for cell optimization (None for position-only optimization)
         **filter_kwargs: Additional arguments passed to cell filter initialization
@@ -60,7 +68,7 @@ def fire_init(
     device: torch.device = model.device
     dtype: torch.dtype = model.dtype
 
-    n_systems = state.n_systems
+    n_groups = state.n_groups
 
     # Get initial forces and energy from model
     model_output = model(state)
@@ -72,12 +80,20 @@ def fire_init(
     dt_start_t = torch.as_tensor(dt_start, device=device, dtype=dtype)
     if dt_start_t.ndim == 0:
         # NOTE: clone needed as this is overwritten/assigned later by a masked_fill
-        dt_start_t = dt_start_t.expand(n_systems).clone()
+        dt_start_t = dt_start_t.expand(n_groups).clone()
+    elif dt_start_t.numel() != n_groups:
+        raise ValueError(
+            f"dt_start must have {n_groups} values, got {dt_start_t.numel()}"
+        )
 
     alpha_start_t = torch.as_tensor(alpha_start, device=device, dtype=dtype)
     if alpha_start_t.ndim == 0:
         # NOTE: clone needed as this is overwritten/assigned later by a masked_fill
-        alpha_start_t = alpha_start_t.expand(n_systems).clone()
+        alpha_start_t = alpha_start_t.expand(n_groups).clone()
+    elif alpha_start_t.numel() != n_groups:
+        raise ValueError(
+            f"alpha_start must have {n_groups} values, got {alpha_start_t.numel()}"
+        )
 
     # FIRE-specific additional attributes
     fire_attrs = {
@@ -89,7 +105,7 @@ def fire_init(
         ),
         "dt": dt_start_t,
         "alpha": alpha_start_t,
-        "n_pos": torch.zeros((n_systems,), device=model.device, dtype=torch.int32),
+        "n_pos": torch.zeros((n_groups,), device=model.device, dtype=torch.int32),
     }
 
     if cell_filter is not None:  # Create cell optimization state
@@ -190,6 +206,8 @@ def _vv_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
 ) -> T:
     """Perform one Velocity-Verlet based FIRE optimization step."""
     n_systems = state.n_systems
+    n_groups = state.n_groups
+    atom_group_idx = state.group_idx[state.system_idx]
 
     # Initialize velocities if NaN
     nan_velocities = state.velocities.isnan().any(dim=1)
@@ -199,10 +217,10 @@ def _vv_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
         state.cell_velocities.masked_fill_(nan_cell_vel.view(n_systems, 1, 1), 0)
 
     # First half of velocity update
-    atom_wise_dt = state.dt[state.system_idx].unsqueeze(-1)
+    atom_wise_dt = state.dt[atom_group_idx].unsqueeze(-1)
     state.velocities += 0.5 * atom_wise_dt * state.forces / state.masses.unsqueeze(-1)
     if isinstance(state, CellFireState):
-        cell_wise_dt = state.dt.view(n_systems, 1, 1)
+        cell_wise_dt = state.dt[state.group_idx].view(n_systems, 1, 1)
         state.cell_velocities += (
             0.5 * cell_wise_dt * state.cell_forces / state.cell_masses.unsqueeze(-1)
         )
@@ -253,46 +271,62 @@ def _vv_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
             0.5 * cell_wise_dt * state.cell_forces / state.cell_masses.unsqueeze(-1)
         )
 
-    # Calculate power
+    # Calculate power per optimizer group
     system_power = tsm.batched_vdot(
-        state.forces, state.velocities, state.system_idx, n_systems=n_systems
+        state.forces, state.velocities, atom_group_idx, n_systems=n_groups
     )
     if isinstance(state, CellFireState):
-        system_power += (state.cell_forces * state.cell_velocities).sum(dim=(1, 2))
+        system_power += _group_sum(
+            (state.cell_forces * state.cell_velocities).sum(dim=(1, 2)),
+            state.group_idx,
+            n_groups,
+        )
 
     pos_mask_system = system_power > 0.0
     neg_mask_system = ~pos_mask_system
 
     # Velocity mixing
     v_scaling_system = tsm.batched_vdot(
-        state.velocities, state.velocities, state.system_idx, n_systems=n_systems
+        state.velocities, state.velocities, atom_group_idx, n_systems=n_groups
     )
     f_scaling_system = tsm.batched_vdot(
-        state.forces, state.forces, state.system_idx, n_systems=n_systems
+        state.forces, state.forces, atom_group_idx, n_systems=n_groups
     )
 
     if isinstance(state, CellFireState):
-        v_scaling_system += state.cell_velocities.pow(2).sum(dim=(1, 2))
-        f_scaling_system += state.cell_forces.pow(2).sum(dim=(1, 2))
+        v_scaling_system += _group_sum(
+            state.cell_velocities.pow(2).sum(dim=(1, 2)),
+            state.group_idx,
+            n_groups,
+        )
+        f_scaling_system += _group_sum(
+            state.cell_forces.pow(2).sum(dim=(1, 2)),
+            state.group_idx,
+            n_groups,
+        )
 
-        v_scaling_cell = torch.sqrt(v_scaling_system.view(n_systems, 1, 1))
-        f_scaling_cell = torch.sqrt(f_scaling_system.view(n_systems, 1, 1))
+        v_scaling_cell = torch.sqrt(
+            v_scaling_system[state.group_idx].view(n_systems, 1, 1)
+        )
+        f_scaling_cell = torch.sqrt(
+            f_scaling_system[state.group_idx].view(n_systems, 1, 1)
+        )
         v_mixing_cell = state.cell_forces / (f_scaling_cell + eps) * v_scaling_cell
 
-        alpha_cell_bc = state.alpha.view(n_systems, 1, 1)
+        alpha_cell_bc = state.alpha[state.group_idx].view(n_systems, 1, 1)
         state.cell_velocities = torch.where(
-            pos_mask_system.view(n_systems, 1, 1),
+            pos_mask_system[state.group_idx].view(n_systems, 1, 1),
             (1.0 - alpha_cell_bc) * state.cell_velocities + alpha_cell_bc * v_mixing_cell,
             torch.zeros_like(state.cell_velocities),
         )
 
-    v_scaling_atom = torch.sqrt(v_scaling_system[state.system_idx].unsqueeze(-1))
-    f_scaling_atom = torch.sqrt(f_scaling_system[state.system_idx].unsqueeze(-1))
+    v_scaling_atom = torch.sqrt(v_scaling_system[atom_group_idx].unsqueeze(-1))
+    f_scaling_atom = torch.sqrt(f_scaling_system[atom_group_idx].unsqueeze(-1))
     v_mixing_atom = state.forces * (v_scaling_atom / (f_scaling_atom + eps))
 
-    alpha_atom = state.alpha[state.system_idx].unsqueeze(-1)
+    alpha_atom = state.alpha[atom_group_idx].unsqueeze(-1)
     state.velocities = torch.where(
-        pos_mask_system[state.system_idx].unsqueeze(-1),
+        pos_mask_system[atom_group_idx].unsqueeze(-1),
         (1.0 - alpha_atom) * state.velocities + alpha_atom * v_mixing_atom,
         torch.zeros_like(state.velocities),
     )
@@ -326,13 +360,20 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
     from torch_sim.optimizers import CellFireState
 
     n_systems = state.n_systems
+    n_groups = state.n_groups
+    atom_group_idx = state.group_idx[state.system_idx]
 
-    # NaN velocities mark systems that haven't stepped yet, including ones swapped in
-    # by an autobatcher; reduce per system without a GPU-syncing Python branch
+    # NaN velocities mark systems/groups that haven't stepped yet, including ones swapped
+    # in by an autobatcher; reduce without a GPU-syncing Python branch
     nan_velocities = state.velocities.isnan().any(dim=1).to(torch.int32)
-    is_first_step = (
+    is_first_step_system = (
         torch.zeros(n_systems, device=state.device, dtype=torch.int32)
         .scatter_add_(0, state.system_idx, nan_velocities)
+        .bool()
+    )
+    is_first_step_group = (
+        torch.zeros(n_groups, device=state.device, dtype=torch.int32)
+        .scatter_add_(0, atom_group_idx, nan_velocities)
         .bool()
     )
     state.velocities.nan_to_num_(nan=0.0)
@@ -344,56 +385,72 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
     forces = state.forces
     if isinstance(state, CellFireState):
         forces = torch.where(
-            is_first_step[state.system_idx].unsqueeze(-1),
+            is_first_step_system[state.system_idx].unsqueeze(-1),
             forces,
             state.deform_grad_forces(),
         )
 
-    # Calculate power. Newly zeroed systems have zero power.
+    # Calculate power per optimizer group. Newly zeroed groups have zero power.
     system_power = tsm.batched_vdot(
-        forces, state.velocities, state.system_idx, n_systems=n_systems
+        forces, state.velocities, atom_group_idx, n_systems=n_groups
     )
     if isinstance(state, CellFireState):
-        system_power += (state.cell_forces * state.cell_velocities).sum(dim=(1, 2))
+        system_power += _group_sum(
+            (state.cell_forces * state.cell_velocities).sum(dim=(1, 2)),
+            state.group_idx,
+            n_groups,
+        )
 
     pos_mask_system = system_power > 0.0
     neg_mask_system = ~pos_mask_system
 
-    # As in ASE, each system's first step leaves dt, alpha and n_pos unchanged
-    pos_mask_system &= ~is_first_step
-    neg_mask_system &= ~is_first_step
+    # As in ASE, each group's first step leaves dt, alpha and n_pos unchanged
+    pos_mask_system &= ~is_first_step_group
+    neg_mask_system &= ~is_first_step_group
 
     # As in ASE, mix with the current alpha before adapting it and before acceleration;
-    # uphill and first-step systems restart from rest
+    # uphill and first-step groups restart from rest
     v_scaling_system = tsm.batched_vdot(
-        state.velocities, state.velocities, state.system_idx, n_systems=n_systems
+        state.velocities, state.velocities, atom_group_idx, n_systems=n_groups
     )
     f_scaling_system = tsm.batched_vdot(
-        forces, forces, state.system_idx, n_systems=n_systems
+        forces, forces, atom_group_idx, n_systems=n_groups
     )
 
     if isinstance(state, CellFireState):
-        v_scaling_system += state.cell_velocities.pow(2).sum(dim=(1, 2))
-        f_scaling_system += state.cell_forces.pow(2).sum(dim=(1, 2))
+        v_scaling_system += _group_sum(
+            state.cell_velocities.pow(2).sum(dim=(1, 2)),
+            state.group_idx,
+            n_groups,
+        )
+        f_scaling_system += _group_sum(
+            state.cell_forces.pow(2).sum(dim=(1, 2)),
+            state.group_idx,
+            n_groups,
+        )
 
-        v_scaling_cell = torch.sqrt(v_scaling_system.view(n_systems, 1, 1))
-        f_scaling_cell = torch.sqrt(f_scaling_system.view(n_systems, 1, 1))
+        v_scaling_cell = torch.sqrt(
+            v_scaling_system[state.group_idx].view(n_systems, 1, 1)
+        )
+        f_scaling_cell = torch.sqrt(
+            f_scaling_system[state.group_idx].view(n_systems, 1, 1)
+        )
         v_mixing_cell = state.cell_forces / (f_scaling_cell + eps) * v_scaling_cell
 
-        alpha_cell_bc = state.alpha.view(n_systems, 1, 1)
+        alpha_cell_bc = state.alpha[state.group_idx].view(n_systems, 1, 1)
         state.cell_velocities = torch.where(
-            pos_mask_system.view(n_systems, 1, 1),
+            pos_mask_system[state.group_idx].view(n_systems, 1, 1),
             (1.0 - alpha_cell_bc) * state.cell_velocities + alpha_cell_bc * v_mixing_cell,
             torch.zeros_like(state.cell_velocities),
         )
 
-    v_scaling_atom = torch.sqrt(v_scaling_system[state.system_idx].unsqueeze(-1))
-    f_scaling_atom = torch.sqrt(f_scaling_system[state.system_idx].unsqueeze(-1))
+    v_scaling_atom = torch.sqrt(v_scaling_system[atom_group_idx].unsqueeze(-1))
+    f_scaling_atom = torch.sqrt(f_scaling_system[atom_group_idx].unsqueeze(-1))
     v_mixing_atom = forces * (v_scaling_atom / (f_scaling_atom + eps))
 
-    alpha_atom = state.alpha[state.system_idx].unsqueeze(-1)
+    alpha_atom = state.alpha[atom_group_idx].unsqueeze(-1)
     state.velocities = torch.where(
-        pos_mask_system[state.system_idx].unsqueeze(-1),
+        pos_mask_system[atom_group_idx].unsqueeze(-1),
         (1.0 - alpha_atom) * state.velocities + alpha_atom * v_mixing_atom,
         torch.zeros_like(state.velocities),
     )
@@ -409,25 +466,32 @@ def _ase_fire_step[T: "FireState | CellFireState"](  # noqa: C901, PLR0915
     state.n_pos = torch.where(neg_mask_system, 0, state.n_pos)
 
     # Acceleration (single forward-Euler, no mass for ASE FIRE)
-    state.velocities += forces * state.dt[state.system_idx].unsqueeze(-1)
-    dr_atom = state.velocities * state.dt[state.system_idx].unsqueeze(-1)
+    state.velocities += forces * state.dt[atom_group_idx].unsqueeze(-1)
+    dr_atom = state.velocities * state.dt[atom_group_idx].unsqueeze(-1)
     dr_scaling_system = tsm.batched_vdot(
-        dr_atom, dr_atom, state.system_idx, n_systems=n_systems
+        dr_atom, dr_atom, atom_group_idx, n_systems=n_groups
     )
 
     if isinstance(state, CellFireState):
-        state.cell_velocities += state.cell_forces * state.dt.view(n_systems, 1, 1)
-        dr_cell = state.cell_velocities * state.dt.view(n_systems, 1, 1)
+        cell_wise_dt = state.dt[state.group_idx].view(n_systems, 1, 1)
+        state.cell_velocities += state.cell_forces * cell_wise_dt
+        dr_cell = state.cell_velocities * cell_wise_dt
 
-        dr_scaling_system += dr_cell.pow(2).sum(dim=(1, 2))
-        dr_scaling_cell = torch.sqrt(dr_scaling_system).view(n_systems, 1, 1)
+        dr_scaling_system += _group_sum(
+            dr_cell.pow(2).sum(dim=(1, 2)),
+            state.group_idx,
+            n_groups,
+        )
+        dr_scaling_cell = torch.sqrt(
+            dr_scaling_system[state.group_idx].view(n_systems, 1, 1)
+        )
         dr_cell = torch.where(
             dr_scaling_cell > max_step,
             max_step * dr_cell / (dr_scaling_cell + eps),
             dr_cell,
         )
 
-    dr_scaling_atom = torch.sqrt(dr_scaling_system)[state.system_idx].unsqueeze(-1)
+    dr_scaling_atom = torch.sqrt(dr_scaling_system)[atom_group_idx].unsqueeze(-1)
     dr_atom = torch.where(
         dr_scaling_atom > max_step,
         max_step * dr_atom / (dr_scaling_atom + eps),
