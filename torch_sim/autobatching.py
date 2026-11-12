@@ -1051,7 +1051,9 @@ class InFlightAutoBatcher[T: SimState]:
         # we need to sample a state and use it to estimate the max metric
         # for the first batch
         first_state = next(self.states_iterator)
-        first_metric = calculate_memory_scalers(first_state, self.memory_scales_with)[0]
+        first_metric = calculate_memory_scalers(
+            first_state, self.memory_scales_with, self.cutoff
+        )[0]
         self.current_scalers += [first_metric]
         self.current_idx += [0]
         self.iteration_count.append(0)  # Initialize attempt counter for first state
