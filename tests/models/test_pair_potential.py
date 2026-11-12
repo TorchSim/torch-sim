@@ -1,6 +1,7 @@
 """Tests for the general pair potential model and pair forces model."""
 
 import functools
+from collections.abc import Callable
 
 import pytest
 import torch
@@ -19,7 +20,7 @@ from torch_sim.models.pair_potential import (
 )
 from torch_sim.models.particle_life import particle_life_pair_force
 from torch_sim.models.soft_sphere import soft_sphere_pair
-from torch_sim.neighbors import torch_nl_n2
+from torch_sim.neighbors import torch_nl_n2, torchsim_nl
 
 
 # BMHTF (Born-Meyer-Huggins-Tosi-Fumi) potential for NaCl
@@ -372,3 +373,76 @@ def test_no_retain_graph_frees_graph(nacl_sim_state: ts.SimState) -> None:
     out = model(nacl_sim_state)
     with pytest.raises(RuntimeError, match="does not require grad"):
         torch.autograd.grad(out["energy"].sum(), A)
+
+
+@pytest.mark.parametrize("neighbor_list_fn", [torch_nl_n2, torchsim_nl])
+@pytest.mark.parametrize("reduce_to_half_list", [False, True])
+def test_isolated_pair_atom_energies(
+    neighbor_list_fn: Callable, *, reduce_to_half_list: bool
+) -> None:
+    """The unique pair energy is divided equally between its two atoms."""
+    state = ts.SimState(
+        positions=torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]], dtype=DTYPE),
+        cell=10 * torch.eye(3, dtype=DTYPE),
+        pbc=False,
+        masses=torch.ones(2, dtype=DTYPE),
+        atomic_numbers=torch.tensor([1, 2]),
+    )
+    model = PairPotentialModel(
+        pair_fn=soft_sphere_pair,
+        cutoff=1.0,
+        dtype=DTYPE,
+        per_atom_energies=True,
+        neighbor_list_fn=neighbor_list_fn,
+        reduce_to_half_list=reduce_to_half_list,
+    )
+    out = model(state)
+    # For epsilon=sigma=1 and alpha=2, V(0.5) = (1-0.5)**2 / 2 = 0.125.
+    torch.testing.assert_close(out["energy"], torch.tensor([0.125], dtype=DTYPE))
+    torch.testing.assert_close(
+        out["energies"], torch.tensor([0.0625, 0.0625], dtype=DTYPE)
+    )
+    torch.testing.assert_close(out["energies"].sum(), out["energy"].sum())
+
+
+@pytest.mark.parametrize("neighbor_list_fn", [torch_nl_n2, torchsim_nl])
+@pytest.mark.parametrize("reduce_to_half_list", [False, True])
+def test_batched_atom_energies_unequal_system_sizes(
+    neighbor_list_fn: Callable, *, reduce_to_half_list: bool
+) -> None:
+    """Atom energies sum to each system's total for unequal-sized systems."""
+    state = ts.SimState(
+        positions=torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [0.5, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+                [0.5, 0.0, 0.0],
+            ],
+            dtype=DTYPE,
+        ),
+        cell=(10 * torch.eye(3, dtype=DTYPE)).repeat(2, 1, 1),
+        pbc=False,
+        masses=torch.ones(5, dtype=DTYPE),
+        atomic_numbers=torch.ones(5, dtype=torch.long),
+        system_idx=torch.tensor([0, 0, 0, 1, 1]),
+    )
+    model = PairPotentialModel(
+        pair_fn=soft_sphere_pair,
+        cutoff=1.0,
+        dtype=DTYPE,
+        per_atom_energies=True,
+        neighbor_list_fn=neighbor_list_fn,
+        reduce_to_half_list=reduce_to_half_list,
+    )
+    out = model(state)
+    # System 0 has two adjacent r=0.5 pairs; system 1 has one such pair.
+    torch.testing.assert_close(out["energy"], torch.tensor([0.25, 0.125], dtype=DTYPE))
+    torch.testing.assert_close(
+        out["energies"],
+        torch.tensor([0.0625, 0.125, 0.0625, 0.0625, 0.0625], dtype=DTYPE),
+    )
+    for system in range(state.n_systems):
+        atom_energy_sum = out["energies"][state.system_idx == system].sum()
+        torch.testing.assert_close(atom_energy_sum, out["energy"][system])
