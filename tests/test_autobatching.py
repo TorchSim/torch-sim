@@ -10,6 +10,7 @@ from torch_sim.autobatching import (
     _n_edges_scalers,
     calculate_memory_scalers,
     determine_max_batch_size,
+    estimate_max_memory_scaler,
     to_constant_volume_bins,
 )
 from torch_sim.models.lennard_jones import LennardJonesModel
@@ -1079,3 +1080,140 @@ def test_binning_auto_batcher_with_lbfgs(
         all_finished_states.extend(batch.split())
 
     assert len(all_finished_states) == len(lbfgs_states)
+
+
+@pytest.fixture
+def probed_n_atoms(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Record the number of atoms of each system whose batch size is probed."""
+    probed: list[int] = []
+
+    def recording_probe(state: ts.SimState, *_args: Any, **_kwargs: Any) -> int:
+        probed.append(state.n_atoms)
+        return 200
+
+    monkeypatch.setattr(ts.autobatching, "determine_max_batch_size", recording_probe)
+    return probed
+
+
+@pytest.mark.parametrize(("identical", "expected"), [(True, [8]), (False, [8, 256])])
+def test_estimate_max_memory_scaler_probes_the_smallest_and_largest_systems(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    probed_n_atoms: list[int],
+    *,
+    identical: bool,
+    expected: list[int],
+) -> None:
+    """Identical systems are probed once, different ones the smallest and largest."""
+    second = si_sim_state if identical else fe_supercell_sim_state
+    states = ts.concatenate_states([si_sim_state, second])
+    metrics = calculate_memory_scalers(states, "n_atoms")
+
+    estimate_max_memory_scaler(states, lj_model, metrics)
+
+    assert probed_n_atoms == expected
+
+
+@pytest.mark.parametrize(
+    ("make_states", "expected"),
+    [
+        (list, [8, 256]),  # all the states are known: the smallest and the largest
+        (ts.concatenate_states, [8, 256]),
+        (iter, [8, 8, 256]),  # lazy: a bootstrap probe of the first state first
+    ],
+)
+def test_in_flight_auto_batcher_probes_known_states_without_bootstrap(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    probed_n_atoms: list[int],
+    make_states: Any,
+    expected: list[int],
+) -> None:
+    batcher = InFlightAutoBatcher(model=lj_model, memory_scales_with="n_atoms")
+
+    batcher.load_states(make_states([si_sim_state, fe_supercell_sim_state]))
+
+    assert probed_n_atoms == expected
+
+
+@pytest.mark.parametrize(("identical", "expected"), [(True, [32]), (False, [32, 256])])
+def test_optimize_reuses_the_memory_estimate_of_the_init(
+    ar_supercell_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    probed_n_atoms: list[int],
+    *,
+    identical: bool,
+    expected: list[int],
+) -> None:
+    """The in-flight autobatcher takes the limit estimated for the init."""
+    second = ar_supercell_sim_state if identical else fe_supercell_sim_state
+    state = ts.initialize_state(
+        [ar_supercell_sim_state, second], lj_model.device, lj_model.dtype
+    )
+
+    ts.optimize(
+        system=state,
+        model=lj_model,
+        optimizer=ts.Optimizer.fire,
+        max_steps=5,
+        autobatcher=True,
+    )
+
+    assert probed_n_atoms == expected
+
+
+def test_optimize_estimates_the_init_with_the_settings_of_the_autobatcher(
+    ar_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The limit estimated for the init uses the autobatcher's cutoff and growth."""
+    scale_factors: list[float] = []
+
+    def recording_probe(*_args: Any, scale_factor: float, **_kwargs: Any) -> int:
+        scale_factors.append(scale_factor)
+        return 200
+
+    monkeypatch.setattr(ts.autobatching, "determine_max_batch_size", recording_probe)
+    # First neighbors only (3.7 A), where the default of 6.0 also counts the second
+    cutoff = 4.0
+    autobatcher = InFlightAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_edges",
+        cutoff=cutoff,
+        memory_scaling_factor=2.0,
+    )
+
+    ts.optimize(
+        system=ar_supercell_sim_state,
+        model=lj_model,
+        optimizer=ts.Optimizer.fire,
+        max_steps=5,
+        autobatcher=autobatcher,
+    )
+
+    metrics = calculate_memory_scalers(ar_supercell_sim_state, "n_edges", cutoff)
+    assert autobatcher.max_memory_scaler == pytest.approx(200 * metrics[0])
+    assert scale_factors == [2.0]
+
+
+def test_in_flight_auto_batcher_counts_lazy_states_at_its_cutoff(
+    ar_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    probed_n_atoms: list[int],
+) -> None:
+    """The first state of a lazy iterator counts edges at the autobatcher's cutoff."""
+    # First neighbors only (3.7 A), where the default of 6.0 also counts the second
+    cutoff = 4.0
+    batcher = InFlightAutoBatcher(
+        model=lj_model, memory_scales_with="n_edges", cutoff=cutoff
+    )
+
+    batcher.load_states(iter([ar_supercell_sim_state]))
+
+    metrics = calculate_memory_scalers(ar_supercell_sim_state, "n_edges", cutoff)
+    assert probed_n_atoms == [32, 32]
+    assert batcher.max_memory_scaler == pytest.approx(200 * metrics[0])
