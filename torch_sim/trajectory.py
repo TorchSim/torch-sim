@@ -277,6 +277,8 @@ class TrajectoryReporter:
         Writes states and calculated properties to all trajectory files at the
         specified frequencies. Splits multi-system states across separate trajectory
         files. The number of systems must match the number of trajectory files.
+        Without filenames, each calculator runs once on the complete batch when
+        any system is due, and returned properties are selected by each system's step.
 
         Args:
             state (SimState): Current system state with n_systems equal to
@@ -291,7 +293,8 @@ class TrajectoryReporter:
             force (bool): If True, bypass the frequency gates and write every array
                 whose last recorded step is below ``step``. Used to capture the
                 initial and final frames of a run, which need not lie on the
-                cadence grid. Defaults to False.
+                cadence grid. For in-memory reporting, computes and returns all enabled
+                properties. Defaults to False.
 
         Returns:
             list[dict[str, torch.Tensor]]: Map of property names to tensors for each
@@ -302,7 +305,7 @@ class TrajectoryReporter:
         """
         # Fast path: no files to write, avoid N SimState constructions from split()
         if self.filenames is None:
-            return self._extract_props_batched(state, step, model)
+            return self._extract_props_batched(state, step, model, force=force)
 
         # Get unique system indices
         system_indices = range(state.n_systems)
@@ -418,6 +421,8 @@ class TrajectoryReporter:
         state: SimState,
         step: int | list[int],
         model: ModelInterface | None = None,
+        *,
+        force: bool = False,
     ) -> list[dict[str, torch.Tensor]]:
         """Extract properties from a batched state without splitting into SimStates.
 
@@ -425,6 +430,7 @@ class TrajectoryReporter:
             state (SimState): Batched system state.
             step (int | list[int]): Current simulation step per system.
             model (ModelInterface, optional): Model used for simulation.
+            force (bool): Bypass cadence for enabled property calculators.
 
         Returns:
             list[dict[str, torch.Tensor]]: Property dictionaries, one per system.
@@ -444,8 +450,12 @@ class TrajectoryReporter:
         ).tolist()
         all_props: list[dict[str, torch.Tensor]] = [{} for _ in range(n_sys)]
 
+        steps = [step[idx] if isinstance(step, list) else step for idx in range(n_sys)]
         for frequency, calculators in self.prop_calculators.items():
-            if frequency == 0:
+            due = [
+                frequency != 0 and (force or value % frequency == 0) for value in steps
+            ]
+            if not any(due):
                 continue
             for prop_name, prop_fn in calculators.items():
                 result = prop_fn(state, model)
@@ -461,8 +471,7 @@ class TrajectoryReporter:
                     splits = [result.clone() for _ in range(n_sys)]
 
                 for idx in range(n_sys):
-                    sys_step = step[idx] if isinstance(step, list) else step
-                    if sys_step % frequency == 0:
+                    if due[idx]:
                         all_props[idx][prop_name] = splits[idx]
 
         return all_props
