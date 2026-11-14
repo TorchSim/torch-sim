@@ -58,7 +58,8 @@ metatomic = ["metatomic-torchsim>=0.1.1", "metatomic-ase>=0.1.0", "upet>=0.3.0"]
 orb = ["orb-models>=0.6.2"]
 sevenn = ["sevenn[torchsim]>=0.12.1"]
 nequip = ["nequip>=0.17.1"]
-nequix = ["nequix[torch-sim]>=0.4.5"]
+# Since 0.8.1, openequivariance fails to build without CUDA, HIP or SYCL.
+nequix = ["nequix[torch-sim]>=0.4.5", "openequivariance==0.8.0; sys_platform == 'darwin'"]
 fairchem = ["fairchem-core>=2.20.0"]
 docs = [
     "autodoc_pydantic==2.2.0",
