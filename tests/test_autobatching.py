@@ -1217,3 +1217,91 @@ def test_in_flight_auto_batcher_counts_lazy_states_at_its_cutoff(
     metrics = calculate_memory_scalers(ar_supercell_sim_state, "n_edges", cutoff)
     assert probed_n_atoms == [32, 32]
     assert batcher.max_memory_scaler == pytest.approx(200 * metrics[0])
+
+
+@pytest.fixture
+def one_system_fits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the probe return a batch size of 1, whatever the back-off does."""
+    monkeypatch.setattr(
+        "torch_sim.autobatching.determine_max_batch_size", lambda *_a, **_k: 1
+    )
+
+
+def test_determine_max_batch_size_raises_when_one_system_does_not_fit(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A clear error, instead of a batch size of 1 that does not fit either."""
+
+    def mock_measure(*_args: Any, **_kwargs: Any) -> float:
+        raise RuntimeError("CUDA out of memory")
+
+    monkeypatch.setattr(
+        "torch_sim.autobatching.measure_model_memory_forward", mock_measure
+    )
+
+    with pytest.raises(RuntimeError, match="does not fit on the device"):
+        determine_max_batch_size(si_sim_state, lj_model)
+
+
+@pytest.mark.usefixtures("one_system_fits")
+def test_estimate_max_memory_scaler_keeps_the_metrics_in_float64(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    """With 1 copy, the limit is the metric itself, not its float32 rounding."""
+    metric = 399.74264818149237  # rounded down by float32
+
+    max_metric = estimate_max_memory_scaler(si_sim_state, lj_model, [metric])
+
+    assert max_metric == metric
+
+
+@pytest.mark.usefixtures("one_system_fits")
+def test_binning_auto_batcher_load_states_does_not_pad_below_a_system(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    """Only one copy fits: the padding must not bring the limit below a system."""
+    batcher = BinningAutoBatcher(
+        model=lj_model, memory_scales_with="n_atoms", max_memory_padding=0.9
+    )
+
+    batcher.load_states(ts.concatenate_states([si_sim_state, si_sim_state]))
+
+    assert batcher.max_memory_scaler == si_sim_state.n_atoms
+
+
+@pytest.mark.usefixtures("one_system_fits")
+@pytest.mark.parametrize("make_states", [list, ts.concatenate_states])
+def test_in_flight_auto_batcher_load_states_does_not_pad_below_a_system(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    make_states: Any,
+) -> None:
+    """The limit estimated over all the known states is not padded below a system."""
+    batcher = InFlightAutoBatcher(
+        model=lj_model, memory_scales_with="n_atoms", max_memory_padding=0.9
+    )
+
+    batcher.load_states(make_states([si_sim_state, si_sim_state]))
+
+    assert batcher.max_memory_scaler == si_sim_state.n_atoms
+
+
+@pytest.mark.usefixtures("one_system_fits")
+def test_in_flight_auto_batcher_lazy_states_accept_a_first_state_that_fits_once(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    """With a lazy iterator, the bootstrap limit still holds the first state."""
+    batcher = InFlightAutoBatcher(
+        model=lj_model, memory_scales_with="n_atoms", max_memory_padding=0.9
+    )
+
+    batcher.load_states(iter([si_sim_state, si_sim_state]))
+    first_batch = batcher._get_first_batch()  # noqa: SLF001
+
+    assert first_batch.n_systems == 1
+    assert batcher.max_memory_scaler == si_sim_state.n_atoms
