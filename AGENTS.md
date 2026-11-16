@@ -26,6 +26,7 @@
 - Keep the description concise. In the summary, cover:
   - What: one or two sentences on what changed.
   - Why: the problem it solves. Link the issue, if any.
+  - Reproduction: for a bug fix, a minimal script that reproduces the bug on main, unless the linked issue already has one.
   - Tests: which tests you added or changed, and what each one checks.
 
 ### Self-review
