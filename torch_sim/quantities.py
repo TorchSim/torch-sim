@@ -35,6 +35,7 @@ def calc_kT(  # noqa: N802
     velocities: torch.Tensor | None = None,
     system_idx: torch.Tensor | None = None,
     dof_per_system: torch.Tensor | None = None,
+    n_systems: int | None = None,
 ) -> torch.Tensor:
     """Calculate temperature in energy units from momenta/velocities and masses.
 
@@ -42,10 +43,14 @@ def calc_kT(  # noqa: N802
         momenta (torch.Tensor): Particle momenta, shape (n_particles, n_dim)
         masses (torch.Tensor): Particle masses, shape (n_particles,)
         velocities (torch.Tensor | None): Particle velocities, shape (n_particles, n_dim)
-        system_idx (torch.Tensor | None): Optional tensor indicating system membership of
-        each particle
+        system_idx (torch.Tensor | None): Optional tensor indicating system membership
+            of each particle
         dof_per_system (torch.Tensor | None): Optional tensor indicating
-        degrees of freedom per system
+            degrees of freedom per system
+        n_systems (int | None): Number of systems. Passing it, e.g.
+            ``state.n_systems``, avoids reading it from ``system_idx``, which
+            synchronizes with the device. It must be at least
+            ``system_idx.max() + 1``; this is not checked.
 
     Returns:
         torch.Tensor: Scalar temperature value
@@ -69,13 +74,16 @@ def calc_kT(  # noqa: N802
     # Sum squared terms for each system
     flattened_squared = torch.sum(squared_term, dim=-1)
 
+    if n_systems is None:
+        n_systems = int(system_idx.max()) + 1
+
     # Count degrees of freedom per system
-    system_sizes = torch.bincount(system_idx)
     if dof_per_system is None:
+        system_sizes = torch.bincount(system_idx, minlength=n_systems)
         dof_per_system = system_sizes * squared_term.shape[-1]  # multiply by n_dimensions
 
     # Calculate temperature per system
-    system_sums = flattened_squared.new_zeros(len(system_sizes)).index_add(
+    system_sums = flattened_squared.new_zeros(n_systems).index_add(
         0, system_idx, flattened_squared
     )
     return system_sums / dof_per_system
@@ -121,6 +129,7 @@ def calc_kinetic_energy(
     momenta: torch.Tensor | None = None,
     velocities: torch.Tensor | None = None,
     system_idx: torch.Tensor | None = None,
+    n_systems: int | None = None,
 ) -> torch.Tensor:
     """Computes the kinetic energy of a system.
 
@@ -128,8 +137,12 @@ def calc_kinetic_energy(
         momenta (torch.Tensor): Particle momenta, shape (n_particles, n_dim)
         masses (torch.Tensor): Particle masses, shape (n_particles,)
         velocities (torch.Tensor | None): Particle velocities, shape (n_particles, n_dim)
-        system_idx (torch.Tensor | None): Optional tensor indicating system membership of
-        each particle
+        system_idx (torch.Tensor | None): Optional tensor indicating system membership
+            of each particle
+        n_systems (int | None): Number of systems. Passing it, e.g.
+            ``state.n_systems``, avoids reading it from ``system_idx``, which
+            synchronizes with the device. It must be at least
+            ``system_idx.max() + 1``; this is not checked.
 
     Returns:
         If system_idx is None: Scalar tensor containing the total kinetic energy
@@ -148,7 +161,8 @@ def calc_kinetic_energy(
     if system_idx is None:
         return 0.5 * torch.sum(squared_term)
     flattened_squared = torch.sum(squared_term, dim=-1)
-    n_systems = int(system_idx.max()) + 1
+    if n_systems is None:
+        n_systems = int(system_idx.max()) + 1
     return 0.5 * flattened_squared.new_zeros(n_systems).index_add(
         0, system_idx, flattened_squared
     )
