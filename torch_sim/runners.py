@@ -891,18 +891,24 @@ def static(  # noqa: C901
         properties.append("forces")
     if model.compute_stress:
         properties.append("stress")
-    if isinstance(trajectory_reporter, dict):
+    from_dict = isinstance(trajectory_reporter, dict)
+    if from_dict:
         traj_dict = dict(copy.deepcopy(trajectory_reporter))
         traj_dict["state_kwargs"] = {
             "variable_atomic_numbers": True,
             "variable_masses": True,
             "save_forces": model.compute_forces,
+            **(traj_dict.get("state_kwargs") or {}),
         }
         trajectory_reporter = traj_dict
     trajectory_reporter = _configure_reporter(
         trajectory_reporter or dict(filenames=None),
         properties=properties,
     )
+    # If forces are also a property, write them only from the property calculator
+    calculators = trajectory_reporter.prop_calculators.values()
+    if from_dict and any("forces" in calcs for calcs in calculators):
+        trajectory_reporter.state_kwargs["save_forces"] = False
 
     @dataclass(kw_only=True)
     class StaticState(SimState):
