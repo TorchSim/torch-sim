@@ -79,7 +79,9 @@ def calc_kT(  # noqa: N802
 
     # Count degrees of freedom per system
     if dof_per_system is None:
-        system_sizes = torch.bincount(system_idx, minlength=n_systems)
+        system_sizes = system_idx.new_zeros(n_systems).index_add(
+            0, system_idx, torch.ones_like(system_idx)
+        )
         dof_per_system = system_sizes * squared_term.shape[-1]  # multiply by n_dimensions
 
     # Calculate temperature per system

@@ -436,8 +436,11 @@ class SimState:
     @property
     def n_atoms_per_system(self) -> torch.Tensor:
         """Number of atoms per system."""
-        return self.system_idx.new_zeros(self.n_systems).index_add(
-            0, self.system_idx, torch.ones_like(self.system_idx)
+        return torch.zeros(
+            self.n_systems, device=self.device, dtype=torch.int64
+        ).index_add(
+            0, self.system_idx, torch.ones_like(self.system_idx, dtype=torch.int64)
+        )
         )
 
     @property
