@@ -441,7 +441,6 @@ class SimState:
         ).index_add(
             0, self.system_idx, torch.ones_like(self.system_idx, dtype=torch.int64)
         )
-        )
 
     @property
     def n_systems(self) -> int:
