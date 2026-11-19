@@ -305,7 +305,7 @@ class TrajectoryReporter:
         """
         # Fast path: no files to write, avoid N SimState constructions from split()
         if self.filenames is None:
-            return self._extract_props_batched(state, step, model, force=force)
+            return self._extract_props_batched(state, step, model, bypass_cadence=force)
 
         # Get unique system indices
         system_indices = range(state.n_systems)
@@ -422,7 +422,7 @@ class TrajectoryReporter:
         step: int | list[int],
         model: ModelInterface | None = None,
         *,
-        force: bool = False,
+        bypass_cadence: bool = False,
     ) -> list[dict[str, torch.Tensor]]:
         """Extract properties from a batched state without splitting into SimStates.
 
@@ -430,7 +430,7 @@ class TrajectoryReporter:
             state (SimState): Batched system state.
             step (int | list[int]): Current simulation step per system.
             model (ModelInterface, optional): Model used for simulation.
-            force (bool): Bypass cadence for enabled property calculators.
+            bypass_cadence (bool): Bypass cadence for enabled property calculators.
 
         Returns:
             list[dict[str, torch.Tensor]]: Property dictionaries, one per system.
@@ -453,7 +453,8 @@ class TrajectoryReporter:
         steps = [step[idx] if isinstance(step, list) else step for idx in range(n_sys)]
         for frequency, calculators in self.prop_calculators.items():
             due = [
-                frequency != 0 and (force or value % frequency == 0) for value in steps
+                frequency != 0 and (bypass_cadence or value % frequency == 0)
+                for value in steps
             ]
             if not any(due):
                 continue

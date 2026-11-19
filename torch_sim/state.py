@@ -436,7 +436,11 @@ class SimState:
     @property
     def n_atoms_per_system(self) -> torch.Tensor:
         """Number of atoms per system."""
-        return self.system_idx.bincount()
+        return torch.zeros(
+            self.n_systems, device=self.device, dtype=torch.int64
+        ).index_add(
+            0, self.system_idx, torch.ones_like(self.system_idx, dtype=torch.int64)
+        )
 
     @property
     def n_systems(self) -> int:
@@ -577,7 +581,9 @@ class SimState:
                 physically valid DOF.
         """
         dof_per_system = _dof_per_system(self, self.constraints)
-        if (dof_per_system <= 0).any():
+        # Every system has at least one atom, so only constraints can remove all of
+        # its degrees of freedom. Skipping the check otherwise avoids a host sync.
+        if self.constraints and (dof_per_system <= 0).any():
             raise ValueError("Degrees of freedom cannot be zero or negative")
         return dof_per_system
 
