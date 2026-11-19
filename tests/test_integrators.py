@@ -45,6 +45,18 @@ def test_initialize_momenta_basic():
             com_momentum, torch.zeros(3, dtype=DTYPE, device=DEVICE), atol=1e-10
         )
 
+    # Check that the center of mass velocity is removed from every atom
+    generator = torch.Generator(device=DEVICE).manual_seed(seed)
+    raw_momenta = torch.randn(
+        positions.shape, device=DEVICE, dtype=DTYPE, generator=generator
+    ) * torch.sqrt(masses * kT[system_idx]).unsqueeze(-1)
+    for sys_idx in range(4):
+        system_mask = system_idx == sys_idx
+        system_masses = masses[system_mask].unsqueeze(-1)
+        com_velocity = raw_momenta[system_mask].sum(dim=0) / system_masses.sum()
+        expected = raw_momenta[system_mask] - system_masses * com_velocity
+        assert torch.allclose(momenta[system_mask], expected)
+
 
 def test_initialize_momenta_single_atoms():
     """Test that initialize_momenta preserves momentum for systems with single atoms."""

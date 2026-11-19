@@ -152,17 +152,20 @@ def initialize_momenta(
     # create 3 copies of system_idx
     system_idx_3 = system_idx.view(-1, 1).repeat(1, 3)
     bincount = torch.bincount(system_idx)
-    mean_momenta = torch.scatter_reduce(
+    system_masses = torch.zeros_like(bincount, dtype=masses.dtype).scatter_add_(
+        0, system_idx, masses
+    )
+    com_velocities = torch.scatter_reduce(
         systemwise_momenta,
         dim=0,
         index=system_idx_3,
         src=momenta,
         reduce="sum",
-    ) / bincount.view(-1, 1)
+    ) / system_masses.view(-1, 1)
 
     return torch.where(
         torch.repeat_interleave(bincount > 1, bincount).view(-1, 1),
-        momenta - mean_momenta[system_idx],
+        momenta - masses.view(-1, 1) * com_velocities[system_idx],
         momenta,
     )
 
