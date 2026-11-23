@@ -638,12 +638,17 @@ def test_determine_max_batch_size_releases_cached_memory(
     bytes on the very next call.
     """
 
+    n_calls = 0
+
     def mock_measure(*_args: Any, **_kwargs: Any) -> float:
+        nonlocal n_calls
+        n_calls += 1
         # Reserve a chunk and release it, so it lands in PyTorch's cache the
         # way a real probe's activations do.
         buffer = torch.empty(256 * 1024**2, dtype=torch.uint8, device="cuda")
         del buffer
-        if probe_ooms:
+        # A single system must fit, so the OOM comes from the second probe on
+        if probe_ooms and n_calls > 1:
             raise RuntimeError("CUDA out of memory")
         return 0.1
 
@@ -1301,7 +1306,8 @@ def test_in_flight_auto_batcher_lazy_states_accept_a_first_state_that_fits_once(
     )
 
     batcher.load_states(iter([si_sim_state, si_sim_state]))
-    first_batch = batcher._get_first_batch()  # noqa: SLF001
+    first_batch, _ = batcher.next_batch(None, None)
 
+    assert isinstance(first_batch, ts.SimState)
     assert first_batch.n_systems == 1
     assert batcher.max_memory_scaler == si_sim_state.n_atoms
