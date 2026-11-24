@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import traceback
+from typing import TYPE_CHECKING
 
 import pytest
 import torch
@@ -12,6 +15,8 @@ from torch_sim.elastic import (
     calculate_elastic_tensor,
     get_bravais_type,
     get_cart_deformed_cell,
+    get_elastic_coeffs,
+    get_elastic_tensor_from_coeffs,
     get_elementary_deformations,
     get_strain,
 )
@@ -19,12 +24,17 @@ from torch_sim.typing import BravaisType
 from torch_sim.units import UnitConversion
 
 
+if TYPE_CHECKING:
+    from torch_sim.models.lennard_jones import LennardJonesModel
+
 try:
     from mace.calculators.foundations_models import mace_mp
 
     from torch_sim.models.mace import MaceModel
+
+    _MACE_IMPORT_ERROR: str | None = None
 except (ImportError, OSError, RuntimeError, AttributeError, ValueError):
-    pytest.skip(f"MACE not installed: {traceback.format_exc()}", allow_module_level=True)
+    _MACE_IMPORT_ERROR = traceback.format_exc()
 
 
 def test_get_strain_zero_deformation(cu_sim_state: ts.SimState) -> None:
@@ -256,9 +266,178 @@ def test_get_elementary_deformations_strain_consistency(
             assert torch.abs(strain[strain_idx]) <= max_strain_shear / 2 + 1e-12
 
 
+@pytest.mark.parametrize(
+    ("bravais_type", "n_coeffs"),
+    [
+        (BravaisType.CUBIC, 3),
+        (BravaisType.HEXAGONAL, 5),
+        (BravaisType.TRIGONAL, 7),
+        (BravaisType.TETRAGONAL, 7),
+        (BravaisType.ORTHORHOMBIC, 9),
+        (BravaisType.MONOCLINIC, 13),
+        (BravaisType.TRICLINIC, 21),
+    ],
+)
+def test_get_elastic_coeffs_pressure_correction(
+    cu_sim_state: ts.SimState,
+    bravais_type: BravaisType,
+    n_coeffs: int,
+) -> None:
+    """Test hydrostatic pressure correction in get_elastic_coeffs for every symmetry."""
+    device, dtype = cu_sim_state.device, cu_sim_state.dtype
+    pressure = torch.tensor(2.3, device=device, dtype=dtype)
+
+    # Distinct Birch coefficients for every independent constant of this symmetry
+    expected_bij = torch.arange(1, n_coeffs + 1, device=device, dtype=dtype) * 10.0
+    b_tensor = get_elastic_tensor_from_coeffs(expected_bij, bravais_type)
+
+    deformed_states = get_elementary_deformations(
+        cu_sim_state, n_deform=3, bravais_type=bravais_type
+    )
+    hydrostatic_stress = torch.tensor(
+        [-pressure, -pressure, -pressure, 0.0, 0.0, 0.0], device=device, dtype=dtype
+    )
+    stresses = torch.empty((len(deformed_states), 6), device=device, dtype=dtype)
+    for idx, deformed in enumerate(deformed_states):
+        strain = get_strain(deformed, cu_sim_state)
+        eng_strain = strain.clone()
+        eng_strain[3:] *= 2.0
+        stresses[idx] = hydrostatic_stress + b_tensor @ eng_strain
+
+    cij, (bij, _residuals, _rank, _sv) = get_elastic_coeffs(
+        cu_sim_state,
+        deformed_states,
+        stresses,
+        base_pressure=pressure,
+        bravais_type=bravais_type,
+    )
+
+    assert cij.dtype == dtype
+    assert cij.device == device
+    torch.testing.assert_close(bij, expected_bij, atol=1e-10, rtol=1e-10)
+
+    # C_ijkl = B_ijkl + p * (delta_ik delta_jl + delta_il delta_jk - delta_ij delta_kl)
+    # In Voigt notation: +p on diagonal normal & shear, -p on off-diagonal normal, 0 else.
+    expected_delta = torch.tensor(
+        [
+            [pressure, -pressure, -pressure, 0.0, 0.0, 0.0],
+            [-pressure, pressure, -pressure, 0.0, 0.0, 0.0],
+            [-pressure, -pressure, pressure, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, pressure, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0, pressure, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0, pressure],
+        ],
+        device=device,
+        dtype=dtype,
+    )
+    c_tensor = get_elastic_tensor_from_coeffs(cij, bravais_type)
+    torch.testing.assert_close(
+        c_tensor - b_tensor, expected_delta, atol=1e-10, rtol=1e-10
+    )
+
+
+def test_calculate_elastic_tensor_under_pressure_hcp(
+    lj_model: LennardJonesModel,
+) -> None:
+    """Test elastic tensor pressure correction on hydrostatically compressed HCP Ar."""
+    atoms = bulk("Ar", "hcp", a=3.6, c=3.6 * (8 / 3) ** 0.5)
+    state = ts.io.atoms_to_state(atoms, DEVICE, DTYPE)
+
+    target_pressure = 0.005
+    opt_state = ts.fire_init(
+        state=state,
+        model=lj_model,
+        scalar_pressure=target_pressure,
+        cell_filter=ts.CellFilter.frechet,
+    )
+    eye3 = torch.eye(3, device=DEVICE, dtype=DTYPE)
+    for _ in range(200):
+        stress_err = (opt_state.stress.squeeze() + target_pressure * eye3).abs().max()
+        if stress_err < 1e-7 and opt_state.forces.abs().max() < 1e-7:
+            break
+        opt_state = ts.fire_step(state=opt_state, model=lj_model)
+
+    assert get_bravais_type(opt_state) == BravaisType.HEXAGONAL
+    ref_pressure = (-torch.trace(opt_state.stress.squeeze()) / 3).item()
+    assert ref_pressure == pytest.approx(target_pressure, rel=1e-3)
+
+    c_hex = calculate_elastic_tensor(
+        state=opt_state,
+        model=lj_model,
+        bravais_type=BravaisType.HEXAGONAL,
+        max_strain_normal=1e-4,
+        max_strain_shear=2e-4,
+        n_deform=3,
+    )
+    c_tri = calculate_elastic_tensor(
+        state=opt_state,
+        model=lj_model,
+        bravais_type=BravaisType.TRICLINIC,
+        max_strain_normal=1e-4,
+        max_strain_shear=2e-4,
+        n_deform=3,
+    )
+    torch.testing.assert_close(c_hex, c_tri, atol=1e-5, rtol=1e-4)
+
+    # Verify against direct numerical second derivatives d^2E / (V0 * d eta_i d eta_j)
+    base_energy = lj_model(opt_state)["energy"].item()
+    base_vol = opt_state.volume.item()
+    base_cell = opt_state.row_vector_cell.squeeze()
+    frac_coords = opt_state.positions @ torch.linalg.inv(base_cell)
+
+    def energy_at_eta(eta: torch.Tensor) -> float:
+        eigvals, eigvecs = torch.linalg.eigh(eye3 + 2.0 * eta)
+        def_grad = eigvecs @ torch.diag(torch.sqrt(eigvals)) @ eigvecs.mT
+        deformed = opt_state.clone()
+        new_cell = base_cell @ def_grad.mT
+        deformed.row_vector_cell = new_cell.unsqueeze(0)
+        deformed.positions = frac_coords @ new_cell
+        return lj_model(deformed)["energy"].item()
+
+    h = 1e-4
+    shear_pairs = {3: (1, 2), 4: (0, 2), 5: (0, 1)}
+
+    def d2e_diag(voigt_idx: int) -> float:
+        eta = torch.zeros((3, 3), device=DEVICE, dtype=DTYPE)
+        if voigt_idx < 3:
+            eta[voigt_idx, voigt_idx] = h
+        else:
+            row, col = shear_pairs[voigt_idx]
+            eta[row, col] = eta[col, row] = h / 2.0
+        return (energy_at_eta(eta) - 2.0 * base_energy + energy_at_eta(-eta)) / (
+            base_vol * h**2
+        )
+
+    def d2e_off_normal(i: int, j: int) -> float:
+        eta_i = torch.zeros((3, 3), device=DEVICE, dtype=DTYPE)
+        eta_j = torch.zeros((3, 3), device=DEVICE, dtype=DTYPE)
+        eta_i[i, i] = h
+        eta_j[j, j] = h
+        return (
+            energy_at_eta(eta_i + eta_j)
+            - energy_at_eta(eta_i - eta_j)
+            - energy_at_eta(-eta_i + eta_j)
+            + energy_at_eta(-eta_i - eta_j)
+        ) / (4.0 * base_vol * h**2)
+
+    expected_entries = {
+        (0, 0): d2e_diag(0),
+        (0, 1): d2e_off_normal(0, 1),
+        (0, 2): d2e_off_normal(0, 2),
+        (2, 2): d2e_diag(2),
+        (3, 3): d2e_diag(3),
+        (5, 5): d2e_diag(5),
+    }
+    for (row, col), expected_val in expected_entries.items():
+        assert c_hex[row, col].item() == pytest.approx(expected_val, abs=1e-5, rel=1e-4)
+        assert c_tri[row, col].item() == pytest.approx(expected_val, abs=1e-5, rel=1e-4)
+
+
 @pytest.fixture
 def mace_model() -> MaceModel:
     """Create a MACE model fixture for testing."""
+    if _MACE_IMPORT_ERROR is not None:
+        pytest.skip(f"MACE not installed: {_MACE_IMPORT_ERROR}")
     mace_model = mace_mp(model="medium", default_dtype="float64", return_raw_model=True)
 
     return MaceModel(
