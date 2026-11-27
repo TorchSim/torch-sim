@@ -427,7 +427,7 @@ def hexagonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
     """Generate equation matrix for hexagonal crystal symmetry.
 
     Constructs the stress-strain relationship matrix for hexagonal symmetry,
-    which has 5 independent elastic constants: C11, C33, C12, C13, C44.
+    which has 5 independent elastic constants: C11, C12, C13, C33, C44.
     Note: C66 = (C11-C12)/2 is dependent.
 
     Args:
@@ -436,7 +436,7 @@ def hexagonal_symmetry(strains: torch.Tensor) -> torch.Tensor:
 
     Returns:
         torch.Tensor: Matrix of shape (6, 5) where columns correspond to
-            coefficients for C11, C33, C12, C13, C44
+            coefficients for C11, C12, C13, C33, C44
 
     Notes:
         The resulting matrix M has the form:
@@ -975,39 +975,41 @@ def get_elastic_coeffs(
     # Solve least squares problem
     Bij, residuals, rank, singular_values = torch.linalg.lstsq(eq_matrix, stress_vector)
 
-    # Calculate elastic constants with pressure correction
+    # Calculate elastic constants with pressure correction. Each vector follows the
+    # column order of its symmetry handler: -p for C11, C22, C33, C44, C55 and C66,
+    # +p for C12, C13 and C23, and 0 for every other constant.
     p = base_pressure
     pressure_corrections = {
         BravaisType.CUBIC: torch.tensor([-p, p, -p]),
-        BravaisType.HEXAGONAL: torch.tensor([-p, -p, p, p, -p]),
-        BravaisType.TRIGONAL: torch.tensor([-p, -p, p, p, p, p, -p]),
-        BravaisType.TETRAGONAL: torch.tensor([-p, -p, p, p, -p, -p, -p]),
-        BravaisType.ORTHORHOMBIC: torch.tensor([-p, -p, -p, p, p, p, -p, -p, -p]),
+        BravaisType.HEXAGONAL: torch.tensor([-p, p, p, -p, -p]),
+        BravaisType.TRIGONAL: torch.tensor([-p, p, p, 0, 0, -p, -p]),
+        BravaisType.TETRAGONAL: torch.tensor([-p, p, p, 0, -p, -p, -p]),
+        BravaisType.ORTHORHOMBIC: torch.tensor([-p, p, p, -p, p, -p, -p, -p, -p]),
         BravaisType.MONOCLINIC: torch.tensor(
-            [-p, -p, -p, p, p, p, -p, -p, -p, p, p, p, p]
+            [-p, p, p, 0, -p, p, 0, -p, 0, -p, 0, -p, -p]
         ),
         BravaisType.TRICLINIC: torch.tensor(
             [
                 -p,
                 p,
                 p,
-                p,
-                p,
-                p,  # C11-C16
+                0,
+                0,
+                0,  # C11-C16
                 -p,
                 p,
-                p,
-                p,
-                p,  # C22-C26
+                0,
+                0,
+                0,  # C22-C26
                 -p,
-                p,
-                p,
-                p,  # C33-C36
+                0,
+                0,
+                0,  # C33-C36
                 -p,
-                p,
-                p,  # C44-C46
+                0,
+                0,  # C44-C46
                 -p,
-                p,  # C55-C56
+                0,  # C55-C56
                 -p,  # C66
             ]
         ),
@@ -1039,11 +1041,11 @@ def get_elastic_tensor_from_coeffs(  # noqa: C901, PLR0915
         The number of independent constants varies by symmetry:
         - Cubic: 3 (C11, C12, C44)
         - Hexagonal: 5 (C11, C12, C13, C33, C44)
-        - Trigonal: 6 (C11, C12, C13, C14, C33, C44)
+        - Trigonal: 7 (C11, C12, C13, C14, C15, C33, C44)
         - Tetragonal: 7 (C11, C12, C13, C16, C33, C44, C66)
-        - Orthorhombic: 9 (C11, C22, C33, C12, C13, C23, C44, C55, C66)
-        - Monoclinic: 13 constants (C11, C22, C33, C12, C13, C23, C44, C55,
-            C66, C15, C25, C35, C46)
+        - Orthorhombic: 9 (C11, C12, C13, C22, C23, C33, C44, C55, C66)
+        - Monoclinic: 13 constants (C11, C12, C13, C15, C22, C23, C25, C33,
+            C35, C44, C46, C55, C66)
         - Triclinic: 21 constants
     """
     # Initialize full tensor
