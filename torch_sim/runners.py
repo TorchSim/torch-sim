@@ -534,7 +534,7 @@ def _chunked_apply[T: SimState](
     model: ModelInterface,
     init_kwargs: Any,
     **batcher_kwargs: Any,
-) -> T:
+) -> tuple[T, float | None]:
     """Apply a function to a state in chunks.
 
     This prevents us from running out of memory when applying a function to a large
@@ -548,7 +548,9 @@ def _chunked_apply[T: SimState](
         **batcher_kwargs: Additional keyword arguments for the autobatcher
 
     Returns:
-        A state with the function applied
+        tuple[T, float | None]: A state with the function applied, and the
+            max_memory_scaler of the autobatcher, given or estimated, so that
+            callers can reuse it instead of estimating it again.
     """
     autobatcher = BinningAutoBatcher(model=model, **batcher_kwargs)
     autobatcher.load_states(states)
@@ -566,7 +568,7 @@ def _chunked_apply[T: SimState](
     ]
 
     ordered_states = autobatcher.restore_original_order(initialized_states)
-    return ts.concatenate_states(ordered_states)
+    return ts.concatenate_states(ordered_states), autobatcher.max_memory_scaler
 
 
 def generate_force_convergence_fn[T: MDState | FireState](
@@ -725,13 +727,17 @@ def optimize[T: OptimState](  # noqa: C901, PLR0915
             "optimize: initializing optimizer state via chunked apply "
             "(BinningAutoBatcher); InFlightAutoBatcher will be used for optimization"
         )
-        state = _chunked_apply(
+        # The in-flight batcher reuses the limit estimated for the init, instead of
+        # probing the same systems again
+        state, autobatcher.max_memory_scaler = _chunked_apply(
             init_fn,
             initial_state,
             model,
             init_kwargs=dict(**init_kwargs or {}),
             max_memory_scaler=autobatcher.max_memory_scaler,
             memory_scales_with=autobatcher.memory_scales_with,
+            cutoff=autobatcher.cutoff,
+            memory_scaling_factor=autobatcher.memory_scaling_factor,
             max_atoms_to_try=autobatcher.max_atoms_to_try,
             oom_error_message=autobatcher.oom_error_message,
             max_memory_padding=autobatcher.max_memory_padding,

@@ -223,6 +223,16 @@ def test_calc_kinetic_energy_batched_system(
     )
     assert torch.allclose(ke_mom, batched_system_data["ke"])
 
+    # n_systems sets the number of systems; one without atoms gives zero
+    ke_three_systems = calc_kinetic_energy(
+        masses=batched_system_data["masses"],
+        momenta=batched_system_data["momenta"],
+        system_idx=batched_system_data["system_idx"],
+        n_systems=3,
+    )
+    expected = torch.tensor([3.0, 24.0, 0.0], device=DEVICE, dtype=DTYPE)
+    assert torch.allclose(ke_three_systems, expected)
+
 
 @pytest.mark.parametrize("calc_fn", [calc_kinetic_energy, calc_kT])
 def test_per_system_sums_with_unsorted_system_idx(calc_fn: Callable[..., Tensor]) -> None:
@@ -285,6 +295,26 @@ def test_calc_kt_batched_system(batched_system_data: dict[str, Tensor]) -> None:
         system_idx=batched_system_data["system_idx"],
     )
     assert torch.allclose(kt_mom, batched_system_data["kt"])
+
+    # A scalar dof_per_system broadcasts over the systems (default is 6 here)
+    kt_scalar_dof = calc_kT(
+        masses=batched_system_data["masses"],
+        momenta=batched_system_data["momenta"],
+        system_idx=batched_system_data["system_idx"],
+        dof_per_system=torch.tensor(4, device=DEVICE),
+    )
+    assert torch.allclose(kt_scalar_dof, batched_system_data["kt"] * 6 / 4)
+
+    # n_systems with an empty third system: kT = 2 * [3, 24, 0] / [4, 12, 1]
+    kt_given_dof = calc_kT(
+        masses=batched_system_data["masses"],
+        momenta=batched_system_data["momenta"],
+        system_idx=batched_system_data["system_idx"],
+        dof_per_system=torch.tensor([4, 12, 1], device=DEVICE),
+        n_systems=3,
+    )
+    expected = torch.tensor([1.5, 4.0, 0.0], device=DEVICE, dtype=DTYPE)
+    assert torch.allclose(kt_given_dof, expected)
 
 
 def test_calc_temperature(single_system_data: dict[str, Tensor]) -> None:

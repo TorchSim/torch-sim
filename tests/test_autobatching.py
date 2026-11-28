@@ -10,6 +10,7 @@ from torch_sim.autobatching import (
     _n_edges_scalers,
     calculate_memory_scalers,
     determine_max_batch_size,
+    estimate_max_memory_scaler,
     to_constant_volume_bins,
 )
 from torch_sim.models.lennard_jones import LennardJonesModel
@@ -637,12 +638,17 @@ def test_determine_max_batch_size_releases_cached_memory(
     bytes on the very next call.
     """
 
+    n_calls = 0
+
     def mock_measure(*_args: Any, **_kwargs: Any) -> float:
+        nonlocal n_calls
+        n_calls += 1
         # Reserve a chunk and release it, so it lands in PyTorch's cache the
         # way a real probe's activations do.
         buffer = torch.empty(256 * 1024**2, dtype=torch.uint8, device="cuda")
         del buffer
-        if probe_ooms:
+        # A single system must fit, so the OOM comes from the second probe on
+        if probe_ooms and n_calls > 1:
             raise RuntimeError("CUDA out of memory")
         return 0.1
 
@@ -1079,3 +1085,229 @@ def test_binning_auto_batcher_with_lbfgs(
         all_finished_states.extend(batch.split())
 
     assert len(all_finished_states) == len(lbfgs_states)
+
+
+@pytest.fixture
+def probed_n_atoms(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Record the number of atoms of each system whose batch size is probed."""
+    probed: list[int] = []
+
+    def recording_probe(state: ts.SimState, *_args: Any, **_kwargs: Any) -> int:
+        probed.append(state.n_atoms)
+        return 200
+
+    monkeypatch.setattr(ts.autobatching, "determine_max_batch_size", recording_probe)
+    return probed
+
+
+@pytest.mark.parametrize(("identical", "expected"), [(True, [8]), (False, [8, 256])])
+def test_estimate_max_memory_scaler_probes_the_smallest_and_largest_systems(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    probed_n_atoms: list[int],
+    *,
+    identical: bool,
+    expected: list[int],
+) -> None:
+    """Identical systems are probed once, different ones the smallest and largest."""
+    second = si_sim_state if identical else fe_supercell_sim_state
+    states = ts.concatenate_states([si_sim_state, second])
+    metrics = calculate_memory_scalers(states, "n_atoms")
+
+    estimate_max_memory_scaler(states, lj_model, metrics)
+
+    assert probed_n_atoms == expected
+
+
+@pytest.mark.parametrize(
+    ("make_states", "expected"),
+    [
+        (list, [8, 256]),  # all the states are known: the smallest and the largest
+        (ts.concatenate_states, [8, 256]),
+        (iter, [8, 8, 256]),  # lazy: a bootstrap probe of the first state first
+    ],
+)
+def test_in_flight_auto_batcher_probes_known_states_without_bootstrap(
+    si_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    probed_n_atoms: list[int],
+    make_states: Any,
+    expected: list[int],
+) -> None:
+    batcher = InFlightAutoBatcher(model=lj_model, memory_scales_with="n_atoms")
+
+    batcher.load_states(make_states([si_sim_state, fe_supercell_sim_state]))
+
+    assert probed_n_atoms == expected
+
+
+@pytest.mark.parametrize(("identical", "expected"), [(True, [32]), (False, [32, 256])])
+def test_optimize_reuses_the_memory_estimate_of_the_init(
+    ar_supercell_sim_state: ts.SimState,
+    fe_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    probed_n_atoms: list[int],
+    *,
+    identical: bool,
+    expected: list[int],
+) -> None:
+    """The in-flight autobatcher takes the limit estimated for the init."""
+    second = ar_supercell_sim_state if identical else fe_supercell_sim_state
+    state = ts.initialize_state(
+        [ar_supercell_sim_state, second], lj_model.device, lj_model.dtype
+    )
+
+    ts.optimize(
+        system=state,
+        model=lj_model,
+        optimizer=ts.Optimizer.fire,
+        max_steps=5,
+        autobatcher=True,
+    )
+
+    assert probed_n_atoms == expected
+
+
+def test_optimize_estimates_the_init_with_the_settings_of_the_autobatcher(
+    ar_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The limit estimated for the init uses the autobatcher's cutoff and growth."""
+    scale_factors: list[float] = []
+
+    def recording_probe(*_args: Any, scale_factor: float, **_kwargs: Any) -> int:
+        scale_factors.append(scale_factor)
+        return 200
+
+    monkeypatch.setattr(ts.autobatching, "determine_max_batch_size", recording_probe)
+    # First neighbors only (3.7 A), where the default of 6.0 also counts the second
+    cutoff = 4.0
+    autobatcher = InFlightAutoBatcher(
+        model=lj_model,
+        memory_scales_with="n_edges",
+        cutoff=cutoff,
+        memory_scaling_factor=2.0,
+    )
+
+    ts.optimize(
+        system=ar_supercell_sim_state,
+        model=lj_model,
+        optimizer=ts.Optimizer.fire,
+        max_steps=5,
+        autobatcher=autobatcher,
+    )
+
+    metrics = calculate_memory_scalers(ar_supercell_sim_state, "n_edges", cutoff)
+    assert autobatcher.max_memory_scaler == pytest.approx(200 * metrics[0])
+    assert scale_factors == [2.0]
+
+
+def test_in_flight_auto_batcher_counts_lazy_states_at_its_cutoff(
+    ar_supercell_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    probed_n_atoms: list[int],
+) -> None:
+    """The first state of a lazy iterator counts edges at the autobatcher's cutoff."""
+    # First neighbors only (3.7 A), where the default of 6.0 also counts the second
+    cutoff = 4.0
+    batcher = InFlightAutoBatcher(
+        model=lj_model, memory_scales_with="n_edges", cutoff=cutoff
+    )
+
+    batcher.load_states(iter([ar_supercell_sim_state]))
+
+    metrics = calculate_memory_scalers(ar_supercell_sim_state, "n_edges", cutoff)
+    assert probed_n_atoms == [32, 32]
+    assert batcher.max_memory_scaler == pytest.approx(200 * metrics[0])
+
+
+@pytest.fixture
+def one_system_fits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the probe return a batch size of 1, whatever the back-off does."""
+    monkeypatch.setattr(
+        "torch_sim.autobatching.determine_max_batch_size", lambda *_a, **_k: 1
+    )
+
+
+def test_determine_max_batch_size_raises_when_one_system_does_not_fit(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A clear error, instead of a batch size of 1 that does not fit either."""
+
+    def mock_measure(*_args: Any, **_kwargs: Any) -> float:
+        raise RuntimeError("CUDA out of memory")
+
+    monkeypatch.setattr(
+        "torch_sim.autobatching.measure_model_memory_forward", mock_measure
+    )
+
+    with pytest.raises(RuntimeError, match="does not fit on the device"):
+        determine_max_batch_size(si_sim_state, lj_model)
+
+
+@pytest.mark.usefixtures("one_system_fits")
+def test_estimate_max_memory_scaler_keeps_the_metrics_in_float64(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    """With 1 copy, the limit is the metric itself, not its float32 rounding."""
+    metric = 399.74264818149237  # rounded down by float32
+
+    max_metric = estimate_max_memory_scaler(si_sim_state, lj_model, [metric])
+
+    assert max_metric == metric
+
+
+@pytest.mark.usefixtures("one_system_fits")
+def test_binning_auto_batcher_load_states_does_not_pad_below_a_system(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    """Only one copy fits: the padding must not bring the limit below a system."""
+    batcher = BinningAutoBatcher(
+        model=lj_model, memory_scales_with="n_atoms", max_memory_padding=0.9
+    )
+
+    batcher.load_states(ts.concatenate_states([si_sim_state, si_sim_state]))
+
+    assert batcher.max_memory_scaler == si_sim_state.n_atoms
+
+
+@pytest.mark.usefixtures("one_system_fits")
+@pytest.mark.parametrize("make_states", [list, ts.concatenate_states])
+def test_in_flight_auto_batcher_load_states_does_not_pad_below_a_system(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+    make_states: Any,
+) -> None:
+    """The limit estimated over all the known states is not padded below a system."""
+    batcher = InFlightAutoBatcher(
+        model=lj_model, memory_scales_with="n_atoms", max_memory_padding=0.9
+    )
+
+    batcher.load_states(make_states([si_sim_state, si_sim_state]))
+
+    assert batcher.max_memory_scaler == si_sim_state.n_atoms
+
+
+@pytest.mark.usefixtures("one_system_fits")
+def test_in_flight_auto_batcher_lazy_states_accept_a_first_state_that_fits_once(
+    si_sim_state: ts.SimState,
+    lj_model: LennardJonesModel,
+) -> None:
+    """With a lazy iterator, the bootstrap limit still holds the first state."""
+    batcher = InFlightAutoBatcher(
+        model=lj_model, memory_scales_with="n_atoms", max_memory_padding=0.9
+    )
+
+    batcher.load_states(iter([si_sim_state, si_sim_state]))
+    first_batch, _ = batcher.next_batch(None, None)
+
+    assert isinstance(first_batch, ts.SimState)
+    assert first_batch.n_systems == 1
+    assert batcher.max_memory_scaler == si_sim_state.n_atoms
