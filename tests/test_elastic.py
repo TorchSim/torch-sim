@@ -12,6 +12,8 @@ from torch_sim.elastic import (
     calculate_elastic_tensor,
     get_bravais_type,
     get_cart_deformed_cell,
+    get_elastic_coeffs,
+    get_elastic_tensor_from_coeffs,
     get_elementary_deformations,
     get_strain,
 )
@@ -254,6 +256,29 @@ def test_get_elementary_deformations_strain_consistency(
             assert torch.abs(strain[strain_idx]) <= max_strain_normal + 1e-12
         else:  # Shear strain (factor of 2 due to symmetric strain tensor)
             assert torch.abs(strain[strain_idx]) <= max_strain_shear / 2 + 1e-12
+
+
+@pytest.mark.parametrize("bravais_type", list(BravaisType))
+def test_get_elastic_coeffs_pressure_correction(
+    cu_sim_state: ts.SimState, bravais_type: BravaisType
+) -> None:
+    """Test that the pressure correction is applied to the right elastic constants."""
+    pressure = torch.tensor(1.0, device=DEVICE, dtype=DTYPE)
+    deformed_states = get_elementary_deformations(cu_sim_state, bravais_type=bravais_type)
+    stresses = torch.zeros((len(deformed_states), 6), device=DEVICE, dtype=DTYPE)
+
+    Cij, (Bij, *_) = get_elastic_coeffs(
+        cu_sim_state, deformed_states, stresses, pressure, bravais_type
+    )
+    correction = get_elastic_tensor_from_coeffs(Cij - Bij, bravais_type)
+
+    # C11 = B11 + p, C12 = B12 - p and C44 = B44 + p for every direction, and the
+    # constants that couple a shear to another component are unchanged
+    expected_correction = torch.zeros((6, 6), device=DEVICE, dtype=DTYPE)
+    expected_correction[:3, :3] = -pressure
+    expected_correction.diagonal().fill_(pressure)
+
+    torch.testing.assert_close(correction, expected_correction)
 
 
 @pytest.fixture

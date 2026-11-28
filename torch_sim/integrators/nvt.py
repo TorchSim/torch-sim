@@ -355,7 +355,10 @@ def nvt_nose_hoover_init(
 
     # Calculate initial kinetic energy per system
     KE = ts.calc_kinetic_energy(
-        masses=state.masses, momenta=momenta, system_idx=state.system_idx
+        masses=state.masses,
+        momenta=momenta,
+        system_idx=state.system_idx,
+        n_systems=state.n_systems,
     )
 
     # Calculate degrees of freedom per system (subtract 3 for COM motion,
@@ -475,7 +478,10 @@ def nvt_nose_hoover_step(
 
     # Update chain kinetic energy per system
     KE = ts.calc_kinetic_energy(
-        masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        masses=state.masses,
+        momenta=state.momenta,
+        system_idx=state.system_idx,
+        n_systems=state.n_systems,
     )
     chain.kinetic_energy = KE
 
@@ -518,7 +524,10 @@ def nvt_nose_hoover_invariant(
     # Calculate system energy terms per system
     e_pot = state.energy
     e_kin = ts.calc_kinetic_energy(
-        masses=state.masses, momenta=state.momenta, system_idx=state.system_idx
+        masses=state.masses,
+        momenta=state.momenta,
+        system_idx=state.system_idx,
+        n_systems=state.n_systems,
     )
 
     # Get system degrees of freedom per system (3N - 3 for COM correction)
