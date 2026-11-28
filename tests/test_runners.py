@@ -815,6 +815,47 @@ def test_static_double(
             )
 
 
+@pytest.mark.parametrize(
+    ("reporter_kwargs", "expect_forces"),
+    [
+        ({}, True),  # Default forces property
+        ({"state_kwargs": None}, True),
+        ({"prop_calculators": {1: {"energy": lambda state: state.energy}}}, True),
+        (
+            {
+                "prop_calculators": {1: {"energy": lambda state: state.energy}},
+                "state_kwargs": {"save_forces": False},
+            },
+            False,
+        ),
+    ],
+)
+def test_static_dict_reporter_forces(
+    *,
+    rattled_ar_supercell_stretched_sim_state: SimState,
+    lj_model: LennardJonesModel,
+    tmp_path: Path,
+    reporter_kwargs: dict,
+    expect_forces: bool,
+) -> None:
+    """Test that a dict reporter writes forces once unless the user disables them."""
+    state = rattled_ar_supercell_stretched_sim_state
+    traj_file = tmp_path / "static.h5md"
+    ts.static(
+        system=state,
+        model=lj_model,
+        trajectory_reporter=dict(filenames=[traj_file], **reporter_kwargs),
+    )
+
+    with TorchSimTrajectory(traj_file) as traj:
+        assert ("forces" in traj.array_registry) == expect_forces
+        if expect_forces:
+            np.testing.assert_allclose(
+                traj.get_array("forces"),
+                lj_model(state)["forces"][None].numpy(),
+            )
+
+
 def test_static_with_autobatcher(
     ar_supercell_sim_state: SimState,
     fe_supercell_sim_state: SimState,
